@@ -18,21 +18,20 @@ import ViewerControls from './components/ViewerControls';
 import { dockPanelId, railButtonId } from './dock';
 import { openPermalinkInAddress } from './permalink';
 import { useProcessingStore } from './processingStore';
-import { hasResultsPanel } from './sections';
 import { useAppStore } from './store';
 
 export default function App() {
   const loadDatasets = useAppStore((s) => s.loadDatasets);
   const dock = useAppStore((s) => s.dock);
   const closeDock = useAppStore((s) => s.closeDock);
-  const resultsPanelCollapsed = useAppStore((s) => s.resultsPanelCollapsed);
-  const toggleResultsPanel = useAppStore((s) => s.toggleResultsPanel);
   const focusMode = useAppStore((s) => s.focusMode);
   const resultView = useAppStore((s) => s.resultViewLayerId !== null);
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
-  const hasResults = useAppStore((s) => hasResultsPanel(s.sections));
   const hasSelection = useAppStore((s) => s.selectedIds.length > 0);
+  // A scene ticked in the list while a view is open that the view does not draw: the bar of the selection shows
+  // above the controls of the view, as it does after any click on a result.
+  const tickedBesideView = useAppStore((s) => s.selectedIds.some((id) => !(id in s.downloaded)));
   // "Zoom to selection" zooms to the AOI, else the pinned layer images;
   // with neither, it stays visibly disabled (store.ts::zoomToView).
   const canZoom = useAppStore((s) => !!s.aoi || s.layers.length > 0);
@@ -69,14 +68,17 @@ export default function App() {
 
       <AppRail />
 
-      {/* The control menu and the layer manager stay mounted (what they hold survives a change of panel);
-          the job manager follows jobs, so it exists only while it is open. */}
+      {/* The control menu, the layer manager and the results stay mounted (what they hold survives a change
+          of panel); the job manager follows jobs, so it exists only while it is open. */}
       <div className="overlay dock" hidden={!dock} onKeyDown={onDockKeyDown}>
         <div className="dock-slot" id={dockPanelId('controls')} hidden={dock !== 'controls'}>
           <ControlPanel />
         </div>
         <div className="dock-slot" id={dockPanelId('layers')} hidden={dock !== 'layers'}>
           <LayerManager />
+        </div>
+        <div className="dock-slot" id={dockPanelId('results')} hidden={dock !== 'results'}>
+          <ResultsPanel />
         </div>
         {dock === 'jobs' && (
           <div className="dock-slot" id={dockPanelId('jobs')}>
@@ -115,39 +117,34 @@ export default function App() {
         </button>
       </div>
 
-      {/* The processing side bar lies over the results list: folded away while it is open. */}
-      {!focusMode && !resultView && hasResults && (
-        <div className={`overlay right results-dock${resultsPanelCollapsed || processingOpen ? ' collapsed' : ''}`}>
-          <ResultsPanel />
-          {!processingOpen && (
-            <button
-              type="button"
-              className="results-toggle"
-              onClick={() => toggleResultsPanel()}
-              title={resultsPanelCollapsed ? 'Show results' : 'Hide results'}
-              aria-label={resultsPanelCollapsed ? 'Show results' : 'Hide results'}
-              aria-expanded={!resultsPanelCollapsed}
-            >
-              {resultsPanelCollapsed ? '‹' : '›'}
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Beside the processing side bar, not under it: the time slider picks the pass of an order. */}
       <div className={`overlay bottom${processingOpen ? ' beside-sheet' : ''}`}>
         {focusMode ? (
-          <Draggable>
-            <ViewerControls />
-          </Draggable>
+          <>
+            {tickedBesideView && (
+              <Draggable className="fill">
+                <ViewBar />
+              </Draggable>
+            )}
+            <Draggable>
+              <ViewerControls />
+            </Draggable>
+          </>
         ) : resultView ? (
-          <Draggable>
-            <ResultControls />
-          </Draggable>
+          <>
+            {hasSelection && (
+              <Draggable className="fill">
+                <ViewBar />
+              </Draggable>
+            )}
+            <Draggable>
+              <ResultControls />
+            </Draggable>
+          </>
         ) : (
           <>
             {hasSelection && (
-              <Draggable>
+              <Draggable className="fill">
                 <ViewBar />
               </Draggable>
             )}

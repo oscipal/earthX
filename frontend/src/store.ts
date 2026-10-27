@@ -43,6 +43,7 @@ import {
   buildSections,
   combineAnswers,
   firstSectionWithItems,
+  hasResultsPanel,
   LOAD_MORE_NOTE,
   NO_SCENES_NOTE,
   needsFallback,
@@ -530,6 +531,7 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
       searchCrops: [],
       selectedIds: [],
       searchContext: null,
+      dock: withoutResults(s.dock),
       error: `Grouping failed: ${failed}`,
       notice: null,
     });
@@ -579,6 +581,8 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     searchCrops: crops,
     selectedIds: keepOpen ? s.selectedIds.filter((id) => open?.items.some((it) => it.id === id)) : [],
     searchContext: ctx,
+    // A new search shows its results; "Load more" leaves the panels as they are.
+    ...(!keepOpen && hasResultsPanel(sections) ? { dock: 'results' as const } : {}),
     error: null,
     notice,
   });
@@ -602,6 +606,7 @@ function applyDatasetSelection(
     datasetId,
     sections: [],
     openSectionId: null,
+    dock: withoutResults(s.dock),
     ...forgetSearch(),
     items: [],
     groups: [],
@@ -702,14 +707,25 @@ function dropPageToken(set: SetState, get: GetState): void {
 // What every replacement of the results resets besides the results themselves.
 function forgetSearch() {
   searchGen += 1;
-  return { searchContext: null, loadingMore: false, loadMoreError: null, loadMoreUsed: false, fallbackDatasetIds: [] };
+  return {
+    searchContext: null,
+    loadingMore: false,
+    loadMoreError: null,
+    loadMoreUsed: false,
+    fallbackDatasetIds: [],
+    resultsOnMap: true,
+  };
 }
 
 // The panels beside the rail (UI-01 §6.9). One is open at a time, or none.
-export type DockPanel = 'controls' | 'layers' | 'jobs';
+export type DockPanel = 'controls' | 'layers' | 'jobs' | 'results';
 
 // Sliding the control panel away leaves another panel where it is.
 const withoutControls = (dock: DockPanel | null): DockPanel | null => (dock === 'controls' ? null : dock);
+
+// The results panel has nothing left to show once the results go: the control menu, where the search
+// settings are, takes its place. A closed dock stays closed.
+const withoutResults = (dock: DockPanel | null): DockPanel | null => (dock === 'results' ? 'controls' : dock);
 
 export interface AppState {
   // --- map / selection ---
@@ -752,11 +768,11 @@ export interface AppState {
   // --- ui layout ---
   // The panel beside the rail (UI-01 §6.9): one at a time, or none.
   dock: DockPanel | null;
-  // Right-docked results list slid off to the right — collapsible the same
-  // way as the left control panel, not freely draggable any more (V-5).
-  resultsPanelCollapsed: boolean;
+  // The search results (quicklooks, crops) are drawn on the map (UI-01g). Off, only the scenes ticked in the
+  // list are; the list itself is the same. Every new search starts with it on.
+  resultsOnMap: boolean;
   // Viewing a full-resolution raster (M2-07b) instead of browsing quicklooks —
-  // swaps ResultsPanel/ViewBar for ViewerControls (App.tsx).
+  // swaps ViewBar for ViewerControls (App.tsx); the results list stays whatever the view.
   focusMode: boolean;
   showDownloaded: boolean;
   focusLoading: boolean; // fetching statistics while entering focus / "auto"
@@ -900,11 +916,13 @@ export interface AppState {
   // A second click on the open panel's symbol closes it.
   toggleDock: (panel: DockPanel) => void;
   closeDock: () => void;
+  toggleResultsOnMap: () => void;
   // The control panel slides away for a draw or a search (`withoutControls`) and comes back when that is over,
   // unless another panel took its place meanwhile.
   reopenControls: () => void;
-  toggleResultsPanel: () => void;
   clearAll: () => void;
+  // The list of results, and nothing else: no AOI, dates, dataset choice or filter, no pinned layer, no job.
+  clearSearchResults: () => void;
   addCurrentToLayers: () => void;
   pinDerivedLayer: (layer: DerivedLayer) => void;
   // Marks the result layers whose job's results are about to go (M4-13c-5).
@@ -979,7 +997,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewportSize: null,
 
   dock: 'controls',
-  resultsPanelCollapsed: false,
+  resultsOnMap: true,
   focusMode: false,
   showDownloaded: true,
   focusLoading: false,
@@ -1142,10 +1160,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   flyTo: (flyToBbox) => set({ flyToBbox }),
   clearFly: () => set({ flyToBbox: null }),
   clearFlyView: () => set({ flyToView: null }),
-  toggleDock: (panel) => set((s) => ({ dock: s.dock === panel ? null : panel })),
+  // The results panel opens only while there are results.
+  toggleDock: (panel) =>
+    set((s) => {
+      if (s.dock === panel) return { dock: null };
+      return panel === 'results' && !hasResultsPanel(s.sections) ? {} : { dock: panel };
+    }),
   closeDock: () => set({ dock: null }),
+  toggleResultsOnMap: () => set((s) => ({ resultsOnMap: !s.resultsOnMap })),
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
-  toggleResultsPanel: () => set((s) => ({ resultsPanelCollapsed: !s.resultsPanelCollapsed })),
+  clearSearchResults: () => {
+    set({
+      sections: [],
+      openSectionId: null,
+      ...forgetSearch(),
+      // The crops a search drew go with it; what the user pinned stays.
+      searchCrops: [],
+      items: [],
+      groups: [],
+      activeGroupIndex: 0,
+      expandedGroupIndex: 0,
+      selectedIds: [],
+      dock: 'controls',
+      playing: false,
+      error: null,
+      notice: null,
+      ...LEAVE_FOCUS,
+    });
+  },
   clearAll: () => {
     set({
       aoi: null,
@@ -1160,7 +1202,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeGroupIndex: 0,
       expandedGroupIndex: 0,
       selectedIds: [],
-      dock: get().dock ?? 'controls',
+      dock: withoutResults(get().dock) ?? 'controls',
       playing: false,
       error: null,
       notice: null,
@@ -1427,18 +1469,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ ...LEAVE_FOCUS, resultViewLayerId: id });
       return;
     }
+    // Layer and search results are apart (Otto, 26.10.2026): the click shows the controls and the picture of
+    // this layer and touches nothing the list holds — no tick, no open section, no choice of datasets. Only
+    // what the view cannot do without follows: the dataset of its controls, and the AOI of a cropped view.
     const r = l.restore;
-    if (r.aoi !== s.aoi) dropPageToken(set, get);
+    const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
+    const aoi = r.cropToAoi && r.aoi ? r.aoi : s.aoi;
+    if (aoi !== s.aoi) dropPageToken(set, get);
     set({
       resultViewLayerId: null,
-      ...layerDatasetState(s, r),
+      ...(dataset && (dataset.viewable || s.selectedDatasetIds.includes(dataset.id)) ? { datasetId: dataset.id } : {}),
       focusMode: r.focusMode,
       downloaded: r.downloaded,
       appliedRender: r.appliedRender,
-      activeGroupIndex: r.activeGroupIndex,
-      expandedGroupIndex: r.activeGroupIndex,
-      selectedIds: r.selectedIds,
-      aoi: r.aoi,
+      aoi,
       cropToAoi: r.cropToAoi,
       showDownloaded: true,
       viewLayerId: id,
@@ -1705,6 +1749,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       ...(oversize ? { notice: oversize } : {}),
       focusMode: true,
+      // A view takes the results off the map; "Show results" brings them back over it (Otto, 26.10.2026).
+      resultsOnMap: false,
       resultViewLayerId: null,
       cropToAoi,
       showDownloaded: true,
@@ -1733,7 +1779,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       passesOf(Object.entries(s.downloaded), s.groups).map((entries) => ({ datasetId, entries })),
     );
   },
-  exitFocus: () => set({ ...LEAVE_FOCUS }),
+  // Back to browsing: the quicklooks of the results are there again.
+  exitFocus: () => set({ ...LEAVE_FOCUS, resultsOnMap: true }),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
@@ -1985,7 +2032,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         searchCrops: [],
         searchContext: null,
         ...openSectionState(null),
-        dock: get().dock ?? 'controls',
+        dock: withoutResults(get().dock) ?? 'controls',
       });
     } finally {
       set({ searching: false });
@@ -2126,7 +2173,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // A lookup carries no AOI, so there is no crop of the last search to keep.
       searchCrops: [],
       selectedIds: [item.id],
-      dock: withoutControls(get().dock),
+      dock: 'results',
       playing: false,
       ...LEAVE_FOCUS,
       error: null,

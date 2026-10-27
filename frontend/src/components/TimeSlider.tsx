@@ -6,8 +6,6 @@ export default function TimeSlider() {
   const groups = useAppStore((s) => s.groups);
   const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
   const setActiveGroupIndex = useAppStore((s) => s.setActiveGroupIndex);
-  const selectAllInActiveGroup = useAppStore((s) => s.selectAllInActiveGroup);
-  const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
   const playing = useAppStore((s) => s.playing);
   const setPlaying = useAppStore((s) => s.setPlaying);
 
@@ -32,7 +30,6 @@ export default function TimeSlider() {
   const active = groups[activeGroupIndex];
   // groups are newest-first; show oldest→newest left→right.
   const sliderValue = groups.length - 1 - activeGroupIndex;
-  const frameCount = active?.items.length ?? 0;
 
   return (
     <div className="panel time-slider">
@@ -60,25 +57,6 @@ export default function TimeSlider() {
           onChange={(e) => setActiveGroupIndex(groups.length - 1 - Number(e.target.value))}
           aria-label="Timeline (mosaic groups)"
         />
-        <div className="mosaic-info">
-          <span>
-            {frameCount} image{frameCount === 1 ? '' : 's'}
-            {frameCount > 1 && ' covering ROI'}
-          </span>
-          {frameCount > 0 && (
-            <button type="button" className="link-btn" onClick={() => selectAllInActiveGroup()}>
-              + select all frames
-            </button>
-          )}
-          <button
-            type="button"
-            className="link-btn"
-            title="Pin the selected scenes (or this group) into the layer manager"
-            onClick={() => addCurrentToLayers()}
-          >
-            + add to layers
-          </button>
-        </div>
       </div>
       <span className="time-count">
         {activeGroupIndex + 1}/{groups.length}

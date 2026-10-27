@@ -113,6 +113,20 @@ export function groupItemIdsFor(itemIds: readonly string[], groups: readonly Tim
   return [...byGroupIndex.values()];
 }
 
+// What the results lay over a full-resolution view (UI-01g): with the results on the map, what browsing shows; off
+// it, the ticked scenes the view does not draw itself (`viewedIds`), so that a scene ticked in the list shows even
+// then (Otto, 26.10.2026).
+export function itemsOverView(
+  groups: TimeStepGroup[],
+  expandedGroupIndex: number | null,
+  selectedIds: readonly string[],
+  viewedIds: readonly string[],
+  resultsOnMap: boolean,
+): StacItem[] {
+  if (resultsOnMap) return itemsForMap(groups, expandedGroupIndex, selectedIds);
+  return groups.flatMap((g) => g.items).filter((it) => selectedIds.includes(it.id) && !viewedIds.includes(it.id));
+}
+
 // What the map should show: the expanded-in-the-list group's items, plus any
 // selected item that belongs to a different group. `ResultsPanel` only ever
 // expands one group at a time, and collapsing it — by switching to another
