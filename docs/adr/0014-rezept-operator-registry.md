@@ -2418,3 +2418,23 @@ Dateiliste in §15l (`TEXT_FILES` mit `methods.txt`) bleiben als Originaltext st
     (`adr/0016` §12c, Otto 2026-10-26).
 - **Tests:** `processing/test_methods.py` (`TestTheTextLiesInTheRecipe`: Text im Feld, Rest des Dokuments gleich, Hash gleich, falscher
   Typ, kein Rezept), `test_export.py`, `api/test_download_route.py`, `api/test_result_zip_files.py`, `runner/test_cli.py`.
+
+## 15s. Nachtrag vom 2026-10-27: was als Band zählt, `auxiliary_assets` (zu §4.2, §5.6; NM4-07)
+
+Das Panel bietet „Select all bands“ an. Dafür muss feststehen, welche Assets Bänder der Daten sind und welche nur helfen, sie
+anzusehen. Die Regel liegt in der Registry, nicht in Namenslisten im Frontend.
+
+- **Feld:** `DatasetConfig.auxiliary_assets`, ein Tupel von Asset-Schlüsseln, **ohne Default** (KLAERUNGEN B10): Jeder Eintrag sagt es
+  ausdrücklich, bei keinem Hilfs-Asset mit `()`. Die Collection veröffentlicht es als `earthx:auxiliary_assets` (Liste). Ein
+  Eintrag nennt nur exakte Schlüssel, keine Muster. Die Prüfung beim Anlegen verlangt brauchbare Schlüssel (nicht leer, ohne
+  Leerraum am Rand), keine Doppelten und nicht die Maskenschicht.
+- **Einträge:** Sentinel-2 L2A `visual`, `preview` (Bilder aus den Bändern, keine Messwerte); Copernicus DEM: leer. `scl` steht nicht
+  im Feld: Die Maskenschicht benennt `mask` (§15m), und das Panel nimmt sie aus „Select all bands“ von dort. `thumbnail` entfällt
+  schon heute, weil das Panel nur GeoTIFF ohne Rolle `thumbnail` als Quelle kennt.
+- **Wirkung nur im Panel:** „Select all bands“ nimmt keine Hilfs-Assets und keine Maskenschicht; wer sie braucht, wählt ihren Chip
+  einzeln. Rezept, Operatoren und Backend-Prüfung ändern sich nicht, ein Auftrag mit `visual` bleibt gültig.
+- **Grenze:** Der Auftrag nimmt höchstens `maxItems` Assets (16, M4-07b F5). „Select all bands“ zählt die Bänder aus Ausdrücken und
+  Schritten mit; würde die Summe darüber liegen, wählt es nichts und nennt den Grund. Nie eine stille Teilmenge.
+- **Ein Band:** Hat die Quelle genau ein wählbares Asset und hat dieses höchstens einen Bandnamen, ist es beim Öffnen gewählt.
+- **Tests:** `catalog/test_auxiliary_assets.py`; im Frontend `ProcessingPanel.test.tsx` („picking all bands“); Browserprüfung
+  `frontend/e2e/band-select.cjs`.
