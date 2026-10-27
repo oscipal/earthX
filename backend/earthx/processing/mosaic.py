@@ -52,7 +52,7 @@ from earthx.processing.warped import WarpedItem, cache_per_item
 from earthx.readers import read_access_for
 from earthx.readers.cog import CogReader
 
-__all__ = ["MosaicSource", "lies_on_grid", "open_mosaic"]
+__all__ = ["MosaicSource", "check_alike", "lies_on_grid", "open_mosaic"]
 
 #: A pixel offset or size counts as a whole number within this (of a pixel).
 _PIXEL_TOLERANCE = 1e-3
@@ -227,7 +227,11 @@ def _chain(first: numpy.ma.MaskedArray, rest: Iterator[numpy.ma.MaskedArray]) ->
     yield from rest
 
 
-def _check_alike(asset: str, members: Sequence[Source]) -> None:
+def check_alike(asset: str, members: Sequence[Source]) -> None:
+    """The scenes of one asset agree in bands, data type, nodata, unit and scaling, or :class:`UnsupportedRecipe`.
+
+    The rule of the job, and of the mosaic tile with an operator (NM4-04), which shows nothing the job refuses.
+    """
     anchor = members[0]
     for other in members[1:]:
         if (other.names, other.data_types, other.nodata, other.units) != (
@@ -266,7 +270,7 @@ def open_mosaic(recipe: Recipe, stack: ExitStack) -> list[MosaicSource]:
     for asset, scenes in sources.items():
         if not all(_north_up(scene) for scene in scenes):
             raise UnsupportedRecipe("only north-up grids are mosaicked")
-        _check_alike(asset, scenes)
+        check_alike(asset, scenes)
     anchors = [scenes[0] for scenes in sources.values()]
     coarse_x = max(anchor.transform.a for anchor in anchors)
     coarse_y = max(-anchor.transform.e for anchor in anchors)

@@ -189,7 +189,8 @@ class EarthxMosaicTilerFactory(EarthxTilerFactory):
     on one scene as before (plan M4-17 §6), and a route nobody needs is a route nobody secures.
 
     The reader's parameters are the GDAL configuration of the route (:class:`MosaicReaderParams`);
-    a ``reader_dependency`` handed in would replace it silently, so it is refused.
+    a ``reader_dependency`` handed in would replace it silently, so it is refused. `api` hands in a reader of its
+    own for a mosaic with steps (NM4-04); `access` imports nothing of the worker core that reads it.
     """
 
     reader: Any = open_mosaic
@@ -207,8 +208,9 @@ class EarthxMosaicTilerFactory(EarthxTilerFactory):
 
     def tilejson_extras(self, src_dst: Any) -> dict[str, Any]:
         """``earthx:order``: the scenes in the order a tile reads them, so a client below the mosaic's
-        first zoom level can stack single scenes the same way (plan M4-17 §4.1, §4.6)."""
-        return {"earthx:order": list(src_dst.order)}
+        first zoom level can stack single scenes the same way (plan M4-17 §4.1, §4.6); with steps also their ``unit``
+        (NM4-04)."""
+        return {**super().tilejson_extras(src_dst), "earthx:order": list(src_dst.order)}
 
     def register_routes(self) -> None:
         self.tile()
