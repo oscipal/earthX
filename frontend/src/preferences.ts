@@ -1,6 +1,8 @@
-// Client-side view preferences (V-1): dark/light HUD theme and flat/globe
-// projection. Both are saved per browser (`localStorage`), never sent to the
-// backend — the tile URLs and the base map are unaffected either way (D27).
+// Client-side view preferences (V-1, UI-02a): dark/light HUD theme, flat/globe
+// projection and the basemap. All are saved per browser (`localStorage`), never
+// sent to the backend — the tile URLs are unaffected by any of them (D27).
+
+import { BASEMAP_IDS, DEFAULT_BASEMAP, type BasemapId } from './basemaps';
 
 export type Theme = 'tech' | 'normal';
 export type Projection = 'mercator' | 'globe';
@@ -10,6 +12,7 @@ export type JobFilter = 'active' | 'expired' | 'all';
 
 const THEME_KEY = 'earthx.theme';
 const PROJECTION_KEY = 'earthx.projection';
+const BASEMAP_KEY = 'earthx.basemap';
 const JOB_FILTER_KEY = 'earthx.jobfilter';
 
 const THEMES: readonly Theme[] = ['tech', 'normal'];
@@ -51,6 +54,14 @@ export function loadProjection(): Projection {
 
 export function saveProjection(projection: Projection): void {
   writeStored(PROJECTION_KEY, projection);
+}
+
+export function loadBasemap(): BasemapId {
+  return readStored(BASEMAP_KEY, BASEMAP_IDS, DEFAULT_BASEMAP);
+}
+
+export function saveBasemap(basemap: BasemapId): void {
+  writeStored(BASEMAP_KEY, basemap);
 }
 
 export function loadJobFilter(): JobFilter {
