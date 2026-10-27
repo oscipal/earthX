@@ -2,7 +2,7 @@
 
 **Pflege:** Dieses Backlog pflegt nur der Planungs-Chat bzw. Otto. Sessions ändern es nicht; Erledigtes tragen sie als Log-Zeile mit PR-Nummer in `docs/ENTSCHEIDUNGSLOG.md` ein (Otto, 26.10.2026).
 
-Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20) fertig zu machen. Danach werden diese Punkte der Reihe nach aufgegriffen. Reihenfolge laut Log vom 24.10.2026: DOC-01, dann UI-01 und UI-02; NM4-01 und NM4-02 als Stufe A daneben. Für die übrigen Punkte entscheidet Otto die Reihenfolge.
+Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20) fertig zu machen. Danach werden diese Punkte der Reihe nach aufgegriffen. Reihenfolge laut Log vom 24.10.2026: DOC-01, dann UI-01 und UI-02; NM4-01 und NM4-02 als Stufe A daneben. Für die übrigen Punkte entscheidet Otto die Reihenfolge.
 
 ## Neu (Plan-Dateien unter `docs/plans/querschnitt/`)
 
@@ -31,6 +31,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-04-mosaik-mit-operator.md`
 5. **Processing auf einem Ergebnis** (Otto, 20.10.2026), also ein Job-Ergebnis als Eingabe eines neuen Rezepts.
    - **Plan:** `querschnitt/nm4-05-processing-auf-ergebnis.md`
+   - **Vorlage:** `adr/0019` (PR #204, 26.10.2026), Empfehlung Option 2: ⚙ am Ergebnis-Layer öffnet das Panel mit dem Auftrag des Jobs, bisherige Schritte gesperrt vorn, neue dahinter, alles als ein Auftrag neu gerechnet; nur Frontend. Entschieden: F1–F5 je Option 1 (Otto, 26.10.2026). Umsetzung: `querschnitt/nm4-05b-processing-auf-ergebnis.md`.
    - **Warum eine Vorlage nötig ist:** Das ist eine neue Art von Eingabe neben Datensatz und Item. Sie berührt „Eingaben per Referenz“ (S3), B8, Herkunft und Ablauf nach 7 Tagen.
    - **Aufgabe:** zuerst eine Entscheidungsvorlage (Stufe C), dann die Umsetzung.
    - **Abgrenzung zu UI-01:** UI-01 sperrt bis dahin den Processing-Knopf bei Ergebnis-Layern mit Grund (UI-01 §1 Punkt 11).
@@ -139,6 +140,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe (Stufe A):** Einheiten mit Quelle nachtragen (Produktspezifikation Sentinel-2 L2A bzw. Item-Metadaten); wo keine Einheit sinnvoll ist (etwa `preview`), das bewusst vermerken. Hinweis: Eine Korrektur der Einheit ändert den Hash (`adr/0014` §15n), also einmal kein Cache-Treffer.
 17. **„Clear all“ wird „Clear search results“** (Otto, 24.10.2026).
    - **Plan:** `querschnitt/nm4-17-clear-search-results.md`
+   - **In UI-01g aufgenommen (Otto, 26.10.2026, zweite Fassung):** Statt „Clear all“ gibt es den Umschalter „Show/Hide results“; zusätzlich unter „Load more“ ein Knopf mit rotem ✕ „Clear search results“ (löscht nur die Liste, Einstellungen bleiben, Control-Menü öffnet sich). Erledigt mit UI-01g (#209).
    - **Soll:** Der Knopf in den Suchergebnissen heißt „Clear search results“ und löscht nur die Ergebnisliste. Danach öffnet sich wieder das Control-Panel.
    - **Bleibt bestehen:** alle Sucheinstellungen, also AOI, Zeitraum, Datensatzwahl, Filter (etwa Wolkenbedeckung). Ein neuer Klick auf „Search“ sucht mit denselben Einstellungen.
    - **Im Plan zu klären:** was mit angehefteten Layern, offener Ansicht (Mosaik aus M4-17) und Jobs passiert (Vorschlag: angeheftete Layer und Jobs bleiben, die offene Ansicht schließt); wo man AOI und Einstellungen künftig zurücksetzt (eigener Knopf im Control-Panel, falls es keinen gibt); Abstimmung mit UI-01 (linke Leiste, Control-Menü).
@@ -182,6 +184,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe A, nur Frontend, zusammen mit Punkt 20 oder in UI-01; gilt ab sofort als Regel für jede neue Oberfläche.
 23. **Backend-Tests schneller** (Otto, 24.10.2026).
    - **Plan:** `querschnitt/nm4-23-backend-tests-schneller.md`
+   - **Erledigt:** NM4-23, PR #207 (27.10.2026): `pytest-xdist` (Dev), `-n auto --dist worksteal`, Datenbank je Worker; Session 989–1009 s → 280–284 s (3× grün), seriell 850 s; CI-Schritt pytest 4:10 min. 9 wackelige Tests stabilisiert (u. a. Shutdown-Test in `jobs/test_worker.py`), Live-Smokes bleiben seriell; Nachtrag `adr/0002` §6. Offen als möglicher kleiner Punkt: Wartezeit bis 1 s je Test beim Worker-Stopp (`WorkerConfig.listen_seconds`, Produktcode).
    - **Befund (CI-Lauf auf `main`, 24.10.2026):** Job „Backend — lint and tests“ 14,2 min, davon `pytest` 13,2 min; Installation 0,5 min, Ruff und Migration je unter 0,1 min. Frontend 0,7 min, Modulgrenzen 0,7 min, compose-topology 1,9 min.
    - **Schritt 1 – messen:** `pytest --durations=30` (lokal in der Session und einmal in der CI-Ausgabe), Tabelle der langsamsten Tests im PR. Erwartete Kandidaten: Speichertests bei 4096² (`VmHWM`), Vergleiche in `spawn`-Prozessen (Runner, Worker, Import), Tests gegen Postgres. Abhilfe ohne Verlust an Aussage: kleinere synthetische Raster, wo die Größe nicht der Prüfgegenstand ist; teure Fixtures mit Geltungsbereich `module`/`session`; doppelte Prüfungen zusammenlegen. Speicher- und Bitgleich-Tests bleiben in voller Größe.
    - **Schritt 2 – parallel (nur nach Ottos Freigabe):** `pytest-xdist` (neue Abhängigkeit). Vorher mit Quellen klären: Verträglichkeit mit `spawn`-Kindprozessen und Speichermessungen (`VmHWM` je Prozess), eigene Datenbank je xdist-Worker für Postgres-Tests, Zahl der Kerne der GitHub-Runner für öffentliche Repos. Einstellung über die pytest-Konfiguration, nicht über `.github/`.
@@ -209,7 +212,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe B, Backend und Frontend, nach UI-01c.
 28. **Suchergebnisse links angedockt** (Otto, 26.10.2026).
    - **Plan:** `vp3/ui-01g-suchergebnisse-angedockt.md` (Teil von UI-01, nach UI-01f).
-   - **Umgesetzt (26.10.2026, Draft-PR #209):** Symbol „Results“ in der Leiste, Panel im Dock, öffnet nach der Suche; Auslegungen im Log vom 26.10.2026.
+   - **Erledigt:** UI-01g, PR #209 (26.10.2026), mit den Ergänzungen unter „In UI-01 aufgenommen“.
 29. **512er-Kacheln im Frontend** (Otto, 26.10.2026, aus NM4-26 Frage 3).
    - **Plan:** `querschnitt/nm4-29-kacheln-512.md`
    - **Befund (NM4-26 §8.2, §10 S3):** Mit `tileSize: 512` braucht dieselbe Fläche ein Drittel der Anfragen (325 → 117). Die Ansicht wird gemessen 18 % schneller (28,3 → 23,0 s), bei gleichen Bytes von der Quelle.
@@ -222,14 +225,26 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Befund:** Mit dem Ausscheiden von `CoverageProvider.SAMPLE` ist der Zweig `single_coverage_product` ohne Flächenweg in `api/coverage_route.py` (`extent_result`) nicht mehr erreichbar: `_check_coverage` verbietet `single_coverage_product` mit Aggregation, `local-sql` nimmt den Flächenweg. Ebenso wirkungslos ist `and not config.capabilities.single_coverage_product` in `check_adapter_specs` (`adapters/spec.py`) samt `_required` in `tests/earthx/adapters/test_spec.py`.
    - **Berührt:** `adr/0004` (Einmal-Produkte: Ausdehnung allein).
    - **Aufgabe (Stufe A, eigener PR):** prüfen, ob der Zweig für eine künftige Quelle ohne Aggregation gebraucht wird; sonst mit seinen Tests entfernen.
+   - **Erledigt:** NM4-31, PR #203 (26.10.2026): `extent_result`, Zweig in `coverage_route.py` und die Klausel in `check_adapter_specs` entfernt; Feld `extent` der Antwort bleibt; Nachtrag `adr/0004`.
 32. **Paket „Datensatzabhängige Suche und Prozessierung“ (DS)** (Otto, 26.10.2026). DS-02, DS-03, DS-06 nach VP3 und vor M5; DS-04 und DS-05 (Sentinel-1) erst mit oder nach M5.
    - **DS-01 erledigt:** `adr/0018` Fassung 2 (PR #200): keine regionale Quelle; Earth Search `sentinel-1-grd` als Level-1-Datensatz mit TPS-Georeferenz überall und Hinweisen „Approximate geolocation“/„Uncalibrated (DN)“; Planetary Computer RTC nur nach positiver Messung durch Otto (anonymes Token zulässig unter Bedingungen, Originale per Klick); eigene Geländekorrektur als eigenes ADR nach DS-04.
    - **Pläne:** `ds/ds-00-paket.md` (Übersicht) und `ds/ds-01` bis `ds/ds-06`: Sentinel-1-Quelle (C), „Advanced search“ (B), Wolken in der AOI (B), S1 anbinden (A), SAR-Operatoren (B), Maske nach Werten (B).
 
 33. **Originale mit einem Klick herunterladen** (Otto, 26.10.2026: „einfach einen Download-Button drücken ohne extra Steps“).
    - **Plan:** `querschnitt/nm4-33-originale-ein-klick.md`
+   - **Benennung (UI-01g, Otto 26.10.2026):** Der Knopf heißt „Download full scene“ bzw. bei mehreren Szenen „Download full scenes“ (Originale, nicht gemergt).
    - **Entscheidet mit:** den offenen Punkt „Originale als ZIP über die Plattform“ (unten). Wege: direkte Downloads nacheinander, ZIP über die Plattform, ZIP im Browser (CORS je Quelle).
    - **Aufgabe:** Stufe B mit Recherche und Messung, nach UI-01.
+
+34. **Job neu starten („Retry“) und Umbenennen im Processing-Fenster** (Otto, 26.10.2026).
+   - **Plan:** `querschnitt/nm4-34-job-neu-starten.md`
+   - **Soll:** Ein kleines Symbol (↻, kein Tastenkürzel) startet einen gescheiterten, abgebrochenen oder abgelaufenen Job mit demselben Auftrag neu; bei einem Batch nur die gescheiterten Teile. Der neue Job ersetzt den alten in der Zeile, der alte wird archiviert. Wo es nicht geht (keine Auftragskopie, Datensatz ausgeschieden), erscheint das Symbol nicht. Dazu: Titel direkt in den Details im Processing-Fenster umbenennen.
+   - **Aufgabe:** Stufe A, nur Frontend, nach UI-01f, nicht gleichzeitig mit NM4-27.
+
+35. **Relief (Schummerung) als Overlay und optional als Basemap** (Otto, 27.10.2026; Vorschlag aus UI-02).
+   - **Plan:** `querschnitt/nm4-35-relief.md`
+   - **Soll:** Schalter „Relief“ bei den Overlays des Basemap-Menüs, über jeder Basemap; optional Basemap „Relief“. Erste Option: MapLibre zeichnet `hillshade` im Browser aus freien Höhenkacheln (etwa AWS Terrain Tiles), ohne Backend und Pyramide; Alternative: eigenes Copernicus DEM.
+   - **Aufgabe:** Stufe B mit Recherche, nach UI-02a.
 
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
@@ -240,14 +255,16 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 - Je fertigem Job nur „Download (ZIP)“, kein „Methods“, kein „Copy“ (Punkt 12).
 - Handbereich der Farbskala je Job dauerhaft speichern (§3 Punkt 1).
 - Stapelung zwischen Überflügen: Ansicht und angeheftete Layer stapeln verschieden (bekannte Grenze aus M4-17c §15), Prüffall in UI-01 §1 Punkt 10.
+- In UI-01g aufgenommen (Otto, 26.10.2026, direkt an die Session): Umschalter „Show results / Hide results“ statt „Clear all“ (Ergebnisse auf der Karte immer über allen Layern; Auswahl bei verborgener Kartenanzeige erscheint trotzdem mit den normalen Steuerelementen); Anzahl in Klammern neben „Results“; Steuerleiste einer Auswahl ohne „Full resolution“-Titel, gleich große Felder, kein „Clear“; Zeitleiste ohne „Add to layers“ und „Select all frames“; Benennung (Otto, 26.10.2026): eine Szene „Crop to AOI“, „View whole scene“, „Download crop“, „Download full scene“; mehrere Szenen „Crop & merge to AOI“, „View merged scenes“ (die ganzen Szenen werden in der Ansicht gemergt), „Download merged crop“, „Download full scenes“. „Clear search results“ mit rotem ✕ unter „Load more“. Ein Klick auf einen angehefteten Layer (Zuschnitt, Ergebnis) wählt nichts in den Suchergebnissen aus – Layer und Suchergebnisse sind vollständig entkoppelt.
+- Fehler nach UI-01g (Otto, 27.10.2026), Auftrag an die UI-02a-Session (#211, eigener Commit): Zuschnitt lässt sich nicht entfernen; nach dem Verlassen der Ansicht erscheint der Quicklook trotz „Hide results“. Regel: „Hide results“ gilt immer, einzige Ausnahme ist die Auswahl; nur der Umschalter ändert den Zustand. Dazu: Knopf „Clear“ in der Steuerleiste der Ansicht (ersetzt „kein Clear“ aus UI-01g), weniger Text im Kopf, Knopfzeilen gleich breit, Text nicht breiter als die Knopfzeilen.
 
 ## Offen im Entscheidungslog (bewusst nach M4)
 
-34. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
-35. Originale als ZIP über die Plattform (wird in Punkt 33 entschieden). Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
-36. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
-37. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
-38. Punkte aus S3 (M4-Plan Fassung 3):
+36. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
+37. Originale als ZIP über die Plattform (wird in Punkt 33 entschieden). Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
+38. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
+39. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
+40. Punkte aus S3 (M4-Plan Fassung 3):
     - Export-Job für Zarr blockweise,
     - schnelleres COG-Profil,
     - Laufzeitdeckel an echten Läufen kalibrieren,
@@ -255,11 +272,11 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
     - Job-Schnittstelle in eigenem Prozess,
     - Eingaben per Referenz (siehe Punkt 5),
     - Datei-Cache des Runners.
-39. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
+41. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
 
 ## Danach geplant
 
-40. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5.
+42. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5. **UI-01 abgeschlossen** mit UI-01a bis UI-01g (#188, #191, #196, #202, #206, #208, #209; 26.10.2026).
 
 ## Verworfen bzw. nur bei Bedarf
 
