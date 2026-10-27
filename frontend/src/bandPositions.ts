@@ -1,24 +1,23 @@
-// Where the user has moved each band (the movable strips at the bottom of the map: the bar of the selection, the time
-// line, the view of scenes, the view of a result). A position belongs to the band, not to the place it is drawn at: a
-// band that goes (the bar of the selection when nothing is ticked, the view after "Change image") and comes back stands
-// where it was left, and what is done in one band moves no other (Otto, 27.10.2026). Kept for the session.
+// Where the user has put each band (the movable strips at the bottom of the map: the bar of the selection, the time
+// line, the view of scenes, the view of a result): the place on the screen, the top left corner of the band in px. A
+// place belongs to the band, not to the place it is drawn at, and it is a place on the screen, not a shift from where
+// the stack of bands would put it: a band that was put somewhere stays there while other bands come, go or change
+// their height (Otto, 27.10.2026). Bands that were not moved stack from the bottom edge as before. Kept for the session.
 
 import { create } from 'zustand';
 
 export type BandId = 'selection' | 'timeline' | 'view' | 'result';
-export interface Offset {
+export interface Place {
   x: number;
   y: number;
 }
 
-export const NOT_MOVED: Offset = { x: 0, y: 0 };
-
-interface BandPositions {
-  offsets: Partial<Record<BandId, Offset>>;
-  move: (id: BandId, offset: Offset) => void;
+interface BandPlaces {
+  places: Partial<Record<BandId, Place>>;
+  move: (id: BandId, place: Place) => void;
 }
 
-export const useBandPositions = create<BandPositions>((set) => ({
-  offsets: {},
-  move: (id, offset) => set((s) => ({ offsets: { ...s.offsets, [id]: offset } })),
+export const useBandPositions = create<BandPlaces>((set) => ({
+  places: {},
+  move: (id, place) => set((s) => ({ places: { ...s.places, [id]: place } })),
 }));
