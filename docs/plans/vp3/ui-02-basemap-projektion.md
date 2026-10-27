@@ -298,3 +298,78 @@ Gelesen am 27.10.2026 in den `LICENSE.md` der Projekte auf GitHub (`openmaptiles
 - **OpenFreeMap (`README.md`, Abschnitt Attribution):** Für andere Clients als MapLibre gilt „OpenFreeMap © OpenMapTiles Data from OpenStreetMap“; „You do not need to display the OpenFreeMap part, but it is nice if you do.“ Die OSMF-Richtlinie akzeptiert „© OpenStreetMap contributors“.
 
 **Wortlaut:** „© OpenMapTiles · OpenFreeMap · © OpenStreetMap contributors“ in der Ecke der Karte (ottos Beispiel). Das erfüllt die Pflicht aus der OpenMapTiles-Lizenz (Nennung von OpenMapTiles mit Link und von OpenStreetMap contributors in der Ecke) und nennt OpenFreeMap. Der Stil selbst muss laut Positron-Lizenz nicht auf der Karte stehen, aber erreichbar sein: Das ist der Tooltip des Eintrags (Stil, Lizenz, bei Grey die Herkunft von CARTO). Ein Link auf eine eigene Seite mit den Stil-Lizenzen gibt es noch nicht; er gehört zum Impressum bzw. zur Datenschutzerklärung vor dem öffentlichen Start.
+
+## 8. Zusatz zu #211: Ergebnisse auf der Karte und die Ansicht der Szenen (Otto, 27.10.2026)
+
+Von Otto nach der Abnahme von UI-02a nachgereicht, als eigene Commits im selben PR. Nur Frontend, keine neue Abhängigkeit.
+
+### 8.1 Befund und Klickweg
+
+**Befund (Otto):** Nach „Crop to AOI“ in der Vollauflösung gab es keinen Weg, die Ansicht wieder wegzunehmen; nach „Clear“ im Control-Menü erschien ein Bild, das auch „Hide results“ nicht mehr entfernte.
+
+**Nachgestellt im echten Browser** (Chromium, Wegwerf-Skript, synthetische Szenen; Stand `main` vor den Änderungen):
+
+1. Suchergebnis mit drei Szenen, eine Szene angehakt, „Crop to AOI“. Die Ergebnisse gehen auf „hidden“ (der Schalter heißt „Show results“), die Karte zeigt den Zuschnitt.
+2. Im Control-Menü (linke Leiste, Suche) steht unter Punkt, Rechteck und Polygon der Knopf **„✕ Clear“**; sein Tooltip lautet „Clear the current area of interest“. Er löscht nur die AOI, nicht die Ansicht. Ein Knopf „Clear“ für die Ansicht gab es nicht.
+3. Klick auf „✕ Clear“ (die AOI): Die Ansicht „Cropped to AOI“ hat keine AOI mehr, `syncFocusRaster` zeichnet die ganze Szene (im Test 63 620 Bildpunkte, vorher Zuschnitt). Das Bild bleibt, weil es die Ansicht ist und kein Ergebnis; „Hide results“ betrifft es nicht, und es gibt keinen Knopf, der es entfernt.
+4. „‹ Choose a different image“ verlässt die Ansicht und **schaltet die Ergebnisse wieder ein** (`exitFocus` setzte `resultsOnMap: true`). Ebenso schaltete „Crop to AOI“ die Ergebnisse aus (`enterFocus`), und jede neue Suche (auch nach dem Szenennamen), „Clear search results“, „Clear all“ und eine neue Auswahl der Datensätze schalteten sie an (`forgetSearch`). Daraus entstand der Eindruck, dass „Hide results“ nicht gilt.
+5. Der Kopf der Ansicht auf `main`: „FULL-RESOLUTION VIEW · Sentinel-2 L2A · cropped to AOI“ links, „1 image“ und „● Hide image“ rechts, so eng, dass die Texte aneinanderstoßen. Der Wegfall von „Full resolution“ in UI-01g betraf nur die Auswahlleiste (`ViewBar`); der Kopf der Ansicht (`ViewerControls`) blieb unberührt und ist auf `main` noch so.
+
+Ich konnte nicht belegen, dass Ottos genaue Klickfolge dieselbe war; die fünf Punkte sind die Stellen, an denen `main` gegen die Regeln unten verstieß.
+
+### 8.2 Regeln und die eine Funktion
+
+1. „Hide results“ gilt immer: Auf der Karte erscheinen keine Umrisse, Quicklooks, Zuschnitte oder Hervorhebungen von Suchergebnissen, egal was vorher geschah (Clear, Verlassen der Ansicht, Crop, Layer entfernen, Wechsel von Basemap oder Projektion, „Load more“, neue Suche, Neuladen).
+2. Einzige Ausnahme ist die Auswahl: Eine angehakte Szene erscheint mit ihren Steuerelementen und verschwindet mit dem Haken.
+3. Nur der Umschalter ändert Show/Hide. `enterFocus`, `exitFocus`, `forgetSearch` (neue Suche, „Clear search results“, Datensatzwechsel) schreiben `resultsOnMap` nicht mehr; `toggleResultsOnMap` ist die einzige Stelle.
+4. **Die Funktion:** `resultsOnMapOf(state)` in `frontend/src/mapResults.ts`. Sie liefert aus Schalter, Auswahl und Liste `quicklooks` (Stöbern), `overlay` (über einer Ansicht), `cropsOf` (welche Zuschnitte der Suche), `highlight` (Umrisse der angehakten Szenen) und `clickable` (was ein Klick auf die Karte treffen darf). `MapView.tsx` zeichnet nur noch daraus, auch beim Aufbau nach `style.load`; die Funktionen `visibleGroupIndex` und `resultsOverlayOf` und die drei einzelnen Formeln sind weg.
+
+**Folge von Regel 3 (Frage 1 unten):** Öffnet man eine Ansicht bei „Show results“, bleiben die Ergebnisse an und ihre Quicklooks liegen über der Ansicht, bis man „Hide results“ wählt. Vorher versteckte der Aufruf der Ansicht sie von selbst.
+
+### 8.3 „✕ Clear“ und „Change image“
+
+- **„✕ Clear“** (Tooltip „Remove this view and deselect“) nimmt die Ansicht (Zuschnitt bzw. ganze Szene) von der Karte und hebt die Auswahl auf (`clearView`). Angeheftete Layer, die Ergebnisliste und „Show/Hide“ bleiben.
+- **„‹ Change image“** (Tooltip „Choose a different image“) verlässt die Ansicht und **behält die Auswahl** (`exitFocus`); die angehakten Szenen bleiben also nach Regel 2 auf der Karte, auch bei „hidden“.
+
+### 8.4 Gestaltung der Ansicht
+
+- Kopf in einer Zeile: „Sentinel-2 L2A · AOI crop“ bzw. „· whole scene“; bei mehreren Szenen „· AOI crop · 3 scenes merged“ bzw. „· 3 scenes merged“. Kein „Full-resolution view“, kein „1 image“. Zu langer Text wird mit „…“ gekürzt, der volle Text steht im Tooltip („… · cropped to the AOI · 3 scenes merged“).
+- „Hide image“ ist ein Augen-Symbol rechts im Kopf; der Tooltip nennt, was ein Klick tut („Hide image“ / „Show image“).
+- Beide Knopfzeilen liegen in einem gemeinsamen Raster aus acht Spalten, dessen Breite die Breite der Ansicht ist (`width: min(…, 100vw – Dock – 24px)`). Zeile 1: Colormap, vmin, vmax je zwei Spalten, „auto“ und „Apply“ je eine. Zeile 2: „＋ Add to layers“, „⚙ Process“, „‹ Change image“, „✕ Clear“, je zwei Spalten. Unter 600 px hat das Raster vier Spalten und die Zeilen brechen um.
+- Der Kopf läuft nie über die Zeilen hinaus (`min-width: 0`, `text-overflow: ellipsis`); Wörter, die nicht passen, brechen (`overflow-wrap: anywhere`). Geprüft: bei 420 px Fensterbreite liegt der Kopf innerhalb der Ansicht, die Ansicht innerhalb des Fensters.
+- Die Klasse `scene-view` trägt die neuen Regeln; `ResultControls` (Ansicht eines Ergebnis-Layers) teilt `viewer-controls` weiter und ist unverändert.
+
+Bilder (Chromium, Software-Rendering, synthetische Szene; vorher = `main`, nachher = dieser Stand):
+
+| | breit (1280 px) | schmal (420 px) |
+|---|---|---|
+| vorher, dunkel | ![](ui-02-bilder/before-dark-1280.png) | ![](ui-02-bilder/before-dark-420.png) |
+| nachher, dunkel | ![](ui-02-bilder/after-dark-1280.png) | ![](ui-02-bilder/after-dark-420.png) |
+| vorher, hell | ![](ui-02-bilder/before-light-1280.png) | ![](ui-02-bilder/before-light-420.png) |
+| nachher, hell | ![](ui-02-bilder/after-light-1280.png) | ![](ui-02-bilder/after-light-420.png) |
+| nachher, langer Titel, drei Szenen | | ![](ui-02-bilder/after-long-dark-420.png) ![](ui-02-bilder/after-long-light-420.png) |
+
+### 8.5 Belege
+
+- **Testmatrix** (`resultsOnMap.test.tsx`, 47 Tests): Ergebnisse an/aus × Szene angehakt ja/nein × zehn Vorgänge („Clear“ der Ansicht, „Change image“, „Crop to AOI“, „View whole scene“, „Clear“ der AOI im Control-Menü, Layer entfernt, Wechsel der Basemap, Wechsel der Projektion, „Load more“, neue Suche). Nach jedem Vorgang steht der Schalter, wie er war, und bei „hidden“ ist nur Angehaktes auf der Karte. Dazu Ottos Klickweg und „Clear“ (Ansicht und Auswahl weg, angeheftete Layer und Ergebnisliste bleiben, Schalter bleibt). Neuladen: Nach einem Neuladen gibt es keine Ergebnisse, also nichts auf der Karte; ob der Schalter dann gemerkt wird, ist Frage 2.
+- **Gegenprobe:** Gegen den Code von vor den Änderungen (nur mit der neuen Funktion und dem Test) scheitern 23 der 47 Tests.
+- **Weitere Tests:** `mapResults.test.ts` (die Funktion, 14), `ViewerControls.test.tsx` (Kopf, Auge, Knöpfe, Vertrag des CSS, 17); die Tests von UI-01g zu „An nach der Suche“ und „an nach Verlassen“ sind auf die neue Regel umgestellt (`ResultsDock.test.tsx`, `store.mosaic.test.ts`).
+- **Echter Browser** (Chromium, Wegwerf-Skript): Klickweg mit angehakter Szene bei „hidden“: nur die angehakte Szene auf der Karte, „Crop to AOI“ lässt den Schalter, „Change image“ ebenso, „Clear“ in der Ansicht nimmt Ansicht und Auswahl weg, der Schalter steht weiter auf „Show results“ und die Liste hat noch ihre Ergebnisse. Bilder oben.
+- **Frontend-Suite mit #212:** In einem Wegwerf-Worktree mit #212 gemergt: 2530 Tests grün. Ohne #212 scheitern die 21 Tests aus `ResultControls.test.tsx` (Uhr in den Fixtures).
+
+### 8.6 Prüfanleitung für Otto (Browser, mit deinem Klickweg)
+
+1. Suche mit einer AOI und Treffern; im Panel „Results“ steht „Hide results“. Eine Szene anhaken: Die Auswahlleiste unten erscheint.
+2. „Crop to AOI“ drücken. Oben links im Panel „Results“ steht jetzt noch „Hide results“, wenn du es vorher nicht verändert hast (die Ansicht ändert den Schalter nicht mehr). Liegen Quicklooks über dem Zuschnitt, „Hide results“ drücken: Es bleibt nur der Zuschnitt und, wenn angehakt, die Szene.
+3. Der Kopf der Ansicht ist eine Zeile („… · AOI crop“), rechts das Auge. Auf das Auge drücken: Das Bild verschwindet, der Tooltip heißt nun „Show image“. Beide Knopfzeilen sind gleich breit; unten „Add to layers“, „Process“, „Change image“, „Clear“.
+4. Im Control-Menü bei „Area of interest“ das **„✕ Clear“** der AOI drücken: Die Ansicht zeigt jetzt die ganze Szene (der Zuschnitt hat keine AOI mehr). Das ist die Stelle aus deinem Bericht.
+5. In der Ansicht **„✕ Clear“** drücken: Die Ansicht ist weg, die Auswahl ist aufgehoben, die Karte zeigt (bei „hidden“) nichts von den Ergebnissen. Angeheftete Layer im Layer-Manager und die Liste im Panel „Results“ bleiben, der Schalter steht unverändert.
+6. Wieder anhaken, „Crop to AOI“, **„‹ Change image“**: Die Ansicht ist weg, die Szene bleibt angehakt und auf der Karte; „Hide results“ ist weiter gedrückt.
+7. Dieselben Schritte bei „Show results“ und bei einem Wechsel der Basemap (Menü „Basemap“) und der Projektion zwischendurch: Der Schalter ändert sich nie von selbst.
+8. Fenster schmal ziehen (unter 600 px): Die Zeilen brechen um, nichts läuft über den Rand; ein langer Titel endet mit „…“, der Tooltip zeigt den ganzen Text.
+
+### 8.7 Fragen an Otto
+
+1. **„Crop to AOI“ bei „Show results“:** Nach Regel 3 ändert die Ansicht den Schalter nicht. Bei „Show results“ liegen die Quicklooks der Ergebnisse dann über dem Zuschnitt. (1) So lassen; wer den Zuschnitt sehen will, wählt „Hide results“ (**Empfehlung**, entspricht der Regel); (2) die Ansicht liegt bei „Show results“ über den Quicklooks (der Schalter bleibt, nur die Reihenfolge der Ebenen ändert sich).
+2. **Neuladen:** Der Schalter liegt nur im Speicher; nach einem Neuladen ist er auf „Show“, und es gibt keine Ergebnisse, also nichts auf der Karte. (1) So lassen (**Empfehlung**: eine neue Suche zeigt ihre Treffer, wie bisher); (2) die Stellung im Browser merken (`localStorage`), sodass auch die nächste Suche bei „hidden“ beginnt.
+3. **AOI löschen in einer zugeschnittenen Ansicht:** Heute zeigt die Ansicht dann die ganze Szene. (1) So lassen (**Empfehlung**; so ist sie gebaut, damit eine neu gezeichnete AOI die Kacheln neu zuschneidet); (2) die Ansicht behält die AOI, mit der sie geöffnet wurde, bis man sie wegnimmt.
