@@ -49,6 +49,10 @@ const MAX_LAYER_OVERLAYS = 200;
 // the AOI. Every pinned layer is stacked directly under it, so the active view
 // (browse mosaic, full-resolution tiles: `beforeAoi`) is always above them.
 const LAYERS_TOP = 'layers-top';
+// Right above `LAYERS_TOP`, under the view: the quicklooks of the search results over a view go just under this marker, so
+// that the full-resolution view (placed `beforeAoi`) lies over them, and the outlines of the results stay over both
+// (Otto, 27.10.2026).
+const RESULTS_TOP = 'results-top';
 // Cache of processed quicklook data URLs, keyed by URL + the parameters that
 // change what gets drawn (freistellung threshold, AOI clip) so the same
 // source image loaded plain (browse mode, a pinned layer) and clipped to an
@@ -247,6 +251,7 @@ export function ensureBaseLayers(map: MapLibreMap): void {
   if (!map.getSource(AOI_SRC)) {
     map.addSource(AOI_SRC, { type: 'geojson', data: EMPTY_FC });
     map.addLayer({ id: LAYERS_TOP, type: 'background', layout: { visibility: 'none' } });
+    map.addLayer({ id: RESULTS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({
       id: 'aoi-fill',
       type: 'fill',
@@ -459,6 +464,9 @@ function settleRetired(map: MapLibreMap): void {
 function dropRetired(map: MapLibreMap): void {
   finishRetired(map);
 }
+
+// Where the quicklooks of the results go while a view is open: under the marker above the layer manager's stack.
+const underTheView = (map: MapLibreMap): string | undefined => (map.getLayer(RESULTS_TOP) ? RESULTS_TOP : beforeAoi(map));
 
 const aboveAll = (map: MapLibreMap): string | undefined => (map.getLayer('aoi-fill') ? 'aoi-fill' : undefined);
 
@@ -928,10 +936,10 @@ export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' 
   settleRetired(map);
 }
 
-// The quicklooks of the search results over the full-resolution view (Otto, 26.10.2026): "Show results" in the
-// results panel draws them while a view is open. Their own id range (`res-…`), apart from the view's two banks, so
-// that neither sync takes the other's layers away; placed last, so they lie over the view, and again after each sync
-// of the view (`MapView.tsx` runs this right after it).
+// The quicklooks of the search results under the full-resolution view (Otto, 26.10.2026, turned over on 27.10.2026):
+// "Show results" in the results panel draws them while a view is open, and the view lies over them. Their own id range
+// (`res-…`), apart from the view's two banks, so that neither sync takes the other's layers away; placed under
+// `RESULTS_TOP`, which is under every layer the view adds, whichever sync came first.
 const RESULTS_KINDS = ['img-lyr', 'img-src', 'tiles-lyr', 'tiles-src'] as const;
 let resultsGen = 0;
 
@@ -954,7 +962,7 @@ export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items
     if (plan.kind === 'tiles') {
       if (!item.bbox) return;
       const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
-      placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.zoom, maxZoom: plan.zoom });
+      placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.zoom, maxZoom: plan.zoom }, underTheView(map));
       return;
     }
     const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
@@ -963,7 +971,7 @@ export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items
     loadProcessed(plan.href, nodataMax, null, (dataUrl) => {
       if (gen !== resultsGen) return; // a newer sync superseded this one
       try {
-        placeImage(map, src, lyr, dataUrl, coords, 1);
+        placeImage(map, src, lyr, dataUrl, coords, 1, underTheView(map));
       } catch {
         /* map/style went away while loading */
       }

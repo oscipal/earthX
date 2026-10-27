@@ -873,12 +873,13 @@ describe('syncLayers: the map follows the order of the list', () => {
 });
 
 describe('ensureBaseLayers', () => {
-  it('lays the end of the layer manager right under the AOI, once', () => {
+  it('lays the end of the layer manager and, over it, the end of the results under the view, right under the AOI, once', () => {
     const { map, stack } = liveMap(['bg']);
     ensureBaseLayers(map as never);
     ensureBaseLayers(map as never);
-    expect(stack.slice(0, 3)).toEqual(['bg', 'layers-top', 'aoi-fill']);
+    expect(stack.slice(0, 4)).toEqual(['bg', 'layers-top', 'results-top', 'aoi-fill']);
     expect(stack.filter((id) => id === 'layers-top')).toHaveLength(1);
+    expect(stack.filter((id) => id === 'results-top')).toHaveLength(1);
   });
 });
 
