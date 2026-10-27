@@ -18,6 +18,11 @@ describe('the basemap catalogue', () => {
     expect(basemap.tip).toMatch(/Tiles load from [a-z.]+\.(com|org)\.$/u);
   });
 
+  it('names the licence of the style\'s design in the tooltip', () => {
+    expect(BASEMAPS.streets.tip).toContain('OSM Liberty style (CC BY 4.0)');
+    expect(BASEMAPS.grey.tip).toContain('Positron style (CC BY 4.0; after CARTO Basemaps, CC BY 3.0)');
+  });
+
   it('names the host the tiles come from, and no other', () => {
     expect(BASEMAPS.satellite.tip).toContain('arcgisonline.com');
     for (const id of ['streets', 'grey', 'outlines'] as const) expect(BASEMAPS[id].tip).toContain('openfreemap.org');

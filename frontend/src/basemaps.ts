@@ -23,11 +23,13 @@ export const ESRI_ATTRIBUTION = 'Imagery © Esri, Maxar, Earthstar Geographics, 
 // `latest` always points to the TileJSON in use (OpenFreeMap README, "Tile versions").
 const OPENFREEMAP_TILES = 'https://tiles.openfreemap.org/planet/latest';
 const OPENFREEMAP_STYLES = 'https://tiles.openfreemap.org/styles';
-// The wording the OpenFreeMap README asks for.
+// The credit for the OpenFreeMap tiles and the styles on them (Otto, 27.10.2026): "OpenMapTiles" with a link and
+// "OpenStreetMap contributors", which the licence of OpenMapTiles and of each style ask to be shown in the corner of a
+// browsable map, and OpenFreeMap, which its README leaves optional but welcome.
 export const OPENFREEMAP_ATTRIBUTION =
-  '<a href="https://openfreemap.org" target="_blank" rel="noopener noreferrer">OpenFreeMap</a> ' +
-  '<a href="https://www.openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a> ' +
-  'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>';
+  '<a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a> · ' +
+  '<a href="https://openfreemap.org" target="_blank" rel="noopener noreferrer">OpenFreeMap</a> · ' +
+  '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>';
 
 export interface Basemap {
   id: BasemapId;
@@ -100,7 +102,7 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
   grey: {
     id: 'grey',
     name: 'Grey',
-    tip: 'OpenStreetMap data, Positron style (CC BY 4.0). Tiles load from openfreemap.org.',
+    tip: 'OpenStreetMap data, Positron style (CC BY 4.0; after CARTO Basemaps, CC BY 3.0). Tiles load from openfreemap.org.',
     style: `${OPENFREEMAP_STYLES}/positron`,
   },
   outlines: {
