@@ -113,6 +113,8 @@ export default function MapView() {
   const appliedRender = useAppStore((s) => s.appliedRender);
   const focusMode = useAppStore((s) => s.focusMode);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
+  // The area a cropped view was opened with: the view is cut to it whatever the area in the control menu becomes.
+  const viewAoi = useAppStore((s) => s.viewAoi);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const showCoverage = useAppStore((s) => s.showCoverage);
   const coverage = useAppStore((s) => s.coverage);
@@ -238,7 +240,7 @@ export default function MapView() {
         focusMode: st.focusMode,
         showDownloaded: viewShown(viewLayer, st.showDownloaded),
         tilesInLayer: viewLayer !== null,
-        aoi: st.aoi,
+        aoi: st.viewAoi,
         cropToAoi: st.cropToAoi,
         groups: st.groups,
       });
@@ -350,8 +352,8 @@ export default function MapView() {
   const highlight = useSameScenes(shown.highlight);
   const cropFilter = shown.cropsOf;
   const viewLayer = useMemo(
-    () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded }),
-    [layers, viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded],
+    () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi: viewAoi, showDownloaded }),
+    [layers, viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, viewAoi, showDownloaded],
   );
   useEffect(() => {
     const map = mapRef.current;
@@ -365,9 +367,9 @@ export default function MapView() {
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
-  // them, only change the highlight (the effect below handles that). Keyed on
-  // `aoi` too (M3-09): redrawing the AOI while "Crop to AOI" is active must
-  // re-clip the tiles already on screen. ---
+  // them, only change the highlight (the effect below handles that). Cut to the
+  // area the view was opened with (`viewAoi`, Otto 27.10.2026), not to the one in
+  // the control menu: drawing, changing or clearing that leaves the view alone. ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && focusMode) {
@@ -377,7 +379,7 @@ export default function MapView() {
         render: appliedRender,
         showDownloaded: viewShown(viewLayer, showDownloaded),
         tilesInLayer: viewLayer !== null,
-        aoi,
+        aoi: viewAoi,
         cropToAoi,
         items,
         dataset,
@@ -385,7 +387,7 @@ export default function MapView() {
         mosaics,
       });
     }
-  }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
+  }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
 
   // --- the preview of the processing panel (M4-13c-2). It keeps itself on top of
   // the rasters placed later (`mapLayers.ts::beforeAoi`); a new AOI cuts it again. ---
@@ -409,7 +411,7 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, dataset: datasets.find((d) => d.id === datasetId) ?? null });
-  }, [focusMode, overlay, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, mosaics]);
+  }, [focusMode, overlay, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. In a cropped focus view
@@ -423,12 +425,12 @@ export default function MapView() {
         selectedIds,
         focusMode,
         cropToAoi,
-        aoi,
+        aoi: viewAoi,
         downloaded,
         groups,
       });
     }
-  }, [groups, focusMode, cropToAoi, aoi, downloaded, highlight, selectedIds]);
+  }, [groups, focusMode, cropToAoi, viewAoi, downloaded, highlight, selectedIds]);
 
   // --- fly to a geocoded place ---
   useEffect(() => {

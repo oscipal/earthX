@@ -302,6 +302,7 @@ const LEAVE_FOCUS = {
   viewLayerId: null,
   resultViewLayerId: null,
   cropToAoi: false,
+  viewAoi: null,
   downloaded: {},
   appliedRender: {},
   pendingColormapName: '',
@@ -789,6 +790,9 @@ export interface AppState {
   // (`mapLayers.ts::syncFocusRaster`) and, once pinned, the layer's own
   // download (`download.ts::downloadRequestFor`, P19).
   cropToAoi: boolean;
+  // The area a cropped view was opened with (Otto, 27.10.2026): it keeps it. Drawing, changing or clearing the area in the
+  // control menu does not touch the view. Null for every view that is not cropped.
+  viewAoi: GeoJSON.Geometry | null;
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
@@ -943,6 +947,7 @@ export interface AppState {
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   selectLayer: (id: string) => void;
   activateLayerContext: (id: string) => void;
+  activateViewContext: () => void;
   openDownloadDialog: (id: string) => Promise<void>;
   openDownloadForSelection: (kind: 'crop' | 'originals') => void;
   closeDownloadDialog: () => void;
@@ -1013,6 +1018,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   showDownloaded: true,
   focusLoading: false,
   cropToAoi: false,
+  viewAoi: null,
 
   layers: [],
   viewLayerId: null,
@@ -1255,8 +1261,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ error: 'Nothing to add — search and pick a time step first.' });
         return;
       }
-      if (s.cropToAoi && s.aoi) {
-        const aoi = s.aoi;
+      if (s.cropToAoi && s.viewAoi) {
+        const aoi = s.viewAoi;
         const byGroupIndex = new Map<number, [string, DownloadedInfo][]>();
         for (const entry of entries) {
           const idx = groupIndexOfItem(s.groups, entry[0]);
@@ -1474,6 +1480,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (aoi !== s.aoi) dropPageToken(set, get);
     set({ ...(r.datasetId && r.datasetId !== s.datasetId ? layerDatasetState(s, r) : {}), aoi });
   },
+  // What the processing panel needs of a cropped view: the area the view was opened with, which is the order's area
+  // ("AOI only"), whatever the area in the control menu has become since.
+  activateViewContext: () => {
+    const s = get();
+    if (!s.focusMode || !s.cropToAoi || !s.viewAoi || s.viewAoi === s.aoi) return;
+    dropPageToken(set, get);
+    set({ aoi: s.viewAoi });
+  },
   selectLayer: (id) => {
     const s = get();
     const l = s.layers.find((x) => x.id === id);
@@ -1499,6 +1513,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       appliedRender: r.appliedRender,
       aoi,
       cropToAoi: r.cropToAoi,
+      viewAoi: r.cropToAoi && r.aoi ? r.aoi : null,
       showDownloaded: true,
       viewLayerId: id,
       focusLoading: true,
@@ -1766,6 +1781,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       focusMode: true,
       resultViewLayerId: null,
       cropToAoi,
+      // The view keeps the area it is opened with.
+      viewAoi: cropToAoi ? s.aoi : null,
       showDownloaded: true,
       downloaded,
       appliedRender: appliedRenderFrom(render),
