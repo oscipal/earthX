@@ -570,6 +570,7 @@ NO_JOB_ROUTES = [
     ("GET", "/results/mask.tif"),
     ("GET", "/results/recipe.json"),
     ("GET", "/events"),
+    ("POST", "/restore"),
 ]
 MALFORMED = [
     "short",
@@ -951,6 +952,168 @@ class TestDismissing:
         assert (await rig.client.get(f"/processing/jobs/{mine}")).json()["status"] == "accepted"
 
 
+class TestDeleting:
+    """NM4-27: a finished job is deleted with a day to restore it; until then it is a 404 everywhere."""
+
+    async def finished(self, rig: Rig, expires: str = "6 days") -> tuple[str, str]:
+        job_id = await placed(rig)
+        return job_id, finish(rig.db, job_id, expires=expires)
+
+    async def test_it_answers_dismissed_with_the_end_of_the_term_as_expiry(self, rig: Rig) -> None:
+        job_id, result_id = await self.finished(rig)
+        response = await rig.client.delete(f"/processing/jobs/{job_id}")
+        assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+        body = response.json()
+        assert (body["status"], body["jobID"]) == ("dismissed", job_id)
+        left = datetime.fromisoformat(body["expires"]) - datetime.now(UTC)
+        assert timedelta(hours=23, minutes=58) < left <= timedelta(days=1)
+        assert result_id not in response.text
+        assert rig.db.execute("SELECT status, result_id FROM public.earthx_run").fetchone() == ("successful", result_id)
+
+    async def test_the_term_ends_with_the_job_when_that_comes_first(self, rig: Rig) -> None:
+        job_id, _ = await self.finished(rig, expires="5 hours")
+        body = (await rig.client.delete(f"/processing/jobs/{job_id}")).json()
+        left = datetime.fromisoformat(body["expires"]) - datetime.now(UTC)
+        assert timedelta(hours=4, minutes=58) < left <= timedelta(hours=5)
+
+    async def test_a_failed_job_is_deleted_too(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        finish(rig.db, job_id, status="failed", kind="source_4xx")
+        assert (await rig.client.delete(f"/processing/jobs/{job_id}")).json()["status"] == "dismissed"
+        assert rig.db.execute("SELECT deleted_until IS NOT NULL FROM public.earthx_job").fetchone() == (True,)
+
+    @pytest.mark.parametrize(("method", "tail"), [route for route in NO_JOB_ROUTES if route[1] != "/restore"])
+    async def test_within_the_term_every_route_is_the_404_of_a_job_that_is_not_there(
+        self, rig: Rig, method: str, tail: str
+    ) -> None:
+        job_id, _ = await self.finished(rig)
+        await rig.client.delete(f"/processing/jobs/{job_id}")
+        deleted = await rig.client.request(method, f"/processing/jobs/{job_id}{tail}")
+        unknown = await rig.client.request(method, f"/processing/jobs/{'A' * 22}{tail}")
+        assert problem(deleted, 404)["type"].endswith("/no-such-job")
+        assert deleted.text == unknown.text and job_id not in deleted.text
+
+    async def test_deleting_twice_is_a_404_the_second_time_and_keeps_the_term(self, rig: Rig) -> None:
+        job_id, _ = await self.finished(rig)
+        await rig.client.delete(f"/processing/jobs/{job_id}")
+        term = rig.db.execute("SELECT deleted_until FROM public.earthx_job").fetchone()
+        assert (await rig.client.delete(f"/processing/jobs/{job_id}")).status_code == 404
+        assert rig.db.execute("SELECT deleted_until FROM public.earthx_job").fetchone() == term
+
+    async def test_the_result_the_job_leaves_still_serves_another_job(self, rig: Rig) -> None:
+        first, result_id = await self.finished(rig)
+        second = (await place(rig)).json()["jobID"]
+        await rig.client.delete(f"/processing/jobs/{first}")
+        path, _ = signed(await rig.client.get(f"/processing/jobs/{second}/results/result.tif"))
+        assert path == f"/earthx/results/{result_id}/result.tif"
+
+    async def test_an_order_placed_while_the_job_is_deleted_is_computed_again(self, rig: Rig) -> None:
+        first, _ = await self.finished(rig)
+        await rig.client.delete(f"/processing/jobs/{first}")
+        second = (await place(rig)).json()
+        assert second["status"] == "accepted"
+        assert count(rig.db, "earthx_run") == 2
+
+    async def test_an_order_placed_after_a_restore_is_a_hit_again(self, rig: Rig) -> None:
+        first, _ = await self.finished(rig)
+        await rig.client.delete(f"/processing/jobs/{first}")
+        await rig.client.post(f"/processing/jobs/{first}/restore")
+        assert (await place(rig)).json()["status"] == "successful"
+        assert count(rig.db, "earthx_run") == 1
+
+    async def test_a_waiting_or_running_job_is_cancelled_as_before(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        await rig.client.delete(f"/processing/jobs/{job_id}")
+        assert rig.db.execute("SELECT deleted_until FROM public.earthx_job").fetchone() == (None,)
+        assert rig.db.execute("SELECT status FROM public.earthx_run").fetchone() == ("dismissed",)
+
+
+class TestRestoring:
+    async def deleted(self, rig: Rig, expires: str = "6 days") -> tuple[str, str]:
+        job_id = await placed(rig)
+        result_id = finish(rig.db, job_id, expires=expires)
+        await rig.client.delete(f"/processing/jobs/{job_id}")
+        return job_id, result_id
+
+    async def test_within_the_term_the_job_is_back_with_its_first_expiry(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        finish(rig.db, job_id, expires="6 days")
+        before = (await rig.client.get(f"/processing/jobs/{job_id}")).json()
+        await rig.client.delete(f"/processing/jobs/{job_id}")
+        response = await rig.client.post(f"/processing/jobs/{job_id}/restore")
+        assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+        assert response.json() == before and response.json()["status"] == "successful"
+        assert (await rig.client.get(f"/processing/jobs/{job_id}")).json() == before
+
+    async def test_its_downloads_work_again(self, rig: Rig) -> None:
+        job_id, result_id = await self.deleted(rig)
+        assert (await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif")).status_code == 404
+        await rig.client.post(f"/processing/jobs/{job_id}/restore")
+        path, _ = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif"))
+        assert path == f"/earthx/results/{result_id}/result.tif"
+        assert (await rig.client.get(f"/processing/jobs/{job_id}/results")).status_code == 200
+
+    async def test_after_the_term_it_is_the_404_of_a_job_that_is_not_there(self, rig: Rig) -> None:
+        job_id, _ = await self.deleted(rig)
+        rig.db.execute("UPDATE public.earthx_job SET deleted_until = clock_timestamp() - interval '1 second'")
+        response = await rig.client.post(f"/processing/jobs/{job_id}/restore")
+        assert problem(response, 404)["type"].endswith("/no-such-job")
+        assert (await rig.client.get(f"/processing/jobs/{job_id}")).status_code == 404
+
+    async def test_once_the_job_has_expired_it_is_a_404_whatever_the_term(self, rig: Rig) -> None:
+        job_id, _ = await self.deleted(rig, expires="2 hours")
+        rig.db.execute("UPDATE public.earthx_run SET expires_at = clock_timestamp() - interval '1 minute'")
+        assert (await rig.client.post(f"/processing/jobs/{job_id}/restore")).status_code == 404
+
+    async def test_a_dismissed_job_is_not_restored(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        await rig.client.delete(f"/processing/jobs/{job_id}")
+        assert (await rig.client.post(f"/processing/jobs/{job_id}/restore")).status_code == 404
+        assert rig.db.execute("SELECT dismissed FROM public.earthx_job").fetchone() == (True,)
+
+    async def test_restoring_a_job_that_is_not_deleted_does_no_harm(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        finish(rig.db, job_id)
+        first = await rig.client.post(f"/processing/jobs/{job_id}/restore")
+        assert first.status_code == 200 and (await rig.client.post(f"/processing/jobs/{job_id}/restore")).json() == first.json()
+
+    async def test_nobody_can_tell_the_cases_apart(self, rig: Rig) -> None:
+        past, dismissed = await self.deleted(rig), await placed(rig, order(assets=("red",)))
+        rig.db.execute("UPDATE public.earthx_job SET deleted_until = clock_timestamp() - interval '1 second'")
+        await rig.client.delete(f"/processing/jobs/{dismissed}")
+        bodies = {
+            (await rig.client.post(f"/processing/jobs/{job_id}/restore")).text
+            for job_id in ("A" * 22, past[0], dismissed)
+        }
+        assert len(bodies) == 1
+
+    @pytest.mark.parametrize("bad", MALFORMED)
+    async def test_a_malformed_identifier_is_a_404_and_touches_nothing(self, rig: Rig, bad: str) -> None:
+        job_id, _ = await self.deleted(rig)
+        term = rig.db.execute("SELECT deleted_until FROM public.earthx_job").fetchone()
+        assert (await rig.client.post(f"/processing/jobs/{bad}/restore")).status_code == 404
+        assert rig.db.execute("SELECT deleted_until FROM public.earthx_job").fetchone() == term
+
+    @pytest.mark.parametrize("method", ["GET", "PUT", "PATCH", "DELETE"])
+    async def test_it_takes_post_only(self, rig: Rig, method: str) -> None:
+        job_id, _ = await self.deleted(rig)
+        response = await rig.client.request(method, f"/processing/jobs/{job_id}/restore")
+        assert response.status_code in (404, 405)
+        assert rig.db.execute("SELECT deleted_until IS NOT NULL FROM public.earthx_job").fetchone() == (True,)
+
+    async def test_a_body_changes_nothing(self, rig: Rig) -> None:
+        job_id, _ = await self.deleted(rig)
+        response = await rig.client.post(f"/processing/jobs/{job_id}/restore", json={"jobID": "A" * 22})
+        assert response.status_code == 200 and response.json()["jobID"] == job_id
+
+    async def test_an_unreachable_database_is_a_503_that_names_nothing(self, rig: Rig) -> None:
+        job_id, _ = await self.deleted(rig)
+        rig.pool.close()
+        rig.api.pool.timeout = 0.2
+        response = await rig.client.post(f"/processing/jobs/{job_id}/restore")
+        assert response.status_code == 503 and job_id not in response.text
+
+
 class TestWhatLogsAndHeadersCarry:
     async def lifecycle(self, rig: Rig) -> tuple[str, str]:
         job_id = (await place(rig, order(steps=[]))).json()["jobID"]
@@ -959,6 +1122,9 @@ class TestWhatLogsAndHeadersCarry:
             await rig.client.get(f"/processing/jobs/{job_id}{tail}")
         await rig.client.delete(f"/processing/jobs/{job_id}")
         await rig.client.get(f"/processing/jobs/{job_id}")
+        await rig.client.post(f"/processing/jobs/{job_id}/restore")
+        await rig.client.delete(f"/processing/jobs/{job_id}")
+        await rig.client.post(f"/processing/jobs/{job_id}/restore")
         return job_id, result_id
 
     async def test_the_access_log_names_the_route_and_never_the_job(
@@ -969,6 +1135,7 @@ class TestWhatLogsAndHeadersCarry:
         paths = {json.loads(line)["path"] for line in access_log_lines}
         assert "/processing/jobs/{jobID}" in paths and "/processing/jobs/{jobID}/results/result.tif" in paths
         assert "/processing/jobs/{jobID}/results/recipe.json" in paths
+        assert "/processing/jobs/{jobID}/restore" in paths
 
     async def test_the_access_log_hides_whatever_stands_where_an_identifier_would(
         self, rig: Rig, access_log_lines: list[str]
