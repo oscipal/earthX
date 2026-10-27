@@ -103,6 +103,9 @@ export interface ResultLayerInfo {
   resampled: boolean | null;
   // Set when `expires` has passed: the map loads no more tiles of it.
   expired: boolean;
+  // Set while the job is deleted and can still be restored (NM4-27): the server answers `404` for it, so the layer
+  // stays in the list, locked, and the map asks for no tiles. It goes from the list when the day is over.
+  deleted?: boolean;
   // What the tiler named for the result (`float32`, `uint16` …); `null` if it did not say. A float result
   // needs a range and a colormap to become a picture, any other is drawn as it is.
   dataType: string | null;

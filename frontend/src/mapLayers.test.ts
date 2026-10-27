@@ -711,6 +711,33 @@ describe('syncLayers: a result layer that expired', () => {
   });
 });
 
+// NM4-27: the result of a deleted job stays in the list, locked, and the map asks for none of its tiles.
+describe('syncLayers: a result layer of a deleted job', () => {
+  const result = (id: string, deleted: boolean) =>
+    pinned(id, `https://t/${id}`, {
+      derived: 'result',
+      result: { jobID: 'J', expires: '2026-10-27T10:00:00Z', gsd: 10, resampled: null, expired: false, deleted, dataType: 'float32', stats: null },
+    });
+
+  it('has no source on the map, and the other layers keep theirs', () => {
+    const { map, sources } = liveMap();
+    syncLayers(map as never, [result('deleted', true), pinned('kept', 'https://t/kept'), result('live', false)]);
+    expect(sources.size).toBe(2);
+    expect([...sources.keys()].some((id) => id.includes('deleted'))).toBe(false);
+  });
+
+  it('comes off the map when the job is deleted, and back when it is restored', () => {
+    const { map, sources, visible } = liveMap();
+    syncLayers(map as never, [result('r', false)]);
+    expect(sources.size).toBe(1);
+    syncLayers(map as never, [result('r', true)]);
+    expect(sources.size).toBe(0);
+    syncLayers(map as never, [result('r', false)]);
+    expect(sources.size).toBe(1);
+    expect(visible(lyr('r'))).toBe(true);
+  });
+});
+
 // M4-28: the layer manager is quick and truthful. Each case here failed against
 // the code that removed and re-added every source on every call and named the map
 // layers after their position among the visible ones.

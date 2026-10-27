@@ -683,8 +683,8 @@ function wantedOverlaysOf(layers: MapLayer[]): { wanted: WantedOverlay[]; notDra
   const wanted: WantedOverlay[] = [];
   let notDrawn = 0;
   for (const layer of layers) {
-    // A result whose job's results are going: no more tiles (M4-13c-5).
-    if (layer.result?.expired) continue;
+    // A result whose job's results are going, or whose job is deleted: no more tiles (M4-13c-5, NM4-27).
+    if (layer.result?.expired || layer.result?.deleted) continue;
     for (let n = layer.overlays.length - 1; n >= 0; n--) {
       if (wanted.length >= MAX_LAYER_OVERLAYS) {
         notDrawn++;

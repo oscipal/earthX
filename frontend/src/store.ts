@@ -939,6 +939,9 @@ export interface AppState {
   pinDerivedLayer: (layer: DerivedLayer) => void;
   // Marks the result layers whose job's results are about to go (M4-13c-5).
   expireResultLayers: (now: number) => void;
+  // The result layers of deleted jobs (`until`: job to the end of its day, in ms): locked while the day lasts, gone
+  // when it is over, as before once the job is restored (NM4-27).
+  syncDeletedResults: (until: ReadonlyMap<string, number>, now: number) => void;
   // Draws a result layer another way: the tile URL is rebuilt, so the map makes a new source of it.
   restyleResultLayer: (id: string, render: AppliedRender) => void;
   closeResultView: () => void;
@@ -1439,6 +1442,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       const due = (l: MapLayer) => l.result && !l.result.expired && isResultExpired(l.result.expires, now);
       if (!s.layers.some(due)) return {};
       return { layers: s.layers.map((l) => (due(l) && l.result ? { ...l, result: { ...l.result, expired: true } } : l)) };
+    }),
+  syncDeletedResults: (until, now) =>
+    set((s) => {
+      const end = (l: MapLayer) => (l.result ? until.get(l.result.jobID) : undefined);
+      const locked = (l: MapLayer) => end(l) !== undefined && (end(l) as number) > now;
+      const gone = (l: MapLayer) => end(l) !== undefined && !locked(l);
+      const changed = s.layers.some((l) => l.result && (gone(l) || locked(l) !== (l.result.deleted === true)));
+      if (!changed) return {};
+      const kept = s.layers.filter((l) => !gone(l));
+      const removed = new Set(s.layers.filter(gone).map((l) => l.id));
+      return {
+        layers: kept.map((l) => (l.result && locked(l) !== (l.result.deleted === true) ? { ...l, result: { ...l.result, deleted: locked(l) } } : l)),
+        ...(s.resultViewLayerId !== null && removed.has(s.resultViewLayerId) ? { resultViewLayerId: null } : {}),
+      };
     }),
   restyleResultLayer: (id, render) =>
     set((s) => ({

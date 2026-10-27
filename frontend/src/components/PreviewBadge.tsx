@@ -39,13 +39,14 @@ export default function PreviewBadge() {
       l.visible &&
       l.result &&
       !l.result.expired &&
+      !l.result.deleted &&
       l.overlays.some(
         (o) => o.kind === 'raster' && isOverview({ gsd: l.result?.gsd ?? null, mapZoom, viewport, maxZoom: o.maxZoom }),
       ),
   );
   // A layer or the preview of the panel that starts at a level above this zoom: the map says so, instead of nothing.
   const waiting = [
-    ...layers.filter((l) => l.visible && !l.result?.expired).map((l) => ({ name: l.name, from: zoomInTo(l.overlays, mapZoom) })),
+    ...layers.filter((l) => l.visible && !l.result?.expired && !l.result?.deleted).map((l) => ({ name: l.name, from: zoomInTo(l.overlays, mapZoom) })),
     ...(draft ? [{ name: 'Preview', from: zoomInTo(draftOverlays, mapZoom) }] : []),
   ].filter((w): w is { name: string; from: number } => w.from !== null);
   if (!draft && !pinned && !overview && waiting.length === 0) return null;
