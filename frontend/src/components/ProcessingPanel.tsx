@@ -128,7 +128,6 @@ function Bands({ view }: { view: OrderView }) {
     autoPicked.current = lonely;
     if (picked.length === 0) setPicked([lonely]);
   }, [lonely, picked.length, setPicked]);
-  const hasBandMath = steps.some((s) => s.op === 'band_math');
   const named = new Set(bandMathExpressions(steps).flatMap((e) => [...namesInExpression(e)]));
   if (!view.pass) return null;
   if (view.sources.length === 0) {
@@ -222,13 +221,6 @@ function Bands({ view }: { view: OrderView }) {
           source.names.length === 0 ? [chip(source, null)] : source.names.map((name) => chip(source, name)),
         )}
       </div>
-      <p className="pp-help">
-        {view.assets.length} of at most {view.info?.maxAssets ?? 16} bands in the order. A click adds a band to the
-        order or leaves it out
-        {hasBandMath
-          ? "; with the cursor in a band-math expression, it inserts the band's name there instead and changes nothing else."
-          : '.'}
-      </p>
     </section>
   );
 }

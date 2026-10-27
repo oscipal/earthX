@@ -346,18 +346,6 @@ describe('the panel built from the schema', () => {
       click(button('red'));
       expect(pressed('red')).toBe('false');
     });
-
-    it('says under the chips what a click does', async () => {
-      select([scene('S2B_A')]);
-      await openPanel();
-      const hint = () => container.querySelector('section[aria-label="Bands"] .pp-help')!.textContent;
-      expect(hint()).toContain('A click adds a band to the order or leaves it out.');
-      expect(hint()).not.toContain('cursor');
-      click(button('＋ Band math'));
-      expect(hint()).toContain(
-        "with the cursor in a band-math expression, it inserts the band's name there instead and changes nothing else",
-      );
-    });
   });
 
   it('shows only a reason when nothing is selected', async () => {
