@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import CSS from './index.css?raw';
 import { BASEMAP_IDS, BASEMAPS, ESRI_ATTRIBUTION, OPENFREEMAP_ATTRIBUTION, type BasemapId } from './basemaps';
-import { publishedStyle } from './fixtures/publishedStyle';
+import { appLayers, publishedStyle } from './fixtures/publishedStyle';
 import {
   applyBasemap,
   applyMapBackground,
@@ -100,20 +100,7 @@ const attributionsOf = (style: StyleSpecification): (string | undefined)[] =>
 
 // A map as the app has it running: the backdrop, a basemap, the app's own layers, and a globe with a sky.
 function runningStyle(basemap: BasemapId = 'satellite'): StyleSpecification {
-  const own: StyleSpecification = {
-    version: 8,
-    sources: {
-      'aoi-src': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-      'm-img-src-0': { type: 'image', url: 'data:image/png;base64,AAAA', coordinates: [[0, 1], [1, 1], [1, 0], [0, 0]] },
-    },
-    layers: [
-      { id: 'layers-top', type: 'background', layout: { visibility: 'none' } },
-      { id: 'm-img-lyr-0', type: 'raster', source: 'm-img-src-0' },
-      { id: 'aoi-line', type: 'line', source: 'aoi-src' },
-    ],
-    sky: { 'sky-color': '#04070a' },
-    projection: { type: 'globe' },
-  };
+  const own = appLayers();
   const base = baseMapStyle('#04070a', basemap);
   return { ...base, sources: { ...base.sources, ...own.sources }, layers: [...base.layers, ...own.layers], projection: own.projection };
 }
@@ -150,12 +137,13 @@ describe('composeStyle', () => {
       'layers-top',
       'm-img-lyr-0',
       'aoi-line',
+      'td-polygon',
     ]);
   });
 
   it('prefixes the sources of the basemap and the source each of its layers points at, so no id of the app is taken', () => {
     const style = composeStyle(runningStyle(), publishedStyle(), 'streets');
-    expect(Object.keys(style.sources).sort()).toEqual(['aoi-src', 'bm-openmaptiles', 'bm-photos', 'm-img-src-0']);
+    expect(Object.keys(style.sources).sort()).toEqual(['aoi-src', 'bm-openmaptiles', 'bm-photos', 'm-img-src-0', 'td-polygon']);
     const layer = style.layers.find((l) => l.id === 'bm-aoi-fill');
     expect(layer && 'source' in layer && layer.source).toBe('bm-openmaptiles');
     // The layer "aoi-fill" of the published style does not collide with a layer of the app of that name.
@@ -175,6 +163,14 @@ describe('composeStyle', () => {
     expect(style.sky).toEqual({ 'sky-color': '#04070a', 'horizon-color': '#04070a', 'fog-color': '#04070a', 'atmosphere-blend': 0 });
   });
 
+  it('takes the camera from the running map and drops the one of the published style', () => {
+    const previous = { ...runningStyle(), center: [10, 20] as [number, number], zoom: 1.6 };
+    const style = composeStyle(previous, publishedStyle(), 'streets');
+    expect([style.center, style.zoom]).toEqual([[10, 20], 1.6]);
+    const first = composeStyle(runningStyle(), publishedStyle(), 'streets');
+    expect('center' in first || 'zoom' in first).toBe(false);
+  });
+
   it('does not invent a projection, a sky, a light or a terrain the running map does not have', () => {
     const previous: StyleSpecification = { version: 8, sources: {}, layers: [{ id: 'background', type: 'background' }] };
     const style = composeStyle(previous, publishedStyle(), 'streets');
@@ -184,8 +180,8 @@ describe('composeStyle', () => {
   it('replaces the former basemap completely when the basemap changes', () => {
     const streets = composeStyle(runningStyle(), publishedStyle(), 'streets');
     const satellite = composeStyle(streets, BASEMAPS.satellite.style as StyleSpecification, 'satellite');
-    expect(idsOf(satellite)).toEqual(['background', 'bm-satellite', 'layers-top', 'm-img-lyr-0', 'aoi-line']);
-    expect(Object.keys(satellite.sources).sort()).toEqual(['aoi-src', 'bm-satellite', 'm-img-src-0']);
+    expect(idsOf(satellite)).toEqual(['background', 'bm-satellite', 'layers-top', 'm-img-lyr-0', 'aoi-line', 'td-polygon']);
+    expect(Object.keys(satellite.sources).sort()).toEqual(['aoi-src', 'bm-satellite', 'm-img-src-0', 'td-polygon']);
   });
 
   it('gives a published style the glyphs and sprite of its own, and a style without them none', () => {
@@ -221,9 +217,17 @@ describe('the attribution of each basemap', () => {
     else expect(attributions).toEqual([OPENFREEMAP_ATTRIBUTION, 'a raster source of its own']);
   });
 
-  it('names OpenFreeMap, OpenMapTiles and OpenStreetMap, each with its link', () => {
-    for (const name of ['OpenFreeMap', 'OpenMapTiles', 'OpenStreetMap']) expect(OPENFREEMAP_ATTRIBUTION).toContain(name);
-    expect(OPENFREEMAP_ATTRIBUTION).toContain('https://www.openstreetmap.org/copyright');
+  it('reads "© OpenMapTiles · OpenFreeMap · © OpenStreetMap contributors", each part with its link (Otto, 27.10.2026)', () => {
+    const div = document.createElement('div');
+    div.innerHTML = OPENFREEMAP_ATTRIBUTION;
+    expect(div.textContent).toBe('© OpenMapTiles · OpenFreeMap · © OpenStreetMap contributors');
+    expect([...div.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual([
+      'https://openmaptiles.org/',
+      'https://openfreemap.org',
+      'https://www.openstreetmap.org/copyright',
+    ]);
+    // Every link opens in a tab of its own and does not hand the page over.
+    for (const a of div.querySelectorAll('a')) expect(a.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
   it('is not left on a basemap that was replaced', () => {

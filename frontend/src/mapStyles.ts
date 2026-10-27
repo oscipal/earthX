@@ -50,10 +50,13 @@ const hasBasemapPrefix = (id: string): boolean => id.startsWith(BASEMAP_PREFIX);
 // The app's own layers and sources are all those that are neither a basemap's nor the backdrop (`background`).
 const isOwnLayer = (layer: Layer): boolean => layer.id !== 'background' && !hasBasemapPrefix(layer.id);
 
+// What the map has of its own, which a basemap's style does not replace.
+const MAP_OWN = ['sky', 'projection', 'light', 'terrain', 'center', 'zoom', 'bearing', 'pitch'] as const;
+
 // `next` (a basemap's style) under the app's layers of `previous`: the backdrop first, then the basemap's layers
 // with a prefix on their ids and sources, then everything of the app. What is the map's rather than the basemap's
-// — the globe's sky and the projection — comes from `previous`, because a published style has none and a missing
-// one would reset the projection.
+// (the camera, the globe's sky, the projection) comes from `previous`: a published style has its own camera and none
+// of the others, and a missing projection would reset the globe.
 export function composeStyle(previous: StyleSpecification | undefined, next: StyleSpecification, id: BasemapId): StyleSpecification {
   const ownLayers = (previous?.layers ?? []).filter(isOwnLayer);
   const ownSources = Object.fromEntries(Object.entries(previous?.sources ?? {}).filter(([key]) => !hasBasemapPrefix(key)));
@@ -70,13 +73,9 @@ export function composeStyle(previous: StyleSpecification | undefined, next: Sty
       : { ...layer, id: BASEMAP_PREFIX + layer.id },
   );
   const backdrop = (previous?.layers ?? []).filter((layer) => layer.id === 'background');
-  const kept = {
-    ...(previous?.sky ? { sky: previous.sky } : {}),
-    ...(previous?.projection ? { projection: previous.projection } : {}),
-    ...(previous?.light ? { light: previous.light } : {}),
-    ...(previous?.terrain ? { terrain: previous.terrain } : {}),
-  };
-  const { sky: _sky, projection: _projection, light: _light, terrain: _terrain, ...rest } = next;
+  const { sky: _sky, projection: _projection, light: _light, terrain: _terrain, center: _center, zoom: _zoom, bearing: _bearing, pitch: _pitch, ...rest } = next;
+  const kept: Partial<StyleSpecification> = {};
+  for (const key of MAP_OWN) if (previous?.[key] !== undefined) Object.assign(kept, { [key]: previous[key] });
   return { ...rest, ...kept, sources: { ...sources, ...ownSources }, layers: [...backdrop, ...layers, ...ownLayers] };
 }
 

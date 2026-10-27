@@ -25,3 +25,23 @@ export function publishedStyle(): StyleSpecification {
     ],
   };
 }
+
+// What the app lays on a map besides its basemap: the area of interest, a picture of a scene, the drawing tool; and
+// the globe, which the user chose.
+export function appLayers(): Pick<StyleSpecification, 'sources' | 'layers' | 'projection'> {
+  const empty: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+  return {
+    sources: {
+      'aoi-src': { type: 'geojson', data: empty },
+      'm-img-src-0': { type: 'image', url: 'data:image/png;base64,AAAA', coordinates: [[0, 1], [1, 1], [1, 0], [0, 0]] },
+      'td-polygon': { type: 'geojson', data: empty },
+    },
+    layers: [
+      { id: 'layers-top', type: 'background', layout: { visibility: 'none' } },
+      { id: 'm-img-lyr-0', type: 'raster', source: 'm-img-src-0' },
+      { id: 'aoi-line', type: 'line', source: 'aoi-src' },
+      { id: 'td-polygon', type: 'fill', source: 'td-polygon' },
+    ],
+    projection: { type: 'globe' },
+  };
+}
