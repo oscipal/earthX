@@ -1,8 +1,9 @@
 // The processing manager (UI-01 §6.10): the jobs of this browser, each with its title, progress and expiry,
-// as rows; the jobs of one batch as one row that opens into its parts. A job is never deleted, only
-// archived and put in a group. A click on a job opens its details in the processing window. R renames, G moves
-// to a group and A archives the row that has the focus or else the one under the pointer, with no click first
-// (never while a field has the keys); the arrow keys go from row to row.
+// as rows; the jobs of one batch as one row that opens into its parts. A job that is over can be archived, put in
+// a group and deleted (NM4-27): a day later it is gone, until then "Restore" takes it back. A click on a job opens
+// its details in the processing window. R renames, G moves to a group, A archives and D deletes the row that has
+// the focus or else the one under the pointer, with no click first (never while a field has the keys); the arrow
+// keys go from row to row.
 
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
@@ -16,7 +17,7 @@ import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
 import Popover from './Popover';
 import { focusFirstItem } from '../popover';
-import { batchSummary, bundleOffer, countBatch, formatUntil, jobLabel, jobState, SHORTCUTS, useNowUntil, type JobState } from './jobView';
+import { batchSummary, bundleOffer, canDelete, canRestore, countBatch, deletableParts, formatUntil, jobLabel, jobState, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
 import Tip from './Tip';
 import { useBundleDownload } from './useBundleDownload';
 
@@ -37,6 +38,9 @@ interface MenuProps {
   archived?: boolean;
   onArchive?: (archived: boolean) => void;
   cancel?: { label: string; disabled: boolean; run: () => void };
+  // "Delete" for a job or batch that is over; "Restore" for a deleted one whose day is not over.
+  onDelete?: () => void;
+  onRestore?: () => void;
   name: string;
   mode: MenuMode;
   onMode: (mode: MenuMode) => void;
@@ -46,7 +50,7 @@ interface MenuProps {
 
 // "⋯" at the end of a row. The list is a `Popover`: in a portal over the whole window, so the scrolling list
 // of jobs and the panel cannot cut it off or cover it.
-function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cancel, name, mode, onMode, anchor }: MenuProps) {
+function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cancel, onDelete, onRestore, name, mode, onMode, anchor }: MenuProps) {
   const button = useRef<HTMLButtonElement>(null);
   const items = useRef<HTMLDivElement>(null);
   // The `Popover` focuses its first entry once per opening; the list of groups replaces the entry that has
@@ -54,7 +58,7 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
   useEffect(() => {
     if (mode === 'move') focusFirstItem(items.current);
   }, [mode]);
-  const hasActions = onRename || onMove || onArchive || cancel;
+  const hasActions = onRename || onMove || onArchive || cancel || onDelete || onRestore;
   if (!hasActions) return <span className="pm-icon" aria-hidden="true" />;
   const done = (run: () => void, keepFocus = false) => () => {
     const row = anchor.current?.closest('.pm-row');
@@ -68,7 +72,15 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
     if (moving || event.ctrlKey || event.altKey || event.metaKey) return;
     const key = event.key.toUpperCase();
     const run =
-      key === SHORTCUTS.rename ? onRename && done(onRename) : key === SHORTCUTS.move ? onMove && (() => onMode('move')) : key === SHORTCUTS.archive ? onArchive && done(() => onArchive(!archived), true) : undefined;
+      key === SHORTCUTS.rename
+        ? onRename && done(onRename)
+        : key === SHORTCUTS.move
+          ? onMove && (() => onMode('move'))
+          : key === SHORTCUTS.archive
+            ? onArchive && done(() => onArchive(!archived), true)
+            : key === SHORTCUTS.delete
+              ? onDelete && done(onDelete, true)
+              : undefined;
     if (!run) return;
     event.preventDefault();
     run();
@@ -98,6 +110,11 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
         focusOnOpen
       >
         <div className="pm-menu-items" ref={items} onKeyDown={onKey}>
+          {!moving && onRestore && (
+            <button type="button" role="menuitem" onClick={done(onRestore, true)}>
+              Restore
+            </button>
+          )}
           {!moving && onRename && (
             <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.rename} onClick={done(onRename)}>
               <span className="pm-menu-label">Rename</span>
@@ -128,6 +145,12 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
               <span className="pm-key" aria-hidden="true">{SHORTCUTS.archive}</span>
             </button>
           )}
+          {!moving && onDelete && (
+            <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.delete} onClick={done(onDelete, true)}>
+              <span className="pm-menu-label">Delete</span>
+              <span className="pm-key" aria-hidden="true">{SHORTCUTS.delete}</span>
+            </button>
+          )}
           {!moving && cancel && (
             <button type="button" role="menuitem" disabled={cancel.disabled} onClick={done(cancel.run)}>
               {cancel.label}
@@ -139,10 +162,10 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
   );
 }
 
-// The keys R, G and A act on a row without a click first: the row the key was pressed on, the one that has the
+// The keys R, G, A and D act on a row without a click first: the row the key was pressed on, the one that has the
 // focus, or the one under the pointer. The row hears of it as an event; what it does is its own.
 const ROW_ACTION = 'pm-row-action';
-type RowAction = 'rename' | 'move' | 'archive';
+type RowAction = 'rename' | 'move' | 'archive' | 'delete';
 const TOP_ROW = '.pm-rows > .pm-row';
 // Where a key belongs to a field, a menu or a dialog, and not to the row.
 const KEYS_ELSEWHERE = 'input, textarea, select, [contenteditable="true"], .popover';
@@ -186,7 +209,8 @@ function rowKey(event: KeyboardEvent) {
   const target = event.target as HTMLElement;
   if (target.closest(KEYS_ELSEWHERE) || document.querySelector('.dialog-backdrop')) return;
   const key = event.key.toUpperCase();
-  const action: RowAction | null = key === SHORTCUTS.rename ? 'rename' : key === SHORTCUTS.move ? 'move' : key === SHORTCUTS.archive ? 'archive' : null;
+  const action: RowAction | null =
+    key === SHORTCUTS.rename ? 'rename' : key === SHORTCUTS.move ? 'move' : key === SHORTCUTS.archive ? 'archive' : key === SHORTCUTS.delete ? 'delete' : null;
   const arrow = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
   if (!action && !arrow) return;
   if (arrow) {
@@ -204,7 +228,7 @@ function rowKey(event: KeyboardEvent) {
   if (!row || !action) return;
   event.preventDefault();
   row.dispatchEvent(new CustomEvent<RowAction>(ROW_ACTION, { detail: action }));
-  if (action === 'archive') refocusAround(row);
+  if (action === 'archive' || action === 'delete') refocusAround(row);
 }
 
 // An action can take the row out of the list (archived under "Active", moved to a folded group) or put it
@@ -262,6 +286,33 @@ function Meter({ state, progress }: { state: JobState; progress?: number }) {
   return value === null ? null : <progress className="pm-progress" max={100} value={value} aria-label="Progress" />;
 }
 
+// "↺" at the place of the download: the deleted job comes back. Its tooltip says until when that works.
+function RestoreButton({ name, until, busy, onRestore }: { name: string; until: string; busy: boolean; onRestore: () => void }) {
+  return (
+    <button type="button" className="pm-icon" disabled={busy} aria-label={`Restore ${name}`} title={`Restore (possible until ${formatUntil(until)})`} onClick={onRestore}>
+      ↺
+    </button>
+  );
+}
+
+// When a job goes: "until" for one that stands, "restore until" for a deleted one whose day is not over. A job that is
+// cancelled, deleted for good or forgotten by the server has no time to name.
+function UntilText({ job, state, now }: { job: JobEntry; state: JobState; now: number }) {
+  if (state.key === 'deleted') {
+    return canRestore(job, now) && job.deletedUntil ? (
+      <span className="pm-until" title={job.deletedUntil}>
+        restore until {formatUntil(job.deletedUntil, now)}
+      </span>
+    ) : null;
+  }
+  if (state.key === 'cancelled' || state.key === 'unavailable') return null;
+  return (
+    <span className="pm-until" title={job.expires}>
+      until {formatUntil(job.expires, now)}
+    </span>
+  );
+}
+
 function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; now: number; part?: boolean; groups: ShelfGroup[] } & DragProps) {
   const open = useProcessingStore((s) => s.openJobDetails);
   const cancelJob = useProcessingStore((s) => s.cancelJob);
@@ -269,6 +320,8 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
   const rename = useProcessingStore((s) => s.renameJob);
   const setArchived = useProcessingStore((s) => s.setArchived);
   const moveToGroup = useProcessingStore((s) => s.moveToGroup);
+  const deleteTarget = useProcessingStore((s) => s.deleteTarget);
+  const restoreTarget = useProcessingStore((s) => s.restoreTarget);
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuMode>('closed');
   const line = useRef<HTMLDivElement>(null);
@@ -286,13 +339,18 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
     rename: () => setRenaming(true),
     move: () => setMenu('move'),
     archive: () => setArchived(target, !job.archived),
+    delete: () => {
+      if (canDelete(job, Date.now())) void deleteTarget(target);
+    },
   });
+  const deletable = canDelete(job, now);
+  const restorable = canRestore(job, now);
   return (
     <li
       ref={row}
       data-row-id={job.jobID}
-      className={`pm-row${part ? ' part' : ''}${job.archived ? ' archived' : ''}${dragging ? ' dragging' : ''}`}
-      aria-keyshortcuts={part ? undefined : 'R G A'}
+      className={`pm-row${part ? ' part' : ''}${job.archived ? ' archived' : ''}${state.key === 'deleted' ? ' deleted' : ''}${dragging ? ' dragging' : ''}`}
+      aria-keyshortcuts={part ? undefined : 'R G A D'}
       onPointerDown={part ? undefined : focusOnPress}
       {...(part || renaming ? {} : dragSource({ jobID: job.jobID }, job.jobID, onDrag))}
     >
@@ -320,17 +378,19 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
           >
             <span className="pm-title">{title}</span>
             <span className={`pm-meta ${state.key}`}>
-              <span className="pm-state">{state.text}</span>
-              {state.key !== 'cancelled' && (
-                <span className="pm-until" title={job.expires}>
-                  until {formatUntil(job.expires, now)}
-                </span>
-              )}
+              <span className="pm-state" title={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
+                {state.text}
+              </span>
+              <UntilText job={job} state={state} now={now} />
               {job.archived && <span className="pm-tag">Archived</span>}
             </span>
           </button>
         )}
-        <DownloadZip job={job} now={now} />
+        {restorable && job.deletedUntil ? (
+          <RestoreButton name={title} until={job.deletedUntil} busy={job.deleting} onRestore={() => void restoreTarget(target)} />
+        ) : (
+          <DownloadZip job={job} now={now} />
+        )}
         <RowMenu
           name={title}
           mode={menu}
@@ -347,10 +407,15 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
               ? { label: 'Cancel', disabled: job.cancelling || !job.status, run: () => void cancelJob(job.jobID) }
               : undefined
           }
+          onDelete={deletable ? () => void deleteTarget(target) : undefined}
+          onRestore={restorable ? () => void restoreTarget(target) : undefined}
         />
       </div>
       <Meter state={state} />
-      {job.phase === 'failed' && <span className="pm-fault">{job.failure ?? job.status?.message ?? 'The job failed'}</span>}
+      {job.phase === 'failed' && state.key !== 'deleted' && (
+        <span className="pm-fault">{job.failure ?? job.status?.message ?? 'The job failed'}</span>
+      )}
+      {job.error && state.key === 'deleted' && <span className="pm-fault" role="alert">{job.error}</span>}
     </li>
   );
 }
@@ -366,6 +431,8 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
   const setArchived = useProcessingStore((s) => s.setArchived);
   const moveToGroup = useProcessingStore((s) => s.moveToGroup);
   const cancelBatch = useProcessingStore((s) => s.cancelBatch);
+  const deleteTarget = useProcessingStore((s) => s.deleteTarget);
+  const restoreTarget = useProcessingStore((s) => s.restoreTarget);
   const followJob = useProcessingStore((s) => s.followJob);
   // The total needs every part; a part of another tab is followed while its batch is listed.
   useEffect(() => {
@@ -381,13 +448,20 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
     rename: () => setRenaming(true),
     move: () => setMenu('move'),
     archive: () => setArchived(target, !batch.archived),
+    delete: () => {
+      if (deletableParts(parts, Date.now()).length > 0) void deleteTarget(target);
+    },
   });
+  const deletable = deletableParts(parts, now).length > 0;
+  const restorable = parts.filter((p) => canRestore(p, now));
+  // The soonest end of the days in which a part can still be restored: after it not every part can.
+  const restoreUntil = restorable.map((p) => p.deletedUntil ?? '').sort((a, b) => Date.parse(a) - Date.parse(b))[0];
   return (
     <li
       ref={row}
       data-row-id={batch.id}
-      className={`pm-row batch${batch.archived ? ' archived' : ''}${dragging ? ' dragging' : ''}`}
-      aria-keyshortcuts="R G A"
+      className={`pm-row batch${batch.archived ? ' archived' : ''}${count.deleted > 0 && count.deleted === parts.length ? ' deleted' : ''}${dragging ? ' dragging' : ''}`}
+      aria-keyshortcuts="R G A D"
       onPointerDown={focusOnPress}
       {...(renaming ? {} : dragSource({ batchId: batch.id }, batch.id, onDrag))}
     >
@@ -427,16 +501,27 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             <span className="pm-title">{batch.title}</span>
             <span className="pm-meta">
               <span className="pm-state">{batchSummary(count)}</span>
-              {count.expires && (
-                <span className="pm-until" title={count.expires}>
-                  until {formatUntil(count.expires, now)}
+              {restoreUntil ? (
+                <span className="pm-until" title={restoreUntil}>
+                  restore until {formatUntil(restoreUntil, now)}
                 </span>
+              ) : (
+                count.expires &&
+                count.deleted < parts.length && (
+                  <span className="pm-until" title={count.expires}>
+                    until {formatUntil(count.expires, now)}
+                  </span>
+                )
               )}
               {batch.archived && <span className="pm-tag">Archived</span>}
             </span>
           </button>
         )}
-        <DownloadAll offer={offer} busy={bundle.busy} onRun={() => void bundle.run()} />
+        {restorable.length > 0 && count.deleted === parts.length ? (
+          <RestoreButton name={batch.title} until={restoreUntil} busy={parts.some((p) => p.deleting)} onRestore={() => void restoreTarget(target)} />
+        ) : (
+          <DownloadAll offer={offer} busy={bundle.busy} onRun={() => void bundle.run()} />
+        )}
         <RowMenu
           name={batch.title}
           mode={menu}
@@ -453,6 +538,8 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
               ? { label: 'Cancel all', disabled: parts.some((p) => p.cancelling), run: () => void cancelBatch(batch.id) }
               : undefined
           }
+          onDelete={deletable ? () => void deleteTarget(target) : undefined}
+          onRestore={restorable.length > 0 ? () => void restoreTarget(target) : undefined}
         />
       </div>
       {running && <progress className="pm-progress" max={100} value={count.progress} aria-label="Progress" />}
@@ -609,22 +696,49 @@ interface DragProps {
 const FILTERS: [JobFilter, string][] = [
   ['active', 'Active'],
   ['expired', 'Expired'],
+  ['deleted', 'Deleted'],
   ['all', 'All'],
 ];
 
-// A batch is expired when every one of its parts is.
-function isExpired(entry: Entry, now: number): boolean {
-  return entry.kind === 'job' ? jobState(entry.job, now).key === 'expired' : entry.parts.length > 0 && entry.parts.every((p) => jobState(p, now).key === 'expired');
+const stateKeysOf = (entry: Entry, now: number): JobState['key'][] =>
+  (entry.kind === 'job' ? [entry.job] : entry.parts).map((p) => jobState(p, now).key);
+
+// A batch is deleted when every one of its parts is.
+function isDeleted(entry: Entry, now: number): boolean {
+  const keys = stateKeysOf(entry, now);
+  return keys.length > 0 && keys.every((key) => key === 'deleted');
 }
 
-// "Active": not archived and not expired. "Expired": expired ones, archived or not. "All": everything.
+// A job is expired when its time is up or the server forgot it. A batch is when every part that is not deleted
+// is, and at least one is not.
+function isExpired(entry: Entry, now: number): boolean {
+  const keys = stateKeysOf(entry, now).filter((key) => key !== 'deleted');
+  return keys.length > 0 && keys.every((key) => key === 'expired' || key === 'unavailable');
+}
+
+// "Active": not archived, expired or deleted. "Expired": expired ones, archived or not. "Deleted": the deleted ones,
+// with "Restore" while their day lasts. "All": everything.
 function listed(filter: JobFilter, entry: Entry, now: number): boolean {
-  if (filter === 'all') return true;
-  return filter === 'expired' ? isExpired(entry, now) : !entry.archived && !isExpired(entry, now);
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'deleted':
+      return isDeleted(entry, now);
+    case 'expired':
+      return isExpired(entry, now);
+    default:
+      return !entry.archived && !isDeleted(entry, now) && !isExpired(entry, now);
+  }
 }
 
 const emptyText = (filter: JobFilter, total: number): string =>
-  total === 0 ? 'No jobs yet.' : filter === 'expired' ? 'No expired jobs.' : 'No active jobs.';
+  total === 0
+    ? 'No jobs yet.'
+    : filter === 'expired'
+      ? 'No expired jobs.'
+      : filter === 'deleted'
+        ? 'No deleted jobs.'
+        : 'No active jobs.';
 
 export default function ProcessingManager() {
   // A focus still due when the manager closes is not wanted any more.
@@ -657,9 +771,11 @@ export default function ProcessingManager() {
     saveCollapsedGroups(kept);
   };
 
-  // A finished job turns "Expired" a minute before `expires`: the clock runs to the soonest of them.
+  // A finished job turns "Expired" a minute before `expires`, and a deleted one loses its "Restore" at the end of its
+  // day: the clock runs to the soonest of them.
   const deadline = Math.min(
-    ...jobs.filter((j) => j.phase === 'successful' && !j.expired).map((j) => Date.parse(j.expires) - MIN_REMAINING_MS),
+    ...jobs.filter((j) => j.phase === 'successful' && !j.expired && j.deletedUntil === null).map((j) => Date.parse(j.expires) - MIN_REMAINING_MS),
+    ...jobs.flatMap((j) => (j.deletedUntil !== null && Date.parse(j.deletedUntil) > Date.now() ? [Date.parse(j.deletedUntil)] : [])),
     Number.POSITIVE_INFINITY,
   );
   const now = useNowUntil(deadline);

@@ -12,7 +12,7 @@ import { useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import InlineRename from './InlineRename';
 import { DownloadZip, RESAMPLED_TIP } from './JobRow';
-import { formatUntil, jobLabel, jobState, useNowUntil } from './jobView';
+import { canRestore, formatUntil, jobLabel, jobState, useNowUntil } from './jobView';
 import Tip from './Tip';
 
 export const NO_COPY_TIP = 'No copy of this order is kept: it was too large, or the browser ran out of room.';
@@ -143,13 +143,14 @@ export default function JobDetails() {
   const followJob = useProcessingStore((s) => s.followJob);
   // Narrow screens only: the sheet from below folds down to its head, as the order does.
   const [folded, setFolded] = useState(false);
-  const now = useNowUntil(job ? Date.parse(job.expires) - MIN_REMAINING_MS : Number.POSITIVE_INFINITY);
+  const now = useNowUntil(job ? (job.deletedUntil ? Date.parse(job.deletedUntil) : Date.parse(job.expires) - MIN_REMAINING_MS) : Number.POSITIVE_INFINITY);
   const unknownStatus = job?.status === null;
   useEffect(() => {
     if (unknownStatus && jobID) followJob(jobID);
   }, [unknownStatus, jobID, followJob]);
   const state = job ? jobState(job, now) : null;
   const active = job?.phase === 'active';
+  const restorable = job ? canRestore(job, now) : false;
 
   return (
     <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Job">
@@ -185,11 +186,22 @@ export default function JobDetails() {
                 {state.key === 'running' ? `Running · ${state.text}` : state.text}
                 {job.resampled === true && state.key === 'finished' && <Tip text={RESAMPLED_TIP} symbol="⚠" tone="warn" />}
               </dd>
-              {state.key !== 'cancelled' && (
-                <>
-                  <dt>Expires</dt>
-                  <dd title={job.expires}>{formatUntil(job.expires, now)}</dd>
-                </>
+              {state.key === 'deleted' ? (
+                restorable &&
+                job.deletedUntil && (
+                  <>
+                    <dt>Restore until</dt>
+                    <dd title={job.deletedUntil}>{formatUntil(job.deletedUntil, now)}</dd>
+                  </>
+                )
+              ) : (
+                state.key !== 'cancelled' &&
+                state.key !== 'unavailable' && (
+                  <>
+                    <dt>Expires</dt>
+                    <dd title={job.expires}>{formatUntil(job.expires, now)}</dd>
+                  </>
+                )
               )}
             </dl>
             {active && <progress className="pp-progress" max={100} value={job.status?.progress ?? 0} aria-label="Progress" />}
@@ -227,7 +239,7 @@ export default function JobDetails() {
                   {job.cancelling ? 'Cancelling…' : 'Cancel'}
                 </button>
               )}
-              {state.key === 'expired' && <OpenInPanel job={job} />}
+              {(state.key === 'expired' || state.key === 'unavailable') && <OpenInPanel job={job} />}
             </div>
           </>
         )}
