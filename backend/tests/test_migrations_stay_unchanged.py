@@ -29,6 +29,7 @@ PINNED = {
     "012_permalink": "37e16cea89f782b4760d1fec9de154f912aa067b9c1498faec29de848e7588c0",
     "013_job_acquisition_years": "4d64fde4bcdc4700eb4af4bd9b6a6f298ff75e0e3e38be8328d55a8d17a7c733",
     "014_bundle": "3167ff08037bdfcaf497b607a24e83f5a243580b3b683e0f680c2267360cf4b9",
+    "015_job_deleted": "874e012f886e1d3ba1e2f1f08c46d1932b33b79dddfea22ed984ed5221dac6df",
 }
 
 

@@ -1,4 +1,4 @@
-"""What `api` calls: place an order, read its state, dismiss it (architekturplan.md 7.5 `JobRunner`).
+"""What `api` calls: place an order, read its state, dismiss or delete it (architekturplan.md 7.5 `JobRunner`).
 
 `api` reaches the queue only through here (adr/0013 §5): what stands behind it, today the
 tables of migration 006, can change without `api` noticing. Every function takes a
@@ -11,6 +11,12 @@ committed a moment earlier.
 is dismissed cancels the run only if no live job hangs on it, so nobody can cancel
 another's job by knowing the same recipe. Nothing returned here carries a run number,
 a cache key, a hash or an address (Q8).
+
+**Deleting (NM4-27).** ``DELETE`` on a job whose run has finished does not dismiss it but deletes it with a term:
+``deleted_until`` is a day from now, or the end of the run if that comes first. Until then the job reads as
+dismissed, serves no cache hit once no live job hangs on its run, and :func:`restore` takes it back; the hourly
+cleanup removes it afterwards (:mod:`earthx.jobs.cleanup`). A run is only ever locked before its jobs, here and
+there, so the two cannot wait for each other.
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ import re
 import secrets
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
 import psycopg
@@ -35,6 +41,7 @@ from earthx.processing.recipe import CropOutput, Recipe, cache_key, recipe_hosts
 
 __all__ = [
     "MIN_RUNTIME_SECONDS",
+    "DELETE_TERM",
     "RUNTIME_FACTOR",
     "JobStatus",
     "RecipeIdTaken",
@@ -43,6 +50,7 @@ __all__ = [
     "job_recipe",
     "job_run",
     "job_status",
+    "restore",
     "run_jobs",
     "submit",
 ]
@@ -51,6 +59,9 @@ __all__ = [
 #: The factor is a starting value; M4-08a leaves calibrating it on real runs open.
 RUNTIME_FACTOR = 2.0
 MIN_RUNTIME_SECONDS = 600
+
+#: How long a deleted job can be restored (NM4-27), counted from the deletion and never past the end of its run.
+DELETE_TERM = timedelta(days=1)
 
 # `secrets.token_urlsafe(16)`: 128 bits, 22 characters (adr/0014 F15).
 _ID = re.compile(r"^[A-Za-z0-9_-]{22}\Z")  # `\Z`: `$` also takes a newline at the end
@@ -78,7 +89,7 @@ class JobStatus:
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
-    #: When the job's rows and result go (7 days after the finish, Q10).
+    #: When the job's rows and result go (7 days after the finish, Q10); for a deleted job the end of its term.
     expires_at: datetime
     #: A short name such as ``source_5xx``, never a text with an address.
     error_kind: str | None
@@ -94,6 +105,8 @@ class JobStatus:
     scene_aoi: bool = False
     #: Where a place-search AOI of a raster order came from (M4-30); the ZIP of the job names it.
     aoi_provenance: dict[str, str] | None = None
+    #: The end of the term in which a deleted job can be restored, ``None`` for a job that is not deleted (NM4-27).
+    deleted_until: datetime | None = None
 
 
 def _runtime_limit(recipe: Recipe, operators: OperatorRegistry) -> int:
@@ -194,14 +207,20 @@ def _run_for(
     """The run the new job hangs on, and whether this call created it."""
     # A concurrent order may finish the active run between the two looks; a second round finds
     # the result instead. Three rounds are far more than one such race needs.
+    # The hit is locked until the job hangs on it, so the cleanup cannot delete the result in between.
     for _ in range(3):
         if cacheable:
             hit = conn.execute(
                 """
-                SELECT run_id FROM public.earthx_run
-                WHERE cache_key = %s AND cacheable AND status = 'successful'
-                  AND expires_at >= clock_timestamp() + %s
-                ORDER BY finished_at DESC LIMIT 1
+                SELECT r.run_id FROM public.earthx_run r
+                WHERE r.cache_key = %s AND r.cacheable AND r.status = 'successful'
+                  AND r.expires_at >= clock_timestamp() + %s
+                  -- A result that only deleted jobs hang on is no hit (NM4-27); one with a job that lives is.
+                  AND (NOT EXISTS (SELECT 1 FROM public.earthx_job d WHERE d.run_id = r.run_id AND d.deleted_until IS NOT NULL)
+                       OR EXISTS (SELECT 1 FROM public.earthx_job l
+                                  WHERE l.run_id = r.run_id AND NOT l.dismissed AND l.deleted_until IS NULL))
+                ORDER BY r.finished_at DESC LIMIT 1
+                FOR SHARE OF r
                 """,
                 (key, CACHE_MIN_REMAINING),
             ).fetchone()
@@ -245,7 +264,7 @@ def _run_for(
 _STATUS_SQL = """
 SELECT j.job_id, j.recipe_id, j.dismissed, j.created_at,
        r.status, r.progress, r.started_at, r.finished_at, r.expires_at, r.error_kind, r.result_id, r.result,
-       j.acquired_on, j.scene_aoi, j.aoi_provenance, j.acquired_first_year, j.acquired_last_year
+       j.acquired_on, j.scene_aoi, j.aoi_provenance, j.acquired_first_year, j.acquired_last_year, j.deleted_until
 FROM public.earthx_job j
 JOIN public.earthx_run r ON r.run_id = j.run_id
 WHERE j.job_id = %s
@@ -271,8 +290,9 @@ def _status(row: tuple[Any, ...]) -> JobStatus:
         provenance,
         first_year,
         last_year,
+        deleted_until,
     ) = row
-    if dismissed:
+    if dismissed or deleted_until is not None:
         status = "dismissed"
     visible = status == "successful"
     return JobStatus(
@@ -283,7 +303,7 @@ def _status(row: tuple[Any, ...]) -> JobStatus:
         created_at=created_at,
         started_at=started,
         finished_at=finished,
-        expires_at=expires,
+        expires_at=expires if deleted_until is None else deleted_until,
         error_kind=kind if status == "failed" else None,
         result_id=result_id if visible else None,
         result=result if visible else None,
@@ -291,6 +311,7 @@ def _status(row: tuple[Any, ...]) -> JobStatus:
         scene_aoi=scene_aoi,
         aoi_provenance=provenance,
         acquired_years=None if first_year is None else (first_year, last_year),
+        deleted_until=deleted_until,
     )
 
 
@@ -354,46 +375,92 @@ def run_jobs(conn: psycopg.Connection, run_id: int, job_ids: Sequence[str]) -> l
 def dismiss(conn: psycopg.Connection, job_id: str) -> JobStatus | None:
     """Dismiss the job (OGC ``dismiss``); returns its state afterwards, ``None`` if unknown.
 
-    The run is cancelled only if no live job hangs on it: waiting at once, running through
-    the flag the supervisor reads (adr/0013 §5.5). A finished job counts as dismissed and its
-    result stays until it expires, since it may serve other jobs as a cache hit (plan F5).
+    A job whose run has not finished is cancelled: the run only if no live job hangs on it, waiting
+    at once, running through the flag the supervisor reads (adr/0013 §5.5). A job whose run has
+    finished is deleted with a term instead (:data:`DELETE_TERM`, NM4-27): its result stays, since it
+    may serve other jobs as a cache hit (plan F5), and goes with the cleanup once no live job hangs on it.
+    A job that is dismissed or deleted already is left as it is and returned as dismissed; ``api`` turns it away
+    before it gets here.
     """
     if not isinstance(job_id, str) or not _ID.match(job_id):
         return None
     with conn.transaction():
-        job = conn.execute(
-            "UPDATE public.earthx_job SET dismissed = true WHERE job_id = %s RETURNING run_id", (job_id,)
-        ).fetchone()
+        job = conn.execute("SELECT run_id FROM public.earthx_job WHERE job_id = %s", (job_id,)).fetchone()
         if job is None:
             return None
         run_id = job[0]
-        # Locking the run orders concurrent dismissals of jobs that share it: the second one
-        # waits, then counts the first one's flag too.
+        # The run is locked first: it orders concurrent dismissals of jobs that share it (the second one
+        # waits, then counts the first one's flag too) and keeps the cleanup from removing it meanwhile.
         run = conn.execute(
-            "SELECT status, progress FROM public.earthx_run WHERE run_id = %s FOR UPDATE", (run_id,)
+            "SELECT status, progress, expires_at FROM public.earthx_run WHERE run_id = %s FOR UPDATE", (run_id,)
         ).fetchone()
-        live = conn.execute(
-            "SELECT count(*) FROM public.earthx_job WHERE run_id = %s AND NOT dismissed", (run_id,)
-        ).fetchone()
-        told = False
-        if run is not None and live is not None and live[0] == 0:
-            if run[0] == "accepted":
-                done = conn.execute(
-                    """
-                    UPDATE public.earthx_run SET status = 'dismissed', finished_at = clock_timestamp()
-                    WHERE run_id = %s AND status = 'accepted'
-                    RETURNING progress
-                    """,
-                    (run_id,),
-                ).fetchone()
-                if done is not None:
-                    notify_progress(conn, run_id, done[0], "dismissed")
-                    told = True
-            elif run[0] == "running":
-                conn.execute("UPDATE public.earthx_run SET cancel_requested = true WHERE run_id = %s", (run_id,))
-                conn.execute("SELECT pg_notify(%s, '')", (WAKE_CHANNEL,))
-        if run is not None and not told:
-            # The run goes on, or has long finished, but this job's own state changed: whoever follows
-            # the job (SSE in `api`) is told through the run's channel, which is the only one there is.
-            notify_progress(conn, run_id, run[1], run[0])
+        if run is None:
+            return None
+        if run[0] in ("successful", "failed"):
+            conn.execute(
+                """
+                UPDATE public.earthx_job
+                SET deleted_until = least(clock_timestamp() + %s, %s)
+                WHERE job_id = %s AND NOT dismissed AND deleted_until IS NULL
+                """,
+                (DELETE_TERM, run[2], job_id),
+            )
+        else:
+            _cancel(conn, job_id, run_id, run[0], run[1])
     return job_status(conn, job_id)
+
+
+def _cancel(conn: psycopg.Connection, job_id: str, run_id: int, status: str, progress: int) -> None:
+    """Mark the job dismissed, and stop its run if that was the last live job on it. The run is locked."""
+    conn.execute("UPDATE public.earthx_job SET dismissed = true WHERE job_id = %s", (job_id,))
+    live = conn.execute(
+        "SELECT count(*) FROM public.earthx_job WHERE run_id = %s AND NOT dismissed AND deleted_until IS NULL",
+        (run_id,),
+    ).fetchone()
+    told = False
+    if live is not None and live[0] == 0:
+        if status == "accepted":
+            done = conn.execute(
+                """
+                UPDATE public.earthx_run SET status = 'dismissed', finished_at = clock_timestamp()
+                WHERE run_id = %s AND status = 'accepted'
+                RETURNING progress
+                """,
+                (run_id,),
+            ).fetchone()
+            if done is not None:
+                notify_progress(conn, run_id, done[0], "dismissed")
+                told = True
+        elif status == "running":
+            conn.execute("UPDATE public.earthx_run SET cancel_requested = true WHERE run_id = %s", (run_id,))
+            conn.execute("SELECT pg_notify(%s, '')", (WAKE_CHANNEL,))
+    if not told:
+        # The run goes on, or has long finished, but this job's own state changed: whoever follows
+        # the job (SSE in `api`) is told through the run's channel, which is the only one there is.
+        notify_progress(conn, run_id, progress, status)
+
+
+def restore(conn: psycopg.Connection, job_id: str) -> JobStatus | None:
+    """Take a deleted job back within its term; returns its state, ``None`` if there is nothing to restore.
+
+    The job then reads as before, with the end of its run as its expiry: the term never changed that. A job
+    that is not deleted and has not expired is returned as it is, so a second press does no harm. ``None``
+    for an identifier that is malformed, unknown, dismissed, past its term or expired, all the same.
+    """
+    if not isinstance(job_id, str) or not _ID.match(job_id):
+        return None
+    with conn.transaction():
+        job = conn.execute("SELECT run_id FROM public.earthx_job WHERE job_id = %s", (job_id,)).fetchone()
+        if job is None:
+            return None
+        run = conn.execute(
+            "SELECT 1 FROM public.earthx_run WHERE run_id = %s AND expires_at > clock_timestamp() FOR UPDATE", (job[0],)
+        ).fetchone()
+        if run is None:
+            return None
+        conn.execute(
+            "UPDATE public.earthx_job SET deleted_until = NULL WHERE job_id = %s AND deleted_until > clock_timestamp()",
+            (job_id,),
+        )
+    status = job_status(conn, job_id)
+    return None if status is None or status.status == "dismissed" else status
