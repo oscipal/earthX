@@ -29,7 +29,6 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Vermerk für M6 (Otto, 25.10.2026):** Die übrigen Links des Ergebnisdokuments und des Auftrags bleiben relativ. Sie liegen auf `api` selbst und lösen sich gegen die Dokument-URL auf. Mit der öffentlichen API (M6) neu prüfen; ein mögliches `EARTHX_API_URL` nach dem Muster von `EARTHX_TILER_URL` wäre dann eine eigene Entscheidung.
 4. **Mosaik mit Operator im Kachel-Pfad,** also eine Vorschau des Mosaik-Jobs mit Band math (M4-17, Frage 4).
    - **Plan:** `querschnitt/nm4-04-mosaik-mit-operator.md`
-   - **Stand:** Plan vorgelegt am 27.10.2026 (§6–§13 dort), wartet auf die Antworten zu den Fragen 1–7.
 5. **Processing auf einem Ergebnis** (Otto, 20.10.2026), also ein Job-Ergebnis als Eingabe eines neuen Rezepts.
    - **Plan:** `querschnitt/nm4-05-processing-auf-ergebnis.md`
    - **Vorlage:** `adr/0019` (PR #204, 26.10.2026), Empfehlung Option 2: ⚙ am Ergebnis-Layer öffnet das Panel mit dem Auftrag des Jobs, bisherige Schritte gesperrt vorn, neue dahinter, alles als ein Auftrag neu gerechnet; nur Frontend. Entschieden: F1–F5 je Option 1 (Otto, 26.10.2026). Umsetzung: `querschnitt/nm4-05b-processing-auf-ergebnis.md`.
