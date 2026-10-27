@@ -834,6 +834,10 @@ class DatasetConfig:
     # names a unit itself goes first (adr/0014 §15n). The default render and the mask layer
     # each need a key.
     band_units: Mapping[str, str | None]
+    # The assets that help to look at or read the data but are no band of it (a true-colour picture, a preview), by
+    # asset key. The panel keeps them out of "Select all"; a user can still pick one. No default (KLAERUNGEN B10):
+    # an entry says so, with an empty tuple where it has none. The mask layer is named by ``mask``, not here.
+    auxiliary_assets: tuple[str, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
@@ -849,6 +853,7 @@ class DatasetConfig:
         self._check_browse_cors()
         self._check_mask()
         self._check_band_units()
+        self._check_auxiliary_assets()
 
     def band_unit(self, asset: str) -> str | None:
         """The unit the entry names for ``asset`` (one key, not a list of variables), or ``None`` where it names none.
@@ -890,6 +895,16 @@ class DatasetConfig:
             for key in single_asset_keys(order_asset, separator):
                 if not any(key == pattern or ("*" in pattern and fnmatchcase(key, pattern)) for pattern in listed):
                     raise ConfigError(f"{self.dataset_id}: band_units has no entry for {key!r}, which the entry reads itself")
+
+    def _check_auxiliary_assets(self) -> None:
+        """The auxiliary assets are distinct, usable keys, and none is the mask layer."""
+        keys = self.auxiliary_assets
+        if isinstance(keys, str) or any(not isinstance(key, str) or not key.strip() or key != key.strip() for key in keys):
+            raise ConfigError(f"{self.dataset_id}: auxiliary_assets is a tuple of asset keys")
+        if len(set(keys)) != len(keys):
+            raise ConfigError(f"{self.dataset_id}: auxiliary_assets names an asset twice")
+        if self.mask is not None and self.mask.asset in keys:
+            raise ConfigError(f"{self.dataset_id}: the mask layer {self.mask.asset!r} is named by mask, not auxiliary_assets")
 
     def _check_mask(self) -> None:
         """``masking`` and ``mask`` agree, and the description of the layer is consistent (M4-18)."""

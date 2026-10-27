@@ -293,6 +293,8 @@ SENTINEL_2_L2A = DatasetConfig(
         "visual": None,
         "preview": None,
     },
+    # Pictures made from the bands, not bands themselves. `scl` is the mask layer (`mask` above).
+    auxiliary_assets=("visual", "preview"),
 )
 
 # M3-11b, F1: no single acquisition instant exists for the DEM (`adr/0009`
@@ -477,6 +479,7 @@ COP_DEM_GLO_30 = DatasetConfig(
     mask=None,
     # Elevation in metres, the unit the default render's range of 0 to 5000 already states (M3-11b plan §2.4).
     band_units={"data": "m"},
+    auxiliary_assets=(),
 )
 
 # The datasets that left the registry (docs/adr/0017-ein-sentinel-2-datensatz.md, rule III). An id on this
