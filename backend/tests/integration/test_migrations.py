@@ -55,6 +55,7 @@ class TestDiscovery:
             ("012", "permalink"),
             ("013", "job_acquisition_years"),
             ("014", "bundle"),
+            ("015", "job_deleted"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:

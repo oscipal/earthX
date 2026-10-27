@@ -1480,6 +1480,28 @@ Otto hat den Plan von UI-01 am 2026-10-24 freigegeben: Frage 7 mit Option 1 (25 
   Attribution ein Jahr braucht, aber keines mehr herleiten kann (`409` bei `result.zip`), fehlt im Bündel mit dem Grund
   `year of acquisition unknown`, statt das ganze Bündel scheitern zu lassen.
 
+## 14g. Nachtrag vom 2026-10-27: ein Objekt kann vor den 7 Tagen gehen (zu §7.1, §7.2, F13; NM4-27)
+
+Otto hat NM4-27 am 2026-10-27 freigegeben (`plans/querschnitt/nm4-27-job-loeschen-mit-frist.md` §12, Fragen 4 und 9). Der
+Originaltext bleibt stehen; maßgeblich ist dieser Nachtrag, ausführlich in `adr/0013` §10c.
+
+- **Löschen mit Frist:** Ein gelöschter Job (`earthx_job.deleted_until`) kann einen Tag lang wiederhergestellt werden. Danach
+  löscht der stündliche Aufräumer seine Zeile und, wenn kein anderer Job den Lauf braucht (keiner lebt, keiner liegt noch
+  in seiner Frist), über `earthx.objectstore` auch das Objekt `results/{result_id}/…` und den Lauf. Das kann früher sein als
+  `expires_at` des Laufs (§7.1). Die Reihenfolge bleibt: erst das Objekt, dann die Zeilen (§7.2); ein Fehler des Speichers
+  rollt den Durchgang zurück.
+- **Die Bucket-Regel (§7.3) bleibt das Netz** für Objekte, die der Aufräumer nicht erreicht. Sie gilt unverändert nach 7 Tagen
+  ab Schreiben und ist weiter die späteste Grenze; die Frist des Gelöschten nur die früheste.
+- **Ein Ergebnis dient nur, solange ein lebender Job daran hängt.** Ein Lauf, an dem nur gelöschte Jobs hängen, ist kein
+  Cache-Treffer mehr (`adr/0013` §10c), sodass kein neuer Job auf ein Objekt zeigt, das gleich gelöscht wird. Wird ein Job
+  wiederhergestellt, ist der Lauf wieder einer. Der Aufräumer und der Treffer sperren denselben Lauf (`FOR UPDATE`, `FOR
+  SHARE`), damit keiner das Objekt unter dem anderen entfernt.
+- **F13 (Rezept):** Ein Rezept lebt weiter, solange ein Job oder ein Lauf darauf verweist. Neu: Verweist nur der Lauf auf das
+  Rezept eines gelöschten Jobs, zeigt er nach der Frist auf das Rezept eines bleibenden; das Rezept des Gelöschten geht mit
+  der Frist, nicht erst mit dem Lauf.
+- **Keine neue Stelle für den Objektspeicher:** `jobs` ruft weiter nur `earthx.objectstore.results.delete_result`; `api`
+  liest und löscht nichts, `.importlinter` und der Importvertrag sind unverändert.
+
 ## 15. Quellen
 
 **Primär, in der Sitzung gelesen [P]:**

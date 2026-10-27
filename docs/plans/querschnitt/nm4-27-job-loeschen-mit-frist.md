@@ -232,3 +232,26 @@ Commits in dieser Reihenfolge, je ein Thema:
 8. Log, Backlog-Punkt 27 als erledigt mit PR-Nummer.
 
 Vor „fertig“: `main` holen, dann `ruff check backend`, `pytest`, `lint-imports --config .importlinter`, `npm run lint`, `npx tsc -b`, `npm test`. Danach die Prüfung im Browser. Die Prüfanleitung für Otto (Browser und PowerShell 5.1: `Invoke-WebRequest -Method Delete`, dann `…/restore`) kommt mit der Umsetzung in den PR.
+
+## 14. Freigabe (Otto, 27.10.2026) und Umsetzung
+
+Alle Empfehlungen aus §12 sind angenommen (jeweils Option 1). Zwei Präzisierungen:
+
+- **Frage 6:** Weil innerhalb der Frist alles `404` liefert (Frage 2), bleibt ein Ergebnis-Layer eines gelöschten Jobs im Layer-Manager stehen, wird aber nicht gezeichnet. Er ist gesperrt, der Grund steht im Tooltip (kurz, etwa „Job deleted – restore to show“). Restore macht ihn wieder sichtbar; nach Ablauf der Frist verschwindet der Eintrag. Kein Text in der Zeile, keine Kachelanfragen für gesperrte Layer.
+- **Frage 10:** Ein PR. Wegen der Grenze von zwei Frontend-Sessions zuerst das Backend, das Frontend erst, wenn Otto meldet, dass #211 oder #216 gemergt ist.
+- Der Fund vom 26.10.2026 (Phase „gone“ nach `404` nicht gespeichert) wird in diesem PR behoben, mit Test: Neuladen → der Job steht unter „Expired“ mit „No longer available“, keine erneute Abfrage.
+- `docs/plans/nach-m4-backlog.md` bleibt unverändert (pflegt der Planungs-Chat).
+
+### 14.1 Backend (umgesetzt)
+
+Wie in §9, mit diesen Abweichungen und Auslegungen:
+
+- **`dismiss` sperrt den Lauf vor dem Job** (zuvor umgekehrt). Der Aufräumer sperrt ebenfalls erst den Lauf; so warten beide nicht aufeinander.
+- **Zustand statt Wert:** `JobStatus.expires_at` eines gelöschten Jobs ist das Ende der Frist, `JobStatus.deleted_until` das Feld dazu. Die Antwort auf `DELETE` trägt es als `expires`, die auf `restore` wieder die ursprüngliche Ablaufzeit.
+- **Treffer:** Der Lauf wird beim Wählen des Treffers mit `FOR SHARE` gesperrt, bis der neue Job daran hängt. Ohne die Sperre könnte der Aufräumer das Objekt zwischen Wahl und Einfügen löschen.
+- **Aufräumer:** Ein Lauf bleibt, solange ein Job lebt oder noch in seiner Frist liegt (er könnte wiederhergestellt werden). Ein verworfener Job hält ihn nicht. `CleanupResult.deleted_jobs` zählt die Jobs, deren Frist zu Ende war.
+- **Tests (Gegenprobe):** Mit dem alten `submit.py`, `cleanup.py` und `processing_route.py` schlagen 40 der neuen und angepassten Tests fehl, zwei Dateien lassen sich nicht einmal importieren.
+
+### 14.2 Frontend (offen)
+
+Beginnt, wenn Otto meldet, dass #211 oder #216 gemergt ist. Reihenfolge wie in §13, Punkte 5 bis 7, dazu die Präzisierung zu Frage 6 für den Layer-Manager.

@@ -1273,6 +1273,41 @@ stehen; für Exporte gilt dieser Nachtrag.
 - Kosten: Zwei gleiche Exporte rechnen doppelt. Raster-Aufträge teilen ihren
   Lauf weiter wie in §5.1.
 
+## 10c. Nachtrag vom 2026-10-27: Löschen mit einem Tag Frist (zu §5.5, §5.8; NM4-27)
+
+Otto hat den Plan von NM4-27 am 2026-10-27 freigegeben, alle Fragen mit Option 1
+(`plans/querschnitt/nm4-27-job-loeschen-mit-frist.md` §12). Der Originaltext bleibt
+stehen; für fertige Jobs gilt dieser Nachtrag.
+
+- **Spalte `earthx_job.deleted_until`** (Migration `015_job_deleted.sql`): Ende der Frist, in der ein gelöschter Job
+  wiederhergestellt werden kann. `NULL` für jeden anderen Job. Sie hält nur eine Zeit und keine Daten.
+- **`DELETE /jobs/{jobID}` (§5.5):** Wartende und laufende Jobs wirken wie beschrieben (`dismissed`, Abbruch nur ohne
+  weiteren lebenden Job). Ist der Lauf erfolgreich oder gescheitert, setzt `dismiss` stattdessen
+  `deleted_until = least(jetzt + 1 Tag, expires_at des Laufs)` und lässt `dismissed` auf `false`. Das Ergebnis bleibt, weil
+  es anderen Jobs als Treffer dienen kann (F5). Die ursprüngliche Ablaufzeit steht unverändert in `earthx_run.expires_at`;
+  Löschen und Wiederherstellen berühren sie nie. Der Lauf wird vor dem Job gesperrt (zuvor umgekehrt), so wie es der
+  Aufräumer tut.
+- **Zustand:** Ein Job mit `deleted_until` liest sich wie ein verworfener (`dismissed`, kein Ergebnis); sein `expires_at`
+  ist das Ende der Frist. `api` antwortet überall mit dem `404` eines unbekannten Jobs (K8), ab dem Löschen, auch nach
+  dem Ende der Frist bis zum Aufräumer.
+- **`restore(conn, job_id)`:** Leert `deleted_until`, solange die Frist läuft und der Lauf nicht abgelaufen ist; dann gilt
+  wieder die ursprüngliche Ablaufzeit. Ein Job ohne Löschung gibt seinen Zustand zurück (zweimal drücken schadet nicht).
+  Unbekannte, falsch geformte, verworfene, abgelaufene und nach der Frist gelöschte Jobs geben alle dasselbe `None`.
+- **Cache-Treffer (§5.8):** Ein erfolgreicher Lauf, an dem mindestens ein gelöschter und kein lebender Job (nicht
+  verworfen, nicht gelöscht) hängt, ist kein Treffer. Ein Lauf mit nur verworfenen Jobs bleibt einer wie bisher. Die
+  Abfrage sperrt den Lauf (`FOR SHARE`) bis der neue Job daran hängt, sodass der Aufräumer das Ergebnis nicht dazwischen
+  löscht.
+- **Aufräumer (§5.8):** Im selben Durchgang und unter derselben Sperre, nach den abgelaufenen Läufen:
+  - Jobs mit `deleted_until` in der Vergangenheit werden gelöscht, die zugehörigen Läufe vorher gesperrt, dann erst die
+    Jobs gelesen (zwei Anweisungen, wie `_lock_attempt`, damit ein gleichzeitiges `submit` oder `restore` gesehen wird).
+  - Hängt am Lauf kein lebender Job und keiner in seiner Frist, gehen das Objekt, alle Jobs und der Lauf. Sonst nur
+    die Zeilen der Abgelaufenen; der Lauf bleibt für die anderen.
+  - Zeigt der Lauf auf das Rezept eines Gelöschten (`earthx_run.recipe_id`), zeigt er danach auf das eines bleibenden
+    Jobs, damit das Rezept des Gelöschten (AOI, `recipe_id`) mit der Frist geht und nicht erst mit dem Lauf (Frage 9).
+  - Ein Fehler des Objektspeichers rollt den Durchgang zurück. Die Bucket-Regel nach 7 Tagen bleibt das Netz
+    (`adr/0015` §14g).
+- **Logs:** Zahlen (`deleted_jobs`), nie eine `jobID`, `recipe_id` oder `result_id`.
+
 ## 11. Quellen
 
 **Im Repo:**
