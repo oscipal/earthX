@@ -46,6 +46,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe A, nur Frontend. Der frühere Entwurf (M4-33, nie im Repo) ist in NM4-06 aufgegangen.
 7. **Bandauswahl im Panel** (Otto, 22.10.2026).
    - **Plan:** `querschnitt/nm4-07-bandauswahl.md`
+   - **Erledigt:** NM4-07, PR #216 (27.10.2026). Ein Band wird beim Öffnen gewählt; „Select all bands“ und „Clear“; über 16 Assets sagt „Select all bands“ den Grund. Was ein Band ist, sagt das neue Registry-Feld `auxiliary_assets` (`adr/0014` §15s).
    - **Ein Band:** Hat das Item bzw. Asset nur ein Band (etwa DEM `data` oder ein Ergebnis), ist es beim Öffnen des Panels automatisch gewählt.
    - **Alle Bänder:** Mit einem Knopf „Select all bands“ (und „Clear“) werden alle Bänder gewählt.
    - **Grenze:** Je Auftrag gilt die Obergrenze von 16 Assets bzw. Bändern (M4-07b F5). Hat ein Datensatz mehr, wählt „Select all“ keine stille Teilmenge, sondern sagt es mit Grund. Welche Assets dabei als Bänder zählen, prüft die Aufgabe; Hilfs-Assets wie `visual`, `thumbnail` oder `scl` zählen eher nicht. Bei Unklarheit ist das eine Frage an Otto.
