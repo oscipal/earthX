@@ -35,8 +35,9 @@ import { isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
 import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
+import type { BasemapId } from './basemaps';
 import type { Projection, Theme } from './preferences';
-import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
+import { loadBasemap, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 import { appliedRenderFrom, autoRescale } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
@@ -301,6 +302,7 @@ const LEAVE_FOCUS = {
   viewLayerId: null,
   resultViewLayerId: null,
   cropToAoi: false,
+  viewAoi: null,
   downloaded: {},
   appliedRender: {},
   pendingColormapName: '',
@@ -704,6 +706,13 @@ function dropPageToken(set: SetState, get: GetState): void {
   if (ctx?.nextToken) set({ searchContext: { ...ctx, nextToken: null } });
 }
 
+// Show or hide of the results is the switch's, with two exceptions (Otto, 27.10.2026): a new search shows them, and a
+// crop of the chosen scenes ("Crop to AOI", "Crop & merge to AOI") hides them. Kept in the browser like the switch.
+function setResultsOnMap(on: boolean) {
+  saveResultsOnMap(on);
+  return { resultsOnMap: on };
+}
+
 // What every replacement of the results resets besides the results themselves.
 function forgetSearch() {
   searchGen += 1;
@@ -713,7 +722,6 @@ function forgetSearch() {
     loadMoreError: null,
     loadMoreUsed: false,
     fallbackDatasetIds: [],
-    resultsOnMap: true,
   };
 }
 
@@ -744,6 +752,7 @@ export interface AppState {
   // --- view preferences (V-1), saved per browser (preferences.ts) ---
   theme: Theme;
   projection: Projection;
+  basemap: BasemapId;
   // --- coverage heatmap (M2-07c) ---
   showCoverage: boolean;
   // The dataset the coverage map is drawn for; `null` while it is off.
@@ -782,6 +791,9 @@ export interface AppState {
   // (`mapLayers.ts::syncFocusRaster`) and, once pinned, the layer's own
   // download (`download.ts::downloadRequestFor`, P19).
   cropToAoi: boolean;
+  // The area a cropped view was opened with (Otto, 27.10.2026): it keeps it. Drawing, changing or clearing the area in the
+  // control menu does not touch the view. Null for every view that is not cropped.
+  viewAoi: GeoJSON.Geometry | null;
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
@@ -936,6 +948,7 @@ export interface AppState {
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   selectLayer: (id: string) => void;
   activateLayerContext: (id: string) => void;
+  activateViewContext: () => void;
   openDownloadDialog: (id: string) => Promise<void>;
   openDownloadForSelection: (kind: 'crop' | 'originals') => void;
   closeDownloadDialog: () => void;
@@ -944,6 +957,7 @@ export interface AppState {
   enterFocus: (cropToAoi: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
   exitFocus: () => void;
+  changeImage: () => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
@@ -973,7 +987,8 @@ export interface AppState {
   pinSearchCrops: () => void;
   setMapViewport: (zoom: number, bbox: Bbox, size: { width: number; height: number }) => void;
   toggleTheme: () => void;
-  toggleProjection: () => void;
+  setProjection: (projection: Projection) => void;
+  setBasemap: (basemap: BasemapId) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -986,6 +1001,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   flyToView: null,
   theme: loadTheme(),
   projection: loadProjection(),
+  basemap: loadBasemap(),
   showCoverage: false,
   coverageDatasetId: null,
   coverage: null,
@@ -997,11 +1013,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewportSize: null,
 
   dock: 'controls',
-  resultsOnMap: true,
+  // Kept in the browser (Otto, 27.10.2026); "Show" when nothing is stored or the storage cannot be used.
+  resultsOnMap: loadResultsOnMap(),
   focusMode: false,
   showDownloaded: true,
   focusLoading: false,
   cropToAoi: false,
+  viewAoi: null,
 
   layers: [],
   viewLayerId: null,
@@ -1167,7 +1185,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       return panel === 'results' && !hasResultsPanel(s.sections) ? {} : { dock: panel };
     }),
   closeDock: () => set({ dock: null }),
-  toggleResultsOnMap: () => set((s) => ({ resultsOnMap: !s.resultsOnMap })),
+  toggleResultsOnMap: () => {
+    const resultsOnMap = !get().resultsOnMap;
+    saveResultsOnMap(resultsOnMap);
+    set({ resultsOnMap });
+  },
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
   clearSearchResults: () => {
     set({
@@ -1240,8 +1262,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ error: 'Nothing to add — search and pick a time step first.' });
         return;
       }
-      if (s.cropToAoi && s.aoi) {
-        const aoi = s.aoi;
+      if (s.cropToAoi && s.viewAoi) {
+        const aoi = s.viewAoi;
         const byGroupIndex = new Map<number, [string, DownloadedInfo][]>();
         for (const entry of entries) {
           const idx = groupIndexOfItem(s.groups, entry[0]);
@@ -1459,6 +1481,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (aoi !== s.aoi) dropPageToken(set, get);
     set({ ...(r.datasetId && r.datasetId !== s.datasetId ? layerDatasetState(s, r) : {}), aoi });
   },
+  // What the processing panel needs of a cropped view: the area the view was opened with, which is the order's area
+  // ("AOI only"), whatever the area in the control menu has become since.
+  activateViewContext: () => {
+    const s = get();
+    if (!s.focusMode || !s.cropToAoi || !s.viewAoi || s.viewAoi === s.aoi) return;
+    dropPageToken(set, get);
+    set({ aoi: s.viewAoi });
+  },
   selectLayer: (id) => {
     const s = get();
     const l = s.layers.find((x) => x.id === id);
@@ -1484,6 +1514,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       appliedRender: r.appliedRender,
       aoi,
       cropToAoi: r.cropToAoi,
+      viewAoi: r.cropToAoi && r.aoi ? r.aoi : null,
       showDownloaded: true,
       viewLayerId: id,
       focusLoading: true,
@@ -1749,10 +1780,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       ...(oversize ? { notice: oversize } : {}),
       focusMode: true,
-      // A view takes the results off the map; "Show results" brings them back over it (Otto, 26.10.2026).
-      resultsOnMap: false,
       resultViewLayerId: null,
       cropToAoi,
+      // The view keeps the area it is opened with.
+      viewAoi: cropToAoi ? s.aoi : null,
+      // A crop takes the results off the map and drops the tick of the scenes it was made of, so that their quicklooks
+      // do not lie beside the crop; the view does not hang on the choice any more, and a scene ticked again shows like any
+      // other (Otto, 27.10.2026). The whole scene keeps the tick and the switch.
+      ...(cropToAoi ? { selectedIds: [], ...setResultsOnMap(false) } : {}),
       showDownloaded: true,
       downloaded,
       appliedRender: appliedRenderFrom(render),
@@ -1779,8 +1814,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       passesOf(Object.entries(s.downloaded), s.groups).map((entries) => ({ datasetId, entries })),
     );
   },
-  // Back to browsing: the quicklooks of the results are there again.
-  exitFocus: () => set({ ...LEAVE_FOCUS, resultsOnMap: true }),
+  // "Clear" in the view: takes the view off the map, nothing else. The choice of scenes, what was pinned and show or hide
+  // of the results stay.
+  exitFocus: () => set({ ...LEAVE_FOCUS }),
+  // "Change image": takes the view off the map and opens the results to choose another scene. Show or hide stays.
+  changeImage: () => set((s) => ({ ...LEAVE_FOCUS, ...(hasResultsPanel(s.sections) ? { dock: 'results' as const } : {}) })),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
@@ -1946,10 +1984,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     saveTheme(theme);
     set({ theme });
   },
-  toggleProjection: () => {
-    const projection: Projection = get().projection === 'mercator' ? 'globe' : 'mercator';
+  setProjection: (projection) => {
     saveProjection(projection);
     set({ projection });
+  },
+  setBasemap: (basemap) => {
+    saveBasemap(basemap);
+    set({ basemap });
   },
 
   runSearch: async () => {
@@ -1983,6 +2024,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       dock: withoutControls(get().dock),
       ...forgetSearch(),
       ...LEAVE_FOCUS,
+      ...setResultsOnMap(true),
     });
     // "Clear all" or another step that drops the results may come before the answer.
     const gen = searchGen;
@@ -2103,7 +2145,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Choose a dataset to search.' });
       return;
     }
-    set({ sceneLookupLoading: true, error: null });
+    set({ sceneLookupLoading: true, error: null, ...setResultsOnMap(true) });
     const gen = searchGen;
     const answers = await Promise.all(
       chosen.map((dataset) =>

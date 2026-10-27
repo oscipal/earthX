@@ -159,6 +159,7 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
       focusMode: true,
       aoi: AOI,
       cropToAoi: true,
+      viewAoi: AOI,
       appliedRender: {},
       downloaded: { S1: focusedDownload('S1'), S2: focusedDownload('S2'), S3: focusedDownload('S3') },
       // The tiler refused the mosaic of S1 and S2, so they are pinned scene by scene; what a

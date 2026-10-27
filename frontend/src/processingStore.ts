@@ -949,11 +949,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       });
     },
     processFocusView: async () => {
+      useAppStore.getState().activateViewContext();
       const app = useAppStore.getState();
       const extraScenes = await selectScenes(Object.keys(app.downloaded), 'this view');
       if (!extraScenes) return;
       get().openProcessing({
-        area: app.cropToAoi && isArea(app.aoi) ? 'aoi' : 'scene',
+        area: app.cropToAoi && isArea(app.viewAoi) ? 'aoi' : 'scene',
         extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
       });
     },
