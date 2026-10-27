@@ -39,5 +39,5 @@ Nach „Crop & merge to AOI“ bleibt der Quicklook der ganzen Szene noch eine W
 - Prüfung im echten Browser (Chromium/Playwright der Sitzung), nicht nur jsdom, in Hell- und Dunkelmodus und bei schmalem Fenster; im PR beschrieben.
 - Prüfanleitung für Otto (Browser und/oder PowerShell 5.1) im PR.
 - Alle vier Pflicht-Checks der CI sind grün.
-- Log-Zeile(n); Backlog-Punkt in `docs/plans/nach-m4-backlog.md` als erledigt markieren (mit PR-Nummer).
+- Log-Zeile(n) mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern (pflegt der Planungs-Chat, siehe Kopf des Backlogs).
 - Vor „fertig“ ist main geholt.
