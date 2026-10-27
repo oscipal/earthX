@@ -37,7 +37,7 @@ import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView }
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
 import type { Projection, Theme } from './preferences';
-import { loadBasemap, loadProjection, loadTheme, saveBasemap, saveProjection, saveTheme } from './preferences';
+import { loadBasemap, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 import { appliedRenderFrom, autoRescale } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
@@ -705,6 +705,12 @@ function dropPageToken(set: SetState, get: GetState): void {
   if (ctx?.nextToken) set({ searchContext: { ...ctx, nextToken: null } });
 }
 
+// A new search puts the results on the map (Otto, 27.10.2026): the one thing besides the switch itself that sets show/hide.
+function showResults() {
+  saveResultsOnMap(true);
+  return { resultsOnMap: true };
+}
+
 // What every replacement of the results resets besides the results themselves.
 function forgetSearch() {
   searchGen += 1;
@@ -1001,7 +1007,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewportSize: null,
 
   dock: 'controls',
-  resultsOnMap: true,
+  // Kept in the browser (Otto, 27.10.2026); "Show" when nothing is stored or the storage cannot be used.
+  resultsOnMap: loadResultsOnMap(),
   focusMode: false,
   showDownloaded: true,
   focusLoading: false,
@@ -1171,7 +1178,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       return panel === 'results' && !hasResultsPanel(s.sections) ? {} : { dock: panel };
     }),
   closeDock: () => set({ dock: null }),
-  toggleResultsOnMap: () => set((s) => ({ resultsOnMap: !s.resultsOnMap })),
+  toggleResultsOnMap: () => {
+    const resultsOnMap = !get().resultsOnMap;
+    saveResultsOnMap(resultsOnMap);
+    set({ resultsOnMap });
+  },
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
   clearSearchResults: () => {
     set({
@@ -1990,6 +2001,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       dock: withoutControls(get().dock),
       ...forgetSearch(),
       ...LEAVE_FOCUS,
+      ...showResults(),
     });
     // "Clear all" or another step that drops the results may come before the answer.
     const gen = searchGen;
@@ -2110,7 +2122,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Choose a dataset to search.' });
       return;
     }
-    set({ sceneLookupLoading: true, error: null });
+    set({ sceneLookupLoading: true, error: null, ...showResults() });
     const gen = searchGen;
     const answers = await Promise.all(
       chosen.map((dataset) =>

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BASEMAP_IDS } from './basemaps';
-import { loadBasemap, loadProjection, loadTheme, saveBasemap, saveProjection, saveTheme } from './preferences';
+import { loadBasemap, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 
 // No jsdom in this project (Vitest runs plain Node) — a minimal
 // localStorage stand-in is enough to exercise the module under test.
@@ -128,6 +128,52 @@ describe('loadBasemap', () => {
 
   it('keeps the basemap apart from the theme and the projection', () => {
     saveBasemap('outlines');
+    expect(loadTheme()).toBe('tech');
+    expect(loadProjection()).toBe('mercator');
+  });
+});
+
+describe('loadResultsOnMap (Otto, 27.10.2026)', () => {
+  it('is "Show" when nothing is stored', () => {
+    expect(loadResultsOnMap()).toBe(true);
+  });
+
+  it.each([true, false])('round-trips %s, under the key earthx.results', (on) => {
+    saveResultsOnMap(on);
+    expect(storage.getItem('earthx.results')).toBe(on ? 'show' : 'hide');
+    expect(loadResultsOnMap()).toBe(on);
+  });
+
+  it.each(['', 'Hide', 'true', 'false', '0', 'hide ', '__proto__', '["hide"]'])('is "Show" for the foreign value %j', (value) => {
+    storage.setItem('earthx.results', value);
+    expect(loadResultsOnMap()).toBe(true);
+  });
+
+  it('is "Show" when localStorage cannot be read', () => {
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: () => {
+          throw new Error('blocked');
+        },
+      },
+    });
+    expect(loadResultsOnMap()).toBe(true);
+  });
+
+  it('does not throw when localStorage.setItem fails (storage full/disabled)', () => {
+    vi.stubGlobal('window', {
+      localStorage: {
+        setItem: () => {
+          throw new Error('quota exceeded');
+        },
+      },
+    });
+    expect(() => saveResultsOnMap(false)).not.toThrow();
+  });
+
+  it('is kept apart from the other preferences', () => {
+    saveResultsOnMap(false);
+    expect(loadBasemap()).toBe('satellite');
     expect(loadTheme()).toBe('tech');
     expect(loadProjection()).toBe('mercator');
   });

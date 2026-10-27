@@ -2,7 +2,8 @@
 //
 // Otto, 27.10.2026 (zu #211): "Hide results" holds. Whatever happens next, no outline, quicklook or crop of a search
 // result is on the map, except for a ticked scene, which shows with its usual controls and goes with its tick; and
-// only the switch changes show/hide. `mapResults.ts` is the one function that says what is on the map, so the matrix
+// only the switch changes show/hide, with the one exception of a new search ("Search"), which always shows them.
+// `mapResults.ts` is the one function that says what is on the map, so the matrix
 // asks it, after each thing a user can do, with the results hidden or shown and a scene ticked or not.
 // The tests of Otto's own click path fail against the code before: "Clear" did not exist, and leaving a view, a
 // crop, a new search and a cleared search all put the switch where they liked.
@@ -148,16 +149,54 @@ describe.each([false, true])('with the results on the map: %s', (onMap) => {
       });
     });
 
-    it.each(OPERATIONS)('%s leaves the switch alone, and with the results hidden only a ticked scene is on the map', async (name, run) => {
+    it.each(OPERATIONS)('%s leaves the switch alone (a new search shows the results), and with the results hidden only a ticked scene is on the map', async (name, run) => {
       const tickBefore = [...state().selectedIds];
       await run();
       await flush();
-      expect(state().resultsOnMap).toBe(onMap);
-      if (!onMap) expectOnlyTickedOnMap();
+      // The one thing besides the switch that sets it: a new search shows the results (Otto, 27.10.2026).
+      const expected = name === 'a new search' ? true : onMap;
+      expect(state().resultsOnMap).toBe(expected);
+      if (!expected) expectOnlyTickedOnMap();
       // The choice of scenes survives everything but "Clear" (and a new search, which starts over).
       if (name.startsWith('"Clear" in the view')) expect(state().selectedIds).toEqual([]);
       else if (!/search|Load more/u.test(name)) expect(state().selectedIds).toEqual(tickBefore);
     });
+  });
+});
+
+describe('a new search shows the results (Otto, 27.10.2026)', () => {
+  const searchButton = () => buttonWith('Search');
+  beforeEach(() => {
+    act(() => useAppStore.setState({ resultsOnMap: false, dock: 'controls' }));
+    window.localStorage.setItem('earthx.results', 'hide');
+  });
+
+  it('"Search" in the control menu puts "Show results" back, in the store and in the browser', async () => {
+    click(searchButton());
+    await flush();
+    expect(state().resultsOnMap).toBe(true);
+    expect(window.localStorage.getItem('earthx.results')).toBe('show');
+  });
+
+  it('so does a search for a scene by its name', async () => {
+    act(() => useAppStore.setState({ sceneNameQuery: 'S2B_MSIL2A_X' }));
+    await act(() => state().findSceneByName());
+    expect(state().resultsOnMap).toBe(true);
+  });
+
+  it('a search that does not start (no area) leaves the switch alone', async () => {
+    act(() => useAppStore.setState({ aoi: null }));
+    await act(() => state().runSearch());
+    expect(state().resultsOnMap).toBe(false);
+  });
+
+  it('"Load more", "Clear search results" and "Clear all" do not', async () => {
+    await act(() => state().loadMore());
+    expect(state().resultsOnMap).toBe(false);
+    act(() => state().clearSearchResults());
+    expect(state().resultsOnMap).toBe(false);
+    act(() => state().clearAll());
+    expect(state().resultsOnMap).toBe(false);
   });
 });
 

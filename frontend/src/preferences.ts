@@ -13,6 +13,7 @@ export type JobFilter = 'active' | 'expired' | 'all';
 const THEME_KEY = 'earthx.theme';
 const PROJECTION_KEY = 'earthx.projection';
 const BASEMAP_KEY = 'earthx.basemap';
+const RESULTS_KEY = 'earthx.results';
 const JOB_FILTER_KEY = 'earthx.jobfilter';
 
 const THEMES: readonly Theme[] = ['tech', 'normal'];
@@ -62,6 +63,16 @@ export function loadBasemap(): BasemapId {
 
 export function saveBasemap(basemap: BasemapId): void {
   writeStored(BASEMAP_KEY, basemap);
+}
+
+// Whether the search results are on the map: the switch "Hide results" / "Show results" (Otto, 27.10.2026). Stored as
+// "show" or "hide"; anything else, and a storage that cannot be read, is "show".
+export function loadResultsOnMap(): boolean {
+  return readStored(RESULTS_KEY, ['show', 'hide'] as const, 'show') === 'show';
+}
+
+export function saveResultsOnMap(onMap: boolean): void {
+  writeStored(RESULTS_KEY, onMap ? 'show' : 'hide');
 }
 
 export function loadJobFilter(): JobFilter {

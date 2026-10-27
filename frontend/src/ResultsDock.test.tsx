@@ -418,19 +418,20 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     expect(container.querySelector('.download-count span')?.textContent).toBe('scene selected');
   });
 
-  it('stay as the switch left them through a new search and after the search was cleared (Otto, 27.10.2026)', async () => {
+  it('stay as the switch left them after the search was cleared, and a new search shows them (Otto, 27.10.2026)', async () => {
     click(toggle());
-    expect(useAppStore.getState().resultsOnMap).toBe(false);
-    await search();
     expect(useAppStore.getState().resultsOnMap).toBe(false);
     act(() => useAppStore.getState().clearAll());
     expect(useAppStore.getState().resultsOnMap).toBe(false);
     act(() => useAppStore.getState().clearSearchResults());
     expect(useAppStore.getState().resultsOnMap).toBe(false);
-    // Only the switch brings them back.
-    act(() => useAppStore.getState().toggleResultsOnMap());
-    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    // Only the switch, or a new search, brings them back ("Clear all" took the area away: draw it again).
+    act(() => useAppStore.setState({ aoi: AOI }));
     await search();
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    click(toggle());
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    act(() => useAppStore.getState().toggleResultsOnMap());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
   });
 });
