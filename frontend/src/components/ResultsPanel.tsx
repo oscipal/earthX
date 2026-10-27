@@ -302,6 +302,58 @@ function SelectionRow() {
 
 export default function ResultsPanel() {
   const sections = useAppStore((s) => s.sections);
+  const resultsOnMap = useAppStore((s) => s.resultsOnMap);
+  // Of the scenes found, the ones ticked (a tick on a scene that is not in the results counts for nothing).
+  const selected = useAppStore((s) => {
+    const ids = new Set(s.selectedIds);
+    return s.sections.reduce((n, section) => n + section.items.filter((it) => ids.has(it.id)).length, 0);
+  });
+  const toggleResultsOnMap = useAppStore((s) => s.toggleResultsOnMap);
+
+  if (!hasResultsPanel(sections)) return null;
+
+  return (
+    <div className="panel dock-panel results-panel" role="region" aria-label="Results">
+      <div className="results-head">
+        <h2 title="Selected scenes / scenes found">Results ({selected}/{totalItems(sections)})</h2>
+        <button
+          type="button"
+          className="results-map-toggle"
+          title={
+            resultsOnMap
+              ? 'Take the search results off the map; the list stays, and ticked scenes still show'
+              : 'Show the search results on the map again, over the layers'
+          }
+          onClick={() => toggleResultsOnMap()}
+        >
+          {resultsOnMap ? 'Hide results' : 'Show results'}
+        </button>
+      </div>
+      <ResultsList sections={sections} />
+    </div>
+  );
+}
+
+// Under "Load more": takes the list of results away, and its pictures on the map. The area, dates, choice of
+// datasets and filters stay, and so do the pinned layers and the jobs; the control menu opens (Otto, 26.10.2026).
+function ClearResults() {
+  const clearSearchResults = useAppStore((s) => s.clearSearchResults);
+  return (
+    <button
+      type="button"
+      className="clear-results"
+      title="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
+      onClick={() => clearSearchResults()}
+    >
+      <span className="clear-results-x" aria-hidden="true">
+        ✕
+      </span>
+      Clear search results
+    </button>
+  );
+}
+
+function ResultsList({ sections }: { sections: ResultSection[] }) {
   // The dataset shown is the one whose scenes `groups`/`items` hold
   // (`store.ts::setOpenSection`). Within it, the open time step stays separate
   // from `activeGroupIndex` (the one the map and time slider show), so the open
@@ -312,26 +364,8 @@ export default function ResultsPanel() {
   const groups = useAppStore((s) => s.groups);
   const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
-  const clearAll = useAppStore((s) => s.clearAll);
-
-  if (!hasResultsPanel(sections)) return null;
-
   return (
-    <div className="panel results-panel">
-      <div className="results-head">
-        <h2>Results</h2>
-        <div className="results-head-right">
-          <span>{totalItems(sections)}</span>
-          <button
-            type="button"
-            className="link-btn"
-            title="Clear the search and selection"
-            onClick={() => clearAll()}
-          >
-            Clear all
-          </button>
-        </div>
-      </div>
+    <>
       <DatasetDropdown sections={sections} openId={openSectionId} />
       <div className="results-list-head">
         <div className="eyebrow results-list-eyebrow">Scenes by time step</div>
@@ -349,6 +383,7 @@ export default function ResultsPanel() {
         ))}
       </div>
       <LoadMore openId={openSectionId} />
-    </div>
+      <ClearResults />
+    </>
   );
 }

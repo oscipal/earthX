@@ -913,9 +913,54 @@ export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' 
   retireDynamicMosaic(map);
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
   const { dataset } = s;
-  if (!dataset) return dropRetired(map);
+  // Nothing to draw (no dataset, or the results are off the map, UI-01g): the picture before it has nothing to
+  // wait for and goes at once.
+  if (!dataset || items.length === 0) return dropRetired(map);
   items.forEach((it, i) => addPreview(map, it, i, gen, dataset));
   settleRetired(map);
+}
+
+// The quicklooks of the search results over the full-resolution view (Otto, 26.10.2026): "Show results" in the
+// results panel draws them while a view is open. Their own id range (`res-…`), apart from the view's two banks, so
+// that neither sync takes the other's layers away; placed last, so they lie over the view, and again after each sync
+// of the view (`MapView.tsx` runs this right after it).
+const RESULTS_KINDS = ['img-lyr', 'img-src', 'tiles-lyr', 'tiles-src'] as const;
+let resultsGen = 0;
+
+function removeResultsOverlay(map: MapLibreMap): void {
+  for (let i = 0; i < MAX_MOSAIC_LAYERS; i++) {
+    for (const lyr of [`res-img-lyr-${i}`, `res-tiles-lyr-${i}`]) if (map.getLayer(lyr)) map.removeLayer(lyr);
+    for (const src of [`res-img-src-${i}`, `res-tiles-src-${i}`]) if (map.getSource(src)) map.removeSource(src);
+  }
+}
+
+export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'>): void {
+  const gen = ++resultsGen;
+  removeResultsOverlay(map);
+  const { dataset } = s;
+  if (!dataset) return;
+  s.items.slice(0, MAX_MOSAIC_LAYERS).forEach((item, i) => {
+    const plan = quicklookPlan(item, dataset);
+    if (!plan) return;
+    const [lyr, src] = [`res-${RESULTS_KINDS[plan.kind === 'tiles' ? 2 : 0]}-${i}`, `res-${RESULTS_KINDS[plan.kind === 'tiles' ? 3 : 1]}-${i}`];
+    if (plan.kind === 'tiles') {
+      if (!item.bbox) return;
+      const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
+      placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.zoom, maxZoom: plan.zoom });
+      return;
+    }
+    const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
+    if (!coords) return;
+    const nodataMax = dataset.viewable ? dataset.quicklookNodataMax : null;
+    loadProcessed(plan.href, nodataMax, null, (dataUrl) => {
+      if (gen !== resultsGen) return; // a newer sync superseded this one
+      try {
+        placeImage(map, src, lyr, dataUrl, coords, 1);
+      } catch {
+        /* map/style went away while loading */
+      }
+    });
+  });
 }
 
 // The yellow outline around selected scenes, in either mode. A plain GeoJSON

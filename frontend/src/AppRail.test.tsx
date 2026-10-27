@@ -53,8 +53,8 @@ afterEach(() => {
 });
 
 const rail = () => container.querySelector<HTMLElement>('nav[aria-label="Main"]')!;
-const symbol = (name: 'controls' | 'layers' | 'jobs') => container.querySelector<HTMLButtonElement>(`#rail-${name}`)!;
-const slot = (name: 'controls' | 'layers' | 'jobs') => container.querySelector<HTMLElement>(`#dock-${name}`);
+const symbol = (name: 'controls' | 'layers' | 'jobs' | 'results') => container.querySelector<HTMLButtonElement>(`#rail-${name}`)!;
+const slot = (name: 'controls' | 'layers' | 'jobs' | 'results') => container.querySelector<HTMLElement>(`#dock-${name}`);
 const click = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const key = (target: Element, name: string) => {
   const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
@@ -64,13 +64,13 @@ const key = (target: Element, name: string) => {
 const stops = () => [...rail().querySelectorAll<HTMLElement>('button')].map((b) => b.tabIndex);
 
 describe('the symbols', () => {
-  it('are three, in a navigation named "Main", each with its name for a screen reader', () => {
+  it('are four, in a navigation named "Main", each with its name for a screen reader', () => {
     expect(rail()).not.toBeNull();
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Processing jobs']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Processing jobs', 'Results, No results yet: run a search first']);
   });
 
   it('carry their tooltip as text that shows on hover and on focus, and no second one as `title`', () => {
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Processing jobs']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Processing jobs', 'No results yet: run a search first']);
     expect(rail().querySelector('[title]')).toBeNull();
   });
 
@@ -173,15 +173,15 @@ describe('the panels', () => {
 
 describe('the keyboard', () => {
   it('gives the Tab key one stop in the rail: the open panel\'s symbol', () => {
-    expect(stops()).toEqual([0, -1, -1]);
+    expect(stops()).toEqual([0, -1, -1, -1]);
     click(symbol('jobs'));
-    expect(stops()).toEqual([-1, -1, 0]);
+    expect(stops()).toEqual([-1, -1, 0, -1]);
   });
 
   it('keeps the stop on the last symbol focused where no panel is open', () => {
     click(symbol('controls'));
     act(() => symbol('layers').focus());
-    expect(stops()).toEqual([-1, 0, -1]);
+    expect(stops()).toEqual([-1, 0, -1, -1]);
   });
 
   it('moves between the symbols with the arrow keys and wraps at the ends', () => {
@@ -190,13 +190,14 @@ describe('the keyboard', () => {
     expect(document.activeElement).toBe(symbol('layers'));
     key(symbol('layers'), 'ArrowDown');
     key(symbol('jobs'), 'ArrowDown');
+    key(symbol('results'), 'ArrowDown');
     expect(document.activeElement).toBe(symbol('controls'));
     key(symbol('controls'), 'ArrowUp');
-    expect(document.activeElement).toBe(symbol('jobs'));
-    key(symbol('jobs'), 'Home');
+    expect(document.activeElement).toBe(symbol('results'));
+    key(symbol('results'), 'Home');
     expect(document.activeElement).toBe(symbol('controls'));
     key(symbol('controls'), 'End');
-    expect(document.activeElement).toBe(symbol('jobs'));
+    expect(document.activeElement).toBe(symbol('results'));
   });
 
   it('does not take other keys', () => {
