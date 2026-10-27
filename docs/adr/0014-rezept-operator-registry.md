@@ -2418,3 +2418,37 @@ Dateiliste in §15l (`TEXT_FILES` mit `methods.txt`) bleiben als Originaltext st
     (`adr/0016` §12c, Otto 2026-10-26).
 - **Tests:** `processing/test_methods.py` (`TestTheTextLiesInTheRecipe`: Text im Feld, Rest des Dokuments gleich, Hash gleich, falscher
   Typ, kein Rezept), `test_export.py`, `api/test_download_route.py`, `api/test_result_zip_files.py`, `runner/test_cli.py`.
+
+## 15s. Nachtrag vom 2026-10-27: die Mosaik-Kachel mit Schritten (zu §6.1, §6.2, §6.3, §15g, §15m; NM4-04)
+
+Otto hat den Plan von NM4-04 am 2026-10-27 freigegeben, F1–F6 je Option 1, F7 Option 3
+(`plans/querschnitt/nm4-04-mosaik-mit-operator.md` §14). Der Originaltext in §6 bleibt stehen;
+maßgeblich ist dieser Nachtrag.
+
+- **Reihenfolge (F1):** Die Mosaik-Kachel mit Schritten rechnet wie der Mosaik-Job (§15g): erst je
+  Asset und Band das Mosaik der Szenen (erstes gültiges Element in der Reihenfolge von
+  `mosaic_order`, physikalische Werte), dann die Assets zusammen, dann die Kerne der Schritte.
+  Belegt am Code: `processing/mosaic.py` (`open_mosaic`, `MosaicSource.read` mit
+  `merge_first_valid`) und `processing/core.py::_run_pass`. Folge bei `mask`: Eine Wolke der ersten
+  Szene bleibt ein Loch, auch wo eine spätere Szene klar ist; das wolkenfreie Komposit wäre ein
+  anderes Produkt und eine eigene Aufgabe.
+- **Ein Lesen:** `processing/tile.py::MosaicOperatorTileReader` nimmt einen `mosaic_reader` über die
+  Szenen, je Szene ihre Assets in physikalischen Werten zusammengelegt. rio-tilers `FirstMethod`
+  wählt je Band und Pixel (rio-tiler 9.4.6, `FirstMethod.feed`), also wie `merge_first_valid` je
+  Asset. Die Kerne laufen als `process_dependency`, dieselben Funktionen wie im Job. Jede Szene
+  muss der ersten gleichen wie im Job (`processing.mosaic.check_alike`, sonst `422`).
+- **Toleranz (§6.3, F2):** Auf der nativen Ebene **bitgleich für Szenen auf dem Raster des
+  Mosaiks** (gleiches CRS, gleiche Pixelgröße, Ursprung um ganze Pixel versetzt): Band math und
+  `mask → band_math` gegen den Job, Maske gleich (`api/test_tiler_mosaic_operator.py`). Für eine
+  Szene außerhalb des Rasters (andere UTM-Zone) verzerrt der Job zweimal (auf das Mosaikraster,
+  im Vergleich von §6.4 auf die Kachel), die Kachel einmal: **56,3 % (z13) bzw. 56,2 % (z14)**
+  identische gültige Pixel, jede Abweichung höchstens ein Pixel der Quelle daneben
+  (`scripts/tile-bench/off_grid_identity.py`). Dort gilt „dieselbe Szene gewinnt an denselben
+  Stellen“ wie ohne Schritte (M4-17). Das gilt schon ohne Schritte und ist keine neue Abweichung.
+- **Kosten (F3):** lokal, CPU, z14: NDVI 1,3–1,8 × und `mask → band_math` 1,5–1,9 × die
+  Mosaik-Kachel ohne Schritte; 12 Szenen, alle gelesen, 3 Assets: 324 ms
+  (`scripts/tile-bench/mosaic_op_cost.py`). Höchstens 4 Assets, also 48 Dateien je Kachel. Kalt
+  über das Netz geschätzt [A] etwa 9 s für die erste Kachel im ungünstigsten Fall (3 Portionen ×
+  3 Assets × ~1 s); Otto prüft es (Prüfanleitung im PR).
+- **Keine Statistik** über das Mosaik (F4); siehe `adr/0006`, Nachtrag NM4-04.
+
