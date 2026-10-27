@@ -234,7 +234,7 @@ Ein Knopf oben rechts neben „⤢ Zoom to selection“ und „☀ Light/☾ Dar
 
 ### 6.9 Schnitt
 
-1. **UI-02a, Frontend:** Katalog, Menü „Basemap“ mit Basemap und Projection, Wechsel per Diff, Streets/Grey/Outlines, Attribution immer offen, Merken. „Light/Dark“ und der Globus bleiben unverändert. Tests. Geschätzt 350–400 Zeilen.
+1. **UI-02a, Frontend (umgesetzt, §7):** Katalog, Menü „Basemap“ mit Basemap und Projection, Wechsel per Diff, Streets/Grey/Outlines, Attribution immer offen, Merken. „Light/Dark“ und der Globus bleiben unverändert. Tests. Geschätzt 350–400 Zeilen.
 2. **UI-02b, Frontend:** Labels (inklusive über Satellite) und Graticule. Geschätzt 150–200 Zeilen.
 3. **UI-02c, Backend und Frontend:** Basemap und Projektion im Permalink (wirksame und gemerkte Wahl getrennt, Frage 8). Geschätzt 100–150 Zeilen.
 
@@ -252,3 +252,35 @@ Je PR: Log-Zeile, Prüfanleitung, `main` holen vor „fertig“. Dazu Punkte fü
 8. **Permalink öffnen:** (1) Basemap und Projektion gelten und werden gemerkt (**Empfehlung**); (2) gelten nur für diesen Besuch. **Antwort Otto: abweichend.** Basemap und Projektion des Permalinks gelten für die geöffnete Ansicht, überschreiben aber nicht die im Browser gespeicherte Vorgabe.
 9. **Datenschutz:** (1) jetzt Hinweis im Tooltip, Selbst-Hosting vor dem öffentlichen Start als Backlog-Punkt (**Empfehlung**); (2) jetzt selbst hosten; (3) Proxy über `gateway`. **Antwort Otto: Option 1.**
 10. **Beleg Lagerichtigkeit:** (1) Prüfanleitung, kein Pixeltest in CI (**Empfehlung**, keine neue Abhängigkeit); (2) Pixeltest mit `@playwright/test` als neue Entwicklungsabhängigkeit. **Antwort Otto: Option 1.**
+
+## 7. UI-02a: Umsetzung (27.10.2026)
+
+Umgesetzt nach §6 mit Ottos Antworten (§6.10): Katalog der Basemaps (`frontend/src/basemaps.ts`), Menü „Basemap“ (`components/BasemapMenu.tsx`) mit den Gruppen Basemap und Projection, Wechsel per Stil-Diff (`mapStyles.ts`), Attribution immer offen, Merken im Browser (`preferences.ts`, Schlüssel `earthx.basemap`). Labels und Graticule folgen mit UI-02b, der Permalink mit UI-02c. Backend unverändert.
+
+### 7.1 Auslegungen (Vorschlag, gelten bis Otto widerspricht)
+
+1. **Outlines:** Die Küste ist der Rand der Meeresfläche (blasse Fläche), nicht eine Linie: Eine Linie entlang der Wasserpolygone zeigte die Kachelränder als Nähte. Länder- und, ab Zoom 4, Regionsgrenzen sind Linien. Meer und Linien sind halbtransparent bzw. mittelgrau, damit sie auf dem dunklen wie auf dem weißen Hintergrund lesbar bleiben.
+2. **Menü:** Es bleibt nach einer Wahl offen (Basemap und Projektion lassen sich nacheinander ändern); `Esc`, Klick daneben und `Tab` schließen es.
+3. **Stil holt die App selbst:** Streets und Grey werden mit `fetch` geladen, nicht von MapLibre, damit ein Fehler gemeldet werden kann („The Streets basemap could not be loaded: …“). Bei einem Fehler zeigt die Karte weiter, was sie hatte, das Menü geht auf diese Wahl zurück, die gewählte bleibt gespeichert (der nächste Besuch versucht sie erneut). Das weicht von §6.5 ab, wo MapLibre die Adresse selbst lud; die Diff-Technik ist dieselbe.
+4. **Wortlaut der Attribution:** Auf den Vektorquellen der veröffentlichten Stile setzt die App den Text, den die OpenFreeMap-README verlangt („OpenFreeMap © OpenMapTiles Data from OpenStreetMap“, mit Links), damit eine Änderung im TileJSON ihn nicht entfernen kann. Satellite behält den heutigen Text.
+5. **Tooltip der Projektion:** „Globe“ nennt, dass die Kugel ab Zoom 12 flach wird (MapLibres Vorgabe, `projection_factory.ts`).
+6. **Offene Frage zur Attribution der Stile (an Otto):** Liberty und Positron sind unter CC BY 4.0 veröffentlicht (Positron geht auf CARTO-Basemaps unter CC BY 3.0 zurück, OpenFreeMap `LICENSE.md`). Die README von OpenFreeMap verlangt nur die drei Angaben oben. (1) Es bleibt dabei, der Tooltip nennt die Lizenz des Stils (**Empfehlung**); (2) die Attribution nennt zusätzlich den Stil („Style: OSM Liberty“ bzw. „Positron“).
+
+### 7.2 Belege
+
+- **Vitest (CI):** Je Basemap ein Test, dass die Wahl im Menü greift (Store, Speicher, Haken) und dass der Stil genau die Attribution trägt, die der Anbieter verlangt, und die des vorigen Anbieters nicht mehr; je Projektion ein Test, dass die Wahl greift und `setProjection` den richtigen Wert bekommt. Dazu: Reihenfolge und Erhalt der eigenen Ebenen, Projektion und Himmel der laufenden Karte bleiben, Fehler des Stil-Servers (`503`, kein Stil, kein JSON, kein Netz), eine überholte Antwort, Rücknahme einer gescheiterten Wahl, Werte im Speicher, die nicht stimmen, gesperrter Speicher, keine Schlüssel in den Adressen.
+- **Gegenprobe:** Fünf Änderungen am Code (Attribution nicht gesetzt, eigene Ebenen vor der Basemap, Projektion nicht übernommen, überholte Antwort nicht verworfen, Quellen ohne Präfix) lassen jeweils Tests scheitern.
+- **Echter Browser (Wegwerf-Skript, nicht im Repo):** Dev-Server mit Chromium, Software-Rendering, die Fremdhosts durch eine erfundene Welt ersetzt (Meer, Land, eine Grenze; Kacheln aus `geojson-vt`). 19 Prüfungen an Bildpunkten und im DOM bestanden: Start mit Satellite; jede Basemap in Mercator und auf dem Globus (Land, Meer, Grenze); Attribution je Basemap und im DOM offen ohne „i“-Knopf; AOI-Linie bleibt in jedem Wechsel; Zeichnen einer AOI nach dem Wechsel; Neuladen behält die Wahl; Stil-Server `503` zeigt die Meldung und lässt die Karte stehen.
+- **Nicht belegt:** echte Kacheln von OpenFreeMap und Esri (kein Zugang aus der Sitzung) und das Verhalten auf einem echten Grafikprozessor (§6.3, Frage 5).
+
+### 7.3 Prüfanleitung für Otto (Browser)
+
+Vorher: Browserdaten der Seite löschen (oder ein privates Fenster), damit die Vorgabe gilt.
+
+1. **Start:** Satellite, Mercator, dunkles Thema. Oben rechts stehen „Zoom to selection“, „Basemap“, „Light“. Unten rechts steht die Attribution von Esri, ausgeschrieben, ohne „i“-Knopf.
+2. **Basemaps:** „Basemap“ öffnen. Nacheinander Streets, Grey, Outlines und Satellite wählen. Das Bild und der Text unten rechts wechseln; die Tooltips der Einträge nennen den Anbieter. Bei Streets, Grey und Outlines steht „OpenFreeMap © OpenMapTiles Data from OpenStreetMap“.
+3. **Eigene Ebenen:** Eine AOI zeichnen (oder hochladen) und, wenn möglich, eine Ansicht oder einen angehefteten Layer öffnen. Die Basemap mehrmals wechseln: AOI-Linie und Bilder bleiben ohne Aufblitzen stehen. Nach einem Wechsel eine neue AOI zeichnen.
+4. **Projektion:** Im selben Menü Globe und Mercator wählen. Auf dem Globus bis Zoom 12 hineinzoomen, dort wird die Karte flach.
+5. **Lage auf dem Globus (Ottos Frage 5, echter Grafikprozessor):** Szene in voller Auflösung bei hoher Breite (etwa Skandinavien) öffnen, „Crop to AOI“, Globus wählen, bei Zoom 8 bis 11 prüfen, ob Zuschnitt, AOI-Linie und Bildkante übereinanderliegen und ein Klick auf die Szene sie trifft. Dasselbe in Mercator als Vergleich. Zeigt sich auf dem Globus ein Versatz von mehreren Pixeln, wird die Frage 5 neu vorgelegt (§6.3: im Software-Rendering der Sitzung bis rund 20 Pixel).
+6. **Neu laden:** Basemap und Projektion bleiben. Über „Light“ das helle Thema wählen: Die Attribution bleibt lesbar.
+7. **Fehlerfall:** In den Entwicklerwerkzeugen die Anfragen an `tiles.openfreemap.org` blockieren und Streets wählen: Es erscheint „The Streets basemap could not be loaded: …“, die Karte bleibt, das Menü hakt wieder die alte Basemap an. Nach dem Aufheben der Sperre und Neuladen gilt Streets.
