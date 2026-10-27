@@ -45,7 +45,7 @@ M4-17 zeigt das Mosaik eines Überflugs als Kachel, M4-18b erlaubt Operator-Kett
 
 # Plan (27.10.2026)
 
-Belegstufen wie in `adr/0009`: [M] gemessen, [P] am Primärdokument oder im Code gelesen, [S] Zusammenfassung oder Suchtreffer, [A] eigene Ableitung. Messskripte und Rohausgaben liegen im Scratchpad der Sitzung, die Aufrufe stehen in §13.
+Belegstufen wie in `adr/0009`: [M] gemessen, [P] am Primärdokument oder im Code gelesen, [S] Zusammenfassung oder Suchtreffer, [A] eigene Ableitung. Die Messskripte liegen unter `scripts/tile-bench/`, die Aufrufe stehen in §13.
 
 ## 6. Kurzfassung
 
@@ -124,7 +124,7 @@ Der Job rechnet also: **Mosaik je Asset und Band → Assets zusammen → Operato
 
 Grenzen:
 
-- uvicorn 0.54 mit `httptools` 0.8 (Vorgabe, wenn installiert; so im Image): Ziel der Anfrage bis **65 535 Byte**, ab 65 536 `400` [M]. Mit `h11` in derselben Messung kein Abbruch bis 100 kB [M]; dokumentiert sind dort 16 384 Byte je unvollständigem Ereignis (M4-17 §2.7).
+- uvicorn 0.54 mit `httptools` 0.8 (Vorgabe, wenn installiert; so im Image): Ziel der Anfrage bis **65 535 Byte**, ab 65 536 `400` [M]. Mit `h11` bis 127 920 Byte [M]; dokumentiert sind dort 16 384 Byte je unvollständigem Ereignis (M4-17 §2.7), die Grenze greift offenbar nur, solange die Anfrage nicht ganz angekommen ist [A].
 - nginx `large_client_header_buffers` Vorgabe `4 8k`: Anfragezeile über 8 kB → `414`; CloudFront und Fastly 8 kB (M4-17 §2.7) [P, S].
 - Eine AOI steht nie in der URL; die Kachel braucht keine (`adr/0014` §6.2).
 
@@ -262,29 +262,75 @@ Kurz beantwortbar: je Frage eine Nummer.
 
 ## 12. Umsetzung nach Freigabe
 
-1. `processing/tile.py`: `MosaicOperatorTileReader` (§8.1), Fehler auf `TileRefused` mit Status wie `_as_refusal`.
-2. `api/mosaic_tiles.py`: `check_query` nimmt mit `op` 1 bis 4 Assets und die drei Operator-Parameter an; Konstanten `MAX_MOSAIC_OPERATOR_ASSETS = 4` und `MAX_MOSAIC_REQUEST_BYTES = 7168`.
-3. `api/tiler.py`: `mosaic_scenes` baut mit `op` die Eingaben je Szene (`describe_bands`, `_open_ref`), prüft Gleichheit über alle Items und KE2; Reader-Weiche und `process_dependency` der Mosaik-Fabrik.
-4. Frontend (NM4-04b): `api.ts` Mosaik-URLs mit Schritten; `processingPreview.ts` Mosaik-Modus, Rückfälle, Messung über `earthx:order[0]`; Ebene der Vorschau wie `mosaic.ts`.
-5. Doku: Nachtrag in `adr/0014` (§6.3, Reihenfolge und Grenze der Bitgleichheit) und `adr/0006` (Mosaik-Route mit `op`, Grenzen), Zeilen im Entscheidungslog, Backlog-Punkt 4 als erledigt mit PR-Nummer.
-6. Vor „fertig“: `main` holen, `ruff check backend`, `pytest`, `lint-imports`, `npm run lint`, `npx tsc -b`, `npm test`.
-
-**Prüfanleitung für Otto (nach der Umsetzung):** folgt im PR; Browser (Überflug wählen, „One job“, NDVI, über z8 eine Fläche, unter z8 Einzelszenen) und PowerShell 5.1 (`Invoke-WebRequest` auf eine Mosaik-Kachel mit `op`, eine mit 5 Schritten → `400`).
+Ersetzt durch §14 (Freigabe), §15 (NM4-04b Frontend) und §16 (Umsetzung des Backends). Laut Frage 7, Option 3 setzt diese Session nur das Backend um.
 
 ## 13. Messanhang
 
 ### 13.1 Kosten je Kachel (§7.5)
 
-Skript `measure.py` (Scratchpad): rio-tiler `Reader` und `mosaic_reader` wie `access/mosaic_tiles.py`, der Operator-Kern aus `earthx.processing.operators.REGISTRY` (`band_math` v1, `mask` v1). „raw“ ist die Mosaik-Kachel von M4-17 (ein Asset, Rohwerte); „op“ und „chain“ lesen je Szene die Assets, skalieren auf `float32`, mischen mit `FirstMethod` und rechnen danach den Kern. Ohne PNG-Kodierung, ohne Netz.
+`scripts/tile-bench/mosaic_op_cost.py`: rio-tiler `Reader` und `mosaic_reader` wie `access/mosaic_tiles.py`, der Operator-Kern aus `earthx.processing.operators.REGISTRY` (`band_math` v1, `mask` v1). „raw“ ist die Mosaik-Kachel von M4-17 (ein Asset, Rohwerte); „op“ und „chain“ lesen je Szene die Assets, skalieren auf `float32`, mischen mit `FirstMethod` und rechnen danach den Kern. Ohne PNG-Kodierung, ohne Netz.
 
 ```bash
-PYTHONPATH=backend python -W ignore measure.py
+PYTHONPATH=backend python -W ignore scripts/tile-bench/mosaic_op_cost.py
 ```
 
 ### 13.2 Szene außerhalb des Rasters (§7.4)
 
-Skript `offgrid.py` (Scratchpad): Szene 3000² Pixel in EPSG:32633 ab Ostwert 300 000, Werte eindeutig je Pixel (`uint32`-Rampe). (a) `Reader.tile` mit `nearest` direkt; (b) `WarpedVRT` mit `nearest` und `tolerance` 0,125 auf ein 10-m-Raster in EPSG:32632, dann `Reader.tile` mit `nearest`. Je 9 Kacheln um die Mitte auf z13 und z14; gezählt werden gleiche Werte unter den in beiden gültigen Pixeln und der größte Versatz in Pixeln der Quelle (Zeile/Spalte aus dem Wert zurückgerechnet): 1.
+`scripts/tile-bench/off_grid_identity.py` (Aufruf `python -W ignore scripts/tile-bench/off_grid_identity.py`): Szene 3000² Pixel in EPSG:32633 ab Ostwert 300 000, Werte eindeutig je Pixel (`uint32`-Rampe). (a) `Reader.tile` mit `nearest` direkt; (b) `WarpedVRT` mit `nearest` und `tolerance` 0,125 auf ein 10-m-Raster in EPSG:32632, dann `Reader.tile` mit `nearest`. Je 9 Kacheln um die Mitte auf z13 und z14; gezählt werden gleiche Werte unter den in beiden gültigen Pixeln und der größte Versatz in Pixeln der Quelle (Zeile/Spalte aus dem Wert zurückgerechnet): 1.
 
 ### 13.3 URL-Länge (§7.7)
 
-`urllen.py` kodiert wie `URLSearchParams`. `probe_limit.py` schickt eine Anfrage wachsender Länge an eine leere ASGI-App unter `uvicorn` 0.54 (`--http auto`, also `httptools` 0.8, und `--http h11`) und sucht die Grenze durch Halbieren: größtes angenommenes Ziel 65 535 Byte, ab 65 536 `400 Bad Request`.
+`scripts/tile-bench/url_length.py` kodiert wie `URLSearchParams` (`python -I scripts/tile-bench/url_length.py`). `scripts/tile-bench/url_limit.py` startet `uvicorn` 0.54 mit einer leeren ASGI-App (`--http auto`, also `httptools` 0.8, und `--http h11`), schickt Anfragen wachsender Länge und sucht die Grenze durch Halbieren: `httptools` größtes angenommenes Ziel 65 535 Byte, ab 65 536 `400 Bad Request`; `h11` 127 920 Byte.
+
+Eine Wiederholung von `mosaic_op_cost.py` aus dem Repo am 27.10.2026 ergab Werte innerhalb von ±15 % der Tabelle in §7.5 (z. B. 12 Szenen, alle gelesen: 183 / 243 / 282 ms).
+
+## 14. Freigabe (Otto, 27.10.2026, zu #215)
+
+1. Option 1: Reihenfolge wie der Job (erst Mosaik je Asset und Band, dann Operator).
+2. Option 1: bitgleich nur auf dem Mosaikraster, sonst „dieselbe Szene gewinnt“.
+3. Option 1: höchstens 4 Assets mit Operator. Darüber derselbe Rückfall wie bei 5.
+4. Option 1: Farbskala über die erste Szene in Mosaik-Reihenfolge; Mosaik und AOI in NM4-19.
+5. Option 1: höchstens 7 168 Byte, darüber `414` vor dem Abruf, Rückfall auf die Vorschau je Szene. Der Rückfall ist erkennbar: ein kurzer Hinweis im Tooltip der Vorschau, etwa „Preview per scene – may differ from the job where scenes overlap“. Kein Text im Panel.
+6. Option 1: ab z8 Mosaik, darunter Einzelszenen in Mosaik-Reihenfolge.
+7. Option 3: Diese Session setzt nur das Backend um (ein PR, #215). Das Frontend folgt nach dem Merge als neue Aufgabe in einer neuen Session (§15).
+
+KE1–KE5 und KE-P angenommen. Dazu: Backlog nicht in dieser Aufgabe pflegen (das tut der Planungs-Chat), Messskripte nach `scripts/tile-bench/`, im PR belegen, dass die Kachel-URL keine AOI, keine Job- oder Permalink-Kennung und keinen Hash trägt, und die Schätzung „~9 s kalt für die erste Kachel im ungünstigsten Fall“ als Prüfschritt in die Prüfanleitung.
+
+## 15. NM4-04b Frontend (Folgeaufgabe, neue Session)
+
+**Stufe A**, nur Frontend, nach dem Merge von #215. Branch von `main`, ein Draft-PR. Der Abschnitt ist ohne das Gespräch zu NM4-04 verständlich; maßgeblich sind §14 und `adr/0006`, Nachtrag NM4-04.
+
+### 15.1 Ausgangslage
+
+- Das Backend (#215) liefert die Mosaik-Kachel mit Schritten: `GET /collections/{dataset}/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}?item=…&item=…&asset=…&op=…&op_version=…&params=…` und das TileJSON unter `…/mosaic/WebMercatorQuad/tilejson.json` mit denselben Parametern. Das TileJSON trägt `earthx:order` (die Szenen in der Reihenfolge, in der die Kachel sie liest) und `unit`.
+- Grenzen des Backends: 2 bis 64 Items, 1 bis 4 Assets mit Schritten, höchstens 4 Schritte, ab z8, höchstens 7 168 Byte für Pfad und Query (`backend/earthx/api/mosaic_tiles.py`: `MIN_MOSAIC_ITEMS`, `MAX_MOSAIC_ITEMS`, `MAX_MOSAIC_OPERATOR_ASSETS`, `MAX_MOSAIC_REQUEST_BYTES`, `MIN_MOSAIC_ZOOM`). Darüber `400`/`414`; Ablehnungen eines Schritts nennen ab zwei Schritten den Platz („step 1: …“).
+- Heute zeigt die Vorschau im Panel (`frontend/src/processingPreview.ts` `previewSpec`) jede Szene als eigene Kachel-URL mit den Schritten und stapelt sie in Auswahlreihenfolge. Sie rechnet damit „Operator je Szene, dann Mosaik“ und weicht an Überlappungen vom Job ab (§7.2).
+
+### 15.2 Umfang
+
+1. **Mosaik-Vorschau bei „One job“:** Besteht der Auftrag aus einem Überflug mit 2 bis 64 Szenen, zeigt die Vorschau ab z8 die Mosaik-Kachel mit den Schritten und darunter die Einzelszenen mit denselben Schritten, gestapelt nach `earthx:order` (gleiches Muster wie `frontend/src/mosaic.ts` für die Ansicht ohne Schritte, `TILE_LEVEL_AHEAD`). Die `item` der URL sind nach ID sortiert (Cache, KE5 aus M4-17).
+2. **„One job per pass“ (KE-P):** jeder Überflug mit mindestens 2 Szenen als eigenes Mosaik; ein Überflug mit einer Szene und „One job per scene“ bleiben bei der Vorschau je Szene.
+3. **Probe der Kette:** `probeChain` fragt das TileJSON des Mosaiks statt das der ersten Szene; dessen `earthx:order` liefert die Reihenfolge für die Stapelung unter z8.
+4. **Farbskala (F4):** Die Messung (`measure`) fragt `/statistics` der Item-Route mit den Schritten für die **erste Szene in Mosaik-Reihenfolge** (`earthx:order[0]`), nicht für die erste Szene der Auswahl. Keine Statistik auf der Mosaik-Route.
+5. **Rückfall auf die Vorschau je Szene** (wie heute), wenn: mehr als 4 Assets; URL über 7 168 Byte (dieselbe Länge rechnen wie der Server: Pfad und Query, wie sie beim `tiler` ankommen); mehr als 64 Szenen; Datensatz nur unter z8 freigegeben; TileJSON des Mosaiks abgewiesen (außer bei einer Ablehnung eines Schritts, die wie heute den Platz zeigt). Der Rückfall ist erkennbar: ein kurzer Hinweis **im Tooltip der Vorschau**, etwa „Preview per scene – may differ from the job where scenes overlap“. **Kein Text im Panel** (F5, UI-01 §4).
+6. Eine Konstante je Grenze im Frontend mit Verweis auf die Konstante im Backend (wie `MIN_MOSAIC_ZOOM`, `MAX_MOSAIC_SCENES` in `mosaic.ts`).
+
+### 15.3 Abnahme
+
+- `vitest`: „One job“ über einen Überflug → eine Mosaik-URL mit sortierten `item`, den Assets und den Schritten; unter z8 Einzelszenen in `earthx:order`; Messung über `earthx:order[0]`. Rückfälle: 5 Assets, URL über 7 168 Byte, 65 Szenen, eine Szene, Datensatz unter z8, abgewiesenes Mosaik → Vorschau je Szene mit dem Hinweis im Tooltip; eine Ablehnung eines Schritts zeigt weiter den Platz. „One job per pass“ → je Überflug ein Mosaik.
+- Gegenprobe: Die neuen Tests scheitern gegen den Code vor der Änderung.
+- Prüfung im echten Browser (Chromium/Playwright der Sitzung) mit nachgestellten Antworten, hell und dunkel, schmales Fenster; im PR beschrieben.
+- Keine AOI, Job-, Rezept- oder Permalink-Kennung und kein Hash in einer Kachel- oder TileJSON-URL (Test über die gebauten URLs).
+- `npm run lint`, `npx tsc -b --pretty false`, `npm test` grün; Prüfanleitung für Otto im PR; Log-Zeile; vor „fertig“ `main` holen.
+
+## 16. Umsetzung des Backends (27.10.2026)
+
+- `processing/tile.py`: `MosaicOperatorTileReader` (§8.1), `judge_steps` (die Prüfung der Schritte, jetzt auch von `OperatorTileReader` benutzt) und `judge_described_bands` (die Bänder aus den Items, KE1). `UnsupportedRecipe` wird wie `RecipeInvalid` zu `422`.
+- `processing/mosaic.py`: `check_alike` öffentlich (vorher `_check_alike`), damit Job und Kachel dieselbe Regel nehmen.
+- `api/mosaic_tiles.py`: `MAX_MOSAIC_OPERATOR_ASSETS = 4`, `MAX_MOSAIC_REQUEST_BYTES = 7168`, `check_length`; `check_query` nimmt mit Schritten 1 bis 4 Assets.
+- `api/tiler.py`: `mosaic_scenes` prüft Länge, Zoom, Form, Schritte und `reprojection` vor dem ersten Item-Abruf, dann über alle Items Skalierung, Einheiten, das CRS bei Zarr und die Bänder der Schritte (`_describe_mosaic`), bevor eine Datei geöffnet wird; `MosaicOperatorInput`, `mosaic_post_process`, `_open_mosaic_reader`. Die drei Query-Parameter der Schritte sind für Item- und Mosaik-Kachel dieselben Typen.
+- `access/mosaic_tiles.py`: Das TileJSON trägt mit Schritten auch `unit`.
+- Tests: `api/test_tiler_mosaic_operator.py` (28 Fälle: bitgleich mit Band math und `mask → band_math`, `red` aus A und `nir` aus B, das Loch der Wolke bleibt, Reihenfolge der IDs und frische App, TileJSON, Ablehnungen vor dem Abruf und vor dem Öffnen); `api/test_mosaic_item_fetches.py` (64 IDs à 60 Zeichen plus drei Schritte durch uvicorn); `api/test_tiler_mosaic.py` angepasst (die drei Parameter der Schritte stehen jetzt im Schema; „halber Schritt“ bleibt `400`).
+- **Gegenprobe:** Gegen `main` scheitern 16 der 28 neuen Fälle, darunter beide Bitgleichheitstests und „das Loch der Wolke bleibt“ (dort weist `main` `op` mit `400` ab). Die 12 übrigen sind Ablehnungen, die `main` aus anderem Grund ebenfalls mit `400` beantwortet; sie sichern das Verhalten.
+- Doku: `adr/0014` §15s, `adr/0006` Nachtrag NM4-04, Log-Zeilen.
+
