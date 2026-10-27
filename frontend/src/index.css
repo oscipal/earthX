@@ -177,6 +177,38 @@ body.dragging * {
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* The menu of the "Basemap" button (`components/BasemapMenu.tsx`) is as wide as its button. */
+.basemap-btn {
+  min-width: 132px;
+}
+.menu-group {
+  display: flex;
+  flex-direction: column;
+}
+.menu-group + .menu-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--panel-border);
+}
+/* A tick takes the place in front of the name, the same width for every entry (`.pm-menu-list` puts it in front of
+   a checked one only, which would shift the name). */
+.pm-menu-list.basemap-menu button {
+  justify-content: flex-start;
+  gap: 6px;
+}
+.pm-menu-list.basemap-menu button::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+}
+.menu-group-label {
+  padding: 2px 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
 
 /* --- full-resolution viewer controls (focus mode) --- */
 .viewer-controls {
@@ -195,10 +227,6 @@ body.dragging * {
   font-size: 12px;
   letter-spacing: 2px;
   color: var(--accent);
-}
-.vc-sub {
-  font-size: 10px;
-  color: var(--muted);
 }
 .vc-polmodes {
   display: flex;
@@ -251,6 +279,126 @@ body.dragging * {
 .vc-actions {
   display: flex;
   gap: 8px;
+}
+/* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
+   head, so the rows of buttons are the same width and that width is the width of the view. Row 1: colormap three
+   columns, vmin and vmax two each, "auto-scale" three, "Apply" two. Row 2: four buttons, three columns each. Every
+   control of row 1 is as high as "Apply", which stands on the same line as the fields. Below 600 px the grid has four
+   columns and the rows wrap; no text ends up outside its cell. */
+.scene-view {
+  --cell: 36px;
+  --row-height: 34px;
+  box-sizing: border-box;
+  width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--dock-offset) - 24px));
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 10px 8px;
+  align-items: end;
+}
+.scene-view > * {
+  min-width: 0;
+}
+.scene-view .vc-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.scene-view .vc-title {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  letter-spacing: 1px;
+}
+.vc-eye {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.vc-eye:hover,
+.vc-eye:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+.vc-eye.off {
+  color: var(--muted);
+}
+.scene-view .vc-render,
+.scene-view .vc-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  gap: 8px;
+  align-items: end;
+}
+.scene-view .vc-render > :nth-child(1) {
+  grid-column: span 3;
+}
+.scene-view .vc-render > :nth-child(2),
+.scene-view .vc-render > :nth-child(3) {
+  grid-column: span 2;
+}
+.scene-view .vc-render > :nth-child(4) {
+  grid-column: span 3;
+}
+.scene-view .vc-render > :nth-child(5) {
+  grid-column: span 2;
+}
+.scene-view .vc-actions > * {
+  grid-column: span 3;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 8px;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.scene-view .vc-field select,
+.scene-view .vc-field input {
+  width: 100%;
+  min-width: 0;
+  height: var(--row-height);
+  box-sizing: border-box;
+}
+/* "auto-scale" and "Apply": one height, the text in the middle, on the line the fields stand on. */
+.scene-view .vc-render > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 0;
+  height: var(--row-height);
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+@media (max-width: 599px) {
+  .scene-view {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .scene-view .vc-render > :nth-child(1) {
+    grid-column: span 4;
+  }
+  .scene-view .vc-render > :nth-child(n + 2) {
+    grid-column: span 2;
+  }
+  .scene-view .vc-actions > * {
+    grid-column: span 2;
+  }
 }
 .ghost-btn.danger {
   border-color: #ff5a6e;
@@ -1826,6 +1974,9 @@ a.pm-icon:hover {
 .pm-menu-list button[aria-checked='true']::before {
   content: '✓ ';
 }
+.pm-menu-list.basemap-menu button[aria-checked='true']::before {
+  content: '✓';
+}
 .pm-fold {
   flex: 0 0 20px;
   width: 20px;
@@ -2003,15 +2154,8 @@ a.pm-icon:hover {
   }
 }
 
-/* MapLibre attribution in the tech theme. `.maplibregl-compact` (the
-   expanded "ⓘ" popup) sets its own `color: #000` and `background: #fff` at
-   the same specificity as the rules below, and wins on source order unless
-   matched here too — leaving the plain text between the links unreadably
-   black on our dark background even though the links themselves picked up
-   `--muted`. */
-.app[data-theme='tech'] .maplibregl-ctrl-attrib,
-.app[data-theme='tech'] .maplibregl-ctrl-attrib.maplibregl-compact,
-.app[data-theme='tech'] .maplibregl-ctrl-attrib.maplibregl-compact-show {
+/* MapLibre attribution in the tech theme: light text on a dark strip (it is always open, `ATTRIBUTION_CONTROL`). */
+.app[data-theme='tech'] .maplibregl-ctrl-attrib {
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
 }
@@ -2316,6 +2460,15 @@ a.pm-icon:hover {
   margin-bottom: 4px;
   font-size: 11px;
   color: var(--text);
+}
+.pp-bands-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.pp-bands-head .pp-heading {
+  margin-right: auto;
 }
 .pp-chips {
   display: flex;

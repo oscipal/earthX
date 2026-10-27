@@ -1,0 +1,259 @@
+// @vitest-environment jsdom
+//
+// Otto, 27.10.2026 (zu #211): the view of scenes has a head of one line, an eye for "Hide image", two rows of buttons
+// of one width, and "✕ Clear". The CSS contract is read off `index.css`, as `mapStyles.test.ts` does for the theme.
+
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import CSS from '../index.css?raw';
+import { datasetsFrom } from '../datasets';
+import { useAppStore, type AppState } from '../store';
+import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
+import { viewDates, viewKind } from '../viewKind';
+import ViewerControls from './ViewerControls';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+
+const collection = (title: string) =>
+  ({
+    id: 'optical',
+    title,
+    'earthx:format': 'cog',
+    'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
+    'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: [[0, 3000]], colormap_name: null, expression: null, resampling: 'nearest' },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+  }) as unknown as Collection;
+
+const info = (): DownloadedInfo => ({ tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 });
+const scenes = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`s${i}`, info()]));
+
+// Scenes s0, s1, … of the search, one per entry of `days` (a datetime, or undefined for a product without an instant).
+const withDays = (days: (string | undefined)[]): TimeStepGroup[] => [
+  {
+    label: 'all',
+    key: 'all',
+    items: days.map((day, i) => ({ id: `s${i}`, collection: 'optical', bbox: [0, 0, 1, 1], properties: day ? { datetime: day } : {}, assets: {} }) as StacItem),
+  } as unknown as TimeStepGroup,
+];
+
+let container: HTMLDivElement;
+let root: Root;
+
+function mount(over: Partial<AppState> = {}, title = 'Sentinel-2 L2A') {
+  act(() => {
+    useAppStore.setState({
+      datasets: datasetsFrom([collection(title)]), datasetId: 'optical', focusMode: true, cropToAoi: true, downloaded: scenes(1), showDownloaded: true,
+      pendingColormapName: '', pendingVmin: '0', pendingVmax: '3000', focusLoading: false, pinLoading: false, groups: [], selectedIds: [], dock: null, resultsOnMap: true, ...over,
+    });
+    root.render(<ViewerControls />);
+  });
+}
+
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+  container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+const head = () => container.querySelector('.vc-head')!;
+const title = () => container.querySelector('.vc-title') as HTMLElement;
+const eye = () => container.querySelector('.vc-eye') as HTMLButtonElement;
+const row = (name: 'vc-render' | 'vc-actions') => container.querySelector(`.${name}`)!;
+
+describe('the head', () => {
+  it.each([
+    [true, 1, 'Sentinel-2 L2A · AOI crop'],
+    [false, 1, 'Sentinel-2 L2A · whole scene'],
+    [true, 3, 'Sentinel-2 L2A · AOI crop · 3 scenes merged'],
+    [false, 3, 'Sentinel-2 L2A · 3 scenes merged'],
+  ])('is one short line: crop %s, %s scene(s) -> "%s"', (cropToAoi, count, text) => {
+    mount({ cropToAoi, downloaded: scenes(count) });
+    expect(title().textContent).toBe(text);
+  });
+
+  it('has the acquisition date (UTC) after the dataset: one date for scenes of one day', () => {
+    mount({ groups: withDays(['2025-07-29T23:30:00Z']) });
+    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 · AOI crop');
+    mount({ cropToAoi: false, downloaded: scenes(2), groups: withDays(['2025-07-29T08:00:00Z', '2025-07-29T20:15:00Z']) });
+    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 · 2 scenes merged');
+  });
+
+  it('has the span of the first and the last day for scenes of different days', () => {
+    mount({ downloaded: scenes(2), groups: withDays(['2025-08-03T10:00:00Z', '2025-07-29T10:00:00Z']) });
+    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 – 2025-08-03 · AOI crop · 2 scenes merged');
+  });
+
+  it('takes the date of the scenes of the view only, not of the other results', () => {
+    mount({ groups: withDays(['2025-07-29T10:00:00Z', '2025-09-01T10:00:00Z']), downloaded: { s0: info() } });
+    expect(title().textContent).toContain('2025-07-29');
+    expect(title().textContent).not.toContain('2025-09-01');
+  });
+
+  it('has no date for a product without an instant, and no empty separator', () => {
+    mount({ groups: withDays([undefined]) });
+    expect(title().textContent).toBe('Sentinel-2 L2A · AOI crop');
+  });
+
+  it('has the date in the tooltip as well, so a cut-off head can be read whole', () => {
+    mount({ downloaded: scenes(2), groups: withDays(['2025-07-29T10:00:00Z', '2025-08-03T10:00:00Z']) });
+    expect(title().title).toBe('Sentinel-2 L2A · 2025-07-29 – 2025-08-03 · cropped to the AOI · 2 scenes merged');
+  });
+
+  it('has no "Full-resolution view" and no count of one image', () => {
+    mount();
+    expect(container.textContent).not.toMatch(/full-resolution view|FULL-RESOLUTION|1 image|image\b.*images?\b/iu);
+    expect(head().textContent).not.toMatch(/\bimages?\b/u);
+  });
+
+  it('gives the whole text as the tooltip, for the cut-off one', () => {
+    mount({ cropToAoi: true, downloaded: scenes(3) }, 'Copernicus DEM GLO-30, global 30 m digital surface model');
+    expect(title().title).toBe('Copernicus DEM GLO-30, global 30 m digital surface model · cropped to the AOI · 3 scenes merged');
+    expect(title().textContent).toContain('Copernicus DEM GLO-30, global 30 m digital surface model');
+  });
+
+  it('gives the dates of the helper in UTC, as a day or a span, and none for bad or missing ones', () => {
+    const at = (datetime?: unknown) => ({ properties: datetime === undefined ? {} : { datetime } });
+    expect(viewDates([at('2025-07-29T23:59:59Z')])).toBe('2025-07-29');
+    expect(viewDates([at('2025-07-30T01:00:00+02:00')])).toBe('2025-07-29');
+    expect(viewDates([at('2025-08-03T00:00:00Z'), at('2025-07-29T12:00:00Z'), at('2025-07-31T12:00:00Z')])).toBe('2025-07-29 – 2025-08-03');
+    expect(viewDates([at('not a date'), at(42), at()])).toBeNull();
+    expect(viewDates([])).toBeNull();
+    expect(viewDates([at('2025-07-29T12:00:00Z'), at()])).toBe('2025-07-29');
+  });
+
+  it('says only what the kind is, for the helper', () => {
+    expect(viewKind(true, 1)).toBe('AOI crop');
+    expect(viewKind(false, 0)).toBe('whole scene');
+    expect(viewKind(true, 2)).toBe('AOI crop · 2 scenes merged');
+  });
+});
+
+describe('the eye', () => {
+  it('is in the head, on the right, with the tooltip of what a click does', () => {
+    mount({ showDownloaded: true });
+    expect(head().lastElementChild).toBe(eye());
+    expect(eye().title).toBe('Hide image');
+    expect(eye().getAttribute('aria-label')).toBe('Hide image');
+    expect(eye().textContent).toBe('');
+  });
+
+  it('hides and shows the image, and the tooltip follows', () => {
+    mount({ showDownloaded: true });
+    act(() => eye().click());
+    expect(useAppStore.getState().showDownloaded).toBe(false);
+    expect(eye().title).toBe('Show image');
+    expect(eye().classList.contains('off')).toBe(true);
+    act(() => eye().click());
+    expect(useAppStore.getState().showDownloaded).toBe(true);
+    expect(eye().title).toBe('Hide image');
+  });
+
+  it('is not the results switch: it leaves "Hide results" alone', () => {
+    mount({ resultsOnMap: false });
+    act(() => eye().click());
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+  });
+});
+
+describe('the rows of buttons', () => {
+  it('has five controls in the first row and four buttons in the second', () => {
+    mount();
+    const first = [...row('vc-render').children];
+    expect(first).toHaveLength(5);
+    expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'BUTTON', 'BUTTON']);
+    expect([first[0], first[1], first[2]].map((el) => el.querySelector('span')?.textContent)).toEqual(['Colormap', 'vmin', 'vmax']);
+    expect([first[3], first[4]].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply']);
+    expect([...row('vc-actions').children].map((el) => el.textContent)).toEqual(['＋ Add to layers', '⚙ Process', '‹ Change image', '✕ Clear']);
+  });
+
+  it('has the tooltips of what "Change image" and "Clear" do', () => {
+    mount();
+    const buttons = [...row('vc-actions').children] as HTMLButtonElement[];
+    expect(buttons[2].title).toBe('Remove this view and choose another scene from the results');
+    expect(buttons[3].title).toBe('Remove this view from the map');
+  });
+
+  it('"Clear" takes the view off the map and nothing else: the tick, the results panel and the switch stay', () => {
+    mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false });
+    act(() => ([...row('vc-actions').children][3] as HTMLButtonElement).click());
+    const s = useAppStore.getState();
+    expect(s.focusMode).toBe(false);
+    expect(s.downloaded).toEqual({});
+    expect(s.selectedIds).toEqual(['s0']);
+    expect(s.dock).toBe('controls');
+    expect(s.resultsOnMap).toBe(false);
+  });
+
+  it('"Change image" takes the view off the map and opens the results, and leaves the tick and the switch', () => {
+    const sections = [{ datasetId: 'optical', items: withDays([undefined])[0].items, groups: [], notes: [] }] as never;
+    mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false, sections });
+    act(() => ([...row('vc-actions').children][2] as HTMLButtonElement).click());
+    const s = useAppStore.getState();
+    expect(s.focusMode).toBe(false);
+    expect(s.dock).toBe('results');
+    expect(s.selectedIds).toEqual(['s0']);
+    expect(s.resultsOnMap).toBe(false);
+  });
+
+  it('puts "auto-scale" and "Apply" on one line: one height, centred, the same as the fields', () => {
+    mount();
+    const [autoScale, apply] = [...row('vc-render').children].slice(3) as HTMLButtonElement[];
+    expect(autoScale.textContent).toBe('auto-scale');
+    expect(apply.parentElement).toBe(autoScale.parentElement);
+  });
+});
+
+// The grid cannot be laid out in jsdom: what the CSS promises is read off the file.
+describe('the layout contract in index.css', () => {
+  const rule = (selector: string): string => {
+    const start = CSS.indexOf(`${selector} {`);
+    expect(start, `no rule for ${selector}`).toBeGreaterThanOrEqual(0);
+    return CSS.slice(start, CSS.indexOf('}', start));
+  };
+
+  it('puts the head and both rows in one grid of twelve columns, which decides the width of the view', () => {
+    expect(rule('.scene-view')).toContain('grid-template-columns: repeat(12, minmax(0, 1fr))');
+    expect(rule('.scene-view')).toMatch(/width: min\(/u);
+    expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('grid-template-columns: subgrid');
+    expect(rule('.scene-view .vc-head')).toContain('grid-column: 1 / -1');
+  });
+
+  it('cuts a long title with "…" and lets it shrink, so the head is never wider than the rows', () => {
+    const title = rule('.scene-view .vc-title');
+    expect(title).toContain('text-overflow: ellipsis');
+    expect(title).toContain('overflow: hidden');
+    expect(title).toContain('white-space: nowrap');
+    expect(title).toContain('min-width: 0');
+  });
+
+  it('gives "auto-scale" and "Apply" the height of the fields and centres their text', () => {
+    const buttons = rule('.scene-view .vc-render > button');
+    expect(buttons).toContain('height: var(--row-height)');
+    expect(buttons).toContain('align-items: center');
+    expect(buttons).toContain('justify-content: center');
+    expect(rule('.scene-view .vc-field select,\n.scene-view .vc-field input')).toContain('height: var(--row-height)');
+    expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('align-items: end');
+  });
+
+  it('gives the four buttons of the second row three columns each and wraps them below 600 px', () => {
+    expect(rule('.scene-view .vc-actions > *')).toContain('grid-column: span 3');
+    expect(CSS).toMatch(/@media \(max-width: 599px\) \{\s*\.scene-view \{\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u);
+  });
+
+  it('breaks a word that is too long for its button instead of running over the edge', () => {
+    expect(rule('.scene-view .vc-actions > *')).toContain('overflow-wrap: anywhere');
+  });
+});

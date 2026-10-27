@@ -1373,7 +1373,7 @@ describe('the ways into the panel (§3.5)', () => {
   it('"⚙ Process" of the full-resolution view takes the scenes of the view, cropped or whole', async () => {
     select([scene('S2B_A'), scene('S2B_B')]);
     const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
-    useAppStore.setState({ focusMode: true, cropToAoi: true, downloaded: { S2B_B: tile }, selectedIds: ['S2B_A', 'S2B_B'] });
+    useAppStore.setState({ focusMode: true, cropToAoi: true, viewAoi: useAppStore.getState().aoi, downloaded: { S2B_B: tile }, selectedIds: ['S2B_A', 'S2B_B'] });
     mount(<ViewerControls />);
     click(button('⚙ Process'));
     await flush();

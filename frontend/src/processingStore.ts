@@ -307,6 +307,7 @@ interface ProcessingState {
   moveStep: (key: number, direction: -1 | 1) => void;
   removeStep: (key: number) => void;
   togglePick: (asset: string) => void;
+  setPicked: (assets: string[]) => void;
   setDtype: (dtype: string) => void;
   loadRecipe: (text: string) => Promise<LoadResult>;
   restoreOrder: (order: Order, view: PermalinkView) => Promise<LoadResult>;
@@ -948,11 +949,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       });
     },
     processFocusView: async () => {
+      useAppStore.getState().activateViewContext();
       const app = useAppStore.getState();
       const extraScenes = await selectScenes(Object.keys(app.downloaded), 'this view');
       if (!extraScenes) return;
       get().openProcessing({
-        area: app.cropToAoi && isArea(app.aoi) ? 'aoi' : 'scene',
+        area: app.cropToAoi && isArea(app.viewAoi) ? 'aoi' : 'scene',
         extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
       });
     },
@@ -1153,6 +1155,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         startError: null,
         ...dropReview(),
       })),
+    setPicked: (assets) => set({ picked: [...assets], reviewError: null, startError: null, ...dropReview() }),
     setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null, ...dropReview() }),
 
     // "Load recipe…": the steps and the data type of a `recipe.json` become the draft, on the

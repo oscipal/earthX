@@ -12,11 +12,12 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
 import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
-import { itemsForMap, itemsOverView } from '../grouping';
+import { resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
 import type { CoverageDisplay } from '../mapLayers';
 import {
   ensureBaseLayers,
+  hasOwnLayers,
   overlayBudgetNote,
   setAoiData,
   setCoverageDisplay,
@@ -28,13 +29,14 @@ import {
   syncPreview,
   syncResultsOverlay,
 } from '../mapLayers';
-import { applyMapBackground, baseMapStyle, mapBackgroundOf } from '../mapStyles';
+import { DEFAULT_BASEMAP } from '../basemaps';
+import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
 import { previewOverlays } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
 import { layersOnMap } from '../searchLayers';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
 import { useAppStore } from '../store';
-import type { ToolMode } from '../types';
+import type { StacItem, ToolMode } from '../types';
 
 // Only one of density/footprints/area is ever drawn (mapLayers.ts): a one-off
 // product's extent (`area`, M3-12 F-07, ENTSCHEIDUNGEN §2) whenever the
@@ -76,30 +78,16 @@ function reportViewport(map: MapLibreMap): void {
     });
 }
 
-// Which group's items the map should treat as "current" (V-11): the
-// results list's own `expandedGroupIndex` in browse mode, since that is
-// what quicklooks/preview tiles and the click-to-select hit test follow —
-// collapsing every group there must hide them, same as never having
-// expanded one. In focus mode `activeGroupIndex` — the scene actually viewed at
-// full resolution — is what matters instead.
-function visibleGroupIndex(st: { focusMode: boolean; activeGroupIndex: number; expandedGroupIndex: number | null }): number | null {
-  return st.focusMode ? st.activeGroupIndex : st.expandedGroupIndex;
-}
-
 // Registered once for the whole page, not per map instance — `addProtocol`
 // is a maplibre-gl-wide registration (M3-09), so re-mounting `MapView` gains
 // nothing from repeating it (and `addProtocol` is idempotent either way).
 addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
 
-// What the results lay over a full-resolution view (browsing draws them itself): the scenes of the open time step
-// with the results on the map, and the ticked scenes the view does not show in any case.
-function resultsOverlayOf(st: ReturnType<typeof useAppStore.getState>) {
-  return {
-    items: st.focusMode
-      ? itemsOverView(st.groups, st.expandedGroupIndex, st.selectedIds, Object.keys(st.downloaded), st.resultsOnMap)
-      : [],
-    dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
-  };
+// The same list while its scenes are the same ones: an effect that draws them runs again only for another list.
+function useSameScenes(items: StacItem[]): StacItem[] {
+  const ref = useRef(items);
+  if (ref.current !== items && !(ref.current.length === items.length && ref.current.every((it, i) => it === items[i]))) ref.current = items;
+  return ref.current;
 }
 
 export default function MapView() {
@@ -107,6 +95,7 @@ export default function MapView() {
   const mapRef = useRef<MapLibreMap | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const readyRef = useRef(false);
+  const basemapRef = useRef<ReturnType<typeof createBasemapSwitcher> | null>(null);
 
   // Reactive slices used to drive the imperative map updates.
   const toolMode = useAppStore((s) => s.toolMode);
@@ -115,7 +104,6 @@ export default function MapView() {
   const items = useAppStore((s) => s.items);
   const datasets = useAppStore((s) => s.datasets);
   const datasetId = useAppStore((s) => s.datasetId);
-  const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
   const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const selectedIds = useAppStore((s) => s.selectedIds);
   const downloaded = useAppStore((s) => s.downloaded);
@@ -125,6 +113,8 @@ export default function MapView() {
   const appliedRender = useAppStore((s) => s.appliedRender);
   const focusMode = useAppStore((s) => s.focusMode);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
+  // The area a cropped view was opened with: the view is cut to it whatever the area in the control menu becomes.
+  const viewAoi = useAppStore((s) => s.viewAoi);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const showCoverage = useAppStore((s) => s.showCoverage);
   const coverage = useAppStore((s) => s.coverage);
@@ -136,6 +126,7 @@ export default function MapView() {
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
+  const basemap = useAppStore((s) => s.basemap);
   const theme = useAppStore((s) => s.theme);
   const preview = useProcessingStore((s) => s.preview);
   // Cut to the AOI only for "AOI only": a new AOI leaves the others alone.
@@ -149,10 +140,10 @@ export default function MapView() {
     if (!containerRef.current) return;
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: baseMapStyle(mapBackgroundOf(containerRef.current)),
+      style: baseMapStyle(mapBackgroundOf(containerRef.current), useAppStore.getState().basemap),
       center: [10, 20],
       zoom: 1.6,
-      attributionControl: { compact: true },
+      attributionControl: ATTRIBUTION_CONTROL,
       // No rotate, no tilt (V-1, D27): mouse and touch only pan and zoom.
       // `maxPitch: 0` blocks tilt regardless of input method; the drag/touch/
       // keyboard handlers below additionally drop rotation itself so a
@@ -163,18 +154,15 @@ export default function MapView() {
       maxPitch: 0,
     });
     mapRef.current = map;
+    const first = useAppStore.getState().basemap;
+    basemapRef.current = createBasemapSwitcher(map, isInFirstStyle(first) ? first : null, (reason, keep) => {
+      // The map keeps what it shows; the choice stays saved, so that the next visit tries it again.
+      useAppStore.getState().setError(reason);
+      useAppStore.setState({ basemap: keep ?? DEFAULT_BASEMAP });
+    });
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
 
-    // `compact: true` only makes the attribution collapsible — MapLibre still
-    // starts it expanded (`maplibregl-compact-show`/`open`) and collapses it
-    // only once the user drags the map (its own `_updateCompactMinimize`,
-    // bound to the `drag` event). Collapsed to the small "i" button from the
-    // start instead of waiting for that first pan (V-7).
-    containerRef.current
-      .querySelector('.maplibregl-ctrl-attrib')
-      ?.classList.remove('maplibregl-compact-show');
-    containerRef.current.querySelector('.maplibregl-ctrl-attrib')?.removeAttribute('open');
     map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right');
 
     const initDraw = () => {
@@ -226,19 +214,25 @@ export default function MapView() {
       applyToolMode(draw, useAppStore.getState().toolMode);
     };
 
-    // Re-add every custom layer whenever a style (re)loads — including after a
-    // theme switch, which wipes all custom sources/layers.
+    // Lay every custom layer when the first style has loaded. A change of the basemap fires `style.load` too, with
+    // the app's layers all still there: laying them again would blink the pictures and restart the drawing tool.
     const onStyleLoad = () => {
-      ensureBaseLayers(map);
+      const carried = hasOwnLayers(map);
+      if (!carried) ensureBaseLayers(map);
       const st = useAppStore.getState();
-      map.setProjection({ type: st.projection });
+      applyProjection(map, st.projection);
+      // A basemap with a published style comes after the first style (it is fetched).
+      basemapRef.current?.show(st.basemap);
+      if (carried) return;
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
-      syncLayers(map, layersForMap(layersOnMap(st.layers, st.searchCrops, st.openSectionId, st.resultsOnMap ? null : st.selectedIds), viewLayer, st.showDownloaded));
+      const shown = resultsOnMapOf(st);
+      syncLayers(map, layersForMap(layersOnMap(st.layers, st.searchCrops, st.openSectionId, shown.cropsOf), viewLayer, st.showDownloaded));
       syncMosaic(map, {
-        // Browsing with the results off the map: the ticked scenes only (UI-01g); a view needs them all.
-        items: itemsForMap(st.groups, st.focusMode || st.resultsOnMap ? visibleGroupIndex(st) : null, st.selectedIds),
+        // What browsing draws; a view draws its own scenes and needs the whole list for the quicklook under them.
+        items: st.focusMode ? st.items : shown.quicklooks,
+        highlight: shown.highlight,
         dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
         downloaded: st.downloaded,
         selectedIds: st.selectedIds,
@@ -246,11 +240,11 @@ export default function MapView() {
         focusMode: st.focusMode,
         showDownloaded: viewShown(viewLayer, st.showDownloaded),
         tilesInLayer: viewLayer !== null,
-        aoi: st.aoi,
+        aoi: st.viewAoi,
         cropToAoi: st.cropToAoi,
         groups: st.groups,
       });
-      syncResultsOverlay(map, resultsOverlayOf(st));
+      syncResultsOverlay(map, { items: shown.overlay, selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null });
       syncPreview(map, previewTilesRef.current);
       initDraw();
       readyRef.current = true;
@@ -274,12 +268,9 @@ export default function MapView() {
     map.on('click', (e) => {
       const st = useAppStore.getState();
       if (st.toolMode !== 'none') return;
-      const idx = visibleGroupIndex(st);
-      const group = idx === null ? undefined : st.groups[idx];
-      if (!group) return;
       const { lng, lat } = e.lngLat;
-      // Toggle the frame under the cursor.
-      const hit = group.items.find((it) => pointInFootprint(lng, lat, it.geometry, it.bbox));
+      // Toggle the frame under the cursor, among the scenes that are drawn.
+      const hit = resultsOnMapOf(st).clickable.find((it) => pointInFootprint(lng, lat, it.geometry, it.bbox));
       if (hit) st.toggleSelected(hit.id);
     });
 
@@ -315,8 +306,13 @@ export default function MapView() {
   // tile URLs are unaffected, `setProjection` just re-renders the same layers.
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) map.setProjection({ type: projection });
+    if (map && readyRef.current) applyProjection(map, projection);
   }, [projection]);
+
+  // --- basemap (UI-02a): under the app's own layers, which stay where they are ---
+  useEffect(() => {
+    if (readyRef.current) basemapRef.current?.show(basemap);
+  }, [basemap]);
 
   // --- AOI geometry ---
   useEffect(() => {
@@ -346,11 +342,20 @@ export default function MapView() {
   const mosaics = mosaicsRef.current;
   // The layer that is the full-resolution view (`viewLayer.ts`) draws it at its
   // place, with its eye.
-  // Results off the map: the crops of the ticked scenes only. Null with them on, so a tick changes nothing here.
-  const cropFilter = resultsOnMap ? null : selectedIds;
+  // Which of the search results are on the map: `mapResults.ts` alone says.
+  const shown = useMemo(
+    () => resultsOnMapOf({ resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded }),
+    [resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded],
+  );
+  const quicklooks = useSameScenes(shown.quicklooks);
+  const overlay = useSameScenes(shown.overlay);
+  const highlight = useSameScenes(shown.highlight);
+  // The ticked scenes whose quicklooks lie over everything else (`mapLayers.ts`, `TICKED_TOP`).
+  const ticked = useMemo(() => highlight.map((item) => item.id), [highlight]);
+  const cropFilter = shown.cropsOf;
   const viewLayer = useMemo(
-    () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded }),
-    [layers, viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded],
+    () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi: viewAoi, showDownloaded }),
+    [layers, viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, viewAoi, showDownloaded],
   );
   useEffect(() => {
     const map = mapRef.current;
@@ -364,9 +369,9 @@ export default function MapView() {
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
-  // them, only change the highlight (the effect below handles that). Keyed on
-  // `aoi` too (M3-09): redrawing the AOI while "Crop to AOI" is active must
-  // re-clip the tiles already on screen. ---
+  // them, only change the highlight (the effect below handles that). Cut to the
+  // area the view was opened with (`viewAoi`, Otto 27.10.2026), not to the one in
+  // the control menu: drawing, changing or clearing that leaves the view alone. ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && focusMode) {
@@ -376,7 +381,7 @@ export default function MapView() {
         render: appliedRender,
         showDownloaded: viewShown(viewLayer, showDownloaded),
         tilesInLayer: viewLayer !== null,
-        aoi,
+        aoi: viewAoi,
         cropToAoi,
         items,
         dataset,
@@ -384,7 +389,7 @@ export default function MapView() {
         mosaics,
       });
     }
-  }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
+  }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
 
   // --- the preview of the processing panel (M4-13c-2). It keeps itself on top of
   // the rasters placed later (`mapLayers.ts::beforeAoi`); a new AOI cuts it again. ---
@@ -399,20 +404,16 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
-      syncBrowseMosaic(map, {
-        // Results off the map: only the ticked scenes are drawn (UI-01g).
-        items: itemsForMap(groups, resultsOnMap ? expandedGroupIndex : null, selectedIds),
-        dataset: datasets.find((d) => d.id === datasetId) ?? null,
-      });
+      syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null });
     }
-  }, [focusMode, groups, expandedGroupIndex, selectedIds, datasets, datasetId, resultsOnMap]);
+  }, [focusMode, quicklooks, ticked, datasets, datasetId]);
 
   // --- the results over a full-resolution view, while "Show results" is on. Runs after the view's own effect
   // above, so what it draws lies over the view. ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) syncResultsOverlay(map, resultsOverlayOf(useAppStore.getState()));
-  }, [focusMode, resultsOnMap, groups, expandedGroupIndex, selectedIds, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, mosaics]);
+    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null });
+  }, [focusMode, overlay, ticked, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. In a cropped focus view
@@ -421,18 +422,17 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) {
-      const idx = focusMode ? activeGroupIndex : expandedGroupIndex;
       syncHighlight(map, {
-        items: itemsForMap(groups, idx, selectedIds),
+        items: highlight,
         selectedIds,
         focusMode,
         cropToAoi,
-        aoi,
+        aoi: viewAoi,
         downloaded,
         groups,
       });
     }
-  }, [groups, focusMode, cropToAoi, aoi, downloaded, activeGroupIndex, expandedGroupIndex, selectedIds]);
+  }, [groups, focusMode, cropToAoi, viewAoi, downloaded, highlight, selectedIds]);
 
   // --- fly to a geocoded place ---
   useEffect(() => {

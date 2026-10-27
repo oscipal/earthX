@@ -123,6 +123,7 @@ def valid_config() -> DatasetConfig:
         zarr=None,
         mask=None,
         band_units={"red": "1", "green": "1", "blue": "1"},
+        auxiliary_assets=(),
     )
 
 

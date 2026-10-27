@@ -50,6 +50,8 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Alle Bänder:** Mit einem Knopf „Select all bands“ (und „Clear“) werden alle Bänder gewählt.
    - **Grenze:** Je Auftrag gilt die Obergrenze von 16 Assets bzw. Bändern (M4-07b F5). Hat ein Datensatz mehr, wählt „Select all“ keine stille Teilmenge, sondern sagt es mit Grund. Welche Assets dabei als Bänder zählen, prüft die Aufgabe; Hilfs-Assets wie `visual`, `thumbnail` oder `scl` zählen eher nicht. Bei Unklarheit ist das eine Frage an Otto.
    - **Aufgabe:** Stufe A, nur Frontend. Bänder aus dem Ausdruck kommen weiter automatisch dazu (M4-13c).
+   - **Erledigt:** NM4-07, PR #216 (27.10.2026). Neues Registry-Pflichtfeld `auxiliary_assets` (S2 L2A: `visual`, `preview`), `adr/0014` §15s.
+   - **Folge (Otto, 27.10.2026):** Die Grenze von 16 und die Auswahl oben entfallen mit Punkt 43.
 8. **Methodentext ins Rezept, `methods.txt` entfällt** (Otto, 22.10.2026).
    - **Plan:** `querschnitt/nm4-08-methodentext-ins-rezept.md`
    - **Erledigt:** NM4-08, PR #201 (26.10.2026). Text in `recipe.json` → `provenance.methods`; ZIPs ohne `methods.txt`; Link `methods` der API bleibt; Runner schreibt den Text in `provenance.json`. `adr/0014` §15r, `adr/0016` §12c.
@@ -68,6 +70,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Zu prüfen:** Der Kopf verdeckt keinen Eintrag, das Nachladen weiterer Treffer am Listenende greift weiter, und das Verhalten passt auch auf schmalen Bildschirmen.
    - **Aufgabe:** Stufe A, nur Frontend. Weil UI-01 die Leisten und Panels neu ordnet, kommt der Punkt nach UI-01 oder wird dort mit aufgenommen.
 10. **Laufnummer und Band-Chips für Ergebnisse von Schritten** (Otto, 22.10.2026).
+   - **Stand 27.10.2026:** geht in Punkt 43 (NM4-43, `adr/0020`) auf; nicht einzeln starten.
    - **Plan:** `querschnitt/nm4-10-schritt-namen-und-chips.md`
    - **Format (Otto):** Schritt-Titel „1. Band_Math_1“, „2. Normalize_2“ usw. Die Nummer steckt auch im Namen des Ergebnisbands: Schritt 1 gibt das Band `Band_Math_1` aus, nicht mehr `band_math`.
    - **Eigener Name (Otto):** Der Name des Ergebnisbands lässt sich je Schritt umbenennen, etwa `ndvi`. `Band_Math_1` ist nur die Vorgabe. Der eigene Name steht im Rezept, erscheint als Chip und im Titel und gilt in den folgenden Schritten. Im Plan zu klären: erlaubte Zeichen und Länge, keine Doppel innerhalb der Kette, keine Kollision mit Bandnamen des Datensatzes, Umbenennen nachdem spätere Schritte den alten Namen schon nutzen (mitziehen oder Hinweis).
@@ -80,6 +83,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
      - Kachel-Pfad (M4-18b), Runner und Methodentext ziehen mit.
    - **Aufgabe:** Stufe B (ändert Ergebnis-Bytes), Backend und Frontend.
 11. **Normalize klarer und mit mehreren Methoden** (Otto, 22.10.2026).
+   - **Stand 27.10.2026:** wartet auf die Entscheidung zu Punkt 43.
    - **Plan:** `querschnitt/nm4-11-normalize-methoden.md`
    - **Klarer:** Im Panel steht kurz, was der Schritt tut, mit Beispiel (etwa „NDVI −1…1 → 0…1“) und der Formel der gewählten Methode. Die Felder tragen verständliche Namen und Hilfetexte (Englisch).
    - **Methoden, Vorschlag:**
@@ -112,6 +116,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Zu klären im PR:** wohin Querschnittsdateien ohne Meilenstein gehören (etwa Zusätze über mehrere Aufgaben); Vorschlag: zum Meilenstein, in dem sie entstanden sind.
    - **Aufgabe:** Stufe A, nur Doku, Sonnet mittel.
 14. **Schnellrechnungen (Index-Knöpfe)** (Otto, 22.10.2026; Grundlage `projektuebersicht.md` §8: „datensatzspezifische Presets … bauen auf Band-Math auf“).
+   - **Stand 27.10.2026:** wartet auf die Entscheidung zu Punkt 43 (Index-Knopf fügt ein neues Band hinzu?).
    - **Plan:** `querschnitt/nm4-14-index-knoepfe.md`
    - **Soll:** An einem Layer eines passenden Datensatzes (etwa „Crop & merge to AOI“ von Sentinel-2) gibt es Knöpfe für häufige Indizes, etwa NDVI, NDWI, NDSI, NBR, EVI. Ein Klick erzeugt einen ganz normalen Band-math-Schritt mit Vorschau; Start als Job wie gewohnt.
    - **Kein zweiter Weg:** Die Knöpfe füllen nur das Rezept. Vorschau, Job, Cache, Runner, Methodentext und `recipe.json` bleiben dieselben.
@@ -163,6 +168,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Im Plan zu klären:** Schnittstelle (POST-Route, Größen- und Punktgrenze der Geometrie wie bei der Annahme), Cache-Schlüssel ohne AOI im Klartext, Messung über mehrere Szenen bzw. Mosaik eines Überflugs, gleiche Methode wie im Job (festes Histogramm, M4-32a) damit die Werte übereinstimmen, Kosten.
    - **Aufgabe:** Stufe B (neue Route im `tiler`, Datenschutz), Backend und Frontend.
 20. **Processing-Panel klarer gegliedert** (Otto, 24.10.2026).
+   - **Stand 27.10.2026:** wartet auf die Entscheidung zu Punkt 43 (Ausgabe am Ende des Panels).
    - **Plan:** `querschnitt/nm4-20-panel-gliederung.md`
    - **Soll:** Die Bereiche „Bands“, „Processing steps“, „Output“ und „Preview“ sind deutlich voneinander abgesetzt (etwa eigene Karten oder Abschnitte mit Überschrift, Abstand, Trennlinie, ggf. einklappbar).
    - **Im Plan zu klären:** Gestaltung in Hell- und Dunkelmodus, Reihenfolge, schmale Bildschirme; Abstimmung mit UI-01 (größeres Fenster, linke Leiste) und mit den Punkten 7, 10 und 14 (Bandauswahl, Band-Chips der Schritte, Index-Knöpfe).
@@ -245,6 +251,17 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-35-relief.md`
    - **Soll:** Schalter „Relief“ bei den Overlays des Basemap-Menüs, über jeder Basemap; optional Basemap „Relief“. Erste Option: MapLibre zeichnet `hillshade` im Browser aus freien Höhenkacheln (etwa AWS Terrain Tiles), ohne Backend und Pyramide; Alternative: eigenes Copernicus DEM.
    - **Aufgabe:** Stufe B mit Recherche, nach UI-02a.
+43. **Ausgabe-Bänder statt Bandauswahl, Band-Math-Ergebnisse als eigene Bänder, keine Bandgrenze** (Otto, 27.10.2026).
+   - **Plan:** `querschnitt/nm4-43-ausgabe-baender.md`
+   - **Soll (Otto):** keine Obergrenze für die Zahl der Bänder; ein `band_math`-Ergebnis wird ein eigenes Band; oben keine Auswahl mehr, nur Info und Namenshilfe; am Ende des Panels alle Bänder des Datensatzes und alle neu gerechneten, per Klick in die Ausgabe. Standardmäßig ist nur das Band-Math-Ergebnis in der Ausgabe; mehrere `band_math`-Schritte hintereinander mit unterschiedlichen Bändern sind möglich.
+   - **Aufgabe:** Stufe C, ADR-Entwurf `adr/0020` mit Messung und Recherche (Schutz ohne Bandgrenze, Ausgabedatei mit gemischten Typen, Vorschau, Hash, alte Rezepte). Nimmt NM4-10 in sich auf; NM4-11, NM4-14, NM4-20, DS-06 warten auf die Entscheidung.
+44. **Schwachstellen der Frontend-Pakete prüfen (`npm audit`)** (Otto, 27.10.2026; 8 Meldungen bei `npm install`, dazu Node-Version für `jsdom`).
+   - **Plan:** `querschnitt/nm4-44-npm-audit.md`
+   - **Aufgabe:** Stufe A, nach UI-02a (#211). Gezielt aktualisieren, kein `npm audit fix --force`; Hauptversionssprung nur nach Ottos Freigabe.
+45. **Einzelne Bänder in der Vollauflösungs-Ansicht per Dropdown** (Otto, 27.10.2026).
+   - **Plan:** `querschnitt/nm4-45-band-in-ansicht.md`
+   - **Soll:** Dropdown „Band“ in der Ansicht, Vorgabe `visual`, dazu jedes Band aus der Registry; bei einem Band Colormap, vmin/vmax, „auto-scale“; Anheften behält das Band. Nur Einzelbänder.
+   - **Aufgabe:** Stufe A, Frontend, nach UI-02a (#211).
 
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
@@ -284,4 +301,5 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 - „Replace source layer“ für Vorschau und Job-Ergebnis: von Otto entfernt (20.10.2026).
 - Knopf zum Kopieren des Methodentexts: von Otto abgelehnt (22.10.2026).
 - QGIS-Stildatei (`result.qml`) im Job-ZIP: von Otto verworfen (25.10.2026), weil bei Analyse-Rastern nicht üblich; die Statistik steht als GDAL-Tags in `result.tif` (M4-32).
+- Equal Earth (und andere Projektionen außer Mercator/Globe) in der Kartenansicht: von Otto zurückgestellt (27.10.2026); MapLibre kann es nicht, ein Wechsel der Kartenbibliothek lohnt nicht.
 - CI bei reinen Plan-Änderungen verkürzen (Filter im Job oder zweiter Workflow): von Otto verworfen (24.10.2026); `.github/` bleibt unverändert.
