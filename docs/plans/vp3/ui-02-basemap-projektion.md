@@ -1,6 +1,6 @@
 # UI-02 — Basemap-Auswahl und Projektion
  
-**Stand:** 12.10.2026, beauftragt von Otto; ergänzt am 24.10.2026 (§3 Permalink); Plan mit Recherche am 27.10.2026 (§6), wartet auf Freigabe.
+**Stand:** 12.10.2026, beauftragt von Otto; ergänzt am 24.10.2026 (§3 Permalink); Plan mit Recherche am 27.10.2026 (§6), von Otto am 27.10.2026 freigegeben (§6.10).
 **Meilenstein:** UI, direkt nach M4 (nach M4-20).
 **Stufe B mit Recherche:** Plan mit Quellen im Draft-PR, Otto gibt frei, dann Code.
 **Modell:** Opus (Effort hoch) für Plan und Recherche, Sonnet (Effort hoch) für die Umsetzung.
@@ -68,7 +68,9 @@ Vorschläge für weitere Ebenen, im Plan zu bewerten:
 - Log-Zeilen.
 - Vor „fertig“ ist main geholt.
 
-## 6. Plan (27.10.2026, zur Freigabe durch Otto)
+## 6. Plan (27.10.2026, von Otto am 27.10.2026 freigegeben)
+
+**Freigabe (Otto, 27.10.2026):** Antworten auf alle zehn Fragen stehen in §6.10. Frage 1 bis 4, 7, 9 und 10 nach Option 1; abweichend: Der Knopf heißt „Basemap“ (nicht „Map“); Frage 5 (der Globus bleibt Globus, kein automatischer Wechsel zu Mercator), Frage 6 (Light/Dark bleibt ein eigener Knopf) und Frage 8 (ein Permalink überschreibt die gemerkte Wahl nicht). Die Änderungen sind in §6.0, §6.3, §6.5, §6.6, §6.8 und §6.9 eingearbeitet. Die Umsetzung beginnt mit UI-02a.
 
 Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #209 (UI-01g gemergt, kein offener UI-PR). Belegstufen wie in `adr/0014`: [P] Code oder Primärquelle gelesen, [M] in der Sitzung gemessen bzw. mit einem Wegwerf-Test nachgestellt (nicht im Repo), [S] nur Zusammenfassung einer Websuche (Originalseite nicht abrufbar, vor einer Entscheidung gegenzuprüfen), [A] eigene Ableitung.
 
@@ -76,16 +78,16 @@ Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main`
 
 ### 6.0 Kurzfassung
 
-- **Menü:** Ein Knopf „🗺 Map“ oben rechts ersetzt „Mercator/Globe“ und „Light/Dark“. Er öffnet ein Menü mit vier Gruppen: Basemap, Overlays, Projection, Interface (§6.5).
+- **Menü:** Ein Knopf „Basemap“ oben rechts ersetzt „Mercator/Globe“. Er öffnet ein Menü mit drei Gruppen: Basemap, Overlays (ab UI-02b), Projection (§6.5). „Light/Dark“ bleibt ein eigener Knopf (Frage 6).
 - **Basemaps jetzt:** Satellite (Esri World Imagery wie heute), Streets (OpenFreeMap Liberty), Grey (OpenFreeMap Positron), Outlines (Küsten und Grenzen aus denselben Vektorkacheln). Kein Schlüssel, keine neue Abhängigkeit (§6.2, §6.4).
 - **Overlays jetzt:** Labels (ein/aus, auch über dem Satellitenbild) und Graticule (im Browser erzeugt). **Später:** Schummerung aus dem eigenen DEM (braucht Backend), Sentinel-2-Kachelraster (Lizenz und Datei ungeklärt).
 - **Projektionen:** Mercator und Globus jetzt. **Equal Earth nicht:** MapLibre GL JS 5.24 kennt nur `mercator`, `globe` und `vertical-perspective` [P]. Es ginge nur mit einem Wechsel der Kartenbibliothek.
-- **Befund Globus [M]:** Mit MapLibres eingebautem Globus liegen eigene Rasterkacheln und GeoJSON bei Zoom 8 bis 11,5 bis zu rund 20 px neben der Stelle, an die `map.project` sie rechnet. Geht der Globus schon bei Zoom 6–7 in Mercator über, liegt alles pixelgleich wie in Mercator. Empfehlung: diesen Übergang setzen (§6.3, Frage 5).
+- **Befund Globus [M]:** Mit MapLibres eingebautem Globus liegen eigene Rasterkacheln und GeoJSON bei Zoom 8 bis 11,5 bis zu rund 20 px neben der Stelle, an die `map.project` sie rechnet. Geht der Globus schon bei Zoom 6–7 in Mercator über, liegt alles pixelgleich wie in Mercator. Entscheidung (Frage 5): Der Globus bleibt Globus, MapLibres Vorgabe ohne eigenen Übergang; Otto prüft die Abweichung auf einem echten Grafikprozessor mit der Prüfanleitung, zeigt sie sich dort auch, wird die Frage neu vorgelegt (§6.3).
 - **Gemerkt** wird die Wahl im Browser (`localStorage`, wie heute Thema und Projektion). **Permalink:** Basemap und Projektion kommen in die gespeicherte Ansicht; das braucht eine kleine Änderung am Modell im Backend (§6.6).
-- **Esri ohne Schlüssel** ist für einen kommerziellen Betrieb nicht belegbar zulässig [S]. Für die heutige, nicht kommerzielle Phase bleibt es; vor dem kommerziellen Start muss es ersetzt oder lizenziert werden (Frage 1).
-- **Attribution:** heute beim Start eingeklappt (V-7). Die OSMF-Richtlinie verlangt Sichtbarkeit ohne Interaktion [S]. Empfehlung: immer ausgeklappt (Frage 4).
-- **Datenschutz:** Die Kacheln lädt der Browser bei Dritten; dabei gehen IP-Adresse und Kartenausschnitt dorthin. Empfehlung: jetzt Hinweis im Tooltip je Basemap, vor dem kommerziellen Start Selbst-Hosting der Vektorkacheln (Frage 9).
-- **Schnitt:** drei PRs UI-02a bis UI-02c (§6.9). **Fragen an Otto:** 10 (§6.10).
+- **Esri ohne Schlüssel** ist für einen kommerziellen Betrieb nicht belegbar zulässig [S]. Für die heutige, nicht kommerzielle Phase bleibt es; vor dem kommerziellen Start muss es ersetzt oder lizenziert werden (Frage 1; Vermerk für M6).
+- **Attribution:** heute beim Start eingeklappt (V-7). Die OSMF-Richtlinie verlangt Sichtbarkeit ohne Interaktion [S]. Entscheidung: immer ausgeklappt (Frage 4).
+- **Datenschutz:** Die Kacheln lädt der Browser bei Dritten; dabei gehen IP-Adresse und Kartenausschnitt dorthin. Entscheidung: jetzt Hinweis im Tooltip je Basemap, vor dem kommerziellen Start Selbst-Hosting der Vektorkacheln (Frage 9).
+- **Schnitt:** drei PRs UI-02a bis UI-02c (§6.9). **Fragen an Otto:** 10, am 27.10.2026 beantwortet (§6.10).
 
 ### 6.1 Stand im Code [P]
 
@@ -149,7 +151,7 @@ Quellen (Auswahl, alle abgerufen oder gesucht am 27.10.2026):
 | `globe` (MapLibre-Vorgabe) | Kacheln bis 5 px, Bild und GeoJSON 0–2 px | Kacheln bis 24 px, GeoJSON bis 16 px daneben | 0–2 px |
 | Globus mit Übergang Zoom 6 → 7 auf Mercator | 0–2 px | 0–2 px | 0–2 px |
 
-Folgerungen: In Mercator liegen alle eigenen Ebenen exakt. Der eingebaute Globus hat im Übergangsbereich bis Zoom 11,5 einen Versatz zwischen Gemaltem und `map.project`; das betrifft das Zeichnen der AOI und den Klick auf eine Szene genau in den Zoomstufen, in denen man arbeitet. Ob ein echter Grafikprozessor dasselbe zeigt, prüft die Anleitung (§6.8). Empfehlung (Frage 5): Globus als `['interpolate', ['linear'], ['zoom'], 6, 'vertical-perspective', 7, 'mercator']`. Der Globus bleibt für die Übersicht bis Zoom 6; darüber ist er ohnehin kaum von Mercator zu unterscheiden.
+Folgerungen: In Mercator liegen alle eigenen Ebenen exakt. Der eingebaute Globus hat im Übergangsbereich bis Zoom 11,5 einen Versatz zwischen Gemaltem und `map.project`; das betrifft das Zeichnen der AOI und den Klick auf eine Szene genau in den Zoomstufen, in denen man arbeitet. Ob ein echter Grafikprozessor dasselbe zeigt, prüft die Anleitung (§6.8). Entscheidung (Frage 5): Der Globus bleibt `{ type: 'globe' }` wie seit V-1, ohne eigenen Übergang auf Mercator; die Zeile „Globus mit Übergang“ ist nur der Messwert dazu. Otto prüft mit der Anleitung (§6.8), ob die Abweichung auf einem echten Grafikprozessor auch auftritt; wenn ja, wird die Frage neu vorgelegt.
 
 **Weitere Folgen des Globus [P].** `map.getBounds()` ist im Globus eine Näherung aus acht Randpunkten und setzt bei sichtbarem Pol die volle Länge (`vertical_perspective_transform.ts`). Das nutzt die Coverage-Abfrage ohne AOI (`MapView.tsx::reportViewport`); bei einem ganz sichtbaren Globus wird die Abfrage damit weltweit, was sie heute bei Zoom 1,6 in Mercator auch ist. Kein Handlungsbedarf, Prüfpunkt in §6.8.
 
@@ -162,14 +164,13 @@ Folgerungen: In Mercator liegen alle eigenen Ebenen exakt. Der eingebaute Globus
 
 ### 6.5 Menü (Oberfläche englisch)
 
-Ein Knopf oben rechts neben „⤢ Zoom to selection“: **„🗺 Map“**, Tooltip „Basemap, overlays and projection“. Er öffnet ein Menü über die vorhandene `Popover`-Komponente (Tastatur, `Esc`, Klick daneben schließt). Inhalt:
+Ein Knopf oben rechts neben „⤢ Zoom to selection“ und „☀ Light/☾ Dark“: **„Basemap“**, Tooltip „Basemap and projection“ (ab UI-02b „Basemap, overlays and projection“). Er öffnet ein Menü über die vorhandene `Popover`-Komponente (Tastatur, `Esc`, Klick daneben schließt). Inhalt:
 
 - **Basemap** (eine Wahl): `Satellite` · `Streets` · `Grey` · `Outlines`. Tooltip je Eintrag mit Quelle und Hinweis, woher die Kacheln kommen, etwa „Esri World Imagery. Tiles load from arcgisonline.com.“
-- **Overlays** (an/aus): `Labels` · `Graticule`.
+- **Overlays** (an/aus, ab UI-02b): `Labels` · `Graticule`.
 - **Projection** (eine Wahl): `Mercator` · `Globe`.
-- **Interface** (eine Wahl): `Dark` · `Light` (heute „☀ Light/☾ Dark“, Frage 6).
 
-„Grey“ statt „Light“, damit es sich nicht mit dem Thema „Light“ verwechselt. Alle Einträge sind immer wählbar; Labels gibt es auf jeder Basemap. Damit gibt es nichts auszublenden oder zu sperren (Regel vom 26.10.2026).
+„Grey“ statt „Light“, damit es sich nicht mit dem Knopf „Light“ des Themas verwechselt. „Light/Dark“ bleibt unverändert ein eigener Knopf (Frage 6). Alle Einträge sind immer wählbar; Labels gibt es auf jeder Basemap. Damit gibt es nichts auszublenden oder zu sperren (Regel vom 26.10.2026).
 
 **Vorgabe beim ersten Start:** Satellite, Mercator, Labels aus, Graticule aus, Dark. Das ist der heutige Stand.
 
@@ -184,10 +185,10 @@ Ein Knopf oben rechts neben „⤢ Zoom to selection“: **„🗺 Map“**, Too
 ### 6.6 Merken und Permalink
 
 - **Im Browser:** ja, wie heute in `preferences.ts`: `earthx.basemap`, `earthx.overlays` (neu), `earthx.projection`, `earthx.theme` (wie bisher). Unbekannte oder fehlende Werte fallen still auf die Vorgabe.
-- **Permalink:** Die Ansicht bekommt zwei Felder, `basemap` (`satellite` | `streets` | `grey` | `outlines`) und `projection` (`mercator` | `globe`). Overlays und Thema kommen nicht hinein (Vorschlag: Sie sind Geschmack des Betrachters).
+- **Permalink:** Die Ansicht bekommt zwei Felder, `basemap` (`satellite` | `streets` | `grey` | `outlines`) und `projection` (`mercator` | `globe`). Overlays und Thema kommen nicht hinein (Sie sind Geschmack des Betrachters).
 - **Backend:** `PermalinkView` in `api/processing_route.py` bekommt beide Felder als optionale Aufzählung (Vorgabe `None`). Begründung für die Backend-Änderung: Das Modell weist unbekannte Felder mit `422` ab (`extra="forbid"`), ohne die Änderung könnte das Frontend die Felder nicht speichern. Gespeicherte Permalinks bleiben gültig.
-- **Ältere Permalinks** ohne die Felder öffnen mit der Vorgabe: Satellite und Mercator, unabhängig von der gemerkten Wahl. `permalink.ts::parseView` liest fehlende Felder als Vorgabe und weist unbekannte Werte ab wie heute.
-- **Beim Öffnen** setzt der Permalink Basemap und Projektion wie eine eigene Wahl, die dann auch gemerkt wird (Frage 8).
+- **Ältere Permalinks** ohne die Felder öffnen mit der Vorgabe: Satellite und Mercator. `permalink.ts::parseView` liest fehlende Felder als Vorgabe und weist unbekannte Werte ab wie heute.
+- **Beim Öffnen** (Frage 8, Otto, abweichend von der Empfehlung) gelten Basemap und Projektion des Permalinks für die geöffnete Ansicht, überschreiben aber nicht die im Browser gespeicherte Vorgabe des Nutzers. Der Store hält deshalb die wirksame Wahl und die gemerkte Wahl getrennt; erst eine Wahl im Menü schreibt in den Speicher. Ein Neuladen der Seite öffnet wieder mit der gemerkten Wahl.
 
 ### 6.7 Attribution und Datenschutz
 
@@ -214,10 +215,10 @@ Ein Knopf oben rechts neben „⤢ Zoom to selection“: **„🗺 Map“**, Too
 **Vitest (in CI, ohne Netz, Stil-Fixtures synthetisch unter `frontend/src/fixtures`):**
 
 - Je Basemap: Die Wahl im Menü setzt den Store, landet im `localStorage` und ergibt einen Stil mit der erwarteten Quelle und genau der erwarteten Attribution.
-- Je Projektion: Die Wahl ergibt die erwartete `ProjectionSpecification` (Globus mit Übergang).
+- Je Projektion: Die Wahl ergibt die erwartete `ProjectionSpecification` (Globus als `{ type: 'globe' }`).
 - Beim Wechsel der Basemap bleiben alle eigenen Quellen und Ebenen in Reihenfolge erhalten (`transformStyle`), Basemap-Ebenen liegen unter ihnen, Labels nach Frage 7.
 - Fehlerfälle: unbekannter Wert im `localStorage`; gesperrter Speicher; Stil-Fixture ohne erwartete Ebenen (Outlines zeigt dann nur den Hintergrund, kein Absturz); Permalink mit unbekannter Basemap (abgewiesen), ohne Felder (Vorgabe), mit Feldern (übernommen).
-- Menü: Tastaturbedienung, `aria-checked`, `Esc`; „Mercator/Globe“ und „Light/Dark“ sind nicht mehr oben rechts (Gegenprobe zu `AppTopBar.test.tsx`).
+- Menü: Tastaturbedienung, `aria-checked`, `Esc`; „Mercator/Globe“ ist nicht mehr oben rechts, „Light/Dark“ bleibt (Gegenprobe zu `AppTopBar.test.tsx`).
 
 **Pytest:** `PermalinkView` nimmt beide Felder an und lässt sie weg, weist unbekannte Werte und Fremdtypen ab (`strict`); ein gespeichertes Dokument ohne die Felder liest sich weiter.
 
@@ -233,21 +234,21 @@ Ein Knopf oben rechts neben „⤢ Zoom to selection“: **„🗺 Map“**, Too
 
 ### 6.9 Schnitt
 
-1. **UI-02a, Frontend:** Katalog, Menü, Wechsel per Diff, Streets/Grey/Outlines, Thema ins Menü, Globus mit Übergang, Attribution, Merken. Tests. Geschätzt 350–400 Zeilen.
+1. **UI-02a, Frontend:** Katalog, Menü „Basemap“ mit Basemap und Projection, Wechsel per Diff, Streets/Grey/Outlines, Attribution immer offen, Merken. „Light/Dark“ und der Globus bleiben unverändert. Tests. Geschätzt 350–400 Zeilen.
 2. **UI-02b, Frontend:** Labels (inklusive über Satellite) und Graticule. Geschätzt 150–200 Zeilen.
-3. **UI-02c, Backend und Frontend:** Basemap und Projektion im Permalink. Geschätzt 100–150 Zeilen.
+3. **UI-02c, Backend und Frontend:** Basemap und Projektion im Permalink (wirksame und gemerkte Wahl getrennt, Frage 8). Geschätzt 100–150 Zeilen.
 
-Je PR: Log-Zeile, Prüfanleitung, `main` holen vor „fertig“. Dazu Backlog-Punkte (Vorschlag): Schummerung aus dem DEM (Stufe B, Backend), Sentinel-2-Kachelraster (ESA-Datei rund 106 MB KML, Lizenz ungeklärt [S]), Selbst-Hosting der Vektorkacheln vor dem öffentlichen Start, Satellit lizenzieren vor dem kommerziellen Start, Equal Earth bei neuer MapLibre-Version prüfen.
+Je PR: Log-Zeile, Prüfanleitung, `main` holen vor „fertig“. Dazu Punkte für den Backlog (Vorschlag; `plans/nach-m4-backlog.md` bleibt auf Ottos Anweisung vom 27.10.2026 unverändert, Otto ordnet sie ein): Schummerung aus dem DEM (Stufe B, Backend), Sentinel-2-Kachelraster (ESA-Datei rund 106 MB KML, Lizenz ungeklärt [S]), Selbst-Hosting der Vektorkacheln vor dem öffentlichen Start, Satellit lizenzieren vor dem kommerziellen Start, Equal Earth bei neuer MapLibre-Version prüfen.
 
-### 6.10 Fragen an Otto
+### 6.10 Fragen an Otto (beantwortet am 27.10.2026)
 
-1. **Satellite:** (1) Esri ohne Schlüssel bleibt, mit Pflicht zur Ablösung vor dem kommerziellen Start (**Empfehlung**); (2) jetzt Esri Location Platform mit Schlüssel; (3) ersetzen durch EOX Sentinel-2 cloudless 2016.
-2. **Streets, Grey:** (1) OpenFreeMap Liberty und Positron (**Empfehlung**); (2) VersaTiles; (3) gleich selbst hosten.
-3. **Outlines:** (1) aus den Vektorkacheln von OpenFreeMap, genau in jedem Zoom (**Empfehlung**); (2) Natural Earth lokal, ohne Dritten, aber grob ab Zoom 10.
-4. **Attribution:** (1) immer offen, `compact: false` (**Empfehlung**, hebt V-7 auf); (2) bleibt beim Start eingeklappt.
-5. **Globus:** (1) Übergang auf Mercator bei Zoom 6–7 (**Empfehlung**); (2) MapLibre-Vorgabe mit dem gemessenen Versatz bis Zoom 11,5.
-6. **Light/Dark:** (1) ins Menü unter „Interface“ (**Empfehlung**); (2) eigener Knopf bleibt.
-7. **Labels:** (1) über den eigenen Bildern, unter AOI-Linie und Zeichnung (**Empfehlung**); (2) unter den eigenen Bildern.
-8. **Permalink öffnen:** (1) Basemap und Projektion gelten und werden gemerkt (**Empfehlung**); (2) gelten nur für diesen Besuch.
-9. **Datenschutz:** (1) jetzt Hinweis im Tooltip, Selbst-Hosting vor dem öffentlichen Start als Backlog-Punkt (**Empfehlung**); (2) jetzt selbst hosten; (3) Proxy über `gateway`.
-10. **Beleg Lagerichtigkeit:** (1) Prüfanleitung, kein Pixeltest in CI (**Empfehlung**, keine neue Abhängigkeit); (2) Pixeltest mit `@playwright/test` als neue Entwicklungsabhängigkeit.
+1. **Satellite:** (1) Esri ohne Schlüssel bleibt, mit Pflicht zur Ablösung vor dem kommerziellen Start (**Empfehlung**); (2) jetzt Esri Location Platform mit Schlüssel; (3) ersetzen durch EOX Sentinel-2 cloudless 2016. **Antwort Otto: Option 1.** Vor dem kommerziellen Start ersetzen oder lizenzieren (M6).
+2. **Streets, Grey:** (1) OpenFreeMap Liberty und Positron (**Empfehlung**); (2) VersaTiles; (3) gleich selbst hosten. **Antwort Otto: Option 1.**
+3. **Outlines:** (1) aus den Vektorkacheln von OpenFreeMap, genau in jedem Zoom (**Empfehlung**); (2) Natural Earth lokal, ohne Dritten, aber grob ab Zoom 10. **Antwort Otto: Option 1.**
+4. **Attribution:** (1) immer offen, `compact: false` (**Empfehlung**, hebt V-7 auf); (2) bleibt beim Start eingeklappt. **Antwort Otto: Option 1.**
+5. **Globus:** (1) Übergang auf Mercator bei Zoom 6–7 (**Empfehlung**); (2) MapLibre-Vorgabe mit dem gemessenen Versatz bis Zoom 11,5. **Antwort Otto: weder 1 noch 2 wörtlich.** Der Globus bleibt Globus, kein automatischer Wechsel zu Mercator. Otto prüft die Abweichung auf einem echten Grafikprozessor mit der Prüfanleitung; zeigt sie sich dort auch, wird die Frage neu vorgelegt.
+6. **Light/Dark:** (1) ins Menü unter „Interface“ (**Empfehlung**); (2) eigener Knopf bleibt. **Antwort Otto: Option 2.** Light/Dark bleibt ein eigener Knopf.
+7. **Labels:** (1) über den eigenen Bildern, unter AOI-Linie und Zeichnung (**Empfehlung**); (2) unter den eigenen Bildern. **Antwort Otto: Option 1.**
+8. **Permalink öffnen:** (1) Basemap und Projektion gelten und werden gemerkt (**Empfehlung**); (2) gelten nur für diesen Besuch. **Antwort Otto: abweichend.** Basemap und Projektion des Permalinks gelten für die geöffnete Ansicht, überschreiben aber nicht die im Browser gespeicherte Vorgabe.
+9. **Datenschutz:** (1) jetzt Hinweis im Tooltip, Selbst-Hosting vor dem öffentlichen Start als Backlog-Punkt (**Empfehlung**); (2) jetzt selbst hosten; (3) Proxy über `gateway`. **Antwort Otto: Option 1.**
+10. **Beleg Lagerichtigkeit:** (1) Prüfanleitung, kein Pixeltest in CI (**Empfehlung**, keine neue Abhängigkeit); (2) Pixeltest mit `@playwright/test` als neue Entwicklungsabhängigkeit. **Antwort Otto: Option 1.**
