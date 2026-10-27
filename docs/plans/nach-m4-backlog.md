@@ -184,7 +184,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe A, nur Frontend, zusammen mit Punkt 20 oder in UI-01; gilt ab sofort als Regel für jede neue Oberfläche.
 23. **Backend-Tests schneller** (Otto, 24.10.2026).
    - **Plan:** `querschnitt/nm4-23-backend-tests-schneller.md`
-   - **Stand (26.10.2026, PR #207):** Plan freigegeben: `pytest-xdist` (Dev), `-n auto`, Datenbank je Worker. Gemessen in der Session 1000 s → 290 s. Nicht in dieser Aufgabe: Wartezeit bis 1 s je Test beim Worker-Stopp (`jobs/worker.py`, zusammen 31 s) – eigener kleiner Punkt, falls gewünscht (neues Feld `WorkerConfig.listen_seconds`). Ein zeitabhängiger Test in `jobs/test_worker.py` scheiterte einmal (NM4-05-Session) – mit NM4-23 prüfen.
+   - **Erledigt:** NM4-23, PR #207 (27.10.2026): `pytest-xdist` (Dev), `-n auto --dist worksteal`, Datenbank je Worker; Session 989–1009 s → 280–284 s (3× grün), seriell 850 s; CI-Schritt pytest 4:10 min. 9 wackelige Tests stabilisiert (u. a. Shutdown-Test in `jobs/test_worker.py`), Live-Smokes bleiben seriell; Nachtrag `adr/0002` §6. Offen als möglicher kleiner Punkt: Wartezeit bis 1 s je Test beim Worker-Stopp (`WorkerConfig.listen_seconds`, Produktcode).
    - **Befund (CI-Lauf auf `main`, 24.10.2026):** Job „Backend — lint and tests“ 14,2 min, davon `pytest` 13,2 min; Installation 0,5 min, Ruff und Migration je unter 0,1 min. Frontend 0,7 min, Modulgrenzen 0,7 min, compose-topology 1,9 min.
    - **Schritt 1 – messen:** `pytest --durations=30` (lokal in der Session und einmal in der CI-Ausgabe), Tabelle der langsamsten Tests im PR. Erwartete Kandidaten: Speichertests bei 4096² (`VmHWM`), Vergleiche in `spawn`-Prozessen (Runner, Worker, Import), Tests gegen Postgres. Abhilfe ohne Verlust an Aussage: kleinere synthetische Raster, wo die Größe nicht der Prüfgegenstand ist; teure Fixtures mit Geltungsbereich `module`/`session`; doppelte Prüfungen zusammenlegen. Speicher- und Bitgleich-Tests bleiben in voller Größe.
    - **Schritt 2 – parallel (nur nach Ottos Freigabe):** `pytest-xdist` (neue Abhängigkeit). Vorher mit Quellen klären: Verträglichkeit mit `spawn`-Kindprozessen und Speichermessungen (`VmHWM` je Prozess), eigene Datenbank je xdist-Worker für Postgres-Tests, Zahl der Kerne der GitHub-Runner für öffentliche Repos. Einstellung über die pytest-Konfiguration, nicht über `.github/`.
@@ -212,7 +212,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe B, Backend und Frontend, nach UI-01c.
 28. **Suchergebnisse links angedockt** (Otto, 26.10.2026).
    - **Plan:** `vp3/ui-01g-suchergebnisse-angedockt.md` (Teil von UI-01, nach UI-01f).
-   - **Umgesetzt (26.10.2026, Draft-PR #209):** Symbol „Results“ in der Leiste, Panel im Dock, öffnet nach der Suche; Auslegungen im Log vom 26.10.2026.
+   - **Erledigt:** UI-01g, PR #209 (26.10.2026), mit den Ergänzungen unter „In UI-01 aufgenommen“.
 29. **512er-Kacheln im Frontend** (Otto, 26.10.2026, aus NM4-26 Frage 3).
    - **Plan:** `querschnitt/nm4-29-kacheln-512.md`
    - **Befund (NM4-26 §8.2, §10 S3):** Mit `tileSize: 512` braucht dieselbe Fläche ein Drittel der Anfragen (325 → 117). Die Ansicht wird gemessen 18 % schneller (28,3 → 23,0 s), bei gleichen Bytes von der Quelle.
