@@ -11,7 +11,7 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
@@ -27,6 +27,8 @@ let root: Root;
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  // "The year of today" below is 2026.
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-10-20T12:00:00Z') });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -37,6 +39,7 @@ afterEach(() => {
     root.unmount();
   });
   container.remove();
+  vi.useRealTimers();
 });
 
 function scene(id: string, properties: Record<string, unknown>): StacItem {
