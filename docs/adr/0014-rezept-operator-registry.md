@@ -2431,10 +2431,13 @@ anzusehen. Die Regel liegt in der Registry, nicht in Namenslisten im Frontend.
 - **Einträge:** Sentinel-2 L2A `visual`, `preview` (Bilder aus den Bändern, keine Messwerte); Copernicus DEM: leer. `scl` steht nicht
   im Feld: Die Maskenschicht benennt `mask` (§15m), und das Panel nimmt sie aus „Select all bands“ von dort. `thumbnail` entfällt
   schon heute, weil das Panel nur GeoTIFF ohne Rolle `thumbnail` als Quelle kennt.
-- **Wirkung nur im Panel:** „Select all bands“ nimmt keine Hilfs-Assets und keine Maskenschicht; wer sie braucht, wählt ihren Chip
-  einzeln. Rezept, Operatoren und Backend-Prüfung ändern sich nicht, ein Auftrag mit `visual` bleibt gültig.
+- **Wirkung nur im Panel (Otto, 2026-10-27):** Die Hilfs-Assets erscheinen im Panel nicht als Chips („nicht Mögliches ausblenden“);
+  ein Hilfs-Asset, das schon im Auftrag steht (etwa aus einem geladenen Rezept), bleibt als Chip sichtbar, damit man es wieder
+  herausnehmen kann. „Select all bands“ nimmt auch die Maskenschicht nicht. Rezept, Operatoren und Backend-Prüfung ändern sich
+  nicht.
 - **Grenze:** Der Auftrag nimmt höchstens `maxItems` Assets (16, M4-07b F5). „Select all bands“ zählt die Bänder aus Ausdrücken und
-  Schritten mit; würde die Summe darüber liegen, wählt es nichts und nennt den Grund. Nie eine stille Teilmenge.
+  Schritten mit; würde die Summe darüber liegen, ist der Knopf gesperrt, der Grund steht kurz im Tooltip („18 bands – an order takes
+  at most 16“), im Panel steht dazu kein Satz. Nie eine stille Teilmenge.
 - **Ein Band:** Hat die Quelle genau ein wählbares Asset und hat dieses höchstens einen Bandnamen, ist es beim Öffnen gewählt.
 - **Tests:** `catalog/test_auxiliary_assets.py`; im Frontend `ProcessingPanel.test.tsx` („picking all bands“); Browserprüfung
   `frontend/e2e/band-select.cjs`.
