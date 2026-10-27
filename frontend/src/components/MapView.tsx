@@ -244,7 +244,7 @@ export default function MapView() {
         cropToAoi: st.cropToAoi,
         groups: st.groups,
       });
-      syncResultsOverlay(map, { items: shown.overlay, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null });
+      syncResultsOverlay(map, { items: shown.overlay, selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null });
       syncPreview(map, previewTilesRef.current);
       initDraw();
       readyRef.current = true;
@@ -350,6 +350,8 @@ export default function MapView() {
   const quicklooks = useSameScenes(shown.quicklooks);
   const overlay = useSameScenes(shown.overlay);
   const highlight = useSameScenes(shown.highlight);
+  // The ticked scenes whose quicklooks lie over everything else (`mapLayers.ts`, `TICKED_TOP`).
+  const ticked = useMemo(() => highlight.map((item) => item.id), [highlight]);
   const cropFilter = shown.cropsOf;
   const viewLayer = useMemo(
     () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi: viewAoi, showDownloaded }),
@@ -402,16 +404,16 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
-      syncBrowseMosaic(map, { items: quicklooks, dataset: datasets.find((d) => d.id === datasetId) ?? null });
+      syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null });
     }
-  }, [focusMode, quicklooks, datasets, datasetId]);
+  }, [focusMode, quicklooks, ticked, datasets, datasetId]);
 
   // --- the results over a full-resolution view, while "Show results" is on. Runs after the view's own effect
   // above, so what it draws lies over the view. ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, dataset: datasets.find((d) => d.id === datasetId) ?? null });
-  }, [focusMode, overlay, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
+    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null });
+  }, [focusMode, overlay, ticked, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. In a cropped focus view

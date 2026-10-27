@@ -53,6 +53,10 @@ const LAYERS_TOP = 'layers-top';
 // that the full-resolution view (placed `beforeAoi`) lies over them, and the outlines of the results stay over both
 // (Otto, 27.10.2026).
 const RESULTS_TOP = 'results-top';
+// Right under the AOI, over everything else: a search result that is ticked has its quicklook over the view, the other
+// quicklooks and the pinned layers, whichever of them was drawn first (Otto, 27.10.2026, "immer der oberste Layer").
+// Every other raster of the app goes under this marker (`aboveAll`), the ticked quicklooks over it (`topOfAll`).
+const TICKED_TOP = 'ticked-top';
 // Cache of processed quicklook data URLs, keyed by URL + the parameters that
 // change what gets drawn (freistellung threshold, AOI clip) so the same
 // source image loaded plain (browse mode, a pinned layer) and clipped to an
@@ -252,6 +256,7 @@ export function ensureBaseLayers(map: MapLibreMap): void {
     map.addSource(AOI_SRC, { type: 'geojson', data: EMPTY_FC });
     map.addLayer({ id: LAYERS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: RESULTS_TOP, type: 'background', layout: { visibility: 'none' } });
+    map.addLayer({ id: TICKED_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({
       id: 'aoi-fill',
       type: 'fill',
@@ -468,7 +473,13 @@ function dropRetired(map: MapLibreMap): void {
 // Where the quicklooks of the results go while a view is open: under the marker above the layer manager's stack.
 const underTheView = (map: MapLibreMap): string | undefined => (map.getLayer(RESULTS_TOP) ? RESULTS_TOP : beforeAoi(map));
 
-const aboveAll = (map: MapLibreMap): string | undefined => (map.getLayer('aoi-fill') ? 'aoi-fill' : undefined);
+// What a new raster of the app goes under: the marker of the ticked quicklooks, or the AOI where the marker is not
+// there (a map without it, as in the tests of the older functions).
+const aboveAll = (map: MapLibreMap): string | undefined =>
+  map.getLayer(TICKED_TOP) ? TICKED_TOP : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
+
+// Where the quicklook of a ticked search result goes: over the marker, under the AOI.
+const topOfAll = (map: MapLibreMap): string | undefined => (map.getLayer('aoi-fill') ? 'aoi-fill' : undefined);
 
 // Where a new raster goes: below the preview, which stays on top of whatever
 // loads after it (a quicklook is placed when its image has arrived).
@@ -536,9 +547,12 @@ function addPreview(
   i: number,
   gen: number,
   dataset: DatasetOption,
+  ticked: boolean,
 ): void {
   const plan = quicklookPlan(item, dataset);
   if (!plan) return;
+  // A ticked scene is the top layer; the others go where later rasters go (`undefined`: the default place).
+  const before = (): string | undefined => (ticked ? topOfAll(map) : undefined);
   if (plan.kind === 'tiles') {
     // Placed by the tile grid itself, not by four corner coordinates: a tile is
     // already in the map's own projection, so there is nothing to reproject and
@@ -547,7 +561,7 @@ function addPreview(
     const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
     const zoom = { minZoom: plan.zoom, maxZoom: plan.zoom };
     const lyrId = dynamicId('tiles-lyr', i);
-    placeRaster(map, dynamicId('tiles-src', i), lyrId, tileUrl, item.bbox, 1, zoom);
+    placeRaster(map, dynamicId('tiles-src', i), lyrId, tileUrl, item.bbox, 1, zoom, before());
     drawsPicture(map, lyrId, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
     return;
   }
@@ -561,7 +575,7 @@ function addPreview(
     if (gen !== syncGen) return; // a newer sync superseded this group
     pendingImages--;
     try {
-      placeImage(map, srcId, lyrId, dataUrl, coords, 1);
+      placeImage(map, srcId, lyrId, dataUrl, coords, 1, before());
       drawsPicture(map, lyrId, overlaySignature({ kind: 'image', url: plan.href, coords, nodataMax }));
     } catch {
       /* map/style went away while loading */
@@ -924,7 +938,7 @@ export function syncFocusRaster(
 // step, plus any scene pinned onto the map by a cross-group selection — see
 // `itemsForMap`, V-3 finding 2). Without a dataset there is nothing to
 // preview *from* — the registry decides both the image and the level.
-export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'>): void {
+export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'> & { selectedIds?: readonly string[] }): void {
   const gen = ++syncGen;
   retireDynamicMosaic(map);
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
@@ -932,7 +946,7 @@ export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' 
   // Nothing to draw (no dataset, or the results are off the map, UI-01g): the picture before it has nothing to
   // wait for and goes at once.
   if (!dataset || items.length === 0) return dropRetired(map);
-  items.forEach((it, i) => addPreview(map, it, i, gen, dataset));
+  items.forEach((it, i) => addPreview(map, it, i, gen, dataset, s.selectedIds?.includes(it.id) ?? false));
   settleRetired(map);
 }
 
@@ -950,7 +964,7 @@ function removeResultsOverlay(map: MapLibreMap): void {
   }
 }
 
-export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'>): void {
+export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'> & { selectedIds?: readonly string[] }): void {
   const gen = ++resultsGen;
   removeResultsOverlay(map);
   const { dataset } = s;
@@ -958,11 +972,13 @@ export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items
   s.items.slice(0, MAX_MOSAIC_LAYERS).forEach((item, i) => {
     const plan = quicklookPlan(item, dataset);
     if (!plan) return;
+    // A ticked scene lies over the view as well; the others under the view.
+    const place = (): string | undefined => (s.selectedIds?.includes(item.id) ? topOfAll(map) : underTheView(map));
     const [lyr, src] = [`res-${RESULTS_KINDS[plan.kind === 'tiles' ? 2 : 0]}-${i}`, `res-${RESULTS_KINDS[plan.kind === 'tiles' ? 3 : 1]}-${i}`];
     if (plan.kind === 'tiles') {
       if (!item.bbox) return;
       const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
-      placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.zoom, maxZoom: plan.zoom }, underTheView(map));
+      placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.zoom, maxZoom: plan.zoom }, place());
       return;
     }
     const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
@@ -971,7 +987,7 @@ export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items
     loadProcessed(plan.href, nodataMax, null, (dataUrl) => {
       if (gen !== resultsGen) return; // a newer sync superseded this one
       try {
-        placeImage(map, src, lyr, dataUrl, coords, 1, underTheView(map));
+        placeImage(map, src, lyr, dataUrl, coords, 1, place());
       } catch {
         /* map/style went away while loading */
       }
