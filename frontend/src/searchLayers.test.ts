@@ -194,8 +194,8 @@ describe('layersOnMap', () => {
   const pinned = [layer('p1', 'optical'), layer('p2', 'dem')];
   const crops = [layer('c1', 'dem'), layer('c2', 'dem'), layer('c3', 'other-full-resolution')];
 
-  it("draws the pinned layers, and under them the crops of the chosen dataset only", () => {
-    expect(layersOnMap(pinned, crops, 'dem').map((l) => l.id)).toEqual(['p1', 'p2', 'c1', 'c2']);
+  it("draws the crops of the chosen dataset only, over the pinned layers", () => {
+    expect(layersOnMap(pinned, crops, 'dem').map((l) => l.id)).toEqual(['c1', 'c2', 'p1', 'p2']);
   });
 
   it('draws no crop when the chosen dataset has none', () => {
@@ -229,13 +229,27 @@ describe('layersOnMap', () => {
 
     it('stays when what is pinned is another picture, or only part of it', () => {
       const crops = [withPicture('crop', 'https://t/dem/1')];
-      expect(layersOnMap([withPicture('other', 'https://t/dem/2')], crops, 'dem').map((l) => l.id)).toEqual(['other', 'crop']);
+      expect(layersOnMap([withPicture('other', 'https://t/dem/2')], crops, 'dem').map((l) => l.id)).toEqual(['crop', 'other']);
       const two = { ...withPicture('two', 'https://t/dem/1'), overlays: [...raster('https://t/dem/1'), ...raster('https://t/dem/2')] };
-      expect(layersOnMap([two], crops, 'dem').map((l) => l.id)).toEqual(['two', 'crop']);
+      expect(layersOnMap([two], crops, 'dem').map((l) => l.id)).toEqual(['crop', 'two']);
     });
   });
 
   it('copes with nothing pinned and nothing cropped', () => {
     expect(layersOnMap([], [], 'dem')).toEqual([]);
+  });
+
+  describe('with the results off the map (UI-01g)', () => {
+    const cropOf = (id: string, itemIds: string[]) => ({ ...layer(id, 'dem'), restore: { datasetId: 'dem', itemIds } as never });
+    const crops = [cropOf('c1', ['a', 'b']), cropOf('c2', ['c'])];
+
+    it('draws only the crops of ticked scenes, still over the pinned layers', () => {
+      expect(layersOnMap(pinned, crops, 'dem', ['c']).map((l) => l.id)).toEqual(['c2', 'p1', 'p2']);
+      expect(layersOnMap(pinned, crops, 'dem', ['b', 'c']).map((l) => l.id)).toEqual(['c1', 'c2', 'p1', 'p2']);
+    });
+
+    it('draws no crop when nothing is ticked, and leaves the pinned layers', () => {
+      expect(layersOnMap(pinned, crops, 'dem', []).map((l) => l.id)).toEqual(['p1', 'p2']);
+    });
   });
 });

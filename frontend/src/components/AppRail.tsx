@@ -1,12 +1,13 @@
-// The narrow rail at the left edge (UI-01 §6.9): one symbol each for the control menu, the layer manager
-// and the processing manager. A symbol opens its panel beside the rail; a second click closes it. The
-// arrow keys move between the symbols (one tab stop), and a number says how many layers there are and how
-// many jobs run.
+// The narrow rail at the left edge (UI-01 §6.9, UI-01g): one symbol each for the control menu, the layer
+// manager, the processing manager and the search results. A symbol opens its panel beside the rail; a second
+// click closes it. The arrow keys move between the symbols (one tab stop), and a number says how many layers
+// there are, how many jobs run and how many scenes the search found.
 
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { dockPanelId, railButtonId } from '../dock';
 import { useProcessingStore } from '../processingStore';
+import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore, type DockPanel } from '../store';
 
 interface Item {
@@ -53,7 +54,20 @@ const ITEMS: Item[] = [
       </>,
     ),
   },
+  {
+    panel: 'results',
+    label: 'Results',
+    icon: svg(
+      <>
+        <rect x="3" y="4" width="5" height="5" rx="1" />
+        <rect x="3" y="15" width="5" height="5" rx="1" />
+        <path d="M12 6.5h9M12 17.5h9" />
+      </>,
+    ),
+  },
 ];
+
+const NO_RESULTS = 'No results yet: run a search first';
 
 export default function AppRail() {
   const dock = useAppStore((s) => s.dock);
@@ -62,7 +76,9 @@ export default function AppRail() {
   const layerCount = useAppStore((s) => s.layers.length);
   // A job whose state is not known yet (an archived one, one of another tab) is not counted as running.
   const running = useProcessingStore((s) => s.jobs.filter((j) => j.phase === 'active' && j.status !== null).length);
-  const counts: Record<DockPanel, number> = { controls: 0, layers: layerCount, jobs: running };
+  const found = useAppStore((s) => totalItems(s.sections));
+  const hasResults = useAppStore((s) => hasResultsPanel(s.sections));
+  const counts: Record<DockPanel, number> = { controls: 0, layers: layerCount, jobs: running, results: found };
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   // The symbol that takes the Tab key: the open panel's, else the one last used.
   const [stop, setStop] = useState(0);
@@ -90,6 +106,8 @@ export default function AppRail() {
       {ITEMS.map((item, index) => {
         const count = counts[item.panel];
         const open = dock === item.panel;
+        // Without results the symbol stays in its place, for the roving focus, and says why it does nothing.
+        const locked = item.panel === 'results' && !hasResults;
         return (
           <button
             key={item.panel}
@@ -99,13 +117,14 @@ export default function AppRail() {
               buttons.current[index] = element;
             }}
             className={`rail-btn has-tip${open ? ' on' : ''}`}
-            data-tip={item.label}
-            aria-label={count > 0 ? `${item.label}, ${count}` : item.label}
+            data-tip={locked ? NO_RESULTS : item.label}
+            aria-label={locked ? `${item.label}, ${NO_RESULTS}` : count > 0 ? `${item.label}, ${count}` : item.label}
+            aria-disabled={locked || undefined}
             aria-expanded={open}
             aria-controls={open ? dockPanelId(item.panel) : undefined}
             tabIndex={index === current ? 0 : -1}
             onFocus={() => setStop(index)}
-            onClick={() => toggleDock(item.panel)}
+            onClick={() => (locked ? undefined : toggleDock(item.panel))}
           >
             {item.icon}
             {count > 0 && <span className="rail-badge" aria-hidden="true">{count > 99 ? '99+' : count}</span>}

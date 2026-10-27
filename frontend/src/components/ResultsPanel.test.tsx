@@ -142,8 +142,7 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(text(box())).toContain('Optical imagery');
     expect(text(box())).toContain('staging');
     expect(text(box().querySelector('.rg-count'))).toBe('2');
-    expect(text(container.querySelector('.results-head'))).toContain('3');
-    expect(container.querySelector('h2')?.textContent).toBe('Results');
+    expect(container.querySelector('h2')?.textContent).toBe('Results (0/3)');
   });
 
   it('starts on the first dataset with scenes and shows its time steps', () => {
@@ -286,10 +285,23 @@ describe('ResultsPanel dataset dropdown', () => {
     useAppStore.setState({ searchCrops: [] });
   });
 
-  it('"Clear all" empties the list', () => {
+  it('has no "Clear all" in its head, only the switch for the map', () => {
     load(MIXED);
-    act(() => (container.querySelector('.link-btn') as HTMLButtonElement).click());
-    expect(useAppStore.getState().sections).toEqual([]);
+    expect([...container.querySelectorAll('.results-head button')].map((b) => b.textContent)).toEqual(['Hide results']);
+  });
+
+  it('names what the switch does, never the state: "Hide results", then "Show results", and takes nothing from the list', () => {
+    load(MIXED);
+    const toggle = () => container.querySelector('.results-head button') as HTMLButtonElement;
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    act(() => toggle().click());
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    expect(toggle().textContent).toBe('Show results');
+    expect(container.querySelectorAll('.result-group')).toHaveLength(2);
+    expect(container.querySelector('h2')?.textContent).toBe('Results (0/3)');
+    act(() => toggle().click());
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(toggle().textContent).toBe('Hide results');
   });
 });
 

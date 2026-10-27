@@ -12,7 +12,7 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
 import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
-import { itemsForMap } from '../grouping';
+import { itemsForMap, itemsOverView } from '../grouping';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
 import type { CoverageDisplay } from '../mapLayers';
 import {
@@ -26,6 +26,7 @@ import {
   syncLayers,
   syncMosaic,
   syncPreview,
+  syncResultsOverlay,
 } from '../mapLayers';
 import { applyMapBackground, baseMapStyle, mapBackgroundOf } from '../mapStyles';
 import { previewOverlays } from '../processingPreview';
@@ -79,9 +80,8 @@ function reportViewport(map: MapLibreMap): void {
 // results list's own `expandedGroupIndex` in browse mode, since that is
 // what quicklooks/preview tiles and the click-to-select hit test follow —
 // collapsing every group there must hide them, same as never having
-// expanded one. In focus mode the list isn't even shown any more (`App.tsx`
-// swaps it for `ViewerControls`), so `activeGroupIndex` — the scene actually
-// viewed at full resolution — is what matters instead.
+// expanded one. In focus mode `activeGroupIndex` — the scene actually viewed at
+// full resolution — is what matters instead.
 function visibleGroupIndex(st: { focusMode: boolean; activeGroupIndex: number; expandedGroupIndex: number | null }): number | null {
   return st.focusMode ? st.activeGroupIndex : st.expandedGroupIndex;
 }
@@ -90,6 +90,17 @@ function visibleGroupIndex(st: { focusMode: boolean; activeGroupIndex: number; e
 // is a maplibre-gl-wide registration (M3-09), so re-mounting `MapView` gains
 // nothing from repeating it (and `addProtocol` is idempotent either way).
 addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
+
+// What the results lay over a full-resolution view (browsing draws them itself): the scenes of the open time step
+// with the results on the map, and the ticked scenes the view does not show in any case.
+function resultsOverlayOf(st: ReturnType<typeof useAppStore.getState>) {
+  return {
+    items: st.focusMode
+      ? itemsOverView(st.groups, st.expandedGroupIndex, st.selectedIds, Object.keys(st.downloaded), st.resultsOnMap)
+      : [],
+    dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
+  };
+}
 
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -122,6 +133,7 @@ export default function MapView() {
   const layers = useAppStore((s) => s.layers);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
   const searchCrops = useAppStore((s) => s.searchCrops);
+  const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
   const theme = useAppStore((s) => s.theme);
@@ -223,9 +235,10 @@ export default function MapView() {
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
-      syncLayers(map, layersForMap(layersOnMap(st.layers, st.searchCrops, st.openSectionId), viewLayer, st.showDownloaded));
+      syncLayers(map, layersForMap(layersOnMap(st.layers, st.searchCrops, st.openSectionId, st.resultsOnMap ? null : st.selectedIds), viewLayer, st.showDownloaded));
       syncMosaic(map, {
-        items: itemsForMap(st.groups, visibleGroupIndex(st), st.selectedIds),
+        // Browsing with the results off the map: the ticked scenes only (UI-01g); a view needs them all.
+        items: itemsForMap(st.groups, st.focusMode || st.resultsOnMap ? visibleGroupIndex(st) : null, st.selectedIds),
         dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
         downloaded: st.downloaded,
         selectedIds: st.selectedIds,
@@ -237,6 +250,7 @@ export default function MapView() {
         cropToAoi: st.cropToAoi,
         groups: st.groups,
       });
+      syncResultsOverlay(map, resultsOverlayOf(st));
       syncPreview(map, previewTilesRef.current);
       initDraw();
       readyRef.current = true;
@@ -332,6 +346,8 @@ export default function MapView() {
   const mosaics = mosaicsRef.current;
   // The layer that is the full-resolution view (`viewLayer.ts`) draws it at its
   // place, with its eye.
+  // Results off the map: the crops of the ticked scenes only. Null with them on, so a tick changes nothing here.
+  const cropFilter = resultsOnMap ? null : selectedIds;
   const viewLayer = useMemo(
     () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded }),
     [layers, viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded],
@@ -340,11 +356,11 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const note = overlayBudgetNote(
-        syncLayers(map, layersForMap(layersOnMap(layers, searchCrops, openSectionId), viewLayer, showDownloaded)),
+        syncLayers(map, layersForMap(layersOnMap(layers, searchCrops, openSectionId, cropFilter), viewLayer, showDownloaded)),
       );
       if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
-  }, [layers, searchCrops, openSectionId, viewLayer, showDownloaded]);
+  }, [layers, searchCrops, openSectionId, viewLayer, showDownloaded, cropFilter]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
@@ -384,11 +400,19 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
       syncBrowseMosaic(map, {
-        items: itemsForMap(groups, expandedGroupIndex, selectedIds),
+        // Results off the map: only the ticked scenes are drawn (UI-01g).
+        items: itemsForMap(groups, resultsOnMap ? expandedGroupIndex : null, selectedIds),
         dataset: datasets.find((d) => d.id === datasetId) ?? null,
       });
     }
-  }, [focusMode, groups, expandedGroupIndex, selectedIds, datasets, datasetId]);
+  }, [focusMode, groups, expandedGroupIndex, selectedIds, datasets, datasetId, resultsOnMap]);
+
+  // --- the results over a full-resolution view, while "Show results" is on. Runs after the view's own effect
+  // above, so what it draws lies over the view. ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current) syncResultsOverlay(map, resultsOverlayOf(useAppStore.getState()));
+  }, [focusMode, resultsOnMap, groups, expandedGroupIndex, selectedIds, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, mosaics]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. In a cropped focus view

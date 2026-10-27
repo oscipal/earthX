@@ -150,16 +150,23 @@ const pictureOf = (layer: MapLayer): string =>
     : JSON.stringify(layer.overlays.map((ov) => (ov.kind === 'raster' ? [ov.tileUrl, ov.bounds] : [ov.url, ov.coords])).sort());
 
 // What the map draws besides the browse view: the layers the user pinned — always,
-// whatever dataset is chosen — and, under them, the crops of the dataset chosen in
-// the dropdown. The crops of every other dataset of the search stay off the map.
+// whatever dataset is chosen — and, over them (UI-01g: the results are on top), the
+// crops of the dataset chosen in the dropdown. The crops of every other dataset of the search stay off the map.
 // A crop the user has pinned is not drawn a second time (Otto, 20.10.2026): the
 // pinned copy is the one the layer manager switches, hidden or not.
-export function layersOnMap(pinned: MapLayer[], crops: MapLayer[], chosenDatasetId: string | null): MapLayer[] {
+export function layersOnMap(
+  pinned: MapLayer[],
+  crops: MapLayer[],
+  chosenDatasetId: string | null,
+  // With the results off the map (UI-01g): only the crops of these ticked scenes are drawn.
+  onlySelected: readonly string[] | null = null,
+): MapLayer[] {
   if (chosenDatasetId === null) return pinned;
   const pinnedPictures = new Set(pinned.map(pictureOf));
   const isPinned = (crop: MapLayer) => pictureOf(crop) !== '' && pinnedPictures.has(pictureOf(crop));
+  const shown = (crop: MapLayer) => onlySelected === null || crop.restore.itemIds.some((id) => onlySelected.includes(id));
   return [
+    ...crops.filter((crop) => crop.restore.datasetId === chosenDatasetId && !isPinned(crop) && shown(crop)),
     ...pinned,
-    ...crops.filter((crop) => crop.restore.datasetId === chosenDatasetId && !isPinned(crop)),
   ];
 }

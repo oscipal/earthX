@@ -881,26 +881,30 @@ describe('pinned layers of several datasets stay', () => {
     expect(state.layers.filter((l) => rest.some((r) => r.id === l.id)).every((l) => l.visible)).toBe(true);
   });
 
-  it('choosing a layer makes its dataset the active one and opens its section', async () => {
+  it('choosing a layer leaves the list as it is: its dataset drives its controls, the open section stays (Otto, 26.10.2026)', async () => {
     await searchedAndPinned();
     useAppStore.getState().setOpenSection('optical-zarr');
-    const opticalLayer = useAppStore.getState().layers.find((l) => l.restore.datasetId === 'optical');
+    const before = useAppStore.getState();
+    const opticalLayer = before.layers.find((l) => l.restore.datasetId === 'optical');
     expect(opticalLayer).toBeDefined();
     useAppStore.getState().selectLayer(opticalLayer!.id);
     const state = useAppStore.getState();
     expect(state.datasetId).toBe('optical');
-    expect(state.openSectionId).toBe('optical');
-    expect(state.items.map((i) => i.id)).toEqual(['o1']);
+    expect(state.openSectionId).toBe('optical-zarr');
+    expect(state.items).toBe(before.items);
+    expect(state.groups).toBe(before.groups);
+    expect(state.selectedIds).toBe(before.selectedIds);
     expect(state.layers.filter((l) => l.visible)).toHaveLength(3);
   });
 
-  it('choosing a layer of a dataset that is no longer ticked ticks it again; the list shows nothing of another dataset', async () => {
+  it('choosing a layer of a dataset that is no longer ticked ticks nothing and leaves the list alone', async () => {
     await searchedAndPinned();
     useAppStore.getState().toggleDatasetSelected('optical'); // wipes sections, unticks it
     const layer = useAppStore.getState().layers.find((l) => l.restore.datasetId === 'optical')!;
+    const ticked = useAppStore.getState().selectedDatasetIds;
     useAppStore.getState().selectLayer(layer.id);
     const state = useAppStore.getState();
-    expect(state.selectedDatasetIds).toContain('optical');
+    expect(state.selectedDatasetIds).toBe(ticked);
     expect(state.datasetId).toBe('optical');
     expect(state.items).toEqual([]);
     expect(state.openSectionId).toBeNull();

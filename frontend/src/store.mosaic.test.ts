@@ -96,6 +96,7 @@ function openGroup(groupIds: string[]) {
     pinLoading: false,
     layers: [],
     viewLayerId: null,
+    resultsOnMap: true,
     aoi: AOI,
     error: null,
     notice: null,
@@ -412,5 +413,42 @@ describe('opening a pinned layer again', () => {
     await vi.waitFor(() => expect(mosaicCalls()).toHaveLength(1));
     expect(itemsOf(mosaicCalls()[0])).toEqual(['A', 'B']);
     await vi.waitFor(() => expect(useAppStore.getState().focusLoading).toBe(false));
+  });
+});
+
+describe('the results on the map around a full-resolution view (Otto, 26.10.2026)', () => {
+  it('go off the map when a view is loaded, and "Show results" brings them back over it', async () => {
+    tiler();
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    await useAppStore.getState().enterFocus(false);
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    useAppStore.getState().toggleResultsOnMap();
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(useAppStore.getState().focusMode).toBe(true);
+  });
+
+  it('go off the map for a cropped view too, and stay off when the view is entered again', async () => {
+    tiler();
+    await useAppStore.getState().enterFocus(true);
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    useAppStore.getState().toggleResultsOnMap();
+    await useAppStore.getState().enterFocus(false);
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+  });
+
+  it('are on again when the view is left', async () => {
+    tiler();
+    await useAppStore.getState().enterFocus(false);
+    useAppStore.getState().exitFocus();
+    expect(useAppStore.getState().focusMode).toBe(false);
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+  });
+
+  it('are not touched by a view that cannot be entered', async () => {
+    tiler();
+    useAppStore.setState({ aoi: null });
+    await useAppStore.getState().enterFocus(true);
+    expect(useAppStore.getState().focusMode).toBe(false);
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
   });
 });

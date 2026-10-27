@@ -132,6 +132,9 @@ body.dragging * {
   cursor: grabbing !important;
   user-select: none;
 }
+.draggable.fill {
+  width: 100%;
+}
 /* controls inside a draggable keep their own affordance */
 .draggable button,
 .draggable input,
@@ -173,38 +176,6 @@ body.dragging * {
 .zoom-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-/* --- collapsible results dock (right), same pattern mirrored horizontally
-   (V-5): fixed to the right edge instead of freely draggable, so it can't
-   end up somewhere the user has to go hunting for it. --- */
-.results-dock {
-  transition: transform 0.32s ease;
-}
-.results-dock.collapsed {
-  transform: translateX(calc(100% + 16px));
-}
-.results-toggle {
-  position: absolute;
-  top: 14px;
-  right: 100%;
-  margin-right: 6px;
-  width: 24px;
-  height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px 0 0 8px;
-  color: var(--accent);
-  font-size: 16px;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-  box-shadow: var(--glow);
-}
-.results-toggle:hover {
-  border-color: var(--accent);
 }
 
 /* --- full-resolution viewer controls (focus mode) --- */
@@ -680,6 +651,9 @@ input[type='date']:focus {
   font-size: 12px;
   cursor: pointer;
 }
+.ghost-btn {
+  overflow-wrap: anywhere;
+}
 .ghost-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -748,8 +722,6 @@ input[type='date']:focus {
 
 /* --- results panel --- */
 .results-panel {
-  width: 300px;
-  max-height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -767,16 +739,50 @@ input[type='date']:focus {
   letter-spacing: 2px;
   text-transform: uppercase;
 }
-.results-head span {
-  font-size: 11px;
-  color: var(--accent);
-}
-.results-head-right {
+/* The switch for the results on the map: a bordered button, but no taller than the head's text line. */
+.clear-results {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  gap: 8px;
+  flex: none;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--panel-border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.clear-results:hover,
+.clear-results:focus-visible {
+  background: var(--row-hover);
+  outline: none;
+}
+.clear-results-x {
+  color: #ff5a6e;
+  font-size: 10px;
+}
+.results-map-toggle {
+  padding: 0 10px;
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.results-map-toggle:hover,
+.results-map-toggle:focus-visible {
+  background: var(--row-hover);
+  outline: none;
 }
 .results-list {
+  flex: 1 1 auto;
+  min-height: 0;
   list-style: none;
   margin: 0;
   padding: 6px;
@@ -1241,14 +1247,6 @@ input[type='date']:focus {
 }
 
 /* --- mosaic info under the timeline --- */
-.mosaic-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 3px;
-  font-size: 10px;
-  color: var(--muted);
-}
 .link-btn {
   background: none;
   border: none;
@@ -1310,27 +1308,40 @@ input[type='date']:focus {
 }
 
 /* --- download bar --- */
+/* A grid of cells of one size, the count first: it wraps to more rows as the window narrows, and a row grows
+   with its tallest label, so no text ends up outside its button (UI-01g). */
 .download-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  align-items: stretch;
+  gap: 8px 10px;
   padding: 10px 16px;
+  box-sizing: border-box;
 }
 .download-count {
-  font-size: 12px;
-  color: var(--accent-2);
-}
-/* The two "View full resolution" buttons (M3-09: "Crop to AOI" / "View full
-   selection"), grouped under a shared label so it stays visible both lead to
-   the same full-resolution view rather than reading as unrelated actions. */
-.view-full-group {
+  /* The number above its label, in a cell of one width: "1 scene" and "12 scenes" must not move the buttons. */
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  color: var(--accent-2);
+  line-height: 1.2;
+  text-align: center;
 }
-.view-full-label {
+.download-count strong {
+  font-size: 16px;
+}
+.download-count span {
   font-size: 11px;
-  color: var(--muted);
+}
+.download-bar .primary-btn,
+.download-bar .ghost-btn {
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 8px;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 .db-select {
   padding: 8px 10px;
@@ -1486,6 +1497,16 @@ input[type='date']:focus {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--row-hover);
+}
+/* Nothing to show yet: dim, still in the tab order and with its tooltip. */
+.rail-btn[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.rail-btn[aria-disabled='true']:hover,
+.rail-btn[aria-disabled='true']:focus-visible {
+  border-color: var(--panel-border);
+  color: var(--muted);
 }
 .rail-badge {
   position: absolute;
