@@ -2,7 +2,7 @@
 
 **Pflege:** Dieses Backlog pflegt nur der Planungs-Chat bzw. Otto. Sessions ändern es nicht; Erledigtes tragen sie als Log-Zeile mit PR-Nummer in `docs/ENTSCHEIDUNGSLOG.md` ein (Otto, 26.10.2026).
 
-Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20) fertig zu machen. Danach werden diese Punkte der Reihe nach aufgegriffen. Reihenfolge laut Log vom 24.10.2026: DOC-01, dann UI-01 und UI-02; NM4-01 und NM4-02 als Stufe A daneben. Für die übrigen Punkte entscheidet Otto die Reihenfolge.
+Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20) fertig zu machen. Danach werden diese Punkte der Reihe nach aufgegriffen. Reihenfolge laut Log vom 24.10.2026: DOC-01, dann UI-01 und UI-02; NM4-01 und NM4-02 als Stufe A daneben. Für die übrigen Punkte entscheidet Otto die Reihenfolge.
 
 ## Neu (Plan-Dateien unter `docs/plans/querschnitt/`)
 
@@ -256,6 +256,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 - Handbereich der Farbskala je Job dauerhaft speichern (§3 Punkt 1).
 - Stapelung zwischen Überflügen: Ansicht und angeheftete Layer stapeln verschieden (bekannte Grenze aus M4-17c §15), Prüffall in UI-01 §1 Punkt 10.
 - In UI-01g aufgenommen (Otto, 26.10.2026, direkt an die Session): Umschalter „Show results / Hide results“ statt „Clear all“ (Ergebnisse auf der Karte immer über allen Layern; Auswahl bei verborgener Kartenanzeige erscheint trotzdem mit den normalen Steuerelementen); Anzahl in Klammern neben „Results“; Steuerleiste einer Auswahl ohne „Full resolution“-Titel, gleich große Felder, kein „Clear“; Zeitleiste ohne „Add to layers“ und „Select all frames“; Benennung (Otto, 26.10.2026): eine Szene „Crop to AOI“, „View whole scene“, „Download crop“, „Download full scene“; mehrere Szenen „Crop & merge to AOI“, „View merged scenes“ (die ganzen Szenen werden in der Ansicht gemergt), „Download merged crop“, „Download full scenes“. „Clear search results“ mit rotem ✕ unter „Load more“. Ein Klick auf einen angehefteten Layer (Zuschnitt, Ergebnis) wählt nichts in den Suchergebnissen aus – Layer und Suchergebnisse sind vollständig entkoppelt.
+- Fehler nach UI-01g (Otto, 27.10.2026), Auftrag an die UI-02a-Session (#211, eigener Commit): Zuschnitt lässt sich nicht entfernen; nach dem Verlassen der Ansicht erscheint der Quicklook trotz „Hide results“. Regel: „Hide results“ gilt immer, einzige Ausnahme ist die Auswahl; nur der Umschalter ändert den Zustand. Dazu: Knopf „Clear“ in der Steuerleiste der Ansicht (ersetzt „kein Clear“ aus UI-01g), weniger Text im Kopf, Knopfzeilen gleich breit, Text nicht breiter als die Knopfzeilen.
 
 ## Offen im Entscheidungslog (bewusst nach M4)
 
