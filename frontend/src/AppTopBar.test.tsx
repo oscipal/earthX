@@ -97,15 +97,19 @@ describe('top-right map controls', () => {
     expect(btn(bar, 'Light')).not.toBeNull();
   });
 
-  it('puts the projection in the Basemap menu: "Globe" while flat, and the other way round', () => {
+  it('puts the projection in the Basemap menu, and back', () => {
     const view = mount();
+    const choose = (name: string) =>
+      act(() => {
+        [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find((e) => e.textContent === name)!.click();
+      });
     act(() => {
       btn(view, 'Basemap')!.click();
     });
-    act(() => {
-      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find((e) => e.textContent === 'Globe')!.click();
-    });
+    choose('Globe');
     expect(useAppStore.getState().projection).toBe('globe');
+    choose('Mercator');
+    expect(useAppStore.getState().projection).toBe('mercator');
     expect(btn(view.querySelector<HTMLElement>('.top-right')!, 'Mercator')).toBeNull();
   });
 
