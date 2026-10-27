@@ -8,7 +8,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
-import { jobEntry } from './fixtures/jobEntries';
+import { jobEntry, NOW } from './fixtures/jobEntries';
 import type { MapLayer } from './layers';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
@@ -35,6 +35,8 @@ const layer = (id: string): MapLayer => ({
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   localStorage.clear();
+  // The jobs of the fixture are dated by `NOW`.
+  vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ collections: [] }), { status: 200 })));
   useAppStore.setState({ dock: 'controls', layers: [], toolMode: 'none', aoi: null, groups: [], selectedIds: [], focusMode: false });
   useProcessingStore.setState({ open: false, detailJobID: null, jobs: [] });
@@ -50,6 +52,7 @@ afterEach(() => {
   resetJobs();
   localStorage.clear();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const rail = () => container.querySelector<HTMLElement>('nav[aria-label="Main"]')!;
