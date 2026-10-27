@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
 import { datasetsFrom } from './datasets';
-import { jobEntry } from './fixtures/jobEntries';
+import { jobEntry, NOW } from './fixtures/jobEntries';
 import { bboxToPolygon } from './geoUtils';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
@@ -88,6 +88,8 @@ beforeEach(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   localStorage.clear();
   sessionStorage.clear();
+  // The jobs of the fixture are dated by `NOW`.
+  vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   vi.stubGlobal('fetch', fetchMock);
   answer = () => json(FEW);
   container = document.createElement('div');
@@ -132,6 +134,7 @@ afterEach(() => {
   resetJobs();
   localStorage.clear();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('the symbol', () => {
