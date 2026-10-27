@@ -113,18 +113,17 @@ export function groupItemIdsFor(itemIds: readonly string[], groups: readonly Tim
   return [...byGroupIndex.values()];
 }
 
-// What the results lay over a full-resolution view (UI-01g): with the results on the map, what browsing shows; off
-// it, the ticked scenes the view does not draw itself (`viewedIds`), so that a scene ticked in the list shows even
-// then (Otto, 26.10.2026).
+// What the results lay under a full-resolution view (UI-01g, turned over on 27.10.2026): with the results on the map, what
+// browsing shows; off it, the ticked scenes, all of them, also one the view draws (a scene ticked again shows like any
+// other, Otto, 27.10.2026; the view lies over its quicklook).
 export function itemsOverView(
   groups: TimeStepGroup[],
   expandedGroupIndex: number | null,
   selectedIds: readonly string[],
-  viewedIds: readonly string[],
   resultsOnMap: boolean,
 ): StacItem[] {
   if (resultsOnMap) return itemsForMap(groups, expandedGroupIndex, selectedIds);
-  return groups.flatMap((g) => g.items).filter((it) => selectedIds.includes(it.id) && !viewedIds.includes(it.id));
+  return groups.flatMap((g) => g.items).filter((it) => selectedIds.includes(it.id));
 }
 
 // What the map should show: the expanded-in-the-list group's items, plus any

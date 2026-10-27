@@ -70,13 +70,17 @@ describe('resultsOnMapOf, over a full-resolution view', () => {
     expect(ids(resultsOnMapOf(view()).overlay)).toEqual(['a1', 'a2']);
   });
 
-  it('lays nothing over it with the results hidden, a ticked scene of the view not twice', () => {
+  it('lays nothing over it with the results hidden and nothing ticked', () => {
     expect(resultsOnMapOf(view({ resultsOnMap: false })).overlay).toEqual([]);
-    expect(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1'] })).overlay).toEqual([]);
   });
 
-  it('lays a ticked scene that the view does not show over it, hidden or not', () => {
-    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1', 'b1'] })).overlay)).toEqual(['b1']);
+  it('lays a ticked scene over it, hidden or not: also one the view is made of, once it is ticked again after a crop', () => {
+    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1'] })).overlay)).toEqual(['a1']);
+    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1', 'b1'] })).overlay).sort()).toEqual(['a1', 'b1']);
+  });
+
+  it('lays no scene of the view over it that is not ticked, while the results are hidden', () => {
+    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['b1'] })).overlay)).toEqual(['b1']);
   });
 
   it('lets a click pick the scenes that are drawn: those of the view, and what lies over it', () => {

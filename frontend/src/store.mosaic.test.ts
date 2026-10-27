@@ -417,26 +417,60 @@ describe('opening a pinned layer again', () => {
 });
 
 describe('the results on the map around a full-resolution view (Otto, 26.10.2026; the switch alone, 27.10.2026)', () => {
-  // Show or hide is the results switch's alone: a view that is loaded, left, cleared or entered again leaves it.
-  it.each([true, false])('a view loaded and left leaves the switch as it was (results on map: %s)', async (before) => {
+  // Show or hide is the results switch's alone, with two exceptions: a new search shows the results, and a crop of the
+  // scenes ("Crop to AOI") hides them. A view of the whole scene, leaving a view and clearing it leave the switch.
+  it.each([true, false])('a view of the whole scene, loaded and left, leaves the switch and the tick as they were (results on map: %s)', async (before) => {
     tiler();
-    useAppStore.setState({ resultsOnMap: before });
+    useAppStore.setState({ resultsOnMap: before, selectedIds: ['A'] });
     await useAppStore.getState().enterFocus(false);
     expect(useAppStore.getState().focusMode).toBe(true);
     expect(useAppStore.getState().resultsOnMap).toBe(before);
+    expect(useAppStore.getState().selectedIds).toEqual(['A']);
     useAppStore.getState().exitFocus();
     expect(useAppStore.getState().focusMode).toBe(false);
     expect(useAppStore.getState().resultsOnMap).toBe(before);
+    expect(useAppStore.getState().selectedIds).toEqual(['A']);
   });
 
-  it.each([true, false])('a cropped view, entered again, and cleared leave the switch as it was (results on map: %s)', async (before) => {
+  it.each([true, false])('a crop hides the results and drops the tick of its scenes, whatever the switch was (results on map: %s)', async (before) => {
     tiler();
-    useAppStore.setState({ resultsOnMap: before });
+    useAppStore.setState({ resultsOnMap: before, selectedIds: ['A', 'B'] });
     await useAppStore.getState().enterFocus(true);
-    await useAppStore.getState().enterFocus(false);
-    expect(useAppStore.getState().resultsOnMap).toBe(before);
-    useAppStore.getState().clearView();
-    expect(useAppStore.getState().resultsOnMap).toBe(before);
+    expect(useAppStore.getState().focusMode).toBe(true);
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    expect(useAppStore.getState().selectedIds).toEqual([]);
+    // The view is made of the scenes that were ticked, and stays open without the tick.
+    expect(Object.keys(useAppStore.getState().downloaded).sort()).toEqual(['A', 'B']);
+  });
+
+  it('a crop of the time step (nothing ticked) hides the results too', async () => {
+    tiler();
+    useAppStore.setState({ resultsOnMap: true, selectedIds: [] });
+    await useAppStore.getState().enterFocus(true);
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    expect(Object.keys(useAppStore.getState().downloaded).sort()).toEqual(['A', 'B', 'C']);
+  });
+
+  it('a scene ticked again after a crop leaves the view alone', async () => {
+    tiler();
+    useAppStore.setState({ selectedIds: ['A'] });
+    await useAppStore.getState().enterFocus(true);
+    const view = useAppStore.getState().downloaded;
+    useAppStore.getState().toggleSelected('A');
+    expect(useAppStore.getState().selectedIds).toEqual(['A']);
+    expect(useAppStore.getState().focusMode).toBe(true);
+    expect(useAppStore.getState().downloaded).toBe(view);
+    expect(useAppStore.getState().cropToAoi).toBe(true);
+  });
+
+  it('"Add to layers" right after a crop takes all scenes of the view, as nothing is ticked any more', async () => {
+    tiler();
+    useAppStore.setState({ selectedIds: ['A', 'B'] });
+    await useAppStore.getState().enterFocus(true);
+    useAppStore.getState().addCurrentToLayers();
+    await vi.waitFor(() => expect(useAppStore.getState().layers.length).toBeGreaterThan(0));
+    const layers = useAppStore.getState().layers;
+    expect(layers.flatMap((l) => l.restore.itemIds).sort()).toEqual(['A', 'B']);
   });
 
   it('the switch alone changes it, in a view as well', async () => {
@@ -450,9 +484,30 @@ describe('the results on the map around a full-resolution view (Otto, 26.10.2026
 
   it('are not touched by a view that cannot be entered', async () => {
     tiler();
-    useAppStore.setState({ aoi: null, resultsOnMap: false });
+    useAppStore.setState({ aoi: null, resultsOnMap: false, selectedIds: ['A'] });
     await useAppStore.getState().enterFocus(true);
     expect(useAppStore.getState().focusMode).toBe(false);
     expect(useAppStore.getState().resultsOnMap).toBe(false);
+    expect(useAppStore.getState().selectedIds).toEqual(['A']);
+  });
+
+  it('"Change image" leaves the view and opens the results, and leaves the switch and the tick', async () => {
+    tiler();
+    useAppStore.setState({ resultsOnMap: false, selectedIds: ['A'], dock: null, sections: [{ datasetId: ID, items: useAppStore.getState().items, groups: useAppStore.getState().groups, notes: [] }] as never });
+    await useAppStore.getState().enterFocus(false);
+    useAppStore.getState().changeImage();
+    expect(useAppStore.getState().focusMode).toBe(false);
+    expect(useAppStore.getState().dock).toBe('results');
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    expect(useAppStore.getState().selectedIds).toEqual(['A']);
+  });
+
+  it('"Change image" without results opens nothing', async () => {
+    tiler();
+    useAppStore.setState({ sections: [], dock: 'controls' });
+    await useAppStore.getState().enterFocus(false);
+    useAppStore.getState().changeImage();
+    expect(useAppStore.getState().focusMode).toBe(false);
+    expect(useAppStore.getState().dock).toBe('controls');
   });
 });

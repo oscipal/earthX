@@ -72,7 +72,7 @@ describe('the area of a cropped view', () => {
     state().exitFocus();
     expect(state().viewAoi).toBeNull();
     await state().enterFocus(true);
-    state().clearView();
+    state().exitFocus();
     expect(state().viewAoi).toBeNull();
     await state().enterFocus(true);
     state().clearAoi();

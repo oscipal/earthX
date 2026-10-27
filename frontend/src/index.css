@@ -280,17 +280,19 @@ body.dragging * {
   display: flex;
   gap: 8px;
 }
-/* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of eight columns for everything under the
-   head, so the rows of buttons are the same width and that width is the width of the view. Row 1: colormap, vmin and
-   vmax two columns wide, "auto" and "Apply" one each. Row 2: four buttons, two columns each. Below 600 px the grid has
-   four columns and the rows wrap; no text ends up outside its cell. */
+/* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
+   head, so the rows of buttons are the same width and that width is the width of the view. Row 1: colormap three
+   columns, vmin and vmax two each, "auto-scale" three, "Apply" two. Row 2: four buttons, three columns each. Every
+   control of row 1 is as high as "Apply", which stands on the same line as the fields. Below 600 px the grid has four
+   columns and the rows wrap; no text ends up outside its cell. */
 .scene-view {
-  --cell: 62px;
+  --cell: 36px;
+  --row-height: 34px;
   box-sizing: border-box;
-  width: min(calc(8 * var(--cell) + 7 * 8px + 32px), calc(100vw - var(--dock-offset) - 24px));
+  width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--dock-offset) - 24px));
   min-width: 0;
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 10px 8px;
   align-items: end;
 }
@@ -342,17 +344,21 @@ body.dragging * {
   gap: 8px;
   align-items: end;
 }
-.scene-view .vc-render > :nth-child(1),
+.scene-view .vc-render > :nth-child(1) {
+  grid-column: span 3;
+}
 .scene-view .vc-render > :nth-child(2),
 .scene-view .vc-render > :nth-child(3) {
   grid-column: span 2;
 }
-.scene-view .vc-render > :nth-child(4),
+.scene-view .vc-render > :nth-child(4) {
+  grid-column: span 3;
+}
 .scene-view .vc-render > :nth-child(5) {
-  grid-column: span 1;
+  grid-column: span 2;
 }
 .scene-view .vc-actions > * {
-  grid-column: span 2;
+  grid-column: span 3;
   min-width: 0;
   min-height: 44px;
   padding: 6px 8px;
@@ -364,15 +370,21 @@ body.dragging * {
 .scene-view .vc-field input {
   width: 100%;
   min-width: 0;
+  height: var(--row-height);
   box-sizing: border-box;
 }
-.scene-view .vc-render .link-btn {
-  justify-self: center;
-  align-self: center;
-}
-.scene-view .vc-apply {
-  padding: 6px 4px;
+/* "auto-scale" and "Apply": one height, the text in the middle, on the line the fields stand on. */
+.scene-view .vc-render > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   min-width: 0;
+  height: var(--row-height);
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
 }
 @media (max-width: 599px) {
   .scene-view {
@@ -381,16 +393,11 @@ body.dragging * {
   .scene-view .vc-render > :nth-child(1) {
     grid-column: span 4;
   }
-  .scene-view .vc-render > :nth-child(2),
-  .scene-view .vc-render > :nth-child(3) {
+  .scene-view .vc-render > :nth-child(n + 2) {
     grid-column: span 2;
   }
-  .scene-view .vc-render > :nth-child(4),
-  .scene-view .vc-render > :nth-child(5) {
+  .scene-view .vc-actions > * {
     grid-column: span 2;
-  }
-  .scene-view .vc-render > :nth-child(4) {
-    justify-self: stretch;
   }
 }
 .ghost-btn.danger {

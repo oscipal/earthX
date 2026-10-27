@@ -11,7 +11,7 @@ import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
-import { viewKind } from '../viewKind';
+import { viewDates, viewKind } from '../viewKind';
 
 function Eye({ off }: { off: boolean }) {
   return (
@@ -35,7 +35,7 @@ export default function ViewerControls() {
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
   const exitFocus = useAppStore((s) => s.exitFocus);
-  const clearView = useAppStore((s) => s.clearView);
+  const changeImage = useAppStore((s) => s.changeImage);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
   const pinLoading = useAppStore((s) => s.pinLoading);
   const count = useAppStore((s) => Object.keys(s.downloaded).length);
@@ -51,14 +51,16 @@ export default function ViewerControls() {
   const datasetTitle = useAppStore(
     (s) => s.datasets.find((d) => d.id === s.datasetId)?.title ?? s.datasetId ?? '',
   );
+  // The scenes of the view, for the date in its head.
+  const date = useAppStore((s) => viewDates(s.groups.flatMap((g) => g.items).filter((it) => it.id in s.downloaded)));
   // What the head cuts short, in full.
-  const title = `${datasetTitle} · ${cropToAoi ? 'cropped to the AOI' : 'whole scene'}${count > 1 ? ` · ${count} scenes merged` : ''}`;
+  const title = [datasetTitle, date, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
 
   return (
     <div className="panel viewer-controls scene-view">
       <div className="vc-head">
         <span className="vc-title" title={title}>
-          {datasetTitle} · {viewKind(cropToAoi, count)}
+          {[datasetTitle, date, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
         </span>
         <button
           type="button"
@@ -103,12 +105,12 @@ export default function ViewerControls() {
         </label>
         <button
           type="button"
-          className="link-btn"
+          className="ghost-btn vc-auto"
           disabled={focusLoading}
           title="Measure the 2nd/98th percentile stretch from the source again"
           onClick={() => autoStretch()}
         >
-          {focusLoading ? 'measuring…' : 'auto'}
+          {focusLoading ? 'measuring…' : 'auto-scale'}
         </button>
         <button type="button" className="primary-btn vc-apply" onClick={() => applyRender()}>
           Apply
@@ -134,10 +136,10 @@ export default function ViewerControls() {
         >
           ⚙ Process
         </button>
-        <button type="button" className="ghost-btn" title="Choose a different image" onClick={() => exitFocus()}>
+        <button type="button" className="ghost-btn" title="Remove this view and choose another scene from the results" onClick={() => changeImage()}>
           ‹ Change image
         </button>
-        <button type="button" className="ghost-btn" title="Remove this view and deselect" onClick={() => clearView()}>
+        <button type="button" className="ghost-btn" title="Remove this view from the map" onClick={() => exitFocus()}>
           ✕ Clear
         </button>
       </div>

@@ -27,7 +27,7 @@ export interface ResultsState {
 export interface ResultsOnMap {
   // Browsing: the scenes whose quicklook is drawn.
   quicklooks: StacItem[];
-  // Over a full-resolution view: the scenes whose quicklook lies over it (the view's own scenes only with the results on).
+  // Under a full-resolution view: the scenes whose quicklook lies below it (the results on, or the ticked ones).
   overlay: StacItem[];
   // The crops a search draws by itself: all of the chosen dataset, or only those of these ticked scenes.
   cropsOf: readonly string[] | null;
@@ -43,7 +43,7 @@ const ticked = (groups: TimeStepGroup[], selectedIds: readonly string[]): StacIt
 export function resultsOnMapOf(s: ResultsState): ResultsOnMap {
   const viewed = Object.keys(s.downloaded);
   const quicklooks = s.focusMode ? [] : itemsForMap(s.groups, s.resultsOnMap ? s.expandedGroupIndex : null, s.selectedIds);
-  const overlay = s.focusMode ? itemsOverView(s.groups, s.expandedGroupIndex, s.selectedIds, viewed, s.resultsOnMap) : [];
+  const overlay = s.focusMode ? itemsOverView(s.groups, s.expandedGroupIndex, s.selectedIds, s.resultsOnMap) : [];
   // The view's own scenes are drawn as well in a view, and can be picked or dropped like the others.
   const ofView = s.focusMode ? s.groups.flatMap((group) => group.items).filter((item) => viewed.includes(item.id)) : [];
   const clickable = [...new Map([...quicklooks, ...overlay, ...ofView].map((item) => [item.id, item])).values()];

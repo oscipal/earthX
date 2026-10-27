@@ -10,8 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CSS from '../index.css?raw';
 import { datasetsFrom } from '../datasets';
 import { useAppStore, type AppState } from '../store';
-import type { Collection, DownloadedInfo } from '../types';
-import { viewKind } from '../viewKind';
+import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
+import { viewDates, viewKind } from '../viewKind';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -32,6 +32,15 @@ const collection = (title: string) =>
 const info = (): DownloadedInfo => ({ tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 });
 const scenes = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`s${i}`, info()]));
 
+// Scenes s0, s1, … of the search, one per entry of `days` (a datetime, or undefined for a product without an instant).
+const withDays = (days: (string | undefined)[]): TimeStepGroup[] => [
+  {
+    label: 'all',
+    key: 'all',
+    items: days.map((day, i) => ({ id: `s${i}`, collection: 'optical', bbox: [0, 0, 1, 1], properties: day ? { datetime: day } : {}, assets: {} }) as StacItem),
+  } as unknown as TimeStepGroup,
+];
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -39,7 +48,7 @@ function mount(over: Partial<AppState> = {}, title = 'Sentinel-2 L2A') {
   act(() => {
     useAppStore.setState({
       datasets: datasetsFrom([collection(title)]), datasetId: 'optical', focusMode: true, cropToAoi: true, downloaded: scenes(1), showDownloaded: true,
-      pendingColormapName: '', pendingVmin: '0', pendingVmax: '3000', focusLoading: false, pinLoading: false, ...over,
+      pendingColormapName: '', pendingVmin: '0', pendingVmax: '3000', focusLoading: false, pinLoading: false, groups: [], selectedIds: [], dock: null, resultsOnMap: true, ...over,
     });
     root.render(<ViewerControls />);
   });
@@ -75,6 +84,34 @@ describe('the head', () => {
     expect(title().textContent).toBe(text);
   });
 
+  it('has the acquisition date (UTC) after the dataset: one date for scenes of one day', () => {
+    mount({ groups: withDays(['2025-07-29T23:30:00Z']) });
+    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 · AOI crop');
+    mount({ cropToAoi: false, downloaded: scenes(2), groups: withDays(['2025-07-29T08:00:00Z', '2025-07-29T20:15:00Z']) });
+    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 · 2 scenes merged');
+  });
+
+  it('has the span of the first and the last day for scenes of different days', () => {
+    mount({ downloaded: scenes(2), groups: withDays(['2025-08-03T10:00:00Z', '2025-07-29T10:00:00Z']) });
+    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 – 2025-08-03 · AOI crop · 2 scenes merged');
+  });
+
+  it('takes the date of the scenes of the view only, not of the other results', () => {
+    mount({ groups: withDays(['2025-07-29T10:00:00Z', '2025-09-01T10:00:00Z']), downloaded: { s0: info() } });
+    expect(title().textContent).toContain('2025-07-29');
+    expect(title().textContent).not.toContain('2025-09-01');
+  });
+
+  it('has no date for a product without an instant, and no empty separator', () => {
+    mount({ groups: withDays([undefined]) });
+    expect(title().textContent).toBe('Sentinel-2 L2A · AOI crop');
+  });
+
+  it('has the date in the tooltip as well, so a cut-off head can be read whole', () => {
+    mount({ downloaded: scenes(2), groups: withDays(['2025-07-29T10:00:00Z', '2025-08-03T10:00:00Z']) });
+    expect(title().title).toBe('Sentinel-2 L2A · 2025-07-29 – 2025-08-03 · cropped to the AOI · 2 scenes merged');
+  });
+
   it('has no "Full-resolution view" and no count of one image', () => {
     mount();
     expect(container.textContent).not.toMatch(/full-resolution view|FULL-RESOLUTION|1 image|image\b.*images?\b/iu);
@@ -85,6 +122,16 @@ describe('the head', () => {
     mount({ cropToAoi: true, downloaded: scenes(3) }, 'Copernicus DEM GLO-30, global 30 m digital surface model');
     expect(title().title).toBe('Copernicus DEM GLO-30, global 30 m digital surface model · cropped to the AOI · 3 scenes merged');
     expect(title().textContent).toContain('Copernicus DEM GLO-30, global 30 m digital surface model');
+  });
+
+  it('gives the dates of the helper in UTC, as a day or a span, and none for bad or missing ones', () => {
+    const at = (datetime?: unknown) => ({ properties: datetime === undefined ? {} : { datetime } });
+    expect(viewDates([at('2025-07-29T23:59:59Z')])).toBe('2025-07-29');
+    expect(viewDates([at('2025-07-30T01:00:00+02:00')])).toBe('2025-07-29');
+    expect(viewDates([at('2025-08-03T00:00:00Z'), at('2025-07-29T12:00:00Z'), at('2025-07-31T12:00:00Z')])).toBe('2025-07-29 – 2025-08-03');
+    expect(viewDates([at('not a date'), at(42), at()])).toBeNull();
+    expect(viewDates([])).toBeNull();
+    expect(viewDates([at('2025-07-29T12:00:00Z'), at()])).toBe('2025-07-29');
   });
 
   it('says only what the kind is, for the helper', () => {
@@ -128,28 +175,44 @@ describe('the rows of buttons', () => {
     expect(first).toHaveLength(5);
     expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'BUTTON', 'BUTTON']);
     expect([first[0], first[1], first[2]].map((el) => el.querySelector('span')?.textContent)).toEqual(['Colormap', 'vmin', 'vmax']);
-    expect([first[3], first[4]].map((el) => el.textContent)).toEqual(['auto', 'Apply']);
+    expect([first[3], first[4]].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply']);
     expect([...row('vc-actions').children].map((el) => el.textContent)).toEqual(['＋ Add to layers', '⚙ Process', '‹ Change image', '✕ Clear']);
   });
 
-  it('has the tooltips: "Choose a different image" and "Remove this view and deselect"', () => {
+  it('has the tooltips of what "Change image" and "Clear" do', () => {
     mount();
     const buttons = [...row('vc-actions').children] as HTMLButtonElement[];
-    expect(buttons[2].title).toBe('Choose a different image');
-    expect(buttons[3].title).toBe('Remove this view and deselect');
+    expect(buttons[2].title).toBe('Remove this view and choose another scene from the results');
+    expect(buttons[3].title).toBe('Remove this view from the map');
   });
 
-  it('leaves the view with "Change image", keeping the choice of scenes, and takes everything with "Clear"', () => {
-    mount({ selectedIds: ['s0'] });
-    const [, , change, clear] = [...row('vc-actions').children] as HTMLButtonElement[];
-    act(() => change.click());
-    expect(useAppStore.getState().focusMode).toBe(false);
-    expect(useAppStore.getState().selectedIds).toEqual(['s0']);
-    mount({ focusMode: true, selectedIds: ['s0'], downloaded: scenes(1) });
+  it('"Clear" takes the view off the map and nothing else: the tick, the results panel and the switch stay', () => {
+    mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false });
     act(() => ([...row('vc-actions').children][3] as HTMLButtonElement).click());
-    expect(useAppStore.getState().focusMode).toBe(false);
-    expect(useAppStore.getState().selectedIds).toEqual([]);
-    expect(clear).toBeDefined();
+    const s = useAppStore.getState();
+    expect(s.focusMode).toBe(false);
+    expect(s.downloaded).toEqual({});
+    expect(s.selectedIds).toEqual(['s0']);
+    expect(s.dock).toBe('controls');
+    expect(s.resultsOnMap).toBe(false);
+  });
+
+  it('"Change image" takes the view off the map and opens the results, and leaves the tick and the switch', () => {
+    const sections = [{ datasetId: 'optical', items: withDays([undefined])[0].items, groups: [], notes: [] }] as never;
+    mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false, sections });
+    act(() => ([...row('vc-actions').children][2] as HTMLButtonElement).click());
+    const s = useAppStore.getState();
+    expect(s.focusMode).toBe(false);
+    expect(s.dock).toBe('results');
+    expect(s.selectedIds).toEqual(['s0']);
+    expect(s.resultsOnMap).toBe(false);
+  });
+
+  it('puts "auto-scale" and "Apply" on one line: one height, centred, the same as the fields', () => {
+    mount();
+    const [autoScale, apply] = [...row('vc-render').children].slice(3) as HTMLButtonElement[];
+    expect(autoScale.textContent).toBe('auto-scale');
+    expect(apply.parentElement).toBe(autoScale.parentElement);
   });
 });
 
@@ -161,8 +224,8 @@ describe('the layout contract in index.css', () => {
     return CSS.slice(start, CSS.indexOf('}', start));
   };
 
-  it('puts the head and both rows in one grid of eight columns, which decides the width of the view', () => {
-    expect(rule('.scene-view')).toContain('grid-template-columns: repeat(8, minmax(0, 1fr))');
+  it('puts the head and both rows in one grid of twelve columns, which decides the width of the view', () => {
+    expect(rule('.scene-view')).toContain('grid-template-columns: repeat(12, minmax(0, 1fr))');
     expect(rule('.scene-view')).toMatch(/width: min\(/u);
     expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('grid-template-columns: subgrid');
     expect(rule('.scene-view .vc-head')).toContain('grid-column: 1 / -1');
@@ -176,8 +239,17 @@ describe('the layout contract in index.css', () => {
     expect(title).toContain('min-width: 0');
   });
 
-  it('gives the four buttons of the second row two columns each and wraps them below 600 px', () => {
-    expect(rule('.scene-view .vc-actions > *')).toContain('grid-column: span 2');
+  it('gives "auto-scale" and "Apply" the height of the fields and centres their text', () => {
+    const buttons = rule('.scene-view .vc-render > button');
+    expect(buttons).toContain('height: var(--row-height)');
+    expect(buttons).toContain('align-items: center');
+    expect(buttons).toContain('justify-content: center');
+    expect(rule('.scene-view .vc-field select,\n.scene-view .vc-field input')).toContain('height: var(--row-height)');
+    expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('align-items: end');
+  });
+
+  it('gives the four buttons of the second row three columns each and wraps them below 600 px', () => {
+    expect(rule('.scene-view .vc-actions > *')).toContain('grid-column: span 3');
     expect(CSS).toMatch(/@media \(max-width: 599px\) \{\s*\.scene-view \{\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u);
   });
 

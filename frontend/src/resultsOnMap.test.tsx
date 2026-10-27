@@ -2,7 +2,8 @@
 //
 // Otto, 27.10.2026 (zu #211): "Hide results" holds. Whatever happens next, no outline, quicklook or crop of a search
 // result is on the map, except for a ticked scene, which shows with its usual controls and goes with its tick; and
-// only the switch changes show/hide, with the one exception of a new search ("Search"), which always shows them.
+// only the switch changes show/hide, with two exceptions: a new search ("Search") shows the results, and a crop
+// ("Crop to AOI", "Crop & merge to AOI") hides them and unticks the scenes it was made of.
 // `mapResults.ts` is the one function that says what is on the map, so the matrix
 // asks it, after each thing a user can do, with the results hidden or shown and a scene ticked or not.
 // The tests of Otto's own click path fail against the code before: "Clear" did not exist, and leaving a view, a
@@ -122,22 +123,30 @@ function expectOnlyTickedOnMap() {
 }
 
 // A view of the scenes open (the ticked ones, or the open time step), as the bar of the selection opens it.
-async function openView(crop = true) {
+async function openView(crop = false) {
   await act(() => state().enterFocus(crop));
   expect(state().focusMode).toBe(true);
 }
 
-const OPERATIONS: [string, () => Promise<void> | void][] = [
-  ['"Clear" in the view', async () => { await openView(); click(viewButton('Clear')); }],
-  ['"Change image" in the view', async () => { await openView(); click(viewButton('Change image')); }],
-  ['"Crop to AOI"', () => openView(true)],
-  ['"View whole scene"', () => openView(false)],
-  ['"Clear" of the area in the control panel, in a view', async () => { await openView(); act(() => state().setToolMode('none')); act(() => state().reopenControls()); act(() => useAppStore.setState({ dock: 'controls' })); click(areaClear()); }],
-  ['a layer removed', async () => { await openView(); act(() => state().removeLayer('none')); }],
-  ['a change of the basemap', () => void act(() => state().setBasemap('streets'))],
-  ['a change of the projection', () => void act(() => state().setProjection('globe'))],
-  ['"Load more"', async () => { await act(() => state().loadMore()); }],
-  ['a new search', () => act(() => state().runSearch())],
+// What each thing a user can do does to the switch and the tick: `switchTo` is what show/hide is afterwards (null: as
+// before), `unticks` whether the tick is gone.
+interface Effect {
+  switchTo?: boolean;
+  unticks?: boolean;
+  startsOver?: boolean;
+}
+const OPERATIONS: [string, () => Promise<void> | void, Effect][] = [
+  ['"Clear" in the view', async () => { await openView(); click(viewButton('Clear')); }, {}],
+  ['"Change image" in the view', async () => { await openView(); click(viewButton('Change image')); }, {}],
+  ['"Crop to AOI"', () => openView(true), { switchTo: false, unticks: true }],
+  ['"View whole scene"', () => openView(false), {}],
+  ['"Clear" of the area in the control panel, in a view', async () => { await openView(); act(() => state().setToolMode('none')); act(() => state().reopenControls()); act(() => useAppStore.setState({ dock: 'controls' })); click(areaClear()); }, {}],
+  ['"Clear" of the area in the control panel, in a crop', async () => { await openView(true); act(() => state().setToolMode('none')); act(() => state().reopenControls()); act(() => useAppStore.setState({ dock: 'controls' })); click(areaClear()); }, { switchTo: false, unticks: true }],
+  ['a layer removed', async () => { await openView(); act(() => state().removeLayer('none')); }, {}],
+  ['a change of the basemap', () => void act(() => state().setBasemap('streets')), {}],
+  ['a change of the projection', () => void act(() => state().setProjection('globe')), {}],
+  ['"Load more"', async () => { await act(() => state().loadMore()); }, { startsOver: true }],
+  ['a new search', () => act(() => state().runSearch()), { switchTo: true, startsOver: true }],
 ];
 
 describe.each([false, true])('with the results on the map: %s', (onMap) => {
@@ -149,17 +158,16 @@ describe.each([false, true])('with the results on the map: %s', (onMap) => {
       });
     });
 
-    it.each(OPERATIONS)('%s leaves the switch alone (a new search shows the results), and with the results hidden only a ticked scene is on the map', async (name, run) => {
+    it.each(OPERATIONS)('%s leaves the switch alone but for the two exceptions, and with the results hidden only a ticked scene is on the map', async (_name, run, effect) => {
       const tickBefore = [...state().selectedIds];
       await run();
       await flush();
-      // The one thing besides the switch that sets it: a new search shows the results (Otto, 27.10.2026).
-      const expected = name === 'a new search' ? true : onMap;
+      const expected = effect.switchTo ?? onMap;
       expect(state().resultsOnMap).toBe(expected);
       if (!expected) expectOnlyTickedOnMap();
-      // The choice of scenes survives everything but "Clear" (and a new search, which starts over).
-      if (name.startsWith('"Clear" in the view')) expect(state().selectedIds).toEqual([]);
-      else if (!/search|Load more/u.test(name)) expect(state().selectedIds).toEqual(tickBefore);
+      // The choice of scenes survives everything but a crop (and a new search, which starts over).
+      if (effect.unticks) expect(state().selectedIds).toEqual([]);
+      else if (!effect.startsOver) expect(state().selectedIds).toEqual(tickBefore);
     });
   });
 });
@@ -225,22 +233,58 @@ describe('a scene that is ticked shows although the results are hidden, and goes
 });
 
 describe('Otto\'s click path (27.10.2026)', () => {
-  // The scene is ticked, "Crop to AOI", "Clear" in the control panel (the area), then "Hide results".
-  it('"Crop to AOI" and "Clear" of the area: no way to clear the view before, "Clear" in the view now takes it away', async () => {
+  it('shown, a scene ticked, "Crop to AOI": the results are hidden and the scene unticked, so its quicklook does not lie on the crop', async () => {
     act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
+    expect(state().resultsOnMap).toBe(true);
     click(buttonWith('Crop to AOI'));
     await flush();
     expect(state().focusMode).toBe(true);
-    // Clear of the area, in the control panel.
+    expect(state().resultsOnMap).toBe(false);
+    expect(buttonWith('Show results').textContent).toBe('Show results');
+    expect(state().selectedIds).toEqual([]);
+    const shown = resultsOnMapOf(state());
+    expect(shown.quicklooks).toEqual([]);
+    expect(shown.overlay).toEqual([]);
+    expect(shown.highlight).toEqual([]);
+    // The view stays, and does not hang on the tick.
+    expect(Object.keys(state().downloaded)).toEqual(['a0']);
+  });
+
+  it('the scene ticked again shows its quicklook like any other and leaves the view alone', async () => {
+    act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
+    click(buttonWith('Crop to AOI'));
+    await flush();
+    const view = state().downloaded;
+    act(() => state().toggleSelected('a0'));
+    expect(idsOf(resultsOnMapOf(state()).overlay)).toEqual(['a0']);
+    expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['a0']);
+    expect(state().focusMode).toBe(true);
+    expect(state().downloaded).toBe(view);
+    act(() => state().toggleSelected('a0'));
+    expect(resultsOnMapOf(state()).overlay).toEqual([]);
+  });
+
+  it('"Show results" with the view open lays the results over the quicklooks of browsing, under the view', async () => {
+    act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
+    click(buttonWith('Crop to AOI'));
+    await flush();
+    click(buttonWith('Show results'));
+    expect(state().resultsOnMap).toBe(true);
+    expect(state().focusMode).toBe(true);
+    expect(resultsOnMapOf(state()).overlay.length).toBeGreaterThan(0);
+  });
+
+  it('"Clear" of the area, then the view\'s own "Clear"', async () => {
+    act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
+    click(buttonWith('Crop to AOI'));
+    await flush();
     act(() => state().reopenControls());
     act(() => useAppStore.setState({ dock: 'controls' }));
     click(areaClear());
     expect(state().aoi).toBeNull();
     expect(state().focusMode).toBe(true);
-    // The view has its own button for it.
     click(viewButton('Clear'));
     expect(state().focusMode).toBe(false);
-    expect(state().selectedIds).toEqual([]);
     expect(state().downloaded).toEqual({});
   });
 
@@ -262,10 +306,10 @@ describe('Otto\'s click path (27.10.2026)', () => {
   });
 });
 
-describe('"Clear" in the view', () => {
-  it('takes the view and the choice of scenes away, and leaves what was pinned and the switch', async () => {
+describe('"Clear" and "Change image" in the view', () => {
+  it('"Clear" takes the view off the map and nothing else: the tick, what was pinned, the switch and the panel stay', async () => {
     const layer = { id: 'pinned', name: 'Pinned', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET, itemIds: [], groupItemIds: [], downloaded: {}, appliedRender: {}, selectedIds: [] } } as never;
-    act(() => useAppStore.setState({ layers: [layer], resultsOnMap: false }));
+    act(() => useAppStore.setState({ layers: [layer], resultsOnMap: false, dock: 'controls' }));
     act(() => state().toggleSelected('a0'));
     await openView();
     const pinned = state().layers;
@@ -273,24 +317,28 @@ describe('"Clear" in the view', () => {
     const s = state();
     expect(s.focusMode).toBe(false);
     expect(s.downloaded).toEqual({});
-    expect(s.selectedIds).toEqual([]);
+    expect(s.selectedIds).toEqual(['a0']);
     expect(s.layers).toBe(pinned);
     expect(s.resultsOnMap).toBe(false);
+    expect(s.dock).toBe('controls');
     // The results list is still there.
     expect(s.sections.length).toBe(1);
   });
 
-  it('is not the same as "Change image", which keeps the choice of scenes', async () => {
+  it('"Change image" takes the view off the map and opens the results, and leaves the tick and the switch', async () => {
+    act(() => useAppStore.setState({ dock: 'controls', resultsOnMap: false }));
     act(() => state().toggleSelected('a0'));
     await openView();
     click(viewButton('Change image'));
     expect(state().focusMode).toBe(false);
+    expect(state().dock).toBe('results');
     expect(state().selectedIds).toEqual(['a0']);
+    expect(state().resultsOnMap).toBe(false);
   });
 
-  it('has the tooltips of the two buttons', async () => {
+  it('have the tooltips of what they do', async () => {
     await openView();
-    expect(viewButton('Clear').title).toBe('Remove this view and deselect');
-    expect(viewButton('Change image').title).toBe('Choose a different image');
+    expect(viewButton('Clear').title).toBe('Remove this view from the map');
+    expect(viewButton('Change image').title).toBe('Remove this view and choose another scene from the results');
   });
 });

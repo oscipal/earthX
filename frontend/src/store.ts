@@ -706,10 +706,11 @@ function dropPageToken(set: SetState, get: GetState): void {
   if (ctx?.nextToken) set({ searchContext: { ...ctx, nextToken: null } });
 }
 
-// A new search puts the results on the map (Otto, 27.10.2026): the one thing besides the switch itself that sets show/hide.
-function showResults() {
-  saveResultsOnMap(true);
-  return { resultsOnMap: true };
+// Show or hide of the results is the switch's, with two exceptions (Otto, 27.10.2026): a new search shows them, and a
+// crop of the chosen scenes ("Crop to AOI", "Crop & merge to AOI") hides them. Kept in the browser like the switch.
+function setResultsOnMap(on: boolean) {
+  saveResultsOnMap(on);
+  return { resultsOnMap: on };
 }
 
 // What every replacement of the results resets besides the results themselves.
@@ -956,7 +957,7 @@ export interface AppState {
   enterFocus: (cropToAoi: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
   exitFocus: () => void;
-  clearView: () => void;
+  changeImage: () => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
@@ -1783,6 +1784,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       cropToAoi,
       // The view keeps the area it is opened with.
       viewAoi: cropToAoi ? s.aoi : null,
+      // A crop takes the results off the map and drops the tick of the scenes it was made of, so that their quicklooks
+      // do not lie beside the crop; the view does not hang on the choice any more, and a scene ticked again shows like any
+      // other (Otto, 27.10.2026). The whole scene keeps the tick and the switch.
+      ...(cropToAoi ? { selectedIds: [], ...setResultsOnMap(false) } : {}),
       showDownloaded: true,
       downloaded,
       appliedRender: appliedRenderFrom(render),
@@ -1809,10 +1814,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       passesOf(Object.entries(s.downloaded), s.groups).map((entries) => ({ datasetId, entries })),
     );
   },
-  // Back to browsing, the choice of scenes kept ("Change image"). Show or hide of the results is the switch's alone.
+  // "Clear" in the view: takes the view off the map, nothing else. The choice of scenes, what was pinned and show or hide
+  // of the results stay.
   exitFocus: () => set({ ...LEAVE_FOCUS }),
-  // "Clear" in the view: takes the view off the map and drops the choice of scenes. What was pinned stays.
-  clearView: () => set({ ...LEAVE_FOCUS, selectedIds: [] }),
+  // "Change image": takes the view off the map and opens the results to choose another scene. Show or hide stays.
+  changeImage: () => set((s) => ({ ...LEAVE_FOCUS, ...(hasResultsPanel(s.sections) ? { dock: 'results' as const } : {}) })),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
@@ -2018,7 +2024,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       dock: withoutControls(get().dock),
       ...forgetSearch(),
       ...LEAVE_FOCUS,
-      ...showResults(),
+      ...setResultsOnMap(true),
     });
     // "Clear all" or another step that drops the results may come before the answer.
     const gen = searchGen;
@@ -2139,7 +2145,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Choose a dataset to search.' });
       return;
     }
-    set({ sceneLookupLoading: true, error: null, ...showResults() });
+    set({ sceneLookupLoading: true, error: null, ...setResultsOnMap(true) });
     const gen = searchGen;
     const answers = await Promise.all(
       chosen.map((dataset) =>

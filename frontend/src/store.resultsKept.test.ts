@@ -63,7 +63,7 @@ describe('the switch for the results on the map, kept in the browser', () => {
     window.localStorage.setItem(KEY, 'hide');
     const store = await freshStore();
     store.getState().exitFocus();
-    store.getState().clearView();
+    store.getState().exitFocus();
     store.getState().clearSearchResults();
     store.getState().clearAll();
     expect(store.getState().resultsOnMap).toBe(false);
