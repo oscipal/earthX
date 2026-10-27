@@ -17,7 +17,7 @@ import { DEFAULT_RANGE } from '../processingPreview';
 import { resetJobs, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { useAppStore } from '../store';
-import type { Collection, StacItem } from '../types';
+import type { Collection, StacAsset, StacItem } from '../types';
 import { JobRow } from './JobRow';
 import { EXPIRED_TIP } from './jobView';
 import ProcessingManager from './ProcessingManager';
@@ -345,18 +345,6 @@ describe('the panel built from the schema', () => {
       expect(pressed('red')).toBe('true');
       click(button('red'));
       expect(pressed('red')).toBe('false');
-    });
-
-    it('says under the chips what a click does', async () => {
-      select([scene('S2B_A')]);
-      await openPanel();
-      const hint = () => container.querySelector('section[aria-label="Bands"] .pp-help')!.textContent;
-      expect(hint()).toContain('A click adds a band to the order or leaves it out.');
-      expect(hint()).not.toContain('cursor');
-      click(button('＋ Band math'));
-      expect(hint()).toContain(
-        "with the cursor in a band-math expression, it inserts the band's name there instead and changes nothing else",
-      );
     });
   });
 
@@ -696,7 +684,6 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
   async function reprojectDem() {
     select([dem()]);
     await openPanel();
-    click(button('data'));
     click(button('＋ Reproject and resample'));
     fill('crs', 'EPSG:3035');
     fill('resolution', '30');
@@ -751,7 +738,6 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     };
     select([item]);
     await openPanel();
-    click(button('lc'));
     click(button('＋ Reproject and resample'));
     fill('crs', 'EPSG:3035');
     fill('resolution', '30');
@@ -777,7 +763,6 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     };
     select([item]);
     await openPanel();
-    click(button('data'));
     click(button('＋ Reproject and resample'));
     choose(resampling(), 'bilinear');
     expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
@@ -866,7 +851,7 @@ describe('the unit of a band (M4-19b)', () => {
 });
 
 describe('a COG asset without band descriptions (K7, Otto 10.10.2026)', () => {
-  it('gets a chip with the asset name, which puts the asset into the order', async () => {
+  it('gets a chip with the asset name, which is in the order when the panel opens (NM4-07)', async () => {
     const dem: StacItem = {
       ...scene('DEM_A'),
       assets: { data: { href: 'https://example.org/dem.tif', type: COG } },
@@ -874,8 +859,113 @@ describe('a COG asset without band descriptions (K7, Otto 10.10.2026)', () => {
     select([dem]);
     await openPanel();
     expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['data']);
-    click(button('data'));
     expect(button('data').getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('picking all bands (NM4-07)', () => {
+  const asset = (key: string) => [key, { href: `https://example.org/${key}.tif`, type: COG, 'raster:bands': [{ data_type: 'uint16' }] }] as [string, StacAsset];
+  const withAssets = (keys: string[]): StacItem => ({
+    ...scene('S_A'),
+    assets: Object.fromEntries(keys.map(asset)),
+  });
+  const pressedChips = () =>
+    [...container.querySelectorAll('.pp-chip')].filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
+  const withAuxiliary = (auxiliary: string[]): DatasetOption => {
+    const option = dataset('processing');
+    Object.assign(option.collection, { 'earthx:auxiliary_assets': auxiliary });
+    return option;
+  };
+
+  it('picks nothing on opening where there are several bands', async () => {
+    select([withAssets(['red', 'nir'])]);
+    await openPanel();
+    expect(pressedChips()).toEqual([]);
+  });
+
+  it('does not pick the one band of an asset that has several, only the asset with a single band', async () => {
+    select([{ ...scene('S_A'), assets: { rgb: { href: 'https://example.org/rgb.tif', type: COG, 'raster:bands': [{}, {}, {}] } } }]);
+    await openPanel();
+    expect(pressedChips()).toEqual([]);
+  });
+
+  it('leaves a cleared single band cleared', async () => {
+    select([withAssets(['data'])]);
+    await openPanel();
+    expect(pressedChips()).toEqual(['data']);
+    click(button('Clear'));
+    expect(pressedChips()).toEqual([]);
+  });
+
+  it('"Select all bands" picks every band and "Clear" none', async () => {
+    select([withAssets(['red', 'nir', 'green'])]);
+    await openPanel();
+    click(button('Select all bands'));
+    expect(pressedChips()).toEqual(['red', 'nir', 'green']);
+    click(button('Clear'));
+    expect(pressedChips()).toEqual([]);
+  });
+
+  it('does not offer the auxiliary assets of the registry as chips, and "Select all bands" leaves them out', async () => {
+    select([withAssets(['red', 'nir', 'visual', 'preview'])], 'processing', withAuxiliary(['visual', 'preview']));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red', 'nir']);
+    click(button('Select all bands'));
+    expect(pressedChips()).toEqual(['red', 'nir']);
+    expect(useProcessingStore.getState().picked).toEqual(['red', 'nir']);
+  });
+
+  it('shows an auxiliary asset that is in the order already, so it can be left out', async () => {
+    select([withAssets(['red', 'visual'])], 'processing', withAuxiliary(['visual']));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red']);
+    act(() => useProcessingStore.getState().togglePick('visual'));
+    expect(pressedChips()).toEqual(['red', 'visual']);
+    click(button('visual'));
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red']);
+  });
+
+  it('does not guess the auxiliary assets from their names', async () => {
+    select([withAssets(['red', 'visual'])]);
+    await openPanel();
+    click(button('Select all bands'));
+    expect(pressedChips()).toEqual(['red', 'visual']);
+  });
+
+  it('keeps the layer of the mask out of "Select all bands"', async () => {
+    const option = dataset('processing');
+    Object.assign(option.collection, {
+      'earthx:mask': { asset: 'scl', band: 'scl', classes: [{ value: 4, label: 'Vegetation' }], suggested: [] },
+    });
+    select([withAssets(['red', 'nir', 'scl'])], 'processing', option);
+    await openPanel();
+    click(button('Select all bands'));
+    expect(pressedChips()).toEqual(['red', 'nir']);
+  });
+
+  it('locks "Select all bands" for a dataset with more bands than an order takes, with the reason in the tooltip', async () => {
+    const keys = Array.from({ length: 18 }, (_, i) => `b${String(i + 1).padStart(2, '0')}`);
+    select([withAssets(keys)]);
+    await openPanel();
+    expect(button('Select all bands').disabled).toBe(true);
+    expect(button('Select all bands').title).toBe('18 bands – an order takes at most 16');
+    click(button('Select all bands'));
+    expect(pressedChips()).toEqual([]);
+    expect(container.querySelector('section[aria-label="Bands"] [role="status"]')).toBeNull();
+  });
+
+  it('takes exactly as many bands as an order allows', async () => {
+    const keys = Array.from({ length: 16 }, (_, i) => `b${String(i + 1).padStart(2, '0')}`);
+    select([withAssets(keys)]);
+    await openPanel();
+    click(button('Select all bands'));
+    expect(pressedChips()).toHaveLength(16);
+  });
+
+  it('has no use for the buttons where the item lists no bands to pick', async () => {
+    select([{ ...scene('S_A'), assets: {} }]);
+    await openPanel();
+    expect(container.querySelector('section[aria-label="Bands"]')!.textContent).toContain('does not list band names');
   });
 });
 
@@ -1646,7 +1736,6 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
   async function openStep(items: StacItem[] = [southern()]) {
     select(items);
     await openPanel();
-    click(button('data'));
     click(button('＋ Reproject and resample'));
   }
 

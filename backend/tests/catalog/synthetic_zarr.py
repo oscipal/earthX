@@ -67,6 +67,7 @@ SYNTHETIC_ZARR: DatasetConfig = replace(
         note=SENTINEL_2_L2A.mask.note,
     ),
     band_units={"SR_*": "1", "SCL_20m:scl": None},
+    auxiliary_assets=(),
 )
 
 TEST_ENTRIES: tuple[DatasetConfig, ...] = (*REGISTRY, SYNTHETIC_ZARR)

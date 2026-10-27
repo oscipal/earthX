@@ -9,20 +9,24 @@
 // on one shows its details here (`JobDetails.tsx`, UI-01). The first step shows
 // on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
 
-import { useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
 import { totalOf } from '../processingBatch';
 import {
+  auxiliaryAssetsOf,
   formatBytes,
   formatDuration,
   formatMegapixels,
   insertName,
   isArea,
+  lonelyBand,
   namesInExpression,
   processBlockReason,
+  selectableAssets,
+  selectAllBands,
   shownUnit,
   uniqueNames,
   type Area,
@@ -103,6 +107,7 @@ function Bands({ view }: { view: OrderView }) {
   const steps = useProcessingStore((s) => s.steps);
   const picked = useProcessingStore((s) => s.picked);
   const togglePick = useProcessingStore((s) => s.togglePick);
+  const setPicked = useProcessingStore((s) => s.setPicked);
   const updateStep = useProcessingStore((s) => s.updateStep);
   // Where the cursor goes once the expression has its new text: a controlled
   // field moves it to the end when its value changes, so it is set after the commit.
@@ -113,7 +118,16 @@ function Bands({ view }: { view: OrderView }) {
     if (pending?.field.isConnected) pending.field.setSelectionRange(pending.at, pending.at);
   });
   const unique = uniqueNames(view.sources);
-  const hasBandMath = steps.some((s) => s.op === 'band_math');
+  const auxiliary = auxiliaryAssetsOf(view.dataset?.collection);
+  const selectable = selectableAssets(view.sources, auxiliary, view.maskLayer?.asset ?? null);
+  // A dataset or scene with one band has it picked on opening, once: a later "Clear" stays cleared.
+  const lonely = lonelyBand(selectable, view.sources);
+  const autoPicked = useRef<string | null>(null);
+  useEffect(() => {
+    if (lonely === null || autoPicked.current === lonely) return;
+    autoPicked.current = lonely;
+    if (picked.length === 0) setPicked([lonely]);
+  }, [lonely, picked.length, setPicked]);
   const named = new Set(bandMathExpressions(steps).flatMap((e) => [...namesInExpression(e)]));
   if (!view.pass) return null;
   if (view.sources.length === 0) {
@@ -173,21 +187,40 @@ function Bands({ view }: { view: OrderView }) {
     );
   };
 
+  // "Select all" takes every band, or is out of reach with the reason; it never takes a part of them in silence.
+  const needed = view.maskAsset ? [view.maskAsset.asset] : [];
+  const all = selectAllBands(view.sources, selectable, bandMathExpressions(steps), needed, view.info?.maxAssets ?? 16);
+  // What is no band of the data is not offered, unless it is in the order already (a loaded recipe can name it).
+  const shown = view.sources.filter((s) => !auxiliary.includes(s.asset) || view.assets.includes(s.asset));
+
   return (
     <section className="pp-section" aria-label="Bands">
-      <h3 className="pp-heading">Bands</h3>
+      <div className="pp-bands-head">
+        <h3 className="pp-heading">Bands</h3>
+        <button
+          type="button"
+          className="link-btn"
+          disabled={selectable.length === 0 || 'reason' in all}
+          title={'reason' in all ? all.reason : 'Pick every band of the data'}
+          onClick={() => 'assets' in all && setPicked(all.assets)}
+        >
+          Select all bands
+        </button>
+        <button
+          type="button"
+          className="link-btn"
+          disabled={picked.length === 0}
+          title="Leave out the bands you picked. Bands named in an expression or needed by a step stay."
+          onClick={() => setPicked([])}
+        >
+          Clear
+        </button>
+      </div>
       <div className="pp-chips">
-        {view.sources.flatMap((source) =>
+        {shown.flatMap((source) =>
           source.names.length === 0 ? [chip(source, null)] : source.names.map((name) => chip(source, name)),
         )}
       </div>
-      <p className="pp-help">
-        {view.assets.length} of at most {view.info?.maxAssets ?? 16} bands in the order. A click adds a band to the
-        order or leaves it out
-        {hasBandMath
-          ? "; with the cursor in a band-math expression, it inserts the band's name there instead and changes nothing else."
-          : '.'}
-      </p>
     </section>
   );
 }
