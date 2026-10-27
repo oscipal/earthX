@@ -1,6 +1,6 @@
 // Browser check of the band choice of the processing panel (NM4-07): a single band is picked on opening, "Select all
 // bands" and "Clear", the auxiliary assets and the mask layer stay out, and a dataset with more bands than an order
-// takes gets a reason instead of a part. Runs in the light and the dark theme at three widths; fails when a button
+// takes gets the button locked with the reason. Runs in the light and the dark theme at three widths; fails when a button
 // overlaps another or leaves the panel; writes a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -68,11 +68,16 @@ async function check(browser, { name, theme, viewport }) {
   const expect = (what, got, want) => { if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`${what}: ${JSON.stringify(got)}, not ${JSON.stringify(want)}`); };
 
   expect('on opening', await pressed(), spec.opening);
-  await page.locator('section[aria-label="Bands"]').getByRole('button', { name: 'Select all bands' }).click();
+  const selectAll = page.locator('section[aria-label="Bands"]').getByRole('button', { name: 'Select all bands' });
+  if (await selectAll.isEnabled()) await selectAll.click();
   expect('after "Select all bands"', await pressed(), spec.all);
-  const note = await page.locator('section[aria-label="Bands"] [role="status"]').allTextContents();
-  if (name === '18 bands' && note[0] !== '18 bands are more than the 16 an order takes. Pick the ones you need.') problems.push(`no reason: ${JSON.stringify(note)}`);
-  if (name !== '18 bands' && note.length > 0) problems.push(`a reason where none is due: ${JSON.stringify(note)}`);
+  const locked = await selectAll.isDisabled();
+  if (locked !== (name === '18 bands')) problems.push(`"Select all bands" is ${locked ? 'locked' : 'open'}`);
+  if (locked && (await selectAll.getAttribute('title')) !== '18 bands – an order takes at most 16') problems.push('no reason in the tooltip');
+  if (name === 'sentinel-2') {
+    const chips = await page.locator('section[aria-label="Bands"] .pp-chip').allTextContents();
+    if (chips.includes('visual') || chips.includes('preview')) problems.push('an auxiliary asset is offered');
+  }
   fs.mkdirSync(OUT, { recursive: true });
   await page.locator('section[aria-label="Bands"]').screenshot({ path: path.join(OUT, `${label.replace(/ /g, '_')}.png`) });
 

@@ -117,9 +117,9 @@ function Bands({ view }: { view: OrderView }) {
     caret.current = null;
     if (pending?.field.isConnected) pending.field.setSelectionRange(pending.at, pending.at);
   });
-  const [limitNote, setLimitNote] = useState<string | null>(null);
   const unique = uniqueNames(view.sources);
-  const selectable = selectableAssets(view.sources, auxiliaryAssetsOf(view.dataset?.collection), view.maskLayer?.asset ?? null);
+  const auxiliary = auxiliaryAssetsOf(view.dataset?.collection);
+  const selectable = selectableAssets(view.sources, auxiliary, view.maskLayer?.asset ?? null);
   // A dataset or scene with one band has it picked on opening, once: a later "Clear" stays cleared.
   const lonely = lonelyBand(selectable, view.sources);
   const autoPicked = useRef<string | null>(null);
@@ -188,21 +188,11 @@ function Bands({ view }: { view: OrderView }) {
     );
   };
 
-  // "Select all" takes every band or says why not; it never takes a part of them in silence.
-  const selectAll = () => {
-    const needed = view.maskAsset ? [view.maskAsset.asset] : [];
-    const result = selectAllBands(view.sources, selectable, bandMathExpressions(steps), needed, view.info?.maxAssets ?? 16);
-    if ('reason' in result) {
-      setLimitNote(result.reason);
-      return;
-    }
-    setLimitNote(null);
-    setPicked(result.assets);
-  };
-  const clear = () => {
-    setLimitNote(null);
-    setPicked([]);
-  };
+  // "Select all" takes every band, or is out of reach with the reason; it never takes a part of them in silence.
+  const needed = view.maskAsset ? [view.maskAsset.asset] : [];
+  const all = selectAllBands(view.sources, selectable, bandMathExpressions(steps), needed, view.info?.maxAssets ?? 16);
+  // What is no band of the data is not offered, unless it is in the order already (a loaded recipe can name it).
+  const shown = view.sources.filter((s) => !auxiliary.includes(s.asset) || view.assets.includes(s.asset));
 
   return (
     <section className="pp-section" aria-label="Bands">
@@ -211,9 +201,9 @@ function Bands({ view }: { view: OrderView }) {
         <button
           type="button"
           className="link-btn"
-          disabled={selectable.length === 0}
-          title="Pick every band of the data. Pictures such as the true-colour preview and the mask layer are not bands."
-          onClick={selectAll}
+          disabled={selectable.length === 0 || 'reason' in all}
+          title={'reason' in all ? all.reason : 'Pick every band of the data'}
+          onClick={() => 'assets' in all && setPicked(all.assets)}
         >
           Select all bands
         </button>
@@ -222,18 +212,13 @@ function Bands({ view }: { view: OrderView }) {
           className="link-btn"
           disabled={picked.length === 0}
           title="Leave out the bands you picked. Bands named in an expression or needed by a step stay."
-          onClick={clear}
+          onClick={() => setPicked([])}
         >
           Clear
         </button>
       </div>
-      {limitNote && (
-        <p className="pp-help" role="status">
-          {limitNote}
-        </p>
-      )}
       <div className="pp-chips">
-        {view.sources.flatMap((source) =>
+        {shown.flatMap((source) =>
           source.names.length === 0 ? [chip(source, null)] : source.names.map((name) => chip(source, name)),
         )}
       </div>

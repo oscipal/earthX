@@ -290,7 +290,7 @@ export function lonelyBand(selectable: readonly string[], sources: readonly Band
 
 export type SelectAll = { assets: string[] } | { reason: string };
 
-// All bands, or the reason there is no such pick: an order takes at most `max` assets, and what an expression or a
+// All bands, or the short reason there is no such pick: an order takes at most `max` assets, and what an expression or a
 // mask step brings along counts as well. Never a part of the bands in silence.
 export function selectAllBands(
   sources: readonly BandSource[],
@@ -301,7 +301,7 @@ export function selectAllBands(
 ): SelectAll {
   const total = orderAssets(sources, selectable, expressions, needed).length;
   if (total > max) {
-    return { reason: `${total} bands are more than the ${max} an order takes. Pick the ones you need.` };
+    return { reason: `${total} bands – an order takes at most ${max}` };
   }
   return { assets: [...selectable] };
 }

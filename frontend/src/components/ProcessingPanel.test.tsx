@@ -918,13 +918,23 @@ describe('picking all bands (NM4-07)', () => {
     expect(pressedChips()).toEqual([]);
   });
 
-  it('keeps the auxiliary assets of the registry out of "Select all bands", but not out of reach', async () => {
+  it('does not offer the auxiliary assets of the registry as chips, and "Select all bands" leaves them out', async () => {
     select([withAssets(['red', 'nir', 'visual', 'preview'])], 'processing', withAuxiliary(['visual', 'preview']));
     await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red', 'nir']);
     click(button('Select all bands'));
     expect(pressedChips()).toEqual(['red', 'nir']);
+    expect(useProcessingStore.getState().picked).toEqual(['red', 'nir']);
+  });
+
+  it('shows an auxiliary asset that is in the order already, so it can be left out', async () => {
+    select([withAssets(['red', 'visual'])], 'processing', withAuxiliary(['visual']));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red']);
+    act(() => useProcessingStore.getState().togglePick('visual'));
+    expect(pressedChips()).toEqual(['red', 'visual']);
     click(button('visual'));
-    expect(pressedChips()).toEqual(['red', 'nir', 'visual']);
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red']);
   });
 
   it('does not guess the auxiliary assets from their names', async () => {
@@ -945,15 +955,15 @@ describe('picking all bands (NM4-07)', () => {
     expect(pressedChips()).toEqual(['red', 'nir']);
   });
 
-  it('picks no part of a dataset with more bands than an order takes, and says why', async () => {
+  it('locks "Select all bands" for a dataset with more bands than an order takes, with the reason in the tooltip', async () => {
     const keys = Array.from({ length: 18 }, (_, i) => `b${String(i + 1).padStart(2, '0')}`);
     select([withAssets(keys)]);
     await openPanel();
+    expect(button('Select all bands').disabled).toBe(true);
+    expect(button('Select all bands').title).toBe('18 bands – an order takes at most 16');
     click(button('Select all bands'));
     expect(pressedChips()).toEqual([]);
-    expect(container.querySelector('section[aria-label="Bands"] [role="status"]')!.textContent).toBe(
-      '18 bands are more than the 16 an order takes. Pick the ones you need.',
-    );
+    expect(container.querySelector('section[aria-label="Bands"] [role="status"]')).toBeNull();
   });
 
   it('takes exactly as many bands as an order allows', async () => {
@@ -962,7 +972,6 @@ describe('picking all bands (NM4-07)', () => {
     await openPanel();
     click(button('Select all bands'));
     expect(pressedChips()).toHaveLength(16);
-    expect(container.querySelector('section[aria-label="Bands"] [role="status"]')).toBeNull();
   });
 
   it('has no use for the buttons where the item lists no bands to pick', async () => {
