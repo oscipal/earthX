@@ -113,34 +113,34 @@ export default function App() {
         {focusMode ? (
           <>
             {tickedBesideView && (
-              <Draggable className="fill">
+              <Draggable id="selection" key="selection" className="fill">
                 <ViewBar />
               </Draggable>
             )}
-            <Draggable>
+            <Draggable id="view" key="view">
               <ViewerControls />
             </Draggable>
           </>
         ) : resultView ? (
           <>
             {hasSelection && (
-              <Draggable className="fill">
+              <Draggable id="selection" key="selection" className="fill">
                 <ViewBar />
               </Draggable>
             )}
-            <Draggable>
+            <Draggable id="result" key="result">
               <ResultControls />
             </Draggable>
           </>
         ) : (
           <>
             {hasSelection && (
-              <Draggable className="fill">
+              <Draggable id="selection" key="selection" className="fill">
                 <ViewBar />
               </Draggable>
             )}
             {hasGroups && (
-              <Draggable>
+              <Draggable id="timeline" key="timeline">
                 <TimeSlider />
               </Draggable>
             )}

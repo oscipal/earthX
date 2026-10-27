@@ -14,6 +14,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
+import { useBandPositions } from './bandPositions';
 import { datasetsFrom } from './datasets';
 import { bboxToPolygon } from './geoUtils';
 import { resultsOnMapOf } from './mapResults';
@@ -340,5 +341,41 @@ describe('"Clear" and "Change image" in the view', () => {
     await openView();
     expect(viewButton('Clear').title).toBe('Remove this view from the map');
     expect(viewButton('Change image').title).toBe('Remove this view and choose another scene from the results');
+  });
+});
+
+describe('the bands keep their own places (Otto, 27.10.2026)', () => {
+  const band = (id: string) => container.querySelector<HTMLElement>(`[data-band="${id}"]`);
+  const placed = (id: string) => band(id)?.style.transform ?? '';
+
+  beforeEach(() => act(() => useBandPositions.setState({ offsets: {} })));
+
+  it('"Change image" in the view moves no other band, and a band that goes and comes back stands where it was left', async () => {
+    act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
+    click(buttonWith('Crop to AOI'));
+    await flush();
+    expect(band('view')).not.toBeNull();
+    // The user moves the view, and the bar of the selection (a scene is ticked again, so the bar is there).
+    act(() => useBandPositions.getState().move('view', { x: 40, y: -30 }));
+    act(() => state().toggleSelected('a1'));
+    expect(band('selection')).not.toBeNull();
+    act(() => useBandPositions.getState().move('selection', { x: -12, y: 8 }));
+    expect(placed('selection')).toBe('translate(-12px, 8px)');
+    expect(placed('view')).toBe('translate(40px, -30px)');
+
+    click(viewButton('Change image'));
+    await flush();
+    expect(band('view')).toBeNull();
+    // Nothing moved: the others stand where they were, no other band took the place of the view.
+    expect(placed('selection')).toBe('translate(-12px, 8px)');
+    expect(placed('result')).toBe('');
+    expect(placed('timeline')).toBe('');
+    expect(useBandPositions.getState().offsets).toEqual({ view: { x: 40, y: -30 }, selection: { x: -12, y: 8 } });
+  });
+
+  it('a band that has not been moved is not moved by moving another', () => {
+    act(() => useBandPositions.getState().move('selection', { x: 5, y: 5 }));
+    expect(useBandPositions.getState().offsets.timeline).toBeUndefined();
+    expect(useBandPositions.getState().offsets.view).toBeUndefined();
   });
 });

@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+
+import { NOT_MOVED, useBandPositions, type BandId } from '../bandPositions';
 
 // How close to the viewport edge a dragged panel is allowed to get — keeps it
 // fully reachable instead of letting it vanish behind the edge (V-10).
@@ -13,8 +15,13 @@ function clamp(value: number, min: number, max: number): number {
 // on top of the panel's normal anchored position, so layout stays responsive.
 // The clamp below applies to manual dragging and to a resize: the panel can
 // never end up (partially) past the viewport edge.
-export default function Draggable({ children, className }: { children: ReactNode; className?: string }) {
-  const [off, setOff] = useState({ x: 0, y: 0 });
+//
+// Where the panel stands is kept per band (`bandPositions.ts`), not in this component: a band is drawn at the same
+// place in the tree as another one when the map changes from browsing to a view and back, and React would hand the
+// position of the one over to the other.
+export default function Draggable({ id, children, className }: { id: BandId; children: ReactNode; className?: string }) {
+  const off = useBandPositions((s) => s.offsets[id] ?? NOT_MOVED);
+  const setOff = useCallback((offset: { x: number; y: number }) => useBandPositions.getState().move(id, offset), [id]);
   const drag = useRef<{ mx: number; my: number; ox: number; oy: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -62,15 +69,18 @@ export default function Draggable({ children, className }: { children: ReactNode
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
-  }, [clampToScreen]);
+  }, [clampToScreen, setOff]);
 
   // A resize can leave a previously in-bounds manual position off-screen
   // (window shrunk) — re-clamp whatever offset is already set.
   useEffect(() => {
-    const onResize = () => setOff((current) => clampToScreen(current.x, current.y));
+    const onResize = () => {
+      const current = useBandPositions.getState().offsets[id] ?? NOT_MOVED;
+      setOff(clampToScreen(current.x, current.y));
+    };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [clampToScreen]);
+  }, [clampToScreen, id, setOff]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     // Don't hijack clicks on controls — only drag from panel chrome / empty space.
@@ -88,6 +98,7 @@ export default function Draggable({ children, className }: { children: ReactNode
   return (
     <div
       ref={rootRef}
+      data-band={id}
       className={`draggable${className ? ` ${className}` : ''}`}
       style={{ transform: off.x || off.y ? `translate(${off.x}px, ${off.y}px)` : undefined }}
       onPointerDown={onPointerDown}
