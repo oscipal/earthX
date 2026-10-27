@@ -90,6 +90,18 @@ def _wait_for(db: psycopg.Connection, job_id: str, status: str, timeout: float =
     wait_until(lambda: _state(db, job_id) == status, timeout)
 
 
+def _children() -> list[multiprocessing.process.BaseProcess]:
+    return [p for p in multiprocessing.active_children() if p.name == "earthx-run"]
+
+
+def _wait_for_children(count: int) -> list[multiprocessing.process.BaseProcess]:
+    """The children once `count` of them run. A run reads "running" from its claim on, and the
+    slot starts its child only after that (`Supervisor._run_one`), so "running" alone does not
+    mean there is a child yet."""
+    wait_until(lambda: len(_children()) == count)
+    return _children()
+
+
 def _run_id(db: psycopg.Connection) -> int:
     row = db.execute("SELECT run_id FROM public.earthx_run ORDER BY run_id LIMIT 1").fetchone()
     assert row is not None
@@ -458,12 +470,14 @@ class TestLeaseAndAttempts:
     def test_an_upload_longer_than_the_lease_does_not_lose_the_run(
         self, db: psycopg.Connection, make_supervisor: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # The upload outlasts the lease by half a second; the heartbeat may come up to 2.7 s late
+        # before the lease runs out under it (NM4-23).
         def slow(store: Store, result_id: str, name: str, path: Path) -> None:
-            time.sleep(1.6)
+            time.sleep(3.5)
             upload_result(store, result_id, name, path)
 
         monkeypatch.setattr("earthx.jobs.worker.upload_result", slow)
-        make_supervisor("succeed", slots=1, lease_seconds=1.0, heartbeat_seconds=0.3).start()
+        make_supervisor("succeed", slots=1, lease_seconds=3.0, heartbeat_seconds=0.3).start()
         job_id = submit(db, make_recipe())
         _wait_for(db, job_id, "successful", timeout=30)
         assert run_row(db, _run_id(db), "attempt") == (1,), "the lease was renewed during the upload"
@@ -479,8 +493,9 @@ class TestLeaseAndAttempts:
         make_supervisor("succeed", slots=1, lease_seconds=60.0, heartbeat_seconds=30.0).start()
         job_id = submit(db, make_recipe())
         _wait_for(db, job_id, "running")
+        _wait_for_children(1)
         db.execute("UPDATE public.earthx_run SET attempt = 2, worker = 'someone-else'")
-        wait_until(lambda: not [p for p in multiprocessing.active_children() if p.name == "earthx-run"])
+        wait_until(lambda: not _children())
         time.sleep(1.0)
         assert run_row(db, _run_id(db), "status", "attempt", "worker", "result_id") == (
             "running",
@@ -496,8 +511,9 @@ class TestLeaseAndAttempts:
         make_supervisor("hang", slots=1).start()
         job_id = submit(db, make_recipe())
         _wait_for(db, job_id, "running")
+        _wait_for_children(1)
         db.execute("UPDATE public.earthx_run SET attempt = 2, worker = 'someone-else'")
-        wait_until(lambda: not [p for p in multiprocessing.active_children() if p.name == "earthx-run"])
+        wait_until(lambda: not _children())
         assert run_row(db, _run_id(db), "status", "attempt", "error_kind") == ("running", 2, None)
 
     def test_a_supervisor_that_is_killed_leaves_a_run_that_is_queued_again_after_the_lease(
@@ -529,7 +545,9 @@ class TestLeaseAndAttempts:
         finally:
             os.killpg(doomed.pid, signal.SIGKILL)  # the supervisor and its child, with no word
             doomed.wait(20)
-        successor = make_supervisor("succeed", slots=1, lease_seconds=1.0, heartbeat_seconds=0.3)
+        # The lease that has to run out is the doomed one's (supervisor_process.py, 1 s); the
+        # successor keeps the usual 3 s, so a late heartbeat of its own cannot make it attempt 3.
+        successor = make_supervisor("succeed", slots=1)
         successor.start()
         _wait_for(db, job_id, "successful", timeout=30)
         assert run_row(db, _run_id(db), "attempt") == (2,), "the first attempt died with its supervisor"
@@ -544,8 +562,7 @@ class TestShutdown:
         jobs = [submit(db, make_recipe(f"ITEM_{n}", host=f"h{n}.example.invalid")) for n in range(2)]
         for job in jobs:
             _wait_for(db, job, "running")
-        children = [p for p in multiprocessing.active_children() if p.name == "earthx-run"]
-        assert len(children) == 2
+        children = _wait_for_children(2)
         with psycopg.connect(autocommit=True) as listener:
             listener.execute(f"LISTEN {queue.WAKE_CHANNEL}")
             started = time.monotonic()

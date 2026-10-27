@@ -54,9 +54,12 @@ def scenes(tmp_path: Path) -> Scenes:
 class Counter:
     """An item source that answers after a delay and counts what runs at the same time."""
 
-    def __init__(self, items: dict[str, dict[str, Any]], *, fail: set[str] = frozenset()) -> None:
+    def __init__(
+        self, items: dict[str, dict[str, Any]], *, fail: set[str] = frozenset(), gate: asyncio.Event | None = None
+    ) -> None:
         self.items = items
         self.fail = fail
+        self.gate = gate
         self.calls: list[str] = []
         self.running = 0
         self.most = 0
@@ -66,6 +69,8 @@ class Counter:
         self.running += 1
         self.most = max(self.most, self.running)
         try:
+            if self.gate is not None:
+                await self.gate.wait()
             await asyncio.sleep(DELAY)
         finally:
             self.running -= 1
@@ -171,6 +176,29 @@ def _bare(scenes: Scenes, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     return app
 
 
+def _all_asked(app: FastAPI, monkeypatch: pytest.MonkeyPatch, times: int) -> asyncio.Event:
+    """Set once the app's `ItemFetches.get` was called ``times`` times.
+
+    A source held by it answers only when every request waits on the fetches. Without it, "at once"
+    is a matter of timing: a request that reaches the fetches more than `DELAY` after the first
+    finds the fetch ended and fetches again, since these apps have no item cache behind it (NM4-23).
+    """
+    asked = asyncio.Event()
+    fetches = app.state.earthx_item_fetches
+    real_get = fetches.get
+    calls = 0
+
+    async def counted(*args: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        if calls == times:
+            asked.set()
+        return await real_get(*args)
+
+    monkeypatch.setattr(fetches, "get", counted)
+    return asked
+
+
 class TestSixTilesAtOnce:
     """The map asks for about six tiles of a view at the same moment."""
 
@@ -179,10 +207,11 @@ class TestSixTilesAtOnce:
     ) -> None:
         names = _scenes_over_the_tile(scenes, 10)
         app = _bare(scenes, monkeypatch)
-        source = Counter({name: scenes.items[name] for name in names})
+        source = Counter({name: scenes.items[name] for name in names}, gate=_all_asked(app, monkeypatch, 6 * len(names)))
         app.state.earthx_item_source = source
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-            responses = await asyncio.gather(*(http.get(_tile_path(), params=_query(names)) for _ in range(6)))
+            tiles = asyncio.gather(*(http.get(_tile_path(), params=_query(names)) for _ in range(6)))
+            responses = await asyncio.wait_for(tiles, timeout=60)
         assert [response.status_code for response in responses] == [200] * 6
         assert sorted(source.calls) == sorted(names)
         assert source.most == mosaic_tiles.MAX_ITEM_FETCHES
@@ -193,13 +222,14 @@ class TestSixTilesAtOnce:
     ) -> None:
         names = _scenes_over_the_tile(scenes, 6)
         app = _bare(scenes, monkeypatch)
-        source = Counter({name: scenes.items[name] for name in names})
+        source = Counter({name: scenes.items[name] for name in names}, gate=_all_asked(app, monkeypatch, 4 * len(names)))
         app.state.earthx_item_source = source
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-            responses = await asyncio.gather(
+            requests = asyncio.gather(
                 http.get("/collections/%s/mosaic/WebMercatorQuad/tilejson.json" % DATASET, params=_query(names)),
                 *(http.get(_tile_path(), params=_query(names)) for _ in range(3)),
             )
+            responses = await asyncio.wait_for(requests, timeout=60)
         assert [response.status_code for response in responses] == [200] * 4
         assert sorted(source.calls) == sorted(names)
 

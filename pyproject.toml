@@ -26,7 +26,11 @@ known-first-party = ["earthx", "tests"]
 minversion = "8.0"
 testpaths = ["backend/tests"]
 pythonpath = ["backend"]
-addopts = "-ra --strict-markers --strict-config"
+# In parallel, one worker per core (NM4-23, Otto 26.10.2026); `pytest -n 0` runs serially,
+# e.g. for `--pdb` or `-s`. `worksteal`: idle workers take tests over, so the long memory
+# tests do not end up queued on one worker. Each worker has a database of its own
+# (backend/tests/worker_database.py).
+addopts = "-ra --strict-markers --strict-config -n auto --dist worksteal"
 markers = [
   "local_only: needs resources that exist neither in CI nor in a cloud session",
   "live_dataset(dataset_id): marks a backend/tests_live module as the T-D smoke covering that registry entry (onboarding checklist point 10, Fassung v1.1)",

@@ -1,6 +1,10 @@
 # Development and CI extras on top of requirements.txt.
 -r requirements.txt
 pytest>=8.2
+# Runs the suite in parallel, one process per core (NM4-23, Otto 26.10.2026): `-n auto`
+# in pyproject.toml, `pytest -n 0` runs it serially. Brings `execnet`. No `psutil`:
+# without it `auto` counts the cores the process may use, 4 on the runner and in the session.
+pytest-xdist>=3.8
 ruff>=0.6
 # Module boundary contracts (architekturplan.md 3.1), enforced via .importlinter
 # on every PR since M1-02 — see docs/adr/0002-testaufteilung.md.
