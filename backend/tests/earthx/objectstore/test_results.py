@@ -233,9 +233,11 @@ def test_the_age_of_a_name_outside_the_fixed_set_is_refused(store: Store) -> Non
         results.result_modified(store, new_result_id(), "../result.tif")
 
 
-@pytest.mark.parametrize("result_id", [new_result_id() for _ in range(3)])
-def test_the_shape_of_a_result_id_is_the_one_that_is_made(result_id: str) -> None:
-    assert is_result_id(result_id)
+# Made in the test, not in `parametrize`: an ID in the test's name would differ from process to
+# process, and pytest-xdist needs every worker to collect the same tests (NM4-23).
+@pytest.mark.parametrize("attempt", range(3))
+def test_the_shape_of_a_result_id_is_the_one_that_is_made(attempt: int) -> None:
+    assert is_result_id(new_result_id())
 
 
 @pytest.mark.parametrize(

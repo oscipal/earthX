@@ -193,6 +193,15 @@ class TestOwnLogText:
     def test_a_value_that_is_not_json_is_written_out_not_dropped(self) -> None:
         assert "9.01" in own_log_text(self._record("run ended", where=(9.01, 47.01), when=datetime(2026, 1, 1)))
 
+    def test_the_measured_duration_of_the_access_log_is_not_in_the_text(self) -> None:
+        """NM4-23: "9.5" matched inside `duration_ms` 59.5; the other fields of the line stay."""
+        text = own_log_text(self._record("request handled", path="/x/9.5", duration_ms=59.5))
+        assert "59.5" not in text and "/x/9.5" in text
+
+    def test_a_duration_that_is_not_a_number_is_not_left_out_quietly(self) -> None:
+        with pytest.raises(AssertionError):
+            own_log_text(self._record("request handled", duration_ms="9.01,47.01"))
+
 
 class TestJsonFormatter:
     def test_output_is_one_json_object_with_the_expected_fields(self) -> None:

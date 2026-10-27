@@ -17,6 +17,15 @@ from __future__ import annotations
 import pytest
 
 
+def pytest_xdist_auto_num_workers(config: pytest.Config) -> int:
+    """One process, as before `-n auto` came into `pyproject.toml` (NM4-23).
+
+    The smokes reach the real sources; in several processes each would bring its own
+    gateway limits per host. 0 workers is xdist's serial run.
+    """
+    return 0
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"

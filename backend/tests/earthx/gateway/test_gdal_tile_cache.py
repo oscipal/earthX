@@ -8,22 +8,29 @@ A view of the map reads neighbouring tiles of the same file, and those share blo
 
 These tests read a small synthetic GeoTIFF from a range server on the loopback address that counts what
 it sends — GDAL does its own sockets, so the count is on the server's side. The file is a few MB, far below
-the 16 MB GDAL starts with; the cache is global and its size may already be fixed by an earlier test of
-the process, and every test reads its own URL so that nothing an earlier test cached can help (or hurt).
+the 16 MB GDAL starts with, and every test reads its own URL so that nothing an earlier test cached can help.
+
+The two tests that expect a cache hit read in a fresh ``spawn`` process, the way the `tiler` starts: the
+cache is one per process, GDAL fixes its size at its first use, and under pytest-xdist the tests that ran
+before in the same worker change from run to run. Once (NM4-23) a second read of the same window there
+fetched every byte again. In a process of its own nothing but the test reads, and its size is the profile's.
 """
 
 from __future__ import annotations
 
+import multiprocessing
 import re
 import threading
 import uuid
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 import rasterio
+import rasterio.session
 from rasterio.transform import from_origin
 from rasterio.windows import Window
 
@@ -77,10 +84,11 @@ class RangeServer:
                     self.send_header("Content-Length", "0")
                     self.end_headers()
                     return
-                self._headers(status, start, end)
-                self.wfile.write(owner.data[start:end])
+                # Counted before it goes out: once GDAL has the bytes, the count has them too.
                 with owner._lock:
                     owner.sent.append((start, end))
+                self._headers(status, start, end)
+                self.wfile.write(owner.data[start:end])
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.httpd.daemon_threads = True
@@ -153,17 +161,54 @@ def read_windows(server: RangeServer, options: dict[str, str], windows: list[Win
     return pixels
 
 
+def _read_batches(path: str, options: dict[str, str], batches: list[list[Window]], conn: Any) -> None:
+    """In a fresh process: each batch read as `read_windows` reads it, then a word to the test and a wait for its answer."""
+    rasterio.session.boto3 = None  # as in the image and in the test process (tests/conftest.py)
+    try:
+        for batch in batches:
+            with rasterio.Env(**options):
+                for window in batch:
+                    with rasterio.open(path) as src:
+                        src.read(1, window=window)
+            conn.send("read")
+            conn.recv()
+    except Exception as error:  # noqa: BLE001 - handed to the test, which fails with it
+        conn.send(f"{type(error).__name__}: {error}")
+    finally:
+        conn.close()
+
+
+def read_in_a_fresh_process(server: RangeServer, options: dict[str, str], batches: list[list[Window]]) -> list[int]:
+    """The bytes the server sent after each batch; the batches read one after another in one new process."""
+    context = multiprocessing.get_context("spawn")
+    parent, child = context.Pipe()
+    process = context.Process(target=_read_batches, args=(server.vsicurl_path, options, batches, child))
+    process.start()
+    child.close()
+    sent = []
+    try:
+        for _ in batches:
+            assert parent.poll(60), "the reading process did not answer"
+            word = parent.recv()
+            assert word == "read", word
+            sent.append(server.bytes_sent)
+            parent.send("go on")
+    finally:
+        process.join(60)
+        process.kill()
+    return sent
+
+
 def test_the_tile_profile_fetches_each_byte_once(server: RangeServer) -> None:
-    read_windows(server, tile_gdal_options(POLICY), [FIRST, SECOND])
+    read_in_a_fresh_process(server, tile_gdal_options(POLICY), [[FIRST, SECOND]])
     assert server.bytes_sent > 0
     assert server.bytes_sent == server.bytes_distinct
 
 
 def test_the_tile_profile_asks_for_nothing_when_the_same_window_is_read_again(server: RangeServer) -> None:
-    read_windows(server, tile_gdal_options(POLICY), [FIRST])
-    first = server.bytes_sent
-    read_windows(server, tile_gdal_options(POLICY), [FIRST])
-    assert server.bytes_sent == first
+    first, second = read_in_a_fresh_process(server, tile_gdal_options(POLICY), [[FIRST], [FIRST]])
+    assert first > 0
+    assert second == first
 
 
 def test_the_base_profile_fetches_the_blocks_of_a_window_again(server: RangeServer) -> None:

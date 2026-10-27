@@ -14,10 +14,62 @@ import socket
 from collections.abc import Iterator
 
 import pytest
+import rasterio.session
 
 from earthx.logging import JsonFormatter
+from tests.worker_database import drop_worker_database, load_session_env, use_worker_database
+
+# rasterio in the test process as in the image: without an AWS session (NM4-23).
+#
+# `boto3` is only in the dev lock, through `moto`; the image never has it
+# (test_objectstore_boundary.py). rasterio checks for it once, at import, and keeps
+# the result in `rasterio.session.boto3`. While that name holds the module, every
+# `rasterio.Env()` builds an `AWSSession`: about 100 ms of CPU each (NM4-26 B9), and
+# whatever `AWS_*` it finds goes on to GDAL (adr/0015 §3.1). Clearing the name sends
+# rasterio down its own path for a missing boto3, `DummySession`, as in the image.
+# `boto3` and `botocore` themselves stay where they are: `moto` patches botocore,
+# and the store's client uses botocore alone, so the object store tests check what
+# they checked before (tests/earthx/objectstore/test_rasterio_session.py).
+rasterio.session.boto3 = None
+
+_WORKER_DATABASE = pytest.StashKey[tuple[str, str]]()
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Under pytest-xdist, each worker gets a database of its own (tests/worker_database.py).
+
+    Here, before anything is collected, so every fixture and every spawned child of the
+    worker reads the worker's `PGDATABASE`. A serial run (`pytest -n 0`) has no
+    `workerinput` and keeps the configured database.
+    """
+    workerinput = getattr(config, "workerinput", None)
+    if workerinput is None:
+        return
+    load_session_env()
+    made = use_worker_database(workerinput["workerid"])
+    if made is not None:
+        config.stash[_WORKER_DATABASE] = made
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    made = config.stash.get(_WORKER_DATABASE, None)
+    if made is not None:
+        drop_worker_database(*made)
+
 
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+
+
+def _without_measured_time(fields: dict[str, object]) -> dict[str, object]:
+    """`fields` minus the access log's `duration_ms`, once it is checked to be a number.
+
+    `RequestIdMiddleware` measures it (`earthx/logging.py`), so nothing a request carries can
+    be in it, but a digit-string marker can match inside it by chance: "9.5" in 59.5 (NM4-23).
+    """
+    rest = dict(fields)
+    duration = rest.pop("duration_ms", None)
+    assert duration is None or isinstance(duration, int | float), duration
+    return rest
 
 
 def log_line_without_timestamp(line: str) -> str:
@@ -45,8 +97,9 @@ def own_log_text(record: logging.LogRecord) -> str:
 
     `str(record.__dict__)` also holds `created`, `relativeCreated`, `msecs`, `thread` and `process`;
     a digit-string marker such as "9.01" matches inside them by chance (`relativeCreated` 25239.017...).
+    The measured `duration_ms` of the access log is left out for the same reason.
     """
-    return record.getMessage() + " " + json.dumps(own_log_fields(record), default=str)
+    return record.getMessage() + " " + json.dumps(_without_measured_time(own_log_fields(record)), default=str)
 
 
 def format_without_timestamp(record: logging.LogRecord) -> str:

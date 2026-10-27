@@ -1,6 +1,6 @@
 # NM4-27 — Jobs löschen mit einem Tag Frist und „Restore“
 
-**Stand:** 24.10.2026, beauftragt von Otto (Backlog-Punkt 27 in `docs/plans/nach-m4-backlog.md`).
+**Stand:** 26.10.2026, beauftragt von Otto (Backlog-Punkt 27 in `docs/plans/nach-m4-backlog.md`).
 **Stufe B:** Erst kommt der Plan im Draft-PR (Optionen, Empfehlung, bei Rechenrelevanz Quellen), Otto gibt ihn frei, dann folgt der Code in derselben Session.
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** nach dem Merge von UI-01c (#196). Höchstens zwei Stufe-B-Sessions gleichzeitig; nicht gleichzeitig mit UI-01e (Backend-Route im selben Bereich).
@@ -15,6 +15,7 @@ In UI-01 hatte Otto festgelegt, dass Jobs nicht löschbar sind, nur archivierbar
 - **Delete (Kürzel D, Menüpunkt „Delete (D)“):** Das Ergebnis des Jobs wird nach **einem Tag** gelöscht, oder früher, wenn es ohnehin vorher abläuft (7-Tage-Frist). Keine Rückfrage beim Löschen.
 - **Restore:** Innerhalb dieses Tages lässt sich der Job wiederherstellen; danach gilt wieder die ursprüngliche Ablaufzeit. Die Zeile zeigt, bis wann Restore möglich ist.
 - **Reiter:** „Active | Expired | Deleted | All“. „Deleted“ zeigt gelöschte Jobs (innerhalb der Frist mit Restore, danach als endgültig gelöscht). Die Einträge bleiben im Browser, auch wenn der Server den Job nicht mehr kennt.
+- **Vom Server vergessene Jobs (Fund 26.10.2026):** Antwortet der Server auf einen Job aus der Ablage mit `404` (etwa nach Abbruch oder zurückgesetzter Datenbank), erscheint er als „No longer available“ im Reiter „Deleted“ bzw. „Expired“, nicht als aktiv; kein wiederholtes Abfragen. Test dazu.
 - **Geteilte Ergebnisse:** Dient dasselbe Ergebnis noch einem anderen Job (Cache-Treffer, `adr/0013`), verschwindet es nur für den gelöschten Job; die Datei bleibt, bis kein Job mehr darauf zeigt. Ein gelöschter Job liefert nach der Frist keine Treffer mehr.
 
 ## 3. Umfang
