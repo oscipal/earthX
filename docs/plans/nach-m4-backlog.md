@@ -241,6 +241,11 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Soll:** Ein kleines Symbol (↻, kein Tastenkürzel) startet einen gescheiterten, abgebrochenen oder abgelaufenen Job mit demselben Auftrag neu; bei einem Batch nur die gescheiterten Teile. Der neue Job ersetzt den alten in der Zeile, der alte wird archiviert. Wo es nicht geht (keine Auftragskopie, Datensatz ausgeschieden), erscheint das Symbol nicht. Dazu: Titel direkt in den Details im Processing-Fenster umbenennen.
    - **Aufgabe:** Stufe A, nur Frontend, nach UI-01f, nicht gleichzeitig mit NM4-27.
 
+35. **Relief (Schummerung) als Overlay und optional als Basemap** (Otto, 27.10.2026; Vorschlag aus UI-02).
+   - **Plan:** `querschnitt/nm4-35-relief.md`
+   - **Soll:** Schalter „Relief“ bei den Overlays des Basemap-Menüs, über jeder Basemap; optional Basemap „Relief“. Erste Option: MapLibre zeichnet `hillshade` im Browser aus freien Höhenkacheln (etwa AWS Terrain Tiles), ohne Backend und Pyramide; Alternative: eigenes Copernicus DEM.
+   - **Aufgabe:** Stufe B mit Recherche, nach UI-02a.
+
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
@@ -254,11 +259,11 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 
 ## Offen im Entscheidungslog (bewusst nach M4)
 
-35. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
-36. Originale als ZIP über die Plattform (wird in Punkt 33 entschieden). Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
-37. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
-38. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
-39. Punkte aus S3 (M4-Plan Fassung 3):
+36. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
+37. Originale als ZIP über die Plattform (wird in Punkt 33 entschieden). Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
+38. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
+39. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
+40. Punkte aus S3 (M4-Plan Fassung 3):
     - Export-Job für Zarr blockweise,
     - schnelleres COG-Profil,
     - Laufzeitdeckel an echten Läufen kalibrieren,
@@ -266,11 +271,11 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
     - Job-Schnittstelle in eigenem Prozess,
     - Eingaben per Referenz (siehe Punkt 5),
     - Datei-Cache des Runners.
-40. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
+41. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
 
 ## Danach geplant
 
-41. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5. **UI-01 abgeschlossen** mit UI-01a bis UI-01g (#188, #191, #196, #202, #206, #208, #209; 26.10.2026).
+42. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5. **UI-01 abgeschlossen** mit UI-01a bis UI-01g (#188, #191, #196, #202, #206, #208, #209; 26.10.2026).
 
 ## Verworfen bzw. nur bei Bedarf
 
