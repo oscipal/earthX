@@ -263,6 +263,49 @@ export function orderAssets(
   return sources.map((s) => s.asset).filter((asset) => wanted.has(asset));
 }
 
+// --- which assets are bands (NM4-07) ----------------------------------------------
+
+// `earthx:auxiliary_assets` of the collection: what the registry says is no band. Nothing guessed from the names.
+export function auxiliaryAssetsOf(collection: Collection | undefined): string[] {
+  const raw: unknown = collection?.['earthx:auxiliary_assets'];
+  return Array.isArray(raw) ? raw.filter((key): key is string => typeof key === 'string') : [];
+}
+
+// The assets "Select all" would take: the bands of the data, in the item's order — not the auxiliary assets of the
+// registry and not the layer of the mask, which a mask step brings along itself.
+export function selectableAssets(
+  sources: readonly BandSource[],
+  auxiliary: readonly string[],
+  maskLayerAsset: string | null,
+): string[] {
+  return sources.map((s) => s.asset).filter((asset) => asset !== maskLayerAsset && !auxiliary.includes(asset));
+}
+
+// The one band of a dataset that has only one, so the panel can pick it on opening; `null` otherwise. An asset with
+// several bands is not "one band", even where it is the only asset.
+export function lonelyBand(selectable: readonly string[], sources: readonly BandSource[]): string | null {
+  const only = selectable.length === 1 ? sources.find((s) => s.asset === selectable[0]) : undefined;
+  return only && only.names.length <= 1 ? only.asset : null;
+}
+
+export type SelectAll = { assets: string[] } | { reason: string };
+
+// All bands, or the short reason there is no such pick: an order takes at most `max` assets, and what an expression or a
+// mask step brings along counts as well. Never a part of the bands in silence.
+export function selectAllBands(
+  sources: readonly BandSource[],
+  selectable: readonly string[],
+  expressions: readonly string[],
+  needed: readonly string[],
+  max: number,
+): SelectAll {
+  const total = orderAssets(sources, selectable, expressions, needed).length;
+  if (total > max) {
+    return { reason: `${total} bands – an order takes at most ${max}` };
+  }
+  return { assets: [...selectable] };
+}
+
 // --- the layer a mask reads (M4-18c) ----------------------------------------------
 
 const isInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value);

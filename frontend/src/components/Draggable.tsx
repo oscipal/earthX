@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+
+import { useBandPositions, type BandId, type Place } from '../bandPositions';
 
 // How close to the viewport edge a dragged panel is allowed to get — keeps it
 // fully reachable instead of letting it vanish behind the edge (V-10).
@@ -8,48 +10,73 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-// Wraps a floating panel and lets the user drag it around by grabbing any
-// non-interactive part (or the grip pill at the top). The offset is a translate
-// on top of the panel's normal anchored position, so layout stays responsive.
-// The clamp below applies to manual dragging and to a resize: the panel can
-// never end up (partially) past the viewport edge.
-export default function Draggable({ children, className }: { children: ReactNode; className?: string }) {
-  const [off, setOff] = useState({ x: 0, y: 0 });
+// Keeps a band of this size, at this place, completely inside the window.
+function keepInWindow(place: Place, width: number, height: number): Place {
+  return {
+    x: clamp(place.x, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, window.innerWidth - width - SCREEN_MARGIN)),
+    y: clamp(place.y, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, window.innerHeight - height - SCREEN_MARGIN)),
+  };
+}
+
+function setStyle(el: HTMLElement, property: 'transform' | 'marginTop', value: string) {
+  if (el.style[property] !== value) el.style[property] = value;
+}
+
+// Wraps a floating panel and lets the user drag it around by grabbing any non-interactive part (or the grip pill at
+// the top).
+//
+// A band that was never moved stands where the stack of bands (`.overlay.bottom`) puts it. A band that was moved
+// stands at the place on the screen where it was put (`bandPositions.ts`), whatever the other bands do: it takes no
+// room in the stack (a negative margin of its own height and the gap), and a translate brings it from where the stack
+// would put it to its place, worked out again after every render, every resize of the band or of the stack, and
+// every resize of the window. In the same step it is kept completely inside the window.
+export default function Draggable({ id, children, className }: { id: BandId; children: ReactNode; className?: string }) {
+  // Subscribes to the place: a move renders the band, and `settle` runs after the render.
+  useBandPositions((s) => s.places[id]);
   const drag = useRef<{ mx: number; my: number; ox: number; oy: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  // The anchor position with no offset applied at all: the parent overlay
-  // (`.overlay.right`, `.bottom`, …) carries the actual `position:
-  // absolute; top/left`, and the transform below lives only on this
-  // component's own root, so the parent's rect is unaffected by the offset.
-  const anchorRect = useCallback((): DOMRect | null => rootRef.current?.parentElement?.getBoundingClientRect() ?? null, []);
+  const settle = useCallback(() => {
+    const el = rootRef.current;
+    const stack = el?.parentElement;
+    if (!el || !stack) return;
+    const wanted = useBandPositions.getState().places[id];
+    if (!wanted) {
+      setStyle(el, 'transform', '');
+      setStyle(el, 'marginTop', '');
+      return;
+    }
+    const gap = parseFloat(getComputedStyle(stack).rowGap) || 0;
+    setStyle(el, 'marginTop', `${-(el.offsetHeight + gap)}px`);
+    el.style.transform = '';
+    const from = el.getBoundingClientRect();
+    const kept = keepInWindow(wanted, el.offsetWidth, el.offsetHeight);
+    if (kept.x !== wanted.x || kept.y !== wanted.y) useBandPositions.getState().move(id, kept);
+    setStyle(el, 'transform', `translate(${kept.x - from.left}px, ${kept.y - from.top}px)`);
+  }, [id]);
 
-  // Keeps a candidate (dragX, dragY) — on top of the anchor — from putting the
-  // panel's box (partially) outside the viewport.
-  const clampToScreen = useCallback(
-    (dragX: number, dragY: number): { x: number; y: number } => {
-      const own = anchorRect();
-      const el = rootRef.current;
-      if (!own || !el) return { x: dragX, y: dragY };
-      const width = el.offsetWidth;
-      const height = el.offsetHeight;
-      const minLeft = SCREEN_MARGIN;
-      const maxLeft = Math.max(minLeft, window.innerWidth - width - SCREEN_MARGIN);
-      const minTop = SCREEN_MARGIN;
-      const maxTop = Math.max(minTop, window.innerHeight - height - SCREEN_MARGIN);
-      const left = clamp(own.left + dragX, minLeft, maxLeft);
-      const top = clamp(own.top + dragY, minTop, maxTop);
-      return { x: left - own.left, y: top - own.top };
-    },
-    [anchorRect],
-  );
+  useLayoutEffect(() => {
+    settle();
+  });
+
+  useEffect(() => {
+    const el = rootRef.current;
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => settle());
+    if (el) observer?.observe(el);
+    if (el?.parentElement) observer?.observe(el.parentElement);
+    window.addEventListener('resize', settle);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', settle);
+    };
+  }, [settle]);
 
   useEffect(() => {
     const move = (e: PointerEvent) => {
-      if (!drag.current) return;
-      const x = drag.current.ox + (e.clientX - drag.current.mx);
-      const y = drag.current.oy + (e.clientY - drag.current.my);
-      setOff(clampToScreen(x, y));
+      const el = rootRef.current;
+      if (!drag.current || !el) return;
+      const wanted = { x: drag.current.ox + (e.clientX - drag.current.mx), y: drag.current.oy + (e.clientY - drag.current.my) };
+      useBandPositions.getState().move(id, keepInWindow(wanted, el.offsetWidth, el.offsetHeight));
     };
     const up = () => {
       if (!drag.current) return;
@@ -62,15 +89,7 @@ export default function Draggable({ children, className }: { children: ReactNode
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
-  }, [clampToScreen]);
-
-  // A resize can leave a previously in-bounds manual position off-screen
-  // (window shrunk) — re-clamp whatever offset is already set.
-  useEffect(() => {
-    const onResize = () => setOff((current) => clampToScreen(current.x, current.y));
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [clampToScreen]);
+  }, [id]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     // Don't hijack clicks on controls — only drag from panel chrome / empty space.
@@ -81,15 +100,16 @@ export default function Draggable({ children, className }: { children: ReactNode
     ) {
       return;
     }
-    drag.current = { mx: e.clientX, my: e.clientY, ox: off.x, oy: off.y };
+    const at = rootRef.current?.getBoundingClientRect();
+    drag.current = { mx: e.clientX, my: e.clientY, ox: at?.left ?? 0, oy: at?.top ?? 0 };
     document.body.classList.add('dragging');
   };
 
   return (
     <div
       ref={rootRef}
+      data-band={id}
       className={`draggable${className ? ` ${className}` : ''}`}
-      style={{ transform: off.x || off.y ? `translate(${off.x}px, ${off.y}px)` : undefined }}
       onPointerDown={onPointerDown}
     >
       <span className="drag-grip" title="Drag to move" aria-hidden="true" />

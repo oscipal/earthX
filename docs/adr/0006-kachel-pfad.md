@@ -636,7 +636,7 @@ für die Statistik eines einzelnen Assets maßgeblich.
 `op_version` und `params` wie die Item-Kachel: gleich oft, in der Reihenfolge der Schritte,
 höchstens 4, jeder `T1` und `pixel` und auf den Datensatz anwendbar. Sie ist damit die Vorschau
 des Mosaik-Jobs (`plans/querschnitt/nm4-04-mosaik-mit-operator.md` §6–§16). Gelesen wird wie im
-Job: erst das Mosaik je Band und Pixel, dann die Schritte (`adr/0014` §15s). Abweichend von oder
+Job: erst das Mosaik je Band und Pixel, dann die Schritte (`adr/0014` §15t). Abweichend von oder
 zusätzlich zu M4-17:
 
 - **Assets:** mit `op` 1 bis **4** (`MAX_MOSAIC_OPERATOR_ASSETS`; höchstens 12 Szenen × 4 = 48

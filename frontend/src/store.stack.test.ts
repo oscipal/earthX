@@ -95,6 +95,8 @@ function focusOn(ids: string[], groups: TimeStepGroup[], over: Partial<ReturnTyp
     aoi: AOI,
     error: null,
     notice: null,
+    // A cropped view holds the area it was opened with.
+    viewAoi: over.cropToAoi ? (over.aoi ?? AOI) : null,
     ...over,
   });
 }
@@ -152,7 +154,7 @@ describe('addCurrentToLayers from the full-resolution view: the layer is the vie
   });
 
   it('does not when it adds one layer per time step: no layer is the whole view', () => {
-    useAppStore.setState({ cropToAoi: true });
+    useAppStore.setState({ cropToAoi: true, viewAoi: AOI });
     useAppStore.getState().addCurrentToLayers();
     expect(useAppStore.getState().layers).toHaveLength(2);
     expect(useAppStore.getState().viewLayerId).toBeNull();

@@ -206,6 +206,8 @@ export interface Collection {
   // The unit of the values of an asset, by the asset key an order names (`red`, `SR_10m:b04`); a key may end in
   // `*` for a group (`SR_*`). `null` says the registry does not know it (M4-19b).
   'earthx:band_units'?: Record<string, string | null> | null;
+  // The assets that are no band of the data (a picture, a preview), by the asset key an order names (NM4-07).
+  'earthx:auxiliary_assets'?: string[] | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).

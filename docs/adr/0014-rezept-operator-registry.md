@@ -2419,7 +2419,30 @@ Dateiliste in §15l (`TEXT_FILES` mit `methods.txt`) bleiben als Originaltext st
 - **Tests:** `processing/test_methods.py` (`TestTheTextLiesInTheRecipe`: Text im Feld, Rest des Dokuments gleich, Hash gleich, falscher
   Typ, kein Rezept), `test_export.py`, `api/test_download_route.py`, `api/test_result_zip_files.py`, `runner/test_cli.py`.
 
-## 15s. Nachtrag vom 2026-10-27: die Mosaik-Kachel mit Schritten (zu §6.1, §6.2, §6.3, §15g, §15m; NM4-04)
+## 15s. Nachtrag vom 2026-10-27: was als Band zählt, `auxiliary_assets` (zu §4.2, §5.6; NM4-07)
+
+Das Panel bietet „Select all bands“ an. Dafür muss feststehen, welche Assets Bänder der Daten sind und welche nur helfen, sie
+anzusehen. Die Regel liegt in der Registry, nicht in Namenslisten im Frontend.
+
+- **Feld:** `DatasetConfig.auxiliary_assets`, ein Tupel von Asset-Schlüsseln, **ohne Default** (KLAERUNGEN B10): Jeder Eintrag sagt es
+  ausdrücklich, bei keinem Hilfs-Asset mit `()`. Die Collection veröffentlicht es als `earthx:auxiliary_assets` (Liste). Ein
+  Eintrag nennt nur exakte Schlüssel, keine Muster. Die Prüfung beim Anlegen verlangt brauchbare Schlüssel (nicht leer, ohne
+  Leerraum am Rand), keine Doppelten und nicht die Maskenschicht.
+- **Einträge:** Sentinel-2 L2A `visual`, `preview` (Bilder aus den Bändern, keine Messwerte); Copernicus DEM: leer. `scl` steht nicht
+  im Feld: Die Maskenschicht benennt `mask` (§15m), und das Panel nimmt sie aus „Select all bands“ von dort. `thumbnail` entfällt
+  schon heute, weil das Panel nur GeoTIFF ohne Rolle `thumbnail` als Quelle kennt.
+- **Wirkung nur im Panel (Otto, 2026-10-27):** Die Hilfs-Assets erscheinen im Panel nicht als Chips („nicht Mögliches ausblenden“);
+  ein Hilfs-Asset, das schon im Auftrag steht (etwa aus einem geladenen Rezept), bleibt als Chip sichtbar, damit man es wieder
+  herausnehmen kann. „Select all bands“ nimmt auch die Maskenschicht nicht. Rezept, Operatoren und Backend-Prüfung ändern sich
+  nicht.
+- **Grenze:** Der Auftrag nimmt höchstens `maxItems` Assets (16, M4-07b F5). „Select all bands“ zählt die Bänder aus Ausdrücken und
+  Schritten mit; würde die Summe darüber liegen, ist der Knopf gesperrt, der Grund steht kurz im Tooltip („18 bands – an order takes
+  at most 16“), im Panel steht dazu kein Satz. Nie eine stille Teilmenge.
+- **Ein Band:** Hat die Quelle genau ein wählbares Asset und hat dieses höchstens einen Bandnamen, ist es beim Öffnen gewählt.
+- **Tests:** `catalog/test_auxiliary_assets.py`; im Frontend `ProcessingPanel.test.tsx` („picking all bands“); Browserprüfung
+  `frontend/e2e/band-select.cjs`.
+
+## 15t. Nachtrag vom 2026-10-27: die Mosaik-Kachel mit Schritten (zu §6.1, §6.2, §6.3, §15g, §15m; NM4-04)
 
 Otto hat den Plan von NM4-04 am 2026-10-27 freigegeben, F1–F6 je Option 1, F7 Option 3
 (`plans/querschnitt/nm4-04-mosaik-mit-operator.md` §14). Der Originaltext in §6 bleibt stehen;
@@ -2451,4 +2474,3 @@ maßgeblich ist dieser Nachtrag.
   über das Netz geschätzt [A] etwa 9 s für die erste Kachel im ungünstigsten Fall (3 Portionen ×
   3 Assets × ~1 s); Otto prüft es (Prüfanleitung im PR).
 - **Keine Statistik** über das Mosaik (F4); siehe `adr/0006`, Nachtrag NM4-04.
-

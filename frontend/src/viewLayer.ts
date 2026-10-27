@@ -2,7 +2,7 @@
 // a layer's name puts its scenes into the view (`store.ts::selectLayer`). As long
 // as the view still shows exactly what that layer pinned, the layer is the picture:
 // it stays at its place in the list and follows its eye. Once anything differs —
-// other scenes, a new stretch, a new AOI under "Crop to AOI" — the view is its own
+// other scenes, a new stretch, another AOI under "Crop to AOI" — the view is its own
 // picture again, drawn above the layers.
 
 import type { MapLayer } from './layers';

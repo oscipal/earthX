@@ -221,7 +221,7 @@ describe('groupItemIdsFor', () => {
   });
 });
 
-describe('itemsOverView (UI-01g)', () => {
+describe('itemsOverView (UI-01g, 27.10.2026)', () => {
   const a1 = taggedItem('a1', '2026-07-25T10:00:00Z');
   const a2 = taggedItem('a2', '2026-07-25T11:00:00Z');
   const b1 = taggedItem('b1', '2026-07-24T10:00:00Z');
@@ -229,19 +229,18 @@ describe('itemsOverView (UI-01g)', () => {
   const ids = (items: { id: string }[]) => items.map((it) => it.id).sort();
 
   it('is what browsing shows with the results on the map', () => {
-    expect(ids(itemsOverView(groups, 0, ['b1'], ['a1'], true))).toEqual(['a1', 'a2', 'b1']);
+    expect(ids(itemsOverView(groups, 0, ['b1'], true))).toEqual(['a1', 'a2', 'b1']);
   });
 
-  it('is only the ticked scenes the view does not draw with the results off', () => {
-    expect(ids(itemsOverView(groups, 0, ['a1', 'b1'], ['a1'], false))).toEqual(['b1']);
+  it('is the ticked scenes, all of them, with the results off: a scene the view draws shows like any other', () => {
+    expect(ids(itemsOverView(groups, 0, ['a1', 'b1'], false))).toEqual(['a1', 'b1']);
   });
 
-  it('is nothing with the results off and nothing ticked, or only what the view shows', () => {
-    expect(itemsOverView(groups, 0, [], [], false)).toEqual([]);
-    expect(itemsOverView(groups, 0, ['a1'], ['a1'], false)).toEqual([]);
+  it('is nothing with the results off and nothing ticked', () => {
+    expect(itemsOverView(groups, 0, [], false)).toEqual([]);
   });
 
   it('does not draw a ticked id that is in no group', () => {
-    expect(itemsOverView(groups, 0, ['ghost'], [], false)).toEqual([]);
+    expect(itemsOverView(groups, 0, ['ghost'], false)).toEqual([]);
   });
 });

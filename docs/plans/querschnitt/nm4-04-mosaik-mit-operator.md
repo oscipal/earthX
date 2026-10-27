@@ -38,7 +38,7 @@ M4-17 zeigt das Mosaik eines Überflugs als Kachel, M4-18b erlaubt Operator-Kett
 - Nachtrag in `adr/0014` bzw. `adr/0006`.
 - Prüfanleitung für Otto (Browser und/oder PowerShell 5.1) im PR.
 - Alle vier Pflicht-Checks der CI sind grün.
-- Log-Zeile(n); Backlog-Punkt in `docs/plans/nach-m4-backlog.md` als erledigt markieren (mit PR-Nummer).
+- Log-Zeile(n) mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern (pflegt der Planungs-Chat, siehe Kopf des Backlogs).
 - Vor „fertig“ ist main geholt.
 
 ---
@@ -332,5 +332,5 @@ KE1–KE5 und KE-P angenommen. Dazu: Backlog nicht in dieser Aufgabe pflegen (da
 - `access/mosaic_tiles.py`: Das TileJSON trägt mit Schritten auch `unit`.
 - Tests: `api/test_tiler_mosaic_operator.py` (28 Fälle: bitgleich mit Band math und `mask → band_math`, `red` aus A und `nir` aus B, das Loch der Wolke bleibt, Reihenfolge der IDs und frische App, TileJSON, Ablehnungen vor dem Abruf und vor dem Öffnen); `api/test_mosaic_item_fetches.py` (64 IDs à 60 Zeichen plus drei Schritte durch uvicorn); `api/test_tiler_mosaic.py` angepasst (die drei Parameter der Schritte stehen jetzt im Schema; „halber Schritt“ bleibt `400`).
 - **Gegenprobe:** Gegen `main` scheitern 16 der 28 neuen Fälle, darunter beide Bitgleichheitstests und „das Loch der Wolke bleibt“ (dort weist `main` `op` mit `400` ab). Die 12 übrigen sind Ablehnungen, die `main` aus anderem Grund ebenfalls mit `400` beantwortet; sie sichern das Verhalten.
-- Doku: `adr/0014` §15s, `adr/0006` Nachtrag NM4-04, Log-Zeilen.
+- Doku: `adr/0014` §15t, `adr/0006` Nachtrag NM4-04, Log-Zeilen.
 
