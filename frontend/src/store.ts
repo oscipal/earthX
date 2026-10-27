@@ -714,7 +714,6 @@ function forgetSearch() {
     loadMoreError: null,
     loadMoreUsed: false,
     fallbackDatasetIds: [],
-    resultsOnMap: true,
   };
 }
 
@@ -946,6 +945,7 @@ export interface AppState {
   enterFocus: (cropToAoi: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
   exitFocus: () => void;
+  clearView: () => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
@@ -1753,8 +1753,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       ...(oversize ? { notice: oversize } : {}),
       focusMode: true,
-      // A view takes the results off the map; "Show results" brings them back over it (Otto, 26.10.2026).
-      resultsOnMap: false,
       resultViewLayerId: null,
       cropToAoi,
       showDownloaded: true,
@@ -1783,8 +1781,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       passesOf(Object.entries(s.downloaded), s.groups).map((entries) => ({ datasetId, entries })),
     );
   },
-  // Back to browsing: the quicklooks of the results are there again.
-  exitFocus: () => set({ ...LEAVE_FOCUS, resultsOnMap: true }),
+  // Back to browsing, the choice of scenes kept ("Change image"). Show or hide of the results is the switch's alone.
+  exitFocus: () => set({ ...LEAVE_FOCUS }),
+  // "Clear" in the view: takes the view off the map and drops the choice of scenes. What was pinned stays.
+  clearView: () => set({ ...LEAVE_FOCUS, selectedIds: [] }),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),

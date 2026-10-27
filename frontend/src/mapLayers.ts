@@ -813,6 +813,8 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
 
 export interface MosaicState {
   items: StacItem[]; // items of the active time step
+  // The scenes outlined as ticked, where that is not the same list as `items` (`mapResults.ts`).
+  highlight?: StacItem[];
   // The dataset those items belong to: the browse preview reads its released
   // levels and its standard visualisation from here rather than from a branch
   // on the dataset id (M2-10).
@@ -1014,5 +1016,5 @@ export function syncMosaic(map: MapLibreMap, s: MosaicState): void {
   } else {
     syncBrowseMosaic(map, s);
   }
-  syncHighlight(map, s);
+  syncHighlight(map, s.highlight ? { ...s, items: s.highlight } : s);
 }

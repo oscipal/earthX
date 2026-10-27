@@ -384,6 +384,8 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
   const toggle = () => [...slot('results').querySelectorAll('.results-head button')][0] as HTMLButtonElement;
 
   beforeEach(async () => {
+    // A search no longer puts the switch back, so each test starts from "on".
+    useAppStore.setState({ resultsOnMap: true });
     answer = MANY;
     await search();
   });
@@ -413,12 +415,19 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     expect(container.querySelector('.download-count span')?.textContent).toBe('scene selected');
   });
 
-  it('are on again with a new search, and after the search was cleared', async () => {
+  it('stay as the switch left them through a new search and after the search was cleared (Otto, 27.10.2026)', async () => {
     click(toggle());
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
     await search();
-    expect(useAppStore.getState().resultsOnMap).toBe(true);
-    click(toggle());
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
     act(() => useAppStore.getState().clearAll());
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    act(() => useAppStore.getState().clearSearchResults());
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    // Only the switch brings them back.
+    act(() => useAppStore.getState().toggleResultsOnMap());
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    await search();
     expect(useAppStore.getState().resultsOnMap).toBe(true);
   });
 });
@@ -441,7 +450,7 @@ describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
   });
 
   it('takes the list away, and what it drew on the map, and opens the control menu', () => {
-    useAppStore.setState({ searchCrops: [{ id: 'c', name: 'c', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET } } as never] });
+    useAppStore.setState({ searchCrops: [{ id: 'c', name: 'c', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET } } as never], resultsOnMap: false });
     click(slot('results').querySelector('.result-row input')!);
     click(clearButton());
     const s = useAppStore.getState();
@@ -450,7 +459,8 @@ describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
     expect(s.groups).toEqual([]);
     expect(s.selectedIds).toEqual([]);
     expect(s.searchCrops).toEqual([]);
-    expect(s.resultsOnMap).toBe(true);
+    // Clearing the results is not the switch: hidden stays hidden.
+    expect(s.resultsOnMap).toBe(false);
     expect(s.dock).toBe('controls');
     expect(visible()).toEqual(['dock-controls']);
     expect(symbol('results').getAttribute('aria-disabled')).toBe('true');

@@ -416,39 +416,43 @@ describe('opening a pinned layer again', () => {
   });
 });
 
-describe('the results on the map around a full-resolution view (Otto, 26.10.2026)', () => {
-  it('go off the map when a view is loaded, and "Show results" brings them back over it', async () => {
+describe('the results on the map around a full-resolution view (Otto, 26.10.2026; the switch alone, 27.10.2026)', () => {
+  // Show or hide is the results switch's alone: a view that is loaded, left, cleared or entered again leaves it.
+  it.each([true, false])('a view loaded and left leaves the switch as it was (results on map: %s)', async (before) => {
     tiler();
-    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    useAppStore.setState({ resultsOnMap: before });
     await useAppStore.getState().enterFocus(false);
-    expect(useAppStore.getState().resultsOnMap).toBe(false);
-    useAppStore.getState().toggleResultsOnMap();
-    expect(useAppStore.getState().resultsOnMap).toBe(true);
     expect(useAppStore.getState().focusMode).toBe(true);
-  });
-
-  it('go off the map for a cropped view too, and stay off when the view is entered again', async () => {
-    tiler();
-    await useAppStore.getState().enterFocus(true);
-    expect(useAppStore.getState().resultsOnMap).toBe(false);
-    useAppStore.getState().toggleResultsOnMap();
-    await useAppStore.getState().enterFocus(false);
-    expect(useAppStore.getState().resultsOnMap).toBe(false);
-  });
-
-  it('are on again when the view is left', async () => {
-    tiler();
-    await useAppStore.getState().enterFocus(false);
+    expect(useAppStore.getState().resultsOnMap).toBe(before);
     useAppStore.getState().exitFocus();
     expect(useAppStore.getState().focusMode).toBe(false);
-    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(useAppStore.getState().resultsOnMap).toBe(before);
+  });
+
+  it.each([true, false])('a cropped view, entered again, and cleared leave the switch as it was (results on map: %s)', async (before) => {
+    tiler();
+    useAppStore.setState({ resultsOnMap: before });
+    await useAppStore.getState().enterFocus(true);
+    await useAppStore.getState().enterFocus(false);
+    expect(useAppStore.getState().resultsOnMap).toBe(before);
+    useAppStore.getState().clearView();
+    expect(useAppStore.getState().resultsOnMap).toBe(before);
+  });
+
+  it('the switch alone changes it, in a view as well', async () => {
+    tiler();
+    await useAppStore.getState().enterFocus(false);
+    const was = useAppStore.getState().resultsOnMap;
+    useAppStore.getState().toggleResultsOnMap();
+    expect(useAppStore.getState().resultsOnMap).toBe(!was);
+    expect(useAppStore.getState().focusMode).toBe(true);
   });
 
   it('are not touched by a view that cannot be entered', async () => {
     tiler();
-    useAppStore.setState({ aoi: null });
+    useAppStore.setState({ aoi: null, resultsOnMap: false });
     await useAppStore.getState().enterFocus(true);
     expect(useAppStore.getState().focusMode).toBe(false);
-    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
   });
 });
