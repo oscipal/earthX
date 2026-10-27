@@ -1,6 +1,7 @@
 import { useEffect, type KeyboardEvent } from 'react';
 
 import AppRail from './components/AppRail';
+import BasemapMenu from './components/BasemapMenu';
 import ControlPanel from './components/ControlPanel';
 import Draggable from './components/Draggable';
 import DownloadDialog from './components/DownloadDialog';
@@ -37,8 +38,6 @@ export default function App() {
   const canZoom = useAppStore((s) => !!s.aoi || s.layers.length > 0);
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
-  const projection = useAppStore((s) => s.projection);
-  const toggleProjection = useAppStore((s) => s.toggleProjection);
   const processingOpen = useProcessingStore((s) => s.open);
   const resumeJobs = useProcessingStore((s) => s.resumeJobs);
 
@@ -97,15 +96,7 @@ export default function App() {
         >
           ⤢ Zoom to selection
         </button>
-        <button
-          type="button"
-          className="panel zoom-btn"
-          onClick={() => toggleProjection()}
-          title={projection === 'globe' ? 'Switch to the Mercator map' : 'Switch to the globe'}
-          aria-pressed={projection === 'globe'}
-        >
-          {projection === 'globe' ? '🗺 Mercator' : '🌐 Globe'}
-        </button>
+        <BasemapMenu />
         <button
           type="button"
           className="panel zoom-btn"

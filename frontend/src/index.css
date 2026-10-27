@@ -177,6 +177,38 @@ body.dragging * {
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* The menu of the "Basemap" button (`components/BasemapMenu.tsx`) is as wide as its button. */
+.basemap-btn {
+  min-width: 132px;
+}
+.menu-group {
+  display: flex;
+  flex-direction: column;
+}
+.menu-group + .menu-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--panel-border);
+}
+/* A tick takes the place in front of the name, the same width for every entry (`.pm-menu-list` puts it in front of
+   a checked one only, which would shift the name). */
+.pm-menu-list.basemap-menu button {
+  justify-content: flex-start;
+  gap: 6px;
+}
+.pm-menu-list.basemap-menu button::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+}
+.menu-group-label {
+  padding: 2px 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
 
 /* --- full-resolution viewer controls (focus mode) --- */
 .viewer-controls {
@@ -1825,6 +1857,9 @@ a.pm-icon:hover {
 }
 .pm-menu-list button[aria-checked='true']::before {
   content: '✓ ';
+}
+.pm-menu-list.basemap-menu button[aria-checked='true']::before {
+  content: '✓';
 }
 .pm-fold {
   flex: 0 0 20px;

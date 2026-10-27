@@ -35,8 +35,9 @@ import { isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
 import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
+import type { BasemapId } from './basemaps';
 import type { Projection, Theme } from './preferences';
-import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
+import { loadBasemap, loadProjection, loadTheme, saveBasemap, saveProjection, saveTheme } from './preferences';
 import { appliedRenderFrom, autoRescale } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
@@ -744,6 +745,7 @@ export interface AppState {
   // --- view preferences (V-1), saved per browser (preferences.ts) ---
   theme: Theme;
   projection: Projection;
+  basemap: BasemapId;
   // --- coverage heatmap (M2-07c) ---
   showCoverage: boolean;
   // The dataset the coverage map is drawn for; `null` while it is off.
@@ -973,7 +975,8 @@ export interface AppState {
   pinSearchCrops: () => void;
   setMapViewport: (zoom: number, bbox: Bbox, size: { width: number; height: number }) => void;
   toggleTheme: () => void;
-  toggleProjection: () => void;
+  setProjection: (projection: Projection) => void;
+  setBasemap: (basemap: BasemapId) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -986,6 +989,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   flyToView: null,
   theme: loadTheme(),
   projection: loadProjection(),
+  basemap: loadBasemap(),
   showCoverage: false,
   coverageDatasetId: null,
   coverage: null,
@@ -1946,10 +1950,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     saveTheme(theme);
     set({ theme });
   },
-  toggleProjection: () => {
-    const projection: Projection = get().projection === 'mercator' ? 'globe' : 'mercator';
+  setProjection: (projection) => {
     saveProjection(projection);
     set({ projection });
+  },
+  setBasemap: (basemap) => {
+    saveBasemap(basemap);
+    set({ basemap });
   },
 
   runSearch: async () => {

@@ -28,7 +28,8 @@ import {
   syncPreview,
   syncResultsOverlay,
 } from '../mapLayers';
-import { applyMapBackground, baseMapStyle, mapBackgroundOf } from '../mapStyles';
+import { DEFAULT_BASEMAP } from '../basemaps';
+import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
 import { previewOverlays } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
 import { layersOnMap } from '../searchLayers';
@@ -107,6 +108,7 @@ export default function MapView() {
   const mapRef = useRef<MapLibreMap | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const readyRef = useRef(false);
+  const basemapRef = useRef<ReturnType<typeof createBasemapSwitcher> | null>(null);
 
   // Reactive slices used to drive the imperative map updates.
   const toolMode = useAppStore((s) => s.toolMode);
@@ -136,6 +138,7 @@ export default function MapView() {
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
+  const basemap = useAppStore((s) => s.basemap);
   const theme = useAppStore((s) => s.theme);
   const preview = useProcessingStore((s) => s.preview);
   // Cut to the AOI only for "AOI only": a new AOI leaves the others alone.
@@ -149,10 +152,10 @@ export default function MapView() {
     if (!containerRef.current) return;
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: baseMapStyle(mapBackgroundOf(containerRef.current)),
+      style: baseMapStyle(mapBackgroundOf(containerRef.current), useAppStore.getState().basemap),
       center: [10, 20],
       zoom: 1.6,
-      attributionControl: { compact: true },
+      attributionControl: ATTRIBUTION_CONTROL,
       // No rotate, no tilt (V-1, D27): mouse and touch only pan and zoom.
       // `maxPitch: 0` blocks tilt regardless of input method; the drag/touch/
       // keyboard handlers below additionally drop rotation itself so a
@@ -163,18 +166,15 @@ export default function MapView() {
       maxPitch: 0,
     });
     mapRef.current = map;
+    const first = useAppStore.getState().basemap;
+    basemapRef.current = createBasemapSwitcher(map, isInFirstStyle(first) ? first : null, (reason, keep) => {
+      // The map keeps what it shows; the choice stays saved, so that the next visit tries it again.
+      useAppStore.getState().setError(reason);
+      useAppStore.setState({ basemap: keep ?? DEFAULT_BASEMAP });
+    });
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
 
-    // `compact: true` only makes the attribution collapsible — MapLibre still
-    // starts it expanded (`maplibregl-compact-show`/`open`) and collapses it
-    // only once the user drags the map (its own `_updateCompactMinimize`,
-    // bound to the `drag` event). Collapsed to the small "i" button from the
-    // start instead of waiting for that first pan (V-7).
-    containerRef.current
-      .querySelector('.maplibregl-ctrl-attrib')
-      ?.classList.remove('maplibregl-compact-show');
-    containerRef.current.querySelector('.maplibregl-ctrl-attrib')?.removeAttribute('open');
     map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right');
 
     const initDraw = () => {
@@ -231,7 +231,10 @@ export default function MapView() {
     const onStyleLoad = () => {
       ensureBaseLayers(map);
       const st = useAppStore.getState();
-      map.setProjection({ type: st.projection });
+      applyProjection(map, st.projection);
+      // A basemap with a published style comes after the first style (it is fetched); every later style load keeps
+      // the one in the map (`applyBasemap` carries the app's layers over).
+      basemapRef.current?.show(st.basemap);
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
@@ -315,8 +318,13 @@ export default function MapView() {
   // tile URLs are unaffected, `setProjection` just re-renders the same layers.
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) map.setProjection({ type: projection });
+    if (map && readyRef.current) applyProjection(map, projection);
   }, [projection]);
+
+  // --- basemap (UI-02a): under the app's own layers, which stay where they are ---
+  useEffect(() => {
+    if (readyRef.current) basemapRef.current?.show(basemap);
+  }, [basemap]);
 
   // --- AOI geometry ---
   useEffect(() => {

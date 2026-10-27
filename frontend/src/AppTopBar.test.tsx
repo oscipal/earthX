@@ -4,8 +4,8 @@
 // 1. the theme/projection buttons label the switch's *target* (what clicking
 //    gets you), e.g. "Light" while the theme is dark — confirmed with Otto
 //    2026-09-23 after an initial state-first reading of the same wording;
-// 2. icons: a globe for the globe, a map for the flat view (renamed
-//    "Mercator"); the symbol for "Layers" moved to the rail (UI-01, `AppRail.test.tsx`);
+// 2. (icons for the projection: replaced by the "Basemap" menu, UI-02a; the symbol for "Layers" moved to the
+//    rail, UI-01, `AppRail.test.tsx`);
 // 3. "Zoom to selection" is disabled with neither an AOI nor pinned layers;
 // 5. "Add to layers" belonged next to "View full resolution" (gone from the bar with UI-01g).
 // Point 4 (the date input's calendar icon in dark mode) is CSS-only and not
@@ -87,16 +87,26 @@ describe('top-right map controls', () => {
     expect(btn(view, 'Light')).toBeNull();
   });
 
-  it('labels the projection button by the switch target: "Globe" while flat, "Mercator" while globe (point 2)', () => {
+  it('has a "Basemap" button where "Mercator/Globe" was, and no button for the projection of its own (UI-02a)', () => {
     const view = mount();
-    expect(btn(view, 'Globe')?.textContent).toMatch(/🌐/u);
-    expect(btn(view, 'Flat')).toBeNull();
-    expect(btn(view, 'Mercator')).toBeNull();
+    const bar = view.querySelector<HTMLElement>('.top-right')!;
+    expect(btn(bar, 'Basemap')).not.toBeNull();
+    expect(btn(bar, 'Globe')).toBeNull();
+    expect(btn(bar, 'Mercator')).toBeNull();
+    // The theme keeps its own button (Otto, 27.10.2026).
+    expect(btn(bar, 'Light')).not.toBeNull();
+  });
 
+  it('puts the projection in the Basemap menu: "Globe" while flat, and the other way round', () => {
+    const view = mount();
     act(() => {
-      btn(view, 'Globe')!.click();
+      btn(view, 'Basemap')!.click();
     });
-    expect(btn(view, 'Mercator')?.textContent).toMatch(/🗺/u);
+    act(() => {
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find((e) => e.textContent === 'Globe')!.click();
+    });
+    expect(useAppStore.getState().projection).toBe('globe');
+    expect(btn(view.querySelector<HTMLElement>('.top-right')!, 'Mercator')).toBeNull();
   });
 
   it('keeps "Layers" and "Jobs" off the top right: their symbols are in the rail (UI-01 §6.9)', () => {
