@@ -9,20 +9,24 @@
 // on one shows its details here (`JobDetails.tsx`, UI-01). The first step shows
 // on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
 
-import { useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
 import { totalOf } from '../processingBatch';
 import {
+  auxiliaryAssetsOf,
   formatBytes,
   formatDuration,
   formatMegapixels,
   insertName,
   isArea,
+  lonelyBand,
   namesInExpression,
   processBlockReason,
+  selectableAssets,
+  selectAllBands,
   shownUnit,
   uniqueNames,
   type Area,
@@ -103,6 +107,7 @@ function Bands({ view }: { view: OrderView }) {
   const steps = useProcessingStore((s) => s.steps);
   const picked = useProcessingStore((s) => s.picked);
   const togglePick = useProcessingStore((s) => s.togglePick);
+  const setPicked = useProcessingStore((s) => s.setPicked);
   const updateStep = useProcessingStore((s) => s.updateStep);
   // Where the cursor goes once the expression has its new text: a controlled
   // field moves it to the end when its value changes, so it is set after the commit.
@@ -112,7 +117,17 @@ function Bands({ view }: { view: OrderView }) {
     caret.current = null;
     if (pending?.field.isConnected) pending.field.setSelectionRange(pending.at, pending.at);
   });
+  const [limitNote, setLimitNote] = useState<string | null>(null);
   const unique = uniqueNames(view.sources);
+  const selectable = selectableAssets(view.sources, auxiliaryAssetsOf(view.dataset?.collection), view.maskLayer?.asset ?? null);
+  // A dataset or scene with one band has it picked on opening, once: a later "Clear" stays cleared.
+  const lonely = lonelyBand(selectable, view.sources);
+  const autoPicked = useRef<string | null>(null);
+  useEffect(() => {
+    if (lonely === null || autoPicked.current === lonely) return;
+    autoPicked.current = lonely;
+    if (picked.length === 0) setPicked([lonely]);
+  }, [lonely, picked.length, setPicked]);
   const hasBandMath = steps.some((s) => s.op === 'band_math');
   const named = new Set(bandMathExpressions(steps).flatMap((e) => [...namesInExpression(e)]));
   if (!view.pass) return null;
@@ -173,9 +188,50 @@ function Bands({ view }: { view: OrderView }) {
     );
   };
 
+  // "Select all" takes every band or says why not; it never takes a part of them in silence.
+  const selectAll = () => {
+    const needed = view.maskAsset ? [view.maskAsset.asset] : [];
+    const result = selectAllBands(view.sources, selectable, bandMathExpressions(steps), needed, view.info?.maxAssets ?? 16);
+    if ('reason' in result) {
+      setLimitNote(result.reason);
+      return;
+    }
+    setLimitNote(null);
+    setPicked(result.assets);
+  };
+  const clear = () => {
+    setLimitNote(null);
+    setPicked([]);
+  };
+
   return (
     <section className="pp-section" aria-label="Bands">
-      <h3 className="pp-heading">Bands</h3>
+      <div className="pp-bands-head">
+        <h3 className="pp-heading">Bands</h3>
+        <button
+          type="button"
+          className="link-btn"
+          disabled={selectable.length === 0}
+          title="Pick every band of the data. Pictures such as the true-colour preview and the mask layer are not bands."
+          onClick={selectAll}
+        >
+          Select all bands
+        </button>
+        <button
+          type="button"
+          className="link-btn"
+          disabled={picked.length === 0}
+          title="Leave out the bands you picked. Bands named in an expression or needed by a step stay."
+          onClick={clear}
+        >
+          Clear
+        </button>
+      </div>
+      {limitNote && (
+        <p className="pp-help" role="status">
+          {limitNote}
+        </p>
+      )}
       <div className="pp-chips">
         {view.sources.flatMap((source) =>
           source.names.length === 0 ? [chip(source, null)] : source.names.map((name) => chip(source, name)),

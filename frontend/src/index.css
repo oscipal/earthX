@@ -2317,6 +2317,15 @@ a.pm-icon:hover {
   font-size: 11px;
   color: var(--text);
 }
+.pp-bands-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.pp-bands-head .pp-heading {
+  margin-right: auto;
+}
 .pp-chips {
   display: flex;
   flex-wrap: wrap;
