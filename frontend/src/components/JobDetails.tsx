@@ -8,11 +8,11 @@ import { viewOf } from '../permalink';
 import { MAX_TITLE_LENGTH } from '../jobShelf';
 import type { Order, OrderStep } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
-import { useProcessingStore, type JobEntry } from '../processingStore';
+import { orderRetired, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import InlineRename from './InlineRename';
 import { DownloadZip, RESAMPLED_TIP } from './JobRow';
-import { canRestore, formatUntil, jobLabel, jobState, useNowUntil } from './jobView';
+import { canRestore, canRetry, failsAgain, formatUntil, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
 import Tip from './Tip';
 
 export const NO_COPY_TIP = 'No copy of this order is kept: it was too large, or the browser ran out of room.';
@@ -83,7 +83,11 @@ function Title({ job }: { job: JobEntry }) {
         />
       ) : (
         <>
-          <h3 className="pm-title-text">{jobLabel(job)}</h3>
+          <h3 className="pm-title-text">
+            <button type="button" className="pm-title-edit" title="Rename this job" onClick={() => setEditing(true)}>
+              {jobLabel(job)}
+            </button>
+          </h3>
           <button type="button" className="link-btn" title="Rename this job" aria-label="Rename this job" onClick={() => setEditing(true)}>
             ✎
           </button>
@@ -139,6 +143,8 @@ export default function JobDetails() {
   const back = useProcessingStore((s) => s.closeJobDetails);
   const close = useProcessingStore((s) => s.closeProcessing);
   const cancelJob = useProcessingStore((s) => s.cancelJob);
+  const retryJob = useProcessingStore((s) => s.retryJob);
+  const retired = useProcessingStore((s) => (job ? orderRetired(job, s.descriptions) : false));
   const showOnMap = useProcessingStore((s) => s.showResultOnMap);
   const followJob = useProcessingStore((s) => s.followJob);
   // Narrow screens only: the sheet from below folds down to its head, as the order does.
@@ -151,6 +157,7 @@ export default function JobDetails() {
   const state = job ? jobState(job, now) : null;
   const active = job?.phase === 'active';
   const restorable = job ? canRestore(job, now) : false;
+  const retryable = job ? canRetry(job, now, retired) : false;
 
   return (
     <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Job">
@@ -184,6 +191,7 @@ export default function JobDetails() {
               <dt>State</dt>
               <dd>
                 {state.key === 'running' ? `Running · ${state.text}` : state.text}
+                {job.superseded && <span className="pm-tag"> · Superseded</span>}
                 {job.resampled === true && state.key === 'finished' && <Tip text={RESAMPLED_TIP} symbol="⚠" tone="warn" />}
               </dd>
               {state.key === 'deleted' ? (
@@ -215,6 +223,11 @@ export default function JobDetails() {
                 {job.error}
               </p>
             )}
+            {job.retryError && (
+              <p className="hint-text error" role="alert">
+                {job.retryError}
+              </p>
+            )}
             {job.order && <Steps order={job.order} />}
             <div className="vc-actions">
               {state.key === 'finished' && job.archive && <DownloadZip job={job} now={now} label="Download (ZIP)" className="ghost-btn" />}
@@ -239,7 +252,19 @@ export default function JobDetails() {
                   {job.cancelling ? 'Cancelling…' : 'Cancel'}
                 </button>
               )}
-              {(state.key === 'expired' || state.key === 'unavailable') && <OpenInPanel job={job} />}
+              {retryable && (
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  disabled={job.retrying}
+                  title={RETRY_TIP}
+                  aria-label={RETRY_TIP}
+                  onClick={() => void retryJob(job.jobID)}
+                >
+                  ↻
+                </button>
+              )}
+              {(state.key === 'expired' || state.key === 'unavailable' || (state.key === 'failed' && (failsAgain(job.failureKind) || job.retryRefused || !job.order))) && <OpenInPanel job={job} />}
             </div>
           </>
         )}
