@@ -182,7 +182,7 @@ class TestOrderSchema:
             "#/$defs/step_coarsen_v1",
             "#/$defs/step_mask_v1",
             "#/$defs/step_normalize_v1",
-            "#/$defs/step_reproject_v3",
+            "#/$defs/step_reproject_v4",
             "#/$defs/step_scale_v1",
         ]
         step = schema["$defs"]["step_scale_v1"]
@@ -201,16 +201,16 @@ class TestOrderSchema:
 
     def test_the_real_registry_offers_reproject(self) -> None:
         schema = order_schema(REAL_OPERATORS)
-        assert "step_reproject_v3" in schema["$defs"]
-        params = schema["$defs"]["step_reproject_v3"]["properties"]["params"]
+        assert "step_reproject_v4" in schema["$defs"]
+        params = schema["$defs"]["step_reproject_v4"]["properties"]["params"]
         assert set(params["required"]) == {"crs", "resolution", "resampling"}
 
     def test_only_the_highest_version_of_an_operator_is_offered(self) -> None:
-        """Version 2 of reproject is still accepted, but not listed (M4-24, Otto 20.10.2026)."""
-        assert ("reproject", 2) in REAL_OPERATORS
+        """Versions 2 and 3 of reproject are still accepted, but not listed (M4-24, Otto 20.10.2026; NM4-43b)."""
+        assert ("reproject", 2) in REAL_OPERATORS and ("reproject", 3) in REAL_OPERATORS
         schema = order_schema(REAL_OPERATORS)
         steps = sorted(key for key in schema["$defs"] if key.startswith("step_"))
-        assert steps == ["step_band_math_v1", "step_mask_v1", "step_normalize_v1", "step_reproject_v3"]
+        assert steps == ["step_band_math_v1", "step_mask_v1", "step_normalize_v1", "step_reproject_v4"]
         assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
 
     def test_an_older_version_alone_is_offered(self) -> None:
@@ -280,8 +280,8 @@ class TestWhatThePanelReads:
         schema = order_schema(REAL_OPERATORS)
         assert schema["$defs"]["step_band_math_v1"]["x-earthx-tiers"] == ["T1", "T2"]
         assert schema["$defs"]["step_band_math_v1"]["x-earthx-kind"] == "pixel"
-        assert schema["$defs"]["step_reproject_v3"]["x-earthx-tiers"] == ["T2"]
-        assert schema["$defs"]["step_reproject_v3"]["x-earthx-kind"] == "grid"
+        assert schema["$defs"]["step_reproject_v4"]["x-earthx-tiers"] == ["T2"]
+        assert schema["$defs"]["step_reproject_v4"]["x-earthx-kind"] == "grid"
 
     def test_an_order_cannot_use_the_annotations_as_parameters(self) -> None:
         step = {**SCALE_STEP, "x-earthx-tiers": ["T1"]}

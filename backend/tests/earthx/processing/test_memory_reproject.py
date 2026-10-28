@@ -88,3 +88,48 @@ def test_a_reprojection_stays_below_the_limit_and_does_not_follow_the_scene_size
         assert measured[size]["blocks"] >= (size // 1024) ** 2 + math.ceil(side * 0.99 / 1024) ** 2
     assert measured[LARGE]["peak_mb"] < PEAK_LIMIT_MB
     assert growth <= growth_limit
+
+
+#: More than two bands (NM4-43b), measured in the session with the same child as above (``VmHWM``,
+#: ``GDAL_CACHEMAX`` 64 MB) and for version 3 as well: 4 bands at 2048² 419 MB, at 4096² 521 MB (version 3: 522 MB);
+#: 17 bands at 1024² 754 MB (version 3: 821 MB), at 2048² 981 MB (version 3: 1051 MB). Version 4 needs no more
+#: than version 3. The 500 MB of two bands do not hold for more bands, not even for the pass that crops
+#: and scales (556 MB for 17 bands at 1024²): the limit per job is the business of NM4-43c, adr/0020 §7.
+#: These two limits keep a third in reserve of what was measured.
+FOUR_BANDS_PEAK_LIMIT_MB = 600
+SEVENTEEN_BANDS_PEAK_LIMIT_MB = 900
+
+
+def _wide(scene: Path, tmp_path: Path, size: int, bands: int) -> dict:
+    measured = measure(scene, tmp_path, size)
+    with rasterio.open(tmp_path / "result.tif") as result:
+        assert result.crs.to_epsg() == 3035
+        assert result.count == bands
+    return measured
+
+
+def test_four_bands_do_not_follow_the_scene_size(
+    tmp_path_factory: pytest.TempPathFactory, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path_factory.mktemp("four-bands")
+    measured = {}
+    for size in (SMALL, LARGE):
+        scene = build_scene(root / f"scene-{size}.tif", size, bands=4)
+        (root / str(size)).mkdir()
+        measured[size] = _wide(scene, root / str(size), size, 4)
+    growth = measured[LARGE]["peak_mb"] - measured[SMALL]["peak_mb"]
+    with capsys.disabled():
+        print(f"\nT2 memory reproject 4 bands {SMALL}²: {measured[SMALL]}, {LARGE}²: {measured[LARGE]}, growth {growth:.1f} MB")
+    assert measured[LARGE]["peak_mb"] < FOUR_BANDS_PEAK_LIMIT_MB
+    assert growth <= GROWTH_LIMIT_MB
+
+
+def test_seventeen_bands_stay_below_the_measured_limit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    scene = build_scene(tmp_path / "scene.tif", 1024, bands=17)
+    (tmp_path / "work").mkdir()
+    measured = _wide(scene, tmp_path / "work", 1024, 17)
+    with capsys.disabled():
+        print(f"\nT2 memory reproject 17 bands 1024²: {measured}")
+    assert measured["peak_mb"] < SEVENTEEN_BANDS_PEAK_LIMIT_MB
