@@ -2609,3 +2609,61 @@ stehen; maßgeblich ist dieser Nachtrag.
   2,1 %. Gegen den exakt nächsten Quellpixel gilt mit 512 px dieselbe Ausnahme an Grenzen (1 von 6462
   Pixeln), mit 256 px weiter keine.
 
+
+## 15 Nachtrag NM4-43c: Bandvorrat, `output.bands` und die Rezeptversion 2 (2026-10-28; zu §4, §5.2, §5.6, §6.1, §7, §9, §10.1, §15m)
+
+`adr/0020` hat den Bandvorrat entschieden (§4 bis §8, §11, §15a); dieser Nachtrag beschreibt, was der Code von NM4-43c, PR 1, daraus
+macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser Nachtrag. Der Schutz ohne Bandgrenze (§7 dort) kommt mit PR 2.
+
+- **Rezeptversion 2 (`RECIPE_VERSION = 2`).** `output.bands` (Pflicht, mindestens ein Name, ohne Rücksicht auf Groß- und Kleinschreibung
+  eindeutig) nennt, was `result.tif` enthält, in dieser Reihenfolge. Ein **Auftrag** für ein Raster nennt keine `assets` mehr (das Modell weist
+  sie ab); `api` leitet sie ab und schreibt sie ins **Rezept**, das sie weiter trägt (`Input.assets`, `resolved` wie bisher). Der Auftrag für
+  `crop` bleibt, wie er war, und nennt seine Assets. Hash und Cache-Schlüssel ändern sich einmal.
+- **Operatoren.** `band_math` Version 2 (`expression`, `name`; fügt das Band hinzu, ersetzt nichts), `mask` Version 2 (die Schicht bleibt im
+  Vorrat und wird wie jedes Band an den ausgeblendeten Klassen maskiert), `normalize` Version 2 (`bands`, Pflicht: nur diese werden umgerechnet,
+  die übrigen bleiben, wie sie sind). Die Namensregeln stehen in `band_math.check_name`: `^[A-Za-z][A-Za-z0-9_]{0,31}$`, kein Python-Schlüsselwort,
+  kein Funktionsname aus R5. Die Versionen 1 bleiben registriert (Kachel, Umdeutung) und tragen `stock=False`; ein Job lehnt sie mit dem Ort des
+  Schritts ab. Die Versionen 2 laufen bis NM4-43d nur als Job (`Tier.T2`) und werden nicht gelistet (`Operator.listed`, `processing_docs._jobs_of`
+  zählt nur gelistete Versionen): Das heutige Panel sieht weiter Version 1. Der Kern prüft einen Namen zusätzlich am Vorrat
+  (`band_math._transform_v2`: „NDVI is used twice“, auch in anderer Schreibweise).
+- **Planer (`plan.stock_steps`, `needed_source_bands`).** Zuerst prüft jeder Schritt auf dem **ganzen** Vorrat (ein falscher Name in einem Schritt,
+  den niemand braucht, wird ebenso abgewiesen, mit dem Ort des Schritts im Text); dann geht der Planer die Kette von hinten durch
+  (`Operator.bands_used` → `BandUse`: gelesene Namen, hinzugefügter Name, geänderte Bänder). Ein Band fällt nach seiner letzten Nutzung weg; ein
+  Schritt, der nichts Gebrauchtes ändert oder hinzufügt, wird nicht gerechnet. Dafür setzt der Planer einen eigenen, nicht registrierten Schritt
+  `select_bands` (`operators/select.py`) vor den Schritt, der folgt, und am Ende. Der Vorrat wird dabei so geordnet wie `output.bands`, sobald er
+  schmaler wird; ein letztes `reproject` braucht deshalb keinen Durchgang, der nur sortiert. Ein `grid`-Schritt warpt nur, was bleibt (Version 4
+  warpt jedes Band für sich; der Wert eines Bandes hängt nicht am Vorrat, `adr/0020` §3.4). `estimate`, `check_bands`, `run` und
+  `area_statistics` benutzen dieselbe Planung.
+- **`api` (`intake.derive_assets`, `band_sources`).** Aus `output.bands` und den Schritten folgen die Namen, die der erste Schritt braucht;
+  jeder Name gehört zu genau einem Asset des Items (Regel des Panels: ein COG-Asset ist ein Band mit dem Namen des Assets oder `<asset>_<n>`;
+  ein Zarr-Asset je Variable mit `<asset><Trenner><Variable>`; der Name ist die Variable; die Kerne und `expected_band_names` stimmen
+  überein). Ein Asset, dessen Bandzahl das Item nicht nennt, steht mit seinem Namen und nimmt `<asset>_<n>` dazu; die Datei entscheidet. Die
+  Assets stehen in der Reihenfolge des Items. `422` mit dem Namen (Stufe `applicable`): ein Name ohne Asset, ein Name, den zwei Assets
+  tragen, ein Name eines `band_math`-Schritts, den ein Band des Datensatzes trägt (auch ein nicht gelesenes, ohne Rücksicht auf Groß- und
+  Kleinschreibung) oder ein anderer Schritt („is used twice“). Die Grenze von 16 Assets gilt bis PR 2 für die abgeleiteten Assets.
+- **Kern.** `result.tif` trägt genau die Bänder von `output.bands`, in dieser Reihenfolge, mit dem Namen als **Banddeskription**; Datentyp und nodata
+  nach den bisherigen Regeln. **Abweichung von `adr/0020` §8: Die Einheit steht nicht in `result.tif`, sondern in den STAC-Eigenschaften
+  (`properties.bands[].unit`, M4-19b) und im Block `bands` der Datei `recipe.json`.** `rio-cogeo` (`cog_translate`) trägt Namen und Tags in die COG, aber keine Einheit.
+  GDALs COG-Treiber (`rasterio.shutil.copy(driver="COG")`) trägt sie, und die Datei ist sonst dieselbe (gleiche Werte, gleiche Block- und Übersichtsstufen,
+  266 Byte mehr, es fehlt das Tag `OVERVIEW_RESAMPLING`). Er hält aber Speicher, der mit der Fläche wächst: mit `GDAL_CACHEMAX` 64 MB, 4 Bänder `float32`,
+  Spitze `cog_translate` gegen COG-Treiber 262 / 306 MB (2048²), 288 / 347 MB (4096²), 301 / 395 MB (8192²), also 44, 59 und 94 MB mehr; im Kern
+  stieg dadurch das Wachstum des Speichers von 2048² auf 4096² von 59 auf 132 MB (Grenze der Tests 120 MB) und brach `test_memory_reproject.py` und
+  `test_memory_mosaic.py`. Die Eigenschaft „der Speicher folgt dem Block, nicht der Szene“ (M4-07a F11) hat Vorrang; deshalb bleibt es bei
+  `cog_translate`, und die Einheit in der Datei ist eine offene Frage an Otto (PR-Text).
+- **Das Kennzeichen `earthx:resampled` (Backlog 51, Otto).** Es sagt nur, wo **Werte** auf ein anderes Raster gebracht wurden. Jedes Band trägt es
+  (`BandMeta.resampled`: seine Quelle liegt nicht auf dem Raster des feinsten Assets oder warpt ihre Szenen; `reproject` setzt es für alle Bänder;
+  `band_math` erbt es von den Bändern, die der Ausdruck nennt). Das Ergebnis ist markiert, wenn **ein Band, das in ihm steht**, es trägt. Eine Schicht,
+  die nur Pixel ausblendet (`scl` von `mask`, nächster Nachbar), markiert nichts, auch wenn sie gröber ist. Steht sie selbst in der Ausgabe, zählt sie wie
+  jedes Band. Die Annahme in `api` kennt das Kennzeichen nicht (es entsteht beim Lesen); es gehört in den Kern und ist dort umgesetzt.
+- **Umdeutung von Version 1 (`processing/upgrade.py`, eine reine Funktion über JSON-Daten).** Wie `adr/0020` §11: Namen für die `band_math`-Schritte
+  (der letzte `band_math`, frühere `band_math_<n>`, Verweise im nächsten Ausdruck auf den Namen des vorigen, token-genau), `bands` für `normalize`, die
+  Schicht von `mask` nicht mehr in `output.bands`, `output.bands` = Vorrat am Ende. Ein Auftrag verliert `assets` (der Name eines Assets ist sein
+  Name, ein Zarr-Schlüssel nennt seine Variablen), ein Rezept behält `assets` und `resolved` (die Namen kommen aus `resolved`). `api` deutet Aufträge und
+  Permalinks bis `intake.VERSION_1_ACCEPTED_UNTIL` um (ohne Datum bis NM4-43e; danach `422` „recipe_version 1 is no longer accepted; send version 2“);
+  ein Permalink bleibt, wie er gesendet wurde, nur geprüft. Der Worker deutet gespeicherte Rezepte um (`jobs/child.py`), der Methodentext und der Runner
+  lesen Version 1 dauerhaft. Werte: bitgleich zu Version 1 für Ketten ohne `reproject` (`test_version_1_values.py`, die Hashes stammen vom Kern vor
+  dieser Änderung); nach `reproject` Version 2 oder 3 können sie abweichen (`adr/0016` Nachtrag NM4-43c).
+- **Methodentext.** Er nennt die Bänder der Ausgabe („… with float32 values and the bands NDVI, NDWI.“); `band_math` und `normalize` Version 2 nennen
+  die Namen; `processing:lineage` und `processing:expression` tragen den Namen des Ergebnisses.
+- **Version.** `earthx.__version__` 0.4.4 → 0.5.0 (`result.tif` trägt Banddeskriptionen und Einheiten; Bytes ändern sich; `reproject` Version 4 aus 0.4.4
+  bleibt).
