@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BASEMAP_IDS } from './basemaps';
-import { loadBasemap, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
+import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 
 // No jsdom in this project (Vitest runs plain Node) — a minimal
 // localStorage stand-in is enough to exercise the module under test.
@@ -130,6 +130,61 @@ describe('loadBasemap', () => {
     saveBasemap('outlines');
     expect(loadTheme()).toBe('tech');
     expect(loadProjection()).toBe('mercator');
+  });
+});
+
+describe('loadOverlays (UI-02b)', () => {
+  it('has both overlays off when nothing is stored', () => {
+    expect(loadOverlays()).toEqual({ labels: false, graticule: false });
+  });
+
+  it.each([
+    { labels: true, graticule: false },
+    { labels: false, graticule: true },
+    { labels: true, graticule: true },
+  ])('round-trips %j', (overlays) => {
+    saveOverlays(overlays);
+    expect(loadOverlays()).toEqual(overlays);
+  });
+
+  it.each(['', 'null', 'true', '42', '"labels"', '[true, true]', '{', '<html>', '{"labels": 1, "graticule": "true"}', '{"labels": null}'])(
+    'has both off for the foreign value %j',
+    (value) => {
+      storage.setItem('earthx.overlays', value);
+      expect(loadOverlays()).toEqual({ labels: false, graticule: false });
+    },
+  );
+
+  it('keeps the one that is valid and drops the one that is not, and ignores unknown keys', () => {
+    storage.setItem('earthx.overlays', '{"labels": true, "graticule": "yes", "mgrs": true, "__proto__": {"labels": true}}');
+    expect(loadOverlays()).toEqual({ labels: true, graticule: false });
+  });
+
+  it('has both off when localStorage cannot be read', () => {
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: () => {
+          throw new Error('blocked');
+        },
+      },
+    });
+    expect(loadOverlays()).toEqual({ labels: false, graticule: false });
+  });
+
+  it('does not throw when localStorage.setItem fails (storage full/disabled)', () => {
+    vi.stubGlobal('window', {
+      localStorage: {
+        setItem: () => {
+          throw new Error('quota exceeded');
+        },
+      },
+    });
+    expect(() => saveOverlays({ labels: true, graticule: true })).not.toThrow();
+  });
+
+  it('is kept apart from the basemap and the projection', () => {
+    saveOverlays({ labels: true, graticule: true });
+    expect([loadBasemap(), loadProjection(), loadTheme()]).toEqual(['satellite', 'mercator', 'tech']);
   });
 });
 
