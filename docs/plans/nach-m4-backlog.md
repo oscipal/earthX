@@ -290,6 +290,11 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 50. **DEM: Layer-Manager und Ergebnisse wie bei Sentinel-2; Augen-Symbol** (Otto, 28.10.2026). Beim DEM wird ein Layer nicht immer ausgeblendet, Colormap und Skala werden nicht gespeichert, Show/Hide results verhält sich anders als bei S2. Der Sichtbarkeits-Schalter im Layer-Manager wird ein Auge. Die Vorschau eines DEM-Ergebnisses zeigt die ganze Kachel statt des Zuschnitts (ersetzt teilweise die Entscheidung vom 26.09.2026, M3-12).
    - **Plan:** `querschnitt/nm4-50-dem-layer-und-ergebnisse.md`
    - **Aufgabe:** Stufe A, Frontend, Vorrang vor neuen Funktionen. Ein Weg für alle Datensätze, keine Zweige je Datensatz.
+51. **Hinweis „resampled to common grid“ nur, wenn Werte betroffen sind** (Otto, 28.10.2026). Kein Hinweis, wenn nur die Maskenschicht (`scl`, nächster Nachbar) auf das Raster gebracht wird; Hinweis bleibt, wenn Wertebänder umgerechnet werden (verschiedene Auflösungen oder CRS/UTM-Zonen). Grund nur im Tooltip.
+   - **Aufgabe:** mit NM4-43e (Panel-Umbau), Stufe A; vorher prüfen, ob die Annahme im Backend beide Fälle schon unterscheidet. Der NM4-43e-Session beim Start mitgeben.
+52. **Tooltips liegen immer über allem und bleiben im Fenster** (Otto, 28.10.2026; Anlass: Tooltip am Rufzeichen wird von anderen Kästen verdeckt).
+   - **Plan:** `querschnitt/nm4-52-tooltips-ueber-allem.md`
+   - **Aufgabe:** Stufe A, Frontend, klein.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
