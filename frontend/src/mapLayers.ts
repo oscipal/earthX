@@ -57,6 +57,9 @@ const RESULTS_TOP = 'results-top';
 // quicklooks and the pinned layers, whichever of them was drawn first (Otto, 27.10.2026, "immer der oberste Layer").
 // Every other raster of the app goes under this marker (`aboveAll`), the ticked quicklooks over it (`topOfAll`).
 const TICKED_TOP = 'ticked-top';
+// Right over the ticked quicklooks and under the area of interest: the overlays of the "Basemap" menu (names,
+// graticule) lie between this marker and the AOI, so that they stay over every picture (UI-02b, `mapStyles.ts`).
+const OVERLAYS_BASE = 'overlays-base';
 // Cache of processed quicklook data URLs, keyed by URL + the parameters that
 // change what gets drawn (freistellung threshold, AOI clip) so the same
 // source image loaded plain (browse mode, a pinned layer) and clipped to an
@@ -257,6 +260,7 @@ export function ensureBaseLayers(map: MapLibreMap): void {
     map.addLayer({ id: LAYERS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: RESULTS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: TICKED_TOP, type: 'background', layout: { visibility: 'none' } });
+    map.addLayer({ id: OVERLAYS_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({
       id: 'aoi-fill',
       type: 'fill',
@@ -478,8 +482,9 @@ const underTheView = (map: MapLibreMap): string | undefined => (map.getLayer(RES
 const aboveAll = (map: MapLibreMap): string | undefined =>
   map.getLayer(TICKED_TOP) ? TICKED_TOP : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
-// Where the quicklook of a ticked search result goes: over the marker, under the AOI.
-const topOfAll = (map: MapLibreMap): string | undefined => (map.getLayer('aoi-fill') ? 'aoi-fill' : undefined);
+// Where the quicklook of a ticked search result goes: over the marker, under the overlays and the AOI.
+const topOfAll = (map: MapLibreMap): string | undefined =>
+  map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
 // Where a new raster goes: below the preview, which stays on top of whatever
 // loads after it (a quicklook is placed when its image has arrived).

@@ -39,6 +39,8 @@ export function appLayers(): Pick<StyleSpecification, 'sources' | 'layers' | 'pr
     layers: [
       { id: 'layers-top', type: 'background', layout: { visibility: 'none' } },
       { id: 'm-img-lyr-0', type: 'raster', source: 'm-img-src-0' },
+      { id: 'overlays-base', type: 'background', layout: { visibility: 'none' } },
+      { id: 'aoi-fill', type: 'fill', source: 'aoi-src' },
       { id: 'aoi-line', type: 'line', source: 'aoi-src' },
       { id: 'td-polygon', type: 'fill', source: 'td-polygon' },
     ],

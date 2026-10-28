@@ -1,10 +1,11 @@
-// The "Basemap" button at the top right and its menu (UI-02a, Otto 27.10.2026): which map lies under the app's own
-// layers, and how the earth is shown (flat or globe). It replaces the "Mercator/Globe" button; "Light/Dark" stays a
+// The "Basemap" button at the top right and its menu (UI-02a, UI-02b, Otto 27.10.2026): which map lies under the app's
+// own layers, the overlays over them (names, graticule), and how the earth is shown (flat or globe). It replaces the "Mercator/Globe" button; "Light/Dark" stays a
 // button of its own. The tooltip of each basemap says where its tiles come from (UI-02 §6.7).
 
 import { useRef, useState } from 'react';
 
 import { BASEMAP_IDS, BASEMAPS } from '../basemaps';
+import { OVERLAY_IDS, OVERLAYS } from '../overlays';
 import type { Projection } from '../preferences';
 import { useAppStore } from '../store';
 import Popover from './Popover';
@@ -14,9 +15,9 @@ const PROJECTIONS: { id: Projection; name: string; tip: string }[] = [
   { id: 'globe', name: 'Globe', tip: 'The earth as a globe; it turns flat from zoom 12' },
 ];
 
-function Choice({ name, tip, checked, onChoose }: { name: string; tip: string; checked: boolean; onChoose: () => void }) {
+function Choice({ name, tip, checked, onChoose, role = 'menuitemradio' }: { name: string; tip: string; checked: boolean; onChoose: () => void; role?: string }) {
   return (
-    <button type="button" role="menuitemradio" aria-checked={checked} title={tip} onClick={onChoose}>
+    <button type="button" role={role} aria-checked={checked} title={tip} onClick={onChoose}>
       <span className="pm-menu-label">{name}</span>
     </button>
   );
@@ -24,8 +25,10 @@ function Choice({ name, tip, checked, onChoose }: { name: string; tip: string; c
 
 export default function BasemapMenu() {
   const basemap = useAppStore((s) => s.basemap);
+  const overlays = useAppStore((s) => s.overlays);
   const projection = useAppStore((s) => s.projection);
   const setBasemap = useAppStore((s) => s.setBasemap);
+  const setOverlay = useAppStore((s) => s.setOverlay);
   const setProjection = useAppStore((s) => s.setProjection);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
@@ -38,7 +41,7 @@ export default function BasemapMenu() {
         className="panel zoom-btn basemap-btn"
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Basemap and projection"
+        title="Basemap, overlays and projection"
         onClick={() => setOpen((was) => !was)}
       >
         Basemap
@@ -49,13 +52,26 @@ export default function BasemapMenu() {
         onClose={() => setOpen(false)}
         className="pm-menu-list basemap-menu"
         role="menu"
-        ariaLabel="Basemap and projection"
+        ariaLabel="Basemap, overlays and projection"
         focusOnOpen
       >
         <div role="group" aria-label="Basemap" className="menu-group">
           <span className="menu-group-label" aria-hidden="true">Basemap</span>
           {BASEMAP_IDS.map((id) => (
             <Choice key={id} name={BASEMAPS[id].name} tip={BASEMAPS[id].tip} checked={basemap === id} onChoose={() => setBasemap(id)} />
+          ))}
+        </div>
+        <div role="group" aria-label="Overlays" className="menu-group">
+          <span className="menu-group-label" aria-hidden="true">Overlays</span>
+          {OVERLAY_IDS.map((id) => (
+            <Choice
+              key={id}
+              role="menuitemcheckbox"
+              name={OVERLAYS[id].name}
+              tip={OVERLAYS[id].tip}
+              checked={overlays[id]}
+              onChoose={() => setOverlay(id, !overlays[id])}
+            />
           ))}
         </div>
         <div role="group" aria-label="Projection" className="menu-group">
