@@ -171,6 +171,13 @@ class MosaicSource(Source):
     def _piece(self, member: _Member, block: Window, grid: Affine) -> numpy.ma.MaskedArray | None:
         """The part of ``block`` this member reaches, placed in an otherwise masked block; ``None`` if it reaches none."""
         col0, row0, col1, row1 = member.extent(grid)
+        if not member.on_grid:
+            # A grid coarser than the mosaic's (a measure of an area, NM4-19) need not end where the warp
+            # does; on the mosaic's own grid every extent lies inside it, and nothing changes. The warp is
+            # kept per member, not per grid: a mosaic is read on one grid, the measure opens its own.
+            warped = self._warped(member, grid)
+            col0, row0 = max(col0, 0), max(row0, 0)
+            col1, row1 = min(col1, warped.vrt.width), min(row1, warped.vrt.height)
         left, top = max(block.col_off, col0), max(block.row_off, row0)
         right = min(block.col_off + block.width, col1)
         bottom = min(block.row_off + block.height, row1)
