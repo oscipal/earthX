@@ -14,15 +14,29 @@
 import { buildMosaicTileTemplate } from './api';
 import type { DownloadedInfo, TimeStepGroup } from './types';
 
-// Mirror `earthx.api.mosaic_tiles` (`MIN_MOSAIC_ZOOM`, `MAX_ITEMS`); the tiler answers `400`
+// Mirror `earthx.api.mosaic_tiles` (`MIN_MOSAIC_ZOOM`, `MIN_MOSAIC_ITEMS`, `MAX_MOSAIC_ITEMS`,
+// `MAX_MOSAIC_OPERATOR_ASSETS`, `MAX_MOSAIC_REQUEST_BYTES`); the tiler answers `400` (`414` for the length)
 // outside them. They are not read from the TileJSON, which comes only after the URL is built.
 export const MIN_MOSAIC_ZOOM = 8;
+export const MIN_MOSAIC_SCENES = 2;
 export const MAX_MOSAIC_SCENES = 64;
+// A mosaic tile with steps reads at most this many assets of each scene, so that a tile opens 12 x 4 files at most.
+export const MAX_MOSAIC_OPERATOR_ASSETS = 4;
+// Path and query of a mosaic request as they arrive at the tiler: the longest a proxy or a CDN in front of it passes.
+export const MAX_MOSAIC_REQUEST_BYTES = 7168;
 
 // A source's `minzoom`/`maxzoom` are tile levels, a layer's `maxzoom` is a map zoom. MapLibre rounds the map zoom
 // for a raster source and asks 256-px tiles for the level above it (`placeRaster`), so tile level L is first
 // asked at map zoom L - 1.5: from there the mosaic is loaded and the scenes under it have to be out of sight.
 export const TILE_LEVEL_AHEAD = 1.5;
+
+// The bytes of a mosaic tile's request as the tiler counts them (`check_length`): path and query, without the address
+// of the API, with the largest tile of `level` in the place of the grid's placeholders (the longest of its tiles).
+export function mosaicRequestBytes(tileUrl: string, level: number): number {
+  const request = tileUrl.slice(Math.max(0, tileUrl.indexOf('/collections/')));
+  const last = String(2 ** level - 1);
+  return request.replace('{z}', String(level)).replace('{x}', last).replace('{y}', last).length;
+}
 
 export type SceneEntry = [itemId: string, info: DownloadedInfo];
 
@@ -68,7 +82,7 @@ export function stackLikeView<T>(firstOnTop: readonly T[]): T[] {
 export function isMosaicPass(entries: SceneEntry[]): boolean {
   const asset = entries[0]?.[1].asset;
   return (
-    entries.length >= 2 &&
+    entries.length >= MIN_MOSAIC_SCENES &&
     entries.length <= MAX_MOSAIC_SCENES &&
     entries.every(([, info]) => info.asset === asset && info.maxZoom >= MIN_MOSAIC_ZOOM)
   );

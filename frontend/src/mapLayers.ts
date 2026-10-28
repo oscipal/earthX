@@ -57,7 +57,11 @@ const RESULTS_TOP = 'results-top';
 // quicklooks and the pinned layers, whichever of them was drawn first (Otto, 27.10.2026, "immer der oberste Layer").
 // Every other raster of the app goes under this marker (`aboveAll`), the ticked quicklooks over it (`topOfAll`).
 const TICKED_TOP = 'ticked-top';
-// Right over the ticked quicklooks and under the area of interest: the overlays of the "Basemap" menu (names,
+// Right over the quicklooks of the ticked results (they go under it, `topOfAll`): the live preview of the processing
+// panel goes over this marker, so that it lies over the ticked quicklooks and under the overlays and the AOI (Otto,
+// 28.10.2026, supplement to UI-02 8.10). A pinned preview is a layer of the manager and lies under them all.
+const PREVIEW_BASE = 'preview-base';
+// Right over the live preview and under the area of interest: the overlays of the "Basemap" menu (names,
 // graticule) lie between this marker and the AOI, so that they stay over every picture (UI-02b, `mapStyles.ts`).
 const OVERLAYS_BASE = 'overlays-base';
 // Cache of processed quicklook data URLs, keyed by URL + the parameters that
@@ -260,6 +264,7 @@ export function ensureBaseLayers(map: MapLibreMap): void {
     map.addLayer({ id: LAYERS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: RESULTS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: TICKED_TOP, type: 'background', layout: { visibility: 'none' } });
+    map.addLayer({ id: PREVIEW_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: OVERLAYS_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({
       id: 'aoi-fill',
@@ -482,14 +487,35 @@ const underTheView = (map: MapLibreMap): string | undefined => (map.getLayer(RES
 const aboveAll = (map: MapLibreMap): string | undefined =>
   map.getLayer(TICKED_TOP) ? TICKED_TOP : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
-// Where the quicklook of a ticked search result goes: over the marker, under the overlays and the AOI.
+// Where the quicklook of a ticked search result goes: over `TICKED_TOP`, under the marker of the live preview.
 const topOfAll = (map: MapLibreMap): string | undefined =>
+  map.getLayer(PREVIEW_BASE) ? PREVIEW_BASE : map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
+
+// Where the quicklook of a ticked scene goes among the others: the scenes lie over each other in the order they were
+// ticked (`ticks`, last on top), whichever picture arrives first. Just under the nearest scene ticked after it that is on
+// the map already, else on top of them all (Otto, 28.10.2026). `layersOf`: the layers a scene's quicklook can have.
+function tickedPlace(
+  map: MapLibreMap,
+  id: string,
+  ticks: readonly string[],
+  layersOf: ReadonlyMap<string, readonly string[]>,
+): string | undefined {
+  for (let rank = ticks.indexOf(id) + 1; rank > 0 && rank < ticks.length; rank++) {
+    const above = layersOf.get(ticks[rank])?.find((lyr) => map.getLayer(lyr));
+    if (above) return above;
+  }
+  return topOfAll(map);
+}
+
+// Where the live preview goes: over everything raster, under the overlays and the AOI.
+const previewTop = (map: MapLibreMap): string | undefined =>
   map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
-// Where a new raster goes: below the preview, which stays on top of whatever
-// loads after it (a quicklook is placed when its image has arrived).
+// Where a new raster goes: under the marker of the ticked quicklooks, and so under the preview, which lies over it. On a
+// map without the markers the preview stays on top of whatever loads after it (a quicklook is placed when its image has
+// arrived).
 const beforeAoi = (map: MapLibreMap): string | undefined =>
-  map.getLayer(`${PREVIEW_LYR}0`) ? `${PREVIEW_LYR}0` : aboveAll(map);
+  map.getLayer(TICKED_TOP) ? TICKED_TOP : map.getLayer(`${PREVIEW_LYR}0`) ? `${PREVIEW_LYR}0` : aboveAll(map);
 
 function clearPreview(map: MapLibreMap): void {
   for (let i = 0; i < MAX_MOSAIC_LAYERS; i++) {
@@ -506,7 +532,7 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
   clearPreview(map);
   // Drawn from the last scene to the first, so the first ends up topmost: the
   // order of the full-resolution view (`syncFocusRaster`). The lowest layer is
-  // `preview-lyr-0`, which `beforeAoi` keeps later rasters under.
+  // `preview-lyr-0`; on a map with the markers the preview lies over `PREVIEW_BASE`, over every other raster.
   [...overlays]
     .slice(0, MAX_MOSAIC_LAYERS)
     .reverse()
@@ -523,10 +549,34 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
         maxzoom: overlay.maxZoom,
       });
       map.addLayer(
-        { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
-        aboveAll(map),
+        {
+          id: lyrId,
+          type: 'raster',
+          source: srcId,
+          ...(overlay.hideFrom === undefined ? {} : { maxzoom: overlay.hideFrom }),
+          paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
+        },
+        previewTop(map),
       );
     });
+}
+
+// Tells whether the tiles of the preview are on their way: from the first one the map asks for until every source of
+// the preview has all of its tiles. The first tile of a mosaic over cold scenes takes seconds, and the map says so
+// (`PreviewBadge`). A slow basemap does not hold it up, but the map's rest (`idle`) is what ends it where tiles were
+// dropped on the way (a fast pan): that waits for the basemap too.
+export function watchPreviewLoading(map: MapLibreMap, onChange: (loading: boolean) => void): void {
+  const isPreview = (event: { sourceId?: string }) => event.sourceId?.startsWith(PREVIEW_SRC) === true;
+  const loaded = () =>
+    Array.from({ length: MAX_MOSAIC_LAYERS }, (_, i) => `${PREVIEW_SRC}${i}`).every((id) => !map.getSource(id) || map.isSourceLoaded(id));
+  const settle = (event: { sourceId?: string }) => {
+    if (isPreview(event)) onChange(!loaded());
+  };
+  map.on('sourcedataloading', (event) => {
+    if (isPreview(event)) onChange(true);
+  });
+  map.on('sourcedata', settle);
+  map.on('idle', () => onChange(false));
 }
 
 // Exported for M2-07c: the same footprint-or-bbox fallback the mosaic
@@ -552,12 +602,14 @@ function addPreview(
   i: number,
   gen: number,
   dataset: DatasetOption,
-  ticked: boolean,
+  ticks: readonly string[],
+  layersOf: ReadonlyMap<string, readonly string[]>,
 ): void {
   const plan = quicklookPlan(item, dataset);
   if (!plan) return;
-  // A ticked scene is the top layer; the others go where later rasters go (`undefined`: the default place).
-  const before = (): string | undefined => (ticked ? topOfAll(map) : undefined);
+  // A ticked scene lies over the others, the last ticked on top; the others go where later rasters go (`undefined`: the
+  // default place).
+  const before = (): string | undefined => (ticks.includes(item.id) ? tickedPlace(map, item.id, ticks, layersOf) : undefined);
   if (plan.kind === 'tiles') {
     // Placed by the tile grid itself, not by four corner coordinates: a tile is
     // already in the map's own projection, so there is nothing to reproject and
@@ -951,7 +1003,8 @@ export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' 
   // Nothing to draw (no dataset, or the results are off the map, UI-01g): the picture before it has nothing to
   // wait for and goes at once.
   if (!dataset || items.length === 0) return dropRetired(map);
-  items.forEach((it, i) => addPreview(map, it, i, gen, dataset, s.selectedIds?.includes(it.id) ?? false));
+  const layersOf = new Map(items.map((it, i) => [it.id, [dynamicId('tiles-lyr', i), dynamicId('img-lyr', i)]]));
+  items.forEach((it, i) => addPreview(map, it, i, gen, dataset, s.selectedIds ?? [], layersOf));
   settleRetired(map);
 }
 
@@ -974,11 +1027,14 @@ export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items
   removeResultsOverlay(map);
   const { dataset } = s;
   if (!dataset) return;
-  s.items.slice(0, MAX_MOSAIC_LAYERS).forEach((item, i) => {
+  const shown = s.items.slice(0, MAX_MOSAIC_LAYERS);
+  const ticks = s.selectedIds ?? [];
+  const layersOf = new Map(shown.map((it, i) => [it.id, [`res-img-lyr-${i}`, `res-tiles-lyr-${i}`]]));
+  shown.forEach((item, i) => {
     const plan = quicklookPlan(item, dataset);
     if (!plan) return;
-    // A ticked scene lies over the view as well; the others under the view.
-    const place = (): string | undefined => (s.selectedIds?.includes(item.id) ? topOfAll(map) : underTheView(map));
+    // A ticked scene lies over the view as well, the last ticked on top; the others under the view.
+    const place = (): string | undefined => (ticks.includes(item.id) ? tickedPlace(map, item.id, ticks, layersOf) : underTheView(map));
     const [lyr, src] = [`res-${RESULTS_KINDS[plan.kind === 'tiles' ? 2 : 0]}-${i}`, `res-${RESULTS_KINDS[plan.kind === 'tiles' ? 3 : 1]}-${i}`];
     if (plan.kind === 'tiles') {
       if (!item.bbox) return;
