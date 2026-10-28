@@ -80,7 +80,7 @@
         },
         {
           "op": "reproject",
-          "op_version": 3,
+          "op_version": 4,
           "params": {
             "align": true,
             "crs": "EPSG:3035",

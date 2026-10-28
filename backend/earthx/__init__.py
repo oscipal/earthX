@@ -8,4 +8,4 @@ boundaries between the submodules below are enforced by `.importlinter`.
 #: cache key and the provenance of every processing result (adr/0014 §4.5), and the
 #: local runner builds its tag and ``runner_version`` from it. A change that can
 #: change a result raises it.
-__version__ = "0.4.3"
+__version__ = "0.4.4"

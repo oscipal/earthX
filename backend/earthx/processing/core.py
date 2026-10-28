@@ -237,8 +237,9 @@ def _nodata_for(dtype: str, meta: RasterMeta) -> float:
     return float(values.pop())
 
 
-def _profile(meta: RasterMeta, dtype: str, nodata: float) -> dict[str, Any]:
-    return {
+def _profile(meta: RasterMeta, dtype: str, nodata: float, interleave: str | None = None) -> dict[str, Any]:
+    """The profile of a work file; ``interleave`` is GDAL's ``INTERLEAVE``, ``None`` leaves it to GDAL (pixel)."""
+    profile = {
         "driver": "GTiff",
         "dtype": dtype,
         "count": len(meta.bands),
@@ -252,6 +253,7 @@ def _profile(meta: RasterMeta, dtype: str, nodata: float) -> dict[str, Any]:
         "blockysize": BLOCK_SIZE,
         "compress": "deflate",
     }
+    return {**profile, "interleave": interleave} if interleave else profile
 
 
 def _cast(data: numpy.ma.MaskedArray, dtype: str) -> numpy.ma.MaskedArray:
@@ -309,8 +311,12 @@ class _Run:
         count_valid: bool,
     ) -> None:
         with ExitStack() as files:
+            # A pass that a later pass reads is stored band by band: reading one band of a pixel-interleaved
+            # tile unpacks all its bands, which a per-band warp does once per band (NM4-43b). The last pass,
+            # the source of ``result.tif``, and the mask keep GDAL's layout, so the files of a job stay as they were.
+            interleave = None if count_valid else "band"
             dst = files.enter_context(
-                open_workfile(self.workdir, self.new_file(name), "w", **_profile(meta, dtype, nodata))
+                open_workfile(self.workdir, self.new_file(name), "w", **_profile(meta, dtype, nodata, interleave))
             )
             mask = files.enter_context(open_workfile(self.workdir, MASK_NAME)) if count_valid else None
             whole = [BandStatistics(dtype) for _ in meta.bands] if count_valid else []
