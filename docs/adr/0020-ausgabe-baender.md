@@ -97,16 +97,17 @@ Items deshalb aus einer Datei, die `curl` geholt hat, und baut die Rezepte über
    auf Groß- und Kleinschreibung, über alle Ergebnisse und alle Bänder des
    Datensatzes. Umbenennen zieht alle Verweise mit.
 4. **Schutz ohne Bandgrenze (F5):** Gemessen wächst der Spitzenspeicher eines
-   Laufs um rund 21 MB je Band im breitesten Durchgang und weniger mit der Fläche;
-   16 Bänder liegen schon über den 500 MB der Speichertests (§3.2). Laufzeit
-   und gelesene Bytes wachsen mit Bändern mal Fläche, und die Zeitschätzung
-   zählt die Ausgabebänder nicht (bei 30 km und 17 Bändern 21 s geschätzt,
-   115 s gemessen). Die bestehenden Grenzen (25 Items, 5 GB Ausgabe, Laufzeit 2 × Schätzung,
-   Deckel 4 bzw. 2 Läufe) decken Fläche, Platte und Quellen. Den Speicher
-   deckt keine davon. Vorschlag: Die Grenze von 16 Assets entfällt; neu ist eine
-   **Speicherschätzung je Lauf** gegen 1,5 GB, gemessen statt gezählt, und die
-   Zeitschätzung zählt die Ausgabebänder. Andere Plattformen begrenzen ebenso nach Datenmenge, Kosten und
-   Zeit, keine nach Bandzahl als Hauptregel (§3.5).
+   Laufs um rund 21 MB je Band im breitesten Durchgang und weniger mit der
+   Fläche; 16 Bänder liegen schon über den 500 MB der Speichertests (§3.2).
+   Laufzeit und gelesene Bytes wachsen mit Bändern mal Fläche, und die
+   Zeitschätzung zählt die Ausgabebänder nicht (bei 30 km und 17 Bändern 21 s
+   geschätzt, 115 s gemessen). Die bestehenden Grenzen (25 Items, 5 GB
+   Ausgabe, Laufzeit 2 × Schätzung, Deckel 4 bzw. 2 Läufe) decken Fläche,
+   Platte und Quellen, den Speicher deckt keine davon. Vorschlag: Die Grenze
+   von 16 Assets entfällt; neu ist eine **Speicherschätzung je Lauf** gegen
+   1,5 GB, gemessen statt gezählt, und die Zeitschätzung zählt die
+   Ausgabebänder. Andere Plattformen begrenzen ebenso nach Datenmenge, Kosten
+   und Zeit, keine nach Bandzahl als Hauptregel (§3.5).
 5. **Nebenbefunde (F11, F13):** Die Schätzung bemisst das Ausgaberaster nach der
    Pixelgröße des **ersten** Assets, der Kern rechnet auf dem **feinsten**.
    Steht ein 60-m-Band vorn, liegen Ausgabegröße, die 5-GB-Prüfung und der
@@ -127,7 +128,8 @@ Items deshalb aus einer Datei, die `curl` geholt hat, und baut die Rezepte über
    Version 2 (mit NM4-11), `earthx.__version__` 0.5.0, Nachträge in
    `adr/0014` und `adr/0016`. Rezepte der Version 1 deutet das Frontend um
    (Datei, Permalink, Ablage), mit Hinweis. `api` und der neue Runner weisen
-   Version 1 mit Grund ab.
+   Version 1 mit Grund ab; bis 7 Tage nach dem Frontend-Umbau deutet `api`
+   sie übergangsweise selbst um (§11).
 10. **Schnitt (F10):** zuerst der Nebenbefund (Stufe A), dann NM4-43a
     Rezept und Kern, NM4-43b Kachel und Vorschau-Route, NM4-43c Frontend.
     NM4-11, NM4-14, DS-06 und NM4-20 folgen danach (§12, §13).
