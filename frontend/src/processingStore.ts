@@ -35,6 +35,7 @@ import {
   type ShelfJob,
   type ShelfState,
 } from './jobShelf';
+import { canDelete, canRestore, deletableParts } from './jobState';
 import { trackJob, type TrackerOptions } from './jobTracker';
 import {
   batchPass,
@@ -53,6 +54,7 @@ import {
 } from './processingBatch';
 import {
   canonicalJson,
+  deleteJob,
   dismissJob,
   estimateOrder,
   fetchCrs,
@@ -61,6 +63,7 @@ import {
   fetchResults,
   fetchResultTileJson,
   placeJob,
+  restoreJob,
   type AoiProvenance,
   type EstimateDocument,
   type Order,
@@ -187,6 +190,8 @@ export interface JobEntry extends ShelfJob {
   failure: string | null;
   error: string | null;
   cancelling: boolean;
+  // "Delete" or "Restore" is under way (NM4-27): a second press does not start a second request.
+  deleting: boolean;
   // `/results` answered `410`: the result is gone before the row's own clock says so.
   expired: boolean;
   // The tiles of a raster result (the link `tiles` of the results document, M4-13c-5);
@@ -317,8 +322,14 @@ interface ProcessingState {
     order: Order,
     options?: { aoiProvenance?: AoiProvenance; title?: string },
   ) => Promise<{ jobID: string } | { message: string }>;
-  // Dismisses a job that is waiting or running; any other is left alone (a finished job is never deleted).
+  // Dismisses a job that is waiting or running; any other is left alone (a finished job has "Delete").
   cancelJob: (jobID: string) => Promise<void>;
+  // "Delete" (NM4-27): a job that is over, or every such part of a batch. A finished one is deleted on the server with
+  // a day to restore it; an entry the server cannot hold any more (expired, cancelled, forgotten) goes from the list
+  // for the same day, here only.
+  deleteTarget: (target: ManagerTarget) => Promise<void>;
+  // "Restore": the deleted jobs of the target whose day is not over.
+  restoreTarget: (target: ManagerTarget) => Promise<void>;
   // Takes the jobs kept in this browser up again, and follows those that have not expired.
   resumeJobs: () => void;
   // Follows a job that is not followed yet (one from another tab, an archived one) because its row is shown.
@@ -577,6 +588,9 @@ const inTarget = (job: ShelfJob, target: ManagerTarget): boolean =>
 // How long "Cancel" waits for the fresh state of the job before it gives up (and cancels nothing).
 const CANCEL_CHECK_MS = 4000;
 
+// How long an entry that only this browser deletes can be restored: as long as the server gives a job (NM4-27).
+const DELETE_TERM_MS = 86_400_000;
+
 const withOthers = <T extends { id: string }>(first: T[], rest: T[]): T[] => [
   ...first,
   ...rest.filter((r) => !first.some((f) => f.id === r.id)),
@@ -713,6 +727,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     set((s) => ({ jobs: s.jobs.map((j) => (j.jobID === jobID ? { ...j, ...patch } : j)) }));
   };
 
+  // The server answered `404`: it does not know the job. That is kept, so that a reload asks about it no more.
+  const forget = (jobID: string) => {
+    updateJob(jobID, { phase: 'gone', lost: true });
+    persist();
+  };
+
   // Keeps the jobs in the browser (UI-01 §6.4). Where the browser is full the oldest copies of orders go,
   // here as well as there, and the shelf says so; it does not say it less once it has.
   const persist = (removedGroups: string[] = []) => {
@@ -778,7 +798,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         onStatus: (status) => applyStatus(jobID, status),
         onGone: () => {
           trackers.delete(jobID);
-          updateJob(jobID, { phase: 'gone' });
+          forget(jobID);
         },
       },
       trackerOptions,
@@ -790,16 +810,19 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
   const jobEntry = (job: ShelfJob, status: StatusInfo | null, now: number): JobEntry => {
     // A job past its expiry is not asked after; it stays in the list as expired.
     const over = Date.parse(job.expires) <= now;
+    // A job the server forgot, or one that is deleted, is not asked about: its state is what it was kept as.
+    const known = !job.lost && job.deletedUntil === null;
     return {
       ...job,
       status,
-      phase: over ? 'gone' : 'active',
+      phase: over || !known ? 'gone' : 'active',
       archive: null,
       bytes: null,
       resampled: null,
       failure: null,
       error: null,
       cancelling: false,
+      deleting: false,
       expired: over,
       tiles: null,
       statistics: null,
@@ -820,6 +843,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       part: null,
       range: null,
       order: null,
+      deletedUntil: null,
+      serverDeleted: false,
+      lost: false,
       ...job,
     };
     blank.titleDefault = job.titleDefault ?? job.title ?? null;
@@ -887,6 +913,66 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     set({ starting: false, batch: null, batchStartRefusals: refusals.length > 0 ? { key: view.key, refusals } : null });
   };
 
+  // "Delete" of one job (NM4-27). What the server still holds is deleted there: it answers with the end of the
+  // day in which "Restore" works. An entry it cannot hold any more is deleted here only, for the same day.
+  const deleteOne = async (jobID: string) => {
+    const job = get().jobs.find((j) => j.jobID === jobID);
+    const now = Date.now();
+    if (!job || !canDelete(job, now)) return;
+    const onServer = (job.phase === 'successful' || job.phase === 'failed') && !job.lost && !job.expired && !isResultExpired(job.expires, now);
+    const here = (extra: Partial<JobEntry> = {}) => {
+      updateJob(jobID, { deleting: false, deletedUntil: new Date(now + DELETE_TERM_MS).toISOString(), serverDeleted: false, ...extra });
+      persist();
+    };
+    if (!onServer) {
+      here();
+      return;
+    }
+    updateJob(jobID, { deleting: true, error: null });
+    try {
+      const status = await deleteJob(jobID);
+      trackers.get(jobID)?.();
+      trackers.delete(jobID);
+      updateJob(jobID, { deleting: false, deletedUntil: status.expires, serverDeleted: true, phase: 'dismissed' });
+      persist();
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 404) {
+        trackers.get(jobID)?.();
+        trackers.delete(jobID);
+        here({ phase: 'gone', lost: true });
+      } else {
+        updateJob(jobID, { deleting: false, error: 'The job could not be deleted. Try again.' });
+      }
+    }
+  };
+
+  // "Restore" of one deleted job. The server takes back what it holds; an entry that was deleted here only is
+  // simply listed again.
+  const restoreOne = async (jobID: string) => {
+    const job = get().jobs.find((j) => j.jobID === jobID);
+    if (!job || !canRestore(job, Date.now())) return;
+    if (!job.serverDeleted) {
+      updateJob(jobID, { deletedUntil: null });
+      persist();
+      return;
+    }
+    updateJob(jobID, { deleting: true, error: null });
+    try {
+      const status = await restoreJob(jobID);
+      updateJob(jobID, { deleting: false, deletedUntil: null, serverDeleted: false });
+      persist();
+      applyStatus(jobID, status);
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 404) {
+        // The day is over for the server, or it forgot the job: nothing to take back.
+        updateJob(jobID, { deleting: false, deletedUntil: null, serverDeleted: false, phase: 'gone', lost: true, error: 'The job could not be restored.' });
+        persist();
+      } else {
+        updateJob(jobID, { deleting: false, error: 'The job could not be restored. Try again.' });
+      }
+    }
+  };
+
   // The shelf as another tab last wrote it (`storage` event): its entries are this tab's too. A job this tab
   // does not know is not followed until `followJob`.
   const takeShelf = () => {
@@ -899,8 +985,14 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     set((s) => {
       const known = new Set(s.jobs.map((j) => j.jobID));
       const added = shelf.jobs.filter((j) => !known.has(j.jobID)).map((j) => jobEntry(j, null, Date.now()));
+      // A job this tab holds as deleted and another tab restored is asked about again: its state is not known here.
+      const merged = s.jobs.map((j) => {
+        const other = stored.get(j.jobID);
+        const back = other !== undefined && j.deletedUntil !== null && other.deletedUntil === null && !other.lost;
+        return { ...j, ...other, ...(back ? { phase: 'active' as const, status: null } : {}) };
+      });
       return {
-        jobs: [...added, ...s.jobs.map((j) => ({ ...j, ...stored.get(j.jobID) }))],
+        jobs: [...added, ...merged],
         batches: withOthers(shelf.batches, s.batches),
         // What is stored is the truth about groups: another tab may have removed an empty one.
         groups: empty ? s.groups : shelf.groups,
@@ -1332,8 +1424,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         }
         updateJob(jobID, {
           cancelling: false,
-          ...(gone ? { phase: 'gone' as const } : { error: 'The state of the job could not be checked, so it was not cancelled. Try again.' }),
+          ...(gone ? {} : { error: 'The state of the job could not be checked, so it was not cancelled. Try again.' }),
         });
+        if (gone) forget(jobID);
         return;
       }
       try {
@@ -1345,7 +1438,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         if (error instanceof HttpError && error.status === 404) {
           trackers.get(jobID)?.();
           trackers.delete(jobID);
-          updateJob(jobID, { cancelling: false, phase: 'gone' });
+          updateJob(jobID, { cancelling: false });
+          forget(jobID);
         } else {
           updateJob(jobID, { cancelling: false, error: error instanceof Error ? error.message : String(error) });
         }
@@ -1419,6 +1513,18 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       } finally {
         cancellingBatches.delete(batchId);
       }
+    },
+    deleteTarget: async (target) => {
+      const now = Date.now();
+      const parts = 'jobID' in target ? get().jobs.filter((j) => j.jobID === target.jobID) : get().jobs.filter((j) => j.batchId === target.batchId);
+      // A batch with a part that waits or runs is cancelled, not deleted.
+      const due = 'jobID' in target ? parts.filter((j) => canDelete(j, now)) : deletableParts(parts, now);
+      await Promise.all(due.map((job) => deleteOne(job.jobID)));
+    },
+    restoreTarget: async (target) => {
+      const now = Date.now();
+      const parts = get().jobs.filter((j) => inTarget(j, target) && !j.deleting && canRestore(j, now));
+      await Promise.all(parts.map((job) => restoreOne(job.jobID)));
     },
     resumeJobs: () => {
       const { shelf, state, locked } = loadShelf();

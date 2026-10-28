@@ -10,6 +10,7 @@ import Tip from './Tip';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
 export const RESAMPLED_LAYER_TEXT = 'Resampled to a common grid';
+export const DELETED_LAYER_TIP = 'Job deleted – restore to show';
 
 // Marks a result layer "Expired" when the time comes (M4-13c-5): one timer for the
 // soonest of them, set again after every change to the list. The tiler's `410` is
@@ -29,6 +30,28 @@ function useResultExpiry(): void {
     const timer = setTimeout(() => expire(Date.now()), Math.min(wait + 50, 2 ** 31 - 1));
     return () => clearTimeout(timer);
   }, [layers, expire]);
+}
+
+// Locks the result layers of deleted jobs for the day they can be restored, and takes them out when it is over
+// (NM4-27). One timer for the soonest end; the list of deletions is read as one text, so that only a change of it
+// runs the effect.
+function useDeletedResults(): void {
+  const deletions = useProcessingStore((s) =>
+    s.jobs.flatMap((j) => (j.deletedUntil !== null ? [`${j.jobID}|${Date.parse(j.deletedUntil)}`] : [])).join(','),
+  );
+  const sync = useAppStore((s) => s.syncDeletedResults);
+  useEffect(() => {
+    const until = new Map(deletions === '' ? [] : deletions.split(',').map((entry): [string, number] => {
+      const [jobID, end] = entry.split('|');
+      return [jobID, Number(end)];
+    }));
+    sync(until, Date.now());
+    const ahead = [...until.values()].filter((end) => end > Date.now());
+    if (ahead.length === 0) return undefined;
+    const wait = Math.min(...ahead) - Date.now();
+    const timer = setTimeout(() => sync(until, Date.now()), Math.min(wait + 50, 2 ** 31 - 1));
+    return () => clearTimeout(timer);
+  }, [deletions, sync]);
 }
 
 // An empty place of the grid, the size of the button that is missing: the others stay where they are.
@@ -59,25 +82,29 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
   const processLayer = useProcessingStore((s) => s.processLayer);
   const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
   const processBlock = layerProcessBlock(l, datasets);
-  const notes = [l.result?.expired ? EXPIRED_LAYER_TEXT : null, l.result?.resampled === true ? RESAMPLED_LAYER_TEXT : null].filter(
+  const locked = l.result?.deleted === true;
+  const notes = [l.result?.expired && !locked ? EXPIRED_LAYER_TEXT : null, l.result?.resampled === true ? RESAMPLED_LAYER_TEXT : null].filter(
     (note): note is string => note !== null,
   );
   return (
-    <li className="layer-row">
+    <li className={`layer-row${locked ? ' locked' : ''}`}>
       <button
         type="button"
-        className={`lm-eye${l.visible ? '' : ' off'}`}
+        className={`lm-eye${l.visible && !locked ? '' : ' off'}`}
         data-col="eye"
-        title={l.visible ? 'Hide' : 'Show'}
-        onClick={() => toggleVis(l.id)}
+        title={locked ? DELETED_LAYER_TIP : l.visible ? 'Hide' : 'Show'}
+        aria-disabled={locked || undefined}
+        onClick={() => {
+          if (!locked) toggleVis(l.id);
+        }}
       >
-        {l.visible ? '●' : '○'}
+        {l.visible && !locked ? '●' : '○'}
       </button>
       <button
         type="button"
         className="lm-name"
         data-col="name"
-        title={`${l.name} — view this layer / continue working on it`}
+        title={locked ? `${l.name} — ${DELETED_LAYER_TIP}` : `${l.name} — view this layer / continue working on it`}
         onClick={() => select(l.id)}
       >
         {l.name}
@@ -92,6 +119,7 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
         value={l.opacity}
         title={`Opacity ${Math.round(l.opacity * 100)}%`}
         aria-label={`Opacity of ${l.name}`}
+        disabled={locked}
         onChange={(e) => setOpacity(l.id, Number(e.target.value))}
       />
       <button type="button" className="lm-btn" data-col="up" title="Move up" disabled={index === 0} onClick={() => move(l.id, 'up')}>
@@ -116,7 +144,7 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
         </button>
       )}
       {l.result ? (
-        <ResultDownload jobID={l.result.jobID} expired={l.result.expired} />
+        <ResultDownload jobID={l.result.jobID} expired={l.result.expired || locked} />
       ) : !l.derived && l.restore.itemIds.length > 0 ? (
         <button
           type="button"
@@ -154,6 +182,7 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
 export default function LayerManager() {
   const layers = useAppStore((s) => s.layers);
   useResultExpiry();
+  useDeletedResults();
 
   // Docked beside the rail (UI-01 §6.9). It stays mounted when another panel is open: the timer of the
   // result layers above runs either way.

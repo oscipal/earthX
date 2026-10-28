@@ -106,6 +106,7 @@ class TestApiDescription:
             "/processing/jobs/{jobID}/results",
             "/processing/jobs/{jobID}/results/{name}",
             "/processing/jobs/{jobID}/events",
+            "/processing/jobs/{jobID}/restore",
         } <= paths
         assert "/processing/api" not in paths, "the description does not describe itself"
 
@@ -330,6 +331,7 @@ class TestWithoutAQueue:
         [
             ("GET", "/processing/jobs/" + "A" * 22),
             ("DELETE", "/processing/jobs/" + "A" * 22),
+            ("POST", "/processing/jobs/" + "A" * 22 + "/restore"),
             ("GET", "/processing/jobs/" + "A" * 22 + "/results"),
             ("GET", "/processing/jobs/" + "A" * 22 + "/results/result.tif"),
             ("GET", "/processing/jobs/" + "A" * 22 + "/events"),

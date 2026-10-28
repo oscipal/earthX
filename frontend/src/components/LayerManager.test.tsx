@@ -5,12 +5,14 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from '../datasets';
 import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
-import LayerManager, { EXPIRED_LAYER_TEXT, RESAMPLED_LAYER_TEXT } from './LayerManager';
+import { jobEntry, jobId, NOW } from '../fixtures/jobEntries';
+import { resetJobs, useProcessingStore } from '../processingStore';
+import LayerManager, { DELETED_LAYER_TIP, EXPIRED_LAYER_TEXT, RESAMPLED_LAYER_TEXT } from './LayerManager';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -231,5 +233,111 @@ describe('LayerManager', () => {
       const name = rows()[kinds.length - 1].querySelector<HTMLElement>('[data-col="name"]')!;
       expect(name.getAttribute('title')).toContain(kinds[kinds.length - 1].name);
     });
+  });
+});
+
+// NM4-27 (Otto, 27.10.2026): while a job is deleted its result stays in the list, locked and not drawn; "Restore" shows it
+// again, and when the day is over the entry goes.
+describe('the result layer of a deleted job', () => {
+  const DAY = 86_400_000;
+  const restore = { datasetId: 'ds', itemIds: [], groupItemIds: [], aoi: null, cropToAoi: false } as unknown as MapLayer['restore'];
+  const resultLayer = (id: string, job: string, over: object = {}): MapLayer => ({
+    id,
+    name: `Result · ${id}`,
+    visible: true,
+    opacity: 1,
+    overlays: [],
+    derived: 'result',
+    restore,
+    result: { jobID: job, expires: new Date(NOW + 7 * DAY).toISOString(), gsd: 10, resampled: null, expired: false, dataType: 'float32', stats: null, ...over },
+  });
+  const rows = () => [...container.querySelectorAll<HTMLElement>('.layer-row')];
+  const deleteJobAt = (n: number, until: number) =>
+    act(() => useProcessingStore.setState({ jobs: [jobEntry(n, { phase: 'dismissed', deletedUntil: new Date(until).toISOString(), serverDeleted: true })] }));
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'], now: NOW });
+    resetJobs();
+    useAppStore.setState({ datasets: [], layers: [resultLayer('a', jobId(1)), resultLayer('b', jobId(2))], dock: 'layers' });
+    act(() => root.render(<LayerManager />));
+  });
+
+  afterEach(() => {
+    resetJobs();
+    vi.useRealTimers();
+  });
+
+  it('is locked once the job is deleted: the reason is the tooltip, the row says nothing', () => {
+    deleteJobAt(1, NOW + DAY);
+    const [locked, free] = rows();
+    expect(locked.classList.contains('locked')).toBe(true);
+    expect(free.classList.contains('locked')).toBe(false);
+    const eye = locked.querySelector<HTMLElement>('[data-col="eye"]')!;
+    expect(eye.getAttribute('title')).toBe(DELETED_LAYER_TIP);
+    expect(eye.getAttribute('aria-disabled')).toBe('true');
+    expect(DELETED_LAYER_TIP).toBe('Job deleted – restore to show');
+    expect(locked.querySelector('[data-col="opacity"]')?.hasAttribute('disabled')).toBe(true);
+    expect(locked.querySelector('[data-col="download"]')?.tagName).toBe('SPAN');
+    expect(locked.querySelector('[data-col="note"]')?.className).toBe('lm-slot');
+    expect(locked.textContent).not.toMatch(/delet|restore|job/iu);
+    expect(useAppStore.getState().layers[0].result?.deleted).toBe(true);
+    expect(useAppStore.getState().layers[1].result?.deleted).toBeFalsy();
+  });
+
+  it('keeps its nine places', () => {
+    deleteJobAt(1, NOW + DAY);
+    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+  });
+
+  it('cannot be switched on with the eye while it is locked, and can still be removed', () => {
+    deleteJobAt(1, NOW + DAY);
+    act(() => rows()[0].querySelector<HTMLElement>('[data-col="eye"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(useAppStore.getState().layers[0].visible).toBe(true);
+    act(() => rows()[0].querySelector<HTMLElement>('[data-col="remove"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['b']);
+  });
+
+  it('is shown again, as it was, once the job is restored', () => {
+    act(() => useAppStore.getState().toggleLayerVisible('a'));
+    act(() => useAppStore.getState().toggleLayerVisible('a'));
+    deleteJobAt(1, NOW + DAY);
+    act(() => useProcessingStore.setState({ jobs: [jobEntry(1)] }));
+    const layer = useAppStore.getState().layers[0];
+    expect(layer.result?.deleted).toBe(false);
+    expect(layer.visible).toBe(true);
+    expect(rows()[0].classList.contains('locked')).toBe(false);
+    expect(rows()[0].querySelector('[data-col="eye"]')?.getAttribute('title')).toBe('Hide');
+  });
+
+  it('goes from the list when the day is over, on the minute and not before', () => {
+    deleteJobAt(1, NOW + 5000);
+    expect(rows()).toHaveLength(2);
+    act(() => {
+      vi.advanceTimersByTime(4900);
+    });
+    expect(rows()).toHaveLength(2);
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['b']);
+    expect(rows()).toHaveLength(1);
+  });
+
+  it('is not there at all for a job whose day was over before the page was open', () => {
+    deleteJobAt(1, NOW - 1000);
+    expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['b']);
+  });
+
+  it('closes the view of the layer that goes', () => {
+    act(() => useAppStore.setState({ resultViewLayerId: 'a' }));
+    deleteJobAt(1, NOW - 1000);
+    expect(useAppStore.getState().resultViewLayerId).toBeNull();
+  });
+
+  it('leaves the layers of other jobs, and a layer that is no result, alone', () => {
+    const scene: MapLayer = { id: 'scene', name: 'Optical · scene', visible: true, opacity: 1, overlays: [], restore };
+    act(() => useAppStore.setState({ layers: [resultLayer('a', jobId(1)), scene] }));
+    deleteJobAt(2, NOW + DAY);
+    expect(useAppStore.getState().layers.map((l) => [l.id, l.result?.deleted])).toEqual([['a', undefined], ['scene', undefined]]);
   });
 });

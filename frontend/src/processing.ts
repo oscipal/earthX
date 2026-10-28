@@ -272,6 +272,24 @@ export async function dismissJob(jobId: string): Promise<void> {
   await jsonOrThrow<unknown>(await fetch(jobUrl(jobId), { method: 'DELETE' }));
 }
 
+// "Delete" of a finished job (NM4-27): the same route as the cancel of a job that waits or runs. The answer says
+// `dismissed`, and its `expires` is the end of the day in which "Restore" still works.
+export async function deleteJob(jobId: string): Promise<StatusInfo> {
+  const status = parseStatusInfo(await jsonOrThrow<unknown>(await fetch(jobUrl(jobId), { method: 'DELETE' })), jobId);
+  if (!status) throw new Error('the server answered with a status the panel cannot read');
+  return status;
+}
+
+// "Restore": the job as it was, with its first expiry. `404` for a job past its day, unknown to the server, or not deleted.
+export async function restoreJob(jobId: string): Promise<StatusInfo> {
+  const status = parseStatusInfo(
+    await jsonOrThrow<unknown>(await fetch(`${jobUrl(jobId)}/restore`, { method: 'POST' })),
+    jobId,
+  );
+  if (!status) throw new Error('the server answered with a status the panel cannot read');
+  return status;
+}
+
 export async function fetchResults(jobId: string): Promise<ResultsDocument> {
   return jsonOrThrow<ResultsDocument>(await fetch(`${jobUrl(jobId)}/results`));
 }

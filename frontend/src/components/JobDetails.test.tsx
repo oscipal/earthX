@@ -156,18 +156,30 @@ describe('what it says of the job', () => {
     ['finished', () => finished(1), 'Finished'],
     ['failed', () => jobEntry(1, { phase: 'failed', failure: 'x' }), 'Failed'],
     ['cancelled', () => jobEntry(1, { phase: 'dismissed' }), 'Cancelled'],
-    ['expired', () => jobEntry(1, { phase: 'gone' }), 'Expired'],
+    ['expired', () => jobEntry(1, { phase: 'gone', expired: true }), 'Expired'],
+    ['forgotten by the server', () => jobEntry(1, { phase: 'gone' }), 'No longer available'],
+    ['deleted', () => jobEntry(1, { phase: 'dismissed', deletedUntil: new Date(NOW + 3_600_000).toISOString(), serverDeleted: true }), 'Deleted'],
   ])('names a %s job', (_, make, text) => {
     show(make());
     expect(fact('State')).toBe(text);
     expect(container.querySelector('progress')).toBeNull();
   });
 
-  it('gives no expiry for a cancelled job, and keeps the date of an expired one', () => {
+  it('gives no expiry for a cancelled job or one the server forgot, and keeps the date of an expired one', () => {
     show(jobEntry(1, { phase: 'dismissed' }));
     expect(fact('Expires')).toBeNull();
     show(jobEntry(1, { phase: 'gone' }));
+    expect(fact('Expires')).toBeNull();
+    show(jobEntry(1, { phase: 'gone', expired: true }));
     expect(fact('Expires')).toMatch(/^27 Oct, \d{2}:\d{2}$/u);
+  });
+
+  it('names the end of the day to restore a deleted job, and no expiry', () => {
+    show(jobEntry(1, { phase: 'dismissed', deletedUntil: new Date(NOW + 3_600_000).toISOString(), serverDeleted: true }));
+    expect(fact('Expires')).toBeNull();
+    expect(fact('Restore until')).toMatch(/^20 Oct, \d{2}:\d{2}$/u);
+    show(jobEntry(1, { phase: 'dismissed', deletedUntil: new Date(NOW - 1000).toISOString(), serverDeleted: true }));
+    expect(fact('Restore until')).toBeNull();
   });
 
   it('shows the reason of a failed job, and an error of its own, as alerts', () => {

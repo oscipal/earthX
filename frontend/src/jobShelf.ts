@@ -44,6 +44,15 @@ export interface ShelfJob {
   range: PreviewRange | null;
   // The order as it was sent, up to `MAX_ORDER_BYTES`; the way to start the job again.
   order: Order | null;
+  // The end of the day in which the job, deleted, can be restored (NM4-27); `null` for a job that is not deleted. A
+  // deleted job is not followed, and after this time it stays in the list for good as deleted.
+  deletedUntil: string | null;
+  // The server deleted the job as well (it answered `200`), so "Restore" asks it; `false` for an entry that was only
+  // deleted here (one that had expired, was cancelled or was no longer known).
+  serverDeleted: boolean;
+  // The server answered `404` once: it does not know the job any more (cancelled, a reset database, expired). It is
+  // never asked about it again, not after a reload either.
+  lost: boolean;
 }
 
 export interface ShelfBatch {
@@ -152,6 +161,7 @@ function parseShelf(raw: string): Shelf | 'foreign' | 'broken' {
     if (!isJobId(j.jobID) || !expires || jobs.some((x) => x.jobID === j.jobID)) continue;
     const batchId = typeof j.batchId === 'string' && batches.some((b) => b.id === j.batchId) ? j.batchId : null;
     const title = text(j.title, MAX_TITLE_LENGTH);
+    const deletedUntil = time(j.deletedUntil);
     jobs.push({
       jobID: j.jobID,
       expires,
@@ -164,6 +174,9 @@ function parseShelf(raw: string): Shelf | 'foreign' | 'broken' {
       part: batchId ? text(j.part, MAX_TITLE_LENGTH) : null,
       range: rangeOf(j.range),
       order: orderCopy(j.order),
+      deletedUntil,
+      serverDeleted: deletedUntil !== null && j.serverDeleted === true,
+      lost: j.lost === true,
     });
   }
   return { jobs, batches, groups };
@@ -182,6 +195,8 @@ function serialize(shelf: Shelf, without: ReadonlySet<string>): string {
     ...(j.batchId ? { batchId: j.batchId, ...(j.part ? { part: j.part } : {}) } : {}),
     ...(j.range ? { range: { vmin: j.range.vmin, vmax: j.range.vmax, colormap: j.range.colormap } } : {}),
     ...(j.order && !without.has(j.jobID) ? { order: j.order } : {}),
+    ...(j.deletedUntil ? { deletedUntil: j.deletedUntil, ...(j.serverDeleted ? { serverDeleted: true } : {}) } : {}),
+    ...(j.lost ? { lost: true } : {}),
   }));
   const batches = shelf.batches.map((b) => ({
     id: b.id,
@@ -216,6 +231,7 @@ function legacyJobs(now: number): ShelfJob[] {
       jobs.push({
         jobID: entry.jobID, expires, title, titleDefault: title, createdAt: expires,
         archived: false, groupId: null, batchId: null, part: null, range: null, order: null,
+        deletedUntil: null, serverDeleted: false, lost: false,
       });
     }
     return jobs;

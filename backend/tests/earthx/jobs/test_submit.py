@@ -17,6 +17,7 @@ import pytest
 
 from earthx.jobs import queue
 from earthx.jobs.submit import (
+    DELETE_TERM,
     MIN_RUNTIME_SECONDS,
     JobStatus,
     RecipeIdTaken,
@@ -25,6 +26,7 @@ from earthx.jobs.submit import (
     job_recipe,
     job_run,
     job_status,
+    restore,
     run_jobs,
     submit,
 )
@@ -237,7 +239,9 @@ class TestStatus:
         with pytest.raises(psycopg.errors.CheckViolation), db.transaction():
             db.execute("UPDATE public.earthx_job SET acquired_first_year = 2025, acquired_last_year = NULL")
 
-    def test_without_a_day_the_job_has_none_and_two_orders_on_one_run_keep_their_own(self, db: psycopg.Connection) -> None:
+    def test_without_a_day_the_job_has_none_and_two_orders_on_one_run_keep_their_own(
+        self, db: psycopg.Connection
+    ) -> None:
         from datetime import date
 
         none = job_status(db, submit(db, make_recipe()))
@@ -364,6 +368,7 @@ class TestStatus:
             "acquired_years",
             "scene_aoi",
             "aoi_provenance",
+            "deleted_until",
         }
         text = repr(status)
         assert "c1:" not in text and HOST not in text and "run_id" not in text
@@ -474,7 +479,9 @@ class TestTheFormOfAJobId:
     def test_22_characters_of_the_url_safe_alphabet_are_one(self, value: str) -> None:
         assert is_job_id(value)
 
-    @pytest.mark.parametrize("value", ["", "A" * 21, "A" * 23, "A" * 21 + "%", "A" * 22 + "\n", None, 7, ["A" * 22], b"A" * 22])
+    @pytest.mark.parametrize(
+        "value", ["", "A" * 21, "A" * 23, "A" * 21 + "%", "A" * 22 + "\n", None, 7, ["A" * 22], b"A" * 22]
+    )
     def test_anything_else_is_none(self, value: object) -> None:
         assert not is_job_id(value)
 
@@ -554,12 +561,13 @@ class TestDismiss:
         status = dismiss(db, job_id)
         assert status is not None and status.status == "dismissed" and status.result_id is None
         assert run_row(db, run_id, "status", "result_id", "cancel_requested") == ("successful", "R" * 22, False)
+        assert db.execute("SELECT dismissed FROM public.earthx_job").fetchone() == (False,), "deleted, not dismissed"
 
     def test_a_finished_run_serves_a_later_order_although_one_job_was_dismissed(self, db: psycopg.Connection) -> None:
         recipe = make_recipe()
         key = cache_key(recipe)
         run_id, (job_id,) = add_run(db, status="successful", key=key, result_id="R" * 22, expires_in="6 days")
-        dismiss(db, job_id)
+        db.execute("UPDATE public.earthx_job SET dismissed = true WHERE job_id = %s", (job_id,))
         new = submit(db, recipe)
         status = job_status(db, new)
         assert status is not None and status.status == "successful" and status.result_id == "R" * 22
@@ -581,6 +589,202 @@ class TestDismiss:
         assert run_row(db, run_id, "cancel_requested") == (True,)
         submit(db, recipe)
         assert run_row(db, run_id, "cancel_requested") == (False,)
+
+
+class TestDeleting:
+    """NM4-27: a finished job is deleted with a term, not dismissed; until the term ends it can be restored."""
+
+    def _deleted_until(self, db: psycopg.Connection, job_id: str):
+        return db.execute("SELECT deleted_until FROM public.earthx_job WHERE job_id = %s", (job_id,)).fetchone()[0]
+
+    def _in(self, db: psycopg.Connection, moment) -> float:
+        """Seconds from now to ``moment``, by the database's clock."""
+        return float(
+            db.execute("SELECT extract(epoch FROM %s::timestamptz - clock_timestamp())", (moment,)).fetchone()[0]
+        )
+
+    @pytest.mark.parametrize("status", ["successful", "failed"])
+    def test_the_term_is_a_day_when_the_run_lives_longer(self, db: psycopg.Connection, status: str) -> None:
+        _, (job_id,) = add_run(db, status=status, expires_in="6 days")
+        deleted = dismiss(db, job_id)
+        assert deleted is not None and deleted.status == "dismissed"
+        assert abs(self._in(db, deleted.deleted_until) - DELETE_TERM.total_seconds()) < 30
+        assert deleted.expires_at == deleted.deleted_until, "a deleted job lives to the end of its term"
+
+    def test_the_term_ends_with_the_run_when_that_comes_first(self, db: psycopg.Connection) -> None:
+        run_id, (job_id,) = add_run(db, status="successful", result_id="R" * 22, expires_in="5 hours")
+        expires = run_row(db, run_id, "expires_at")[0]
+        assert self._deleted_until(db, job_id) is None
+        dismiss(db, job_id)
+        assert self._deleted_until(db, job_id) == expires
+
+    def test_a_deletion_leaves_the_run_and_its_expiry_alone(self, db: psycopg.Connection) -> None:
+        run_id, (job_id,) = add_run(db, status="successful", result_id="R" * 22, expires_in="3 days")
+        before = run_row(db, run_id, "status", "result_id", "expires_at", "cancel_requested")
+        dismiss(db, job_id)
+        assert run_row(db, run_id, "status", "result_id", "expires_at", "cancel_requested") == before
+
+    def test_it_is_not_a_dismissal(self, db: psycopg.Connection) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id="R" * 22)
+        dismiss(db, job_id)
+        assert db.execute("SELECT dismissed FROM public.earthx_job").fetchone() == (False,)
+
+    def test_the_job_reads_as_dismissed_and_shows_no_result(self, db: psycopg.Connection) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id="R" * 22)
+        dismiss(db, job_id)
+        status = job_status(db, job_id)
+        assert status is not None
+        assert (status.status, status.result_id, status.result) == ("dismissed", None, None)
+
+    def test_deleting_twice_keeps_the_first_term(self, db: psycopg.Connection) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id="R" * 22)
+        dismiss(db, job_id)
+        first = self._deleted_until(db, job_id)
+        dismiss(db, job_id)
+        assert self._deleted_until(db, job_id) == first
+
+    def test_a_waiting_job_is_cancelled_not_deleted(self, db: psycopg.Connection) -> None:
+        job_id = submit(db, make_recipe())
+        dismiss(db, job_id)
+        assert self._deleted_until(db, job_id) is None
+        assert db.execute("SELECT dismissed FROM public.earthx_job").fetchone() == (True,)
+
+    def test_a_job_of_another_is_not_touched(self, db: psycopg.Connection) -> None:
+        _, (mine, theirs) = add_run(db, status="successful", result_id="R" * 22, jobs=2)
+        dismiss(db, mine)
+        assert self._deleted_until(db, theirs) is None
+        other = job_status(db, theirs)
+        assert other is not None and other.status == "successful" and other.result_id == "R" * 22
+
+    @pytest.mark.parametrize("bad", ["", "short", "A" * 23, "A" * 21 + "\n", "../" * 8])
+    def test_a_job_that_is_malformed_or_unknown_is_not_deleted(self, db: psycopg.Connection, bad: str) -> None:
+        add_run(db, status="successful", result_id="R" * 22)
+        assert dismiss(db, bad) is None
+        assert dismiss(db, "A" * 22) is None
+        assert db.execute("SELECT count(*) FROM public.earthx_job WHERE deleted_until IS NOT NULL").fetchone() == (0,)
+
+
+class TestRestoring:
+    def test_within_the_term_the_job_is_as_it_was(self, db: psycopg.Connection) -> None:
+        run_id, (job_id,) = add_run(db, status="successful", result_id="R" * 22, expires_in="4 days")
+        expires = run_row(db, run_id, "expires_at")[0]
+        before = job_status(db, job_id)
+        dismiss(db, job_id)
+        restored = restore(db, job_id)
+        assert restored == before
+        assert restored is not None and restored.expires_at == expires and restored.deleted_until is None
+        assert run_row(db, run_id, "expires_at") == (expires,)
+
+    def test_a_failed_job_comes_back_as_failed(self, db: psycopg.Connection) -> None:
+        _, (job_id,) = add_run(db, status="failed")
+        dismiss(db, job_id)
+        restored = restore(db, job_id)
+        assert restored is not None and restored.status == "failed"
+
+    def test_after_the_term_it_does_not(self, db: psycopg.Connection) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id="R" * 22)
+        dismiss(db, job_id)
+        db.execute("UPDATE public.earthx_job SET deleted_until = clock_timestamp() - interval '1 second'")
+        assert restore(db, job_id) is None
+        assert db.execute("SELECT deleted_until IS NOT NULL FROM public.earthx_job").fetchone() == (True,)
+
+    def test_once_the_run_has_expired_it_does_not(self, db: psycopg.Connection) -> None:
+        run_id, (job_id,) = add_run(db, status="successful", result_id="R" * 22, expires_in="2 hours")
+        dismiss(db, job_id)
+        db.execute("UPDATE public.earthx_run SET expires_at = clock_timestamp() - interval '1 second'")
+        assert restore(db, job_id) is None
+
+    def test_a_dismissed_job_is_not_restored(self, db: psycopg.Connection) -> None:
+        job_id = submit(db, make_recipe())
+        dismiss(db, job_id)
+        assert restore(db, job_id) is None
+        assert db.execute("SELECT dismissed FROM public.earthx_job").fetchone() == (True,)
+
+    def test_a_job_that_is_not_deleted_is_returned_as_it_is(self, db: psycopg.Connection) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id="R" * 22)
+        status = restore(db, job_id)
+        assert status is not None and status.status == "successful"
+        assert restore(db, job_id) == status
+
+    def test_restoring_twice_does_no_harm(self, db: psycopg.Connection) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id="R" * 22)
+        dismiss(db, job_id)
+        assert restore(db, job_id) == restore(db, job_id)
+
+    @pytest.mark.parametrize("bad", ["", "short", "A" * 23, "A" * 21 + "\n", None, 5])
+    def test_an_identifier_that_is_malformed_or_unknown_restores_nothing(
+        self, db: psycopg.Connection, bad: object
+    ) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id="R" * 22)
+        dismiss(db, job_id)
+        assert restore(db, bad) is None  # type: ignore[arg-type]
+        assert restore(db, "A" * 22) is None
+        assert db.execute("SELECT deleted_until IS NOT NULL FROM public.earthx_job").fetchone() == (True,)
+
+    def test_a_malformed_identifier_never_reaches_the_database(self) -> None:
+        class Refuses:
+            def execute(self, *args: object, **kwargs: object) -> None:
+                raise AssertionError("the database was asked")
+
+            transaction = execute
+
+        assert restore(Refuses(), "not-an-id") is None  # type: ignore[arg-type]
+
+
+class TestDeletedJobsAndTheCache:
+    """NM4-27 question 4: a result only deleted jobs hang on is no hit; a live job keeps it one."""
+
+    def _hit(self, db: psycopg.Connection, recipe) -> bool:
+        runs = _count(db, "earthx_run")
+        job_id = submit(db, recipe)
+        return (
+            _count(db, "earthx_run") == runs and job_status(db, job_id) is not None and job_run(db, job_id) is not None
+        )
+
+    def _finished(self, db: psycopg.Connection, recipe, jobs: int = 1) -> tuple[int, list[str]]:
+        return add_run(
+            db, status="successful", key=cache_key(recipe), result_id="R" * 22, expires_in="6 days", jobs=jobs
+        )
+
+    def test_the_only_job_deleted_the_result_is_no_hit(self, db: psycopg.Connection) -> None:
+        recipe = make_recipe()
+        _, (job_id,) = self._finished(db, recipe)
+        dismiss(db, job_id)
+        assert not self._hit(db, recipe)
+        assert _count(db, "earthx_run") == 2
+
+    def test_restored_the_result_is_a_hit_again(self, db: psycopg.Connection) -> None:
+        recipe = make_recipe()
+        _, (job_id,) = self._finished(db, recipe)
+        dismiss(db, job_id)
+        restore(db, job_id)
+        assert self._hit(db, recipe)
+
+    def test_a_job_that_lives_keeps_the_result_a_hit(self, db: psycopg.Connection) -> None:
+        recipe = make_recipe()
+        _, (deleted, _alive) = self._finished(db, recipe, jobs=2)
+        dismiss(db, deleted)
+        assert self._hit(db, recipe)
+
+    def test_a_job_placed_after_the_deletion_does_not_hang_on_the_deleted_result(self, db: psycopg.Connection) -> None:
+        recipe = make_recipe()
+        old_run, (job_id,) = self._finished(db, recipe)
+        dismiss(db, job_id)
+        new = submit(db, recipe)
+        assert job_run(db, new) != old_run
+
+    def test_a_result_with_only_dismissed_jobs_is_a_hit_as_before(self, db: psycopg.Connection) -> None:
+        recipe = make_recipe()
+        _, (job_id,) = self._finished(db, recipe)
+        db.execute("UPDATE public.earthx_job SET dismissed = true WHERE job_id = %s", (job_id,))
+        assert self._hit(db, recipe)
+
+    def test_a_result_with_a_deleted_and_a_dismissed_job_and_none_alive_is_no_hit(self, db: psycopg.Connection) -> None:
+        recipe = make_recipe()
+        _, (deleted, dismissed) = self._finished(db, recipe, jobs=2)
+        db.execute("UPDATE public.earthx_job SET dismissed = true WHERE job_id = %s", (dismissed,))
+        dismiss(db, deleted)
+        assert not self._hit(db, recipe)
 
 
 class TestAnExportHasARunOfItsOwn:

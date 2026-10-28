@@ -6,9 +6,9 @@ import { BASEMAP_IDS, DEFAULT_BASEMAP, type BasemapId } from './basemaps';
 
 export type Theme = 'tech' | 'normal';
 export type Projection = 'mercator' | 'globe';
-// The jobs the processing manager lists: those that are neither archived nor expired, the expired ones, or
-// all of them (UI-01 §6.10).
-export type JobFilter = 'active' | 'expired' | 'all';
+// The jobs the processing manager lists: those that are neither archived, expired nor deleted, the expired ones,
+// the deleted ones, or all of them (UI-01 §6.10, NM4-27).
+export type JobFilter = 'active' | 'expired' | 'deleted' | 'all';
 
 const THEME_KEY = 'earthx.theme';
 const PROJECTION_KEY = 'earthx.projection';
@@ -18,7 +18,7 @@ const JOB_FILTER_KEY = 'earthx.jobfilter';
 
 const THEMES: readonly Theme[] = ['tech', 'normal'];
 const PROJECTIONS: readonly Projection[] = ['mercator', 'globe'];
-const JOB_FILTERS: readonly JobFilter[] = ['active', 'expired', 'all'];
+const JOB_FILTERS: readonly JobFilter[] = ['active', 'expired', 'deleted', 'all'];
 const COLLAPSED_GROUPS_KEY = 'earthx.jobgroups.collapsed';
 
 function readStored<T extends string>(key: string, valid: readonly T[], fallback: T): T {

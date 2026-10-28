@@ -40,6 +40,10 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     failure: null,
     error: null,
     cancelling: false,
+    deleting: false,
+    deletedUntil: null,
+    serverDeleted: false,
+    lost: false,
     expired: false,
     title: 'Band math · Sentinel-2 L2A',
     tiles: { href: HREF, width: 1000, gsd: 10 },
@@ -279,6 +283,7 @@ describe('the layer a result becomes', () => {
             {
               jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM', titleDefault: null, createdAt: '2026-10-10T12:00:00Z',
               archived: false, groupId: null, batchId: null, part: null, range, order: null,
+              deletedUntil: null, serverDeleted: false, lost: false,
             },
           ],
           batches: [],

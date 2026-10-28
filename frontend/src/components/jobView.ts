@@ -6,18 +6,12 @@ import { useEffect, useState } from 'react';
 import { HttpError } from '../api';
 import { BUNDLE_MAX_BYTES, BUNDLE_MAX_PARTS } from '../processing';
 import type { BatchEntry, JobEntry } from '../processingStore';
-import { isResultExpired } from '../resultLayer';
+import { canDelete, canRestore, deletableParts, jobState, UNAVAILABLE_TIP, type JobState, type JobStateKey } from '../jobState';
+
+export { canDelete, canRestore, deletableParts, jobState, UNAVAILABLE_TIP };
+export type { JobState, JobStateKey };
 
 export const EXPIRED_TIP = 'Expired: results are kept for 7 days.';
-
-export type JobStateKey = 'checking' | 'waiting' | 'running' | 'finished' | 'failed' | 'cancelled' | 'expired';
-
-export interface JobState {
-  key: JobStateKey;
-  text: string;
-  // 0–100 while the job waits or runs; `null` once it is over.
-  progress: number | null;
-}
 
 // The current time, refreshed when `deadline` passes: a finished job turns "Expired" on the spot.
 export function useNowUntil(deadline: number): number {
@@ -29,28 +23,6 @@ export function useNowUntil(deadline: number): number {
     return () => clearTimeout(timer);
   }, [deadline, now]);
   return now;
-}
-
-// A finished job is "Expired" from a minute before `expires` (`MIN_REMAINING` of the job API: its links
-// answer `410` from then on); a job the server no longer knows (`404`) is expired or cancelled.
-export function jobState(job: JobEntry, now: number): JobState {
-  switch (job.phase) {
-    case 'gone':
-      return { key: 'expired', text: 'Expired', progress: null };
-    case 'dismissed':
-      return { key: 'cancelled', text: 'Cancelled', progress: null };
-    case 'failed':
-      return { key: 'failed', text: 'Failed', progress: null };
-    case 'successful':
-      return job.expired || isResultExpired(job.expires, now)
-        ? { key: 'expired', text: 'Expired', progress: null }
-        : { key: 'finished', text: 'Finished', progress: null };
-    default:
-      if (!job.status) return { key: 'checking', text: 'Checking…', progress: null };
-      return job.status.status === 'running'
-        ? { key: 'running', text: `${job.status.progress}%`, progress: job.status.progress }
-        : { key: 'waiting', text: 'Waiting', progress: 0 };
-  }
 }
 
 const MONTH_DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
@@ -72,6 +44,8 @@ export interface BatchCount {
   failed: number;
   expired: number;
   cancelled: number;
+  unavailable: number;
+  deleted: number;
   total: number;
   // 0–100: a part that is over counts whole.
   progress: number;
@@ -84,7 +58,7 @@ export function countBatch(batch: BatchEntry, parts: readonly JobEntry[], now: n
   const count = (key: JobStateKey) => states.filter((s) => s.key === key).length;
   const total = parts.length + batch.refused.length;
   const sum = states.reduce((all, s) => all + (s.progress ?? (s.key === 'checking' ? 0 : 100)), 0) + 100 * batch.refused.length;
-  const standing = parts.filter((_, i) => states[i].key !== 'expired' && states[i].key !== 'cancelled');
+  const standing = parts.filter((_, i) => !['expired', 'cancelled', 'unavailable', 'deleted'].includes(states[i].key));
   const ends = (standing.length > 0 ? standing : parts).map((part) => part.expires).sort((a, b) => Date.parse(a) - Date.parse(b));
   return {
     done: count('finished'),
@@ -93,6 +67,8 @@ export function countBatch(batch: BatchEntry, parts: readonly JobEntry[], now: n
     failed: count('failed'),
     expired: count('expired'),
     cancelled: count('cancelled'),
+    unavailable: count('unavailable'),
+    deleted: count('deleted'),
     total,
     progress: total === 0 ? 0 : Math.round(sum / total),
     expires: ends[0] ?? null,
@@ -108,6 +84,8 @@ export function batchSummary(count: BatchCount): string {
     [count.failed, 'failed'],
     [count.expired, 'expired'],
     [count.cancelled, 'cancelled'],
+    [count.unavailable, 'unavailable'],
+    [count.deleted, 'deleted'],
   ];
   return parts.filter(([n]) => n > 0).map(([n, word]) => `${n} ${word}`).join(' · ');
 }
@@ -163,6 +141,6 @@ export function bundleFault(error: unknown): string {
 }
 
 // The keys of the row actions of the manager, shown in its menu and taken on a focused row.
-export const SHORTCUTS = { rename: 'R', move: 'G', archive: 'A' } as const;
+export const SHORTCUTS = { rename: 'R', move: 'G', archive: 'A', delete: 'D' } as const;
 
 export const jobLabel = (job: { title: string | null }): string => job.title ?? 'Untitled job';

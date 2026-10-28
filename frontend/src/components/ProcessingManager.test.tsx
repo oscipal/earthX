@@ -177,12 +177,19 @@ describe('the rows', () => {
     expect(useProcessingStore.getState()).toMatchObject({ open: true, detailJobID: jobId(1) });
   });
 
-  it('has nothing to delete a job and no "Methods" or "Copy" in any state', () => {
+  it('has no "Methods", "Copy" or "Remove" in any state, and "Delete" only where a job is over', () => {
     put({ jobs: [finished(1), jobEntry(2), jobEntry(3, { phase: 'failed' }), jobEntry(4, { phase: 'gone' })] });
     mount();
-    for (const row of rows()) menuOf(row);
+    click(button('All'));
+    const deletable = rows().map((row) => {
+      menuOf(row);
+      const has = [...document.querySelectorAll('[role="menu"] button')].some((b) => b.querySelector('.pm-menu-label')?.textContent === 'Delete');
+      act(() => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })));
+      return has;
+    });
+    expect(deletable).toEqual([true, false, true, true]);
     const text = container.textContent ?? '';
-    for (const word of ['Methods', 'Copy', 'Remove', 'Delete']) expect(text).not.toContain(word);
+    for (const word of ['Methods', 'Copy', 'Remove']) expect(text).not.toContain(word);
     expect(container.querySelector('[title*="Remove"], [aria-label*="Remove"]')).toBeNull();
   });
 });
@@ -196,7 +203,7 @@ describe('the menu of a row', () => {
     // A real click begins with a press beside the open menu, which closes it.
     act(() => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })));
     menuOf(rows()[1]);
-    expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['RenameR', 'Move to group…G', 'ArchiveA']);
+    expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['RenameR', 'Move to group…G', 'ArchiveA', 'DeleteD']);
   });
 
   it('closes on Escape and gives the focus back to its button', () => {
@@ -359,9 +366,9 @@ describe('archive and the filter', () => {
     expect(container.querySelector('.pm-empty')?.textContent).toBe('No active jobs.');
   });
 
-  it('has the three tabs in the order Active, Expired, All, with "Active" first', () => {
+  it('has the four tabs in the order Active, Expired, Deleted, All, with "Active" first', () => {
     mount();
-    expect([...container.querySelectorAll('.pm-filter button')].map((b) => b.textContent)).toEqual(['Active', 'Expired', 'All']);
+    expect([...container.querySelectorAll('.pm-filter button')].map((b) => b.textContent)).toEqual(['Active', 'Expired', 'Deleted', 'All']);
     expect(button('Active').getAttribute('aria-pressed')).toBe('true');
   });
 
@@ -595,7 +602,7 @@ describe('the keys of a focused row (R, G, A)', () => {
   it('leave every other key alone', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
-    for (const other of ['b', 'd', 'Delete', 'Enter', 'ArrowDown']) expect(press(openButton(rows()[0]), other).defaultPrevented).toBe(false);
+    for (const other of ['b', 'x', 'Delete', 'Enter', 'ArrowDown']) expect(press(openButton(rows()[0]), other).defaultPrevented).toBe(false);
     expect(useProcessingStore.getState().jobs).toHaveLength(1);
   });
 
@@ -623,7 +630,7 @@ describe('the keys of a focused row (R, G, A)', () => {
   it('are named on the row for a screen reader', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
-    expect(rows()[0].getAttribute('aria-keyshortcuts')).toBe('R G A');
+    expect(rows()[0].getAttribute('aria-keyshortcuts')).toBe('R G A D');
     menuOf(rows()[0]);
     const entries = [...document.querySelectorAll('[role="menu"] button')];
     expect(entries.map((b) => [b.textContent, b.getAttribute('aria-keyshortcuts')])).toEqual([
@@ -634,13 +641,11 @@ describe('the keys of a focused row (R, G, A)', () => {
     ]);
   });
 
-  it('have no key for deleting: that is a task of its own', () => {
+  it('have no key for the Delete key of the keyboard: only the letter D deletes', () => {
     put({ jobs: [finished(1)] });
     mount();
-    press(openButton(rows()[0]), 'd');
     press(openButton(rows()[0]), 'Delete');
-    expect(useProcessingStore.getState().jobs).toHaveLength(1);
-    expect(container.textContent).not.toContain('Delete');
+    expect(useProcessingStore.getState().jobs[0].deletedUntil).toBeNull();
   });
 
   it('give the focus back to the row once a rename ends, by Enter or by Escape', () => {
@@ -1219,13 +1224,15 @@ describe('a batch', () => {
     expect(refused.querySelector('a, [role="menu"], button[aria-haspopup]')).toBeNull();
   });
 
-  it('gives a part its download and a menu with nothing but "Cancel" while it runs', () => {
+  it('gives a part its download and a menu with nothing but "Delete" once it is done and "Cancel" while it runs', () => {
     withBatch([finished(1, { batchId: BATCH, part: 'S1' }), jobEntry(2, { batchId: BATCH, part: 'S2' })]);
     mount();
     click(button('▸'));
     const [done, running] = [...container.querySelectorAll<HTMLElement>('.pm-parts .pm-row')];
     expect(done.querySelector('a[aria-label="Download (ZIP)"]')).not.toBeNull();
-    expect(done.querySelector('button[aria-haspopup]')).toBeNull();
+    menuOf(done);
+    expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['DeleteD']);
+    act(() => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })));
     menuOf(running);
     expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['Cancel']);
   });
@@ -1693,7 +1700,7 @@ describe('another tab', () => {
 });
 
 describe('a job the server no longer has', () => {
-  it('shows "Expired" once the server answers 404 for it, keeps it in the list and in the browser', async () => {
+  it('shows "No longer available" once the server answers 404 for it, keeps it in the list and in the browser', async () => {
     setTrackerOptions({
       EventSource: null,
       fetchJob: async () => {
@@ -1705,8 +1712,8 @@ describe('a job the server no longer has', () => {
     act(() => useProcessingStore.getState().renameJob(jobId(1), 'Kept'));
     mount();
     click(button('Expired'));
-    await vi.waitFor(() => expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('Expired'));
+    await vi.waitFor(() => expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('No longer available'));
     expect(titles()).toEqual(['Kept']);
-    expect(stored().jobs[0].jobID).toBe(jobId(1));
+    expect(stored().jobs[0]).toMatchObject({ jobID: jobId(1), lost: true });
   });
 });

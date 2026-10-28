@@ -318,6 +318,17 @@ class TestWhatIsMissing:
         rig.db.execute("UPDATE public.earthx_job SET dismissed = true WHERE job_id = %s", (two,))
         assert await self.lines(rig, href) == [f"02 sentinel-2-c1-l2a_scale_{DAY}: no longer available"]
 
+    async def test_a_part_that_was_deleted_is_no_longer_available_and_comes_back_when_restored(
+        self, mocked: Store, rig: Rig
+    ) -> None:
+        one, two = await part(rig, 1), await part(rig, 2)
+        href = await make(rig, one, two)
+        await rig.client.delete(f"/processing/jobs/{two}")
+        assert await self.lines(rig, href) == [f"02 sentinel-2-c1-l2a_scale_{DAY}: no longer available"]
+        await rig.client.post(f"/processing/jobs/{two}/restore")
+        response = await rig.client.get(href)
+        assert response.status_code == 200 and b"MISSING.txt" not in response.content
+
     async def test_a_bundle_none_of_whose_parts_is_left_is_a_410(self, mocked: Store, rig: Rig) -> None:
         one = await part(rig, 1)
         href = await make(rig, one)

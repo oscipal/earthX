@@ -1,4 +1,4 @@
-"""The job API: place a job, follow it, dismiss it, fetch its result (M4-08b; adr/0014 §9, adr/0015 §6).
+"""The job API: place a job, follow it, dismiss or delete it, fetch its result (M4-08b; adr/0014 §9, adr/0015 §6).
 
 It follows the *form* of OGC API – Processes 1.0 — paths, words, status values, the status
 and results documents — and **claims no conformance** (Otto, F4; adr/0014 §15d): an input
@@ -14,6 +14,11 @@ What each route turns away, and how (all errors are ``application/problem+json``
   from "has expired" or "was dismissed". The links under ``/results`` are the one
   exception: they answer ``410`` from the end of the job's life (or 60 s before it) until
   the rows are gone (adr/0015 §6.2).
+* **``DELETE``** (OGC ``dismiss``) cancels a job that waits or runs. A job that has finished (it succeeded or failed) it
+  deletes with a term (NM4-27): the answer is ``200`` with the status ``dismissed`` and ``expires`` at the end of the term,
+  a day from now or the end of the job's life if that comes first. Until then the job is a ``404`` on every route, like a
+  dismissed one, and ``POST …/restore`` takes it back: ``200`` with the job's status and its first expiry. Restore is a
+  ``404`` for an identifier that is malformed, unknown, dismissed, past its term or expired, one fixed text.
 * **Placing a job** is asynchronous only (``201`` and ``Location``); an input by reference,
   a qualified value, a ``response`` other than ``document`` and anything else outside the
   envelope is ``400``. The order itself goes through :func:`earthx.api.intake.accept_order`.
@@ -103,7 +108,7 @@ from earthx.catalog.registry import (
 )
 from earthx.gateway import Gateway
 from earthx.jobs import bundles, permalinks
-from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, is_job_id, job_recipe, job_status, submit
+from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, is_job_id, job_recipe, job_status, restore, submit
 from earthx.objectstore.errors import ObjectStoreError, ResultExpiring, ResultNotFound, StoreUnavailable
 from earthx.objectstore.results import MIN_REMAINING, Store, open_result_range, result_size, signed_download
 from earthx.processing import check_scope
@@ -814,7 +819,7 @@ async def job(request: Request, jobID: str, api: Api) -> Response:
 
 @router.delete(
     "/jobs/{jobID}",
-    summary="Dismiss a job",
+    summary="Dismiss a job: cancel it, or delete a finished one with a term to restore it",
     response_model=StatusInfo,
     response_model_by_alias=True,
     responses=_PROBLEMS,
@@ -823,6 +828,20 @@ async def dismiss_job(request: Request, jobID: str, api: Api) -> Response:
     await _live_job(api, jobID)
     status = await _db(api, dismiss, jobID)
     if status is None:
+        raise _no_such_job()
+    return JSONResponse(_dump(_status_info(_root(request), status)))
+
+
+@router.post(
+    "/jobs/{jobID}/restore",
+    summary="Take back a job deleted within the last day (outside OGC API – Processes)",
+    response_model=StatusInfo,
+    response_model_by_alias=True,
+    responses=_PROBLEMS,
+)
+async def restore_job(request: Request, jobID: str, api: Api) -> Response:
+    status = await _db(api, restore, jobID)
+    if status is None or status.expires_at <= datetime.now(UTC):
         raise _no_such_job()
     return JSONResponse(_dump(_status_info(_root(request), status)))
 

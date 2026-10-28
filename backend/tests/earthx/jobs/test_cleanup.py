@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,14 +11,16 @@ import psycopg
 import pytest
 
 from earthx.jobs import bundles, permalinks
-from earthx.jobs.cleanup import cleanup, cleanup_batch
+from earthx.jobs.cleanup import CleanupResult, cleanup, cleanup_batch
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.queue import CLEANUP_LOCK_KEY
-from earthx.jobs.submit import job_status, submit
+from earthx.jobs.submit import dismiss, job_run, job_status, restore, submit
 from earthx.jobs.worker import Supervisor
 from earthx.objectstore.errors import StoreUnavailable
 from earthx.objectstore.results import Store, delete_result, new_result_id, upload_result
-from tests.earthx.jobs.support import add_run, make_recipe, wait_until
+from earthx.processing.recipe import cache_key
+from tests.conftest import own_log_text
+from tests.earthx.jobs.support import add_run, make_recipe, run_row, wait_until
 
 
 def _count(db: psycopg.Connection, table: str) -> int:
@@ -85,7 +88,9 @@ class TestPermalinks:
         )
         return made.permalink_id
 
-    def test_after_30_days_the_row_is_gone_whole_and_before_it_stays(self, db: psycopg.Connection, store: Store) -> None:
+    def test_after_30_days_the_row_is_gone_whole_and_before_it_stays(
+        self, db: psycopg.Connection, store: Store
+    ) -> None:
         old, young = self._made(db, "30 days 1 minute"), self._made(db, "29 days 23 hours")
         assert permalinks.read(db, old) is None  # already refused before the cleanup came
         result = cleanup(db, store)
@@ -142,6 +147,176 @@ class TestBundles:
     def test_a_malformed_identifier_is_none_and_never_reaches_a_row(self, db: psycopg.Connection) -> None:
         assert not bundles.is_bundle_id("short") and not bundles.is_bundle_id("A" * 21 + "%")
         assert bundles.is_bundle_id("A" * 22)
+
+
+def _delete(db: psycopg.Connection, job_id: str, *, ended: bool = True) -> None:
+    """Delete the job as `api` does; with ``ended`` the term is over by a second."""
+    assert dismiss(db, job_id) is not None
+    if ended:
+        db.execute(
+            "UPDATE public.earthx_job SET deleted_until = clock_timestamp() - interval '1 second' WHERE job_id = %s",
+            (job_id,),
+        )
+
+
+def _keys(store: Store) -> list[str]:
+    return sorted(store.s3.list_keys("results/"))
+
+
+class TestDeletedJobs:
+    """NM4-27: a deleted job goes when its term ends, and the result with it only if no other job needs it."""
+
+    def test_the_only_job_takes_the_run_the_object_and_the_recipe_with_it(
+        self, db: psycopg.Connection, store: Store, tmp_path: Path
+    ) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id=_stored_result(store, tmp_path), expires_in="6 days")
+        _delete(db, job_id)
+        result = cleanup(db, store)
+        assert (result.deleted_jobs, result.runs, result.objects, result.recipes) == (1, 1, 1, 1)
+        assert _tables(db) == (0, 0, 0)
+        assert _keys(store) == []
+
+    def test_inside_the_term_nothing_goes(self, db: psycopg.Connection, store: Store, tmp_path: Path) -> None:
+        result_id = _stored_result(store, tmp_path)
+        _, (job_id,) = add_run(db, status="successful", result_id=result_id, expires_in="6 days")
+        _delete(db, job_id, ended=False)
+        assert cleanup(db, store).total == 0
+        assert _tables(db) == (1, 1, 1) and len(_keys(store)) == 2
+        assert restore(db, job_id) is not None
+
+    def test_a_failed_job_goes_without_an_object(self, db: psycopg.Connection, store: Store) -> None:
+        _, (job_id,) = add_run(db, status="failed", expires_in="6 days")
+        _delete(db, job_id)
+        assert cleanup(db, store).objects == 0
+        assert _tables(db) == (0, 0, 0)
+
+    def test_a_job_that_lives_keeps_the_object_the_run_and_its_recipe(
+        self, db: psycopg.Connection, store: Store, tmp_path: Path
+    ) -> None:
+        recipe = make_recipe()
+        result_id = _stored_result(store, tmp_path)
+        run_id, (first,) = add_run(
+            db, status="successful", key=cache_key(recipe), result_id=result_id, expires_in="6 days"
+        )
+        second = submit(db, recipe)
+        assert job_run(db, second) == run_id, "a hit, on a recipe of its own"
+        _delete(db, first)
+        result = cleanup(db, store)
+        assert (result.deleted_jobs, result.runs, result.objects, result.recipes) == (1, 0, 0, 1)
+        assert _count(db, "earthx_run") == 1 and _count(db, "earthx_job") == 1
+        assert len(_keys(store)) == 2
+        status = job_status(db, second)
+        assert status is not None and status.status == "successful" and status.result_id == result_id
+
+    def test_the_run_is_left_with_a_recipe_that_stays(self, db: psycopg.Connection, store: Store) -> None:
+        recipe = make_recipe()
+        run_id, (first,) = add_run(
+            db, status="successful", key=cache_key(recipe), result_id="R" * 22, expires_in="6 days"
+        )
+        second = submit(db, recipe)
+        gone = run_row(db, run_id, "recipe_id")[0]
+        _delete(db, first)
+        cleanup(db, store)
+        status = job_status(db, second)
+        assert status is not None
+        assert run_row(db, run_id, "recipe_id") == (status.recipe_id,) and status.recipe_id != gone
+        assert db.execute("SELECT count(*) FROM public.earthx_recipe WHERE recipe_id = %s", (gone,)).fetchone() == (0,)
+
+    def test_a_job_still_inside_its_term_keeps_the_object_for_its_restore(
+        self, db: psycopg.Connection, store: Store, tmp_path: Path
+    ) -> None:
+        result_id = _stored_result(store, tmp_path)
+        _, (early, late) = add_run(db, status="successful", result_id=result_id, expires_in="6 days", jobs=2)
+        _delete(db, early)
+        _delete(db, late, ended=False)
+        result = cleanup(db, store)
+        assert (result.deleted_jobs, result.runs, result.objects) == (1, 0, 0)
+        assert len(_keys(store)) == 2
+        restored = restore(db, late)
+        assert restored is not None and restored.status == "successful" and restored.result_id == result_id
+
+    def test_a_dismissed_job_does_not_keep_the_object(
+        self, db: psycopg.Connection, store: Store, tmp_path: Path
+    ) -> None:
+        _, (deleted, dismissed) = add_run(
+            db, status="successful", result_id=_stored_result(store, tmp_path), expires_in="6 days", jobs=2
+        )
+        db.execute("UPDATE public.earthx_job SET dismissed = true WHERE job_id = %s", (dismissed,))
+        _delete(db, deleted)
+        assert cleanup(db, store).runs == 1
+        assert _tables(db) == (0, 0, 0) and _keys(store) == []
+
+    def test_a_job_that_hangs_on_the_run_while_the_cleanup_waits_for_it_keeps_the_object(
+        self, db: psycopg.Connection, store: Store, tmp_path: Path
+    ) -> None:
+        """What `submit` does for a hit: it holds the run, adds its job, and only then lets the cleanup in."""
+        result_id = _stored_result(store, tmp_path)
+        run_id, (job_id,) = add_run(db, status="successful", result_id=result_id, expires_in="6 days")
+        recipe_id = db.execute("SELECT recipe_id FROM public.earthx_job").fetchone()[0]
+        _delete(db, job_id)
+        outcome: list[CleanupResult] = []
+
+        def sweep() -> None:
+            with psycopg.connect(autocommit=True) as conn:
+                outcome.append(cleanup(conn, store))
+
+        with psycopg.connect(autocommit=True) as holder, holder.transaction():
+            holder.execute("SELECT 1 FROM public.earthx_run WHERE run_id = %s FOR SHARE", (run_id,))
+            thread = threading.Thread(target=sweep)
+            thread.start()
+            wait_until(
+                lambda: (
+                    db.execute(
+                        "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()"
+                    ).fetchone()
+                    == (1,)
+                )
+            )
+            holder.execute(
+                "INSERT INTO public.earthx_job (job_id, run_id, recipe_id) VALUES (%s, %s, %s)",
+                ("N" * 22, run_id, recipe_id),
+            )
+        thread.join(20)
+        assert [(r.deleted_jobs, r.runs, r.objects) for r in outcome] == [(1, 0, 0)]
+        assert _count(db, "earthx_run") == 1 and len(_keys(store)) == 2
+        assert db.execute("SELECT job_id FROM public.earthx_job").fetchall() == [("N" * 22,)]
+
+    def test_when_the_store_fails_the_job_stays_and_the_next_try_finishes(
+        self, db: psycopg.Connection, store: Store, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id=_stored_result(store, tmp_path), expires_in="6 days")
+        _delete(db, job_id)
+
+        def fails(store: Store, result_id: str) -> None:
+            raise StoreUnavailable("the store did not answer")
+
+        monkeypatch.setattr("earthx.jobs.cleanup.delete_result", fails)
+        with pytest.raises(StoreUnavailable):
+            cleanup(db, store)
+        assert _tables(db) == (1, 1, 1) and len(_keys(store)) == 2
+        monkeypatch.setattr("earthx.jobs.cleanup.delete_result", delete_result)
+        assert cleanup(db, store).deleted_jobs == 1
+        assert _tables(db) == (0, 0, 0) and _keys(store) == []
+
+    def test_it_works_in_batches_until_nothing_is_left(self, db: psycopg.Connection, store: Store) -> None:
+        for _ in range(7):
+            _delete(db, add_run(db, status="failed", expires_in="6 days")[1][0])
+        add_run(db, status="failed", expires_in="6 days")
+        assert cleanup(db, store, batch=3).deleted_jobs == 7
+        assert _tables(db) == (1, 1, 1)
+
+    def test_the_log_names_numbers_and_nothing_else(
+        self, db: psycopg.Connection, store: Store, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _, (job_id,) = add_run(db, status="successful", result_id="R" * 22, expires_in="6 days")
+        recipe_id = db.execute("SELECT recipe_id FROM public.earthx_job").fetchone()[0]
+        _delete(db, job_id)
+        with caplog.at_level(logging.DEBUG, logger="earthx"):
+            cleanup(db, store)
+        text = "\n".join(own_log_text(record) for record in caplog.records)
+        assert caplog.records and "deleted_jobs" in text
+        for forbidden in (job_id, recipe_id, "R" * 22):
+            assert forbidden not in text
 
 
 class TestObjectsBeforeRows:

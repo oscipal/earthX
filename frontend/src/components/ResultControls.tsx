@@ -28,7 +28,7 @@ function Controls({ layer }: { layer: MapLayer }) {
   if (!info) return null;
   const adjustable = info.dataType !== null && /^float/.test(info.dataType);
   // What cannot be set at all is not shown: a result of whole numbers is drawn as it is, an expired one not at all.
-  const settable = adjustable && !info.expired;
+  const settable = adjustable && !info.expired && !info.deleted;
   const edit = (patch: Partial<PreviewRange>) => {
     setDraft((d) => ({ ...d, ...patch }));
     setProblem(null);

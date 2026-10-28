@@ -1564,6 +1564,17 @@ input[type='date']:focus {
 .lm-eye.off {
   color: var(--muted);
 }
+/* The result of a deleted job (NM4-27): in the list, not on the map, until it is restored or its day is over. */
+.lm-eye[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+.layer-row.locked .lm-name,
+.layer-row.locked .lm-opacity {
+  opacity: 0.45;
+}
+.layer-row.locked .lm-name {
+  cursor: help;
+}
 .lm-btn:hover:not(:disabled) {
   border-color: var(--accent);
 }
@@ -1758,6 +1769,7 @@ input[type='date']:focus {
 }
 .pm-tools {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
@@ -1766,6 +1778,7 @@ input[type='date']:focus {
 }
 .pm-filter {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 .pm-note,
@@ -1817,6 +1830,11 @@ input[type='date']:focus {
 .pm-row.archived {
   opacity: 0.7;
 }
+/* A deleted job (NM4-27): quieter than an archived one, since it goes for good when its day is over. */
+.pm-row.deleted .pm-title {
+  color: var(--muted);
+  text-decoration: line-through;
+}
 .pm-line {
   display: flex;
   align-items: center;
@@ -1867,6 +1885,9 @@ button.pm-open:hover {
 }
 .pm-meta.finished .pm-state {
   color: var(--accent);
+}
+.pm-meta.unavailable .pm-state {
+  cursor: help;
 }
 .pm-tag {
   color: var(--accent-2);
