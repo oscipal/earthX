@@ -321,7 +321,7 @@ KE1–KE8 angenommen. **Zusatz Modulgrenzen:** Die Route nutzt `estimate_order` 
 
 ### 15.1 Ausgangslage
 
-- Das Backend (#218) misst die Farbskala über die AOI wie der Job: `POST /collections/{dataset}/statistics` im `tiler`, Body = der Auftrag, wie ihn das Panel für den Job baut (`processingOrder.ts::buildOrder`, dasselbe JSON wie für `POST /processing/jobs`), `Content-Type: application/json`, höchstens 1 048 576 Byte, AOI höchstens 20 000 Positionen.
+- Das Backend (#218) misst die Farbskala über die AOI wie der Job: `POST /collections/{dataset}/statistics` im `tiler`, Body = der Auftrag, wie ihn das Panel für den Job baut (`processingOrder.ts::buildOrder`, das `order` selbst, **ohne** die Hülle `{"inputs": {"recipe": …}}` der Job-Route und ohne `aoiProvenance`), `Content-Type: application/json`, höchstens 1 048 576 Byte, AOI höchstens 20 000 Positionen.
 - Antwort `200`: `{"bands": [{"name", "unit"?, "statistics": {minimum, maximum, mean, stddev?, count, valid_percent, percentile_2, percentile_98}}], "exact": bool, "factor": int}`; `statistics` ist genau das Objekt des Ergebnisdokuments eines Jobs (`properties.bands[].statistics`). `exact: false` heißt: gröber gelesen (Fenster über 4 Mi Pixel), die Werte können vom Ergebnis abweichen.
 - Ablehnungen: `413` (Body, Positionen, mehr als 16 Dateien), `415`, `422` (Auftrag ungültig, ohne `aoi`, Datensatz im Pfad ≠ Auftrag, `grid`-Schritt, AOI außerhalb), `403` (Lizenz), `502`–`504` (Quelle). Ein abgelehnter Schritt nennt ab zwei Schritten den Platz („step 1: …“).
 - Heute misst die Vorschau `GET …/items/{erste Szene}/statistics?op=…` über die ganze erste Szene (`processingPreview.ts::previewSpec` → `measure`, `processingStore.ts::measureFor`, `MEASURE_WAIT_MS` 5 s).
@@ -372,3 +372,66 @@ KE1–KE8 angenommen. **Zusatz Modulgrenzen:** Die Route nutzt `estimate_order` 
 3. R2.
 4. R3.
 5. R5, bleibt.
+
+## 17. Umsetzung des Backends (28.10.2026)
+
+- `processing/core.py`: `area_statistics`, `area_factor`, `AreaStatistics`, `MAX_AREA_PIXELS`. Das Zählen je Block (`_written`, `_count`), die Maske je Block (`_mask_block`) und das Lesen je Block (`_read_block`) teilen sich `write_pass`, `_write_mask` und `_run_pass` mit der Messung; die Bytes eines Jobs ändern sich nicht, die Version bleibt.
+- `processing/mosaic.py`: `MosaicSource._piece` beschneidet den Teil eines verzerrten Mitglieds auf seinen `WarpedVRT`. Ohne das schlug die gröbere Messung eines Mosaiks mit einer Szene der anderen UTM-Zone fehl (Breite 25 statt 26); auf dem eigenen Raster des Mosaiks liegt jeder Teil schon im VRT.
+- `api/area_statistics.py` (neu): die Route, Body roh gelesen (KE3), Grenzen vor dem Abruf, `estimate_order(..., announce=False)`, 16 Dateien, Cache (`area_statistics_cache_key`, 7 Tage), eine Logzeile (KE2), Lese- und Cache-Fehler ohne Text im Log. `api/tiler.py` hängt sie in `build_app` ein.
+- `api/intake.py`: `estimate_order` mit `announce` (KE2).
+- `access/tiles.py`: `StatsCache.set` nimmt `ttl_s` wie `PostgresStatsCache`.
+- `jobs/cleanup.py`: löscht abgelaufene Zeilen von `earthx_stats_cache` (KE9), zählt sie in `CleanupResult.statistics`.
+- Tests: `processing/test_area_statistics.py` (24), `api/test_tiler_area_statistics.py` (37), `jobs/test_cleanup.py` (+3), `api/test_tiler.py` (die Route ist die zweite ohne Item im Pfad, wie der Download).
+- **Abweichungen von §10:** Nr. 7 nannte `test_tiler_start_is_light`; den Test gibt es im Repo nicht mehr (nur noch ein Verweis im Docstring von `_operator_support`). Stattdessen: Die Route importiert `processing` erst beim ersten Aufruf, wie die Operator-Kachel. Nr. 5 läuft über die ASGI-App mit dem echten `RequestIdMiddleware` und dem echten `JsonFormatter`, wie `tests/integration/test_access_log.py`, nicht über einen uvicorn-Prozess. Ganzzahlige Ausgabe (Nr. 1) mit `mask` allein: Mit `band_math` oder `normalize` hat jede Ausgabe nodata NaN, und eine Ganzzahl-Ausgabe weist der Job dann ab (`_nodata_for`).
+- **Gegenprobe:** Gegen `main` scheitern alle neuen Tests der Route und des Kerns, schon beim Import (`earthx.api.area_statistics`, `area_statistics` fehlen); die Route antwortet dort `405`. Die drei Tests des Aufräumers scheitern an `CleanupResult.statistics`.
+- **Echte Quelle [M]:** Sentinel-2 C1 L2A, eine Szene vom August 2025, NDVI. Die Item-Quelle ist im Prozess eingesetzt, weil das `gateway` der Sitzung Earth Search nicht erreicht (wie M4-19c §14 (d)); die COG-Lesezugriffe gehen echt über `readers`. AOI 0,08° × 0,08° (0,53 Mi Pixel): kalt 2,6 s, warm 0,13 s; `statistics` **gleich** denen eines Laufs des Kerns auf demselben Rezept. AOI 0,24° × 0,24° (4,8 Mi Pixel): `exact: false`, `factor` 2, kalt 2,8 s; 2–98 % liegen 0,4 bzw. 0,5 % der Spanne neben dem Job, das Maximum grob 0,94 statt 1,48 (Frage 8).
+- `ruff check backend`, `lint-imports` (16 Verträge, `.importlinter` unverändert), `pytest` grün; Ergebnis im PR.
+
+### 17.1 Prüfanleitung für Otto (PowerShell 5.1)
+
+Gegen den Stack aus `docker compose`. Die AOI ist ein kleines Quadrat in der Mitte der ersten gefundenen Szene; sie steht nur in dieser Sitzung von PowerShell.
+
+```powershell
+docker compose up -d --build
+$api = 'http://localhost:8000'; $tiler = 'http://localhost:8001'
+
+# Eine Sentinel-2-Szene und ein Quadrat von 0,08 Grad in ihrer Mitte
+$search = @{ collections = @('sentinel-2-c1-l2a'); bbox = @(10.0, 47.0, 10.5, 47.5); limit = 1 } | ConvertTo-Json -Depth 5
+$scene = (Invoke-RestMethod -Method Post -Uri "${api}/stac/search" -ContentType application/json -Body $search).features[0]
+$x = ($scene.bbox[0] + $scene.bbox[2]) / 2; $y = ($scene.bbox[1] + $scene.bbox[3]) / 2; $h = 0.04
+$aoi = @{ type = 'Polygon'; coordinates = @(,@(@(($x-$h),($y-$h)), @(($x+$h),($y-$h)), @(($x+$h),($y+$h)), @(($x-$h),($y+$h)), @(($x-$h),($y-$h)))) }
+function New-Order($aoi) {
+    @{ recipe_version = 1
+       inputs = @(@{ name = 'input'; dataset = 'sentinel-2-c1-l2a'; groups = @(,@($scene.id)); assets = @('red', 'nir') })
+       aoi = $aoi
+       steps = @(@{ op = 'band_math'; op_version = 1; params = @{ expression = '(nir - red) / (nir + red)' } })
+       output = @{ kind = 'raster'; format = 'cog'; dtype = 'float32' } }
+}
+$order = New-Order $aoi | ConvertTo-Json -Depth 10 -Compress
+
+# 1) Die Messung über die AOI: exact = True, factor = 1; beim zweiten Mal schneller (Cache)
+$area = Invoke-RestMethod -Method Post -Uri "${tiler}/collections/sentinel-2-c1-l2a/statistics" -ContentType application/json -Body $order
+$area.exact; $area.factor; $area.bands[0].statistics | Format-List
+
+# 2) Derselbe Auftrag als Job: dieselben Zahlen, Feld für Feld (Ausgabe: True)
+$job = Invoke-RestMethod -Method Post -Uri "${api}/processing/jobs" -ContentType application/json -Body ("{""inputs"":{""recipe"":$order}}")
+do { Start-Sleep 5; $status = (Invoke-RestMethod "${api}/processing/jobs/$($job.jobID)").status } while ($status -in 'accepted', 'running')
+$results = Invoke-RestMethod "${api}/processing/jobs/$($job.jobID)/results"
+($results.result.properties.bands[0].statistics | ConvertTo-Json -Compress) -eq ($area.bands[0].statistics | ConvertTo-Json -Compress)
+
+# 3) Ein Quadrat von 0,3 Grad: über 2048² Pixel, also gröber gelesen (exact = False, factor >= 2)
+$h = 0.15; $big = @{ type = 'Polygon'; coordinates = @(,@(@(($x-$h),($y-$h)), @(($x+$h),($y-$h)), @(($x+$h),($y+$h)), @(($x-$h),($y+$h)), @(($x-$h),($y-$h)))) }
+$coarse = Invoke-RestMethod -Method Post -Uri "${tiler}/collections/sentinel-2-c1-l2a/statistics" -ContentType application/json -Body (New-Order $big | ConvertTo-Json -Depth 10 -Compress)
+$coarse.exact; $coarse.factor
+
+# 4) Ablehnungen: ohne AOI 422, als GET 405
+$whole = New-Order $null; $whole.Remove('aoi')
+try { Invoke-RestMethod -Method Post -Uri "${tiler}/collections/sentinel-2-c1-l2a/statistics" -ContentType application/json -Body ($whole | ConvertTo-Json -Depth 10) } catch { $_.Exception.Response.StatusCode.value__ }
+try { Invoke-RestMethod "${tiler}/collections/sentinel-2-c1-l2a/statistics" } catch { $_.Exception.Response.StatusCode.value__ }
+
+# 5) Keine AOI im Log: die Zeilen der Messung nennen Pfad, Zahlen und Dauer, keine Koordinate
+docker compose logs tiler | Select-String 'area statistics measured|/statistics' | Select-Object -Last 4
+docker compose logs tiler | Select-String ([string]::Format('{0:F4}', $x).Replace(',', '.'))   # keine Ausgabe
+```
+
+Die Vorschau im Panel ändert sich mit diesem PR noch nicht; das kommt mit NM4-19b (§15).
