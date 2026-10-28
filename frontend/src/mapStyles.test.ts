@@ -4,11 +4,12 @@
 // dark in the tech theme, white in the light one — not a fixed colour.
 
 import type { StyleSpecification, TransformStyleFunction } from 'maplibre-gl';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CSS from './index.css?raw';
 import { BASEMAP_IDS, BASEMAPS, ESRI_ATTRIBUTION, OPENFREEMAP_ATTRIBUTION, type BasemapId } from './basemaps';
 import { appLayers, publishedStyle } from './fixtures/publishedStyle';
+import { NO_OVERLAYS } from './overlays';
 import {
   applyBasemap,
   applyMapBackground,
@@ -17,6 +18,7 @@ import {
   baseMapStyle,
   composeStyle,
   createBasemapSwitcher,
+  forgetPublishedStyles,
   isInFirstStyle,
   mapBackgroundOf,
 } from './mapStyles';
@@ -132,10 +134,12 @@ describe('composeStyle', () => {
       'background',
       'bm-background',
       'bm-aoi-fill',
-      'bm-place-label',
       'bm-photos',
       'layers-top',
       'm-img-lyr-0',
+      'overlays-base',
+      'ov-place-label',
+      'aoi-fill',
       'aoi-line',
       'td-polygon',
     ]);
@@ -146,8 +150,8 @@ describe('composeStyle', () => {
     expect(Object.keys(style.sources).sort()).toEqual(['aoi-src', 'bm-openmaptiles', 'bm-photos', 'm-img-src-0', 'td-polygon']);
     const layer = style.layers.find((l) => l.id === 'bm-aoi-fill');
     expect(layer && 'source' in layer && layer.source).toBe('bm-openmaptiles');
-    // The layer "aoi-fill" of the published style does not collide with a layer of the app of that name.
-    expect(idsOf(style).filter((id) => id.endsWith('aoi-fill'))).toEqual(['bm-aoi-fill']);
+    // The layer "aoi-fill" of the published style does not collide with the layer of the app of that name.
+    expect(idsOf(style).filter((id) => id.endsWith('aoi-fill'))).toEqual(['bm-aoi-fill', 'aoi-fill']);
   });
 
   it('carries the app\'s sources over unchanged', () => {
@@ -180,7 +184,7 @@ describe('composeStyle', () => {
   it('replaces the former basemap completely when the basemap changes', () => {
     const streets = composeStyle(runningStyle(), publishedStyle(), 'streets');
     const satellite = composeStyle(streets, BASEMAPS.satellite.style as StyleSpecification, 'satellite');
-    expect(idsOf(satellite)).toEqual(['background', 'bm-satellite', 'layers-top', 'm-img-lyr-0', 'aoi-line', 'td-polygon']);
+    expect(idsOf(satellite)).toEqual(['background', 'bm-satellite', 'layers-top', 'm-img-lyr-0', 'overlays-base', 'aoi-fill', 'aoi-line', 'td-polygon']);
     expect(Object.keys(satellite.sources).sort()).toEqual(['aoi-src', 'bm-satellite', 'm-img-src-0', 'td-polygon']);
   });
 
@@ -194,7 +198,7 @@ describe('composeStyle', () => {
   });
 
   it('works for a first style without a running one, and for a published style that names no sources', () => {
-    expect(idsOf(composeStyle(undefined, publishedStyle(), 'streets'))).toEqual(['bm-background', 'bm-aoi-fill', 'bm-place-label', 'bm-photos']);
+    expect(idsOf(composeStyle(undefined, publishedStyle(), 'streets'))).toEqual(['bm-background', 'bm-aoi-fill', 'bm-photos', 'ov-place-label']);
     const bare = { version: 8, layers: [] } as unknown as StyleSpecification;
     expect(() => composeStyle(runningStyle(), bare, 'streets')).not.toThrow();
   });
@@ -258,6 +262,7 @@ const jsonAnswer = (status: number, body: unknown): Response =>
   ({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response;
 
 describe('applyBasemap', () => {
+  beforeEach(forgetPublishedStyles);
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -355,6 +360,7 @@ describe('applyProjection', () => {
 });
 
 describe('createBasemapSwitcher', () => {
+  beforeEach(forgetPublishedStyles);
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -388,7 +394,7 @@ describe('createBasemapSwitcher', () => {
     await settle();
     expect(onFailure).toHaveBeenCalledTimes(1);
     expect(onFailure.mock.calls[0][0]).toMatch(/^The Grey basemap could not be loaded/u);
-    expect(onFailure.mock.calls[0][1]).toBe('satellite');
+    expect(onFailure.mock.calls[0].slice(1)).toEqual(['satellite', NO_OVERLAYS]);
     expect(map.setStyle).not.toHaveBeenCalled();
     // Asked for again (a second try), it is tried again.
     switcher.show('grey');
@@ -402,7 +408,7 @@ describe('createBasemapSwitcher', () => {
     const onFailure = vi.fn();
     createBasemapSwitcher(map, null, onFailure).show('streets');
     await settle();
-    expect(onFailure).toHaveBeenCalledWith(expect.stringContaining('Failed to fetch'), null);
+    expect(onFailure).toHaveBeenCalledWith(expect.stringContaining('Failed to fetch'), null, NO_OVERLAYS);
   });
 
   it('goes back to the basemap that was handed over, not to one that was only asked for', async () => {
@@ -414,7 +420,7 @@ describe('createBasemapSwitcher', () => {
     switcher.show('grey');
     await settle();
     // `streets` was overtaken and never reached the map, so what the map shows is still the satellite imagery.
-    expect(onFailure).toHaveBeenCalledWith(expect.any(String), 'satellite');
+    expect(onFailure).toHaveBeenCalledWith(expect.any(String), 'satellite', NO_OVERLAYS);
     expect(map.setStyle).not.toHaveBeenCalled();
   });
 });

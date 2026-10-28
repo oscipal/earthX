@@ -8,6 +8,7 @@ import type { StyleSpecification } from 'maplibre-gl';
 import { describe, expect, it } from 'vitest';
 
 import { BASEMAP_IDS, BASEMAP_PREFIX, BASEMAPS, type BasemapId } from './basemaps';
+import { OVERLAY_PREFIX } from './overlays';
 import { appLayers, publishedStyle } from './fixtures/publishedStyle';
 import { baseMapStyle, composeStyle } from './mapStyles';
 
@@ -49,14 +50,15 @@ describe('the style diff of a change of the basemap', () => {
     expect(commands.map((c) => c.command).filter((name) => !ALLOWED.has(name))).toEqual([]);
     // Every command on a source or a layer is on one of the basemap's, never on one of the app's.
     for (const command of commands.filter((c) => ON_AN_ID.test(c.command))) {
-      expect(idOf(command).startsWith(BASEMAP_PREFIX)).toBe(true);
+      expect(idOf(command).startsWith(BASEMAP_PREFIX) || idOf(command).startsWith(OVERLAY_PREFIX)).toBe(true);
     }
   });
 
   it.each(pairs)('%s to %s: the app\'s layers and sources are neither removed nor added, and keep their order', (from, to) => {
     const previous = running(from);
     const next = composeStyle(previous, styleOf(to), to);
-    const own = (layers: StyleSpecification['layers']) => layers.map((l) => l.id).filter((id) => id !== 'background' && !id.startsWith(BASEMAP_PREFIX));
+    const own = (layers: StyleSpecification['layers']) =>
+      layers.map((l) => l.id).filter((id) => id !== 'background' && !id.startsWith(BASEMAP_PREFIX) && !id.startsWith(OVERLAY_PREFIX));
     expect(own(next.layers)).toEqual(own(previous.layers));
     expect(Object.keys(next.sources).filter((k) => !k.startsWith(BASEMAP_PREFIX)).sort()).toEqual(
       Object.keys(previous.sources).filter((k) => !k.startsWith(BASEMAP_PREFIX)).sort(),
