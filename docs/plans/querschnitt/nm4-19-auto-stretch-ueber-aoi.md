@@ -262,6 +262,8 @@ Kurz beantwortbar: je Frage eine Nummer.
 
 ## 12. Umsetzung nach Freigabe
 
+Ergänzt durch §14 (Freigabe), §15 (NM4-19b Frontend) und §16 (Frage 8). Laut Frage 7, Option 3 setzt diese Session nur das Backend um.
+
 Nach den Antworten in dieser Session, je nach Frage 7:
 
 - **NM4-19a (Backend):** `processing/core.py` (`area_statistics`, gemeinsames Zählen je Block mit `write_pass`), `api/intake.py` (Schalter für die Logzeile), `api/tiler.py` (Route, Body, Grenzen, Cache, Log), `access/tiles.py` (Schlüssel `area-statistics/v1`). Tests §10 Nr. 1–8. Nachtrag `adr/0006` (Route, Grenzen, Datenschutz) und `adr/0014` (die Statistik der AOI gibt es jetzt auch ohne Job, aus demselben Code; §15k gilt weiter). Prüfanleitung in PowerShell 5.1. Log-Zeile mit PR-Nummer.
@@ -281,3 +283,92 @@ PYTHONPATH=backend python -W ignore scripts/tile-bench/aoi_statistics.py <ordner
 ```
 
 Gemessen am 28.10.2026; 1024², 2048² und 8192² mit k = 4 zweimal (in §7.5 als Spanne), die übrigen einmal. Exakte Werte, aus denen §7.6 rechnet (p2 / p98): `red` 2048² 0,018799 / 0,221680; 4096² 0,017822 / 0,217773; 8192² 0,015381 / 0,214844. NDVI 2048² 0,126953 / 0,902344; 4096² 0,115234 / 0,906250; 8192² 0,001595 / 0,914062. Die Fächer des Histogramms haben die relative Breite 2⁻⁷; ein Fach ist bei `red` um 0,02 rund 0,06 % der Spanne breit.
+
+## 14. Freigabe (Otto, 28.10.2026, zu #218)
+
+1. Option 1: `POST /collections/{dataset}/statistics` im `tiler`, Body = der Auftrag, `estimate_order` und die Zählung des Jobs.
+2. Option 1: exakt bis 4 Mi Pixel, darüber gröber auf 4 Mi, `exact: false`, Hinweis im Tooltip.
+3. Option 1: 1 MB Body, 20 000 Positionen, Prüfungen von `recipe.Aoi`, ohne `aoi` `422`; die Annahme des Jobs bleibt ohne Punktgrenze.
+4. Option 1: SHA-256 über das Rezept im bestehenden Statistik-Cache, nie geloggt. **Zusatz:** Der Schlüssel hängt am Rezept und damit an der AOI. Ein Eintrag lebt höchstens so lange wie ein Rezept (7 Tage, Q10); der Schlüssel steht nie in Logs oder URLs. Wo der Cache liegt und wie er abläuft: §14.1.
+5. Option 1: den ersten Auftrag messen.
+6. Option 1: „Whole scene“ bleibt wie heute.
+7. Option 3: Diese Session setzt nur das Backend um (#218). Das Frontend folgt nach dem Merge als neue Aufgabe in einer neuen Session (§15).
+
+KE1–KE8 angenommen. **Zusatz Modulgrenzen:** Die Route nutzt `estimate_order` und die Zählung des Jobs; `lint-imports` bleibt ohne Lockerung grün, ein Vertrag im Weg wäre zuerst eine Frage an Otto (§14.2). **Neue Frage 8** vor dem Code zur Index-Regel (§16); bis zur Antwort nur, was nicht davon abhängt. Das Backlog pflegt der Planungs-Chat.
+
+### 14.1 Wo der Cache liegt und wie er abläuft [P]
+
+- **Ort:** die Tabelle `public.earthx_stats_cache` in der Postgres-Datenbank der Plattform (`catalog/migrations/003_stats_cache.sql`), dieselbe wie für die GET-Statistik. Der `tiler` erreicht sie über `statistics_cache` (`api/tiler.py`, eine Verbindung aus dem Pool je Anfrage); ohne Pool gibt es keinen Cache, die Messung wird dann jedes Mal gelesen (E5).
+- **Inhalt einer Zeile:** `cache_key` (SHA-256, 64 Hexzeichen), `dataset_id`, `payload` (nur die Statistik je Band, `exact`, `factor`; keine AOI, keine Item-ID, kein Rezept), `expires_at`, `created_at`.
+- **Schlüssel:** SHA-256 über `{"kind": "area-statistics/v1", "recipe": <Rezept ohne recipe_id>}`, kanonisch (sortierte Schlüssel, ohne Leerzeichen). Das Rezept trägt AOI, Items, Assets mit Skalierung, Schritte und Ausgabetyp; der Hash ist aus der AOI zurückrechenbar (Q8) und gilt deshalb wie ein Rezept als personenbezogen.
+- **Ablauf heute:** `PostgresStatsCache.set` setzt `expires_at = now() + ttl_s` (Vorgabe 30 Tage); `get` liest nur Zeilen mit `expires_at > now()`. **Gelöscht wird eine abgelaufene Zeile heute nie**; der Index `earthx_stats_cache_expires_at_idx` ist für ein späteres Aufräumen vorbereitet.
+- **Ablauf neu (KE9):**
+  1. Die Messung über die AOI schreibt mit `ttl_s` = 7 Tage (`AREA_STATISTICS_TTL_S`, aus derselben Zahl wie die Frist der Läufe, Q10).
+  2. Der stündliche Aufräumer der Jobs (`jobs/cleanup.py::cleanup_batch`, dieselbe Transaktion und dieselbe Sperre wie für Läufe, Rezepte, Permalinks und Bundles) löscht abgelaufene Zeilen von `earthx_stats_cache` in Portionen von 5 000. Das betrifft auch die abgelaufenen Zeilen der GET-Statistik (30 Tage); sie werden heute schon nicht mehr gelesen. Ein Eintrag lebt damit höchstens 7 Tage und eine Stunde, wie ein Rezept, dessen letzter Lauf abläuft.
+  3. `CleanupResult` zählt die gelöschten Zeilen (`statistics`).
+- **Nie in Logs oder URLs:** Der Schlüssel entsteht und bleibt im `tiler`. Ein Fehler des Caches wird auf dieser Route nur mit der Art der Ausnahme geloggt, ohne Text und ohne Traceback, weil der Text einer Datenbank-Ausnahme Werte der Anweisung wiedergeben kann (Test mit einem Cache, der mit dem Schlüssel im Text wirft). Der Aufräumer loggt nur Zahlen. Die Antwort trägt den Schlüssel nicht, die URL auch nicht.
+
+### 14.2 Modulgrenzen [P]
+
+- Neu ist `api/tiler.py → api/intake.py` (`estimate_order`) und `api/tiler.py → processing.core` (`area_statistics`). Beides liegt innerhalb der erlaubten Richtungen (`api` darf alles außer `datasets`, architekturplan 3.1); `api/tiler.py` importiert `processing` schon heute.
+- `processing.core.area_statistics` liest wie `run` über `access.open_asset_ref`; kein neuer Import in `processing`.
+- `jobs/cleanup.py` löscht mit SQL, ohne `catalog` zu importieren (der Vertrag `jobs` verbietet `catalog`), wie bei den übrigen Tabellen.
+- `lint-imports --config .importlinter` läuft vor dem Push; an `.importlinter` ändert sich nichts.
+
+## 15. NM4-19b Frontend (Folgeaufgabe, neue Session)
+
+**Stufe A**, nur Frontend, nach dem Merge von #218. Branch von `main`, ein Draft-PR. Der Abschnitt ist ohne das Gespräch zu NM4-19 verständlich; maßgeblich sind §14, §16 (falls entschieden) und `adr/0006`, Nachtrag NM4-19.
+
+### 15.1 Ausgangslage
+
+- Das Backend (#218) misst die Farbskala über die AOI wie der Job: `POST /collections/{dataset}/statistics` im `tiler`, Body = der Auftrag, wie ihn das Panel für den Job baut (`processingOrder.ts::buildOrder`, dasselbe JSON wie für `POST /processing/jobs`), `Content-Type: application/json`, höchstens 1 048 576 Byte, AOI höchstens 20 000 Positionen.
+- Antwort `200`: `{"bands": [{"name", "unit"?, "statistics": {minimum, maximum, mean, stddev?, count, valid_percent, percentile_2, percentile_98}}], "exact": bool, "factor": int}`; `statistics` ist genau das Objekt des Ergebnisdokuments eines Jobs (`properties.bands[].statistics`). `exact: false` heißt: gröber gelesen (Fenster über 4 Mi Pixel), die Werte können vom Ergebnis abweichen.
+- Ablehnungen: `413` (Body, Positionen, mehr als 16 Dateien), `415`, `422` (Auftrag ungültig, ohne `aoi`, Datensatz im Pfad ≠ Auftrag, `grid`-Schritt, AOI außerhalb), `403` (Lizenz), `502`–`504` (Quelle). Ein abgelehnter Schritt nennt ab zwei Schritten den Platz („step 1: …“).
+- Heute misst die Vorschau `GET …/items/{erste Szene}/statistics?op=…` über die ganze erste Szene (`processingPreview.ts::previewSpec` → `measure`, `processingStore.ts::measureFor`, `MEASURE_WAIT_MS` 5 s).
+
+### 15.2 Umfang
+
+1. **Messung über die AOI:** Bei „AOI only“ und vollständigem Auftrag des ersten Jobs (`orderView(...).parts[0].order` ist nicht `null`) misst die Vorschau mit `POST …/statistics` und diesem Auftrag. Bei „One job per pass“ oder „per scene“ gilt `parts[0]` (Frage 5).
+2. **Schlüssel der Messung:** der kanonische Auftragstext (`canonicalJson`), nur im Speicher (die bestehende Abbildung der Messungen); er steht in keiner URL, keinem `localStorage`, keinem Log und keiner Fehlermeldung.
+3. **Farbskala:** aus `bands[].statistics` mit derselben Abbildung, die ein Ergebnis-Layer nimmt (`resultLayer.ts`/`render.ts::scaleOf`), damit Vorschau und Ergebnis dieselbe Regel haben; die Einheit aus `bands[].unit` (`shownUnit`).
+4. **Rückfall (KE1):** ohne vollständigen Auftrag, bei einer abgeschnittenen Kette (die Vorschau zeigt nur die ersten Schritte), bei `413`, `5xx` oder einem Netzfehler misst die Vorschau wie heute (GET, erste Szene). Tooltip der Vorschau dann: „Range measured over the first whole scene“. Eine Ablehnung eines Schritts (`422` mit Platz) zeigt das Panel wie bisher.
+5. **Gröbere Messung:** bei `exact: false` im Tooltip der Vorschau „Range measured on a coarser read; the result may differ“. Kein Text im Panel (UI-01 §4).
+6. **„Whole scene“** bleibt unverändert (Frage 6). `MEASURE_WAIT_MS` und das spätere Übernehmen bleiben (KE8).
+7. Frage 8 (§16) nur, wenn sie bis dahin für NM4-19b entschieden ist.
+
+### 15.3 Abnahme
+
+- `vitest`: „AOI only“ mit vollständigem Auftrag → genau ein POST mit dem Auftrag von `parts[0]`, keine GET-Messung; die Farbskala aus der Antwort ist dieselbe wie die eines Ergebnis-Layers mit denselben `statistics`. Keine AOI, keine Koordinate, kein Auftragstext in einer gebauten URL (Test über alle URLs der Vorschau). Rückfälle aus 15.2 Nr. 4 mit dem Tooltip; `exact: false` mit dem Tooltip; „Whole scene“ unverändert; eine ältere Messung wird verworfen.
+- Gegenprobe: Die neuen Tests scheitern gegen den Code vor der Änderung.
+- Prüfung im echten Browser (Chromium/Playwright der Sitzung) mit nachgestellten Antworten, hell und dunkel, schmales Fenster; im PR beschrieben.
+- `npm run lint`, `npx tsc -b --pretty false`, `npm test` grün; Prüfanleitung für Otto im PR; Log-Zeile mit PR-Nummer; `docs/plans/nach-m4-backlog.md` nicht ändern; vor „fertig“ `main` holen.
+
+## 16. Frage 8 — Index-Regel bei gröberer Messung
+
+### 16.1 Befund [M, P]
+
+- `render.ts::scaleOf` (eine Regel für Vorschau und Ergebnis, M4-32b): Kommen die Werte aus einem Band-math-Schritt und liegen **Minimum und Maximum** aller Bänder in −1…1, gilt −1…1 in `rdylgn` (Index); sonst 2–98 % in `viridis`.
+- Gemessen (§7.6): NDVI über eine echte Szene hat exakt Minimum −0,97 und Maximum 1,48 (negative Reflexion nach `offset` −0,1 an wenigen Pixeln), gröber gelesen in jedem Fall unter 0,95. Exakt (also im Job): kein Index, `viridis` 0,0016…0,914. Grob: Index, `rdylgn` −1…1.
+- Die neue Route ist bis 4 Mi Pixel exakt; dort tritt der Unterschied nicht auf. Er bleibt über der Grenze und bei der heutigen Messung (GET, „Whole scene“ und Rückfall).
+- Die Regel liegt nur im Frontend; das Backend liefert in jedem Fall Minimum, Maximum und die Perzentile. **Das Backend dieses PRs hängt von Frage 8 nicht ab.**
+
+### 16.2 Optionen
+
+| | Regel | Folge |
+|---|---|---|
+| **R1** | Index, wenn Band math und **p2 ≥ −1 und p98 ≤ 1** (Perzentile statt Minimum/Maximum), für Vorschau und Ergebnis | Einzelne Ausreißer schalten nicht mehr um; das NDVI oben ist dann überall ein Index. Perzentile liegen auch grob nah am Job (≤ 3 % der Spanne, §7.6); nur knapp an der Grenze kann es noch kippen. Ändert die Farbskala bestehender Ergebnis-Layer mit Ausreißern (von `viridis` zu −1…1). |
+| R2 | Index nur aus einer exakten Messung; grob immer 2–98 % | Grob nie „Index“; der Job kann aber „Index“ wählen, dann weicht die Vorschau in die andere Richtung ab. |
+| R3 | bei grober Messung die Regel aussetzen und −1…1 nehmen, wenn Band math | Grob immer „Index“, auch wo der Job `viridis` zeigt. |
+| R4 | Index aus dem Rezept (Index-Knopf, NM4-14, oder Form des Ausdrucks) | Ein Ausdruck sagt nicht verlässlich, ob seine Werte in −1…1 liegen (das NDVI oben tut es nicht); braucht ein neues Feld im Rezept. |
+| R5 | bleibt wie heute | Über der Grenze kann die Vorschau eine ganz andere Farbskala zeigen. |
+
+**Empfehlung R1.** Eine Regel, die an den Werten hängt, die auch grob stabil sind, und für Vorschau und Ergebnis dieselbe bleibt (M4-32b). Dass ein NDVI mit wenigen Pixeln über 1 als Index gezeigt wird, ist eher richtig als falsch.
+
+**Wo:** Die Regel ist eine Zeile in `render.ts::scaleOf` mit Tests, nur Frontend. **Empfehlung:** in NM4-19b (dort wird `scaleOf` für die Vorschau ohnehin angefasst), mit Gegenprobe für das NDVI-Beispiel und einem Test, dass ein Ergebnis-Layer dieselbe Regel nimmt. Alternative: eigene Stufe-A-Aufgabe, unabhängig von NM4-19b.
+
+**Frage 8**
+1. R1, in NM4-19b. **(Empfehlung)**
+2. R1 als eigene Aufgabe.
+3. R2.
+4. R3.
+5. R5, bleibt.
