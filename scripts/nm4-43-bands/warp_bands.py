@@ -78,13 +78,17 @@ def _peak_mb() -> float:
         return next(int(line.split()[1]) for line in status if line.startswith("VmHWM:")) / 1024
 
 
+def _make(path: Path, size: int, count: int, interleave: str | None) -> None:
+    """Child process: only writes the pass file, so that its own peak is not the one measured."""
+    _write(path, numpy.random.default_rng(1).random((size, size)) * 0.5, count, interleave)
+
+
 def _measure_one(size: int, count: int, op_version: int, interleave: str | None) -> None:
     """Child process: one warp pass over ``count`` bands, printed as JSON."""
-    base = numpy.random.default_rng(1).random((size, size)) * 0.5
     with tempfile.TemporaryDirectory() as directory, worker_environment():
         path = Path(directory) / f"bands-{count}.tif"
-        _write(path, base, count, interleave)
-        del base
+        command = [sys.executable, __file__, "--make", str(path), "--size", str(size), "--counts", str(count)]
+        subprocess.run([*command, *(["--interleave", interleave] if interleave else [])], check=True)
         before = _peak_mb()
         started = time.perf_counter()
         _warp(path, size, count, OPERATORS[op_version], keep=False)
@@ -102,8 +106,11 @@ def main() -> None:
     parser.add_argument("--measure", action="store_true")
     parser.add_argument("--interleave", choices=["band", "pixel"], help="for --measure: the file's INTERLEAVE")
     parser.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--make", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     counts = [int(count) for count in args.counts.split(",")]
+    if args.make:
+        return _make(args.make, args.size, counts[0], args.interleave)
     if args.child:
         return _measure_one(args.size, counts[0], args.op_version, args.interleave)
     if args.measure:
