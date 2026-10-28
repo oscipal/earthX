@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { GRATICULE_SOURCE, graticuleData, graticuleLayers, NO_OVERLAYS, OVERLAY_IDS, OVERLAY_PREFIX, OVERLAYS } from './overlays';
 
 describe('the overlay catalogue', () => {
-  it('offers labels and a graticule, both off to begin with', () => {
-    expect(OVERLAY_IDS).toEqual(['labels', 'graticule']);
-    expect(NO_OVERLAYS).toEqual({ labels: false, graticule: false });
+  it('offers labels, a graticule and the relief, all off to begin with', () => {
+    expect(OVERLAY_IDS).toEqual(['labels', 'graticule', 'relief']);
+    expect(NO_OVERLAYS).toEqual({ labels: false, graticule: false, relief: false });
     expect(Object.keys(OVERLAYS)).toEqual([...OVERLAY_IDS]);
   });
 
@@ -16,6 +16,8 @@ describe('the overlay catalogue', () => {
     expect(OVERLAYS.labels.tip).toContain('openfreemap.org');
     expect(OVERLAYS.graticule.name).toBe('Graticule');
     expect(OVERLAYS.graticule.tip).toContain('in the browser');
+    expect(OVERLAYS.relief.name).toBe('Relief');
+    expect(OVERLAYS.relief.tip).toContain('amazonaws.com');
   });
 });
 

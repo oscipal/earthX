@@ -13,9 +13,9 @@ import { appLayers, publishedStyle } from './fixtures/publishedStyle';
 import { applyBasemap, baseMapStyle, composeStyle, createBasemapSwitcher, forgetPublishedStyles } from './mapStyles';
 import { NO_OVERLAYS, OVERLAY_PREFIX, type Overlays } from './overlays';
 
-const LABELS: Overlays = { labels: true, graticule: false };
-const GRATICULE: Overlays = { labels: false, graticule: true };
-const BOTH: Overlays = { labels: true, graticule: true };
+const LABELS: Overlays = { ...NO_OVERLAYS, labels: true };
+const GRATICULE: Overlays = { ...NO_OVERLAYS, graticule: true };
+const BOTH: Overlays = { ...NO_OVERLAYS, labels: true, graticule: true };
 
 const idsOf = (style: StyleSpecification): string[] => style.layers.map((layer) => layer.id);
 const overlayIds = (style: StyleSpecification): string[] => idsOf(style).filter((id) => id.startsWith(OVERLAY_PREFIX));
@@ -112,7 +112,7 @@ describe('Labels', () => {
     }
   });
 
-  it.each(['satellite', 'outlines'] as const)('%s has none of its own: it takes the names of Grey when Labels is on, with their glyphs and sprite', (id) => {
+  it.each(['satellite', 'outlines', 'relief'] as const)('%s has none of its own: it takes the names of Grey when Labels is on, with their glyphs and sprite', (id) => {
     const style = running(id, LABELS);
     // Over Outlines the names use its own tiles; over the satellite imagery they bring a source of their own.
     expect(layer(style, 'ov-labels-place-label')).toMatchObject({ type: 'symbol', source: id === 'outlines' ? 'bm-openmaptiles' : 'bm-labels-openmaptiles' });
@@ -121,12 +121,12 @@ describe('Labels', () => {
     expect(layer(style, 'ov-labels-place-label')?.layout?.visibility).toBeUndefined();
   });
 
-  it.each(['satellite', 'outlines'] as const)('%s asks nobody for names and loads no vector tiles while Labels is off', (id) => {
+  it.each(['satellite', 'outlines', 'relief'] as const)('%s asks nobody for names and loads no vector tiles while Labels is off', (id) => {
     const style = running(id);
     expect(overlayIds(style)).toEqual([]);
     expect(Object.keys(style.sources).filter((key) => key.includes('labels'))).toEqual([]);
     expect(style.glyphs).toBeUndefined();
-    if (id === 'satellite') expect(Object.values(style.sources).some((source) => source.type === 'vector')).toBe(false);
+    if (id !== 'outlines') expect(Object.values(style.sources).some((source) => source.type === 'vector')).toBe(false);
   });
 
   it('use the tiles Outlines already has, not a second copy of them', () => {
