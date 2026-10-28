@@ -1,6 +1,6 @@
 # ADR 0020 — Ausgabe-Bänder statt Bandauswahl
 
-- **Status:** **Entwurf**, wartet auf Ottos Antworten zu §15 (F1–F12).
+- **Status:** **Entwurf**, wartet auf Ottos Antworten zu §15 (F1–F13).
 - **Datum:** 2026-10-28
 - **Aufgabe:** NM4-43 laut `docs/plans/querschnitt/nm4-43-ausgabe-baender.md`
   (Backlog-Punkt 43 in `docs/plans/nach-m4-backlog.md`). Nimmt NM4-10 in sich
@@ -85,7 +85,8 @@ Items deshalb aus einer Datei, die `curl` geholt hat, und baut die Rezepte über
 2. **Gelesen wird nur, was gebraucht wird.** Der Planer streicht jedes Band,
    das weder in der Ausgabe steht noch von einem späteren Schritt gebraucht
    wird. Die Werte der übrigen Bänder ändern sich dadurch nicht, weil jeder
-   Schritt je Band bzw. je Pixel rechnet **[A]**. Die Eingabe-Assets leitet
+   Schritt je Band bzw. je Pixel rechnet **[A]**; nur `reproject` hängt heute
+   an der Zahl der Bänder (Nebenbefund, §3.4, F13). Die Eingabe-Assets leitet
    `api` daraus ab; der Auftrag nennt sie nicht mehr (F2).
 3. **Namen (F3):** Vorgabe `Band_Math_<n>` mit der Stelle des Schritts,
    umbenennbar (`NDVI`). Erlaubt sind `^[A-Za-z][A-Za-z0-9_]{0,31}$`, kein
@@ -100,12 +101,14 @@ Items deshalb aus einer Datei, die `curl` geholt hat, und baut die Rezepte über
    davon. Vorschlag: Die Grenze von 16 Assets entfällt; neu ist eine
    **Speicherschätzung je Lauf** gegen einen festen Wert, gemessen statt
    gezählt. Andere Plattformen begrenzen ebenso nach Datenmenge, Kosten und
-   Zeit, keine nach Bandzahl als Hauptregel (§3.4).
-5. **Nebenbefund (F11):** Die Schätzung bemisst das Ausgaberaster nach der
+   Zeit, keine nach Bandzahl als Hauptregel (§3.5).
+5. **Nebenbefunde (F11, F13):** Die Schätzung bemisst das Ausgaberaster nach der
    Pixelgröße des **ersten** Assets, der Kern rechnet auf dem **feinsten**.
    Steht ein 60-m-Band vorn, liegen Ausgabegröße, die 5-GB-Prüfung und der
    Plattenbedarf um bis zu den Faktor 36 zu niedrig (§3.3). Das gilt schon
-   heute und ist unabhängig von dieser Entscheidung zu beheben.
+   heute und ist unabhängig von dieser Entscheidung zu beheben. Außerdem gibt
+   `reproject` für dasselbe Band andere Werte, sobald die Zwischendatei 4 statt
+   3 Bänder hat (GDAL teilt den Warp nach Speicher, §3.4).
 6. **Ausgabedatei (F6):** eine COG, ein Datentyp für alle Bänder nach den
    heutigen Regeln (meist `float32`, weil der Kern physikalische Werte liefert),
    mit Banddeskription, Einheit und nodata je Band.
@@ -238,7 +241,30 @@ Schätzung.
 - Behebung: das Raster aus dem kleinsten `gsd` aller Assets bemessen. Das ist
   eine kleine Änderung mit Test, unabhängig von diesem ADR (F11).
 
-### 3.4 Wie andere Plattformen begrenzen — [P] [S] [F]
+### 3.4 Nebenbefund: `reproject` hängt an der Zahl der Bänder — [M]
+
+Der Durchgang von `reproject` liest je Block aus einem `WarpedVRT` über **alle**
+Bänder der Zwischendatei (`processing/operators/reproject.py:_run`). GDAL teilt
+den Warp nach `warp_mem_limit` (64 MB) auf, und diese Teilung hängt an der Zahl
+der Bänder. Gemessen mit `scripts/nm4-43-bands/warp_bands.py` (synthetisch,
+2048², `float64` wie die Zwischendatei, `bilinear` nach EPSG:3035): Band 1 ist
+bei 1, 2 und 3 Bändern bitgleich; ab 4 Bändern weichen 96 % seiner Pixel ab
+(4 136 158 von 4 303 544, größte Abweichung 0,0077 bei Werten bis 0,5; zwölf
+Randpixel wechseln zwischen gültig und NaN). 4, 18 und 34 Bänder ergeben
+untereinander dieselben Werte.
+
+- **Heute schon:** Dasselbe Band hat nach `reproject` andere Werte, je nachdem,
+  ob der Auftrag 3 oder 4 Bänder trägt. Bitgleichheit Job ↔ Runner gilt weiter
+  (dasselbe Rezept, dieselben Bänder); die Kachel rechnet `reproject` nicht.
+- **Für dieses ADR:** Das Streichen ungenutzter Bänder (§4) ändert die Zahl der
+  Bänder vor `reproject` und damit dessen Werte. Es bleibt deterministisch, weil
+  das Rezept die Bänder festlegt, aber der Wert eines Bandes hinge an seinen
+  Nachbarn in der Ausgabe.
+- **Abhilfe [A]:** `reproject` Version 4 warpt jedes Band für sich (je Band ein
+  Warp mit festem Plan). Dann hängt der Wert eines Bandes nur noch an ihm selbst.
+  Kosten und Bitgleichheit misst die Umsetzung (F13).
+
+### 3.5 Wie andere Plattformen begrenzen — [P] [S] [F]
 
 | Plattform | Art der Grenze | Wert | Beleg |
 |---|---|---|---|
@@ -297,10 +323,12 @@ Sentinel Hub und Earth Engine einen gemeinsamen Typ je Ausgabe.
 Ein Band bleibt, solange es in `output.bands` steht oder ein späterer Schritt es
 braucht: ein Ausdruck, die Schicht von `mask`, ein Band in `normalize.bands`.
 Alles andere fällt nach seiner letzten Nutzung weg, und was nie gebraucht wird,
-wird nicht gelesen. Die Werte der übrigen Bänder ändern sich dadurch nicht:
-`band_math` und `normalize` rechnen je Band, `mask` je Pixel aus der Schicht,
-`reproject` warpt jedes Band für sich mit demselben Plan **[A]**. Ein Test
-vergleicht je Operator „mit Streichen“ gegen „ohne Streichen“ bitgleich.
+wird nicht gelesen. Die Werte der übrigen Bänder ändern sich dadurch nicht,
+weil `band_math` und `normalize` je Band und `mask` je Pixel aus der Schicht
+rechnen **[A]**. **Ausnahme `reproject`:** Seine Werte hängen heute an der Zahl
+der Bänder (§3.4). Mit `reproject` Version 4, die jedes Band einzeln warpt,
+gilt die Regel auch dort (F13). Ein Test vergleicht je Operator „mit Streichen“
+gegen „ohne Streichen“ bitgleich.
 
 **Beispiel.** Ottos Fall: NDVI aus B04/B08, NDWI aus B03/B08, Ausgabe beide:
 
@@ -430,7 +458,7 @@ gibt es bei Sentinel-2 also nicht; „`uint8`-Klassen neben `float32`“ schon.
 | Größe | Klassenbänder doppelt bis vierfach roh; nach deflate ⟨SIZE⟩ | kleinste | kleinste |
 | Ergebnis-Layer, Kachel, Statistik, Runner | wie heute | zwei Dateien je Job, Route und Layer müssen wählen | viele Dateien, viele Routen |
 | GIS-Programme | ein Stapel | zwei Stapel | einzeln |
-| andere Plattformen | Sentinel Hub und Earth Engine: ein Typ je Ausgabe (§3.4) | Sentinel Hub: mehrere Ausgabeobjekte | — |
+| andere Plattformen | Sentinel Hub und Earth Engine: ein Typ je Ausgabe (§3.5) | Sentinel Hub: mehrere Ausgabeobjekte | — |
 
 **Empfehlung: D1.**
 
@@ -501,6 +529,7 @@ Vorschau und Ergebnis zugleich (§12).
 | `band_math` | `op_version` 2: Parameter `expression` und `name`, fügt hinzu. Version 1 wird nicht mehr gelistet |
 | `normalize` | `op_version` 2 mit `bands` (F4), in NM4-11 zusammen mit den Methoden |
 | `mask` | `op_version` 2: Die Schicht bleibt im Vorrat |
+| `reproject` | `op_version` 4: jedes Band ein eigener Warp (F13) |
 | Hash | ändert sich für jedes Rezept (neue Felder); einmal kein Cache-Treffer |
 | `earthx.__version__` | 0.4.3 → 0.5.0: `result.tif` trägt Banddeskriptionen und Einheiten, die Bytes ändern sich |
 | `adr/0014` | Nachtrag §15u: Bandvorrat, Streichen, `output.bands`, Namen, Speicherschätzung |
@@ -557,7 +586,7 @@ die Werte bitgleich mit dem alten Ergebnis.
 | Reihenfolge | Aufgabe | Stufe | Inhalt | Richtwert |
 |---|---|---|---|---|
 | 0 | **NM4-43-0** Schätzung auf feinstem Raster | A | §3.3; Test mit 60-m-Asset vorn | < 100 Zeilen |
-| 1 | **NM4-43a** Rezept und Kern | A | `recipe_version` 2, `band_math` v2, `mask` v2, Streichen im Planer, `output.bands`, Ableitung der Assets in `api`, Namen, Banddeskription und Einheit, Speicherschätzung (G2), `units` mit Bändern, Prozessbeschreibung, Runner, Nachträge `adr/0014` und `adr/0016`, `__version__` | etwa 400 Zeilen; sonst Speicherschätzung als eigener PR |
+| 1 | **NM4-43a** Rezept und Kern | A | `recipe_version` 2, `band_math` v2, `mask` v2, `reproject` v4 (F13), Streichen im Planer, `output.bands`, Ableitung der Assets in `api`, Namen, Banddeskription und Einheit, Speicherschätzung (G2), `units` mit Bändern, Prozessbeschreibung, Runner, Nachträge `adr/0014` und `adr/0016`, `__version__` | etwa 400 Zeilen; sonst Speicherschätzung als eigener PR |
 | 2 | **NM4-43b** Kachel | A | Parameter `band` für Kachel und Mosaik-Kachel, Streichen dort, Statistik je Band | < 250 Zeilen |
 | 3 | **NM4-43c** Frontend | A | Panel nach §14, Namen und Umbenennen, Ausgabe, Vorschau „Show“, Ergebnis-Layer je Band, Umdeutung von Version 1 | über 400 Zeilen; in zwei PRs: Auftrag und Panel, dann Vorschau und Layer |
 | danach | NM4-11, NM4-14, DS-06, NM4-20 | wie geplant | §12 | — |
@@ -687,6 +716,10 @@ jeweils Option 1.
 1. Bänder des Datensatzes oben (Info), Ergebnisse früherer Schritte als Chips am Schritt; das Panel kennt die Regel selbst, `api` prüft sie (§12) **(Empfehlung)**
 2. Alles oben in einer Liste, Ergebnisse dort ab ihrem Schritt
 3. Wie in NM4-10 geplant: Die Regel kommt aus dem Backend (eigene Route)
+
+**F13 — `reproject` und die Zahl der Bänder (§3.4)?**
+1. `reproject` Version 4 warpt jedes Band für sich; Kosten und Speicher misst NM4-43a, Version 3 wird danach nicht mehr gelistet **(Empfehlung)**
+2. So lassen; im Methodentext steht nichts dazu, das Streichen ändert dann die Werte nach `reproject`
 
 ---
 
