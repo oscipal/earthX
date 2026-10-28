@@ -173,6 +173,13 @@ class TestTwoResultsBesideTheData:
         )
         assert [entry["name"] for entry in result.properties["processing:expression"]] == ["NDVI", "NDWI"]
 
+    def test_a_step_nobody_needs_is_not_reported_in_the_lineage_the_expressions_or_the_methods(
+        self, tmp_path: Path
+    ) -> None:
+        result = _run(_recipe([NDVI, NDWI], ["NDVI"]), tmp_path)
+        assert result.properties["processing:lineage"] == "band math: NDVI = (nir - red) / (nir + red)"
+        assert result.properties["processing:expression"]["name"] == "NDVI"
+
 
 @pytest.mark.usefixtures("served")
 class TestDroppingWhatIsNotNeededChangesNoValue:

@@ -80,6 +80,16 @@ class TestTheParagraph:
         text = methods_text(document(recipes.recipe_data(steps=steps)), operators=OPERATORS)
         assert text.index("multiplied by 2.0") < text.index("coarsened by 2")
 
+    def test_a_step_whose_result_the_output_does_not_keep_is_not_in_the_text(self) -> None:
+        steps = [
+            {"op": "band_math", "op_version": 2, "params": {"expression": "nir - red", "name": "Kept"}},
+            {"op": "band_math", "op_version": 2, "params": {"expression": "nir + red", "name": "Unused"}},
+        ]
+        data = recipes.recipe_data(steps=steps)
+        data["output"]["bands"] = ["Kept"]
+        text = methods_text(document(data), operators=REGISTRY)
+        assert "nir - red" in text and "nir + red" not in text
+
     def test_scenes_of_one_overpass_are_said_to_be_mosaicked(self) -> None:
         data = band_math()
         data["inputs"][0]["groups"] = [["ITEM_A", "ITEM_B"]]

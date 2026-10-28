@@ -110,6 +110,27 @@ class TestDroppingWhatNobodyNeeds:
         assert "normalize" in _ops(chain)
         assert [(band.name, band.data_type) for band in meta.bands] == [("red", "float32"), ("nir", "float32")]
 
+    def test_normalize_converts_only_the_bands_of_its_list_that_the_output_keeps(self) -> None:
+        normalize = _step("normalize", 2, bands=["red", "nir"], **NORMALIZE)
+        chain, trace, _ = _plan([normalize], ["red"])
+        step = next(step for step in chain if step.step.op == "normalize")
+        assert list(step.params.bands) == ["red"]
+        assert next(before for op, before, _ in trace if op == "normalize") == ["red"]
+
+    def test_normalize_of_a_band_the_planner_dropped_does_not_name_it_to_the_stock(self) -> None:
+        # A band that only the list of normalize names (here the layer of no step) is not read at all.
+        normalize = _step("normalize", 2, bands=["red", "scl"], **NORMALIZE)
+        assert needed_source_bands(plan_steps([normalize], REGISTRY), ["red"]) == {"red"}
+        chain, _, meta = _plan([normalize], ["red"], names=("red", "nir", "scl"))
+        assert [band.name for band in meta.bands] == ["red"]
+        assert "normalize" in _ops(chain)
+
+    def test_normalize_after_a_mask_keeps_working_when_the_layer_is_dropped(self) -> None:
+        normalize = _step("normalize", 2, bands=["red", "scl"], **NORMALIZE)
+        chain, _, meta = _plan([MASK, normalize], ["red"])
+        assert [band.name for band in meta.bands] == ["red"]
+        assert _ops(chain).count("normalize") == 1
+
     def test_the_layer_of_a_mask_is_dropped_after_the_mask_unless_the_output_names_it(self) -> None:
         _, _, meta = _plan([MASK], ["red", "nir"])
         assert [band.name for band in meta.bands] == ["red", "nir"]

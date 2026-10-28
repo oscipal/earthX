@@ -71,7 +71,7 @@ from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.export import Attachments, ExportResult, check_export, export
 from earthx.processing.mosaic import open_mosaic
 from earthx.processing.operators import REGISTRY, BandMeta, OperatorRegistry, RasterMeta
-from earthx.processing.plan import PlannedStep, Segment, crop_window, plan_steps, segments, stock_steps
+from earthx.processing.plan import PlannedStep, Segment, crop_window, live_steps, plan_steps, segments, stock_steps
 from earthx.processing.recipe import AppliedScaling, CropOutput, RasterOutput, Recipe, engine_versions
 from earthx.processing.source import Source, common_grid, merge_images
 from earthx.processing.statistics import BandStatistics, gdal_tags, summarize
@@ -573,7 +573,7 @@ def run(
         path=workfile_path(workdir, RESULT_NAME),
         mask_path=workfile_path(workdir, MASK_NAME),
         meta=final,
-        properties=_properties(final, planned, engine, _scenes(recipe), state.statistics),
+        properties=_properties(final, live_steps(planned, output.bands), engine, _scenes(recipe), state.statistics),
         scaling=scaling,
         blocks=state.done,
         valid_pixels=state.valid_pixels,

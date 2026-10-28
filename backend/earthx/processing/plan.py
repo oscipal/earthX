@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 import numpy
@@ -65,6 +66,7 @@ __all__ = [
     "disk_needed",
     "estimate",
     "export_outputs",
+    "live_steps",
     "needed_source_bands",
     "plan_steps",
     "segments",
@@ -236,10 +238,20 @@ def stock_steps(meta: RasterMeta, planned: Sequence[PlannedStep], output: Sequen
     for index, step in enumerate(planned):
         if dead[index]:
             continue
+        if step.operator.restrict is not None:
+            # The bands of the step that the planner dropped are not converted; the others are, as before.
+            step = replace(step, params=step.operator.restrict(step.params, needed[index + 1]))
         steps.append(step)
         current = step.operator.transform(current, step.params)
         narrow(needed[index + 1])
     return steps
+
+
+def live_steps(planned: Sequence[PlannedStep], output: Sequence[str]) -> list[PlannedStep]:
+    """The steps of a recipe that run: those whose result the output keeps. What a result reports (lineage,
+    expressions, methods text) is these steps and no other."""
+    _, dead = _trace(planned, output)
+    return [step for step, is_dead in zip(planned, dead, strict=True) if not is_dead]
 
 
 def split_tiers(steps: Sequence[Step], operators: OperatorRegistry) -> tuple[list[Step], list[Step]]:
@@ -390,12 +402,26 @@ def _asset_entries(recipe: Recipe) -> list[ResolvedInput]:
     return entries
 
 
-def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta | None:
+def _guessed_names(asset: str, wanted: frozenset[str]) -> list[str]:
+    """The bands of an asset whose names are only in the file, as far as the recipe asks for them.
+
+    A file of one band names it after the asset, one of several ``<asset>_1`` to ``<asset>_n``
+    (:func:`~earthx.processing.source.expected_band_names`): ``n`` is at least the highest index the recipe uses.
+    """
+    pattern = re.compile(rf"{re.escape(asset)}_([0-9]+)")
+    indices = [int(match.group(1)) for name in wanted if (match := pattern.fullmatch(name))]
+    return [f"{asset}_{index}" for index in range(1, max(indices) + 1)] if indices else [asset]
+
+
+def _input_meta(
+    recipe: Recipe, *, names_known: bool, sized: bool, wanted: frozenset[str] = frozenset()
+) -> RasterMeta | None:
     """The raster the first pass would read, as far as the recipe says (no read).
 
     The bands of every input asset, in order, named as the core names them. Where an
     asset's names are only in the file, ``names_known`` decides: ``False`` falls back to
-    the asset key (an estimate does not care), ``True`` gives up and returns ``None``
+    the asset key, or ``<asset>_<n>`` for the numbered bands ``wanted`` names (an estimate
+    does not care how many there are), ``True`` gives up and returns ``None``
     (a check against the names would reject what the file may well offer). CRS and pixel
     size are those of the asset with the finest ``gsd`` (:func:`_finest`), the grid the core
     reads all assets onto (adr/0020 §3.3). With ``sized`` the raster is the AOI's box in that CRS
@@ -410,7 +436,7 @@ def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta
         if names is None:
             if names_known:
                 return None
-            names = [entry.asset.asset]
+            names = _guessed_names(entry.asset.asset, wanted)
         types = [band.data_type for band in entry.bands] if len(entry.bands) == len(names) else [None] * len(names)
         units = units_of(entry, len(names))
         bands.extend(
@@ -477,9 +503,11 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         rows, columns = estimate_output_dims(aoi, entry.gsd)
         input_pixels += rows * columns
         input_bytes += rows * columns * _band_bytes(entry.bands)
-    meta = _input_meta(recipe, names_known=False, sized=True)
+    planned_steps = plan_steps(recipe.steps, operators)
+    wanted = needed_source_bands(planned_steps, recipe.output.bands)
+    meta = _input_meta(recipe, names_known=False, sized=True, wanted=wanted)
     assert meta is not None  # a recipe has at least one resolved input
-    steps = stock_steps(meta, plan_steps(recipe.steps, operators), recipe.output.bands)
+    steps = stock_steps(meta, planned_steps, recipe.output.bands)
     planned = [step for step in steps if step.operator is not SELECT_BANDS]
     for step in steps:
         meta = step.operator.transform(meta, step.params)

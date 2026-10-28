@@ -119,6 +119,14 @@ class TestEstimate:
         assert cost.seconds >= 2 * SECONDS_PER_ASSET
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.0)
 
+    def test_a_numbered_band_of_an_asset_the_item_left_undescribed_is_estimated(self) -> None:
+        """The file names the bands ``red_1``, ``red_2``: the estimate cannot know how many, but the recipe asks for one."""
+        data = recipe_data(steps=[])
+        data["inputs"][0]["resolved"][0] = {**resolved("ITEM_A", "red", scale=None, offset=None), "bands": [], "unit": "1"}
+        data["output"]["bands"] = ["red_2", "nir"]
+        cost = estimate(recipe_of_data(data, OPERATORS), OPERATORS)
+        assert cost.output_bytes == cost.output_pixels * 4 * 2
+
     def test_a_grid_step_changes_the_output_size_and_its_factor_counts(self) -> None:
         steps = [
             {"op": "scale", "op_version": 1, "params": {"factor": 2.0}},

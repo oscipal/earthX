@@ -167,6 +167,9 @@ class Operator:
     dataset_check: Callable[[DatasetConfig, BaseModel], list[str]] = field(default=_no_dataset_reasons)
     #: Which bands of the stock the step needs and changes (:class:`BandUse`), for the planner (adr/0020 §4).
     bands_used: Callable[[BaseModel], BandUse] = field(default=_keeps_every_band)
+    #: The same step for a stock that the planner narrowed: ``restrict(params, kept)`` keeps of the bands the step changes
+    #: only those in ``kept`` (``normalize``). ``None`` for a step that names no bands.
+    restrict: Callable[[BaseModel, frozenset[str]], BaseModel] | None = None
     #: Whether the step works on the stock of named bands (recipe version 2). ``False`` is a step of recipe
     #: version 1, which replaces or removes bands: it stays for the tile and for old recipes, which are
     #: rewritten before the core sees them (:mod:`earthx.processing.upgrade`), and no job runs it.

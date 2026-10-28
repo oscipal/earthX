@@ -2,7 +2,8 @@
 
 The hashes are those of the core before the stock of named bands (``main`` at the merge of NM4-43b), run on the very
 recipes of :mod:`version_1_cases`; none of these chains has a ``reproject``, so the values are the same to the last
-bit. The core writes the bands of ``output.bands`` in that order: the layer of a mask is not among them, as it was not
+bit. ``normalize-then-mask`` is the chain in which the upgrade lists the layer of the mask in ``normalize.bands`` and
+the planner then drops it. The core writes the bands of ``output.bands`` in that order: the layer of a mask is not among them, as it was not
 in version 1.
 """
 
@@ -59,6 +60,24 @@ RECORDED = {
         "dcdecadf40adc3952ad037a19a157c68f5ce29bb2ba909a8e11d8dd8c2785d5b",
         3,
         ["red", "nir", "scl"],
+    ),
+    "ndvi-then-normalize": (
+        "f852e04ad4b650da066438743326b488669df72e2f798b15ed7756645938bd1d",
+        "b64e6bac5dd7881e6c869496c65a1e81fbe2544491fe4d5ee27aaedbc9748b5d",
+        1,
+        ["band_math"],
+    ),
+    "normalize-then-mask": (
+        "4fa0216ed340dfc31c3a35c400049ecb46969c78bb64ace737aa191bbd95ae4f",
+        "0bf2be63f5e2d328e79b55b3c40390d6d07f1b63f73f342be59cd411334efa01",
+        2,
+        ["red", "nir"],
+    ),
+    "mask-ndvi-normalize": (
+        "afedb2e7f36344e04fc8a8219f764b7409e257253d952ebe81974d35e63e77ba",
+        "a17e00f21a2c734e56c7153471f866772771875ab178b6613b0f34e9b575a7b3",
+        1,
+        ["band_math"],
     ),
 }
 

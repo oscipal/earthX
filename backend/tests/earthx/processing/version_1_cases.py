@@ -22,6 +22,11 @@ NORMALIZE = {
     "op_version": 1,
     "params": {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True},
 }
+NDVI_RANGE = {
+    "op": "normalize",
+    "op_version": 1,
+    "params": {"in_min": -1.0, "in_max": 1.0, "out_min": 0.0, "out_max": 1000.0, "clip": True},
+}
 TWICE = {"op": "band_math", "op_version": 1, "params": {"expression": "band_math * 2 + 1"}}
 
 #: Name → (assets of the order, steps).
@@ -32,6 +37,9 @@ CASES: dict[str, tuple[tuple[str, ...], list[dict[str, Any]]]] = {
     "ndvi-alone": (("red", "nir"), [NDVI]),
     "mask-alone": (("red", "nir", "scl"), [MASK]),
     "no-step": (("red", "nir", "scl"), []),
+    "ndvi-then-normalize": (("red", "nir"), [NDVI, NDVI_RANGE]),
+    "normalize-then-mask": (("red", "nir", "scl"), [NORMALIZE, MASK]),
+    "mask-ndvi-normalize": (("red", "nir", "scl"), [MASK, NDVI, NDVI_RANGE]),
 }
 
 

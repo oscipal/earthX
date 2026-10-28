@@ -141,6 +141,12 @@ def _transform_v2(meta: RasterMeta, params: BaseModel) -> RasterMeta:
     return RasterMeta(meta.crs, meta.transform, meta.width, meta.height, bands, meta.resampled)
 
 
+def _restrict_v2(params: BaseModel, kept: frozenset[str]) -> BaseModel:
+    """The step for a stock without the bands nobody needs: it converts the ones of its list that are still there."""
+    assert isinstance(params, NormalizeParamsV2)
+    return params.model_copy(update={"bands": [name for name in params.bands if name in kept]})
+
+
 def _bands_used_v2(params: BaseModel) -> BandUse:
     assert isinstance(params, NormalizeParamsV2)
     return BandUse(acts_on=frozenset(params.bands))
@@ -216,6 +222,7 @@ NORMALIZE_V2 = dataclasses.replace(
     lineage=_lineage_v2,
     method=_method_v2,
     bands_used=_bands_used_v2,
+    restrict=_restrict_v2,
     stock=True,
     listed=False,
 )

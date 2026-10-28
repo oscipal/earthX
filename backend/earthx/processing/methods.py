@@ -30,9 +30,11 @@ from earthx.catalog.registry import Attributable, doi_name
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY
 from earthx.processing.operators.registry import OperatorRegistry
+from earthx.processing.plan import live_steps, plan_steps
 from earthx.processing.recipe import (
     CropOutput,
     Provenance,
+    RasterOutput,
     Recipe,
     document_bytes,
     loads_i_json,
@@ -176,13 +178,10 @@ def _scaling_sentences(provenance: Provenance) -> list[str]:
 
 
 def _step_sentences(recipe: Recipe, operators: OperatorRegistry) -> list[str]:
-    sentences = []
-    for step in recipe.steps:
-        operator = operators.operator(step.op, step.op_version)
-        sentences.append(
-            operator.method(operator.params.model_validate_json(json.dumps(step.params, allow_nan=False), strict=True))
-        )
-    return sentences
+    planned = plan_steps(recipe.steps, operators)
+    if isinstance(recipe.output, RasterOutput):
+        planned = live_steps(planned, recipe.output.bands)
+    return [step.operator.method(step.params) for step in planned]
 
 
 def _output_sentence(recipe: Recipe) -> str:
