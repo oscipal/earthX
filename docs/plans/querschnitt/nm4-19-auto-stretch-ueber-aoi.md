@@ -395,52 +395,26 @@ Option 1: Index-Regel nach Perzentilen (Band math und p2 ≥ −1 und p98 ≤ 1)
 
 ### 17.1 Prüfanleitung für Otto (PowerShell 5.1)
 
-Gegen den Stack aus `docker compose`. Die AOI ist ein kleines Quadrat in der Mitte der ersten gefundenen Szene; sie steht nur in dieser Sitzung von PowerShell.
+Voraussetzung: `docker compose up -d --build`, das Netz erreicht Earth Search (kein VPN). Aus dem Wurzelverzeichnis des Repos:
 
 ```powershell
-docker compose up -d --build
-$api = 'http://localhost:8000'; $tiler = 'http://localhost:8001'
-
-# Eine Sentinel-2-Szene und ein Quadrat von 0,08 Grad in ihrer Mitte
-$search = @{ collections = @('sentinel-2-c1-l2a'); bbox = @(10.0, 47.0, 10.5, 47.5); limit = 1 } | ConvertTo-Json -Depth 5
-$scene = (Invoke-RestMethod -Method Post -Uri "${api}/stac/search" -ContentType application/json -Body $search).features[0]
-$x = ($scene.bbox[0] + $scene.bbox[2]) / 2; $y = ($scene.bbox[1] + $scene.bbox[3]) / 2; $h = 0.04
-$aoi = @{ type = 'Polygon'; coordinates = @(,@(@(($x-$h),($y-$h)), @(($x+$h),($y-$h)), @(($x+$h),($y+$h)), @(($x-$h),($y+$h)), @(($x-$h),($y-$h)))) }
-function New-Order($aoi) {
-    @{ recipe_version = 1
-       inputs = @(@{ name = 'input'; dataset = 'sentinel-2-c1-l2a'; groups = @(,@($scene.id)); assets = @('red', 'nir') })
-       aoi = $aoi
-       steps = @(@{ op = 'band_math'; op_version = 1; params = @{ expression = '(nir - red) / (nir + red)' } })
-       output = @{ kind = 'raster'; format = 'cog'; dtype = 'float32' } }
-}
-$order = New-Order $aoi | ConvertTo-Json -Depth 10 -Compress
-
-# 1) Die Messung über die AOI: exact = True, factor = 1; beim zweiten Mal schneller (Cache)
-$area = Invoke-RestMethod -Method Post -Uri "${tiler}/collections/sentinel-2-c1-l2a/statistics" -ContentType application/json -Body $order
-$area.exact; $area.factor; $area.bands[0].statistics | Format-List
-
-# 2) Derselbe Auftrag als Job: dieselben Zahlen, Feld für Feld (Ausgabe: True)
-$job = Invoke-RestMethod -Method Post -Uri "${api}/processing/jobs" -ContentType application/json -Body ("{""inputs"":{""recipe"":$order}}")
-do { Start-Sleep 5; $status = (Invoke-RestMethod "${api}/processing/jobs/$($job.jobID)").status } while ($status -in 'accepted', 'running')
-$results = Invoke-RestMethod "${api}/processing/jobs/$($job.jobID)/results"
-($results.result.properties.bands[0].statistics | ConvertTo-Json -Compress) -eq ($area.bands[0].statistics | ConvertTo-Json -Compress)
-
-# 3) Ein Quadrat von 0,3 Grad: über 2048² Pixel, also gröber gelesen (exact = False, factor >= 2)
-$h = 0.15; $big = @{ type = 'Polygon'; coordinates = @(,@(@(($x-$h),($y-$h)), @(($x+$h),($y-$h)), @(($x+$h),($y+$h)), @(($x-$h),($y+$h)), @(($x-$h),($y-$h)))) }
-$coarse = Invoke-RestMethod -Method Post -Uri "${tiler}/collections/sentinel-2-c1-l2a/statistics" -ContentType application/json -Body (New-Order $big | ConvertTo-Json -Depth 10 -Compress)
-$coarse.exact; $coarse.factor
-
-# 4) Ablehnungen: ohne AOI 422, als GET 405
-$whole = New-Order $null; $whole.Remove('aoi')
-try { Invoke-RestMethod -Method Post -Uri "${tiler}/collections/sentinel-2-c1-l2a/statistics" -ContentType application/json -Body ($whole | ConvertTo-Json -Depth 10) } catch { $_.Exception.Response.StatusCode.value__ }
-try { Invoke-RestMethod "${tiler}/collections/sentinel-2-c1-l2a/statistics" } catch { $_.Exception.Response.StatusCode.value__ }
-
-# 5) Keine AOI im Log: die Zeilen der Messung nennen Pfad, Zahlen und Dauer, keine Koordinate
-docker compose logs tiler | Select-String 'area statistics measured|/statistics' | Select-Object -Last 4
-docker compose logs tiler | Select-String ([string]::Format('{0:F4}', $x).Replace(',', '.'))   # keine Ausgabe
+.\scripts\checks\nm4-19-statistics.ps1
 ```
 
-Die Vorschau im Panel ändert sich mit diesem PR noch nicht; das kommt mit NM4-19b (§15).
+Sperrt die Ausführungsrichtlinie das Skript: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\checks\nm4-19-statistics.ps1`.
+
+Das Skript sucht selbst eine Sentinel-2-Szene (Sommer 2025, höchstens 10 % Wolken, um 7° O / 46° N), bildet zwei Quadrate (0,08° und 0,3°), baut den Auftrag (NDVI, `float32`) und prüft:
+
+1. Szene und Quadrate;
+2. Messung über das kleine Quadrat: `exact`, `factor` 1, gültige Pixel, zweite Messung gleich;
+3. derselbe Auftrag als Job (`POST /processing/processes/recipe/execution`, warten auf `successful`, höchstens 600 s): Statistik des Ergebnisses Feld für Feld gleich der Messung;
+4. großes Quadrat: `exact: false`, `factor` ≥ 2;
+5. ohne AOI `422`, GET `405`;
+6. `docker compose logs tiler`: keine Koordinate der Quadrate, die Zeile „area statistics measured“ und der Pfad der Route stehen darin.
+
+Je Schritt eine Zeile `PASS …` oder `FAIL … (erwartet …, bekommen …)`, am Ende `ALL PASS` oder die Zahl der Fehler (Exit-Code 0 bzw. 1). Das Skript gibt keine Item-ID, keine Koordinate, keine Job-ID und keinen Hash aus. Parameter: `-ApiUrl` (Vorgabe `http://localhost:8000`), `-TilerUrl` (`http://localhost:8001`), `-JobTimeoutSeconds` (600).
+
+In der Sitzung nicht gelaufen (kein `pwsh`, kein Stack mit Zugang zur Quelle); was ungeprüft ist, steht im PR.
 
 ### 17.2 Review vor dem PR (Subagent `reviewer`, 28.10.2026)
 
