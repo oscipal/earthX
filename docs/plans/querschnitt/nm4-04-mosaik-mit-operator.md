@@ -334,3 +334,10 @@ KE1–KE5 und KE-P angenommen. Dazu: Backlog nicht in dieser Aufgabe pflegen (da
 - **Gegenprobe:** Gegen `main` scheitern 16 der 28 neuen Fälle, darunter beide Bitgleichheitstests und „das Loch der Wolke bleibt“ (dort weist `main` `op` mit `400` ab). Die 12 übrigen sind Ablehnungen, die `main` aus anderem Grund ebenfalls mit `400` beantwortet; sie sichern das Verhalten.
 - Doku: `adr/0014` §15t, `adr/0006` Nachtrag NM4-04, Log-Zeilen.
 
+## 17. Umsetzung des Frontends (28.10.2026, NM4-04b)
+
+- `api.ts`: URL von Kachel und TileJSON des Mosaiks mit Schritten (`buildMosaicOperatorTileTemplate`, `buildMosaicOperatorTileJsonUrl`). `mosaic.ts`: `MIN_MOSAIC_SCENES`, `MAX_MOSAIC_OPERATOR_ASSETS`, `MAX_MOSAIC_REQUEST_BYTES` mit Verweis auf das Backend und `mosaicRequestBytes` (Länge wie `check_length`).
+- `processingPreview.ts`: `previewSpec` nimmt die Szenen je Job (`jobs`) und die Antworten der Probe (`answers`); `PreviewSpec` trägt `mosaics`, `perScene`, Szenen mit `below`. `probeMosaic` liest `earthx:order` oder fällt auf die Szenen zurück; `previewOverlays` legt Mosaik und Szenen darunter (`hideFrom`).
+- `processingStore.ts`: `settle` fragt zuerst die Mosaike (`chainRefusal`), danach wie bisher die erste Szene; bei einem abgelehnten Schritt wird das Mosaik der gekürzten Kette neu gefragt. `previewSettling` und `previewTilesLoading` tragen den Ladehinweis.
+- Ladehinweis (Otto, 28.10.: kalt 6,0 s, warm 0,16 s): `components/usePreviewLoading.ts` (erst nach 600 ms), Badge in `PreviewBadge` und in der Überschrift der Vorschau; `mapLayers.ts::watchPreviewLoading` beobachtet nur die Quellen der Vorschau.
+- Tests: `processingPreview.test.ts`, `mosaic.test.ts`, `mapLayers.test.ts`, `components/ProcessingPreview.test.tsx`. **Gegenprobe:** gegen `main` scheitern 64 Tests. Browser: `frontend/e2e/mosaic-preview.cjs`.
