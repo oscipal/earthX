@@ -2475,7 +2475,32 @@ maßgeblich ist dieser Nachtrag.
   3 Assets × ~1 s); Otto prüft es (Prüfanleitung im PR).
 - **Keine Statistik** über das Mosaik (F4); siehe `adr/0006`, Nachtrag NM4-04.
 
-## 15u. Nachtrag vom 2026-10-28: die Schätzung bemisst das Raster nach dem feinsten Asset (zu §5.5, §15i; NM4-43a)
+## 15u. Nachtrag vom 2026-10-28: die Statistik der AOI ohne Job (zu §5.6, §6.3, §15g, §15k; NM4-19)
+
+Otto hat den Plan von NM4-19 am 2026-10-28 freigegeben, F1–F7 je Option 1 bzw. F7 Option 3
+(`plans/querschnitt/nm4-19-auto-stretch-ueber-aoi.md` §14). §15k bleibt maßgeblich für das, was ein
+Job zählt; dieser Nachtrag sagt, wie dieselbe Zahl ohne Job entsteht.
+
+- **Ein Code:** `processing/core.py::area_statistics(recipe)` liest und zählt wie `run`, schreibt aber
+  nichts: dieselben Quellen und dasselbe Mosaik (`_open_sources`, §15g), dieselben Blöcke zu 1024²
+  (`_read_block`, jetzt auch von `_run_pass` benutzt), dieselben Kerne, dieselbe Umwandlung in den
+  Ausgabetyp (`_cast`), dieselbe Maske je Block (`_mask_block`, jetzt auch von `_write_mask` benutzt)
+  und dasselbe Zählen (`_written`, `_count`, jetzt mit `write_pass` geteilt).
+- **Gleichheit:** Hält das Fenster `bbox(AOI ∩ Raster)` höchstens `MAX_AREA_PIXELS` = 2048² Pixel, ist
+  die Antwort die `statistics` der Eigenschaften des Ergebnisses, Feld für Feld, auch `stddev` (gleiche
+  Folge der Blöcke). Belegt für eine Szene, Ganzzahl-Ausgabe mit nodata-Kollision, `mask → band_math`
+  und ein Mosaik (`processing/test_area_statistics.py`, `api/test_tiler_area_statistics.py`) und an
+  einer echten Sentinel-2-Szene (NDVI, 0,53 Mi Pixel: gleich).
+- **Darüber:** ein Raster `area_factor` mal gröber (ganze Zahl, höchstens wieder 2048² Pixel), vom Eck
+  des Fensters aus auf das Raster des Jobs gelegt; der Leser nimmt dort eine Übersicht. Die Antwort sagt
+  `exact: false`. Gemessen: 2–98 % bis 3 % der Spanne daneben; Minimum und Maximum glätten weg (Plan
+  §7.6, Frage 8).
+- **Nur `pixel`-Schritte:** ein `grid`-Schritt ändert das Raster, auf dem der Job zählt; `UnsupportedRecipe`.
+- **Mosaik auf gröberem Raster:** `MosaicSource._piece` beschneidet den Teil eines verzerrten Mitglieds
+  auf seinen `WarpedVRT`. Auf dem eigenen Raster des Mosaiks liegt jeder Teil schon darin; die Bytes
+  eines Jobs ändern sich nicht, die Version bleibt.
+
+## 15v. Nachtrag vom 2026-10-28: die Schätzung bemisst das Raster nach dem feinsten Asset (zu §5.5, §15i; NM4-43a)
 
 `adr/0020` §3.3 hat gemessen, dass die Schätzung vor dem Lauf das Ausgaberaster nach dem **ersten** Asset des Auftrags bemaß,
 der Kern aber alle Assets auf das **feinste** Raster liest (`processing/source.py: common_grid`).
