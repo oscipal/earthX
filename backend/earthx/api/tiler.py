@@ -97,6 +97,7 @@ from earthx.adapters import (
     check_adapter_specs,
 )
 from earthx.api import mosaic_tiles
+from earthx.api.area_statistics import AREA_STATISTICS_ROUTE, area_statistics_endpoint
 from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.api.item_source import (
@@ -1377,6 +1378,14 @@ def build_app(
         download_crop,
         methods=["POST"],
         tags=["Download"],
+    )
+    # The statistics of an order's area, as its result would carry them (NM4-19): the AOI in the body only.
+    app.add_api_route(
+        AREA_STATISTICS_ROUTE,
+        area_statistics_endpoint(statistics_cache),
+        methods=["POST"],
+        tags=["Statistics"],
+        summary="The statistics of an order's area, as its result would carry them",
     )
 
     @app.exception_handler(TileOutsideBounds)
