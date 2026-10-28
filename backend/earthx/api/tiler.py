@@ -117,7 +117,7 @@ from earthx.catalog.registry import (
     RetiredDatasetError,
     UnknownDatasetError,
 )
-from earthx.catalog.stats_cache import PostgresStatsCache
+from earthx.catalog.stats_cache import PooledStatsCache, PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError
 from earthx.gateway.gdal import crop_gdal_options, tile_gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
@@ -1268,6 +1268,12 @@ async def statistics_cache(request: Request) -> AsyncIterator[PostgresStatsCache
         yield PostgresStatsCache(conn)
 
 
+def area_statistics_cache(request: Request) -> PooledStatsCache | None:
+    """The statistics cache for the measure of an area (NM4-19): a connection only around a read or a write."""
+    pool = getattr(request.app.state, "earthx_cache_pool", None)
+    return None if pool is None else PooledStatsCache(pool)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with (
@@ -1382,7 +1388,7 @@ def build_app(
     # The statistics of an order's area, as its result would carry them (NM4-19): the AOI in the body only.
     app.add_api_route(
         AREA_STATISTICS_ROUTE,
-        area_statistics_endpoint(statistics_cache),
+        area_statistics_endpoint(area_statistics_cache),
         methods=["POST"],
         tags=["Statistics"],
         summary="The statistics of an order's area, as its result would carry them",

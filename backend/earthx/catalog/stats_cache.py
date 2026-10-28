@@ -78,3 +78,23 @@ class PostgresStatsCache:
         """Store a value, replacing whatever was under that key."""
         async with self._conn.transaction(), self._conn.cursor() as cur:
             await cur.execute(_UPSERT, (key, dataset_id, Jsonb(value), float(ttl_s)))
+
+
+class PooledStatsCache:
+    """The same cache over a pool: a connection for each read or write, not for the whole request.
+
+    For a request that reads for seconds between the two (the measure of an area, NM4-19): holding a
+    connection of the small pool all that time would leave the item fetches of the same requests
+    waiting for one.
+    """
+
+    def __init__(self, pool: Any) -> None:
+        self._pool = pool
+
+    async def get(self, key: str) -> dict[str, Any] | None:
+        async with self._pool.connection() as conn:
+            return await PostgresStatsCache(conn).get(key)
+
+    async def set(self, key: str, value: dict[str, Any], *, dataset_id: str, ttl_s: float = TTL_S) -> None:
+        async with self._pool.connection() as conn:
+            await PostgresStatsCache(conn).set(key, value, dataset_id=dataset_id, ttl_s=ttl_s)

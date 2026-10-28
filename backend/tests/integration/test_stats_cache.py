@@ -11,11 +11,13 @@ zero seconds reads back as expired without anyone waiting for it.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import psycopg
 import pytest
 
 from earthx.catalog.schema import discover_migrations
-from earthx.catalog.stats_cache import TABLE, TTL_S, PostgresStatsCache
+from earthx.catalog.stats_cache import TABLE, TTL_S, PooledStatsCache, PostgresStatsCache
 
 from .conftest import SHIPPED_TABLES
 
@@ -82,3 +84,35 @@ async def test_a_failing_statement_leaves_the_connection_usable(
     async with aconn.cursor() as cur:
         await cur.execute("SELECT 1")
         assert await cur.fetchone() == (1,)
+
+
+class _CountingPool:
+    """A pool of the one test connection that counts how often a connection is taken."""
+
+    def __init__(self, conn: psycopg.AsyncConnection) -> None:
+        self.conn, self.taken, self.open = conn, 0, 0
+
+    @asynccontextmanager
+    async def connection(self):
+        self.taken += 1
+        self.open += 1
+        try:
+            yield self.conn
+        finally:
+            self.open -= 1
+
+
+async def test_the_pooled_cache_takes_a_connection_per_call_and_gives_it_back(
+    cache: PostgresStatsCache, aconn: psycopg.AsyncConnection
+) -> None:
+    """NM4-19: the measure of an area holds no connection while it reads."""
+    pool = _CountingPool(aconn)
+    pooled = PooledStatsCache(pool)
+    await pooled.set("area", VALUE, dataset_id="sentinel-2-c1-l2a", ttl_s=7 * 24 * 60 * 60)
+    assert pool.open == 0
+    assert await pooled.get("area") == VALUE
+    assert (pool.taken, pool.open) == (2, 0)
+    async with aconn.cursor() as cur:
+        await cur.execute(f"SELECT expires_at - created_at FROM {TABLE} WHERE cache_key = %s", ("area",))
+        (lifetime,) = await cur.fetchone()
+    assert abs(lifetime.total_seconds() - 7 * 24 * 60 * 60) < 5
