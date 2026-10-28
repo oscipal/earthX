@@ -1642,6 +1642,116 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(layer.overlays[0]).toMatchObject({ kind: 'raster', maxZoom: 7, hideFrom: 6.5, preview: true });
     expect(layer.restore.itemIds).toEqual(['S2B_B', 'S2B_A']);
   });
+
+  describe('"Loading…" while the first tile is on its way (Otto, 28.10.2026: cold 6.0 s, warm 0.16 s)', () => {
+    const loading = () => container.querySelector('.preview-badge-dock .preview-badge.loading');
+    let release: (response: Response) => void;
+
+    function holdTheMosaic() {
+      const held = new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+      tilejson = (url) => (url.includes('/mosaic/') ? (held as unknown as Response) : json({ tilejson: '3.0.0' }));
+    }
+
+    it('shows a small badge with the explanation in its tooltip, once the wait lasts, and takes it away with the picture', async () => {
+      holdTheMosaic();
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      expect(store().previewSettling).toBe(true);
+      expect(loading()).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(599);
+      });
+      expect(loading()).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(loading()?.textContent).toBe('Loading…');
+      expect(loading()?.getAttribute('title')).toBe('Reading the scenes. The first tile of a mosaic can take several seconds.');
+      expect(loading()?.getAttribute('role')).toBe('status');
+      // The heading of the preview says it too, for a window in which the panel hides the map: a badge, no line of text.
+      const inHeading = section().querySelector('.pp-heading .pp-badge.loading');
+      expect(inHeading?.textContent).toBe('Loading…');
+      expect(inHeading?.getAttribute('title')).toBe(loading()?.getAttribute('title'));
+      expect(section().querySelector('p')?.textContent ?? '').not.toContain('Loading');
+      release(json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] }));
+      await flush();
+      expect(store().previewSettling).toBe(false);
+      expect(store().preview).not.toBeNull();
+      expect(loading()).toBeNull();
+    });
+
+    it('never shows for a warm answer', async () => {
+      tilejson = taking(['S2B_A', 'S2B_B']);
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      expect(store().previewSettling).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(loading()).toBeNull();
+    });
+
+    it('shows while the map loads the tiles of the preview, and not before they are asked for', async () => {
+      tilejson = taking(['S2B_A', 'S2B_B']);
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      act(() => useProcessingStore.setState({ previewTilesLoading: true }));
+      act(() => {
+        vi.advanceTimersByTime(599);
+      });
+      expect(loading()).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(loading()).not.toBeNull();
+      act(() => useProcessingStore.setState({ previewTilesLoading: false }));
+      expect(loading()).toBeNull();
+    });
+
+    it('is not for tiles of a layer or a preview that is gone', async () => {
+      tilejson = taking(['S2B_A', 'S2B_B']);
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      act(() => store().closeProcessing());
+      act(() => useProcessingStore.setState({ previewTilesLoading: true }));
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(store().preview).toBeNull();
+      expect(loading()).toBeNull();
+      expect(container.querySelector('.preview-badge-dock')).toBeNull();
+    });
+
+    it('stops with the panel: no badge for a question nobody waits for', async () => {
+      holdTheMosaic();
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      expect(store().previewSettling).toBe(true);
+      act(() => store().closeProcessing());
+      expect(store().previewSettling).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(loading()).toBeNull();
+    });
+
+    it('does not stay when the answer comes for a draft that has changed', async () => {
+      holdTheMosaic();
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      typeInto(expression(), 'nir / red');
+      release(json({ tilejson: '3.0.0', 'earthx:order': ['S2B_A', 'S2B_B'] }));
+      await flush();
+      expect(store().previewSettling).toBe(false);
+      tilejson = taking(['S2B_A', 'S2B_B']);
+      await afterDebounce();
+      await flush();
+      expect(store().previewSettling).toBe(false);
+      expect(store().preview).not.toBeNull();
+    });
+  });
 });
 
 describe('layerProcessBlock', () => {

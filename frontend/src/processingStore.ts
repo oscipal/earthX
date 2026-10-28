@@ -251,6 +251,10 @@ interface ProcessingState {
   preview: PreviewSpec | null;
   // Why the preview shows fewer steps than the draft chains, or none: the tiler's reason.
   previewNote: string | null;
+  // The panel asks the tiler about the preview, or the map is still loading its tiles: the first tile of a mosaic
+  // can take seconds when the scenes are cold, and the map says so instead of looking broken (`PreviewBadge`).
+  previewSettling: boolean;
+  previewTilesLoading: boolean;
   // What the tiler measured of the preview (M4-19c): the numbers its colour scale comes from, and its unit.
   measure: PreviewMeasure | null;
   // Why the preview has no measured range: the measure could not be had.
@@ -693,6 +697,8 @@ const EMPTY_DRAFT = {
   rangeDraft: DEFAULT_RANGE,
   preview: null as PreviewSpec | null,
   previewNote: null as string | null,
+  previewSettling: false,
+  previewTilesLoading: false,
   measure: null as PreviewMeasure | null,
   rangeNote: null as string | null,
   rangeByHand: false,
@@ -1749,6 +1755,16 @@ async function chainRefusal(wanted: PreviewSpec): Promise<RefusedStep | null> {
 // refused single step nothing but the reason. Statistics and tiles of a refused chain are not asked.
 async function settle(wanted: PreviewSpec): Promise<void> {
   const run = ++settleRun;
+  useProcessingStore.setState({ previewSettling: true });
+  try {
+    await settleAs(run, wanted);
+  } finally {
+    // A newer run has its own say; a preview that went away cleared it already.
+    if (run === settleRun && useProcessingStore.getState().previewSettling) useProcessingStore.setState({ previewSettling: false });
+  }
+}
+
+async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
   const refused = await chainRefusal(wanted);
   if (run !== settleRun) return;
   // The steps the tiler takes: all of them, or the ones before the step it refuses.
@@ -1777,7 +1793,7 @@ async function settle(wanted: PreviewSpec): Promise<void> {
     }
   }
   settledKey = wantedPreview()?.key ?? wanted.key;
-  useProcessingStore.setState({ preview: spec, previewNote: note });
+  useProcessingStore.setState({ preview: spec, previewNote: note, previewSettling: false });
   // A measure that comes after all is taken in with one redraw, and only if it changes the picture.
   if (late) {
     const measure = await late;
@@ -1808,7 +1824,9 @@ function refreshPreview(): void {
     settledKey = null;
     probed.clear();
     mosaicAnswers.clear();
-    if (state.preview !== null || state.previewNote !== null) useProcessingStore.setState({ preview: null, previewNote: null });
+    if (state.preview !== null || state.previewNote !== null || state.previewSettling) {
+      useProcessingStore.setState({ preview: null, previewNote: null, previewSettling: false });
+    }
     return;
   }
   previewTimer = setTimeout(() => {

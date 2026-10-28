@@ -10,6 +10,7 @@ import {
   syncLayers,
   syncMosaic,
   syncPreview,
+  watchPreviewLoading,
   syncSelectionHighlight,
 } from './mapLayers';
 import type { LayerOverlay, MapLayer } from './layers';
@@ -1083,5 +1084,64 @@ describe('syncPreview', () => {
     });
     expect(stack.indexOf('m-tiles-lyr-0')).toBeLessThan(stack.indexOf('preview-lyr-0'));
     expect(stack.indexOf('preview-lyr-0')).toBeLessThan(stack.indexOf('aoi-fill'));
+  });
+});
+
+describe('watchPreviewLoading (NM4-04b)', () => {
+  function watched() {
+    const handlers = new Map<string, (event: { sourceId?: string }) => void>();
+    const sources = new Set(['preview-src-0', 'preview-src-1', 'm-tiles-src-3']);
+    const pending = new Set<string>();
+    const map = {
+      on: (name: string, handler: (event: { sourceId?: string }) => void) => handlers.set(name, handler),
+      getSource: (id: string) => (sources.has(id) ? {} : undefined),
+      isSourceLoaded: (id: string) => !pending.has(id),
+    };
+    const seen: boolean[] = [];
+    watchPreviewLoading(map as never, (loading) => seen.push(loading));
+    return { fire: (name: string, sourceId?: string) => handlers.get(name)!({ sourceId }), seen, pending };
+  }
+
+  it('is loading from the first tile of the preview asked for until every source of it has its tiles', () => {
+    const { fire, seen, pending } = watched();
+    pending.add('preview-src-0').add('preview-src-1');
+    fire('sourcedataloading', 'preview-src-0');
+    pending.delete('preview-src-0');
+    fire('sourcedata', 'preview-src-0');
+    expect(seen).toEqual([true, true]);
+    pending.delete('preview-src-1');
+    fire('sourcedata', 'preview-src-1');
+    expect(seen).toEqual([true, true, false]);
+  });
+
+  it('is not loading any more when a tile fails, nor when the map is at rest', () => {
+    const { fire, seen, pending } = watched();
+    pending.add('preview-src-0');
+    fire('sourcedataloading', 'preview-src-0');
+    pending.delete('preview-src-0');
+    fire('error', 'preview-src-0');
+    expect(seen).toEqual([true, false]);
+    fire('idle');
+    expect(seen).toEqual([true, false, false]);
+  });
+
+  it('does not take the tiles of anything else for the preview, however slow they are', () => {
+    const { fire, seen, pending } = watched();
+    pending.add('m-tiles-src-3').add('basemap');
+    fire('sourcedataloading', 'm-tiles-src-3');
+    fire('sourcedata', 'm-tiles-src-3');
+    fire('sourcedataloading', 'basemap');
+    fire('error');
+    fire('sourcedataloading');
+    expect(seen).toEqual([]);
+  });
+
+  it('keeps its word while a basemap is still loading: the preview alone decides', () => {
+    const { fire, seen, pending } = watched();
+    pending.add('basemap').add('preview-src-0');
+    fire('sourcedataloading', 'preview-src-0');
+    pending.delete('preview-src-0');
+    fire('sourcedata', 'preview-src-0');
+    expect(seen).toEqual([true, false]);
   });
 });

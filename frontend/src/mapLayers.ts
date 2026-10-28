@@ -530,6 +530,25 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
     });
 }
 
+// Tells whether the tiles of the preview are on their way: from the first one the map asks for until every source of
+// the preview has all of its tiles. The first tile of a mosaic over cold scenes takes seconds, and the map says so
+// (`PreviewBadge`). Only the preview's own sources count: a basemap that is slow does not make the preview "loading".
+export function watchPreviewLoading(map: MapLibreMap, onChange: (loading: boolean) => void): void {
+  const isPreview = (event: { sourceId?: string }) => event.sourceId?.startsWith(PREVIEW_SRC) === true;
+  const loaded = () =>
+    Array.from({ length: MAX_MOSAIC_LAYERS }, (_, i) => `${PREVIEW_SRC}${i}`).every((id) => !map.getSource(id) || map.isSourceLoaded(id));
+  const settle = (event: { sourceId?: string }) => {
+    if (isPreview(event)) onChange(!loaded());
+  };
+  map.on('sourcedataloading', (event) => {
+    if (isPreview(event)) onChange(true);
+  });
+  map.on('sourcedata', settle);
+  // A tile that fails is not loading any more.
+  map.on('error', settle);
+  map.on('idle', () => onChange(false));
+}
+
 // Exported for M2-07c: the same footprint-or-bbox fallback the mosaic
 // selection highlight uses, reused to draw real scene footprints once the
 // coverage answer's `footprints_advised` switches the map away from density.

@@ -55,6 +55,7 @@ import type { StacItem } from '../types';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
+import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
 
@@ -352,6 +353,7 @@ function PreviewSection({ view }: { view: OrderView }) {
   const measure = useProcessingStore((s) => s.measure);
   const autoStretch = useProcessingStore((s) => s.autoStretch);
   const unit = previewUnit(preview, measure);
+  const loading = usePreviewLoading();
   const plan = planPreview(steps, view.info);
   const range = rescaleOf(rangeDraft);
   const sceneCount = view.pass?.items.length ?? 0;
@@ -362,6 +364,11 @@ function PreviewSection({ view }: { view: OrderView }) {
         {preview && (
           <span className="pp-badge" title={preview.perScene ? SCENE_PREVIEW_HINT : undefined}>
             Preview
+          </span>
+        )}
+        {loading && (
+          <span className="pp-badge loading" title={LOADING_TITLE}>
+            Loading…
           </span>
         )}
       </h3>

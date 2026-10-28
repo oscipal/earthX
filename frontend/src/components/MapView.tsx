@@ -28,6 +28,7 @@ import {
   syncMosaic,
   syncPreview,
   syncResultsOverlay,
+  watchPreviewLoading,
 } from '../mapLayers';
 import { DEFAULT_BASEMAP } from '../basemaps';
 import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
@@ -154,6 +155,9 @@ export default function MapView() {
       maxPitch: 0,
     });
     mapRef.current = map;
+    watchPreviewLoading(map, (loading) => {
+      if (useProcessingStore.getState().previewTilesLoading !== loading) useProcessingStore.setState({ previewTilesLoading: loading });
+    });
     const first = useAppStore.getState().basemap;
     basemapRef.current = createBasemapSwitcher(map, isInFirstStyle(first) ? first : null, (reason, keep) => {
       // The map keeps what it shows; the choice stays saved, so that the next visit tries it again.
