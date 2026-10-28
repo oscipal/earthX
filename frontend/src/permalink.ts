@@ -5,6 +5,8 @@
 // (`localStorage`, `earthx.permalinks`); it is worth nothing without the identifier.
 
 import { HttpError, jsonOrThrow } from './api';
+import { BASEMAP_IDS, DEFAULT_BASEMAP, type BasemapId } from './basemaps';
+import { DEFAULT_PROJECTION, PROJECTIONS, type Projection } from './preferences';
 import type { Order } from './processing';
 import type { Bbox } from './types';
 import { useProcessingStore } from './processingStore';
@@ -19,12 +21,17 @@ export const KEYS_STORAGE = 'earthx.permalinks';
 export const GONE_TEXT = 'This link has expired or never existed.';
 
 // What is restored besides the order: the map's centre and zoom, the range and colormap of
-// the preview if the user set them by hand.
+// the preview if the user set them by hand, and the basemap and projection on screen (UI-02c).
 export interface PermalinkView {
   center: [number, number];
   zoom: number;
   range: { vmin: number; vmax: number; colormap: string } | null;
+  basemap: BasemapId;
+  projection: Projection;
 }
+
+// The basemap and projection a view is made with.
+export type Look = Pick<PermalinkView, 'basemap' | 'projection'>;
 
 export interface PermalinkDocument {
   order: Order;
@@ -73,6 +80,7 @@ export function viewOf(
   bbox: Bbox,
   zoom: number,
   range: { vmin: string; vmax: string; colormap: string } | null,
+  look: Look,
 ): PermalinkView {
   const [west, south, east, north] = bbox;
   const lon = (west + (east < west ? east + 360 : east)) / 2;
@@ -81,7 +89,16 @@ export function viewOf(
     center: [lon > 180 ? lon - 360 : lon, (south + north) / 2],
     zoom: Math.min(Math.max(zoom, 0), 24),
     range: hand ? { vmin: Number(range.vmin), vmax: Number(range.vmax), colormap: range.colormap } : null,
+    basemap: look.basemap,
+    projection: look.projection,
   };
+}
+
+// A link made before UI-02c has neither field, and the server keeps a field that was left out as `null`: both mean
+// the defaults. A value that is none of the menu's ids makes the link unreadable, like any other field.
+function choiceIn<T extends string>(value: unknown, valid: readonly T[], fallback: T): T | null {
+  if (value === undefined || value === null) return fallback;
+  return typeof value === 'string' && (valid as readonly string[]).includes(value) ? (value as T) : null;
 }
 
 export function parseView(value: unknown): PermalinkView | null {
@@ -94,7 +111,10 @@ export function parseView(value: unknown): PermalinkView | null {
     if (!isObject(range) || !isNumber(range.vmin) || !isNumber(range.vmax) || typeof range.colormap !== 'string') return null;
     parsed = { vmin: range.vmin, vmax: range.vmax, colormap: range.colormap };
   }
-  return { center: [lon, lat], zoom: value.zoom, range: parsed };
+  const basemap = choiceIn(value.basemap, BASEMAP_IDS, DEFAULT_BASEMAP);
+  const projection = choiceIn(value.projection, PROJECTIONS, DEFAULT_PROJECTION);
+  if (!basemap || !projection) return null;
+  return { center: [lon, lat], zoom: value.zoom, range: parsed, basemap, projection };
 }
 
 // What the server keeps is checked again: it is a file of someone else's, as far as this tab knows.

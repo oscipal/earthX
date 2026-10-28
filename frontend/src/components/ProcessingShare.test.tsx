@@ -11,6 +11,7 @@ import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import { bboxToPolygon } from '../geoUtils';
 import { GONE_TEXT, KEYS_STORAGE, loadKeys, openPermalinkInAddress } from '../permalink';
+import { loadBasemap, loadProjection } from '../preferences';
 import type { Order } from '../processing';
 import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
@@ -120,6 +121,8 @@ beforeEach(async () => {
     error: null,
     notice: null,
     flyToView: null,
+    basemap: 'satellite',
+    projection: 'mercator',
     viewportBbox: [10, 50, 10.3, 50.3],
     mapZoom: 11.5,
   });
@@ -275,6 +278,91 @@ describe('opening a link', () => {
   });
 });
 
+describe('opening a link, basemap and projection', () => {
+  const linkWith = (look: Record<string, unknown>) => {
+    link = () => json({ order: ORDER, view: { ...VIEW, ...look }, expires_at: EXPIRES });
+    onAddress(`?permalink=${ID}`);
+  };
+
+  it.each([
+    ['streets', 'globe'],
+    ['grey', 'mercator'],
+    ['outlines', 'globe'],
+    ['satellite', 'globe'],
+  ] as const)('shows %s and %s for the opened view', async (basemap, projection) => {
+    linkWith({ basemap, projection });
+    await open();
+    expect(useAppStore.getState()).toMatchObject({ basemap, projection, error: null });
+  });
+
+  it('does not write them to the browser: the choice the user made in the menu stays the one that is kept', async () => {
+    act(() => {
+      useAppStore.getState().setBasemap('grey');
+      useAppStore.getState().setProjection('mercator');
+    });
+    linkWith({ basemap: 'outlines', projection: 'globe' });
+    await open();
+    expect(useAppStore.getState()).toMatchObject({ basemap: 'outlines', projection: 'globe' });
+    expect(loadBasemap()).toBe('grey'); // what the next visit opens with
+    expect(loadProjection()).toBe('mercator');
+    expect(localStorage.getItem('earthx.basemap')).toBe('grey');
+  });
+
+  it('writes nothing for a user who never chose, and a choice in the menu afterwards is kept as always', async () => {
+    linkWith({ basemap: 'streets', projection: 'globe' });
+    await open();
+    expect(localStorage.getItem('earthx.basemap')).toBeNull();
+    expect(localStorage.getItem('earthx.projection')).toBeNull();
+    act(() => useAppStore.getState().setBasemap('grey'));
+    expect(loadBasemap()).toBe('grey');
+    expect(useAppStore.getState().projection).toBe('globe'); // still the link's; only what was chosen is kept
+    expect(localStorage.getItem('earthx.projection')).toBeNull();
+  });
+
+  it('opens a link from before UI-02c, with neither field or with null, as Satellite and Mercator', async () => {
+    for (const look of [{}, { basemap: null, projection: null }]) {
+      act(() => useAppStore.setState({ basemap: 'grey', projection: 'globe' }));
+      linkWith(look);
+      await open();
+      expect(useAppStore.getState()).toMatchObject({ basemap: 'satellite', projection: 'mercator', error: null });
+    }
+  });
+
+  it.each([{ basemap: 'osm' }, { basemap: 7 }, { projection: 'equal-earth' }, { projection: ['globe'] }])(
+    'refuses a link with the unknown choice %j and changes nothing',
+    async (look) => {
+      act(() => useAppStore.setState({ basemap: 'grey', projection: 'globe' }));
+      linkWith(look);
+      await open();
+      expect(useAppStore.getState().error).toMatch(/could not be opened.*cannot read/u);
+      expect(useAppStore.getState()).toMatchObject({ basemap: 'grey', projection: 'globe' });
+      expect(draft().open).toBe(false);
+    },
+  );
+
+  it('leaves them as they are when the order cannot be taken up', async () => {
+    act(() => useAppStore.setState({ basemap: 'grey', projection: 'globe' }));
+    link = () =>
+      json({
+        order: { ...ORDER, steps: [{ op: 'warp', op_version: 1, params: {} }] },
+        view: { ...VIEW, basemap: 'streets', projection: 'mercator' },
+        expires_at: EXPIRES,
+      });
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(useAppStore.getState().error).toMatch(/not available/u);
+    expect(useAppStore.getState()).toMatchObject({ basemap: 'grey', projection: 'globe' });
+  });
+
+  it('leaves them as they are for an expired link', async () => {
+    act(() => useAppStore.setState({ basemap: 'grey', projection: 'globe' }));
+    link = () => json({ detail: 'there is no such permalink' }, 404);
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(useAppStore.getState()).toMatchObject({ basemap: 'grey', projection: 'globe' });
+  });
+});
+
 describe('Share', () => {
   const button = (label: string) =>
     [...container.querySelectorAll('button')].find((b) => b.textContent === label) as HTMLButtonElement | undefined;
@@ -301,11 +389,31 @@ describe('Share', () => {
     const sent = JSON.parse(init.body);
     expect(sent.order).toEqual(ORDER);
     // The centre is the viewport's, the range the one that came back with the opened link.
-    expect(sent.view).toEqual({ center: [10.15, 50.15], zoom: 11.5, range: VIEW.range });
+    expect(sent.view).toEqual({ center: [10.15, 50.15], zoom: 11.5, range: VIEW.range, basemap: 'satellite', projection: 'mercator' });
     expect((container.querySelector('input[aria-label="Link"]') as HTMLInputElement).value).toContain(`?permalink=${ID}`);
     expect(container.textContent).toContain('Anyone with the link sees your area');
     expect(loadKeys()[ID].key).toBe(KEY);
     expect(container.textContent).not.toContain(KEY);
+  });
+
+  it('keeps the basemap and the projection on screen, not the ones kept in the browser', async () => {
+    act(() => {
+      useAppStore.getState().setBasemap('grey');
+      useAppStore.getState().showSharedLook({ basemap: 'outlines', projection: 'globe' });
+    });
+    await click('Share');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).view).toMatchObject({ basemap: 'outlines', projection: 'globe' });
+  });
+
+  it('hands the choice on: what one link keeps, the next one opens', async () => {
+    act(() => useAppStore.getState().showSharedLook({ basemap: 'streets', projection: 'globe' }));
+    await click('Share');
+    const kept = JSON.parse(fetchMock.mock.calls[0][1].body).view;
+    act(() => useAppStore.getState().showSharedLook({ basemap: 'grey', projection: 'mercator' }));
+    link = () => json({ order: ORDER, view: kept, expires_at: EXPIRES });
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(useAppStore.getState()).toMatchObject({ basemap: 'streets', projection: 'globe' });
   });
 
   it('leaves the range out where the user did not apply one', async () => {
@@ -336,7 +444,7 @@ describe('Share', () => {
   it('has no title field, in the panel or in what is sent', async () => {
     expect(container.querySelector('input[aria-label*="Title" i], input[placeholder*="Title" i]')).toBeNull();
     await click('Share');
-    expect(Object.keys(JSON.parse(fetchMock.mock.calls[0][1].body).view).sort()).toEqual(['center', 'range', 'zoom']);
+    expect(Object.keys(JSON.parse(fetchMock.mock.calls[0][1].body).view).sort()).toEqual(['basemap', 'center', 'projection', 'range', 'zoom']);
   });
 
   it('shows the link in a read-only text field, which the theme colours', async () => {

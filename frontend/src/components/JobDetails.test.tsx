@@ -46,7 +46,7 @@ beforeEach(() => {
   setTrackerOptions({ EventSource: null, fetchJob: async (id) => status({ jobID: id }), pollMs: 60_000 });
   resetJobs();
   useProcessingStore.setState({ open: false, cancelJob, ensureDescription, restoreOrder, showResultOnMap });
-  useAppStore.setState({ datasetId: null, datasets: [], viewportBbox: [5, 45, 15, 55], mapZoom: 6 });
+  useAppStore.setState({ datasetId: null, datasets: [], viewportBbox: [5, 45, 15, 55], mapZoom: 6, basemap: 'satellite', projection: 'mercator' });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -357,7 +357,20 @@ describe('"Open in panel"', () => {
     expect(restore).toHaveBeenCalledTimes(1);
     const [order, view] = restore.mock.calls[0] as unknown as [Order, { center: number[]; zoom: number; range: unknown }];
     expect(order).toEqual(ORDER);
-    expect(view).toEqual({ center: [10, 50], zoom: 6, range: { vmin: 0, vmax: 1, colormap: 'viridis' } });
+    expect(view).toEqual({ center: [10, 50], zoom: 6, range: { vmin: 0, vmax: 1, colormap: 'viridis' }, basemap: 'satellite', projection: 'mercator' });
+  });
+
+  it('hands on the basemap and projection on screen, so that opening an order does not change them', async () => {
+    const restore = vi.fn(async () => ({ ok: true as const, notes: [] }));
+    act(() => {
+      useProcessingStore.setState({ restoreOrder: restore });
+      useAppStore.setState({ basemap: 'outlines', projection: 'globe' });
+    });
+    show(gone());
+    await act(async () => {
+      button('Open in panel')!.click();
+    });
+    expect((restore.mock.calls[0] as unknown[])[1]).toMatchObject({ basemap: 'outlines', projection: 'globe' });
   });
 
   it('says why where the order cannot be taken back, and stays in the details', async () => {

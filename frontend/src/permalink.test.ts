@@ -32,7 +32,8 @@ const ORDER: Order = {
   steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
   output: { kind: 'raster', format: 'cog', dtype: 'float32' },
 };
-const VIEW = { center: [9.5, 47.25] as [number, number], zoom: 9.5, range: null };
+const LOOK = { basemap: 'satellite', projection: 'mercator' } as const;
+const VIEW = { center: [9.5, 47.25] as [number, number], zoom: 9.5, range: null, ...LOOK };
 const FUTURE = new Date(Date.now() + 86_400_000).toISOString();
 
 const json = (body: unknown, status = 200) =>
@@ -64,33 +65,72 @@ describe('the address', () => {
 
 describe('viewOf', () => {
   it('takes the centre of the viewport, also across the antimeridian', () => {
-    expect(viewOf([8, 46, 11, 48], 9.5, null).center).toEqual([9.5, 47]);
-    expect(viewOf([170, -10, -160, 10], 3, null).center).toEqual([-175, 0]);
-    expect(viewOf([175, -10, -175, 10], 3, null).center[0]).toBe(180);
+    expect(viewOf([8, 46, 11, 48], 9.5, null, LOOK).center).toEqual([9.5, 47]);
+    expect(viewOf([170, -10, -160, 10], 3, null, LOOK).center).toEqual([-175, 0]);
+    expect(viewOf([175, -10, -175, 10], 3, null, LOOK).center[0]).toBe(180);
   });
 
   it('keeps a range only where the user set one, as numbers, and drops one that is none', () => {
-    expect(viewOf([8, 46, 11, 48], 5, null).range).toBeNull();
-    expect(viewOf([8, 46, 11, 48], 5, { vmin: '0', vmax: '0.5', colormap: 'viridis' }).range).toEqual({
+    expect(viewOf([8, 46, 11, 48], 5, null, LOOK).range).toBeNull();
+    expect(viewOf([8, 46, 11, 48], 5, { vmin: '0', vmax: '0.5', colormap: 'viridis' }, LOOK).range).toEqual({
       vmin: 0,
       vmax: 0.5,
       colormap: 'viridis',
     });
-    expect(viewOf([8, 46, 11, 48], 5, { vmin: '', vmax: '1', colormap: 'viridis' }).range).toBeNull();
-    expect(viewOf([8, 46, 11, 48], 5, { vmin: 'x', vmax: '1', colormap: '' }).range).toBeNull();
+    expect(viewOf([8, 46, 11, 48], 5, { vmin: '', vmax: '1', colormap: 'viridis' }, LOOK).range).toBeNull();
+    expect(viewOf([8, 46, 11, 48], 5, { vmin: 'x', vmax: '1', colormap: '' }, LOOK).range).toBeNull();
   });
 
   it('clamps the zoom, and has no title', () => {
-    expect(viewOf([8, 46, 11, 48], 99, null).zoom).toBe(24);
-    expect(viewOf([8, 46, 11, 48], -1, null).zoom).toBe(0);
-    expect(Object.keys(viewOf([8, 46, 11, 48], 5, null)).sort()).toEqual(['center', 'range', 'zoom']);
+    expect(viewOf([8, 46, 11, 48], 99, null, LOOK).zoom).toBe(24);
+    expect(viewOf([8, 46, 11, 48], -1, null, LOOK).zoom).toBe(0);
+    expect(Object.keys(viewOf([8, 46, 11, 48], 5, null, LOOK)).sort()).toEqual(['basemap', 'center', 'projection', 'range', 'zoom']);
+  });
+});
+
+describe('viewOf, basemap and projection', () => {
+  it.each([
+    ['streets', 'globe'],
+    ['grey', 'mercator'],
+    ['outlines', 'globe'],
+    ['satellite', 'mercator'],
+  ] as const)('keeps %s and %s as they are on screen', (basemap, projection) => {
+    const view = viewOf([8, 46, 11, 48], 5, null, { basemap, projection });
+    expect(view).toMatchObject({ basemap, projection });
+    expect(parseView(JSON.parse(JSON.stringify(view)))).toEqual(view);
   });
 });
 
 describe('parseView', () => {
   it('reads what viewOf writes', () => {
-    const view = viewOf([8, 46, 11, 48], 5, { vmin: '0', vmax: '1', colormap: 'plasma' });
+    const view = viewOf([8, 46, 11, 48], 5, { vmin: '0', vmax: '1', colormap: 'plasma' }, LOOK);
     expect(parseView(JSON.parse(JSON.stringify(view)))).toEqual(view);
+  });
+
+  it('opens a link from before UI-02c, with neither field, and one the server stored with null, with the defaults', () => {
+    const old = { center: [1, 2], zoom: 3, range: null };
+    expect(parseView(old)).toEqual({ ...old, basemap: 'satellite', projection: 'mercator' });
+    expect(parseView({ ...old, basemap: null, projection: null })).toEqual({ ...old, basemap: 'satellite', projection: 'mercator' });
+    expect(parseView({ ...old, basemap: 'grey' })).toMatchObject({ basemap: 'grey', projection: 'mercator' });
+    expect(parseView({ ...old, projection: 'globe' })).toMatchObject({ basemap: 'satellite', projection: 'globe' });
+  });
+
+  it.each([
+    { basemap: 'osm' },
+    { basemap: 'Streets' },
+    { basemap: '' },
+    { basemap: 1 },
+    { basemap: ['grey'] },
+    { basemap: { id: 'grey' } },
+    { basemap: 'constructor' },
+    { basemap: '__proto__' },
+    { projection: 'equal-earth' },
+    { projection: 'vertical-perspective' },
+    { projection: true },
+    { projection: { type: 'globe' } },
+    { projection: 'toString' },
+  ])('refuses the unknown choice %j instead of falling back', (choice) => {
+    expect(parseView({ center: [1, 2], zoom: 3, range: null, ...choice })).toBeNull();
   });
 
   it.each([null, 'x', [], {}, { center: [1], zoom: 1 }, { center: [1, 2], zoom: '1' }, { center: [1, 'x'], zoom: 1 }, { center: [1, 2], zoom: 1, range: 5 }, { center: [1, 2], zoom: 1, range: { vmin: 0 } }])(
