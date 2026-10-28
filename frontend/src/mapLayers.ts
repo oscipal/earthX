@@ -491,6 +491,22 @@ const aboveAll = (map: MapLibreMap): string | undefined =>
 const topOfAll = (map: MapLibreMap): string | undefined =>
   map.getLayer(PREVIEW_BASE) ? PREVIEW_BASE : map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
+// Where the quicklook of a ticked scene goes among the others: the scenes lie over each other in the order they were
+// ticked (`ticks`, last on top), whichever picture arrives first. Just under the nearest scene ticked after it that is on
+// the map already, else on top of them all (Otto, 28.10.2026). `layersOf`: the layers a scene's quicklook can have.
+function tickedPlace(
+  map: MapLibreMap,
+  id: string,
+  ticks: readonly string[],
+  layersOf: ReadonlyMap<string, readonly string[]>,
+): string | undefined {
+  for (let rank = ticks.indexOf(id) + 1; rank > 0 && rank < ticks.length; rank++) {
+    const above = layersOf.get(ticks[rank])?.find((lyr) => map.getLayer(lyr));
+    if (above) return above;
+  }
+  return topOfAll(map);
+}
+
 // Where the live preview goes: over everything raster, under the overlays and the AOI.
 const previewTop = (map: MapLibreMap): string | undefined =>
   map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
@@ -586,12 +602,14 @@ function addPreview(
   i: number,
   gen: number,
   dataset: DatasetOption,
-  ticked: boolean,
+  ticks: readonly string[],
+  layersOf: ReadonlyMap<string, readonly string[]>,
 ): void {
   const plan = quicklookPlan(item, dataset);
   if (!plan) return;
-  // A ticked scene is the top layer; the others go where later rasters go (`undefined`: the default place).
-  const before = (): string | undefined => (ticked ? topOfAll(map) : undefined);
+  // A ticked scene lies over the others, the last ticked on top; the others go where later rasters go (`undefined`: the
+  // default place).
+  const before = (): string | undefined => (ticks.includes(item.id) ? tickedPlace(map, item.id, ticks, layersOf) : undefined);
   if (plan.kind === 'tiles') {
     // Placed by the tile grid itself, not by four corner coordinates: a tile is
     // already in the map's own projection, so there is nothing to reproject and
@@ -985,7 +1003,8 @@ export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' 
   // Nothing to draw (no dataset, or the results are off the map, UI-01g): the picture before it has nothing to
   // wait for and goes at once.
   if (!dataset || items.length === 0) return dropRetired(map);
-  items.forEach((it, i) => addPreview(map, it, i, gen, dataset, s.selectedIds?.includes(it.id) ?? false));
+  const layersOf = new Map(items.map((it, i) => [it.id, [dynamicId('tiles-lyr', i), dynamicId('img-lyr', i)]]));
+  items.forEach((it, i) => addPreview(map, it, i, gen, dataset, s.selectedIds ?? [], layersOf));
   settleRetired(map);
 }
 
@@ -1008,11 +1027,14 @@ export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items
   removeResultsOverlay(map);
   const { dataset } = s;
   if (!dataset) return;
-  s.items.slice(0, MAX_MOSAIC_LAYERS).forEach((item, i) => {
+  const shown = s.items.slice(0, MAX_MOSAIC_LAYERS);
+  const ticks = s.selectedIds ?? [];
+  const layersOf = new Map(shown.map((it, i) => [it.id, [`res-img-lyr-${i}`, `res-tiles-lyr-${i}`]]));
+  shown.forEach((item, i) => {
     const plan = quicklookPlan(item, dataset);
     if (!plan) return;
-    // A ticked scene lies over the view as well; the others under the view.
-    const place = (): string | undefined => (s.selectedIds?.includes(item.id) ? topOfAll(map) : underTheView(map));
+    // A ticked scene lies over the view as well, the last ticked on top; the others under the view.
+    const place = (): string | undefined => (ticks.includes(item.id) ? tickedPlace(map, item.id, ticks, layersOf) : underTheView(map));
     const [lyr, src] = [`res-${RESULTS_KINDS[plan.kind === 'tiles' ? 2 : 0]}-${i}`, `res-${RESULTS_KINDS[plan.kind === 'tiles' ? 3 : 1]}-${i}`];
     if (plan.kind === 'tiles') {
       if (!item.bbox) return;

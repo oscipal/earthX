@@ -327,3 +327,75 @@ describe('the live preview of the processing panel', () => {
     });
   });
 });
+
+// Otto, 28.10.2026 (zu #221): the ticked scenes lie over each other in the order they were ticked, the last one on
+// top, whatever order the results are listed and drawn in, and after a new style.
+describe('the ticked quicklooks lie in the order they were ticked', () => {
+  const lists: [string, string[]][] = [
+    ['listed S1, S2, S3', ['S1', 'S2', 'S3']],
+    ['listed S3, S2, S1', ['S3', 'S2', 'S1']],
+    ['listed S2, S3, S1', ['S2', 'S3', 'S1']],
+  ];
+  const ticks: [string, string[]][] = [
+    ['ticked S1, S2, S3', ['S1', 'S2', 'S3']],
+    ['ticked S3, S1, S2', ['S3', 'S1', 'S2']],
+    ['ticked S2, S3 (S1 not ticked)', ['S2', 'S3']],
+  ];
+  const overlay = (live: Live, order: string[], selectedIds: string[]) =>
+    syncResultsOverlay(live.map as never, { items: order.map(scene), selectedIds, dataset: dataset() });
+  const browse = (live: Live, order: string[], selectedIds: string[]) =>
+    syncBrowseMosaic(live.map as never, { items: order.map(scene), selectedIds, dataset: dataset() });
+  // The layer of a scene: the items are drawn as `res-tiles-lyr-<position in the list>` or `m-tiles-lyr-<…>`.
+  const layerOf = (prefix: string, order: string[], id: string) => `${prefix}-tiles-lyr-${order.indexOf(id)}`;
+
+  function expectOrder(live: Live, prefix: string, order: string[], selectedIds: string[]) {
+    const stackIndexes = selectedIds.map((id) => index(live, layerOf(prefix, order, id)));
+    // Bottom to top in the order of the ticks.
+    expect([...stackIndexes].sort((a, b) => a - b)).toEqual(stackIndexes);
+    expect(new Set(stackIndexes).size).toBe(selectedIds.length);
+    for (const id of order.filter((id) => !selectedIds.includes(id))) {
+      expect(index(live, layerOf(prefix, order, id))).toBeLessThan(Math.min(...stackIndexes));
+    }
+    expect(Math.max(...stackIndexes)).toBeLessThan(index(live, 'aoi-fill'));
+  }
+
+  describe.each(lists)('%s', (_l, order) => {
+    it.each(ticks)('over a view: %s', (_t, selectedIds) => {
+      const live = freshMap();
+      view(live);
+      overlay(live, order, selectedIds);
+      expectOrder(live, 'res', order, selectedIds);
+      // And again, as after a new tick, and after a new style, which lays everything again.
+      overlay(live, order, selectedIds);
+      expectOrder(live, 'res', order, selectedIds);
+      const next = freshMap();
+      overlay(next, order, selectedIds);
+      view(next);
+      expectOrder(next, 'res', order, selectedIds);
+    });
+
+    it.each(ticks)('while browsing: %s', (_t, selectedIds) => {
+      const live = freshMap();
+      browse(live, order, selectedIds);
+      expectOrder(live, 'm', order, selectedIds);
+    });
+  });
+
+  it('puts a scene ticked again on top, and the one unticked under none of the others', () => {
+    const live = freshMap();
+    const order = ['S1', 'S2', 'S3'];
+    overlay(live, order, ['S1', 'S2', 'S3']);
+    overlay(live, order, ['S2', 'S3', 'S1']);
+    expectOrder(live, 'res', order, ['S2', 'S3', 'S1']);
+    overlay(live, order, ['S2', 'S1']);
+    expectOrder(live, 'res', order, ['S2', 'S1']);
+  });
+
+  it('keeps the live preview over all of them', () => {
+    const live = freshMap();
+    syncPreview(live.map as never, [{ kind: 'raster', tileUrl: '/p/{z}/{x}/{y}', bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, preview: true }]);
+    overlay(live, ['S1', 'S2'], ['S2', 'S1']);
+    expect(index(live, 'res-tiles-lyr-0')).toBeLessThan(index(live, 'preview-lyr-0'));
+    expect(index(live, 'res-tiles-lyr-1')).toBeLessThan(index(live, 'res-tiles-lyr-0'));
+  });
+});
