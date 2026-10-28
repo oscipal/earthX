@@ -412,8 +412,10 @@ describe('the actions', () => {
     expect(button('Open in panel')!.getAttribute('aria-disabled')).toBe('false');
   });
 
-  it('of a job the server forgot is "Open in panel" only', () => {
+  it('of a job the server forgot is "Run again" and "Open in panel"', () => {
     show(jobEntry(1, { phase: 'gone', order: ORDER }));
+    expect(actions()).toEqual(['↻', 'Open in panel']);
+    show(jobEntry(1, { phase: 'gone', order: null }));
     expect(actions()).toEqual(['Open in panel']);
   });
 

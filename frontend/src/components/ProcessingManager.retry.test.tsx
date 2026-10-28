@@ -127,6 +127,7 @@ describe('the symbol', () => {
     ['a failed job', () => failed(1)],
     ['a cancelled job', () => cancelled(1)],
     ['an expired job', () => expiredJob(1)],
+    ['a job the server no longer knows', () => failed(1, { phase: 'gone', lost: true })],
   ])('is on %s, with the tooltip "Run again"', (_, make) => {
     put({ jobs: [make()] });
     mount();
@@ -140,7 +141,6 @@ describe('the symbol', () => {
     ['one that waits or runs', () => jobEntry(1, { order: ORDER })],
     ['a finished one', () => finished(1, { order: ORDER })],
     ['one that was deleted', () => failed(1, { deletedUntil: new Date(NOW + DAY).toISOString() })],
-    ['one the server forgot', () => failed(1, { phase: 'gone', lost: true })],
     ['one that is replaced already', () => failed(1, { superseded: true, archived: true })],
   ])('is not on %s', (_, make) => {
     put({ jobs: [make()] });
@@ -159,7 +159,7 @@ describe('the symbol', () => {
     expect(rows()[0].querySelectorAll('.pm-line > .pm-icon')).toHaveLength(rows()[1].querySelectorAll('.pm-line > .pm-icon').length);
   });
 
-  it.each(['source_timeout', 'source_5xx', 'source_429', 'source_unreachable', 'out_of_memory', 'child_crashed', 'upload_failed', 'lease_lost', 'cancelled', 'unknown', 'a_kind_of_a_later_version'])(
+  it.each(['source_timeout', 'source_5xx', 'source_429', 'source_unreachable', 'out_of_memory', 'child_crashed', 'upload_failed', 'lease_lost', 'disk_space', 'cancelled', 'unknown', 'a_kind_of_a_later_version'])(
     'is on a job that failed for %s, which may not repeat',
     (kind) => {
       put({ jobs: [failed(1, { failureKind: kind })] });
@@ -174,7 +174,7 @@ describe('the symbol', () => {
     expect(retryIn(rows()[0])).not.toBeNull();
   });
 
-  it.each(['recipe_invalid', 'unsupported_recipe', 'scaling_mismatch', 'grid_mismatch', 'aoi_outside_inputs', 'rejected', 'source_4xx', 'runtime_exceeded', 'disk_space'])(
+  it.each(['recipe_invalid', 'unsupported_recipe', 'scaling_mismatch', 'grid_mismatch', 'aoi_outside_inputs', 'rejected', 'source_4xx', 'runtime_exceeded'])(
     'is not on a job that failed for %s, which would end the same',
     (kind) => {
       put({ jobs: [failed(1, { failureKind: kind })] });
@@ -414,6 +414,14 @@ describe('a batch', () => {
     click(symbol);
     await settle();
     expect(sent()).toHaveLength(2);
+  });
+
+  it('leaves a part the server forgot to its own symbol: the batch starts only parts that failed or were cancelled', async () => {
+    put({ batches: [batchEntry(BATCH)], jobs: [failed(1, part('S1', { phase: 'gone', lost: true })), finished(2, part('S2', {}))] });
+    mount();
+    expect(retryIn(topRows()[0])).toBeNull();
+    click(container.querySelector('.pm-chevron'));
+    expect(retryIn(container.querySelector<HTMLElement>('.pm-parts > .pm-row')!)).not.toBeNull();
   });
 
   it('has no symbol when no part failed or was cancelled', () => {

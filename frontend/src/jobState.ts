@@ -76,9 +76,10 @@ export const RETRY_TIP = 'Run again';
 export const RETRY_PARTS_TIP = 'Retry failed parts';
 
 // The kinds of failure (`processing.failure_kind`, the end of the `type` of the result) that run again the way they ran
-// before would end the same: the recipe is wrong or does not fit, the source refuses it, or the job is too big for
-// the worker. There "Open in panel" is the way, to change the order. Any other kind, and one the platform adds later,
-// may be gone on a second try (the source was down, the worker lost, memory short for a moment).
+// before would end the same: the recipe is wrong or does not fit, the source refuses it, or the job runs too long.
+// `source_429` (the source throttles) and `disk_space` (the worker is full for now) may pass and are not listed. For
+// the listed ones "Open in panel" is the way, to change the order. Any other kind, and one the platform adds later, may
+// be gone on a second try (the source was down, the worker lost, memory short for a moment).
 const FAILS_AGAIN: ReadonlySet<string> = new Set([
   'recipe_invalid',
   'unsupported_recipe',
@@ -88,13 +89,13 @@ const FAILS_AGAIN: ReadonlySet<string> = new Set([
   'rejected',
   'source_4xx',
   'runtime_exceeded',
-  'disk_space',
 ]);
 
 export const failsAgain = (kind: string | null): boolean => kind !== null && FAILS_AGAIN.has(kind);
 
-// The states "Run again" starts from: the job failed, was cancelled, or its result is gone with its time.
-const RETRYABLE: readonly JobStateKey[] = ['failed', 'cancelled', 'expired'];
+// The states "Run again" starts from: the job failed, was cancelled, or its result is gone (its time is up, or the
+// server does not know the job any more).
+const RETRYABLE: readonly JobStateKey[] = ['failed', 'cancelled', 'expired', 'unavailable'];
 
 // Whether "Run again" is offered: the order is kept, the job is in one of those states for a reason that may not
 // repeat, it is not already replaced, and the platform still carries the dataset (`retiredDataset`, or a `410`).
