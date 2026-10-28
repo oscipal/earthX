@@ -263,12 +263,15 @@ async def estimate_order(
     operators: OperatorRegistry,
     item_source: ItemSource,
     aoi_provenance: Mapping[str, str] | None = None,
+    announce: bool = True,
 ) -> EstimatedOrder:
     """The order as a recipe for the cost estimate — or an :class:`OrderRefused` (module docstring).
 
     Stages 1 to 6 of :func:`accept_order`, then the same checks of hosts and band names
     on a recipe without versions. No request to an asset is made. ``aoi_provenance`` is
-    only checked (M4-11 F4, M4-30); an estimate builds no side files.
+    only checked (M4-11 F4, M4-30); an estimate builds no side files. Without ``announce``
+    no line says "order estimated": the measure of an area (NM4-19) takes the recipe and
+    writes a line of its own.
     """
     try:
         prepared = await _prepare(raw, registry, operators, item_source, aoi_provenance)
@@ -276,6 +279,8 @@ async def estimate_order(
     except OrderRefused as refused:
         _log_refused(refused)
         raise
+    if not announce:
+        return EstimatedOrder(recipe, prepared.skipped)
     LOGGER.info(
         "order estimated",
         extra={
