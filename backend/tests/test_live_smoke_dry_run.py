@@ -24,6 +24,8 @@ from typing import Any
 import httpx
 import pytest
 
+from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.registry import FilterKind
 from earthx.gateway import Gateway
 
 pytestmark = pytest.mark.anyio
@@ -76,10 +78,49 @@ def _dem_double(request: httpx.Request) -> httpx.Response:
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
 
 
+def _filtered_items() -> list[dict[str, Any]]:
+    """Three synthetic scenes per filter: a range at 10, 40 and 90 % of its span, the values in turn."""
+    items: list[dict[str, Any]] = []
+    for index, share in enumerate((0.1, 0.4, 0.9)):
+        properties: dict[str, Any] = {"datetime": "2024-06-01T10:00:00Z"}
+        for search_filter in SENTINEL_2_L2A.search_filters:
+            if search_filter.kind is FilterKind.RANGE:
+                low, high = search_filter.minimum or 0.0, search_filter.maximum or 0.0
+                properties[search_filter.property] = low + share * (high - low)
+            else:
+                properties[search_filter.property] = search_filter.values[index % len(search_filter.values)].value
+        items.append({**_fixture("earth_search", "item"), "id": f"SYNTH_FILTERED_{index}", "properties": properties})
+    return items
+
+
+def _keeps(item: dict[str, Any], query: dict[str, dict[str, Any]]) -> bool:
+    for name, operators in query.items():
+        value = item["properties"].get(name)
+        if "in" in operators and value not in operators["in"]:
+            return False
+        if "gte" in operators and not value >= operators["gte"]:
+            return False
+        if "lte" in operators and not value <= operators["lte"]:
+            return False
+    return True
+
+
+def _filtering_double(request: httpx.Request) -> httpx.Response:
+    """Applies the query extension to synthetic scenes, as the source does (DS-02 plan §6.2)."""
+    if request.method == "POST" and request.url.path.endswith("/search"):
+        body = json.loads(request.content)
+        kept = [item for item in _filtered_items() if _keeps(item, body.get("query", {}))]
+        return _json({"type": "FeatureCollection", "numberMatched": len(kept), "features": kept[: body["limit"]], "links": []})
+    if request.method == "GET" and request.url.path.endswith("/queryables"):
+        return _json({"type": "object", "properties": {"eo:cloud_cover": {"$ref": "https://example.invalid/eo"}}})
+    raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+
+
 DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_earth_search_smoke": _stac_double("earth_search"),
     "test_coverage_smoke": _coverage_double,
     "test_cop_dem_smoke": _dem_double,
+    "test_search_filters_live": _filtering_double,
 }
 
 
