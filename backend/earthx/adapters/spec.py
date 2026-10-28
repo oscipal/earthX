@@ -67,6 +67,8 @@ class FilterSupport:
     intersects: bool
     ids: bool
     cql2: bool
+    # The STAC query extension, which carries the conditions of a dataset's search filters (DS-02).
+    query: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,8 +114,8 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         fetch=earth_search.get_item,
         materialize=None,
         coverage={CoverageProvider.UPSTREAM_AGGREGATION: aggregate_coverage},
-        # CQL2 is not answered by this source (measured, M3-13 plan §2.3).
-        filters=FilterSupport(intersects=True, ids=True, cql2=False),
+        # CQL2 is not answered by this source (measured, M3-13 plan §2.3); `query` is (DS-02 plan §6.2).
+        filters=FilterSupport(intersects=True, ids=True, cql2=False, query=True),
     ),
     AdapterSpec(
         kind=AdapterKind.COP_DEM_BUCKET,
@@ -144,6 +146,8 @@ def check_adapter_specs(registry: DatasetRegistry, adapters: AdapterSpecs) -> No
             continue
         if config.source.item_holding is ItemHolding.FEDERATED and spec.search is None:
             problems.append(f"{config.dataset_id}: federated, but {kind} offers no search")
+        if config.search_filters and (spec.filters is None or not spec.filters.query):
+            problems.append(f"{config.dataset_id}: has search filters, but {kind} applies no query")
         provider = config.coverage.provider
         if provider is not CoverageProvider.LOCAL_SQL and provider not in spec.coverage:
             problems.append(f"{config.dataset_id}: {kind} answers no {provider.value} coverage")

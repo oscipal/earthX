@@ -31,6 +31,7 @@ from collections.abc import Collection, Mapping, Sequence
 from typing import Any, TypedDict
 
 from earthx.adapters.errors import InvalidQuery
+from earthx.catalog.search_filters import FilterConditions, conditions_key
 
 # adr/0005 rule V's read timeout is 15 s (gateway.Policy); a mixed page's own budget
 # per source sits under that with room to spare, well above the slowest single
@@ -78,6 +79,7 @@ def mixed_fingerprint(
     intersects: Mapping[str, Any] | None,
     ids: Sequence[str] | None,
     datetime_value: str | None,
+    conditions: Mapping[str, FilterConditions] | None = None,
 ) -> str:
     """A hash of the *whole* mixed search — the raw request, before any per-source
     splitting or per-source datetime dropping (`_apply_time_axis` in
@@ -94,6 +96,9 @@ def mixed_fingerprint(
         payload["intersects"] = json.dumps(intersects, separators=(",", ":"), sort_keys=True)
     if ids is not None:
         payload["ids"] = sorted(set(ids))
+    if conditions:
+        # DS-02: only when set, so a mixed search without filters hashes as before.
+        payload["conditions"] = {cid: conditions_key(conditions[cid]) for cid in sorted(conditions)}
     return hashlib.sha256(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
 
 

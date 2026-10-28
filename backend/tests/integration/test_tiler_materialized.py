@@ -38,6 +38,7 @@ MATERIALIZED = replace(
         asset_hosts=("assets.example.invalid",),
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+    search_filters=(),
 )
 
 BASE = f"/collections/{MATERIALIZED.dataset_id}/items"

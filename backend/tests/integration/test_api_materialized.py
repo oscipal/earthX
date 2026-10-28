@@ -43,6 +43,7 @@ MATERIALIZED = replace(
         source_collection_id="earthx-test-materialized-api",
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+    search_filters=(),
 )
 
 # Routing reads the registry (M4-01a), so the app has to know these collections.

@@ -133,6 +133,7 @@ class TestSearchDispatchesByAdapter:
             SENTINEL_2_L2A,
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+            search_filters=(),
         )
         gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
         async with gateway:
@@ -158,6 +159,7 @@ class TestGetItemDispatchesByAdapter:
             SENTINEL_2_L2A,
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+            search_filters=(),
         )
         gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "item")))
         async with gateway:
@@ -189,7 +191,7 @@ class TestFilterCapabilities:
                 await search_items(
                     SENTINEL_2_L2A,
                     SearchParams(intersects={"type": "Point", "coordinates": [10.0, 49.0]}),
-                    adapters=_earth_search_with(FilterSupport(intersects=False, ids=True, cql2=False)),
+                    adapters=_earth_search_with(FilterSupport(intersects=False, ids=True, cql2=False, query=True)),
                     gateway=gateway,
                 )
         assert seen == []  # refused before the adapter (or anything else) was asked
@@ -201,7 +203,7 @@ class TestFilterCapabilities:
                 await search_items(
                     SENTINEL_2_L2A,
                     SearchParams(ids=("known-id",)),
-                    adapters=_earth_search_with(FilterSupport(intersects=True, ids=False, cql2=False)),
+                    adapters=_earth_search_with(FilterSupport(intersects=True, ids=False, cql2=False, query=True)),
                     gateway=gateway,
                 )
         assert seen == []

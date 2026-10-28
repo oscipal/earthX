@@ -54,6 +54,7 @@ NATIVE_A = replace(
         source_collection_id="earthx-test-mixed-native-a",
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+    search_filters=(),
 )
 
 # A second materialized collection with a time axis: shares NATIVE_A's source (one

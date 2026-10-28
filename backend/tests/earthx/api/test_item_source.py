@@ -27,6 +27,7 @@ def _materialized_entry() -> Any:
         SENTINEL_2_L2A,
         source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
         coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+        search_filters=(),
     )
 
 

@@ -423,6 +423,17 @@ CQL2 etwas leisten könnte.
 > ohne Wirkung blieben (gemessen, still verworfen) — dasselbe Muster wie
 > `filter`. Beide sind jetzt aus denselben Gründen ebenfalls aus.
 
+> **Nachtrag (DS-02a, 28.10.2026, `adr/0021`):** `POST /stac/search` nimmt
+> `query` wieder an, aber nur mit den Filtern, die die Registry je Datensatz
+> nennt (`gte`/`lte` auf Bereichen, `in` auf Wertelisten), dazu
+> `query_by_collection` für Werte je Datensatz; alles andere ist `400`. Die
+> Plattform prüft vor der Quelle, weil Earth Search eine unbekannte Eigenschaft
+> still mit 0 Treffern und einen unbekannten Operator still ungefiltert
+> beantwortet (gemessen). Die Landing Page weist `#query` weiterhin **nicht**
+> aus: beantwortet wird eine erklärte Teilmenge, nicht jede Eigenschaft. `GET`
+> und die Items-Route weisen `query` weiter ab; `filter`, `sortby` und `fields`
+> bleiben aus.
+
 ---
 
 ## 6. Folgen
