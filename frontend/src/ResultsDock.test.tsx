@@ -409,11 +409,12 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     expect(toggle().textContent).toBe('Hide results');
   });
 
-  it('a scene ticked while they are off is ticked as usual, with the bar of the selection', () => {
+  it('a scene ticked while they are off is ticked as usual, with the bar of the selection, and shows them (Otto, 28.10.2026)', () => {
     click(toggle());
     click(slot('results').querySelector('.result-row input')!);
     expect(useAppStore.getState().selectedIds).toHaveLength(1);
-    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(toggle().textContent).toBe('Hide results');
     expect(container.querySelector('.download-count strong')?.textContent).toBe('1');
     expect(container.querySelector('.download-count span')?.textContent).toBe('scene selected');
   });
@@ -454,8 +455,9 @@ describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
   });
 
   it('takes the list away, and what it drew on the map, and opens the control menu', () => {
-    useAppStore.setState({ searchCrops: [{ id: 'c', name: 'c', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET } } as never], resultsOnMap: false });
+    useAppStore.setState({ searchCrops: [{ id: 'c', name: 'c', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET } } as never] });
     click(slot('results').querySelector('.result-row input')!);
+    useAppStore.setState({ resultsOnMap: false });
     click(clearButton());
     const s = useAppStore.getState();
     expect(s.sections).toEqual([]);

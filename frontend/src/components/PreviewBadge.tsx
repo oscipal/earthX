@@ -10,16 +10,20 @@
 // own file; at a zoom where the tile is coarser than the result's pixel size, the
 // tiler reads its overviews, and the badge says so (`resultLayer.ts::isOverview`).
 //
+// "Loading…": the panel asks the tiler about the preview, or the map waits for its tiles (`usePreviewLoading`). The
+// panel's heading says it too: a narrow window hides the map behind the panel.
+//
 // "Zoom in": a layer, or the preview of the panel, whose tiles start at a level above the map's zoom
 // shows nothing there, and the badge says from which zoom it is drawn (`zoomHint.ts`).
 
 import { useMemo } from 'react';
 
-import { previewOverlays } from '../processingPreview';
+import { previewOverlays, SCENE_PREVIEW_HINT } from '../processingPreview';
 import { isOverview } from '../resultLayer';
 import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import { zoomInTo } from '../zoomHint';
+import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
 
 export const OVERVIEW_TITLE = 'Drawn coarser than the result: zoom in for its full resolution.';
 
@@ -28,6 +32,7 @@ const zoomInTitle = (waiting: { name: string; from: number }[]): string =>
 
 export default function PreviewBadge() {
   const draft = useProcessingStore((s) => s.preview);
+  const loading = usePreviewLoading();
   const aoi = useAppStore((s) => s.aoi);
   const draftOverlays = useMemo(() => (draft ? previewOverlays(draft, draft.clipToAoi ? aoi : null) : []), [draft, aoi]);
   const layers = useAppStore((s) => s.layers);
@@ -49,10 +54,19 @@ export default function PreviewBadge() {
     ...layers.filter((l) => l.visible && !l.result?.expired && !l.result?.deleted).map((l) => ({ name: l.name, from: zoomInTo(l.overlays, mapZoom) })),
     ...(draft ? [{ name: 'Preview', from: zoomInTo(draftOverlays, mapZoom) }] : []),
   ].filter((w): w is { name: string; from: number } => w.from !== null);
-  if (!draft && !pinned && !overview && waiting.length === 0) return null;
+  if (!draft && !pinned && !overview && waiting.length === 0 && !loading) return null;
   return (
     <div className="overlay preview-badge-dock">
-      {(draft || pinned) && <span className="preview-badge">Preview</span>}
+      {(draft || pinned) && (
+        <span className="preview-badge" title={draft?.perScene ? SCENE_PREVIEW_HINT : undefined}>
+          Preview
+        </span>
+      )}
+      {loading && (
+        <span className="preview-badge loading" role="status" title={LOADING_TITLE}>
+          Loading…
+        </span>
+      )}
       {overview && (
         <span className="preview-badge" title={OVERVIEW_TITLE}>
           Overview
