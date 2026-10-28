@@ -278,3 +278,15 @@ Direkt mit `rio_tiler.io.Reader` am synthetischen `B04.tif`, `nearest`, Mittelpu
 ### 14.3 Die Bitgleich-Tests auf 512 px
 
 Lokal geändert und danach verworfen: `ZOOM = 13` statt 14, `tilesize=512` in den URLs der vier Testmodule und in `_job_tile`/`_job_bands`, 512 statt 256 in `_source_position` und `_tile_at`. Dann `pytest -k "NativeLevel or OnZarr"` über `test_tiler_operator.py`, `test_tiler_chain.py`, `test_tiler_mask_normalize.py` und `test_tiler_mosaic_operator.py`.
+
+## 15. Freigabe (Otto, 28.10.2026)
+
+1. **Umstellen:** Option 2. 512 px nur für Mosaik und Mosaik-Vorschau (Mosaik-Kachel ohne und mit Schritten); Szene, Item-Vorschau und Ergebnis bleiben bei 256 px. Begründung: Der Vorteil kommt aus der Grenze von 6 Verbindungen je Host bei HTTP/1.1.
+   - **Wiedervorlage M6:** Mit HTTP/2 bzw. CDN vor dem `tiler` neu messen, ob 512 px für Mosaik und Mosaik-Vorschau dann noch schneller ist und ob es sich für weitere Kachel-Arten lohnt.
+   - Die sieben Stellen aus §9.1 rechnen künftig mit der Kachelgröße der jeweiligen Quelle, nicht fest mit 256 px. Dazu gehört der AOI-Zuschnitt im Browser. TileJSON und Viewer passen zusammen.
+2. **`tilesize`:** Option 1, nur 256 und 512, sonst `400`.
+3. **Mosaik-Zoom:** Option 1, `MIN_MOSAIC_ZOOM` bleibt 8.
+4. **Bitgleich-Tests:** Option 1, für 256 und 512 px; Zarr-Grenze für 512 px 3 %.
+5. **Nachtrag:** Option 1, in `adr/0014` §6.3.
+
+**Schnitt:** ein PR. Das Backend (Grenze für `tilesize`, Tests) kommt jetzt. Mit dem Frontend beginnt die Session erst, wenn Otto einen freien Frontend-Platz meldet.
