@@ -38,7 +38,7 @@ from tests.earthx.api.test_tiler_mask_normalize import (
     ZARR,
     _hidden_classes,
 )
-from tests.earthx.api.test_tiler_operator import _BAND, HEIGHT, NDVI, WIDTH, _source_position, _tiles
+from tests.earthx.api.test_tiler_operator import _BAND, HEIGHT, NATIVE, NDVI, WIDTH, _source_position, _tiles
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
 from tests.earthx.processing.test_mask import scl_layer
@@ -119,9 +119,12 @@ def _url(
     assets: Sequence[str] = ("red", "nir", "scl"),
     versions: Sequence[int] | None = None,
     route: str | None = None,
+    size: int | None = None,
 ) -> str:
     z, x, y = tile
     query = [f"asset={quote(a)}" for a in assets] + _query(steps, versions)
+    if size is not None:
+        query.append(f"tilesize={size}")
     path = route or f"tiles/WebMercatorQuad/{z}/{x}/{y}.tif"
     return f"/collections/{dataset}/items/{ITEM}/{path}?{'&'.join(query)}"
 
@@ -136,10 +139,10 @@ def _decode(content: bytes) -> numpy.ma.MaskedArray:
     return numpy.ma.masked_array(data, mask=numpy.broadcast_to(alpha <= 0, data.shape))
 
 
-def _job_bands(result_path: Path, tile: tuple[int, int, int]) -> numpy.ma.MaskedArray:
+def _job_bands(result_path: Path, tile: tuple[int, int, int], size: int = 256) -> numpy.ma.MaskedArray:
     z, x, y = tile
     with Reader(str(result_path)) as reader:
-        return reader.tile(x, y, z, resampling_method="nearest", tilesize=256).array
+        return reader.tile(x, y, z, resampling_method="nearest", tilesize=size).array
 
 
 def _recipe(assets: Sequence[str], chain: Sequence[tuple[str, dict]]) -> dict:
@@ -165,6 +168,7 @@ def _recipe(assets: Sequence[str], chain: Sequence[tuple[str, dict]]) -> dict:
 class TestTheChainEqualsTheJobOnTheNativeLevel:
     """§6.4: the tile through the real route against the job, bit for bit, on every tile of the raster."""
 
+    @pytest.mark.parametrize("size", NATIVE)
     @pytest.mark.parametrize(
         ("assets", "chain"),
         [
@@ -175,13 +179,13 @@ class TestTheChainEqualsTheJobOnTheNativeLevel:
         ],
         ids=["mask, band math", "mask, normalize", "mask, band math, normalize", "normalize, band math"],
     )
-    def test_cog_pair_with_a_nested_layer(self, client: TestClient, tmp_path: Path, assets, chain) -> None:
+    def test_cog_pair_with_a_nested_layer(self, client: TestClient, tmp_path: Path, assets, chain, size: int) -> None:
         result = run(recipe_from_data(_recipe(assets, chain), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
         compared = masked = 0
-        for tile in _tiles():
-            response = client.get(_url(tile, chain, assets=assets))
+        for tile in _tiles(NATIVE[size]):
+            response = client.get(_url(tile, chain, assets=assets, size=size))
             assert response.status_code == 200, response.text
-            from_tile, from_job = _decode(response.content), _job_bands(result.path, tile)
+            from_tile, from_job = _decode(response.content), _job_bands(result.path, tile, size)
             assert from_tile.shape == from_job.shape, tile
             assert numpy.array_equal(from_tile.mask, numpy.ma.getmaskarray(from_job)), tile
             valid = ~from_tile.mask
@@ -269,10 +273,11 @@ class TestTheChainEqualsTheJobOnZarr:
     source pixel of a boundary of either grid, and differs in less than 5 % of the valid pixels.
     """
 
-    def test_a_masked_index_over_a_20_m_layer_in_a_zarr_store(self, client: TestClient, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("size", NATIVE)
+    def test_a_masked_index_over_a_20_m_layer_in_a_zarr_store(self, client: TestClient, tmp_path: Path, size: int) -> None:
         expression = "(b08 - b04) / (b08 + b04)"
         west, south, east, north = transform_bounds(mini_zarr_cf.ITEM_CRS, WGS84_CRS, *mini_zarr_cf.store_bounds())
-        tile = WEB_MERCATOR_TMS.tile((west + east) / 2, (south + north) / 2, 14)
+        tile = WEB_MERCATOR_TMS.tile((west + east) / 2, (south + north) / 2, NATIVE[size])
         key = ("r10m:b04,b08", "scl20m:scl")
         result = run(
             recipe_from_data(_zarr_recipe(expression), OPERATORS), workdir=tmp_path, progress=lambda d, t: None
@@ -284,13 +289,14 @@ class TestTheChainEqualsTheJobOnZarr:
                 [("mask", MASK), ("band_math", {"expression": expression})],
                 dataset=ZARR,
                 assets=key,
+                size=size,
             )
         )
         assert response.status_code == 200, response.text
         from_tile = _decode(response.content)[0]
-        from_job = _job_bands(result.path, (tile.z, tile.x, tile.y))[0]
+        from_job = _job_bands(result.path, (tile.z, tile.x, tile.y), size)[0]
 
-        col, row = _source_position(tile)
+        col, row = _source_position(tile, size)
         size = mini_zarr_cf.SIZE
         inside = (col >= 0) & (col < size) & (row >= 0) & (row < size)
         fine_row = numpy.clip(numpy.floor(row).astype(int), 0, size - 1)

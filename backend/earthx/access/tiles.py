@@ -13,7 +13,10 @@ three things TiTiler leaves open:
 * **which routes exist** — no viewer (it would need a free URL to be useful), no
   ``/bbox`` and no ``/feature`` (the AOI download is M2-06), no OGC Maps;
 * **statistics with a cache**, because a cold read costs the ~1 s adr/0006 §3.4
-  measured, and it is the same second before every first tile of a view.
+  measured, and it is the same second before every first tile of a view;
+* **two tile sizes** — :data:`TILE_SIZES`, on every route of the factory (NM4-29):
+  TiTiler takes any ``tilesize`` above 0, and a tile of 4096 px held a thread for
+  12.6 s.
 
 What is deliberately *not* here: `gateway`. `access` may not import it
 (architekturplan.md 3.1), which is why the process entrypoint moved to
@@ -33,7 +36,7 @@ from typing import Annotated, Any, Literal, Protocol
 import morecantile
 import rasterio
 from attrs import define, field
-from fastapi import Depends, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from morecantile.defaults import TileMatrixSets
 from rasterio.errors import RasterioIOError
 from rio_tiler.io import BaseReader
@@ -50,6 +53,22 @@ from earthx.readers.cog import AssetPath, CogReader
 from earthx.readers.zarr_reader import ZarrAsset, ZarrReader
 
 LOGGER = logging.getLogger("earthx.access.tiles")
+
+#: The sizes a tile may have, in pixels (NM4-29 §15): 256 for scenes, item previews and results, 512 for the mosaic.
+TILE_SIZES = (256, 512)
+
+
+def tile_size_allowed(request: Request) -> None:
+    """``400`` for a ``tilesize`` that is not one of :data:`TILE_SIZES`, before the source is asked.
+
+    Read off the query, not declared: as a dependency of the whole router it also answers a ``tilesize`` on a route
+    that takes none (statistics, TileJSON's own ``tilesize`` is the same check), and it runs ahead of the path
+    dependency, which fetches the item. One value, written as the number itself.
+    """
+    values = request.query_params.getlist("tilesize")
+    if values and (len(values) != 1 or values[0] not in {str(size) for size in TILE_SIZES}):
+        sizes = " or ".join(str(size) for size in TILE_SIZES)
+        raise HTTPException(status_code=400, detail=f"tilesize is {sizes}")
 
 
 def open_asset(src_path: Any, **reader_params: Any) -> BaseReader:
@@ -125,6 +144,14 @@ class EarthxTilerFactory(TilerFactory):
     """TiTiler's tiler factory with our reader, our route set and a cached statistic."""
 
     reader: Callable[..., BaseReader] = open_asset
+
+    # Every route checks `tilesize` first (NM4-29). A field of the factory, not an argument of `include_router`, so
+    # that a factory built in a test carries it too.
+    router: APIRouter = field(factory=lambda: APIRouter(dependencies=[Depends(tile_size_allowed)]))
+
+    # The size of the tiles the TileJSON hands out when the request names none: the size the viewer draws this kind
+    # of tile at, so that a client following the document gets the same tiles (NM4-29 §15). TiTiler's default is 512.
+    tile_size: int = 256
 
     # A cache is optional everywhere it appears: without one this is slower, never
     # wrong (E5, adr/0001 §9.3). The default is "no cache", so a factory built in a
@@ -237,7 +264,10 @@ class EarthxTilerFactory(TilerFactory):
             return statistics
 
     def tilejson(self) -> None:  # noqa: C901
-        """Register ``GET /{tileMatrixSetId}/tilejson.json`` — TiTiler's, with one change.
+        """Register ``GET /{tileMatrixSetId}/tilejson.json`` — TiTiler's, with two changes.
+
+        The tiles it hands out are :attr:`tile_size` px when the request names no ``tilesize``, the size the viewer
+        draws them at (NM4-29), not TiTiler's 512 for every kind of tile.
 
         ``minzoom``/``maxzoom`` default to the registry's released range
         (``viewer_zoom_dependency``) instead of rio-tiler's reader-computed ones (M3-04,
@@ -261,7 +291,7 @@ class EarthxTilerFactory(TilerFactory):
         some tests do), nothing is validated and TiTiler's original precedence holds.
 
         Everything else — the tile URL, the reader-derived bounds and metadata — is
-        unchanged from TiTiler's own implementation; only the zoom source differs.
+        unchanged from TiTiler's own implementation; only the zoom source and the default size differ.
         """
 
         def tilejson(
@@ -269,8 +299,8 @@ class EarthxTilerFactory(TilerFactory):
             tileMatrixSetId,
             tilesize: Annotated[
                 int | None,
-                Query(gt=0, description="Tilesize in pixels. Default to 512."),
-            ] = 512,
+                Query(gt=0, description=f"Tilesize in pixels, {' or '.join(map(str, TILE_SIZES))}."),
+            ] = self.tile_size,
             tile_format: Annotated[
                 ImageType | None,
                 Query(

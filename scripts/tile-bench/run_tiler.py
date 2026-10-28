@@ -73,7 +73,10 @@ def synthetic_item(item_id: str) -> dict:
         "bbox": FOOTPRINT,
         "geometry": {"type": "Polygon",
                      "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]]},
-        "properties": {"datetime": "2026-08-01T10:20:39Z", "proj:code": "EPSG:32632", "eo:cloud_cover": 1.0},
+        # One overpass for every scene, so that they make one mosaic (NM4-29): its key is day and MGRS tile, the
+        # overpass is `s2:datatake_id`.
+        "properties": {"datetime": "2026-08-01T10:20:39Z", "grid:code": "MGRS-32TPT",
+                       "s2:datatake_id": "SYNTH_20260801T102039", "proj:code": "EPSG:32632", "eo:cloud_cover": 1.0},
         "links": [],
         "assets": {
             "red": {"href": f"{ASSET_HOST}/synth/{item_id}/B04.tif", "type": cog_type, "roles": ["data", "reflectance"],
