@@ -317,7 +317,7 @@ KE1–KE8 angenommen. **Zusatz Modulgrenzen:** Die Route nutzt `estimate_order` 
 
 ## 15. NM4-19b Frontend (Folgeaufgabe, neue Session)
 
-**Stufe A**, nur Frontend, nach dem Merge von #218. Branch von `main`, ein Draft-PR. Der Abschnitt ist ohne das Gespräch zu NM4-19 verständlich; maßgeblich sind §14, §16 (falls entschieden) und `adr/0006`, Nachtrag NM4-19.
+**Stufe A**, nur Frontend, nach dem Merge von #218. Branch von `main`, ein Draft-PR. Der Abschnitt ist ohne das Gespräch zu NM4-19 verständlich; maßgeblich sind §14, §16.3 und `adr/0006`, Nachtrag NM4-19.
 
 ### 15.1 Ausgangslage
 
@@ -334,11 +334,13 @@ KE1–KE8 angenommen. **Zusatz Modulgrenzen:** Die Route nutzt `estimate_order` 
 4. **Rückfall (KE1):** ohne vollständigen Auftrag, bei einer abgeschnittenen Kette (die Vorschau zeigt nur die ersten Schritte), bei `413`, `5xx` oder einem Netzfehler misst die Vorschau wie heute (GET, erste Szene). Tooltip der Vorschau dann: „Range measured over the first whole scene“. Eine Ablehnung eines Schritts (`422` mit Platz) zeigt das Panel wie bisher.
 5. **Gröbere Messung:** bei `exact: false` im Tooltip der Vorschau „Range measured on a coarser read; the result may differ“. Kein Text im Panel (UI-01 §4).
 6. **„Whole scene“** bleibt unverändert (Frage 6). `MEASURE_WAIT_MS` und das spätere Übernehmen bleiben (KE8).
-7. Frage 8 (§16) nur, wenn sie bis dahin für NM4-19b entschieden ist.
+7. **Index-Regel nach Perzentilen (Frage 8, Otto 28.10.2026, §16.3):** In `render.ts::scaleOf`, der einen Regel für Vorschau und Ergebnis, gilt eine Band-math-Ausgabe als Index, wenn bei allen Bändern **p2 ≥ −1 und p98 ≤ 1** gilt (statt Minimum und Maximum); dann −1…1 in `rdylgn`, sonst wie bisher 2–98 % in `viridis`, und wo die Perzentile fehlen, Minimum…Maximum. Die Regel gilt für die Vorschau und für Ergebnis-Layer gleich.
+8. **Folgen für das Ergebnis prüfen:** Ändert die Regel etwas am Ergebnis selbst, also an den Tags in `result.tif` oder an der Darstellungsvorgabe aus M4-32 (`resultRender`, Darstellung, die ein Ergebnis mitbringt), dann `earthx.__version__` erhöhen (mit README, Runner-Tag und Fixture wie bei 0.4.2) und einen Nachtrag in `adr/0014` schreiben. Bleibt die Änderung reine Anzeige im Frontend, sagt der PR das mit Beleg (welche Datei und welches Feld unverändert bleibt).
 
 ### 15.3 Abnahme
 
 - `vitest`: „AOI only“ mit vollständigem Auftrag → genau ein POST mit dem Auftrag von `parts[0]`, keine GET-Messung; die Farbskala aus der Antwort ist dieselbe wie die eines Ergebnis-Layers mit denselben `statistics`. Keine AOI, keine Koordinate, kein Auftragstext in einer gebauten URL (Test über alle URLs der Vorschau). Rückfälle aus 15.2 Nr. 4 mit dem Tooltip; `exact: false` mit dem Tooltip; „Whole scene“ unverändert; eine ältere Messung wird verworfen.
+- **Index-Regel (Frage 8):** `vitest` mit einem NDVI mit Ausreißern über ±1 (etwa Minimum −1,3, Maximum 1,5, p2 0,0, p98 0,91, wie die echte Szene in §16.1): Vorschau und Ergebnis-Layer wählen beide „Index“ (−1…1, `rdylgn`); ein Band-math-Ergebnis mit p98 > 1 bleibt 2–98 % `viridis`; ohne Band math nie Index. Gegenprobe: Mit der alten Regel (Minimum/Maximum) scheitert der Ausreißer-Fall.
 - Gegenprobe: Die neuen Tests scheitern gegen den Code vor der Änderung.
 - Prüfung im echten Browser (Chromium/Playwright der Sitzung) mit nachgestellten Antworten, hell und dunkel, schmales Fenster; im PR beschrieben.
 - `npm run lint`, `npx tsc -b --pretty false`, `npm test` grün; Prüfanleitung für Otto im PR; Log-Zeile mit PR-Nummer; `docs/plans/nach-m4-backlog.md` nicht ändern; vor „fertig“ `main` holen.
@@ -372,6 +374,10 @@ KE1–KE8 angenommen. **Zusatz Modulgrenzen:** Die Route nutzt `estimate_order` 
 3. R2.
 4. R3.
 5. R5, bleibt.
+
+### 16.3 Antwort (Otto, 28.10.2026)
+
+Option 1: Index-Regel nach Perzentilen (Band math und p2 ≥ −1 und p98 ≤ 1), gleich für Vorschau und Ergebnis, umgesetzt in NM4-19b (§15.2 Nr. 7 und 8, §15.3). Ändert sich dadurch etwas am Ergebnis (Tags in `result.tif`, Darstellungsvorgabe aus M4-32), wird die Version erhöht und `adr/0014` ergänzt. Test mit einem NDVI mit Ausreißern über ±1: Vorschau und Job zeigen beide „Index“.
 
 ## 17. Umsetzung des Backends (28.10.2026)
 
@@ -445,6 +451,6 @@ Eingearbeitet:
 - Tests ergänzt: Body ohne Länge (gestreamt, `413` beim Lesen), Positionen über ein MultiPolygon, genau 20 000 Positionen.
 - Docstrings: am Rand einer Einzelszene liest das grobe Raster den Randwert (`valid_percent` dort etwas höher als im Job); der VRT eines Mosaik-Mitglieds gilt je Mitglied, nicht je Raster.
 
-**Item-IDs im Log, eingeordnet statt geändert:** §10 Nr. 5 des Plans versprach mehr als die Vorgabe: „in keiner Logzeile … eine Item-ID“. Die Grenze der Aufgabe (§4) nennt AOI, Job-, Rezept- und Permalink-Kennungen, Hashes, `href` und signierte URLs, keine Item-IDs. Item-IDs stehen heute im Zugriffslog jeder Kachel-Route (`/collections/{dataset}/items/{item}/…`), in der Zeile „order refused“ der Annahme (`no item '…' in '…'`) und im Pfad der `gateway`-Zeile eines Item-Abrufs. Für diese Route gilt dasselbe: Ihre eigene Zeile nennt kein Item; eine Ablehnung der Annahme und der Item-Abruf schreiben die ID wie bei einem Job. Der Test prüft das so (keine AOI, kein Schlüssel, kein Item in der Zeile der Route). Sollen Item-IDs auch dort heraus, ist das eine eigene Entscheidung über alle Routen.
+**Item-IDs im Log, eingeordnet statt geändert:** §10 Nr. 5 des Plans versprach mehr als die Vorgabe: „in keiner Logzeile … eine Item-ID“. Die Grenze der Aufgabe (§4) nennt AOI, Job-, Rezept- und Permalink-Kennungen, Hashes, `href` und signierte URLs, keine Item-IDs. Item-IDs stehen heute im Zugriffslog jeder Kachel-Route (`/collections/{dataset}/items/{item}/…`), in der Zeile „order refused“ der Annahme (`no item '…' in '…'`) und im Pfad der `gateway`-Zeile eines Item-Abrufs. Für diese Route gilt dasselbe: Ihre eigene Zeile nennt kein Item; eine Ablehnung der Annahme und der Item-Abruf schreiben die ID wie bei einem Job. Der Test prüft das so (keine AOI, kein Schlüssel, kein Item in der Zeile der Route). Sollen Item-IDs auch dort heraus, ist das eine eigene Entscheidung über alle Routen. **Otto, 28.10.2026:** so lassen; das wird mit M6 (Datenschutz) für alle Routen entschieden.
 
 Nicht geändert: Bei einer gleichzeitigen Erneuerung kann der Aufräumer einen gerade erneuerten Eintrag löschen; die Folge ist ein Cache-Fehlschuss.
