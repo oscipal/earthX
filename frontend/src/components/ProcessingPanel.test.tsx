@@ -719,7 +719,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     expect(resampling().value).toBe('');
     choose(resampling(), 'lanczos');
     await review();
-    expect(sent().steps[0]).toMatchObject({ op: 'reproject', op_version: 3, params: { resampling: 'lanczos' } });
+    expect(sent().steps[0]).toMatchObject({ op: 'reproject', op_version: 4, params: { resampling: 'lanczos' } });
   });
 
   it('the data type is chosen by the panel and said so, with the reason; it is sent explicitly', async () => {

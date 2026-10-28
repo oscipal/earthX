@@ -305,7 +305,7 @@
               "T2"
             ]
           },
-          "step_reproject_v3": {
+          "step_reproject_v4": {
             "additionalProperties": false,
             "description": "Bring the raster into another CRS at a chosen pixel size, with a chosen resampling.",
             "properties": {
@@ -313,7 +313,7 @@
                 "const": "reproject"
               },
               "op_version": {
-                "const": 3
+                "const": 4
               },
               "params": {
                 "additionalProperties": false,
@@ -462,7 +462,7 @@
                   "$ref": "#/$defs/step_normalize_v1"
                 },
                 {
-                  "$ref": "#/$defs/step_reproject_v3"
+                  "$ref": "#/$defs/step_reproject_v4"
                 }
               ]
             },
