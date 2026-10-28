@@ -2474,3 +2474,21 @@ maßgeblich ist dieser Nachtrag.
   über das Netz geschätzt [A] etwa 9 s für die erste Kachel im ungünstigsten Fall (3 Portionen ×
   3 Assets × ~1 s); Otto prüft es (Prüfanleitung im PR).
 - **Keine Statistik** über das Mosaik (F4); siehe `adr/0006`, Nachtrag NM4-04.
+
+## 15u. Nachtrag vom 2026-10-28: die Schätzung bemisst das Raster nach dem feinsten Asset (zu §5.5, §15i; NM4-43a)
+
+`adr/0020` §3.3 hat gemessen, dass die Schätzung vor dem Lauf das Ausgaberaster nach dem **ersten** Asset des Auftrags bemaß,
+der Kern aber alle Assets auf das **feinste** Raster liest (`processing/source.py: common_grid`).
+
+- **Was falsch war:** `plan._input_meta(sized=True)` nahm `resolved[0]` und dessen `gsd`. Stand ein grobes Asset vorn (Sentinel-2:
+  `coastal` mit 60 m vor `red` mit 10 m), lagen `output_pixels`, `output_bytes`, die Prüfung auf `MAX_JOB_BYTES` (`JobTooLarge`,
+  `413`) und `units` um bis zum Faktor 36 zu niedrig. `disk_needed` bemaß den `float64`-Durchgang je Asset mit dessen eigenem
+  `gsd`, obwohl er auf dem feinsten Raster über alle Bänder läuft. Die Reihenfolge der Assets bestimmte also die Zahlen.
+- **Was jetzt gilt:** Das Raster der Schätzung ist die AOI-Box im CRS des Assets mit dem **kleinsten `gsd`** (bei Gleichstand das
+  erste), mit dessen Pixelgröße (`plan._finest`). `disk_needed` bemisst den Durchgang in `float64` einmal auf diesem Raster, aufgefüllt
+  auf ganze Blöcke, über die Bänder **aller** Assets. Fehlt bei einem Asset das `gsd`, bleibt die Abweisung (`UnsupportedRecipe`, „no gsd“),
+  gleich an welcher Stelle es steht; die Namensprüfung (`check_bands`) wartet nicht auf ein Pixelmaß.
+- **Unverändert:** Was ein Asset auf seinem eigenen Raster liest (`input_pixels`, `input_bytes`, daraus die Sekunden), stimmte schon.
+  Bei einem einzigen Pixelmaß bleiben alle Zahlen bitgleich zu vorher; `earthx.__version__` bleibt, kein Byte eines Ergebnisses ändert sich.
+- **Tests:** `test_plan.py` (`TestTheRasterIsTheFinestAsset`), `test_estimate_geographic.py` (zwei Pixelgrößen in Grad) und
+  `test_band_math_run.py` (`TestNestedGrids`: die Schätzung gegen den Lauf auf zwei Pixelgrößen).
