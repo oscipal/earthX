@@ -8,6 +8,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BASEMAP_IDS, BASEMAPS } from '../basemaps';
+import { NO_OVERLAYS, OVERLAYS } from '../overlays';
 import { useAppStore } from '../store';
 import BasemapMenu from './BasemapMenu';
 
@@ -27,7 +28,7 @@ beforeEach(() => {
   container.className = 'app';
   document.body.append(container);
   root = createRoot(container);
-  useAppStore.setState({ basemap: 'satellite', projection: 'mercator' });
+  useAppStore.setState({ basemap: 'satellite', projection: 'mercator', overlays: { ...NO_OVERLAYS } });
   act(() => root.render(<BasemapMenu />));
 });
 
@@ -40,10 +41,11 @@ const trigger = (): HTMLButtonElement => container.querySelector('button.basemap
 const menu = (): HTMLElement | null => document.querySelector('[role="menu"]');
 const entries = (): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
 const entry = (name: string): HTMLButtonElement => {
-  const found = entries().find((e) => e.textContent === name);
+  const found = [...entries(), ...checkboxes()].find((e) => e.textContent === name);
   if (!found) throw new Error(`no entry ${name}`);
   return found;
 };
+const checkboxes = (): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]')];
 const open = () => act(() => trigger().click());
 const choose = (name: string) => act(() => entry(name).click());
 
@@ -54,12 +56,13 @@ describe('the Basemap button', () => {
     expect(menu()).toBeNull();
   });
 
-  it('opens a menu with a group of basemaps and a group of projections', () => {
+  it('opens a menu with a group of basemaps, one of overlays and one of projections', () => {
     open();
     expect(trigger().getAttribute('aria-expanded')).toBe('true');
     const groups = [...document.querySelectorAll('[role="menu"] [role="group"]')];
-    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Basemap', 'Projection']);
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Basemap', 'Overlays', 'Projection']);
     expect(entries().map((e) => e.textContent)).toEqual(['Satellite', 'Streets', 'Grey', 'Outlines', 'Mercator', 'Globe']);
+    expect(checkboxes().map((e) => e.textContent)).toEqual(['Labels', 'Graticule']);
   });
 
   it('closes on the second click on the button', () => {
@@ -68,10 +71,13 @@ describe('the Basemap button', () => {
     expect(menu()).toBeNull();
   });
 
-  it('has no "Overlays" group yet and no theme entry (Light/Dark is a button of its own)', () => {
+  it('has no theme entry (Light/Dark is a button of its own)', () => {
     open();
-    const text = menu()?.textContent ?? '';
-    expect(text).not.toMatch(/Overlays|Labels|Graticule|Light|Dark/u);
+    expect(menu()?.textContent ?? '').not.toMatch(/Light|Dark/u);
+  });
+
+  it('is called "Basemap, overlays and projection" in its tooltip', () => {
+    expect(trigger().title).toBe('Basemap, overlays and projection');
   });
 });
 
@@ -110,6 +116,63 @@ describe('choosing a basemap', () => {
     choose('Grey');
     expect(useAppStore.getState().basemap).toBe('grey');
     expect(entries().filter((e) => e.getAttribute('aria-checked') === 'true')).toHaveLength(2);
+  });
+});
+
+describe('switching an overlay on and off', () => {
+  it('starts with both off', () => {
+    open();
+    expect(checkboxes().map((e) => e.getAttribute('aria-checked'))).toEqual(['false', 'false']);
+  });
+
+  it.each([
+    ['Labels', 'labels'],
+    ['Graticule', 'graticule'],
+  ] as const)('%s: a click switches it on, the next one off, in the store, the storage and the mark', (name, id) => {
+    open();
+    choose(name);
+    expect(useAppStore.getState().overlays[id]).toBe(true);
+    expect(JSON.parse(window.localStorage.getItem('earthx.overlays') ?? '{}')[id]).toBe(true);
+    expect(entry(name).getAttribute('aria-checked')).toBe('true');
+    choose(name);
+    expect(useAppStore.getState().overlays[id]).toBe(false);
+    expect(entry(name).getAttribute('aria-checked')).toBe('false');
+  });
+
+  it.each(['labels', 'graticule'] as const)('%s: the tooltip says what it shows', (id) => {
+    open();
+    expect(entry(OVERLAYS[id].name).title).toBe(OVERLAYS[id].tip);
+  });
+
+  it('switches one overlay without the other, and leaves basemap and projection alone', () => {
+    open();
+    choose('Graticule');
+    expect(useAppStore.getState().overlays).toEqual({ labels: false, graticule: true });
+    expect([useAppStore.getState().basemap, useAppStore.getState().projection]).toEqual(['satellite', 'mercator']);
+    expect(menu()).not.toBeNull();
+  });
+
+  it('is an overlay for every basemap: the marks of the basemaps do not move it', () => {
+    open();
+    choose('Labels');
+    for (const id of BASEMAP_IDS) {
+      choose(BASEMAPS[id].name);
+      expect(entry('Labels').getAttribute('aria-checked')).toBe('true');
+    }
+  });
+
+  it('works when the browser keeps nothing (storage blocked)', () => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => {
+      throw new Error('blocked');
+    };
+    try {
+      open();
+      choose('Labels');
+    } finally {
+      Storage.prototype.setItem = setItem;
+    }
+    expect(useAppStore.getState().overlays.labels).toBe(true);
   });
 });
 
@@ -156,10 +219,14 @@ describe('the keyboard and the mouse', () => {
     expect(document.activeElement?.textContent).toBe('Grey');
   });
 
-  it('moves between the entries with the arrow keys, across both groups', () => {
+  it('moves between the entries with the arrow keys, across all three groups', () => {
     open();
     act(() => entry('Outlines').focus());
-    act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    const down = () => act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    down();
+    expect(document.activeElement?.textContent).toBe('Labels');
+    down();
+    down();
     expect(document.activeElement?.textContent).toBe('Mercator');
   });
 

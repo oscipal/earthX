@@ -36,8 +36,9 @@ import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
 import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
+import type { OverlayId, Overlays } from './overlays';
 import type { Projection, Theme } from './preferences';
-import { loadBasemap, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
+import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 import { appliedRenderFrom, autoRescale } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
@@ -753,6 +754,7 @@ export interface AppState {
   theme: Theme;
   projection: Projection;
   basemap: BasemapId;
+  overlays: Overlays;
   // --- coverage heatmap (M2-07c) ---
   showCoverage: boolean;
   // The dataset the coverage map is drawn for; `null` while it is off.
@@ -992,6 +994,7 @@ export interface AppState {
   toggleTheme: () => void;
   setProjection: (projection: Projection) => void;
   setBasemap: (basemap: BasemapId) => void;
+  setOverlay: (overlay: OverlayId, on: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -1005,6 +1008,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   theme: loadTheme(),
   projection: loadProjection(),
   basemap: loadBasemap(),
+  overlays: loadOverlays(),
   showCoverage: false,
   coverageDatasetId: null,
   coverage: null,
@@ -2008,6 +2012,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setBasemap: (basemap) => {
     saveBasemap(basemap);
     set({ basemap });
+  },
+  setOverlay: (overlay, on) => {
+    const overlays = { ...get().overlays, [overlay]: on };
+    saveOverlays(overlays);
+    set({ overlays });
   },
 
   runSearch: async () => {

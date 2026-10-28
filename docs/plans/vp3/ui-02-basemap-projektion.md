@@ -1,6 +1,6 @@
 # UI-02 — Basemap-Auswahl und Projektion
  
-**Stand:** 12.10.2026, beauftragt von Otto; ergänzt am 24.10.2026 (§3 Permalink); Plan mit Recherche am 27.10.2026 (§6), von Otto am 27.10.2026 freigegeben (§6.10).
+**Stand:** 12.10.2026, beauftragt von Otto; ergänzt am 24.10.2026 (§3 Permalink); Plan mit Recherche am 27.10.2026 (§6), von Otto am 27.10.2026 freigegeben (§6.10); UI-02a umgesetzt (§7, §8), UI-02b am 28.10.2026 (§9).
 **Meilenstein:** UI, direkt nach M4 (nach M4-20).
 **Stufe B mit Recherche:** Plan mit Quellen im Draft-PR, Otto gibt frei, dann Code.
 **Modell:** Opus (Effort hoch) für Plan und Recherche, Sonnet (Effort hoch) für die Umsetzung.
@@ -235,7 +235,7 @@ Ein Knopf oben rechts neben „⤢ Zoom to selection“ und „☀ Light/☾ Dar
 ### 6.9 Schnitt
 
 1. **UI-02a, Frontend (umgesetzt, §7):** Katalog, Menü „Basemap“ mit Basemap und Projection, Wechsel per Diff, Streets/Grey/Outlines, Attribution immer offen, Merken. „Light/Dark“ und der Globus bleiben unverändert. Tests. Geschätzt 350–400 Zeilen.
-2. **UI-02b, Frontend:** Labels (inklusive über Satellite) und Graticule. Geschätzt 150–200 Zeilen.
+2. **UI-02b, Frontend (umgesetzt, §9):** Labels (inklusive über Satellite) und Graticule. Geschätzt 150–200 Zeilen; mit Tests rund 260 Zeilen Code und 700 Zeilen Tests (§9.5).
 3. **UI-02c, Backend und Frontend:** Basemap und Projektion im Permalink (wirksame und gemerkte Wahl getrennt, Frage 8). Geschätzt 100–150 Zeilen.
 
 Je PR: Log-Zeile, Prüfanleitung, `main` holen vor „fertig“. Dazu Punkte für den Backlog (Vorschlag; `plans/nach-m4-backlog.md` bleibt auf Ottos Anweisung vom 27.10.2026 unverändert, Otto ordnet sie ein): Schummerung aus dem DEM (Stufe B, Backend), Sentinel-2-Kachelraster (ESA-Datei rund 106 MB KML, Lizenz ungeklärt [S]), Selbst-Hosting der Vektorkacheln vor dem öffentlichen Start, Satellit lizenzieren vor dem kommerziellen Start, Equal Earth bei neuer MapLibre-Version prüfen.
@@ -404,3 +404,47 @@ Bilder (Chromium, Software-Rendering, synthetische Szene; vorher = `main`, nachh
 
 **Belege:** `mapLayers.resultsUnderView.test.ts` (8 neue Tests: über der Ansicht bei drei Zeichen-Reihenfolgen, nach einem neuen Stil, beim Stöbern, ohne Haken wie vorher unter der Ansicht, Marker bleibt); gegen den `mapLayers.ts` davor scheitern 6 davon. Im echten Browser (Chromium): Ebenenfolge bei offenem Zuschnitt und wieder angehakter Szene `layers-top`, `results-top`, `m-tiles-lyr-0` (Ansicht), `ticked-top`, `res-tiles-lyr-0` (Quicklook der Szene), `aoi-fill`, `aoi-line`, `mosaicsel-line`; mit „Show results“ liegt der Quicklook der angehakten Szene als einziger über dem Marker.
 
+
+## 9. UI-02b: Umsetzung (28.10.2026)
+
+Umgesetzt nach §6.5 mit Ottos Antworten (§6.10, Frage 7): Die Gruppe „Overlays“ im Menü „Basemap“ mit `Labels` und `Graticule` (`overlays.ts`, `components/BasemapMenu.tsx`), beide aus; die Wahl wird im Browser gemerkt (`preferences.ts`, Schlüssel `earthx.overlays`). Beide liegen auf jeder Basemap und in beiden Projektionen über allen Bildern der App und unter AOI und Zeichnung. Nur Frontend, keine neue Abhängigkeit, Backend unverändert. Der Permalink bleibt UI-02c vorbehalten (Overlays kommen nach §6.6 nicht hinein).
+
+### 9.1 Auslegungen (Vorschlag, gelten bis Otto widerspricht)
+
+1. **Labels sind die `symbol`-Ebenen einer Basemap** (§6.5). `composeStyle` nimmt sie aus den Ebenen der Basemap (`bm-…`) heraus und legt sie als Overlay (`ov-…`) über die Bilder der App. Bei ausgeschaltetem Schalter bleiben sie im Stil, mit `visibility: none`; das Ein- und Ausschalten von Labels auf Streets und Grey sind dann nur `setLayoutProperty`-Befehle des Diffs. Ein `visibility`, das ein veröffentlichter Stil selbst setzt, bleibt beim Einschalten erhalten.
+2. **Folge für Streets und Grey (bitte prüfen):** Weil die Vorgabe „Labels aus“ gilt (§6.5), zeigen Streets und Grey beim ersten Start **keine Namen und keine Symbole** mehr, die Liberty und Positron sonst mitbringen; erst „Labels“ blendet sie ein. Das ist eine Änderung gegenüber UI-02a. Siehe Frage 1 (von Otto am 28.10.2026 so bestätigt).
+3. **Satellite und Outlines haben keine Namen.** Schaltet man dort Labels ein, holt die App einmal den Stil von Grey (Positron, `fetch` wie bei der Basemap, im Speicher behalten) und übernimmt dessen `symbol`-Ebenen samt Glyphen und Sprite (`withLabelsOf`). Die Vektorquelle ist bei Outlines dieselbe wie die der Basemap (gleiche Adresse), bei Satellite eine eigene (`bm-labels-…`) mit der Attribution von OpenFreeMap (§7.4). Ohne Labels lädt Satellite weiterhin nichts von OpenFreeMap; die Attribution von OpenFreeMap steht nur da, wo Kacheln von dort kommen. Scheitert der Abruf, steht „The labels could not be loaded: …“, die Karte bleibt, der Haken geht zurück, die Wahl bleibt gespeichert (wie bei der Basemap, §7.1 Punkt 3).
+4. **Graticule** wird im Browser erzeugt (`overlays.ts::graticuleData`, einmal, erst beim Einschalten): ein Meridian je Grad von 180° W bis 179° E, ein Breitenkreis je Grad von 85° S bis 85° N (Mercator kann die Pole nicht zeichnen), ein Stützpunkt alle 5°, damit ein Breitenkreis auf dem Globus nicht abkürzt. Jede Linie trägt `step` (30, 10, 5 oder 1: das gröbste Gitter, das sie enthält); vier Ebenen mit `minzoom`/`maxzoom` zeigen 30° unter Zoom 3, 10° von 3 bis 6, 5° von 6 bis 8 und 1° darüber, ohne dass JavaScript auf den Zoom hört. Mittelgrau (`rgba(150, 165, 180, 0.55)`), damit es auf dunklem und weißem Grund und auf Bildern lesbar ist. Keine Gradzahlen (§6.5).
+5. **Marker `overlays-base`.** Ein dritter versteckter Marker unter `aoi-fill`, nach `ticked-top` (`mapLayers.ts`). Der Quicklook einer angehakten Szene geht jetzt unter ihn statt unter die AOI (`topOfAll`); die Overlays liegen zwischen dem Marker und `aoi-fill`. Ohne den Marker läge ein angehaktes Ergebnis (§8.10) über Namen und Gradnetz.
+6. **Alles in einem Aufruf:** `composeStyle(previous, next, id, overlays, labelStyle)` setzt Basemap und Overlays zusammen; `applyBasemap` und der Umschalter (`createBasemapSwitcher`) nehmen die Overlays als zusätzlichen Parameter, `onFailure` bekommt die Overlays, auf die die Karte zurückgeht. Das Einschalten eines Overlays ist damit derselbe Stil-Diff wie ein Wechsel der Basemap und lässt die eigenen Ebenen unberührt (Test auf der Befehlsliste, `mapStyles.overlays.test.ts`).
+7. **Tooltip des Knopfes** „Basemap, overlays and projection“ (wie in §6.5 vorgesehen). Die Einträge der Gruppe sind `menuitemcheckbox` mit `aria-checked`; die Pfeiltasten laufen durch alle drei Gruppen.
+
+### 9.2 Belege
+
+- **Vitest (CI):** `overlays.test.ts` (Katalog; Gradnetz: 360 Meridiane, 171 Breitenkreise, Gitter 17/53/107/531 Linien, Stützpunkte, Zoombänder), `mapStyles.overlays.test.ts` (68 Tests: Lage der Overlays je Basemap über allen Bildern und unter AOI und Zeichnung, Labels sichtbar/versteckt/geliehen/ohne Kopie der Kacheln, Attribution mit und ohne Labels auf jeder Basemap, Befehlsliste des Diffs für sechs Umschaltungen auf jeder Basemap, Abruf und Zwischenspeicher des Stils, Fehler „labels could not be loaded“, Umschalter), `BasemapMenu.test.tsx` (Gruppe, Haken, Speicher, Tooltips, gesperrter Speicher, Tastatur), `preferences.test.ts` (Vorgabe, Rundreise, Fremdwerte, Schlüssel `__proto__`, gesperrter Speicher), `store.overlays.test.ts`, `mapLayers.resultsUnderView.test.ts` (angehakter Quicklook unter `overlays-base`).
+- **Gegenprobe:** Fünf Änderungen am Code (Labels nicht versteckt, Overlays vor die Ebenen der App gelegt, Attribution an der geliehenen Quelle weg, angehakter Quicklook wieder unter `aoi-fill`, Gradnetz immer an) lassen jeweils Tests scheitern.
+- **Echter Browser (Wegwerf-Skript, nicht im Repo; Chromium, Software-Rendering):** MapLibre mit den echten Funktionen `baseMapStyle`, `ensureBaseLayers` und `createBasemapSwitcher`; Esri-Kacheln durch eine grüne Kachel ersetzt, der Stil von Grey durch einen erfundenen mit einem GeoJSON-Punkt, zwei Bilder (rot, blau; das blaue als angehakter Quicklook unter dem Marker). Ebenenfolge nach dem Einschalten: `…, ticked-top, ticked-lyr, overlays-base, ov-graticule-30/10/5/1, ov-labels-place_label, aoi-fill, aoi-line, …`; Bildpunkte auf dem Äquator bzw. dem 30. Breitenkreis über dem roten und dem blauen Bild sind grau getönt (Mercator und Globus); Labels bringen genau einen Abruf des Stils von Grey, die Quelle `bm-labels-openmaptiles` und die Glyphen-Adresse; alles ausschalten entfernt Ebenen und Quelle, die Projektion bleibt Globus.
+- **Nicht belegt:** echte Kacheln und Schriften von OpenFreeMap (kein Zugang aus der Sitzung), also wie Namen auf Satellite tatsächlich aussehen (Positron setzt dunkle Schrift mit hellem Rand; Lesbarkeit auf dunklem Bild prüft die Anleitung), die Schriftnamen des veröffentlichten Stils (kommen aus dem Stil selbst, nichts davon steht im Code) und das Verhalten auf einem echten Grafikprozessor.
+- **Frontend-Suite:** 86 Dateien, 2813 Tests grün; `oxlint`, `tsc -b`, `ruff check backend` und `lint-imports` ohne Befund; `pytest` 6189 bestanden, 8 übersprungen (PowerShell fehlt in der Sitzung; die CI hat es).
+
+### 9.3 Prüfanleitung für Otto (Browser)
+
+Vorher: Browserdaten der Seite löschen (oder ein privates Fenster).
+
+1. **Start:** Satellite, Mercator, Dunkel, im Menü „Basemap“ die Gruppe „Overlays“ mit „Labels“ und „Graticule“, beide ohne Haken. Die Karte zeigt keine Namen und kein Gitter. Unten rechts nur die Attribution von Esri.
+2. **Labels auf Satellite:** „Labels“ anhaken. Namen von Ländern, Städten, Gewässern und Straßen erscheinen über dem Bild; die Attribution unten rechts nennt jetzt auch „© OpenMapTiles · OpenFreeMap · © OpenStreetMap contributors“. Prüfen, ob die Schrift auf dem dunklen Bild lesbar ist (Positron: dunkle Schrift mit hellem Rand). Abhaken: Namen und die zweite Attribution verschwinden.
+3. **Labels auf allen Basemaps:** Streets, Grey, Outlines nacheinander mit und ohne Haken. Ohne Haken: Streets und Grey ohne Namen und Symbole (Punkt 9.1.2); mit Haken: Namen und Symbole. Ein Wechsel der Basemap behält den Haken.
+4. **Graticule:** anhaken. Bei Weltansicht Linien alle 30°, beim Hineinzoomen alle 10° (ab Zoom 3), 5° (ab 6) und 1° (ab 8). Auf jeder Basemap und auf dem Globus (Projection „Globe“).
+5. **Lage über den Bildern:** Eine Szene öffnen oder anhaken und einen angehefteten Layer anzeigen: Namen und Gitter liegen über dem Bild, AOI-Linie und Zeichnung darüber. Eine Szene anhaken, während Labels an sind: ihr Quicklook deckt die Namen nicht zu. Eine Polygonzeichnung anfangen und das Overlay umschalten: die Zeichnung bleibt (wie beim Wechsel der Basemap, §7.1 Punkt 6).
+6. **Neu laden:** Die Haken bleiben. Im Speicher (Application, Local Storage) steht `earthx.overlays` als `{"labels":true,"graticule":true}`; ein kaputter Wert dort schaltet beide aus.
+7. **Fehlerfall:** Anfragen an `tiles.openfreemap.org` sperren, auf Satellite „Labels“ anhaken: Es erscheint „The labels could not be loaded: …“, der Haken geht zurück, die Karte bleibt.
+
+### 9.4 Fragen an Otto
+
+1. **Streets und Grey ohne Namen beim Start (§9.1 Punkt 2).** (1) So lassen: Vorgabe „Labels aus“ gilt für alle Basemaps, wie in §6.5 (**Empfehlung**, entspricht dem Plan, kein Sonderfall im Code); (2) „Labels“ ist nur auf Satellite und Outlines ein Schalter, Streets und Grey zeigen ihre Namen immer (Sonderfall im Code, eine Basemap mehr, bei der der Haken nichts bewirkt, das widerspricht der Regel vom 26.10.2026); (3) Vorgabe „Labels an“ für alle (ändert den Start von Satellite).
+
+**Antwort Otto (28.10.2026): Option 1.** „Labels“ gilt für alle Basemaps, Vorgabe aus, im Browser gemerkt; Streets und Grey zeigen ihre Namen erst mit dem Haken. Geändert hat sich dadurch nichts am Code.
+
+### 9.5 Größe des PR
+
+Der Richtwert von 400 Zeilen ist überschritten: rund 260 Zeilen Code (`overlays.ts` 79, `mapStyles.ts` +83, Menü, Speicher, Marker) und rund 700 Zeilen Tests. Ich habe nichts davon gestrichen, weil die Tests die Reihenfolge der Ebenen, die Befehlsliste des Diffs und die Attribution je Basemap belegen, die die Abnahme (§5) verlangt. Der Schnitt in zwei PRs (Labels, Graticule) hätte `composeStyle` zweimal angefasst.
