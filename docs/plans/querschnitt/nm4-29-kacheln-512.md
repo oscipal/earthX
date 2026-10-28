@@ -290,3 +290,16 @@ Lokal geändert und danach verworfen: `ZOOM = 13` statt 14, `tilesize=512` in de
 5. **Nachtrag:** Option 1, in `adr/0014` §6.3.
 
 **Schnitt:** ein PR. Das Backend (Grenze für `tilesize`, Tests) kommt jetzt. Mit dem Frontend beginnt die Session erst, wenn Otto einen freien Frontend-Platz meldet.
+
+## 16. Umsetzung Backend (28.10.2026)
+
+- **`tilesize`:** `access/tiles.py` hat `TILE_SIZES = (256, 512)` und `tile_size_allowed`. Die Prüfung hängt als Abhängigkeit am Router von `EarthxTilerFactory` und gilt damit für jede Route der Fabriken von Szene, Mosaik und Ergebnis, auch für Statistik und TileJSON. Sie läuft vor der Pfad-Abhängigkeit: Für eine andere Größe wird kein Item geholt und keine Datei geöffnet, die Antwort ist `400` „tilesize is 256 or 512“.
+- **TileJSON:** `EarthxTilerFactory.tile_size` ist die Größe, die das Dokument ausgibt, wenn die Anfrage keine nennt: 256 für Szene und Ergebnis, 512 für das Mosaik (`EarthxMosaicTilerFactory`). Bisher waren es 512 für alle.
+- **Tests:**
+  - `access/test_tile_size.py`: an einer Fabrik ohne Leser. Zehn falsche Schreibweisen auf vier Routen und zwei Größen in einer Anfrage ergeben `400`, ohne dass etwas geöffnet wird; 256, 512 und keine Größe kommen durch; jede Route prüft zuerst.
+  - `api/test_tile_size_routes.py`: jede Route der echten App unter den drei Präfixen (aus dem OpenAPI-Schema) antwortet auf 4096 mit `400`.
+  - Je Route Ende-zu-Ende: Szene (Größe der Kachel, TileJSON 256), Mosaik (nichts geholt bei 1024/4096, TileJSON 512, Kachel 512 px), Ergebnis (nichts gelesen, TileJSON 256).
+  - Am alten Code scheitern 25 dieser Tests, das neue Modul unter `access` lädt nicht.
+- **Bitgleich-Tests (Frage 4):** Die T1↔T2-Tests der vier Module laufen für 256 px auf z14 und für 512 px auf z13, 17 Fälle mehr, alle grün. Zarr: Grenze 3 % für 512 px; gegen den exakt nächsten Quellpixel ist bei 512 px eine Abweichung nur innerhalb von 0,125 px an einer Grenze erlaubt, bei 256 px keine.
+- **Dokumente:** Nachtrag NM4-29 in `adr/0006` §5, `adr/0014` §15w.
+- **Offen:** das Frontend (§9.1 mit Frage 1 Option 2: 512 px für Mosaik und Mosaik-Vorschau, die sieben Stellen rechnen mit der Größe der Quelle), die Messung nachher, die Prüfung im Browser und die Prüfanleitung. Beginnt, wenn Otto einen freien Frontend-Platz meldet.
