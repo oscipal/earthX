@@ -37,7 +37,7 @@ from rasterio.transform import Affine
 
 from earthx.catalog.registry import Capabilities, DataClass, DatasetConfig, LicenseTier
 
-__all__ = ["BandMeta", "Operator", "RasterMeta", "Requirement", "Tier"]
+__all__ = ["BandMeta", "BandUse", "Operator", "RasterMeta", "Requirement", "Tier"]
 
 _OP_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _CAPABILITY_NAMES = frozenset(field.name for field in fields(Capabilities))
@@ -76,6 +76,25 @@ class BandMeta:
     unit: str | None = None
     scale: float = 1.0
     offset: float = 0.0
+    #: The values of this band were brought onto another grid (read from a coarser asset, warped from another
+    #: zone, reprojected). The result is marked resampled only if a band that is in it was (NM4-43c, backlog 51);
+    #: a layer that only hides pixels does not count.
+    resampled: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class BandUse:
+    """Which bands of the stock one step needs and changes (adr/0020 §4); the planner drops what nobody needs.
+
+    The default is a step that keeps every band by name and needs none besides the ones it passes on.
+    """
+
+    #: Bands the step reads besides the ones it passes on: the names of an expression, the layer of a mask.
+    reads: frozenset[str] = frozenset()
+    #: The name of the one band the step adds to the stock, ``band_math``'s result; ``None`` for a step that adds none.
+    adds: str | None = None
+    #: The bands whose values the step changes; ``None`` for all. A step that changes none the output keeps is not run.
+    acts_on: frozenset[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +102,8 @@ class RasterMeta:
     """The small description every operator maps onto a new one (§5.6).
 
     ``resampled`` is the honesty flag of principle 2.9: a step that resamples or
-    reprojects sets it, and panel and download show it.
+    reprojects sets it, and panel and download show it. For a result of the core it is the
+    flag of the bands in it (:attr:`BandMeta.resampled`).
     """
 
     crs: str
@@ -116,6 +136,10 @@ def _no_dataset_reasons(config: DatasetConfig, params: BaseModel) -> list[str]:
     return []
 
 
+def _keeps_every_band(params: BaseModel) -> BandUse:
+    return BandUse()
+
+
 @dataclass(frozen=True, slots=True)
 class Operator:
     """One registered operator in one version."""
@@ -141,6 +165,16 @@ class Operator:
     properties: Callable[[BaseModel], dict[str, Any]] = field(default=_no_properties)
     #: Why these parameters do not fit this entry (empty means they do); only :func:`applicable` calls it.
     dataset_check: Callable[[DatasetConfig, BaseModel], list[str]] = field(default=_no_dataset_reasons)
+    #: Which bands of the stock the step needs and changes (:class:`BandUse`), for the planner (adr/0020 §4).
+    bands_used: Callable[[BaseModel], BandUse] = field(default=_keeps_every_band)
+    #: Whether the step works on the stock of named bands (recipe version 2). ``False`` is a step of recipe
+    #: version 1, which replaces or removes bands: it stays for the tile and for old recipes, which are
+    #: rewritten before the core sees them (:mod:`earthx.processing.upgrade`), and no job runs it.
+    stock: bool = True
+    #: Whether the process description offers this version. The highest *listed* version of an operator is
+    #: offered; one that is only accepted (or not yet offered) is not (NM4-43c: version 2 of the bands steps comes
+    #: with the panel that sends it).
+    listed: bool = True
 
     def __post_init__(self) -> None:
         if not _OP_NAME.match(self.op):
