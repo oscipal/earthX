@@ -1,6 +1,15 @@
 # ADR 0020 — Ausgabe-Bänder statt Bandauswahl
 
-- **Status:** **Entwurf**, wartet auf Ottos Antworten zu §15 (F1–F13).
+- **Status:** **Angenommen** von Otto am 2026-10-28 (Entscheidungsvorlage
+  Draft-PR #219).
+  - F1–F13 sind beantwortet, jeweils mit Option 1 außer **F7** (Option 2).
+    Ergänzungen zu F7, F9, F11 und F13 und die neue Aufgabenfolge stehen in
+    §15 und §15a.
+  - **F14** (§15a) ist offen und hält nur einen Teil von NM4-43c an
+    (Rezepte der Version 1 mit `reproject`).
+  - Die Aufgaben NM4-43a bis NM4-43e sind in
+    `plans/querschnitt/nm4-43-ausgabe-baender.md` §6 beschrieben, je mit
+    Startsatz.
 - **Datum:** 2026-10-28
 - **Aufgabe:** NM4-43 laut `docs/plans/querschnitt/nm4-43-ausgabe-baender.md`
   (Backlog-Punkt 43 in `docs/plans/nach-m4-backlog.md`). Nimmt NM4-10 in sich
@@ -67,17 +76,29 @@ Kachelfläche in `scripts/tile-bench/run_tiler.py`. Koordinaten des
 Messquadrats, Item-Kennungen und Adressen stehen weder hier noch in den
 Ausgaben des Skripts.
 
-**Warum `curl` für die Suche.** Der Client von `gateway` verbindet sich selbst
-mit der aufgelösten Adresse und nutzt den HTTPS-Proxy der Cloud-Sitzung nicht;
-die Suche über die Plattform scheiterte in dieser Sitzung mit
-„could not be reached“ **[M]**. GDAL liest über den Proxy. Das Skript nimmt die
-Items deshalb aus einer Datei, die `curl` geholt hat, und baut die Rezepte über
-`api.intake.estimate_order` wie die Plattform; jede Adresse passiert dabei
-`check_url` in `readers` wie im Worker.
+**Warum `curl` für die Suche (Grenze der Cloud-Sitzung, `adr/0002` Nachtrag
+2026-09-20, M2-13).** `gateway` verbindet absichtlich die von `check_url`
+geprüfte Adresse; die Egress-Freigabe der Sitzung arbeitet namensbasiert und
+weist `CONNECT` auf eine Adresse mit `403` ab. Die Suche über die Plattform
+scheiterte hier mit „could not be reached“ **[M]**; `curl` (Name) kommt durch.
+Der Aufruf ist ein einmaliger, dokumentierter Schritt (§17), kein Teil der
+Skripte.
+
+**Die Skripte machen keine eigenen HTTP-Aufrufe.** `measure.py` und
+`warp_bands.py` importieren keinen HTTP-Client (Prüfung in §17). `measure.py`
+liest die Items aus der Datei, die `curl` geschrieben hat, und baut die Rezepte
+über `api.intake.estimate_order`; die Dateien der Szenen liest allein der
+Processing-Kern über `readers`, und jede Adresse passiert dabei `check_url` wie
+im Worker. `warp_bands.py` liest keine Quelle.
 
 ---
 
 ## 0. Kurzfassung
+
+Entschieden am 2026-10-28: Die Empfehlungen unten gelten, mit zwei
+Abweichungen und zwei Ergänzungen (Otto): **F7** hat Option 2 (Punkt 7),
+**F9** lässt den Runner Version 1 dauerhaft lesen (Punkt 9), **F11** und
+**F13** sind je eine eigene kleine Aufgabe (Punkt 10).
 
 1. **Rezeptmodell (F1): ein Vorrat an benannten Bändern, weiter eine lineare
    Kette.** Am Anfang enthält der Vorrat die Bänder des Datensatzes,
@@ -118,8 +139,11 @@ Items deshalb aus einer Datei, die `curl` geholt hat, und baut die Rezepte über
 6. **Ausgabedatei (F6):** eine COG, ein Datentyp für alle Bänder nach den
    heutigen Regeln (meist `float32`, weil der Kern physikalische Werte liefert),
    mit Banddeskription, Einheit und nodata je Band.
-7. **Vorgabe ohne `band_math` (F7):** keines angehakt, außer der Datensatz hat
-   nur ein Band. „Start“ ist dann gesperrt mit Grund im Tooltip.
+7. **Vorgabe der Ausgabe (F7, Option 2 von Otto):** Ohne `band_math` im
+   Rezept sind alle wählbaren Bänder angehakt (Hilfs-Assets nicht). Mit
+   `band_math` sind nur die Band-Math-Ergebnisse angehakt. Die Vorgabe wechselt,
+   wenn ein `band_math`-Schritt dazukommt oder wegfällt, aber nur solange der
+   Benutzer die Auswahl nicht selbst geändert hat (§9).
 8. **Vorschau (F8):** eine Auswahl „Show“ über die Bänder der Ausgabe, Vorgabe
    ist das letzte Band-Math-Ergebnis. Die Kachel rechnet nur dieses eine Band
    und liest nur, was es braucht. Derselbe Baustein dient am Ergebnis-Layer und
@@ -127,12 +151,16 @@ Items deshalb aus einer Datei, die `curl` geholt hat, und baut die Rezepte über
 9. **Versionen (F9):** `recipe_version` 2, `band_math` Version 2, `normalize`
    Version 2 (mit NM4-11), `earthx.__version__` 0.5.0, Nachträge in
    `adr/0014` und `adr/0016`. Rezepte der Version 1 deutet das Frontend um
-   (Datei, Permalink, Ablage), mit Hinweis. `api` und der neue Runner weisen
-   Version 1 mit Grund ab; bis 7 Tage nach dem Frontend-Umbau deutet `api`
-   sie übergangsweise selbst um (§11).
-10. **Schnitt (F10):** zuerst der Nebenbefund (Stufe A), dann NM4-43a
-    Rezept und Kern, NM4-43b Kachel und Vorschau-Route, NM4-43c Frontend.
-    NM4-11, NM4-14, DS-06 und NM4-20 folgen danach (§12, §13).
+   (Datei, Permalink, Ablage), mit Hinweis. `api` deutet sie 30 Tage nach
+   dem Umbau des Frontends noch um, danach weist sie sie mit Grund ab. **Der
+   Runner liest Version 1 dauerhaft** (heruntergeladene `recipe.json` bleiben
+   lesbar, `adr/0016`); nach `reproject` können die Werte dabei abweichen (F14,
+   §15a).
+10. **Schnitt (F10, F11, F13):** zuerst zwei kleine, voneinander und vom Rest
+    unabhängige Aufgaben: **NM4-43a** Schätzung nach dem feinsten Asset und
+    **NM4-43b** `reproject` Version 4 je Band. Danach **NM4-43c** Rezept und
+    Kern, **NM4-43d** Kachel, **NM4-43e** Frontend. NM4-11, NM4-14, DS-06 und
+    NM4-20 folgen danach (§12, §13).
 
 ---
 
@@ -259,7 +287,7 @@ streut über die 25 Szenen um höchstens 6 MB, die Laufzeit stärker (Netz:
    naiv an (`numpy.ma.concatenate` kopiert den Vorrat je Block); daher
    +112 MB gegenüber „kein Schritt“. Eine Umsetzung, die das Ergebnis neben
    den Vorrat legt statt ihn zu kopieren, sollte nahe an „kein Schritt +
-   ein Band“ liegen **[A]**; das misst NM4-43a.
+   ein Band“ liegen **[A]**; das misst NM4-43c.
 4. **Laufzeit:** Bei 1 Mio. Pixeln bestimmen Öffnen, Lesen, Schreiben und
    Statistik je Band die Zeit. 17 statt 2 Bänder kosten das 5,5-Fache
    (19,4 statt 3,5 s). Die Schätzung trifft die Größenordnung (17,4 bzw. 2,1 s).
@@ -296,7 +324,7 @@ um die Mitte dieser Szene (0,1, 1,1 und 9,5 Mio. Pixel), je ein Lauf. Das
    20,9 MB je Band). Einen Teil des Flächenanteils trägt vermutlich der
    COG-Schritt am Ende, den `adr/0014` §3.5 mit rund 100 MB nennt **[A]**.
    Gemessen ist nur bis 9,5 Mio. Pixel; die 5-GB-Grenze erlaubt bei 17
-   Bändern rund 72 Mio. Pixel. Wie die Spitze dorthin wächst, misst NM4-43a
+   Bändern rund 72 Mio. Pixel. Wie die Spitze dorthin wächst, misst NM4-43c
    (§7.2).
 9. **Die Zeitschätzung wächst nicht mit den Bändern der Ausgabe.** Bei 30 km
    und 17 Bändern schätzt die Plattform 21 s, gemessen sind 115 s (Faktor 5,5;
@@ -325,7 +353,8 @@ Schätzung.
   die Reihenfolge frei. Ein Auftrag `["coastal", "red"]` über eine große Fläche
   kommt also an der 5-GB-Prüfung vorbei und scheitert erst im Lauf **[A]**.
 - Behebung: das Raster aus dem kleinsten `gsd` aller Assets bemessen. Das ist
-  eine kleine Änderung mit Test, unabhängig von diesem ADR (F11).
+  eine kleine Änderung mit Test, unabhängig von diesem ADR (F11): Aufgabe
+  NM4-43a.
 
 ### 3.4 Nebenbefund: `reproject` hängt an der Zahl der Bänder — [M]
 
@@ -348,7 +377,7 @@ untereinander dieselben Werte.
   Nachbarn in der Ausgabe.
 - **Abhilfe [A]:** `reproject` Version 4 warpt jedes Band für sich (je Band ein
   Warp mit festem Plan). Dann hängt der Wert eines Bandes nur noch an ihm selbst.
-  Kosten und Bitgleichheit misst die Umsetzung (F13).
+  Kosten und Bitgleichheit misst die Umsetzung, Aufgabe NM4-43b (F13).
 
 ### 3.5 Wie andere Plattformen begrenzen — [P] [S] [F]
 
@@ -525,16 +554,16 @@ nichts verloren geht. Ein Name, der einen Konflikt ergäbe, wird nicht
 | Regel | 16 Assets entfällt, sonst nichts | 16 Assets entfällt; neu: geschätzter Spitzenspeicher ≤ Grenze je Kindprozess | 16 Assets entfällt; neu: Pixel × Bänder × Szenen der Eingabe ≤ Grenze |
 | schützt Speicher | ✗ | ✓ unmittelbar | ~ nur mittelbar; der Speicher hängt vor allem an den Bändern je Block, weniger an der Fläche |
 | schützt Laufzeit, Platte, Quellen | ✓ Laufzeitgrenze, 5 GB, `disk_needed`, Deckel je Host | ✓ wie G1 | ✓ doppelt zu G1 |
-| trifft Sentinel-2 (≤ 33 Bänder im Vorrat) | — | bis 9,5 Mio. Pixel nicht (rund 1,0 GB); große Flächen und Mosaik misst NM4-43a | je nach Wert |
+| trifft Sentinel-2 (≤ 33 Bänder im Vorrat) | — | bis 9,5 Mio. Pixel nicht (rund 1,0 GB); große Flächen und Mosaik misst NM4-43c | je nach Wert |
 | trifft Hyperspektral (etwa 224 Bänder in einem Asset) | — | ja, mit Zahl im Grund | ja |
 | neue Zahl, die gepflegt werden muss | keine | ein Wert je Band, gemessen, im Speichertest geprüft | eine Grenze ohne gemessenen Bezug |
 
 **Empfehlung: G2,** dazu die Behebung aus §3.3 (F11).
 
 - **Formel:** 300 MB plus 21 MB je Band im breitesten Durchgang (Befund 8),
-  dazu ein Flächenanteil, den NM4-43a bis zur 5-GB-Grenze und für ein Mosaik
+  dazu ein Flächenanteil, den NM4-43c bis zur 5-GB-Grenze und für ein Mosaik
   misst. Der Planer kennt den breitesten
-  Durchgang nach dem Streichen (§4). Die Werte misst NM4-43a mit dem echten
+  Durchgang nach dem Streichen (§4). Die Werte misst NM4-43c mit dem echten
   Anhängen neu.
 - **Grenze:** ein Wert je Kindprozess (F5), Startwert **1,5 GB**: Sentinel-2
   mit 17 Bändern und 16 `band_math`-Schritten (rund 1,0 GB bei 9,5 Mio. Pixeln)
@@ -590,21 +619,45 @@ gibt es bei Sentinel-2 also nicht; „`uint8`-Klassen neben `float32`“ schon.
 
 ---
 
-## 9. Vorgabe der Ausgabe ohne `band_math` (Punkt 6)
+## 9. Vorgabe der Ausgabe (Punkt 6)
+
+**Mit `band_math`** ist entschieden (Vorab fest 5): Angehakt sind nur die
+Band-Math-Ergebnisse. Offen war, was ohne `band_math` im Rezept angehakt ist
+(nur `reproject`, `mask`, `normalize` oder gar kein Schritt):
 
 | | O1 keines angehakt | O2 alle angehakt |
 |---|---|---|
 | Kosten der Vorgabe | null; der Benutzer wählt | 17 Bänder bei Sentinel-2 je Szene und 1 Mio. Pixel: 19 s, 536 MB Spitze, 37 MB gelesen, 39 MB Datei (§3.2) |
-| typischer Fall „wolkenfreies RGB“ (`mask`) | drei Klicks | 14 Klicks zum Abwählen oder „None“ und drei Klicks |
+| typischer Fall „wolkenfreies RGB“ (`mask`) | drei Klicks | „None“ und drei Klicks |
 | Einband-Datensatz (DEM) | das eine Band ist angehakt (Regel aus NM4-07) | gleich |
-| leerer Auftrag | „Start“ gesperrt, Tooltip „Pick at least one band for the output.“ | kommt nicht vor |
+| leerer Auftrag | „Start“ gesperrt, Tooltip „Pick at least one band for the output.“ | kommt zunächst nicht vor |
 
-**Empfehlung: O1.** Hat ein Datensatz genau ein Band, ist es angehakt. Die
-Regel für mehrere Band-Math-Schritte steht schon fest (Vorab fest 5):
+**Empfehlung war O1. Entschieden hat Otto am 2026-10-28: O2** (F7). Die Regeln
+im Einzelnen:
 
-- Ein neuer `band_math`-Schritt hakt sein Ergebnis an.
-- Wird ein Schritt entfernt, verschwindet sein Band aus der Ausgabe.
-- Alles andere bleibt, wie der Benutzer es gesetzt hat.
+1. **Ohne `band_math` im Rezept** sind alle wählbaren Bänder angehakt.
+   „Wählbar“ ist, was „Select all bands“ heute nimmt (NM4-07, `adr/0014`
+   §15s): nicht die Hilfs-Assets aus `auxiliary_assets` (`visual`, `preview`)
+   und nicht die Maskenschicht (`scl`); beide bleiben in der Liste „Data“,
+   nicht angehakt, und lassen sich anklicken **(Auslegung, §15a)**.
+2. **Mit `band_math`** sind nur die Band-Math-Ergebnisse angehakt (Vorab fest 5).
+3. **Wechsel der Vorgabe:** Kommt der erste `band_math`-Schritt dazu oder fällt
+   der letzte weg, wechselt die Vorgabe zwischen 1 und 2, **aber nur solange
+   der Benutzer die Auswahl nicht selbst geändert hat.** Als eigene Änderung
+   zählt jeder Klick auf ein Band der Ausgabe, auf „All“ oder auf „None“. Das
+   Panel merkt sich dafür einen Zustand „automatisch“ oder „vom Benutzer
+   gesetzt“, kein Wert im Rezept.
+4. **Ein neuer `band_math`-Schritt hakt sein Ergebnis an**, auch nach einer
+   eigenen Änderung (Auslegung der Regel aus Vorab fest 5). **Wird ein
+   Schritt entfernt, verschwindet sein Band** aus der Ausgabe. Alles andere
+   bleibt, wie der Benutzer es gesetzt hat.
+5. **Leere Ausgabe:** „Start“ ist gesperrt, Tooltip „Pick at least one band for
+   the output.“ Ein leerer Auftrag wird nicht gestartet (Plan §3 Punkt 6).
+6. **Folge für breite Datensätze:** Hat ein Datensatz mehr wählbare Bänder, als
+   die Speichergrenze (§7) zulässt (etwa ein Asset mit 224 Bändern), wäre
+   die Vorgabe schon zu groß. „Start“ ist dann gesperrt, der Grund steht im
+   Tooltip, und der Benutzer nimmt Bänder heraus. Die Vorgabe wählt keine
+   stille Teilmenge.
 
 ---
 
@@ -643,15 +696,15 @@ Vorschau und Ergebnis zugleich (§12).
 | Stelle | Änderung |
 |---|---|
 | `recipe_version` | 2: `output.bands`; im Auftrag kein `assets` für `raster`; `RECIPE_VERSION = 2` (`recipe.py:85`) |
-| `band_math` | `op_version` 2: Parameter `expression` und `name`, fügt hinzu. Version 1 wird nicht mehr gelistet; angenommen nur in der Übergangszeit über die Umdeutung (unten) |
-| `normalize` | `op_version` 2 mit `bands` (F4), in NM4-11 zusammen mit den Methoden |
+| `band_math` | `op_version` 2: Parameter `expression` und `name`, fügt hinzu. Version 1 bleibt registriert und angenommen (Umdeutung, Kachel bis NM4-43d) und wird mit NM4-43e nicht mehr gelistet |
+| `normalize` | `op_version` 2 mit `bands` (F4). Das Feld kommt schon mit NM4-43c, weil das Vorratsmodell es braucht (§15a); NM4-11 setzt die Methoden darauf |
 | `mask` | `op_version` 2: Die Schicht bleibt im Vorrat |
-| `reproject` | `op_version` 4: jedes Band ein eigener Warp (F13) |
+| `reproject` | `op_version` 4: jedes Band ein eigener Warp (F13, NM4-43b, vor der Rezeptversion 2 und von ihr unabhängig). Version 3 bleibt angenommen, wird aber nicht mehr gelistet (wie Version 2 heute) |
 | `resolved` | Form unverändert (`ResolvedInput`, `adr/0011` §6.4); es hält genau einen Eintrag je Item und **abgeleitetem** Asset, also nur die Assets, die nach dem Streichen gelesen werden (`recipe.py:Input._complete` prüft das weiter gegen `assets`) |
 | Hash | ändert sich für jedes Rezept (neue Felder); einmal kein Cache-Treffer |
-| `earthx.__version__` | 0.4.3 → 0.5.0: `result.tif` trägt Banddeskriptionen und Einheiten, die Bytes ändern sich |
-| `adr/0014` | Nachtrag §15u: Bandvorrat, Streichen, `output.bands`, Namen, Speicherschätzung |
-| `adr/0016` | Nachtrag §12d: Der Runner nimmt `recipe_version` 2; ältere Runner-Tags rechnen weiter Version 1 (§9 dort, fester Tag) |
+| `earthx.__version__` | 0.4.3 → 0.4.4 mit NM4-43b (`reproject` Version 4 ändert Werte); → 0.5.0 mit NM4-43c (`result.tif` trägt Banddeskriptionen und Einheiten, die Bytes ändern sich). NM4-43a ändert keine Bytes und hebt nichts an |
+| `adr/0014` | drei Nachträge: §15u (NM4-43a, Schätzung nach dem feinsten Asset, zu §5.5), §15v (NM4-43b, `reproject` Version 4, zu §3.4, §6.3), §15w (NM4-43c, Bandvorrat, Streichen, `output.bands`, Namen, Speicherschätzung) |
+| `adr/0016` | Nachtrag §12d: Der Runner nimmt `recipe_version` 2 und liest Version 1 **dauerhaft** über die Umdeutung; ältere Runner-Tags rechnen Version 1 weiter wie bisher (§9 dort, fester Tag) |
 | Prozessbeschreibung | `inputs.assets.maxItems` entfällt (`api/processing_docs.py:299`); `output.bands` mit Schema |
 
 **Umdeutung von Version 1 [A].** Jedes gültige Rezept der Version 1 lässt
@@ -671,28 +724,67 @@ die Werte mit dem alten Ergebnis: bitgleich für Ketten ohne `reproject`. Nach
 ändert (§3.4) und weil `reproject` Version 4 jedes Band einzeln warpt (F13);
 dort prüft der Test die Toleranz von `adr/0014` §6.3.
 
-**Übergang [A].** Bis das Frontend Version 2 schickt (NM4-43c), muss `api`
-Aufträge der Version 1 weiter annehmen, und Jobs der Version 1 können beim
-Deploy von NM4-43a noch in der Warteschlange stehen oder wiederhergestellt
-werden (NM4-27). Deshalb bringt NM4-43a dieselbe Umdeutung auch in Python
-(`processing/recipe.py`): `api` deutet Aufträge der Version 1 um, der Worker
-gespeicherte Rezepte der Version 1 beim Lesen. Der Kern rechnet nur noch
-Version 2. Die Python-Umdeutung entfällt 7 Tage nach NM4-43c (Ablauf Q10);
-danach gilt U1.
+**Wo die Umdeutung läuft (F9, Otto).**
+
+| Ort | wie lange | Aufgabe |
+|---|---|---|
+| Frontend (`recipeFile.ts`, Permalink, Ablage im Browser) | dauerhaft | NM4-43e |
+| Runner (`recipe.json` einer älteren Fassung) | **dauerhaft**: heruntergeladene Rezepte bleiben lesbar | NM4-43c |
+| `api` (Aufträge, Permalinks anlegen) | Übergang, siehe unten | NM4-43c |
+| Worker (gespeicherte Rezepte der Warteschlange und der Wiederherstellung, NM4-27) | wie `api` | NM4-43c |
+
+Die Python-Umdeutung (`processing`, ein Modul, von `api`, Worker und Runner
+gemeinsam benutzt) bleibt wegen des Runners dauerhaft. Sie läuft dabei vor der
+Prüfung des Rezepts; der Kern selbst rechnet nur Version 2.
+
+**Übergangsfrist für `api` (Otto: mindestens so lange wie gespeicherte Rezepte
+und Permalinks gelten).** Bestimmend ist der Permalink mit 30 Tagen ab
+Erstellung (Log 24.10.2026, M4-19e); ein Job und sein Rezept gelten 7 Tage
+(Q10), ein gelöschter Job bleibt bis zu einen Tag wiederherstellbar (NM4-27).
+Ein Dokument der Version 1 kann also bis zu 30 Tage nach dem letzten Schreiben
+im alten Format noch gültig sein. Festgelegt wird:
+
+- **`api` nimmt Aufträge der Version 1 an und deutet sie um** ab dem Deploy von
+  NM4-43c bis **30 Tage nach dem Deploy von NM4-43e.** Mit NM4-43e schreibt das
+  Frontend nur noch Version 2. Ein Browser-Tab mit der alten Fassung kann
+  weiter Version 1 schicken, solange er offen ist; ein Permalink der Version 1
+  gilt 30 Tage. Beides deckt die Frist.
+- **Danach** (U1): `422` „recipe_version 1 is no longer accepted; send
+  version 2“. Gespeicherte Permalinks der Version 1 liest `api` weiter aus
+  (`read_permalink` prüft nicht neu, `processing_route.py:1421`), das Frontend
+  deutet sie um.
+- **Ein Datum steht erst fest, wenn NM4-43e deployt ist.** Der PR von NM4-43e
+  trägt es als Konstante in `api` und als Log-Zeile ein; eine Zeile im Code
+  schaltet die Annahme ab, ein Test hält sie fest.
+- **Bis NM4-43e** listet die Prozessbeschreibung weiter Version 1 der Schritte
+  (`processing_docs.py:205` nennt nur die jeweils höchste Version), damit das
+  heutige Panel funktioniert; NM4-43e schaltet die Liste auf Version 2 um
+  (Vorschlag, Umsetzung in NM4-43c, §13).
 
 **Optionen für alte Rezepte:**
 
 | | U1 Frontend deutet um, `api` weist ab | U2 `api` deutet auch um | U3 überall abweisen |
 |---|---|---|---|
 | Datei (`recipe.json`), Permalink, Ablage im Browser | öffnen mit Hinweis „Converted from recipe version 1.“ | wie U1 | nicht mehr lesbar |
-| API-Clients, Chatbot | `422` „recipe_version 1 is no longer accepted; send version 2“ | weiter angenommen | wie U1 |
+| API-Clients, Chatbot | `422` „recipe_version 1 is no longer accepted; send version 2“ nach der Frist | weiter angenommen | wie U1 |
 | Permalinks der letzten 30 Tage | gespeichert als Version 1, beim Öffnen umgedeutet | gleich | verloren |
-| Runner | nur Version 2; alte Tags für alte Dateien | gleich | gleich |
-| Code | dauerhaft eine Umdeutung in `recipeFile.ts`; die in Python nur im Übergang | dauerhaft zwei (TS und Python) | keine |
+| Runner | **dauerhaft** (Otto, F9) | gleich | nur Version 2 |
+| Code | Umdeutung in `recipeFile.ts` und, wegen des Runners, in Python | gleich, dauerhaft in `api` | keine |
 
-**Empfehlung: U1.** Rezepte laufen nach 7 Tagen ab (Q10), Permalinks nach
-30. Es gibt keine fremden API-Clients. Auf Dauer genügt eine Umdeutung an
-einer Stelle.
+**Empfehlung war U1; entschieden hat Otto U1 mit der Ergänzung, dass der Runner
+Version 1 dauerhaft liest (F9).** Rezepte laufen nach 7 Tagen ab (Q10),
+Permalinks nach 30. Es gibt keine fremden API-Clients.
+
+**Grenze der Umdeutung für `reproject` (F14, §15a).** Jedes Rezept ohne
+`reproject` gibt nach der Umdeutung dieselben Werte wie vorher, bitgleich. Mit
+`reproject` Version 3 hängen die Werte an der Zahl der Bänder, die der Warp
+sieht (§3.4); nach der Umdeutung sieht er nach dem Streichen unter Umständen
+weniger Bänder als in Version 1, und `reproject` Version 3 bleibt dabei die
+Version des Rezepts. Dann können sich die Werte ändern (bei Bilinear gemessen
+bis 1,5 % des Wertebereichs, §3.4). Der Runner sagt es in `provenance.methods`
+und in einer Meldung auf dem Bildschirm; die Werte des alten Laufs gibt der
+Runner-Tag der Zeit, der Rezepte der Version 1 weiter wie bisher rechnet
+(`adr/0016` §9).
 
 ---
 
@@ -703,9 +795,9 @@ einer Stelle.
 | **NM4-10** Schritt-Namen und Chips | geht hierin auf. Titel „1. Band_Math_1“, Name im Rezept (§6). Chips: Die Bänder des Datensatzes stehen oben (Info, Klick fügt ein); am Schritt stehen nur die Ergebnisse früherer Schritte als Chips, weil nach V1 nichts mehr wegfällt. Die Regel „Datensatz + frühere Ergebnisse“ ist so einfach, dass das Panel sie selbst kennt; `api` prüft sie (abweichend von NM4-10 §2, letzter Punkt) |
 | **NM4-11** Normalize | `normalize` v2 bekommt `bands` (Pflicht; das Panel schlägt das letzte Ergebnis vor) zusammen mit den Methoden. Statistik je Band, falls Perzentile kommen |
 | **NM4-14** Index-Knöpfe | ein Knopf = ein `band_math`-Schritt mit Namen aus dem Preset (`NDVI`), sein Ergebnis angehakt. Zwei Knöpfe = zwei Schritte, zwei Bänder. Trägt der Datensatz schon ein Band dieses Namens, hängt das Panel eine Zahl an (`NDVI_2`) |
-| **NM4-20** Panel-Gliederung | neue Reihenfolge: Bands (Info) · Steps · Output · Preview (§14). Erst nach NM4-43c |
+| **NM4-20** Panel-Gliederung | neue Reihenfolge: Bands (Info) · Steps · Output · Preview (§14). Erst nach NM4-43e |
 | **NM4-05b** ⚙ am Ergebnis | Die gesperrten Schritte der Eltern bringen ihre Namen mit; neue Schritte sehen sie als Chips. Die Ausgabe der Eltern ist die Vorgabe, neue Ergebnisse kommen angehakt dazu. Eltern in Version 1 werden umgedeutet (§11) |
-| **NM4-45** Band in der Ansicht | teilt das Dropdown „Band“ mit Vorschau und Ergebnis-Layer (§10). Am besten vor NM4-43c bauen, dann übernimmt NM4-43c den Baustein |
+| **NM4-45** Band in der Ansicht | teilt das Dropdown „Band“ mit Vorschau und Ergebnis-Layer (§10). Am besten vor NM4-43e bauen, dann übernimmt NM4-43e den Baustein |
 | **DS-06** Maske nach Werten | die Bedingung nennt ein Band des Vorrats, auch ein Ergebnis (`NDVI < 0.2`). Wirkt wie `mask` auf alle Bänder |
 | **`auxiliary_assets`** (NM4-07, `adr/0014` §15s) | bleiben in Info und Ausgabe ausgeblendet. Die Maskenschicht steht in der Ausgabe wie jedes andere Band, nicht angehakt |
 | **NM4-07** Bandauswahl | „Select all bands“ und „Clear“ wandern in die Ausgabe als „All“ und „None“, je nur sichtbar, wenn sie etwas ändern. Die Grenze 16 und ihr Tooltip entfallen |
@@ -714,20 +806,31 @@ einer Stelle.
 
 ## 13. Schnitt der Umsetzung (Punkt 10)
 
+Entschieden am 2026-10-28 (F10, F11, F13). Jede Aufgabe ist in
+`plans/querschnitt/nm4-43-ausgabe-baender.md` §6 mit Stufe, Modell, Start,
+Startsatz, Umfang und Abnahme beschrieben, ohne dieses Gespräch verständlich.
+
 | Reihenfolge | Aufgabe | Stufe | Inhalt | Richtwert |
 |---|---|---|---|---|
-| 0 | **NM4-43-0** Schätzung auf feinstem Raster | A | §3.3; Test mit 60-m-Asset vorn | < 100 Zeilen |
-| 1 | **NM4-43a** Rezept und Kern | A | `recipe_version` 2, `band_math` v2, `mask` v2, `reproject` v4 (F13), Streichen im Planer, `output.bands`, Ableitung der Assets in `api`, Namen, Banddeskription und Einheit, Speicherschätzung (G2), `units` mit Bändern, Prozessbeschreibung, Runner, Nachträge `adr/0014` und `adr/0016`, `__version__` | etwa 400 Zeilen; sonst Speicherschätzung als eigener PR |
-| 2 | **NM4-43b** Kachel | A | Parameter `band` für Kachel und Mosaik-Kachel, Streichen dort, Statistik je Band | < 250 Zeilen |
-| 3 | **NM4-43c** Frontend | A | Panel nach §14, Namen und Umbenennen, Ausgabe, Vorschau „Show“, Ergebnis-Layer je Band, Umdeutung von Version 1 | über 400 Zeilen; in zwei PRs: Auftrag und Panel, dann Vorschau und Layer |
+| unabhängig, sofort | **NM4-43a** Schätzung nach feinstem Asset (F11) | A | §3.3; Test mit 60-m-Asset vorn | < 100 Zeilen |
+| unabhängig, sofort | **NM4-43b** `reproject` Version 4 je Band (F13) | A | §3.4; je Band ein Warp, Version 3 bleibt angenommen | < 250 Zeilen |
+| 1 | **NM4-43c** Rezept und Kern | A | `recipe_version` 2, `band_math` v2 (`name`), `mask` v2, `normalize` v2 (`bands`), Streichen im Planer, `output.bands`, Ableitung der Assets in `api`, Namen, Banddeskription und Einheit, Umdeutung von Version 1 in Python (`api`, Worker, Runner), Prozessbeschreibung, Nachtrag `adr/0014` §15w und `adr/0016` §12d, `__version__` 0.5.0; in einem zweiten PR der Schutz ohne Bandgrenze (G2, Zeitschätzung, `units`, Grenze 16 entfällt) | über 400 Zeilen; deshalb zwei PRs |
+| 2 | **NM4-43d** Kachel | A | Parameter `band` für Kachel und Mosaik-Kachel, Streichen dort, Statistik je Band, `band_math` Version 2 in der Kachel | < 250 Zeilen |
+| 3 | **NM4-43e** Frontend | A | Panel nach §14, Namen und Umbenennen, Ausgabe mit der Vorgabe aus §9, Vorschau „Show“, Ergebnis-Layer je Band, Umdeutung von Version 1, Prozessbeschreibung auf Version 2 umschalten | über 400 Zeilen; zwei PRs: Auftrag und Panel, dann Vorschau und Layer |
 | danach | NM4-11, NM4-14, DS-06, NM4-20 | wie geplant | §12 | — |
 
-NM4-43a und NM4-43b sind Backend und können nacheinander in einer Session
-laufen; NM4-43c ist Frontend und nicht gleichzeitig mit NM4-20, NM4-45 oder
-NM4-14 (Bandbereich des Panels). Bis NM4-43c fertig ist, nimmt `api` neben
-Version 2 auch Version 1 an und deutet sie um (§11, Übergang), damit `main`
-nie ein Panel hat, das die API ablehnt. 7 Tage nach NM4-43c endet die Annahme
-von Version 1 (U1).
+- **NM4-43a und NM4-43b** sind unabhängig voneinander und vom Rest. NM4-43a
+  muss vor NM4-43c fertig sein (beide ändern `processing/plan.py`). NM4-43b
+  ändert `operators/reproject.py` und ist nur Voraussetzung dafür, dass das
+  Streichen von Bändern in NM4-43c die Werte nach `reproject` nicht ändert.
+- **NM4-43c und NM4-43d** sind Backend und laufen nacheinander. NM4-43e ist
+  Frontend und läuft nicht gleichzeitig mit NM4-20, NM4-45 oder NM4-14
+  (Bandbereich des Panels), höchstens zwei Frontend-Sessions zugleich.
+- **`main` hat nie ein Panel, das die API ablehnt.** Bis NM4-43e nimmt `api`
+  Aufträge der Version 1 an und deutet sie um (§11). Dafür listet die
+  Prozessbeschreibung bis dahin weiter Version 1 der Schritte (Vorschlag für
+  NM4-43c: ein Feld am Operator, das die Auflistung steuert); NM4-43e schaltet
+  auf Version 2 um und beginnt damit die Frist aus §11.
 
 ---
 
@@ -778,6 +881,11 @@ PROCESSING                                   sentinel-2-c1-l2a · 1 scene
   Angehakte Bänder sind gefüllt (Stil der heutigen Chips). „All“ erscheint nur,
   wenn nicht alle angehakt sind, „None“ nur, wenn mindestens eines angehakt ist.
   Die Kopfzeile nennt Zahl und Typ.
+- **Vorgabe der Ausgabe (F7, §9):** Ohne `band_math` im Rezept sind alle
+  Bänder unter „Data“ angehakt, ausgenommen Hilfs-Assets und die
+  Maskenschicht; „New“ ist dann leer und erscheint nicht. Kommt ein
+  `band_math`-Schritt dazu, wechselt die Vorgabe auf „nur die Ergebnisse“,
+  solange der Benutzer nichts angeklickt hat.
 - **Start ohne Ausgabe:** gesperrt, Tooltip „Pick at least one band for the
   output.“
 - **Speichergrenze (G2):** Würde der Auftrag sie überschreiten, ist „Start“
@@ -789,69 +897,146 @@ PROCESSING                                   sentinel-2-c1-l2a · 1 scene
 
 ---
 
-## 15. Fragen an Otto
+## 15. Fragen an Otto — beantwortet am 2026-10-28
 
-Antwort je Frage mit der Nummer der Option, etwa „F1: 1“. Empfehlung ist
-jeweils Option 1.
+Otto hat F1 bis F13 mit Option 1 beantwortet, außer **F7** (Option 2), und
+vier Ergänzungen gemacht (F7, F9, F11/F13, Messskripte). Die Fragen stehen mit
+ihrem ursprünglichen Wortlaut da; die Antwort folgt je Frage. Die Nummer der
+Antwort ist die Nummer in der Liste der Frage.
 
 **F1 — Rezeptmodell?**
 1. Bandvorrat, lineare Kette; `band_math` fügt hinzu, `mask` und `reproject` wirken auf alle Bänder, der Planer streicht Ungenutztes (§4, V1) **(Empfehlung)**
 2. Zwei Phasen: erst alle `band_math`-Schritte, dann `mask`, `normalize`, `reproject` (V2)
 3. Graph wie openEO (V3)
 
+**Antwort F1: (1)** Bandvorrat, lineare Kette; `band_math` fügt hinzu, `mask` und `reproject` wirken auf alle Bänder, der Planer streicht Ungenutztes.
+
 **F2 — Ausgabe im Rezept?**
 1. `output.bands`; der Auftrag nennt keine Assets mehr, `api` leitet sie ab und schreibt sie ins Rezept (§5, A1) **(Empfehlung)**
 2. Der Auftrag nennt weiter `assets`, `api` prüft sie gegen die Ableitung (A2)
+
+**Antwort F2: (1)** `output.bands`; der Auftrag nennt keine Assets mehr, `api` leitet sie ab und schreibt sie ins Rezept.
 
 **F3 — Namen neu gerechneter Bänder?**
 1. Vorgabe `Band_Math_<n>`; Zeichen und Regeln aus §6; eindeutig ohne Groß-/Kleinschreibung; Umbenennen zieht alle Verweise automatisch mit **(Empfehlung)**
 2. Wie 1, aber Groß-/Kleinschreibung unterscheidet (`NDVI` ≠ `ndvi`)
 3. Wie 1, aber Umbenennen ändert nur den Schritt, spätere Verweise zeigen einen Fehler
 
+**Antwort F3: (1)** Vorgabe `Band_Math_<n>`, Regeln aus §6, eindeutig ohne Groß-/Kleinschreibung, Umbenennen zieht alle Verweise mit.
+
 **F4 — Worauf wirkt `normalize`?**
 1. Auf die Bänder, die der Schritt nennt (`bands`, Pflicht; das Panel schlägt das letzte Ergebnis vor); umgesetzt mit NM4-11 **(Empfehlung)**
 2. Auf alle Bänder des Vorrats wie heute
+
+**Antwort F4: (1)** `normalize` v2 mit `bands`. Auslegung (§15a): Das Feld kommt schon mit NM4-43c, die Methoden mit NM4-11.
 
 **F5 — Schutz ohne Bandgrenze?**
 1. Grenze 16 entfällt; neu eine Speicherschätzung je Lauf gegen eine Grenze je Kindprozess, Startwert 1,5 GB; Zeitschätzung und `units` zählen die Bänder der Ausgabe (§7, G2) **(Empfehlung)**
 2. Grenze 16 entfällt, nur die bestehenden Grenzen (G1)
 3. Grenze 16 entfällt; neu eine Grenze für Pixel × Bänder × Szenen der Eingabe (G3)
 
+**Antwort F5: (1)** Grenze 16 entfällt; Speicherschätzung je Lauf gegen 1,5 GB, Zeitschätzung und `units` zählen die Bänder.
+
 **F6 — Ausgabedatei?**
 1. Eine COG, ein Typ für alle Bänder nach den heutigen Regeln, Banddeskription und Einheit je Band (§8, D1) **(Empfehlung)**
 2. Eine COG je Datentyp (D2)
 3. Eine COG je Band (D3)
 
+**Antwort F6: (1)** Eine COG, ein Typ, Banddeskription und Einheit je Band.
+
 **F7 — Was ist ohne `band_math` angehakt?**
 1. Nichts, außer der Datensatz hat genau ein Band; „Start“ gesperrt mit Grund (§9, O1) **(Empfehlung)**
 2. Alle Bänder (O2)
+
+**Antwort F7: (2)** (Otto) Alle wählbaren Bänder angehakt, wenn das Rezept kein `band_math` hat; Hilfs-Assets aus `auxiliary_assets` (`visual`, `preview`) nicht. Mit `band_math` gilt weiter: nur die Band-Math-Ergebnisse. Kommt ein `band_math`-Schritt dazu oder fällt er weg, wechselt die Vorgabe, aber nur solange der Benutzer die Auswahl nicht selbst geändert hat. Einzelheiten und Auslegungen: §9, §15a.
 
 **F8 — Vorschau bei mehreren Bändern?**
 1. Ein Band, Auswahl „Show“ (Vorgabe letztes Ergebnis); dasselbe Dropdown am Ergebnis-Layer und in NM4-45; RGB später als eigene Aufgabe (§10, P1) **(Empfehlung)**
 2. Wie 1, dazu RGB aus drei Bändern der Ausgabe jetzt (P2)
 3. Immer das erste Band der Ausgabe (P3)
 
+**Antwort F8: (1)** Ein Band, Auswahl „Show“; RGB später als eigene Aufgabe.
+
 **F9 — Rezepte der Version 1?**
 1. Das Frontend deutet Datei, Permalink und Ablage um, mit Hinweis; `api` und der neue Runner weisen Version 1 mit Grund ab, sobald NM4-43c fertig ist (§11, U1) **(Empfehlung)**
 2. Auch `api` deutet Version 1 um (U2)
 3. Version 1 überall abweisen (U3)
 
+**Antwort F9: (1)** mit Ergänzung (Otto): Der **Runner liest das alte Rezeptformat dauerhaft** (heruntergeladene `recipe.json` bleiben lesbar, `adr/0016`). Die Übergangsfrist für `api` nennt §11: 30 Tage nach dem Deploy von NM4-43e (mindestens so lange wie gespeicherte Rezepte und Permalinks gelten).
+
 **F10 — Schnitt der Umsetzung?**
-1. NM4-43-0, dann NM4-43a, NM4-43b, NM4-43c wie in §13; danach NM4-11, NM4-14, DS-06, NM4-20 **(Empfehlung)**
-2. Ein Backend-PR (0, a, b zusammen), dann das Frontend
+1. Erst die Schätzung (Nebenbefund), dann Rezept und Kern, Kachel, Frontend wie in §13; danach NM4-11, NM4-14, DS-06, NM4-20 **(Empfehlung)**
+2. Ein Backend-PR (Schätzung, Rezept und Kern, Kachel zusammen), dann das Frontend
+
+**Antwort F10: (1)** Reihenfolge wie in §13 mit der neuen Nummerierung: NM4-43a und NM4-43b (unabhängig), danach NM4-43c Kern, NM4-43d Kachel, NM4-43e Frontend; dann NM4-11, NM4-14, DS-06, NM4-20.
 
 **F11 — Nebenbefund Schätzung (§3.3)?**
 1. Sofort als eigene kleine Aufgabe (Stufe A), unabhängig von den übrigen Antworten **(Empfehlung)**
-2. Mit NM4-43a
+2. Mit dem Rezept und dem Kern
+
+**Antwort F11: (1)** (Otto) Eigene kleine Aufgabe, Stufe A, sofort und unabhängig startbar: **NM4-43a** „Schätzung nach feinstem Asset“.
 
 **F12 — Chips der Ergebnisse (aus NM4-10)?**
 1. Bänder des Datensatzes oben (Info), Ergebnisse früherer Schritte als Chips am Schritt; das Panel kennt die Regel selbst, `api` prüft sie (§12) **(Empfehlung)**
 2. Alles oben in einer Liste, Ergebnisse dort ab ihrem Schritt
 3. Wie in NM4-10 geplant: Die Regel kommt aus dem Backend (eigene Route)
 
+**Antwort F12: (1)** Bänder des Datensatzes oben, frühere Ergebnisse als Chips am Schritt; das Panel kennt die Regel, `api` prüft sie.
+
 **F13 — `reproject` und die Zahl der Bänder (§3.4)?**
-1. `reproject` Version 4 warpt jedes Band für sich; Kosten und Speicher misst NM4-43a, Version 3 wird danach nicht mehr gelistet **(Empfehlung)**
+1. `reproject` Version 4 warpt jedes Band für sich; Kosten und Speicher misst NM4-43b, Version 3 wird danach nicht mehr gelistet **(Empfehlung)**
 2. So lassen; im Methodentext steht nichts dazu, das Streichen ändert dann die Werte nach `reproject`
+
+**Antwort F13: (1)** (Otto) Eigene kleine Aufgabe, Stufe A, sofort und unabhängig startbar: **NM4-43b** „`reproject` Version 4 je Band“.
+
+---
+
+## 15a. Auflagen und Auslegungen (2026-10-28) und Frage F14
+
+**Von Otto:**
+
+- **F7:** Option 2 mit der Wechselregel; Hilfs-Assets nicht angehakt.
+- **F9:** Der Runner liest das alte Format dauerhaft; die Frist für `api` nennt
+  dieses ADR (§11).
+- **F11, F13:** je eine eigene kleine Aufgabe, sofort startbar; danach
+  NM4-43c, NM4-43d, NM4-43e (§13).
+- **Messskripte:** Sie enthalten keine eigenen HTTP-Aufrufe außerhalb von
+  `gateway`; der `curl`-Schritt steht nur als dokumentierter Einmal-Schritt im
+  ADR (Grenze der Cloud-Sitzung, `adr/0002`). Eingearbeitet in „Methode“ und §17.
+- **Status:** angenommen; Log-Zeile „entschieden“.
+
+**Auslegungen von Claude (Vorschlag, gelten bis Otto widerspricht):**
+
+1. **F4:** `normalize` v2 bekommt das Feld `bands` schon mit NM4-43c, nicht erst
+   mit NM4-11. Grund: Im Vorratsmodell würde `normalize` Version 1 sonst alle
+   Bänder des Vorrats, auch die rohen Eingaben, mitrechnen und das Streichen
+   verhindern. NM4-11 setzt die Methoden auf dasselbe Feld.
+2. **F7, „wählbar“:** Gemeint ist, was „Select all bands“ heute nimmt (ohne
+   Hilfs-Assets und ohne Maskenschicht). Die Maskenschicht `scl` ist also ohne
+   `band_math` nicht angehakt, aber wählbar (§9 Punkt 1). Wollte Otto sie
+   mit angehakt haben, ist das eine Zeile im Panel.
+3. **F7, eigene Änderung:** Jeder Klick auf ein Band der Ausgabe, „All“ oder
+   „None“ zählt als eigene Änderung; ein neues Band-Math-Ergebnis wird auch
+   danach angehakt, ein entferntes verschwindet (§9 Punkt 3 und 4).
+4. **F9, Dauer der Python-Umdeutung:** Sie bleibt wegen des Runners dauerhaft in
+   `processing`; nur die Annahme in `api` endet mit der Frist.
+
+**F14 — Rezepte der Version 1 mit `reproject` im Runner (offen).** Die
+Umdeutung gibt bitgleiche Werte, außer nach `reproject` Version 3: Dessen Werte
+hängen an der Zahl der Bänder, die der Warp sieht (§3.4), und die Umdeutung
+streicht Bänder. Otto will, dass heruntergeladene Rezepte reproduzierbar bleiben
+(F9). Wie genau, ist offen:
+1. Umdeutung wie oben; der Runner sagt, dass Werte nach `reproject` abweichen
+   können; die bitgleichen Werte gibt der Runner-Tag der Zeit, der Version 1
+   weiter rechnet (`adr/0016` §9) **(Empfehlung)**
+2. Der Kern führt Rezepte der Version 1 dauerhaft mit der alten Semantik aus
+   (`band_math` ersetzt, `reproject` Version 3 sieht alle Bänder): bitgleich im
+   neuen Runner, aber ein zweiter Rechenweg mit eigenen Tests, der bleibt
+3. Version-1-Rezepte mit `reproject` im neuen Runner abweisen, mit Grund und
+   dem Hinweis auf den alten Runner-Tag
+
+Die Frage hält nur den `reproject`-Teil der Umdeutung in NM4-43c an. Alles
+andere in NM4-43a bis NM4-43e ist davon unabhängig und kann starten.
 
 ---
 
@@ -896,7 +1081,9 @@ Aufbau und Ausgaben). Im Repo, weil die Messung reproduzierbar sein soll
 geladen und registriert seinen Operator `band_math_append` nur im eigenen
 Prozess.
 
-**Aufrufe** (Repo-Wurzel, Projekt-venv):
+**Aufrufe** (Repo-Wurzel, Projekt-venv). Der erste ist ein `curl` und
+einmalig (Grenze der Cloud-Sitzung, „Methode“); er schreibt nur `items.json`,
+die Skripte machen keinen eigenen HTTP-Aufruf:
 
 ```bash
 curl -sS -X POST https://earth-search.aws.element84.com/v1/search -H 'Content-Type: application/json' \
@@ -914,6 +1101,12 @@ PYTHONPATH=backend python scripts/nm4-43-bands/measure.py run m10 --scenes 25
 
 ```bash
 PYTHONPATH=backend python scripts/nm4-43-bands/measure.py summary m10
+```
+
+**Keine eigenen HTTP-Aufrufe in den Skripten** (Erwartung: keine Ausgabe):
+
+```bash
+grep -nE "^\s*(import|from) (httpx|requests|urllib|aiohttp|http\.client|socket|botocore|boto3)" scripts/nm4-43-bands/*.py
 ```
 
 Für die Flächenreihe (§3.2) dasselbe mit `--scenes 1` und `--km 3`, `--km 10`,
