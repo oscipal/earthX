@@ -2518,7 +2518,7 @@ der Kern aber alle Assets auf das **feinste** Raster liest (`processing/source.p
 - **Tests:** `test_plan.py` (`TestTheRasterIsTheFinestAsset`), `test_estimate_geographic.py` (zwei Pixelgrößen in Grad) und
   `test_band_math_run.py` (`TestNestedGrids`: die Schätzung gegen den Lauf auf zwei Pixelgrößen).
 
-## 15w. Nachtrag vom 2026-10-28: das Kachelraster je Kachelgröße (zu §6.3, §6.4; NM4-29)
+## 15 Nachtrag NM4-29: das Kachelraster je Kachelgröße (2026-10-28; zu §6.3, §6.4)
 
 Otto hat am 2026-10-28 entschieden, dass Mosaik und Mosaik-Vorschau mit 512 px gezeichnet werden, Szene,
 Item-Vorschau und Ergebnis weiter mit 256 px; der `tiler` liefert beide Größen

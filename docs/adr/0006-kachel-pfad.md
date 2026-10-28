@@ -762,7 +762,7 @@ deshalb in den Anwendungs-Cache (12.3).
   Router der Fabrik). Vorher nahm TiTiler jede Größe über 0; eine Kachel mit 4096 px band einen
   Thread 12,6 s [M].
 - **Wer welche Größe zeichnet:** Mosaik und Mosaik-Vorschau 512 px, Szene, Item-Vorschau und
-  Ergebnis 256 px. Gemessen bringt 512 px dort am meisten, wo viele teure Kacheln hinter den
+  Ergebnis 256 px (im Frontend mit NM4-29b, Plan §17). Gemessen bringt 512 px dort am meisten, wo viele teure Kacheln hinter den
   6 Verbindungen des Browsers warten (Mosaik 29,1 → 14,3 s); bei einer einzelnen Ebene und
   begrenzter Leitung ist es langsamer, weil eine 512er-Kachel weiter über den Bildrand ragt.
   Mit HTTP/2 bzw. CDN (M6) wird neu gemessen (Wiedervorlage M6).
@@ -774,7 +774,7 @@ deshalb in den Anwendungs-Cache (12.3).
   (ab z8, 12 Szenen je Kachel) zählen Flächen einer Stufe und gelten für beide Größen. Eine
   512er-Kachel einer Stufe hat viermal so viele Pixel und wird eine Kartenzoomstufe später
   gefragt; das Mosaik erscheint damit ab Kartenzoom 7,5 statt 6,5 (Frage 3, Option 1).
-- **Bitgleichheit:** siehe `adr/0014` §15w.
+- **Bitgleichheit:** siehe `adr/0014` §15 Nachtrag NM4-29.
 
 ### 5.1 Wo der Kachel-Pfad liegt — eine Modulgrenze, die auffällt
 

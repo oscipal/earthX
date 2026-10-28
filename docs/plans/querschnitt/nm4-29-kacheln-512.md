@@ -1,6 +1,6 @@
 # NM4-29 — 512er-Kacheln prüfen
 
-**Stand:** 28.10.2026, Plan zur Freigabe (§6–§14); bis zur Freigabe ist kein Produktivcode geändert. Beauftragt am 24.10.2026 von Otto (Backlog-Punkt 29 in `docs/plans/nach-m4-backlog.md`).
+**Stand:** 28.10.2026, Plan freigegeben (§15); Backend umgesetzt (§16, #227), das Frontend ist die eigene Aufgabe NM4-29b (§17). Beauftragt am 24.10.2026 von Otto (Backlog-Punkt 29 in `docs/plans/nach-m4-backlog.md`).
 **Stufe B:** Erst kommt der Plan im Draft-PR (Optionen, Empfehlung, bei Rechenrelevanz Quellen), Otto gibt ihn frei, dann folgt der Code in derselben Session.
 **Modell:** Opus für Messung und Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** nach dem Merge von NM4-26; nicht gleichzeitig mit NM4-04 oder NM4-19 (`tiler`).
@@ -301,5 +301,50 @@ Lokal geändert und danach verworfen: `ZOOM = 13` statt 14, `tilesize=512` in de
   - Je Route Ende-zu-Ende: Szene (Größe der Kachel, TileJSON 256), Mosaik (nichts geholt bei 1024/4096, TileJSON 512, Kachel 512 px), Ergebnis (nichts gelesen, TileJSON 256).
   - Am alten Code scheitern 25 dieser Tests, das neue Modul unter `access` lädt nicht.
 - **Bitgleich-Tests (Frage 4):** Die T1↔T2-Tests der vier Module laufen für 256 px auf z14 und für 512 px auf z13, 17 Fälle mehr, alle grün. Zarr: Grenze 3 % für 512 px; gegen den exakt nächsten Quellpixel ist bei 512 px eine Abweichung nur innerhalb von 0,125 px an einer Grenze erlaubt, bei 256 px keine.
-- **Dokumente:** Nachtrag NM4-29 in `adr/0006` §5, `adr/0014` §15w.
-- **Offen:** das Frontend (§9.1 mit Frage 1 Option 2: 512 px für Mosaik und Mosaik-Vorschau, die sieben Stellen rechnen mit der Größe der Quelle), die Messung nachher, die Prüfung im Browser und die Prüfanleitung. Beginnt, wenn Otto einen freien Frontend-Platz meldet.
+- **Dokumente:** Nachtrag NM4-29 in `adr/0006` §5, `adr/0014` §15 Nachtrag NM4-29.
+- **Offen:** das Frontend. Es ist die eigene Aufgabe NM4-29b (§17).
+
+**Schnitt geändert (Otto, 28.10.2026, zu #227):** Der PR #227 enthält nur das Backend und wird so gemergt. Das Frontend ist die eigene Aufgabe NM4-29b (§17), in einer neuen Session.
+
+## 17. NM4-29b Frontend
+
+**Stufe A**, nur Frontend; der Plan ist freigegeben (§15). **Modell:** Sonnet, Effort hoch. **Start:** nach dem Merge von #227 (NM4-29 Backend), wenn Otto einen freien Frontend-Platz meldet. Nicht gleichzeitig mit anderen Aufgaben an `frontend/src/mapLayers.ts`, `mosaic.ts`, `processingPreview.ts`, `aoiClip.ts` oder `resultLayer.ts`.
+**Startsatz:** „Führe Aufgabe NM4-29b aus `docs/plans/querschnitt/nm4-29-kacheln-512.md` §17 aus.“
+
+**Ausgangslage.**
+
+- **Messung (§7):** Der Browser öffnet über HTTP/1.1 höchstens 6 Verbindungen je Host; die Kacheln einer Ansicht warten dort in einer Schlange (NM4-26). Mit Kacheln von 512 statt 256 px fragt MapLibre für denselben Ausschnitt 2,2- bis 3-mal weniger Kacheln, jede ist aber teurer. Beim Mosaik lohnt das am meisten: Ein NDVI-Mosaik aus 12 Szenen auf 1920×1080 braucht 14,3 statt 29,1 s ohne Leitungsgrenze und 33,3 statt 41,0 s bei 100 Mbit/s. Bei einer einzelnen Ebene und begrenzter Leitung ist 512 px langsamer.
+- **Entscheidung (§15):** 512 px nur für die **Mosaik-Kachel** und die **Mosaik-Vorschau** (Mosaik-Kachel mit Schritten). Szene, Item-Vorschau und Ergebnis bleiben bei 256 px. `MIN_MOSAIC_ZOOM` bleibt 8. Mit HTTP/2 bzw. CDN (M6) wird neu gemessen.
+- **Backend (#227, §16):** Der `tiler` nimmt `tilesize` nur als 256 oder 512, sonst `400`. Ohne `tilesize` liefert die Kachel-Route weiter 256 px. Das TileJSON des Mosaiks nennt in `tiles` 512 px, das von Szene und Ergebnis 256 px.
+- **MapLibre (§7.1):** Eine Rasterquelle wird ab Kartenzoom `round(z + log2(512 / tileSize))` auf Stufe L gefragt (maplibre-gl 5.24.0, `covering_tiles.ts`). Stufe L erscheint damit mit 256 px ab Kartenzoom L − 1,5, mit 512 px ab L − 0,5. Ein Mosaik ab z8 erscheint also ab Kartenzoom 7,5 statt 6,5. Darunter zeigt die Karte wie bisher die Einzelszenen in `earthx:order`.
+
+**Umfang.**
+
+1. **Kachelgröße je Quelle.** Jede Rasterquelle der App trägt ihre Größe; keine Stelle rechnet mehr fest mit 256 px. Mosaik und Mosaik-Vorschau bekommen 512 px, alles andere bleibt bei 256 px. Die Größe gehört zur Vorlage (`tilesize` in der URL) und zur Quelle (`tileSize` in MapLibre); beide müssen übereinstimmen. Die sieben Stellen (§9.1):
+   1. `mapLayers.ts` `placeRaster` und `syncPreview`: `tileSize: 256` → die Größe der Quelle.
+   2. `api.ts` `buildMosaicTileTemplate` und `buildMosaicOperatorTileTemplate`: `tilesize=512` in der URL. `buildTileTemplate` und `buildOperatorTileTemplate` bleiben ohne `tilesize` (256 px). Die Mosaik-URL wird damit 13 Bytes länger. `mosaicRequestBytes` zählt die Vorlage mit, die Grenze `MAX_MOSAIC_REQUEST_BYTES` (7168) bleibt stimmig.
+   3. `resultLayer.ts` `resultTileTemplate`: bleibt `tilesize=256`, aus derselben Größe wie die Quelle des Ergebnisses statt als fester Text.
+   4. `mosaic.ts` `TILE_LEVEL_AHEAD = 1.5` → abhängig von der Größe (1,5 bei 256 px, 0,5 bei 512 px). Benutzt in `hideFrom` der Einzelszenen unter einem Mosaik (`mosaic.ts`, `processingPreview.ts`), im Zoomhinweis (`zoomHint.ts`: `isDrawnAt`, `zoomInTo`) und in `fixtures/zoomMap.ts`. Unter einem Mosaik mit 512 px verschwinden die Einzelszenen ab Kartenzoom 7,5.
+   5. `processingPreview.ts` `previewMaxZoom`, `tileResolution`: Pixelgröße der Kachel aus ihrer Größe. Die Mosaik-Vorschau endet eine Stufe tiefer, damit sie gröber als die Daten bleibt (Otto, 19.10.2026).
+   6. `resultLayer.ts` `isOverview`, `tileMetres`: Stufe und Pixelgröße aus der Größe der Quelle (bleibt 256 px).
+   7. `aoiClip.ts` `TILE_PX = 256`: die Maske im Pixelraum des geladenen Bildes (`bitmap.width`/`bitmap.height`). Sonst schneidet „AOI only“ eine 512er-Kachel nur im linken oberen Viertel richtig zu.
+2. **Keine Migration:** Permalinks und Job-Ablage speichern keine Kachel-URL (§9.1); nichts umzuschreiben.
+3. **Messung nachher:** dieselbe Mosaik-Ansicht wie §7.2 im echten Browser (Chromium der Sitzung, `tiler` aus `scripts/tile-bench`, nachgestellte Suchantwort), vorher (`main`) und nachher: Zahl der Kachelanfragen, Zeit bis zur letzten Kachel, Größe der Bilder. Dazu `scripts/tile-bench/bench.sh` mit `--mosaic --scenes 12 --viewport 1920x1080 --map-zoom 11.5` für 256 und 512 px am aktuellen `tiler` (Aufruf §14.1).
+
+**Abnahme.**
+
+- **Tests**, die am alten Code scheitern:
+  - Jede Rasterquelle nennt in `tileSize` dieselbe Größe wie ihre Vorlage in `tilesize`: Mosaik und Mosaik-Vorschau 512, Szene, Item-Vorschau und Ergebnis 256.
+  - Stufe L einer 512er-Quelle erscheint ab Kartenzoom L − 0,5, einer 256er ab L − 1,5. Unter einem Mosaik ab z8 verschwinden die Einzelszenen bei 7,5, und der Zoomhinweis nennt die richtige Stufe.
+  - `previewMaxZoom` einer Mosaik-Vorschau liegt eine Stufe tiefer als die einer Item-Vorschau derselben Daten.
+  - „AOI only“ auf einer 512er-Kachel maskiert die ganze Kachel an der AOI.
+  - Die Längengrenze der Mosaik-URL rechnet `tilesize=512` mit.
+- **Prüfung im echten Browser** (Chromium/Playwright der Sitzung, nicht nur jsdom), in Hell- und Dunkelmodus und bei schmalem Fenster (360 px), im PR beschrieben:
+  - Mosaik-Kacheln tragen `tilesize=512` und sind 512 px groß; Szene, Item-Vorschau und Ergebnis bleiben bei 256 px.
+  - Der Rand von „AOI only“ liegt an der AOI.
+  - Mosaik und Einzelszenen wechseln bei Kartenzoom 7,5.
+- **Messung vorher/nachher** (Umfang 3) im PR.
+- **Prüfanleitung für Otto** (Browser und/oder PowerShell 5.1) im PR, z. B. DevTools → Network, Filter `tiles`: Zahl der Mosaik-Anfragen und „Finish“ vor und nach dem Wechsel, `tilesize=512` in den Mosaik-URLs.
+- **Dokumente:** Nachtrag NM4-29b in `adr/0006` (Kachelgröße je Quelle im Frontend, Mosaik ab Kartenzoom 7,5); Log-Zeile mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern.
+- Frontend `npm run lint`, `npx tsc -b --pretty false`, `npm test`; alle vier Pflicht-Checks der CI grün; vor „fertig“ ist `main` geholt.
+- **Grenzen:** Oberflächentexte nur auf Englisch, wenig Text, Erklärungen im Tooltip (UI-01 §4). Keine neue Abhängigkeit ohne Frage an Otto. Keine AOI, Job-, Rezept- oder Permalink-Kennungen, Hashes, `href` oder signierten URLs in Logs oder URLs. `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
