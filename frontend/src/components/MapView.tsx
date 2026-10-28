@@ -34,7 +34,6 @@ import { DEFAULT_BASEMAP } from '../basemaps';
 import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
 import { previewOverlays } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
-import { layersOnMap } from '../searchLayers';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
 import { useAppStore } from '../store';
 import type { StacItem, ToolMode } from '../types';
@@ -123,9 +122,7 @@ export default function MapView() {
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
-  const searchCrops = useAppStore((s) => s.searchCrops);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
-  const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
   const basemap = useAppStore((s) => s.basemap);
   const overlays = useAppStore((s) => s.overlays);
@@ -233,7 +230,7 @@ export default function MapView() {
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
       const shown = resultsOnMapOf(st);
-      syncLayers(map, layersForMap(layersOnMap(st.layers, st.searchCrops, st.openSectionId, shown.cropsOf), viewLayer, st.showDownloaded));
+      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded));
       syncMosaic(map, {
         // What browsing draws; a view draws its own scenes and needs the whole list for the quicklook under them.
         items: st.focusMode ? st.items : shown.quicklooks,
@@ -333,9 +330,7 @@ export default function MapView() {
     }
   }, [showCoverage, coverage, coverageFootprints, mapZoom, focusMode]);
 
-  // --- pinned layers (layer manager), and under them the AOI crops of the
-  // dataset chosen in the results dropdown (M3-10): the map shows that dataset
-  // only, plus whatever the user pinned. ---
+  // --- pinned layers (layer manager) ---
   // The mosaics this view asks for, the same object until one of them changes: another view's
   // TileJSON arriving must not tear this view's tiles down.
   const picked = useMemo(
@@ -357,7 +352,6 @@ export default function MapView() {
   const highlight = useSameScenes(shown.highlight);
   // The ticked scenes whose quicklooks lie over everything else (`mapLayers.ts`, `TICKED_TOP`).
   const ticked = useMemo(() => highlight.map((item) => item.id), [highlight]);
-  const cropFilter = shown.cropsOf;
   const viewLayer = useMemo(
     () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi: viewAoi, showDownloaded }),
     [layers, viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, viewAoi, showDownloaded],
@@ -366,11 +360,11 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const note = overlayBudgetNote(
-        syncLayers(map, layersForMap(layersOnMap(layers, searchCrops, openSectionId, cropFilter), viewLayer, showDownloaded)),
+        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded)),
       );
       if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
-  }, [layers, searchCrops, openSectionId, viewLayer, showDownloaded, cropFilter]);
+  }, [layers, viewLayer, showDownloaded]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload

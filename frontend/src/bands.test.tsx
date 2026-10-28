@@ -161,7 +161,7 @@ beforeEach(async () => {
   useAppStore.setState({
     dock: null, datasets: datasetsFrom([COLLECTION]), selectedDatasetIds: [DATASET], datasetId: DATASET, aoi: AOI, dateFrom: '', dateTo: '',
     sections: [], openSectionId: null, items: [], groups: [], selectedIds: [], layers: [], searchContext: null, searching: false, loadingMore: false,
-    focusMode: false, resultViewLayerId: null, searchCrops: [], error: null, notice: null, resultsOnMap: true,
+    focusMode: false, resultViewLayerId: null, error: null, notice: null, resultsOnMap: true,
   });
   useProcessingStore.setState({ open: false, jobs: [] });
   await act(() => state().runSearch());

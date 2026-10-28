@@ -275,16 +275,6 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(container.querySelector('.results-panel')).toBeNull();
   });
 
-  it('has no "Pin to layers" row for a dataset drawn as a crop', () => {
-    load(MIXED);
-    const crop = { id: 'c', name: 'Elevation model · x', visible: true, opacity: 1, overlays: [], restore: { datasetId: 'dem' } } as never;
-    useAppStore.setState({ searchCrops: [crop] });
-    openList();
-    act(() => options()[2].click());
-    expect(container.textContent).not.toContain('Pin to layers');
-    useAppStore.setState({ searchCrops: [] });
-  });
-
   it('has no "Clear all" in its head, only the switch for the map', () => {
     load(MIXED);
     expect([...container.querySelectorAll('.results-head button')].map((b) => b.textContent)).toEqual(['Hide results']);

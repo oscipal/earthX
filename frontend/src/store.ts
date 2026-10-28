@@ -51,7 +51,7 @@ import {
   needsFallback,
   withSourceState,
 } from './sections';
-import { cropPasses, fullResolutionLayers, overlaysOfPass, underlaysOf } from './searchLayers';
+import { overlaysOfPass, underlaysOf } from './searchLayers';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -383,34 +383,6 @@ let searchGen = 0;
 // Item ids are unique only within a collection.
 const sceneKey = (item: StacItem) => `${item.collection ?? ''}\u0000${item.id}`;
 
-// The AOI crops of every dataset without a browsable preview (`browse:
-// 'full_resolution'`, the DEM): part of that dataset's results, on the map while
-// it is the one chosen in the dropdown (Otto, 30.09.2026). `problems` names a
-// dataset whose scenes could not be drawn.
-function cropsForSearch(
-  datasets: ViewableDataset[],
-  sections: ResultSection[],
-  aoi: GeoJSON.Geometry,
-  mosaics?: Mosaics,
-): { crops: MapLayer[]; problems: string[] } {
-  const batchId = nextBatchId();
-  const problems: string[] = [];
-  const crops = datasets.flatMap((dataset) => {
-    const section = sections.find((x) => x.datasetId === dataset.id);
-    if (dataset.browse !== 'full_resolution' || !section || section.items.length === 0) return [];
-    const drawn = fullResolutionLayers(dataset, section, aoi, batchId, mosaics);
-    if (drawn.length === 0) {
-      problems.push(
-        defaultRenderOf(dataset.collection)?.assets[0]
-          ? `${dataset.title}: none of its scenes carries a bounding box to draw.`
-          : `${dataset.title} has no default visualisation yet (earthx:default_render).`,
-      );
-    }
-    return drawn;
-  });
-  return { crops, problems };
-}
-
 // The overlays for these scenes, split by time step and stacked the way the view draws them
 // (`stackLikeView`); `null` while the mosaic of one is not known.
 function overlaysOfEntries(s: AppState, entries: SceneEntry[], clip: GeoJSON.Geometry | null): LayerOverlay[] | null {
@@ -484,23 +456,6 @@ async function fetchMosaics(
   if (failures.length > 0) set({ notice: `Could not load the mosaic (${failures[0]}); its scenes are drawn one by one.` });
 }
 
-// The AOI crops are drawn scene by scene until the mosaics of their groups have loaded, and then again.
-function upgradeCrops(
-  set: SetState,
-  get: GetState,
-  datasets: ViewableDataset[],
-  sections: ResultSection[],
-  aoi: GeoJSON.Geometry,
-): void {
-  const requests = cropPasses(datasets, sections).filter((r) => isMosaicPass(r.entries));
-  if (requests.length === 0) return;
-  void fetchMosaics(set, get, requests).then(() => {
-    if (get().sections !== sections) return; // another search has taken the results over
-    const loaded = requests.some((r) => get().mosaics[mosaicTemplateOf(r.datasetId, r.entries) ?? '']);
-    if (loaded) set({ searchCrops: cropsForSearch(datasets, sections, aoi, get().mosaics).crops });
-  });
-}
-
 function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections: ResultSection[]): string {
   if (ctx.features.length === 0) {
     return datasets.length === 1 || (!ctx.dateFrom && !ctx.dateTo)
@@ -517,8 +472,8 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
   return `${found} scene(s) in ${steps} time step(s) across ${datasets.length} datasets.`;
 }
 
-// Lays out the scenes a search has loaded: one section per dataset asked, their
-// AOI crops and the search notice. A new search opens the first dataset with
+// Lays out the scenes a search has loaded: one section per dataset asked and
+// the search notice. A new search opens the first dataset with
 // scenes, else the active one. "Load more" (`keepOpen`) keeps the dataset and
 // time step that are open; a dataset showing its ±90-day fallback keeps it while
 // the search still has nothing of its own for it, and a dataset whose new scenes
@@ -532,7 +487,6 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     set({
       ...openSectionState(null),
       sections: [],
-      searchCrops: [],
       selectedIds: [],
       searchContext: null,
       dock: withoutResults(s.dock),
@@ -568,13 +522,11 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     single && !single.hasTimeAxis && ctx.answer.ignoredFilters.includes('datetime')
       ? acquisitionNote(single.collection)
       : null;
-  const { crops, problems } = cropsForSearch(datasets, sections, ctx.aoi, s.mosaics);
   const notice = [
     resultsNotice(ctx, datasets, sections),
     ctx.truncatedNotice,
     timeNote && `${timeNote}.`,
     stray > 0 ? `${stray} scene(s) of other datasets were left out.` : null,
-    ...problems,
   ]
     .filter(Boolean)
     .join(' ');
@@ -582,7 +534,6 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     sections,
     ...(keepOpen ? reopenedSectionState(s, open) : openSectionState(open)),
     ...(open ? { datasetId: open.datasetId } : {}),
-    searchCrops: crops,
     selectedIds: keepOpen ? s.selectedIds.filter((id) => open?.items.some((it) => it.id === id)) : [],
     searchContext: ctx,
     // A new search shows its results; "Load more" leaves the panels as they are.
@@ -590,7 +541,6 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     error: null,
     notice,
   });
-  upgradeCrops(set, get, datasets, sections, ctx.aoi);
 }
 
 // A new set of ticked datasets (M4-29): the results of the last search go, the
@@ -621,7 +571,6 @@ function applyDatasetSelection(
     notice: null,
     playing: false,
     ...LEAVE_FOCUS,
-    searchCrops: [],
   });
   // The coverage map is for a dataset that is picked; dropping that one drops it.
   if (s.coverageDatasetId && !selectedDatasetIds.includes(s.coverageDatasetId)) get().hideCoverage();
@@ -678,17 +627,14 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
     );
     if (!done) return;
     const { now, replacement, sections } = done;
-    const { crops, problems } = cropsForSearch(viewableDatasets(now.datasets, ctx.datasetIds), sections, ctx.aoi, now.mosaics);
     const singleNotice = replacement.groupingError
       ? { error: `Grouping failed: ${replacement.groupingError}`, notice: null }
-      : { notice: [replacement.notes[0], ctx.truncatedNotice, ...problems].filter(Boolean).join(' ') };
+      : { notice: [replacement.notes[0], ctx.truncatedNotice].filter(Boolean).join(' ') };
     set({
       sections,
       ...(now.openSectionId === datasetId ? openSectionState(replacement) : {}),
-      searchCrops: crops,
       ...(ctx.datasetIds.length === 1 ? singleNotice : {}),
     });
-    upgradeCrops(set, get, viewableDatasets(now.datasets, ctx.datasetIds), sections, ctx.aoi);
   } catch (e) {
     if (rethrow) throw e;
     // Not tried again for this search.
@@ -787,7 +733,7 @@ export interface AppState {
   // --- ui layout ---
   // The panel beside the rail (UI-01 §6.9): one at a time, or none.
   dock: DockPanel | null;
-  // The search results (quicklooks, crops) are drawn on the map (UI-01g). Off, only the scenes ticked in the
+  // The search results (quicklooks) are drawn on the map (UI-01g). Off, only the scenes ticked in the
   // list are; the list itself is the same. Every new search starts with it on.
   resultsOnMap: boolean;
   // Viewing a full-resolution raster (M2-07b) instead of browsing quicklooks —
@@ -815,11 +761,6 @@ export interface AppState {
   // `selectLayer` sets it for a result layer. The results list is folded away meanwhile, as in the
   // full-resolution view, which this is not (`focusMode` stays off).
   resultViewLayerId: string | null;
-  // The AOI crops a search draws by itself for a dataset with no browsable preview
-  // (`browse: 'full_resolution'`): part of that dataset's results, on the map only
-  // while that dataset is the one chosen in the results dropdown. Not in `layers`;
-  // `pinSearchCrops` copies them there.
-  searchCrops: MapLayer[];
   // The layer the download dialog (M2-07d) is open for, `null` when closed.
   downloadDialogLayerId: string | null;
   // The dialog open for the current selection (V-4) rather than a pinned
@@ -997,7 +938,6 @@ export interface AppState {
   findSceneByName: () => Promise<void>;
   showCoverageFor: (datasetId: string) => void;
   hideCoverage: () => void;
-  pinSearchCrops: () => void;
   setMapViewport: (zoom: number, bbox: Bbox, size: { width: number; height: number }) => void;
   toggleTheme: () => void;
   setProjection: (projection: Projection) => void;
@@ -1042,7 +982,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   layers: [],
   viewLayerId: null,
   resultViewLayerId: null,
-  searchCrops: [],
   downloadDialogLayerId: null,
   downloadSelection: false,
   downloadResolution: 1,
@@ -1214,8 +1153,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       sections: [],
       openSectionId: null,
       ...forgetSearch(),
-      // The crops a search drew go with it; what the user pinned stays.
-      searchCrops: [],
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -1235,8 +1172,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       sections: [],
       openSectionId: null,
       ...forgetSearch(),
-      // The crops a search drew go with it; what the user pinned stays.
-      searchCrops: [],
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -1388,9 +1323,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         continue;
       }
-      // The preview substitute (M2-10): pinned at the one level it is read on,
+      // The preview substitute (M2-10): pinned at the levels it is read on,
       // so a pinned preview stays a preview and never turns into a full-
-      // resolution read when the map zooms in on it.
+      // resolution read when the map zooms in on it (the whole scene of a
+      // `full_resolution` dataset is read at every level already).
       // `browsed` is already non-null here (a plan needs one), named again so
       // TypeScript can narrow it for the call below.
       if (!it.bbox || !browsed) continue;
@@ -1398,8 +1334,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         kind: 'raster',
         tileUrl: buildTileUrl(api.buildTileTemplate(browsed.id, it.id, plan.asset), plan.render),
         bounds: it.bbox,
-        minZoom: plan.zoom,
-        maxZoom: plan.zoom,
+        minZoom: plan.minZoom,
+        maxZoom: plan.maxZoom,
       });
     }
     if (overlays.length === 0) {
@@ -1982,24 +1918,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       coverageLoading: false,
     });
   },
-  // Copies the AOI crops of the dataset shown in the results into the layer
-  // manager, where they stay whichever dataset is chosen next. The user's own
-  // step: a search never pins anything by itself.
-  pinSearchCrops: () => {
-    const s = get();
-    const crops = s.searchCrops.filter((c) => c.restore.datasetId === s.openSectionId);
-    if (crops.length === 0) {
-      set({ error: 'Nothing to pin — this dataset has no crop to show.' });
-      return;
-    }
-    const batchId = nextBatchId();
-    const pinned = crops.map((c, i) => ({ ...c, id: `L${batchId}${i}` }));
-    set({
-      layers: [...pinned, ...s.layers],
-      error: null,
-      notice: `Pinned ${pinned.length} layer${pinned.length === 1 ? '' : 's'} (${pinned[0].name.split(' · ')[0]}).`,
-    });
-  },
   setMapViewport: (mapZoom, viewportBbox, viewportSize) => {
     set({ mapZoom, viewportBbox, viewportSize });
     scheduleCoverageRefresh(set, get);
@@ -2105,7 +2023,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         error: `Search failed: ${(e as Error).message}`,
         sections: [],
-        searchCrops: [],
         searchContext: null,
         ...openSectionState(null),
         dock: withoutResults(get().dock) ?? 'controls',
@@ -2246,8 +2163,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...openSectionState(open),
       ...forgetSearch(),
       datasetId: open.datasetId,
-      // A lookup carries no AOI, so there is no crop of the last search to keep.
-      searchCrops: [],
       selectedIds: [item.id],
       dock: 'results',
       playing: false,

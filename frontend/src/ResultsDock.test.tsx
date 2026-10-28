@@ -121,7 +121,6 @@ beforeEach(async () => {
     loadMoreUsed: false,
     focusMode: false,
     resultViewLayerId: null,
-    searchCrops: [],
     error: null,
     notice: null,
   });
@@ -455,7 +454,6 @@ describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
   });
 
   it('takes the list away, and what it drew on the map, and opens the control menu', () => {
-    useAppStore.setState({ searchCrops: [{ id: 'c', name: 'c', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET } } as never] });
     click(slot('results').querySelector('.result-row input')!);
     useAppStore.setState({ resultsOnMap: false });
     click(clearButton());
@@ -464,7 +462,6 @@ describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
     expect(s.items).toEqual([]);
     expect(s.groups).toEqual([]);
     expect(s.selectedIds).toEqual([]);
-    expect(s.searchCrops).toEqual([]);
     // Clearing the results is not the switch: hidden stays hidden.
     expect(s.resultsOnMap).toBe(false);
     expect(s.dock).toBe('controls');

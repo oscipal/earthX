@@ -616,7 +616,7 @@ function addPreview(
     // nothing to get wrong at a scene's rotated edges (the M2-16 bug).
     if (!item.bbox) return;
     const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
-    const zoom = { minZoom: plan.zoom, maxZoom: plan.zoom };
+    const zoom = { minZoom: plan.minZoom, maxZoom: plan.maxZoom };
     const lyrId = dynamicId('tiles-lyr', i);
     placeRaster(map, dynamicId('tiles-src', i), lyrId, tileUrl, item.bbox, 1, zoom, before());
     drawsPicture(map, lyrId, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
@@ -1039,7 +1039,7 @@ export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items
     if (plan.kind === 'tiles') {
       if (!item.bbox) return;
       const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
-      placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.zoom, maxZoom: plan.zoom }, place());
+      placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.minZoom, maxZoom: plan.maxZoom }, place());
       return;
     }
     const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));

@@ -1,10 +1,10 @@
 // What of the search results is on the map (Otto, 27.10.2026, zu #211): one function of the state, used by every
-// place that draws or answers for them: the quicklooks of browsing, the ones over a full-resolution view, the crops a
-// search draws by itself, the outline of the ticked scenes, and the click on a scene. Nothing else may decide it, a
-// rebuild of the map included.
+// place that draws or answers for them: the quicklooks of browsing (for a dataset without any, the whole scene), the
+// ones over a full-resolution view, the outline of the ticked scenes, and the click on a scene. Nothing else may decide
+// it, a rebuild of the map included.
 //
 // The rules:
-//  1. "Hide results" holds: no outline, quicklook or crop of a search result is on the map, whatever came before
+//  1. "Hide results" holds: no outline or quicklook of a search result is on the map, whatever came before
 //     (a view opened or left, a crop, a layer removed, a change of basemap or projection, "Load more", a new search).
 //  2. (Until 28.10.2026 a ticked scene was the one exception; no more, Otto, zu #221.) "Hide results" hides the ticked
 //     scenes too, outline and quicklook; their ticks stay, for "Crop & merge" and the rest.
@@ -31,8 +31,6 @@ export interface ResultsOnMap {
   quicklooks: StacItem[];
   // Under a full-resolution view: the scenes whose quicklook lies below it (the results on).
   overlay: StacItem[];
-  // The crops a search draws by itself: all of the chosen dataset, or none while the results are hidden.
-  cropsOf: readonly string[] | null;
   // The scenes outlined as ticked, in the order they were ticked: the last one lies on top.
   highlight: StacItem[];
   // The scenes a click on the map can pick or drop: those that are drawn.
@@ -54,7 +52,6 @@ export function resultsOnMapOf(s: ResultsState): ResultsOnMap {
   return {
     quicklooks,
     overlay,
-    cropsOf: s.resultsOnMap ? null : [],
     highlight: s.resultsOnMap ? ticked(s.groups, s.selectedIds) : [],
     clickable,
   };
