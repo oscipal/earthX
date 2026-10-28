@@ -632,6 +632,32 @@ für die Statistik eines einzelnen Assets maßgeblich.
   24.10.2026); danach gilt der Startbereich, und eine spätere Messung wird mit einem Neuzeichnen übernommen. Alle Adressen gehen durch `check_url` wie
   bei der Kachel.
 
+**Nachtrag NM4-04 (2026-10-27, Otto, zu M4-17 Frage 4):** Die Mosaik-Kachel nimmt `op`,
+`op_version` und `params` wie die Item-Kachel: gleich oft, in der Reihenfolge der Schritte,
+höchstens 4, jeder `T1` und `pixel` und auf den Datensatz anwendbar. Sie ist damit die Vorschau
+des Mosaik-Jobs (`plans/querschnitt/nm4-04-mosaik-mit-operator.md` §6–§16). Gelesen wird wie im
+Job: erst das Mosaik je Band und Pixel, dann die Schritte (`adr/0014` §15t). Abweichend von oder
+zusätzlich zu M4-17:
+
+- **Assets:** mit `op` 1 bis **4** (`MAX_MOSAIC_OPERATOR_ASSETS`; höchstens 12 Szenen × 4 = 48
+  Dateien je Kachel), ohne `op` weiter genau eines.
+- **Länge:** Pfad und Query einer Mosaik-Anfrage höchstens **7 168 Byte**
+  (`MAX_MOSAIC_REQUEST_BYTES`), mit und ohne `op`; darüber `414` vor dem ersten Item-Abruf.
+  uvicorn mit `httptools` nimmt 65 535 Byte (gemessen), nginx und die CDNs von M6 oft nur 8 kB für
+  die Anfragezeile. Typische URLs: 2,5–4,7 kB.
+- **Vor dem Abruf** (KE1): Form, Schritte, Assets, Länge, Zoom und die Fähigkeit `reprojection`
+  des Datensatzes (wie die Annahme des Mosaik-Jobs). **Vor dem Öffnen einer Datei:** gleiche
+  Skalierung und Einheiten je Asset über **alle** Items der URL, ein CRS bei Zarr, und die Bänder,
+  die die Schritte nennen, soweit die Items sie beschreiben.
+- **Lesen:** Nur die erste Szene wird beim Öffnen gelesen (Bänder für das TileJSON und die
+  Prüfung der Schritte), jede weitere in ihrem Thread, in Portionen zu 4 wie ohne `op`.
+- **TileJSON:** trägt weiter `earthx:order` und mit `op` die `unit` der Schritte, und es hat
+  dieselben Ablehnungen wie die Kachel (die Probe des Panels).
+- **Keine Statistik** auf der Mosaik-Route (Otto, F4): Die Farbskala misst eine Szene über die
+  Item-Route, die erste in Mosaik-Reihenfolge. Mosaik und AOI klärt NM4-19.
+- **URL:** Item-IDs, Asset-Schlüssel, Schritte und Darstellung; keine AOI, keine Job-, Rezept- oder
+  Permalink-Kennung, kein Hash.
+
 **Zu Frage 5 — Quicklook-Proxy.** **Es gibt keinen.** Der Browser lädt das
 Thumbnail direkt von der Quelle; CORS ist offen (§3.6), 6.4 verlangt es so, und
 F15 fällt mit dem Token weg. Die Registry bekommt dafür zwei Felder: den

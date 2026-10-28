@@ -635,7 +635,7 @@ class TestWhatTheUrlMayCarry:
             {"params": "{}"},
         ],
     )
-    def test_a_parameter_that_could_carry_an_area_an_operator_or_an_address_is_a_400(
+    def test_a_parameter_that_could_carry_an_area_or_an_address_or_half_a_step_is_a_400(
         self, scenes: Scenes, client, extra: dict[str, str]
     ) -> None:
         _seam(scenes)
@@ -684,8 +684,8 @@ class TestWhatTheUrlMayCarry:
             for operation in operations.values()
             for parameter in operation["parameters"]
         }
-        assert {"item", "asset"} <= names
-        assert not names & {"url", "aoi", "bbox", "geometry", "intersects", "expression", "algorithm", "op", "params"}
+        assert {"item", "asset", "op", "op_version", "params"} <= names  # the steps of NM4-04
+        assert not names & {"url", "aoi", "bbox", "geometry", "intersects", "expression", "algorithm"}
 
     def test_only_the_tile_and_the_tilejson_exist(self, scenes: Scenes, client) -> None:
         paths = [path for path in client().app.openapi()["paths"] if path.startswith(MOSAIC_ROUTER_PREFIX)]

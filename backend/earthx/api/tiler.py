@@ -79,7 +79,7 @@ from earthx.access.download import (
     parse_aoi_geometry,
     plan_outputs,
 )
-from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicScenes
+from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicScenes, open_mosaic
 from earthx.access.resolve import (
     AssetNotOnItem,
     InvalidAssetKey,
@@ -373,6 +373,20 @@ class OperatorInput:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class MosaicOperatorInput:
+    """What the path of a mosaic tile with steps stands for (NM4-04): per scene its assets, the steps, the extent.
+
+    The scenes are those the tile reads, in the order of the mosaic, each with the same assets in the order of
+    the URL; ``processing.tile`` reads it by its attributes (``MosaicTileInputs``), like :class:`OperatorInput`.
+    """
+
+    dataset_id: str
+    scenes: tuple[tuple[tuple[Any, AssetPath | ZarrAsset], ...], ...]
+    steps: tuple[tuple[Any, Any], ...]
+    bounds: tuple[float, float, float, float]
+
+
 def _operator_support() -> Any:
     """The worker core's operator side, imported when the first operator tile needs it.
 
@@ -381,7 +395,7 @@ def _operator_support() -> Any:
     """
     from earthx.api.intake import describe_bands
     from earthx.processing import operators, tile
-    from earthx.processing.errors import UnknownOperator
+    from earthx.processing.errors import RecipeInvalid, UnknownOperator
     from earthx.processing.recipe import ResolvedAssetModel, ResolvedInput
 
     return SimpleNamespace(
@@ -392,6 +406,9 @@ def _operator_support() -> Any:
         resolved_input=ResolvedInput,
         resolved_asset=ResolvedAssetModel,
         reader=tile.OperatorTileReader,
+        mosaic_reader=tile.MosaicOperatorTileReader,
+        judge_described_bands=tile.judge_described_bands,
+        recipe_invalid=RecipeInvalid,
         describe_bands=describe_bands,
     )
 
@@ -581,20 +598,32 @@ async def dataset_asset_path(
     )
 
 
+_OpQuery = Annotated[
+    list[str] | None, Query(description="operator of a computed tile, such as `band_math`; repeated for a chain")
+]
+_OpVersionQuery = Annotated[
+    list[Annotated[int, Field(ge=1)]] | None, Query(description="version of the operator, once per `op`")
+]
+_ParamsQuery = Annotated[
+    list[str] | None,
+    Query(description=f"its parameters, as JSON, once per `op`; at most {MAX_OPERATOR_PARAMS_CHARS} characters each"),
+]
+
+
+def _kernels(steps: tuple[tuple[Any, Any], ...]) -> Callable[[ImageData], ImageData]:
+    def chain(image: ImageData) -> ImageData:
+        for operator, parameters in steps:
+            image = operator.run(image, parameters)
+        return image
+
+    return chain
+
+
 def operator_post_process(
     src_path: Annotated[Any, Depends(dataset_asset_path)],
-    op: Annotated[
-        list[str] | None, Query(description="operator of a computed tile, such as `band_math`; repeated for a chain")
-    ] = None,
-    op_version: Annotated[
-        list[Annotated[int, Field(ge=1)]] | None, Query(description="version of the operator, once per `op`")
-    ] = None,
-    params: Annotated[
-        list[str] | None,
-        Query(
-            description=f"its parameters, as JSON, once per `op`; at most {MAX_OPERATOR_PARAMS_CHARS} characters each"
-        ),
-    ] = None,
+    op: _OpQuery = None,
+    op_version: _OpVersionQuery = None,
+    params: _ParamsQuery = None,
 ) -> Callable[[ImageData], ImageData] | None:
     """TiTiler's ``process_dependency`` for our tile: the operators' kernels, the ones a job calls.
 
@@ -604,14 +633,7 @@ def operator_post_process(
     """
     if not isinstance(src_path, OperatorInput):
         return None
-    steps = src_path.steps
-
-    def chain(image: ImageData) -> ImageData:
-        for operator, parameters in steps:
-            image = operator.run(image, parameters)
-        return image
-
-    return chain
+    return _kernels(src_path.steps)
 
 
 def _open_reader(src_path: Any, **reader_params: Any) -> Any:
@@ -621,9 +643,11 @@ def _open_reader(src_path: Any, **reader_params: Any) -> Any:
     return open_asset(src_path, **reader_params)
 
 
-def _no_post_process() -> None:
-    """The mosaic tile has no post-processing: TiTiler's own ``algorithm`` parameters stay out of its schema."""
-    return None
+def _open_mosaic_reader(src_path: Any, **reader_params: Any) -> Any:
+    """The reader of the mosaic tile: the worker core's for steps (NM4-04), `access`'s for the scenes alone."""
+    if isinstance(src_path, MosaicOperatorInput):
+        return _operator_support().mosaic_reader(src_path, **reader_params)
+    return open_mosaic(src_path, **reader_params)
 
 
 def _declared_query(request: Request) -> set[str]:
@@ -644,13 +668,15 @@ async def _validate_before_fetching(request: Request) -> None:
     FastAPI solves the dependencies of a route one after the other and checks the route's own path and
     query parameters last, so the path dependency below would fetch up to 64 items for a request that is
     refused afterwards for its format, its tile matrix set or a ``tilesize``. This runs the same solving
-    on the matched route without that dependency: the other dependencies (``bidx``, ``rescale``, the
+    on the matched route without that dependency and the steps that hang on it (``op`` is judged by the path
+    dependency itself, before the fetch): the other dependencies (``bidx``, ``rescale``, the
     zoom limits of a TileJSON …) and the route's own parameters are checked here, and a refusal is the
     ``422`` FastAPI would have answered, with nothing asked of the source.
     """
     route = request.scope["route"]
+    skipped = (mosaic_scenes, mosaic_post_process)
     dependant = dataclasses.replace(
-        route.dependant, dependencies=[sub for sub in route.dependant.dependencies if sub.call is not mosaic_scenes]
+        route.dependant, dependencies=[sub for sub in route.dependant.dependencies if sub.call not in skipped]
     )
     async with AsyncExitStack() as stack:
         solved = await solve_dependencies(
@@ -695,8 +721,11 @@ async def mosaic_scenes(
         list[str],
         Query(default_factory=list, description="item ids of one overpass, each once; 2 to 64 of them"),
     ],
-    asset: Annotated[list[str], Query(default_factory=list, description="asset key every scene is read from")],
-) -> MosaicScenes:
+    asset: Annotated[
+        list[str],
+        Query(default_factory=list, description="asset key every scene is read from; up to four together with `op`"),
+    ],
+) -> MosaicScenes | MosaicOperatorInput:
     """Turn dataset, item ids and asset into the scenes a mosaic tile reads, in the order it reads them.
 
     The path dependency of the mosaic route, in the order of plan M4-17 §4.2: everything that costs
@@ -707,6 +736,10 @@ async def mosaic_scenes(
     scene the mosaic job over the same list picks (S5, `access.crop_rules.mosaic_order`).
 
     A TileJSON names no tile and gets every scene, in the order a tile reads them.
+
+    With ``op``, ``op_version`` and ``params`` (NM4-04) the tile is the preview of the mosaic job: the steps are
+    judged as on the tile of one item, and the dataset has to allow what the job's order needs — all before the
+    first item is fetched (KE1, KE2).
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
@@ -715,9 +748,20 @@ async def mosaic_scenes(
     _mosaic_zooms(config)
     viewer = config.viewer
     assert viewer is not None  # `_mosaic_zooms` answered 501 otherwise
+    with_steps = any(name in request.query_params for name in ("op", "op_version", "params"))
     try:
+        mosaic_tiles.check_length(request.scope.get("raw_path") or b"", request.scope.get("query_string") or b"")
         grid = mosaic_tiles.mosaic_tile(request.path_params)
-        ids = mosaic_tiles.check_query(request.query_params, _declared_query(request), item, asset)
+        ids = mosaic_tiles.check_query(request.query_params, _declared_query(request), item, asset, steps=with_steps)
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    steps = _operator_request(request, config)
+    try:
+        if steps is not None and not config.capabilities.reprojection:
+            # The words of the mosaic job's order (`api.intake._one_overpass`): the tile shows nothing it refuses.
+            raise OrderRefused(
+                422, f"{config.dataset_id!r} does not allow reprojection, which a mosaic of scenes may need", "applicable"
+            )
         await _validate_before_fetching(request)
         if getattr(state, "earthx_cache_pool", None) is None:
             raise OrderRefused(
@@ -725,16 +769,113 @@ async def mosaic_scenes(
             )
         items = await mosaic_tiles.fetch_items(state.earthx_item_fetches, state.earthx_item_source, dataset, ids)
         mosaic_tiles.check_one_overpass(items, viewer)
-        refs = {item_id: _resolve_ref(items[item_id], config=config, item=item_id, asset=asset[0]) for item_id in ids}
+        refs = {
+            (item_id, key): _resolve_ref(items[item_id], config=config, item=item_id, asset=key)
+            for item_id in ids
+            for key in asset
+        }
         outlines = mosaic_tiles.footprints_of(items)
-        order = mosaic_order({item_id: ref.crs for item_id, ref in refs.items()})
+        order = mosaic_order({item_id: refs[(item_id, asset[0])].crs for item_id in ids})
         read = order if grid is None else mosaic_tiles.scenes_touching(order, outlines, grid)
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
-    scenes = tuple(
-        _open_ref(state, refs[item_id], target_gsd=target_gsd_for(request, items[item_id])) for item_id in read
+    bounds = mosaic_tiles.union_bounds(outlines)
+    if steps is None:
+        scenes = tuple(
+            _open_ref(state, refs[(item_id, asset[0])], target_gsd=target_gsd_for(request, items[item_id]))
+            for item_id in read
+        )
+        return MosaicScenes(dataset, scenes, bounds)
+    described = _describe_mosaic(items, refs, config=config, order=order, assets=asset, steps=steps)
+    scenes_with_steps = tuple(
+        tuple(
+            (
+                described[(item_id, key)],
+                _open_ref(
+                    state,
+                    refs[(item_id, key)],
+                    target_gsd=target_gsd_for(request, items[item_id]),
+                    decode_cf=described[(item_id, key)].scaling == "store-cf",
+                ),
+            )
+            for key in asset
+        )
+        for item_id in read
     )
-    return MosaicScenes(dataset, scenes, mosaic_tiles.union_bounds(outlines))
+    return MosaicOperatorInput(dataset, scenes_with_steps, tuple(steps), bounds)
+
+
+def _describe_mosaic(
+    items: dict[str, dict[str, Any]],
+    refs: dict[tuple[str, str], ResolvedAsset],
+    *,
+    config: DatasetConfig,
+    order: list[str],
+    assets: list[str],
+    steps: list[tuple[Any, Any]],
+) -> dict[tuple[str, str], Any]:
+    """Each asset of each scene with the bands and scaling its item describes, judged as the job judges them.
+
+    Over **every** scene of the URL, not only those of the tile, so that every tile of one mosaic gives the same
+    answer (NM4-04 §8.1): the scenes scale each asset alike and name the same units (the part of the job's
+    ``check_alike`` the items decide; the files are compared by the reader), a Zarr mosaic lies in one CRS
+    (``check_scope``), and the steps know the bands the first scene's items name (KE1). Nothing is opened.
+    """
+    support = _operator_support()
+    described: dict[tuple[str, str], Any] = {}
+    for item_id in order:
+        for key in assets:
+            try:
+                bands, scaling, unit = support.describe_bands(items[item_id], config, refs[(item_id, key)])
+                described[(item_id, key)] = support.resolved_input(
+                    asset=support.resolved_asset(**refs[(item_id, key)].to_json()),
+                    version=None,
+                    bands=bands,
+                    scaling=scaling,
+                    unit=unit,
+                    gsd=None,
+                )
+            except OrderRefused as error:
+                raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+            except ValidationError:
+                raise HTTPException(status_code=502, detail=malformed_item_detail(item_id)) from None
+    first = order[0]
+    for key in assets:
+        anchor = described[(first, key)]
+        for item_id in order[1:]:
+            entry = described[(item_id, key)]
+            if (entry.scaling, [(b.scale, b.offset) for b in entry.bands]) != (
+                anchor.scaling,
+                [(b.scale, b.offset) for b in anchor.bands],
+            ):
+                raise HTTPException(status_code=422, detail=f"the scenes of the mosaic scale {key!r} differently")
+            if (entry.unit, [b.unit for b in entry.bands]) != (anchor.unit, [b.unit for b in anchor.bands]):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"the scenes of the mosaic differ in the bands, data type, nodata or unit of {key!r}",
+                )
+    if any(ref.reader == "zarr" for ref in refs.values()) and len({ref.crs for ref in refs.values()}) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail="a mosaic of Zarr scenes needs all scenes in one CRS; warping Zarr is not done yet",
+        )
+    try:
+        support.judge_described_bands([described[(first, key)] for key in assets], steps)
+    except support.recipe_invalid as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    return described
+
+
+def mosaic_post_process(
+    src_path: Annotated[Any, Depends(mosaic_scenes)],
+    op: _OpQuery = None,
+    op_version: _OpVersionQuery = None,
+    params: _ParamsQuery = None,
+) -> Callable[[ImageData], ImageData] | None:
+    """The ``process_dependency`` of the mosaic tile: the kernels of the steps after the mosaic, as in the job."""
+    if not isinstance(src_path, MosaicOperatorInput):
+        return None
+    return _kernels(src_path.steps)
 
 
 #: On a `413` of the crop: whether the same selection fits an export job (M4-11 K5); M4-11b-2 reads it.
@@ -1220,7 +1361,8 @@ def build_app(
     mosaic_factory = EarthxMosaicTilerFactory(
         path_dependency=mosaic_scenes,
         layer_dependency=BidxParams,
-        process_dependency=_no_post_process,
+        process_dependency=mosaic_post_process,
+        reader=_open_mosaic_reader,
         environment_dependency=gdal_environment,
         viewer_zoom_dependency=_mosaic_zoom_range,
         router_prefix=MOSAIC_ROUTER_PREFIX,
