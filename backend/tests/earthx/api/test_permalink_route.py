@@ -53,7 +53,7 @@ class TestCreateReadDelete:
         response = await rig.client.get(f"{PATH}/{made['id']}")
         assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
         document = response.json()
-        assert document["order"] == order() and document["view"] == {**VIEW, "center": [9.5, 47.25]}
+        assert document["order"] == order() and document["view"] == {**VIEW, "basemap": None, "projection": None}
         expires = datetime.fromisoformat(document["expires_at"])
         assert expires == datetime.fromisoformat(made["expires_at"])
         assert timedelta(days=29, hours=23) < expires - datetime.now(UTC) <= permalinks.TTL
@@ -61,7 +61,33 @@ class TestCreateReadDelete:
     async def test_the_range_of_the_view_is_optional(self, rig: Rig) -> None:
         made = await create(rig, body(view={"center": [0, 0], "zoom": 2}))
         stored = (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]
-        assert stored == {"center": [0, 0], "zoom": 2, "range": None}
+        assert stored == {"center": [0, 0], "zoom": 2, "range": None, "basemap": None, "projection": None}
+
+    @pytest.mark.parametrize("basemap", ["satellite", "streets", "grey", "outlines"])
+    @pytest.mark.parametrize("projection", ["mercator", "globe"])
+    async def test_the_basemap_and_the_projection_come_back_as_they_were_kept(
+        self, rig: Rig, basemap: str, projection: str
+    ) -> None:
+        made = await create(rig, body(view={**VIEW, "basemap": basemap, "projection": projection}))
+        stored = (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]
+        assert stored["basemap"] == basemap and stored["projection"] == projection
+
+    async def test_the_basemap_and_the_projection_are_optional_each_on_its_own(self, rig: Rig) -> None:
+        made = await create(rig, body(view={**VIEW, "basemap": "grey"}))
+        stored = (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]
+        assert (stored["basemap"], stored["projection"]) == ("grey", None)
+        made = await create(rig, body(view={**VIEW, "projection": "globe", "basemap": None}))
+        stored = (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]
+        assert (stored["basemap"], stored["projection"]) == (None, "globe")
+
+    async def test_a_link_kept_before_the_basemap_existed_is_read_as_it_was_kept(self, rig: Rig) -> None:
+        old = {"center": [9.5, 47.25], "zoom": 9.5, "range": None}
+        made = await create(rig, body(view=old))
+        rig.db.execute(
+            "UPDATE public.earthx_permalink SET body = jsonb_set(body, '{view}', %s::jsonb)", (json.dumps(old),)
+        )
+        response = await rig.client.get(f"{PATH}/{made['id']}")
+        assert response.status_code == 200 and response.json()["view"] == old
 
     async def test_two_links_for_one_order_are_two_identifiers_and_two_keys(self, rig: Rig) -> None:
         one, two = await create(rig), await create(rig)
@@ -134,6 +160,14 @@ class TestWhatIsRefused:
             {"center": [9.5, 47], "zoom": 25},
             {"center": [9.5, 47], "zoom": "5"},
             {"center": [9.5, 47], "zoom": 5, "title": "Lake"},
+            {"center": [9.5, 47], "zoom": 5, "basemap": "osm"},
+            {"center": [9.5, 47], "zoom": 5, "basemap": "Satellite"},
+            {"center": [9.5, 47], "zoom": 5, "basemap": 1},
+            {"center": [9.5, 47], "zoom": 5, "basemap": ["grey"]},
+            {"center": [9.5, 47], "zoom": 5, "basemap": "https://tiles.example.test/{z}/{x}/{y}.png"},
+            {"center": [9.5, 47], "zoom": 5, "projection": "equal-earth"},
+            {"center": [9.5, 47], "zoom": 5, "projection": True},
+            {"center": [9.5, 47], "zoom": 5, "projection": {"type": "globe"}},
             {"center": [9.5, 47], "zoom": 5, "range": {"vmin": 0, "vmax": 1}},
             {"center": [9.5, 47], "zoom": 5, "range": {"vmin": 0, "vmax": 1, "colormap": "../x"}},
             {"center": [9.5, 47], "zoom": 5, "range": {"vmin": 0, "vmax": 1, "colormap": "a", "extra": 1}},
