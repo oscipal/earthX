@@ -97,6 +97,7 @@ from earthx.adapters import (
     check_adapter_specs,
 )
 from earthx.api import mosaic_tiles
+from earthx.api.area_statistics import AREA_STATISTICS_ROUTE, area_statistics_endpoint
 from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.api.item_source import (
@@ -116,7 +117,7 @@ from earthx.catalog.registry import (
     RetiredDatasetError,
     UnknownDatasetError,
 )
-from earthx.catalog.stats_cache import PostgresStatsCache
+from earthx.catalog.stats_cache import PooledStatsCache, PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError
 from earthx.gateway.gdal import crop_gdal_options, tile_gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
@@ -1267,6 +1268,12 @@ async def statistics_cache(request: Request) -> AsyncIterator[PostgresStatsCache
         yield PostgresStatsCache(conn)
 
 
+def area_statistics_cache(request: Request) -> PooledStatsCache | None:
+    """The statistics cache for the measure of an area (NM4-19): a connection only around a read or a write."""
+    pool = getattr(request.app.state, "earthx_cache_pool", None)
+    return None if pool is None else PooledStatsCache(pool)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with (
@@ -1377,6 +1384,14 @@ def build_app(
         download_crop,
         methods=["POST"],
         tags=["Download"],
+    )
+    # The statistics of an order's area, as its result would carry them (NM4-19): the AOI in the body only.
+    app.add_api_route(
+        AREA_STATISTICS_ROUTE,
+        area_statistics_endpoint(area_statistics_cache),
+        methods=["POST"],
+        tags=["Statistics"],
+        summary="The statistics of an order's area, as its result would carry them",
     )
 
     @app.exception_handler(TileOutsideBounds)

@@ -56,5 +56,8 @@ def db(jobs_database: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[psycopg.
 
 
 def reset(connection: psycopg.Connection) -> None:
-    connection.execute("TRUNCATE public.earthx_job, public.earthx_run, public.earthx_recipe, public.earthx_permalink, public.earthx_bundle RESTART IDENTITY")
+    connection.execute(
+        "TRUNCATE public.earthx_job, public.earthx_run, public.earthx_recipe, public.earthx_permalink, public.earthx_bundle, "
+        "public.earthx_stats_cache RESTART IDENTITY"
+    )
     connection.execute("UPDATE public.earthx_job_limits SET global_cap = 4, host_cap = 2")

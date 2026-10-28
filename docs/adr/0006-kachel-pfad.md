@@ -663,6 +663,39 @@ zusätzlich zu M4-17:
   zurück (Hinweis im Tooltip). Während die erste Kachel lädt (kalt 6,0 s gemessen), sagt ein
   Badge „Loading…“ es.
 
+**Nachtrag NM4-19 (2026-10-28, Otto, zu #218):** Die Farbskala der Vorschau misst bei „AOI only“
+über die AOI, so wie der Job sie zählt (`plans/querschnitt/nm4-19-auto-stretch-ueber-aoi.md`
+§6–§17, `adr/0014` §15u). Neben die GET-Statistik eines Items tritt eine Route **ohne Item im
+Pfad**:
+
+- **Route:** `POST /collections/{dataset}/statistics` (`api/area_statistics.py`). Body: der Auftrag,
+  wie ihn das Panel für den Job baut, ohne die Hülle der Job-Route; `application/json` (`415`),
+  höchstens 1 048 576 Byte wie die Job-Route (`413`, beim Lesen), AOI höchstens 20 000 Positionen
+  wie das Hochladen (`413`), ohne `aoi` `422`, der Datensatz des Auftrags gleich dem des Pfads
+  (`422`). All das vor dem ersten Item-Abruf. Danach die Annahme des Jobs
+  (`intake.estimate_order`, ohne `HEAD`, ohne ihre Zeile „order estimated“): Lizenz *processing*
+  (`403`), Schritte, Items, Gruppen. Höchstens 16 Dateien (Szenen × Assets, `413`) vor dem Öffnen
+  der ersten. Dann `processing.core.area_statistics` im Thread, unter dem GDAL-Profil der
+  Kachel-Routen; ein Lesefehler wird einmal wiederholt.
+- **Antwort:** `{"bands": [{"name", "unit"?, "statistics"}], "exact", "factor"}`, `statistics` wie im
+  Ergebnisdokument; `Cache-Control: no-store`.
+- **Datenschutz:** Die AOI steht nur im Body. Das Zugriffslog schreibt Methode, Pfad
+  (`/collections/{dataset}/statistics`), Status und Dauer. Die Route schreibt eine Zeile „area
+  statistics measured“ mit Datensatz, Szenen, Assets, Faktor, gelesenen Pixeln, Cache-Treffer und
+  Dauer, ohne AOI, Item-ID oder Schlüssel. Item-IDs sind keine Grenze dieser Route: Eine Ablehnung
+  der Annahme und der Item-Abruf des `gateway` nennen sie wie bei einem Job, das Zugriffslog jeder
+  Kachel-Route ohnehin. Ein Lesefehler und ein Fehler des Caches gehen ohne Text
+  ins Log (GDALs Text nennt die Adresse, der einer Datenbank Werte der Anweisung). Eine fehlerhafte
+  AOI kommt nicht in der Antwort zurück (kein Pydantic-Modell am Body).
+- **Cache (Otto, F4 mit Zusatz):** `public.earthx_stats_cache` wie die GET-Statistik, über
+  `PooledStatsCache` (eine Verbindung je Lesen und Schreiben, nicht über die Messung); Schlüssel
+  SHA-256 über `area-statistics/v1`, die Version von earthx und den Hash des Rezepts ohne
+  `recipe_id`, also über die AOI (Q8). Lebensdauer **7 Tage** wie ein Rezept (Q10,
+  `RESULT_TTL`); der stündliche Aufräumer der Jobs löscht abgelaufene Zeilen der Tabelle
+  (`jobs/cleanup.py`, auch die der GET-Statistik nach 30 Tagen, die bis dahin liegen blieben).
+- **Unverändert:** die GET-Statistik eines Items (M4-19c) für „Whole scene“ und als Rückfall
+  des Panels.
+
 **Zu Frage 5 — Quicklook-Proxy.** **Es gibt keinen.** Der Browser lädt das
 Thumbnail direkt von der Quelle; CORS ist offen (§3.6), 6.4 verlangt es so, und
 F15 fällt mit dem Token weg. Die Registry bekommt dafür zwei Felder: den
