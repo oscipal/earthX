@@ -102,11 +102,11 @@ class TestBadInput:
             {"bbox": "5,45,15"},  # wrong number of values
             {"bbox": "5,-95,15,55"},  # latitude outside ±90
             {"intersects": "not json at all"},
+            {"intersects": '{"type": "Polygon", "coordinates": [[[' + "1" * 5000 + ", 0]]]}"},  # unreadable number
             {"intersects": "[1, 2, 3]"},  # not a GeoJSON object
             {"intersects": BROKEN_RING},  # fewer than four positions
             {"intersects": OFF_GLOBE_RING},  # adr/0005 §3.5's lesson, applied to intersects
             {"datetime": "not-a-date"},
-            {"max_cloud_cover": 150},  # a percentage, not a fraction
         ],
     )
     def test_answers_400(self, params: dict[str, object]) -> None:
@@ -118,6 +118,147 @@ class TestBadInput:
     def test_no_out_of_bounds_coordinate_reaches_the_response(self) -> None:
         response = get(client_for(gateway_for(lambda r: ok("aggregate_complete"))), intersects=OFF_GLOBE_RING)
         assert "999" not in response.text
+
+
+def query_of(**filters: Any) -> str:
+    return json.dumps(filters)
+
+
+class TestSearchFilters:
+    """DS-02b: ``query`` carries the dataset's search filters, read by the code of ``POST /stac/search``."""
+
+    def test_the_conditions_reach_the_source_in_the_query_extension(self) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        query = query_of(
+            **{
+                "eo:cloud_cover": {"gte": 5, "lte": 20},
+                "s2:nodata_pixel_percentage": {"lte": 5},
+                "platform": {"in": ["sentinel-2b", "sentinel-2a"]},
+            }
+        )
+
+        response = get(client_for(gateway), bbox="5,45,15,55", query=query)
+
+        assert response.status_code == 200
+        assert len(seen) == 1
+        assert json.loads(seen[0].url.params["query"]) == {
+            "eo:cloud_cover": {"gte": 5.0, "lte": 20.0},
+            "s2:nodata_pixel_percentage": {"lte": 5.0},
+            "platform": {"in": ["sentinel-2a", "sentinel-2b"]},
+        }
+        assert response.json()["ignored_filters"] == []
+
+    def test_a_bound_at_the_edge_of_the_range_is_allowed(self) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(client_for(gateway), query=query_of(**{"eo:cloud_cover": {"gte": 0, "lte": 100}}))
+        assert response.status_code == 200
+
+    def test_no_query_and_an_empty_one_send_no_filter(self) -> None:
+        gateway, seen = answering(ok("aggregate_complete"), ok("aggregate_complete"))
+        client = client_for(gateway)
+
+        assert get(client).status_code == 200
+        assert get(client, query="{}").status_code == 200
+        assert all("query" not in request.url.params for request in seen)
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            query_of(**{"foo:bar": {"gte": 1}}),  # a property the dataset does not offer: the source would answer 0
+            query_of(**{"sat:orbit_state": {"in": ["ascending", "descending"]}}),  # DS-04, not Sentinel-2
+            query_of(**{"earthx:aoi_cloud_cover": {"lte": 10}}),  # reserved for DS-03
+            query_of(datetime={"gte": 1}),  # has its own parameter
+            query_of(**{"eo:cloud_cover": {"lt": 20}}),  # an operator outside gte/lte
+            query_of(**{"eo:cloud_cover": {"between": [1, 2]}}),  # the source would pass it over
+            query_of(**{"eo:cloud_cover": {"in": [10]}}),  # an operator of the other kind
+            query_of(**{"eo:cloud_cover": {"lte": "abc"}}),  # the source answers 400 with its internals
+            query_of(**{"eo:cloud_cover": {"lte": True}}),
+            query_of(**{"eo:cloud_cover": {"lte": 101}}),  # outside the range the filter offers
+            query_of(**{"eo:cloud_cover": {"gte": -1}}),
+            query_of(**{"eo:cloud_cover": {"gte": 30, "lte": 20}}),
+            query_of(**{"eo:cloud_cover": {}}),
+            query_of(**{"eo:cloud_cover": 20}),
+            query_of(platform={"in": []}),
+            query_of(platform={"in": ["sentinel-2z"]}),  # not a value it offers
+            query_of(platform={"in": ["sentinel-2a", "sentinel-2a"]}),
+            query_of(platform={"in": "sentinel-2a"}),
+            query_of(platform={"gte": 1}),
+            "[1, 2]",  # not an object
+            "20",
+            "not json at all",
+            "[" * 20000,  # deep enough to exhaust the parser's stack
+            '{"eo:cloud_cover": {"lte": ' + "1" * 5000 + "}}",  # a number the parser refuses to read
+        ],
+    )
+    def test_a_filter_the_dataset_does_not_have_is_400_before_anything_is_sent(self, query: str) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(client_for(gateway), query=query)
+        assert response.status_code == 400
+        assert not seen
+
+    def test_a_400_names_no_value_of_the_request(self) -> None:
+        gateway, _ = answering(ok("aggregate_complete"))
+        client = client_for(gateway)
+        bodies = [
+            get(client, query=query_of(**{"eo:cloud_cover": {"lte": 98765}})).text,
+            get(client, query=query_of(platform={"in": ["secret-satellite"]})).text,
+            get(client, query=query_of(**{"Home Address 12": {"gte": 12345}})).text,  # no property, so unnamed
+        ]
+        for needle, body in zip(("98765", "secret-satellite", "Home Address"), bodies, strict=True):
+            assert needle not in body
+
+    def test_a_dataset_without_filters_refuses_any(self) -> None:
+        config = replace(SENTINEL_2_L2A, search_filters=())
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(
+            client_for(gateway, registry=DatasetRegistry((config,))),
+            dataset_id=config.dataset_id,
+            query=query_of(**{"eo:cloud_cover": {"lte": 20}}),
+        )
+        assert response.status_code == 400
+        assert not seen
+
+    def test_a_source_error_reaches_neither_the_answer_nor_the_log(self, caplog: pytest.LogCaptureFixture) -> None:
+        """C (Otto, 28.10.2026): status and our own text only, even where the source quotes the filter back."""
+        # Our own loggers only: the production configuration silences the libraries that log whole URLs
+        # (`logging._URL_LOGGING_LIBRARIES`), a bare caplog does not.
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        gateway = gateway_for(
+            lambda request: httpx.Response(
+                400, json={"error": "parse_exception: failed to parse [eo:cloud_cover] value [17.25] in shard 3"}
+            )
+        )
+
+        response = get(client_for(gateway), query=query_of(**{"eo:cloud_cover": {"lte": 17.25}}))
+
+        assert response.status_code == 502
+        for needle in ("parse_exception", "shard", "17.25"):
+            assert needle not in response.text
+            assert needle not in caplog.text
+
+    def test_the_log_names_the_filters_but_no_value(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level(logging.INFO, logger="earthx.api.coverage")
+        gateway, _ = answering(ok("aggregate_complete"))
+
+        get(
+            client_for(gateway),
+            bbox="5.123,45.456,15,55",
+            query=query_of(**{"eo:cloud_cover": {"lte": 17.25}, "platform": {"in": ["sentinel-2c"]}}),
+        )
+
+        record = next(record for record in caplog.records if record.name == "earthx.api.coverage")
+        assert record.filters == ["eo:cloud_cover", "platform"]
+        for needle in ("17.25", "sentinel-2c", "5.123", "45.456"):
+            assert needle not in caplog.text
+            assert needle not in str(record.__dict__)
+
+    def test_the_parameter_is_declared_in_the_schema_as_an_optional_string(self) -> None:
+        gateway, _ = answering(ok("aggregate_complete"))
+        schema = client_for(gateway).app.openapi()
+        parameters = {p["name"]: p for p in schema["paths"]["/coverage/{dataset_id}"]["get"]["parameters"]}
+        assert "max_cloud_cover" not in parameters
+        assert parameters["query"]["required"] is False
+        assert parameters["query"]["schema"]["anyOf"][0] == {"type": "string"}
 
 
 class TestUpstreamErrors:
@@ -198,6 +339,19 @@ class TestAreaPathWithoutADatabase:
         gateway, seen = answering(ok("aggregate_complete"))
         response = get(
             client_for(gateway, registry=DatasetRegistry((config,))), dataset_id=config.dataset_id, intersects=area
+        )
+
+        assert response.status_code == 400
+        assert not seen
+
+
+    def test_a_search_filter_on_the_area_way_is_400_before_the_missing_pool_is_503(self) -> None:
+        config = self._config()
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(
+            client_for(gateway, registry=DatasetRegistry((config,))),
+            dataset_id=config.dataset_id,
+            query=query_of(**{"eo:cloud_cover": {"lte": 20}}),
         )
 
         assert response.status_code == 400

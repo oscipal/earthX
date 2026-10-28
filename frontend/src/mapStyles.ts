@@ -6,6 +6,7 @@
 import type { StyleSpecification, TransformStyleFunction } from 'maplibre-gl';
 
 import { BASEMAP_PREFIX, BASEMAPS, DEFAULT_BASEMAP, OPENFREEMAP_ATTRIBUTION, type BasemapId } from './basemaps';
+import { RELIEF_OVERLAY_ID, reliefLayer, reliefSource } from './relief';
 import { GRATICULE_SOURCE, graticuleData, graticuleLayers, NO_OVERLAYS, OVERLAY_IDS, OVERLAY_PREFIX, type Overlays } from './overlays';
 
 // The attribution is always open (Otto, 27.10.2026, UI-02 question 4): the OSMF guidelines ask for it to be visible
@@ -115,6 +116,9 @@ export function composeStyle(
   });
   const layers = (basemap.layers ?? []).filter((layer) => !isLabel(layer)).map((layer) => prefixed(layer, BASEMAP_PREFIX));
   if (overlays.graticule) sources[GRATICULE_SOURCE] = { type: 'geojson', data: graticuleData() };
+  // The shading lies over the basemap and under all the app's layers; the basemap "Relief" is the shading already.
+  const shading = overlays.relief && id !== 'relief';
+  if (shading) sources[RELIEF_OVERLAY_ID] = reliefSource();
   const over = [...(overlays.graticule ? graticuleLayers() : []), ...names];
   const split = ownLayers.findIndex((layer) => layer.id === OVERLAYS_BEFORE);
   const at = split < 0 ? ownLayers.length : split;
@@ -126,7 +130,7 @@ export function composeStyle(
     ...rest,
     ...kept,
     sources: { ...sources, ...ownSources },
-    layers: [...backdrop, ...layers, ...ownLayers.slice(0, at), ...over, ...ownLayers.slice(at)],
+    layers: [...backdrop, ...layers, ...(shading ? [reliefLayer(RELIEF_OVERLAY_ID, RELIEF_OVERLAY_ID, 'overlay')] : []), ...ownLayers.slice(0, at), ...over, ...ownLayers.slice(at)],
   };
 }
 

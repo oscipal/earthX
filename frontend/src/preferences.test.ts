@@ -99,7 +99,7 @@ describe('loadBasemap', () => {
     expect(loadBasemap()).toBe(id);
   });
 
-  it.each(['', 'Streets', 'osm', 'satellite ', '__proto__', 'constructor', '["streets"]'])('falls back to the default on the foreign value %j', (value) => {
+  it.each(['', 'Streets', 'Relief', 'hillshade', 'osm', 'satellite ', '__proto__', 'constructor', '["streets"]'])('falls back to the default on the foreign value %j', (value) => {
     storage.setItem('earthx.basemap', value);
     expect(loadBasemap()).toBe('satellite');
   });
@@ -134,33 +134,42 @@ describe('loadBasemap', () => {
 });
 
 describe('loadOverlays (UI-02b)', () => {
-  it('has both overlays off when nothing is stored', () => {
-    expect(loadOverlays()).toEqual({ labels: false, graticule: false });
+  it('has all overlays off when nothing is stored', () => {
+    expect(loadOverlays()).toEqual({ labels: false, graticule: false, relief: false });
   });
 
   it.each([
-    { labels: true, graticule: false },
-    { labels: false, graticule: true },
-    { labels: true, graticule: true },
+    { labels: true, graticule: false, relief: false },
+    { labels: false, graticule: true, relief: false },
+    { labels: true, graticule: true, relief: false },
+    { labels: false, graticule: false, relief: true },
+    { labels: true, graticule: true, relief: true },
   ])('round-trips %j', (overlays) => {
     saveOverlays(overlays);
     expect(loadOverlays()).toEqual(overlays);
   });
 
   it.each(['', 'null', 'true', '42', '"labels"', '[true, true]', '{', '<html>', '{"labels": 1, "graticule": "true"}', '{"labels": null}'])(
-    'has both off for the foreign value %j',
+    'has all off for the foreign value %j',
     (value) => {
       storage.setItem('earthx.overlays', value);
-      expect(loadOverlays()).toEqual({ labels: false, graticule: false });
+      expect(loadOverlays()).toEqual({ labels: false, graticule: false, relief: false });
     },
   );
 
   it('keeps the one that is valid and drops the one that is not, and ignores unknown keys', () => {
     storage.setItem('earthx.overlays', '{"labels": true, "graticule": "yes", "mgrs": true, "__proto__": {"labels": true}}');
-    expect(loadOverlays()).toEqual({ labels: true, graticule: false });
+    expect(loadOverlays()).toEqual({ labels: true, graticule: false, relief: false });
   });
 
-  it('has both off when localStorage cannot be read', () => {
+  it('reads a value kept before the relief existed as "relief off" and keeps the others (NM4-35)', () => {
+    storage.setItem('earthx.overlays', '{"labels":true,"graticule":true}');
+    expect(loadOverlays()).toEqual({ labels: true, graticule: true, relief: false });
+    storage.setItem('earthx.overlays', '{"relief": "on"}');
+    expect(loadOverlays().relief).toBe(false);
+  });
+
+  it('has all off when localStorage cannot be read', () => {
     vi.stubGlobal('window', {
       localStorage: {
         getItem: () => {
@@ -168,7 +177,7 @@ describe('loadOverlays (UI-02b)', () => {
         },
       },
     });
-    expect(loadOverlays()).toEqual({ labels: false, graticule: false });
+    expect(loadOverlays()).toEqual({ labels: false, graticule: false, relief: false });
   });
 
   it('does not throw when localStorage.setItem fails (storage full/disabled)', () => {
@@ -179,11 +188,11 @@ describe('loadOverlays (UI-02b)', () => {
         },
       },
     });
-    expect(() => saveOverlays({ labels: true, graticule: true })).not.toThrow();
+    expect(() => saveOverlays({ labels: true, graticule: true, relief: false })).not.toThrow();
   });
 
   it('is kept apart from the basemap and the projection', () => {
-    saveOverlays({ labels: true, graticule: true });
+    saveOverlays({ labels: true, graticule: true, relief: false });
     expect([loadBasemap(), loadProjection(), loadTheme()]).toEqual(['satellite', 'mercator', 'tech']);
   });
 });

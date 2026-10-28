@@ -106,11 +106,19 @@ def _keeps(item: dict[str, Any], query: dict[str, dict[str, Any]]) -> bool:
 
 
 def _filtering_double(request: httpx.Request) -> httpx.Response:
-    """Applies the query extension to synthetic scenes, as the source does (DS-02 plan §6.2)."""
+    """Applies the query extension to synthetic scenes, in a search and an aggregation, as the source does (plan §6.2)."""
     if request.method == "POST" and request.url.path.endswith("/search"):
         body = json.loads(request.content)
         kept = [item for item in _filtered_items() if _keeps(item, body.get("query", {}))]
         return _json({"type": "FeatureCollection", "numberMatched": len(kept), "features": kept[: body["limit"]], "links": []})
+    if request.method == "GET" and request.url.path.endswith("/aggregate"):
+        kept = [item for item in _filtered_items() if _keeps(item, json.loads(request.url.params.get("query", "{}")))]
+        cells = [{"key": "4/8/5", "frequency": len(kept)}] if kept else []
+        return _json({"aggregations": [
+            {"name": "total_count", "value": len(kept)},
+            {"name": "grid_geotile_frequency", "buckets": cells},
+            {"name": "datetime_frequency", "buckets": []},
+        ]})
     if request.method == "GET" and request.url.path.endswith("/queryables"):
         return _json({"type": "object", "properties": {"eo:cloud_cover": {"$ref": "https://example.invalid/eo"}}})
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")

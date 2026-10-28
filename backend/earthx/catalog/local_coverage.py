@@ -66,11 +66,12 @@ async def area_coverage(
     Valid only for ``coverage.provider is LOCAL_SQL`` **and**
     ``capabilities.single_coverage_product`` — the dispatch that combination
     requires lives in `api.coverage_route`, which is also what strips
-    ``max_cloud_cover`` and (for a dataset without a time axis) ``datetime``
-    before calling this; both are checked again here as
-    :class:`CoverageProviderMismatch`/defensive reads, not trusted from the
-    caller alone, the same posture `earth_search_coverage.aggregate_coverage`
-    already takes for its own provider check.
+    ``datetime`` (for a dataset without a time axis) before calling this; the
+    provider is checked again here as :class:`CoverageProviderMismatch`, and
+    search filters are refused (a materialized dataset carries none, DS-02), not
+    trusted from the caller alone, the same posture
+    `earth_search_coverage.aggregate_coverage` already takes for its own
+    provider check.
     """
     if config.coverage.provider is not CoverageProvider.LOCAL_SQL:
         raise CoverageProviderMismatch(
@@ -86,6 +87,9 @@ async def area_coverage(
         raise CoverageProviderMismatch(
             f"{config.dataset_id}: local-sql without single_coverage_product has no area to answer with"
         )
+    if query.conditions is not None:
+        # The key below leaves them out, so a filtered question would be answered, and cached, as an unfiltered one.
+        raise InvalidCoverageQuery(f"{config.dataset_id}: the area way has no search filters")
     if query.intersects is not None:
         check_intersects_is_valid(query.intersects)
 
@@ -205,10 +209,10 @@ _EMPTY_AREA: dict[str, Any] = {"type": "MultiPolygon", "coordinates": []}
 
 
 def _cache_key(query: CoverageQuery) -> str:
-    """A hash of the normalised question. ``level`` and ``max_cloud_cover`` are
-    deliberately left out: the area does not depend on either (there is no grid to
-    resolve to, and this way never reads cloud cover), so two requests that differ
-    only in one of those are one cache entry, not two.
+    """A hash of the normalised question. ``level`` is deliberately left out: the
+    area does not depend on it (there is no grid to resolve to), so two requests
+    that differ only in it are one cache entry, not two. There are no search
+    filters to leave out: `area_coverage` refuses them.
     """
     payload = json.dumps(
         {

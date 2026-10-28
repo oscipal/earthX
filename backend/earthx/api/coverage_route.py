@@ -17,12 +17,19 @@ things the scope names explicitly:
   reads ``error.excerpt`` — only the status the exception type already names.
 * **Nothing here logs an AOI.** The one log line this route writes carries
   ``dataset_id``, the clamped ``level``, ``completeness`` and the answer's origin —
-  never ``bbox``, ``intersects`` or ``max_cloud_cover``.
-* **A filter this dataset cannot honour is dropped, not silently applied** (M3-11c,
-  Otto 26.09.2026): ``datetime`` for a dataset with ``capabilities.time_range=False``,
-  and ``max_cloud_cover`` on the ``local-sql`` area way, which has no cloud cover to
-  filter on. Both are named in the answer's ``ignored_filters`` rather than just
-  disappearing from the query.
+  never ``bbox``, ``intersects`` or a value of ``query``, only the *names* of the
+  search filters that were set (DS-02 plan §6.4, rule 8).
+* **A time window this dataset cannot honour is dropped, not silently applied**
+  (M3-11c, Otto 26.09.2026): ``datetime`` for a dataset with
+  ``capabilities.time_range=False`` is named in the answer's ``ignored_filters``
+  rather than just disappearing from the query.
+
+``query`` (DS-02b) carries the search filters of the dataset's registry entry, in the
+form of the STAC query extension and read by the same code as ``POST /stac/search``
+(`api.search_filters`): only the properties and operators the entry names. This route
+asks for exactly one dataset, so a filter it does not offer is a ``400`` here, not an
+entry in ``ignored_filters`` (plan §6.4, rule 7) — there is no second dataset the filter
+could still apply to.
 """
 
 from __future__ import annotations
@@ -38,6 +45,7 @@ from stac_fastapi.types.rfc3339 import str_to_interval
 from earthx.adapters import AdapterSpecs
 from earthx.adapters import coverage as adapter_coverage
 from earthx.adapters.errors import UpstreamShapeError
+from earthx.api.search_filters import read_search_conditions
 from earthx.catalog.coverage import (
     HISTOGRAM_INTERVAL,
     CoverageProviderMismatch,
@@ -50,6 +58,7 @@ from earthx.catalog.coverage import (
 from earthx.catalog.local_coverage import area_coverage, check_intersects_is_valid
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, RetiredDatasetError, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
+from earthx.catalog.search_filters import InvalidFilter
 from earthx.gateway import GatewayError, UpstreamError, UpstreamTimeout, UpstreamUnreachable
 
 LOGGER = logging.getLogger("earthx.api.coverage")
@@ -94,7 +103,13 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
         datetime: Annotated[
             str | None, Query(description="a STAC interval: an instant, start/end, start/.. or ../end")
         ] = None,
-        max_cloud_cover: Annotated[float | None, Query(description="percentage, 0..100")] = None,
+        search_filters: Annotated[
+            str | None,
+            Query(
+                alias="query",
+                description="the dataset's search filters as JSON in the STAC query extension, e.g. gte/lte, in",
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         try:
             config = registry.get(dataset_id)
@@ -115,6 +130,14 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
         has_spatial_filter = bbox is not None or intersects is not None
         start, end = _datetime_bounds(datetime)
         try:
+            conditions = read_search_conditions(
+                {} if search_filters is None else {"query": _parse_query(search_filters)},
+                [dataset_id],
+                lambda _: config.search_filters,
+            ).by_collection.get(dataset_id)
+        except InvalidFilter as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        try:
             query = CoverageQuery(
                 dataset_id=dataset_id,
                 level=level_for_viewport(zoom, config, has_spatial_filter=has_spatial_filter),
@@ -122,23 +145,21 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
                 intersects=_parse_intersects(intersects),
                 start=start,
                 end=end,
-                max_cloud_cover=max_cloud_cover,
+                conditions=conditions,
             )
         except InvalidCoverageQuery as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
 
-        # A filter this dataset structurally cannot honour is dropped here, once,
+        # A time window this dataset structurally cannot honour is dropped here, once,
         # for every way — not left to each way to remember on its own (Otto,
         # 26.09.2026, M3-11c). `time_range=False` applies to any provider a future
-        # dataset without a time axis might use; `max_cloud_cover` only to the area
-        # way, which has no such property on a one-off product.
+        # dataset without a time axis might use. A search filter is never dropped: a
+        # materialized dataset, which the area way answers, carries none (registry),
+        # so `query` is already a `400` for it above.
         ignored_filters: list[str] = []
         if not config.capabilities.time_range and (query.start is not None or query.end is not None):
             query = replace(query, start=None, end=None)
             ignored_filters.append("datetime")
-        if area_path and query.max_cloud_cover is not None:
-            query = replace(query, max_cloud_cover=None)
-            ignored_filters.append("max_cloud_cover")
 
         # Checked ahead of the pool below, on purpose: a malformed request is a
         # `400` whether or not the database happens to be reachable, and the two
@@ -166,10 +187,11 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
                         query, config, adapters=adapters, gateway=gateway, cache=PostgresSearchCache(conn)
                     )
         except InvalidCoverageQuery as error:
-            # `area_coverage`'s own defensive re-check of `check_intersects_is_valid`
-            # (`local_coverage.py`) — the route above already validates the same
-            # geometry before this call is ever made, so this is unreachable through
-            # this route today, kept for a caller of `area_coverage` that skips it.
+            # `area_coverage`'s own defensive re-checks (`local_coverage.py`): of
+            # `check_intersects_is_valid` and of search filters, which a materialized
+            # dataset has none of. The route above already refuses both before this
+            # call is ever made, so this is unreachable through this route today,
+            # kept for a caller of `area_coverage` that skips them.
             raise HTTPException(status_code=400, detail=str(error)) from None
         except CoverageProviderMismatch as error:
             # Reachable only if the registry and this route disagree about the
@@ -204,6 +226,7 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
                 "completeness": result.completeness.value,
                 "from_cache": result.from_cache,
                 "answer": "area" if area_path else "density",
+                "filters": sorted(conditions or ()),
                 "ignored_filters": result.ignored_filters,
             },
         )
@@ -230,11 +253,20 @@ def _parse_intersects(value: str | None) -> dict[str, Any] | None:
         return None
     try:
         parsed = json.loads(value)
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):
         raise HTTPException(status_code=400, detail="intersects is not valid JSON") from None
     if not isinstance(parsed, dict):
         raise HTTPException(status_code=400, detail="intersects is not a GeoJSON object")
     return parsed
+
+
+def _parse_query(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except (ValueError, RecursionError):
+        # ValueError also covers a number too long to read (4300 digits), which is no JSONDecodeError. Not the
+        # exception's text: it quotes the document.
+        raise HTTPException(status_code=400, detail="query is not valid JSON") from None
 
 
 def _datetime_bounds(value: str | None) -> tuple[Any, Any]:
