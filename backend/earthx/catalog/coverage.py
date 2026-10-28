@@ -35,6 +35,7 @@ from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
 from earthx.catalog.registry import DatasetConfig
+from earthx.catalog.search_filters import FilterConditions, RangeCondition, ValuesCondition
 
 # adr/0004 §5, Otto's answer to question 3 of 19.09.2026: below this many hits the
 # viewer draws the real footprints instead of a density. It lives here, once, so that
@@ -132,13 +133,15 @@ class CoverageQuery:
     intersects: Mapping[str, Any] | None = None
     start: datetime | None = None
     end: datetime | None = None
-    max_cloud_cover: float | None = None
+    # The dataset's search filters (DS-02b), already checked against its registry entry by `api`; this
+    # only checks the form, like `SearchParams.conditions`.
+    conditions: FilterConditions | None = None
 
     def __post_init__(self) -> None:
         self._check_level()
         self._check_area()
         self._check_time()
-        self._check_cloud_cover()
+        self._check_conditions()
 
     @property
     def has_spatial_filter(self) -> bool:
@@ -146,13 +149,13 @@ class CoverageQuery:
 
     @property
     def is_unfiltered(self) -> bool:
-        """True for the world overview: no area, no time window, no cloud filter.
+        """True for the world overview: no area, no time window, no search filter.
 
         This is the one answer Otto gave the long lifetime on 20.09.2026 (F3): at
         thirty million items a day's new scenes change nothing visible, and it is the
         view every user sees first.
         """
-        return not self.has_spatial_filter and self.start is None and self.end is None and self.max_cloud_cover is None
+        return not self.has_spatial_filter and self.start is None and self.end is None and self.conditions is None
 
     def _check_level(self) -> None:
         if not 0 <= self.level <= MAX_GEOTILE_LEVEL:
@@ -212,14 +215,13 @@ class CoverageQuery:
         if self.start is not None and self.end is not None and self.start > self.end:
             raise InvalidCoverageQuery("time window ends before it starts")
 
-    def _check_cloud_cover(self) -> None:
-        # The one content filter of M2, listed rather than passed through: a free query
-        # parameter would be an open door outwards again, and CQL2 stays off anyway
-        # (adr/0005 rule VI).
-        if self.max_cloud_cover is None:
+    def _check_conditions(self) -> None:
+        if self.conditions is None:
             return
-        if not 0.0 <= self.max_cloud_cover <= 100.0:
-            raise InvalidCoverageQuery("max_cloud_cover is a percentage, so it lies between 0 and 100")
+        if not self.conditions:
+            raise InvalidCoverageQuery("conditions is empty; omit it instead of filtering on nothing")
+        if not all(isinstance(condition, (RangeCondition, ValuesCondition)) for condition in self.conditions.values()):
+            raise InvalidCoverageQuery("conditions holds something that is no search filter condition")
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,8 +254,7 @@ class CoverageResult:
     area: Mapping[str, Any] | None = None
     # Filters the query carried that this answer could not honour and silently
     # dropped rather than reject (Otto, 26.09.2026, M3-11c): ``"datetime"`` for a
-    # dataset with ``capabilities.time_range=False``, ``"max_cloud_cover"`` on the
-    # area way, which has no cloud cover to filter on. Named, not just dropped, so
+    # dataset with ``capabilities.time_range=False``. Named, not just dropped, so
     # the frontend can say so instead of the map quietly answering a narrower
     # question than the one asked (the same posture as `completeness=truncated`).
     ignored_filters: tuple[str, ...] = ()
