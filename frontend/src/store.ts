@@ -254,6 +254,7 @@ function foundNotice(
 export interface DerivedLayer {
   name: string;
   derived: NonNullable<MapLayer['derived']>;
+  note?: string;
   result?: ResultLayerInfo;
   overlays: LayerOverlay[];
   // The scenes the picture was made from.
@@ -1421,6 +1422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       opacity: 1,
       overlays: input.overlays,
       derived: input.derived,
+      ...(input.note ? { note: input.note } : {}),
       ...(input.result ? { result: input.result } : {}),
       restore: {
         focusMode: false,

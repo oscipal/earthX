@@ -120,6 +120,7 @@ import {
   type PreviewMeasure,
   type PreviewRange,
   type MosaicAnswer,
+  SCENE_PREVIEW_HINT,
   type PreviewSpec,
 } from './processingPreview';
 import type { ResultStats } from './render';
@@ -1077,6 +1078,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       app.pinDerivedLayer({
         name: `Preview · ${preview.title}`,
         derived: 'preview',
+        ...(preview.perScene ? { note: SCENE_PREVIEW_HINT } : {}),
         overlays: stackLikeView(previewOverlays(preview, app.aoi)),
         itemIds: [...new Set([...preview.mosaics.flatMap((mosaic) => mosaic.order), ...preview.scenes.map((scene) => scene.id)])],
         cropToAoi: preview.clipToAoi,

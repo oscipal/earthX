@@ -1677,6 +1677,36 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(layer.restore.itemIds).toEqual(['S2B_B', 'S2B_A']);
   });
 
+  describe('the preview pinned to the layer manager', () => {
+    const nameButton = () => container.querySelector<HTMLElement>('.layer-row .lm-name')!;
+
+    it('keeps the hint of a preview drawn scene by scene in the tooltip of its layer, and in no line of its row', async () => {
+      tilejson = mosaicRefused(422, "'sentinel-2-c1-l2a' does not allow reprojection, which a mosaic of scenes may need");
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      expect(store().preview!.perScene).toBe(true);
+      click(button(/Add preview to layers/));
+      const layer = useAppStore.getState().layers[0];
+      expect(layer.note).toBe(HINT);
+      mount(<LayerManager />);
+      expect(nameButton().getAttribute('title')).toContain(HINT);
+      expect(nameButton().getAttribute('title')).toContain(`${layer.name} — `);
+      expect(container.querySelector('.layer-row')!.textContent).not.toContain('per scene');
+      expect(container.querySelector('.layer-row')!.textContent).not.toContain('may differ');
+    });
+
+    it('carries no hint for a preview drawn as a mosaic, nor for scenes that are no mosaic job', async () => {
+      tilejson = taking(['S2B_B', 'S2B_A']);
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      click(button(/Add preview to layers/));
+      expect(useAppStore.getState().layers[0].note).toBeUndefined();
+      mount(<LayerManager />);
+      expect(nameButton().getAttribute('title')).not.toContain('per scene');
+      expect(nameButton().getAttribute('title')).toBe(`${useAppStore.getState().layers[0].name} — view this layer / continue working on it`);
+    });
+  });
+
   describe('"Loading…" while the first tile is on its way (Otto, 28.10.2026: cold 6.0 s, warm 0.16 s)', () => {
     const loading = () => container.querySelector('.preview-badge-dock .preview-badge.loading');
     let release: (response: Response) => void;
