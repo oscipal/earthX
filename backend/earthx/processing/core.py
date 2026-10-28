@@ -587,8 +587,10 @@ def area_statistics(
     the job's own grid with the same blocks, kernels, cast into the output type and mask, so the answer is the
     ``statistics`` of the result's properties, field for field (``stddev`` too: the blocks come in the same
     order). A larger window is read on a grid :func:`area_factor` times coarser, laid on the job's from the
-    window's corner; the reader picks an overview there, and the values are those of that read. Only ``pixel``
-    steps: a ``grid`` step changes the grid the job counts on.
+    window's corner; the reader picks an overview there, and the values are those of that read. A coarse pixel
+    of a single scene whose centre lies just past the raster's edge reads the edge value rather than nothing,
+    so ``count`` and ``valid_percent`` there are a little higher than the job's. Only ``pixel`` steps: a
+    ``grid`` step changes the grid the job counts on.
 
     The GDAL options are the caller's (:func:`run` enters those of `readers`).
     """

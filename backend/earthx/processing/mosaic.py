@@ -173,7 +173,8 @@ class MosaicSource(Source):
         col0, row0, col1, row1 = member.extent(grid)
         if not member.on_grid:
             # A grid coarser than the mosaic's (a measure of an area, NM4-19) need not end where the warp
-            # does; on the mosaic's own grid every extent lies inside it, and nothing changes.
+            # does; on the mosaic's own grid every extent lies inside it, and nothing changes. The warp is
+            # kept per member, not per grid: a mosaic is read on one grid, the measure opens its own.
             warped = self._warped(member, grid)
             col0, row0 = max(col0, 0), max(row0, 0)
             col1, row1 = min(col1, warped.vrt.width), min(row1, warped.vrt.height)

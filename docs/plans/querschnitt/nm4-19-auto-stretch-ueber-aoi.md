@@ -300,7 +300,7 @@ KE1–KE8 angenommen. **Zusatz Modulgrenzen:** Die Route nutzt `estimate_order` 
 
 - **Ort:** die Tabelle `public.earthx_stats_cache` in der Postgres-Datenbank der Plattform (`catalog/migrations/003_stats_cache.sql`), dieselbe wie für die GET-Statistik. Der `tiler` erreicht sie über `statistics_cache` (`api/tiler.py`, eine Verbindung aus dem Pool je Anfrage); ohne Pool gibt es keinen Cache, die Messung wird dann jedes Mal gelesen (E5).
 - **Inhalt einer Zeile:** `cache_key` (SHA-256, 64 Hexzeichen), `dataset_id`, `payload` (nur die Statistik je Band, `exact`, `factor`; keine AOI, keine Item-ID, kein Rezept), `expires_at`, `created_at`.
-- **Schlüssel:** SHA-256 über `{"kind": "area-statistics/v1", "recipe": <Rezept ohne recipe_id>}`, kanonisch (sortierte Schlüssel, ohne Leerzeichen). Das Rezept trägt AOI, Items, Assets mit Skalierung, Schritte und Ausgabetyp; der Hash ist aus der AOI zurückrechenbar (Q8) und gilt deshalb wie ein Rezept als personenbezogen.
+- **Schlüssel:** SHA-256 über `{"kind": "area-statistics/v1", "earthx": <Version>, "recipe": <Hash des Rezepts ohne recipe_id>}` (`recipe_hash`), kanonisch (sortierte Schlüssel, ohne Leerzeichen); die Version, weil eine neue Version anders zählen kann. Das Rezept trägt AOI, Items, Assets mit Skalierung, Schritte und Ausgabetyp; der Hash ist aus der AOI zurückrechenbar (Q8) und gilt deshalb wie ein Rezept als personenbezogen.
 - **Ablauf heute:** `PostgresStatsCache.set` setzt `expires_at = now() + ttl_s` (Vorgabe 30 Tage); `get` liest nur Zeilen mit `expires_at > now()`. **Gelöscht wird eine abgelaufene Zeile heute nie**; der Index `earthx_stats_cache_expires_at_idx` ist für ein späteres Aufräumen vorbereitet.
 - **Ablauf neu (KE9):**
   1. Die Messung über die AOI schreibt mit `ttl_s` = 7 Tage (`AREA_STATISTICS_TTL_S`, aus derselben Zahl wie die Frist der Läufe, Q10).
@@ -381,7 +381,7 @@ KE1–KE8 angenommen. **Zusatz Modulgrenzen:** Die Route nutzt `estimate_order` 
 - `api/intake.py`: `estimate_order` mit `announce` (KE2).
 - `access/tiles.py`: `StatsCache.set` nimmt `ttl_s` wie `PostgresStatsCache`.
 - `jobs/cleanup.py`: löscht abgelaufene Zeilen von `earthx_stats_cache` (KE9), zählt sie in `CleanupResult.statistics`.
-- Tests: `processing/test_area_statistics.py` (24), `api/test_tiler_area_statistics.py` (37), `jobs/test_cleanup.py` (+3), `api/test_tiler.py` (die Route ist die zweite ohne Item im Pfad, wie der Download).
+- Tests: `processing/test_area_statistics.py` (24), `api/test_tiler_area_statistics.py` (46), `jobs/test_cleanup.py` (+3), `integration/test_stats_cache.py` (+1), `api/test_tiler.py` (die Route ist die zweite ohne Item im Pfad, wie der Download).
 - **Abweichungen von §10:** Nr. 7 nannte `test_tiler_start_is_light`; den Test gibt es im Repo nicht mehr (nur noch ein Verweis im Docstring von `_operator_support`). Stattdessen: Die Route importiert `processing` erst beim ersten Aufruf, wie die Operator-Kachel. Nr. 5 läuft über die ASGI-App mit dem echten `RequestIdMiddleware` und dem echten `JsonFormatter`, wie `tests/integration/test_access_log.py`, nicht über einen uvicorn-Prozess. Ganzzahlige Ausgabe (Nr. 1) mit `mask` allein: Mit `band_math` oder `normalize` hat jede Ausgabe nodata NaN, und eine Ganzzahl-Ausgabe weist der Job dann ab (`_nodata_for`).
 - **Gegenprobe:** Gegen `main` scheitern alle neuen Tests der Route und des Kerns, schon beim Import (`earthx.api.area_statistics`, `area_statistics` fehlen); die Route antwortet dort `405`. Die drei Tests des Aufräumers scheitern an `CleanupResult.statistics`.
 - **Echte Quelle [M]:** Sentinel-2 C1 L2A, eine Szene vom August 2025, NDVI. Die Item-Quelle ist im Prozess eingesetzt, weil das `gateway` der Sitzung Earth Search nicht erreicht (wie M4-19c §14 (d)); die COG-Lesezugriffe gehen echt über `readers`. AOI 0,08° × 0,08° (0,53 Mi Pixel): kalt 2,6 s, warm 0,13 s; `statistics` **gleich** denen eines Laufs des Kerns auf demselben Rezept. AOI 0,24° × 0,24° (4,8 Mi Pixel): `exact: false`, `factor` 2, kalt 2,8 s; 2–98 % liegen 0,4 bzw. 0,5 % der Spanne neben dem Job, das Maximum grob 0,94 statt 1,48 (Frage 8).
@@ -435,3 +435,16 @@ docker compose logs tiler | Select-String ([string]::Format('{0:F4}', $x).Replac
 ```
 
 Die Vorschau im Panel ändert sich mit diesem PR noch nicht; das kommt mit NM4-19b (§15).
+
+### 17.2 Review vor dem PR (Subagent `reviewer`, 28.10.2026)
+
+Eingearbeitet:
+- Ein `RasterioError`, der kein Lesefehler ist, ging an den Handler des `tiler`, der ihn mit Traceback loggt; GDALs Text kann die Adresse nennen. Die Route fängt ihn jetzt selbst ab: `500`, im Log nur die Art (Test mit einer `WarpOperationError`, deren Text die Adresse trägt; ebenso der Lesefehler mit Wiederholung und `502`).
+- Ein Body mit tief verschachteltem `coordinates` gab `500` (`RecursionError`). Jetzt zählt `_positions` ohne Rekursion, und `json.loads` antwortet bei zu tiefer Schachtelung `400` (Tests mit Tiefe 600, 5 000, 200 000).
+- Die Cache-Abhängigkeit hielt eine Verbindung des kleinen Pools (5) über die ganze Messung, während der Item-Abruf derselben Anfrage eine zweite braucht: Fünf gleichzeitige Messungen hätten den Pool erschöpft. Neu `catalog.stats_cache.PooledStatsCache` mit einer Verbindung je `get`/`set` (`api.tiler.area_statistics_cache`), Test gegen Postgres.
+- Tests ergänzt: Body ohne Länge (gestreamt, `413` beim Lesen), Positionen über ein MultiPolygon, genau 20 000 Positionen.
+- Docstrings: am Rand einer Einzelszene liest das grobe Raster den Randwert (`valid_percent` dort etwas höher als im Job); der VRT eines Mosaik-Mitglieds gilt je Mitglied, nicht je Raster.
+
+**Item-IDs im Log, eingeordnet statt geändert:** §10 Nr. 5 des Plans versprach mehr als die Vorgabe: „in keiner Logzeile … eine Item-ID“. Die Grenze der Aufgabe (§4) nennt AOI, Job-, Rezept- und Permalink-Kennungen, Hashes, `href` und signierte URLs, keine Item-IDs. Item-IDs stehen heute im Zugriffslog jeder Kachel-Route (`/collections/{dataset}/items/{item}/…`), in der Zeile „order refused“ der Annahme (`no item '…' in '…'`) und im Pfad der `gateway`-Zeile eines Item-Abrufs. Für diese Route gilt dasselbe: Ihre eigene Zeile nennt kein Item; eine Ablehnung der Annahme und der Item-Abruf schreiben die ID wie bei einem Job. Der Test prüft das so (keine AOI, kein Schlüssel, kein Item in der Zeile der Route). Sollen Item-IDs auch dort heraus, ist das eine eigene Entscheidung über alle Routen.
+
+Nicht geändert: Bei einer gleichzeitigen Erneuerung kann der Aufräumer einen gerade erneuerten Eintrag löschen; die Folge ist ein Cache-Fehlschuss.

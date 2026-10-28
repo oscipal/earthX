@@ -677,10 +677,13 @@ Pfad**:
 - **Datenschutz:** Die AOI steht nur im Body. Das Zugriffslog schreibt Methode, Pfad
   (`/collections/{dataset}/statistics`), Status und Dauer. Die Route schreibt eine Zeile „area
   statistics measured“ mit Datensatz, Szenen, Assets, Faktor, gelesenen Pixeln, Cache-Treffer und
-  Dauer, ohne AOI, Item-ID oder Schlüssel. Ein Lesefehler und ein Fehler des Caches gehen ohne Text
+  Dauer, ohne AOI, Item-ID oder Schlüssel. Item-IDs sind keine Grenze dieser Route: Eine Ablehnung
+  der Annahme und der Item-Abruf des `gateway` nennen sie wie bei einem Job, das Zugriffslog jeder
+  Kachel-Route ohnehin. Ein Lesefehler und ein Fehler des Caches gehen ohne Text
   ins Log (GDALs Text nennt die Adresse, der einer Datenbank Werte der Anweisung). Eine fehlerhafte
   AOI kommt nicht in der Antwort zurück (kein Pydantic-Modell am Body).
-- **Cache (Otto, F4 mit Zusatz):** `public.earthx_stats_cache` wie die GET-Statistik; Schlüssel
+- **Cache (Otto, F4 mit Zusatz):** `public.earthx_stats_cache` wie die GET-Statistik, über
+  `PooledStatsCache` (eine Verbindung je Lesen und Schreiben, nicht über die Messung); Schlüssel
   SHA-256 über `area-statistics/v1`, die Version von earthx und den Hash des Rezepts ohne
   `recipe_id`, also über die AOI (Q8). Lebensdauer **7 Tage** wie ein Rezept (Q10,
   `RESULT_TTL`); der stündliche Aufräumer der Jobs löscht abgelaufene Zeilen der Tabelle
