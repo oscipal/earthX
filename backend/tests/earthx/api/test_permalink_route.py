@@ -63,7 +63,7 @@ class TestCreateReadDelete:
         stored = (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]
         assert stored == {"center": [0, 0], "zoom": 2, "range": None, "basemap": None, "projection": None}
 
-    @pytest.mark.parametrize("basemap", ["satellite", "streets", "grey", "outlines"])
+    @pytest.mark.parametrize("basemap", ["satellite", "streets", "grey", "outlines", "relief"])
     @pytest.mark.parametrize("projection", ["mercator", "globe"])
     async def test_the_basemap_and_the_projection_come_back_as_they_were_kept(
         self, rig: Rig, basemap: str, projection: str
@@ -161,6 +161,11 @@ class TestWhatIsRefused:
             {"center": [9.5, 47], "zoom": "5"},
             {"center": [9.5, 47], "zoom": 5, "title": "Lake"},
             {"center": [9.5, 47], "zoom": 5, "basemap": "osm"},
+            {"center": [9.5, 47], "zoom": 5, "basemap": "Relief"},
+            {"center": [9.5, 47], "zoom": 5, "basemap": "hillshade"},
+            # The overlays are the viewer's own taste and are not kept in a link (UI-02 §6.6, NM4-35).
+            {"center": [9.5, 47], "zoom": 5, "overlays": {"relief": True}},
+            {"center": [9.5, 47], "zoom": 5, "relief": True},
             {"center": [9.5, 47], "zoom": 5, "basemap": "Satellite"},
             {"center": [9.5, 47], "zoom": 5, "basemap": 1},
             {"center": [9.5, 47], "zoom": 5, "basemap": ["grey"]},
