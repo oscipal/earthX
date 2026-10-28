@@ -7,8 +7,8 @@
   auf.
 - **Autonomiestufe:** C. Kein Produktivcode, keine Änderung an `backend/`,
   `frontend/`, Fixtures, `.github/`, `.claude/`, `CLAUDE.md` oder den
-  Lock-Dateien. Neu ist nur das Messskript `scripts/nm4-43-bands/measure.py`
-  (§17). Die Umsetzung bekommt nach Ottos Entscheidung eigene Aufgaben (§13).
+  Lock-Dateien. Neu sind nur die Messskripte `scripts/nm4-43-bands/measure.py`
+  und `warp_bands.py` (§17). Die Umsetzung bekommt nach Ottos Entscheidung eigene Aufgaben (§13).
 - **Vorab fest (Otto, 27.10.2026, Plan §2):**
   1. Keine Obergrenze für die Zahl der Bänder je Auftrag.
   2. Ein `band_math`-Schritt fügt ein neues Band hinzu, statt die Bänder zu
@@ -58,11 +58,14 @@ auflösbar waren `docs.sentinel-hub.com`, `developers.google.com`,
 `openeo.dataspace.copernicus.eu` und `forum.dataspace.copernicus.eu`. Primärtexte
 kamen deshalb aus den Doku- und Spezifikations-Repos auf GitHub.
 
-**Anfragen an Datenquellen.** Drei Suchen an `earth-search.aws.element84.com`
-mit grobem Rechteck bzw. Suchpunkt (keine Nutzer-AOI) und die Lesezugriffe von
-GDAL auf `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`, deren
-Zahl §3.2 je Lauf nennt. Ortsangaben, Item-Kennungen und Adressen stehen weder
-hier noch in den Ausgaben des Skripts.
+**Anfragen an Datenquellen.** Fünf Suchen an `earth-search.aws.element84.com`
+(die letzte, maßgebliche nach einer MGRS-Kachel von rund 110 km, keine
+Nutzer-AOI; sie ergibt dieselben 25 Szenen wie die Suchen davor) und die
+Lesezugriffe von GDAL auf `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`,
+deren Zahl §3.2 je Lauf nennt. Die Kachel steht im Aufruf (§17), wie die grobe
+Kachelfläche in `scripts/tile-bench/run_tiler.py`. Koordinaten des
+Messquadrats, Item-Kennungen und Adressen stehen weder hier noch in den
+Ausgaben des Skripts.
 
 **Warum `curl` für die Suche.** Der Client von `gateway` verbindet sich selbst
 mit der aufgelösten Adresse und nutzt den HTTPS-Proxy der Cloud-Sitzung nicht;
@@ -94,7 +97,7 @@ Items deshalb aus einer Datei, die `curl` geholt hat, und baut die Rezepte über
    auf Groß- und Kleinschreibung, über alle Ergebnisse und alle Bänder des
    Datensatzes. Umbenennen zieht alle Verweise mit.
 4. **Schutz ohne Bandgrenze (F5):** Gemessen wächst der Spitzenspeicher eines
-   Laufs um rund 21 MB je Band im breitesten Durchgang und kaum mit der Fläche;
+   Laufs um rund 21 MB je Band im breitesten Durchgang und weniger mit der Fläche;
    16 Bänder liegen schon über den 500 MB der Speichertests (§3.2). Laufzeit
    und gelesene Bytes wachsen mit Bändern mal Fläche, und die Zeitschätzung
    zählt die Ausgabebänder nicht (bei 30 km und 17 Bändern 21 s geschätzt,
@@ -256,7 +259,7 @@ streut über die 25 Szenen um höchstens 6 MB, die Laufzeit stärker (Netz:
    den Vorrat legt statt ihn zu kopieren, sollte nahe an „kein Schritt +
    ein Band“ liegen **[A]**; das misst NM4-43a.
 4. **Laufzeit:** Bei 1 Mio. Pixeln bestimmen Öffnen, Lesen, Schreiben und
-   Statistik je Band die Zeit. 17 statt 2 Bänder kosten das 5,6-Fache
+   Statistik je Band die Zeit. 17 statt 2 Bänder kosten das 5,5-Fache
    (19,4 statt 3,5 s). Die Schätzung trifft die Größenordnung (17,4 bzw. 2,1 s).
 5. **Gelesene Bytes:** 12,7 MB für 2 Bänder, 37 MB für 16 oder 17. Das ist nur
    das 2,9-Fache, weil die 20- und 60-m-Bänder ein Viertel bzw. ein Neuntel der
@@ -264,30 +267,35 @@ streut über die 25 Szenen um höchstens 6 MB, die Laufzeit stärker (Netz:
    so viel; der Deckel je Host (2) bestimmt, wie viel davon gleichzeitig läuft.
 6. **Ausgabe:** 17 Bänder in `float32` mit deflate sind 38,7 MB je 1 Mio.
    Pixel, gegenüber 6,5 MB für zwei. Die Klassenschicht `scl` als `float32`
-   kostet 6,2 MB (32,4 → 38,7 MB).
+   kostet 6,3 MB (32,4 → 38,7 MB).
 7. **Nicht gemessen:** ein Mosaik von 25 Szenen in einem Lauf. Je Block liest
    der Kern nur die Szenen, die ihn berühren, und hört auf, sobald alle Pixel
    gefüllt sind (`processing/mosaic.py`, Kopf); `api` lässt Szenen weg, die die
    AOI nicht berühren. Die Spitze hängt dort wie hier an den Bändern je Block;
    Laufzeit und Bytes wachsen mit der Fläche.
 
-**Flächenreihe.** Dieselbe Szene, Quadrate von 3, 10 und 30 km (0,1, 1,1
-und 9,5 Mio. Pixel), je ein Lauf:
+**Flächenreihe.** Eine Szene (die erste der 25), Quadrate von 3, 10 und 30 km
+um die Mitte dieser Szene (0,1, 1,1 und 9,5 Mio. Pixel), je ein Lauf. Das
+10-km-Quadrat liegt damit an anderer Stelle als in der Tabelle oben:
 
 | Konfiguration | 3 km: s / Spitze MB | 10 km: s / Spitze MB | 30 km: s / Spitze MB | 30 km: gelesen MB | 30 km: `result.tif` MB | 30 km: Schätzung s |
 |---|---|---|---|---|---|---|
-| 2, kein Schritt | 2,1 / 216 | 3,5 / 275 | 12,2 / 338 | 59 | 60 | 3,2 |
-| 2, `band_math` heute | 1,3 / 198 | 2,8 / 248 | 9,3 / 314 | 59 | 44 | 3,2 |
-| 17, kein Schritt | 9,3 / 406 | 19,4 / 536 | 114,7 / 651 | 266 | 346 | 21,0 |
-| 17, `band_math` heute | 7,7 / 217 | 11,0 / 395 | 49,4 / 426 | 266 | 44 | 21,0 |
-| 17, `band_math` anhängen | 8,7 / 418 | 22,3 / 648 | 141,9 / 911 | 266 | 403 | 21,0 |
+| 2, kein Schritt | 2,1 / 216 | 3,5 / 276 | 12,2 / 338 | 59 | 60 | 3,2 |
+| 2, `band_math` heute | 1,3 / 198 | 2,9 / 250 | 9,3 / 314 | 59 | 44 | 3,2 |
+| 17, kein Schritt | 9,3 / 406 | 22,1 / 536 | 114,7 / 651 | 266 | 346 | 21,0 |
+| 17, `band_math` heute | 7,7 / 217 | 12,8 / 396 | 49,4 / 426 | 266 | 44 | 21,0 |
+| 17, `band_math` anhängen | 8,7 / 418 | 23,4 / 649 | 141,9 / 911 | 266 | 403 | 21,0 |
 
-8. **Die Spitze hängt vor allem an den Bändern, nur wenig an der Fläche.**
+8. **Die Spitze hängt vor allem an den Bändern, aber auch an der Fläche.**
    Unter 1024 px Seitenlänge sind die Blöcke kleiner (3 km). Von 1,1 auf
-   9,5 Mio. Pixel wächst sie bei 17 Bändern um 115 MB, bei 2 Bändern um 63 MB;
-   ab 1024² gilt also etwa **340 MB + 21 MB je Band** im breitesten Durchgang
-   (30 km, kein Schritt). Ein Teil davon ist der COG-Schritt am Ende, den
-   `adr/0014` §3.5 mit rund 100 MB nennt **[A]**.
+   9,5 Mio. Pixel wächst sie bei 17 Bändern um 115 MB, bei 2 Bändern um 62 MB.
+   Bei 9,5 Mio. Pixeln gilt etwa **300 MB + 21 MB je Band** im breitesten
+   Durchgang (Gerade durch 2 und 17 Bänder, kein Schritt: 296 MB Sockel,
+   20,9 MB je Band). Einen Teil des Flächenanteils trägt vermutlich der
+   COG-Schritt am Ende, den `adr/0014` §3.5 mit rund 100 MB nennt **[A]**.
+   Gemessen ist nur bis 9,5 Mio. Pixel; die 5-GB-Grenze erlaubt bei 17
+   Bändern rund 72 Mio. Pixel. Wie die Spitze dorthin wächst, misst NM4-43a
+   (§7.2).
 9. **Die Zeitschätzung wächst nicht mit den Bändern der Ausgabe.** Bei 30 km
    und 17 Bändern schätzt die Plattform 21 s, gemessen sind 115 s (Faktor 5,5;
    bei 2 Bändern 3,2 gegen 12,2 s). `SECONDS_PER_INPUT_MB` stammt aus einem
@@ -351,6 +359,7 @@ untereinander dieselben Werte.
 | CDSE/VITO openEO | Speicher je Executor als Auftragsparameter, Höchstwert je Instanz | Fehlermeldung nennt etwa 24 G | [S] `processing_parameters`; [P] openeo-python-driver Issue 468 |
 | Sentinel Hub | Processing Units: 1 PU = 512 × 512 px, 3 Eingabebänder; **Faktor Eingabebänder / 3**; `FLOAT32` × 2 | — | [P] eu-cdse `ProcessingUnit.qmd` |
 | Sentinel Hub Process API | Ausgabe höchstens 2500 × 2500 px je Anfrage; größer nur Batch | — | [F] Forum |
+| Sentinel Hub Batch | Processing Units mit Faktor 1/3 gegenüber der Process API | — | [P] eu-cdse `Batch.qmd` |
 | Sentinel Hub | Ausgabebänder | keine Obergrenze gefunden; `sampleType` gilt je Ausgabeobjekt, nicht je Band | [P] sentinelhub-py `evalscript.py`; [S] Evalscript V3 |
 | Earth Engine `getDownloadURL` | Anfragegröße | 32 MB, höchstens 10 000 px je Seite | [P] earthengine-api `image.py` |
 | Earth Engine `computePixels` | Pixel × Bänder × Bytes; Bänder | 48 MB; **höchstens 1024 Bänder** | [S] REST-Referenz |
@@ -391,7 +400,7 @@ Sentinel Hub und Earth Engine einen gemeinsamen Typ je Ausgabe.
 | Schritt | wirkt auf | Änderung zu heute |
 |---|---|---|
 | `band_math` v2 | liest die Bänder, die der Ausdruck nennt; fügt ein Band `name` hinzu | ersetzt nicht mehr |
-| `mask` | blendet in allen Bändern des Vorrats aus | die Schicht bleibt im Vorrat; ob sie in die Datei kommt, entscheidet `output.bands` |
+| `mask` | blendet in allen Bändern des Vorrats aus, auch in der Schicht selbst | die Schicht bleibt im Vorrat; ob sie in die Datei kommt, entscheidet `output.bands`. Steht sie in der Ausgabe, sind ihre ausgeblendeten Klassen dort nodata |
 | `normalize` v2 | die Bänder in `bands` (F4) | heute alle Bänder |
 | `reproject` | alle Bänder des Vorrats | keine |
 
@@ -485,15 +494,18 @@ nichts verloren geht. Ein Name, der einen Konflikt ergäbe, wird nicht
 ### 7.1 Was die Messung sagt
 
 - **Speicher:** Keine bestehende Grenze schützt ihn. Die Spitze wächst um
-  rund 21 MB je Band im breitesten Durchgang (Befund 8) und kaum mit der
-  Fläche; schon 16 Bänder liegen über den 500 MB der Speichertests. Bei
+  rund 21 MB je Band im breitesten Durchgang und weniger mit der Fläche
+  (Befund 8); schon 16 Bänder liegen über den 500 MB der Speichertests. Bei
   Sentinel-2 kann der Vorrat höchstens 17 Bänder plus ein Band je
-  `band_math`-Schritt haben, also 33; das ergibt nach der Formel rund 1,03 GB.
-  Ein Datensatz mit vielen Bändern in einem Asset (hyperspektral, etwa 224)
-  käme auf rund 5 GB **[A]**.
+  `band_math`-Schritt haben, also 33; das ergibt nach der Formel bei
+  9,5 Mio. Pixeln rund 1,0 GB. Ein Datensatz mit vielen Bändern in einem Asset
+  (hyperspektral, etwa 224) käme auf rund 5 GB **[A]**. Gestrichen wird je
+  Band, gelesen aber je Asset: Ein Asset mit vielen Bändern wird ganz gelesen,
+  auch wenn nur eines gebraucht wird.
 - **Laufzeit:** Die Grenze (2 × Schätzung, mindestens 600 s) schützt den
   Worker, ist aber für viele Ausgabebänder zu knapp, weil die Schätzung sie
-  nicht zählt (Befund 9). Ohne Bandgrenze bräche ein gültiger großer Job ab.
+  nicht zählt (Befund 9). Das gilt schon heute mit 16 Bändern: Ein gültiger
+  großer Job bräche ab.
 - **Platte und Ausgabe:** Die 5-GB-Grenze zählt Pixel × Bänder × Typ, wächst
   also mit den Bändern; `disk_needed` ebenso. Beide sind heute durch den
   Nebenbefund §3.3 zu niedrig.
@@ -509,20 +521,22 @@ nichts verloren geht. Ein Name, der einen Konflikt ergäbe, wird nicht
 | | G1 nur die bestehenden Grenzen | G2 Speicherschätzung je Lauf | G3 Datenmenge der Eingabe |
 |---|---|---|---|
 | Regel | 16 Assets entfällt, sonst nichts | 16 Assets entfällt; neu: geschätzter Spitzenspeicher ≤ Grenze je Kindprozess | 16 Assets entfällt; neu: Pixel × Bänder × Szenen der Eingabe ≤ Grenze |
-| schützt Speicher | ✗ | ✓ unmittelbar | ~ nur mittelbar, und er hängt gar nicht von der Fläche ab |
+| schützt Speicher | ✗ | ✓ unmittelbar | ~ nur mittelbar; der Speicher hängt vor allem an den Bändern je Block, weniger an der Fläche |
 | schützt Laufzeit, Platte, Quellen | ✓ Laufzeitgrenze, 5 GB, `disk_needed`, Deckel je Host | ✓ wie G1 | ✓ doppelt zu G1 |
-| trifft Sentinel-2 (≤ 33 Bänder im Vorrat) | — | nie (§7.1) | je nach Wert |
+| trifft Sentinel-2 (≤ 33 Bänder im Vorrat) | — | bis 9,5 Mio. Pixel nicht (rund 1,0 GB); große Flächen und Mosaik misst NM4-43a | je nach Wert |
 | trifft Hyperspektral (etwa 224 Bänder in einem Asset) | — | ja, mit Zahl im Grund | ja |
 | neue Zahl, die gepflegt werden muss | keine | ein Wert je Band, gemessen, im Speichertest geprüft | eine Grenze ohne gemessenen Bezug |
 
 **Empfehlung: G2,** dazu die Behebung aus §3.3 (F11).
 
-- **Formel:** 340 MB plus 21 MB je Band im breitesten Durchgang (Befund 8),
-  unterhalb von 1024 px Seitenlänge anteilig. Der Planer kennt den breitesten
+- **Formel:** 300 MB plus 21 MB je Band im breitesten Durchgang (Befund 8),
+  dazu ein Flächenanteil, den NM4-43a bis zur 5-GB-Grenze und für ein Mosaik
+  misst. Der Planer kennt den breitesten
   Durchgang nach dem Streichen (§4). Die Werte misst NM4-43a mit dem echten
   Anhängen neu.
 - **Grenze:** ein Wert je Kindprozess (F5), Startwert **1,5 GB**: Sentinel-2
-  mit 17 Bändern und 16 `band_math`-Schritten (rund 1,03 GB) passt, ein
+  mit 17 Bändern und 16 `band_math`-Schritten (rund 1,0 GB bei 9,5 Mio. Pixeln)
+  passt, ein
   hyperspektrales Asset nicht. Ein Worker mit 2 Slots braucht dann bis zu
   3 GB. Darüber `413` mit Grund, etwa
   „This job would need about 2.4 GB of memory, more than the 1.5 GB a job may
@@ -556,7 +570,7 @@ gibt es bei Sentinel-2 also nicht; „`uint8`-Klassen neben `float32`“ schon.
 | Datei | `result.tif` mit allen Bändern | `result_float32.tif`, `result_uint8.tif` | je Band eine Datei im ZIP |
 | Typ | nach den heutigen Regeln (`processingDefaults.ts:chooseDtype`): `float32`, sobald ein Band Bruchzahlen hat; ganzzahlig nur bei einem Typ, einem nodata, unskaliert | je Datei der eigene Typ | je Band der eigene Typ |
 | Klassen in `float32` | exakt (jede Ganzzahl bis 2²⁴) | — | — |
-| Größe | Klassenbänder roh vierfach (`uint8` → `float32`); gemessen kostet `scl` 6,2 MB je 1 Mio. Pixel nach deflate (§3.2, Befund 6) | kleinste | kleinste |
+| Größe | Klassenbänder roh vierfach (`uint8` → `float32`); gemessen kostet `scl` 6,3 MB je 1 Mio. Pixel nach deflate (§3.2, Befund 6) | kleinste | kleinste |
 | Ergebnis-Layer, Kachel, Statistik, Runner | wie heute | zwei Dateien je Job, Route und Layer müssen wählen | viele Dateien, viele Routen |
 | GIS-Programme | ein Stapel | zwei Stapel | einzeln |
 | andere Plattformen | Sentinel Hub und Earth Engine: ein Typ je Ausgabe (§3.5) | Sentinel Hub: mehrere Ausgabeobjekte | — |
@@ -627,10 +641,11 @@ Vorschau und Ergebnis zugleich (§12).
 | Stelle | Änderung |
 |---|---|
 | `recipe_version` | 2: `output.bands`; im Auftrag kein `assets` für `raster`; `RECIPE_VERSION = 2` (`recipe.py:85`) |
-| `band_math` | `op_version` 2: Parameter `expression` und `name`, fügt hinzu. Version 1 wird nicht mehr gelistet |
+| `band_math` | `op_version` 2: Parameter `expression` und `name`, fügt hinzu. Version 1 wird nicht mehr gelistet; angenommen nur in der Übergangszeit über die Umdeutung (unten) |
 | `normalize` | `op_version` 2 mit `bands` (F4), in NM4-11 zusammen mit den Methoden |
 | `mask` | `op_version` 2: Die Schicht bleibt im Vorrat |
 | `reproject` | `op_version` 4: jedes Band ein eigener Warp (F13) |
+| `resolved` | Form unverändert (`ResolvedInput`, `adr/0011` §6.4); es hält genau einen Eintrag je Item und **abgeleitetem** Asset, also nur die Assets, die nach dem Streichen gelesen werden (`recipe.py:Input._complete` prüft das weiter gegen `assets`) |
 | Hash | ändert sich für jedes Rezept (neue Felder); einmal kein Cache-Treffer |
 | `earthx.__version__` | 0.4.3 → 0.5.0: `result.tif` trägt Banddeskriptionen und Einheiten, die Bytes ändern sich |
 | `adr/0014` | Nachtrag §15u: Bandvorrat, Streichen, `output.bands`, Namen, Speicherschätzung |
@@ -638,7 +653,7 @@ Vorschau und Ergebnis zugleich (§12).
 | Prozessbeschreibung | `inputs.assets.maxItems` entfällt (`api/processing_docs.py:299`); `output.bands` mit Schema |
 
 **Umdeutung von Version 1 [A].** Jedes gültige Rezept der Version 1 lässt
-sich ohne Wertänderung als Version 2 schreiben:
+sich als Version 2 schreiben, ohne Wertänderung außer nach `reproject`:
 
 1. Jeder `band_math`-Schritt bekommt einen Namen. Der letzte heißt
    `band_math` wie heute; frühere bekommen `band_math_<n>`. Jeder Ausdruck,
@@ -649,7 +664,19 @@ sich ohne Wertänderung als Version 2 schreiben:
 4. `output.bands` ist der Vorrat, den Version 1 am Ende hatte.
 
 Ein Test führt jede Rezept-Fixture der Version 1 umgedeutet aus und vergleicht
-die Werte bitgleich mit dem alten Ergebnis.
+die Werte mit dem alten Ergebnis: bitgleich für Ketten ohne `reproject`. Nach
+`reproject` ändern sich die Werte, weil das Streichen die Zahl der Bänder
+ändert (§3.4) und weil `reproject` Version 4 jedes Band einzeln warpt (F13);
+dort prüft der Test die Toleranz von `adr/0014` §6.3.
+
+**Übergang [A].** Bis das Frontend Version 2 schickt (NM4-43c), muss `api`
+Aufträge der Version 1 weiter annehmen, und Jobs der Version 1 können beim
+Deploy von NM4-43a noch in der Warteschlange stehen oder wiederhergestellt
+werden (NM4-27). Deshalb bringt NM4-43a dieselbe Umdeutung auch in Python
+(`processing/recipe.py`): `api` deutet Aufträge der Version 1 um, der Worker
+gespeicherte Rezepte der Version 1 beim Lesen. Der Kern rechnet nur noch
+Version 2. Die Python-Umdeutung entfällt 7 Tage nach NM4-43c (Ablauf Q10);
+danach gilt U1.
 
 **Optionen für alte Rezepte:**
 
@@ -659,10 +686,11 @@ die Werte bitgleich mit dem alten Ergebnis.
 | API-Clients, Chatbot | `422` „recipe_version 1 is no longer accepted; send version 2“ | weiter angenommen | wie U1 |
 | Permalinks der letzten 30 Tage | gespeichert als Version 1, beim Öffnen umgedeutet | gleich | verloren |
 | Runner | nur Version 2; alte Tags für alte Dateien | gleich | gleich |
-| Code | eine Umdeutung in `recipeFile.ts` | zwei (TS und Python) | keine |
+| Code | dauerhaft eine Umdeutung in `recipeFile.ts`; die in Python nur im Übergang | dauerhaft zwei (TS und Python) | keine |
 
 **Empfehlung: U1.** Rezepte laufen nach 7 Tagen ab (Q10), Permalinks nach
-30. Es gibt keine fremden API-Clients. Eine Umdeutung an einer Stelle genügt.
+30. Es gibt keine fremden API-Clients. Auf Dauer genügt eine Umdeutung an
+einer Stelle.
 
 ---
 
@@ -695,8 +723,9 @@ die Werte bitgleich mit dem alten Ergebnis.
 NM4-43a und NM4-43b sind Backend und können nacheinander in einer Session
 laufen; NM4-43c ist Frontend und nicht gleichzeitig mit NM4-20, NM4-45 oder
 NM4-14 (Bandbereich des Panels). Bis NM4-43c fertig ist, nimmt `api` neben
-Version 2 auch Version 1 an, damit `main` nie ein Panel hat, das die API
-ablehnt. Mit NM4-43c endet die Annahme von Version 1 (U1).
+Version 2 auch Version 1 an und deutet sie um (§11, Übergang), damit `main`
+nie ein Panel hat, das die API ablehnt. 7 Tage nach NM4-43c endet die Annahme
+von Version 1 (U1).
 
 ---
 
@@ -869,7 +898,7 @@ Prozess.
 
 ```bash
 curl -sS -X POST https://earth-search.aws.element84.com/v1/search -H 'Content-Type: application/json' \
-  -d '{"collections":["sentinel-2-c1-l2a"],"bbox":[11.0,47.0,11.01,47.01],"datetime":"2026-04-01T00:00:00Z/2026-10-01T00:00:00Z","limit":200,"query":{"eo:cloud_cover":{"lt":80}}}' \
+  -d '{"collections":["sentinel-2-c1-l2a"],"datetime":"2026-04-01T00:00:00Z/2026-10-01T00:00:00Z","limit":200,"query":{"grid:code":{"eq":"MGRS-32TPT"},"eo:cloud_cover":{"lt":80}}}' \
   -o items.json
 ```
 
@@ -885,7 +914,9 @@ PYTHONPATH=backend python scripts/nm4-43-bands/measure.py run m10 --scenes 25
 PYTHONPATH=backend python scripts/nm4-43-bands/measure.py summary m10
 ```
 
-Für die Flächenreihe (§7.1) dasselbe mit `--km 3` und `--km 30`, `--scenes 1`.
+Für die Flächenreihe (§3.2) dasselbe mit `--scenes 1` und `--km 3`, `--km 10`,
+`--km 30`, jeweils mit
+`--configs 2-none 2-bm 17-none 17-bm 17-append`.
 
 **Ergebnisse** der Läufe lagen als `results.jsonl` im Kratzverzeichnis der
 Sitzung; die Tabellen in §3.2 sind daraus mit `summary` gebildet (Median je
