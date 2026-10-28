@@ -35,7 +35,7 @@ import {
   type ShelfJob,
   type ShelfState,
 } from './jobShelf';
-import { canDelete, canRestore, deletableParts } from './jobState';
+import { canDelete, canRestore, canRetry, deletableParts, retryableParts } from './jobState';
 import { trackJob, type TrackerOptions } from './jobTracker';
 import {
   batchPass,
@@ -191,8 +191,17 @@ export interface JobEntry extends ShelfJob {
   // `earthx:resampled` of the result (Prinzip 2.9); `null` until the results are read.
   resampled: boolean | null;
   failure: string | null;
+  // The kind of a failure, the end of the `type` of its problem (`failureKindOf`); `null` while unknown. It decides
+  // whether "Run again" is offered (`jobState.ts`).
+  failureKind: string | null;
   error: string | null;
   cancelling: boolean;
+  // "Run again" is under way (NM4-34): a second press does not send the order a second time.
+  retrying: boolean;
+  // The server answered `410` to the order: the dataset has left, so the order cannot be sent again. Not kept.
+  retryRefused: boolean;
+  // Why "Run again" did not work; shown in the row and in the details.
+  retryError: string | null;
   // "Delete" or "Restore" is under way (NM4-27): a second press does not start a second request.
   deleting: boolean;
   // `/results` answered `410`: the result is gone before the row's own clock says so.
@@ -308,6 +317,11 @@ interface ProcessingState {
   moveToGroup: (target: ManagerTarget, groupId: string | null) => void;
   // "Cancel all" of a batch: its waiting and running parts, one after the other.
   cancelBatch: (batchId: string) => Promise<void>;
+  // "Run again" (NM4-34): the kept order of a job that failed, was cancelled or expired goes to the server once more.
+  // The new job takes the place of the old one, which stays archived and "Superseded".
+  retryJob: (jobID: string) => Promise<void>;
+  // "Run the failed parts again": the parts of a batch that failed or were cancelled, one after the other, in the batch.
+  retryBatch: (batchId: string) => Promise<void>;
   ensureDescription: (datasetId: string) => void;
   lookupCrs: (code: string, signal: AbortSignal) => Promise<void>;
   resetDraft: () => void;
@@ -588,6 +602,8 @@ let storageListening = false;
 
 // Batches whose "Cancel all" is under way: a second click does not start a second round.
 const cancellingBatches = new Set<string>();
+// The same for "Run the failed parts again".
+const retryingBatches = new Set<string>();
 
 const inTarget = (job: ShelfJob, target: ManagerTarget): boolean =>
   'jobID' in target ? job.jobID === target.jobID : job.batchId === target.batchId;
@@ -610,6 +626,7 @@ export function resetJobs(): void {
   shelfLocked = false;
   copiesDropped = false;
   cancellingBatches.clear();
+  retryingBatches.clear();
   useProcessingStore.setState({ jobs: [], batches: [], groups: [], shelf: 'ok', detailJobID: null });
 }
 
@@ -679,10 +696,22 @@ const FAILURE_TEXTS: Record<string, string> = {
   runtime_exceeded: 'The job took longer than allowed. Choose a smaller area or fewer assets.',
 };
 
+const FAILED_TYPE = 'urn:earthx:job-failed:';
+
+// The kind of a failed job's problem document (`processing.failure_kind`); `null` for an answer that names none.
+export function failureKindOf(error: unknown): string | null {
+  return error instanceof HttpError && error.type?.startsWith(FAILED_TYPE) ? error.type.slice(FAILED_TYPE.length) : null;
+}
+
 export function failureText(error: unknown, fallback: string): string {
   if (!(error instanceof HttpError)) return fallback;
-  const kind = error.type?.startsWith('urn:earthx:job-failed:') ? error.type.slice('urn:earthx:job-failed:'.length) : '';
-  return FAILURE_TEXTS[kind] ?? error.title ?? fallback;
+  return FAILURE_TEXTS[failureKindOf(error) ?? ''] ?? error.title ?? fallback;
+}
+
+// Whether the platform has said that it no longer carries the dataset of the job's order (a `410` of its description).
+export function orderRetired(job: JobEntry, descriptions: Record<string, Description>): boolean {
+  const description = job.order ? descriptions[job.order.inputs[0]?.dataset ?? ''] : undefined;
+  return description?.state === 'error' && description.retired !== undefined;
 }
 
 const EMPTY_DRAFT = {
@@ -777,7 +806,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (error instanceof HttpError && error.status === 410) {
         updateJob(jobID, { expired: true });
       } else if (status.status === 'failed') {
-        updateJob(jobID, { failure: failureText(error, status.message || 'The job failed') });
+        updateJob(jobID, { failure: failureText(error, status.message || 'The job failed'), failureKind: failureKindOf(error) });
       } else {
         updateJob(jobID, { error: error instanceof Error ? error.message : String(error) });
       }
@@ -829,8 +858,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       bytes: null,
       resampled: null,
       failure: null,
+      failureKind: null,
       error: null,
       cancelling: false,
+      retrying: false,
+      retryRefused: false,
+      retryError: null,
       deleting: false,
       expired: over,
       tiles: null,
@@ -840,7 +873,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
 
   type NewJob = Pick<ShelfJob, 'jobID' | 'expires'> & Partial<ShelfJob> & { status: StatusInfo };
 
-  const addJob = ({ status, ...job }: NewJob) => {
+  const addJob = ({ status, ...job }: NewJob, replaces?: string) => {
     if (get().jobs.some((j) => j.jobID === job.jobID)) return;
     const blank: ShelfJob = {
       title: null,
@@ -855,10 +888,17 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       deletedUntil: null,
       serverDeleted: false,
       lost: false,
+      superseded: false,
       ...job,
     };
     blank.titleDefault = job.titleDefault ?? job.title ?? null;
-    set((s) => ({ jobs: [jobEntry(blank, status, Date.now()), ...s.jobs] }));
+    const entry = jobEntry(blank, status, Date.now());
+    set((s) => {
+      // A job that replaces another stands where it stood, and the old one goes aside, archived.
+      const at = replaces ? s.jobs.findIndex((j) => j.jobID === replaces) : -1;
+      const jobs = s.jobs.map((j) => (j.jobID === replaces ? { ...j, archived: true, superseded: true, retrying: false, retryError: null } : j));
+      return { jobs: at < 0 ? [entry, ...jobs] : [...jobs.slice(0, at), entry, ...jobs.slice(at)] };
+    });
     persist();
     follow(job.jobID);
   };
@@ -1523,6 +1563,51 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         for (const part of parts) await get().cancelJob(part.jobID);
       } finally {
         cancellingBatches.delete(batchId);
+      }
+    },
+    retryJob: async (jobID) => {
+      const job = get().jobs.find((j) => j.jobID === jobID);
+      if (!job?.order || job.retrying || !canRetry(job, Date.now(), orderRetired(job, get().descriptions))) return;
+      updateJob(jobID, { retrying: true, retryError: null });
+      try {
+        // The order as it was kept: the server may know its result already (a cache hit).
+        const status = await placeJob(job.order);
+        addJob(
+          {
+            jobID: status.jobID,
+            expires: status.expires,
+            status,
+            title: job.title,
+            titleDefault: job.titleDefault,
+            createdAt: job.createdAt,
+            groupId: job.groupId,
+            batchId: job.batchId,
+            part: job.part,
+            range: job.range,
+            order: job.order,
+          },
+          jobID,
+        );
+      } catch (error) {
+        // `410` with a reason: the dataset has left, so the order cannot be sent again and "Run again" goes.
+        const retired = error instanceof HttpError && error.status === 410 && error.detail !== undefined;
+        updateJob(jobID, { retrying: false, retryError: refusalMessage(error), ...(retired ? { retryRefused: true } : {}) });
+      }
+    },
+    retryBatch: async (batchId) => {
+      if (retryingBatches.has(batchId)) return;
+      retryingBatches.add(batchId);
+      try {
+        const now = Date.now();
+        const { jobs, descriptions } = get();
+        const parts = retryableParts(
+          jobs.filter((j) => j.batchId === batchId && !j.superseded),
+          now,
+          (part) => orderRetired(part, descriptions),
+        );
+        for (const part of parts) await get().retryJob(part.jobID);
+      } finally {
+        retryingBatches.delete(batchId);
       }
     },
     deleteTarget: async (target) => {
