@@ -5,8 +5,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncResultsOverlay } from './mapLayers';
-import { liveMap } from './fixtures/liveMap';
+import type { LayerOverlay } from './layers';
+import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, syncPreview, syncResultsOverlay } from './mapLayers';
+import { liveMap, lyr, pinned } from './fixtures/liveMap';
 import type { DownloadedInfo, StacItem } from './types';
 
 const dataset = () =>
@@ -180,5 +181,147 @@ describe('the quicklook of a ticked search result is the top layer', () => {
     syncResultsOverlay(live.map as never, { items: [], selectedIds: [], dataset: dataset() });
     expect(resultLayers(live)).toEqual([]);
     expect(live.stack.filter((id) => id === 'ticked-top')).toHaveLength(1);
+  });
+});
+
+// Otto, 28.10.2026 (zu #221, supplement to UI-02 8.10): from the top, the AOI and the drawing, the overlays, the live
+// preview of the processing panel (while the panel is open), the quicklooks of the ticked scenes, then the view, the
+// results and the pinned layers. A pinned preview is a layer of the manager and lies under the ticked quicklook.
+describe('the live preview of the processing panel', () => {
+  const ticked = ['S1'];
+  const tickedResults = (live: Live) => syncResultsOverlay(live.map as never, { items: [scene('S1'), scene('S2')], selectedIds: ticked, dataset: dataset() });
+  const previewOverlays = (n = 2): LayerOverlay[] =>
+    Array.from({ length: n }, (_, i) => ({
+      kind: 'raster' as const,
+      tileUrl: `/collections/optical/items/S${i}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual&op=band_math`,
+      bounds: [10, 47, 11, 48] as [number, number, number, number],
+      minZoom: 8,
+      maxZoom: 14,
+      preview: true as const,
+    }));
+  const live_ = (live: Live) => syncPreview(live.map as never, previewOverlays());
+  const previewLayers = (live: Live) => live.stack.filter((id) => id.startsWith('preview-lyr-'));
+
+  function expectOrder(live: Live) {
+    const previews = previewLayers(live);
+    expect(previews.length).toBeGreaterThan(0);
+    const lowest = Math.min(...previews.map((id) => index(live, id)));
+    const highest = Math.max(...previews.map((id) => index(live, id)));
+    // Over the ticked quicklook, over the view and the unticked quicklook, under the AOI and the outlines.
+    expect(index(live, 'res-tiles-lyr-0')).toBeLessThan(lowest);
+    expect(index(live, 'ticked-top')).toBeLessThan(index(live, 'res-tiles-lyr-0'));
+    expect(index(live, 'preview-base')).toBeGreaterThan(index(live, 'res-tiles-lyr-0'));
+    expect(index(live, 'preview-base')).toBeLessThan(lowest);
+    expect(Math.max(...viewLayers(live).map((id) => index(live, id)))).toBeLessThan(lowest);
+    expect(index(live, 'res-tiles-lyr-1')).toBeLessThan(lowest);
+    expect(highest).toBeLessThan(index(live, 'aoi-fill'));
+    expect(highest).toBeLessThan(index(live, 'mosaicsel-line'));
+  }
+
+  it.each([
+    ['the preview first', (live: Live) => { live_(live); view(live); tickedResults(live); }],
+    ['the preview last', (live: Live) => { view(live); tickedResults(live); live_(live); }],
+    ['the preview between', (live: Live) => { tickedResults(live); live_(live); view(live); }],
+    ['everything drawn again, the ticked quicklook after the preview', (live: Live) => {
+      live_(live);
+      view(live);
+      tickedResults(live);
+      live_(live);
+      view(live);
+      tickedResults(live);
+    }],
+  ])('lies over the quicklook of a ticked scene, with %s', (_name, draw) => {
+    const live = freshMap();
+    draw(live);
+    expectOrder(live);
+  });
+
+  it('after a style load, which lays the map\'s layers again and draws everything as `onStyleLoad` does', () => {
+    const live = freshMap();
+    live_(live);
+    view(live);
+    tickedResults(live);
+    const next = freshMap();
+    view(next);
+    tickedResults(next);
+    live_(next);
+    expectOrder(next);
+  });
+
+  it('lies over the quicklook of a ticked scene that is browsed, which arrives after the preview', () => {
+    const live = freshMap();
+    live_(live);
+    syncBrowseMosaic(live.map as never, { items: [scene('S2'), scene('S1')], selectedIds: ticked, dataset: dataset() });
+    const tickedLayer = index(live, 'm-tiles-lyr-1');
+    expect(tickedLayer).toBeLessThan(Math.min(...previewLayers(live).map((id) => index(live, id))));
+    expect(index(live, 'm-tiles-lyr-0')).toBeLessThan(tickedLayer);
+    expect(Math.max(...previewLayers(live).map((id) => index(live, id)))).toBeLessThan(index(live, 'aoi-fill'));
+  });
+
+  it('lies under the overlays, once their marker is on the map, and under the AOI', () => {
+    const live = freshMap();
+    live.map.addLayer({ id: 'overlays-base' }, 'aoi-fill');
+    live.map.addLayer({ id: 'labels' }, 'aoi-fill');
+    live_(live);
+    tickedResults(live);
+    const highest = Math.max(...previewLayers(live).map((id) => index(live, id)));
+    expect(highest).toBeLessThan(index(live, 'overlays-base'));
+    expect(index(live, 'overlays-base')).toBeLessThan(index(live, 'labels'));
+    expect(index(live, 'labels')).toBeLessThan(index(live, 'aoi-fill'));
+    expect(index(live, 'res-tiles-lyr-0')).toBeLessThan(Math.min(...previewLayers(live).map((id) => index(live, id))));
+  });
+
+  it('keeps its two layers in the order of the scenes: the first on top', () => {
+    const live = freshMap();
+    live_(live);
+    const urls = previewLayers(live).map((id) => (live.sources.get(live.layers.get(id)!.source!) as { tiles: string[] }).tiles[0]);
+    expect(urls[0]).toContain('/items/S1/');
+    expect(urls[1]).toContain('/items/S0/');
+  });
+
+  it('is gone with the panel and leaves the markers', () => {
+    const live = freshMap();
+    live_(live);
+    tickedResults(live);
+    syncPreview(live.map as never, []);
+    expect(previewLayers(live)).toEqual([]);
+    expect(live.stack.filter((id) => id === 'preview-base' || id === 'ticked-top')).toHaveLength(2);
+    expect(index(live, 'res-tiles-lyr-0')).toBeLessThan(index(live, 'preview-base'));
+  });
+
+  it('does not push the view, the results or a new quicklook over a preview that is on the map', () => {
+    const live = freshMap();
+    live_(live);
+    view(live);
+    results(live);
+    syncBrowseMosaic(live.map as never, { items: [scene('S3')], dataset: dataset() });
+    const lowest = Math.min(...previewLayers(live).map((id) => index(live, id)));
+    for (const id of [...viewLayers(live), ...resultLayers(live), ...live.stack.filter((layer) => layer.startsWith('m-tiles-lyr-'))]) {
+      expect(index(live, id)).toBeLessThan(lowest);
+    }
+  });
+
+  describe('a preview pinned to the layer manager', () => {
+    const pin = (live: Live) =>
+      syncLayers(live.map as never, [pinned('P', '/collections/optical/items/S1/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual&op=band_math', { derived: 'preview' })]);
+
+    it.each([
+      ['pinned first', (live: Live) => { pin(live); tickedResults(live); }],
+      ['pinned last', (live: Live) => { tickedResults(live); pin(live); }],
+    ])('lies under the quicklook of a ticked scene, %s', (_name, draw) => {
+      const live = freshMap();
+      draw(live);
+      expect(index(live, lyr('P'))).toBeLessThan(index(live, 'ticked-top'));
+      expect(index(live, lyr('P'))).toBeLessThan(index(live, 'res-tiles-lyr-0'));
+    });
+
+    it('lies under the live preview and under the view too', () => {
+      const live = freshMap();
+      live_(live);
+      view(live);
+      pin(live);
+      expect(index(live, lyr('P'))).toBeLessThan(Math.min(...viewLayers(live).map((id) => index(live, id))));
+      expect(index(live, lyr('P'))).toBeLessThan(Math.min(...previewLayers(live).map((id) => index(live, id))));
+    });
   });
 });

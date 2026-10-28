@@ -57,6 +57,12 @@ const RESULTS_TOP = 'results-top';
 // quicklooks and the pinned layers, whichever of them was drawn first (Otto, 27.10.2026, "immer der oberste Layer").
 // Every other raster of the app goes under this marker (`aboveAll`), the ticked quicklooks over it (`topOfAll`).
 const TICKED_TOP = 'ticked-top';
+// Right over the quicklooks of the ticked results (they go under it, `topOfAll`), under the AOI: the live preview of the
+// processing panel goes over this marker, so that it lies over the ticked quicklooks and under the overlays and the AOI
+// (Otto, 28.10.2026, supplement to UI-02 8.10). A pinned preview is a layer of the manager and lies under them all.
+const PREVIEW_BASE = 'preview-base';
+// Where the overlays (labels, graticule) of UI-02b begin, once they are there: the preview lies under this marker.
+const OVERLAYS_BASE = 'overlays-base';
 // Cache of processed quicklook data URLs, keyed by URL + the parameters that
 // change what gets drawn (freistellung threshold, AOI clip) so the same
 // source image loaded plain (browse mode, a pinned layer) and clipped to an
@@ -257,6 +263,7 @@ export function ensureBaseLayers(map: MapLibreMap): void {
     map.addLayer({ id: LAYERS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: RESULTS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: TICKED_TOP, type: 'background', layout: { visibility: 'none' } });
+    map.addLayer({ id: PREVIEW_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({
       id: 'aoi-fill',
       type: 'fill',
@@ -478,13 +485,19 @@ const underTheView = (map: MapLibreMap): string | undefined => (map.getLayer(RES
 const aboveAll = (map: MapLibreMap): string | undefined =>
   map.getLayer(TICKED_TOP) ? TICKED_TOP : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
-// Where the quicklook of a ticked search result goes: over the marker, under the AOI.
-const topOfAll = (map: MapLibreMap): string | undefined => (map.getLayer('aoi-fill') ? 'aoi-fill' : undefined);
+// Where the quicklook of a ticked search result goes: over `TICKED_TOP`, under the marker of the live preview.
+const topOfAll = (map: MapLibreMap): string | undefined =>
+  map.getLayer(PREVIEW_BASE) ? PREVIEW_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
-// Where a new raster goes: below the preview, which stays on top of whatever
-// loads after it (a quicklook is placed when its image has arrived).
+// Where the live preview goes: over everything raster, under the overlays and the AOI.
+const previewTop = (map: MapLibreMap): string | undefined =>
+  map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
+
+// Where a new raster goes: under the marker of the ticked quicklooks, and so under the preview, which lies over it. On a
+// map without the markers the preview stays on top of whatever loads after it (a quicklook is placed when its image has
+// arrived).
 const beforeAoi = (map: MapLibreMap): string | undefined =>
-  map.getLayer(`${PREVIEW_LYR}0`) ? `${PREVIEW_LYR}0` : aboveAll(map);
+  map.getLayer(TICKED_TOP) ? TICKED_TOP : map.getLayer(`${PREVIEW_LYR}0`) ? `${PREVIEW_LYR}0` : aboveAll(map);
 
 function clearPreview(map: MapLibreMap): void {
   for (let i = 0; i < MAX_MOSAIC_LAYERS; i++) {
@@ -501,7 +514,7 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
   clearPreview(map);
   // Drawn from the last scene to the first, so the first ends up topmost: the
   // order of the full-resolution view (`syncFocusRaster`). The lowest layer is
-  // `preview-lyr-0`, which `beforeAoi` keeps later rasters under.
+  // `preview-lyr-0`; on a map with the markers the preview lies over `PREVIEW_BASE`, over every other raster.
   [...overlays]
     .slice(0, MAX_MOSAIC_LAYERS)
     .reverse()
@@ -525,7 +538,7 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
           ...(overlay.hideFrom === undefined ? {} : { maxzoom: overlay.hideFrom }),
           paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
         },
-        aboveAll(map),
+        previewTop(map),
       );
     });
 }
