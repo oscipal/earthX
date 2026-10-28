@@ -1,6 +1,6 @@
 # NM4-29 — 512er-Kacheln prüfen
 
-**Stand:** 24.10.2026, beauftragt von Otto (Backlog-Punkt 29 in `docs/plans/nach-m4-backlog.md`).
+**Stand:** 28.10.2026, Plan zur Freigabe (§6–§14); bis zur Freigabe ist kein Produktivcode geändert. Beauftragt am 24.10.2026 von Otto (Backlog-Punkt 29 in `docs/plans/nach-m4-backlog.md`).
 **Stufe B:** Erst kommt der Plan im Draft-PR (Optionen, Empfehlung, bei Rechenrelevanz Quellen), Otto gibt ihn frei, dann folgt der Code in derselben Session.
 **Modell:** Opus für Messung und Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** nach dem Merge von NM4-26; nicht gleichzeitig mit NM4-04 oder NM4-19 (`tiler`).
