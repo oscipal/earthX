@@ -414,7 +414,7 @@ Das Skript sucht selbst eine Sentinel-2-Szene (Sommer 2025, höchstens 10 % Wolk
 
 Je Schritt eine Zeile `PASS …` oder `FAIL … (erwartet …, bekommen …)`, am Ende `ALL PASS` oder die Zahl der Fehler (Exit-Code 0 bzw. 1). Das Skript gibt keine Item-ID, keine Koordinate, keine Job-ID und keinen Hash aus. Parameter: `-ApiUrl` (Vorgabe `http://localhost:8000`), `-TilerUrl` (`http://localhost:8001`), `-JobTimeoutSeconds` (600).
 
-In der Sitzung nicht gelaufen (kein `pwsh`, kein Stack mit Zugang zur Quelle); was ungeprüft ist, steht im PR.
+In der Sitzung nicht gelaufen (kein `pwsh`, kein Stack mit Zugang zur Quelle). `backend/tests/test_nm4_19_check_script.py` prüft den Text auf das, was 5.1 nicht nimmt (nur ASCII, keine Syntax und keine Parameter von PowerShell 7), und lässt das Skript in der CI unter `pwsh` 7 gegen eine nachgestellte Plattform laufen (Suche, Route, Job, Ergebnis, `docker`-Log): alles grün, eine abweichende Statistik, ein Job ohne Ende, eine Koordinate im Log; keine Item-ID, Job-ID oder Koordinate in der Ausgabe. Was nur ein Lauf unter 5.1 gegen den echten Stack zeigt, steht im PR.
 
 ### 17.2 Review vor dem PR (Subagent `reviewer`, 28.10.2026)
 

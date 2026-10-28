@@ -229,7 +229,9 @@ Write-Host ''
 Write-Host '1. Szene suchen, Quadrate bilden' -ForegroundColor Cyan
 
 $box = ($SearchBox | ForEach-Object { Format-Number $_ }) -join ', '
-$search = '{"collections": ["' + $Dataset + '"], "bbox": [' + $box + '], "datetime": "' + $SearchPeriod + '", "limit": 30}'
+# The cloud filter of the search (DS-02, adr/0021); the script checks the cover itself as well.
+$search = '{"collections": ["' + $Dataset + '"], "bbox": [' + $box + '], "datetime": "' + $SearchPeriod + '", "limit": 30' +
+    ', "query": {"eo:cloud_cover": {"lte": ' + (Format-Number $MaxCloudPercent) + '}}}'
 $found = Invoke-Http -Method Post -Uri "$ApiUrl/stac/search" -Body $search -TimeoutSec 120
 if ($found.Status -ne 200) {
     Stop-Run 'Szene suchen' 'HTTP 200 (laeuft docker compose up -d --build?)' (Get-Detail $found)
