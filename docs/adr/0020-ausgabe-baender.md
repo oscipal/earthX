@@ -2,11 +2,12 @@
 
 - **Status:** **Angenommen** von Otto am 2026-10-28 (Entscheidungsvorlage
   Draft-PR #219).
-  - F1–F13 sind beantwortet, jeweils mit Option 1 außer **F7** (Option 2).
-    Ergänzungen zu F7, F9, F11 und F13 und die neue Aufgabenfolge stehen in
-    §15 und §15a.
-  - **F14** (§15a) ist offen und hält nur einen Teil von NM4-43c an
-    (Rezepte der Version 1 mit `reproject`).
+  - F1–F13 sind beantwortet, jeweils mit Option 1; **F7** gilt mit
+    Ausnahmen (Otto hat seine erste Antwort, Option 2, am selben Tag durch
+    „Option 1 mit Ausnahmen“ ersetzt). Ergänzungen zu F7, F9, F11 und F13 und
+    die neue Aufgabenfolge stehen in §15 und §15a.
+  - **F14** (§15a, Rezepte der Version 1 mit `reproject` im Runner) ist mit
+    Option 1 beantwortet.
   - Die Aufgaben NM4-43a bis NM4-43e sind in
     `plans/querschnitt/nm4-43-ausgabe-baender.md` §6 beschrieben, je mit
     Startsatz.
@@ -95,10 +96,10 @@ im Worker. `warp_bands.py` liest keine Quelle.
 
 ## 0. Kurzfassung
 
-Entschieden am 2026-10-28: Die Empfehlungen unten gelten, mit zwei
-Abweichungen und zwei Ergänzungen (Otto): **F7** hat Option 2 (Punkt 7),
-**F9** lässt den Runner Version 1 dauerhaft lesen (Punkt 9), **F11** und
-**F13** sind je eine eigene kleine Aufgabe (Punkt 10).
+Entschieden am 2026-10-28: Die Empfehlungen unten gelten, mit einer
+Abweichung und zwei Ergänzungen (Otto): **F7** gilt als Option 1 mit
+Ausnahmen (Punkt 7), **F9** lässt den Runner Version 1 dauerhaft lesen
+(Punkt 9), **F11** und **F13** sind je eine eigene kleine Aufgabe (Punkt 10).
 
 1. **Rezeptmodell (F1): ein Vorrat an benannten Bändern, weiter eine lineare
    Kette.** Am Anfang enthält der Vorrat die Bänder des Datensatzes,
@@ -139,11 +140,13 @@ Abweichungen und zwei Ergänzungen (Otto): **F7** hat Option 2 (Punkt 7),
 6. **Ausgabedatei (F6):** eine COG, ein Datentyp für alle Bänder nach den
    heutigen Regeln (meist `float32`, weil der Kern physikalische Werte liefert),
    mit Banddeskription, Einheit und nodata je Band.
-7. **Vorgabe der Ausgabe (F7, Option 2 von Otto):** Ohne `band_math` im
-   Rezept sind alle wählbaren Bänder angehakt (Hilfs-Assets nicht). Mit
-   `band_math` sind nur die Band-Math-Ergebnisse angehakt. Die Vorgabe wechselt,
-   wenn ein `band_math`-Schritt dazukommt oder wegfällt, aber nur solange der
-   Benutzer die Auswahl nicht selbst geändert hat (§9).
+7. **Vorgabe der Ausgabe (F7, Option 1 mit Ausnahmen, Otto):**
+   Band-Math-Ergebnisse sind immer vorausgewählt, auch nach Eingriffen des
+   Benutzers. Hat der Datensatz genau ein wählbares Band, ist es angehakt (wie
+   NM4-07). Sonst ist kein Band angehakt, auch nicht ohne `band_math`. Am Ende
+   des Panels stehen alle wählbaren Bänder unter der festen Überschrift
+   „Select Bands that are processed“ (immer sichtbar). „Start“ ist gesperrt,
+   solange die Ausgabe leer ist; der Grund steht im Tooltip (§9).
 8. **Vorschau (F8):** eine Auswahl „Show“ über die Bänder der Ausgabe, Vorgabe
    ist das letzte Band-Math-Ergebnis. Die Kachel rechnet nur dieses eine Band
    und liest nur, was es braucht. Derselbe Baustein dient am Ergebnis-Layer und
@@ -154,8 +157,9 @@ Abweichungen und zwei Ergänzungen (Otto): **F7** hat Option 2 (Punkt 7),
    (Datei, Permalink, Ablage), mit Hinweis. `api` deutet sie 30 Tage nach
    dem Umbau des Frontends noch um, danach weist sie sie mit Grund ab. **Der
    Runner liest Version 1 dauerhaft** (heruntergeladene `recipe.json` bleiben
-   lesbar, `adr/0016`); nach `reproject` können die Werte dabei abweichen (F14,
-   §15a).
+   lesbar, `adr/0016`); nach `reproject` Version 3 können die Werte dabei
+   abweichen, der Runner meldet es und nennt den Runner-Tag für bitgleiche
+   Werte (F14, §15a).
 10. **Schnitt (F10, F11, F13):** zuerst zwei kleine, voneinander und vom Rest
     unabhängige Aufgaben: **NM4-43a** Schätzung nach dem feinsten Asset und
     **NM4-43b** `reproject` Version 4 je Band. Danach **NM4-43c** Rezept und
@@ -621,7 +625,7 @@ gibt es bei Sentinel-2 also nicht; „`uint8`-Klassen neben `float32`“ schon.
 
 ## 9. Vorgabe der Ausgabe (Punkt 6)
 
-**Mit `band_math`** ist entschieden (Vorab fest 5): Angehakt sind nur die
+**Mit `band_math`** ist entschieden (Vorab fest 5): Angehakt sind die
 Band-Math-Ergebnisse. Offen war, was ohne `band_math` im Rezept angehakt ist
 (nur `reproject`, `mask`, `normalize` oder gar kein Schritt):
 
@@ -632,32 +636,36 @@ Band-Math-Ergebnisse. Offen war, was ohne `band_math` im Rezept angehakt ist
 | Einband-Datensatz (DEM) | das eine Band ist angehakt (Regel aus NM4-07) | gleich |
 | leerer Auftrag | „Start“ gesperrt, Tooltip „Pick at least one band for the output.“ | kommt zunächst nicht vor |
 
-**Empfehlung war O1. Entschieden hat Otto am 2026-10-28: O2** (F7). Die Regeln
-im Einzelnen:
+**Empfehlung war O1. Otto hat zuerst O2 gewählt und das am selben Tag (2026-10-28)
+durch „O1 mit Ausnahmen“ ersetzt** (F7). Es gilt:
 
-1. **Ohne `band_math` im Rezept** sind alle wählbaren Bänder angehakt.
-   „Wählbar“ ist, was „Select all bands“ heute nimmt (NM4-07, `adr/0014`
-   §15s): nicht die Hilfs-Assets aus `auxiliary_assets` (`visual`, `preview`)
-   und nicht die Maskenschicht (`scl`); beide bleiben in der Liste „Data“,
-   nicht angehakt, und lassen sich anklicken **(Auslegung, §15a)**.
-2. **Mit `band_math`** sind nur die Band-Math-Ergebnisse angehakt (Vorab fest 5).
-3. **Wechsel der Vorgabe:** Kommt der erste `band_math`-Schritt dazu oder fällt
-   der letzte weg, wechselt die Vorgabe zwischen 1 und 2, **aber nur solange
-   der Benutzer die Auswahl nicht selbst geändert hat.** Als eigene Änderung
-   zählt jeder Klick auf ein Band der Ausgabe, auf „All“ oder auf „None“. Das
-   Panel merkt sich dafür einen Zustand „automatisch“ oder „vom Benutzer
-   gesetzt“, kein Wert im Rezept.
-4. **Ein neuer `band_math`-Schritt hakt sein Ergebnis an**, auch nach einer
-   eigenen Änderung (Auslegung der Regel aus Vorab fest 5). **Wird ein
-   Schritt entfernt, verschwindet sein Band** aus der Ausgabe. Alles andere
-   bleibt, wie der Benutzer es gesetzt hat.
-5. **Leere Ausgabe:** „Start“ ist gesperrt, Tooltip „Pick at least one band for
-   the output.“ Ein leerer Auftrag wird nicht gestartet (Plan §3 Punkt 6).
-6. **Folge für breite Datensätze:** Hat ein Datensatz mehr wählbare Bänder, als
-   die Speichergrenze (§7) zulässt (etwa ein Asset mit 224 Bändern), wäre
-   die Vorgabe schon zu groß. „Start“ ist dann gesperrt, der Grund steht im
-   Tooltip, und der Benutzer nimmt Bänder heraus. Die Vorgabe wählt keine
-   stille Teilmenge.
+1. **Band-Math-Ergebnisse sind immer vorausgewählt.** Ein neues Ergebnis wird
+   angehakt, auch nach Eingriffen des Benutzers (Auslegung §15a, von Otto
+   angenommen); der Benutzer kann es danach abwählen. Wird ein Schritt
+   entfernt, verschwindet sein Band aus der Ausgabe.
+2. **Hat der Datensatz genau ein wählbares Band, ist es angehakt**, einmal je
+   Öffnen des Panels (Regel aus NM4-07: ein späteres „None“ bleibt stehen). Kommt
+   ein Ergebnis dazu, sind beide angehakt; das Quellband lässt sich abwählen
+   (Auslegung, §15a). „Wählbar“ ist, was „Select all bands“ heute nimmt (NM4-07,
+   `adr/0014` §15s): nicht die Hilfs-Assets aus `auxiliary_assets`
+   (`visual`, `preview`) und nicht die Maskenschicht (`scl`).
+3. **Sonst ist kein Band angehakt, auch nicht ohne `band_math`** (nur
+   `reproject`, `mask`, `normalize` oder kein Schritt). Die Wechselregel der
+   ersten Antwort (Vorgabe nach Schritten, Zustand „automatisch“ oder „vom
+   Benutzer gesetzt“) entfällt: Es gibt nur noch die Auswahl des Benutzers, das
+   automatische Anhaken eines neuen Ergebnisses und die Regel für das eine Band.
+4. **Feste Überschrift.** Am Ende des Panels stehen alle wählbaren Bänder des
+   Datensatzes unter der festen Überschrift „Select Bands that are processed“,
+   **immer sichtbar, unabhängig von der Auswahl.** Kein weiterer Hinweissatz im
+   Panel. Die Hilfs-Assets erscheinen dort nicht; die Maskenschicht steht in
+   der Liste, nicht angehakt (§12).
+5. **Leere Ausgabe:** „Start“ (bzw. „Run“) ist gesperrt, solange die Ausgabe
+   leer ist; der Grund steht im Tooltip: „Pick at least one band for the
+   output.“ Ein leerer Auftrag wird nicht gestartet (Plan §3 Punkt 6).
+6. **Breite Datensätze:** Es ist nichts vorausgewählt, die Vorgabe ist also nie
+   zu groß. „All“ wählt alle wählbaren Bänder; liegt die Auswahl über der
+   Speichergrenze (§7), ist „Start“ gesperrt und der Grund steht im Tooltip.
+   Es gibt keine stille Teilmenge.
 
 ---
 
@@ -781,10 +789,16 @@ Permalinks nach 30. Es gibt keine fremden API-Clients.
 sieht (§3.4); nach der Umdeutung sieht er nach dem Streichen unter Umständen
 weniger Bänder als in Version 1, und `reproject` Version 3 bleibt dabei die
 Version des Rezepts. Dann können sich die Werte ändern (bei Bilinear gemessen
-bis 1,5 % des Wertebereichs, §3.4). Der Runner sagt es in `provenance.methods`
-und in einer Meldung auf dem Bildschirm; die Werte des alten Laufs gibt der
-Runner-Tag der Zeit, der Rezepte der Version 1 weiter wie bisher rechnet
-(`adr/0016` §9).
+bis 1,5 % des Wertebereichs, §3.4). **Entschieden (Otto, F14, Option 1):**
+Hat ein Rezept der Version 1 einen Schritt `reproject` Version 3, meldet der
+Runner das kurz auf dem Bildschirm und schreibt dieselbe Meldung als Eintrag
+`notes` in `provenance.json` des Laufs. Sie sagt, dass Werte nach `reproject`
+abweichen können, und nennt den Runner-Tag für bitgleiche Werte, den der
+frühere Lauf benutzte: `earthx-runner:<Version aus source_engine.earthx>`
+(`adr/0016` §9; trägt das Rezept keine Version, steht „an older runner tag“).
+Beispiel: „Converted from recipe version 1. Values after reproject can differ;
+for identical values use earthx-runner:0.4.3.“ Die Umdeutung selbst bleibt wie
+oben.
 
 ---
 
@@ -856,7 +870,7 @@ PROCESSING                                   sentinel-2-c1-l2a · 1 scene
        (NDVI)                       ← Chips: Ergebnisse früherer Schritte
     Add step:  ＋ Band math   ＋ Mask   ＋ Normalize   ＋ Reproject
 
-  Output  ⓘ                                   2 bands · float32
+  Select Bands that are processed  ⓘ          2 bands · float32
     New    [✓ NDVI] [✓ NDWI]
     Data   [ coastal ] [ blue ] [ green ] [ red ] … [ scl ] [ cloud ] [ snow ]
            All
@@ -877,15 +891,16 @@ PROCESSING                                   sentinel-2-c1-l2a · 1 scene
   Grund im Tooltip, etwa „NDVI is used twice“.
 - **Chips am Schritt:** nur Ergebnisse früherer Schritte; gibt es keine, steht
   dort nichts.
-- **Output:** „New“ zeigt die Ergebnisse, „Data“ die Bänder des Datensatzes.
+- **Select Bands that are processed:** die feste Überschrift des Abschnitts am
+  Ende (immer sichtbar, kein Hinweissatz). „New“ zeigt die Ergebnisse, „Data“ die
+  Bänder des Datensatzes.
   Angehakte Bänder sind gefüllt (Stil der heutigen Chips). „All“ erscheint nur,
   wenn nicht alle angehakt sind, „None“ nur, wenn mindestens eines angehakt ist.
   Die Kopfzeile nennt Zahl und Typ.
-- **Vorgabe der Ausgabe (F7, §9):** Ohne `band_math` im Rezept sind alle
-  Bänder unter „Data“ angehakt, ausgenommen Hilfs-Assets und die
-  Maskenschicht; „New“ ist dann leer und erscheint nicht. Kommt ein
-  `band_math`-Schritt dazu, wechselt die Vorgabe auf „nur die Ergebnisse“,
-  solange der Benutzer nichts angeklickt hat.
+- **Vorgabe der Ausgabe (F7, §9):** Neue Ergebnisse sind angehakt. Hat der
+  Datensatz genau ein wählbares Band, ist es angehakt. Sonst ist nichts
+  angehakt, auch nicht ohne `band_math`; „New“ ist ohne Ergebnis leer und
+  erscheint nicht.
 - **Start ohne Ausgabe:** gesperrt, Tooltip „Pick at least one band for the
   output.“
 - **Speichergrenze (G2):** Würde der Auftrag sie überschreiten, ist „Start“
@@ -899,8 +914,9 @@ PROCESSING                                   sentinel-2-c1-l2a · 1 scene
 
 ## 15. Fragen an Otto — beantwortet am 2026-10-28
 
-Otto hat F1 bis F13 mit Option 1 beantwortet, außer **F7** (Option 2), und
-vier Ergänzungen gemacht (F7, F9, F11/F13, Messskripte). Die Fragen stehen mit
+Otto hat F1 bis F13 mit Option 1 beantwortet, mit Ausnahmen bei **F7**, und
+vier Ergänzungen gemacht (F7, F9, F11/F13, Messskripte). Die erste Antwort zu
+F7 (Option 2) hat er am selben Tag ersetzt; es gilt die Antwort unten. Die Fragen stehen mit
 ihrem ursprünglichen Wortlaut da; die Antwort folgt je Frage. Die Nummer der
 Antwort ist die Nummer in der Liste der Frage.
 
@@ -946,9 +962,9 @@ Antwort ist die Nummer in der Liste der Frage.
 
 **F7 — Was ist ohne `band_math` angehakt?**
 1. Nichts, außer der Datensatz hat genau ein Band; „Start“ gesperrt mit Grund (§9, O1) **(Empfehlung)**
-2. Alle Bänder (O2)
+2. Alle Bänder (O2) — Ottos erste Antwort, am selben Tag ersetzt
 
-**Antwort F7: (2)** (Otto) Alle wählbaren Bänder angehakt, wenn das Rezept kein `band_math` hat; Hilfs-Assets aus `auxiliary_assets` (`visual`, `preview`) nicht. Mit `band_math` gilt weiter: nur die Band-Math-Ergebnisse. Kommt ein `band_math`-Schritt dazu oder fällt er weg, wechselt die Vorgabe, aber nur solange der Benutzer die Auswahl nicht selbst geändert hat. Einzelheiten und Auslegungen: §9, §15a.
+**Antwort F7: (1) mit Ausnahmen** (Otto, ersetzt seine erste Antwort „Option 2“ vom selben Tag): Band-Math-Ergebnisse sind immer vorausgewählt (auch nach Eingriffen des Benutzers). Hat der Datensatz genau ein wählbares Band, ist es angehakt (wie NM4-07). Sonst ist kein Band angehakt, auch nicht ohne `band_math` (`reproject`, `mask`, `normalize` oder kein Schritt). Am Ende des Panels stehen alle wählbaren Bänder unter der festen Überschrift „Select Bands that are processed“ (immer sichtbar, unabhängig von der Auswahl). „Run“ bzw. der Start-Knopf ist gesperrt, solange die Ausgabe leer ist; der Grund steht im Tooltip. Die Wechselregel entfällt. Einzelheiten: §9.
 
 **F8 — Vorschau bei mehreren Bändern?**
 1. Ein Band, Auswahl „Show“ (Vorgabe letztes Ergebnis); dasselbe Dropdown am Ergebnis-Layer und in NM4-45; RGB später als eigene Aufgabe (§10, P1) **(Empfehlung)**
@@ -991,11 +1007,13 @@ Antwort ist die Nummer in der Liste der Frage.
 
 ---
 
-## 15a. Auflagen und Auslegungen (2026-10-28) und Frage F14
+## 15a. Auflagen, Auslegungen und Antwort zu F14 (2026-10-28)
 
 **Von Otto:**
 
-- **F7:** Option 2 mit der Wechselregel; Hilfs-Assets nicht angehakt.
+- **F7:** Option 1 mit Ausnahmen (§9): Ergebnisse immer vorausgewählt, ein
+  wählbares Band angehakt, sonst nichts; feste Überschrift „Select Bands that
+  are processed“; „Start“ gesperrt bei leerer Ausgabe. Ersetzt Option 2.
 - **F9:** Der Runner liest das alte Format dauerhaft; die Frist für `api` nennt
   dieses ADR (§11).
 - **F11, F13:** je eine eigene kleine Aufgabe, sofort startbar; danach
@@ -1005,27 +1023,33 @@ Antwort ist die Nummer in der Liste der Frage.
   ADR (Grenze der Cloud-Sitzung, `adr/0002`). Eingearbeitet in „Methode“ und §17.
 - **Status:** angenommen; Log-Zeile „entschieden“.
 
-**Auslegungen von Claude (Vorschlag, gelten bis Otto widerspricht):**
+**Auslegungen von Claude (von Otto am 2026-10-28 angenommen):**
 
 1. **F4:** `normalize` v2 bekommt das Feld `bands` schon mit NM4-43c, nicht erst
    mit NM4-11. Grund: Im Vorratsmodell würde `normalize` Version 1 sonst alle
    Bänder des Vorrats, auch die rohen Eingaben, mitrechnen und das Streichen
    verhindern. NM4-11 setzt die Methoden auf dasselbe Feld.
 2. **F7, „wählbar“:** Gemeint ist, was „Select all bands“ heute nimmt (ohne
-   Hilfs-Assets und ohne Maskenschicht). Die Maskenschicht `scl` ist also ohne
-   `band_math` nicht angehakt, aber wählbar (§9 Punkt 1). Wollte Otto sie
-   mit angehakt haben, ist das eine Zeile im Panel.
-3. **F7, eigene Änderung:** Jeder Klick auf ein Band der Ausgabe, „All“ oder
-   „None“ zählt als eigene Änderung; ein neues Band-Math-Ergebnis wird auch
-   danach angehakt, ein entferntes verschwindet (§9 Punkt 3 und 4).
+   Hilfs-Assets und ohne Maskenschicht). Die Maskenschicht `scl` ist also nie
+   vorausgewählt, aber in der Liste anklickbar (§9 Punkt 2 und 4).
+3. **F7, Eingriff des Benutzers:** Ein neues Band-Math-Ergebnis wird auch nach
+   Eingriffen des Benutzers angehakt, ein entferntes verschwindet (§9 Punkt 1).
 4. **F9, Dauer der Python-Umdeutung:** Sie bleibt wegen des Runners dauerhaft in
    `processing`; nur die Annahme in `api` endet mit der Frist.
+5. **Auflistung bis NM4-43e:** Die Prozessbeschreibung listet bis dahin weiter
+   Version 1 der Schritte; NM4-43e schaltet auf Version 2 um und beginnt die
+   Frist (§11, §13).
 
-**F14 — Rezepte der Version 1 mit `reproject` im Runner (offen).** Die
+**Auslegung von Claude zur neuen F7-Antwort (Vorschlag, gilt bis Otto
+widerspricht):** Bei einem Datensatz mit einem wählbaren Band sind das Band
+(einmal beim Öffnen) und ein neues Ergebnis zusammen angehakt; das Quellband
+lässt sich abwählen (§9 Punkt 2).
+
+**F14 — Rezepte der Version 1 mit `reproject` im Runner (beantwortet).** Die
 Umdeutung gibt bitgleiche Werte, außer nach `reproject` Version 3: Dessen Werte
 hängen an der Zahl der Bänder, die der Warp sieht (§3.4), und die Umdeutung
 streicht Bänder. Otto will, dass heruntergeladene Rezepte reproduzierbar bleiben
-(F9). Wie genau, ist offen:
+(F9). Wie genau, war offen:
 1. Umdeutung wie oben; der Runner sagt, dass Werte nach `reproject` abweichen
    können; die bitgleichen Werte gibt der Runner-Tag der Zeit, der Version 1
    weiter rechnet (`adr/0016` §9) **(Empfehlung)**
@@ -1035,8 +1059,10 @@ streicht Bänder. Otto will, dass heruntergeladene Rezepte reproduzierbar bleibe
 3. Version-1-Rezepte mit `reproject` im neuen Runner abweisen, mit Grund und
    dem Hinweis auf den alten Runner-Tag
 
-Die Frage hält nur den `reproject`-Teil der Umdeutung in NM4-43c an. Alles
-andere in NM4-43a bis NM4-43e ist davon unabhängig und kann starten.
+**Antwort F14: (1)** (Otto) Umdeutung. Bei Rezepten mit `reproject` Version 3
+meldet der Runner kurz, dass Werte nach `reproject` abweichen können, und nennt
+den Runner-Tag für bitgleiche Werte (`adr/0016` §9). Die Meldung steht auch in
+`provenance.json` des Laufs (§11).
 
 ---
 
