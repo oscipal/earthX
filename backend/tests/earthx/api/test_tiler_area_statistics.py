@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from rasterio.errors import RasterioIOError, WarpOperationError
 from rasterio.warp import transform_bounds
 from shapely.geometry import box, mapping
 
@@ -31,7 +32,7 @@ from earthx.api.area_statistics import (
 )
 from earthx.api.intake import estimate_order
 from earthx.api.processing_route import MAX_BODY_BYTES
-from earthx.api.tiler import build_app, statistics_cache
+from earthx.api.tiler import area_statistics_cache, build_app
 from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import UpstreamError
 from earthx.logging import JsonFormatter
@@ -179,10 +180,10 @@ def client(files: dict[str, Path], fetches: Fetches, monkeypatch: pytest.MonkeyP
 def cache(client: TestClient) -> FakeCache:
     fake = FakeCache()
 
-    async def provide() -> Iterator[FakeCache]:
-        yield fake
+    def provide() -> FakeCache:
+        return fake
 
-    client.app.dependency_overrides[statistics_cache] = provide
+    client.app.dependency_overrides[area_statistics_cache] = provide
     return fake
 
 
@@ -242,6 +243,39 @@ class TestAboveTheLimit:
         assert answer["bands"][0]["statistics"]["count"] > 0
 
 
+class TestReadFailures:
+    def test_a_read_failure_is_tried_once_more(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from earthx.processing import core
+
+        real, calls = core.area_statistics, []
+
+        def flaky(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RasterioIOError(f"HTTP response code on {sources.url('red')}")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(core, "area_statistics", flaky)
+        assert _post(client, _order()).status_code == 200
+        assert len(calls) == 2
+
+    @pytest.mark.parametrize(
+        ("error", "status"), [(RasterioIOError, 502), (WarpOperationError, 500)]
+    )
+    def test_a_failure_names_no_address_in_the_log(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, error: type, status: int
+    ) -> None:
+        def failing(*args, **kwargs):
+            raise error(f"HTTP response code on {sources.url('red')}")
+
+        monkeypatch.setattr("earthx.processing.core.area_statistics", failing)
+        with caplog.at_level(logging.DEBUG):
+            response = _post(client, _order())
+        assert response.status_code == status
+        text = " ".join(JsonFormatter().format(record) for record in caplog.records)
+        assert sources.HOST not in text and sources.HOST not in response.text
+
+
 class TestBeforeAnyItemIsFetched:
     @pytest.mark.parametrize(
         ("document", "status", "words"),
@@ -272,6 +306,34 @@ class TestBeforeAnyItemIsFetched:
         response = _post(client, b" " * (MAX_AREA_BODY_BYTES + 1))
         assert response.status_code == 413
         assert fetches.asked == []
+
+    def test_a_body_without_a_length_is_cut_off_while_it_is_read(self, client: TestClient, fetches: Fetches) -> None:
+        def chunks() -> Iterator[bytes]:
+            for _ in range(MAX_AREA_BODY_BYTES // 65536 + 2):
+                yield b" " * 65536
+
+        response = client.post(ROUTE, content=chunks(), headers={"content-type": "application/json"})
+        assert response.status_code == 413
+        assert fetches.asked == []
+
+    @pytest.mark.parametrize("depth", [600, 5000, 200_000])
+    def test_an_order_nested_too_deeply(self, client: TestClient, fetches: Fetches, depth: int) -> None:
+        nested = "[" * depth + "]" * depth
+        body = json.dumps(_order()).replace('"coordinates": [[', f'"coordinates": [{nested}, [', 1)
+        response = _post(client, body.encode())
+        assert response.status_code in (400, 422), response.text
+        assert fetches.asked == []
+
+    def test_the_positions_of_a_multipolygon_count_together(self) -> None:
+        ring = [[9.0, 47.0]] * 10_000
+        assert area_module._positions([[ring], [ring]]) == 20_000
+        assert area_module._positions([[ring], [ring + [[9.0, 47.0]]]]) == 20_001
+        assert area_module._positions("not an array") == 0
+
+    def test_exactly_the_limit_of_positions_goes_on_to_the_intake(self, client: TestClient, fetches: Fetches) -> None:
+        ring = [[9.0 + i * 1e-6, 47.0] for i in range(19_998)] + [[9.0, 47.1], [9.0, 47.0]]
+        response = _post(client, _order(aoi={"type": "Polygon", "coordinates": [ring]}))
+        assert response.status_code != 413
 
     def test_the_cap_is_the_job_routes(self) -> None:
         assert MAX_AREA_BODY_BYTES == MAX_BODY_BYTES
@@ -345,10 +407,10 @@ class TestTheCache:
     def test_a_cache_that_fails_still_answers(self, client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
         failing = FakeCache(fail=True)
 
-        async def provide() -> Iterator[FakeCache]:
-            yield failing
+        def provide() -> FakeCache:
+            return failing
 
-        client.app.dependency_overrides[statistics_cache] = provide
+        client.app.dependency_overrides[area_statistics_cache] = provide
         with caplog.at_level(logging.WARNING, logger="earthx.api.area_statistics"):
             response = _post(client, _order())
         assert response.status_code == 200
@@ -377,7 +439,8 @@ class TestNothingOfTheAreaLeaves:
             root.removeHandler(handler)
             root.setLevel(previous)
 
-    def test_no_line_names_the_area_an_item_or_the_key(self, client: TestClient, cache: FakeCache, lines: list[str]) -> None:
+    def test_no_line_names_the_area_or_the_key(self, client: TestClient, cache: FakeCache, lines: list[str]) -> None:
+        """Item ids are no secret of this route: a refusal of the intake names one, as it does for a job (§17.2)."""
         assert _post(client, _order()).status_code == 200
         assert _post(client, _order(items=("NOWHERE",))).status_code == 422
         (key,) = cache.stored
@@ -386,7 +449,9 @@ class TestNothingOfTheAreaLeaves:
             payload = json.loads(line)
             payload.pop("timestamp", None)
             text = json.dumps(payload)
-            assert AOI_DIGITS not in text and key not in text and "ITEM_A" not in text
+            assert AOI_DIGITS not in text and key not in text
+            if payload["message"] == "area statistics measured":
+                assert "ITEM_A" not in text
 
     def test_the_access_log_names_the_route(self, client: TestClient, lines: list[str]) -> None:
         _post(client, _order())

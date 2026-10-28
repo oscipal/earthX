@@ -26,7 +26,7 @@ from typing import Any
 import rasterio
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from rasterio.errors import RasterioIOError
+from rasterio.errors import RasterioError, RasterioIOError
 from starlette.concurrency import run_in_threadpool
 
 import earthx
@@ -98,12 +98,20 @@ async def _read_body(request: Request) -> bytes:
 
 
 def _positions(coordinates: Any) -> int:
-    """How many positions a GeoJSON ``coordinates`` array holds; what is not one the intake refuses later."""
-    if isinstance(coordinates, list) and coordinates and all(isinstance(value, (int, float)) for value in coordinates):
-        return 1
-    if isinstance(coordinates, list):
-        return sum(_positions(item) for item in coordinates)
-    return 0
+    """How many positions a GeoJSON ``coordinates`` array holds; what is not one the intake refuses later.
+
+    Without recursion, so that an array nested a thousand deep is counted, not a ``RecursionError``.
+    """
+    count, pending = 0, [coordinates]
+    while pending:
+        value = pending.pop()
+        if not isinstance(value, list):
+            continue
+        if value and all(isinstance(number, (int, float)) for number in value):
+            count += 1
+        else:
+            pending.extend(value)
+    return count
 
 
 def _check_order(raw: bytes, dataset: str) -> None:
@@ -115,6 +123,8 @@ def _check_order(raw: bytes, dataset: str) -> None:
         order = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError):
         raise HTTPException(status_code=400, detail="the order is not JSON") from None
+    except RecursionError:
+        raise HTTPException(status_code=400, detail="the order is nested too deeply") from None
     if not isinstance(order, dict):
         raise HTTPException(status_code=422, detail="the order is a JSON object")
     aoi = order.get("aoi")
@@ -140,6 +150,10 @@ def _measure(recipe: Any, env: dict[str, str]) -> Any:
             if attempt + 1 == _READ_ATTEMPTS:
                 raise HTTPException(status_code=502, detail="the asset could not be read from the source") from None
             LOGGER.warning("could not read the asset from the source, retrying once")
+        except RasterioError as error:
+            # Not the tiler's handler, which logs the traceback: GDAL's text can name the address here too.
+            LOGGER.error("the asset could not be processed", extra={"error_type": type(error).__name__})
+            raise HTTPException(status_code=500, detail="the asset could not be processed") from None
     raise AssertionError("unreachable")
 
 
@@ -186,7 +200,7 @@ async def _store(cache: StatsCache | None, key: str, value: dict[str, Any], data
 
 
 def area_statistics_endpoint(cache_dependency: Callable[..., Any]) -> Callable[..., Any]:
-    """The route, with the statistics cache of the tiler (``api.tiler.statistics_cache``) as its dependency."""
+    """The route, with the statistics cache of the tiler (``api.tiler.area_statistics_cache``) as its dependency."""
 
     async def area_statistics_route(
         request: Request, dataset: str, cache: StatsCache | None = Depends(cache_dependency)
