@@ -183,6 +183,13 @@ class TestARecipe:
         recipe = recipe_data(steps=[])
         assert recipe_of_any_version(json.dumps(recipe), REGISTRY).output.bands == ["red", "nir"]
 
+    @pytest.mark.parametrize("op", ["band_math", "mask", "normalize"])
+    def test_a_step_of_version_2_in_a_document_of_version_1_is_refused(self, op: str) -> None:
+        params = {"band_math": {"expression": "red", "name": "Red"}, "mask": {"source": "scl", "classes": [3]}}
+        document = _order([_step(op, 2, **params.get(op, {"bands": ["red"], **NORMALIZE}))])
+        with pytest.raises(RecipeInvalid, match="not a document of recipe version 1"):
+            upgrade_order(document)
+
     def test_text_that_is_no_recipe_is_refused(self) -> None:
         with pytest.raises(RecipeInvalid):
             recipe_of_any_version("[1, 2]", REGISTRY)

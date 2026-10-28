@@ -55,6 +55,9 @@ NamesOf = Callable[[str], Sequence[str]]
 
 _NOT_VERSION_1 = "not a document of recipe version 1"
 
+#: The operators that exist in version 1 and in version 2; version 1 knows their first version only.
+_BANDS_STEPS = ("band_math", "mask", "normalize")
+
 #: The versions of ``reproject`` that warp all bands of the stock at once (version 4 warps each for itself).
 _ALL_BANDS_WARPS = (2, 3)
 
@@ -107,6 +110,9 @@ def _chain(document: Mapping[str, Any], stock: list[str]) -> tuple[list[dict[str
         step = dict(_mapping(raw))
         op, version = step.get("op"), step.get("op_version")
         params = step.get("params")
+        if op in _BANDS_STEPS and (version != 1 or not isinstance(params, Mapping)):
+            # A step of version 2 belongs to a document of version 2: this one would run without the checks of either.
+            raise RecipeInvalid(_NOT_VERSION_1)
         if version != 1 or not isinstance(params, Mapping):
             rewritten.append(step)
             continue

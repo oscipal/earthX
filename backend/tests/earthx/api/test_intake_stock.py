@@ -233,6 +233,13 @@ class TestVersion1WhileItIsTaken:
         accepted = await accept(self._v1([], ("red", "nir")), Source((S2, _item())), operators=intake_operators())
         assert accepted.recipe.output.bands == ["red", "nir"]
 
+    async def test_a_multi_band_asset_of_an_order_of_version_1_is_the_numbered_bands_of_the_item(self) -> None:
+        item = _item()
+        item["assets"]["visual"] = {**item["assets"]["red"], "raster:bands": [{"data_type": "uint8"}] * 3, "gsd": 10}
+        accepted = await accept(self._v1([], ("visual",)), Source((S2, item)), operators=intake_operators())
+        assert accepted.recipe.output.bands == ["visual_1", "visual_2", "visual_3"]
+        assert accepted.recipe.inputs[0].assets == ["visual"]
+
     async def test_a_zarr_key_with_variables_is_the_bands_of_those_variables(self) -> None:
         accepted = await accept(self._v1([], ("SR_10m:b04,b08",)) | {"inputs": [{"name": "scene", "dataset": ZARR_ID, "groups": [["ZARR_A"]], "assets": ["SR_10m:b04,b08"]}]}, Source((ZARR, zarr_item())))
         assert accepted.recipe.output.bands == ["b04", "b08"]
