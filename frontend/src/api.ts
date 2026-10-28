@@ -611,14 +611,12 @@ export interface CoverageParams {
   zoom: number;
   bbox?: Bbox;
   datetime?: string;
-  maxCloudCover?: number;
 }
 
 export function buildCoverageUrl(p: CoverageParams): string {
   const params = new URLSearchParams({ zoom: String(p.zoom) });
   if (p.bbox) params.set('bbox', p.bbox.join(','));
   if (p.datetime) params.set('datetime', p.datetime);
-  if (p.maxCloudCover !== undefined) params.set('max_cloud_cover', String(p.maxCloudCover));
   return `${BASE}/coverage/${encodeURIComponent(p.datasetId)}?${params.toString()}`;
 }
 
