@@ -27,8 +27,8 @@ from earthx.processing.plan import (
     segments,
     split_tiers,
 )
-from earthx.processing.recipe import Step, recipe_from_data
-from tests.earthx.processing.recipes import crop_data, recipe_data, resolved
+from earthx.processing.recipe import Step
+from tests.earthx.processing.recipes import crop_data, recipe_data, recipe_data_v1, recipe_of_data, resolved
 from tests.earthx.processing.testops import OPERATORS
 
 SCALE = Step(op="scale", op_version=1, params={"factor": 2.0})
@@ -109,7 +109,7 @@ class TestCropWindow:
 
 class TestEstimate:
     def test_a_band_math_like_run(self) -> None:
-        cost = estimate(recipe_from_data(recipe_data(), OPERATORS), OPERATORS)
+        cost = estimate(recipe_of_data(recipe_data(), OPERATORS), OPERATORS)
         assert cost.assets == 2
         assert cost.input_bytes == cost.input_pixels * 2  # uint16
         # One asset's grid: the input is counted by the conservative rule of the crops, the output by the
@@ -124,18 +124,18 @@ class TestEstimate:
             {"op": "scale", "op_version": 1, "params": {"factor": 2.0}},
             {"op": "coarsen", "op_version": 1, "params": {"factor": 2}},
         ]
-        plain = estimate(recipe_from_data(recipe_data(), OPERATORS), OPERATORS)
-        coarse = estimate(recipe_from_data(recipe_data(steps=steps), OPERATORS), OPERATORS)
+        plain = estimate(recipe_of_data(recipe_data(), OPERATORS), OPERATORS)
+        coarse = estimate(recipe_of_data(recipe_data(steps=steps), OPERATORS), OPERATORS)
         assert coarse.output_pixels < plain.output_pixels / 3
         assert coarse.units == pytest.approx(coarse.output_pixels / 1e6 * 1.4)
 
     def test_a_raster_without_step_counts_the_statistics_pass(self) -> None:
-        cost = estimate(recipe_from_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
+        cost = estimate(recipe_of_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
         assert RASTER_WITHOUT_STEP_FACTOR == 1.0  # the crop's 0.9 with the statistics pass, adr/0014 §15k
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * RASTER_WITHOUT_STEP_FACTOR)
 
     def test_an_export_writes_no_statistics_and_keeps_its_factor(self) -> None:
-        cost = estimate(recipe_from_data(crop_data(), OPERATORS), OPERATORS)
+        cost = estimate(recipe_of_data(crop_data(), OPERATORS), OPERATORS)
         assert EXPORT_FACTOR == 0.9
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * EXPORT_FACTOR)
 
@@ -145,11 +145,11 @@ class TestEstimate:
         for index in unknown:
             data["inputs"][0]["resolved"][index]["gsd"] = None
         with pytest.raises(UnsupportedRecipe, match=r"pixel size of asset '(red|nir)'.*no gsd"):
-            estimate(recipe_from_data(data, OPERATORS), OPERATORS)
+            estimate(recipe_of_data(data, OPERATORS), OPERATORS)
 
     def test_band_math_has_one_float_band_whatever_the_inputs_are(self) -> None:
         step = {"op": "band_math", "op_version": 1, "params": {"expression": "(nir - red) / (nir + red)"}}
-        cost = estimate(recipe_from_data(recipe_data(steps=[step]), REGISTRY), REGISTRY)
+        cost = estimate(recipe_of_data(recipe_data_v1(steps=[step]), REGISTRY), REGISTRY)
         assert cost.output_bytes == cost.output_pixels * 4
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.2)  # band math's factor (adr/0014 §15k)
 
@@ -163,17 +163,17 @@ class TestEstimate:
         data = recipe_data(steps=[step])
         for entry in data["inputs"][0]["resolved"]:
             entry["asset"]["crs"], entry["gsd"] = "EPSG:4326", 30.0
-        cost = estimate(recipe_from_data(data, REGISTRY), REGISTRY)
+        cost = estimate(recipe_of_data(data, REGISTRY), REGISTRY)
         # Same ground, same pixel size: about as many pixels out as in one asset's grid, not thousands of times more.
         one_asset = cost.input_pixels // 2
         assert one_asset / 2 < cost.output_pixels < one_asset * 2
 
     def test_the_estimate_does_not_reject_a_name_it_cannot_know(self) -> None:
         """An estimate falls back to the asset key for an asset whose bands only the file names."""
-        data = recipe_data(steps=[{"op": "band_math", "op_version": 1, "params": {"expression": "red + nir"}}])
+        data = recipe_data_v1(steps=[{"op": "band_math", "op_version": 1, "params": {"expression": "red + nir"}}])
         for entry in data["inputs"][0]["resolved"]:
             entry["bands"], entry["scaling"] = [], "none"
-        assert estimate(recipe_from_data(data, REGISTRY), REGISTRY).output_pixels > 0
+        assert estimate(recipe_of_data(data, REGISTRY), REGISTRY).output_pixels > 0
 
 
 class TestTheCapOfARasterJob:
@@ -182,12 +182,12 @@ class TestTheCapOfARasterJob:
     BIG = {"type": "Polygon", "coordinates": [[[5.0, 45.0], [10.0, 45.0], [10.0, 50.0], [5.0, 50.0], [5.0, 45.0]]]}
 
     def test_a_job_over_the_cap_is_refused_with_the_size(self) -> None:
-        recipe = recipe_from_data(recipe_data(aoi=self.BIG), OPERATORS)
+        recipe = recipe_of_data(recipe_data(aoi=self.BIG), OPERATORS)
         with pytest.raises(JobTooLarge, match="more than the 5000 MB a job may write"):
             estimate(recipe, OPERATORS)
 
     def test_the_cap_holds_to_the_byte(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        recipe = recipe_from_data(recipe_data(), OPERATORS)
+        recipe = recipe_of_data(recipe_data(), OPERATORS)
         cost = estimate(recipe, OPERATORS)
         total = cost.output_bytes + cost.output_pixels
         monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", total)
@@ -199,11 +199,11 @@ class TestTheCapOfARasterJob:
     def test_the_size_that_counts_is_the_output_after_the_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A coarser grid makes the job smaller, so what is refused as it stands may pass with a step."""
         steps = [{"op": "coarsen", "op_version": 1, "params": {"factor": 16}}]
-        plain = estimate(recipe_from_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
+        plain = estimate(recipe_of_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
         monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", (plain.output_bytes + plain.output_pixels) // 2)
         with pytest.raises(JobTooLarge):
-            estimate(recipe_from_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
-        assert estimate(recipe_from_data(recipe_data(steps=steps), OPERATORS), OPERATORS).output_pixels > 0
+            estimate(recipe_of_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
+        assert estimate(recipe_of_data(recipe_data(steps=steps), OPERATORS), OPERATORS).output_pixels > 0
 
     def test_an_export_keeps_its_own_error_class(self) -> None:
         from earthx.processing.errors import ExportTooLarge
@@ -215,11 +215,11 @@ class TestAMosaicIsEstimatedOnce:
     def test_the_assets_of_the_scenes_count_once_in_the_bands_and_pixels_and_all_in_the_opens(self) -> None:
         from tests.earthx.processing.recipes import resolved
 
-        one = estimate(recipe_from_data(recipe_data(), OPERATORS), OPERATORS)
+        one = estimate(recipe_of_data(recipe_data(), OPERATORS), OPERATORS)
         data = recipe_data()
         data["inputs"][0]["groups"] = [["ITEM_A", "ITEM_B"]]
         data["inputs"][0]["resolved"] += [resolved("ITEM_B", "red"), resolved("ITEM_B", "nir")]
-        two = estimate(recipe_from_data(data, OPERATORS), OPERATORS)
+        two = estimate(recipe_of_data(data, OPERATORS), OPERATORS)
         assert two.input_pixels == one.input_pixels and two.input_bytes == one.input_bytes
         assert two.output_pixels == one.output_pixels and two.output_bytes == one.output_bytes
         assert two.assets == 2 * one.assets
@@ -228,12 +228,12 @@ class TestAMosaicIsEstimatedOnce:
     def test_the_bands_of_a_mosaic_are_the_bands_of_one_scene(self) -> None:
         from tests.earthx.processing.recipes import resolved
 
-        data = recipe_data(
+        data = recipe_data_v1(
             steps=[{"op": "band_math", "op_version": 1, "params": {"expression": "(nir - red) / (nir + red)"}}]
         )
         data["inputs"][0]["groups"] = [["ITEM_A", "ITEM_B"]]
         data["inputs"][0]["resolved"] += [resolved("ITEM_B", "red"), resolved("ITEM_B", "nir")]
-        check_bands(recipe_from_data(data, REGISTRY), REGISTRY)  # no `red_2`: the names are one scene's
+        check_bands(recipe_of_data(data, REGISTRY), REGISTRY)  # no `red_2`: the names are one scene's
 
 
 class TestTheRasterIsTheFinestAsset:
@@ -251,9 +251,10 @@ class TestTheRasterIsTheFinestAsset:
             entry["gsd"] = gsd
             entries.append(entry)
         data = recipe_data(steps=[], **options)
+        data["output"]["bands"] = list(gsds)
         data["inputs"][0]["assets"] = list(gsds)
         data["inputs"][0]["resolved"] = entries
-        return recipe_from_data(data, OPERATORS)
+        return recipe_of_data(data, OPERATORS)
 
     @pytest.mark.parametrize("order", [["coastal", "red"], ["red", "coastal"]])
     def test_the_order_of_the_assets_changes_no_number(self, order: list[str]) -> None:
@@ -336,7 +337,7 @@ class TestTheEstimateOnAGeographicGrid:
             "version": None, "bands": [], "scaling": "none", "gsd": gsd,
         }  # fmt: skip
         step = {"op": "reproject", "op_version": 2, "params": {"crs": target, "resolution": resolution, "resampling": "bilinear"}}
-        return recipe_from_data(
+        return recipe_of_data(
             {
                 "recipe_version": 1,
                 "inputs": [{"name": "dem", "dataset": "synthetic", "groups": [["T"]], "assets": ["data"], "resolved": [entry]}],
@@ -369,7 +370,7 @@ class TestTheEstimateOnAGeographicGrid:
 class TestCheckBands:
     def _recipe(self, expression: str, **options):
         step = {"op": "band_math", "op_version": 1, "params": {"expression": expression}}
-        return recipe_from_data(recipe_data(steps=[step], **options), REGISTRY)
+        return recipe_of_data(recipe_data_v1(steps=[step], **options), REGISTRY)
 
     def test_the_names_of_the_assets_pass(self) -> None:
         check_bands(self._recipe("(nir - red) / (nir + red)"), REGISTRY)
@@ -379,16 +380,18 @@ class TestCheckBands:
             check_bands(self._recipe("swir + red"), REGISTRY)
 
     def test_the_output_of_one_step_is_the_input_of_the_next(self) -> None:
-        data = recipe_data(
+        data = recipe_data_v1(
             steps=[
                 {"op": "band_math", "op_version": 1, "params": {"expression": "nir - red"}},
                 {"op": "band_math", "op_version": 1, "params": {"expression": "band_math * 2"}},
             ]
         )
-        check_bands(recipe_from_data(data, REGISTRY), REGISTRY)
-        data["steps"][1]["params"]["expression"] = "red * 2"
-        with pytest.raises(RecipeInvalid, match="red"):
-            check_bands(recipe_from_data(data, REGISTRY), REGISTRY)
+        check_bands(recipe_of_data(data, REGISTRY), REGISTRY)
+        # Version 1 refused `red` after a band math (only the result was left); the rewrite does not judge version 1,
+        # and in the stock `red` is still there. A name nobody has is refused as before.
+        data["steps"][1]["params"]["expression"] = "swir * 2"
+        with pytest.raises(RecipeInvalid, match="swir"):
+            check_bands(recipe_of_data(data, REGISTRY), REGISTRY)
 
     def test_an_asset_whose_bands_only_the_file_knows_is_not_judged(self) -> None:
         recipe = self._recipe("anything_at_all + red")
@@ -411,4 +414,4 @@ class TestCheckBands:
         return recipe
 
     def test_a_recipe_without_steps_has_nothing_to_check(self) -> None:
-        check_bands(recipe_from_data(recipe_data(steps=[]), REGISTRY), REGISTRY)
+        check_bands(recipe_of_data(recipe_data(steps=[]), REGISTRY), REGISTRY)
