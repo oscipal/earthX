@@ -27,7 +27,6 @@ from earthx.api.tiler import MAX_OPERATOR_PARAMS_CHARS, MAX_OPERATOR_STEPS, buil
 from earthx.gateway import check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
-from earthx.processing.recipe import recipe_from_data
 from tests.earthx.api.test_tiler_mask_normalize import (
     COG,
     ITEM,
@@ -40,7 +39,7 @@ from tests.earthx.api.test_tiler_mask_normalize import (
 )
 from tests.earthx.api.test_tiler_operator import _BAND, HEIGHT, NATIVE, NDVI, WIDTH, _source_position, _tiles
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.test_mask import scl_layer
 from tests.earthx.readers import mini_zarr, mini_zarr_cf
 
@@ -180,7 +179,7 @@ class TestTheChainEqualsTheJobOnTheNativeLevel:
         ids=["mask, band math", "mask, normalize", "mask, band math, normalize", "normalize, band math"],
     )
     def test_cog_pair_with_a_nested_layer(self, client: TestClient, tmp_path: Path, assets, chain, size: int) -> None:
-        result = run(recipe_from_data(_recipe(assets, chain), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
+        result = run(recipe_of_data(_recipe(assets, chain), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
         compared = masked = 0
         for tile in _tiles(NATIVE[size]):
             response = client.get(_url(tile, chain, assets=assets, size=size))
@@ -280,9 +279,10 @@ class TestTheChainEqualsTheJobOnZarr:
         tile = WEB_MERCATOR_TMS.tile((west + east) / 2, (south + north) / 2, NATIVE[size])
         key = ("r10m:b04,b08", "scl20m:scl")
         result = run(
-            recipe_from_data(_zarr_recipe(expression), OPERATORS), workdir=tmp_path, progress=lambda d, t: None
+            recipe_of_data(_zarr_recipe(expression), OPERATORS), workdir=tmp_path, progress=lambda d, t: None
         )
-        assert result.meta.resampled is True and [band.name for band in result.meta.bands] == ["band_math"]
+        # The coarser layer only hides pixels, the index is computed on bands of one grid: nothing is marked (backlog 51).
+        assert result.meta.resampled is False and [band.name for band in result.meta.bands] == ["band_math"]
         response = client.get(
             _url(
                 (tile.z, tile.x, tile.y),
