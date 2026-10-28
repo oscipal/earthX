@@ -369,6 +369,20 @@ class TestTheTileJson:
         assert template.startswith("http://testserver" + BASE + "/tiles/WebMercatorQuad/{z}/{x}/{y}")
         assert template.count("item=") == 3 and f"asset={ASSET}" in template
 
+    def test_its_tiles_are_512_px_unless_asked_for_256(self, scenes: Scenes, client) -> None:
+        """The viewer draws a mosaic at 512 px (NM4-29 §15); the document hands out the same tiles."""
+        _seam(scenes)
+        api = client()
+        (default,) = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).json()["tiles"]
+        (asked,) = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"], tilesize="256")).json()[
+            "tiles"
+        ]
+        assert "tilesize=512" in default and "tilesize=256" in asked
+
+    def test_a_tile_of_512_px_is_512_px(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        assert _array(client().get(_tile_path(), params=_query(["WEST", "EAST"], tilesize="512"))).shape[-2:] == (512, 512)
+
     def test_the_order_is_the_jobs_not_the_urls(self, scenes: Scenes, client) -> None:
         scenes.add("A", ZONE_33, 500_000.0, 4000.0, 1, top=5_700_000.0)
         scenes.add("B", ZONE_32, SEAM_X, 4000.0, 2)
@@ -550,12 +564,15 @@ class TestNothingIsFetchedForARequestThatIsRefused:
             (f"{BASE}/tiles/WebMercatorQuad/abc/{TILE.x}/{TILE.y}.png", {}),
             (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "0"}),
             (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "big"}),
+            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "1024"}),
+            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "4096"}),
             (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"bidx": "first"}),
             (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"resampling": "magic"}),
             (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"padding": "wide"}),
             (f"{BASE}/NoSuchGrid/tilejson.json", {}),
             (f"{BASE}/WebMercatorQuad/tilejson.json", {"minzoom": "low"}),
             (f"{BASE}/WebMercatorQuad/tilejson.json", {"tilesize": "0"}),
+            (f"{BASE}/WebMercatorQuad/tilejson.json", {"tilesize": "4096"}),
             (f"{BASE}/WebMercatorQuad/tilejson.json", {"tile_format": "gif"}),
         ],
     )

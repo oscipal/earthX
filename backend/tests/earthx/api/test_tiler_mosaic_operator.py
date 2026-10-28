@@ -59,6 +59,8 @@ REGISTRY = DatasetRegistry(
 POOL = object()  # a stand-in for the cache pool: the route only asks whether there is one
 TMS = morecantile.tms.get("WebMercatorQuad")
 ZOOM = 14
+# The native level per tile size: 512 px at z13 has the pixels of 256 px at z14 (NM4-29 §15).
+NATIVE = {256: 14, 512: 13}
 ZONE_32 = sources.CRS
 X0, Y0 = sources.ORIGIN_X, sources.ORIGIN_Y
 WIDTH, HEIGHT = 400, 300  # pixels of 10 m per scene
@@ -202,8 +204,11 @@ def _url(
     items: Sequence[str] = ("B", "A"),
     assets: Sequence[str] = ("red", "nir", "scl"),
     dataset: str = DATASET,
+    size: int = 256,
 ) -> str:
     query = [f"item={item}" for item in items] + [f"asset={quote(asset)}" for asset in assets] + _steps(steps)
+    if size != 256:
+        query.append(f"tilesize={size}")
     if tile is None:
         path = "WebMercatorQuad/tilejson.json"
     else:
@@ -212,10 +217,10 @@ def _url(
     return f"/collections/{dataset}/mosaic/{path}?{'&'.join(query)}"
 
 
-def _tiles() -> list[tuple[int, int, int]]:
-    """Every z14 tile over the two scenes (the native level of 10 m data at 51° N is z14, ~6 m per pixel)."""
+def _tiles(zoom: int = ZOOM) -> list[tuple[int, int, int]]:
+    """Every tile of ``zoom`` over the two scenes (the native level of 10 m data at 51° N is z14, ~6 m per pixel)."""
     west, south, east, north = transform_bounds(ZONE_32, "EPSG:4326", X0, Y0 - HEIGHT * 10, X0 + 7000.0, Y0)
-    return [(tile.z, tile.x, tile.y) for tile in TMS.tiles(west, south, east, north, [ZOOM])]
+    return [(tile.z, tile.x, tile.y) for tile in TMS.tiles(west, south, east, north, [zoom])]
 
 
 def _tile_at(x: float, y: float) -> tuple[tuple[int, int, int], int, int]:
@@ -252,10 +257,10 @@ def _job(tmp_path: Path, assets: Sequence[str], chain: Sequence[tuple[str, dict]
     return result.path
 
 
-def _job_tile(path: Path, tile: tuple[int, int, int]) -> numpy.ma.MaskedArray:
+def _job_tile(path: Path, tile: tuple[int, int, int], size: int = 256) -> numpy.ma.MaskedArray:
     z, x, y = tile
     with Reader(str(path)) as reader:
-        return reader.tile(x, y, z, resampling_method="nearest", tilesize=256).array
+        return reader.tile(x, y, z, resampling_method="nearest", tilesize=size).array
 
 
 def _physical(item: str, asset: str, row: int, col: int) -> numpy.float32:
@@ -270,19 +275,20 @@ def _ndvi(red: numpy.float32, nir: numpy.float32) -> float:
 class TestTheTileEqualsTheJobOnTheNativeLevel:
     """§6.4: the mosaic tile through the real route against the mosaic job, bit for bit, on every tile."""
 
+    @pytest.mark.parametrize("size", NATIVE)
     @pytest.mark.parametrize(
         ("assets", "chain"),
         [(("red", "nir"), [("band_math", NDVI)]), (("red", "nir", "scl"), CLOUDS_THEN_NDVI)],
         ids=["band math", "mask, band math"],
     )
-    def test_bit_for_bit(self, client, tmp_path: Path, assets, chain) -> None:
+    def test_bit_for_bit(self, client, tmp_path: Path, assets, chain, size: int) -> None:
         job = _job(tmp_path, assets, chain)
         api = client()
         compared = masked = 0
-        for tile in _tiles():
-            response = api.get(_url(tile, chain, assets=assets))
+        for tile in _tiles(NATIVE[size]):
+            response = api.get(_url(tile, chain, assets=assets, size=size))
             assert response.status_code == 200, response.text
-            from_tile, from_job = _decode(response.content), _job_tile(job, tile)
+            from_tile, from_job = _decode(response.content), _job_tile(job, tile, size)
             assert from_tile.shape == from_job.shape, tile
             assert numpy.array_equal(from_tile.mask, numpy.ma.getmaskarray(from_job)), tile
             valid = ~from_tile.mask
