@@ -2615,8 +2615,25 @@ a.pm-icon:hover {
   letter-spacing: 1px;
   text-transform: uppercase;
 }
-.preview-badge + .preview-badge {
+.preview-badge + .preview-badge,
+.pp-badge + .pp-badge {
   margin-left: 6px;
+}
+/* "Loading…" (NM4-04b): the badge itself breathes, so a cold mosaic does not look stuck. */
+.preview-badge.loading,
+.pp-badge.loading {
+  animation: previewLoading 1.4s ease-in-out infinite;
+}
+@keyframes previewLoading {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .preview-badge.loading,
+  .pp-badge.loading {
+    animation: none;
+  }
 }
 .pp-range {
   display: flex;

@@ -36,8 +36,9 @@ import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
 import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
+import type { OverlayId, Overlays } from './overlays';
 import type { Projection, Theme } from './preferences';
-import { loadBasemap, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
+import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 import { appliedRenderFrom, autoRescale } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
@@ -254,6 +255,7 @@ function foundNotice(
 export interface DerivedLayer {
   name: string;
   derived: NonNullable<MapLayer['derived']>;
+  note?: string;
   result?: ResultLayerInfo;
   overlays: LayerOverlay[];
   // The scenes the picture was made from.
@@ -706,11 +708,18 @@ function dropPageToken(set: SetState, get: GetState): void {
   if (ctx?.nextToken) set({ searchContext: { ...ctx, nextToken: null } });
 }
 
-// Show or hide of the results is the switch's, with two exceptions (Otto, 27.10.2026): a new search shows them, and a
+// Show or hide of the results is the switch's, with three exceptions (Otto, 27.10.2026 and 28.10.2026): a new search shows them, a ticked scene shows them (`ticking`), and a
 // crop of the chosen scenes ("Crop to AOI", "Crop & merge to AOI") hides them. Kept in the browser like the switch.
 function setResultsOnMap(on: boolean) {
   saveResultsOnMap(on);
   return { resultsOnMap: on };
+}
+
+// A scene ticked while the results are hidden shows them (Otto, 28.10.2026, zu #221): the third exception, besides a
+// search and a crop. Unticking changes nothing.
+function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap'>, selectedIds: string[]) {
+  const ticked = selectedIds.some((id) => !s.selectedIds.includes(id));
+  return { selectedIds, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
 }
 
 // What every replacement of the results resets besides the results themselves.
@@ -753,6 +762,7 @@ export interface AppState {
   theme: Theme;
   projection: Projection;
   basemap: BasemapId;
+  overlays: Overlays;
   // --- coverage heatmap (M2-07c) ---
   showCoverage: boolean;
   // The dataset the coverage map is drawn for; `null` while it is off.
@@ -992,6 +1002,7 @@ export interface AppState {
   toggleTheme: () => void;
   setProjection: (projection: Projection) => void;
   setBasemap: (basemap: BasemapId) => void;
+  setOverlay: (overlay: OverlayId, on: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -1005,6 +1016,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   theme: loadTheme(),
   projection: loadProjection(),
   basemap: loadBasemap(),
+  overlays: loadOverlays(),
   showCoverage: false,
   coverageDatasetId: null,
   coverage: null,
@@ -1421,6 +1433,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       opacity: 1,
       overlays: input.overlays,
       derived: input.derived,
+      ...(input.note ? { note: input.note } : {}),
       ...(input.result ? { result: input.result } : {}),
       restore: {
         focusMode: false,
@@ -1912,31 +1925,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (idx >= 0) set({ activeGroupIndex: idx, expandedGroupIndex: idx });
   },
   toggleSelected: (id) =>
-    set((s) => ({
-      selectedIds: s.selectedIds.includes(id)
-        ? s.selectedIds.filter((x) => x !== id)
-        : [...s.selectedIds, id],
-    })),
+    set((s) => ticking(s, s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id])),
   selectAllInActiveGroup: () =>
     set((s) => {
       const group = s.groups[s.activeGroupIndex];
       if (!group) return {};
       const merged = new Set([...s.selectedIds, ...group.items.map((it) => it.id)]);
-      return { selectedIds: [...merged] };
+      return ticking(s, [...merged]);
     }),
   // M4-29: "Select all" takes the loaded scenes only — never more pages — and
   // the limits (merge, job size, batch) still answer where they always did.
-  selectAllLoaded: () => set((s) => ({ selectedIds: s.items.map((it) => it.id) })),
+  selectAllLoaded: () => set((s) => ticking(s, s.items.map((it) => it.id))),
   toggleGroupSelected: (index) =>
     set((s) => {
       const ids = s.groups[index]?.items.map((it) => it.id) ?? [];
       if (ids.length === 0) return {};
       const all = ids.every((id) => s.selectedIds.includes(id));
-      return {
-        selectedIds: all
-          ? s.selectedIds.filter((id) => !ids.includes(id))
-          : [...s.selectedIds, ...ids.filter((id) => !s.selectedIds.includes(id))],
-      };
+      return ticking(
+        s,
+        all ? s.selectedIds.filter((id) => !ids.includes(id)) : [...s.selectedIds, ...ids.filter((id) => !s.selectedIds.includes(id))],
+      );
     }),
   clearSelection: () => set({ selectedIds: [] }),
   setDateFrom: (dateFrom) => {
@@ -2008,6 +2016,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setBasemap: (basemap) => {
     saveBasemap(basemap);
     set({ basemap });
+  },
+  setOverlay: (overlay, on) => {
+    const overlays = { ...get().overlays, [overlay]: on };
+    saveOverlays(overlays);
+    set({ overlays });
   },
 
   runSearch: async () => {

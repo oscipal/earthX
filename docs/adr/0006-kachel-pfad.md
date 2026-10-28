@@ -657,6 +657,11 @@ zusätzlich zu M4-17:
   Item-Route, die erste in Mosaik-Reihenfolge. Mosaik und AOI klärt NM4-19.
 - **URL:** Item-IDs, Asset-Schlüssel, Schritte und Darstellung; keine AOI, keine Job-, Rezept- oder
   Permalink-Kennung, kein Hash.
+- **Frontend (NM4-04b, 2026-10-28):** Das Panel zeichnet „One job“ über einen Überflug ab z8 als
+  Mosaik-Kachel mit den Schritten und fällt bei mehr als 4 Assets, über 7 168 Byte, mehr als 64
+  Szenen, einem Datensatz nur unter z8 oder einem abgelehnten Mosaik auf die Vorschau je Szene
+  zurück (Hinweis im Tooltip). Während die erste Kachel lädt (kalt 6,0 s gemessen), sagt ein
+  Badge „Loading…“ es.
 
 **Nachtrag NM4-19 (2026-10-28, Otto, zu #218):** Die Farbskala der Vorschau misst bei „AOI only“
 über die AOI, so wie der Job sie zählt (`plans/querschnitt/nm4-19-auto-stretch-ueber-aoi.md`

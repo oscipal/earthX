@@ -1396,6 +1396,428 @@ describe('the ways into the panel (§3.5)', () => {
   });
 });
 
+describe('the preview of a mosaic job (NM4-04b)', () => {
+  const HINT = 'Preview per scene – may differ from the job where scenes overlap';
+  const asks = (part: string) => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes(part));
+  const query = (url: string) => new URL(url, 'http://localhost');
+  const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  // The tiler takes a mosaic and names the order of its scenes; a scene it takes as it did.
+  const taking = (order: string[]) => (url: string) =>
+    url.includes('/mosaic/') ? json({ tilejson: '3.0.0', 'earthx:order': order }) : json({ tilejson: '3.0.0' });
+  const mosaicRefused = (status: number, detail: string) => (url: string) =>
+    url.includes('/mosaic/') ? reply(status, { detail }) : json({ tilejson: '3.0.0' });
+
+  // A dataset released below the first level of a mosaic, so that scenes can stand under it.
+  function selectWide(items: StacItem[]) {
+    select(items);
+    useAppStore.setState({ datasets: [{ ...(dataset() as Extract<DatasetOption, { viewable: true }>), zoom: { min: 5, max: 14 } }] });
+  }
+
+  async function typeNdvi(expressionText = '(nir - red) / (nir + red)') {
+    await openPanel();
+    mount(
+      <>
+        <ProcessingPanel />
+        <PreviewBadge />
+      </>,
+    );
+    vi.useFakeTimers();
+    click(button('＋ Band math'));
+    typeInto(expression(), expressionText);
+    await afterDebounce();
+    await flush();
+  }
+
+  const dockBadge = () => container.querySelector('.preview-badge-dock .preview-badge:not(.loading)');
+  const panelBadge = () => section().querySelector('.pp-badge');
+
+  it('draws one job over a pass as its mosaic with the steps, and the scenes below it in the order of the tiler', async () => {
+    tilejson = taking(['S2B_B', 'S2B_C', 'S2B_A']);
+    selectWide([scene('S2B_C'), scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    const preview = store().preview!;
+    expect(preview.mosaics).toHaveLength(1);
+    const url = query(preview.mosaics[0].url);
+    expect(preview.mosaics[0].url.split('?')[0]).toBe('/collections/sentinel-2-c1-l2a/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}');
+    expect(url.searchParams.getAll('item')).toEqual(['S2B_A', 'S2B_B', 'S2B_C']);
+    expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
+    expect(url.searchParams.getAll('op')).toEqual(['band_math']);
+    expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)' });
+    expect(preview.scenes.map((scene) => [scene.id, scene.below])).toEqual([['S2B_B', 8], ['S2B_C', 8], ['S2B_A', 8]]);
+    expect(preview.perScene).toBe(false);
+    // The tiler is asked about the mosaic, not about a scene; the colour scale is measured over the scene that wins.
+    expect(asks('/mosaic/')).toHaveLength(1);
+    expect(asks('/items/')).toHaveLength(asks('/statistics?').length);
+    expect(asks('/statistics?').map((u) => query(u).pathname)).toEqual(['/collections/sentinel-2-c1-l2a/items/S2B_B/statistics']);
+    expect(asks('/mosaic/').some((u) => u.includes('/statistics'))).toBe(false);
+    expect(panelBadge()?.getAttribute('title')).toBeNull();
+    expect(dockBadge()?.getAttribute('title')).toBeNull();
+  });
+
+  it('keeps the TileJSON of the mosaic and the measure when only the range changes', async () => {
+    tilejson = taking(['S2B_B', 'S2B_A']);
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    const inputs = [...section().querySelectorAll<HTMLInputElement>('input[type="number"]')];
+    typeInto(inputs[0], '-0.5');
+    click(button('Apply'));
+    await afterDebounce();
+    await flush();
+    expect(query(store().preview!.mosaics[0].url).searchParams.get('rescale')).toBe('-0.5,1');
+    expect(asks('/mosaic/')).toHaveLength(1);
+    expect(asks('/statistics?')).toHaveLength(1);
+  });
+
+  it('draws the scenes one by one, with the hint in the tooltip and none in the panel, when the tiler refuses the mosaic', async () => {
+    tilejson = mosaicRefused(422, "'sentinel-2-c1-l2a' does not allow reprojection, which a mosaic of scenes may need");
+    selectWide([scene('S2B_A'), scene('S2B_B'), scene('S2B_C')]);
+    await typeNdvi();
+    const preview = store().preview!;
+    expect(preview.mosaics).toEqual([]);
+    expect(preview.scenes.map((s) => [s.id, s.below])).toEqual([['S2B_A', undefined], ['S2B_B', undefined], ['S2B_C', undefined]]);
+    expect(preview.perScene).toBe(true);
+    expect(panelBadge()?.getAttribute('title')).toBe(HINT);
+    expect(dockBadge()?.getAttribute('title')).toBe(HINT);
+    expect(section().textContent).not.toContain('per scene');
+    expect(section().textContent).not.toContain('may differ');
+    expect(store().previewNote).toBeNull();
+    // Then the first scene is asked about the chain, as ever.
+    expect(asks('/items/S2B_A/WebMercatorQuad/tilejson.json')).toHaveLength(1);
+  });
+
+  it.each([
+    ['a request that is too long', 414, 'a mosaic request takes at most 7168 bytes, not 8000'],
+    ['a pass the tiler cannot mosaic', 422, 'the scenes of the mosaic are not of one overpass'],
+    ['scenes it cannot compare', 422, "the scenes of the mosaic scale 'red' differently"],
+    ['a mosaic it does not serve', 501, 'this dataset has no mosaic'],
+    ['a failing source', 502, 'the catalog is down'],
+  ])('draws the scenes one by one for %s', async (_, status, detail) => {
+    tilejson = mosaicRefused(status, detail);
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    expect(store().preview).toMatchObject({ mosaics: [], perScene: true });
+    expect(panelBadge()?.getAttribute('title')).toBe(HINT);
+  });
+
+  it('draws the scenes one by one when the network fails for the mosaic', async () => {
+    tilejson = (url) => {
+      if (url.includes('/mosaic/')) throw new TypeError('Failed to fetch');
+      return json({ tilejson: '3.0.0' });
+    };
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    expect(store().preview).toMatchObject({ mosaics: [], perScene: true });
+  });
+
+  it('draws the scenes for now when the question about the mosaic fails on the way, and asks again at the next change', async () => {
+    let calls = 0;
+    tilejson = (url) => {
+      if (!url.includes('/mosaic/')) return json({ tilejson: '3.0.0' });
+      return ++calls === 1 ? reply(502, { detail: 'the catalog is down' }) : json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] });
+    };
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    expect(store().preview).toMatchObject({ mosaics: [], perScene: true });
+    act(() => useProcessingStore.setState({ range: { vmin: '-0.5', vmax: '1', colormap: 'rdylgn' } }));
+    await afterDebounce();
+    await flush();
+    expect(asks('/mosaic/')).toHaveLength(2);
+    expect(store().preview).toMatchObject({ perScene: false });
+    expect(store().preview!.mosaics).toHaveLength(1);
+  });
+
+  it('does not ask the mosaic twice while the first question is still on its way', async () => {
+    let release!: (response: Response) => void;
+    const held = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    tilejson = (url) => (url.includes('/mosaic/') ? (held as unknown as Response) : json({ tilejson: '3.0.0' }));
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    act(() => useProcessingStore.setState({ range: { vmin: '-0.5', vmax: '1', colormap: 'rdylgn' } }));
+    await afterDebounce();
+    await flush();
+    release(json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] }));
+    await flush();
+    expect(asks('/mosaic/')).toHaveLength(1);
+    expect(store().preview!.mosaics).toHaveLength(1);
+  });
+
+  it('draws the scenes one by one for a mosaic with more bands than the tiler takes with steps', async () => {
+    const wide = (id: string): StacItem => ({
+      ...scene(id),
+      assets: Object.fromEntries(['a', 'b', 'c', 'd', 'e'].map((key) => [key, scene(id).assets!.red])),
+    });
+    selectWide([wide('S2B_A'), wide('S2B_B')]);
+    await typeNdvi('a + b + c + d + e');
+    expect(store().preview).toMatchObject({ mosaics: [], perScene: true });
+    expect(store().preview!.scenes).toHaveLength(2);
+    expect(asks('/mosaic/')).toHaveLength(0);
+  });
+
+  it('shows the place of a step the tiler refuses for the mosaic, and asks the mosaic of the shorter chain', async () => {
+    tilejson = (url) =>
+      url.includes('/mosaic/')
+        ? query(url).searchParams.getAll('op').length === 2
+          ? reply(422, { detail: 'step 1: expression names unknown band(s): red; the input has: band_math' })
+          : json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] })
+        : json({ tilejson: '3.0.0' });
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    click(button('＋ Band math'));
+    typeInto(expression(1), 'red + 1');
+    await afterDebounce();
+    await flush();
+    const preview = store().preview!;
+    expect(preview.stepCount).toBe(1);
+    expect(preview.mosaics).toHaveLength(1);
+    expect(preview.scenes.map((s) => s.id)).toEqual(['S2B_B', 'S2B_A']);
+    expect(preview.perScene).toBe(false);
+    expect(query(preview.mosaics[0].url).searchParams.getAll('op')).toEqual(['band_math']);
+    expect(store().previewNote).toBe(
+      'Preview shows step 1 of 2. Step 2: expression names unknown band(s): red; the input has: band_math.',
+    );
+    expect(section().textContent).toContain('Preview shows step 1 of 2. Step 2: expression names unknown band(s): red');
+    // The answer for the first step alone is the one kept from before the second was added.
+    expect(asks('/mosaic/').map((u) => query(u).searchParams.getAll('op').length)).toEqual([1, 2]);
+  });
+
+  it('shows no picture, and the reason, when the tiler refuses the first of two steps of the mosaic', async () => {
+    tilejson = (url) =>
+      url.includes('/mosaic/') && query(url).searchParams.getAll('op').length === 2
+        ? reply(422, { detail: 'step 0: expression names unknown band(s): green; the input has: red, nir' })
+        : json({ tilejson: '3.0.0', 'earthx:order': ['S2B_A', 'S2B_B'] });
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    click(button('＋ Band math'));
+    typeInto(expression(1), 'red + 1');
+    await afterDebounce();
+    await flush();
+    expect(store().preview).toBeNull();
+    expect(store().previewNote).toBe('No preview. Step 1: expression names unknown band(s): green; the input has: red, nir.');
+  });
+
+  it('leaves the refusal of a single step to the first scene, which names it as ever', async () => {
+    tilejson = () => reply(422, { detail: 'expression: not a valid expression' });
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    expect(store().preview).toBeNull();
+    expect(store().previewNote).toBe('No preview: expression: not a valid expression.');
+  });
+
+  it('draws one mosaic for each pass with "One job per pass", and a pass of one scene alone', async () => {
+    tilejson = (url) => (url.includes('/mosaic/') ? json({ tilejson: '3.0.0', 'earthx:order': query(url).searchParams.getAll('item').reverse() }) : json({ tilejson: '3.0.0' }));
+    const items = ['S2B_A', 'S2B_B', 'S2B_C', 'S2B_D', 'S2B_E'].map((id) => scene(id));
+    select(items);
+    useAppStore.setState({
+      groups: [
+        { key: ['d1'], label: 'd1', items: items.slice(0, 2) },
+        { key: ['d2'], label: 'd2', items: items.slice(2, 4) },
+        { key: ['d3'], label: 'd3', items: items.slice(4) },
+      ],
+    });
+    await openPanel();
+    act(() => useProcessingStore.setState({ runAs: 'pass' }));
+    mount(
+      <>
+        <ProcessingPanel />
+        <PreviewBadge />
+      </>,
+    );
+    vi.useFakeTimers();
+    click(button('＋ Band math'));
+    typeInto(expression(), 'nir / red');
+    await afterDebounce();
+    await flush();
+    const preview = store().preview!;
+    expect(preview.mosaics.map((m) => query(m.url).searchParams.getAll('item'))).toEqual([
+      ['S2B_A', 'S2B_B'],
+      ['S2B_C', 'S2B_D'],
+    ]);
+    expect(preview.mosaics.map((m) => m.order)).toEqual([['S2B_B', 'S2B_A'], ['S2B_D', 'S2B_C']]);
+    expect(preview.scenes.map((s) => s.id)).toEqual(['S2B_E']);
+    expect(preview.perScene).toBe(false);
+    expect(asks('/mosaic/')).toHaveLength(2);
+    expect(asks('/statistics?').map((u) => query(u).pathname)).toEqual(['/collections/sentinel-2-c1-l2a/items/S2B_B/statistics']);
+  });
+
+  it('draws a job of one scene, and "One job per scene", scene by scene with no hint and no question about a mosaic', async () => {
+    selectWide([scene('S2B_A')]);
+    await typeNdvi();
+    expect(store().preview).toMatchObject({ mosaics: [], perScene: false });
+    expect(panelBadge()?.getAttribute('title')).toBeNull();
+    expect(asks('/mosaic/')).toHaveLength(0);
+
+    act(() => store().closeProcessing());
+    const items = [scene('S2B_A'), scene('S2B_B'), scene('S2B_C')];
+    selectWide(items);
+    act(() => useProcessingStore.setState({ runAs: 'scene' }));
+    act(() => store().openProcessing());
+    await afterDebounce();
+    await flush();
+    expect(store().preview).toMatchObject({ mosaics: [], perScene: false });
+    expect(store().preview!.scenes).toHaveLength(3);
+    expect(panelBadge()?.getAttribute('title')).toBeNull();
+    expect(asks('/mosaic/')).toHaveLength(0);
+  });
+
+  it('puts the mosaic and the scenes under it into the layer it pins', async () => {
+    tilejson = taking(['S2B_B', 'S2B_A']);
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    click(button(/Add preview to layers/));
+    const layer = useAppStore.getState().layers[0];
+    expect(layer.overlays).toHaveLength(3);
+    // Bottom to top: the scenes, the first one on top of them, then the mosaic.
+    const tiles = layer.overlays.map((o) => (o.kind === 'raster' ? query(o.tileUrl).pathname.split('/')[3] : null));
+    expect(tiles).toEqual(['items', 'items', 'mosaic']);
+    const mosaic = layer.overlays[2];
+    expect(mosaic).toMatchObject({ kind: 'raster', minZoom: 8, preview: true });
+    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', maxZoom: 7, hideFrom: 6.5, preview: true });
+    expect(layer.restore.itemIds).toEqual(['S2B_B', 'S2B_A']);
+  });
+
+  describe('the preview pinned to the layer manager', () => {
+    const nameButton = () => container.querySelector<HTMLElement>('.layer-row .lm-name')!;
+
+    it('keeps the hint of a preview drawn scene by scene in the tooltip of its layer, and in no line of its row', async () => {
+      tilejson = mosaicRefused(422, "'sentinel-2-c1-l2a' does not allow reprojection, which a mosaic of scenes may need");
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      expect(store().preview!.perScene).toBe(true);
+      click(button(/Add preview to layers/));
+      const layer = useAppStore.getState().layers[0];
+      expect(layer.note).toBe(HINT);
+      mount(<LayerManager />);
+      expect(nameButton().getAttribute('title')).toContain(HINT);
+      expect(nameButton().getAttribute('title')).toContain(`${layer.name} — `);
+      expect(container.querySelector('.layer-row')!.textContent).not.toContain('per scene');
+      expect(container.querySelector('.layer-row')!.textContent).not.toContain('may differ');
+    });
+
+    it('carries no hint for a preview drawn as a mosaic, nor for scenes that are no mosaic job', async () => {
+      tilejson = taking(['S2B_B', 'S2B_A']);
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      click(button(/Add preview to layers/));
+      expect(useAppStore.getState().layers[0].note).toBeUndefined();
+      mount(<LayerManager />);
+      expect(nameButton().getAttribute('title')).not.toContain('per scene');
+      expect(nameButton().getAttribute('title')).toBe(`${useAppStore.getState().layers[0].name} — view this layer / continue working on it`);
+    });
+  });
+
+  describe('"Loading…" while the first tile is on its way (Otto, 28.10.2026: cold 6.0 s, warm 0.16 s)', () => {
+    const loading = () => container.querySelector('.preview-badge-dock .preview-badge.loading');
+    let release: (response: Response) => void;
+
+    function holdTheMosaic() {
+      const held = new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+      tilejson = (url) => (url.includes('/mosaic/') ? (held as unknown as Response) : json({ tilejson: '3.0.0' }));
+    }
+
+    it('shows a small badge with the explanation in its tooltip, once the wait lasts, and takes it away with the picture', async () => {
+      holdTheMosaic();
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      expect(store().previewSettling).toBe(true);
+      expect(loading()).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(599);
+      });
+      expect(loading()).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(loading()?.textContent).toBe('Loading…');
+      expect(loading()?.getAttribute('title')).toBe('Reading the scenes. The first tile of a mosaic can take several seconds.');
+      expect(loading()?.getAttribute('role')).toBe('status');
+      // The heading of the preview says it too, for a window in which the panel hides the map: a badge, no line of text.
+      const inHeading = section().querySelector('.pp-heading .pp-badge.loading');
+      expect(inHeading?.textContent).toBe('Loading…');
+      expect(inHeading?.getAttribute('title')).toBe(loading()?.getAttribute('title'));
+      expect(section().querySelector('p')?.textContent ?? '').not.toContain('Loading');
+      release(json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] }));
+      await flush();
+      expect(store().previewSettling).toBe(false);
+      expect(store().preview).not.toBeNull();
+      expect(loading()).toBeNull();
+    });
+
+    it('never shows for a warm answer', async () => {
+      tilejson = taking(['S2B_A', 'S2B_B']);
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      expect(store().previewSettling).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(loading()).toBeNull();
+    });
+
+    it('shows while the map loads the tiles of the preview, and not before they are asked for', async () => {
+      tilejson = taking(['S2B_A', 'S2B_B']);
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      act(() => useProcessingStore.setState({ previewTilesLoading: true }));
+      act(() => {
+        vi.advanceTimersByTime(599);
+      });
+      expect(loading()).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(loading()).not.toBeNull();
+      act(() => useProcessingStore.setState({ previewTilesLoading: false }));
+      expect(loading()).toBeNull();
+    });
+
+    it('is not for tiles of a layer or a preview that is gone', async () => {
+      tilejson = taking(['S2B_A', 'S2B_B']);
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      act(() => store().closeProcessing());
+      act(() => useProcessingStore.setState({ previewTilesLoading: true }));
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(store().preview).toBeNull();
+      expect(loading()).toBeNull();
+      expect(container.querySelector('.preview-badge-dock')).toBeNull();
+    });
+
+    it('stops with the panel: no badge for a question nobody waits for', async () => {
+      holdTheMosaic();
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      expect(store().previewSettling).toBe(true);
+      act(() => store().closeProcessing());
+      expect(store().previewSettling).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(loading()).toBeNull();
+    });
+
+    it('does not stay when the answer comes for a draft that has changed', async () => {
+      holdTheMosaic();
+      selectWide([scene('S2B_A'), scene('S2B_B')]);
+      await typeNdvi();
+      typeInto(expression(), 'nir / red');
+      release(json({ tilejson: '3.0.0', 'earthx:order': ['S2B_A', 'S2B_B'] }));
+      await flush();
+      expect(store().previewSettling).toBe(false);
+      tilejson = taking(['S2B_A', 'S2B_B']);
+      await afterDebounce();
+      await flush();
+      expect(store().previewSettling).toBe(false);
+      expect(store().preview).not.toBeNull();
+    });
+  });
+});
+
 describe('layerProcessBlock', () => {
   it('names the reason, or none', () => {
     const datasets = [dataset()];
