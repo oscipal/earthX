@@ -91,13 +91,13 @@ def test_a_reprojection_stays_below_the_limit_and_does_not_follow_the_scene_size
 
 
 #: More than two bands (NM4-43b), measured in the session with the same child as above (``VmHWM``,
-#: ``GDAL_CACHEMAX`` 64 MB) and for version 3 as well: 4 bands at 2048² 419 MB, at 4096² 521 MB (version 3: 522 MB);
-#: 17 bands at 1024² 754 MB (version 3: 821 MB), at 2048² 981 MB (version 3: 1051 MB). Version 4 needs no more
-#: than version 3. The 500 MB of two bands do not hold for more bands, not even for the pass that crops
-#: and scales (556 MB for 17 bands at 1024²): the limit per job is the business of NM4-43c, adr/0020 §7.
-#: These two limits keep a third in reserve of what was measured.
+#: ``GDAL_CACHEMAX`` 64 MB), with the passes stored by band: 4 bands at 2048² 393 MB, at 4096² 452 MB; 17 bands at
+#: 1024² 612 MB. Before that layout (and with version 3) 4 bands needed 521 MB at 4096² and 17 bands 754 MB (version 3:
+#: 821 MB) at 1024², 981 MB (version 3: 1051 MB) at 2048². The 500 MB of two bands do not hold for 17 bands, not even for
+#: the pass that crops and scales (556 MB at 1024²): the limit per job is the business of NM4-43c, adr/0020 §7.
+#: These two limits keep a third in reserve of what was measured (Otto, 28.10.2026).
 FOUR_BANDS_PEAK_LIMIT_MB = 600
-SEVENTEEN_BANDS_PEAK_LIMIT_MB = 900
+SEVENTEEN_BANDS_PEAK_LIMIT_MB = 800
 
 
 def _wide(scene: Path, tmp_path: Path, size: int, bands: int) -> dict:
