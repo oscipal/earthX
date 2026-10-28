@@ -83,13 +83,13 @@ Fünf Aufgaben, alle **Stufe A** (Plan und Entscheidung stehen im ADR; ein Draft
 3. Unverändert bleibt, was ein Asset auf seinem eigenen Raster liest (`input_pixels`, `input_bytes`, Sekunden aus den Eingabebytes): Das ist das Leseaufkommen und stimmte schon.
 4. Die Reihenfolge der Assets im Auftrag ändert keinen Wert der Schätzung (`output_pixels`, `output_bytes`, `units`, `disk_needed`).
 5. Kein Eingriff in `core.py`, `source.py` und die Operatoren. `earthx.__version__` bleibt (kein Byte des Ergebnisses ändert sich); ändern sich die Zahlen vorhandener Tests, steht der Grund im PR.
-6. Nachtrag `adr/0014` §15u (kurz: was falsch war, was jetzt gilt, Messung aus `adr/0020` §3.3).
+6. Nachtrag `adr/0014` §15v (kurz: was falsch war, was jetzt gilt, Messung aus `adr/0020` §3.3).
 
 **Abnahme.**
 
 - Tests (`backend/tests/earthx/processing/test_plan.py`, bei geographischem CRS `test_estimate_geographic.py`): ein Auftrag mit einem 60-m- und einem 10-m-Asset (synthetisch) gibt für `[grob, fein]` und `[fein, grob]` dieselbe Schätzung; `output_pixels` liegt bei den Pixeln des feinsten Rasters (höchstens ein Pixel je Seite Unterschied zum Rand, den der Kern nach außen rundet); `JobTooLarge` greift für eine Fläche, die nur auf dem feinsten Raster über 5 GB liegt, in beiden Reihenfolgen; `disk_needed` wächst mit dem feinsten Raster und nicht mit der Summe der Raster; ein Auftrag mit einem Pixelmaß bleibt bitgleich bei allen Zahlen (bestehende Tests unverändert grün).
 - Vergleich mit dem Kern: Ein Test lässt `processing.core.run` auf einer kleinen synthetischen Quelle mit zwei Pixelgrößen laufen (die vorhandenen Fixtures für verschachtelte Raster in `test_source.py`/`test_band_math_run.py`, falls geeignet) und prüft, dass die geschätzten Ausgabepixel zum Ergebnis passen.
-- Gegenprobe, die üblichen Prüfungen, Log-Zeile, Nachtrag `adr/0014` §15u, `main` geholt.
+- Gegenprobe, die üblichen Prüfungen, Log-Zeile, Nachtrag `adr/0014` §15v, `main` geholt.
 
 ### 6.2 NM4-43b — `reproject` Version 4, je Band ein Warp
 
@@ -103,12 +103,12 @@ Fünf Aufgaben, alle **Stufe A** (Plan und Entscheidung stehen im ADR; ein Draft
 1. **`reproject` `op_version` 4:** Dieselben Parameter wie Version 3 (`crs`, `resolution`, `resampling`, `align`). Jedes Band bekommt einen **eigenen Warp** mit dem festen Plan der Version 3 (Blöcke 1024 px, `tolerance` 0,125, `warp_mem_limit` 64 MB). Wie ein Band einzeln gelesen wird (etwa eine Einband-Sicht auf die Zwischendatei), ist Sache der Umsetzung; sie wählt den Weg mit der Messung und beschreibt ihn im PR. Der Wert eines Bandes hängt dann nur noch an ihm selbst.
 2. **Version 3 bleibt angenommen und rechnet wie bisher**, wird aber nicht mehr gelistet (wie Version 2 heute: `REPROJECT_V2` in `operators/reproject.py`; `api/processing_docs.py` listet nur die höchste Version). Version 4 ist die gelistete.
 3. **Messung im PR** (Skript im PR, `scripts/nm4-43-bands/warp_bands.py` bekommt dazu einen Schalter `--op-version 3|4`, damit die Zahlen aus `adr/0020` §3.4 reproduzierbar bleiben): Laufzeit und Spitzenspeicher von Version 3 und 4 bei 1, 4 und 17 Bändern, 4096², `bilinear`. Der Kostenfaktor in `_METHODS` wird danach angepasst, falls Version 4 spürbar mehr braucht. Ist der Mehraufwand deutlich, fragt der PR Otto, bevor er „fertig“ meldet.
-4. `earthx.__version__` 0.4.3 → 0.4.4 (ein Ergebnis kann sich ändern, `adr/0016` §9). Nachtrag `adr/0014` §15v (zu §3.4, §6.3); der Methodentext von `reproject` bleibt, der Cache-Schlüssel ändert sich über `op_version`.
+4. `earthx.__version__` 0.4.3 → 0.4.4 (ein Ergebnis kann sich ändern, `adr/0016` §9). Nachtrag `adr/0014` §15w (zu §3.4, §6.3); der Methodentext von `reproject` bleibt, der Cache-Schlüssel ändert sich über `op_version`.
 
 **Abnahme.**
 
 - Tests (`test_reproject.py`, `test_reproject_tolerance.py`, `test_memory_reproject.py`): Band 1 hat bei 1, 2, 3, 4, 18 und 34 Bändern **dieselben Bytes** (Version 4); Version 4 gibt für 1 bis 3 Bänder dieselben Bytes wie Version 3 (damit ändert sich für bestehende Einband- und Dreibandaufträge nichts); Version 3 gibt für 4 Bänder weiter die bisherigen Bytes (angenommene Version unverändert); die Maske (NaN) ist je Band dieselbe wie im Einbandlauf; die Toleranz T2 ↔ T2L aus `adr/0014` §6.3 hält; der Speichertest (Grenze 500 MB, Wachstum höchstens 120 MB) hält auch mit 17 Bändern.
-- Gegenprobe, die üblichen Prüfungen, Log-Zeile, Nachtrag `adr/0014` §15v, `main` geholt.
+- Gegenprobe, die üblichen Prüfungen, Log-Zeile, Nachtrag `adr/0014` §15w, `main` geholt.
 
 ### 6.3 NM4-43c — Rezept und Kern: Bandvorrat, `output.bands`, Schutz ohne Bandgrenze
 
@@ -125,7 +125,7 @@ Fünf Aufgaben, alle **Stufe A** (Plan und Entscheidung stehen im ADR; ein Draft
 4. **`api/intake.py`:** leitet aus `output.bands` und den Schritten die Assets ab (Zuordnung Bandname → Asset über `describe_bands`/`expected_band_names`), schreibt sie ins Rezept, weist einen Namen ohne Asset mit `422` und dem Namen ab, prüft die Namensregeln gegen die Bänder der Collection. Die Prozessbeschreibung (`processing_docs.py`) bekommt das Schema von `output.bands`.
 5. **`processing/core.py`:** gibt nur `output.bands` aus (in der Reihenfolge der Liste); **Banddeskription** (der Name) und **Einheit** je Band in `result.tif` (`adr/0020` §8) und in den STAC-Eigenschaften; Datentyp und nodata nach den heutigen Regeln.
 6. **Umdeutung von Version 1** (`adr/0020` §11): ein Modul in `processing`, das ein Rezept oder einen Auftrag der Version 1 als Version 2 schreibt (Namen der `band_math`-Schritte, `normalize.bands`, `output.bands`). Benutzt von `api` (Aufträge, Permalink anlegen; **bis 30 Tage nach dem Deploy von NM4-43e**, Konstante mit Datum, die NM4-43e setzt; danach `422` „recipe_version 1 is no longer accepted; send version 2“), vom Worker (gespeicherte Rezepte der Warteschlange und der Wiederherstellung) und vom **Runner dauerhaft** (`runner/recipe_file.py`; heruntergeladene `recipe.json` bleiben lesbar). **Entschieden (Otto, F14, Option 1):** Hat ein umgedeutetes Rezept einen Schritt `reproject` Version 3, meldet der Runner kurz auf dem Bildschirm (`runner/cli.py`), dass Werte nach `reproject` abweichen können, und nennt den Runner-Tag für bitgleiche Werte: `earthx-runner:<Version aus source_engine.earthx>` des früheren Laufs, aus dem Provenienzblock der `recipe.json` (`adr/0016` §9; fehlt sie dort, „an older runner tag“). Dieselbe Meldung steht als Eintrag `notes` (Liste kurzer Texte) in `provenance.json` des Laufs (`runner/output.py: provenance_document`; kein Teil des Hash). Beispiel: „Converted from recipe version 1. Values after reproject can differ; for identical values use earthx-runner:0.4.3.“ Ohne `reproject` Version 3 keine Meldung, die Werte sind bitgleich.
-7. `earthx.__version__` 0.5.0; Nachtrag `adr/0014` §15w, Nachtrag `adr/0016` §12d; Methodentext und `recipe.json` tragen die neuen Felder; `docs/`-Verweise auf „16 Assets“ bleiben bis PR 2.
+7. `earthx.__version__` 0.5.0; Nachtrag `adr/0014` §15x, Nachtrag `adr/0016` §12d; Methodentext und `recipe.json` tragen die neuen Felder; `docs/`-Verweise auf „16 Assets“ bleiben bis PR 2.
 
 **PR 2 — Schutz ohne Bandgrenze** (`adr/0020` §7).
 
@@ -138,7 +138,7 @@ Fünf Aufgaben, alle **Stufe A** (Plan und Entscheidung stehen im ADR; ein Draft
 
 - Tests: Version 2 rechnet NDVI und NDWI als zwei Ergebnisse neben den Eingaben, nur `output.bands` im Ergebnis (Reihenfolge, Banddeskription, Einheit, nodata); ein Name doppelt, in anderer Schreibweise doppelt, gleich einem Band des Datensatzes, ein Schlüsselwort, zu lang, unbekannt in `output.bands` → `422` mit dem Namen; leere `output.bands`; Streichen bitgleich zum Lauf ohne Streichen; ein nicht gelesenes Asset wird nicht geöffnet (Test über die Zahl der Öffnungen); Auftrag von Version 1 → umgedeutet, Werte **bitgleich** zum Lauf von vorher für Ketten ohne `reproject` (Fixtures der Version 1 aus den vorhandenen Tests); `api` nimmt Version 1 vor und weist sie nach der Frist ab (Uhr festgesetzt); der Runner liest ein Rezept der Version 1 (ohne `reproject`: bitgleich, keine Meldung; mit `reproject` Version 3: Meldung auf dem Bildschirm und `notes` in `provenance.json` mit dem Tag aus `source_engine.earthx`, ohne diese Version „an older runner tag“; kein Pfad, keine Kennung in der Meldung); der Hash ändert sich einmal, ein zweiter gleicher Auftrag ist ein Cache-Treffer.
 - PR 2: 17 Bänder ohne Schritt werden angenommen (vorher `422`); eine Ausgabe über der Speichergrenze wird mit `413` und dem Grund abgewiesen; die Zeitschätzung wächst mit den Ausgabebändern.
-- Gegenprobe, die üblichen Prüfungen, Log-Zeilen, Nachträge in `adr/0014` (§15w) und `adr/0016` (§12d), `main` geholt.
+- Gegenprobe, die üblichen Prüfungen, Log-Zeilen, Nachträge in `adr/0014` (§15x) und `adr/0016` (§12d), `main` geholt.
 
 ### 6.4 NM4-43d — Kachel: ein Band, Schritte der Version 2
 

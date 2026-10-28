@@ -228,17 +228,29 @@ def _no_pixel_size(entry: ResolvedInput) -> UnsupportedRecipe:
     )
 
 
-def _input_grid(recipe: Recipe, first: ResolvedInput) -> tuple[Affine, int, int]:
-    """The box of the AOI in the CRS of ``first``'s asset, with the pixel size of its ``gsd``: ``(transform, width, height)``.
+def _finest(entries: Sequence[ResolvedInput]) -> ResolvedInput:
+    """The entry the core reads the others onto: the smallest ``gsd``, the first of equals (``source.common_grid``).
+
+    Whatever the order of the assets in the job, this is the same entry. A missing ``gsd`` is
+    refused with the reason, not guessed (``UnsupportedRecipe``, a ``422``).
+    """
+    for entry in entries:
+        if entry.gsd is None:
+            raise _no_pixel_size(entry)
+    return min(entries, key=lambda entry: entry.gsd)
+
+
+def _input_grid(recipe: Recipe, finest: ResolvedInput) -> tuple[Affine, int, int]:
+    """The box of the AOI in the CRS of ``finest``'s asset, with the pixel size of its ``gsd``: ``(transform, width, height)``.
 
     The box is where the first pass would read, the AOI's bounds in the CRS of the asset, not the
     origin of that CRS; the pixel size is ``gsd`` in the units of the CRS, a geographic one at the
     latitude of the middle of the AOI. A missing ``gsd`` is not guessed: the estimate is refused
     with the reason (``UnsupportedRecipe``, a ``422``).
     """
-    if first.gsd is None:
-        raise _no_pixel_size(first)
-    crs = first.asset.crs or "EPSG:4326"
+    if finest.gsd is None:
+        raise _no_pixel_size(finest)
+    crs = finest.asset.crs or "EPSG:4326"
     aoi = recipe.aoi.model_dump(mode="json")
     try:
         _, south, _, north = shapely_shape(aoi).bounds
@@ -247,7 +259,7 @@ def _input_grid(recipe: Recipe, first: ResolvedInput) -> tuple[Affine, int, int]
         raise UnsupportedRecipe(f"the AOI cannot be placed in the CRS {crs!r} of the input") from None
     if not all(math.isfinite(value) for value in (left, bottom, right, top)):
         raise UnsupportedRecipe(f"the AOI has no finite extent in the CRS {crs!r} of the input")
-    size_x, size_y = _pixel_size(crs, first.gsd, (south + north) / 2)
+    size_x, size_y = _pixel_size(crs, finest.gsd, (south + north) / 2)
     width = max(1, math.ceil((right - left) / size_x))
     height = max(1, math.ceil((top - bottom) / size_y))
     return Affine(size_x, 0, left, 0, -size_y, top), width, height
@@ -276,7 +288,8 @@ def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta
     asset's names are only in the file, ``names_known`` decides: ``False`` falls back to
     the asset key (an estimate does not care), ``True`` gives up and returns ``None``
     (a check against the names would reject what the file may well offer). CRS and pixel
-    size are those of the first asset. With ``sized`` the raster is the AOI's box in that CRS
+    size are those of the asset with the finest ``gsd`` (:func:`_finest`), the grid the core
+    reads all assets onto (adr/0020 §3.3). With ``sized`` the raster is the AOI's box in that CRS
     at that pixel size (:func:`_input_grid`, which refuses a missing ``gsd``); without it, one
     pixel at the corner of that box, or at the origin where the size is not known: the names
     are all a check wants.
@@ -295,17 +308,18 @@ def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta
             BandMeta(name, data_type or "float64", None, unit)
             for name, data_type, unit in zip(names, types, units, strict=True)
         )
-    first = resolved[0]
-    crs = first.asset.crs or "EPSG:4326"
     if sized:
-        transform, width, height = _input_grid(recipe, first)
+        finest = _finest(resolved)
+        transform, width, height = _input_grid(recipe, finest)
     else:
+        finest = resolved[0]
         try:
-            transform, _, _ = _input_grid(recipe, first)
+            finest = _finest(resolved)
+            transform, _, _ = _input_grid(recipe, finest)
         except UnsupportedRecipe:
             transform = Affine(1, 0, 0, 0, -1, 0)
         width = height = 1
-    return RasterMeta(crs, transform, width, height, tuple(bands))
+    return RasterMeta(finest.asset.crs or "EPSG:4326", transform, width, height, tuple(bands))
 
 
 def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
@@ -477,12 +491,8 @@ def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
     else:
         cost = estimate(recipe, operators)
         finished = cost.output_bytes + cost.output_pixels
-        aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
-        largest = 0
-        for entry in _asset_entries(recipe):
-            if entry.gsd is not None:
-                rows, columns = estimate_output_dims(aoi, entry.gsd)
-            else:
-                rows = columns = MAX_OUTPUT_SIDE_PX
-            largest += _tiles_px(rows) * _tiles_px(columns) * max(len(entry.bands), 1) * _PASS_BYTES
+        entries = _asset_entries(recipe)
+        rows, columns = estimate_output_dims(shapely_shape(recipe.aoi.model_dump(mode="json")), _finest(entries).gsd)
+        bands = sum(max(len(entry.bands), 1) for entry in entries)
+        largest = _tiles_px(rows) * _tiles_px(columns) * bands * _PASS_BYTES
     return math.ceil(finished * _WITH_OVERVIEWS) + 2 * largest + DISK_RESERVE_BYTES

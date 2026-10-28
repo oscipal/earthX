@@ -15,18 +15,20 @@ from earthx.processing.errors import (
 )
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import (
+    DISK_RESERVE_BYTES,
     EXPORT_FACTOR,
     RASTER_WITHOUT_STEP_FACTOR,
     SECONDS_PER_ASSET,
     check_bands,
     crop_window,
+    disk_needed,
     estimate,
     plan_steps,
     segments,
     split_tiers,
 )
 from earthx.processing.recipe import Step, recipe_from_data
-from tests.earthx.processing.recipes import crop_data, recipe_data
+from tests.earthx.processing.recipes import crop_data, recipe_data, resolved
 from tests.earthx.processing.testops import OPERATORS
 
 SCALE = Step(op="scale", op_version=1, params={"factor": 2.0})
@@ -232,6 +234,86 @@ class TestAMosaicIsEstimatedOnce:
         data["inputs"][0]["groups"] = [["ITEM_A", "ITEM_B"]]
         data["inputs"][0]["resolved"] += [resolved("ITEM_B", "red"), resolved("ITEM_B", "nir")]
         check_bands(recipe_from_data(data, REGISTRY), REGISTRY)  # no `red_2`: the names are one scene's
+
+
+class TestTheRasterIsTheFinestAsset:
+    """The core reads every asset onto the finest grid; the estimate sizes the output the same way (adr/0020 §3.3).
+
+    Sentinel-2's ``coastal`` is 60 m, ``red`` 10 m. The estimate once took the first asset's pixel size,
+    so ``["coastal", "red"]`` came out up to 36 times too small, past the cap and into the disk check.
+    """
+
+    @staticmethod
+    def _recipe(gsds: dict[str, float | None], **options):
+        entries = []
+        for asset, gsd in gsds.items():
+            entry = resolved("ITEM_A", asset)
+            entry["gsd"] = gsd
+            entries.append(entry)
+        data = recipe_data(steps=[], **options)
+        data["inputs"][0]["assets"] = list(gsds)
+        data["inputs"][0]["resolved"] = entries
+        return recipe_from_data(data, OPERATORS)
+
+    @pytest.mark.parametrize("order", [["coastal", "red"], ["red", "coastal"]])
+    def test_the_order_of_the_assets_changes_no_number(self, order: list[str]) -> None:
+        gsds = {"coastal": 60.0, "red": 10.0}
+        reference = self._recipe(gsds)
+        recipe = self._recipe({asset: gsds[asset] for asset in order})
+        assert estimate(recipe, OPERATORS) == estimate(reference, OPERATORS)
+        assert disk_needed(recipe, OPERATORS) == disk_needed(reference, OPERATORS)
+
+    def test_the_output_has_the_pixels_of_the_finest_raster(self) -> None:
+        mixed = estimate(self._recipe({"coastal": 60.0, "red": 10.0}), OPERATORS)
+        fine = estimate(self._recipe({"red": 10.0}), OPERATORS)
+        coarse = estimate(self._recipe({"coastal": 60.0}), OPERATORS)
+        assert mixed.output_pixels == fine.output_pixels
+        assert mixed.output_pixels > 30 * coarse.output_pixels  # 36 times, less the rounding up of the small raster
+        assert mixed.output_bytes == 2 * mixed.output_pixels * 4  # two float32 bands, as the core writes them
+
+    def test_what_each_asset_reads_stays_on_its_own_raster(self) -> None:
+        mixed = estimate(self._recipe({"coastal": 60.0, "red": 10.0}), OPERATORS)
+        fine = estimate(self._recipe({"red": 10.0}), OPERATORS)
+        coarse = estimate(self._recipe({"coastal": 60.0}), OPERATORS)
+        assert mixed.input_pixels == fine.input_pixels + coarse.input_pixels
+        assert mixed.input_bytes == fine.input_bytes + coarse.input_bytes
+
+    @pytest.mark.parametrize("order", [["coastal", "red"], ["red", "coastal"]])
+    def test_the_cap_holds_for_the_finest_raster_in_either_order(self, order: list[str]) -> None:
+        """5 degrees square: about 0.5 GB at 60 m, about 19 GB at 10 m."""
+        big = TestTheCapOfARasterJob.BIG
+        coarse_only = self._recipe({"coastal": 60.0}, aoi=big)
+        assert estimate(coarse_only, OPERATORS).output_pixels > 0
+        gsds = {"coastal": 60.0, "red": 10.0}
+        with pytest.raises(JobTooLarge, match="more than the 5000 MB a job may write"):
+            estimate(self._recipe({asset: gsds[asset] for asset in order}, aoi=big), OPERATORS)
+
+    def test_the_float64_pass_grows_with_the_finest_raster_not_with_the_sum_of_the_rasters(self) -> None:
+        wide = {"type": "Polygon", "coordinates": [[[9.0, 47.0], [9.3, 47.0], [9.3, 47.3], [9.0, 47.3], [9.0, 47.0]]]}
+
+        def need(gsds: dict[str, float]) -> int:
+            return disk_needed(self._recipe(gsds, aoi=wide), OPERATORS) - DISK_RESERVE_BYTES
+
+        base = need({"coastal": 60.0, "red": 10.0})
+        for coarse in (30.0, 120.0):  # the coarse asset's raster is not what the pass is sized by
+            assert need({"coastal": coarse, "red": 10.0}) == base
+        assert need({"coastal": 60.0, "red": 5.0}) > 3 * base
+        # Two bands on one raster of the finest grid: the same as two assets that both are 10 m.
+        assert base == need({"red": 10.0, "nir": 10.0})
+
+    def test_a_single_pixel_size_is_unchanged_whatever_the_order(self) -> None:
+        one = estimate(self._recipe({"red": 10.0, "nir": 10.0}), OPERATORS)
+        assert estimate(self._recipe({"nir": 10.0, "red": 10.0}), OPERATORS) == one
+
+    @pytest.mark.parametrize("gsds", [{"coastal": None, "red": 10.0}, {"red": 10.0, "coastal": None}])
+    def test_a_missing_gsd_is_refused_wherever_it_stands(self, gsds: dict) -> None:
+        with pytest.raises(UnsupportedRecipe, match=r"pixel size of asset 'coastal'.*no gsd"):
+            estimate(self._recipe(gsds), OPERATORS)
+        with pytest.raises(UnsupportedRecipe, match=r"pixel size of asset 'coastal'.*no gsd"):
+            disk_needed(self._recipe(gsds), OPERATORS)
+
+    def test_the_band_names_do_not_wait_for_a_pixel_size(self) -> None:
+        check_bands(self._recipe({"coastal": None, "red": 10.0}), OPERATORS)
 
 
 class TestTheEstimateOnAGeographicGrid:

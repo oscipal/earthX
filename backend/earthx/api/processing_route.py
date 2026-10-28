@@ -1356,13 +1356,19 @@ class PermalinkRange(BaseModel):
 
 
 class PermalinkView(BaseModel):
-    """What a permalink restores besides the order: the map's centre and zoom and the preview's range."""
+    """What a permalink restores besides the order: the map's centre and zoom, the preview's range, the basemap and the projection.
+
+    ``basemap`` and ``projection`` are the ids of the UI menu (UI-02c); a link made before they existed has neither
+    and is opened with the viewer's defaults.
+    """
 
     model_config = ConfigDict(strict=True, extra="forbid", allow_inf_nan=False)
 
     center: list[float] = Field(min_length=2, max_length=2)
     zoom: float = Field(ge=0, le=24)
     range: PermalinkRange | None = None
+    basemap: Literal["satellite", "streets", "grey", "outlines"] | None = None
+    projection: Literal["mercator", "globe"] | None = None
 
     @model_validator(mode="after")
     def _in_the_world(self) -> PermalinkView:
