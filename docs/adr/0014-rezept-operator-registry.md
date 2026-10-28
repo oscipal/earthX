@@ -2637,7 +2637,9 @@ macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser N
   schmaler wird; ein letztes `reproject` braucht deshalb keinen Durchgang, der nur sortiert. Ein `grid`-Schritt warpt nur, was bleibt (Version 4
   warpt jedes Band für sich; der Wert eines Bandes hängt nicht am Vorrat, `adr/0020` §3.4). `estimate`, `check_bands`, `run` und
   `area_statistics` benutzen dieselbe Planung. Kennt das Item die Bänder eines Assets nicht (nur die Datei weiß, wie viele es sind),
-  nimmt `estimate` die Namen `<asset>_1` bis zum höchsten Index an, den `output.bands` oder ein Ausdruck nennt; `check_bands` prüft solche Namen erst im Kern.
+  gilt es in `estimate` und `check_bands` als ein Band, das wie das Asset heißt; ein Name `<asset>_<n>` wird dort abgewiesen
+  (`test_a_band_the_item_does_not_describe_is_found_where_the_check_before_could_not_tell`). Ein umgedeuteter Auftrag der Version 1 mit so einem
+  mehrbändigen Asset scheitert deshalb im Kern am Namen `<asset>`; das ist eine bekannte Grenze, bis NM4-43e die Bänder aus der Prozessbeschreibung bestellt.
 - **`api` (`intake.derive_assets`, `band_sources`).** Aus `output.bands` und den Schritten folgen die Namen, die der erste Schritt braucht;
   jeder Name gehört zu genau einem Asset des Items (Regel des Panels: ein COG-Asset ist ein Band mit dem Namen des Assets oder `<asset>_<n>`;
   ein Zarr-Asset je Variable mit `<asset><Trenner><Variable>`; der Name ist die Variable; die Kerne und `expected_band_names` stimmen
