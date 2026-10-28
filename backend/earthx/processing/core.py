@@ -75,7 +75,19 @@ from earthx.processing.statistics import BandStatistics, gdal_tags, summarize
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
 
-__all__ = ["BLOCK_SIZE", "MASK_NAME", "RESULT_NAME", "Progress", "RunResult", "run", "worker_environment"]
+__all__ = [
+    "BLOCK_SIZE",
+    "MASK_NAME",
+    "MAX_AREA_PIXELS",
+    "RESULT_NAME",
+    "AreaStatistics",
+    "Progress",
+    "RunResult",
+    "area_factor",
+    "area_statistics",
+    "run",
+    "worker_environment",
+]
 
 LOGGER = logging.getLogger("earthx.processing")
 
@@ -83,6 +95,10 @@ LOGGER = logging.getLogger("earthx.processing")
 #: §7.2) and of the windowed crop (M3-18 §10.3). Part of the result for a grid
 #: step (§3.4), so a change raises ``earthx.__version__``.
 BLOCK_SIZE = 1024
+
+#: The most pixels of the window ``bbox(AOI ∩ raster)`` a measure of the area counts on the job's own grid
+#: (NM4-19, Otto's answer 2): 2048², about 20 by 20 km at 10 m. A larger window is counted on a coarser grid.
+MAX_AREA_PIXELS = 2048 * 2048
 
 RESULT_NAME = "result.tif"
 MASK_NAME = "mask.tif"
@@ -118,6 +134,21 @@ class RunResult:
     blocks: int
     valid_pixels: int
     engine: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class AreaStatistics:
+    """What :func:`area_statistics` found: the statistics of the area a result would carry, without the result."""
+
+    #: Per band of the result: ``name``, ``unit`` where known, and ``statistics`` as in the result's properties.
+    bands: list[dict[str, Any]]
+    #: ``1`` on the job's own grid (the very statistics of the result), else how many times coarser.
+    factor: int
+    pixels_read: int
+
+    @property
+    def exact(self) -> bool:
+        return self.factor == 1
 
 
 @contextmanager
@@ -288,14 +319,10 @@ class _Run:
             for window in _blocks(meta.width, meta.height):
                 data = _cast(block(window), dtype)
                 if mask is not None:
-                    valid = ~numpy.ma.getmaskarray(data)
+                    values, valid, written = _written(data, nodata)
                     self.valid_pixels += int(valid.any(axis=0).sum())
                     inside = mask.read(1, window=window) == 1
                     inside_pixels += int(inside.sum())
-                    values = numpy.ma.getdata(data)
-                    # A valid value rounded onto an integer nodata reads back as nodata: the statistics count
-                    # what the file says (adr/0014 §15h, "Kollision mit nodata").
-                    written = valid if math.isnan(nodata) else valid & (values != nodata)
                     _count(values, written, inside, whole, area)
                 dst.write(numpy.ma.filled(data, nodata), window=window)
                 self.tick()
@@ -305,21 +332,37 @@ class _Run:
                 self.statistics = [statistics.summary(max(inside_pixels, 1)) for statistics in area]
 
 
+def _written(data: numpy.ma.MaskedArray, nodata: float) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    """The values of a block as written, the valid ones, and those the file keeps as values.
+
+    A valid value rounded onto an integer nodata reads back as nodata: the statistics count what the file says
+    (adr/0014 §15h, "Kollision mit nodata").
+    """
+    valid = ~numpy.ma.getmaskarray(data)
+    values = numpy.ma.getdata(data)
+    return values, valid, valid if math.isnan(nodata) else valid & (values != nodata)
+
+
 def _count(
     values: numpy.ndarray,
     valid: numpy.ndarray,
     inside: numpy.ndarray,
-    whole: list[BandStatistics],
+    whole: list[BandStatistics] | None,
     area: list[BandStatistics],
 ) -> None:
-    """One block into the statistics: what lies inside the mask counts for both, the rest for the file only."""
+    """One block into the statistics: what lies inside the mask counts for both, the rest for the file only.
+
+    Without ``whole`` (a measure of the area alone, :func:`area_statistics`) only the area is counted.
+    """
     everywhere = bool(inside.all())
-    for band, valid_band, file_statistics, area_statistics in zip(values, valid, whole, area, strict=True):
+    for index, (band, valid_band, area_statistics) in enumerate(zip(values, valid, area, strict=True)):
         within = summarize(band[valid_band & inside])
         area_statistics.merge(within)
-        file_statistics.merge(within)
+        if whole is None:
+            continue
+        whole[index].merge(within)
         if not everywhere:
-            file_statistics.merge(summarize(band[valid_band & ~inside]))
+            whole[index].merge(summarize(band[valid_band & ~inside]))
 
 
 def _pixel_kernels(image: ImageData, steps: tuple[PlannedStep, ...]) -> ImageData:
@@ -385,21 +428,25 @@ def _properties(
     return properties
 
 
+def _mask_block(geometry: dict, window: Window, transform: Affine) -> numpy.ndarray:
+    """``1`` where a pixel of ``window`` touches the AOI (in the grid's CRS), else ``0``; ``uint8``."""
+    return rasterize(
+        [geometry],
+        out_shape=(int(window.height), int(window.width)),
+        transform=window_transform(window, transform),
+        all_touched=True,
+        default_value=1,
+        fill=0,
+        dtype="uint8",
+    )
+
+
 def _write_mask(state: _Run, meta: RasterMeta, aoi: dict) -> None:
     geometry = transform_geom("EPSG:4326", meta.crs, aoi)
     profile = {**_profile(meta, "uint8", 0), "count": 1, "nodata": None}
     with open_workfile(state.workdir, state.new_file(MASK_NAME), "w", **profile) as dst:
         for window in _blocks(meta.width, meta.height):
-            inside = rasterize(
-                [geometry],
-                out_shape=(int(window.height), int(window.width)),
-                transform=window_transform(window, meta.transform),
-                all_touched=True,
-                default_value=1,
-                fill=0,
-                dtype="uint8",
-            )
-            dst.write(inside, 1, window=window)
+            dst.write(_mask_block(geometry, window, meta.transform), 1, window=window)
 
 
 def run(
@@ -515,6 +562,77 @@ def run(
     )
 
 
+def _read_block(sources: list[Source], grid: Affine, window: Window, block: Window) -> ImageData:
+    """``block`` of the window ``window`` of the grid ``grid``, every source onto it, merged into one image."""
+    absolute = Window(window.col_off + block.col_off, window.row_off + block.row_off, block.width, block.height)
+    return merge_images([source.read(absolute, grid) for source in sources])
+
+
+def area_factor(width: int, height: int, max_pixels: int = MAX_AREA_PIXELS) -> int:
+    """The smallest whole ``k`` for which a grid ``k`` times coarser than ``width`` × ``height`` holds ``max_pixels``."""
+    if max_pixels < 1:
+        raise ValueError("max_pixels is at least 1")
+    factor = max(1, math.isqrt(width * height // max_pixels))
+    while -(-width // factor) * -(-height // factor) > max_pixels:
+        factor += 1
+    return factor
+
+
+def area_statistics(
+    recipe: Recipe, *, operators: OperatorRegistry = REGISTRY, max_pixels: int = MAX_AREA_PIXELS
+) -> AreaStatistics:
+    """The statistics of the AOI the result of ``recipe`` would carry, read and counted as :func:`run` does (NM4-19).
+
+    Nothing is written. While the window ``bbox(AOI ∩ raster)`` holds at most ``max_pixels``, it is read on
+    the job's own grid with the same blocks, kernels, cast into the output type and mask, so the answer is the
+    ``statistics`` of the result's properties, field for field (``stddev`` too: the blocks come in the same
+    order). A larger window is read on a grid :func:`area_factor` times coarser, laid on the job's from the
+    window's corner; the reader picks an overview there, and the values are those of that read. Only ``pixel``
+    steps: a ``grid`` step changes the grid the job counts on.
+
+    The GDAL options are the caller's (:func:`run` enters those of `readers`).
+    """
+    output = check_scope(recipe)
+    if isinstance(output, CropOutput):
+        raise UnsupportedRecipe("an export has no statistics of its area; measure a raster order")
+    passes = segments(plan_steps(recipe.steps, operators))
+    if any(segment.kind == "grid" for segment in passes):
+        raise UnsupportedRecipe("the area is measured for pixel steps only; a grid step changes the grid of the result")
+    steps = passes[0].steps
+    aoi = recipe.aoi.model_dump(mode="json")
+    with ExitStack() as stack:
+        sources = _open_sources(recipe, stack)
+        finest, resampled = common_grid(sources)
+        resampled = resampled or any(source.warps for source in sources)
+        window, transform = crop_window(aoi, finest.crs.to_string(), finest.transform, finest.width, finest.height)
+        meta = _transform_meta(_source_meta(sources, finest, resampled, window, transform), steps)
+        nodata = _nodata_for(output.dtype, meta)
+        factor = area_factor(meta.width, meta.height, max_pixels)
+        width, height = -(-meta.width // factor), -(-meta.height // factor)
+        coarse = meta.transform @ Affine.scale(factor)
+        geometry = transform_geom("EPSG:4326", meta.crs, aoi)
+        area = [BandStatistics(output.dtype) for _ in meta.bands]
+        inside_pixels = 0
+        for block in _blocks(width, height):
+            if factor == 1:
+                image = _read_block(sources, finest.transform, window, block)
+            else:
+                image = merge_images([source.read(block, coarse) for source in sources])
+            values, _, written = _written(_cast(_pixel_kernels(image, steps).array, output.dtype), nodata)
+            inside = _mask_block(geometry, block, coarse) == 1
+            inside_pixels += int(inside.sum())
+            _count(values, written, inside, None, area)
+    bands = [
+        {
+            "name": band.name,
+            **({} if band.unit is None else {"unit": band.unit}),
+            "statistics": statistics.summary(max(inside_pixels, 1)),
+        }
+        for band, statistics in zip(meta.bands, area, strict=True)
+    ]
+    return AreaStatistics(bands=bands, factor=factor, pixels_read=width * height)
+
+
 def _run_pass(
     state: _Run,
     segment: Segment,
@@ -541,9 +659,7 @@ def _run_pass(
     if sources is not None:
 
         def block(w: Window) -> numpy.ma.MaskedArray:
-            absolute = Window(window.col_off + w.col_off, window.row_off + w.row_off, w.width, w.height)
-            image = merge_images([source.read(absolute, grid) for source in sources])
-            return _pixel_kernels(image, segment.steps).array
+            return _pixel_kernels(_read_block(sources, grid, window, w), segment.steps).array
 
         state.write_pass(name, target_meta, dtype, nodata, block, last)
         return name
