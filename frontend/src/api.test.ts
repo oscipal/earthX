@@ -11,6 +11,8 @@ import {
   fetchMosaicTileJson,
   HttpError,
   nextTokenFrom,
+  parseAreaStatistics,
+  postAreaStatistics,
   searchAllPages,
   searchItems,
   uploadAoi,
@@ -667,5 +669,68 @@ describe('fetchMosaicTileJson', () => {
   ])('refuses an answer with %s rather than drawing from it', async (_name, body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, body)));
     await expect(fetchMosaicTileJson('d', ['A', 'B'], 'visual')).rejects.toThrow(/cannot read/);
+  });
+});
+
+// NM4-19: the statistics over the AOI of an order, the AOI in the body and nowhere else.
+describe('postAreaStatistics', () => {
+  const answer = { bands: [{ name: 'b1', unit: 'm', statistics: { minimum: 1, maximum: 2, count: 3 } }, { name: 'b2', statistics: {} }], exact: false, factor: 2 };
+  const reply = (status: number, body: unknown) =>
+    ({ ok: status < 300, status, statusText: 'x', headers: new Headers(), json: async () => body }) as unknown as Response;
+  const order = { recipe_version: 1, aoi: { type: 'Polygon', coordinates: [[[10.4, 50.4], [10.6, 50.4], [10.6, 50.6], [10.4, 50.4]]] }, steps: [] };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('posts the order as the JSON body to the path of the dataset, with no query', async () => {
+    const fetchMock = vi.fn(async () => reply(200, answer));
+    vi.stubGlobal('fetch', fetchMock);
+    const read = await postAreaStatistics('sentinel-2-c1-l2a', order);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/collections/sentinel-2-c1-l2a/statistics');
+    expect(init).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    expect(JSON.parse(String(init.body))).toEqual(order);
+    expect(read).toEqual({
+      bands: [
+        { name: 'b1', unit: 'm', statistics: { minimum: 1, maximum: 2, count: 3 } },
+        { name: 'b2', unit: null, statistics: {} },
+      ],
+      exact: false,
+      factor: 2,
+    });
+  });
+
+  it('writes the dataset into the path as one segment, whatever it is called', async () => {
+    const fetchMock = vi.fn(async () => reply(200, answer));
+    vi.stubGlobal('fetch', fetchMock);
+    await postAreaStatistics('a/b?c', order);
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe('/collections/a%2Fb%3Fc/statistics');
+  });
+
+  it.each([
+    [413, { detail: 'too many positions' }],
+    [422, { detail: 'step 1: expression names unknown band(s)' }],
+    [502, {}],
+  ])('throws an HttpError for status %s', async (status, body) => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(status, body)));
+    await expect(postAreaStatistics('d', order)).rejects.toMatchObject({ status });
+  });
+
+  it.each([
+    ['no object', null],
+    ['no bands', { bands: [], exact: true, factor: 1 }],
+    ['bands that are no list', { bands: 'x', exact: true, factor: 1 }],
+    ['no statement whether it is exact', { bands: answer.bands, factor: 1 }],
+  ])('refuses an answer with %s', (_, body) => {
+    expect(() => parseAreaStatistics(body)).toThrow('cannot read');
+  });
+
+  it('takes a factor that is no number as 1, and a band that is no object as an empty one', () => {
+    expect(parseAreaStatistics({ bands: [null], exact: true, factor: 'x' })).toEqual({
+      bands: [{ name: '', unit: null, statistics: {} }],
+      exact: true,
+      factor: 1,
+    });
   });
 });

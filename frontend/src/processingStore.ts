@@ -18,7 +18,7 @@
 
 import { create } from 'zustand';
 
-import { fetchItem, fetchStatisticsAt, HttpError } from './api';
+import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics } from './api';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import { resultsGroupByOfOption, type DatasetOption } from './datasets';
 import {
@@ -104,6 +104,7 @@ import {
   type ProcessInfo,
 } from './processingOrder';
 import {
+  areaMeasureOf,
   DEFAULT_RANGE,
   measuredRange,
   measureOf,
@@ -1106,6 +1107,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     autoStretch: () => {
       failedMeasures.clear();
       measuring.clear();
+      // The measure over the AOI is asked again where it fell back to the scene.
+      for (const [key, measure] of measures) if (measure.source === 'fallback') measures.delete(key);
       settledKey = null;
       set({ range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false });
       refreshPreview();
@@ -1701,7 +1704,8 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   const plan = limit === undefined ? full : shortenPlan(full, limit);
   if (plan === null) return null;
   const jobs = view.parts.map((part) => part.unit.items);
-  const args = { dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, area: p.area, jobs, answers: mosaicAnswers };
+  const order = view.parts[0]?.order ?? null;
+  const args = { dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, area: p.area, jobs, answers: mosaicAnswers, order };
   const spec = previewSpec({ ...args, range: p.range });
   if (spec === null) return null;
   const range = drawnRange(p, spec.measure);
@@ -1722,12 +1726,27 @@ function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'
   return (p.measure?.key === measureKey ? measuredRange(p.measure) : null) ?? p.range;
 }
 
-// One measure per state of the preview, which is the steps over the first scene: remembered, and a failed one is
-// not asked again before "Auto stretch" (so a typed expression asks for no measure per key, nor a refusal twice).
+// One measure per state of the preview, which is the steps over the first scene (over the AOI, for "AOI only" with
+// a complete order, NM4-19): remembered, and a failed one is not asked again before "Auto stretch" (so a typed
+// expression asks for no measure per key, nor a refusal twice). The key of an area measure is the text of the order,
+// which carries the AOI: it lives here in memory and goes into no URL, storage, log or message.
 const MEASURES_KEPT = 50;
 const measures = new Map<string, PreviewMeasure>();
 const failedMeasures = new Set<string>();
 const measuring = new Map<string, Promise<PreviewMeasure | null>>();
+
+// The measure over the AOI; where the tiler does not give it (an order it refuses, a source that fails, a network
+// that fails, an answer the panel cannot read) the first whole scene as before, marked as the fall-back (KE1).
+async function measureOver(spec: PreviewSpec): Promise<PreviewMeasure> {
+  if (spec.areaOrder) {
+    try {
+      return areaMeasureOf(spec.measure, await postAreaStatistics(spec.areaOrder.datasetId, spec.areaOrder.order), spec.expression);
+    } catch {
+      return measureOf(spec.measure, await fetchStatisticsAt(spec.sceneMeasure), spec.expression, 'fallback');
+    }
+  }
+  return measureOf(spec.measure, await fetchStatisticsAt(spec.sceneMeasure), spec.expression);
+}
 
 function measureFor(spec: PreviewSpec): Promise<PreviewMeasure | null> {
   const known = measures.get(spec.measure);
@@ -1735,9 +1754,8 @@ function measureFor(spec: PreviewSpec): Promise<PreviewMeasure | null> {
   if (failedMeasures.has(spec.measure)) return Promise.resolve(null);
   let request = measuring.get(spec.measure);
   if (!request) {
-    request = fetchStatisticsAt(spec.measure)
-      .then((statistics) => {
-        const measure = measureOf(spec.measure, statistics, spec.expression);
+    request = measureOver(spec)
+      .then((measure) => {
         if (measures.size >= MEASURES_KEPT) measures.delete(measures.keys().next().value!);
         measures.set(spec.measure, measure);
         return measure;
@@ -1790,6 +1808,9 @@ function adoptMeasure(measure: PreviewMeasure | null): void {
 // The key of the whole chain the shown preview comes from: a preview cut by the tiler
 // differs from it, and must not be asked for again on every change that leaves it alone.
 let settledKey: string | null = null;
+// Together with what the range is measured on: for "AOI only" that is the order, whose AOI and output type are no
+// part of the tiles (`PreviewSpec.key`), so a change of either is a new measure over the same picture.
+const settledOf = (spec: PreviewSpec): string => `${spec.key}\n${spec.measure}`;
 let settleRun = 0;
 // What the tiler said of a chain, taken (`null`) or refused, until there is nothing to show: asking again for a new
 // range would give the same answer. Bounded like the measures; a question that failed on the way is not kept.
@@ -1894,7 +1915,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
       spec = wantedPreview(limit);
     }
   }
-  settledKey = wantedPreview()?.key ?? wanted.key;
+  settledKey = settledOf(wantedPreview() ?? wanted);
   useProcessingStore.setState({ preview: spec, previewNote: note, previewSettling: false });
   // A measure that comes after all is taken in with one redraw, and only if it changes the picture.
   if (late) {
@@ -1903,7 +1924,8 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
     adoptMeasure(measure);
     const again = wantedPreview(limit);
     if (again && again.key !== spec?.key) {
-      settledKey = wantedPreview()?.key ?? settledKey;
+      const now = wantedPreview();
+      if (now) settledKey = settledOf(now);
       useProcessingStore.setState({ preview: again });
     }
   }
@@ -1922,7 +1944,7 @@ function refreshPreview(): void {
   for (const [probe, answer] of mosaicAnswers) if (answer.state === 'scenes' && answer.retry) mosaicAnswers.delete(probe);
   const wanted = wantedPreview();
   const state = useProcessingStore.getState();
-  if (wanted !== null && wanted.key === settledKey && (state.preview !== null || state.previewNote !== null)) return;
+  if (wanted !== null && settledOf(wanted) === settledKey && (state.preview !== null || state.previewNote !== null)) return;
   if (wanted === null) {
     settleRun++;
     settledKey = null;
@@ -1951,6 +1973,7 @@ useProcessingStore.subscribe((s, prev) => {
     s.runAs !== prev.runAs ||
     s.steps !== prev.steps ||
     s.picked !== prev.picked ||
+    s.dtype !== prev.dtype ||
     s.range !== prev.range
   ) {
     refreshPreview();

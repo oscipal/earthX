@@ -18,7 +18,7 @@
 
 import { useMemo } from 'react';
 
-import { previewOverlays, SCENE_PREVIEW_HINT } from '../processingPreview';
+import { previewOverlays, previewTitle } from '../processingPreview';
 import { isOverview } from '../resultLayer';
 import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
@@ -32,6 +32,7 @@ const zoomInTitle = (waiting: { name: string; from: number }[]): string =>
 
 export default function PreviewBadge() {
   const draft = useProcessingStore((s) => s.preview);
+  const draftMeasure = useProcessingStore((s) => s.measure);
   const loading = usePreviewLoading();
   const aoi = useAppStore((s) => s.aoi);
   const draftOverlays = useMemo(() => (draft ? previewOverlays(draft, draft.clipToAoi ? aoi : null) : []), [draft, aoi]);
@@ -58,7 +59,7 @@ export default function PreviewBadge() {
   return (
     <div className="overlay preview-badge-dock">
       {(draft || pinned) && (
-        <span className="preview-badge" title={draft?.perScene ? SCENE_PREVIEW_HINT : undefined}>
+        <span className="preview-badge" title={previewTitle(draft, draftMeasure)}>
           Preview
         </span>
       )}

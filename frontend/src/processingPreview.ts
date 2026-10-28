@@ -11,6 +11,7 @@ import {
   buildOperatorTileJsonUrl,
   buildOperatorTileTemplate,
   MOSAIC_TILEJSON_TIMEOUT_MS,
+  type AreaStatistics,
   type BandStatistics,
 } from './api';
 import type { DatasetOption } from './datasets';
@@ -26,9 +27,9 @@ import {
   TILE_LEVEL_AHEAD,
   mosaicRequestBytes,
 } from './mosaic';
-import { canonicalJson } from './processing';
+import { canonicalJson, type Order } from './processing';
 import { bandsOf, shownUnit, type Area, type DraftStep, type Operator, type ProcessInfo } from './processingOrder';
-import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, type BandStats, type ResultStats } from './render';
+import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
 import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
@@ -47,6 +48,11 @@ export const NO_PREVIEW_UNLISTED = 'No preview: the first step is not available 
 
 // The tooltip of "Preview" while a pass the job mosaics is drawn scene by scene: the tiler would not take its mosaic.
 export const SCENE_PREVIEW_HINT = 'Preview per scene – may differ from the job where scenes overlap';
+
+// The tooltip of "Preview" when the range of "AOI only" is not the one the job counts (NM4-19): the measure fell back
+// to the first whole scene, or the tiler read the AOI on a coarser raster (a window above 2048² pixels).
+export const SCENE_MEASURE_HINT = 'Range measured over the first whole scene';
+export const COARSE_MEASURE_HINT = 'Range measured on a coarser read; the result may differ';
 
 // --- range and colormap ------------------------------------------------------
 
@@ -250,9 +256,16 @@ export interface PreviewSpec {
   stepCount: number;
   // The TileJSON of the first scene with the same steps: what `probeChain` asks.
   probe: string;
-  // The statistics of the first scene with the same steps (of a mosaic: the first it reads, the one that wins where
-  // scenes overlap): what `measureOf` reads. It does not depend on the range, so a new range is no new measure.
+  // What the measure is called: the statistics of the first scene with the same steps (of a mosaic: the first it
+  // reads, the one that wins where scenes overlap), as `sceneMeasure` asks them; for "AOI only" with a complete order
+  // the order text instead (`areaOrder`), which carries the AOI and so stays in memory. It does not depend on the
+  // range, so a new range is no new measure.
   measure: string;
+  // The statistics of the first scene as a GET: the measure of "Whole scene", and the fall-back of the other.
+  sceneMeasure: string;
+  // "AOI only", whole chain, complete order of the first job: the tiler counts the statistics over the AOI as the job
+  // does (`postAreaStatistics`). `null`: the measure is the first scene's.
+  areaOrder: { datasetId: string; order: Order } | null;
   // Whether a Band math step is among the steps: what the values of an index are judged by.
   expression: boolean;
   // The passes drawn as a mosaic from their first level up, and the scenes: those below a mosaic, those of a pass
@@ -319,8 +332,10 @@ export function previewSpec(args: {
   jobs?: readonly (readonly StacItem[])[];
   // What the tiler said of the mosaics asked so far, by TileJSON URL; one not asked yet is taken to be taken.
   answers?: ReadonlyMap<string, MosaicAnswer>;
+  // The order of the first job, `null` while it is not complete: with "AOI only" it is what the range is measured on.
+  order?: Order | null;
 }): PreviewSpec | null {
-  const { dataset, items, assets, info, plan, range, area, jobs = [], answers } = args;
+  const { dataset, items, assets, info, plan, range, area, jobs = [], answers, order = null } = args;
   if (!dataset?.viewable || assets.length === 0 || assets.length > MAX_PREVIEW_ASSETS) return null;
   const rescale = rescaleOf(range);
   if ('problem' in rescale) return null;
@@ -384,6 +399,9 @@ export function previewSpec(args: {
   const measured = mosaics[0]?.order[0] ?? scenes[0]?.id;
   if (measured === undefined) return null;
   const clipToAoi = area === 'aoi';
+  // The chain must be whole: the order runs all its steps, and a preview of a start of them would be measured on more.
+  const areaOrder = clipToAoi && order !== null && !plan.further ? { datasetId: dataset.id, order } : null;
+  const sceneMeasure = buildOperatorStatisticsUrl(dataset.id, measured, assets, chain);
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
@@ -395,7 +413,9 @@ export function previewSpec(args: {
     title: plan.steps.map(({ operator }) => operator.title).join(' → '),
     stepCount: plan.steps.length,
     probe,
-    measure: buildOperatorStatisticsUrl(dataset.id, measured, assets, chain),
+    measure: areaOrder ? canonicalJson(areaOrder.order) : sceneMeasure,
+    sceneMeasure,
+    areaOrder,
     expression: plan.steps.some(({ step }) => step.op === 'band_math'),
     mosaics,
     scenes,
@@ -408,20 +428,36 @@ export function previewSpec(args: {
 
 // --- the measure of a preview (M4-19c) ---------------------------------------
 
-// What the tiler said of the values the steps make of the first scene: the numbers the colour scale is chosen
-// from, and the unit of the result. `key` is the `PreviewSpec.measure` it answers.
+// What the tiler said of the values the steps make: the numbers the colour scale is chosen from, and the unit of
+// the result. `key` is the `PreviewSpec.measure` it answers.
 export interface PreviewMeasure {
   key: string;
   stats: ResultStats | null;
   // As the data say it; "1" is shown as nothing (`shownUnit`).
   unit: string | null;
+  // Over what it was measured: the AOI as the job counts it, the first whole scene, or — `fallback` — the first
+  // whole scene because the measure over the AOI was not to be had.
+  source: 'area' | 'scene' | 'fallback';
+  // Over the AOI: the values are the result's; else the tiler read a coarser raster. Always `true` for a scene.
+  exact: boolean;
 }
 
 const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
+// The one unit all bands have, where they have one.
+function commonUnit(units: readonly (string | null)[]): string | null {
+  const distinct = new Set(units);
+  return distinct.size === 1 ? [...distinct][0] : null;
+}
+
 // `/statistics` with the steps, as a measure: per band the minimum, maximum and 2/98 percentiles of the valid
 // pixels (none with `count` 0), and the one unit all bands have, where they have one.
-export function measureOf(key: string, statistics: Record<string, BandStatistics>, expression: boolean): PreviewMeasure {
+export function measureOf(
+  key: string,
+  statistics: Record<string, BandStatistics>,
+  expression: boolean,
+  source: 'scene' | 'fallback' = 'scene',
+): PreviewMeasure {
   const bands = Object.values(statistics);
   const read = bands.map((band): BandStats => {
     const usable = (finite(band.count) ?? 0) > 0;
@@ -432,10 +468,34 @@ export function measureOf(key: string, statistics: Record<string, BandStatistics
       percentile98: usable ? finite(band.percentile_98) : null,
     };
   });
-  const units = new Set(bands.map((band) => (typeof band.unit === 'string' ? band.unit : null)));
-  const unit = units.size === 1 ? [...units][0] : null;
+  const unit = commonUnit(bands.map((band) => (typeof band.unit === 'string' ? band.unit : null)));
   const named = read.some((band) => band.minimum !== null && band.maximum !== null);
-  return { key, stats: named ? { bands: read, expression } : null, unit };
+  return { key, stats: named ? { bands: read, expression } : null, unit, source, exact: true };
+}
+
+// The statistics over the AOI as a measure: the object of the results document per band, read as a result's are.
+export function areaMeasureOf(key: string, answer: AreaStatistics, expression: boolean): PreviewMeasure {
+  return {
+    key,
+    stats: statsFrom(answer.bands, expression),
+    unit: commonUnit(answer.bands.map((band) => band.unit)),
+    source: 'area',
+    exact: answer.exact,
+  };
+}
+
+// What the tooltip of "Preview" says of the range, where it is not the job's: only for "AOI only", and only of the
+// measure of this very preview.
+export function measureHint(preview: PreviewSpec | null, measure: PreviewMeasure | null): string | null {
+  if (!preview || !preview.clipToAoi || !measure || measure.key !== preview.measure) return null;
+  if (measure.source === 'area') return measure.exact ? null : COARSE_MEASURE_HINT;
+  return SCENE_MEASURE_HINT;
+}
+
+// The tooltip of "Preview", on the map and in the panel.
+export function previewTitle(preview: PreviewSpec | null, measure: PreviewMeasure | null): string | undefined {
+  const lines = [preview?.perScene ? SCENE_PREVIEW_HINT : null, measureHint(preview, measure)].filter((line) => line !== null);
+  return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
 // The range the measure calls for as the panel holds it (the same rule as a result's, `scaleOf`), or `null`.
