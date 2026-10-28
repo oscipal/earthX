@@ -69,8 +69,10 @@ from earthx.api.mixed_search import (
     is_mixed_token,
     mixed_fingerprint,
 )
-from earthx.catalog.registry import DatasetRegistry, ItemHolding
+from earthx.api.search_filters import FILTER_KEYS, read_search_conditions
+from earthx.catalog.registry import DatasetRegistry, ItemHolding, SearchFilter, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
+from earthx.catalog.search_filters import FilterConditions, InvalidFilter
 from earthx.gateway import UpstreamError, UpstreamTimeout, UpstreamUnreachable
 
 LOGGER = logging.getLogger("earthx.api.federating_client")
@@ -88,6 +90,9 @@ LOGGER = logging.getLogger("earthx.api.federating_client")
 # without this check pydantic's `extra="ignore"` (or FastAPI ignoring an undeclared
 # query parameter) would swallow them rather than reject them.
 _DISALLOWED_QUERY_KEYS = frozenset({"filter", "filter-lang", "filter_lang", "sortby", "query", "fields"})
+# DS-02: a POST body may carry the search filters of the registry (`api/search_filters.py`); a GET query string
+# may not, so `query` stays refused there and on the items endpoint.
+_DISALLOWED_BODY_KEYS = _DISALLOWED_QUERY_KEYS - FILTER_KEYS
 
 # M3-08: `/search` forwards `ids`/`intersects` to a federated source now (§4 of the
 # M3-08 plan), but OGC API Features' items endpoint (`GET /collections/{id}/items`)
@@ -107,6 +112,11 @@ def _reject_keys(keys: object, disallowed: frozenset[str], reason: str) -> None:
 def _reject_disallowed_keys(keys: object) -> None:
     _reject_keys(
         frozenset(keys),
+        FILTER_KEYS,
+        "is taken in the body of POST /stac/search only (DS-02)",
+    )
+    _reject_keys(
+        frozenset(keys),
         _DISALLOWED_QUERY_KEYS,
         "is not available in M1 (adr/0005 rule VI; docs/plans/m1/m1-07-stac-api.md §6)",
     )
@@ -120,12 +130,17 @@ def _reject_items_endpoint_keys(keys: object) -> None:
     )
 
 
-async def _reject_disallowed_body(request: Request) -> None:
-    if request.method != "POST":
-        return
+async def _search_filters_of_body(request: Request) -> dict[str, Any]:
+    """The search filters a POST body carries, after refusing what no body may carry."""
     body = await request.json()
-    if isinstance(body, dict):
-        _reject_disallowed_keys(body.keys())
+    if not isinstance(body, dict):
+        return {}
+    _reject_keys(
+        frozenset(body),
+        _DISALLOWED_BODY_KEYS,
+        "is not available in M1 (adr/0005 rule VI; docs/plans/m1/m1-07-stac-api.md §6)",
+    )
+    return {key: body[key] for key in FILTER_KEYS if key in body}
 
 
 def _dump_intersects(geometry: Any) -> dict[str, Any] | None:
@@ -234,11 +249,13 @@ class _NativeGroup:
 
 @dataclass(frozen=True, slots=True)
 class _FederatedSource:
-    """One federated collection — always its own source (M3-13 §4.2)."""
+    """One federated collection — always its own source (M3-13 §4.2) — with the
+    conditions on its own search filters (DS-02), ``None`` where it has none."""
 
     collection_id: str
     effective_datetime: str | None
     dropped_datetime: bool
+    conditions: FilterConditions | None = None
 
     @property
     def key(self) -> str:
@@ -249,7 +266,10 @@ _Source = _NativeGroup | _FederatedSource
 
 
 def _partition_sources(
-    target_ids: list[str], infos: Mapping[str, tuple[ItemHolding, bool]], datetime_value: str | None
+    target_ids: list[str],
+    infos: Mapping[str, tuple[ItemHolding, bool]],
+    datetime_value: str | None,
+    conditions: Mapping[str, FilterConditions],
 ) -> list[_Source]:
     """The distinct *sources* a search over ``target_ids`` reaches (M3-13 §4.2):
     this platform's own collections, split into at most two groups by whether
@@ -276,27 +296,36 @@ def _partition_sources(
     for collection_id in federated_ids:
         effective, ignored = _apply_time_axis(datetime_value, [infos[collection_id][1]])
         sources.append(
-            _FederatedSource(collection_id=collection_id, effective_datetime=effective, dropped_datetime=bool(ignored))
+            _FederatedSource(
+                collection_id=collection_id,
+                effective_datetime=effective,
+                dropped_datetime=bool(ignored),
+                conditions=conditions.get(collection_id) or None,
+            )
         )
     return sources
 
 
-def _ignored_filters_of(sources: list[_Source]) -> tuple[tuple[str, ...], dict[str, tuple[str, ...]]]:
+def _ignored_filters_of(
+    sources: list[_Source], dropped_conditions: Mapping[str, tuple[str, ...]]
+) -> tuple[tuple[str, ...], dict[str, tuple[str, ...]]]:
     """The flat ``ignored_filters`` (unchanged shape, for a simple client) and the
     new per-collection breakdown (Otto, M3-13 F4: "weil der Viewer mit
     Mehrfachauswahl je Datensatz einen Hinweis zeigen soll") — computed together
-    because both read off the same per-source ``dropped_datetime``.
+    because both read off the same per-source ``dropped_datetime``. The properties
+    of a shared ``query`` a collection does not offer (DS-02) follow ``datetime``.
     """
     by_collection: dict[str, tuple[str, ...]] = {}
-    any_dropped = False
     for source in sources:
         if not source.dropped_datetime:
             continue
-        any_dropped = True
         ids = source.ids if isinstance(source, _NativeGroup) else (source.collection_id,)
         for collection_id in ids:
             by_collection[collection_id] = ("datetime",)
-    return (("datetime",) if any_dropped else ()), by_collection
+    for collection_id, names in dropped_conditions.items():
+        by_collection[collection_id] = (*by_collection.get(collection_id, ()), *names)
+    flat = {name for names in by_collection.values() for name in names}
+    return tuple(sorted(flat, key=lambda name: (name != "datetime", name))), by_collection
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,6 +496,14 @@ def _registry_of(request: Request) -> DatasetRegistry:
     return registry
 
 
+def _search_filters_in(registry: DatasetRegistry, collection_id: str) -> tuple[SearchFilter, ...]:
+    """The search filters a collection offers; none for one pgstac holds but the registry does not."""
+    try:
+        return registry.get(collection_id).search_filters
+    except UnknownDatasetError:
+        return ()
+
+
 def _adapters_of(request: Request) -> AdapterSpecs:
     adapters = getattr(request.app.state, "earthx_adapters", None)
     if adapters is None:
@@ -565,7 +602,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         return cast(Item, item)
 
     async def post_search(self, search_request: Any, request: Request, **kwargs: Any) -> ItemCollection:
-        await _reject_disallowed_body(request)
+        search_filters = await _search_filters_of_body(request)
         collections = list(search_request.collections) if search_request.collections else None
         bbox = search_request.bbox
         outcome = await self._dispatch_search(
@@ -577,6 +614,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             datetime_value=search_request.datetime,
             limit=search_request.limit,
             token=search_request.token,
+            search_filters=search_filters,
         )
         if outcome.result is None:
             if outcome.effective_datetime != search_request.datetime:
@@ -694,6 +732,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         datetime_value: str | None,
         limit: int | None,
         token: str | None,
+        search_filters: Mapping[str, Any] | None = None,
     ) -> DispatchOutcome:
         """A federated page, a mixed page, or an outcome with ``result=None`` meaning:
         nothing here is federated, let ``super()`` answer as usual — with
@@ -712,8 +751,15 @@ class FederatingCoreCrudClient(CoreCrudClient):
         """
         target_ids = collections or await self._all_collection_ids(request)
         infos = {cid: await self._source_info_of(cid, request) for cid in target_ids}
-        sources = _partition_sources(target_ids, infos, datetime_value)
-        ignored_filters, ignored_by_collection = _ignored_filters_of(sources)
+        registry = _registry_of(request)
+        try:
+            conditions = read_search_conditions(
+                search_filters or {}, target_ids, lambda cid: _search_filters_in(registry, cid)
+            )
+        except InvalidFilter as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        sources = _partition_sources(target_ids, infos, datetime_value, conditions.by_collection)
+        ignored_filters, ignored_by_collection = _ignored_filters_of(sources, conditions.dropped)
 
         if len(sources) <= 1:
             if not sources:
@@ -744,6 +790,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 datetime_value=source.effective_datetime,
                 limit=limit,
                 token=token,
+                conditions=source.conditions,
             )
             return DispatchOutcome(
                 page, source.effective_datetime, ignored_filters, ignored_by_collection, searched=searched
@@ -780,11 +827,12 @@ class FederatingCoreCrudClient(CoreCrudClient):
         datetime_value: str | None,
         limit: int | None,
         token: str | None,
+        conditions: FilterConditions | None = None,
     ) -> ItemCollection:
         try:
             page = await self._federated_search_raw(
                 collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
-                datetime_value=datetime_value, limit=limit, token=token,
+                datetime_value=datetime_value, limit=limit, token=token, conditions=conditions,
             )
         except (
             InvalidQuery,
@@ -809,6 +857,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         datetime_value: str | None,
         limit: int | None,
         token: str | None,
+        conditions: FilterConditions | None = None,
     ) -> ItemPage:
         """The adapter's own answer, with none of its exceptions caught.
 
@@ -834,6 +883,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             end=end,
             limit=limit or SearchParams().limit,
             page_token=_strip_forward_token(token),
+            conditions=conditions,
         )
         # The app's own registry, the same one that routed this collection here
         # (adr/0011 §7 D2) — not a module-wide default (M4-01b).
@@ -901,7 +951,12 @@ class FederatingCoreCrudClient(CoreCrudClient):
         of a page that only ever shrinks (the fixed-share alternative).
         """
         collection_ids = tuple(cid for source in sources for cid in _collections_of(source))
-        fingerprint = mixed_fingerprint(collection_ids, bbox, intersects, ids, datetime_value)
+        conditions = {
+            source.collection_id: source.conditions
+            for source in sources
+            if isinstance(source, _FederatedSource) and source.conditions is not None
+        }
+        fingerprint = mixed_fingerprint(collection_ids, bbox, intersects, ids, datetime_value, conditions)
         known_source_keys = {source.key for source in sources}
         by_key = {source.key: source for source in sources}
 
@@ -934,6 +989,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
                     self._federated_search_raw(
                         source.collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
                         datetime_value=source.effective_datetime, limit=share, token=marker,
+                        conditions=source.conditions,
                     ),
                     # Read off the module, not a name imported at load time
                     # (`from ... import SOURCE_TIMEOUT_S`): a test's monkeypatch of
