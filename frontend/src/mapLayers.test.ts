@@ -1114,15 +1114,12 @@ describe('watchPreviewLoading (NM4-04b)', () => {
     expect(seen).toEqual([true, true, false]);
   });
 
-  it('is not loading any more when a tile fails, nor when the map is at rest', () => {
+  it('is not loading any more when the map is at rest', () => {
     const { fire, seen, pending } = watched();
     pending.add('preview-src-0');
     fire('sourcedataloading', 'preview-src-0');
-    pending.delete('preview-src-0');
-    fire('error', 'preview-src-0');
-    expect(seen).toEqual([true, false]);
     fire('idle');
-    expect(seen).toEqual([true, false, false]);
+    expect(seen).toEqual([true, false]);
   });
 
   it('does not take the tiles of anything else for the preview, however slow they are', () => {
@@ -1131,7 +1128,6 @@ describe('watchPreviewLoading (NM4-04b)', () => {
     fire('sourcedataloading', 'm-tiles-src-3');
     fire('sourcedata', 'm-tiles-src-3');
     fire('sourcedataloading', 'basemap');
-    fire('error');
     fire('sourcedataloading');
     expect(seen).toEqual([]);
   });

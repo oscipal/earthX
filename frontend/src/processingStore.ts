@@ -1715,16 +1715,30 @@ function rememberProbe(url: string, refused: RefusedStep | null): void {
 
 // What the tiler said of each mosaic of a preview (NM4-04), by its TileJSON: the order of its scenes, or that the
 // scenes are drawn one by one. A failing source or network counts as that too, until the preview goes away.
+// An answer that failed on the way (`retry`) is dropped with the next change (`refreshPreview`); one still on its way is
+// not asked twice, and one that comes after the preview went away is not kept.
 const mosaicAnswers = new Map<string, MosaicAnswer>();
+const askingMosaics = new Map<string, Promise<void>>();
+let mosaicEpoch = 0;
 
 async function askMosaics(spec: PreviewSpec | null): Promise<void> {
   await Promise.all(
     (spec?.mosaics ?? [])
       .filter((mosaic) => !mosaicAnswers.has(mosaic.probe))
-      .map(async ({ probe }) => {
-        const answer = await probeMosaic(probe);
-        if (mosaicAnswers.size >= PROBES_KEPT) mosaicAnswers.delete(mosaicAnswers.keys().next().value!);
-        mosaicAnswers.set(probe, answer);
+      .map(({ probe }) => {
+        let request = askingMosaics.get(probe);
+        if (!request) {
+          const epoch = mosaicEpoch;
+          request = probeMosaic(probe)
+            .then((answer) => {
+              if (epoch !== mosaicEpoch) return;
+              if (mosaicAnswers.size >= PROBES_KEPT) mosaicAnswers.delete(mosaicAnswers.keys().next().value!);
+              mosaicAnswers.set(probe, answer);
+            })
+            .finally(() => askingMosaics.delete(probe));
+          askingMosaics.set(probe, request);
+        }
+        return request;
       }),
   );
 }
@@ -1816,6 +1830,8 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
 // last change, so typing an expression asks for no tile per key.
 function refreshPreview(): void {
   clearTimeout(previewTimer);
+  // A mosaic whose question failed on the way is asked again with the next change.
+  for (const [probe, answer] of mosaicAnswers) if (answer.state === 'scenes' && answer.retry) mosaicAnswers.delete(probe);
   const wanted = wantedPreview();
   const state = useProcessingStore.getState();
   if (wanted !== null && wanted.key === settledKey && (state.preview !== null || state.previewNote !== null)) return;
@@ -1824,6 +1840,8 @@ function refreshPreview(): void {
     settledKey = null;
     probed.clear();
     mosaicAnswers.clear();
+    askingMosaics.clear();
+    mosaicEpoch++;
     if (state.preview !== null || state.previewNote !== null || state.previewSettling) {
       useProcessingStore.setState({ preview: null, previewNote: null, previewSettling: false });
     }

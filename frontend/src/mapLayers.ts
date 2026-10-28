@@ -532,7 +532,8 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
 
 // Tells whether the tiles of the preview are on their way: from the first one the map asks for until every source of
 // the preview has all of its tiles. The first tile of a mosaic over cold scenes takes seconds, and the map says so
-// (`PreviewBadge`). Only the preview's own sources count: a basemap that is slow does not make the preview "loading".
+// (`PreviewBadge`). A slow basemap does not hold it up, but the map's rest (`idle`) is what ends it where tiles were
+// dropped on the way (a fast pan): that waits for the basemap too.
 export function watchPreviewLoading(map: MapLibreMap, onChange: (loading: boolean) => void): void {
   const isPreview = (event: { sourceId?: string }) => event.sourceId?.startsWith(PREVIEW_SRC) === true;
   const loaded = () =>
@@ -544,8 +545,6 @@ export function watchPreviewLoading(map: MapLibreMap, onChange: (loading: boolea
     if (isPreview(event)) onChange(true);
   });
   map.on('sourcedata', settle);
-  // A tile that fails is not loading any more.
-  map.on('error', settle);
   map.on('idle', () => onChange(false));
 }
 

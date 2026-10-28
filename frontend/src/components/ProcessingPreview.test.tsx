@@ -1509,6 +1509,40 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(store().preview).toMatchObject({ mosaics: [], perScene: true });
   });
 
+  it('draws the scenes for now when the question about the mosaic fails on the way, and asks again at the next change', async () => {
+    let calls = 0;
+    tilejson = (url) => {
+      if (!url.includes('/mosaic/')) return json({ tilejson: '3.0.0' });
+      return ++calls === 1 ? reply(502, { detail: 'the catalog is down' }) : json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] });
+    };
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    expect(store().preview).toMatchObject({ mosaics: [], perScene: true });
+    act(() => useProcessingStore.setState({ range: { vmin: '-0.5', vmax: '1', colormap: 'rdylgn' } }));
+    await afterDebounce();
+    await flush();
+    expect(asks('/mosaic/')).toHaveLength(2);
+    expect(store().preview).toMatchObject({ perScene: false });
+    expect(store().preview!.mosaics).toHaveLength(1);
+  });
+
+  it('does not ask the mosaic twice while the first question is still on its way', async () => {
+    let release!: (response: Response) => void;
+    const held = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    tilejson = (url) => (url.includes('/mosaic/') ? (held as unknown as Response) : json({ tilejson: '3.0.0' }));
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    act(() => useProcessingStore.setState({ range: { vmin: '-0.5', vmax: '1', colormap: 'rdylgn' } }));
+    await afterDebounce();
+    await flush();
+    release(json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] }));
+    await flush();
+    expect(asks('/mosaic/')).toHaveLength(1);
+    expect(store().preview!.mosaics).toHaveLength(1);
+  });
+
   it('draws the scenes one by one for a mosaic with more bands than the tiler takes with steps', async () => {
     const wide = (id: string): StacItem => ({
       ...scene(id),

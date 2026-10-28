@@ -509,6 +509,16 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
       expect(spec.scenes.map((s) => s.id)).toEqual(big.map((b) => b.id).slice(0, MAX_PREVIEW_SCENES - 1));
     });
 
+    it('keeps the scenes drawn alone when a mosaic is big, and fills the rest with the scenes below it', () => {
+      const big = Array.from({ length: 45 }, (_, i) => item(`A${String(i).padStart(2, '0')}`, { gsd: 10 }));
+      const lone = item('B_LONE', { gsd: 10 });
+      const spec = previewSpec({ ...base, dataset: wide, items: [...big, lone], jobs: [big, [lone]] })!;
+      expect(spec.mosaics).toHaveLength(1);
+      expect(spec.scenes).toHaveLength(MAX_PREVIEW_SCENES - 1);
+      expect(spec.scenes.filter((s) => s.below === undefined).map((s) => s.id)).toEqual(['B_LONE']);
+      expect(spec.scenes.filter((s) => s.below !== undefined)).toHaveLength(MAX_PREVIEW_SCENES - 2);
+    });
+
     it('with the hint a person can read', () => {
       expect(SCENE_PREVIEW_HINT).toBe('Preview per scene – may differ from the job where scenes overlap');
     });
@@ -544,7 +554,7 @@ describe('probeMosaic (NM4-04b)', () => {
   it('asks for the TileJSON it was given', async () => {
     const reply = vi.fn(answer(200, { 'earthx:order': ['A'] }));
     await probe(reply);
-    expect(reply).toHaveBeenCalledWith('/mosaic/tilejson.json?item=A');
+    expect(reply).toHaveBeenCalledWith('/mosaic/tilejson.json?item=A', { signal: expect.any(AbortSignal) });
   });
 
   it('names the step a refusal names, as for one scene', async () => {
@@ -560,12 +570,19 @@ describe('probeMosaic (NM4-04b)', () => {
     ['a dataset that does not reproject', 422, { detail: "'x' does not allow reprojection, which a mosaic of scenes may need" }],
     ['scenes that scale a band differently', 422, { detail: "the scenes of the mosaic scale 'red' differently" }],
     ['a single step the tiler refuses (no step to name)', 422, { detail: 'expression: not a valid expression' }],
-    ['a missing scene', 404, { detail: 'item not found' }],
-    ['a busy tiler', 429, { detail: 'busy' }],
-    ['a failing source', 502, { detail: 'step 1: looks like a step but is no refusal' }],
+    ['a mosaic it does not serve', 501, { detail: 'no mosaic' }],
     ['an answer that is no JSON', 414, 'Request-URI Too Large'],
   ])('draws the scenes one by one for %s', async (_, status, body) => {
     expect(await probe(answer(status, body))).toEqual({ state: 'scenes' });
+  });
+
+  it.each([
+    ['a missing scene', 404, { detail: 'item not found' }],
+    ['a busy tiler', 429, { detail: 'busy' }],
+    ['a failing source', 502, { detail: 'step 1: looks like a step but is no refusal' }],
+    ['a tiler that is down', 503, 'unavailable'],
+  ])('draws the scenes for now, and asks again later, for %s', async (_, status, body) => {
+    expect(await probe(answer(status, body))).toEqual({ state: 'scenes', retry: true });
   });
 
   it.each([
@@ -577,8 +594,9 @@ describe('probeMosaic (NM4-04b)', () => {
     expect(await probe(answer(200, body))).toEqual({ state: 'scenes' });
   });
 
-  it('draws the scenes one by one when the network fails', async () => {
-    expect(await probe(async () => Promise.reject(new TypeError('failed')))).toEqual({ state: 'scenes' });
+  it('draws the scenes for now, and asks again later, when the network fails or no answer comes in time', async () => {
+    expect(await probe(async () => Promise.reject(new TypeError('failed')))).toEqual({ state: 'scenes', retry: true });
+    expect(await probe(async () => Promise.reject(new DOMException('timed out', 'TimeoutError')))).toEqual({ state: 'scenes', retry: true });
   });
 });
 

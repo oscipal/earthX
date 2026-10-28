@@ -10,6 +10,7 @@ import {
   buildOperatorStatisticsUrl,
   buildOperatorTileJsonUrl,
   buildOperatorTileTemplate,
+  MOSAIC_TILEJSON_TIMEOUT_MS,
   type BandStatistics,
 } from './api';
 import type { DatasetOption } from './datasets';
@@ -174,11 +175,16 @@ export async function probeChain(url: string, steps: number, fetchImpl: typeof f
 // What the tiler said to the TileJSON of a mosaic with steps (NM4-04): it takes it and names the scenes in the order a tile
 // reads them, it refuses a step (the same words as for one scene), or it does not take the mosaic as such — too long
 // a request, a pass it cannot mosaic, a failing source, a network that fails — and the scenes are drawn one by one.
-export type MosaicAnswer = { state: 'taken'; order: string[] } | { state: 'refused'; refused: RefusedStep } | { state: 'scenes' };
+// `retry`: the question failed on the way (a busy tiler, a failing source, a network that fails, no answer in time) and
+// says nothing about the mosaic: the scenes are drawn for now and the mosaic is asked again at the next change.
+export type MosaicAnswer =
+  | { state: 'taken'; order: string[] }
+  | { state: 'refused'; refused: RefusedStep }
+  | { state: 'scenes'; retry?: true };
 
 export async function probeMosaic(url: string, fetchImpl: typeof fetch = fetch): Promise<MosaicAnswer> {
   try {
-    const response = await fetchImpl(url);
+    const response = await fetchImpl(url, { signal: AbortSignal.timeout(MOSAIC_TILEJSON_TIMEOUT_MS) });
     const body: unknown = await response.json().catch(() => null);
     if (response.ok) {
       const order = (body as Record<string, unknown> | null)?.['earthx:order'];
@@ -186,9 +192,10 @@ export async function probeMosaic(url: string, fetchImpl: typeof fetch = fetch):
       return named ? { state: 'taken', order: order as string[] } : { state: 'scenes' };
     }
     const refused = refusedStepOf((body as { detail?: unknown } | null)?.detail);
-    return refused && (response.status === 400 || response.status === 422) ? { state: 'refused', refused } : { state: 'scenes' };
+    if (refused && (response.status === 400 || response.status === 422)) return { state: 'refused', refused };
+    return [400, 414, 422, 501].includes(response.status) ? { state: 'scenes' } : { state: 'scenes', retry: true };
   } catch {
-    return { state: 'scenes' };
+    return { state: 'scenes', retry: true };
   }
 }
 
@@ -352,22 +359,24 @@ export function previewSpec(args: {
   const mosaics = jobs.flatMap((unit) => mosaicOf(unit) ?? []);
   const mosaicked = new Set(mosaics.flatMap((mosaic) => mosaic.order));
 
-  // The scenes below a mosaic come first, in the order the mosaic reads them, then the scenes drawn alone.
+  // The scenes below a mosaic come first, in the order the mosaic reads them, then the scenes drawn alone. The map
+  // draws so many rasters and no more: the scenes drawn alone have their places first, for they are the only picture
+  // of their scene at every level, the ones below a mosaic take what is left.
   const known = new Map([...items, ...jobs.flat()].map((item) => [item.id, item]));
   const below = dataset.zoom.min < firstLevel ? firstLevel : undefined;
-  const candidates: { item: StacItem; below?: number }[] = [
-    ...mosaics.flatMap((mosaic) => (below === undefined ? [] : mosaic.order.map((id) => ({ item: known.get(id)!, below })))),
-    ...items.filter((item) => !mosaicked.has(item.id)).map((item) => ({ item })),
-  ];
+  const places = Math.max(0, MAX_PREVIEW_SCENES - mosaics.length);
+  const alone: { item: StacItem; below?: number }[] = items.filter((item) => !mosaicked.has(item.id)).slice(0, places).map((item) => ({ item }));
+  const under: { item: StacItem; below?: number }[] =
+    below === undefined ? [] : mosaics.flatMap((mosaic) => mosaic.order.map((id) => ({ item: known.get(id)!, below }))).slice(0, places - alone.length);
   const scenes: PreviewScene[] = [];
   let probe = '';
-  for (const { item, below: under } of candidates.slice(0, Math.max(0, MAX_PREVIEW_SCENES - mosaics.length))) {
+  for (const { item, below: underLevel } of [...under, ...alone]) {
     if (!item.bbox) continue;
     scenes.push({
       id: item.id,
       bbox: item.bbox,
       url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain), render),
-      ...(under === undefined ? {} : { below: under }),
+      ...(underLevel === undefined ? {} : { below: underLevel }),
     });
     if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain);
   }
