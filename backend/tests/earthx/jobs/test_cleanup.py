@@ -112,6 +112,39 @@ class TestPermalinks:
         assert cleanup(db, store, batch=2).permalinks == 5 and _count(db, "earthx_permalink") == 0
 
 
+class TestTheStatisticsCache:
+    """NM4-19 KE9: an expired entry goes with the hourly sweep; one over an AOI lives seven days, like a recipe."""
+
+    @staticmethod
+    def _entry(db: psycopg.Connection, key: str, ends_in: str) -> None:
+        db.execute(
+            "INSERT INTO public.earthx_stats_cache (cache_key, dataset_id, payload, expires_at) "
+            "VALUES (%s, 'synthetic', '{}'::jsonb, clock_timestamp() + %s::interval)",
+            (key, ends_in),
+        )
+
+    def test_what_has_expired_is_gone_and_the_rest_stays(self, db: psycopg.Connection, store: Store) -> None:
+        self._entry(db, "a" * 64, "-1 minute")
+        self._entry(db, "b" * 64, "6 days 23 hours")
+        result = cleanup(db, store)
+        assert result.statistics == 1 and result.total == 1
+        assert [r[0] for r in db.execute("SELECT cache_key FROM public.earthx_stats_cache")] == ["b" * 64]
+
+    def test_batches_go_on_until_none_is_left(self, db: psycopg.Connection, store: Store) -> None:
+        for index in range(5):
+            self._entry(db, f"{index}" * 64, "-1 day")
+        assert cleanup(db, store, batch=2).statistics == 5 and _count(db, "earthx_stats_cache") == 0
+
+    def test_the_log_counts_and_names_no_key(
+        self, db: psycopg.Connection, store: Store, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        self._entry(db, "c" * 64, "-1 minute")
+        with caplog.at_level(logging.INFO, logger="earthx.jobs"):
+            cleanup(db, store)
+        assert all("c" * 64 not in own_log_text(record) for record in caplog.records)
+        assert any(getattr(record, "statistics", None) == 1 for record in caplog.records)
+
+
 class TestBundles:
     """UI-01e: the term is the one stored at creation; the row goes whole, and looking never lengthens it."""
 
