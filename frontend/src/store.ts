@@ -1002,6 +1002,9 @@ export interface AppState {
   toggleTheme: () => void;
   setProjection: (projection: Projection) => void;
   setBasemap: (basemap: BasemapId) => void;
+  // The basemap and projection of an opened permalink (UI-02c): they hold for this view and are not written to the
+  // browser, so the next visit opens with what the user chose in the menu.
+  showSharedLook: (look: { basemap: BasemapId; projection: Projection }) => void;
   setOverlay: (overlay: OverlayId, on: boolean) => void;
 }
 
@@ -2017,6 +2020,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     saveBasemap(basemap);
     set({ basemap });
   },
+  showSharedLook: ({ basemap, projection }) => set({ basemap, projection }),
   setOverlay: (overlay, on) => {
     const overlays = { ...get().overlays, [overlay]: on };
     saveOverlays(overlays);
