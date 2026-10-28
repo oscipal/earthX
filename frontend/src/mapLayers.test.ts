@@ -10,6 +10,7 @@ import {
   syncLayers,
   syncMosaic,
   syncPreview,
+  watchPreviewLoading,
   syncSelectionHighlight,
 } from './mapLayers';
 import type { LayerOverlay, MapLayer } from './layers';
@@ -904,7 +905,8 @@ describe('ensureBaseLayers', () => {
     const { map, stack } = liveMap(['bg']);
     ensureBaseLayers(map as never);
     ensureBaseLayers(map as never);
-    expect(stack.slice(0, 6)).toEqual(['bg', 'layers-top', 'results-top', 'ticked-top', 'overlays-base', 'aoi-fill']);
+    expect(stack.slice(0, 7)).toEqual(['bg', 'layers-top', 'results-top', 'ticked-top', 'preview-base', 'overlays-base', 'aoi-fill']);
+    expect(stack.filter((id) => id === 'preview-base')).toHaveLength(1);
     expect(stack.filter((id) => id === 'layers-top')).toHaveLength(1);
     expect(stack.filter((id) => id === 'results-top')).toHaveLength(1);
   });
@@ -1047,6 +1049,16 @@ describe('syncPreview', () => {
     });
   });
 
+  it('hides a scene below a mosaic from the level the mosaic takes over (NM4-04b)', () => {
+    const live = liveMap(['aoi-fill']);
+    const [mosaic, scene] = previewTiles(2) as [LayerOverlay, Extract<LayerOverlay, { kind: 'raster' }>];
+    syncPreview(live.map as never, [mosaic, { ...scene, minZoom: 5, maxZoom: 7, hideFrom: 6.5 }]);
+    // The first overlay is on top and drawn last: the scene is the lower layer.
+    expect(live.layers.get('preview-lyr-0')!.maxzoom).toBe(6.5);
+    expect(live.layers.get('preview-lyr-1')!.maxzoom).toBeUndefined();
+    expect(live.sources.get('preview-src-0')).toMatchObject({ minzoom: 5, maxzoom: 7 });
+  });
+
   it('builds the picture anew each time, and leaves nothing behind for none', () => {
     const { map, stack, sources } = stackedMap(['aoi-fill']);
     syncPreview(map as never, previewTiles(3));
@@ -1073,5 +1085,60 @@ describe('syncPreview', () => {
     });
     expect(stack.indexOf('m-tiles-lyr-0')).toBeLessThan(stack.indexOf('preview-lyr-0'));
     expect(stack.indexOf('preview-lyr-0')).toBeLessThan(stack.indexOf('aoi-fill'));
+  });
+});
+
+describe('watchPreviewLoading (NM4-04b)', () => {
+  function watched() {
+    const handlers = new Map<string, (event: { sourceId?: string }) => void>();
+    const sources = new Set(['preview-src-0', 'preview-src-1', 'm-tiles-src-3']);
+    const pending = new Set<string>();
+    const map = {
+      on: (name: string, handler: (event: { sourceId?: string }) => void) => handlers.set(name, handler),
+      getSource: (id: string) => (sources.has(id) ? {} : undefined),
+      isSourceLoaded: (id: string) => !pending.has(id),
+    };
+    const seen: boolean[] = [];
+    watchPreviewLoading(map as never, (loading) => seen.push(loading));
+    return { fire: (name: string, sourceId?: string) => handlers.get(name)!({ sourceId }), seen, pending };
+  }
+
+  it('is loading from the first tile of the preview asked for until every source of it has its tiles', () => {
+    const { fire, seen, pending } = watched();
+    pending.add('preview-src-0').add('preview-src-1');
+    fire('sourcedataloading', 'preview-src-0');
+    pending.delete('preview-src-0');
+    fire('sourcedata', 'preview-src-0');
+    expect(seen).toEqual([true, true]);
+    pending.delete('preview-src-1');
+    fire('sourcedata', 'preview-src-1');
+    expect(seen).toEqual([true, true, false]);
+  });
+
+  it('is not loading any more when the map is at rest', () => {
+    const { fire, seen, pending } = watched();
+    pending.add('preview-src-0');
+    fire('sourcedataloading', 'preview-src-0');
+    fire('idle');
+    expect(seen).toEqual([true, false]);
+  });
+
+  it('does not take the tiles of anything else for the preview, however slow they are', () => {
+    const { fire, seen, pending } = watched();
+    pending.add('m-tiles-src-3').add('basemap');
+    fire('sourcedataloading', 'm-tiles-src-3');
+    fire('sourcedata', 'm-tiles-src-3');
+    fire('sourcedataloading', 'basemap');
+    fire('sourcedataloading');
+    expect(seen).toEqual([]);
+  });
+
+  it('keeps its word while a basemap is still loading: the preview alone decides', () => {
+    const { fire, seen, pending } = watched();
+    pending.add('basemap').add('preview-src-0');
+    fire('sourcedataloading', 'preview-src-0');
+    pending.delete('preview-src-0');
+    fire('sourcedata', 'preview-src-0');
+    expect(seen).toEqual([true, false]);
   });
 });

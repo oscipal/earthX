@@ -29,12 +29,18 @@ describe('resultsOnMapOf, browsing', () => {
     expect(shown.cropsOf).toEqual([]);
   });
 
-  it('shows a ticked scene hidden, even in a time step that is not open, and only that', () => {
-    const shown = resultsOnMapOf(state({ resultsOnMap: false, selectedIds: ['b2'] }));
-    expect(ids(shown.quicklooks)).toEqual(['b2']);
-    expect(ids(shown.highlight)).toEqual(['b2']);
-    expect(ids(shown.clickable)).toEqual(['b2']);
-    expect(shown.cropsOf).toEqual(['b2']);
+  it('shows nothing with the results hidden, a ticked scene included: its tick stays (Otto, 28.10.2026)', () => {
+    const shown = resultsOnMapOf(state({ resultsOnMap: false, selectedIds: ['b2', 'a1'] }));
+    expect(shown.quicklooks).toEqual([]);
+    expect(shown.overlay).toEqual([]);
+    expect(shown.highlight).toEqual([]);
+    expect(shown.clickable).toEqual([]);
+    expect(shown.cropsOf).toEqual([]);
+  });
+
+  it('lists the ticked scenes in the order they were ticked, the last one on top', () => {
+    expect(ids(resultsOnMapOf(state({ selectedIds: ['b2', 'a1', 'b1'] })).highlight)).toEqual(['b2', 'a1', 'b1']);
+    expect(ids(resultsOnMapOf(state({ selectedIds: ['a1', 'b2'] })).highlight)).toEqual(['a1', 'b2']);
   });
 
   it('shows the open step and a ticked scene of another one with the results on the map', () => {
@@ -74,17 +80,19 @@ describe('resultsOnMapOf, over a full-resolution view', () => {
     expect(resultsOnMapOf(view({ resultsOnMap: false })).overlay).toEqual([]);
   });
 
-  it('lays a ticked scene over it, hidden or not: also one the view is made of, once it is ticked again after a crop', () => {
-    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1'] })).overlay)).toEqual(['a1']);
-    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1', 'b1'] })).overlay).sort()).toEqual(['a1', 'b1']);
+  it('lays a ticked scene over it with the results shown: also one the view is made of, once it is ticked again after a crop', () => {
+    expect(ids(resultsOnMapOf(view({ selectedIds: ['a1'] })).overlay)).toContain('a1');
+    expect(ids(resultsOnMapOf(view({ selectedIds: ['a1', 'b1'] })).overlay).sort()).toEqual(['a1', 'a2', 'b1']);
   });
 
-  it('lays no scene of the view over it that is not ticked, while the results are hidden', () => {
-    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['b1'] })).overlay)).toEqual(['b1']);
+  it('lays nothing over it, a ticked scene included, while the results are hidden (Otto, 28.10.2026)', () => {
+    expect(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1', 'b1'] })).overlay).toEqual([]);
+    expect(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1', 'b1'] })).highlight).toEqual([]);
   });
 
-  it('lets a click pick the scenes that are drawn: those of the view, and what lies over it', () => {
-    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['b1'] })).clickable).sort()).toEqual(['a1', 'b1']);
+  it('lets a click pick the scenes that are drawn: those of the view, and while the results are shown what lies over it', () => {
+    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['b1'] })).clickable)).toEqual(['a1']);
+    expect(ids(resultsOnMapOf(view({ selectedIds: ['b1'] })).clickable).sort()).toEqual(['a1', 'a2', 'b1']);
   });
 
   it('outlines the ticked scenes only', () => {

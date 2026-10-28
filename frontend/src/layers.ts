@@ -87,6 +87,9 @@ export interface MapLayer {
   // preview of the processing panel, or the result of a job. It cannot be
   // processed or downloaded as scenes (the buttons of the layer manager skip it).
   derived?: 'preview' | 'result';
+  // A hint for the tooltip of the layer's name, never a line of text in its row: a preview drawn scene by scene where
+  // the job is a mosaic says it may differ from the job (`processingPreview.ts::SCENE_PREVIEW_HINT`).
+  note?: string;
   // Of a `result` layer (M4-13c-5).
   result?: ResultLayerInfo;
 }

@@ -404,6 +404,17 @@ Bilder (Chromium, Software-Rendering, synthetische Szene; vorher = `main`, nachh
 
 **Belege:** `mapLayers.resultsUnderView.test.ts` (8 neue Tests: über der Ansicht bei drei Zeichen-Reihenfolgen, nach einem neuen Stil, beim Stöbern, ohne Haken wie vorher unter der Ansicht, Marker bleibt); gegen den `mapLayers.ts` davor scheitern 6 davon. Im echten Browser (Chromium): Ebenenfolge bei offenem Zuschnitt und wieder angehakter Szene `layers-top`, `results-top`, `m-tiles-lyr-0` (Ansicht), `ticked-top`, `res-tiles-lyr-0` (Quicklook der Szene), `aoi-fill`, `aoi-line`, `mosaicsel-line`; mit „Show results“ liegt der Quicklook der angehakten Szene als einziger über dem Marker.
 
+**Nachtrag (Otto, 28.10.2026, zu #221, Ebenenfolge der Vorschau):** Von oben nach unten: AOI und Zeichnung → Overlays (Labels, Graticule; Marker `overlays-base` aus UI-02b) → Live-Vorschau des Processing-Panels, solange das Panel offen ist (Item-, Mosaik- und Rückfall-Vorschau je Szene) → Quicklooks angehakter Szenen (`ticked-top`) → Ansicht, Ergebnisse, angeheftete Layer (auch eine angeheftete Vorschau). Die Vorschau liegt also **über** dem Quicklook einer angehakten Szene. Umsetzung und Belege: `plans/querschnitt/nm4-04-mosaik-mit-operator.md` §17.
+
+**Nachtrag zu §8.2 und §8.10 (Otto, 28.10.2026, zu #221, Ergebnisse auf der Karte; die Texte oben bleiben als Stand vom 27.10. stehen):**
+
+1. **Regel 2 aus §8.2 entfällt.** „Hide results“ blendet **alle** Suchergebnisse aus, auch die angehakten Szenen (Umriss und Quicklook). Die Haken bleiben erhalten, für „Crop & merge“ und den Rest. Das ändert auch den Satz in §8.10, ein angehaktes Suchergebnis sei „immer der oberste Layer“: Das gilt nur, solange die Ergebnisse angezeigt werden.
+2. **Dritte Ausnahme von Regel 3**, neben „Search“ → Show und „Crop“ → Hide: Wird bei „Hide“ eine Szene angehakt, schaltet der Schalter auf „Show results“ (der Knopf wechselt sichtbar). Abhaken ändert den Schalter nicht.
+3. **Reihenfolge der angehakten Szenen:** Die zuletzt angehakte liegt oben, dann die davor usw.; erneutes Anhaken bringt eine Szene nach oben. Gilt auch nach `style.load` und Basemap-Wechsel; die Reihenfolge steht nur im Speicher (die Reihenfolge von `selectedIds`).
+
+Zusammen mit der Ebenenfolge der Vorschau (Nachtrag oben): von oben AOI und Zeichnung → Overlays → Live-Vorschau → angehakte Szenen in Anhak-Reihenfolge → Ansicht, Ergebnisse, angeheftete Layer.
+
+**Umsetzung:** `mapResults.ts::resultsOnMapOf` liefert bei „Hide“ nichts mehr (`quicklooks`, `overlay`, `highlight` leer, `cropsOf` leer) und `highlight` in Anhak-Reihenfolge; `store.ts::ticking` schaltet bei einem neuen Haken auf „Show“ (`toggleSelected`, `selectAllInActiveGroup`, `selectAllLoaded`, `toggleGroupSelected`); `mapLayers.ts::tickedPlace` legt die Quicklooks angehakter Szenen je direkt unter die nächste später angehakte, die schon auf der Karte liegt, sonst unter den Marker der Vorschau (gleich, welches Bild zuerst ankommt). **Tests:** `resultsOnMap.test.tsx` (Matrix aus #211 angepasst: Hide → Auswahl unsichtbar, Hide → Anhaken → Show, Abhaken ändert nichts, Anhak-Reihenfolge auch mit Abhaken und Wiederanhaken), `mapResults.test.ts`, `mapLayers.resultsUnderView.test.ts` (Reihenfolge bei drei Listen- und drei Anhak-Reihenfolgen, über einer Ansicht und beim Stöbern, nach neuem Stil), `ResultsDock.test.tsx`, `grouping.test.ts`. **Gegenprobe:** Gegen den Code davor scheitern 37 Tests.
 
 ## 9. UI-02b: Umsetzung (28.10.2026)
 

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildMosaicTileTemplate } from './api';
+import { buildMosaicOperatorTileTemplate, buildMosaicTileTemplate } from './api';
 import {
   isMosaicPass,
+  MAX_MOSAIC_REQUEST_BYTES,
   MAX_MOSAIC_SCENES,
+  mosaicRequestBytes,
   mosaicsOfView,
   mosaicTemplateOf,
   oversizeNote,
@@ -175,5 +177,31 @@ describe('the mosaics a view asks for', () => {
     expect(sameMosaics(before, after)).toBe(true);
     expect(sameMosaics(before, {})).toBe(false);
     expect(sameMosaics(before, mosaicOf(view, { order: ['B', 'A'] }))).toBe(false); // another answer for it
+  });
+});
+
+describe('the length of a mosaic request (NM4-04b)', () => {
+  const step = { op: 'band_math', opVersion: 1, paramsJson: '{"expression":"red"}' };
+
+  it('counts path and query as the tiler does: the largest tile of the level in the grid, no address of the API', () => {
+    const template = buildMosaicOperatorTileTemplate(DATASET, ['B', 'A'], ['red', 'nir'], [step]);
+    const request = template.slice(template.indexOf('/collections/'));
+    expect(mosaicRequestBytes(`https://api.example.org${template}`, 10)).toBe(
+      request.replace('{z}', '10').replace('{x}', '1023').replace('{y}', '1023').length,
+    );
+    expect(mosaicRequestBytes(template, 10)).toBe(mosaicRequestBytes(`https://api.example.org/v1${template}`, 10));
+  });
+
+  it('grows with the level, and with every scene', () => {
+    const one = buildMosaicOperatorTileTemplate(DATASET, ['A'], ['red'], [step]);
+    const two = buildMosaicOperatorTileTemplate(DATASET, ['A', 'B'], ['red'], [step]);
+    expect(mosaicRequestBytes(one, 14)).toBeGreaterThan(mosaicRequestBytes(one, 8));
+    expect(mosaicRequestBytes(two, 8)).toBeGreaterThan(mosaicRequestBytes(one, 8));
+  });
+
+  it('is under the limit of the tiler for a pass of 64 scenes of 60 characters and the usual chain', () => {
+    const ids = Array.from({ length: MAX_MOSAIC_SCENES }, (_, i) => `${'S'.repeat(57)}${String(i).padStart(3, '0')}`);
+    const template = buildMosaicOperatorTileTemplate(DATASET, ids, ['red', 'nir', 'scl'], [step, step]);
+    expect(mosaicRequestBytes(template, 14)).toBeLessThan(MAX_MOSAIC_REQUEST_BYTES);
   });
 });
