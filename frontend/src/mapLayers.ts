@@ -518,7 +518,13 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
         maxzoom: overlay.maxZoom,
       });
       map.addLayer(
-        { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
+        {
+          id: lyrId,
+          type: 'raster',
+          source: srcId,
+          ...(overlay.hideFrom === undefined ? {} : { maxzoom: overlay.hideFrom }),
+          paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
+        },
         aboveAll(map),
       );
     });

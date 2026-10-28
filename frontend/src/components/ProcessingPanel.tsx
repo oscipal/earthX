@@ -38,6 +38,7 @@ import {
   planPreview,
   previewUnit,
   rescaleOf,
+  SCENE_PREVIEW_HINT,
 } from '../processingPreview';
 import {
   bandMathExpressions,
@@ -359,7 +360,7 @@ function PreviewSection({ view }: { view: OrderView }) {
       <h3 className="pp-heading">
         Preview on the map{' '}
         {preview && (
-          <span className="pp-badge">
+          <span className="pp-badge" title={preview.perScene ? SCENE_PREVIEW_HINT : undefined}>
             Preview
           </span>
         )}

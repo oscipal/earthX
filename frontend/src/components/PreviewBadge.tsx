@@ -15,7 +15,7 @@
 
 import { useMemo } from 'react';
 
-import { previewOverlays } from '../processingPreview';
+import { previewOverlays, SCENE_PREVIEW_HINT } from '../processingPreview';
 import { isOverview } from '../resultLayer';
 import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
@@ -52,7 +52,11 @@ export default function PreviewBadge() {
   if (!draft && !pinned && !overview && waiting.length === 0) return null;
   return (
     <div className="overlay preview-badge-dock">
-      {(draft || pinned) && <span className="preview-badge">Preview</span>}
+      {(draft || pinned) && (
+        <span className="preview-badge" title={draft?.perScene ? SCENE_PREVIEW_HINT : undefined}>
+          Preview
+        </span>
+      )}
       {overview && (
         <span className="preview-badge" title={OVERVIEW_TITLE}>
           Overview

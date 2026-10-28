@@ -1047,6 +1047,16 @@ describe('syncPreview', () => {
     });
   });
 
+  it('hides a scene below a mosaic from the level the mosaic takes over (NM4-04b)', () => {
+    const live = liveMap(['aoi-fill']);
+    const [mosaic, scene] = previewTiles(2) as [LayerOverlay, Extract<LayerOverlay, { kind: 'raster' }>];
+    syncPreview(live.map as never, [mosaic, { ...scene, minZoom: 5, maxZoom: 7, hideFrom: 6.5 }]);
+    // The first overlay is on top and drawn last: the scene is the lower layer.
+    expect(live.layers.get('preview-lyr-0')!.maxzoom).toBe(6.5);
+    expect(live.layers.get('preview-lyr-1')!.maxzoom).toBeUndefined();
+    expect(live.sources.get('preview-src-0')).toMatchObject({ minzoom: 5, maxzoom: 7 });
+  });
+
   it('builds the picture anew each time, and leaves nothing behind for none', () => {
     const { map, stack, sources } = stackedMap(['aoi-fill']);
     syncPreview(map as never, previewTiles(3));
