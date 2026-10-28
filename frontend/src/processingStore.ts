@@ -110,6 +110,7 @@ import {
   NO_MEASURE,
   planPreview,
   probeChain,
+  probeMosaic,
   previewOverlays,
   previewSpec,
   refusedNote,
@@ -118,6 +119,8 @@ import {
   rescaleOf,
   type PreviewMeasure,
   type PreviewRange,
+  type MosaicAnswer,
+  SCENE_PREVIEW_HINT,
   type PreviewSpec,
 } from './processingPreview';
 import type { ResultStats } from './render';
@@ -249,6 +252,10 @@ interface ProcessingState {
   preview: PreviewSpec | null;
   // Why the preview shows fewer steps than the draft chains, or none: the tiler's reason.
   previewNote: string | null;
+  // The panel asks the tiler about the preview, or the map is still loading its tiles: the first tile of a mosaic
+  // can take seconds when the scenes are cold, and the map says so instead of looking broken (`PreviewBadge`).
+  previewSettling: boolean;
+  previewTilesLoading: boolean;
   // What the tiler measured of the preview (M4-19c): the numbers its colour scale comes from, and its unit.
   measure: PreviewMeasure | null;
   // Why the preview has no measured range: the measure could not be had.
@@ -691,6 +698,8 @@ const EMPTY_DRAFT = {
   rangeDraft: DEFAULT_RANGE,
   preview: null as PreviewSpec | null,
   previewNote: null as string | null,
+  previewSettling: false,
+  previewTilesLoading: false,
   measure: null as PreviewMeasure | null,
   rangeNote: null as string | null,
   rangeByHand: false,
@@ -1069,8 +1078,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       app.pinDerivedLayer({
         name: `Preview · ${preview.title}`,
         derived: 'preview',
+        ...(preview.perScene ? { note: SCENE_PREVIEW_HINT } : {}),
         overlays: stackLikeView(previewOverlays(preview, app.aoi)),
-        itemIds: preview.scenes.map((scene) => scene.id),
+        itemIds: [...new Set([...preview.mosaics.flatMap((mosaic) => mosaic.order), ...preview.scenes.map((scene) => scene.id)])],
         cropToAoi: preview.clipToAoi,
       });
     },
@@ -1604,7 +1614,8 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   if (full.state !== 'ready') return null;
   const plan = limit === undefined ? full : shortenPlan(full, limit);
   if (plan === null) return null;
-  const args = { dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, area: p.area };
+  const jobs = view.parts.map((part) => part.unit.items);
+  const args = { dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, area: p.area, jobs, answers: mosaicAnswers };
   const spec = previewSpec({ ...args, range: p.range });
   if (spec === null) return null;
   const range = drawnRange(p, spec.measure);
@@ -1704,21 +1715,83 @@ function rememberProbe(url: string, refused: RefusedStep | null): void {
   probed.set(url, refused);
 }
 
+// What the tiler said of each mosaic of a preview (NM4-04), by its TileJSON: the order of its scenes, or that the
+// scenes are drawn one by one. A failing source or network counts as that too, until the preview goes away.
+// An answer that failed on the way (`retry`) is dropped with the next change (`refreshPreview`); one still on its way is
+// not asked twice, and one that comes after the preview went away is not kept.
+const mosaicAnswers = new Map<string, MosaicAnswer>();
+const askingMosaics = new Map<string, Promise<void>>();
+let mosaicEpoch = 0;
+
+async function askMosaics(spec: PreviewSpec | null): Promise<void> {
+  await Promise.all(
+    (spec?.mosaics ?? [])
+      .filter((mosaic) => !mosaicAnswers.has(mosaic.probe))
+      .map(({ probe }) => {
+        let request = askingMosaics.get(probe);
+        if (!request) {
+          const epoch = mosaicEpoch;
+          request = probeMosaic(probe)
+            .then((answer) => {
+              if (epoch !== mosaicEpoch) return;
+              if (mosaicAnswers.size >= PROBES_KEPT) mosaicAnswers.delete(mosaicAnswers.keys().next().value!);
+              mosaicAnswers.set(probe, answer);
+            })
+            .finally(() => askingMosaics.delete(probe));
+          askingMosaics.set(probe, request);
+        }
+        return request;
+      }),
+  );
+}
+
+// The step of the chain the tiler refuses, or `null`. The mosaics are asked first: one of them that takes the chain
+// is answer enough. If none does, the scenes are drawn one by one and the first of them is asked, as ever.
+async function chainRefusal(wanted: PreviewSpec): Promise<RefusedStep | null> {
+  let spec: PreviewSpec | null = wanted;
+  if (spec.mosaics.length > 0) {
+    await askMosaics(spec);
+    const answers = spec.mosaics.map((mosaic) => mosaicAnswers.get(mosaic.probe));
+    const refused = answers.find((answer) => answer?.state === 'refused');
+    if (refused?.state === 'refused') return refused.refused;
+    if (answers.some((answer) => answer?.state === 'taken')) return null;
+    spec = wantedPreview();
+  }
+  if (!spec) return null;
+  let refused = probed.get(spec.probe);
+  if (refused === undefined) {
+    const answer = await probeChain(spec.probe, spec.stepCount);
+    if (answer.state !== 'none') rememberProbe(spec.probe, answer.state === 'refused' ? answer.refused : null);
+    refused = answer.state === 'refused' ? answer.refused : null;
+  }
+  return refused;
+}
+
 // Shows `wanted`, or — for a chain the tiler refuses at step k — its first k − 1 steps and the reason; for a
 // refused single step nothing but the reason. Statistics and tiles of a refused chain are not asked.
 async function settle(wanted: PreviewSpec): Promise<void> {
   const run = ++settleRun;
-  let refused = probed.get(wanted.probe);
-  if (refused === undefined) {
-    const answer = await probeChain(wanted.probe, wanted.stepCount);
-    if (answer.state !== 'none') rememberProbe(wanted.probe, answer.state === 'refused' ? answer.refused : null);
-    if (run !== settleRun) return;
-    refused = answer.state === 'refused' ? answer.refused : null;
+  useProcessingStore.setState({ previewSettling: true });
+  try {
+    await settleAs(run, wanted);
+  } finally {
+    // A newer run has its own say; a preview that went away cleared it already.
+    if (run === settleRun && useProcessingStore.getState().previewSettling) useProcessingStore.setState({ previewSettling: false });
   }
+}
+
+async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
+  const refused = await chainRefusal(wanted);
+  if (run !== settleRun) return;
   // The steps the tiler takes: all of them, or the ones before the step it refuses.
   const cut = refused && refused.step < wanted.stepCount ? refused : null;
   const limit = cut ? cut.step : undefined;
   const note = cut ? refusedNote(cut.step, wanted.stepCount, cut) : null;
+  // The order of a mosaic does not depend on the steps, but the tiler is asked about the chain that is drawn.
+  if (cut) {
+    await askMosaics(wantedPreview(limit));
+    if (run !== settleRun) return;
+  }
   const hand = useProcessingStore.getState().rangeByHand;
   let spec = wantedPreview(limit);
   // Without a range of the user's the picture waits for the measure, so that it is drawn once and not twice,
@@ -1736,7 +1809,7 @@ async function settle(wanted: PreviewSpec): Promise<void> {
     }
   }
   settledKey = wantedPreview()?.key ?? wanted.key;
-  useProcessingStore.setState({ preview: spec, previewNote: note });
+  useProcessingStore.setState({ preview: spec, previewNote: note, previewSettling: false });
   // A measure that comes after all is taken in with one redraw, and only if it changes the picture.
   if (late) {
     const measure = await late;
@@ -1759,6 +1832,8 @@ async function settle(wanted: PreviewSpec): Promise<void> {
 // last change, so typing an expression asks for no tile per key.
 function refreshPreview(): void {
   clearTimeout(previewTimer);
+  // A mosaic whose question failed on the way is asked again with the next change.
+  for (const [probe, answer] of mosaicAnswers) if (answer.state === 'scenes' && answer.retry) mosaicAnswers.delete(probe);
   const wanted = wantedPreview();
   const state = useProcessingStore.getState();
   if (wanted !== null && wanted.key === settledKey && (state.preview !== null || state.previewNote !== null)) return;
@@ -1766,7 +1841,12 @@ function refreshPreview(): void {
     settleRun++;
     settledKey = null;
     probed.clear();
-    if (state.preview !== null || state.previewNote !== null) useProcessingStore.setState({ preview: null, previewNote: null });
+    mosaicAnswers.clear();
+    askingMosaics.clear();
+    mosaicEpoch++;
+    if (state.preview !== null || state.previewNote !== null || state.previewSettling) {
+      useProcessingStore.setState({ preview: null, previewNote: null, previewSettling: false });
+    }
     return;
   }
   previewTimer = setTimeout(() => {

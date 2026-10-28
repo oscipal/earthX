@@ -4,10 +4,28 @@
 // `processingStore.ts`.
 
 import { clipTileUrl } from './aoiClip';
-import { buildOperatorStatisticsUrl, buildOperatorTileJsonUrl, buildOperatorTileTemplate, type BandStatistics } from './api';
+import {
+  buildMosaicOperatorTileJsonUrl,
+  buildMosaicOperatorTileTemplate,
+  buildOperatorStatisticsUrl,
+  buildOperatorTileJsonUrl,
+  buildOperatorTileTemplate,
+  MOSAIC_TILEJSON_TIMEOUT_MS,
+  type BandStatistics,
+} from './api';
 import type { DatasetOption } from './datasets';
+import { unionBbox } from './geoUtils';
 import type { LayerOverlay } from './layers';
 import { buildTileUrl } from './mapLayers';
+import {
+  MAX_MOSAIC_OPERATOR_ASSETS,
+  MAX_MOSAIC_REQUEST_BYTES,
+  MAX_MOSAIC_SCENES,
+  MIN_MOSAIC_SCENES,
+  MIN_MOSAIC_ZOOM,
+  TILE_LEVEL_AHEAD,
+  mosaicRequestBytes,
+} from './mosaic';
 import { canonicalJson } from './processing';
 import { bandsOf, shownUnit, type Area, type DraftStep, type Operator, type ProcessInfo } from './processingOrder';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, type BandStats, type ResultStats } from './render';
@@ -26,6 +44,9 @@ export const MAX_PREVIEW_STEPS = 4;
 export const NO_PREVIEW = 'No preview: the first step runs only as a job.';
 export const NO_PREVIEW_FORM = 'No preview: this panel has no form for the first step yet.';
 export const NO_PREVIEW_UNLISTED = 'No preview: the first step is not available for this dataset.';
+
+// The tooltip of "Preview" while a pass the job mosaics is drawn scene by scene: the tiler would not take its mosaic.
+export const SCENE_PREVIEW_HINT = 'Preview per scene – may differ from the job where scenes overlap';
 
 // --- range and colormap ------------------------------------------------------
 
@@ -151,6 +172,33 @@ export async function probeChain(url: string, steps: number, fetchImpl: typeof f
   }
 }
 
+// What the tiler said to the TileJSON of a mosaic with steps (NM4-04): it takes it and names the scenes in the order a tile
+// reads them, it refuses a step (the same words as for one scene), or it does not take the mosaic as such — too long
+// a request, a pass it cannot mosaic, a failing source, a network that fails — and the scenes are drawn one by one.
+// `retry`: the question failed on the way (a busy tiler, a failing source, a network that fails, no answer in time) and
+// says nothing about the mosaic: the scenes are drawn for now and the mosaic is asked again at the next change.
+export type MosaicAnswer =
+  | { state: 'taken'; order: string[] }
+  | { state: 'refused'; refused: RefusedStep }
+  | { state: 'scenes'; retry?: true };
+
+export async function probeMosaic(url: string, fetchImpl: typeof fetch = fetch): Promise<MosaicAnswer> {
+  try {
+    const response = await fetchImpl(url, { signal: AbortSignal.timeout(MOSAIC_TILEJSON_TIMEOUT_MS) });
+    const body: unknown = await response.json().catch(() => null);
+    if (response.ok) {
+      const order = (body as Record<string, unknown> | null)?.['earthx:order'];
+      const named = Array.isArray(order) && order.length > 0 && order.every((id) => typeof id === 'string');
+      return named ? { state: 'taken', order: order as string[] } : { state: 'scenes' };
+    }
+    const refused = refusedStepOf((body as { detail?: unknown } | null)?.detail);
+    if (refused && (response.status === 400 || response.status === 422)) return { state: 'refused', refused };
+    return [400, 414, 422, 501].includes(response.status) ? { state: 'scenes' } : { state: 'scenes', retry: true };
+  } catch {
+    return { state: 'scenes', retry: true };
+  }
+}
+
 // The plan cut to its first `count` steps, the ones before a refused step; `null` for none.
 export function shortenPlan(plan: Extract<PreviewPlan, { state: 'ready' }>, count: number): Extract<PreviewPlan, { state: 'ready' }> | null {
   if (count < 1) return null;
@@ -175,6 +223,23 @@ export interface PreviewScene {
   bbox: Bbox;
   // The tile template of the scene, without any AOI clip.
   url: string;
+  // Set for a scene of a mosaic: the first level of the mosaic. The scene is drawn below it, stacked in the order of
+  // the mosaic, and steps aside for the mosaic from there (`mosaic.ts::viewOfPass`).
+  below?: number;
+}
+
+// The pass of one job drawn as one surface, the mosaic the job makes (NM4-04): the tiler reads its scenes, the first
+// valid pixel of each band wins and the steps run over the result.
+export interface PreviewMosaic {
+  // The scenes of the pass, in the order the tiler reads them.
+  order: string[];
+  bounds: Bbox;
+  // The tile template, without any AOI clip.
+  url: string;
+  // Its TileJSON: what `probeMosaic` asks.
+  probe: string;
+  // Its first level.
+  minZoom: number;
 }
 
 export interface PreviewSpec {
@@ -185,12 +250,17 @@ export interface PreviewSpec {
   stepCount: number;
   // The TileJSON of the first scene with the same steps: what `probeChain` asks.
   probe: string;
-  // The statistics of the first scene with the same steps: what `measureOf` reads. It does not depend on the
-  // range, so a new range is no new measure.
+  // The statistics of the first scene with the same steps (of a mosaic: the first it reads, the one that wins where
+  // scenes overlap): what `measureOf` reads. It does not depend on the range, so a new range is no new measure.
   measure: string;
   // Whether a Band math step is among the steps: what the values of an index are judged by.
   expression: boolean;
+  // The passes drawn as a mosaic from their first level up, and the scenes: those below a mosaic, those of a pass
+  // that is drawn scene by scene.
+  mosaics: PreviewMosaic[];
   scenes: PreviewScene[];
+  // A pass the job makes a mosaic of is drawn scene by scene: the tiler would not take its mosaic.
+  perScene: boolean;
   minZoom: number;
   // Capped so that no tile is as fine as the data (`previewMaxZoom`).
   maxZoom: number;
@@ -228,6 +298,14 @@ export function finestGsd(items: readonly StacItem[], assets: readonly string[],
   return known.length === 0 ? null : Math.min(...known);
 }
 
+// The scenes of a mosaic in the order the tiler named, those it did not name last and by id: the order of the pass
+// is the tiler's, and an answer that lacks a scene or knows an unknown one does not unmake the picture.
+function readOrder(named: readonly string[], ids: readonly string[]): string[] {
+  const known = new Set(ids);
+  const order = [...new Set(named.filter((id) => known.has(id)))];
+  return [...order, ...[...ids].sort().filter((id) => !order.includes(id))];
+}
+
 export function previewSpec(args: {
   dataset: DatasetOption | undefined;
   items: readonly StacItem[];
@@ -236,43 +314,92 @@ export function previewSpec(args: {
   plan: Extract<PreviewPlan, { state: 'ready' }>;
   range: PreviewRange;
   area: Area;
+  // The scenes of each job of the order: a job of several scenes is a mosaic (NM4-04), and the preview draws it
+  // as one where the tiler takes it. Without them every scene is drawn alone.
+  jobs?: readonly (readonly StacItem[])[];
+  // What the tiler said of the mosaics asked so far, by TileJSON URL; one not asked yet is taken to be taken.
+  answers?: ReadonlyMap<string, MosaicAnswer>;
 }): PreviewSpec | null {
-  const { dataset, items, assets, info, plan, range, area } = args;
+  const { dataset, items, assets, info, plan, range, area, jobs = [], answers } = args;
   if (!dataset?.viewable || assets.length === 0 || assets.length > MAX_PREVIEW_ASSETS) return null;
   const rescale = rescaleOf(range);
   if ('problem' in rescale) return null;
+  const render = { rescale: rescale.rescale, colormapName: range.colormap || undefined };
   const chain = plan.steps.map(({ step, params }) => ({ op: step.op, opVersion: step.opVersion, paramsJson: canonicalJson(params) }));
-  const scenes: PreviewScene[] = [];
-  let probe = '';
-  let measure = '';
-  for (const item of items.slice(0, MAX_PREVIEW_SCENES)) {
-    if (!item.bbox) continue;
-    const template = buildOperatorTileTemplate(dataset.id, item.id, assets, chain);
-    scenes.push({
-      id: item.id,
-      bbox: item.bbox,
-      url: buildTileUrl(template, { rescale: rescale.rescale, colormapName: range.colormap || undefined }),
-    });
-    if (!probe) {
-      probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain);
-      measure = buildOperatorStatisticsUrl(dataset.id, item.id, assets, chain);
-    }
-  }
-  if (scenes.length === 0) return null;
   // Without a pixel size there is no level to hold the preview under: it is drawn
   // as before, up to the last released level, and "Preview" says what it is (Otto,
   // 19.10.2026).
   const gsd = finestGsd(items, assets, info.variableSeparator);
-  const maxZoom = gsd === null ? dataset.zoom.max : previewMaxZoom(scenes.map((s) => s.bbox), gsd, dataset.zoom);
+  const maxZoom =
+    gsd === null ? dataset.zoom.max : previewMaxZoom(items.flatMap((item) => (item.bbox ? [item.bbox] : [])), gsd, dataset.zoom);
+  // The levels from which a pass is one mosaic: the tiler takes none below `MIN_MOSAIC_ZOOM`.
+  const firstLevel = Math.max(MIN_MOSAIC_ZOOM, dataset.zoom.min);
+
+  // The mosaic of one job, or `null` for the scenes one by one: not a pass of several scenes, more than the tile route
+  // takes (scenes, assets, bytes of the request, levels), or a mosaic the tiler did not take.
+  const mosaicOf = (unit: readonly StacItem[]): PreviewMosaic | null => {
+    const bounds = unionBbox(unit.map((item) => item.bbox));
+    if (
+      !bounds ||
+      unit.length < MIN_MOSAIC_SCENES ||
+      unit.length > MAX_MOSAIC_SCENES ||
+      assets.length > MAX_MOSAIC_OPERATOR_ASSETS ||
+      maxZoom < MIN_MOSAIC_ZOOM
+    ) {
+      return null;
+    }
+    const ids = unit.map((item) => item.id);
+    const url = buildTileUrl(buildMosaicOperatorTileTemplate(dataset.id, ids, assets, chain), render);
+    if (mosaicRequestBytes(url, maxZoom) > MAX_MOSAIC_REQUEST_BYTES) return null;
+    const probe = buildMosaicOperatorTileJsonUrl(dataset.id, ids, assets, chain);
+    const answer = answers?.get(probe);
+    if (answer?.state === 'scenes') return null;
+    return { order: readOrder(answer?.state === 'taken' ? answer.order : [], ids), bounds, url, probe, minZoom: firstLevel };
+  };
+  const mosaics = jobs.flatMap((unit) => mosaicOf(unit) ?? []);
+  const mosaicked = new Set(mosaics.flatMap((mosaic) => mosaic.order));
+
+  // The scenes below a mosaic come first, in the order the mosaic reads them, then the scenes drawn alone. The map
+  // draws so many rasters and no more: the scenes drawn alone have their places first, for they are the only picture
+  // of their scene at every level, the ones below a mosaic take what is left.
+  const known = new Map([...items, ...jobs.flat()].map((item) => [item.id, item]));
+  const below = dataset.zoom.min < firstLevel ? firstLevel : undefined;
+  const places = Math.max(0, MAX_PREVIEW_SCENES - mosaics.length);
+  const alone: { item: StacItem; below?: number }[] = items.filter((item) => !mosaicked.has(item.id)).slice(0, places).map((item) => ({ item }));
+  const under: { item: StacItem; below?: number }[] =
+    below === undefined ? [] : mosaics.flatMap((mosaic) => mosaic.order.map((id) => ({ item: known.get(id)!, below }))).slice(0, places - alone.length);
+  const scenes: PreviewScene[] = [];
+  let probe = '';
+  for (const { item, below: underLevel } of [...under, ...alone]) {
+    if (!item.bbox) continue;
+    scenes.push({
+      id: item.id,
+      bbox: item.bbox,
+      url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain), render),
+      ...(underLevel === undefined ? {} : { below: underLevel }),
+    });
+    if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain);
+  }
+  // The scene that wins where the scenes of the first mosaic overlap is the one measured.
+  const measured = mosaics[0]?.order[0] ?? scenes[0]?.id;
+  if (measured === undefined) return null;
   const clipToAoi = area === 'aoi';
   return {
-    key: canonicalJson({ urls: scenes.map((s) => s.url), minZoom: dataset.zoom.min, maxZoom, clipToAoi }),
+    key: canonicalJson({
+      urls: scenes.map((s) => s.url),
+      ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order]), below: scenes.map((s) => s.below ?? null) } : {}),
+      minZoom: dataset.zoom.min,
+      maxZoom,
+      clipToAoi,
+    }),
     title: plan.steps.map(({ operator }) => operator.title).join(' → '),
     stepCount: plan.steps.length,
     probe,
-    measure,
+    measure: buildOperatorStatisticsUrl(dataset.id, measured, assets, chain),
     expression: plan.steps.some(({ step }) => step.op === 'band_math'),
+    mosaics,
     scenes,
+    perScene: jobs.some((unit) => unit.length >= MIN_MOSAIC_SCENES && !mosaicked.has(unit[0].id)),
     minZoom: dataset.zoom.min,
     maxZoom,
     clipToAoi,
@@ -326,17 +453,28 @@ export function previewUnit(preview: PreviewSpec | null, measure: PreviewMeasure
 // What the panel says when the measure could not be had: the preview then keeps the start range.
 export const NO_MEASURE = 'The range could not be measured, so the preview uses its start range. Set it by hand or try Auto stretch.';
 
-// The overlays of a preview, as the map and a layer hold them.
+// The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes. A scene
+// below a mosaic is drawn up to the level before it and steps aside for it (`hideFrom`, as in `mosaic.ts::viewOfPass`).
 export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null): LayerOverlay[] {
   const clip = spec.clipToAoi ? aoi : null;
-  return spec.scenes.map((scene) => ({
+  const mosaics = spec.mosaics.map((mosaic) => ({
+    kind: 'raster' as const,
+    tileUrl: clipTileUrl(mosaic.url, clip),
+    bounds: mosaic.bounds,
+    minZoom: mosaic.minZoom,
+    maxZoom: spec.maxZoom,
+    preview: true as const,
+  }));
+  const scenes = spec.scenes.map((scene) => ({
     kind: 'raster' as const,
     tileUrl: clipTileUrl(scene.url, clip),
     bounds: scene.bbox,
     minZoom: spec.minZoom,
-    maxZoom: spec.maxZoom,
+    maxZoom: scene.below === undefined ? spec.maxZoom : Math.min(spec.maxZoom, scene.below - 1),
+    ...(scene.below === undefined ? {} : { hideFrom: scene.below - TILE_LEVEL_AHEAD }),
     preview: true as const,
   }));
+  return [...mosaics, ...scenes];
 }
 
 // --- never as fine as the data (Otto, 19.10.2026) ---------------------------

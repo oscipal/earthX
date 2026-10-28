@@ -104,7 +104,10 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
         type="button"
         className="lm-name"
         data-col="name"
-        title={locked ? `${l.name} — ${DELETED_LAYER_TIP}` : `${l.name} — view this layer / continue working on it`}
+        title={
+          (locked ? `${l.name} — ${DELETED_LAYER_TIP}` : `${l.name} — view this layer / continue working on it`) +
+          (l.note ? `\n${l.note}` : '')
+        }
         onClick={() => select(l.id)}
       >
         {l.name}

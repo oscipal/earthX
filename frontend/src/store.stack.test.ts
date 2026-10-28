@@ -174,7 +174,7 @@ describe('pinPreview: the layer stacks the scenes the way the preview does', () 
       bbox: [10, 47, 11, 48] as [number, number, number, number],
       url: `/collections/${ID}/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual&op=band_math`,
     }));
-    const preview = { key: 'k', title: 'Band math', scenes, minZoom: 8, maxZoom: 14, clipToAoi: false } as unknown as PreviewSpec;
+    const preview = { key: 'k', title: 'Band math', mosaics: [], scenes, minZoom: 8, maxZoom: 14, clipToAoi: false } as unknown as PreviewSpec;
     useProcessingStore.setState({ preview });
     useAppStore.setState({ layers: [], aoi: AOI });
     useProcessingStore.getState().pinPreview();

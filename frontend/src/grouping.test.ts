@@ -232,8 +232,8 @@ describe('itemsOverView (UI-01g, 27.10.2026)', () => {
     expect(ids(itemsOverView(groups, 0, ['b1'], true))).toEqual(['a1', 'a2', 'b1']);
   });
 
-  it('is the ticked scenes, all of them, with the results off: a scene the view draws shows like any other', () => {
-    expect(ids(itemsOverView(groups, 0, ['a1', 'b1'], false))).toEqual(['a1', 'b1']);
+  it('is nothing with the results off, the ticked scenes included (Otto, 28.10.2026)', () => {
+    expect(itemsOverView(groups, 0, ['a1', 'b1'], false)).toEqual([]);
   });
 
   it('is nothing with the results off and nothing ticked', () => {

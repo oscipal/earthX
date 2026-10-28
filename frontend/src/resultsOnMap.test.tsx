@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 //
 // Otto, 27.10.2026 (zu #211): "Hide results" holds. Whatever happens next, no outline, quicklook or crop of a search
-// result is on the map, except for a ticked scene, which shows with its usual controls and goes with its tick; and
-// only the switch changes show/hide, with two exceptions: a new search ("Search") shows the results, and a crop
-// ("Crop to AOI", "Crop & merge to AOI") hides them and unticks the scenes it was made of.
+// result is on the map; and only the switch changes show/hide, with exceptions: a new search ("Search") shows the
+// results, a crop ("Crop to AOI", "Crop & merge to AOI") hides them and unticks the scenes it was made of.
+// Changed on 28.10.2026 (zu #221): the ticked scene is no exception any more, "Hide results" hides it too (its tick
+// stays), and ticking a scene while the results are hidden shows them (the third exception; unticking changes nothing).
 // `mapResults.ts` is the one function that says what is on the map, so the matrix
 // asks it, after each thing a user can do, with the results hidden or shown and a scene ticked or not.
 // The tests of Otto's own click path fail against the code before: "Clear" did not exist, and leaving a view, a
@@ -112,14 +113,15 @@ afterEach(() => {
 });
 
 const idsOf = (items: StacItem[]) => items.map((it) => it.id);
-const ticked = () => new Set(state().selectedIds);
-
-// What may be on the map with the results hidden: the ticked scenes, and nothing else.
-function expectOnlyTickedOnMap() {
+// What may be on the map with the results hidden: nothing of the search, the ticked scenes included. The view's own
+// scenes are no result.
+function expectNothingOnMap() {
   const shown = resultsOnMapOf(state());
-  const allowed = ticked();
-  for (const id of [...idsOf(shown.quicklooks), ...idsOf(shown.overlay), ...idsOf(shown.highlight), ...idsOf(shown.clickable)]) expect(allowed.has(id) || (state().focusMode && Object.hasOwn(state().downloaded, id))).toBe(true);
-  expect(shown.cropsOf).toEqual(state().selectedIds);
+  expect(shown.quicklooks).toEqual([]);
+  expect(shown.overlay).toEqual([]);
+  expect(shown.highlight).toEqual([]);
+  for (const id of idsOf(shown.clickable)) expect(state().focusMode && Object.hasOwn(state().downloaded, id)).toBe(true);
+  expect(shown.cropsOf).toEqual([]);
 }
 
 // A view of the scenes open (the ticked ones, or the open time step), as the bar of the selection opens it.
@@ -152,19 +154,20 @@ const OPERATIONS: [string, () => Promise<void> | void, Effect][] = [
 describe.each([false, true])('with the results on the map: %s', (onMap) => {
   describe.each([false, true])('and a scene ticked: %s', (hasTick) => {
     beforeEach(() => {
+      // Ticked first: ticking a scene while the results are hidden would show them.
       act(() => {
-        useAppStore.setState({ resultsOnMap: onMap });
         if (hasTick) state().toggleSelected('a0');
+        useAppStore.setState({ resultsOnMap: onMap });
       });
     });
 
-    it.each(OPERATIONS)('%s leaves the switch alone but for the two exceptions, and with the results hidden only a ticked scene is on the map', async (_name, run, effect) => {
+    it.each(OPERATIONS)('%s leaves the switch alone but for its exceptions, and with the results hidden nothing is on the map, a ticked scene included', async (_name, run, effect) => {
       const tickBefore = [...state().selectedIds];
       await run();
       await flush();
       const expected = effect.switchTo ?? onMap;
       expect(state().resultsOnMap).toBe(expected);
-      if (!expected) expectOnlyTickedOnMap();
+      if (!expected) expectNothingOnMap();
       // The choice of scenes survives everything but a crop (and a new search, which starts over).
       if (effect.unticks) expect(state().selectedIds).toEqual([]);
       else if (!effect.startsOver) expect(state().selectedIds).toEqual(tickBefore);
@@ -208,27 +211,88 @@ describe('a new search shows the results (Otto, 27.10.2026)', () => {
   });
 });
 
-describe('a scene that is ticked shows although the results are hidden, and goes with its tick', () => {
-  beforeEach(() => act(() => useAppStore.setState({ resultsOnMap: false })));
-
-  it('nothing is on the map with nothing ticked', () => {
-    const shown = resultsOnMapOf(state());
-    expect(shown.quicklooks).toEqual([]);
-    expect(shown.overlay).toEqual([]);
-    expect(shown.highlight).toEqual([]);
-    expect(shown.cropsOf).toEqual([]);
+describe('"Hide results" hides a ticked scene too, and ticking while hidden shows the results (Otto, 28.10.2026)', () => {
+  it('hiding takes the ticked scenes off the map, and their ticks stay', () => {
+    act(() => { state().toggleSelected('a0'); state().toggleSelected('b0'); });
+    expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['a0', 'b0']);
+    act(() => state().toggleResultsOnMap());
+    expect(state().resultsOnMap).toBe(false);
+    expect(state().selectedIds).toEqual(['a0', 'b0']);
+    expectNothingOnMap();
   });
 
-  it('the ticked scene shows, in browsing and over a view, and is gone when its tick is', async () => {
+  it('hiding takes them off over a view as well, and a crop with them keeps working on the ticks', async () => {
+    act(() => { state().toggleSelected('a0'); state().toggleSelected('b0'); });
+    await act(() => state().enterFocus(false));
+    expect(idsOf(resultsOnMapOf(state()).overlay)).toEqual(expect.arrayContaining(['a0', 'b0']));
+    act(() => state().toggleResultsOnMap());
+    expectNothingOnMap();
+    expect(state().selectedIds).toEqual(['a0', 'b0']);
+  });
+
+  describe('ticking a scene while the results are hidden', () => {
+    beforeEach(() => {
+      act(() => { state().toggleSelected('a1'); state().toggleResultsOnMap(); });
+      expect(state().resultsOnMap).toBe(false);
+    });
+
+    it('switches to "Show results", in the button too and in the browser', () => {
+      act(() => useAppStore.setState({ dock: 'results' }));
+      expect(buttonWith('Show results').textContent).toBe('Show results');
+      act(() => state().toggleSelected('a0'));
+      expect(state().resultsOnMap).toBe(true);
+      expect(buttonWith('Hide results').textContent).toBe('Hide results');
+      expect(window.localStorage.getItem('earthx.results')).toBe('show');
+      expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['a1', 'a0']);
+    });
+
+    it('does so for a click on a row of the list, for the time step and for "Select all"', () => {
+      act(() => useAppStore.setState({ dock: 'results' }));
+      click(container.querySelector('.result-row input')!);
+      expect(state().resultsOnMap).toBe(true);
+      act(() => state().toggleResultsOnMap());
+      act(() => state().toggleGroupSelected(1));
+      expect(state().resultsOnMap).toBe(true);
+      act(() => state().toggleResultsOnMap());
+      act(() => state().selectAllInActiveGroup());
+      expect(state().resultsOnMap).toBe(true);
+      act(() => state().toggleResultsOnMap());
+      act(() => state().selectAllLoaded());
+      expect(state().resultsOnMap).toBe(true);
+    });
+
+    it('is left alone by unticking: the results stay hidden', () => {
+      act(() => state().toggleSelected('a1'));
+      expect(state().selectedIds).toEqual([]);
+      expect(state().resultsOnMap).toBe(false);
+      act(() => state().toggleSelected('a1'));
+      act(() => state().toggleResultsOnMap());
+      act(() => state().clearSelection());
+      expect(state().resultsOnMap).toBe(false);
+    });
+
+    it('is left alone by ticking a scene that is ticked already (the time step again)', () => {
+      act(() => state().selectAllInActiveGroup());
+      act(() => state().toggleResultsOnMap());
+      act(() => state().selectAllInActiveGroup());
+      expect(state().resultsOnMap).toBe(false);
+    });
+  });
+});
+
+describe('the order of the ticked scenes (Otto, 28.10.2026)', () => {
+  it('is the order they were ticked in, the last one on top, and a scene ticked again goes to the top', () => {
+    act(() => { state().toggleSelected('b0'); state().toggleSelected('a0'); state().toggleSelected('a2'); });
+    expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['b0', 'a0', 'a2']);
     act(() => state().toggleSelected('a0'));
-    expect(idsOf(resultsOnMapOf(state()).quicklooks)).toEqual(['a0']);
-    expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['a0']);
-    await act(() => state().enterFocus(true));
-    // The view draws the scene itself; a second ticked scene lies over it.
-    act(() => state().toggleSelected('a1'));
-    expect(idsOf(resultsOnMapOf(state()).overlay)).toEqual(['a1']);
-    act(() => state().toggleSelected('a1'));
-    expect(resultsOnMapOf(state()).overlay).toEqual([]);
+    expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['b0', 'a2']);
+    act(() => state().toggleSelected('a0'));
+    expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['b0', 'a2', 'a0']);
+  });
+
+  it('is kept in memory only: nothing of it goes into the browser', () => {
+    act(() => { state().toggleSelected('b0'); state().toggleSelected('a0'); });
+    expect(JSON.stringify({ ...localStorage })).not.toContain('b0');
   });
 });
 
@@ -250,17 +314,19 @@ describe('Otto\'s click path (27.10.2026)', () => {
     expect(Object.keys(state().downloaded)).toEqual(['a0']);
   });
 
-  it('the scene ticked again shows its quicklook like any other and leaves the view alone', async () => {
+  it('the scene ticked again shows the results with its quicklook and leaves the view alone', async () => {
     act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
     click(buttonWith('Crop to AOI'));
     await flush();
     const view = state().downloaded;
     act(() => state().toggleSelected('a0'));
-    expect(idsOf(resultsOnMapOf(state()).overlay)).toEqual(['a0']);
+    // The tick shows the results (the third exception): the quicklook of the scene lies over the view with the others.
+    expect(state().resultsOnMap).toBe(true);
+    expect(idsOf(resultsOnMapOf(state()).overlay)).toContain('a0');
     expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['a0']);
     expect(state().focusMode).toBe(true);
     expect(state().downloaded).toBe(view);
-    act(() => state().toggleSelected('a0'));
+    act(() => state().toggleResultsOnMap());
     expect(resultsOnMapOf(state()).overlay).toEqual([]);
   });
 
@@ -288,29 +354,31 @@ describe('Otto\'s click path (27.10.2026)', () => {
     expect(state().downloaded).toEqual({});
   });
 
-  it('the switch says what a click does, and hiding takes everything but a ticked scene off the map', async () => {
+  it('the switch says what a click does, and hiding takes everything off the map, a ticked scene included', async () => {
     act(() => useAppStore.setState({ dock: 'results' }));
     expect(buttonWith('Hide results').textContent).toBe('Hide results');
+    act(() => state().toggleSelected('a0'));
     click(buttonWith('Hide results'));
     expect(buttonWith('Show results').textContent).toBe('Show results');
-    expectOnlyTickedOnMap();
-    // Leaving a view brings nothing back.
-    act(() => state().toggleSelected('a0'));
+    expectNothingOnMap();
+    // Leaving a view brings nothing back, and the tick stays.
     await openView();
     click(viewButton('Change image'));
     expect(state().resultsOnMap).toBe(false);
-    expect(idsOf(resultsOnMapOf(state()).quicklooks)).toEqual(['a0']);
+    expect(state().selectedIds).toEqual(['a0']);
+    expectNothingOnMap();
+    // Unticking changes nothing.
     act(() => state().toggleSelected('a0'));
-    expectOnlyTickedOnMap();
-    expect(resultsOnMapOf(state()).quicklooks).toEqual([]);
+    expect(state().resultsOnMap).toBe(false);
+    expectNothingOnMap();
   });
 });
 
 describe('"Clear" and "Change image" in the view', () => {
   it('"Clear" takes the view off the map and nothing else: the tick, what was pinned, the switch and the panel stay', async () => {
     const layer = { id: 'pinned', name: 'Pinned', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET, itemIds: [], groupItemIds: [], downloaded: {}, appliedRender: {}, selectedIds: [] } } as never;
-    act(() => useAppStore.setState({ layers: [layer], resultsOnMap: false, dock: 'controls' }));
     act(() => state().toggleSelected('a0'));
+    act(() => useAppStore.setState({ layers: [layer], resultsOnMap: false, dock: 'controls' }));
     await openView();
     const pinned = state().layers;
     click(viewButton('Clear'));
@@ -326,8 +394,8 @@ describe('"Clear" and "Change image" in the view', () => {
   });
 
   it('"Change image" takes the view off the map and opens the results, and leaves the tick and the switch', async () => {
-    act(() => useAppStore.setState({ dock: 'controls', resultsOnMap: false }));
     act(() => state().toggleSelected('a0'));
+    act(() => useAppStore.setState({ dock: 'controls', resultsOnMap: false }));
     await openView();
     click(viewButton('Change image'));
     expect(state().focusMode).toBe(false);
