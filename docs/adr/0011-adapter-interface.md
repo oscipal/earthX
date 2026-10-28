@@ -724,7 +724,7 @@ Anfrage hinein, der Adapter schreibt sie in das Format seiner Quelle (Earth
 Search: `query`, `earth_search.query_extension`). Eine Quelle mit CQL2 bekommt
 eine eigene Übersetzung im Adapter, ohne Änderung am Modell; das ist der
 Dialekt aus §8.2. `check_adapter_specs` weist einen Eintrag mit Filtern ab,
-dessen Quelle `query` nicht kann. Begründung und Messung: `adr/0020`.
+dessen Quelle `query` nicht kann. Begründung und Messung: `adr/0021`.
 
 ## 12. Quellen
 

@@ -1,6 +1,6 @@
-# ADR 0020 — Suchfilter je Datensatz
+# ADR 0021 — Suchfilter je Datensatz
 
-- **Status:** Entwurf. Die Entscheidungen hat Otto am 28.10.2026 mit dem Plan von DS-02 getroffen (`docs/plans/ds/ds-02-advanced-search.md` §6, freigegeben zu #217). Dieses ADR hält sie als Architekturentscheidung fest; Begründung, Optionen und Messungen stehen im Plan.
+- **Status:** Entwurf (Nummer 0021, weil 0020 durch NM4-43 belegt ist; Otto, 28.10.2026). Die Entscheidungen hat Otto am 28.10.2026 mit dem Plan von DS-02 getroffen (`docs/plans/ds/ds-02-advanced-search.md` §6, freigegeben zu #217). Dieses ADR hält sie als Architekturentscheidung fest; Begründung, Optionen und Messungen stehen im Plan.
 - **Datum:** 2026-10-28
 - **Aufgabe:** DS-02a (Backend Suche). DS-02b (Coverage) und DS-02c (Oberfläche) folgen als eigene PRs.
 

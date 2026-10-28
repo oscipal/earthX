@@ -423,7 +423,7 @@ CQL2 etwas leisten könnte.
 > ohne Wirkung blieben (gemessen, still verworfen) — dasselbe Muster wie
 > `filter`. Beide sind jetzt aus denselben Gründen ebenfalls aus.
 
-> **Nachtrag (DS-02a, 28.10.2026, `adr/0020`):** `POST /stac/search` nimmt
+> **Nachtrag (DS-02a, 28.10.2026, `adr/0021`):** `POST /stac/search` nimmt
 > `query` wieder an, aber nur mit den Filtern, die die Registry je Datensatz
 > nennt (`gte`/`lte` auf Bereichen, `in` auf Wertelisten), dazu
 > `query_by_collection` für Werte je Datensatz; alles andere ist `400`. Die

@@ -192,6 +192,8 @@ Kein Vorgabewert, auch kein voreingestellter Filterwert: Ein Filter wirkt erst, 
 
 **Angenommen: (1), (3) als Notiz für M5.** (2) scheidet aus, weil die Queryables unvollständig sind und weder Bereich noch Beschriftung tragen [M]. Der Live-Test (`backend/tests_live/test_search_filters_live.py`, nicht in der CI; `.github/` bleibt unverändert, D) prüft je Datensatz und Filter über `gateway`: Die Eigenschaft steht in den Items einer festen Probe (sonst träfe der Filter still nichts, §6.2a), der Filter verengt die Trefferzahl ohne Fehler, Werte der Quelle für einen `VALUES`-Filter sind in der Registry bekannt, und wo die Queryables die Eigenschaft mit Typ nennen, passt er (`number`/`integer` zu `RANGE`, `string` zu `VALUES`). Fehlt die Eigenschaft in den Queryables, ist das kein Fehler. Proben ohne AOI im Log.
 
+**Nachtrag (Review Otto, 28.10.2026, zu #217):** `.github/workflows/live-smoke.yml` wählt die Live-Tests nach **Pfad**, nicht nach Marker: Der Schritt des Jobs `earth-search` nennt seine Dateien einzeln (`pytest backend/tests_live/test_earth_search_smoke.py backend/tests_live/test_coverage_smoke.py`). Der Marker `live_dataset("sentinel-2-c1-l2a")` ist gesetzt, reicht aber nicht. `.github/` bleibt unverändert; vorgeschlagen ist im PR genau eine Zeile, Otto entscheidet. Bis dahin läuft der Abgleich nur lokal und als Offline-Wiedergabe in `backend/tests/test_live_smoke_dry_run.py`.
+
 ### 6.7 Oberfläche (englisch)
 
 - **Ort (Frage 7):** Im Control-Menü nach „Acquisition date“ ein Aufklapper „Advanced search“ (▸/▾). Er erscheint nur, wenn mindestens ein gewählter Datensatz Filter hat.
@@ -230,7 +232,7 @@ Kein Vorgabewert, auch kein voreingestellter Filterwert: Ein Filter wirkt erst, 
 - **DS-02c (vitest):** Aufklapper nur mit Filtern; Umschalter nur mit Datensätzen mit Filtern, gleiche Tastatur wie im Panel „Results“; Werte je Datensatz getrennt; Kopf zählt Datensätze mit aktiven Filtern, Tooltip; Eingabefehler sperren „Search“; Suche, „Load more“, Fallback und Coverage senden die Filter; Coverage-Speicher trennt nach Filtern; „Clear search results“ behält sie; „Reset filters“.
 - **DS-02c Browser (Chromium/Playwright der Sitzung):** Klickweg Sentinel-2 + DEM gewählt, Filter setzen, Suche und Coverage beobachten (Anfragen gemockt, wo die Quelle sonst gebraucht würde), Hell/Dunkel, schmales Fenster; im PR beschrieben.
 - Je PR: Prüfanleitung für Otto (Browser und/oder PowerShell 5.1), Log-Zeilen, vier Pflicht-Checks grün, `main` geholt.
-- **Doku mit DS-02a:** ADR-Entwurf `adr/0020-suchfilter-je-datensatz.md` (kurz, verweist auf diesen Plan), Nachträge in `architekturplan.md` 5.1 (Zeile `earthx:search_filters`), `adr/0005` Regel VI und `adr/0011` (internes Modell, `FilterSupport.query`).
+- **Doku mit DS-02a:** ADR-Entwurf `adr/0021-suchfilter-je-datensatz.md` (kurz, verweist auf diesen Plan), Nachträge in `architekturplan.md` 5.1 (Zeile `earthx:search_filters`), `adr/0005` Regel VI und `adr/0011` (internes Modell, `FilterSupport.query`).
 
 ### 6.11 Schnitt (angenommen, E)
 
