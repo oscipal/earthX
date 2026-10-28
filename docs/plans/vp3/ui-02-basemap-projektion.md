@@ -1,6 +1,6 @@
 # UI-02 — Basemap-Auswahl und Projektion
  
-**Stand:** 12.10.2026, beauftragt von Otto; ergänzt am 24.10.2026 (§3 Permalink); Plan mit Recherche am 27.10.2026 (§6), von Otto am 27.10.2026 freigegeben (§6.10); UI-02a umgesetzt (§7, §8), UI-02b am 28.10.2026 (§9).
+**Stand:** 12.10.2026, beauftragt von Otto; ergänzt am 24.10.2026 (§3 Permalink); Plan mit Recherche am 27.10.2026 (§6), von Otto am 27.10.2026 freigegeben (§6.10); UI-02a umgesetzt (§7, §8), UI-02b am 28.10.2026 (§9), UI-02c am 28.10.2026 (§10).
 **Meilenstein:** UI, direkt nach M4 (nach M4-20).
 **Stufe B mit Recherche:** Plan mit Quellen im Draft-PR, Otto gibt frei, dann Code.
 **Modell:** Opus (Effort hoch) für Plan und Recherche, Sonnet (Effort hoch) für die Umsetzung.
@@ -236,7 +236,7 @@ Ein Knopf oben rechts neben „⤢ Zoom to selection“ und „☀ Light/☾ Dar
 
 1. **UI-02a, Frontend (umgesetzt, §7):** Katalog, Menü „Basemap“ mit Basemap und Projection, Wechsel per Diff, Streets/Grey/Outlines, Attribution immer offen, Merken. „Light/Dark“ und der Globus bleiben unverändert. Tests. Geschätzt 350–400 Zeilen.
 2. **UI-02b, Frontend (umgesetzt, §9):** Labels (inklusive über Satellite) und Graticule. Geschätzt 150–200 Zeilen; mit Tests rund 260 Zeilen Code und 700 Zeilen Tests (§9.5).
-3. **UI-02c, Backend und Frontend:** Basemap und Projektion im Permalink (wirksame und gemerkte Wahl getrennt, Frage 8). Geschätzt 100–150 Zeilen.
+3. **UI-02c, Backend und Frontend (umgesetzt, §10):** Basemap und Projektion im Permalink (wirksame und gemerkte Wahl getrennt, Frage 8). Geschätzt 100–150 Zeilen.
 
 Je PR: Log-Zeile, Prüfanleitung, `main` holen vor „fertig“. Dazu Punkte für den Backlog (Vorschlag; `plans/nach-m4-backlog.md` bleibt auf Ottos Anweisung vom 27.10.2026 unverändert, Otto ordnet sie ein): Schummerung aus dem DEM (Stufe B, Backend), Sentinel-2-Kachelraster (ESA-Datei rund 106 MB KML, Lizenz ungeklärt [S]), Selbst-Hosting der Vektorkacheln vor dem öffentlichen Start, Satellit lizenzieren vor dem kommerziellen Start, Equal Earth bei neuer MapLibre-Version prüfen.
 
@@ -459,3 +459,46 @@ Vorher: Browserdaten der Seite löschen (oder ein privates Fenster).
 ### 9.5 Größe des PR
 
 Der Richtwert von 400 Zeilen ist überschritten: rund 260 Zeilen Code (`overlays.ts` 79, `mapStyles.ts` +83, Menü, Speicher, Marker) und rund 700 Zeilen Tests. Ich habe nichts davon gestrichen, weil die Tests die Reihenfolge der Ebenen, die Befehlsliste des Diffs und die Attribution je Basemap belegen, die die Abnahme (§5) verlangt. Der Schnitt in zwei PRs (Labels, Graticule) hätte `composeStyle` zweimal angefasst.
+
+## 10. UI-02c: Umsetzung (28.10.2026)
+
+Umgesetzt nach §6.6 mit Ottos Antwort 8 (§6.10): Der Permalink hält Basemap und Projektion der Ansicht. Backend (`PermalinkView`) und Frontend (`permalink.ts`, `store.ts`, `processingStore.ts`); keine neue Abhängigkeit, keine Migration, die API bleibt rückwärtskompatibel. Overlays und Thema kommen nicht in den Permalink (§6.6).
+
+### 10.1 Umsetzung
+
+1. **Backend:** `PermalinkView` bekommt `basemap` (`satellite` | `streets` | `grey` | `outlines`) und `projection` (`mercator` | `globe`), beide optional (Vorgabe `None`). `strict=True` und `extra="forbid"` bleiben: Eine unbekannte Kennung, ein Fremdtyp (Zahl, Liste, Objekt, Wahrheitswert) und jede Adresse im Feld werden mit `422` abgewiesen. Was der Server speichert, steht im Dokument als `null`, wenn das Feld fehlte; ein vor UI-02c gespeichertes Dokument ohne die Felder wird unverändert ausgeliefert.
+2. **Lesen:** `permalink.ts::parseView` liest ein fehlendes oder `null` gespeichertes Feld als Vorgabe (Satellite, Mercator, `DEFAULT_BASEMAP` und `DEFAULT_PROJECTION`); ein Wert, der keine Kennung des Menüs ist, macht den Link unlesbar („The link could not be opened: …“), wie jedes andere ungültige Feld, und ändert nichts.
+3. **Schreiben:** `viewOf` nimmt die wirksame Wahl (`ShareLink`: `basemap` und `projection` des Stores, also das, was auf dem Bildschirm steht, nicht das Gemerkte).
+4. **Wirksame und gemerkte Wahl getrennt (Antwort 8):** Der Store hält die wirksame Wahl (`basemap`, `projection`, die `MapView` zeichnet); die gemerkte Wahl ist der `localStorage` (`earthx.basemap`, `earthx.projection`) und wird nur vom Menü geschrieben (`setBasemap`, `setProjection`). Ein geöffneter Permalink setzt über die neue Aktion `showSharedLook` nur die wirksame Wahl, am Ende von `restoreOrder`, also nur dann, wenn der Auftrag ganz übernommen wurde (ein abgelaufener oder unlesbarer Link und ein Auftrag, den der Datensatz nicht nimmt, ändern nichts). Ein Neuladen öffnet mit der gemerkten Wahl. Wählt der Nutzer danach im Menü eine Basemap, wird nur diese gemerkt; die Projektion des Links bleibt wirksam, aber ungespeichert.
+5. **„Open in panel“** (Auftrag eines Jobs zurück ins Panel) gibt die laufende Wahl an `restoreOrder` weiter und ändert sie damit nicht.
+6. **Ältere Links** (ohne die Felder, auch die mit `null`) öffnen mit Satellite und Mercator (§6.6), auch wenn der Nutzer etwas anderes gemerkt hat; das gilt wie bei einem neuen Link nur für diese Ansicht.
+
+### 10.2 Auslegungen (Vorschlag, gelten bis Otto widerspricht)
+
+1. **Alte Links überschreiben die wirksame Wahl mit der Vorgabe** (Satellite, Mercator), nicht mit dem Gemerkten: so steht es in §6.6 („öffnen mit der Vorgabe“). Wer lieber hätte, dass ein Link ohne Felder die Wahl des Nutzers lässt, sagt es; das ist eine Zeile in `parseView`.
+2. **Fällt die gewählte Basemap beim Öffnen aus** (Stil von Streets oder Grey nicht ladbar), gilt der Rückfall aus §7.1 Punkt 3: Die Karte zeigt weiter, was sie hatte, das Menü geht zurück, es wird nichts gespeichert.
+
+### 10.3 Belege
+
+- **Pytest (`test_permalink_route.py`):** je alle vier Basemaps × beide Projektionen Rundreise; jedes Feld einzeln optional; ein Dokument ohne die Felder liest sich weiter (in der Datenbank auf das alte Format gesetzt); `422` für `osm`, `Satellite`, Zahl, Liste, Adresse, `equal-earth`, Wahrheitswert und Objekt, ohne dass etwas gespeichert wird.
+- **Vitest:** `permalink.test.ts` (Rundreise `viewOf`/`parseView` je Wahl, fehlende und `null`-Felder als Vorgabe, 13 unbekannte Werte inklusive `constructor`, `__proto__` und `vertical-perspective` abgewiesen), `ProcessingShare.test.tsx` (je Wahl greift im Store; **nichts im `localStorage` geschrieben**, auch nicht für einen Nutzer, der nie gewählt hat; Menüwahl danach wird gemerkt; alter Link mit und ohne `null`; unbekannte Wahl, nicht übernehmbarer Auftrag und abgelaufener Link ändern nichts; „Share“ schickt die wirksame, nicht die gemerkte Wahl; ein Link gibt seine Wahl an den nächsten weiter), `JobDetails.test.tsx` („Open in panel“ gibt die laufende Wahl weiter).
+- **Gegenprobe:** Schreibt `showSharedLook` in den Speicher, scheitern zwei Tests; schreibt `viewOf` immer die Vorgabe statt der Wahl, scheitern fünf.
+- **Suiten (28.10.2026):** `npx vitest run` 86 Dateien, 2960 Tests grün; `oxlint`, `tsc -b`, `ruff check backend`, `lint-imports` (16 Verträge) ohne Befund; `pytest` 6317 bestanden, 8 übersprungen (PowerShell fehlt in der Sitzung; die CI hat es).
+- **Nicht belegt:** ein echter Browser mit echtem Backend (die Sitzung hat keinen Zugang zu den Kachelanbietern; der Wechsel selbst ist seit UI-02a belegt, hier ändert sich nur, woher die Wahl kommt) und das Teilen über zwei echte Browserfenster; beides prüft die Anleitung.
+
+### 10.4 Prüfanleitung für Otto (Browser)
+
+Vorher: Browserdaten der Seite löschen. Backend mit dieser Änderung starten.
+
+1. Basemap „Streets“ und Projection „Globe“ wählen, einen Auftrag zusammenstellen, „Share“ drücken, den Link kopieren.
+2. **Link im privaten Fenster öffnen:** Streets und Globus wie geteilt. Im Menü „Basemap“ stehen genau diese Haken.
+3. **Gemerkt wird nichts:** Im privaten Fenster unter Application, Local Storage stehen `earthx.basemap` und `earthx.projection` nicht. Die Seite neu laden: Satellite und Mercator (die Vorgabe).
+4. **Im normalen Fenster** zuerst Grey und Mercator im Menü wählen, dann den Link öffnen: Streets und Globus. Neu laden: Grey und Mercator (die gemerkte Wahl). Im Local Storage steht weiter `grey`.
+5. Nach dem Öffnen im Menü „Outlines“ wählen: Das wird gemerkt (Local Storage `outlines`), die Projektion des Links bleibt auf dem Globus, ohne gespeichert zu sein.
+6. **Alter Link** (von vor dieser Änderung, falls einer da ist): öffnet mit Satellite und Mercator.
+7. **Light/Dark und Overlays** (Labels, Graticule) ändert der Link nicht.
+8. **„Open in panel“** an einem Job: Basemap und Projektion bleiben, wie sie waren.
+
+### 10.5 Größe des PR
+
+Rund 45 Zeilen Code (Backend 7, Frontend 35) und rund 210 Zeilen Tests, gut unter dem Richtwert von 400 Zeilen.
