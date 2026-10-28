@@ -32,6 +32,7 @@ from earthx.catalog.coverage import (
     parse_cell_key,
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.search_filters import RangeCondition, ValuesCondition
 
 UTC = timezone.utc
 
@@ -278,10 +279,14 @@ class TestQueryChecks:
                 end=datetime(2024, 1, 1, tzinfo=UTC),
             )
 
-    @pytest.mark.parametrize("value", [-1.0, 100.1])
-    def test_a_cloud_cover_outside_the_percentage_range_is_refused(self, value: float) -> None:
-        with pytest.raises(InvalidCoverageQuery, match="percentage"):
-            CoverageQuery(dataset_id="d", level=6, max_cloud_cover=value)
+    def test_empty_conditions_are_refused_rather_than_read_as_no_filter(self) -> None:
+        with pytest.raises(InvalidCoverageQuery, match="empty"):
+            CoverageQuery(dataset_id="d", level=6, conditions={})
+
+    @pytest.mark.parametrize("condition", [{"gte": 1}, 20.0, "eo:cloud_cover", None])
+    def test_something_that_is_no_condition_is_refused(self, condition: object) -> None:
+        with pytest.raises(InvalidCoverageQuery, match="no search filter condition"):
+            CoverageQuery(dataset_id="d", level=6, conditions={"eo:cloud_cover": condition})  # type: ignore[dict-item]
 
     @pytest.mark.parametrize("level", [-1, MAX_GEOTILE_LEVEL + 1])
     def test_a_level_outside_the_grid_is_refused(self, level: int) -> None:
@@ -308,7 +313,8 @@ class TestUnfilteredFlag:
             {"bbox": (5.0, 45.0, 15.0, 55.0)},
             {"start": datetime(2024, 1, 1, tzinfo=UTC)},
             {"end": datetime(2024, 1, 1, tzinfo=UTC)},
-            {"max_cloud_cover": 20.0},
+            {"conditions": {"eo:cloud_cover": RangeCondition(minimum=None, maximum=20.0)}},
+            {"conditions": {"platform": ValuesCondition(values=("sentinel-2a",))}},
         ],
     )
     def test_any_filter_at_all_takes_it_out_of_the_world_overview(self, kwargs) -> None:
@@ -357,3 +363,19 @@ class TestRegularResult:
 
     def test_a_regular_result_carries_no_extent(self) -> None:
         assert result().extent is None
+
+
+@pytest.mark.anyio
+async def test_the_area_way_refuses_search_filters_instead_of_answering_without_them() -> None:
+    """Its cache key leaves the filters out, so a filtered question would be answered, and kept, as an unfiltered one."""
+    from earthx.catalog.datasets import COP_DEM_GLO_30
+    from earthx.catalog.local_coverage import area_coverage
+
+    query = CoverageQuery(
+        dataset_id=COP_DEM_GLO_30.dataset_id,
+        level=3,
+        conditions={"eo:cloud_cover": RangeCondition(minimum=None, maximum=20.0)},
+    )
+
+    with pytest.raises(InvalidCoverageQuery, match="no search filters"):
+        await area_coverage(query, COP_DEM_GLO_30, conn=None)  # type: ignore[arg-type]

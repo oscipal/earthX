@@ -215,6 +215,9 @@ eigene Fehlerklassen mit denselben Namen wie `federated_search`
   des Adapters.** `time_range=False` und `max_cloud_cover` behandelt `api`
   (`ignored_filters`) vor jedem Adapter. Das ist richtig so. Capability-Flags
   des Datensatzes (B10) und Filter-Fähigkeiten der Quelle sind zwei Dinge.
+  *(Stand 28.10.2026, DS-02: Der Wolkenfilter ist kein fester Parameter mehr
+  und steht nicht mehr in `ignored_filters`; er ist ein Suchfilter der
+  Registry, §11a. `ignored_filters` nennt nur noch `datetime`.)*
 
 ---
 
@@ -725,6 +728,12 @@ Search: `query`, `earth_search.query_extension`). Eine Quelle mit CQL2 bekommt
 eine eigene Übersetzung im Adapter, ohne Änderung am Modell; das ist der
 Dialekt aus §8.2. `check_adapter_specs` weist einen Eintrag mit Filtern ab,
 dessen Quelle `query` nicht kann. Begründung und Messung: `adr/0021`.
+
+DS-02b (28.10.2026): Dieselben Bedingungen gehen mit `CoverageQuery.conditions`
+an die Aggregation. `earth_search_coverage` schreibt sie mit derselben Funktion
+(`query_extension`) in den Parameter `query` von `/aggregate`; zwei Übersetzungen
+derselben Bedingung gibt es nicht. Der Cache-Schlüssel der Coverage nimmt sie nur
+auf, wenn gesetzt.
 
 ## 12. Quellen
 

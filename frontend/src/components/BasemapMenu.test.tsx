@@ -46,8 +46,15 @@ const entry = (name: string): HTMLButtonElement => {
   return found;
 };
 const checkboxes = (): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]')];
+// The overlay and the basemap "Relief" share a name: `entry` finds the basemap, this the overlay.
+const overlayEntry = (name: string): HTMLButtonElement => {
+  const found = checkboxes().find((e) => e.textContent === name);
+  if (!found) throw new Error(`no overlay ${name}`);
+  return found;
+};
 const open = () => act(() => trigger().click());
 const choose = (name: string) => act(() => entry(name).click());
+const chooseOverlay = (name: string) => act(() => overlayEntry(name).click());
 
 describe('the Basemap button', () => {
   it('is called "Basemap" and opens nothing before it is clicked', () => {
@@ -61,8 +68,8 @@ describe('the Basemap button', () => {
     expect(trigger().getAttribute('aria-expanded')).toBe('true');
     const groups = [...document.querySelectorAll('[role="menu"] [role="group"]')];
     expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Basemap', 'Overlays', 'Projection']);
-    expect(entries().map((e) => e.textContent)).toEqual(['Satellite', 'Streets', 'Grey', 'Outlines', 'Mercator', 'Globe']);
-    expect(checkboxes().map((e) => e.textContent)).toEqual(['Labels', 'Graticule']);
+    expect(entries().map((e) => e.textContent)).toEqual(['Satellite', 'Streets', 'Grey', 'Outlines', 'Relief', 'Mercator', 'Globe']);
+    expect(checkboxes().map((e) => e.textContent)).toEqual(['Labels', 'Graticule', 'Relief']);
   });
 
   it('closes on the second click on the button', () => {
@@ -120,45 +127,60 @@ describe('choosing a basemap', () => {
 });
 
 describe('switching an overlay on and off', () => {
-  it('starts with both off', () => {
+  it('starts with all off', () => {
     open();
-    expect(checkboxes().map((e) => e.getAttribute('aria-checked'))).toEqual(['false', 'false']);
+    expect(checkboxes().map((e) => e.getAttribute('aria-checked'))).toEqual(['false', 'false', 'false']);
   });
 
   it.each([
     ['Labels', 'labels'],
     ['Graticule', 'graticule'],
+    ['Relief', 'relief'],
   ] as const)('%s: a click switches it on, the next one off, in the store, the storage and the mark', (name, id) => {
     open();
-    choose(name);
+    chooseOverlay(name);
     expect(useAppStore.getState().overlays[id]).toBe(true);
     expect(JSON.parse(window.localStorage.getItem('earthx.overlays') ?? '{}')[id]).toBe(true);
-    expect(entry(name).getAttribute('aria-checked')).toBe('true');
-    choose(name);
+    expect(overlayEntry(name).getAttribute('aria-checked')).toBe('true');
+    chooseOverlay(name);
     expect(useAppStore.getState().overlays[id]).toBe(false);
-    expect(entry(name).getAttribute('aria-checked')).toBe('false');
+    expect(overlayEntry(name).getAttribute('aria-checked')).toBe('false');
   });
 
-  it.each(['labels', 'graticule'] as const)('%s: the tooltip says what it shows', (id) => {
+  it.each(['labels', 'graticule', 'relief'] as const)('%s: the tooltip says what it shows', (id) => {
     open();
-    expect(entry(OVERLAYS[id].name).title).toBe(OVERLAYS[id].tip);
+    expect(overlayEntry(OVERLAYS[id].name).title).toBe(OVERLAYS[id].tip);
   });
 
   it('switches one overlay without the other, and leaves basemap and projection alone', () => {
     open();
-    choose('Graticule');
-    expect(useAppStore.getState().overlays).toEqual({ labels: false, graticule: true });
+    chooseOverlay('Graticule');
+    expect(useAppStore.getState().overlays).toEqual({ labels: false, graticule: true, relief: false });
     expect([useAppStore.getState().basemap, useAppStore.getState().projection]).toEqual(['satellite', 'mercator']);
     expect(menu()).not.toBeNull();
   });
 
   it('is an overlay for every basemap: the marks of the basemaps do not move it', () => {
     open();
-    choose('Labels');
+    chooseOverlay('Labels');
+    chooseOverlay('Relief');
     for (const id of BASEMAP_IDS) {
       choose(BASEMAPS[id].name);
-      expect(entry('Labels').getAttribute('aria-checked')).toBe('true');
+      expect(overlayEntry('Labels').getAttribute('aria-checked')).toBe('true');
+      expect(overlayEntry('Relief').getAttribute('aria-checked')).toBe('true');
     }
+  });
+
+  it('keeps the overlay "Relief" and the basemap "Relief" apart: each click moves only its own', () => {
+    open();
+    choose('Relief');
+    expect(useAppStore.getState().basemap).toBe('relief');
+    expect(useAppStore.getState().overlays.relief).toBe(false);
+    chooseOverlay('Relief');
+    expect(useAppStore.getState().overlays.relief).toBe(true);
+    expect(useAppStore.getState().basemap).toBe('relief');
+    expect(entry('Relief').getAttribute('aria-checked')).toBe('true');
+    expect(overlayEntry('Relief').getAttribute('aria-checked')).toBe('true');
   });
 
   it('works when the browser keeps nothing (storage blocked)', () => {
@@ -168,7 +190,7 @@ describe('switching an overlay on and off', () => {
     };
     try {
       open();
-      choose('Labels');
+      chooseOverlay('Labels');
     } finally {
       Storage.prototype.setItem = setItem;
     }
@@ -221,11 +243,14 @@ describe('the keyboard and the mouse', () => {
 
   it('moves between the entries with the arrow keys, across all three groups', () => {
     open();
-    act(() => entry('Outlines').focus());
+    act(() => entry('Relief').focus());
     const down = () => act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
     down();
     expect(document.activeElement?.textContent).toBe('Labels');
     down();
+    down();
+    expect(document.activeElement?.textContent).toBe('Relief');
+    expect(document.activeElement?.getAttribute('role')).toBe('menuitemcheckbox');
     down();
     expect(document.activeElement?.textContent).toBe('Mercator');
   });

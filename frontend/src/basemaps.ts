@@ -7,9 +7,11 @@
 
 import type { StyleSpecification } from 'maplibre-gl';
 
-export type BasemapId = 'satellite' | 'streets' | 'grey' | 'outlines';
+import { reliefLayer, reliefSource } from './relief';
 
-export const BASEMAP_IDS: readonly BasemapId[] = ['satellite', 'streets', 'grey', 'outlines'];
+export type BasemapId = 'satellite' | 'streets' | 'grey' | 'outlines' | 'relief';
+
+export const BASEMAP_IDS: readonly BasemapId[] = ['satellite', 'streets', 'grey', 'outlines', 'relief'];
 export const DEFAULT_BASEMAP: BasemapId = 'satellite';
 
 // Every source and layer of a basemap carries this prefix in the running style, so that a basemap can be taken
@@ -86,6 +88,11 @@ function outlinesStyle(): StyleSpecification {
   );
 }
 
+// The terrain shading alone, on the backdrop of the theme.
+function reliefStyle(): StyleSpecification {
+  return localStyle('relief', { relief: reliefSource() }, [reliefLayer('relief', 'relief', 'basemap')]);
+}
+
 export const BASEMAPS: Record<BasemapId, Basemap> = {
   satellite: {
     id: 'satellite',
@@ -110,5 +117,11 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     name: 'Outlines',
     tip: 'Coasts and borders only, from OpenStreetMap data. Tiles load from openfreemap.org.',
     style: outlinesStyle(),
+  },
+  relief: {
+    id: 'relief',
+    name: 'Relief',
+    tip: 'Shading of the terrain alone, from AWS Terrain Tiles. Tiles load from amazonaws.com.',
+    style: reliefStyle(),
   },
 };

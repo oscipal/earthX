@@ -8,10 +8,11 @@ gateway, for every entry with filters:
   nothing without a word (plan §6.2a);
 * each filter narrows the sample, and still finds something;
 * a values filter knows every value the sample holds;
+* the coverage map follows the filter: the aggregation counts exactly the scenes the search matches (DS-02b);
 * where the queryables name a property with a type, the type fits the kind of filter.
 
-Small on purpose (adr/0005 §3.6, K5): one sample, one request per filter and one for the queryables, in a
-closed window in the past.
+Small on purpose (adr/0005 §3.6, K5): one sample, two requests per filter (search, aggregation) and one for the
+queryables, in a closed window in the past.
 """
 
 from __future__ import annotations
@@ -23,7 +24,8 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-from earthx.adapters import ADAPTER_SPECS, SearchParams, search_items
+from earthx.adapters import ADAPTER_SPECS, SearchParams, coverage, search_items
+from earthx.catalog.coverage import CoverageQuery
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetConfig, FilterKind, SearchFilter
 from earthx.catalog.search_filters import Condition, RangeCondition, ValuesCondition
@@ -70,6 +72,13 @@ async def _matched(config: DatasetConfig, gateway: Gateway, conditions: dict[str
     return page.matched
 
 
+async def _counted(config: DatasetConfig, gateway: Gateway, conditions: dict[str, Condition]) -> int | None:
+    query = CoverageQuery(
+        dataset_id=config.dataset_id, level=4, bbox=BBOX, start=WINDOW[0], end=WINDOW[1], conditions=conditions
+    )
+    return (await coverage(query, config, adapters=ADAPTER_SPECS, gateway=gateway)).total_count
+
+
 async def test_the_registry_filters_still_fit_their_source(gateway: Gateway) -> None:
     assert FILTERED, "no registry entry offers search filters"
     for config in FILTERED:
@@ -90,6 +99,9 @@ async def test_the_registry_filters_still_fit_their_source(gateway: Gateway) -> 
                 assert set(found) <= offered, f"{config.dataset_id}: the source holds a value of {name} not offered"
             narrowed = await _matched(config, gateway, {name: _narrowing(search_filter)})
             assert 0 < narrowed < total, f"{config.dataset_id}: {name} does not narrow the sample"
+            assert await _counted(config, gateway, {name: _narrowing(search_filter)}) == narrowed, (
+                f"{config.dataset_id}: the coverage count does not follow {name}"
+            )
 
         url = f"{config.source.endpoint.rstrip('/')}/collections/{config.source.source_collection_id}/queryables"
         queryables = (await gateway.get(url)).json().get("properties", {})

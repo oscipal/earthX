@@ -22,27 +22,27 @@ afterEach(() => {
 
 describe('the overlays in the store', () => {
   it('start off with nothing stored', async () => {
-    expect((await freshStore()).getState().overlays).toEqual({ labels: false, graticule: false });
+    expect((await freshStore()).getState().overlays).toEqual({ labels: false, graticule: false, relief: false });
   });
 
   it('start as they were left', async () => {
     window.localStorage.setItem(KEY, '{"labels":true,"graticule":true}');
-    expect((await freshStore()).getState().overlays).toEqual({ labels: true, graticule: true });
+    expect((await freshStore()).getState().overlays).toEqual({ labels: true, graticule: true, relief: false });
   });
 
   it('start off for a stored value that is not an object of booleans', async () => {
     window.localStorage.setItem(KEY, 'labels');
-    expect((await freshStore()).getState().overlays).toEqual({ labels: false, graticule: false });
+    expect((await freshStore()).getState().overlays).toEqual({ labels: false, graticule: false, relief: false });
   });
 
   it('write what is switched, one at a time, and a reload after that starts the same', async () => {
     const store = await freshStore();
     store.getState().setOverlay('graticule', true);
-    expect(JSON.parse(window.localStorage.getItem(KEY) ?? '{}')).toEqual({ labels: false, graticule: true });
+    expect(JSON.parse(window.localStorage.getItem(KEY) ?? '{}')).toEqual({ labels: false, graticule: true, relief: false });
     store.getState().setOverlay('labels', true);
     store.getState().setOverlay('graticule', false);
-    expect(store.getState().overlays).toEqual({ labels: true, graticule: false });
-    expect((await freshStore()).getState().overlays).toEqual({ labels: true, graticule: false });
+    expect(store.getState().overlays).toEqual({ labels: true, graticule: false, relief: false });
+    expect((await freshStore()).getState().overlays).toEqual({ labels: true, graticule: false, relief: false });
   });
 
   it('leave the basemap, the projection and the theme alone', async () => {

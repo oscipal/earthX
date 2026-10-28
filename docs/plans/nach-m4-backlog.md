@@ -29,6 +29,8 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Vermerk für M6 (Otto, 25.10.2026):** Die übrigen Links des Ergebnisdokuments und des Auftrags bleiben relativ. Sie liegen auf `api` selbst und lösen sich gegen die Dokument-URL auf. Mit der öffentlichen API (M6) neu prüfen; ein mögliches `EARTHX_API_URL` nach dem Muster von `EARTHX_TILER_URL` wäre dann eine eigene Entscheidung.
 4. **Mosaik mit Operator im Kachel-Pfad,** also eine Vorschau des Mosaik-Jobs mit Band math (M4-17, Frage 4).
    - **Plan:** `querschnitt/nm4-04-mosaik-mit-operator.md`
+   - **Backend erledigt:** PR #215 (gemergt 28.10.2026; Otto: §11 Fragen 1–6 Option 1, Frage 7 Option 3). Mosaik-Kachel nimmt `op`/`params` wie die Item-Kachel, rechnet wie der Job (erst Mosaik, dann Schritte), ab z8, höchstens 4 Assets mit Schritten, URL bis 7 168 Byte (sonst `414`). Messskripte unter `scripts/tile-bench/`. Otto-Messung 28.10.2026 (lokal, echte Quelle, 4 Szenen über die UTM-Grenze 31/32, `red`+`nir`, NDVI, z10, 512 px): kalt 6,0 s, warm 0,16 s.
+   - **Frontend erledigt:** NM4-04b, PR #221 (gemergt 28.10.2026), mit Ottos Regeln: Live-Vorschau über angehakten Szenen, „Hide results“ blendet auch die Auswahl aus (Haken bleiben), Anhaken bei „Hide“ schaltet auf „Show“, zuletzt angehakte Szene oben.
 5. **Processing auf einem Ergebnis** (Otto, 20.10.2026), also ein Job-Ergebnis als Eingabe eines neuen Rezepts.
    - **Plan:** `querschnitt/nm4-05-processing-auf-ergebnis.md`
    - **Vorlage:** `adr/0019` (PR #204, 26.10.2026), Empfehlung Option 2: ⚙ am Ergebnis-Layer öffnet das Panel mit dem Auftrag des Jobs, bisherige Schritte gesperrt vorn, neue dahinter, alles als ein Auftrag neu gerechnet; nur Frontend. Entschieden: F1–F5 je Option 1 (Otto, 26.10.2026). Umsetzung: `querschnitt/nm4-05b-processing-auf-ergebnis.md`.
@@ -161,6 +163,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
      - Verhalten beim Zoomen oder Verschieben während des Abspielens.
    - **Aufgabe:** Stufe A, nur Frontend; Test, dass der Wechsel erst nach dem Laden erfolgt (mit verzögerten Kacheln).
 19. **Auto stretch der Vorschau über die AOI** (Otto, 24.10.2026).
+   - **Backend:** PR #218 (28.10.2026): `POST /collections/{dataset}/statistics` im `tiler`, Body = Auftrag, Zählung mit dem Code des Jobs, exakt bis 2048² Pixel, darüber `exact: false`; Cache 7 Tage. Frontend und Index-Regel nach Perzentilen: NM4-19b (§15 des Plans), nach dem Merge in neuer Session.
    - **Plan:** `querschnitt/nm4-19-auto-stretch-ueber-aoi.md`
    - **Heute (M4-19c):** Die Messung für die Farbskala der Vorschau gilt für die erste Szene der Karte, auch bei „AOI only“ für die ganze Szene. Das Job-Ergebnis nimmt dagegen die Statistik über die AOI-Maske (M4-32). Vorschau und Ergebnis können sich deshalb unterscheiden.
    - **Soll:** Bei „AOI only“ misst auch die Vorschau über die AOI, damit Vorschau und Ergebnis dieselbe Farbskala zeigen.
@@ -216,6 +219,8 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-27-job-loeschen-mit-frist.md`
    - **Soll:** Delete (Kürzel D) löscht das Ergebnis nach einem Tag (oder früher, wenn es vorher abläuft); innerhalb des Tages „Restore“; keine Rückfrage. Reiter „Active | Expired | Deleted | All“. Geteilte Ergebnisse verschwinden nur für den gelöschten Job.
    - **Aufgabe:** Stufe B, Backend und Frontend, nach UI-01c.
+   - **Erledigt:** NM4-27, PR #214 (gemergt 28.10.2026): Migration 015 (`deleted_until`), `DELETE` mit einem Tag Frist (nie über den Ablauf), `POST …/restore`, `404` innerhalb der Frist, Cache und Aufräumer; Reiter „Deleted“, Kürzel `D`, Restore im Menü und als ↺, gesperrter Layer mit Tooltip; Fix „gone“ nach `404`. `adr/0013` §10c, `adr/0015` §14g, `adr/0014` §9.
+
 28. **Suchergebnisse links angedockt** (Otto, 26.10.2026).
    - **Plan:** `vp3/ui-01g-suchergebnisse-angedockt.md` (Teil von UI-01, nach UI-01f).
    - **Erledigt:** UI-01g, PR #209 (26.10.2026), mit den Ergänzungen unter „In UI-01 aufgenommen“.
@@ -233,6 +238,8 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe (Stufe A, eigener PR):** prüfen, ob der Zweig für eine künftige Quelle ohne Aggregation gebraucht wird; sonst mit seinen Tests entfernen.
    - **Erledigt:** NM4-31, PR #203 (26.10.2026): `extent_result`, Zweig in `coverage_route.py` und die Klausel in `check_adapter_specs` entfernt; Feld `extent` der Antwort bleibt; Nachtrag `adr/0004`.
 32. **Paket „Datensatzabhängige Suche und Prozessierung“ (DS)** (Otto, 26.10.2026). DS-02, DS-03, DS-06 nach VP3 und vor M5; DS-04 und DS-05 (Sentinel-1) erst mit oder nach M5.
+   - **DS-02a erledigt** (PR #217, gemergt 28.10.2026): Filter je Datensatz in der Registry (`earthx:search_filters`; S2: Cloud cover, No data, Satellite), `query_by_collection`, `adr/0021`; Live-Abgleich `tests_live/test_search_filters_live.py`, eingetragen im Job `earth-search` von `live-smoke.yml` (ausdrückliche Ausnahme für `.github/`, Otto 28.10.2026). Orbit-Richtung und relative Umlaufbahn tragen S2-Items nicht, kommen mit DS-04 für S1. Offen: DS-02b (Coverage), DS-02c (Oberfläche, Umschalter je Datensatz).
+   - **DS-02b** (PR #226, 28.10.2026): `GET /coverage/{id}` nimmt `query` wie die Suche, `max_cloud_cover` entfällt; Prüfung gegen die Registry, Fehler der Quelle nur als Status.
    - **DS-01 erledigt:** `adr/0018` Fassung 2 (PR #200): keine regionale Quelle; Earth Search `sentinel-1-grd` als Level-1-Datensatz mit TPS-Georeferenz überall und Hinweisen „Approximate geolocation“/„Uncalibrated (DN)“; Planetary Computer RTC nur nach positiver Messung durch Otto (anonymes Token zulässig unter Bedingungen, Originale per Klick); eigene Geländekorrektur als eigenes ADR nach DS-04.
    - **Pläne:** `ds/ds-00-paket.md` (Übersicht) und `ds/ds-01` bis `ds/ds-06`: Sentinel-1-Quelle (C), „Advanced search“ (B), Wolken in der AOI (B), S1 anbinden (A), SAR-Operatoren (B), Maske nach Werten (B).
 
@@ -251,10 +258,12 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-35-relief.md`
    - **Soll:** Schalter „Relief“ bei den Overlays des Basemap-Menüs, über jeder Basemap; optional Basemap „Relief“. Erste Option: MapLibre zeichnet `hillshade` im Browser aus freien Höhenkacheln (etwa AWS Terrain Tiles), ohne Backend und Pyramide; Alternative: eigenes Copernicus DEM.
    - **Aufgabe:** Stufe B mit Recherche, nach UI-02a.
+   - **Stand 28.10.2026 (PR #222):** Option A (MapLibre `hillshade`, AWS Terrain Tiles, bis Zoom 12), Basemap „Relief“ allein, nur die Basemap im Permalink. Attribution: Kurzform „Terrain: USGS, NOAA, EU-DEM (Copernicus) and others“ als Link auf die Joerd-Liste; Rest-Risiko bei CC BY 3.0 AT/NZ, OGL Canada, EU-DEM, INEGI von Otto in Kauf genommen, **vor dem öffentlichen Betrieb (M6) rechtlich prüfen**.
 43. **Ausgabe-Bänder statt Bandauswahl, Band-Math-Ergebnisse als eigene Bänder, keine Bandgrenze** (Otto, 27.10.2026).
    - **Plan:** `querschnitt/nm4-43-ausgabe-baender.md`
    - **Soll (Otto):** keine Obergrenze für die Zahl der Bänder; ein `band_math`-Ergebnis wird ein eigenes Band; oben keine Auswahl mehr, nur Info und Namenshilfe; am Ende des Panels alle Bänder des Datensatzes und alle neu gerechneten, per Klick in die Ausgabe. Standardmäßig ist nur das Band-Math-Ergebnis in der Ausgabe; mehrere `band_math`-Schritte hintereinander mit unterschiedlichen Bändern sind möglich.
    - **Aufgabe:** Stufe C, ADR-Entwurf `adr/0020` mit Messung und Recherche (Schutz ohne Bandgrenze, Ausgabedatei mit gemischten Typen, Vorschau, Hash, alte Rezepte). Nimmt NM4-10 in sich auf; NM4-11, NM4-14, NM4-20, DS-06 warten auf die Entscheidung.
+   - **Entschieden (Otto, 28.10.2026, PR #219):** `adr/0020` angenommen, F1–F13 Option 1 außer F7 Option 2 (ohne `band_math` alle wählbaren Bänder angehakt). Aufgaben in §6 des Plans: NM4-43a (Schätzung nach feinstem Asset) und NM4-43b (`reproject` Version 4 je Band) sofort und unabhängig; dann NM4-43c (Kern, zwei PRs), NM4-43d (Kachel), NM4-43e (Frontend). Runner liest Rezept-Version 1 dauerhaft; `api` bis 30 Tage nach dem Deploy von NM4-43e. NM4-11, NM4-14, NM4-20, DS-06 nach NM4-43c.
 44. **Schwachstellen der Frontend-Pakete prüfen (`npm audit`)** (Otto, 27.10.2026; 8 Meldungen bei `npm install`, dazu Node-Version für `jsdom`).
    - **Plan:** `querschnitt/nm4-44-npm-audit.md`
    - **Aufgabe:** Stufe A, nach UI-02a (#211). Gezielt aktualisieren, kein `npm audit fix --force`; Hauptversionssprung nur nach Ottos Freigabe.
@@ -263,6 +272,29 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Soll:** Dropdown „Band“ in der Ansicht, Vorgabe `visual`, dazu jedes Band aus der Registry; bei einem Band Colormap, vmin/vmax, „auto-scale“; Anheften behält das Band. Nur Einzelbänder.
    - **Aufgabe:** Stufe A, Frontend, nach UI-02a (#211).
 
+46. **Eigene Dateien hochladen** (Otto, 28.10.2026: „dass ich eigene dateien hochladen kann“).
+   - **Stand heute:** Nur AOIs lassen sich hochladen (GeoJSON, KML, Shapefile als ZIP; M3-06a/b), nichts wird gespeichert. Eigene Rasterdaten gibt es nicht.
+   - **Geplant:** `projektplan.md` M7 Paket 7h „eigene Daten per URL“, Voraussetzung M6 (Login, Quotas, Speicher je Nutzer).
+   - **Offen (Otto):** welche Dateien (eigene GeoTIFF/COG zum Ansehen und Rechnen, Vektoren als Overlay, Ergebnisse anderer Tools); Upload der Datei oder Verweis per URL; privat oder teilbar; Aufbewahrung.
+   - **Zu beachten:** Härtung der Dateiverarbeitung (projektuebersicht §4: Größenlimits, Timeouts, Treiber-Allowlist), Datenschutz, Lizenz der eigenen Daten, Speicherkosten. Erst als ADR (Stufe C), frühestens mit M6.
+   - **Otto, 28.10.2026:** bleibt in M7. Zwei Stufen für den ADR: (1) lokale Datei bleibt auf dem Rechner und ist ein normaler Layer, gerendert im Browser (eigene Kachelquelle in MapLibre, etwa geotiff.js): Anzeige, Band, Colormap, vmin/vmax, Zuschnitt-Download, kleine Band-Math-Vorschau; keine Server-Jobs, kein Teilen per Permalink. (2) Upload oder URL für Jobs und Teilen (M6/M7). Ganz ohne Unterschied nur mit lokalem tiler im Runner (M7 Paket 7f). Recherche: Bibliotheken, Browser-Unterstützung (File System Access nur Chromium), Dateigrößen, COG gegen GeoTIFF ohne Übersichten.
+   - **Otto, 28.10.2026:** Für Einzelnutzer ist Stufe 1 (lokal) gut. Zusätzlich gewünscht: Projekte, für die mehrere Nutzer freigeschaltet sind, mit geteilten Dateien. Gehört zu `projektplan.md` M7 Paket 7h (Arbeitsbereiche, Voraussetzung M6). Im ADR mitdenken: Dateien eines Projekts liegen im Objektspeicher des Projekts (Stufe 2); eine lokale Datei lässt sich mit einem Klick ins Projekt hochladen; Rollen (lesen/bearbeiten), Kontingent je Projekt, Lizenz beim Teilen abgeleiteter Daten, Löschen beim Austritt.
+   - **Otto, 28.10.2026:** Ein Reiter „Projects“ speichert alles Nutzerspezifische (Arbeitsstand: AOI, Zeitraum, Datensätze, Filter, Kartenausschnitt, Layer, Auswahl, offene Rezepte). Ein Neuladen ohne Projekt bleibt wie heute (Auswahl weg); kein eigenes Wiederherstellen der Sitzung im Browser.
+47. **Item-IDs in Logs** (aus NM4-19, #218, 28.10.2026). Abgelehnte Annahmen und der Item-Abruf loggen die Item-ID; die Regel verbietet AOI, Job-/Bündel-/Permalink-Kennungen, Hashes, `href` und signierte URLs, aber keine Item-IDs. Eine Item-ID verrät grob den Ort des Interesses (MGRS-Kachel, rund 110 km).
+   - **Aufgabe:** Mit der Datenschutzprüfung von M6 entscheiden (alle Routen einheitlich: behalten, kürzen oder entfernen). Bis dahin unverändert.
+48. **Datennähe: eine Hauptquelle, Rechnen und Rendern dort, wo die Daten liegen** (Otto, 28.10.2026).
+   - **Anlass:** Lokal gemessen (28.10.2026) braucht die erste Mosaik-Kachel kalt 6,0 s, fast alles ist Weg über das Netz. Sentinel-2 von Earth Search liegt in AWS `us-west-2` (Oregon); die Plattform soll in EU/CH laufen (projektuebersicht §4).
+   - **Kandidaten:** (A) Earth Search mit Rechnern in AWS `us-west-2` (schnell, aber außerhalb der EU); (B) Copernicus Data Space Ecosystem mit CloudFerro bzw. Open Telekom Cloud (EU, alle Copernicus-Daten, S3-Zugang mit kostenlosem Konto); (C) Planetary Computer mit Azure West Europe (EU, viele Datensätze, Token anonym).
+   - **Aufgabe:** Stufe C, ADR mit Recherche und Messung (Latenz und Durchsatz je Region, Kosten, Abdeckung der Datensätze, Lizenz, Ausfall, Bindung an einen Anbieter; Föderation bleibt). Vor der Wahl des Cloud-Anbieters in M6, am besten zu Beginn von M5 (Auswahl der Quellen). Messung braucht Ottos Rechner oder Test-VMs, aus Cloud-Sessions sind die Quellen nicht erreichbar (adr/0002).
+49. **Unbekannte Query-Parameter abweisen** (aus DS-02b, #226, 28.10.2026). Heute ignorieren Routen unbekannte Parameter still; ein alter Client mit `max_cloud_cover` bekäme eine ungefilterte Coverage-Karte. Solange das eigene Frontend der einzige Client ist, bleibt es so (Otto). Mit der öffentlichen API (M6) einheitlich entscheiden: unbekannte Parameter mit `400` und Namen des Parameters (ohne Wert) abweisen.
+50. **DEM: Layer-Manager und Ergebnisse wie bei Sentinel-2; Augen-Symbol** (Otto, 28.10.2026). Beim DEM wird ein Layer nicht immer ausgeblendet, Colormap und Skala werden nicht gespeichert, Show/Hide results verhält sich anders als bei S2. Der Sichtbarkeits-Schalter im Layer-Manager wird ein Auge. Die Vorschau eines DEM-Ergebnisses zeigt die ganze Kachel statt des Zuschnitts (ersetzt teilweise die Entscheidung vom 26.09.2026, M3-12).
+   - **Plan:** `querschnitt/nm4-50-dem-layer-und-ergebnisse.md`
+   - **Aufgabe:** Stufe A, Frontend, Vorrang vor neuen Funktionen. Ein Weg für alle Datensätze, keine Zweige je Datensatz.
+51. **Hinweis „resampled to common grid“ nur, wenn Werte betroffen sind** (Otto, 28.10.2026). Kein Hinweis, wenn nur die Maskenschicht (`scl`, nächster Nachbar) auf das Raster gebracht wird; Hinweis bleibt, wenn Wertebänder umgerechnet werden (verschiedene Auflösungen oder CRS/UTM-Zonen). Grund nur im Tooltip.
+   - **Aufgabe:** mit NM4-43e (Panel-Umbau), Stufe A; vorher prüfen, ob die Annahme im Backend beide Fälle schon unterscheidet. Der NM4-43e-Session beim Start mitgeben.
+52. **Tooltips liegen immer über allem und bleiben im Fenster** (Otto, 28.10.2026; Anlass: Tooltip am Rufzeichen wird von anderen Kästen verdeckt).
+   - **Plan:** `querschnitt/nm4-52-tooltips-ueber-allem.md`
+   - **Aufgabe:** Stufe A, Frontend, klein.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
@@ -273,7 +305,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 - Handbereich der Farbskala je Job dauerhaft speichern (§3 Punkt 1).
 - Stapelung zwischen Überflügen: Ansicht und angeheftete Layer stapeln verschieden (bekannte Grenze aus M4-17c §15), Prüffall in UI-01 §1 Punkt 10.
 - In UI-01g aufgenommen (Otto, 26.10.2026, direkt an die Session): Umschalter „Show results / Hide results“ statt „Clear all“ (Ergebnisse auf der Karte immer über allen Layern; Auswahl bei verborgener Kartenanzeige erscheint trotzdem mit den normalen Steuerelementen); Anzahl in Klammern neben „Results“; Steuerleiste einer Auswahl ohne „Full resolution“-Titel, gleich große Felder, kein „Clear“; Zeitleiste ohne „Add to layers“ und „Select all frames“; Benennung (Otto, 26.10.2026): eine Szene „Crop to AOI“, „View whole scene“, „Download crop“, „Download full scene“; mehrere Szenen „Crop & merge to AOI“, „View merged scenes“ (die ganzen Szenen werden in der Ansicht gemergt), „Download merged crop“, „Download full scenes“. „Clear search results“ mit rotem ✕ unter „Load more“. Ein Klick auf einen angehefteten Layer (Zuschnitt, Ergebnis) wählt nichts in den Suchergebnissen aus – Layer und Suchergebnisse sind vollständig entkoppelt.
-- Fehler nach UI-01g (Otto, 27.10.2026), Auftrag an die UI-02a-Session (#211, eigener Commit): Zuschnitt lässt sich nicht entfernen; nach dem Verlassen der Ansicht erscheint der Quicklook trotz „Hide results“. Regel: „Hide results“ gilt immer, einzige Ausnahme ist die Auswahl; nur der Umschalter ändert den Zustand. Dazu: Knopf „Clear“ in der Steuerleiste der Ansicht (ersetzt „kein Clear“ aus UI-01g), weniger Text im Kopf, Knopfzeilen gleich breit, Text nicht breiter als die Knopfzeilen.
+- Fehler nach UI-01g (Otto, 27.10.2026), Auftrag an die UI-02a-Session (#211, eigener Commit): Zuschnitt lässt sich nicht entfernen; nach dem Verlassen der Ansicht erscheint der Quicklook trotz „Hide results“. Regel: „Hide results“ gilt immer, einzige Ausnahme ist die Auswahl; nur der Umschalter ändert den Zustand. Dazu: Knopf „Clear“ in der Steuerleiste der Ansicht (ersetzt „kein Clear“ aus UI-01g), weniger Text im Kopf, Knopfzeilen gleich breit, Text nicht breiter als die Knopfzeilen. Erledigt mit #211 (28.10.2026).
 
 ## Offen im Entscheidungslog (bewusst nach M4)
 
@@ -293,7 +325,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 
 ## Danach geplant
 
-42. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5. **UI-01 abgeschlossen** mit UI-01a bis UI-01g (#188, #191, #196, #202, #206, #208, #209; 26.10.2026).
+42. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5. **UI-01 abgeschlossen** mit UI-01a bis UI-01g (#188, #191, #196, #202, #206, #208, #209; 26.10.2026). **UI-02a erledigt** (#211, gemergt 28.10.2026; mit Ottos Zusätzen zu Ergebnissen auf der Karte, Ansicht, festen Plätzen der Leisten). **UI-02b erledigt** (#220, gemergt 28.10.2026; Labels global, Vorgabe aus). Offen: UI-02c (Permalink), Schnitt in `vp3/ui-02-basemap-projektion.md` §6.9.
 
 ## Verworfen bzw. nur bei Bedarf
 

@@ -39,6 +39,7 @@ from earthx.adapters.earth_search import (
     cache_get,
     cache_set,
     endpoint_of,
+    query_extension,
     stac_interval,
     ttl_for_window,
 )
@@ -55,6 +56,7 @@ from earthx.catalog.coverage import (
     parse_cell_key,
 )
 from earthx.catalog.registry import CoverageProvider, DatasetConfig
+from earthx.catalog.search_filters import conditions_key
 from earthx.gateway import Gateway, UrlTooLong
 
 LOGGER = logging.getLogger("earthx.adapters.earth_search_coverage")
@@ -244,8 +246,10 @@ def _params(
     window = stac_interval(query.start, query.end)
     if window is not None:
         params["datetime"] = window
-    if query.max_cloud_cover is not None:
-        params["query"] = json.dumps({"eo:cloud_cover": {"lt": query.max_cloud_cover}}, separators=(",", ":"))
+    if query.conditions is not None:
+        # The same translation as the item search (DS-02 plan §6.5), so a filter narrows the map exactly as it
+        # narrows the results; measured on 28.10.2026 for `gte`, `lte` and `in` (plan §6.2).
+        params["query"] = json.dumps(query_extension(query.conditions), separators=(",", ":"), sort_keys=True)
     return params
 
 
@@ -383,19 +387,19 @@ def _cache_key(query: CoverageQuery) -> str:
     Numbers go in as floats and instants as their UTC text, the same normalisation the
     search fingerprint does. The key is opaque, so no coordinate is stored outside the
     payload and none can reach a log through it.
+
+    The conditions go in only when set (DS-02b), as in the search fingerprint: another filter is another map.
     """
-    payload = json.dumps(
-        {
-            "dataset": query.dataset_id,
-            "level": query.level,
-            "bbox": None if query.bbox is None else [float(value) for value in query.bbox],
-            "intersects": None if query.intersects is None else json.dumps(query.intersects, sort_keys=True),
-            "datetime": stac_interval(query.start, query.end),
-            "cloud": None if query.max_cloud_cover is None else float(query.max_cloud_cover),
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    )
+    question: dict[str, Any] = {
+        "dataset": query.dataset_id,
+        "level": query.level,
+        "bbox": None if query.bbox is None else [float(value) for value in query.bbox],
+        "intersects": None if query.intersects is None else json.dumps(query.intersects, sort_keys=True),
+        "datetime": stac_interval(query.start, query.end),
+    }
+    if query.conditions is not None:
+        question["conditions"] = conditions_key(query.conditions)
+    payload = json.dumps(question, separators=(",", ":"), sort_keys=True)
     # The prefix stays readable in front of the hash, not folded into it: Otto answered
     # F6 with "key prefix ``coverage:``", and a prefix inside a digest is none — rows of
     # this kind could not be found or dropped without decoding every key.

@@ -172,7 +172,7 @@ Kein Vorgabewert, auch kein voreingestellter Filterwert: Ein Filter wirkt erst, 
 4a. **Fehler der Quelle (C):** Ein Fehler der Quelle geht als Status mit eigenem Text weiter („the source answered with an error“, wie heute `_adapter_error_to_http` und die Coverage seit M2-05b); der Auszug, den `gateway.UpstreamError` trägt, erscheint weder in der Antwort noch im Log. Ein Test belegt das mit einem `400` der Quelle, das Interna der Suchmaschine enthält.
 5. Nur `POST`. `GET /stac/search` und `GET …/items` weisen `query` weiter ab, mit Hinweis auf `POST` (das Frontend sucht nur per `POST`, M3-08). `filter`, `sortby`, `fields` bleiben abgewiesen.
 6. Keine Konformitätsklasse `#query` auf der Landing Page: Wir beantworten eine erklärte Teilmenge, nicht beliebige Eigenschaften (wie `/processing`, das keine Konformität erklärt). Nachtrag zu `adr/0005` Regel VI.
-7. `/coverage/{id}` nimmt `query` als JSON im Parameter (wie `/aggregate` [M]) mit denselben Prüfungen; ein Filter, den der Datensatz nicht kennt, ist hier `400`, weil die Route genau einen Datensatz fragt. `max_cloud_cover` entfällt (Frage 3); der Flächenweg nennt verworfene Filter wie bisher in `ignored_filters`, nur ist er nie erreichbar, weil der DEM keine Filter hat.
+7. `/coverage/{id}` nimmt `query` als JSON im Parameter (wie `/aggregate` [M]) mit denselben Prüfungen; ein Filter, den der Datensatz nicht kennt, ist hier `400`, weil die Route genau einen Datensatz fragt. `max_cloud_cover` entfällt (Frage 3); der Flächenweg nennt verworfene Filter wie bisher in `ignored_filters`, nur ist er nie erreichbar, weil der DEM keine Filter hat. *(Umgesetzt in DS-02b als `400`, weil es dort nichts zu verwerfen gibt, §6.11.)*
 8. Logs: wie bisher nur Datensatz, Stufe, Herkunft; dazu höchstens die **Namen** der gesetzten Filter, keine Werte.
 
 ### 6.5 Übersetzung je Adapter (`adr/0011`)
@@ -238,6 +238,7 @@ Kein Vorgabewert, auch kein voreingestellter Filterwert: Ein Filter wirkt erst, 
 
 1. **DS-02a, Backend Suche (diese Session):** `SearchFilter` und Bedingungen mit Prüfungen, `earthx:search_filters`, Einträge Sentinel-2/DEM, `FilterSupport.query`, `SearchParams.conditions`, Fingerabdrücke, Earth-Search-Body, Lesen und Prüfen von `query`/`query_by_collection` in `/stac/search`, Live-Test, ADR und Nachträge.
 2. **DS-02b, Backend Coverage (neue Session nach dem Merge von DS-02a):** Bedingungen an `/coverage`, `CoverageQuery`, `/aggregate`, Cache-Schlüssel, Wegfall von `max_cloud_cover`.
+   *Umgesetzt am 28.10.2026 (Draft-PR, Log-Zeile, `adr/0021` §5).* Gegenüber dem Plan: Das Frontend verliert `maxCloudCover` schon hier, weil der Parameter der Route nicht mehr existiert; die Bedienung bleibt DS-02c. `area_coverage` verweigert Bedingungen zusätzlich selbst, weil sein Cache-Schlüssel sie nicht kennt. Der Live-Abgleich (§6.6) prüft jetzt auch, dass die Aggregation so viele Szenen zählt, wie die Suche findet.
 3. **DS-02c, Frontend (neue Session nach dem Merge von DS-02b):** „Advanced search“ mit Umschalter, Store, Suche/Load more/Fallback/Coverage, Browserprüfung.
 
 Je PR ein Draft-PR, Log-Zeile, Prüfanleitung, `main` holen vor „fertig“. DS-03 beginnt nach DS-02c.

@@ -11,13 +11,13 @@ import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, type ShelfGroup } from '../jobShelf'
 import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter, type JobFilter } from '../preferences';
 import { isJobId } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
-import { useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
+import { orderRetired, useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
 import DownloadAll from './DownloadAll';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
 import Popover from './Popover';
 import { focusFirstItem } from '../popover';
-import { batchSummary, bundleOffer, canDelete, canRestore, countBatch, deletableParts, formatUntil, jobLabel, jobState, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
+import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, formatUntil, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
 import Tip from './Tip';
 import { useBundleDownload } from './useBundleDownload';
 
@@ -295,6 +295,17 @@ function RestoreButton({ name, until, busy, onRestore }: { name: string; until: 
   );
 }
 
+// "↻" in front of the download: the order of the job goes to the server once more. Where it cannot be offered the
+// place stays empty, so that no other symbol moves.
+export function RetryButton({ offered, name, tip, busy, onRetry }: { offered: boolean; name: string; tip: string; busy: boolean; onRetry: () => void }) {
+  if (!offered) return <span className="pm-icon" aria-hidden="true" />;
+  return (
+    <button type="button" className="pm-icon" disabled={busy} aria-label={`${tip}: ${name}`} title={tip} onClick={onRetry}>
+      ↻
+    </button>
+  );
+}
+
 // When a job goes: "until" for one that stands, "restore until" for a deleted one whose day is not over. A job that is
 // cancelled, deleted for good or forgotten by the server has no time to name.
 function UntilText({ job, state, now }: { job: JobEntry; state: JobState; now: number }) {
@@ -322,6 +333,8 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
   const moveToGroup = useProcessingStore((s) => s.moveToGroup);
   const deleteTarget = useProcessingStore((s) => s.deleteTarget);
   const restoreTarget = useProcessingStore((s) => s.restoreTarget);
+  const retryJob = useProcessingStore((s) => s.retryJob);
+  const retired = useProcessingStore((s) => orderRetired(job, s.descriptions));
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuMode>('closed');
   const line = useRef<HTMLDivElement>(null);
@@ -383,9 +396,11 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
               </span>
               <UntilText job={job} state={state} now={now} />
               {job.archived && <span className="pm-tag">Archived</span>}
+              {job.superseded && <span className="pm-tag">Superseded</span>}
             </span>
           </button>
         )}
+        <RetryButton offered={canRetry(job, now, retired)} name={title} tip={RETRY_TIP} busy={job.retrying} onRetry={() => void retryJob(job.jobID)} />
         {restorable && job.deletedUntil ? (
           <RestoreButton name={title} until={job.deletedUntil} busy={job.deleting} onRestore={() => void restoreTarget(target)} />
         ) : (
@@ -416,6 +431,7 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
         <span className="pm-fault">{job.failure ?? job.status?.message ?? 'The job failed'}</span>
       )}
       {job.error && state.key === 'deleted' && <span className="pm-fault" role="alert">{job.error}</span>}
+      {job.retryError && <span className="pm-fault" role="alert">{job.retryError}</span>}
     </li>
   );
 }
@@ -434,6 +450,8 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
   const deleteTarget = useProcessingStore((s) => s.deleteTarget);
   const restoreTarget = useProcessingStore((s) => s.restoreTarget);
   const followJob = useProcessingStore((s) => s.followJob);
+  const retryBatch = useProcessingStore((s) => s.retryBatch);
+  const descriptions = useProcessingStore((s) => s.descriptions);
   // The total needs every part; a part of another tab is followed while its batch is listed.
   useEffect(() => {
     for (const part of parts) if (part.status === null) followJob(part.jobID);
@@ -453,6 +471,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
     },
   });
   const deletable = deletableParts(parts, now).length > 0;
+  const retryable = retryableParts(parts, now, (part) => orderRetired(part, descriptions));
   const restorable = parts.filter((p) => canRestore(p, now));
   // The soonest end of the days in which a part can still be restored: after it not every part can.
   const restoreUntil = restorable.map((p) => p.deletedUntil ?? '').sort((a, b) => Date.parse(a) - Date.parse(b))[0];
@@ -517,6 +536,13 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             </span>
           </button>
         )}
+        <RetryButton
+          offered={retryable.length > 0}
+          name={batch.title}
+          tip={RETRY_PARTS_TIP}
+          busy={parts.some((p) => p.retrying)}
+          onRetry={() => void retryBatch(batch.id)}
+        />
         {restorable.length > 0 && count.deleted === parts.length ? (
           <RestoreButton name={batch.title} until={restoreUntil} busy={parts.some((p) => p.deleting)} onRestore={() => void restoreTarget(target)} />
         ) : (
@@ -546,6 +572,11 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
       {bundle.fault && (
         <span className="pm-fault" role="alert">
           {bundle.fault}
+        </span>
+      )}
+      {parts.some((p) => p.retryError) && (
+        <span className="pm-fault" role="alert">
+          {parts.find((p) => p.retryError)?.retryError}
         </span>
       )}
       {expanded && (
@@ -583,7 +614,7 @@ function entriesOf(jobs: readonly JobEntry[], batches: readonly BatchEntry[]): E
     ...batches.map((batch): Entry => ({
       kind: 'batch',
       batch,
-      parts: jobs.filter((j) => j.batchId === batch.id),
+      parts: jobs.filter((j) => j.batchId === batch.id && !j.superseded),
       at: Date.parse(batch.createdAt),
       groupId: batch.groupId,
       archived: batch.archived,

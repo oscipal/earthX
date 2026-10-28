@@ -36,6 +36,7 @@ from earthx.catalog.coverage import (
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import CoverageProvider, ItemHolding
+from earthx.catalog.search_filters import RangeCondition, ValuesCondition
 from earthx.gateway import UpstreamError, UpstreamTimeout
 
 from .conftest import answering, gateway_for, load
@@ -111,7 +112,7 @@ async def test_the_query_string_is_the_one_that_was_measured(dataset_id: str) ->
             bbox=(5.0, 45.0, 15.0, 55.0),
             start=datetime(2024, 1, 1, tzinfo=UTC),
             end=datetime(2024, 12, 31, tzinfo=UTC),
-            max_cloud_cover=20.0,
+            conditions={"eo:cloud_cover": RangeCondition(minimum=None, maximum=20.0)},
         ),
         SENTINEL_2_L2A,
         gateway=gateway,
@@ -124,7 +125,118 @@ async def test_the_query_string_is_the_one_that_was_measured(dataset_id: str) ->
     # Measured 20.09.2026: the source ignores this parameter, so it is not sent.
     assert "datetime_frequency_interval" not in params
     assert params["datetime"] == "2024-01-01T00:00:00Z/2024-12-31T00:00:00Z"
-    assert json.loads(params["query"]) == {"eo:cloud_cover": {"lt": 20.0}}
+    assert json.loads(params["query"]) == {"eo:cloud_cover": {"lte": 20.0}}
+
+
+class TestSearchFilters:
+    """DS-02b: the conditions of the dataset's filters travel as the query extension, like in the item search."""
+
+    CONDITIONS = {
+        "eo:cloud_cover": RangeCondition(minimum=5.0, maximum=20.0),
+        "s2:nodata_pixel_percentage": RangeCondition(minimum=None, maximum=5.0),
+        "platform": ValuesCondition(values=("sentinel-2a", "sentinel-2b")),
+    }
+
+    async def test_every_kind_of_condition_is_sent_in_the_query_extension(self, dataset_id: str) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+
+        await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, bbox=(5.0, 45.0, 15.0, 55.0), conditions=self.CONDITIONS),
+            SENTINEL_2_L2A,
+            gateway=gateway,
+        )
+
+        assert len(seen) == 1
+        assert json.loads(params_of(seen[0])["query"]) == {
+            "eo:cloud_cover": {"gte": 5.0, "lte": 20.0},
+            "s2:nodata_pixel_percentage": {"lte": 5.0},
+            "platform": {"in": ["sentinel-2a", "sentinel-2b"]},
+        }
+        assert params_of(seen[0])["bbox"] == "5.0,45.0,15.0,55.0"
+
+    async def test_the_same_translation_as_the_item_search(self, dataset_id: str) -> None:
+        """One function writes both requests, so a filter cannot narrow the map differently than the results."""
+        from earthx.adapters.earth_search import query_extension
+
+        gateway, seen = answering(ok("aggregate_complete"))
+        await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, conditions=self.CONDITIONS), SENTINEL_2_L2A, gateway=gateway
+        )
+        assert json.loads(params_of(seen[0])["query"]) == query_extension(self.CONDITIONS)
+
+    async def test_without_conditions_no_query_is_sent(self, dataset_id: str) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway)
+        assert "query" not in params_of(seen[0])
+
+    async def test_a_polygon_reduced_for_the_url_limit_still_carries_the_filters(self, dataset_id: str) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+
+        result = await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, intersects=polygon(3000), conditions=self.CONDITIONS),
+            SENTINEL_2_L2A,
+            gateway=gateway,
+        )
+
+        assert len(seen) == 1
+        assert json.loads(params_of(seen[0])["query"])["platform"] == {"in": ["sentinel-2a", "sentinel-2b"]}
+        assert result.completeness is Completeness.TRUNCATED
+
+    async def test_a_filtered_question_is_another_cache_entry(self, dataset_id: str) -> None:
+        """Otherwise the unfiltered page would answer the filtered map, or the other way round."""
+        gateway, seen = answering(ok("aggregate_complete"), ok("aggregate_complete"), ok("aggregate_complete"))
+        cache = FakeCache()
+        area = (5.0, 45.0, 15.0, 55.0)
+        plain = CoverageQuery(dataset_id=dataset_id, level=8, bbox=area)
+        clouds = CoverageQuery(dataset_id=dataset_id, level=8, bbox=area, conditions=self.CONDITIONS)
+        fewer = CoverageQuery(
+            dataset_id=dataset_id,
+            level=8,
+            bbox=area,
+            conditions={**self.CONDITIONS, "eo:cloud_cover": RangeCondition(minimum=5.0, maximum=30.0)},
+        )
+
+        for query in (plain, clouds, fewer):
+            await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=cache)
+
+        assert len(seen) == 3
+        assert len(cache.entries) == 3
+
+    async def test_the_same_conditions_in_another_order_are_one_entry(self, dataset_id: str) -> None:
+        gateway, seen = answering(ok("aggregate_complete"), ok("aggregate_complete"))
+        cache = FakeCache()
+        area = (5.0, 45.0, 15.0, 55.0)
+        reordered = dict(reversed(list(self.CONDITIONS.items())))
+
+        await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, bbox=area, conditions=self.CONDITIONS),
+            SENTINEL_2_L2A,
+            gateway=gateway,
+            cache=cache,
+        )
+        again = await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, bbox=area, conditions=reordered),
+            SENTINEL_2_L2A,
+            gateway=gateway,
+            cache=cache,
+        )
+
+        assert len(seen) == 1
+        assert again.from_cache is True
+
+    async def test_a_filtered_world_view_is_no_longer_the_one_kept_for_a_day(self, dataset_id: str) -> None:
+        """`is_unfiltered` is the one answer with the long lifetime (Otto, F3); a filter takes it out."""
+        gateway, _ = answering(ok("aggregate_complete"))
+        cache = FakeCache()
+
+        await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=3, conditions=self.CONDITIONS),
+            SENTINEL_2_L2A,
+            gateway=gateway,
+            cache=cache,
+        )
+
+        assert list(cache.ttls.values()) == [TTL_OPEN_EDGE_S]
 
 
 async def test_a_world_query_sends_no_area_at_all(dataset_id: str) -> None:
