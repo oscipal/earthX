@@ -1,6 +1,6 @@
 # NM4-35 — Relief (Schummerung) als Overlay und optional als Basemap
 
-**Stand:** 27.10.2026, beauftragt von Otto (Backlog-Punkt 35; Vorschlag aus dem Plan von UI-02, §6); Plan mit Recherche am 28.10.2026 (§6), von Otto am 28.10.2026 freigegeben (§6.10). Der Code wartet auf den Merge von UI-02c und einen freien Frontend-Platz; Otto meldet beides.
+**Stand:** 27.10.2026, beauftragt von Otto (Backlog-Punkt 35; Vorschlag aus dem Plan von UI-02, §6); Plan mit Recherche am 28.10.2026 (§6), von Otto am 28.10.2026 freigegeben (§6.10). UI-02c ist gemergt (#223), der Code ist umgesetzt (§7).
 **Stufe B:** Erst kommt der Plan im Draft-PR (Optionen, Empfehlung, Quellen), Otto gibt ihn frei, dann folgt der Code in derselben Session.
 **Modell:** Opus für Recherche und Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** nach dem Merge von UI-02a (Basemap-Menü). Frontend-Aufgabe: höchstens zwei Frontend-Sessions gleichzeitig.
@@ -225,3 +225,59 @@ Die Lizenztexte stammen aus der [SPDX License List](https://github.com/spdx/lice
 - **In der Ecke:** „Terrain: USGS, NOAA, EU-DEM (Copernicus) and others“. Der ganze Text ist ein Link, damit er auffällt.
 - **Hinter dem Link:** die volle Liste, und zwar die offizielle Seite [`tilezen/joerd/docs/attribution.md`](https://github.com/tilezen/joerd/blob/master/docs/attribution.md). Sie enthält alle elf Sätze, wird von den Herausgebern der Kacheln gepflegt und ist dieselbe Seite, auf die der Registry-Eintrag verweist. Eine eigene Seite mit der Liste kann vor dem öffentlichen Start zum Impressum dazukommen, wie für die Stil-Lizenzen (UI-02 §7.4).
 - **Rest-Risiko für Ottos Einstufung:** Für CC BY 3.0 AT und NZ, OGL Canada, EU-DEM und INEGI erlaubt kein gelesener Text ausdrücklich einen Link; sie verlangen eine „angemessene“ bzw. „dem Medium angemessene“ Nennung. Die volle Liste bleibt mit einem Klick aus der Ecke erreichbar. Eine eindeutige Auskunft gäbe nur eine Rechtsprüfung.
+
+## 7. Umsetzung (28.10.2026)
+
+Umgesetzt nach §6 mit Ottos Antworten (§6.10): Overlay „Relief“ in der Gruppe „Overlays“ und Basemap „Relief“ im Menü „Basemap“, Schummerung im Browser aus AWS Terrain Tiles bis Zoom 12, Basemap „Relief“ im Permalink über den Mechanismus von UI-02c (#223), das Overlay nicht. Grundlage ist `main` nach #223. Keine neue Abhängigkeit, kein Backend außer einem Wert mehr in der Aufzählung `PermalinkView.basemap`, `.github/` und `CLAUDE.md` unverändert, `docs/plans/nach-m4-backlog.md` unverändert.
+
+### 7.1 Was neu ist
+
+- `frontend/src/relief.ts` (neu): Quelle (`raster-dem`, Terrarium, 256 px, `maxzoom` 12, Attribution), Ebene (`hillshade`; Licht aus 315°, Höhe 45°, Anker `map`, Methode `standard`) in zwei Ausführungen, `overlay` und `basemap` (§6.5 Punkt 3 und 4).
+- `overlays.ts`: `relief` als dritter Eintrag (Name „Relief“, Tooltip mit Quelle und Host). `preferences.ts` und `store.ts` brauchten keine Änderung: Ein gemerkter Wert ohne `relief` gilt als „aus“.
+- `basemaps.ts`: Basemap `relief`, lokaler Stil, im ersten Stil enthalten (nichts zu laden).
+- `mapStyles.ts::composeStyle`: das Overlay als Ebene `ov-relief` mit Quelle `ov-relief` zwischen den Ebenen der Basemap und den eigenen Ebenen der App; auf der Basemap „Relief“ wird es nicht ein zweites Mal gezeichnet.
+- `BasemapMenu.tsx`: unverändert; die Einträge kommen aus den Katalogen.
+- Backend: `PermalinkView.basemap` nimmt `relief` an. Overlays bleiben mit `422` abgewiesen (`extra="forbid"`).
+
+### 7.2 Auslegungen (Vorschlag, gelten bis Otto widerspricht)
+
+1. **Die Ebene heißt `ov-relief`, liegt aber unter den Bildern der App.** Alle anderen `ov-`-Ebenen (Labels, Graticule) liegen über den Bildern. Der Name sagt „Overlay“ (Schalter im Menü), die Lage folgt §6.5 Punkt 1. `isComposed` erkennt das Präfix, ein Wechsel der Basemap nimmt die Ebene mit.
+2. **Haken und Basemap „Relief“ gleichzeitig:** Der Haken bleibt wählbar, die Karte zeigt die Schummerung einmal (§6.5 Punkt 6). Beide Einträge heißen „Relief“, im Menü stehen sie in verschiedenen Gruppen.
+3. **Labels auf der Basemap „Relief“:** Wie bei Satellite und Outlines holt „Labels“ die Namen aus dem Stil von Grey (UI-02b §9.1 Punkt 3).
+4. **Ohne Meldung bei Ausfall der Höhenkacheln:** Sperre ich `s3.amazonaws.com`, bleibt die Karte stehen, die Schummerung fehlt. MapLibre meldet nur ein `error`-Ereignis, die App hat dafür keine Meldung, wie bei den Rasterkacheln von Satellite. Eine Meldung gibt es nur, wenn ein Stil nicht geladen werden kann (UI-02 §7.1 Punkt 3).
+5. **Weltansicht auf dunklem Grund ist fast schwarz.** Bei Zoom 1 gibt es kaum Gefälle; die Schummerung zeigt dort nur Küstenränder, Schelfe und Gebirgsränder. Das ist die feste Darstellung ohne Einstellmöglichkeit (Aufgabe §3); ab Zoom 3 trägt sie.
+6. **Permalink:** Die Basemap „Relief“ im Link zeigt das Relief immer, auch dem, der sein Overlay nie eingeschaltet hat; sie schreibt wie jede geöffnete Wahl nichts in den Speicher (UI-02 Frage 8).
+
+### 7.3 Belege
+
+- **Pflicht-Checks:** `ruff check backend`, `lint-imports` (16 Verträge), `oxlint`, `tsc -b` ohne Befund; Vitest 88 Dateien, 3055 Tests grün; `pytest` 6418 bestanden, 14 übersprungen (PowerShell fehlt in der Sitzung; die CI hat es).
+- **Neue Tests:** `relief.test.ts` (Quelle, Zoom 12, Attribution mit Link, Look, Prüfung gegen die Style-Spec), `mapStyles.relief.test.ts` (29 Tests: Lage über der Basemap und unter jeder Ebene der App, unter Labels und Graticule, nicht doppelt auf der Basemap „Relief“, nichts im Stil bei „aus“, Attribution mit und ohne, Diff beim Ein- und Ausschalten und beim Wechsel zur Basemap „Relief“ nur auf eigenen Ids, gleicher Stil ändert nichts), `BasemapMenu.test.tsx` (Haken und Basemap getrennt, Tooltip, Tastatur durch alle Gruppen), `preferences.test.ts` und `store.overlays.test.ts` (Rundreise, Wert aus der Zeit vor „Relief“, Fremdwerte), `permalink.test.ts` und `ProcessingShare.test.tsx` (Basemap „Relief“ teilen und öffnen ohne Eingriff in den Speicher, kein Overlay im Link), `test_permalink_route.py` (`relief` angenommen; `Relief`, `hillshade`, `overlays`, `relief` als Feld mit `422`).
+- **Gegenprobe:** Fünf Änderungen am Code lassen jeweils Tests scheitern (Overlay über die Ebenen der App gelegt: 5; Attribution weggelassen: 4; Overlay auch auf der Basemap „Relief“: 2; Zoom 15 statt 12: 3; `relief` aus der Liste der Basemaps genommen: 6).
+- **Echter Browser (Wegwerf-Skript, nicht im Repo; Chromium, Software-Rendering, Dev-Server von Vite, MapLibre mit den echten Funktionen `baseMapStyle` und `createBasemapSwitcher`; echte Höhenkacheln von AWS; Esri durch eine grüne Kachel ersetzt, ein rotes Bild und eine blaue AOI als eigene Ebenen):** 42 Prüfungen bestanden, in Dunkel und Hell, Mercator und Globus:
+  - Beim Start keine Ebene und keine Anfrage an AWS.
+  - Ebenenfolge nach dem Einschalten: `background, bm-satellite, ov-relief, layers-top, m-img-lyr-0, overlays-base, aoi-fill, aoi-line`.
+  - 24 Kacheln von Zoom 10 bei Zoom 9; bei Zoom 14 nur 2 Kacheln, beide von Zoom 12.
+  - Das Pixel unter dem eigenen Bild bleibt gleich (192, 57, 43), das daneben wird getönt (45, 148, 48 → 47, 131, 49).
+  - Attribution: „Imagery © Esri …“ und „Terrain: USGS, NOAA, EU-DEM (Copernicus) and others“ mit Link auf die Joerd-Seite; auf der Basemap „Relief“ nur noch der Terrain-Text.
+  - Mit Basemap „Relief“ und Haken eine einzige `hillshade`-Ebene (`bm-relief`).
+  - Ausschalten entfernt Ebene und Quelle, Bild und AOI bleiben.
+  - Sperre von AWS: Karte, Bild und AOI bleiben.
+- **Nicht belegt:** Esri und OpenFreeMap in echt (aus der Sitzung nicht erreichbar), also wie das Relief über echten Satellitenbildern und über Streets aussieht; das Verhalten auf einem echten Grafikprozessor; die Menüleiste in der laufenden App mit Backend (das Skript nutzt die Funktionen, nicht die App).
+- **Rechtlich:** Das Rest-Risiko der Attribution (§6.11) hat Otto am 28.10.2026 in Kauf genommen; vor dem öffentlichen Betrieb rechtlich prüfen.
+
+### 7.4 Prüfanleitung für Otto (Browser)
+
+Vorher: Browserdaten der Seite löschen (oder ein privates Fenster).
+
+1. **Start:** Satellite, Mercator, dunkel. Im Menü „Basemap“ steht in „Overlays“ der Eintrag „Relief“ ohne Haken, in „Basemap“ der Eintrag „Relief“ nach „Outlines“. Unten rechts nur die Attribution von Esri; in den Entwicklerwerkzeugen (Netzwerk) keine Anfrage an `s3.amazonaws.com`.
+2. **Overlay:** „Relief“ unter „Overlays“ anhaken. Gebirge treten über dem Satellitenbild plastisch hervor, auf jeder Basemap (Streets, Grey, Outlines, Satellite). Unten rechts steht zusätzlich „Terrain: USGS, NOAA, EU-DEM (Copernicus) and others“; der Link öffnet die Liste auf GitHub. Abhaken: Schummerung und zweiter Text verschwinden.
+3. **Lage:** Eine Szene anhaken oder einen Layer anzeigen: Das Bild deckt die Schummerung zu, AOI, Labels und Graticule (wenn an) liegen darüber.
+4. **Basemap „Relief“:** Die Schummerung allein auf dem Grund des Themas, in Dunkel und Hell („Light“) lesbar. Mit angehaktem Overlay sieht sie nicht stärker aus. Mit „Labels“ erscheinen die Namen; die Attribution nennt dann zusätzlich OpenMapTiles, OpenFreeMap und OpenStreetMap.
+5. **Zoom und Globus:** Hineinzoomen bis 14: Das Relief wird ab Zoom 12 weicher, aber nicht streifig; in den Anfragen kommt keine Kachel von Zoom 13 oder höher. Auf dem Globus (Projection „Globe“) folgt die Schummerung der Kugel. Bei Zoom 1 auf dunklem Grund ist sie kaum zu sehen (§7.2 Punkt 5).
+6. **Merken:** Neu laden: Haken und Basemap bleiben. Im Local Storage steht `earthx.overlays` mit `"relief":true` und `earthx.basemap` mit `relief`. Ein alter Wert ohne `relief` schaltet es aus.
+7. **Permalink (UI-02c):** Mit gewählter Basemap „Relief“ „Share“, den Link in einem privaten Fenster öffnen: Relief wie geteilt; im normalen Fenster mit gemerktem Grey neu laden: wieder Grey. Mit dem Overlay „Relief“ geteilt: im privaten Fenster ohne Schummerung (das Overlay steht nicht im Link).
+8. **Fehlerfall:** Anfragen an `s3.amazonaws.com` sperren und „Relief“ anhaken: Die Karte bleibt, die Schummerung fehlt, eine Meldung gibt es nicht (§7.2 Punkt 4).
+
+### 7.5 Größe des PR
+
+Rund 90 Zeilen Code (`relief.ts` 54, Katalog, Zusammensetzen, Aufzählung im Backend) und rund 370 Zeilen Tests, zusammen rund 460 Zeilen. Der Code liegt weit unter dem Richtwert von 400 Zeilen, mit den Tests ist er überschritten; ich habe nichts gestrichen, weil die Abnahme (Aufgabe §5) Lage, Merken, Permalink und Attribution belegt haben will.
