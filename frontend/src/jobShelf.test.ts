@@ -36,6 +36,7 @@ function job(jobID: string, over: Partial<ShelfJob> = {}): ShelfJob {
     deletedUntil: null,
     serverDeleted: false,
     lost: false,
+    superseded: false,
     ...over,
   };
 }
@@ -183,6 +184,21 @@ describe('a deleted job and one the server forgot (NM4-27)', () => {
     saveShelf(shelfOf([job(JOB, { deletedUntil: until, serverDeleted: true, lost: true })]));
     expect(stored().v).toBe(1);
     expect(Object.keys(stored().jobs[0]).sort()).toEqual(['createdAt', 'deletedUntil', 'expires', 'jobID', 'lost', 'serverDeleted']);
+  });
+});
+
+describe('a job that was started again (NM4-34)', () => {
+  it('is written as superseded and read back, in version 1; a job that is not writes no such key', () => {
+    saveShelf(shelfOf([job(JOB, { superseded: true, archived: true }), job(OTHER)]));
+    expect(stored().v).toBe(1);
+    expect(stored().jobs[0]).toMatchObject({ superseded: true, archived: true });
+    expect(stored().jobs[1]).not.toHaveProperty('superseded');
+    expect(readShelf().shelf.jobs).toEqual([job(JOB, { superseded: true, archived: true }), job(OTHER)]);
+  });
+
+  it('is read as not superseded where the value is not `true`', () => {
+    localStorage.setItem(SHELF_KEY, JSON.stringify({ v: 1, jobs: [{ jobID: JOB, expires: '2026-10-17T12:00:00Z', superseded: 'yes' }], batches: [], groups: [] }));
+    expect(readShelf().shelf.jobs[0].superseded).toBe(false);
   });
 });
 

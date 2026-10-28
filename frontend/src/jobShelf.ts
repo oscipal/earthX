@@ -53,6 +53,9 @@ export interface ShelfJob {
   // The server answered `404` once: it does not know the job any more (cancelled, a reset database, expired). It is
   // never asked about it again, not after a reload either.
   lost: boolean;
+  // "Run again" started the job again and the new job took its place (NM4-34); this one stays, archived, and is not
+  // counted in its batch.
+  superseded: boolean;
 }
 
 export interface ShelfBatch {
@@ -177,6 +180,7 @@ function parseShelf(raw: string): Shelf | 'foreign' | 'broken' {
       deletedUntil,
       serverDeleted: deletedUntil !== null && j.serverDeleted === true,
       lost: j.lost === true,
+      superseded: j.superseded === true,
     });
   }
   return { jobs, batches, groups };
@@ -197,6 +201,7 @@ function serialize(shelf: Shelf, without: ReadonlySet<string>): string {
     ...(j.order && !without.has(j.jobID) ? { order: j.order } : {}),
     ...(j.deletedUntil ? { deletedUntil: j.deletedUntil, ...(j.serverDeleted ? { serverDeleted: true } : {}) } : {}),
     ...(j.lost ? { lost: true } : {}),
+    ...(j.superseded ? { superseded: true } : {}),
   }));
   const batches = shelf.batches.map((b) => ({
     id: b.id,
@@ -231,7 +236,7 @@ function legacyJobs(now: number): ShelfJob[] {
       jobs.push({
         jobID: entry.jobID, expires, title, titleDefault: title, createdAt: expires,
         archived: false, groupId: null, batchId: null, part: null, range: null, order: null,
-        deletedUntil: null, serverDeleted: false, lost: false,
+        deletedUntil: null, serverDeleted: false, lost: false, superseded: false,
       });
     }
     return jobs;

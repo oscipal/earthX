@@ -6,9 +6,9 @@ import { useEffect, useState } from 'react';
 import { HttpError } from '../api';
 import { BUNDLE_MAX_BYTES, BUNDLE_MAX_PARTS } from '../processing';
 import type { BatchEntry, JobEntry } from '../processingStore';
-import { canDelete, canRestore, deletableParts, jobState, UNAVAILABLE_TIP, type JobState, type JobStateKey } from '../jobState';
+import { canDelete, canRestore, canRetry, deletableParts, failsAgain, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, UNAVAILABLE_TIP, type JobState, type JobStateKey } from '../jobState';
 
-export { canDelete, canRestore, deletableParts, jobState, UNAVAILABLE_TIP };
+export { canDelete, canRestore, canRetry, deletableParts, failsAgain, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, UNAVAILABLE_TIP };
 export type { JobState, JobStateKey };
 
 export const EXPIRED_TIP = 'Expired: results are kept for 7 days.';

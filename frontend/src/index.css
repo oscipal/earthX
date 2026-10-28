@@ -2028,6 +2028,22 @@ a.pm-icon:hover {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+/* The title is the button that renames it: it reads as text until it is pointed at. */
+.pm-title-edit {
+  padding: 0;
+  background: none;
+  border: none;
+  border-bottom: 1px dashed transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.pm-title-edit:hover,
+.pm-title-edit:focus-visible {
+  border-bottom-color: var(--accent);
+}
 .pm-facts {
   display: grid;
   grid-template-columns: max-content 1fr;
