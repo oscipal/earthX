@@ -94,6 +94,7 @@ describe('viewOf, basemap and projection', () => {
     ['grey', 'mercator'],
     ['outlines', 'globe'],
     ['satellite', 'mercator'],
+    ['relief', 'globe'],
   ] as const)('keeps %s and %s as they are on screen', (basemap, projection) => {
     const view = viewOf([8, 46, 11, 48], 5, null, { basemap, projection });
     expect(view).toMatchObject({ basemap, projection });
@@ -112,11 +113,14 @@ describe('parseView', () => {
     expect(parseView(old)).toEqual({ ...old, basemap: 'satellite', projection: 'mercator' });
     expect(parseView({ ...old, basemap: null, projection: null })).toEqual({ ...old, basemap: 'satellite', projection: 'mercator' });
     expect(parseView({ ...old, basemap: 'grey' })).toMatchObject({ basemap: 'grey', projection: 'mercator' });
+    expect(parseView({ ...old, basemap: 'relief' })).toMatchObject({ basemap: 'relief', projection: 'mercator' });
     expect(parseView({ ...old, projection: 'globe' })).toMatchObject({ basemap: 'satellite', projection: 'globe' });
   });
 
   it.each([
     { basemap: 'osm' },
+    { basemap: 'Relief' },
+    { basemap: 'hillshade' },
     { basemap: 'Streets' },
     { basemap: '' },
     { basemap: 1 },

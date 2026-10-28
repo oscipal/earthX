@@ -289,6 +289,7 @@ describe('opening a link, basemap and projection', () => {
     ['grey', 'mercator'],
     ['outlines', 'globe'],
     ['satellite', 'globe'],
+    ['relief', 'mercator'],
   ] as const)('shows %s and %s for the opened view', async (basemap, projection) => {
     linkWith({ basemap, projection });
     await open();
@@ -306,6 +307,19 @@ describe('opening a link, basemap and projection', () => {
     expect(loadBasemap()).toBe('grey'); // what the next visit opens with
     expect(loadProjection()).toBe('mercator');
     expect(localStorage.getItem('earthx.basemap')).toBe('grey');
+  });
+
+  it('opens the basemap "Relief" of a link and leaves the relief overlay and the kept basemap as the viewer had them (NM4-35)', async () => {
+    act(() => {
+      useAppStore.getState().setBasemap('grey');
+      useAppStore.getState().setOverlay('relief', false);
+      useAppStore.getState().setOverlay('graticule', true);
+    });
+    linkWith({ basemap: 'relief', projection: 'mercator' });
+    await open();
+    expect(useAppStore.getState()).toMatchObject({ basemap: 'relief', overlays: { relief: false, graticule: true, labels: false } });
+    expect(localStorage.getItem('earthx.basemap')).toBe('grey');
+    expect(JSON.parse(localStorage.getItem('earthx.overlays') ?? '{}')).toMatchObject({ relief: false, graticule: true });
   });
 
   it('writes nothing for a user who never chose, and a choice in the menu afterwards is kept as always', async () => {
@@ -403,6 +417,19 @@ describe('Share', () => {
     });
     await click('Share');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).view).toMatchObject({ basemap: 'outlines', projection: 'globe' });
+  });
+
+  it('keeps no overlay in a link, the relief one neither: only the basemap and the projection are in the view', async () => {
+    act(() => {
+      useAppStore.getState().showSharedLook({ basemap: 'relief', projection: 'globe' });
+      useAppStore.getState().setOverlay('relief', true);
+      useAppStore.getState().setOverlay('labels', true);
+    });
+    await click('Share');
+    const view = JSON.parse(fetchMock.mock.calls[0][1].body).view;
+    expect(view).toMatchObject({ basemap: 'relief', projection: 'globe' });
+    expect(Object.keys(view).sort()).toEqual(['basemap', 'center', 'projection', 'range', 'zoom']);
+    expect(JSON.stringify(view)).not.toMatch(/overlay|labels|graticule/u);
   });
 
   it('hands the choice on: what one link keeps, the next one opens', async () => {

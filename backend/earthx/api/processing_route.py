@@ -1367,7 +1367,7 @@ class PermalinkView(BaseModel):
     center: list[float] = Field(min_length=2, max_length=2)
     zoom: float = Field(ge=0, le=24)
     range: PermalinkRange | None = None
-    basemap: Literal["satellite", "streets", "grey", "outlines"] | None = None
+    basemap: Literal["satellite", "streets", "grey", "outlines", "relief"] | None = None
     projection: Literal["mercator", "globe"] | None = None
 
     @model_validator(mode="after")

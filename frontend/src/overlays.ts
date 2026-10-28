@@ -1,14 +1,15 @@
 // The overlays of the "Basemap" menu (UI-02b, `docs/plans/vp3/ui-02-basemap-projektion.md` §6.5): names on the map and
-// a graticule. They lie over the app's own pictures and under the area of interest and the drawing (Otto, 27.10.2026,
+// a graticule; and the terrain shading "Relief" (NM4-35, `relief.ts`), which lies the other way round: over the basemap
+// and under every picture of the app. The names and the graticule lie over the app's own pictures and under the area of interest and the drawing (Otto, 27.10.2026,
 // question 7), on every basemap. `mapStyles.ts::composeStyle` puts them there.
 
 import type { StyleSpecification } from 'maplibre-gl';
 
-export type OverlayId = 'labels' | 'graticule';
+export type OverlayId = 'labels' | 'graticule' | 'relief';
 export type Overlays = Record<OverlayId, boolean>;
 
-export const OVERLAY_IDS: readonly OverlayId[] = ['labels', 'graticule'];
-export const NO_OVERLAYS: Overlays = { labels: false, graticule: false };
+export const OVERLAY_IDS: readonly OverlayId[] = ['labels', 'graticule', 'relief'];
+export const NO_OVERLAYS: Overlays = { labels: false, graticule: false, relief: false };
 
 // Every source and layer of an overlay carries this prefix in the running style (`bm-` is the basemap's).
 export const OVERLAY_PREFIX = 'ov-';
@@ -16,6 +17,7 @@ export const OVERLAY_PREFIX = 'ov-';
 export const OVERLAYS: Record<OverlayId, { name: string; tip: string }> = {
   labels: { name: 'Labels', tip: 'Names of places, waters and roads. Tiles and fonts load from openfreemap.org.' },
   graticule: { name: 'Graticule', tip: 'Lines of latitude and longitude, drawn in the browser.' },
+  relief: { name: 'Relief', tip: 'Shading of the terrain, drawn in the browser. Elevation tiles load from amazonaws.com.' },
 };
 
 export const GRATICULE_SOURCE = `${OVERLAY_PREFIX}graticule`;
