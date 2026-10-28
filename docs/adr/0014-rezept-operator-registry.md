@@ -2626,14 +2626,18 @@ macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser N
   Schritts ab. Die Versionen 2 laufen bis NM4-43d nur als Job (`Tier.T2`) und werden nicht gelistet (`Operator.listed`, `processing_docs._jobs_of`
   zählt nur gelistete Versionen): Das heutige Panel sieht weiter Version 1. Der Kern prüft einen Namen zusätzlich am Vorrat
   (`band_math._transform_v2`: „NDVI is used twice“, auch in anderer Schreibweise).
-- **Planer (`plan.stock_steps`, `needed_source_bands`).** Zuerst prüft jeder Schritt auf dem **ganzen** Vorrat (ein falscher Name in einem Schritt,
-  den niemand braucht, wird ebenso abgewiesen, mit dem Ort des Schritts im Text); dann geht der Planer die Kette von hinten durch
+- **Planer (`plan.stock_steps`, `needed_source_bands`).** Der Planer geht die Kette von hinten durch
   (`Operator.bands_used` → `BandUse`: gelesene Namen, hinzugefügter Name, geänderte Bänder). Ein Band fällt nach seiner letzten Nutzung weg; ein
-  Schritt, der nichts Gebrauchtes ändert oder hinzufügt, wird nicht gerechnet. Dafür setzt der Planer einen eigenen, nicht registrierten Schritt
+  Schritt, der nichts Gebrauchtes ändert oder hinzufügt („toter“ Schritt), wird **nicht geprüft, nicht gerechnet und nicht berichtet**: die Bänder,
+  die er nennt, werden nicht gelesen und müssen nicht da sein, und weder `processing:lineage`, `processing:expression` noch der Methodentext nennen
+  ihn (`plan.live_steps`). Jeder Schritt, der läuft, wird auf dem **ganzen** Vorrat geprüft (ein falscher Name, mit dem Ort des Schritts im Text).
+  Von der Liste `bands` eines `normalize` bekommt der Schritt nur, was nach der Kürzung noch im Vorrat steht (`Operator.restrict`); die übrigen
+  Namen der Liste sind nie nötig. Dafür setzt der Planer einen eigenen, nicht registrierten Schritt
   `select_bands` (`operators/select.py`) vor den Schritt, der folgt, und am Ende. Der Vorrat wird dabei so geordnet wie `output.bands`, sobald er
   schmaler wird; ein letztes `reproject` braucht deshalb keinen Durchgang, der nur sortiert. Ein `grid`-Schritt warpt nur, was bleibt (Version 4
   warpt jedes Band für sich; der Wert eines Bandes hängt nicht am Vorrat, `adr/0020` §3.4). `estimate`, `check_bands`, `run` und
-  `area_statistics` benutzen dieselbe Planung.
+  `area_statistics` benutzen dieselbe Planung. Kennt das Item die Bänder eines Assets nicht (nur die Datei weiß, wie viele es sind),
+  nimmt `estimate` die Namen `<asset>_1` bis zum höchsten Index an, den `output.bands` oder ein Ausdruck nennt; `check_bands` prüft solche Namen erst im Kern.
 - **`api` (`intake.derive_assets`, `band_sources`).** Aus `output.bands` und den Schritten folgen die Namen, die der erste Schritt braucht;
   jeder Name gehört zu genau einem Asset des Items (Regel des Panels: ein COG-Asset ist ein Band mit dem Namen des Assets oder `<asset>_<n>`;
   ein Zarr-Asset je Variable mit `<asset><Trenner><Variable>`; der Name ist die Variable; die Kerne und `expected_band_names` stimmen
@@ -2649,7 +2653,8 @@ macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser N
   Spitze `cog_translate` gegen COG-Treiber 262 / 306 MB (2048²), 288 / 347 MB (4096²), 301 / 395 MB (8192²), also 44, 59 und 94 MB mehr; im Kern
   stieg dadurch das Wachstum des Speichers von 2048² auf 4096² von 59 auf 132 MB (Grenze der Tests 120 MB) und brach `test_memory_reproject.py` und
   `test_memory_mosaic.py`. Die Eigenschaft „der Speicher folgt dem Block, nicht der Szene“ (M4-07a F11) hat Vorrang; deshalb bleibt es bei
-  `cog_translate`, und die Einheit in der Datei ist eine offene Frage an Otto (PR-Text).
+  `cog_translate`. **Das ist ein Vorschlag, bis Otto antwortet:** Die Einheit in der Datei ist eine offene Frage an ihn (PR-Text); bis dahin gilt `adr/0020` §8
+  für die Einheit in der Datei als nicht umgesetzt.
 - **Das Kennzeichen `earthx:resampled` (Backlog 51, Otto).** Es sagt nur, wo **Werte** auf ein anderes Raster gebracht wurden. Jedes Band trägt es
   (`BandMeta.resampled`: seine Quelle liegt nicht auf dem Raster des feinsten Assets oder warpt ihre Szenen; `reproject` setzt es für alle Bänder;
   `band_math` erbt es von den Bändern, die der Ausdruck nennt). Das Ergebnis ist markiert, wenn **ein Band, das in ihm steht**, es trägt. Eine Schicht,
@@ -2665,5 +2670,5 @@ macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser N
   dieser Änderung); nach `reproject` Version 2 oder 3 können sie abweichen (`adr/0016` Nachtrag NM4-43c).
 - **Methodentext.** Er nennt die Bänder der Ausgabe („… with float32 values and the bands NDVI, NDWI.“); `band_math` und `normalize` Version 2 nennen
   die Namen; `processing:lineage` und `processing:expression` tragen den Namen des Ergebnisses.
-- **Version.** `earthx.__version__` 0.4.4 → 0.5.0 (`result.tif` trägt Banddeskriptionen und Einheiten; Bytes ändern sich; `reproject` Version 4 aus 0.4.4
+- **Version.** `earthx.__version__` 0.4.4 → 0.5.0 (`result.tif` trägt Banddeskriptionen; Bytes ändern sich; `reproject` Version 4 aus 0.4.4
   bleibt).
