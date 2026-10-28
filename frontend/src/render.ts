@@ -86,14 +86,40 @@ export interface Scale {
 const smallest = (values: Array<number | null>) => Math.min(...values.filter((v): v is number => v !== null));
 const largest = (values: Array<number | null>) => Math.max(...values.filter((v): v is number => v !== null));
 
+const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+// The statistics of the bands of a results document (`properties.bands`) or of the area statistics of the tiler
+// (`bands`, NM4-19): both carry the object of the results document per band. `null` where no band names a value.
+export function statsFrom(bands: unknown, expression: boolean): ResultStats | null {
+  if (!Array.isArray(bands) || bands.length === 0) return null;
+  const read = bands.map((band): BandStats => {
+    const stats = (band as { statistics?: Record<string, unknown> } | null)?.statistics;
+    // `count` 0: the band has no valid pixel, and its statistics name no value.
+    const usable = stats !== null && typeof stats === 'object' && (finite(stats.count) ?? 0) > 0;
+    return {
+      minimum: usable ? finite(stats.minimum) : null,
+      maximum: usable ? finite(stats.maximum) : null,
+      percentile2: usable ? finite(stats.percentile_2) : null,
+      percentile98: usable ? finite(stats.percentile_98) : null,
+    };
+  });
+  if (read.every((band) => band.minimum === null && band.maximum === null)) return null;
+  return { bands: read, expression };
+}
+
 // The scale the measured values call for, or `null` where they name none. In order:
-//  1. an index (a Band math result whose values all lie in −1…1) is drawn at −1…1 in `rdylgn`, so that
-//     indices can be compared with one another;
+//  1. an index (a Band math result whose 2–98 % lie in −1…1 for every band; the minimum…maximum where a band has
+//     no percentiles) is drawn at −1…1 in `rdylgn`, so that indices can be compared with one another. Single
+//     pixels beyond −1…1 do not make it another quantity (NM4-19, Otto, 28.10.2026), and a coarser read, which
+//     smooths them away, picks the same scale as the exact one;
 //  2. otherwise the 2–98 % of the measure, in `viridis`; the minimum…maximum where there are no percentiles.
 export function scaleOf(stats: ResultStats | null): Scale | null {
   const present = stats?.bands.filter((band) => band.minimum !== null && band.maximum !== null) ?? [];
   if (!stats || present.length === 0) return null;
-  if (stats.expression && present.every((band) => band.minimum! >= INDEX_RANGE[0] && band.maximum! <= INDEX_RANGE[1])) {
+  const isIndex = present.every(
+    (band) => (band.percentile2 ?? band.minimum!) >= INDEX_RANGE[0] && (band.percentile98 ?? band.maximum!) <= INDEX_RANGE[1],
+  );
+  if (stats.expression && isIndex) {
     return { low: INDEX_RANGE[0], high: INDEX_RANGE[1], colormap: INDEX_COLORMAP };
   }
   let low = smallest(present.map((band) => band.percentile2));
