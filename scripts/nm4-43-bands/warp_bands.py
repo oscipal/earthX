@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Does the number of bands in a file change what ``reproject`` gives for one band? (NM4-43, adr/0020 §3.5)
+"""Does the number of bands in a file change what ``reproject`` gives for one band? (NM4-43, adr/0020 §3.4)
 
     PYTHONPATH=backend python scripts/nm4-43-bands/warp_bands.py [--size 2048] [--counts 1,2,3,4,18,34]
 
 Writes synthetic ``float64`` files in the core's intermediate form (1024 px tiles, NaN as nodata) with
 ``count`` bands whose first band is always the same, runs the ``reproject`` operator block by block onto
-EPSG:3035 with ``bilinear`` as the core does, and compares the first band bit by bit with the one-band file.
+EPSG:3035 with ``bilinear`` as the core does, and compares the first band bit by bit with the first count
+given and with the count before it.
 No source is read; the files live in a temporary directory.
 """
 
@@ -68,17 +69,22 @@ def main() -> None:
             path = Path(directory) / f"bands-{count}.tif"
             _write(path, base, count)
             results[count] = _warp_first_band(path, args.size, count)
-    reference = results[counts[0]]
-    for count, out in results.items():
-        both_nan = numpy.isnan(reference) & numpy.isnan(out)
-        same = both_nan | (reference.view("uint64") == out.view("uint64"))
-        valid = ~numpy.isnan(reference) & ~numpy.isnan(out)
-        delta = numpy.abs(reference - out)[valid]
-        print(
-            f"{count} bands: band 1 differs in {int((~same).sum())} of {reference.size} pixels, "
-            f"valid/NaN swapped in {int((numpy.isnan(reference) != numpy.isnan(out)).sum())}, "
-            f"largest difference {float(delta.max()) if delta.size else 0.0:.3g}"
-        )
+    for index, count in enumerate(counts):
+        compared = [counts[0]] if index < 2 else [counts[0], counts[index - 1]]
+        for other in compared if index else []:
+            print(f"{count} against {other} bands: {_difference(results[other], results[count])}")
+
+
+def _difference(reference: numpy.ndarray, out: numpy.ndarray) -> str:
+    """How band 1 of ``out`` differs from ``reference``: pixels, valid/NaN swaps, largest difference."""
+    same = (numpy.isnan(reference) & numpy.isnan(out)) | (reference.view("uint64") == out.view("uint64"))
+    valid = ~numpy.isnan(reference) & ~numpy.isnan(out)
+    delta = numpy.abs(reference - out)[valid]
+    return (
+        f"band 1 differs in {int((~same).sum())} of {reference.size} pixels, "
+        f"valid/NaN swapped in {int((numpy.isnan(reference) != numpy.isnan(out)).sum())}, "
+        f"largest difference {float(delta.max()) if delta.size else 0.0:.3g}"
+    )
 
 
 if __name__ == "__main__":

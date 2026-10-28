@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Cost of a raster job by number of bands, scenes and band math (NM4-43, adr/0020 §4).
+"""Cost of a raster job by number of bands, scenes and band math (NM4-43, adr/0020 §3.2).
 
     curl -sS -X POST https://earth-search.aws.element84.com/v1/search -H 'Content-Type: application/json' \\
-      -d '{"collections":["sentinel-2-c1-l2a"],"bbox":[11.0,47.0,11.01,47.01],
-           "datetime":"2026-04-01T00:00:00Z/2026-10-01T00:00:00Z","limit":200,
-           "query":{"eo:cloud_cover":{"lt":80}}}' -o items.json
+      -d '{"collections":["sentinel-2-c1-l2a"],"datetime":"2026-04-01T00:00:00Z/2026-10-01T00:00:00Z",
+           "limit":200,"query":{"grid:code":{"eq":"MGRS-32TPT"},"eo:cloud_cover":{"lt":80}}}' -o items.json
     PYTHONPATH=backend python scripts/nm4-43-bands/measure.py prepare <dir> --items items.json [--km 10] [--scenes 25]
     PYTHONPATH=backend python scripts/nm4-43-bands/measure.py run <dir> [--scenes 1] [--configs ...]
     PYTHONPATH=backend python scripts/nm4-43-bands/measure.py summary <dir>
 
-The search is a plain ``curl`` with a coarse rectangle, no one's AOI: the platform's `gateway` connects
+The search is a plain ``curl`` for one MGRS tile (about 110 km, no one's AOI): the platform's `gateway` connects
 without the HTTPS proxy a cloud session has to use, so the script takes the items from that file and
 makes no request of its own for metadata. ``prepare`` keeps the whole scenes of the most frequent MGRS
 tile, one per day, places a square of ``--km`` around the middle of the area all of them cover, and
 builds one recipe per configuration and scene with ``api.intake.estimate_order``, the path an order
-takes before it is queued. Nothing of the place is printed: no coordinates, no item ids, no address.
+takes before it is queued. Nothing of the place is printed: no coordinates, no item ids, no address;
+a failed run is recorded by the class of its error only, because GDAL's messages name addresses.
 
 ``run`` computes each recipe with ``processing.core.run`` in a child process of its own, as a worker
 does, and appends one line of JSON per run to ``<dir>/results.jsonl``: wall time, peak RSS
@@ -216,8 +216,9 @@ def _run(directory: Path, scenes: int, configs: list[str]) -> None:
                 [sys.executable, __file__, "_child", str(path)], capture_output=True, text=True, env=env, check=False
             )
             if child.returncode != 0:
-                # The last line of the traceback names the error class and its text, which never repeats an address.
-                line = {"config": name, "scene": index, "error": child.stderr.strip().splitlines()[-1][:300]}
+                lines = child.stderr.strip().splitlines()
+                kind = lines[-1].split(":", 1)[0][:100] if lines else f"exit code {child.returncode}"
+                line = {"config": name, "scene": index, "error": kind}
             else:
                 # GDAL writes its statistics to stdout after the line of the run.
                 own, _, network = child.stdout.partition("Network statistics:")
@@ -231,26 +232,34 @@ def _run(directory: Path, scenes: int, configs: list[str]) -> None:
 def _summary(directory: Path) -> None:
     lines = [json.loads(line) for line in (directory / "results.jsonl").read_text().splitlines()]
     print(
-        "| config | runs | out bands | s (median) | s (sum) | peak RSS MB (max) | read MB (median) | read MB (sum) "
-        "| GETs (median) | result MB (median) | est. s | est. disk MB |"
+        "| config | runs | out bands | s (median) | s (min–max) | s (sum) | peak RSS MB (max) | baseline MB (max) "
+        "| read MB (median) | read MB (sum) | GETs (median) | result MB (median) | est. s | est. output MB "
+        "| est. disk MB |"
     )
-    print("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for name in CONFIGS:
         runs = [line for line in lines if line["config"] == name and "error" not in line]
         errors = [line for line in lines if line["config"] == name and "error" in line]
         if errors:
-            print(f"| {name} | {len(errors)} failed | {errors[0]['error'][:80]} |")
+            print(f"| {name} | {len(errors)} failed | {errors[0]['error']} |")
         if not runs:
             continue
 
-        def median(key: str, runs: list[dict] = runs) -> float:
-            return round(statistics.median(line[key] for line in runs), 2)
+        def median(key: str, runs: list[dict] = runs) -> float | None:
+            values = [line[key] for line in runs if line[key] is not None]
+            return round(statistics.median(values), 2) if values else None
 
+        def total(key: str, runs: list[dict] = runs) -> float | None:
+            values = [line[key] for line in runs if line[key] is not None]
+            return round(sum(values), 1) if values else None
+
+        seconds = [line["seconds"] for line in runs]
         print(
             f"| {name} | {len(runs)} | {runs[0]['out_bands']} | {median('seconds')} | "
-            f"{round(sum(line['seconds'] for line in runs), 1)} | {max(line['rss_mb'] for line in runs)} | "
-            f"{median('read_mb')} | {round(sum(line['read_mb'] for line in runs), 1)} | {median('gets')} | "
-            f"{median('result_mb')} | {median('est_seconds')} | {median('est_disk_mb')} |"
+            f"{min(seconds)}–{max(seconds)} | {total('seconds')} | {max(line['rss_mb'] for line in runs)} | "
+            f"{max(line['rss_baseline_mb'] for line in runs)} | {median('read_mb')} | {total('read_mb')} | "
+            f"{median('gets')} | {median('result_mb')} | {median('est_seconds')} | {median('est_output_mb')} | "
+            f"{median('est_disk_mb')} |"
         )
 
 
