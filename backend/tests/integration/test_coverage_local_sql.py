@@ -303,7 +303,7 @@ class TestTimeFilter:
         assert _multipolygon_area(body["area"]) == pytest.approx(1.0)
 
 
-class TestCacheAndIgnoredCloudFilter:
+class TestCacheAndSearchFilters:
     def test_a_second_identical_request_answers_from_the_cache(self, app_client: Any) -> None:
         first = get(app_client, bbox="0,0,2,2")
         second = get(app_client, bbox="0,0,2,2")
@@ -312,13 +312,11 @@ class TestCacheAndIgnoredCloudFilter:
         assert second.json()["from_cache"] is True
         assert second.json()["area"] == first.json()["area"]
 
-    def test_max_cloud_cover_is_ignored_and_named(self, app_client: Any) -> None:
-        response = get(app_client, bbox="0,0,2,2", max_cloud_cover=10)
+    def test_a_search_filter_is_refused_not_ignored(self, app_client: Any) -> None:
+        """A materialized one-off product has no filters (DS-02): answering it unfiltered would look like an answer."""
+        response = get(app_client, bbox="0,0,2,2", query='{"eo:cloud_cover": {"lte": 10}}')
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["ignored_filters"] == ["max_cloud_cover"]
-        assert _multipolygon_area(body["area"]) == pytest.approx(4.0)
+        assert response.status_code == 400
 
 
 class TestNoCoordinateInTheLog:
