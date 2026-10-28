@@ -695,6 +695,18 @@ Pfad**:
   (`jobs/cleanup.py`, auch die der GET-Statistik nach 30 Tagen, die bis dahin liegen blieben).
 - **Unverändert:** die GET-Statistik eines Items (M4-19c) für „Whole scene“ und als Rückfall
   des Panels.
+- **Frontend (NM4-19b, 2026-10-28, [#230](https://github.com/oscipal/earthX/pull/230)):** Bei „AOI only“ und vollständigem Auftrag
+  des ersten Jobs (`parts[0]`, ganze Kette) misst die Vorschau mit `POST …/statistics` und diesem Auftrag; sonst, bei
+  jedem Fehler der Route (`413`, `5xx`, Netz, unlesbare Antwort, auch `403`/`422`) und bei „Whole scene“ über die GET-Statistik
+  der ersten Szene. Der Schlüssel der Messung ist der Auftragstext, nur im Speicher; er steht in keiner URL, keinem
+  Speicher und keinem Log. Eine Änderung der AOI oder des Ausgabetyps misst neu. Der Tooltip von „Preview“ sagt „Range measured
+  over the first whole scene“ (Rückfall) bzw. „Range measured on a coarser read; the result may differ“ (`exact: false`).
+  „Auto stretch“ fragt nach einem Rückfall die AOI erneut.
+- **Index-Regel nach Perzentilen (Frage 8, Otto, 2026-10-28):** `render.ts::scaleOf`, die eine Regel für Vorschau und
+  Ergebnis: Band math und bei allen Bändern p2 ≥ −1 und p98 ≤ 1 (Minimum…Maximum, wo Perzentile fehlen) → −1…1 `rdylgn`,
+  sonst 2–98 % `viridis`. Nur Anzeige: `result.tif`, seine Tags und das Ergebnisdokument tragen keine Darstellungsvorgabe
+  (`processing/` und `api/processing_docs.py` kennen weder `rescale` noch eine Colormap), `earthx.__version__` bleibt, `adr/0014`
+  braucht keinen Nachtrag. Ein bestehender Ergebnis-Layer mit Ausreißern über ±1 wird damit als Index gezeichnet.
 
 **Zu Frage 5 — Quicklook-Proxy.** **Es gibt keinen.** Der Browser lädt das
 Thumbnail direkt von der Quelle; CORS ist offen (§3.6), 6.4 verlangt es so, und
