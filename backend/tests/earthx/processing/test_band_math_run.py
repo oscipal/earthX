@@ -16,6 +16,7 @@ from rio_tiler.io import Reader
 from earthx.processing import run
 from earthx.processing.errors import GridMismatch, RecipeInvalid, ScalingMismatch, UnsupportedRecipe
 from earthx.processing.operators import REGISTRY
+from earthx.processing.plan import estimate
 from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
@@ -185,6 +186,23 @@ class TestNestedGrids:
         numpy.testing.assert_array_equal(data.mask, expected_mask)
         numpy.testing.assert_array_equal(data.compressed(), expected[~expected_mask])
         assert sources.RESOLUTION == result.properties["gsd"]
+
+    @pytest.mark.parametrize("assets", [("b11", "red"), ("red", "b11")])
+    def test_the_estimate_sizes_the_output_as_the_run_makes_it(
+        self, tmp_path: Path, coarse: Path, assets: tuple[str, str]
+    ) -> None:
+        """The run reads onto the finest grid; the estimate once took the first asset's 20 m for it (adr/0020 §3.3)."""
+        step = {"op": "band_math", "op_version": 1, "params": {"expression": "b11 - red"}}
+        data = _recipe([step], assets=assets)
+        for entry in data["inputs"][0]["resolved"]:
+            entry["gsd"] = 20.0 if entry["asset"]["asset"] == "b11" else sources.RESOLUTION
+        recipe = recipe_from_data(data, REGISTRY)
+        estimated = estimate(recipe, REGISTRY).output_pixels
+        result = run(recipe, workdir=tmp_path, progress=lambda done, total: None, operators=REGISTRY)
+        assert result.meta.resampled
+        actual = result.meta.width * result.meta.height
+        assert actual == WIDTH * HEIGHT
+        assert 0.97 < estimated / actual < 1.03, (estimated, actual)
 
     @pytest.mark.parametrize("other", [("b11", 15.0, 866, 733), ("b11", 20.0, 643, 550)])
     def test_other_grids_are_not_nested(
