@@ -505,6 +505,30 @@ class TestRefusals:
 # --- what the tile does not change --------------------------------------------------------------
 
 
+class TestTheTileSize:
+    """256 or 512 px on the tile of a scene (NM4-29 §15); the viewer draws scenes and item previews at 256 px."""
+
+    @pytest.mark.parametrize(("query", "size"), [({}, 256), ({"tilesize": "256"}, 256), ({"tilesize": "512"}, 512)])
+    def test_the_tile_has_the_size_asked_for(self, client: TestClient, query: dict[str, str], size: int) -> None:
+        extra = "".join(f"&{name}={value}" for name, value in query.items())
+        response = client.get(_url(_tiles()[1], extra=extra))
+        assert response.status_code == 200, response.text
+        assert _decode(response.content).shape == (size, size)
+
+    @pytest.mark.parametrize("size", ["1024", "4096", "0"])
+    def test_another_size_is_a_400(self, client: TestClient, size: str) -> None:
+        for path in (_url(_tiles()[1]), f"/collections/{COG}/items/{ITEM}/WebMercatorQuad/tilejson.json?asset=red"):
+            response = client.get(f"{path}&tilesize={size}")
+            assert response.status_code == 400, (path, response.text)
+            assert response.json()["detail"] == "tilesize is 256 or 512"
+
+    def test_the_tilejson_hands_out_tiles_of_256_px_unless_asked_for_512(self, client: TestClient) -> None:
+        path = f"/collections/{COG}/items/{ITEM}/WebMercatorQuad/tilejson.json?asset=red"
+        (default,) = client.get(path).json()["tiles"]
+        (asked,) = client.get(path + "&tilesize=512").json()["tiles"]
+        assert "tilesize=256" in default and "tilesize=512" in asked
+
+
 class TestWhatStaysAsItWas:
     def test_a_single_asset_tile_without_an_operator_is_unchanged(self, client: TestClient) -> None:
         z, x, y = _tiles()[0]
