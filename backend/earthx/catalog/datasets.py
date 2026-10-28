@@ -26,6 +26,8 @@ from earthx.catalog.registry import (
     DatasetConfig,
     DatasetRegistry,
     DefaultRender,
+    FilterKind,
+    FilterValue,
     HealthInfo,
     HealthStatus,
     ItemHolding,
@@ -35,6 +37,7 @@ from earthx.catalog.registry import (
     MaskSource,
     Maturity,
     RetiredDataset,
+    SearchFilter,
     SourceInfo,
     SpatialExtent,
     TemporalExtent,
@@ -295,6 +298,48 @@ SENTINEL_2_L2A = DatasetConfig(
     },
     # Pictures made from the bands, not bands themselves. `scl` is the mask layer (`mask` above).
     auxiliary_assets=("visual", "preview"),
+    # DS-02 plan §6.2, §6.2a (Otto 28.10.2026, question 4 option 3): measured against the source on 28.10.2026 —
+    # `query` narrows on all three. The items carry no `sat:orbit_state` or `sat:relative_orbit`, so neither is offered.
+    search_filters=(
+        SearchFilter(
+            property="eo:cloud_cover",
+            kind=FilterKind.RANGE,
+            title="Cloud cover",
+            description="Share of the whole scene (about 110 × 110 km) covered by clouds, as reported by the source.",
+            unit="%",
+            minimum=0.0,
+            maximum=100.0,
+            integer=False,
+            values=(),
+        ),
+        SearchFilter(
+            property="s2:nodata_pixel_percentage",
+            kind=FilterKind.RANGE,
+            title="No data",
+            description="Share of the scene tile without image data, e.g. at the edge of a swath.",
+            unit="%",
+            minimum=0.0,
+            maximum=100.0,
+            integer=False,
+            values=(),
+        ),
+        SearchFilter(
+            property="platform",
+            kind=FilterKind.VALUES,
+            title="Satellite",
+            description="The satellite that took the scene.",
+            unit=None,
+            minimum=None,
+            maximum=None,
+            integer=False,
+            # The collection's own summaries name only 2A and 2B; the items carry 2C as well (measured).
+            values=(
+                FilterValue(value="sentinel-2a", label="Sentinel-2A"),
+                FilterValue(value="sentinel-2b", label="Sentinel-2B"),
+                FilterValue(value="sentinel-2c", label="Sentinel-2C"),
+            ),
+        ),
+    ),
 )
 
 # M3-11b, F1: no single acquisition instant exists for the DEM (`adr/0009`
@@ -480,6 +525,7 @@ COP_DEM_GLO_30 = DatasetConfig(
     # Elevation in metres, the unit the default render's range of 0 to 5000 already states (M3-11b plan §2.4).
     band_units={"data": "m"},
     auxiliary_assets=(),
+    search_filters=(),
 )
 
 # The datasets that left the registry (docs/adr/0017-ein-sentinel-2-datensatz.md, rule III). An id on this

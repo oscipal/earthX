@@ -115,6 +115,8 @@ def _check_filters(dataset_id: str, filters: FilterSupport, params: SearchParams
         raise UnsupportedFilter(f"{dataset_id} does not support intersects")
     if params.ids is not None and not filters.ids:
         raise UnsupportedFilter(f"{dataset_id} does not support ids")
+    if params.conditions is not None and not filters.query:
+        raise UnsupportedFilter(f"{dataset_id} does not support search filters")
 
 
 async def search_items(

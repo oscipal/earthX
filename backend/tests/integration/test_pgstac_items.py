@@ -34,6 +34,7 @@ MATERIALIZED = replace(
         source_collection_id="earthx-test-materialized",
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+    search_filters=(),
 )
 
 FEDERATED = SENTINEL_2_L2A
