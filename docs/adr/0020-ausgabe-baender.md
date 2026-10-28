@@ -711,7 +711,7 @@ Vorschau und Ergebnis zugleich (§12).
 | `resolved` | Form unverändert (`ResolvedInput`, `adr/0011` §6.4); es hält genau einen Eintrag je Item und **abgeleitetem** Asset, also nur die Assets, die nach dem Streichen gelesen werden (`recipe.py:Input._complete` prüft das weiter gegen `assets`) |
 | Hash | ändert sich für jedes Rezept (neue Felder); einmal kein Cache-Treffer |
 | `earthx.__version__` | 0.4.3 → 0.4.4 mit NM4-43b (`reproject` Version 4 ändert Werte); → 0.5.0 mit NM4-43c (`result.tif` trägt Banddeskriptionen und Einheiten, die Bytes ändern sich). NM4-43a ändert keine Bytes und hebt nichts an |
-| `adr/0014` | drei Nachträge: §15u (NM4-43a, Schätzung nach dem feinsten Asset, zu §5.5), §15v (NM4-43b, `reproject` Version 4, zu §3.4, §6.3), §15w (NM4-43c, Bandvorrat, Streichen, `output.bands`, Namen, Speicherschätzung) |
+| `adr/0014` | drei Nachträge: §15v (NM4-43a, Schätzung nach dem feinsten Asset, zu §5.5), §15w (NM4-43b, `reproject` Version 4, zu §3.4, §6.3), §15x (NM4-43c, Bandvorrat, Streichen, `output.bands`, Namen, Speicherschätzung) |
 | `adr/0016` | Nachtrag §12d: Der Runner nimmt `recipe_version` 2 und liest Version 1 **dauerhaft** über die Umdeutung; ältere Runner-Tags rechnen Version 1 weiter wie bisher (§9 dort, fester Tag) |
 | Prozessbeschreibung | `inputs.assets.maxItems` entfällt (`api/processing_docs.py:299`); `output.bands` mit Schema |
 
@@ -828,7 +828,7 @@ Startsatz, Umfang und Abnahme beschrieben, ohne dieses Gespräch verständlich.
 |---|---|---|---|---|
 | unabhängig, sofort | **NM4-43a** Schätzung nach feinstem Asset (F11) | A | §3.3; Test mit 60-m-Asset vorn | < 100 Zeilen |
 | unabhängig, sofort | **NM4-43b** `reproject` Version 4 je Band (F13) | A | §3.4; je Band ein Warp, Version 3 bleibt angenommen | < 250 Zeilen |
-| 1 | **NM4-43c** Rezept und Kern | A | `recipe_version` 2, `band_math` v2 (`name`), `mask` v2, `normalize` v2 (`bands`), Streichen im Planer, `output.bands`, Ableitung der Assets in `api`, Namen, Banddeskription und Einheit, Umdeutung von Version 1 in Python (`api`, Worker, Runner), Prozessbeschreibung, Nachtrag `adr/0014` §15w und `adr/0016` §12d, `__version__` 0.5.0; in einem zweiten PR der Schutz ohne Bandgrenze (G2, Zeitschätzung, `units`, Grenze 16 entfällt) | über 400 Zeilen; deshalb zwei PRs |
+| 1 | **NM4-43c** Rezept und Kern | A | `recipe_version` 2, `band_math` v2 (`name`), `mask` v2, `normalize` v2 (`bands`), Streichen im Planer, `output.bands`, Ableitung der Assets in `api`, Namen, Banddeskription und Einheit, Umdeutung von Version 1 in Python (`api`, Worker, Runner), Prozessbeschreibung, Nachtrag `adr/0014` §15x und `adr/0016` §12d, `__version__` 0.5.0; in einem zweiten PR der Schutz ohne Bandgrenze (G2, Zeitschätzung, `units`, Grenze 16 entfällt) | über 400 Zeilen; deshalb zwei PRs |
 | 2 | **NM4-43d** Kachel | A | Parameter `band` für Kachel und Mosaik-Kachel, Streichen dort, Statistik je Band, `band_math` Version 2 in der Kachel | < 250 Zeilen |
 | 3 | **NM4-43e** Frontend | A | Panel nach §14, Namen und Umbenennen, Ausgabe mit der Vorgabe aus §9, Vorschau „Show“, Ergebnis-Layer je Band, Umdeutung von Version 1, Prozessbeschreibung auf Version 2 umschalten | über 400 Zeilen; zwei PRs: Auftrag und Panel, dann Vorschau und Layer |
 | danach | NM4-11, NM4-14, DS-06, NM4-20 | wie geplant | §12 | — |
