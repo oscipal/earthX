@@ -1330,6 +1330,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         dtype,
       });
       useAppStore.setState({ flyToView: { center: view.center, zoom: view.zoom } });
+      useAppStore.getState().showSharedLook(view);
       return { ok: true, notes };
     },
 
