@@ -219,9 +219,57 @@ Batch von 25 Jobs macht (`processingBatch.ts:12`); ein Lauf mit 25 Szenen in
 einer Gruppe ist ein Mosaik eines Überflugs, bei dem je Block nur die Szenen
 gelesen werden, die ihn berühren (`processing/mosaic.py`, Kopf).
 
-⟨TABELLE⟩
+Je Konfiguration 25 Läufe (25 Szenen), keiner fehlgeschlagen. Median je Lauf,
+Spitze als Höchstwert über die 25 Läufe, Summe über alle 25:
 
-⟨BEFUNDE⟩
+| Konfiguration | Bänder gelesen → in der Datei | s je Lauf | s für 25 Szenen | Spitzen-RSS MB | gelesen MB je Lauf | gelesen MB, 25 Szenen | GETs je Lauf | `result.tif` MB | Schätzung s | Schätzung Ausgabe MB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2, kein Schritt | 2 → 2 | 3,5 | 94 | 275 | 12,7 | 319 | 4 | 6,5 | 2,1 | 8,5 |
+| 2, `band_math` heute | 2 → 1 | 2,8 | 70 | 248 | 12,7 | 319 | 4 | 4,8 | 2,1 | 4,2 |
+| 2, `band_math` anhängen | 2 → 3 | 3,9 | 104 | 297 | 12,7 | 319 | 4 | 11,9 | 2,1 | 12,7 |
+| 16, kein Schritt | 16 → 16 | 19,3 | 497 | 518 | 37,1 | 933 | 32 | 32,4 | 16,4 | 1,9 |
+| 16, `band_math` heute | 16 → 1 | 11,9 | 305 | 387 | 37,1 | 933 | 32 | 4,8 | 16,4 | 0,1 |
+| 16, `band_math` anhängen | 16 → 17 | 20,7 | 546 | 624 | 37,1 | 933 | 32 | 44,4 | 16,4 | 2,0 |
+| 17, kein Schritt | 17 → 17 | 19,4 | 520 | 536 | 37,2 | 935 | 34 | 38,7 | 17,4 | 2,0 |
+| 17, `band_math` heute | 17 → 1 | 11,0 | 291 | 395 | 37,2 | 935 | 34 | 4,8 | 17,4 | 0,1 |
+| 17, `band_math` anhängen | 17 → 18 | 22,3 | 570 | 648 | 37,2 | 935 | 34 | 45,0 | 17,4 | 2,1 |
+
+Der Sockel des Kindprozesses nach den Imports liegt bei 166 MB. Die Spitze
+streut über die 25 Szenen um höchstens 6 MB, die Laufzeit stärker (Netz:
+16 Bänder 11,0–22,3 s mit `band_math`). Die Schätzung der Ausgabe ist bei 16 und
+17 Bändern falsch, siehe §3.3.
+
+**Befunde.**
+
+1. **Speicher wächst mit den Bändern im Durchgang**, rund 17–18 MB je Band
+   (2 → 17 Bänder ohne Schritt: 275 → 536 MB). Das sind etwa zwei Kopien
+   eines Blocks von 1024² in `float64` je Band. Schon 16 Bänder liegen über
+   den 500 MB, die die Speichertests für einen Lauf erlauben (§3.1).
+2. **`band_math` wie heute liest alle gewählten Bänder** und schreibt eines:
+   16 Bänder kosten 387 statt 248 MB und 11,9 statt 2,8 s für dasselbe NDVI.
+   Das Streichen aus §4 spart genau das.
+3. **Anhängen kostet ein Band mehr** in Datei und Statistik. Das Skript hängt
+   naiv an (`numpy.ma.concatenate` kopiert den Vorrat je Block); daher
+   +112 MB gegenüber „kein Schritt“. Eine Umsetzung, die das Ergebnis neben
+   den Vorrat legt statt ihn zu kopieren, sollte nahe an „kein Schritt +
+   ein Band“ liegen **[A]**; das misst NM4-43a.
+4. **Laufzeit:** Bei 1 Mio. Pixeln bestimmen Öffnen, Lesen, Schreiben und
+   Statistik je Band die Zeit. 17 statt 2 Bänder kosten das 5,6-Fache
+   (19,4 statt 3,5 s). Die Schätzung trifft die Größenordnung (17,4 bzw. 2,1 s).
+5. **Gelesene Bytes:** 12,7 MB für 2 Bänder, 37 MB für 16 oder 17. Das ist nur
+   das 2,9-Fache, weil die 20- und 60-m-Bänder ein Viertel bzw. ein Neuntel der
+   Pixel haben. Je Band zwei Anfragen (Kopf und Daten). 25 Szenen sind 25-mal
+   so viel; der Deckel je Host (2) bestimmt, wie viel davon gleichzeitig läuft.
+6. **Ausgabe:** 17 Bänder in `float32` mit deflate sind 38,7 MB je 1 Mio.
+   Pixel, gegenüber 6,5 MB für zwei. Die Klassenschicht `scl` als `float32`
+   kostet 6,2 MB (32,4 → 38,7 MB).
+7. **Nicht gemessen:** ein Mosaik von 25 Szenen in einem Lauf. Je Block liest
+   der Kern nur die Szenen, die ihn berühren, und hört auf, sobald alle Pixel
+   gefüllt sind (`processing/mosaic.py`, Kopf); `api` lässt Szenen weg, die die
+   AOI nicht berühren. Die Spitze hängt dort wie hier an den Bändern je Block;
+   Laufzeit und Bytes wachsen mit der Fläche.
+
+⟨FLAECHE⟩
 
 ### 3.3 Nebenbefund: Die Schätzung nimmt das Raster des ersten Assets — [M] [P]
 
@@ -229,7 +277,8 @@ gelesen werden, die ihn berühren (`processing/mosaic.py`, Kopf).
 ersten Eintrags (`processing/plan.py:298`). Der Kern liest alle Assets auf das
 **feinste** Raster (`processing/source.py:common_grid`). Die Folge in der
 Messung: Bei 17 Bändern mit `coastal` (60 m) vorn schätzt die Plattform die
-Ausgabe auf ⟨EST⟩, geschrieben werden ⟨REAL⟩ (§3.2). Bei `red` vorn stimmt die
+Ausgabe auf 2,0 MB roh, geschrieben werden 38,7 MB nach deflate, roh
+rund 72 MB (§3.2). Das ist ein Faktor 36, weil 60 m statt 10 m. Bei `red` vorn stimmt die
 Schätzung.
 
 - Betroffen sind `estimate` (Ausgabebytes, die 5-GB-Prüfung `JobTooLarge`,
@@ -455,7 +504,7 @@ gibt es bei Sentinel-2 also nicht; „`uint8`-Klassen neben `float32`“ schon.
 | Datei | `result.tif` mit allen Bändern | `result_float32.tif`, `result_uint8.tif` | je Band eine Datei im ZIP |
 | Typ | nach den heutigen Regeln (`processingDefaults.ts:chooseDtype`): `float32`, sobald ein Band Bruchzahlen hat; ganzzahlig nur bei einem Typ, einem nodata, unskaliert | je Datei der eigene Typ | je Band der eigene Typ |
 | Klassen in `float32` | exakt (jede Ganzzahl bis 2²⁴) | — | — |
-| Größe | Klassenbänder doppelt bis vierfach roh; nach deflate ⟨SIZE⟩ | kleinste | kleinste |
+| Größe | Klassenbänder roh vierfach (`uint8` → `float32`); gemessen kostet `scl` 6,2 MB je 1 Mio. Pixel nach deflate (§3.2, Befund 6) | kleinste | kleinste |
 | Ergebnis-Layer, Kachel, Statistik, Runner | wie heute | zwei Dateien je Job, Route und Layer müssen wählen | viele Dateien, viele Routen |
 | GIS-Programme | ein Stapel | zwei Stapel | einzeln |
 | andere Plattformen | Sentinel Hub und Earth Engine: ein Typ je Ausgabe (§3.5) | Sentinel Hub: mehrere Ausgabeobjekte | — |
@@ -477,7 +526,7 @@ gibt es bei Sentinel-2 also nicht; „`uint8`-Klassen neben `float32`“ schon.
 
 | | O1 keines angehakt | O2 alle angehakt |
 |---|---|---|
-| Kosten der Vorgabe | null; der Benutzer wählt | 17 Bänder bei Sentinel-2: ⟨O2COST⟩ (§3.2) |
+| Kosten der Vorgabe | null; der Benutzer wählt | 17 Bänder bei Sentinel-2 je Szene und 1 Mio. Pixel: 19 s, 536 MB Spitze, 37 MB gelesen, 39 MB Datei (§3.2) |
 | typischer Fall „wolkenfreies RGB“ (`mask`) | drei Klicks | 14 Klicks zum Abwählen oder „None“ und drei Klicks |
 | Einband-Datensatz (DEM) | das eine Band ist angehakt (Regel aus NM4-07) | gleich |
 | leerer Auftrag | „Start“ gesperrt, Tooltip „Pick at least one band for the output.“ | kommt nicht vor |
