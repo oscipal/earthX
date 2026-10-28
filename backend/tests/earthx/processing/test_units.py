@@ -15,7 +15,7 @@ from rasterio.transform import Affine
 
 from earthx.processing import run
 from earthx.processing.errors import UnsupportedRecipe
-from earthx.processing.mosaic import _check_alike
+from earthx.processing.mosaic import check_alike
 from earthx.processing.operators import MASK, NORMALIZE, REGISTRY, REPROJECT, BandMeta, RasterMeta
 from earthx.processing.operators.band_math import BAND_MATH, BandMathParams
 from earthx.processing.operators.mask import MaskParams
@@ -217,12 +217,12 @@ class TestAMosaic:
         return SimpleNamespace(names=["red"], data_types=["uint16"], nodata=[0.0], units=[unit], scaling="same")
 
     def test_scenes_with_the_same_unit_agree(self) -> None:
-        _check_alike("red", [self._scene("1"), self._scene("1")])
+        check_alike("red", [self._scene("1"), self._scene("1")])
 
     def test_scenes_with_another_unit_are_refused_by_name(self) -> None:
         with pytest.raises(UnsupportedRecipe, match="differ in the bands, data type, nodata or unit of 'red'"):
-            _check_alike("red", [self._scene("1"), self._scene("percent")])
+            check_alike("red", [self._scene("1"), self._scene("percent")])
 
     def test_a_scene_that_names_a_unit_and_one_that_does_not_differ(self) -> None:
         with pytest.raises(UnsupportedRecipe, match="unit"):
-            _check_alike("red", [self._scene("1"), self._scene(None)])
+            check_alike("red", [self._scene("1"), self._scene(None)])

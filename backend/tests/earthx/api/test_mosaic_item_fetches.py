@@ -9,12 +9,14 @@ check it on its own, then through the real app and the real gateway, and last th
 from __future__ import annotations
 
 import asyncio
+import json
 import socket
 import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -319,16 +321,29 @@ def server(scenes: Scenes, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[st
         thread.join(timeout=15)
 
 
+#: A chain of three steps on the one asset of the scenes, as the panel would send it (NM4-04 §7.7).
+CHAIN = "&".join(
+    f"op={op}&op_version=1&params={quote(json.dumps(params, separators=(',', ':'), sort_keys=True))}"
+    for op, params in (
+        ("normalize", {"in_min": 0, "in_max": 255, "out_min": 0, "out_max": 1, "clip": True}),
+        ("band_math", {"expression": "visual * 2 - 1"}),
+        ("normalize", {"in_min": -1, "in_max": 1, "out_min": 0, "out_max": 255, "clip": True}),
+    )
+)
+
+
 class TestTheLongestUrl:
+    @pytest.mark.parametrize("steps", ["", CHAIN], ids=["scenes", "scenes and three steps"])
     def test_64_ids_of_60_characters_get_through_the_server_the_compose_file_starts(
-        self, server: tuple[str, list[str]]
+        self, server: tuple[str, list[str]], steps: str
     ) -> None:
         """Sent by hand over a socket: the guard of the test suite allows no name lookup, not even of 127.0.0.1."""
         address, ids = server
         assert len(ids) == mosaic_tiles.MAX_MOSAIC_ITEMS
-        query = "&".join([f"item={item_id}" for item_id in ids] + [f"asset={ASSET}"])
+        query = "&".join([f"item={item_id}" for item_id in ids] + [f"asset={ASSET}"] + ([steps] if steps else []))
         target = f"{_tile_path()}?{query}"
         assert len(target) > 4000  # the plan counts 4.3 kB for 64 long ids (§5)
+        assert len(target) <= mosaic_tiles.MAX_MOSAIC_REQUEST_BYTES
         host, port = address.removeprefix("http://").split(":")
         with socket.socket() as connection:
             connection.settimeout(30)

@@ -7,8 +7,9 @@ dependency and maps :class:`~earthx.api.item_source.OrderRefused` to the answer 
 
 * the **limits** of §5, as constants, because they hang on the tile grid and the source, not on a
   dataset;
-* the **shape of the query** — one asset, two to 64 distinct ids that look like ids, and none of the
-  parameters that could carry an area, an operator or an address;
+* the **shape of the query** — one asset (one to four with steps, NM4-04), two to 64 distinct ids that
+  look like ids, at most :data:`MAX_MOSAIC_REQUEST_BYTES` in all, and none of the parameters that could
+  carry an area, a free expression or an address;
 * the **item fetches** (§4.3) — one running fetch per item however many tiles ask for it, and at
   most four at a time in the whole process;
 * the **overpass** (§4.2 step 5) and the **footprints** that cut the list down to the scenes a tile
@@ -42,11 +43,14 @@ LOGGER = logging.getLogger("earthx.api.mosaic_tiles")
 __all__ = [
     "MAX_ITEM_FETCHES",
     "MAX_MOSAIC_ITEMS",
+    "MAX_MOSAIC_OPERATOR_ASSETS",
+    "MAX_MOSAIC_REQUEST_BYTES",
     "MAX_SCENES_PER_TILE",
     "MIN_MOSAIC_ITEMS",
     "MIN_MOSAIC_ZOOM",
     "ROUTER_PREFIX",
     "ItemFetches",
+    "check_length",
     "check_one_overpass",
     "check_query",
     "fetch_items",
@@ -71,13 +75,38 @@ MIN_MOSAIC_ZOOM = 8
 #: Item fetches at the source at the same time, in the whole process: under the five connections of the
 #: cache pool (`api.dependencies`) and the six per host of the gateway (`gateway.policy`).
 MAX_ITEM_FETCHES = 4
+#: Assets of a mosaic tile with steps (NM4-04 F3): 12 scenes x 4 assets = 48 files at most for one tile. NDVI
+#: takes 2, a masked NDVI 3, a masked EVI 4; the item tile takes 16, but reads one scene.
+MAX_MOSAIC_OPERATOR_ASSETS = 4
+#: Path and query of a mosaic request as they arrive (NM4-04 F5): uvicorn takes 65 535 bytes, nginx and the CDNs
+#: in front of it in M6 often 8 kB for the whole request line; 1 kB is left for a prefix, method and version.
+MAX_MOSAIC_REQUEST_BYTES = 7168
 
 #: Failures of the item cache itself: the database went away, the pool had no connection to give
 #: (``PoolTimeout`` and ``PoolClosed`` are ``OperationalError``s) or the table is missing.
 _CACHE_FAILURES = (psycopg.Error,)
 
 
-def check_query(query: Mapping[str, Any] | Any, declared: Collection[str], items: Sequence[str], assets: Sequence[str]) -> list[str]:
+def check_length(raw_path: bytes, query_string: bytes) -> None:
+    """``414`` for a request longer than :data:`MAX_MOSAIC_REQUEST_BYTES`, before anything is fetched.
+
+    The limit holds with and without steps: a URL that works here works behind the proxy of M6 too.
+    """
+    length = len(raw_path) + (len(query_string) + 1 if query_string else 0)
+    if length > MAX_MOSAIC_REQUEST_BYTES:
+        raise OrderRefused(
+            414, f"a mosaic request takes at most {MAX_MOSAIC_REQUEST_BYTES} bytes, not {length}", "order"
+        )
+
+
+def check_query(
+    query: Mapping[str, Any] | Any,
+    declared: Collection[str],
+    items: Sequence[str],
+    assets: Sequence[str],
+    *,
+    steps: bool = False,
+) -> list[str]:
     """The item ids of the URL, sorted, or the ``400`` the query earns.
 
     ``query`` is the request's query parameters and ``declared`` the names the route declares (its own
@@ -85,7 +114,8 @@ def check_query(query: Mapping[str, Any] | Any, declared: Collection[str], items
     parameter a route does not declare without a word, and a mosaic that quietly ignored ``bbox``, a
     ``filter`` or ``BBOX `` would look like an answer to a question it never heard — and the TileJSON
     would copy it into the tile URLs it hands out (Q8, plan §4.1). The list of what is allowed, not of
-    what is forbidden: no spelling of an area gets past it.
+    what is forbidden: no spelling of an area gets past it. With ``steps`` (``op`` in the query) a tile reads one
+    to :data:`MAX_MOSAIC_OPERATOR_ASSETS` assets, as the job reads the assets of its order.
 
     Sorting makes the answer to an error independent of the order the client wrote its ids in; the
     order of the pixels never depends on it either (§4.4).
@@ -93,7 +123,12 @@ def check_query(query: Mapping[str, Any] | Any, declared: Collection[str], items
     for name in query:
         if name not in declared:
             raise OrderRefused(400, "a mosaic tile takes item, asset and the parameters of its display only", "order")
-    if len(assets) != 1:
+    if steps:
+        if not 1 <= len(assets) <= MAX_MOSAIC_OPERATOR_ASSETS or len(set(assets)) != len(assets):
+            raise OrderRefused(
+                400, f"with op, name each asset once, at most {MAX_MOSAIC_OPERATOR_ASSETS} of them", "order"
+            )
+    elif len(assets) != 1:
         raise OrderRefused(400, "name one asset", "order")
     if not MIN_MOSAIC_ITEMS <= len(items) <= MAX_MOSAIC_ITEMS:
         raise OrderRefused(
