@@ -1,0 +1,66 @@
+{
+  "inputs": {
+    "recipe": {
+      "recipe_version": 1,
+      "inputs": [
+        {
+          "name": "input",
+          "dataset": "cop-dem-glo-30",
+          "groups": [
+            [
+              "ITEM_A"
+            ]
+          ],
+          "assets": [
+            "data"
+          ]
+        }
+      ],
+      "aoi": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              9,
+              47
+            ],
+            [
+              9.05,
+              47
+            ],
+            [
+              9.05,
+              47.05
+            ],
+            [
+              9,
+              47.05
+            ],
+            [
+              9,
+              47
+            ]
+          ]
+        ]
+      },
+      "steps": [
+        {
+          "op": "normalize",
+          "op_version": 1,
+          "params": {
+            "clip": true,
+            "in_max": 3000,
+            "in_min": 0,
+            "out_max": 1,
+            "out_min": 0
+          }
+        }
+      ],
+      "output": {
+        "kind": "raster",
+        "format": "cog",
+        "dtype": "float32"
+      }
+    }
+  }
+}

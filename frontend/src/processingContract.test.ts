@@ -104,6 +104,26 @@ const CASES: Case[] = [
     dtype: 'float32',
   },
   {
+    // A mask in front of the index: the layer the mask reads is an asset of the order (M4-18c).
+    name: 'masked-ndvi-with-drawn-aoi',
+    datasetId: 'sentinel-2-c1-l2a',
+    description: s2,
+    assets: ['red', 'nir', 'scl'],
+    aoi: SQUARE,
+    steps: [draft(s2, 'mask', { source: 'scl', classes: '3, 8, 9, 10' }), { ...draft(s2, 'band_math', NDVI), key: 2 }],
+    dtype: 'float32',
+  },
+  {
+    // A DEM with a step that keeps the grid, so that the area can be measured (no `reproject`).
+    name: 'normalize-dem-with-drawn-aoi',
+    datasetId: 'cop-dem-glo-30',
+    description: cop,
+    assets: ['data'],
+    aoi: SQUARE,
+    steps: [draft(cop, 'normalize', { in_min: '0', in_max: '3000', out_min: '0', out_max: '1', clip: true })],
+    dtype: 'float32',
+  },
+  {
     // The scenes of one pass (M4-12b): one group, the AOI of the selection.
     name: 'ndvi-on-a-mosaic-of-three-scenes',
     itemIds: ['ITEM_C', 'ITEM_A', 'ITEM_B'],
