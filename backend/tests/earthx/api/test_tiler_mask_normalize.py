@@ -30,7 +30,7 @@ from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.recipe import recipe_from_data
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
-from tests.earthx.api.test_tiler_operator import HEIGHT, WIDTH, _job_tile, _source_position, _tiles
+from tests.earthx.api.test_tiler_operator import HEIGHT, NATIVE, WIDTH, _job_tile, _source_position, _tiles
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
 from tests.earthx.processing.test_mask import scl_layer
@@ -114,10 +114,14 @@ def client(files: dict[str, Path], cf_store: Path, monkeypatch: pytest.MonkeyPat
         yield test_client
 
 
-def _url(tile, op: str, params: dict | str, *, dataset: str = COG, assets=("red", "scl"), form: str = "tif") -> str:
+def _url(
+    tile, op: str, params: dict | str, *, dataset: str = COG, assets=("red", "scl"), form: str = "tif", size: int = 256
+) -> str:
     z, x, y = tile
     raw = params if isinstance(params, str) else json.dumps(params)
     query = [f"asset={quote(a)}" for a in assets] + [f"op={op}", "op_version=1", f"params={quote(raw)}"]
+    if size != 256:
+        query.append(f"tilesize={size}")
     return f"/collections/{dataset}/items/{ITEM}/tiles/WebMercatorQuad/{z}/{x}/{y}.{form}?{'&'.join(query)}"
 
 
@@ -151,6 +155,7 @@ def _recipe(assets: tuple[str, ...], step: dict) -> dict:
 
 
 class TestTheTileEqualsTheJobOnTheNativeLevel:
+    @pytest.mark.parametrize("size", NATIVE)
     @pytest.mark.parametrize(
         ("assets", "op", "params"),
         [
@@ -162,15 +167,15 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
         ids=["mask", "mask most classes", "normalize", "normalize reversed, unclipped"],
     )
     def test_cog_pair_with_a_nested_layer(
-        self, client: TestClient, tmp_path: Path, assets: tuple[str, ...], op: str, params: dict
+        self, client: TestClient, tmp_path: Path, assets: tuple[str, ...], op: str, params: dict, size: int
     ) -> None:
         step = {"op": op, "op_version": 1, "params": params}
         result = run(recipe_from_data(_recipe(assets, step), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
         compared = masked = 0
-        for tile in _tiles():
-            response = client.get(_url(tile, op, params, assets=assets))
+        for tile in _tiles(NATIVE[size]):
+            response = client.get(_url(tile, op, params, assets=assets, size=size))
             assert response.status_code == 200, response.text
-            from_tile, from_job = _decode(response.content), _job_tile(result.path, tile)
+            from_tile, from_job = _decode(response.content), _job_tile(result.path, tile, size)
             assert numpy.array_equal(from_tile.mask, numpy.ma.getmaskarray(from_job)), tile
             valid = ~from_tile.mask
             assert numpy.array_equal(from_tile.data[valid], from_job.data[valid]), tile
@@ -292,18 +297,19 @@ class TestTheTileEqualsTheJobOnZarr:
     values and the same mask wherever no pixel centre lies within 0.125 source pixel of a boundary of either grid.
     """
 
-    def test_a_mask_over_a_20_m_layer_in_a_zarr_store(self, client: TestClient, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("size", NATIVE)
+    def test_a_mask_over_a_20_m_layer_in_a_zarr_store(self, client: TestClient, tmp_path: Path, size: int) -> None:
         west, south, east, north = transform_bounds(mini_zarr_cf.ITEM_CRS, WGS84_CRS, *mini_zarr_cf.store_bounds())
-        tile = WEB_MERCATOR_TMS.tile((west + east) / 2, (south + north) / 2, 14)
+        tile = WEB_MERCATOR_TMS.tile((west + east) / 2, (south + north) / 2, NATIVE[size])
         key = ("r10m:b04", "scl20m:scl")
         result = run(recipe_from_data(_zarr_recipe(), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
         assert result.meta.resampled is True and [band.name for band in result.meta.bands] == ["b04"]
-        response = client.get(_url((tile.z, tile.x, tile.y), "mask", MASK, dataset=ZARR, assets=key))
+        response = client.get(_url((tile.z, tile.x, tile.y), "mask", MASK, dataset=ZARR, assets=key, size=size))
         assert response.status_code == 200, response.text
         from_tile = _decode(response.content)
-        from_job = _job_tile(result.path, (tile.z, tile.x, tile.y))
+        from_job = _job_tile(result.path, (tile.z, tile.x, tile.y), size)
 
-        col, row = _source_position(tile)
+        col, row = _source_position(tile, size)
         size = mini_zarr_cf.SIZE
         inside = (col >= 0) & (col < size) & (row >= 0) & (row < size)
         fine_row = numpy.clip(numpy.floor(row).astype(int), 0, size - 1)
