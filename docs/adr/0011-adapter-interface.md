@@ -713,6 +713,19 @@ Präzisierungen (unten). Die Fragen stehen mit ihrem ursprünglichen Wortlaut da
 
 ---
 
+## 11a. Nachtrag DS-02a (28.10.2026): Suchfilter je Datensatz
+
+Die Filter eines Datensatzes stehen in der Registry (`search_filters`, B12:
+Eigenschaft des Datensatzes); was die Quelle davon anwenden kann, ist ein Feld
+von `FilterSupport` (`query: bool`, gemessen wie `cql2`; Earth Search `True`).
+Das Modell der Bedingungen (`catalog/search_filters.py`: Bereich, Werteliste)
+ist unabhängig vom Format auf der Leitung (Otto, 28.10.2026, B): `api` liest die
+Anfrage hinein, der Adapter schreibt sie in das Format seiner Quelle (Earth
+Search: `query`, `earth_search.query_extension`). Eine Quelle mit CQL2 bekommt
+eine eigene Übersetzung im Adapter, ohne Änderung am Modell; das ist der
+Dialekt aus §8.2. `check_adapter_specs` weist einen Eintrag mit Filtern ab,
+dessen Quelle `query` nicht kann. Begründung und Messung: `adr/0020`.
+
 ## 12. Quellen
 
 **Im Repo [P]**
