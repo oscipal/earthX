@@ -1561,6 +1561,17 @@ input[type='date']:focus {
   top: calc(100% + 4px);
   right: 0;
 }
+.lm-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+.lm-eye:hover:not([aria-disabled='true']),
+.lm-eye:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
 .lm-eye.off {
   color: var(--muted);
 }
