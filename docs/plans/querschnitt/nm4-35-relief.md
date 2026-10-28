@@ -1,6 +1,6 @@
 # NM4-35 — Relief (Schummerung) als Overlay und optional als Basemap
 
-**Stand:** 27.10.2026, beauftragt von Otto (Backlog-Punkt 35; Vorschlag aus dem Plan von UI-02, §6); Plan mit Recherche am 28.10.2026 (§6), wartet auf Ottos Freigabe.
+**Stand:** 27.10.2026, beauftragt von Otto (Backlog-Punkt 35; Vorschlag aus dem Plan von UI-02, §6); Plan mit Recherche am 28.10.2026 (§6), von Otto am 28.10.2026 freigegeben (§6.10). Der Code wartet auf den Merge von UI-02c und einen freien Frontend-Platz; Otto meldet beides.
 **Stufe B:** Erst kommt der Plan im Draft-PR (Optionen, Empfehlung, Quellen), Otto gibt ihn frei, dann folgt der Code in derselben Session.
 **Modell:** Opus für Recherche und Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** nach dem Merge von UI-02a (Basemap-Menü). Frontend-Aufgabe: höchstens zwei Frontend-Sessions gleichzeitig.
@@ -38,7 +38,9 @@ UI-02 hat eine Schummerung aus dem eigenen Copernicus DEM geprüft: Der `tiler` 
 - Alle vier Pflicht-Checks grün; Log-Zeile mit PR-Nummer (Backlog pflegt der Planungs-Chat).
 - Vor „fertig“ ist main geholt.
 
-## 6. Plan (28.10.2026, wartet auf Ottos Freigabe)
+## 6. Plan (28.10.2026, von Otto am 28.10.2026 freigegeben)
+
+**Freigabe (Otto, 28.10.2026, zu #222):** Option A mit AWS Terrain Tiles, Basemap „Relief“ als Schummerung allein, Kacheln nur bis Zoom 12, Meeresboden bleibt sichtbar. Abweichend von den Empfehlungen: Attribution nur mit Beleg (§6.11), der Code wartet auf UI-02c (Frage 5), das Overlay „Relief“ kommt nicht in den Permalink (Frage 6). Antworten in §6.10; §6.0, §6.6, §6.7 und §6.8 sind angepasst. Bis zu Ottos Meldung kein Produktivcode.
 
 Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #219 mit UI-02a und UI-02b; UI-02c (Basemap und Projektion im Permalink) ist noch nicht umgesetzt. Belegstufen wie in UI-02 §6: [P] Code oder Primärquelle gelesen, [M] in der Sitzung gemessen (Wegwerf-Skript, nicht im Repo), [S] nur Suchtreffer, [A] eigene Ableitung. Lizenzfragen entscheidet Otto (CLAUDE.md); alles hier ist Vorschlag.
 
@@ -51,8 +53,9 @@ Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main`
 - **Option B** (eigenes DEM als Terrarium) kostet eine Vorabrechnung bis Zoom 7 (rund 22 000 Kacheln, rund 1 GB [A]) und darüber Kacheln live aus dem `tiler`, mit einem neuen Operator. **Option C** (fertige Schummerung aus dem `tiler`) hat dieselben Kosten, dazu Nähte an den Kachelrändern und eine feste Farbe für beide Themen. Beide sind Backend-Arbeit für eine Funktion, die A ohne Backend liefert.
 - **Gemessen [M]:** 24 Höhenkacheln je Ansicht (1280×800 px), 0,5–1,8 MB; CORS offen; Schummerung in Mercator und auf dem Globus richtig gezeichnet. Mit `maxzoom: 12` sinkt die Zahl bei Zoom 14 auf 2 Kacheln, und die Störungen der Kacheln von Zoom 15 entfallen.
 - **Regel „nur über `gateway`“** gilt hier nicht: Der Browser lädt die Höhenkacheln selbst, wie die Basemaps (§6.6).
-- **Permalink:** hängt an UI-02c, das noch fehlt (Frage 5 und 6).
-- **Fragen an Otto:** 6 (§6.9).
+- **Permalink:** Die Basemap „Relief“ kommt über den Mechanismus von UI-02c hinein, das Overlay nicht (Otto, Frage 5 und 6). Der Code beginnt erst nach dem Merge von UI-02c.
+- **Attribution:** Kurzform in der Kartenecke, volle Liste hinter dem Link; eine Kurzform allein ist an den offiziellen Angaben nicht für alle Quellen belegt (§6.11).
+- **Fragen an Otto:** 6, beantwortet am 28.10.2026 (§6.10).
 
 ### 6.1 Stand im Code [P]
 
@@ -130,9 +133,9 @@ Wegwerf-Skript, nicht im Repo: Chromium der Sitzung (Software-Rendering), MapLib
 ### 6.6 Merken, Permalink, Attribution, Datenschutz
 
 - **Im Browser:** Overlay „Relief“ in `earthx.overlays` (`{"labels":…,"graticule":…,"relief":…}`), Basemap „Relief“ in `earthx.basemap` (`relief`). Ältere Werte ohne `relief` gelten als „aus“ (§6.1). Vorgabe: Relief aus, Basemap Satellite.
-- **Permalink:** UI-02c bringt Basemap und Projektion in den Permalink, ist aber noch nicht umgesetzt. Die Basemap „Relief“ kommt dort als weiterer Wert dazu (`satellite` | `streets` | `grey` | `outlines` | `relief`). Für das Overlay sagt UI-02 §6.6 „Overlays kommen nicht hinein“, NM4-35 §2 sagt „Permalink wie Basemap und Projektion“. Beides ist eine Frage (5, 6).
-- **Attribution:** MapLibre zeigt die Attribution der sichtbaren Quellen; die der Höhenkacheln steht damit nur da, wenn Relief an ist. Die Joerd-Liste hat elf Pflichtsätze. CC BY 4.0 (§3(a)(2)) erlaubt eine Attribution über einen Link auf eine Seite mit den Angaben; dasselbe Muster nutzt Mapterhorn. Vorschlag für die Ecke: „Terrain: USGS, NOAA, EU-DEM (Copernicus) and others“, „others“ als Link auf die Joerd-Liste. Lizenz-Einstufung ist Ottos Entscheidung (Frage 3).
-- **Datenschutz:** wie bei den Basemaps (UI-02 Frage 9, Option 1): Tooltip „Elevation tiles load from amazonaws.com.“ IP und Kartenausschnitt gehen an Amazon in den USA; der EU-Spiegel ist nicht öffentlich lesbar [M].
+- **Permalink (Otto, Frage 5 und 6):** Die Basemap „Relief“ kommt über den Mechanismus von UI-02c in den Permalink, als weiterer Wert der Basemap (`satellite` | `streets` | `grey` | `outlines` | `relief`). Wie dort gilt sie für die geöffnete Ansicht und überschreibt die gemerkte Wahl nicht (UI-02 Frage 8). Das Overlay „Relief“ kommt nicht hinein, einheitlich mit Labels und Graticule (UI-02 §6.6); die Vorgabe aus §2 ist damit zurückgenommen. Ein Permalink, der mit der Basemap „Relief“ geteilt wird, zeigt das Relief also immer, ein Overlay „Relief“ dagegen nur bei dem, der es selbst eingeschaltet hat.
+- **Attribution:** MapLibre zeigt die Attribution der sichtbaren Quellen; die der Höhenkacheln steht damit nur da, wenn Relief an ist oder die Basemap „Relief“ gewählt ist. Wortlaut und Beleg in §6.11.
+- **Datenschutz (Otto, 28.10.2026: wie bei den Basemaps, UI-02 §6.7):** Der Browser lädt die Höhenkacheln direkt bei AWS, nicht über die Plattform. Hinweis wie bei den Basemaps (UI-02 Frage 9, Option 1): Tooltip „Elevation tiles load from amazonaws.com.“ IP und Kartenausschnitt gehen an Amazon in den USA; der EU-Spiegel ist nicht öffentlich lesbar [M].
 - **Regel „ausgehende Requests nur über `gateway`“:** Sie gilt für das Backend und bleibt dort unverändert. Die Höhenkacheln lädt der Browser des Nutzers selbst, wie die Kacheln der Basemaps (UI-02 §6.7); das Backend fragt die Quelle nie an. Option A ändert an `gateway`, der Allowlist und den Importregeln nichts.
 
 ### 6.7 Umsetzung nach der Freigabe (NM4-35a, Frontend)
@@ -144,7 +147,7 @@ Wegwerf-Skript, nicht im Repo: Chromium der Sitzung (Software-Rendering), MapLib
 - `BasemapMenu.tsx`, `preferences.ts`, `store.ts`: nichts außer dem, was sich aus den Katalogen ergibt (§6.1).
 - Keine neue Abhängigkeit, kein Backend, keine Änderung an `.github/`.
 - Schätzung: rund 120 Zeilen Code, 300–400 Zeilen Tests.
-- Permalink je nach Frage 5 mit UI-02c.
+- Beginn erst nach dem Merge von UI-02c und Ottos Meldung (Frage 5). Dann `relief` als weiterer Wert der Basemap im Permalink, über den Mechanismus von UI-02c (Frontend und die Aufzählung in `PermalinkView`, falls UI-02c sie dort festlegt). Das Overlay bleibt draußen.
 
 ### 6.8 Tests, Prüfanleitung, Abnahme
 
@@ -154,8 +157,9 @@ Wegwerf-Skript, nicht im Repo: Chromium der Sitzung (Software-Rendering), MapLib
 - Lage: Overlay „Relief“ über allen `bm-`-Ebenen und unter der ersten eigenen Ebene, unter Labels und Graticule, auf jeder Basemap; angehakter Quicklook (`overlays-base`) bleibt darüber.
 - Basemap „Relief“: Stil mit `raster-dem`-Quelle und `hillshade`-Ebene; mit Overlay an keine zweite Ebene und keine zweite Quelle.
 - Diff: Einschalten ist nur `addSource`/`addLayer` (bzw. Entfernen), die eigenen Ebenen bleiben unberührt (wie `mapStyles.overlays.test.ts`).
-- Attribution: steht an der Quelle, nur wenn Relief an ist oder die Basemap Relief ist.
+- Attribution: genau der Wortlaut aus §6.11 mit dem Link auf die volle Liste, an der Quelle der Höhenkacheln; nur sichtbar, wenn Relief an ist oder die Basemap „Relief“ gewählt ist.
 - Speicher: Rundreise, alter Wert ohne `relief`, kaputter Wert, gesperrter Speicher, `relief` als Basemap.
+- Permalink (mit dem Mechanismus von UI-02c): Basemap „Relief“ wird gespeichert und beim Öffnen übernommen, ohne die gemerkte Wahl zu überschreiben; das Overlay „Relief“ steht nicht im Permalink und bleibt beim Öffnen so, wie der Betrachter es gemerkt hat; `relief` als unbekannter Wert eines älteren Backends wird wie jeder andere unbekannte Wert behandelt.
 - Fehlerfälle: Quelle ohne Schlüssel in der Adresse; Werte der Darstellung im erlaubten Bereich der Style-Spec (Prüfung mit `@maplibre/maplibre-gl-style-spec`, schon `devDependency`).
 
 **Echter Browser (Playwright, Wegwerf-Skript wie UI-02a/b, nicht im Repo):** Mercator und Globus, Hell und Dunkel, Overlay über Satellite (Ersatzkachel) und Basemap „Relief“, Ebenenfolge im laufenden Stil, Bildpunkte unter einem eigenen Bild unverändert, echte Höhenkacheln von AWS.
@@ -163,14 +167,15 @@ Wegwerf-Skript, nicht im Repo: Chromium der Sitzung (Software-Rendering), MapLib
 **Prüfanleitung für Otto (Kurzfassung, die volle Fassung kommt mit NM4-35a):**
 
 1. Start mit leerem Speicher: kein Relief, Attribution nur von Esri.
-2. „Relief“ anhaken: Gebirge treten plastisch hervor, auf jeder Basemap; Attribution „Terrain: …“ erscheint. Eine Szene öffnen: sie deckt die Schummerung zu, Labels und Graticule liegen darüber.
+2. „Relief“ anhaken: Gebirge treten plastisch hervor, auf jeder Basemap; Attribution „Terrain: USGS, NOAA, EU-DEM (Copernicus) and others“ erscheint unten rechts; der Link öffnet die volle Liste (§6.11). Eine Szene öffnen: sie deckt die Schummerung zu, Labels und Graticule liegen darüber.
 3. Basemap „Relief“: graue Schummerung allein, in Hell und Dunkel lesbar.
 4. Globus: Schummerung folgt der Kugel; Zoom 12 und mehr: weich, ohne Streifen.
-5. Neu laden: Wahl bleibt. Sperre von `s3.amazonaws.com`: die Karte bleibt, nur das Relief fehlt.
+5. Permalink mit Basemap „Relief“ teilen und in einem privaten Fenster öffnen: Relief wie geteilt; danach neu laden: wieder die gemerkte Basemap. Mit Overlay „Relief“ geteilt: im privaten Fenster ohne Relief.
+6. Neu laden: Wahl bleibt. Sperre von `s3.amazonaws.com`: die Karte bleibt, nur das Relief fehlt.
 
 **Pflicht-Checks:** `npm run lint`, `npx tsc -b`, Vitest, `ruff check backend`, `pytest`, `lint-imports`; Log-Zeile mit PR-Nummer; `main` holen vor „fertig“.
 
-### 6.9 Fragen an Otto
+### 6.9 Fragen an Otto (beantwortet am 28.10.2026, §6.10)
 
 1. **Option:** (1) A, Schummerung im Browser aus fremden Höhenkacheln (**Empfehlung**); (2) B, eigenes DEM als Terrarium mit Pyramide bis Zoom 7 und `tiler` darüber; (3) C, fertige Schummerung aus dem `tiler`.
 2. **Quelle bei A:** (1) AWS Terrain Tiles (**Empfehlung**: in der Sitzung geprüft, CORS offen, offene Lizenzen, seit 2017 stabil); (2) Mapterhorn (neuer, genauer, kurze Attribution, aber Betrieb über Sponsor, keine Bedingungen auffindbar, aus der Sitzung nicht prüfbar); (3) AWS jetzt, Mapterhorn als Backlog-Punkt prüfen, wenn der Host erreichbar ist.
@@ -178,3 +183,45 @@ Wegwerf-Skript, nicht im Repo: Chromium der Sitzung (Software-Rendering), MapLib
 4. **Basemap „Relief“:** (1) ja, Schummerung allein auf dem Hintergrund des Themas (**Empfehlung**, wie §2 „optional“); (2) ja, mit blasser Wasserfläche von OpenFreeMap, damit die Küsten erkennbar sind (Dritter mehr); (3) nein, nur das Overlay.
 5. **Permalink und UI-02c:** (1) NM4-35a jetzt ohne Permalink; UI-02c nimmt `relief` in die Basemaps auf und gegebenenfalls das Overlay (Frage 6); der Abnahmepunkt „Permalink“ wandert zu UI-02c (**Empfehlung**, kein doppeltes Anfassen von `PermalinkView`); (2) NM4-35 wartet, bis UI-02c gemergt ist; (3) NM4-35 setzt UI-02c mit um (Backend und Frontend, größerer PR).
 6. **Overlay „Relief“ im Permalink:** (1) ja, als eigenes Feld, wie in §2 verlangt; Labels und Graticule bleiben draußen (**Empfehlung**, weicht für dieses eine Overlay von UI-02 §6.6 ab); (2) nein, nur die Basemap „Relief“ kommt hinein, wie UI-02 §6.6 für alle Overlays.
+
+### 6.10 Antworten von Otto (28.10.2026, zu #222)
+
+1. **Option:** A.
+2. **Quelle:** AWS Terrain Tiles. Mapterhorn wird nicht weiter verfolgt.
+3. **Attribution:** Option 1, aber belegt: An den offiziellen Lizenz- und Attributionsangaben der Terrain Tiles prüfen, ob eine Kurzform mit Link zulässig ist, und die Stelle zitieren. Ist sie nicht zulässig, kommt die Kurzform in die Kartenecke und die volle Liste hinter den Link, nicht alle Sätze in die Ecke. Ergebnis in §6.11.
+4. **Basemap „Relief“:** Option 1, die Schummerung allein.
+5. **Permalink und UI-02c:** Option 2. Der Code wartet, bis UI-02c gemergt ist (läuft gerade); danach kommt „Relief“ als Basemap über den Mechanismus von UI-02c in den Permalink. Außerdem wartet der Code auf einen freien Frontend-Platz; Otto meldet beides.
+6. **Overlay „Relief“ im Permalink:** Option 2, nicht hinein, einheitlich mit Labels und Graticule (UI-02 §6.6). Die Basemap „Relief“ schon. Die Vorgabe aus §2 ist damit zurückgenommen.
+
+Dazu angenommen: Höhenkacheln nur bis Zoom 12 laden (§6.5 Punkt 7); der Meeresboden bleibt sichtbar (§6.5 Punkt 5). Datenschutz wie bei den Basemaps (UI-02 §6.7): Der Browser lädt die Kacheln direkt bei AWS (§6.6).
+
+### 6.11 Attribution: Prüfung der Kurzform (zu Frage 3)
+
+**Offizielle Angabe der Terrain Tiles.** Der Registry-Eintrag nennt als Lizenz genau eine Seite: `License: https://github.com/tilezen/joerd/blob/master/docs/attribution.md` ([YAML](https://raw.githubusercontent.com/awslabs/open-data-registry/main/datasets/terrain-tiles.yaml), gelesen am 28.10.2026) [P]. Dort steht:
+
+- „Attribution is required for many terrain tile data providers. Example language is provided below, but you are responsible for researching each project to follow their license terms.“
+- Unter „***Required attribution:***“ folgen elf Sätze, je Quelle einer (ArcticDEM, Australien, Österreich, Kanada, EU-DEM, ETOPO1, Mexiko, Neuseeland, Norwegen, Vereinigtes Königreich, USGS für 3DEP, GMTED2010 und SRTM).
+- Abschnitt „Where to attribute“: „Attribution needs to "appear in a place that is reasonable to the medium or means you are utilising."“ Dazu ein Verweis auf Beispiele der OSM Foundation.
+
+([attribution.md](https://github.com/tilezen/joerd/blob/master/docs/attribution.md), gelesen am 28.10.2026 [P].)
+
+**Ergebnis:** Die offizielle Seite erlaubt eine Kurzform mit Link **nicht ausdrücklich**. Sie nennt die elf Sätze „required“ und verweist für die Form auf die einzelnen Lizenzen. Diese Lizenzen sind verschieden deutlich:
+
+| Quelle | Lizenz | Stelle zur Form der Nennung | Kurzform mit Link |
+|---|---|---|---|
+| Norwegen (Kartverket), Australien | CC BY 4.0 | §3(a)(2): „You may satisfy the conditions in Section 3(a)(1) in any reasonable manner based on the medium, means, and context in which You Share the Licensed Material. For example, it may be reasonable to satisfy the conditions by providing a URI or hyperlink to a resource that includes the required information.“ | ausdrücklich erlaubt |
+| Vereinigtes Königreich | OGL UK 3.0 | „If you are using Information from several Information Providers and listing multiple attributions is not practical in your product or application, you may include a URI or hyperlink to a resource that contains the required attribution statements.“ | ausdrücklich erlaubt |
+| Kanada | OGL Canada 2.0 | „… if you are using information from several information providers and multiple attributions are not practical for your product or application, you must use the following attribution statement: Contains information licensed under the Open Government Licence – Canada.“ | ein fester Satz; wo er stehen muss, sagt die Lizenz nicht |
+| Österreich | CC BY 3.0 AT | §4 b): „Die nach diesem Abschnitt 4.b) erforderlichen Angaben können in jeder angemessenen Form gemacht werden …“ | angemessene Form, Link nicht genannt |
+| Neuseeland (LINZ) | CC BY 3.0 NZ | „… ensure that You credit the Licensor / Original Author as appropriate to the media used.“ | dem Medium angemessen, Link nicht genannt |
+| 3DEP, SRTM, GMTED2010 (USGS), ETOPO1 (NOAA), ArcticDEM | gemeinfrei bzw. ohne Lizenz | laut Joerd nur eine Bitte um Nennung („the USGS does request that proper credit be given“; ArcticDEM „Requested citation“) | keine Pflicht zur Form |
+| EU-DEM | Copernicus (EEA) | Joerd nennt nur den Satz „Produced using Copernicus data and information funded by the European Union - EU-DEM layers.“ | Form nicht geregelt |
+| Mexiko (INEGI) | Términos de libre uso | nicht gelesen (Seite aus der Sitzung nicht erreichbar) | offen |
+
+Die Lizenztexte stammen aus der [SPDX License List](https://github.com/spdx/license-list-data) (`text/CC-BY-4.0.txt`, `OGL-UK-3.0.txt`, `OGL-Canada-2.0.txt`, `CC-BY-3.0-AT.txt`) und aus dem Repo von Creative Commons ([cc-legal-tools-data](https://github.com/creativecommons/cc-legal-tools-data), `docs/licenses/by/3.0/nz/legalcode.en.html`), gelesen am 28.10.2026 [P]. Die Originalseiten (`creativecommons.org`, `nationalarchives.gov.uk`, `open.canada.ca`, `inegi.org.mx`) waren aus der Sitzung nicht erreichbar.
+
+**Folge (nach Ottos Regel für den Fall „nicht zulässig“):** Weil die Kurzform allein nicht für alle Quellen belegt ist, gilt: Kurzform in der Kartenecke, volle Liste hinter dem Link, nicht alle Sätze in der Ecke.
+
+- **In der Ecke:** „Terrain: USGS, NOAA, EU-DEM (Copernicus) and others“. Der ganze Text ist ein Link, damit er auffällt.
+- **Hinter dem Link:** die volle Liste, und zwar die offizielle Seite [`tilezen/joerd/docs/attribution.md`](https://github.com/tilezen/joerd/blob/master/docs/attribution.md). Sie enthält alle elf Sätze, wird von den Herausgebern der Kacheln gepflegt und ist dieselbe Seite, auf die der Registry-Eintrag verweist. Eine eigene Seite mit der Liste kann vor dem öffentlichen Start zum Impressum dazukommen, wie für die Stil-Lizenzen (UI-02 §7.4).
+- **Rest-Risiko für Ottos Einstufung:** Für CC BY 3.0 AT und NZ, OGL Canada, EU-DEM und INEGI erlaubt kein gelesener Text ausdrücklich einen Link; sie verlangen eine „angemessene“ bzw. „dem Medium angemessene“ Nennung. Die volle Liste bleibt mit einem Klick aus der Ecke erreichbar. Eine eindeutige Auskunft gäbe nur eine Rechtsprüfung.
