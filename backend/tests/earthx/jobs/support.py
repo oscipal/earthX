@@ -12,8 +12,8 @@ import psycopg
 
 from earthx.processing.export import Attachments
 from earthx.processing.operators import REGISTRY
-from earthx.processing.recipe import Recipe, recipe_from_data
-from tests.earthx.processing.recipes import SQUARE, crop_data, recipe_data, resolved
+from earthx.processing.recipe import Recipe
+from tests.earthx.processing.recipes import SQUARE, crop_data, recipe_data, recipe_of_data, resolved
 
 HOST = "store.example.invalid"
 
@@ -37,7 +37,7 @@ def make_recipe(
     data["aoi"] = copy.deepcopy(SQUARE)
     if recipe_id is not None:
         data["recipe_id"] = recipe_id
-    return recipe_from_data(data, REGISTRY)
+    return recipe_of_data(data, REGISTRY)
 
 
 def make_export(groups: list[list[str]] | None = None, *, recipe_id: str | None = None) -> Recipe:
@@ -47,7 +47,7 @@ def make_export(groups: list[list[str]] | None = None, *, recipe_id: str | None 
         entry["asset"]["href"] = entry["asset"]["href"].replace("store.example.invalid", HOST)
     if recipe_id is not None:
         data["recipe_id"] = recipe_id
-    return recipe_from_data(data, REGISTRY)
+    return recipe_of_data(data, REGISTRY)
 
 
 ATTACHMENTS = Attachments(
