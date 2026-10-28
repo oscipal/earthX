@@ -123,6 +123,8 @@ export default function MapView() {
   const layers = useAppStore((s) => s.layers);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
+  const sections = useAppStore((s) => s.sections);
+  const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
   const basemap = useAppStore((s) => s.basemap);
   const overlays = useAppStore((s) => s.overlays);
@@ -245,8 +247,9 @@ export default function MapView() {
         aoi: st.viewAoi,
         cropToAoi: st.cropToAoi,
         groups: st.groups,
+        datasets: st.datasets,
       });
-      syncResultsOverlay(map, { items: shown.overlay, selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null });
+      syncResultsOverlay(map, { items: shown.overlay, selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null, datasets: st.datasets });
       syncPreview(map, previewTilesRef.current);
       initDraw();
       readyRef.current = true;
@@ -344,8 +347,8 @@ export default function MapView() {
   // place, with its eye.
   // Which of the search results are on the map: `mapResults.ts` alone says.
   const shown = useMemo(
-    () => resultsOnMapOf({ resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded }),
-    [resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded],
+    () => resultsOnMapOf({ resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded, sections, openSectionId }),
+    [resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded, sections, openSectionId],
   );
   const quicklooks = useSameScenes(shown.quicklooks);
   const overlay = useSameScenes(shown.overlay);
@@ -403,7 +406,7 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
-      syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null });
+      syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });
     }
   }, [focusMode, quicklooks, ticked, datasets, datasetId]);
 
@@ -411,7 +414,7 @@ export default function MapView() {
   // above, so what it draws lies over the view. ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null });
+    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });
   }, [focusMode, overlay, ticked, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
 
   // --- selection highlight — cheap, runs in both modes independently of the

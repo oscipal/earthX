@@ -47,6 +47,18 @@ describe('the preview of a dataset with no quicklook', () => {
     expect(source).toMatchObject({ minzoom: 8, maxzoom: 8 });
   });
 
+  it('draws a ticked scene of another dataset with its own dataset, not with the one the list shows', () => {
+    const live = freshMap();
+    syncBrowseMosaic(live.map as never, {
+      items: [scene('o1', 'other'), scene('d1', 'dem')],
+      dataset: other,
+      datasets: [dem, other],
+      selectedIds: ['d1'],
+    });
+    const zooms = tileSources(live).map(([, source]) => [source.minzoom, source.maxzoom]);
+    expect(zooms).toEqual([[8, 8], [0, 15]]);
+  });
+
   it('is drawn under a view as well, by the results over the view', () => {
     const live = freshMap();
     syncResultsOverlay(live.map as never, { items: [scene('d1', 'dem')], dataset: dem, selectedIds: [] });

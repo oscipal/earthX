@@ -898,6 +898,8 @@ export interface MosaicState {
   // levels and its standard visualisation from here rather than from a branch
   // on the dataset id (M2-10).
   dataset: DatasetOption | null;
+  // Every dataset of the search, for the ticked scenes of the ones the list does not show (`datasetOfItem`).
+  datasets?: readonly DatasetOption[];
   downloaded: Record<string, DownloadedInfo>;
   selectedIds: string[];
   render: AppliedRender;
@@ -995,7 +997,14 @@ export function syncFocusRaster(
 // step, plus any scene pinned onto the map by a cross-group selection — see
 // `itemsForMap`, V-3 finding 2). Without a dataset there is nothing to
 // preview *from* — the registry decides both the image and the level.
-export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'> & { selectedIds?: readonly string[] }): void {
+// The dataset of a scene: its own where the search has several (the ticks stay over a change of the dataset), else the one
+// the list shows.
+const datasetOfItem = (item: StacItem, s: { dataset: DatasetOption | null; datasets?: readonly DatasetOption[] }): DatasetOption | null =>
+  s.datasets?.find((d) => d.id === item.collection) ?? s.dataset;
+
+type PreviewState = Pick<MosaicState, 'items' | 'dataset' | 'datasets'> & { selectedIds?: readonly string[] };
+
+export function syncBrowseMosaic(map: MapLibreMap, s: PreviewState): void {
   const gen = ++syncGen;
   retireDynamicMosaic(map);
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
@@ -1004,7 +1013,10 @@ export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' 
   // wait for and goes at once.
   if (!dataset || items.length === 0) return dropRetired(map);
   const layersOf = new Map(items.map((it, i) => [it.id, [dynamicId('tiles-lyr', i), dynamicId('img-lyr', i)]]));
-  items.forEach((it, i) => addPreview(map, it, i, gen, dataset, s.selectedIds ?? [], layersOf));
+  items.forEach((it, i) => {
+    const own = datasetOfItem(it, s);
+    if (own) addPreview(map, it, i, gen, own, s.selectedIds ?? [], layersOf);
+  });
   settleRetired(map);
 }
 
@@ -1022,7 +1034,7 @@ function removeResultsOverlay(map: MapLibreMap): void {
   }
 }
 
-export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'> & { selectedIds?: readonly string[] }): void {
+export function syncResultsOverlay(map: MapLibreMap, s: PreviewState): void {
   const gen = ++resultsGen;
   removeResultsOverlay(map);
   const { dataset } = s;
@@ -1031,20 +1043,21 @@ export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items
   const ticks = s.selectedIds ?? [];
   const layersOf = new Map(shown.map((it, i) => [it.id, [`res-img-lyr-${i}`, `res-tiles-lyr-${i}`]]));
   shown.forEach((item, i) => {
-    const plan = quicklookPlan(item, dataset);
-    if (!plan) return;
+    const own = datasetOfItem(item, s);
+    const plan = own && quicklookPlan(item, own);
+    if (!own || !plan) return;
     // A ticked scene lies over the view as well, the last ticked on top; the others under the view.
     const place = (): string | undefined => (ticks.includes(item.id) ? tickedPlace(map, item.id, ticks, layersOf) : underTheView(map));
     const [lyr, src] = [`res-${RESULTS_KINDS[plan.kind === 'tiles' ? 2 : 0]}-${i}`, `res-${RESULTS_KINDS[plan.kind === 'tiles' ? 3 : 1]}-${i}`];
     if (plan.kind === 'tiles') {
       if (!item.bbox) return;
-      const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
+      const tileUrl = buildTileUrl(buildTileTemplate(own.id, item.id, plan.asset), plan.render);
       placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.minZoom, maxZoom: plan.maxZoom }, place());
       return;
     }
-    const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
+    const coords = quicklookCoords(item, preferredGeoreferencedAsset(own));
     if (!coords) return;
-    const nodataMax = dataset.viewable ? dataset.quicklookNodataMax : null;
+    const nodataMax = own.viewable ? own.quicklookNodataMax : null;
     loadProcessed(plan.href, nodataMax, null, (dataUrl) => {
       if (gen !== resultsGen) return; // a newer sync superseded this one
       try {

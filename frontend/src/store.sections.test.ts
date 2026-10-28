@@ -588,7 +588,7 @@ describe('setOpenSection: the dropdown of the results', () => {
     expect(useAppStore.getState().items).toBe(before.items);
   });
 
-  it('opening a section clears the scene selection and leaves the full-resolution view', async () => {
+  it('opening a section keeps the ticks (NM4-50) and leaves the full-resolution view', async () => {
     await searched();
     useAppStore.setState({
       selectedIds: ['o1'],
@@ -600,7 +600,7 @@ describe('setOpenSection: the dropdown of the results', () => {
     });
     useAppStore.getState().setOpenSection('optical-zarr');
     const state = useAppStore.getState();
-    expect(state.selectedIds).toEqual([]);
+    expect(state.selectedIds).toEqual(['o1']);
     expect(state.focusMode).toBe(false);
     expect(state.cropToAoi).toBe(false);
     expect(state.downloaded).toEqual({});

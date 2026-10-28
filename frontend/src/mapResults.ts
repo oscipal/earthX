@@ -11,6 +11,8 @@
 //  3. Only the switch changes show/hide (`store.ts::toggleResultsOnMap`), and three things: "Search" shows, a crop hides,
 //     and ticking a scene while the results are hidden shows them (unticking changes nothing).
 //  4. The ticked scenes lie over each other in the order they were ticked: the last one on top (`mapLayers.ts`).
+//  5. The ticks stay over a change of the time step and of the dataset (NM4-50): the ticked scenes of the other datasets
+//     of the search are on the map like the ticked ones of the open dataset, whichever dataset the list shows.
 
 import { itemsForMap, itemsOverView } from './grouping';
 import type { StacItem, TimeStepGroup } from './types';
@@ -24,6 +26,9 @@ export interface ResultsState {
   selectedIds: readonly string[];
   // The scenes a full-resolution view draws itself, by id.
   downloaded: Record<string, unknown>;
+  // The datasets of the search: the ticked scenes of those the list does not show are on the map as well.
+  sections?: readonly { datasetId: string; groups: TimeStepGroup[] }[];
+  openSectionId?: string | null;
 }
 
 export interface ResultsOnMap {
@@ -42,17 +47,23 @@ const ticked = (groups: TimeStepGroup[], selectedIds: readonly string[]): StacIt
   return selectedIds.flatMap((id) => byId.get(id) ?? []);
 };
 
+// The time steps of the datasets whose list is not open.
+const groupsElsewhere = (s: ResultsState): TimeStepGroup[] =>
+  (s.sections ?? []).filter((section) => section.datasetId !== s.openSectionId).flatMap((section) => section.groups);
+
 export function resultsOnMapOf(s: ResultsState): ResultsOnMap {
   const viewed = Object.keys(s.downloaded);
-  const quicklooks = s.focusMode || !s.resultsOnMap ? [] : itemsForMap(s.groups, s.expandedGroupIndex, s.selectedIds);
-  const overlay = s.focusMode ? itemsOverView(s.groups, s.expandedGroupIndex, s.selectedIds, s.resultsOnMap) : [];
+  const others = groupsElsewhere(s);
+  const elsewhere = s.resultsOnMap ? ticked(others, s.selectedIds) : [];
+  const quicklooks = s.focusMode || !s.resultsOnMap ? [] : [...itemsForMap(s.groups, s.expandedGroupIndex, s.selectedIds), ...elsewhere];
+  const overlay = s.focusMode ? [...itemsOverView(s.groups, s.expandedGroupIndex, s.selectedIds, s.resultsOnMap), ...elsewhere] : [];
   // The view's own scenes are drawn as well in a view, and can be picked or dropped like the others.
   const ofView = s.focusMode ? s.groups.flatMap((group) => group.items).filter((item) => viewed.includes(item.id)) : [];
   const clickable = [...new Map([...quicklooks, ...overlay, ...ofView].map((item) => [item.id, item])).values()];
   return {
     quicklooks,
     overlay,
-    highlight: s.resultsOnMap ? ticked(s.groups, s.selectedIds) : [],
+    highlight: s.resultsOnMap ? ticked([...s.groups, ...others], s.selectedIds) : [],
     clickable,
   };
 }

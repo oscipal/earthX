@@ -74,7 +74,18 @@ const COVERAGE_DEBOUNCE_MS = 400;
 // offers its scenes from that same set.
 export function selectionItemsFrom(s: Pick<AppState, 'groups' | 'activeGroupIndex' | 'selectedIds' | 'items'>): StacItem[] {
   const group = s.groups[s.activeGroupIndex];
-  return s.selectedIds.length ? s.items.filter((it) => s.selectedIds.includes(it.id)) : (group?.items ?? []);
+  const picked = s.items.filter((it) => s.selectedIds.includes(it.id));
+  return picked.length ? picked : (group?.items ?? []);
+}
+
+// The ticks that are not on scenes of another dataset of the search (NM4-50): the ticks stay over a change of the
+// dataset, and what acts on the picked scenes — the bar of the selection, a view, a job — acts on the open one's.
+export function ticksOfOpen(s: Pick<AppState, 'sections' | 'openSectionId' | 'selectedIds'>): string[] {
+  if (s.selectedIds.length === 0) return s.selectedIds;
+  const others = s.sections.filter((section) => section.datasetId !== s.openSectionId);
+  if (others.length === 0) return s.selectedIds;
+  const elsewhere = new Set(others.flatMap((section) => section.items.map((it) => it.id)));
+  return s.selectedIds.filter((id) => !elsewhere.has(id));
 }
 
 function buildDatetime(from: string, to: string): string | undefined {
@@ -534,7 +545,7 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     sections,
     ...(keepOpen ? reopenedSectionState(s, open) : openSectionState(open)),
     ...(open ? { datasetId: open.datasetId } : {}),
-    selectedIds: keepOpen ? s.selectedIds.filter((id) => open?.items.some((it) => it.id === id)) : [],
+    selectedIds: keepOpen ? s.selectedIds.filter((id) => sections.some((section) => section.items.some((it) => it.id === id))) : [],
     searchContext: ctx,
     // A new search shows its results; "Load more" leaves the panels as they are.
     ...(!keepOpen && hasResultsPanel(sections) ? { dock: 'results' as const } : {}),
@@ -1092,7 +1103,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       ...openSectionState(section),
       datasetId: section.datasetId,
-      selectedIds: [],
       playing: false,
       ...LEAVE_FOCUS,
     });
@@ -1208,9 +1218,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     if (s.focusMode) {
-      const entries = s.selectedIds.length
-        ? Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id))
-        : Object.entries(s.downloaded);
+      const ticked = Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id));
+      const entries = ticked.length ? ticked : Object.entries(s.downloaded);
       if (entries.length === 0) {
         set({ error: 'Nothing to add — search and pick a time step first.' });
         return;
@@ -1282,7 +1291,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           downloaded: { ...s.downloaded },
           appliedRender: { ...s.appliedRender },
           activeGroupIndex: s.activeGroupIndex,
-          selectedIds: [...s.selectedIds],
+          selectedIds: ticksOfOpen(s),
           itemIds,
           groupItemIds: groupItemIdsFor(itemIds, s.groups),
           aoi: s.aoi,
@@ -1302,9 +1311,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    const items = s.selectedIds.length
-      ? s.items.filter((it) => s.selectedIds.includes(it.id))
-      : (activeGroup?.items ?? []);
+    const items = selectionItemsFrom(s);
     const itemIds = items.map((it) => it.id);
     const overlays: LayerOverlay[] = [];
     const browsed = s.datasets.find((d) => d.id === s.datasetId);
@@ -1351,7 +1358,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloaded: { ...s.downloaded },
         appliedRender: { ...s.appliedRender },
         activeGroupIndex: s.activeGroupIndex,
-        selectedIds: [...s.selectedIds],
+        selectedIds: ticksOfOpen(s),
         itemIds,
         groupItemIds: groupItemIdsFor(itemIds, s.groups),
         aoi: s.aoi,
@@ -1704,10 +1711,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // (`mapLayers.ts::syncFocusRaster`), never here.
   enterFocus: async (cropToAoi) => {
     const s = get();
-    const group = s.groups[s.activeGroupIndex];
-    const items = s.selectedIds.length
-      ? s.items.filter((it) => s.selectedIds.includes(it.id))
-      : (group?.items ?? []);
+    const items = selectionItemsFrom(s);
     if (items.length === 0) {
       set({ error: 'Nothing to view — pick a time step or select scenes first.' });
       return;
@@ -1758,7 +1762,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // A crop takes the results off the map and drops the tick of the scenes it was made of, so that their quicklooks
       // do not lie beside the crop; the view does not hang on the choice any more, and a scene ticked again shows like any
       // other (Otto, 27.10.2026). The whole scene keeps the tick and the switch.
-      ...(cropToAoi ? { selectedIds: [], ...setResultsOnMap(false) } : {}),
+      ...(cropToAoi ? { selectedIds: s.selectedIds.filter((id) => !(id in downloaded)), ...setResultsOnMap(false) } : {}),
       showDownloaded: true,
       downloaded,
       appliedRender: applied,
@@ -1874,7 +1878,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   // M4-29: "Select all" takes the loaded scenes only — never more pages — and
   // the limits (merge, job size, batch) still answer where they always did.
-  selectAllLoaded: () => set((s) => ticking(s, s.items.map((it) => it.id))),
+  selectAllLoaded: () =>
+    set((s) => {
+      const here = new Set(s.items.map((it) => it.id));
+      return ticking(s, [...s.selectedIds.filter((id) => !here.has(id)), ...here]);
+    }),
   toggleGroupSelected: (index) =>
     set((s) => {
       const ids = s.groups[index]?.items.map((it) => it.id) ?? [];
@@ -1885,7 +1893,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         all ? s.selectedIds.filter((id) => !ids.includes(id)) : [...s.selectedIds, ...ids.filter((id) => !s.selectedIds.includes(id))],
       );
     }),
-  clearSelection: () => set({ selectedIds: [] }),
+  // The ticks of the scenes the list shows; those on other datasets stay (NM4-50).
+  clearSelection: () =>
+    set((s) => {
+      const here = new Set(s.items.map((it) => it.id));
+      return { selectedIds: s.selectedIds.filter((id) => !here.has(id)) };
+    }),
   setDateFrom: (dateFrom) => {
     set({ dateFrom });
     dropPageToken(set, get);
