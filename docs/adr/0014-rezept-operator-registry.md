@@ -2547,7 +2547,7 @@ Originaltext von §3.4 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag.
 
   | Bänder | Version 3, Pixel-Interleave (heute) | Version 4, Pixel-Interleave | Version 3, Band-Interleave | Version 4, Band-Interleave |
   |---|---|---|---|---|
-  | 1 | 2,4 s, 325 MB | 3,1 s, 325 MB | – | – |
+  | 1 | 2,4 s, 325 MB | 3,1 s, 325 MB | 2,5 s, 325 MB | 2,5 s, 325 MB |
   | 4 | 40,0 s, 433 MB | 56,2 s, 435 MB | 34,9 s, 378 MB | 20,4 s, 319 MB |
   | 17 | 336,7 s, 865 MB | 874,9 s, 838 MB | 281,8 s, 608 MB | 97,7 s, 541 MB |
 
@@ -2556,20 +2556,31 @@ Originaltext von §3.4 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag.
   1,2 / 17 / 252 s bei 1 / 4 / 17 Bändern; mit Band-Interleave Version 3 6,5 / 68 s, Version 4 5,0 / 23 s bei 4 / 17 Bändern. Die
   1-Band-Zeile von Version 4 (3,1 gegen 2,4 s) liegt im Rauschen der Sitzung: Der Operator warpt eine Datei mit einem Band direkt.
 
-  Im Gesamtlauf des Kerns (`memory_run.py`, zwei Durchgänge, Szene als COG): 4 Bänder bei 4096² 522 MB (Version 3) gegen 521 MB
+  Im Gesamtlauf des Kerns mit Pixel-Interleave (`memory_run.py`, zwei Durchgänge, Szene als COG): 4 Bänder bei 4096² 522 MB (Version 3) gegen 521 MB
   (Version 4), 73 s gegen 75 s; 17 Bänder bei 2048² 1051 MB und 145 s (Version 3) gegen 981 MB und 216 s (Version 4).
-- **Befund zum Aufwand:** Version 4 braucht gleich viel Speicher (bei 17 Bändern etwas weniger), bei einem Band gleich lang, bei mehreren Bändern
-  länger: im Warp-Durchgang das 1,4-fache bei 4 und das 2,6-fache bei 17 Bändern, im Gesamtlauf das 1,0- und das 1,5-fache. Ein Band aus einer Pixel-Interleave-Kachel zu lesen, entpackt die ganze Kachel (`float64`, deflate), und `GDAL_CACHEMAX` 64 MB hält die
-  Bänder derselben Kachel nicht. Mit Band-Interleave in den Zwischendateien (`"interleave": "band"` in `core._profile`) ist Version 4 schneller
-  als Version 3 heute. Das ist ein Eingriff in den Kern und nicht Teil von NM4-43b; Otto entscheidet (Frage im PR). Der Kostenfaktor in `_METHODS`
-  bleibt: er kennt die Zahl der Bänder nicht (er gilt je Pixel und Band), und schon Version 3 wächst mit den Bändern stärker als linear;
-  die Zeitschätzung je Ausgabeband kommt mit NM4-43c, PR 2 (`adr/0020` §7).
-- **Speicher mit vielen Bändern:** Die Grenze von 500 MB (M4-07a) hält für mehr als zwei Bänder nicht, auch nicht für den Durchgang, der
-  zuschneidet und skaliert (17 Bänder bei 1024²: 556 MB); `reproject` Version 4 kommt auf 754 MB (Version 3: 821 MB). Die Grenze je Lauf ist
-  Sache von NM4-43c, PR 2. `test_memory_reproject.py` hat dafür einen Lauf mit 4 Bändern (Grenze 600 MB, Wachstum höchstens 120 MB) und einen mit
-  17 Bändern (Grenze 900 MB, gemessen 754 MB); beide halten ein Drittel Reserve.
+- **Befund zum Aufwand:** Mit GDALs Layout der Zwischendateien (Pixel-Interleave) braucht Version 4 gleich viel Speicher (bei 17 Bändern etwas
+  weniger), bei einem Band gleich lang, bei mehreren Bändern länger: im Warp-Durchgang das 1,4-fache bei 4 und das 2,6-fache bei 17 Bändern, im
+  Gesamtlauf das 1,0- und das 1,5-fache. Ein Band aus einer Pixel-Interleave-Kachel zu lesen, entpackt die ganze Kachel (`float64`, deflate), und
+  `GDAL_CACHEMAX` 64 MB hält die Bänder derselben Kachel nicht.
+- **Band-Interleave der Zwischendateien (Otto, 28.10.2026, Option 2):** Der Kern schreibt jeden Durchgang, den ein späterer liest, mit
+  `INTERLEAVE=BAND` (`core._profile`, `_Run.write_pass`). Damit ist Version 4 **schneller als Version 3 heute** (4096²: 4 Bänder 20,4 s gegen
+  40,0 s, 17 Bänder 97,7 s gegen 336,7 s) und braucht weniger Speicher (17 Bänder 541 gegen 865 MB). **Nur Zwischendateien:** der letzte
+  Durchgang, aus dem `result.tif` wird, und `mask.tif` behalten das Layout von GDAL; die Dateien eines Auftrags ändern sich im Format nicht.
+  `result.tif` und `mask.tif` sind bei 1 bis 3 Bändern bytegleich zum Lauf von Version 3 vorher, und das Layout allein ändert auch bei 4 Bändern
+  kein Byte; bei 4 Bändern weichen nur die Werte nach Version 4 ab (Profil und Maske gleich). Die ganze Suite läuft damit grün (`test_pass_interleave.py`).
+- **Kostenfaktor (Otto: anpassen, falls Version 4 mit Band-Interleave deutlich schneller ist, als der Faktor annimmt):** Er bleibt. Der Faktor
+  in `_METHODS` gilt je Pixel und Band und ist am Ein- bis Zweibandlauf gemessen; ein Band kostet in Version 4 mit Band-Interleave bei 4 und 17 Bändern
+  5,1 und 5,7 s gegen 2,5 s bei einem Band (4096²), also mehr, nicht weniger, als der Faktor annimmt. Schneller als Version 3 heute ist Version 4
+  nur, weil Version 3 bei vielen Bändern je Band 10,0 (bei 4) und 19,8 s (bei 17) brauchte. Die Zeitschätzung je Ausgabeband mit einem gemessenen
+  Wert je Band kommt mit NM4-43c, PR 2 (`adr/0020` §7).
+- **Speicher mit vielen Bändern:** Die Grenze von 500 MB (M4-07a) hält für 17 Bänder nicht, auch nicht für den Durchgang, der zuschneidet und
+  skaliert (556 MB bei 1024²). Gemessen im Gesamtlauf des Kerns (`memory_run.py`): 4 Bänder 452 MB bei 4096² (vorher 521 MB), 17 Bänder 612 MB bei
+  1024² (vorher 754 MB, Version 3: 821 MB). Die Grenze je Lauf ist Sache von NM4-43c, PR 2; Otto hat die gemessenen Grenzen der Tests angenommen:
+  `test_memory_reproject.py` hat einen Lauf mit 4 Bändern (Grenze 600 MB, Wachstum höchstens 120 MB, gemessen 60 MB) und einen mit 17 Bändern
+  (Grenze 800 MB), je mit etwa einem Drittel Reserve.
 - **Tests:** `test_reproject.py` (`TestEachBandIsWarpedForItself`: Band 1 bytegleich bei 1, 2, 3, 4, 18 und 34 Bändern, jedes Band gleich seinem
   Einbandlauf, Version 4 gleich Version 3 bis 3 Bänder, Masken je Band; `TestVersion3IsUnchanged`: Version 3 gleich einem Warp über alle Bänder,
-  bei 4 Bändern weiter anders als Version 4), `test_reproject_tolerance.py`, `test_workfile.py` (`TestABandOfAWorkFile`),
+  bei 4 Bändern weiter anders als Version 4), `test_reproject_tolerance.py`, `test_workfile.py` (`TestABandOfAWorkFile`), `test_pass_interleave.py` (welche Dateien band-weise geschrieben werden, Format und Bytes der
+  Ausgabedateien gegenüber vorher),
   `test_memory_reproject.py`. **Gegenprobe:** Rechnet Version 4 wie Version 3, scheitern fünf der neuen Tests (Band 1 bei 4, 18 und 34 Bändern,
   jedes Band gleich dem Einbandlauf, Version 3 gegen 4 bei 4 Bändern).
