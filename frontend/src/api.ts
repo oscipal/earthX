@@ -433,6 +433,36 @@ export function buildOperatorStatisticsUrl(
   return `${itemBase(datasetId, itemId)}/statistics?${operatorQuery(assets, steps)}`;
 }
 
+// The mosaic of a pass with the steps over it (NM4-04, `api/mosaic_tiles.py`): the scenes as one `item` each,
+// sorted by id like the mosaic without steps, and the assets and steps as the tile of one scene takes them.
+// The order of the scenes in the URL does not count, so the same pass is the same URL. Never an AOI, never an id
+// of a job or a recipe.
+export function buildMosaicOperatorTileTemplate(
+  datasetId: string,
+  itemIds: readonly string[],
+  assets: readonly string[],
+  steps: readonly TileStep[],
+): string {
+  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicOperatorQuery(itemIds, assets, steps)}`;
+}
+
+// Its TileJSON: the cheap question, with the refusals of the tiles and `earthx:order`, the scenes in the order a
+// tile reads them.
+export function buildMosaicOperatorTileJsonUrl(
+  datasetId: string,
+  itemIds: readonly string[],
+  assets: readonly string[],
+  steps: readonly TileStep[],
+): string {
+  return `${mosaicBase(datasetId)}/${TILE_MATRIX_SET}/tilejson.json?${mosaicOperatorQuery(itemIds, assets, steps)}`;
+}
+
+function mosaicOperatorQuery(itemIds: readonly string[], assets: readonly string[], steps: readonly TileStep[]): string {
+  const items = new URLSearchParams();
+  for (const id of [...itemIds].sort()) items.append('item', id);
+  return `${items.toString()}&${operatorQuery(assets, steps)}`;
+}
+
 function operatorQuery(assets: readonly string[], steps: readonly TileStep[]): string {
   const params = new URLSearchParams();
   for (const asset of assets) params.append('asset', asset);
