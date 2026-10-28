@@ -94,13 +94,15 @@ Items deshalb aus einer Datei, die `curl` geholt hat, und baut die Rezepte über
    auf Groß- und Kleinschreibung, über alle Ergebnisse und alle Bänder des
    Datensatzes. Umbenennen zieht alle Verweise mit.
 4. **Schutz ohne Bandgrenze (F5):** Gemessen wächst der Spitzenspeicher eines
-   Laufs mit der Zahl der Bänder im breitesten Durchgang, nicht mit der Fläche
-   (§3.2). Die Laufzeit und die gelesenen Bytes wachsen mit Bändern mal
-   Fläche. Die bestehenden Grenzen (25 Items, 5 GB Ausgabe, Laufzeit 2 × Schätzung,
-   Deckel 4 bzw. 2 Läufe) decken Fläche und Laufzeit. Den Speicher deckt keine
-   davon. Vorschlag: Die Grenze von 16 Assets entfällt; neu ist eine
-   **Speicherschätzung je Lauf** gegen einen festen Wert, gemessen statt
-   gezählt. Andere Plattformen begrenzen ebenso nach Datenmenge, Kosten und
+   Laufs um rund 21 MB je Band im breitesten Durchgang und kaum mit der Fläche;
+   16 Bänder liegen schon über den 500 MB der Speichertests (§3.2). Laufzeit
+   und gelesene Bytes wachsen mit Bändern mal Fläche, und die Zeitschätzung
+   zählt die Ausgabebänder nicht (bei 30 km und 17 Bändern 21 s geschätzt,
+   115 s gemessen). Die bestehenden Grenzen (25 Items, 5 GB Ausgabe, Laufzeit 2 × Schätzung,
+   Deckel 4 bzw. 2 Läufe) decken Fläche, Platte und Quellen. Den Speicher
+   deckt keine davon. Vorschlag: Die Grenze von 16 Assets entfällt; neu ist eine
+   **Speicherschätzung je Lauf** gegen 1,5 GB, gemessen statt gezählt, und die
+   Zeitschätzung zählt die Ausgabebänder. Andere Plattformen begrenzen ebenso nach Datenmenge, Kosten und
    Zeit, keine nach Bandzahl als Hauptregel (§3.5).
 5. **Nebenbefunde (F11, F13):** Die Schätzung bemisst das Ausgaberaster nach der
    Pixelgröße des **ersten** Assets, der Kern rechnet auf dem **feinsten**.
@@ -269,7 +271,32 @@ streut über die 25 Szenen um höchstens 6 MB, die Laufzeit stärker (Netz:
    AOI nicht berühren. Die Spitze hängt dort wie hier an den Bändern je Block;
    Laufzeit und Bytes wachsen mit der Fläche.
 
-⟨FLAECHE⟩
+**Flächenreihe.** Dieselbe Szene, Quadrate von 3, 10 und 30 km (0,1, 1,1
+und 9,5 Mio. Pixel), je ein Lauf:
+
+| Konfiguration | 3 km: s / Spitze MB | 10 km: s / Spitze MB | 30 km: s / Spitze MB | 30 km: gelesen MB | 30 km: `result.tif` MB | 30 km: Schätzung s |
+|---|---|---|---|---|---|---|
+| 2, kein Schritt | 2,1 / 216 | 3,5 / 275 | 12,2 / 338 | 59 | 60 | 3,2 |
+| 2, `band_math` heute | 1,3 / 198 | 2,8 / 248 | 9,3 / 314 | 59 | 44 | 3,2 |
+| 17, kein Schritt | 9,3 / 406 | 19,4 / 536 | 114,7 / 651 | 266 | 346 | 21,0 |
+| 17, `band_math` heute | 7,7 / 217 | 11,0 / 395 | 49,4 / 426 | 266 | 44 | 21,0 |
+| 17, `band_math` anhängen | 8,7 / 418 | 22,3 / 648 | 141,9 / 911 | 266 | 403 | 21,0 |
+
+8. **Die Spitze hängt vor allem an den Bändern, nur wenig an der Fläche.**
+   Unter 1024 px Seitenlänge sind die Blöcke kleiner (3 km). Von 1,1 auf
+   9,5 Mio. Pixel wächst sie bei 17 Bändern um 115 MB, bei 2 Bändern um 63 MB;
+   ab 1024² gilt also etwa **340 MB + 21 MB je Band** im breitesten Durchgang
+   (30 km, kein Schritt). Ein Teil davon ist der COG-Schritt am Ende, den
+   `adr/0014` §3.5 mit rund 100 MB nennt **[A]**.
+9. **Die Zeitschätzung wächst nicht mit den Bändern der Ausgabe.** Bei 30 km
+   und 17 Bändern schätzt die Plattform 21 s, gemessen sind 115 s (Faktor 5,5;
+   bei 2 Bändern 3,2 gegen 12,2 s). `SECONDS_PER_INPUT_MB` stammt aus einem
+   Band-Math-Lauf mit 2 Bändern und einem Band Ausgabe (`plan.py:71`).
+   Schreiben, Statistik und COG je Ausgabeband fehlen. Heute fängt die
+   Untergrenze von 600 s das auf. Linear hochgerechnet **[A]** braucht ein
+   Job mit 17 Bändern an der 5-GB-Grenze (rund 72 Mio. Pixel in `float32`) etwa
+   870 s; die Grenze wäre 2 × 47 s, also die Untergrenze von 600 s, und der
+   Job bräche ab.
 
 ### 3.3 Nebenbefund: Die Schätzung nimmt das Raster des ersten Assets — [M] [P]
 
@@ -457,7 +484,25 @@ nichts verloren geht. Ein Name, der einen Konflikt ergäbe, wird nicht
 
 ### 7.1 Was die Messung sagt
 
-⟨SCHUTZBEFUND⟩
+- **Speicher:** Keine bestehende Grenze schützt ihn. Die Spitze wächst um
+  rund 21 MB je Band im breitesten Durchgang (Befund 8) und kaum mit der
+  Fläche; schon 16 Bänder liegen über den 500 MB der Speichertests. Bei
+  Sentinel-2 kann der Vorrat höchstens 17 Bänder plus ein Band je
+  `band_math`-Schritt haben, also 33; das ergibt nach der Formel rund 1,03 GB.
+  Ein Datensatz mit vielen Bändern in einem Asset (hyperspektral, etwa 224)
+  käme auf rund 5 GB **[A]**.
+- **Laufzeit:** Die Grenze (2 × Schätzung, mindestens 600 s) schützt den
+  Worker, ist aber für viele Ausgabebänder zu knapp, weil die Schätzung sie
+  nicht zählt (Befund 9). Ohne Bandgrenze bräche ein gültiger großer Job ab.
+- **Platte und Ausgabe:** Die 5-GB-Grenze zählt Pixel × Bänder × Typ, wächst
+  also mit den Bändern; `disk_needed` ebenso. Beide sind heute durch den
+  Nebenbefund §3.3 zu niedrig.
+- **Quellen:** Je Band zwei Anfragen. 17 Bänder sind 34 Anfragen je Szene, ein
+  Batch von 25 Szenen 850; der Deckel je Host (2 gleichzeitige Läufe) und die
+  Wiederholung mit Backoff in `gateway` begrenzen die Rate. Eine eigene Grenze
+  braucht es dafür nicht **[A]**.
+- **Zahl der Szenen:** Die 25 Items je Auftrag bzw. 25 Jobs je Batch bleiben;
+  25 Szenen sind 25-mal ein Lauf (§3.2).
 
 ### 7.2 Optionen
 
@@ -472,14 +517,21 @@ nichts verloren geht. Ein Name, der einen Konflikt ergäbe, wird nicht
 
 **Empfehlung: G2,** dazu die Behebung aus §3.3 (F11).
 
-- **Formel:** Grundbedarf plus Bänder im breitesten Durchgang mal gemessenem
-  Wert je Band (§7.1). Der Planer kennt den breitesten Durchgang nach dem
-  Streichen (§4).
-- **Grenze:** ein Wert je Kindprozess (F5). Darüber `413` mit Grund, etwa
+- **Formel:** 340 MB plus 21 MB je Band im breitesten Durchgang (Befund 8),
+  unterhalb von 1024 px Seitenlänge anteilig. Der Planer kennt den breitesten
+  Durchgang nach dem Streichen (§4). Die Werte misst NM4-43a mit dem echten
+  Anhängen neu.
+- **Grenze:** ein Wert je Kindprozess (F5), Startwert **1,5 GB**: Sentinel-2
+  mit 17 Bändern und 16 `band_math`-Schritten (rund 1,03 GB) passt, ein
+  hyperspektrales Asset nicht. Ein Worker mit 2 Slots braucht dann bis zu
+  3 GB. Darüber `413` mit Grund, etwa
   „This job would need about 2.4 GB of memory, more than the 1.5 GB a job may
   use. Put fewer bands in the output.“
 - **Test:** Der bestehende Speichertest bekommt einen Lauf mit 17 Bändern; er
   prüft, dass die Messung unter der Schätzung bleibt.
+- **Zeitschätzung:** Die Sekunden zählen künftig Ausgabepixel mal
+  Ausgabebänder mit einem gemessenen Wert je Band (Befund 9), damit die
+  Laufzeitgrenze (2 × Schätzung) auch für viele Bänder hält.
 - **Kosten:** `units` zählt künftig die Bänder mit (Ausgabepixel × Bänder der
   Ausgabe × Faktor), damit die Einheiten für M6 (Quoten) mit der Last wachsen,
   wie bei Sentinel Hub **[A]**.
@@ -730,7 +782,7 @@ jeweils Option 1.
 2. Auf alle Bänder des Vorrats wie heute
 
 **F5 — Schutz ohne Bandgrenze?**
-1. Grenze 16 entfällt; neu eine Speicherschätzung je Lauf gegen eine Grenze je Kindprozess, Startwert ⟨F5WERT⟩; `units` zählt die Bänder (§7, G2) **(Empfehlung)**
+1. Grenze 16 entfällt; neu eine Speicherschätzung je Lauf gegen eine Grenze je Kindprozess, Startwert 1,5 GB; Zeitschätzung und `units` zählen die Bänder der Ausgabe (§7, G2) **(Empfehlung)**
 2. Grenze 16 entfällt, nur die bestehenden Grenzen (G1)
 3. Grenze 16 entfällt; neu eine Grenze für Pixel × Bänder × Szenen der Eingabe (G3)
 
@@ -835,4 +887,17 @@ PYTHONPATH=backend python scripts/nm4-43-bands/measure.py summary m10
 
 Für die Flächenreihe (§7.1) dasselbe mit `--km 3` und `--km 30`, `--scenes 1`.
 
-⟨ANHANG⟩
+**Ergebnisse** der Läufe lagen als `results.jsonl` im Kratzverzeichnis der
+Sitzung; die Tabellen in §3.2 sind daraus mit `summary` gebildet (Median je
+Lauf, Höchstwert der Spitze, Summe über 25 Szenen). Die Laufzeit hängt am Netz
+der Sitzung (Proxy, Quelle in us-west-2); Spitze, Bytes und Anfragen hängen
+nicht daran.
+
+**`reproject` und die Zahl der Bänder (§3.4):**
+
+```bash
+PYTHONPATH=backend python scripts/nm4-43-bands/warp_bands.py --counts 1,2,3,4,18,34
+```
+
+Erwartung: 1 bis 3 Bänder „differs in 0“, ab 4 Bändern „differs in 4136158 of
+4303544 pixels“.
