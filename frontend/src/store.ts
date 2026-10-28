@@ -39,7 +39,7 @@ import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
-import { appliedRenderFrom, autoRescale } from './render';
+import { appliedRenderFrom, autoRescale, pendingFieldsOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
   buildSections,
@@ -1481,6 +1481,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       focusMode: r.focusMode,
       downloaded: r.downloaded,
       appliedRender: r.appliedRender,
+      // The controls show what the layer was made with, not what the last view had in them.
+      ...pendingFieldsOf(r.appliedRender),
       aoi,
       cropToAoi: r.cropToAoi,
       viewAoi: r.cropToAoi && r.aoi ? r.aoi : null,
@@ -1740,7 +1742,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'None of the selected scenes carry a bounding box to render.' });
       return;
     }
-    const rescale = render.rescale?.[0];
+    const applied = appliedRenderFrom(render);
     // Scenes of a time step too big for one mosaic are drawn one by one, and only so many of those.
     const passes = passesOf(Object.entries(downloaded), s.groups);
     const oneByOne = passes.filter((pass) => !isMosaicPass(pass)).reduce((sum, pass) => sum + pass.length, 0);
@@ -1759,10 +1761,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...(cropToAoi ? { selectedIds: [], ...setResultsOnMap(false) } : {}),
       showDownloaded: true,
       downloaded,
-      appliedRender: appliedRenderFrom(render),
-      pendingColormapName: render.colormap_name ?? '',
-      pendingVmin: rescale ? String(rescale[0]) : '',
-      pendingVmax: rescale ? String(rescale[1]) : '',
+      appliedRender: applied,
+      ...pendingFieldsOf(applied),
     });
     // The stretch and the mosaics are asked for together; the view says "Loading…" until both are here,
     // because a time step draws nothing until its mosaic has answered.

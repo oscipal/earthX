@@ -53,6 +53,13 @@ export function appliedRenderFrom(render: EarthxDefaultRender): AppliedRender {
   };
 }
 
+// The fields of the view's controls for a look, the other way round: what "Apply" would send back to make the same
+// picture. Where a view starts from a layer, the controls show what the layer was made with (NM4-50).
+export function pendingFieldsOf(render: AppliedRender): { pendingColormapName: string; pendingVmin: string; pendingVmax: string } {
+  const [vmin = '', vmax = ''] = (render.rescale ?? '').split(',');
+  return { pendingColormapName: render.colormapName ?? '', pendingVmin: vmin, pendingVmax: vmax };
+}
+
 // --- one colour scale for a preview and a result (M4-32b, M4-19c) --------------------
 
 // What a measure says of one band, for the colour scale: the fields that are numbers. A result gets it from
