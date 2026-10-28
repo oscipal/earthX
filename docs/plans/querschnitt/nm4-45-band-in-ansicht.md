@@ -3,7 +3,7 @@
 **Stand:** 27.10.2026, beauftragt von Otto (Backlog-Punkt 45 in `docs/plans/nach-m4-backlog.md`).
 **Stufe A:** direkt umsetzen, ein Draft-PR. Braucht es mehr als Frontend (etwa eine neue `tiler`-Route oder ein Registry-Feld), legt die Session das Otto zuerst als Frage vor.
 **Modell:** Sonnet, Effort mittel.
-**Start:** nach dem Merge von UI-02a (#211), weil #211 den Kopf und die Knopfzeilen der Ansicht umgebaut hat. Frontend-Aufgabe: höchstens zwei Frontend-Sessions gleichzeitig.
+**Start:** nach dem Merge von NM4-53 (beide ändern die Leiste der Ansicht). Frontend-Aufgabe: höchstens zwei Frontend-Sessions gleichzeitig.
 **Startsatz:** „Führe Aufgabe NM4-45 aus `docs/plans/querschnitt/nm4-45-band-in-ansicht.md` aus.“
 
 ## 1. Wunsch (Otto, 27.10.2026, wörtlich)

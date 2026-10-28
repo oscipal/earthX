@@ -194,6 +194,8 @@ class EarthxMosaicTilerFactory(EarthxTilerFactory):
     """
 
     reader: Any = open_mosaic
+    # A mosaic is drawn with tiles of 512 px (NM4-29 §15): its tiles are dear and a view asks for a third of them.
+    tile_size: int = 512
 
     def __attrs_post_init__(self) -> None:
         if self.reader_dependency is not DefaultDependency:

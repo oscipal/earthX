@@ -42,6 +42,12 @@ ITEM = "ITEM_A"
 COG = "synthetic-cog"
 ZARR = SYNTHETIC_ZARR.dataset_id
 ZOOM = 14
+# The level whose pixels match the native 10 m of the fixtures, per tile size: a tile of 512 px at z13 has the pixels
+# of one of 256 px at z14. Both sizes are served (NM4-29 §15), so the tile is compared with the job at both.
+NATIVE = {256: 14, 512: 13}
+# On Zarr the tile and the job may pick other neighbours within 0.125 px of a boundary (docstring of the test); a
+# 512 px tile spans more of GDAL's approximated transform, measured 2.1 % against 0.4 % at 256 px (NM4-29 §8).
+ZARR_DIFFERING = {256: 0.02, 512: 0.03}
 NDVI = "(nir - red) / (nir + red)"
 OP = {"op": "band_math", "op_version": "1"}
 
@@ -122,8 +128,8 @@ def client(files: dict[str, Path], cf_store: Path, monkeypatch: pytest.MonkeyPat
         yield test_client
 
 
-def _tiles() -> list[tuple[int, int, int]]:
-    """Tiles of zoom 14 over the raster, the one with the nodata corner (top left) first."""
+def _tiles(zoom: int = ZOOM) -> list[tuple[int, int, int]]:
+    """Tiles of ``zoom`` over the raster, the one with the nodata corner (top left) first."""
     west, south, east, north = transform_bounds(
         sources.CRS,
         WGS84_CRS,
@@ -132,9 +138,9 @@ def _tiles() -> list[tuple[int, int, int]]:
         sources.ORIGIN_X + WIDTH * sources.RESOLUTION,
         sources.ORIGIN_Y,
     )
-    corner = WEB_MERCATOR_TMS.tile(west + 1e-5, north - 1e-5, ZOOM)
+    corner = WEB_MERCATOR_TMS.tile(west + 1e-5, north - 1e-5, zoom)
     found = [(corner.z, corner.x, corner.y)]
-    for t in WEB_MERCATOR_TMS.tiles(west, south, east, north, [ZOOM]):
+    for t in WEB_MERCATOR_TMS.tiles(west, south, east, north, [zoom]):
         if (t.z, t.x, t.y) not in found:
             found.append((t.z, t.x, t.y))
     return found
@@ -186,16 +192,16 @@ def _recipe(assets: tuple[str, ...], expression: str) -> dict:
     }
 
 
-def _source_position(tile) -> tuple[numpy.ndarray, numpy.ndarray]:
-    """Where the centre of each pixel of a 256 px tile lies in the Mini-Zarr's pixels (column, row)."""
+def _source_position(tile, size: int = 256) -> tuple[numpy.ndarray, numpy.ndarray]:
+    """Where the centre of each pixel of a tile of ``size`` px lies in the Mini-Zarr's pixels (column, row)."""
     bounds = WEB_MERCATOR_TMS.xy_bounds(tile)
-    step = (bounds.right - bounds.left) / 256
-    xs = bounds.left + (numpy.arange(256) + 0.5) * step
-    ys = bounds.top - (numpy.arange(256) + 0.5) * step
+    step = (bounds.right - bounds.left) / size
+    xs = bounds.left + (numpy.arange(size) + 0.5) * step
+    ys = bounds.top - (numpy.arange(size) + 0.5) * step
     grid_x, grid_y = numpy.meshgrid(xs, ys)
     x, y = rasterio_transform("EPSG:3857", mini_zarr_cf.ITEM_CRS, grid_x.ravel().tolist(), grid_y.ravel().tolist())
-    col = (numpy.array(x).reshape(256, 256) - mini_zarr_cf.ORIGIN_X) / mini_zarr_cf.RESOLUTION_M
-    row = (mini_zarr_cf.ORIGIN_Y - numpy.array(y).reshape(256, 256)) / mini_zarr_cf.RESOLUTION_M
+    col = (numpy.array(x).reshape(size, size) - mini_zarr_cf.ORIGIN_X) / mini_zarr_cf.RESOLUTION_M
+    row = (mini_zarr_cf.ORIGIN_Y - numpy.array(y).reshape(size, size)) / mini_zarr_cf.RESOLUTION_M
     return col, row
 
 
@@ -220,19 +226,20 @@ def _zarr_ndvi(item_scaling: bool) -> numpy.ma.MaskedArray:
     return numpy.ma.masked_array(result, mask=mask)
 
 
-def _job_tile(result_path: Path, tile: tuple[int, int, int]) -> numpy.ma.MaskedArray:
+def _job_tile(result_path: Path, tile: tuple[int, int, int], size: int = 256) -> numpy.ma.MaskedArray:
     z, x, y = tile
     with Reader(str(result_path)) as reader:
-        return reader.tile(x, y, z, resampling_method="nearest", tilesize=256).array[0]
+        return reader.tile(x, y, z, resampling_method="nearest", tilesize=size).array[0]
 
 
 class TestTheTileEqualsTheJobOnTheNativeLevel:
+    @pytest.mark.parametrize("size", NATIVE)
     @pytest.mark.parametrize(
         "expression",
         [NDVI, "where((red > 0.15) & (nir > 0.2), (nir - red) / (nir + red), -1)", "sqrt(abs(nir - red)) + red ** 3"],
     )
     def test_cog_pair_with_scale_and_offset(
-        self, client: TestClient, files: dict[str, Path], tmp_path: Path, expression: str
+        self, client: TestClient, files: dict[str, Path], tmp_path: Path, expression: str, size: int
     ) -> None:
         result = run(
             recipe_from_data(_recipe(("red", "nir"), expression), OPERATORS),
@@ -240,11 +247,11 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
             progress=lambda done, total: None,
         )
         compared = masked_compared = 0
-        for tile in _tiles():
-            response = client.get(_url(tile, expression=expression))
+        for tile in _tiles(NATIVE[size]):
+            response = client.get(_url(tile, expression=expression, extra=f"&tilesize={size}"))
             assert response.status_code == 200, response.text
             from_tile = _decode(response.content)
-            from_job = _job_tile(result.path, tile)
+            from_job = _job_tile(result.path, tile, size)
             assert numpy.array_equal(from_tile.mask, numpy.ma.getmaskarray(from_job)), tile
             valid = ~from_tile.mask
             assert numpy.array_equal(from_tile.data[valid], from_job.data[valid]), tile
@@ -253,21 +260,24 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
         assert compared > 1_000_000  # more than a coincidence of a few pixels
         assert masked_compared > 0  # and the nodata corner was among them
 
+    @pytest.mark.parametrize("size", NATIVE)
     @pytest.mark.parametrize(("group", "item_scaling"), [("r10m", False), ("r10m-scaled", True)])
     def test_the_zarr_with_cf_attributes(
-        self, client: TestClient, cf_store: Path, tmp_path: Path, group: str, item_scaling: bool
+        self, client: TestClient, cf_store: Path, tmp_path: Path, group: str, item_scaling: bool, size: int
     ) -> None:
         """Mini-Zarr with CF attributes: the store's own decoding, or the item's scaling on the raw values.
 
-        Two claims. The tile is the formula on exactly the nearest source pixel, everywhere. And the
+        Two claims. The tile is the formula on exactly the nearest source pixel, everywhere at 256 px; at
+        512 px everywhere but within GDAL's approximation tolerance (``0.125`` px) of a source pixel boundary,
+        where its longer rows approximate the transform differently (1 of 6462 pixels, NM4-29 §8). And the
         job's result read onto the same tile gives the same bytes wherever nearest is unambiguous: the
         Zarr tile and the COG result are warped by two code paths, and where a tile pixel centre lies
-        within GDAL's approximation tolerance (``0.125`` px) of a source pixel boundary they may pick
-        different neighbours — measured 13 of 3489 pixels, all within 0.003 px of a boundary. The
-        COG pair above has no such pixels: both sides use one warp.
+        within that tolerance of a source pixel boundary they may pick different neighbours — measured
+        13 of 3489 pixels at 256 px, 138 of 6462 at 512 px. The COG pair above has no such pixels: both
+        sides use one warp.
         """
         west, south, east, north = transform_bounds(mini_zarr_cf.ITEM_CRS, WGS84_CRS, *mini_zarr_cf.store_bounds())
-        tile = WEB_MERCATOR_TMS.tile((west + east) / 2, (south + north) / 2, ZOOM)
+        tile = WEB_MERCATOR_TMS.tile((west + east) / 2, (south + north) / 2, NATIVE[size])
         key = f"{group}:b04,b08"
         expression = "(b08 - b04) / (b08 + b04)"
         entry = resolved(
@@ -290,12 +300,14 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
             "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
         }
         result = run(recipe_from_data(recipe, OPERATORS), workdir=tmp_path, progress=lambda done, total: None)
-        response = client.get(_url((tile.z, tile.x, tile.y), dataset=ZARR, assets=(key,), expression=expression))
+        response = client.get(
+            _url((tile.z, tile.x, tile.y), dataset=ZARR, assets=(key,), expression=expression, extra=f"&tilesize={size}")
+        )
         assert response.status_code == 200, response.text
         from_tile = _decode(response.content)
-        from_job = _job_tile(result.path, (tile.z, tile.x, tile.y))
+        from_job = _job_tile(result.path, (tile.z, tile.x, tile.y), size)
 
-        col, row = _source_position(tile)
+        col, row = _source_position(tile, size)
         inside = (col >= 0) & (col < mini_zarr_cf.SIZE) & (row >= 0) & (row < mini_zarr_cf.SIZE)
         picked_row = numpy.clip(numpy.floor(row).astype(int), 0, mini_zarr_cf.SIZE - 1)
         picked_col = numpy.clip(numpy.floor(col).astype(int), 0, mini_zarr_cf.SIZE - 1)
@@ -303,13 +315,14 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
         valid = inside & ~numpy.ma.getmaskarray(exact)
         assert valid.sum() > 1000
         assert numpy.array_equal(~from_tile.mask, valid)
-        assert numpy.array_equal(from_tile.data[valid], numpy.ma.getdata(exact)[valid])
-
         near_a_boundary = (numpy.abs(col - numpy.round(col)) <= 0.125) | (numpy.abs(row - numpy.round(row)) <= 0.125)
+        not_exact = valid & (from_tile.data != numpy.ma.getdata(exact))
+        assert not (not_exact & ~near_a_boundary if size == 512 else not_exact).any()
+
         job_mask = numpy.ma.getmaskarray(from_job)
         differing = (from_tile.mask != job_mask) | (~from_tile.mask & ~job_mask & (from_tile.data != from_job.data))
         assert not (differing & ~near_a_boundary).any()
-        assert differing.sum() < 0.02 * valid.sum()
+        assert differing.sum() < ZARR_DIFFERING[size] * valid.sum()
 
     def test_a_tile_below_the_native_level_is_a_preview_and_not_asserted_equal(
         self, client: TestClient, files: dict[str, Path], tmp_path: Path
@@ -503,6 +516,30 @@ class TestRefusals:
 
 
 # --- what the tile does not change --------------------------------------------------------------
+
+
+class TestTheTileSize:
+    """256 or 512 px on the tile of a scene (NM4-29 §15); the viewer draws scenes and item previews at 256 px."""
+
+    @pytest.mark.parametrize(("query", "size"), [({}, 256), ({"tilesize": "256"}, 256), ({"tilesize": "512"}, 512)])
+    def test_the_tile_has_the_size_asked_for(self, client: TestClient, query: dict[str, str], size: int) -> None:
+        extra = "".join(f"&{name}={value}" for name, value in query.items())
+        response = client.get(_url(_tiles()[1], extra=extra))
+        assert response.status_code == 200, response.text
+        assert _decode(response.content).shape == (size, size)
+
+    @pytest.mark.parametrize("size", ["1024", "4096", "0"])
+    def test_another_size_is_a_400(self, client: TestClient, size: str) -> None:
+        for path in (_url(_tiles()[1]), f"/collections/{COG}/items/{ITEM}/WebMercatorQuad/tilejson.json?asset=red"):
+            response = client.get(f"{path}&tilesize={size}")
+            assert response.status_code == 400, (path, response.text)
+            assert response.json()["detail"] == "tilesize is 256 or 512"
+
+    def test_the_tilejson_hands_out_tiles_of_256_px_unless_asked_for_512(self, client: TestClient) -> None:
+        path = f"/collections/{COG}/items/{ITEM}/WebMercatorQuad/tilejson.json?asset=red"
+        (default,) = client.get(path).json()["tiles"]
+        (asked,) = client.get(path + "&tilesize=512").json()["tiles"]
+        assert "tilesize=256" in default and "tilesize=512" in asked
 
 
 class TestWhatStaysAsItWas:

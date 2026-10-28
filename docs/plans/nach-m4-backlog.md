@@ -163,7 +163,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
      - Verhalten beim Zoomen oder Verschieben während des Abspielens.
    - **Aufgabe:** Stufe A, nur Frontend; Test, dass der Wechsel erst nach dem Laden erfolgt (mit verzögerten Kacheln).
 19. **Auto stretch der Vorschau über die AOI** (Otto, 24.10.2026).
-   - **Backend:** PR #218 (28.10.2026): `POST /collections/{dataset}/statistics` im `tiler`, Body = Auftrag, Zählung mit dem Code des Jobs, exakt bis 2048² Pixel, darüber `exact: false`; Cache 7 Tage. Frontend und Index-Regel nach Perzentilen: NM4-19b (§15 des Plans), nach dem Merge in neuer Session.
+   - **Backend erledigt:** PR #218 (28.10.2026): `POST /collections/{dataset}/statistics` im `tiler`, Body = Auftrag, Zählung mit dem Code des Jobs, exakt bis 2048² Pixel, darüber `exact: false`; Cache 7 Tage. Frontend und Index-Regel nach Perzentilen: NM4-19b (§15 des Plans), nach dem Merge in neuer Session.
    - **Plan:** `querschnitt/nm4-19-auto-stretch-ueber-aoi.md`
    - **Heute (M4-19c):** Die Messung für die Farbskala der Vorschau gilt für die erste Szene der Karte, auch bei „AOI only“ für die ganze Szene. Das Job-Ergebnis nimmt dagegen die Statistik über die AOI-Maske (M4-32). Vorschau und Ergebnis können sich deshalb unterscheiden.
    - **Soll:** Bei „AOI only“ misst auch die Vorschau über die AOI, damit Vorschau und Ergebnis dieselbe Farbskala zeigen.
@@ -239,7 +239,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Erledigt:** NM4-31, PR #203 (26.10.2026): `extent_result`, Zweig in `coverage_route.py` und die Klausel in `check_adapter_specs` entfernt; Feld `extent` der Antwort bleibt; Nachtrag `adr/0004`.
 32. **Paket „Datensatzabhängige Suche und Prozessierung“ (DS)** (Otto, 26.10.2026). DS-02, DS-03, DS-06 nach VP3 und vor M5; DS-04 und DS-05 (Sentinel-1) erst mit oder nach M5.
    - **DS-02a erledigt** (PR #217, gemergt 28.10.2026): Filter je Datensatz in der Registry (`earthx:search_filters`; S2: Cloud cover, No data, Satellite), `query_by_collection`, `adr/0021`; Live-Abgleich `tests_live/test_search_filters_live.py`, eingetragen im Job `earth-search` von `live-smoke.yml` (ausdrückliche Ausnahme für `.github/`, Otto 28.10.2026). Orbit-Richtung und relative Umlaufbahn tragen S2-Items nicht, kommen mit DS-04 für S1. Offen: DS-02b (Coverage), DS-02c (Oberfläche, Umschalter je Datensatz).
-   - **DS-02b** (PR #226, 28.10.2026): `GET /coverage/{id}` nimmt `query` wie die Suche, `max_cloud_cover` entfällt; Prüfung gegen die Registry, Fehler der Quelle nur als Status.
+   - **DS-02b erledigt** (PR #226, 28.10.2026): `GET /coverage/{id}` nimmt `query` wie die Suche, `max_cloud_cover` entfällt; Prüfung gegen die Registry, Fehler der Quelle nur als Status.
    - **DS-01 erledigt:** `adr/0018` Fassung 2 (PR #200): keine regionale Quelle; Earth Search `sentinel-1-grd` als Level-1-Datensatz mit TPS-Georeferenz überall und Hinweisen „Approximate geolocation“/„Uncalibrated (DN)“; Planetary Computer RTC nur nach positiver Messung durch Otto (anonymes Token zulässig unter Bedingungen, Originale per Klick); eigene Geländekorrektur als eigenes ADR nach DS-04.
    - **Pläne:** `ds/ds-00-paket.md` (Übersicht) und `ds/ds-01` bis `ds/ds-06`: Sentinel-1-Quelle (C), „Advanced search“ (B), Wolken in der AOI (B), S1 anbinden (A), SAR-Operatoren (B), Maske nach Werten (B).
 
@@ -250,6 +250,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe B mit Recherche und Messung, nach UI-01.
 
 34. **Job neu starten („Retry“) und Umbenennen im Processing-Fenster** (Otto, 26.10.2026).
+   - **Erledigt:** NM4-34, PR #225 (28.10.2026): ↻ bei gescheiterten, abgebrochenen, abgelaufenen und „No longer available“-Jobs (mit Auftragskopie), auch `disk_space` und `source_429`; nicht bei `source_4xx`/`runtime_exceeded` („Open in panel“). Neuer Job an derselben Stelle, alter als „Superseded“ archiviert; „Retry failed parts“; Umbenennen per Klick auf den Titel.
    - **Plan:** `querschnitt/nm4-34-job-neu-starten.md`
    - **Soll:** Ein kleines Symbol (↻, kein Tastenkürzel) startet einen gescheiterten, abgebrochenen oder abgelaufenen Job mit demselben Auftrag neu; bei einem Batch nur die gescheiterten Teile. Der neue Job ersetzt den alten in der Zeile, der alte wird archiviert. Wo es nicht geht (keine Auftragskopie, Datensatz ausgeschieden), erscheint das Symbol nicht. Dazu: Titel direkt in den Details im Processing-Fenster umbenennen.
    - **Aufgabe:** Stufe A, nur Frontend, nach UI-01f, nicht gleichzeitig mit NM4-27.
@@ -258,19 +259,19 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-35-relief.md`
    - **Soll:** Schalter „Relief“ bei den Overlays des Basemap-Menüs, über jeder Basemap; optional Basemap „Relief“. Erste Option: MapLibre zeichnet `hillshade` im Browser aus freien Höhenkacheln (etwa AWS Terrain Tiles), ohne Backend und Pyramide; Alternative: eigenes Copernicus DEM.
    - **Aufgabe:** Stufe B mit Recherche, nach UI-02a.
-   - **Stand 28.10.2026 (PR #222):** Option A (MapLibre `hillshade`, AWS Terrain Tiles, bis Zoom 12), Basemap „Relief“ allein, nur die Basemap im Permalink. Attribution: Kurzform „Terrain: USGS, NOAA, EU-DEM (Copernicus) and others“ als Link auf die Joerd-Liste; Rest-Risiko bei CC BY 3.0 AT/NZ, OGL Canada, EU-DEM, INEGI von Otto in Kauf genommen, **vor dem öffentlichen Betrieb (M6) rechtlich prüfen**.
+   - **Erledigt (PR #222, 28.10.2026):** Option A (MapLibre `hillshade`, AWS Terrain Tiles, bis Zoom 12), Basemap „Relief“ allein, nur die Basemap im Permalink. Attribution: Kurzform „Terrain: USGS, NOAA, EU-DEM (Copernicus) and others“ als Link auf die Joerd-Liste; Rest-Risiko bei CC BY 3.0 AT/NZ, OGL Canada, EU-DEM, INEGI von Otto in Kauf genommen, **vor dem öffentlichen Betrieb (M6) rechtlich prüfen**.
 43. **Ausgabe-Bänder statt Bandauswahl, Band-Math-Ergebnisse als eigene Bänder, keine Bandgrenze** (Otto, 27.10.2026).
    - **Plan:** `querschnitt/nm4-43-ausgabe-baender.md`
    - **Soll (Otto):** keine Obergrenze für die Zahl der Bänder; ein `band_math`-Ergebnis wird ein eigenes Band; oben keine Auswahl mehr, nur Info und Namenshilfe; am Ende des Panels alle Bänder des Datensatzes und alle neu gerechneten, per Klick in die Ausgabe. Standardmäßig ist nur das Band-Math-Ergebnis in der Ausgabe; mehrere `band_math`-Schritte hintereinander mit unterschiedlichen Bändern sind möglich.
    - **Aufgabe:** Stufe C, ADR-Entwurf `adr/0020` mit Messung und Recherche (Schutz ohne Bandgrenze, Ausgabedatei mit gemischten Typen, Vorschau, Hash, alte Rezepte). Nimmt NM4-10 in sich auf; NM4-11, NM4-14, NM4-20, DS-06 warten auf die Entscheidung.
-   - **Entschieden (Otto, 28.10.2026, PR #219):** `adr/0020` angenommen, F1–F13 Option 1 außer F7 Option 2 (ohne `band_math` alle wählbaren Bänder angehakt). Aufgaben in §6 des Plans: NM4-43a (Schätzung nach feinstem Asset) und NM4-43b (`reproject` Version 4 je Band) sofort und unabhängig; dann NM4-43c (Kern, zwei PRs), NM4-43d (Kachel), NM4-43e (Frontend). Runner liest Rezept-Version 1 dauerhaft; `api` bis 30 Tage nach dem Deploy von NM4-43e. NM4-11, NM4-14, NM4-20, DS-06 nach NM4-43c.
+   - **Entschieden (Otto, 28.10.2026, PR #219):** `adr/0020` angenommen, F1–F13 Option 1 außer F7 Option 2 (ohne `band_math` alle wählbaren Bänder angehakt). Aufgaben in §6 des Plans: NM4-43a (Schätzung nach feinstem Asset; erledigt #224, `adr/0014` §15v) und NM4-43b (`reproject` Version 4 je Band) sofort und unabhängig; dann NM4-43c (Kern, zwei PRs), NM4-43d (Kachel), NM4-43e (Frontend). Runner liest Rezept-Version 1 dauerhaft; `api` bis 30 Tage nach dem Deploy von NM4-43e. NM4-11, NM4-14, NM4-20, DS-06 nach NM4-43c.
 44. **Schwachstellen der Frontend-Pakete prüfen (`npm audit`)** (Otto, 27.10.2026; 8 Meldungen bei `npm install`, dazu Node-Version für `jsdom`).
    - **Plan:** `querschnitt/nm4-44-npm-audit.md`
    - **Aufgabe:** Stufe A, nach UI-02a (#211). Gezielt aktualisieren, kein `npm audit fix --force`; Hauptversionssprung nur nach Ottos Freigabe.
 45. **Einzelne Bänder in der Vollauflösungs-Ansicht per Dropdown** (Otto, 27.10.2026).
    - **Plan:** `querschnitt/nm4-45-band-in-ansicht.md`
    - **Soll:** Dropdown „Band“ in der Ansicht, Vorgabe `visual`, dazu jedes Band aus der Registry; bei einem Band Colormap, vmin/vmax, „auto-scale“; Anheften behält das Band. Nur Einzelbänder.
-   - **Aufgabe:** Stufe A, Frontend, nach UI-02a (#211).
+   - **Aufgabe:** Stufe A, Frontend, nach NM4-53 (beide ändern die Leiste der Ansicht).
 
 46. **Eigene Dateien hochladen** (Otto, 28.10.2026: „dass ich eigene dateien hochladen kann“).
    - **Stand heute:** Nur AOIs lassen sich hochladen (GeoJSON, KML, Shapefile als ZIP; M3-06a/b), nichts wird gespeichert. Eigene Rasterdaten gibt es nicht.
@@ -295,6 +296,9 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 52. **Tooltips liegen immer über allem und bleiben im Fenster** (Otto, 28.10.2026; Anlass: Tooltip am Rufzeichen wird von anderen Kästen verdeckt).
    - **Plan:** `querschnitt/nm4-52-tooltips-ueber-allem.md`
    - **Aufgabe:** Stufe A, Frontend, klein.
+53. **Ansicht nach „Crop & merge“ über mehrere Gruppen und Datensätze: Zeitschritte durchschalten** (Otto, 28.10.2026). Kleine Zeile `‹ Datum · S2A ›` in der Leiste der Ansicht, Dropdown für den Datensatz, „Add to layers“ nur der angezeigte Zeitschritt, neu „Add all to layers“.
+   - **Plan:** `querschnitt/nm4-53-ansicht-mehrere-zeitschritte.md`
+   - **Aufgabe:** Stufe B, Frontend, nach NM4-50; danach NM4-45 (beide ändern die Leiste der Ansicht). Der Fehler „Haken verschwinden beim Wechsel der Gruppe/des Datensatzes“ geht an NM4-50.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).

@@ -2517,3 +2517,95 @@ der Kern aber alle Assets auf das **feinste** Raster liest (`processing/source.p
   Bei einem einzigen Pixelmaß bleiben alle Zahlen bitgleich zu vorher; `earthx.__version__` bleibt, kein Byte eines Ergebnisses ändert sich.
 - **Tests:** `test_plan.py` (`TestTheRasterIsTheFinestAsset`), `test_estimate_geographic.py` (zwei Pixelgrößen in Grad) und
   `test_band_math_run.py` (`TestNestedGrids`: die Schätzung gegen den Lauf auf zwei Pixelgrößen).
+
+## 15 Nachtrag NM4-43b (2026-10-28): `reproject` Version 4, je Band ein Warp (zu §3.4, §6.3, §15j)
+
+`adr/0020` §3.4 hat gemessen, dass der Wert eines Bandes nach `reproject` an der Zahl der Bänder der Zwischendatei hing. Der
+Originaltext von §3.4 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Was falsch war:** `reproject` warpte je Block alle Bänder der Zwischendatei in einem `WarpedVRT`. GDAL teilt den Warp nach
+  `warp_mem_limit` (64 MB) auf, und diese Teilung hängt an der Zahl der Bänder. Band 1 ist bei 1, 2 und 3 Bändern bitgleich;
+  ab 4 Bändern weichen 4 136 158 von 4 303 544 Pixeln ab (größte Abweichung 0,0077 bei Werten bis 0,5), zwölf Randpixel wechseln
+  zwischen gültig und NaN; 4, 18 und 34 Bänder ergeben dieselben Werte (`scripts/nm4-43-bands/warp_bands.py --op-version 3`, die Zahlen
+  aus `adr/0020` §3.4 stimmen). Mit dem Streichen ungenutzter Bänder (NM4-43c) hinge der Wert eines Bandes an dem, was die Ausgabe sonst enthält.
+- **Was jetzt gilt:** `reproject` Version 4 hat dieselben Parameter (`crs`, `resolution`, `resampling`, `align`) und denselben festen Plan
+  (Blöcke 1024 px, `tolerance` 0,125, `warp_mem_limit` 64 MB). Jedes Band bekommt einen **eigenen Warp**; der Wert eines Bandes hängt nur
+  noch an ihm selbst. Eine Zwischendatei mit einem Band wird wie bei Version 3 direkt gewarpt, bei mehreren Bändern liest der Operator
+  jedes Band durch eine Einband-Sicht (`workfile.open_workfile_band`: ein VRT-Dokument, das als Text an `rasterio.open` geht, nichts
+  wird geschrieben). Sie liegt in `workfile.py`, der einen Stelle, an der `processing` Dateien öffnet (`test_no_direct_open.py`), und
+  nimmt nur eine geöffnete Arbeitsdatei: ein Name, der keine Arbeitsdatei sein kann, oder ein Symlink wird mit `WorkfileRejected` abgewiesen.
+- **Version 3 bleibt angenommen** und rechnet wie bisher (alle Bänder in einem Warp, gleiche Bytes), wird aber nicht mehr gelistet,
+  wie Version 2 (`REPROJECT_V3` in `operators/reproject.py`; die Prozessbeschreibung listet nur die höchste Version). Das Panel nimmt
+  die gelistete Version aus der Prozessbeschreibung; ein Rezept mit Version 2 oder 3 wird dort als Version 4 gelesen (Hinweis „taken as version 4“).
+- **Bitgleichheit:** Für 1 bis 3 Bänder gibt Version 4 dieselben Bytes wie Version 3 (bestehende Einband- und Dreibandaufträge ändern
+  sich nicht); ab 4 Bändern ändern sich die Werte der Bänder 1 und folgende gegenüber Version 3. `earthx.__version__` 0.4.3 → 0.4.4
+  (`adr/0016` §9); der Cache-Schlüssel ändert sich über `op_version`. Der Methodentext bleibt.
+- **Toleranz (§6.3, §15j):** Für jedes Band einer Datei mit mehreren Bändern gilt dieselbe Zeile wie im Einbandlauf
+  (`test_reproject_tolerance.py`); die Maske (NaN) ist je Band dieselbe wie im Einbandlauf.
+- **Messung** (`scripts/nm4-43-bands/warp_bands.py --measure --op-version 3|4 [--interleave band]`, synthetisch, `bilinear`, Zwischendatei
+  mit dem Profil des Kerns: 1024-px-Kacheln, deflate, `float64`, `GDAL_CACHEMAX` 64 MB, Spitze `VmHWM` des Warp-Prozesses; Sitzung, 4 Kerne; Version 4 mit einem Band wie Version 3):
+
+  | Bänder | Version 3, Pixel-Interleave (heute) | Version 4, Pixel-Interleave | Version 3, Band-Interleave | Version 4, Band-Interleave |
+  |---|---|---|---|---|
+  | 1 | 2,4 s, 325 MB | 3,1 s, 325 MB | 2,5 s, 325 MB | 2,5 s, 325 MB |
+  | 4 | 40,0 s, 433 MB | 56,2 s, 435 MB | 34,9 s, 378 MB | 20,4 s, 319 MB |
+  | 17 | 336,7 s, 865 MB | 874,9 s, 838 MB | 281,8 s, 608 MB | 97,7 s, 541 MB |
+
+  4096² Quellpixel, 25 Blöcke des Ziels; Sekunden und Spitze des Warp-Durchgangs, die Datei wird in einem eigenen Prozess geschrieben.
+  Gleiche Reihe bei 2048² (Spitze mit dem Schreiben der Datei im selben Prozess, daher höher): Version 3 0,6 / 7,8 / 72 s, Version 4
+  1,2 / 17 / 252 s bei 1 / 4 / 17 Bändern; mit Band-Interleave Version 3 6,5 / 68 s, Version 4 5,0 / 23 s bei 4 / 17 Bändern. Die
+  1-Band-Zeile von Version 4 (3,1 gegen 2,4 s) liegt im Rauschen der Sitzung: Der Operator warpt eine Datei mit einem Band direkt.
+
+  Im Gesamtlauf des Kerns mit Pixel-Interleave (`memory_run.py`, zwei Durchgänge, Szene als COG): 4 Bänder bei 4096² 522 MB (Version 3) gegen 521 MB
+  (Version 4), 73 s gegen 75 s; 17 Bänder bei 2048² 1051 MB und 145 s (Version 3) gegen 981 MB und 216 s (Version 4).
+- **Befund zum Aufwand:** Mit GDALs Layout der Zwischendateien (Pixel-Interleave) braucht Version 4 gleich viel Speicher (bei 17 Bändern etwas
+  weniger), bei einem Band gleich lang, bei mehreren Bändern länger: im Warp-Durchgang das 1,4-fache bei 4 und das 2,6-fache bei 17 Bändern, im
+  Gesamtlauf das 1,0- und das 1,5-fache. Ein Band aus einer Pixel-Interleave-Kachel zu lesen, entpackt die ganze Kachel (`float64`, deflate), und
+  `GDAL_CACHEMAX` 64 MB hält die Bänder derselben Kachel nicht.
+- **Band-Interleave der Zwischendateien (Otto, 28.10.2026, Option 2):** Der Kern schreibt jeden Durchgang, den ein späterer liest, mit
+  `INTERLEAVE=BAND` (`core._profile`, `_Run.write_pass`). Damit ist Version 4 **schneller als Version 3 heute** (4096²: 4 Bänder 20,4 s gegen
+  40,0 s, 17 Bänder 97,7 s gegen 336,7 s) und braucht weniger Speicher (17 Bänder 541 gegen 865 MB). **Nur Zwischendateien:** der letzte
+  Durchgang, aus dem `result.tif` wird, und `mask.tif` behalten das Layout von GDAL; die Dateien eines Auftrags ändern sich im Format nicht.
+  `result.tif` und `mask.tif` sind bei 1 bis 3 Bändern bytegleich zum Lauf von Version 3 vorher, und das Layout allein ändert auch bei 4 Bändern
+  kein Byte; bei 4 Bändern weichen nur die Werte nach Version 4 ab (Profil und Maske gleich). Die ganze Suite läuft damit grün (`test_pass_interleave.py`).
+- **Kostenfaktor (Otto: anpassen, falls Version 4 mit Band-Interleave deutlich schneller ist, als der Faktor annimmt):** Er bleibt. Der Faktor
+  in `_METHODS` gilt je Pixel und Band und ist am Ein- bis Zweibandlauf gemessen; ein Band kostet in Version 4 mit Band-Interleave bei 4 und 17 Bändern
+  5,1 und 5,7 s gegen 2,5 s bei einem Band (4096²), also mehr, nicht weniger, als der Faktor annimmt. Schneller als Version 3 heute ist Version 4
+  nur, weil Version 3 bei vielen Bändern je Band 10,0 (bei 4) und 19,8 s (bei 17) brauchte. Die Zeitschätzung je Ausgabeband mit einem gemessenen
+  Wert je Band kommt mit NM4-43c, PR 2 (`adr/0020` §7).
+- **Speicher mit vielen Bändern:** Die Grenze von 500 MB (M4-07a) hält für 17 Bänder nicht, auch nicht für den Durchgang, der zuschneidet und
+  skaliert (556 MB bei 1024²). Gemessen im Gesamtlauf des Kerns (`memory_run.py`): 4 Bänder 452 MB bei 4096² (vorher 521 MB), 17 Bänder 612 MB bei
+  1024² (vorher 754 MB, Version 3: 821 MB). Die Grenze je Lauf ist Sache von NM4-43c, PR 2; Otto hat die gemessenen Grenzen der Tests angenommen:
+  `test_memory_reproject.py` hat einen Lauf mit 4 Bändern (Grenze 600 MB, Wachstum höchstens 120 MB, gemessen 60 MB) und einen mit 17 Bändern
+  (Grenze 800 MB), je mit etwa einem Drittel Reserve.
+- **Tests:** `test_reproject.py` (`TestEachBandIsWarpedForItself`: Band 1 bytegleich bei 1, 2, 3, 4, 18 und 34 Bändern, jedes Band gleich seinem
+  Einbandlauf, Version 4 gleich Version 3 bis 3 Bänder, Masken je Band; `TestVersion3IsUnchanged`: Version 3 gleich einem Warp über alle Bänder,
+  bei 4 Bändern weiter anders als Version 4), `test_reproject_tolerance.py`, `test_workfile.py` (`TestABandOfAWorkFile`), `test_pass_interleave.py` (welche Dateien band-weise geschrieben werden, Format und Bytes der
+  Ausgabedateien gegenüber vorher),
+  `test_memory_reproject.py`. **Gegenprobe:** Rechnet Version 4 wie Version 3, scheitern fünf der neuen Tests (Band 1 bei 4, 18 und 34 Bändern,
+  jedes Band gleich dem Einbandlauf, Version 3 gegen 4 bei 4 Bändern).
+
+## 15 Nachtrag NM4-29: das Kachelraster je Kachelgröße (2026-10-28; zu §6.3, §6.4)
+
+Otto hat am 2026-10-28 entschieden, dass Mosaik und Mosaik-Vorschau mit 512 px gezeichnet werden, Szene,
+Item-Vorschau und Ergebnis weiter mit 256 px; der `tiler` liefert beide Größen
+(`plans/querschnitt/nm4-29-kacheln-512.md` §15, `adr/0006` Nachtrag NM4-29). Der Originaltext in §6.3 bleibt
+stehen; maßgeblich ist dieser Nachtrag.
+
+- **„Das Kachelraster einer Zoomstufe“ (§6.3, Zeile 2) ist das Raster der Kachel in ihrer Größe.** Die
+  native Ebene der 10-m-Daten ist mit 256 px z14 und mit 512 px z13: Beide haben dieselbe Pixelgröße.
+- **Bitgleich bei beiden Größen [M]:** Band math, Ketten, `mask`/`normalize` und die Mosaik-Kachel mit
+  Schritten, jeweils gegen den Job, der mit `nearest` auf dieselbe Kachel derselben Größe gelesen wird.
+  Die Vergleichstests (§6.4) laufen für 256 px auf z14 und für 512 px auf z13 (`api/test_tiler_operator.py`,
+  `test_tiler_chain.py`, `test_tiler_mask_normalize.py`, `test_tiler_mosaic_operator.py`).
+- **Zwischen den Größen nicht byte-identisch [M]:** Eine 512er-Kachel weicht von ihren vier 256er-Kacheln
+  ab, auf der nativen Ebene an 1,1 % der Pixel, auf Übersichtsstufen an 0,06–0,07 %. Ursache: Der Warp
+  (`WarpedVRT`) rechnet die Transformation mit einer Näherung von 0,125 px, und über eine längere Zeile
+  fällt sie anders aus. Wo ein Zielpixel fast auf einer Quellpixelgrenze liegt, wählt `nearest` dann den
+  anderen Nachbarn; neue Werte entstehen nicht. Mit einer Toleranz von 1e-6 sind beide gleich
+  (Plan §8, §14.2). Die Kacheln bleiben bei 0,125 px.
+- **Zarr:** Die Abweichungen zwischen Kachel und Job liegen auch mit 512 px nur innerhalb von 0,125 px an
+  einer Pixelgrenze; ihr Anteil darf dort bis 3 % (256 px: 2 %) der gültigen Pixel betragen, gemessen
+  2,1 %. Gegen den exakt nächsten Quellpixel gilt mit 512 px dieselbe Ausnahme an Grenzen (1 von 6462
+  Pixeln), mit 256 px weiter keine.
+

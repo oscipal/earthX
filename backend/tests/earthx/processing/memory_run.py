@@ -5,10 +5,10 @@ Called by ``test_memory_8192.py`` as ``python -m tests.earthx.processing.memory_
 square scene in pixels. It puts the COG behind the same two
 seams the tests use — ``vsicurl_path`` and the resolver — enters
 ``worker_environment()`` in its main thread as a `jobs` child does (adr/0013 §5.3),
-runs one step over both bands — the test operator ``scale``, or with ``step`` set to
+runs one step over every band of the COG (two, or more since NM4-43b) — the test operator ``scale``, or with ``step`` set to
 ``reproject`` the platform's ``reproject`` to EPSG:3035 with ``bilinear`` at 10 m, with
 ``reproject-lanczos`` with ``lanczos`` at 30 m, with ``normalize`` the platform's
-``normalize`` over both bands, with ``mask`` its ``mask`` over both bands and the 20 m
+``normalize`` over its bands, with ``mask`` its ``mask`` over its bands and the 20 m
 classification layer ``layer`` (a second COG, M4-18) — and prints one JSON line: peak
 resident memory in MB, the resident memory after the imports, seconds and blocks.
 Nothing here opens a socket.
@@ -45,13 +45,13 @@ STEPS = {
     "scale": {"op": "scale", "op_version": 1, "params": {"factor": 2.0}},
     "reproject": {
         "op": "reproject",
-        "op_version": 3,
+        "op_version": 4,
         "params": {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
     },
     # The highest peak of plan M4-24 §7.5: lanczos, coarsening by 3.
     "reproject-lanczos": {
         "op": "reproject",
-        "op_version": 3,
+        "op_version": 4,
         "params": {"crs": "EPSG:3035", "resolution": 30.0, "resampling": "lanczos"},
     },
     # M4-18: the two pixel operators, in the pass that reads the scene.
@@ -68,6 +68,8 @@ def main(
     cog: Path, workdir: Path, size: int, cachemax_mb: int | None, step: str = "scale", layer: Path | None = None
 ) -> None:
     # Imported here, after `boto3` is hidden (module docstring), not at the top.
+    import rasterio
+
     import earthx.readers.access as read_access
     import earthx.readers.cog as cog_reader
     from earthx.processing import run, worker_environment
@@ -83,8 +85,10 @@ def main(
     read_access.resolve_host = lambda host, port=443: ("93.184.216.34",)
     if cachemax_mb is not None:
         read_access.GDAL_CACHEMAX_BYTES = cachemax_mb * 1024 * 1024
+    with rasterio.open(cog) as scene:
+        bands = scene.count
     entry = resolved("ITEM_BIG", "big", href=address)
-    entry["bands"] = entry["bands"] * 2
+    entry["bands"] = entry["bands"] * bands
     entries, assets = [entry], ["big"]
     if layer is not None:
         classes = resolved("ITEM_BIG", "scl", href=layer_address, scale=None, offset=None)
