@@ -961,6 +961,13 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     await afterDebounce();
   }
 
+  it('says nothing in the console where the route answers', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    warn.mockClear();
+    await aoiOnly();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('posts the order of the job once, as the body of the dataset route, and asks no statistics of a scene for it', async () => {
     await withNdvi();
     const before = sceneAsked().length;
@@ -1092,9 +1099,16 @@ describe('the range measured over the AOI (NM4-19b)', () => {
   });
 
   describe('falls back to the first whole scene, as before, and says so', () => {
+    let warn: ReturnType<typeof vi.spyOn>;
     beforeEach(() => {
       statistics = () => measured({ b1: DEM });
+      warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      warn.mockClear();
     });
+    // One line with the status and nothing of the answer or the order, so that an order built wrongly (422) shows in the console.
+    const warned = (what: string) => {
+      expect(warn.mock.calls).toEqual([[`area statistics: ${what}; measuring the first whole scene`]]);
+    };
     const fellBack = () => {
       expect(posted()).toHaveLength(1);
       expect(sceneAsked()).toHaveLength(2); // the scene measure of "Whole scene" first, then that of the fall-back
@@ -1111,15 +1125,17 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       ['an order it refuses', 422],
       ['a dataset under another licence', 403],
     ])('for %s', async (_, status) => {
-      areaStatistics = () => new Response(JSON.stringify({ detail: 'refused' }), { status, headers: { 'Content-Type': 'application/json' } });
+      areaStatistics = () => new Response(JSON.stringify({ detail: 'refused 10.4 recipe_version' }), { status, headers: { 'Content-Type': 'application/json' } });
       await aoiOnly();
       fellBack();
+      warned(`status ${status}`);
     });
 
     it('for a network that fails', async () => {
-      areaStatistics = () => Promise.reject(new TypeError('failed'));
+      areaStatistics = () => Promise.reject(new TypeError('failed to fetch 10.4'));
       await aoiOnly();
       fellBack();
+      warned('no readable answer');
     });
 
     it.each([
@@ -1130,6 +1146,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       areaStatistics = () => measured(answer);
       await aoiOnly();
       fellBack();
+      warned('no readable answer');
     });
 
     it('for a chain the tiler takes only in part: the preview shows less than the order runs', async () => {
@@ -1154,6 +1171,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       areaStatistics = () => new Response('{}', { status: 502 });
       await aoiOnly();
       fellBack();
+      warned('status 502');
       expect(button('Auto stretch').disabled).toBe(false);
       areaStatistics = () => areaAnswer([areaBand({ ...DEM, percentile_2: 130 })]);
       click(button('Auto stretch'));

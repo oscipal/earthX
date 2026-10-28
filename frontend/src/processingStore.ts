@@ -1741,7 +1741,10 @@ async function measureOver(spec: PreviewSpec): Promise<PreviewMeasure> {
   if (spec.areaOrder) {
     try {
       return areaMeasureOf(spec.measure, await postAreaStatistics(spec.areaOrder.datasetId, spec.areaOrder.order), spec.expression);
-    } catch {
+    } catch (error) {
+      // The status alone: an order the panel built wrongly (422) must not pass unnoticed, but the text of an answer and
+      // the order carry what was sent, the AOI among it.
+      console.warn(`area statistics: ${error instanceof HttpError ? `status ${error.status}` : 'no readable answer'}; measuring the first whole scene`);
       return measureOf(spec.measure, await fetchStatisticsAt(spec.sceneMeasure), spec.expression, 'fallback');
     }
   }
