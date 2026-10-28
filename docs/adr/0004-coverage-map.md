@@ -522,7 +522,10 @@ Fähigkeit ausdrücklich frei), keine Heuristik.
 > kann (`max_cloud_cover` auf diesem Weg; `datetime` bei
 > `capabilities.time_range=False`), wird stillschweigend fallengelassen und in
 > einem neuen Feld `ignored_filters` benannt, statt eine engere Antwort zu
-> geben, als gefragt wurde.
+> geben, als gefragt wurde. *(Stand 28.10.2026, DS-02b: `max_cloud_cover` gibt es
+> nicht mehr. Die Suchfilter des Datensatzes kommen als `query` an die Route; ein
+> Datensatz ohne Filter, auch der Flächenweg, weist sie mit `400` ab, statt sie
+> fallenzulassen. `ignored_filters` nennt nur noch `datetime`.)*
 
 **Zeit-Histogramm: derselbe Anbieter, derselbe Filter.** Föderiert über
 `datetime_frequency` (0,50 s für 133 Monate, §3.2), lokal über `date_trunc`

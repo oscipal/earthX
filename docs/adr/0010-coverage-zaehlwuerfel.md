@@ -71,7 +71,9 @@ Such-AOI) und `datetime` auf. `datetime` ist tagesgenau (`YYYY-MM-DDT00:00:00Z`
 bis `…T23:59:59Z`) und beim Start leer. **Einen Wolkenfilter setzt die
 Oberfläche nirgends** — `maxCloudCover` gibt es nur im API-Client
 (`api.ts:227`). Die Route nimmt `max_cloud_cover` an, aber kein Bedienelement
-füllt es.
+füllt es. *(Stand 28.10.2026, DS-02b: Die Route nimmt stattdessen `query` mit den
+Suchfiltern des Datensatzes, `adr/0021`; `maxCloudCover` ist aus dem API-Client
+entfernt, die Bedienelemente kommen mit DS-02c.)*
 
 ## 2. Kriterien
 

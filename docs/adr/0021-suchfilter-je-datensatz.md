@@ -2,7 +2,7 @@
 
 - **Status:** Entwurf (Nummer 0021, weil 0020 durch NM4-43 belegt ist; Otto, 28.10.2026). Die Entscheidungen hat Otto am 28.10.2026 mit dem Plan von DS-02 getroffen (`docs/plans/ds/ds-02-advanced-search.md` §6, freigegeben zu #217). Dieses ADR hält sie als Architekturentscheidung fest; Begründung, Optionen und Messungen stehen im Plan.
 - **Datum:** 2026-10-28
-- **Aufgabe:** DS-02a (Backend Suche). DS-02b (Coverage) und DS-02c (Oberfläche) folgen als eigene PRs.
+- **Aufgabe:** DS-02a (Backend Suche, umgesetzt), DS-02b (Backend Coverage, §5) und DS-02c (Oberfläche) als eigene PRs.
 
 ## 1. Anlass
 
@@ -27,5 +27,15 @@ Otto möchte unter „Advanced search“ die Filter sehen, die zum gewählten Da
 ## 4. Folgen
 
 - Sentinel-2 bietet Cloud cover, No data und Satellite an; der DEM keine.
-- DS-02b ersetzt `max_cloud_cover` an `/coverage` durch dieselben Bedingungen. DS-02c baut die Oberfläche mit Umschalter je Datensatz.
+- DS-02b ersetzt `max_cloud_cover` an `/coverage` durch dieselben Bedingungen (§5). DS-02c baut die Oberfläche mit Umschalter je Datensatz.
 - Ein materialisierter Datensatz mit Filtern braucht vorher eine Übersetzung für pgstac (CQL2) bzw. die SQL-Coverage: eigene Aufgabe.
+
+## 5. Coverage (DS-02b, 28.10.2026)
+
+1. **Parameter:** `GET /coverage/{dataset_id}` nimmt `query` als JSON in der Form der STAC-Query-Extension (Plan §6.4, Regel 7). `max_cloud_cover` entfällt (Otto, Frage 3).
+2. **Gleiche Prüfung wie die Suche:** Die Route liest `query` mit `api.search_filters.read_search_conditions`, mit dem Datensatz als einziger Collection. Was die Registry des Datensatzes nicht nennt (Eigenschaft, Operator, Typ, Bereich, `earthx:`), ist `400` ohne Wert im Text. Ein Filter, den der Datensatz nicht kennt, ist hier auch `400` und kein Eintrag in `ignored_filters`, weil die Route genau einen Datensatz fragt. Ein Datensatz ohne Filter, auch der Flächenweg des DEM, weist jedes `query` ab; `area_coverage` verweigert Bedingungen zusätzlich selbst, weil sein Cache-Schlüssel sie nicht kennt.
+3. **Modell:** `CoverageQuery.conditions` (`catalog.search_filters`) ersetzt `max_cloud_cover`; `is_unfiltered` ist nur ohne Bedingungen wahr, ein gefilterter Weltblick bekommt also nicht die Lebensdauer von einem Tag (Otto, F3 vom 20.09.2026).
+4. **Quelle:** `/aggregate` bekommt `query` als JSON-Parameter, geschrieben von `earth_search.query_extension`, derselben Funktion wie die Suche. Die URL-Grenze der Quelle (adr/0004 §3.4) gilt weiter; ein gekürzter Umriss behält die Filter.
+5. **Cache:** Der Schlüssel nimmt `conditions_key` nur auf, wenn Bedingungen gesetzt sind; anders gefilterte Karten sind andere Einträge, dieselben Bedingungen in anderer Reihenfolge ein Eintrag. Der Wegfall des festen Feldes `cloud` ändert die Hashes aller bisherigen Einträge einmal; sie laufen aus (E5, kein Fehler).
+6. **Fehler der Quelle (Otto, C):** unverändert `502`/`504` mit eigenem Text; Auszug und Filterwerte erscheinen weder in der Antwort noch im Log. Das Log der Route nennt höchstens die Namen der gesetzten Filter.
+7. **Live-Abgleich:** `backend/tests_live/test_search_filters_live.py` prüft zusätzlich, dass die Aggregation mit jedem Filter genau so viele Szenen zählt, wie die Suche findet (Plan §6.2: 42/7/21/24).
