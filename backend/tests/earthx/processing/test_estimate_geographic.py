@@ -57,27 +57,53 @@ def tile(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-def _recipe(aoi_degrees: float, resolution: float = 30.0, *, gsd: float | None = 30.0, crs: str = "EPSG:4326", target: str = "EPSG:3035"):
+def _recipe(
+    aoi_degrees: float,
+    resolution: float = 30.0,
+    *,
+    gsd: float | None = 30.0,
+    crs: str = "EPSG:4326",
+    target: str | None = "EPSG:3035",
+    also: float | None = None,
+):
+    """``target=None`` leaves out the ``reproject`` step; ``also`` adds a second asset of that ``gsd`` after the first."""
     half = aoi_degrees / 2
     west, south, east, north = CENTRE[0] - half, CENTRE[1] - half, CENTRE[0] + half, CENTRE[1] + half
     entry = resolved("DEM", "data", scale=None, offset=None, href=sources.url("dem"))
     entry["asset"]["crs"], entry["gsd"] = crs, gsd
     entry["bands"] = [{"data_type": "int16", "nodata": -32768, "scale": None, "offset": None}]
-    step = {
-        "op": "reproject",
-        "op_version": 2,
-        "params": {"crs": target, "resolution": resolution, "resampling": "bilinear"},
-    }
+    steps = (
+        []
+        if target is None
+        else [
+            {
+                "op": "reproject",
+                "op_version": 2,
+                "params": {"crs": target, "resolution": resolution, "resampling": "bilinear"},
+            }
+        ]
+    )
+    entries = [entry]
+    if also is not None:
+        second = resolved("DEM", "second", scale=None, offset=None, href=sources.url("dem"))
+        second["asset"]["crs"], second["gsd"], second["bands"] = crs, also, entry["bands"]
+        entries.append(second)
     data: dict[str, Any] = {
         "recipe_version": 1,
         "inputs": [
-            {"name": "dem", "dataset": "synthetic", "groups": [["DEM"]], "assets": ["data"], "resolved": [entry]}
+            {
+                "name": "dem",
+                "dataset": "synthetic",
+                "groups": [["DEM"]],
+                "assets": [e["asset"]["asset"] for e in entries],
+                "resolved": entries,
+            }
         ],
         "aoi": {
             "type": "Polygon",
             "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]],
         },
-        "steps": [step],
+        "steps": steps,
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
     return recipe_from_data(data, REGISTRY)
@@ -95,6 +121,16 @@ def test_the_estimated_target_grid_is_the_one_the_run_makes(
     result = run(recipe, workdir=tmp_path, progress=lambda done, total: None)
     actual = result.meta.width * result.meta.height
     assert 0.8 < estimated / actual < 1.2, (estimated, actual)
+
+
+@pytest.mark.parametrize("gsds", [(90.0, 30.0), (30.0, 90.0)])
+def test_assets_of_two_pixel_sizes_are_sized_on_the_finest_in_degrees(gsds: tuple[float, float]) -> None:
+    """A geographic asset at 90 m beside one at 30 m: the grid is the 30 m one, whichever stands first (adr/0020 §3.3)."""
+    mixed = estimate(_recipe(0.5, gsd=gsds[0], also=gsds[1], target=None), REGISTRY).output_pixels
+    fine = estimate(_recipe(0.5, gsd=30.0, target=None), REGISTRY).output_pixels
+    coarse = estimate(_recipe(0.5, gsd=90.0, target=None), REGISTRY).output_pixels
+    assert mixed == fine
+    assert 8 < mixed / coarse < 10
 
 
 class TestTheSideCapOfTheTargetGrid:
