@@ -8,11 +8,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { finished, jobEntry, jobId, NOW, status } from '../fixtures/jobEntries';
+import { SHELF_KEY } from '../jobShelf';
 import type { Order } from '../processing';
 import { resetJobs, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { useAppStore } from '../store';
 import JobDetails, { NO_COPY_TIP } from './JobDetails';
+import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
 
 declare global {
@@ -213,6 +215,51 @@ describe('what it says of the job', () => {
   });
 });
 
+describe('"Run again"', () => {
+  const failedJob = (over: Partial<JobEntry> = {}) =>
+    jobEntry(1, { phase: 'failed', failure: 'The source failed', failureKind: 'source_5xx', order: ORDER, title: 'Mine', createdAt: '2026-10-20T11:00:00Z', ...over });
+  const accepted = (id: string) => ({ processID: 'recipe', type: 'process', jobID: id, status: 'accepted', message: '', progress: 0, created: '2026-10-20T12:00:00Z', expires: new Date(NOW + 7 * 86_400_000).toISOString(), recipeID: 'r', links: [] });
+  const stubExecution = (respond: () => Response) => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond());
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+
+  it('sends the kept order once, however often it is pressed, and the new job takes the place of the old one', async () => {
+    const fetchMock = stubExecution(() => new Response(JSON.stringify(accepted(jobId(9))), { status: 201, headers: { 'Content-Type': 'application/json' } }));
+    show(failedJob());
+    const symbol = button('↻')!;
+    expect(symbol.title).toBe('Run again');
+    await act(async () => {
+      symbol.click();
+      symbol.click();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toEqual({ inputs: { recipe: ORDER } });
+    const jobs = useProcessingStore.getState().jobs;
+    expect(jobs.map((j) => [j.jobID, j.title, j.superseded, j.archived])).toEqual([
+      [jobId(9), 'Mine', false, false],
+      [jobId(1), 'Mine', true, true],
+    ]);
+  });
+
+  it('says why the order was not sent, and offers the symbol again', async () => {
+    stubExecution(() => new Response(JSON.stringify({ title: 'No', detail: 'step 0 is not valid' }), { status: 422, headers: { 'Content-Type': 'application/problem+json' } }));
+    show(failedJob());
+    click(button('↻'));
+    await vi.waitFor(() => expect(useProcessingStore.getState().jobs[0].retryError).not.toBeNull());
+    expect([...container.querySelectorAll('[role="alert"]')].map((a) => a.textContent)).toEqual(['The source failed', 'step 0 is not valid']);
+    expect(button('↻')).toBeDefined();
+    expect(useProcessingStore.getState().jobs).toHaveLength(1);
+  });
+
+  it('marks the old job as superseded', () => {
+    show(failedJob({ superseded: true, archived: true }));
+    expect(fact('State')).toBe('Failed · Superseded');
+    expect(actions()).toEqual([]);
+  });
+});
+
 describe('the title', () => {
   it('is renamed in place, and an empty name brings the default back', () => {
     show(jobEntry(1, { title: 'Mine', titleDefault: 'Band math · Sentinel-2 L2A · 1 Oct' }));
@@ -224,6 +271,38 @@ describe('the title', () => {
     type(container.querySelector('input.pm-rename')!, '');
     key(container.querySelector('input.pm-rename')!, 'Enter');
     expect(container.querySelector('.pm-title-text')?.textContent).toBe('Band math · Sentinel-2 L2A · 1 Oct');
+  });
+
+  it('is also renamed with a click on the title itself', () => {
+    show(jobEntry(1, { title: 'Mine' }));
+    click(container.querySelector('.pm-title-text button'));
+    type(container.querySelector('input.pm-rename')!, 'Field 7');
+    key(container.querySelector('input.pm-rename')!, 'Enter');
+    expect(container.querySelector('.pm-title-text')?.textContent).toBe('Field 7');
+    expect(container.querySelector('input.pm-rename')).toBeNull();
+  });
+
+  it('shows in the manager at once what was typed in the details, and not before Enter', () => {
+    act(() => useProcessingStore.setState({ open: true, jobs: [jobEntry(1, { title: 'Mine' })], detailJobID: jobId(1) }));
+    act(() => root.render(<><JobDetails /><ProcessingManager /></>));
+    const managerTitle = () => container.querySelector('.pm-rows .pm-title')?.textContent;
+    click(container.querySelector('.pm-title-text button'));
+    type(container.querySelector('input.pm-rename')!, 'Field 7');
+    expect(managerTitle()).toBe('Mine');
+    key(container.querySelector('input.pm-rename')!, 'Enter');
+    expect(managerTitle()).toBe('Field 7');
+    expect(container.querySelector('.pm-title-text')?.textContent).toBe('Field 7');
+    expect(JSON.parse(localStorage.getItem(SHELF_KEY)!).jobs[0].title).toBe('Field 7');
+  });
+
+  it('does not show in the manager what was dropped with Escape', () => {
+    act(() => useProcessingStore.setState({ open: true, jobs: [jobEntry(1, { title: 'Mine' })], detailJobID: jobId(1) }));
+    act(() => root.render(<><JobDetails /><ProcessingManager /></>));
+    click(container.querySelector('.pm-title-text button'));
+    type(container.querySelector('input.pm-rename')!, 'Other');
+    key(container.querySelector('input.pm-rename')!, 'Escape');
+    expect(container.querySelector('.pm-rows .pm-title')?.textContent).toBe('Mine');
+    expect(container.querySelector('input.pm-rename')).toBeNull();
   });
 
   it('keeps the old title when the edit is dropped', () => {
@@ -320,18 +399,34 @@ describe('the actions', () => {
     expect(fact('State')).toBe('Cancelled');
   });
 
-  it('of a failed or cancelled job are none', () => {
+  it('of a failed or cancelled job is "Run again" and nothing else', () => {
     show(jobEntry(1, { phase: 'failed', failure: 'x', order: ORDER }));
-    expect(actions()).toEqual([]);
+    expect(actions()).toEqual(['↻']);
     show(jobEntry(1, { phase: 'dismissed', order: ORDER }));
-    expect(actions()).toEqual([]);
+    expect(actions()).toEqual(['↻']);
   });
 
-  it('of an expired job is "Open in panel", and nothing to download', () => {
+  it('of an expired job is "Run again" and "Open in panel", and nothing to download', () => {
+    show(finished(1, { expired: true, order: ORDER }));
+    expect(actions()).toEqual(['↻', 'Open in panel']);
+    expect(button('Open in panel')!.getAttribute('aria-disabled')).toBe('false');
+  });
+
+  it('of a job the server forgot is "Open in panel" only', () => {
     show(jobEntry(1, { phase: 'gone', order: ORDER }));
     expect(actions()).toEqual(['Open in panel']);
-    expect(button('Open in panel')!.getAttribute('aria-disabled')).toBe('false');
-    show(finished(1, { expired: true, order: ORDER }));
+  });
+
+  it('of a job that would fail again is "Open in panel", to change the order', () => {
+    show(jobEntry(1, { phase: 'failed', failure: 'x', failureKind: 'grid_mismatch', order: ORDER }));
+    expect(actions()).toEqual(['Open in panel']);
+  });
+
+  it('of a job without a copy of its order has no "Run again"; "Open in panel" says why it is off', () => {
+    show(jobEntry(1, { phase: 'failed', failure: 'x', order: null }));
+    expect(actions()).toEqual(['Open in panel']);
+    expect(button('Open in panel')!.getAttribute('aria-disabled')).toBe('true');
+    show(finished(1, { expired: true, order: null }));
     expect(actions()).toEqual(['Open in panel']);
   });
 
