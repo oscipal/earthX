@@ -13,6 +13,8 @@ import CopyButton from './CopyButton';
 export default function ShareLink({ view }: { view: OrderView }) {
   const bbox = useAppStore((s) => s.viewportBbox);
   const zoom = useAppStore((s) => s.mapZoom);
+  const basemap = useAppStore((s) => s.basemap);
+  const projection = useAppStore((s) => s.projection);
   const range = useProcessingStore((s) => handRangeOf(s));
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<Created | null>(null);
@@ -26,7 +28,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
     setBusy(true);
     setNote(null);
     try {
-      const created = await createPermalink(order, viewOf(bbox, zoom, range));
+      const created = await createPermalink(order, viewOf(bbox, zoom, range, { basemap, projection }));
       rememberKey(created);
       setMade(created);
     } catch (error) {

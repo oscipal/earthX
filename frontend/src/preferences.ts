@@ -7,6 +7,7 @@ import { NO_OVERLAYS, OVERLAY_IDS, type Overlays } from './overlays';
 
 export type Theme = 'tech' | 'normal';
 export type Projection = 'mercator' | 'globe';
+export const DEFAULT_PROJECTION: Projection = 'mercator';
 // The jobs the processing manager lists: those that are neither archived, expired nor deleted, the expired ones,
 // the deleted ones, or all of them (UI-01 §6.10, NM4-27).
 export type JobFilter = 'active' | 'expired' | 'deleted' | 'all';
@@ -19,7 +20,7 @@ const RESULTS_KEY = 'earthx.results';
 const JOB_FILTER_KEY = 'earthx.jobfilter';
 
 const THEMES: readonly Theme[] = ['tech', 'normal'];
-const PROJECTIONS: readonly Projection[] = ['mercator', 'globe'];
+export const PROJECTIONS: readonly Projection[] = ['mercator', 'globe'];
 const JOB_FILTERS: readonly JobFilter[] = ['active', 'expired', 'deleted', 'all'];
 const COLLAPSED_GROUPS_KEY = 'earthx.jobgroups.collapsed';
 
@@ -52,7 +53,7 @@ export function saveTheme(theme: Theme): void {
 }
 
 export function loadProjection(): Projection {
-  return readStored(PROJECTION_KEY, PROJECTIONS, 'mercator');
+  return readStored(PROJECTION_KEY, PROJECTIONS, DEFAULT_PROJECTION);
 }
 
 export function saveProjection(projection: Projection): void {
