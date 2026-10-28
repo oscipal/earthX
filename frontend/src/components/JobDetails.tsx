@@ -104,8 +104,8 @@ function OpenInPanel({ job }: { job: JobEntry }) {
     const app = useAppStore.getState();
     setBusy(true);
     setProblem(null);
-    // The map stays where it is; the order brings its own area.
-    const view = viewOf(app.viewportBbox ?? [-180, -90, 180, 90], app.mapZoom, job.range);
+    // The map stays where it is, basemap and projection included; the order brings its own area.
+    const view = viewOf(app.viewportBbox ?? [-180, -90, 180, 90], app.mapZoom, job.range, { basemap: app.basemap, projection: app.projection });
     const result = await restoreOrder(order, view);
     setBusy(false);
     if (!result.ok) setProblem(result.reason);
