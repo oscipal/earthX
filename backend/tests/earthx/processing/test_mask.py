@@ -18,10 +18,9 @@ from earthx.catalog.registry import LicenseTier
 from earthx.processing import run
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import MASK, REGISTRY, BandMeta, MaskParams, RasterMeta, applicable
-from earthx.processing.recipe import recipe_from_data
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 
 WIDTH, HEIGHT = 1300, 1100
 STEP = {"op": "mask", "op_version": 1, "params": {"source": "scl", "classes": [3, 8, 9, 10]}}
@@ -214,7 +213,7 @@ def _recipe(assets: tuple[str, ...], steps: list, dtype: str = "float32") -> dic
 
 
 def _run(data: dict, workdir: Path):
-    return run(recipe_from_data(data, REGISTRY), workdir=workdir, progress=lambda done, total: None, operators=REGISTRY)
+    return run(recipe_of_data(data, REGISTRY), workdir=workdir, progress=lambda done, total: None, operators=REGISTRY)
 
 
 @pytest.fixture(scope="module")
@@ -235,7 +234,7 @@ def served(files: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> list[str]
 
 @pytest.mark.usefixtures("served")
 class TestRunWithA20mLayer:
-    def test_the_layer_is_repeated_with_nearest_so_no_new_value_appears_and_the_result_is_marked(
+    def test_the_layer_is_repeated_with_nearest_so_no_new_value_appears_and_the_result_is_not_marked(
         self, tmp_path: Path, files: dict[str, Path]
     ) -> None:
         classes = [3, 8, 9, 10]
@@ -248,7 +247,9 @@ class TestRunWithA20mLayer:
             data = dataset.read(1, masked=True)
         red = sources.ramp(WIDTH, HEIGHT, 1200)
         expected_hidden = numpy.isin(repeated, classes) | (repeated == 0) | (red == sources.NODATA)
-        assert result.meta.resampled is True and result.properties["earthx:resampled"] is True
+        # The coarser layer only hides pixels; no value of `red` was moved to another grid, so nothing is marked
+        # (backlog 51, adr/0014 Nachtrag NM4-43c). `test_stock_run.TestTheHonestyFlag` has the cases where it is.
+        assert result.meta.resampled is False and result.properties["earthx:resampled"] is False
         assert [band.name for band in result.meta.bands] == ["red"]
         numpy.testing.assert_array_equal(numpy.ma.getmaskarray(data), expected_hidden)
         assert 0 < expected_hidden.sum() < expected_hidden.size
@@ -259,14 +260,14 @@ class TestRunWithA20mLayer:
     def test_a_mask_then_band_math_uses_only_the_valid_pixels(self, tmp_path: Path) -> None:
         double = {"op": "band_math", "op_version": 1, "params": {"expression": "red * 2"}}
         result = _run(_recipe(("red", "scl"), [STEP, double]), tmp_path)
-        assert result.properties["processing:lineage"] == "mask: scl classes 3, 8, 9, 10; band math: red * 2"
+        assert result.properties["processing:lineage"] == "mask: scl classes 3, 8, 9, 10; band math: band_math = red * 2"
         assert result.valid_pixels < WIDTH * HEIGHT - 64
 
     def test_the_layer_missing_from_the_order_stops_before_the_first_block(self, tmp_path: Path) -> None:
         ticks: list[int] = []
         with pytest.raises(RecipeInvalid, match="not among the bands"):
             run(
-                recipe_from_data(_recipe(("red",), [STEP]), REGISTRY),
+                recipe_of_data(_recipe(("red",), [STEP]), REGISTRY),
                 workdir=tmp_path,
                 progress=lambda done, total: ticks.append(done),
                 operators=REGISTRY,

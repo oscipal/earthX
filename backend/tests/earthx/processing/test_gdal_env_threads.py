@@ -16,10 +16,9 @@ from rasterio._env import get_gdal_config
 
 from earthx.processing import run, worker_environment
 from earthx.processing import source as source_module
-from earthx.processing.recipe import recipe_from_data
 from earthx.readers import process_gdal_options
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.testops import OPERATORS
 
 OPTIONS = ("GDAL_HTTP_TIMEOUT", "GDAL_DISABLE_READDIR_ON_OPEN", "CPL_VSIL_CURL_ALLOWED_EXTENSIONS", "GDAL_CACHEMAX")
@@ -81,7 +80,7 @@ def test_run_reads_under_the_options_from_a_pool_thread_without_worker_environme
         "steps": [],
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
-    recipe = recipe_from_data(data, OPERATORS)
+    recipe = recipe_of_data(data, OPERATORS)
     work = tmp_path / "work"
     work.mkdir()
     with ThreadPoolExecutor(max_workers=1) as pool:
