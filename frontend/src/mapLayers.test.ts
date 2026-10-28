@@ -905,7 +905,7 @@ describe('ensureBaseLayers', () => {
     const { map, stack } = liveMap(['bg']);
     ensureBaseLayers(map as never);
     ensureBaseLayers(map as never);
-    expect(stack.slice(0, 6)).toEqual(['bg', 'layers-top', 'results-top', 'ticked-top', 'preview-base', 'aoi-fill']);
+    expect(stack.slice(0, 7)).toEqual(['bg', 'layers-top', 'results-top', 'ticked-top', 'preview-base', 'overlays-base', 'aoi-fill']);
     expect(stack.filter((id) => id === 'preview-base')).toHaveLength(1);
     expect(stack.filter((id) => id === 'layers-top')).toHaveLength(1);
     expect(stack.filter((id) => id === 'results-top')).toHaveLength(1);

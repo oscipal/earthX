@@ -57,11 +57,12 @@ const RESULTS_TOP = 'results-top';
 // quicklooks and the pinned layers, whichever of them was drawn first (Otto, 27.10.2026, "immer der oberste Layer").
 // Every other raster of the app goes under this marker (`aboveAll`), the ticked quicklooks over it (`topOfAll`).
 const TICKED_TOP = 'ticked-top';
-// Right over the quicklooks of the ticked results (they go under it, `topOfAll`), under the AOI: the live preview of the
-// processing panel goes over this marker, so that it lies over the ticked quicklooks and under the overlays and the AOI
-// (Otto, 28.10.2026, supplement to UI-02 8.10). A pinned preview is a layer of the manager and lies under them all.
+// Right over the quicklooks of the ticked results (they go under it, `topOfAll`): the live preview of the processing
+// panel goes over this marker, so that it lies over the ticked quicklooks and under the overlays and the AOI (Otto,
+// 28.10.2026, supplement to UI-02 8.10). A pinned preview is a layer of the manager and lies under them all.
 const PREVIEW_BASE = 'preview-base';
-// Where the overlays (labels, graticule) of UI-02b begin, once they are there: the preview lies under this marker.
+// Right over the live preview and under the area of interest: the overlays of the "Basemap" menu (names,
+// graticule) lie between this marker and the AOI, so that they stay over every picture (UI-02b, `mapStyles.ts`).
 const OVERLAYS_BASE = 'overlays-base';
 // Cache of processed quicklook data URLs, keyed by URL + the parameters that
 // change what gets drawn (freistellung threshold, AOI clip) so the same
@@ -264,6 +265,7 @@ export function ensureBaseLayers(map: MapLibreMap): void {
     map.addLayer({ id: RESULTS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: TICKED_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: PREVIEW_BASE, type: 'background', layout: { visibility: 'none' } });
+    map.addLayer({ id: OVERLAYS_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({
       id: 'aoi-fill',
       type: 'fill',
@@ -487,7 +489,7 @@ const aboveAll = (map: MapLibreMap): string | undefined =>
 
 // Where the quicklook of a ticked search result goes: over `TICKED_TOP`, under the marker of the live preview.
 const topOfAll = (map: MapLibreMap): string | undefined =>
-  map.getLayer(PREVIEW_BASE) ? PREVIEW_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
+  map.getLayer(PREVIEW_BASE) ? PREVIEW_BASE : map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
 // Where the live preview goes: over everything raster, under the overlays and the AOI.
 const previewTop = (map: MapLibreMap): string | undefined =>

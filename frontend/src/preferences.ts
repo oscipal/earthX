@@ -3,6 +3,7 @@
 // sent to the backend — the tile URLs are unaffected by any of them (D27).
 
 import { BASEMAP_IDS, DEFAULT_BASEMAP, type BasemapId } from './basemaps';
+import { NO_OVERLAYS, OVERLAY_IDS, type Overlays } from './overlays';
 
 export type Theme = 'tech' | 'normal';
 export type Projection = 'mercator' | 'globe';
@@ -13,6 +14,7 @@ export type JobFilter = 'active' | 'expired' | 'deleted' | 'all';
 const THEME_KEY = 'earthx.theme';
 const PROJECTION_KEY = 'earthx.projection';
 const BASEMAP_KEY = 'earthx.basemap';
+const OVERLAYS_KEY = 'earthx.overlays';
 const RESULTS_KEY = 'earthx.results';
 const JOB_FILTER_KEY = 'earthx.jobfilter';
 
@@ -63,6 +65,22 @@ export function loadBasemap(): BasemapId {
 
 export function saveBasemap(basemap: BasemapId): void {
   writeStored(BASEMAP_KEY, basemap);
+}
+
+// The overlays that are switched on, stored as JSON like {"labels":true,"graticule":false}. A value that is not
+// `true`, an unknown key, anything that is not an object and a storage that cannot be read leave the overlay off.
+export function loadOverlays(): Overlays {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(OVERLAYS_KEY) ?? 'null');
+    if (!parsed || typeof parsed !== 'object') return { ...NO_OVERLAYS };
+    return Object.fromEntries(OVERLAY_IDS.map((id) => [id, (parsed as Record<string, unknown>)[id] === true])) as Overlays;
+  } catch {
+    return { ...NO_OVERLAYS };
+  }
+}
+
+export function saveOverlays(overlays: Overlays): void {
+  writeStored(OVERLAYS_KEY, JSON.stringify(overlays));
 }
 
 // Whether the search results are on the map: the switch "Hide results" / "Show results" (Otto, 27.10.2026). Stored as

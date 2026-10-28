@@ -130,6 +130,9 @@ describe('the quicklook of a ticked search result is the top layer', () => {
     const others = rasters(live).filter((id) => id !== tickedLayer);
     expect(others.length).toBeGreaterThan(0);
     expect(index(live, tickedLayer)).toBeGreaterThan(Math.max(...others.map((id) => index(live, id))));
+    // Under the marker of the overlays (UI-02b): names and graticule stay over the quicklook of a ticked scene.
+    expect(index(live, tickedLayer)).toBeLessThan(index(live, 'overlays-base'));
+    expect(index(live, 'overlays-base')).toBeLessThan(index(live, 'aoi-fill'));
     expect(index(live, tickedLayer)).toBeLessThan(index(live, 'aoi-fill'));
     expect(index(live, tickedLayer)).toBeLessThan(index(live, 'mosaicsel-line'));
     expect(index(live, tickedLayer)).toBeGreaterThan(index(live, 'layers-top'));
@@ -258,9 +261,8 @@ describe('the live preview of the processing panel', () => {
     expect(Math.max(...previewLayers(live).map((id) => index(live, id)))).toBeLessThan(index(live, 'aoi-fill'));
   });
 
-  it('lies under the overlays, once their marker is on the map, and under the AOI', () => {
+  it('lies under the overlays (their marker, and the labels between it and the AOI) and under the AOI', () => {
     const live = freshMap();
-    live.map.addLayer({ id: 'overlays-base' }, 'aoi-fill');
     live.map.addLayer({ id: 'labels' }, 'aoi-fill');
     live_(live);
     tickedResults(live);

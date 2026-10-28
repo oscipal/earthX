@@ -128,6 +128,7 @@ export default function MapView() {
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
   const basemap = useAppStore((s) => s.basemap);
+  const overlays = useAppStore((s) => s.overlays);
   const theme = useAppStore((s) => s.theme);
   const preview = useProcessingStore((s) => s.preview);
   // Cut to the AOI only for "AOI only": a new AOI leaves the others alone.
@@ -159,10 +160,10 @@ export default function MapView() {
       if (useProcessingStore.getState().previewTilesLoading !== loading) useProcessingStore.setState({ previewTilesLoading: loading });
     });
     const first = useAppStore.getState().basemap;
-    basemapRef.current = createBasemapSwitcher(map, isInFirstStyle(first) ? first : null, (reason, keep) => {
+    basemapRef.current = createBasemapSwitcher(map, isInFirstStyle(first) ? first : null, (reason, keep, overlays) => {
       // The map keeps what it shows; the choice stays saved, so that the next visit tries it again.
       useAppStore.getState().setError(reason);
-      useAppStore.setState({ basemap: keep ?? DEFAULT_BASEMAP });
+      useAppStore.setState({ basemap: keep ?? DEFAULT_BASEMAP, overlays });
     });
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
@@ -226,7 +227,7 @@ export default function MapView() {
       const st = useAppStore.getState();
       applyProjection(map, st.projection);
       // A basemap with a published style comes after the first style (it is fetched).
-      basemapRef.current?.show(st.basemap);
+      basemapRef.current?.show(st.basemap, st.overlays);
       if (carried) return;
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
@@ -313,10 +314,10 @@ export default function MapView() {
     if (map && readyRef.current) applyProjection(map, projection);
   }, [projection]);
 
-  // --- basemap (UI-02a): under the app's own layers, which stay where they are ---
+  // --- basemap (UI-02a) under the app's own layers, which stay where they are, and the overlays (UI-02b) over them ---
   useEffect(() => {
-    if (readyRef.current) basemapRef.current?.show(basemap);
-  }, [basemap]);
+    if (readyRef.current) basemapRef.current?.show(basemap, overlays);
+  }, [basemap, overlays]);
 
   // --- AOI geometry ---
   useEffect(() => {
