@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from earthx.catalog.registry import DatasetConfig, LicenseInfo, doi_name
+from earthx.catalog.registry import DatasetConfig, FilterKind, LicenseInfo, doi_name
 
 # STAC 1.0 for now, because that is what pgstac and Earth Search speak. The licence
 # value below is tied to it: STAC 1.1 dropped "proprietary" in favour of "other",
@@ -87,6 +87,30 @@ def _earthx_band_units(config: DatasetConfig) -> dict[str, str | None]:
 def _earthx_auxiliary_assets(config: DatasetConfig) -> list[str]:
     """The assets of the dataset that are no band of its data, so the panel leaves them out of "Select all"."""
     return list(config.auxiliary_assets)
+
+
+def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
+    """The filters the search offers, in the words of STAC queryables (JSON Schema) where they have one (DS-02).
+
+    ``kind`` and ``unit`` are ours: a queryable describes a property, the panel also needs how it narrows it.
+    """
+    published: list[dict[str, object]] = []
+    for entry in config.search_filters:
+        fields: dict[str, object] = {
+            "property": entry.property,
+            "kind": entry.kind.value,
+            "title": entry.title,
+            "description": entry.description,
+            "unit": entry.unit,
+        }
+        if entry.kind is FilterKind.RANGE:
+            fields.update(
+                type="integer" if entry.integer else "number", minimum=entry.minimum, maximum=entry.maximum
+            )
+        else:
+            fields.update(type="string", oneOf=[{"const": value.value, "title": value.label} for value in entry.values])
+        published.append(fields)
+    return published
 
 
 def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
@@ -168,6 +192,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:mask": _earthx_mask(config),
         "earthx:band_units": _earthx_band_units(config),
         "earthx:auxiliary_assets": _earthx_auxiliary_assets(config),
+        "earthx:search_filters": _earthx_search_filters(config),
         "earthx:license_flags": _earthx_license_flags(config),
         "earthx:access": {
             "token_free_checked_at": config.access.token_free_checked_at.isoformat(),

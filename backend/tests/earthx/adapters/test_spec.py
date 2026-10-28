@@ -51,7 +51,7 @@ def _spec(**fields: object) -> AdapterSpec:
         "fetch": _never,
         "materialize": None,
         "coverage": {},
-        "filters": FilterSupport(intersects=True, ids=True, cql2=False),
+        "filters": FilterSupport(intersects=True, ids=True, cql2=False, query=True),
     }
     values.update(fields)
     return AdapterSpec(**values)
@@ -225,7 +225,7 @@ class TestTheCheckFailsForAManipulatedEntry:
         assert _missing(SYNTHETIC_ZARR, table) == ["coverage"]
 
     def test_a_table_whose_source_lost_a_filter(self) -> None:
-        table = _with_earth_search(filters=FilterSupport(intersects=True, ids=False, cql2=False))
+        table = _with_earth_search(filters=FilterSupport(intersects=True, ids=False, cql2=False, query=True))
         assert _missing(SYNTHETIC_ZARR, table) == ["ids"]
 
     def test_a_table_without_the_entrys_kind(self) -> None:
@@ -308,6 +308,7 @@ class TestCheckAdapterSpecs:
             SENTINEL_2_L2A,
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+            search_filters=(),
         )
         check_adapter_specs(DatasetRegistry((materialized,)), ADAPTER_SPECS)
 

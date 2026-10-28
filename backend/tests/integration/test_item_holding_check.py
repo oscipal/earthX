@@ -38,6 +38,7 @@ MATERIALIZED = replace(
     FEDERATED,
     source=replace(FEDERATED.source, item_holding=ItemHolding.MATERIALIZED),
     coverage=replace(FEDERATED.coverage, provider=CoverageProvider.LOCAL_SQL),
+    search_filters=(),
 )
 
 

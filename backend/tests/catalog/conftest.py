@@ -124,6 +124,7 @@ def valid_config() -> DatasetConfig:
         mask=None,
         band_units={"red": "1", "green": "1", "blue": "1"},
         auxiliary_assets=(),
+        search_filters=(),
     )
 
 

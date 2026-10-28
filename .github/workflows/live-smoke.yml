@@ -55,8 +55,8 @@ jobs:
       # Named explicitly, and to its own two files: `pytest` on its own would
       # collect backend/tests instead (the offline suite), and `backend/tests_live`
       # on its own would pull in the eopf job's file too.
-      - name: Live smoke (pytest backend/tests_live/test_earth_search_smoke.py backend/tests_live/test_coverage_smoke.py)
-        run: pytest backend/tests_live/test_earth_search_smoke.py backend/tests_live/test_coverage_smoke.py
+      - name: Live smoke (pytest backend/tests_live/test_earth_search_smoke.py backend/tests_live/test_coverage_smoke.py backend/tests_live/test_search_filters_live.py)
+        run: pytest backend/tests_live/test_earth_search_smoke.py backend/tests_live/test_coverage_smoke.py backend/tests_live/test_search_filters_live.py
 
   cop-dem:
     name: Copernicus DEM GLO-30 bucket still answers as recorded

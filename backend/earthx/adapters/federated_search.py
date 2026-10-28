@@ -45,6 +45,7 @@ from shapely.geometry import shape as shapely_shape
 from earthx.adapters.cache import CacheValue, SearchCache
 from earthx.adapters.errors import InvalidQuery, UnsupportedSource, UpstreamShapeError
 from earthx.catalog.registry import AdapterKind, DatasetConfig
+from earthx.catalog.search_filters import FilterConditions, RangeCondition, ValuesCondition, conditions_key
 
 LOGGER = logging.getLogger("earthx.adapters.federated_search")
 
@@ -135,6 +136,8 @@ class SearchParams:
     end: datetime | None = None
     limit: int = DEFAULT_LIMIT
     page_token: str | None = None
+    # The conditions on the dataset's search filters (DS-02), already checked against its registry entry by `api`.
+    conditions: FilterConditions | None = None
 
     def __post_init__(self) -> None:
         self._check_limit()
@@ -142,6 +145,7 @@ class SearchParams:
         self._check_intersects()
         self._check_ids()
         self._check_time()
+        self._check_conditions()
 
     def _check_limit(self) -> None:
         if self.limit < 1 or self.limit > MAX_LIMIT:
@@ -195,6 +199,14 @@ class SearchParams:
             raise InvalidQuery(f"ids has more than {MAX_IDS} entries (M3-08 F3a)")
         if not all(ITEM_ID.match(item_id) for item_id in self.ids):
             raise InvalidQuery("ids contains a value that is not a scene id we would put into a URL path")
+
+    def _check_conditions(self) -> None:
+        if self.conditions is None:
+            return
+        if not self.conditions:
+            raise InvalidQuery("conditions is empty; omit it instead of filtering on nothing")
+        if not all(isinstance(condition, (RangeCondition, ValuesCondition)) for condition in self.conditions.values()):
+            raise InvalidQuery("conditions holds something that is no search filter condition")
 
     def _check_time(self) -> None:
         for name, value in (("start", self.start), ("end", self.end)):
@@ -346,8 +358,9 @@ def search_fingerprint(dataset_id: str, params: SearchParams) -> str:
     Numbers go in as floats and instants as their UTC text, so that ``47`` and ``47.0``,
     or the same moment written in two offsets, are one search and not two.
 
-    ``intersects``/``ids`` are added to the payload only when set (M3-08): a search
-    that uses neither hashes exactly as it did when this field was introduced.
+    ``intersects``/``ids`` are added to the payload only when set (M3-08), and so are
+    ``conditions`` (DS-02): a search that uses none of them hashes exactly as it did
+    when this field was introduced.
     """
     payload: dict[str, Any] = {
         "dataset": dataset_id,
@@ -363,6 +376,9 @@ def search_fingerprint(dataset_id: str, params: SearchParams) -> str:
         # Sorted and de-duplicated: the same set of ids asked for in a different
         # order, or with a repeated id, is one search.
         payload["ids"] = sorted(set(params.ids))
+    if params.conditions is not None:
+        # DS-02: a filtered search is another search, and so another cache entry; an unfiltered one hashes as before.
+        payload["conditions"] = conditions_key(params.conditions)
     return hashlib.sha256(
         json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     ).hexdigest()

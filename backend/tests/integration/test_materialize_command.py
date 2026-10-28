@@ -57,6 +57,7 @@ MATERIALIZED = replace(
         source_collection_id="earthx-test-materialize-command",
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+    search_filters=(),
     # The DEM adapter stamps every item with the entry's own acquisition period
     # (adr/0011 F3), so this entry needs a closed one, as the real DEM entry has.
     temporal_extent=COP_DEM_GLO_30.temporal_extent,

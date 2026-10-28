@@ -55,6 +55,7 @@ from earthx.adapters.federated_search import (
     with_core_bands,
 )
 from earthx.catalog.registry import AdapterKind, DatasetConfig
+from earthx.catalog.search_filters import FilterConditions, RangeCondition
 from earthx.gateway import Gateway
 
 LOGGER = logging.getLogger("earthx.adapters.earth_search")
@@ -157,11 +158,29 @@ def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None
     window = stac_interval(params.start, params.end)
     if window is not None:
         body["datetime"] = window
+    if params.conditions is not None:
+        body["query"] = query_extension(params.conditions)
     if marker is not None:
         # Keyset paging: the marker is the sort key of the last item of the page
         # before, so the same search body plus this field is the next page (§3.3).
         body["next"] = marker
     return body
+
+
+def query_extension(conditions: FilterConditions) -> dict[str, dict[str, Any]]:
+    """The conditions in this source's own form, the STAC query extension (DS-02 plan §6.5).
+
+    Only ``gte``, ``lte`` and ``in``: measured to narrow on 28.10.2026, where an operator the source does not know
+    is passed over without a word (plan §6.2).
+    """
+    query: dict[str, dict[str, Any]] = {}
+    for name, condition in conditions.items():
+        if isinstance(condition, RangeCondition):
+            bounds = {"gte": condition.minimum, "lte": condition.maximum}
+            query[name] = {operator: bound for operator, bound in bounds.items() if bound is not None}
+        else:
+            query[name] = {"in": list(condition.values)}
+    return query
 
 
 def _storable(payload: Any) -> CacheValue:

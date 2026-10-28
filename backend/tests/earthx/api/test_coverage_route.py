@@ -152,6 +152,7 @@ class TestUnavailableProvider:
         config = replace(
             SENTINEL_2_L2A,
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+            search_filters=(),
             # local-sql is only a valid combination on a materialized entry
             # (M3-11a K-05) — this route's 501 is about no caller existing yet,
             # not about the combination itself being invalid.
@@ -174,6 +175,7 @@ class TestAreaPathWithoutADatabase:
             SENTINEL_2_L2A,
             capabilities=replace(SENTINEL_2_L2A.capabilities, single_coverage_product=True),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+            search_filters=(),
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
         )
 

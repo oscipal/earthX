@@ -246,6 +246,7 @@ forbidden_modules =
     earthx.catalog.pgstac
     earthx.catalog.schema
     earthx.catalog.search_cache
+    earthx.catalog.search_filters
     earthx.catalog.stats_cache
 
 [importlinter:contract:datasets-isolated]

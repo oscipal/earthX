@@ -786,6 +786,78 @@ class MaskSource:
     note: str
 
 
+class FilterKind(Enum):
+    """How a search filter narrows a property (DS-02 plan §6.3)."""
+
+    RANGE = "range"  # a number between two bounds, either of them open
+    VALUES = "values"  # one of a fixed list of texts
+
+
+# A STAC property as the source names it: ``platform``, ``eo:cloud_cover``. ``earthx:`` is kept free for filters the
+# platform computes itself (DS-03), ``datetime`` has its own field.
+FILTER_PROPERTY = re.compile(r"\A[a-z0-9_]+(:[a-z0-9_]+)?\Z")
+RESERVED_FILTER_PREFIX = "earthx:"
+
+
+@dataclass(frozen=True, slots=True)
+class FilterValue:
+    """One value a ``VALUES`` filter offers: the text the source holds and what the panel shows."""
+
+    value: str
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class SearchFilter:
+    """A filter the search offers for one dataset (DS-02 plan §6.3). ``title`` and ``description`` are shown as they
+    stand. ``minimum``, ``maximum`` and ``integer`` belong to a ``RANGE``, ``values`` to a ``VALUES`` filter."""
+
+    property: str
+    kind: FilterKind
+    title: str
+    description: str
+    unit: str | None
+    minimum: float | None
+    maximum: float | None
+    integer: bool
+    values: tuple[FilterValue, ...]
+
+
+def _filter_problem(search_filter: SearchFilter) -> str | None:
+    """The rule a search filter breaks, or None."""
+    name = search_filter.property
+    if not isinstance(name, str) or not FILTER_PROPERTY.match(name) or name == "datetime":
+        return f"{name!r} is not a property a filter can name"
+    if name.startswith(RESERVED_FILTER_PREFIX):
+        return f"{name!r} uses the prefix {RESERVED_FILTER_PREFIX!r}, which is kept for filters the platform computes"
+    if not search_filter.title.strip() or not search_filter.description.strip():
+        return f"the filter on {name!r} has a title and a description"
+    unit = search_filter.unit
+    if unit is not None and (not unit.strip() or unit != unit.strip() or len(unit) > MAX_UNIT_CHARS):
+        return f"the unit of the filter on {name!r} is a short non-blank text or None"
+    if search_filter.kind is FilterKind.RANGE:
+        low, high = search_filter.minimum, search_filter.maximum
+        if search_filter.values or low is None or high is None or not (_is_finite_number(low) and _is_finite_number(high)):
+            return f"the range filter on {name!r} has a finite minimum and maximum and no values"
+        if not low < high:
+            return f"the range filter on {name!r} has a minimum below its maximum"
+        if search_filter.integer and not (float(low).is_integer() and float(high).is_integer()):
+            return f"the whole-number filter on {name!r} has whole-number bounds"
+        return None
+    if search_filter.minimum is not None or search_filter.maximum is not None or search_filter.integer:
+        return f"the values filter on {name!r} has no bounds"
+    texts = [entry.value for entry in search_filter.values]
+    if len(texts) < 2 or len(set(texts)) != len(texts):
+        return f"the values filter on {name!r} offers at least two values, each once"
+    if not all(entry.value.strip() and entry.label.strip() for entry in search_filter.values):
+        return f"every value of the filter on {name!r} has a text and a label"
+    return None
+
+
+def _is_finite_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetConfig:
     """One dataset, everything the platform decides about it before asking the source."""
@@ -838,6 +910,9 @@ class DatasetConfig:
     # asset key. The panel keeps them out of "Select all"; a user can still pick one. No default (KLAERUNGEN B10):
     # an entry says so, with an empty tuple where it has none. The mask layer is named by ``mask``, not here.
     auxiliary_assets: tuple[str, ...]
+    # The filters the search offers for this dataset, in the order the panel shows them (DS-02). No default
+    # (KLAERUNGEN B10): an entry says so, with an empty tuple where it offers none.
+    search_filters: tuple[SearchFilter, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
@@ -854,6 +929,30 @@ class DatasetConfig:
         self._check_mask()
         self._check_band_units()
         self._check_auxiliary_assets()
+        self._check_search_filters()
+
+    def search_filter(self, name: str) -> SearchFilter | None:
+        """The filter on the property ``name``, or None where the entry offers none."""
+        return next((entry for entry in self.search_filters if entry.property == name), None)
+
+    def _check_search_filters(self) -> None:
+        """Every filter is well formed, each property once, and only on items the source searches (DS-02 plan §6.3).
+
+        Whether the source can apply them is ``adapters.check_adapter_specs``' question.
+        """
+        if isinstance(self.search_filters, SearchFilter) or not isinstance(self.search_filters, tuple):
+            raise ConfigError(f"{self.dataset_id}: search_filters is a tuple of SearchFilter")
+        for entry in self.search_filters:
+            if not isinstance(entry, SearchFilter):
+                raise ConfigError(f"{self.dataset_id}: search_filters is a tuple of SearchFilter")
+            if problem := _filter_problem(entry):
+                raise ConfigError(f"{self.dataset_id}: {problem}")
+        names = [entry.property for entry in self.search_filters]
+        if len(set(names)) != len(names):
+            raise ConfigError(f"{self.dataset_id}: search_filters names a property twice")
+        if names and self.source.item_holding is not ItemHolding.FEDERATED:
+            # Our own items are searched by pgstac, which applies no filter of this kind yet (DS-02 plan §6.5).
+            raise ConfigError(f"{self.dataset_id}: search filters need federated items")
 
     def band_unit(self, asset: str) -> str | None:
         """The unit the entry names for ``asset`` (one key, not a list of variables), or ``None`` where it names none.

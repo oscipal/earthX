@@ -45,6 +45,7 @@ NO_TIME_AXIS = replace(
         source_collection_id="earthx-test-no-time-axis",
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+    search_filters=(),
 )
 
 # A control with a time axis, otherwise identical — proves the drop is specific to
