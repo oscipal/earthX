@@ -275,6 +275,19 @@ def test_the_tilejson_describes_the_result_and_its_tiles(rig: Rig, uploaded: str
     assert body["tiles"][0].split("?")[0].endswith(f"/results/{uploaded}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}")
 
 
+def test_the_tilejson_hands_out_tiles_of_256_px_like_the_viewer_draws(rig: Rig, uploaded: str) -> None:
+    (template,) = rig.client.get(f"/results/{uploaded}/WebMercatorQuad/tilejson.json").json()["tiles"]
+    assert "tilesize=256" in template
+
+
+@pytest.mark.parametrize("size", ["1024", "4096"])
+def test_a_tile_of_another_size_than_256_or_512_is_a_400_and_reads_nothing(rig: Rig, uploaded: str, size: str) -> None:
+    response = rig.client.get(rig.tile_url(uploaded, f"&tilesize={size}"))
+    assert response.status_code == 400
+    assert response.json()["detail"] == "tilesize is 256 or 512"
+    assert rig.opened == [] and rig.heads == []
+
+
 def test_the_tiles_are_read_in_the_data_of_the_result_not_resampled_to_a_flat_picture(rig: Rig, uploaded: str) -> None:
     low = rig.client.get(rig.tile_url(uploaded))
     other = rig.client.get(rig.tile_url(uploaded).replace("rescale=-1,1", "rescale=0,0.1"))

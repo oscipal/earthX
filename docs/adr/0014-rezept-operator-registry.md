@@ -2517,3 +2517,28 @@ der Kern aber alle Assets auf das **feinste** Raster liest (`processing/source.p
   Bei einem einzigen Pixelmaß bleiben alle Zahlen bitgleich zu vorher; `earthx.__version__` bleibt, kein Byte eines Ergebnisses ändert sich.
 - **Tests:** `test_plan.py` (`TestTheRasterIsTheFinestAsset`), `test_estimate_geographic.py` (zwei Pixelgrößen in Grad) und
   `test_band_math_run.py` (`TestNestedGrids`: die Schätzung gegen den Lauf auf zwei Pixelgrößen).
+
+## 15 Nachtrag NM4-29: das Kachelraster je Kachelgröße (2026-10-28; zu §6.3, §6.4)
+
+Otto hat am 2026-10-28 entschieden, dass Mosaik und Mosaik-Vorschau mit 512 px gezeichnet werden, Szene,
+Item-Vorschau und Ergebnis weiter mit 256 px; der `tiler` liefert beide Größen
+(`plans/querschnitt/nm4-29-kacheln-512.md` §15, `adr/0006` Nachtrag NM4-29). Der Originaltext in §6.3 bleibt
+stehen; maßgeblich ist dieser Nachtrag.
+
+- **„Das Kachelraster einer Zoomstufe“ (§6.3, Zeile 2) ist das Raster der Kachel in ihrer Größe.** Die
+  native Ebene der 10-m-Daten ist mit 256 px z14 und mit 512 px z13: Beide haben dieselbe Pixelgröße.
+- **Bitgleich bei beiden Größen [M]:** Band math, Ketten, `mask`/`normalize` und die Mosaik-Kachel mit
+  Schritten, jeweils gegen den Job, der mit `nearest` auf dieselbe Kachel derselben Größe gelesen wird.
+  Die Vergleichstests (§6.4) laufen für 256 px auf z14 und für 512 px auf z13 (`api/test_tiler_operator.py`,
+  `test_tiler_chain.py`, `test_tiler_mask_normalize.py`, `test_tiler_mosaic_operator.py`).
+- **Zwischen den Größen nicht byte-identisch [M]:** Eine 512er-Kachel weicht von ihren vier 256er-Kacheln
+  ab, auf der nativen Ebene an 1,1 % der Pixel, auf Übersichtsstufen an 0,06–0,07 %. Ursache: Der Warp
+  (`WarpedVRT`) rechnet die Transformation mit einer Näherung von 0,125 px, und über eine längere Zeile
+  fällt sie anders aus. Wo ein Zielpixel fast auf einer Quellpixelgrenze liegt, wählt `nearest` dann den
+  anderen Nachbarn; neue Werte entstehen nicht. Mit einer Toleranz von 1e-6 sind beide gleich
+  (Plan §8, §14.2). Die Kacheln bleiben bei 0,125 px.
+- **Zarr:** Die Abweichungen zwischen Kachel und Job liegen auch mit 512 px nur innerhalb von 0,125 px an
+  einer Pixelgrenze; ihr Anteil darf dort bis 3 % (256 px: 2 %) der gültigen Pixel betragen, gemessen
+  2,1 %. Gegen den exakt nächsten Quellpixel gilt mit 512 px dieselbe Ausnahme an Grenzen (1 von 6462
+  Pixeln), mit 256 px weiter keine.
+

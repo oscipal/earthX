@@ -765,6 +765,29 @@ Block-Bereich rund 2 MB von der Quelle, unabhängig von der Kachelgröße; und d
 COG-Header (32 kB) ist der teuerste Einzelposten einer kalten Ansicht und gehört
 deshalb in den Anwendungs-Cache (12.3).
 
+**Nachtrag NM4-29 (2026-10-28, Otto, zu #227):** Kachelgröße und `tilesize`
+(`plans/querschnitt/nm4-29-kacheln-512.md` §6–§15).
+
+- **Zwei Größen:** Jede Route der drei Kachel-Router (Szene, Mosaik, Ergebnis) nimmt
+  `tilesize` nur als `256` oder `512`, sonst `400` „tilesize is 256 or 512“, bevor ein Item
+  geholt oder eine Datei geöffnet wird (`access.tiles.tile_size_allowed`, eine Abhängigkeit am
+  Router der Fabrik). Vorher nahm TiTiler jede Größe über 0; eine Kachel mit 4096 px band einen
+  Thread 12,6 s [M].
+- **Wer welche Größe zeichnet:** Mosaik und Mosaik-Vorschau 512 px, Szene, Item-Vorschau und
+  Ergebnis 256 px (im Frontend mit NM4-29b, Plan §17). Gemessen bringt 512 px dort am meisten, wo viele teure Kacheln hinter den
+  6 Verbindungen des Browsers warten (Mosaik 29,1 → 14,3 s); bei einer einzelnen Ebene und
+  begrenzter Leitung ist es langsamer, weil eine 512er-Kachel weiter über den Bildrand ragt.
+  Mit HTTP/2 bzw. CDN (M6) wird neu gemessen (Wiedervorlage M6).
+- **TileJSON:** Ohne `tilesize` in der Anfrage nennt das Dokument die Größe, mit der der Viewer
+  die Art zeichnet: 512 px beim Mosaik, sonst 256 px (`EarthxTilerFactory.tile_size`), statt
+  TiTilers 512 für alle. `tileSize` selbst kennt TileJSON nicht; die Größe steht in der URL unter
+  `tiles`.
+- **Stufen unverändert:** Freigegebene Stufen (`earthx:viewer`) und die Grenzen der Mosaik-Kachel
+  (ab z8, 12 Szenen je Kachel) zählen Flächen einer Stufe und gelten für beide Größen. Eine
+  512er-Kachel einer Stufe hat viermal so viele Pixel und wird eine Kartenzoomstufe später
+  gefragt; das Mosaik erscheint damit ab Kartenzoom 7,5 statt 6,5 (Frage 3, Option 1).
+- **Bitgleichheit:** siehe `adr/0014` §15 Nachtrag NM4-29.
+
 ### 5.1 Wo der Kachel-Pfad liegt — eine Modulgrenze, die auffällt
 
 Die Zusammensetzung passt **nicht** in `access`. `access` darf `gateway` nach
