@@ -41,9 +41,11 @@
 - Log-Zeile(n) mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern (pflegt der Planungs-Chat, siehe Kopf des Backlogs).
 - Vor „fertig“ ist main geholt.
 
-## 6. Plan (28.10.2026, Vorschlag, Freigabe durch Otto offen)
+## 6. Plan (28.10.2026, von Otto am 29.10.2026 freigegeben)
 
-Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #232. Belegstufen wie in `adr/0009`: [M] in der Sitzung gemessen (Wegwerf-Skripte im Kratzverzeichnis, nicht im Repo; ausgegeben wurden nur Statuscodes, Kopfzeilen und Größen, keine Adresse), [P] Primärquelle oder Code gelesen, [S] nur Suchtreffer, [A] eigene Ableitung. Aus der Sitzung nicht erreichbar: `planetarycomputer.microsoft.com` (Proxy `403`), die Seiten von MDN, caniuse, Bugzilla und WebKit-Trac. Für MDN, caniuse und die Fetch-Spezifikation gelten ihre Rohquellen auf GitHub (§6.9).
+**Freigabe (Otto, 29.10.2026, zu #233):** alle sechs Fragen mit Option 1 (A2, Rückfall über iframes mit Linkliste, „Merged per pass (job)“ als zweiter Knopf, 500 MB je Datei, Token-Weg erst mit dem Datensatz, ein PR); K1–K6 angenommen. ZIP über die Plattform: nein. Dazu drei Aufträge: die Rückfrage „mehrere Dateien“ in Chrome/Edge und Firefox prüfen und im PR beschreiben (§6.11), Wiedervorlage zu DS-04 (§6.12), Nachträge heißen „Nachtrag NM4-33“. Antworten in §6.10. Der Code ist Frontend und beginnt erst, wenn Otto einen freien Frontend-Platz meldet.
+
+Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #232. Belegstufen wie in `adr/0009`: [M] in der Sitzung gemessen (Wegwerf-Skripte im Kratzverzeichnis, nicht im Repo; ausgegeben wurden nur Statuscodes, Kopfzeilen und Größen, keine Adresse), [P] Primärquelle oder Code gelesen, [S] nur Suchtreffer, [A] eigene Ableitung. Aus der Sitzung nicht erreichbar: `planetarycomputer.microsoft.com` (Proxy `403`), die Seiten von MDN, caniuse, Bugzilla und WebKit-Trac. Für MDN, caniuse und die Fetch-Spezifikation gelten ihre Rohquellen auf GitHub (§6.13).
 
 ### 6.0 Kurzfassung
 
@@ -59,7 +61,7 @@ Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main`
   - Chromium: 171 MB per CORS-`fetch` in 9 s, gespeichert unter eigenem Namen, Heap etwa 172 MB.
   - Mehrere Downloads aus einem Klick in Chromium: per `a.click()` ohne Abstand kommt nur 1 von 4 an, mit 1 s Abstand alle 4. Über versteckte iframes kommen alle 4 ohne Abstand an.
 - **Quellen mit anonymem Token (Planetary Computer):** Der Browser holt das Token beim Klick selbst (`adr/0018` N1), danach gilt derselbe Weg. Das Backend signiert nicht. Gebaut wird erst mit dem Datensatz (Frage 5).
-- **Fragen an Otto:** 6, in §6.8.
+- **Fragen an Otto:** 6, in §6.8; beantwortet am 29.10.2026 (§6.10).
 
 ### 6.1 Stand im Code [P]
 
@@ -110,7 +112,7 @@ Chromium, von `http://localhost`:
 - **`download` cross-origin:** Chrome (ab 65), Safari und Firefox ignorieren `download` bei fremden Hosts. Es folgt eine normale Navigation, und die Antwort der Quelle entscheidet, ob ein Download entsteht. Bei `blob:`, `data:` und gleichem Ursprung gilt der Name aus `download` [P: MDN, BCD, Chrome-65-Blog].
 - **TIFF:** Nur Safari zeigt TIFF an [P: MDN]. Ohne `Content-Disposition: attachment`, und die Buckets senden es nicht, öffnet Safari die Datei im Tab bzw. im iframe, statt sie zu speichern [A].
 - **Mehrere Downloads:**
-  - Chrome lässt den ersten zu und fragt danach einmal „Automatic downloads“. Die Wahl gilt für die Seite [P: `download_request_limiter.h`].
+  - Chrome lässt den ersten zu und fragt danach einmal „Automatic downloads“. Die Wahl gilt für die Seite [P: `download_request_limiter.h`]; die Rückfrage ist in der Sitzung gemessen (§6.11) [M].
   - Firefox fragt laut Bug 1859620 nicht [S].
   - Safari fragt je Website mit „Ask“ als Vorgabe [S].
 - **Blob speichern** (`<a download>` auf `blob:`): alle Engines, iOS-Safari ab 13 [P: BCD].
@@ -225,6 +227,7 @@ Chromium, von `http://localhost`:
   - Hell und dunkel, 1280, 360 und 320 px Breite. Prüfung auf Überlappen und Überlauf, Bildschirmfotos.
 - **Prüfanleitung für Otto im PR:**
   - Chrome und Safari (Mac oder iPhone) mit S2 (CORS) und DEM (ohne).
+  - **Eigener Schritt „Rückfrage mehrere Dateien“** (§6.11): in Chrome oder Edge und in Firefox je einmal mit frischem Profil oder privatem Fenster zwei Szenen laden. Notieren, ob und wann der Browser fragt, ob die übrigen Dateien bis zur Antwort warten und ob ein zweiter Klick nach „Allow“ wieder fragt. Danach entscheidet Otto, ob eine einmalige Erlaubnis je Website tragbar ist oder Chromium ein ZIP im Browser bekommt.
   - PowerShell 5.1 für die CORS-Kopfzeilen der Hosts.
 - **Pflicht-Checks:** Backend, Frontend, Importregeln und Compose müssen grün sein. Lokal laufen `npm run lint`, `npx tsc -b`, `npm test`, `ruff check backend` und `pytest`.
 - **Doku:**
@@ -273,7 +276,47 @@ Bisher fragt der Dialog vorher „Each scene separately / Merged per pass (job)�
 - **K5** „Save link list“ bleibt, als kleiner Knopf mit Tooltip.
 - **K6** Der Layer-Manager nimmt denselben Weg.
 
-### 6.9 Quellen
+### 6.10 Antworten (Otto, 29.10.2026)
+
+| Frage | Antwort |
+|---|---|
+| 1 Weg | Option 1: A2 |
+| 2 Quelle ohne CORS | Option 1: Download des Browsers über iframes, darunter „Save link list“ und die aufklappbaren Links |
+| 3 „Merged per pass (job)“ | Option 1: zweiter Knopf im Fenster, bricht den Download nicht ab |
+| 4 Grenze je Datei | Option 1: 500 MB, darüber Download des Browsers |
+| 5 Token-Quellen | Option 1: Weg beschrieben, gebaut mit dem Datensatz (`adr/0018` Teil B) |
+| 6 Schnitt | Option 1: ein PR |
+| K1–K6 | angenommen |
+| ZIP über die Plattform | nein; damit ist der offene Log-Punkt vom 15.10.2026 entschieden. Backlog-Punkt 37 pflegt der Planungs-Chat |
+
+Zusätzlich: Rückfrage „mehrere Dateien“ prüfen (§6.11) und als eigenen Schritt in die Prüfanleitung (§6.7); Wiedervorlage DS-04 (§6.12); Nachträge heißen „Nachtrag NM4-33“ (`architekturplan.md` 6.4, `adr/0018` §9.3).
+
+### 6.11 Rückfrage „mehrere Dateien“ (Auftrag vom 29.10.2026)
+
+**Chromium [M]:** Chrome for Testing 153 in der Sitzung, mit Fenster unter Xvfb, frisches Profil, ohne Playwright gestartet (Playwright übernimmt die Downloads über CDP und umgeht die Sperre: dort kamen auch mit Fenster immer 4 von 4 ohne Rückfrage an). Der Klick ist ein echtes Mausereignis über CDP, danach 10–14 s gewartet.
+
+| Weg | angekommen ohne Antwort | Rückfrage |
+|---|---|---|
+| 4 versteckte iframes (Weg A, Rückfall) | 1 von 4 | „http://127.0.0.1:5199 wants to · Download multiple files · Block / Allow“ |
+| 4 × `<a>` cross-origin, 1 s Abstand | 1 von 4 | dieselbe |
+| 4 × CORS-`fetch` → Blob → `<a download>` (A2) | 1 von 4 | dieselbe |
+
+- Die erste Datei kommt sofort, alle weiteren warten auf die Antwort. Bei A2 ist die erste Datei `ATTRIBUTION.txt`, die Rückfrage erscheint also mit dem ersten Original.
+- Die Rückfrage hängt nicht am Weg: Auch Blob-Downloads mit eigenem Namen lösen sie aus. Ein ZIP (eine einzige Datei) wäre der einzige Weg ohne sie.
+- **Edge:** dieselbe Engine und dieselbe Sperre (`DownloadRequestLimiter`) [A]; nicht gemessen.
+- **Ob „Allow“ dauerhaft gilt:** In der Sitzung nicht prüfbar, weil sich die Schaltfläche der Browser-Oberfläche ohne Werkzeug für X-Eingaben nicht klicken lässt. Laut Quelltext ist es die Einstellung „Automatic downloads“ der Website [P: `download_request_limiter.h`]. Das prüft Otto (§6.7).
+- **Firefox:** in der Sitzung nicht vorhanden; `playwright install` ist hier ausgeschlossen. Nach Bug 1859620 fragt Firefox nicht [S]. Das prüft Otto (§6.7).
+- **Folge für die Umsetzung [A]:** Wartet ein Download auf „Allow“, darf die Blob-URL nicht vorher ungültig werden. Die Umsetzung misst, ob ein Download aus einer schon freigegebenen (`revokeObjectURL`) Blob-URL nach spätem „Allow“ noch ankommt. Sonst bleiben die Blob-URLs bis zum Ende des Laufs gültig, und es liegen höchstens die noch nicht bestätigten Dateien im Speicher.
+- **Entscheidung danach bei Otto:** einmalige Erlaubnis je Website tragbar, oder Chromium bekommt ein ZIP im Browser (Frage 1, Option 3).
+
+### 6.12 Wiedervorlage DS-04 (Sentinel-1 GRD)
+
+Mit DS-04 neu prüfen:
+- **Grenze je Datei:** VV-Dateien der GRD liegen bei 0,6–0,9 GB (`adr/0018` §3.1), also über 500 MB. Nach heutiger Regel gehen sie als Download des Browsers, unter dem Namen der Quelle.
+- **Benennung:** Die GRD-Dateien heißen je Szene gleich (`vv.tif`, `vh.tif`). Über den Download des Browsers verlöre sich der Bezug zur Szene wie bei `TCI.tif`.
+- Optionen dann: Grenze für diesen Datensatz anheben, ein ZIP im Browser für Chromium, oder Unterordner je Szene über den Ordner-Picker. Der Bucket hat CORS (`*`, §6.2).
+
+### 6.13 Quellen
 
 - **Fetch-Spezifikation** (Range ohne Preflight, `Content-Length` lesbar): https://raw.githubusercontent.com/whatwg/fetch/main/fetch.bs
 - **MDN:**
