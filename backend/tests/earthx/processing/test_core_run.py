@@ -15,11 +15,11 @@ from rio_tiler.io import Reader
 from earthx.processing import RunCancelled, run
 from earthx.processing import core as core_module
 from earthx.processing.errors import AoiOutsideInputs, GridMismatch, UnsupportedRecipe
-from earthx.processing.recipe import recipe_from_data, recipe_hash
+from earthx.processing.recipe import recipe_hash
 from earthx.readers import AssetRejected
 from tests.conftest import own_log_text
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import CROP, resolved
+from tests.earthx.processing.recipes import CROP, recipe_of_data, resolved
 from tests.earthx.processing.testops import OPERATORS
 
 WIDTH, HEIGHT = 1300, 1100  # more than one 1024 block in each direction
@@ -67,7 +67,7 @@ def physical(bands: dict[str, Path]) -> dict[str, numpy.ma.MaskedArray]:
 
 
 def _run(data: dict, workdir: Path, progress=lambda done, total: None):
-    return run(recipe_from_data(data, OPERATORS), workdir=workdir, progress=progress, operators=OPERATORS)
+    return run(recipe_of_data(data, OPERATORS), workdir=workdir, progress=progress, operators=OPERATORS)
 
 
 def _read(path: Path) -> numpy.ma.MaskedArray:
@@ -290,6 +290,6 @@ def test_logs_name_no_address_no_aoi_and_no_hash(tmp_path: Path, caplog: pytest.
     text = "\n".join(own_log_text(record) for record in caplog.records)
     assert "processing run finished" in text
     assert sources.HOST not in text
-    assert recipe_hash(recipe_from_data(data, OPERATORS)) not in text
+    assert recipe_hash(recipe_of_data(data, OPERATORS)) not in text
     first = data["aoi"]["coordinates"][0][0]
     assert f"{first[0]}" not in text and f"{first[1]}" not in text

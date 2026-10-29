@@ -17,10 +17,10 @@ from rio_tiler.models import ImageData
 
 from earthx.processing import run
 from earthx.processing.errors import ScalingMismatch
-from earthx.processing.recipe import Band, recipe_from_data
+from earthx.processing.recipe import Band
 from earthx.processing.scaling import Scaling, apply_scaling, scaling_for_cog, scaling_for_zarr
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.testops import OPERATORS
 from tests.earthx.readers import mini_zarr_cf
 
@@ -127,7 +127,7 @@ def _zarr_recipe(scale: float | None, offset: float | None) -> dict:
 
 def _run(data: dict, workdir: Path):
     return run(
-        recipe_from_data(data, OPERATORS), workdir=workdir, progress=lambda done, total: None, operators=OPERATORS
+        recipe_of_data(data, OPERATORS), workdir=workdir, progress=lambda done, total: None, operators=OPERATORS
     )
 
 

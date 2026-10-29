@@ -31,10 +31,9 @@ from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.gateway import check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
-from earthx.processing.recipe import recipe_from_data
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.readers import mini_zarr, mini_zarr_cf
 
 WIDTH, HEIGHT = 700, 600
@@ -242,7 +241,7 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
         self, client: TestClient, files: dict[str, Path], tmp_path: Path, expression: str, size: int
     ) -> None:
         result = run(
-            recipe_from_data(_recipe(("red", "nir"), expression), OPERATORS),
+            recipe_of_data(_recipe(("red", "nir"), expression), OPERATORS),
             workdir=tmp_path,
             progress=lambda done, total: None,
         )
@@ -299,7 +298,7 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
             "steps": [{"op": "band_math", "op_version": 1, "params": {"expression": expression}}],
             "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
         }
-        result = run(recipe_from_data(recipe, OPERATORS), workdir=tmp_path, progress=lambda done, total: None)
+        result = run(recipe_of_data(recipe, OPERATORS), workdir=tmp_path, progress=lambda done, total: None)
         response = client.get(
             _url((tile.z, tile.x, tile.y), dataset=ZARR, assets=(key,), expression=expression, extra=f"&tilesize={size}")
         )
@@ -413,13 +412,20 @@ class TestRefusals:
         # "x", "1.0": the path dependency (400); "-1", "0": the schema (422) or no such version (422).
         assert client.get(_url((14, 1, 1), op_version=version)).status_code in (400, 422)
 
-    @pytest.mark.parametrize(("op", "version"), [("nonesuch", "1"), ("band_math", "2"), ("band_math", "99")])
+    @pytest.mark.parametrize(("op", "version"), [("nonesuch", "1"), ("band_math", "3"), ("band_math", "99")])
     def test_an_operator_or_version_the_platform_does_not_know_is_a_422(
         self, client: TestClient, op: str, version: str
     ) -> None:
         response = client.get(_url((14, 1, 1), op=op, op_version=version))
         assert response.status_code == 422
         assert "not available" in response.json()["detail"]
+
+    @pytest.mark.parametrize("op", ["band_math", "mask", "normalize"])
+    def test_version_2_of_the_bands_steps_is_a_job_for_now_and_no_tile(self, client: TestClient, op: str) -> None:
+        """They work on a stock of named bands; the tile reads them with NM4-43d (adr/0020 §13)."""
+        response = client.get(_url((14, 1, 1), op=op, op_version="2", params="{}"))
+        assert response.status_code == 422
+        assert "does not run as a tile" in response.json()["detail"]
 
     def test_an_operator_that_does_not_run_as_a_tile_is_a_422(self, client: TestClient) -> None:
         raw = '{"crs": "EPSG:3035", "resolution": 10, "resampling": "nearest"}'

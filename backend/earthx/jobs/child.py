@@ -30,7 +30,8 @@ from typing import Any
 from earthx.processing import RunCancelled, failure_kind, run, worker_environment
 from earthx.processing.export import ExportResult, read_attachments
 from earthx.processing.operators import REGISTRY
-from earthx.processing.recipe import CropOutput, parse_recipe
+from earthx.processing.recipe import CropOutput
+from earthx.processing.upgrade import recipe_of_any_version
 
 __all__ = ["guard", "high_water_mb", "run_child"]
 
@@ -62,7 +63,8 @@ def guard(conn: Any, work: Callable[[], None]) -> None:
 
 
 def _run(workdir: Path, conn: Any) -> None:
-    recipe = parse_recipe((workdir / RECIPE_NAME).read_bytes(), REGISTRY)
+    # A recipe the queue still holds from before version 2 is rewritten here, and gives the same values (adr/0020 §11).
+    recipe = recipe_of_any_version((workdir / RECIPE_NAME).read_bytes(), REGISTRY)
 
     def progress(done: int, total: int) -> None:
         conn.send(("progress", done, total, high_water_mb()))

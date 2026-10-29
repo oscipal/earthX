@@ -28,11 +28,10 @@ from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.gateway import check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
-from earthx.processing.recipe import recipe_from_data
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, without_cloud_share
 from tests.earthx.api.test_tiler_operator import HEIGHT, NATIVE, WIDTH, _job_tile, _source_position, _tiles
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.test_mask import scl_layer
 from tests.earthx.readers import mini_zarr, mini_zarr_cf
 
@@ -170,7 +169,7 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
         self, client: TestClient, tmp_path: Path, assets: tuple[str, ...], op: str, params: dict, size: int
     ) -> None:
         step = {"op": op, "op_version": 1, "params": params}
-        result = run(recipe_from_data(_recipe(assets, step), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
+        result = run(recipe_of_data(_recipe(assets, step), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
         compared = masked = 0
         for tile in _tiles(NATIVE[size]):
             response = client.get(_url(tile, op, params, assets=assets, size=size))
@@ -302,8 +301,9 @@ class TestTheTileEqualsTheJobOnZarr:
         west, south, east, north = transform_bounds(mini_zarr_cf.ITEM_CRS, WGS84_CRS, *mini_zarr_cf.store_bounds())
         tile = WEB_MERCATOR_TMS.tile((west + east) / 2, (south + north) / 2, NATIVE[size])
         key = ("r10m:b04", "scl20m:scl")
-        result = run(recipe_from_data(_zarr_recipe(), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
-        assert result.meta.resampled is True and [band.name for band in result.meta.bands] == ["b04"]
+        result = run(recipe_of_data(_zarr_recipe(), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
+        # The coarser layer only hides pixels, `b04` was not moved to another grid: nothing is marked (backlog 51).
+        assert result.meta.resampled is False and [band.name for band in result.meta.bands] == ["b04"]
         response = client.get(_url((tile.z, tile.x, tile.y), "mask", MASK, dataset=ZARR, assets=key, size=size))
         assert response.status_code == 200, response.text
         from_tile = _decode(response.content)
