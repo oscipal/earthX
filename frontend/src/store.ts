@@ -39,7 +39,7 @@ import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
-import { appliedRenderFrom, autoRescale, pendingFieldsOf } from './render';
+import { appliedRenderFrom, autoRescale, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
   buildSections,
@@ -906,6 +906,10 @@ export interface AppState {
   syncDeletedResults: (until: ReadonlyMap<string, number>, now: number) => void;
   // Draws a result layer another way: the tile URL is rebuilt, so the map makes a new source of it.
   restyleResultLayer: (id: string, render: AppliedRender) => void;
+  // "Save" of a result's settings: what "Apply" draws is the layer's own look from now on.
+  saveResultLayer: (id: string) => void;
+  // The settings are closed: a look that was applied and not saved goes, the layer is drawn as saved again.
+  revertResultLayer: (id: string) => void;
   closeResultView: () => void;
   removeLayer: (id: string) => void;
   toggleLayerVisible: (id: string) => void;
@@ -1416,13 +1420,42 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...(s.resultViewLayerId !== null && removed.has(s.resultViewLayerId) ? { resultViewLayerId: null } : {}),
       };
     }),
+  // "Apply": draws the result with this look. The look it was saved with is kept until "Save" or until the settings close.
   restyleResultLayer: (id, render) =>
     set((s) => ({
-      layers: s.layers.map((l) =>
-        l.id === id && l.derived === 'result'
-          ? { ...l, overlays: l.overlays.map((o) => (o.kind === 'raster' ? { ...o, tileUrl: restyledTileUrl(o.tileUrl, render) } : o)) }
-          : l,
-      ),
+      layers: s.layers.map((l) => {
+        if (l.id !== id || l.derived !== 'result' || !l.result) return l;
+        const was = l.overlays.find((o) => o.kind === 'raster')?.tileUrl;
+        const overlays = l.overlays.map((o) => (o.kind === 'raster' ? { ...o, tileUrl: restyledTileUrl(o.tileUrl, render) } : o));
+        const now = overlays.find((o) => o.kind === 'raster')?.tileUrl;
+        const saved = l.result.savedTileUrl ?? was;
+        // Back at the saved look: nothing is unsaved.
+        const { savedTileUrl: _kept, ...info } = l.result;
+        return { ...l, overlays, result: saved === undefined || saved === now ? info : { ...info, savedTileUrl: saved } };
+      }),
+    })),
+  saveResultLayer: (id) =>
+    set((s) => ({
+      layers: s.layers.map((l) => {
+        if (l.id !== id || !l.result?.savedTileUrl) return l;
+        const { savedTileUrl: _saved, ...info } = l.result;
+        return { ...l, result: info };
+      }),
+    })),
+  revertResultLayer: (id) =>
+    set((s) => ({
+      layers: s.layers.map((l) => {
+        const saved = l.id === id ? l.result?.savedTileUrl : undefined;
+        if (!l.result || saved === undefined) return l;
+        const { savedTileUrl: _saved, ...info } = l.result;
+        let first = true;
+        const overlays = l.overlays.map((o) => {
+          if (o.kind !== 'raster' || !first) return o;
+          first = false;
+          return { ...o, tileUrl: saved };
+        });
+        return { ...l, overlays, result: info };
+      }),
     })),
   closeResultView: () => set({ resultViewLayerId: null }),
   removeLayer: (id) =>
@@ -1800,15 +1833,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // runs, which is the point of an explicit "Apply".
   applyRender: () => {
     const s = get();
-    const vmin = s.pendingVmin.trim();
-    const vmax = s.pendingVmax.trim();
-    set({
-      appliedRender: {
-        ...s.appliedRender,
-        colormapName: s.pendingColormapName || undefined,
-        rescale: vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
-      },
-    });
+    set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
   },
   // Re-measures the stretch from `/statistics` (adr/0006 §3.4) and writes it into
   // the pending fields only — still needs "Apply" to take effect on the map.
@@ -2192,3 +2217,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (dataset?.browse === 'full_resolution') await get().enterFocus(false);
   },
 }));
+
+// The settings of a result are closed — another layer chosen, the view left, the panel shut: what was applied and not saved
+// goes without asking, and the layer is drawn as saved again (NM4-50).
+useAppStore.subscribe((s, prev) => {
+  if (prev.resultViewLayerId !== null && prev.resultViewLayerId !== s.resultViewLayerId) s.revertResultLayer(prev.resultViewLayerId);
+});

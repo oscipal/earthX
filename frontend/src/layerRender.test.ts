@@ -94,3 +94,61 @@ describe.each([
     expect(useAppStore.getState().viewLayerId).toBe(`L-${id}`);
   });
 });
+
+
+// Otto, 29.10.2026 (zu #234): "Apply" in the view does not change a pinned layer; "Add to layers" takes the look the view was
+// given with "Apply" and nothing that was only typed.
+describe.each([
+  ['the DEM', 'dem', 'full_resolution'],
+  ['Sentinel-2', 's2', 'quicklook'],
+] as const)('the view of %s and its layers', (_name, id, browse) => {
+  const overlayUrl = (layer: MapLayer) => (layer.overlays.find((o) => o.kind === 'raster') as { tileUrl: string } | undefined)?.tileUrl ?? '';
+
+  beforeEach(() => {
+    const layer = layerOf(id, { colormapName: 'viridis', rescale: '10,2900' });
+    layer.overlays = [{ kind: 'raster', tileUrl: `/collections/${id}/items/a/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual&colormap_name=viridis&rescale=10%2C2900`, bounds: [0, 0, 1, 1], minZoom: 8, maxZoom: 14 }];
+    useAppStore.setState({
+      datasets: datasetsFrom([collection(id, browse)]),
+      selectedDatasetIds: [id],
+      datasetId: id,
+      layers: [layer],
+      items: [],
+      groups: [],
+      mosaics: {},
+      focusMode: false,
+      downloaded: {},
+      appliedRender: {},
+      viewLayerId: null,
+      aoi: null,
+    });
+    useAppStore.getState().selectLayer(`L-${id}`);
+  });
+
+  it('is the picture of the layer until "Apply" gives it another look, and the layer stays as it was', () => {
+    const before = useAppStore.getState().layers[0];
+    expect(useAppStore.getState().viewLayerId).toBe(`L-${id}`);
+    useAppStore.getState().setPendingColormapName('magma');
+    useAppStore.getState().applyRender();
+    const s = useAppStore.getState();
+    expect(s.appliedRender.colormapName).toBe('magma');
+    expect(s.layers[0]).toBe(before);
+    expect(s.layers[0].restore.appliedRender).toEqual({ colormapName: 'viridis', rescale: '10,2900' });
+    expect(overlayUrl(s.layers[0])).toContain('colormap_name=viridis');
+  });
+
+  it('takes into "Add to layers" the look that was applied, not what was only typed', () => {
+    useAppStore.getState().setPendingColormapName('magma');
+    useAppStore.getState().setPendingVmin('1');
+    useAppStore.getState().setPendingVmax('50');
+    useAppStore.getState().applyRender();
+    useAppStore.getState().setPendingColormapName('plasma');
+    useAppStore.getState().setPendingVmax('99');
+    useAppStore.getState().addCurrentToLayers();
+    const [added, original] = useAppStore.getState().layers;
+    expect(added.restore.appliedRender).toMatchObject({ colormapName: 'magma', rescale: '1,50' });
+    expect(overlayUrl(added)).toContain('colormap_name=magma');
+    expect(overlayUrl(added)).toContain('rescale=1%2C50');
+    expect(overlayUrl(added)).not.toContain('plasma');
+    expect(original.restore.appliedRender).toEqual({ colormapName: 'viridis', rescale: '10,2900' });
+  });
+});

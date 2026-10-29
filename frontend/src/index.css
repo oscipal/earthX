@@ -247,6 +247,38 @@ body.dragging * {
   padding: 6px 16px;
   align-self: flex-end;
 }
+/* "auto" on top, "Apply" under it and "Save" beside "Apply" (the view of scenes has no "Save" yet): together no higher
+   than the row of the fields they stand beside (label, 3px, a 34px field). */
+.vc-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 6px;
+  align-self: flex-end;
+  min-width: 0;
+}
+.vc-buttons > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 22px;
+  margin: 0;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.vc-buttons > .vc-auto {
+  grid-column: 1 / -1;
+}
+.vc-buttons > button[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.result-controls .vc-buttons {
+  width: 176px;
+}
 .vc-field {
   display: flex;
   flex-direction: column;
@@ -282,8 +314,8 @@ body.dragging * {
 }
 /* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
    head, so the rows of buttons are the same width and that width is the width of the view. Row 1: colormap three
-   columns, vmin and vmax two each, "auto-scale" three, "Apply" two. Row 2: four buttons, three columns each. Every
-   control of row 1 is as high as "Apply", which stands on the same line as the fields. Below 600 px the grid has four
+   columns, vmin and vmax two each, and five for "auto-scale" with "Apply" under it (`.vc-buttons`, Otto 29.10.2026). Row 2:
+   four buttons, three columns each. Every field of row 1 is 34px high. Below 600 px the grid has four
    columns and the rows wrap; no text ends up outside its cell. */
 .scene-view {
   --cell: 36px;
@@ -352,10 +384,7 @@ body.dragging * {
   grid-column: span 2;
 }
 .scene-view .vc-render > :nth-child(4) {
-  grid-column: span 3;
-}
-.scene-view .vc-render > :nth-child(5) {
-  grid-column: span 2;
+  grid-column: span 5;
 }
 .scene-view .vc-actions > * {
   grid-column: span 3;
@@ -373,19 +402,6 @@ body.dragging * {
   height: var(--row-height);
   box-sizing: border-box;
 }
-/* "auto-scale" and "Apply": one height, the text in the middle, on the line the fields stand on. */
-.scene-view .vc-render > button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-width: 0;
-  height: var(--row-height);
-  padding: 0 6px;
-  font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
-}
 @media (max-width: 599px) {
   .scene-view {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -393,8 +409,11 @@ body.dragging * {
   .scene-view .vc-render > :nth-child(1) {
     grid-column: span 4;
   }
-  .scene-view .vc-render > :nth-child(n + 2) {
+  .scene-view .vc-render > :nth-child(n + 2):nth-child(-n + 3) {
     grid-column: span 2;
+  }
+  .scene-view .vc-render > :nth-child(4) {
+    grid-column: span 4;
   }
   .scene-view .vc-actions > * {
     grid-column: span 2;

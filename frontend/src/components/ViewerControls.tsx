@@ -9,7 +9,7 @@
 
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { COLORMAPS } from '../render';
+import { COLORMAPS, lookChanged, NOTHING_TO_APPLY } from '../render';
 import { useAppStore } from '../store';
 import { viewDates, viewKind } from '../viewKind';
 import Eye from './Eye';
@@ -22,6 +22,8 @@ export default function ViewerControls() {
   const setPendingVmin = useAppStore((s) => s.setPendingVmin);
   const setPendingVmax = useAppStore((s) => s.setPendingVmax);
   const applyRender = useAppStore((s) => s.applyRender);
+  // Whether "Apply" would draw anything else than the map shows.
+  const changed = useAppStore((s) => lookChanged(s.appliedRender, s));
   const autoStretch = useAppStore((s) => s.autoStretch);
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
@@ -94,18 +96,28 @@ export default function ViewerControls() {
             onChange={(e) => setPendingVmax(e.target.value)}
           />
         </label>
-        <button
-          type="button"
-          className="ghost-btn vc-auto"
-          disabled={focusLoading}
-          title="Measure the 2nd/98th percentile stretch from the source again"
-          onClick={() => autoStretch()}
-        >
-          {focusLoading ? 'measuring…' : 'auto-scale'}
-        </button>
-        <button type="button" className="primary-btn vc-apply" onClick={() => applyRender()}>
-          Apply
-        </button>
+        <div className="vc-buttons">
+          <button
+            type="button"
+            className="ghost-btn vc-auto"
+            disabled={focusLoading}
+            title="Measure the 2nd/98th percentile stretch from the source again"
+            onClick={() => autoStretch()}
+          >
+            {focusLoading ? 'measuring…' : 'auto-scale'}
+          </button>
+          <button
+            type="button"
+            className="primary-btn vc-apply"
+            aria-disabled={!changed || undefined}
+            title={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
+            onClick={() => {
+              if (changed) applyRender();
+            }}
+          >
+            Apply
+          </button>
+        </div>
       </div>
 
       <div className="vc-actions">

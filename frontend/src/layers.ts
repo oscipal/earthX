@@ -109,6 +109,9 @@ export interface ResultLayerInfo {
   // Set while the job is deleted and can still be restored (NM4-27): the server answers `404` for it, so the layer
   // stays in the list, locked, and the map asks for no tiles. It goes from the list when the day is over.
   deleted?: boolean;
+  // The tile URL the layer is saved with while "Apply" draws another one that is not saved yet (NM4-50): the unsaved
+  // look goes when the settings are closed (`revertResultLayer`), "Save" makes it the layer's own.
+  savedTileUrl?: string;
   // What the tiler named for the result (`float32`, `uint16` …); `null` if it did not say. A float result
   // needs a range and a colormap to become a picture, any other is drawn as it is.
   dataType: string | null;
