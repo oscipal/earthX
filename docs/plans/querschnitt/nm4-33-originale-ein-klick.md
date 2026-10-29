@@ -45,7 +45,7 @@
 
 **Freigabe (Otto, 29.10.2026, zu #233):** alle sechs Fragen mit Option 1 (A2, Rückfall über iframes mit Linkliste, „Merged per pass (job)“ als zweiter Knopf, 500 MB je Datei, Token-Weg erst mit dem Datensatz, ein PR); K1–K6 angenommen. ZIP über die Plattform: nein. Dazu drei Aufträge: die Rückfrage „mehrere Dateien“ in Chrome/Edge und Firefox prüfen und im PR beschreiben (§6.11), Wiedervorlage zu DS-04 (§6.12), Nachträge heißen „Nachtrag NM4-33“. Antworten in §6.10. Der Code ist Frontend und beginnt erst, wenn Otto einen freien Frontend-Platz meldet.
 
-**Änderung (Otto, 29.10.2026, zu #233): Für Quellen mit CORS ersetzt ein ZIP je Szene den Weg A2.** Das ZIP wird im Browser gebaut, ist unkomprimiert (STORE) und wird über einen Service Worker in den Download gestreamt. client-zip ist erlaubt. Quellen ohne CORS bleiben wie freigegeben. Der überarbeitete Plan steht in §6.14 und liegt Otto noch einmal vor. §6.0–§6.12 bleiben als Stand der ersten Freigabe stehen; wo §6.14 abweicht, gilt §6.14.
+**Änderung (Otto, 29.10.2026, zu #233): Für Quellen mit CORS ersetzt ein ZIP je Szene den Weg A2.** Das ZIP wird im Browser gebaut, ist unkomprimiert (STORE) und wird über einen Service Worker in den Download gestreamt. client-zip ist erlaubt. Quellen ohne CORS bleiben wie freigegeben. Der überarbeitete Plan steht in §6.14; Otto hat ihn am 29.10.2026 freigegeben (§6.14.10). §6.0–§6.12 bleiben als Stand der ersten Freigabe stehen; wo §6.14 abweicht, gilt §6.14.
 
 Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #232. Belegstufen wie in `adr/0009`: [M] in der Sitzung gemessen (Wegwerf-Skripte im Kratzverzeichnis, nicht im Repo; ausgegeben wurden nur Statuscodes, Kopfzeilen und Größen, keine Adresse), [P] Primärquelle oder Code gelesen, [S] nur Suchtreffer, [A] eigene Ableitung. Aus der Sitzung nicht erreichbar: `planetarycomputer.microsoft.com` (Proxy `403`), die Seiten von MDN, caniuse, Bugzilla und WebKit-Trac. Für MDN, caniuse und die Fetch-Spezifikation gelten ihre Rohquellen auf GitHub (§6.13).
 
@@ -319,7 +319,7 @@ Mit DS-04 neu prüfen:
 - Optionen dann: Grenze für diesen Datensatz anheben, ein ZIP im Browser für Chromium, oder Unterordner je Szene über den Ordner-Picker. Der Bucket hat CORS (`*`, §6.2).
 - **Stand nach §6.14:** Mit dem ZIP je Szene entfällt für Quellen mit CORS die Grenze je Datei, und die Benennung `<Szene>_<Asset>.tif` löst die gleichen Namen. Mit DS-04 bleibt zu prüfen, ob alle Assets des GRD-Buckets CORS haben (gemessen ist nur `GET` auf den Bucket) und wie sich Szenen von 1,0–1,5 GB verhalten.
 
-### 6.14 Überarbeitung: ein ZIP je Szene (Änderung Otto, 29.10.2026; Freigabe offen)
+### 6.14 Überarbeitung: ein ZIP je Szene (Änderung Otto, 29.10.2026; freigegeben am 29.10.2026)
 
 #### 6.14.1 Vorgabe (Otto)
 
@@ -352,6 +352,7 @@ Damit bleibt TCI (`visual`, Standarddarstellung) drin, und `preview` fällt hera
 
 - `cloud` und `snow` (Wolken- und Schneewahrscheinlichkeit in %) folgen aus der Regel, obwohl Otto sie nicht genannt hat (Frage Z2).
 - Die drei Metadaten-Dateien sind keine `.tif` und fallen aus der Regel heraus (Frage Z3).
+- **Nach Ottos Antwort Z3:** Zusätzlich kommen alle Assets des Items mit der STAC-Rolle `metadata` ins ZIP, als `<Szenen-ID>_<Asset><Endung der Quelle>`. Bei S2 sind das `granule_metadata` (`.xml`), `product_metadata` (`.xml`) und `tileinfo_metadata` (`.json`), zusammen unter 1 MB, also 21 Dateien aus der Quelle. Für sie gelten dieselben Prüfungen (`https`, Host des Datensatzes).
 
 **Größe einer ganzen S2-Szene [M]:** Ein Item mit voller Kachel hat 886 MB in den 18 Dateien. `red`, `green`, `blue` und `nir` haben je 143–156 MB, die 20-m-Bänder je rund 47 MB. Alle Assets tragen `file:size`: Daraus berechnet client-zip die Länge des ZIPs vorab (`Content-Length`) ohne zusätzliche Anfrage.
 
@@ -437,12 +438,12 @@ Damit bleibt TCI (`visual`, Standarddarstellung) drin, und `preview` fällt hera
 #### 6.14.7 Tests und Prüfung (Änderungen zu §6.7)
 
 - **vitest:**
-  - Regel der Assets: S2 ergibt die 18 Dateien aus §6.14.2 aus den Registry-Feldern einer Fixture-Collection. Muster, `auxiliary_assets` und Standarddarstellung werden einzeln geprüft. Zweckfremd: Asset ohne `https`, fremder Host, fehlendes `file:size`.
+  - Regel der Assets: S2 ergibt die 18 Dateien aus §6.14.2 aus den Registry-Feldern einer Fixture-Collection. Dazu die drei Assets mit der Rolle `metadata` (Z3). Muster, `auxiliary_assets`, Standarddarstellung und Rolle werden einzeln geprüft. Zweckfremd: Asset ohne `https`, fremder Host, fehlendes `file:size`.
   - Name und Inhalt des ZIPs; Länge vorab gleich der echten Länge (`predictLength` gegen ein mit client-zip gebautes ZIP aus synthetischen Daten).
   - Wahl des Wegs (`cors`, Worker bereit, `TypeError`).
   - Nachrichten zwischen Seite und Worker: Abbruch, Fehler mitten im ZIP, unbekannte ID gibt `404`.
 - **Playwright (`frontend/e2e/originals-one-click.cjs`):**
-  - Ein Klick auf zwei Szenen ergibt zwei ZIPs nacheinander mit gültiger CRC, den 18 Namen, `ATTRIBUTION.txt` und `item.json`. Synthetische Bytes von einem gestellten CORS-Host.
+  - Ein Klick auf zwei Szenen ergibt zwei ZIPs nacheinander mit gültiger CRC und je 23 Einträgen (18 `.tif`, 3 Metadaten-Dateien, `ATTRIBUTION.txt`, `item.json`). Synthetische Bytes von einem gestellten CORS-Host.
   - DEM-Fall: eine Datei über das iframe.
   - Rückfall: Worker abgeschaltet.
   - Fehler einer Quelle mitten im ZIP.
@@ -481,6 +482,20 @@ Etwa 450–550 geänderte Zeilen mit Tests (Worker, Weg-Wahl, Asset-Regel, Fenst
 **Z5 — Wahl des Wegs**
 1. Aus `earthx:access.cors` der Registry, mit Rückfall bei `TypeError`; ersetzt K2. **(Empfehlung)**
 2. Wie K2 nur beim Laden erkennen.
+
+#### 6.14.10 Antworten (Otto, 29.10.2026)
+
+| Frage | Antwort |
+|---|---|
+| Z1 Regel der Assets | 1: aus der Registry abgeleitet, keine Änderung am Backend |
+| Z2 `cloud` und `snow` | 1: mit ins ZIP |
+| Z3 Metadaten-Dateien | 1: mit ins ZIP, ausgewählt über die STAC-Rolle `metadata` |
+| Z4 Rückfall ohne Streaming | 1: Einzeldateien wie A2, gleiche Benennung, `item.json` und `ATTRIBUTION.txt` |
+| Z5 Wahl des Wegs | 1: aus `earthx:access.cors`, Rückfall bei `TypeError`; ersetzt K2 |
+| Schnitt | ein PR mit getrennten Commits |
+| Firefox | prüft Otto selbst (Schritt in der Prüfanleitung, §6.14.7) |
+
+Ein ZIP einer S2-Szene enthält damit 23 Einträge: 18 `.tif`, 3 Metadaten-Dateien, `ATTRIBUTION.txt` und `item.json`. Der Code beginnt, sobald Otto einen freien Frontend-Platz meldet.
 
 ### 6.13 Quellen
 
