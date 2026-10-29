@@ -142,15 +142,15 @@ describe('draftFromOrder', () => {
       const order = asV2(2);
       const { draft, problems, notes } = draftFromOrder(order, infoOf(order.inputs[0].dataset), keys());
       expect(problems).toEqual([]);
-      expect(notes).toEqual(['Step 1 (reproject): version 2 is taken as version 3.']);
-      expect(draft.steps.map((s) => [s.op, s.opVersion, s.values.resampling])).toEqual([['reproject', 3, 'cubic']]);
+      expect(notes).toEqual(['Step 1 (reproject): version 2 is taken as version 4.']);
+      expect(draft.steps.map((s) => [s.op, s.opVersion, s.values.resampling])).toEqual([['reproject', 4, 'cubic']]);
       const rebuilt = roundTrip(order).built.order;
-      expect(rebuilt?.steps).toEqual([{ op: 'reproject', op_version: 3, params: { crs: 'EPSG:3035', resolution: 30, resampling: 'cubic', align: false } }]);
+      expect(rebuilt?.steps).toEqual([{ op: 'reproject', op_version: 4, params: { crs: 'EPSG:3035', resolution: 30, resampling: 'cubic', align: false } }]);
     });
 
     it('has no note for the listed version, and refuses a version the server does not list or take', () => {
-      expect(draftFromOrder(asV2(3), infoOf('cop-dem-glo-30'), keys()).notes).toEqual([]);
-      expect(draftFromOrder(asV2(4), infoOf('cop-dem-glo-30'), keys()).problems).toEqual([
+      expect(draftFromOrder(asV2(4), infoOf('cop-dem-glo-30'), keys()).notes).toEqual([]);
+      expect(draftFromOrder(asV2(5), infoOf('cop-dem-glo-30'), keys()).problems).toEqual([
         'Step 1 (reproject): this operator is not available for this dataset.',
       ]);
     });
