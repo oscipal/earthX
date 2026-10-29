@@ -37,6 +37,7 @@ CLOUD = SearchFilter(
     maximum=100.0,
     integer=False,
     values=(),
+    within_aoi=False,
 )
 ORBIT = replace(CLOUD, property="sat:relative_orbit", title="Relative orbit", unit=None, minimum=1, maximum=175, integer=True)
 PLATFORM = SearchFilter(
@@ -49,6 +50,7 @@ PLATFORM = SearchFilter(
     maximum=None,
     integer=False,
     values=(FilterValue("sentinel-2a", "Sentinel-2A"), FilterValue("sentinel-2b", "Sentinel-2B")),
+    within_aoi=False,
 )
 
 
@@ -143,6 +145,7 @@ class TestTheCollection:
                 "title": "Cloud cover",
                 "description": "Share of the scene covered by clouds.",
                 "unit": "%",
+                "within_aoi": False,
                 "type": "number",
                 "minimum": 0.0,
                 "maximum": 100.0,
@@ -153,6 +156,7 @@ class TestTheCollection:
                 "title": "Relative orbit",
                 "description": "Share of the scene covered by clouds.",
                 "unit": None,
+                "within_aoi": False,
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 175,
@@ -163,6 +167,7 @@ class TestTheCollection:
                 "title": "Satellite",
                 "description": "The satellite that took the scene.",
                 "unit": None,
+                "within_aoi": False,
                 "type": "string",
                 "oneOf": [
                     {"const": "sentinel-2a", "title": "Sentinel-2A"},

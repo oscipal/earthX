@@ -274,6 +274,10 @@ SENTINEL_2_L2A = DatasetConfig(
         suggested=_SCL_SUGGESTED,
         reference=_SCL_REFERENCE,
         note=_SCL_NOTE,
+        # DS-03 plan §6.6, §6.10: 8, 9, 10 is the definition of `eo:cloud_cover`, measured equal on 48 of 48 scenes
+        # (plan §6.2.5); cloud shadows (3) do not count.
+        cloud_classes=frozenset({8, 9, 10}),
+        cloud_note="Sen2Cor's classification can miss thin cirrus and can take snow or bright ground for clouds.",
     ),
     # The twelve reflectance bands of the L2A product (surface reflectance, scaled by the item), then the other
     # assets. Sources: Sen2Cor L2A IODD (S2-PDGS-MPC-L2A-IODD-2.4, issue 02) Tables 6 and 7 (cloud and snow
@@ -311,6 +315,8 @@ SENTINEL_2_L2A = DatasetConfig(
             maximum=100.0,
             integer=False,
             values=(),
+            # DS-03 plan §6.10: the range of this filter may also be applied to the cloud share inside the AOI.
+            within_aoi=True,
         ),
         SearchFilter(
             property="s2:nodata_pixel_percentage",
@@ -322,6 +328,7 @@ SENTINEL_2_L2A = DatasetConfig(
             maximum=100.0,
             integer=False,
             values=(),
+            within_aoi=False,
         ),
         SearchFilter(
             property="platform",
@@ -338,6 +345,7 @@ SENTINEL_2_L2A = DatasetConfig(
                 FilterValue(value="sentinel-2b", label="Sentinel-2B"),
                 FilterValue(value="sentinel-2c", label="Sentinel-2C"),
             ),
+            within_aoi=False,
         ),
     ),
 )

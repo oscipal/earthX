@@ -30,6 +30,7 @@ from earthx.catalog.registry import DataFormat, DatasetRegistry
 from earthx.gateway import check_url
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
+from tests.catalog.synthetic_zarr import without_cloud_share
 from tests.earthx.readers import mini_zarr
 from tests.earthx.readers.mini_zarr import BASE_URL, HOST, build_mini_zarr, serve_store
 
@@ -40,7 +41,7 @@ GROUP = "r20m"
 BASE = f"/collections/{DATASET}/items/{ITEM}"
 
 ZARR_DATASET = replace(
-    SENTINEL_2_L2A,
+    without_cloud_share(SENTINEL_2_L2A),
     dataset_id=DATASET,
     format=DataFormat.ZARR,
     source=replace(SENTINEL_2_L2A.source, asset_hosts=(HOST,)),

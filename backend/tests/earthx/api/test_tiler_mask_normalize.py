@@ -29,7 +29,7 @@ from earthx.gateway import check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.recipe import recipe_from_data
-from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, without_cloud_share
 from tests.earthx.api.test_tiler_operator import HEIGHT, NATIVE, WIDTH, _job_tile, _source_position, _tiles
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
@@ -47,7 +47,7 @@ COG_DATASET = replace(
 )
 ZARR_DATASET = SYNTHETIC_ZARR
 NO_LAYER = replace(
-    COG_DATASET,
+    without_cloud_share(COG_DATASET),
     dataset_id="synthetic-no-layer",
     capabilities=replace(COG_DATASET.capabilities, masking=False),
     mask=None,

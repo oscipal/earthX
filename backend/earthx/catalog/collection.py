@@ -65,7 +65,10 @@ def _earthx_capabilities(config: DatasetConfig) -> dict[str, bool]:
 
 
 def _earthx_mask(config: DatasetConfig) -> dict[str, object] | None:
-    """The layer ``mask`` reads, for the panel's list of classes; ``None`` where there is none (M4-18)."""
+    """The layer ``mask`` reads, for the panel's list of classes; ``None`` where there is none (M4-18).
+
+    ``cloud_classes`` (ascending) and ``cloud_note`` tell the panel what counts as cloud in the AOI (DS-03 plan §6.10).
+    """
     mask = config.mask
     if mask is None:
         return None
@@ -76,6 +79,8 @@ def _earthx_mask(config: DatasetConfig) -> dict[str, object] | None:
         "suggested": sorted(mask.suggested),
         "reference": mask.reference,
         "note": mask.note,
+        "cloud_classes": sorted(mask.cloud_classes),
+        "cloud_note": mask.cloud_note,
     }
 
 
@@ -92,7 +97,8 @@ def _earthx_auxiliary_assets(config: DatasetConfig) -> list[str]:
 def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
     """The filters the search offers, in the words of STAC queryables (JSON Schema) where they have one (DS-02).
 
-    ``kind`` and ``unit`` are ours: a queryable describes a property, the panel also needs how it narrows it.
+    ``kind``, ``unit`` and ``within_aoi`` are ours: a queryable describes a property, the panel also needs how it
+    narrows it and whether its range may be applied to the cloud share inside the AOI (DS-03 plan §6.10).
     """
     published: list[dict[str, object]] = []
     for entry in config.search_filters:
@@ -102,6 +108,7 @@ def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
             "title": entry.title,
             "description": entry.description,
             "unit": entry.unit,
+            "within_aoi": entry.within_aoi,
         }
         if entry.kind is FilterKind.RANGE:
             fields.update(
