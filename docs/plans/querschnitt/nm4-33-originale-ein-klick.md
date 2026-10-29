@@ -45,6 +45,8 @@
 
 **Freigabe (Otto, 29.10.2026, zu #233):** alle sechs Fragen mit Option 1 (A2, Rückfall über iframes mit Linkliste, „Merged per pass (job)“ als zweiter Knopf, 500 MB je Datei, Token-Weg erst mit dem Datensatz, ein PR); K1–K6 angenommen. ZIP über die Plattform: nein. Dazu drei Aufträge: die Rückfrage „mehrere Dateien“ in Chrome/Edge und Firefox prüfen und im PR beschreiben (§6.11), Wiedervorlage zu DS-04 (§6.12), Nachträge heißen „Nachtrag NM4-33“. Antworten in §6.10. Der Code ist Frontend und beginnt erst, wenn Otto einen freien Frontend-Platz meldet.
 
+**Änderung (Otto, 29.10.2026, zu #233): Für Quellen mit CORS ersetzt ein ZIP je Szene den Weg A2.** Das ZIP wird im Browser gebaut, ist unkomprimiert (STORE) und wird über einen Service Worker in den Download gestreamt. client-zip ist erlaubt. Quellen ohne CORS bleiben wie freigegeben. Der überarbeitete Plan steht in §6.14 und liegt Otto noch einmal vor. §6.0–§6.12 bleiben als Stand der ersten Freigabe stehen; wo §6.14 abweicht, gilt §6.14.
+
 Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #232. Belegstufen wie in `adr/0009`: [M] in der Sitzung gemessen (Wegwerf-Skripte im Kratzverzeichnis, nicht im Repo; ausgegeben wurden nur Statuscodes, Kopfzeilen und Größen, keine Adresse), [P] Primärquelle oder Code gelesen, [S] nur Suchtreffer, [A] eigene Ableitung. Aus der Sitzung nicht erreichbar: `planetarycomputer.microsoft.com` (Proxy `403`), die Seiten von MDN, caniuse, Bugzilla und WebKit-Trac. Für MDN, caniuse und die Fetch-Spezifikation gelten ihre Rohquellen auf GitHub (§6.13).
 
 ### 6.0 Kurzfassung
@@ -315,6 +317,170 @@ Mit DS-04 neu prüfen:
 - **Grenze je Datei:** VV-Dateien der GRD liegen bei 0,6–0,9 GB (`adr/0018` §3.1), also über 500 MB. Nach heutiger Regel gehen sie als Download des Browsers, unter dem Namen der Quelle.
 - **Benennung:** Die GRD-Dateien heißen je Szene gleich (`vv.tif`, `vh.tif`). Über den Download des Browsers verlöre sich der Bezug zur Szene wie bei `TCI.tif`.
 - Optionen dann: Grenze für diesen Datensatz anheben, ein ZIP im Browser für Chromium, oder Unterordner je Szene über den Ordner-Picker. Der Bucket hat CORS (`*`, §6.2).
+- **Stand nach §6.14:** Mit dem ZIP je Szene entfällt für Quellen mit CORS die Grenze je Datei, und die Benennung `<Szene>_<Asset>.tif` löst die gleichen Namen. Mit DS-04 bleibt zu prüfen, ob alle Assets des GRD-Buckets CORS haben (gemessen ist nur `GET` auf den Bucket) und wie sich Szenen von 1,0–1,5 GB verhalten.
+
+### 6.14 Überarbeitung: ein ZIP je Szene (Änderung Otto, 29.10.2026; Freigabe offen)
+
+#### 6.14.1 Vorgabe (Otto)
+
+- **Ein ZIP je Szene:** „Download full scene(s)“ lädt je Szene ein ZIP, gebaut im Browser, `<Szenen-ID>.zip`. Kein Byte läuft über das Backend.
+- **Inhalt:**
+  - alle Daten-Assets der Szene als `<Szenen-ID>_<Asset>.tif`;
+  - `ATTRIBUTION.txt`;
+  - `item.json` (das STAC-Item);
+  - keine Vorschau- oder Thumbnail-Bilder.
+  - Welche Assets dazugehören, kommt aus der Registry, nicht aus einer Namensliste im Frontend.
+- **STORE, gestreamt über einen Service Worker,** nicht im Arbeitsspeicher. Die Grenze von 500 MB je Datei entfällt. Kann der Browser nicht streamen, schlägt der Plan einen Rückfall vor.
+- **client-zip** ist als neue Abhängigkeit erlaubt.
+- **Ohne CORS (DEM):** wie freigegeben, eine Datei als Download des Browsers, `ATTRIBUTION.txt` einzeln.
+- **Mehrere Szenen:** je Szene ein ZIP, nacheinander. Die einmalige Rückfrage „multiple downloads“ ist akzeptiert; der Tooltip nennt sie.
+
+#### 6.14.2 Welche Assets (aus der Registry) [P][M]
+
+Die Collection trägt schon alles, was die Regel braucht: `earthx:band_units` (jedes Raster-Asset des Datensatzes mit seiner Einheit), `earthx:auxiliary_assets` (aus den Bändern gemachte Bilder) und `earthx:default_render.assets`.
+
+**Regel (Vorschlag):** In ein ZIP kommen
+- die Schlüssel von `earthx:band_units` ohne Muster (`*` gibt es nur bei Zarr);
+- davon nicht die Assets aus `earthx:auxiliary_assets`, es sei denn, die Standarddarstellung nutzt sie.
+
+Damit bleibt TCI (`visual`, Standarddarstellung) drin, und `preview` fällt heraus. Assets ohne `https`-Adresse auf einem Host des Datensatzes (D12) oder ohne Eintrag im Item fehlen im ZIP und werden in `ATTRIBUTION.txt` genannt.
+
+| Datensatz | im ZIP | nicht im ZIP |
+|---|---|---|
+| Sentinel-2 L2A (18 Dateien) | `coastal`, `blue`, `green`, `red`, `rededge1`, `rededge2`, `rededge3`, `nir`, `nir08`, `nir09`, `swir16`, `swir22`, `aot`, `wvp`, `cloud`, `snow`, `scl`, `visual` (TCI) | `preview` (Rolle `overview`), `thumbnail` (JPEG), `granule_metadata`, `product_metadata` (XML), `tileinfo_metadata` (JSON) |
+| Copernicus DEM GLO-30 | `data` (kein CORS, also kein ZIP: eine Datei, §6.14.5) | – |
+
+- `cloud` und `snow` (Wolken- und Schneewahrscheinlichkeit in %) folgen aus der Regel, obwohl Otto sie nicht genannt hat (Frage Z2).
+- Die drei Metadaten-Dateien sind keine `.tif` und fallen aus der Regel heraus (Frage Z3).
+
+**Größe einer ganzen S2-Szene [M]:** Ein Item mit voller Kachel hat 886 MB in den 18 Dateien. `red`, `green`, `blue` und `nir` haben je 143–156 MB, die 20-m-Bänder je rund 47 MB. Alle Assets tragen `file:size`: Daraus berechnet client-zip die Länge des ZIPs vorab (`Content-Length`) ohne zusätzliche Anfrage.
+
+#### 6.14.3 client-zip [P]
+
+| | |
+|---|---|
+| Version | 2.5.1 (14.09.2026) |
+| Lizenz | MIT |
+| Größe | `index.js` 6,5 kB, 2,7 kB gzip; `worker.js` (für `importScripts` im Service Worker) 6,4 kB |
+| Abhängigkeiten | keine |
+| Eigenschaften | nur STORE (keine Kompression); Zip64 bei Bedarf; Data Descriptor; `Content-Length` vorab aus Namen und Größen (`predictLength`/`metadata`); Dateinamen UTF-8 |
+| Bekannt (README) | Firefox kann einen Service Worker beenden, der noch einen Download speist (Umgehung: regelmäßige Nachricht der Seite an den Worker); Safari streamt aus dem Service Worker erst ab 15.4 |
+
+#### 6.14.4 Messung in Chromium [M]
+
+- **Aufbau:** Prototyp nur im Kratzverzeichnis.
+  - Eine Seite übergibt dem Service Worker per `postMessage` die Liste (Namen, Adressen, Größen) und öffnet ein verstecktes iframe auf `/__originals/<Zufalls-ID>`.
+  - Der Worker (`importScripts` von `worker.js`) antwortet mit `downloadZip(...)`, mit `Content-Length` und `Content-Disposition`. Die Assets holt er einzeln nacheinander per CORS-`fetch` von der Quelle.
+  - Chromium 153 der Sitzung über Playwright. Speicher als RSS aller Browser-Prozesse, jede Sekunde gemessen.
+
+| Fall | Nutzlast | Dauer | RSS vorher → Spitze | Ergebnis |
+|---|---|---|---|---|
+| ganze S2-Szene: 18 Assets + `ATTRIBUTION.txt` + `item.json` | 886 MB | 127 s (Proxy der Sitzung) | 366 → 494 MB (+128 MB) | 20 Einträge, alle STORE, alle CRC richtig (`zipfile.testzip`), 886 493 664 Byte, Name aus `Content-Disposition` |
+| langsame Quelle (40 MB über 7 min, CORS), Seite schickt alle 10 s eine Nachricht | 42 MB | 420 s | 387 → 440 MB | vollständig, CRC richtig |
+| wie oben, ohne Nachricht der Seite | 42 MB | 420 s | 385 → 436 MB | vollständig, CRC richtig: Chromium beendet den Worker auch ohne Nachricht nicht, solange er einen Download speist |
+
+- **Speicher:** Der Speicher wächst um rund 130 MB, nicht um die Größe der Szene. Das ZIP liegt nicht im Arbeitsspeicher.
+- **Dauer:** Sie hängt an der Leitung, nicht am Packen. In der Sitzung waren es rund 7 MB/s. Bei 50 Mbit/s wären es für eine Szene etwa 2,5 min, bei 10 Mbit/s etwa 12 min [A].
+- **Rückfrage:** Ein Download aus einem Service Worker ist für Chrome ein Download wie jeder andere. Ab der zweiten Szene fragt Chrome einmal (§6.11).
+
+#### 6.14.4a Firefox
+
+- **Firefox:** in der Sitzung nicht messbar. Was fehlt:
+  - `download.mozilla.org`, `archive.mozilla.org` und `ftp.mozilla.org` sind gesperrt (Proxy `403`).
+  - Das Ubuntu-Paket `firefox` ist nur der Snap-Platzhalter.
+  - `playwright install` ist in der Sitzung ausgeschlossen.
+  - Für eine Messung hier müsste Otto `download.mozilla.org` in der Allowlist der Umgebung freigeben; das wirkt erst in einer neuen Sitzung. Sonst misst Otto selbst nach der Prüfanleitung (§6.14.7).
+- **Bekannte Lage [P][S]:**
+  - Firefox beendet einen Service Worker nach etwa 30 s ohne Ereignis. Ein Download, den er speist, kann dann abbrechen (client-zip-README; StreamSaver #366).
+  - Umgehung: Die Seite schickt dem Worker während des Downloads alle 10 s eine Nachricht. Die Umsetzung baut das ein (wie im Prototyp).
+  - Mit `Content-Length` meldet der Browser ein abgebrochenes ZIP als fehlgeschlagen, statt eine kaputte Datei zu speichern [A].
+
+#### 6.14.5 Ablauf (Vorschlag)
+
+1. **Klick** auf „⇩ Download full scene(s)“, in der Trefferansicht oder im Layer-Manager:
+   - Das Fenster „Download full scenes“ öffnet sich und startet sofort.
+   - Je Szene steht dort eine Zeile mit Zustand (wartet, lädt mit %, fertig, Fehler), dazu Attribution und Bedingungen sichtbar.
+   - Knöpfe: „Cancel“, nach Ende „Retry failed“, „Merged per pass (job)“ (Frage 3 der ersten Freigabe) und „Save link list“.
+2. **Welcher Weg** entscheidet sich je Datensatz aus der Registry (`earthx:access.cors`) und je Browser:
+   - **ZIP-Weg:** `cors = true`, und der Service Worker ist bereit (unterstützt, sicherer Kontext, registriert, aktiv).
+   - **Sonst bei `cors = true`:** der Rückfall (§6.14.6).
+   - **`cors = false` (DEM):** wie freigegeben, `ATTRIBUTION.txt` als Blob, dann je Szene die Datei über ein iframe als Download des Browsers.
+   - K2 („CORS beim Laden erkennen“) wird damit ersetzt: Das Feld gibt es schon (`adr/0006` §3.6, gesetzt für S2 `true`, DEM `false`). Scheitert der erste `fetch` dennoch mit `TypeError`, gilt der Rückfall (§6.14.6) für den Rest des Laufs.
+3. **Je Szene ein ZIP, nacheinander:**
+   - Die Seite übergibt dem Worker per `postMessage` den Namen `<Szenen-ID>.zip`, die Liste (`<Szenen-ID>_<Asset><Endung>`, Adresse, `file:size`), `ATTRIBUTION.txt` und `item.json`.
+   - Danach öffnet sie ein verstecktes iframe auf `/__originals/<Zufalls-ID>`.
+   - Der Worker streamt das ZIP mit `Content-Length` und `Content-Disposition`. Er meldet der Seite die gelesenen Bytes und das Ende bzw. den Fehler.
+   - Erst danach beginnt die nächste Szene.
+   - Fehlt einem Asset `file:size`, holt die Seite die Größe vorher per `HEAD`.
+4. **`ATTRIBUTION.txt`** steht im ZIP, gebaut wie in §6.5 (unveränderte Attribution, Bedingungen, Zitierangabe, Szene, Liste „Datei → Asset“, Hinweis auf unveränderte Originale direkt von der Quelle, Zeitpunkt).
+5. **`item.json`** ist das STAC-Item, wie es die Seite hat (Federation über die eigene API), eingerückt. Es enthält die Adressen der Quelle und den Footprint der Szene, keine AOI.
+6. **Abbruch und Fehler:**
+   - „Cancel“ bricht den laufenden `fetch` im Worker ab, das ZIP endet als abgebrochener Download.
+   - Ein Fehler der Quelle (z. B. `403`) beendet das ZIP der Szene. Der Browser meldet „Failed“, weil die Länge nicht stimmt, und die Zeile nennt den Grund.
+   - **Fortsetzen:** nur je Szene. „Retry failed“ lädt das ganze ZIP der Szene neu. Innerhalb eines ZIPs geht es nicht: Antworten eines Service Workers setzt Chrome nicht fort [P: `download_item_impl.cc`].
+7. **Service Worker:**
+   - Script unter `/__originals/sw.js`, Gültigkeitsbereich `/__originals/`. Er steuert die Seiten der App nicht und fängt nur die Download-Adressen ab.
+   - Von Vite als eigener Einstieg gebaut (klassisches Skript mit client-zip). Den Weg im Dev-Server und im Build legt die Umsetzung fest.
+   - Die Adresse trägt nur eine zufällige ID, keine Szenen-ID, keinen Hash und keine Quelladresse. Kommt sie doch beim Server an (Worker nicht aktiv), steht im Zugriffslog nur die Zufalls-ID.
+   - Der Worker schreibt nichts ins Log.
+8. **Tooltip des Knopfs** (Englisch, kurz), Vorschlag: „Download each selected scene as one ZIP of its original files, straight from the source. Your browser may ask once to allow several downloads.“ Bei `cors = false`: „… as its original file, straight from the source.“
+
+#### 6.14.6 Rückfall, wenn der Browser nicht streamen kann
+
+- **Wann:** kein Service Worker, etwa im privaten Fenster von Firefox, per Richtlinie abgeschaltet oder Safari vor 15.4. Oder der erste `fetch` scheitert.
+- **Vorschlag:** die Einzeldateien wie A2 (§6.5), mit derselben Benennung wie im ZIP und mit `item.json` und `ATTRIBUTION.txt` als eigenen Dateien.
+  - Bis 500 MB je Datei über den Speicher, darüber als Download des Browsers mit dem Namen der Quelle.
+  - Das Fenster sagt in einer Zeile „Your browser cannot build the ZIP; the files come one by one.“ und nennt den Grund im Tooltip.
+  - Für eine S2-Szene sind das 20 Dateien statt einer, mit einer Rückfrage.
+- **Alternative:** nur die Linkliste mit „Save link list“, wie heute.
+
+#### 6.14.7 Tests und Prüfung (Änderungen zu §6.7)
+
+- **vitest:**
+  - Regel der Assets: S2 ergibt die 18 Dateien aus §6.14.2 aus den Registry-Feldern einer Fixture-Collection. Muster, `auxiliary_assets` und Standarddarstellung werden einzeln geprüft. Zweckfremd: Asset ohne `https`, fremder Host, fehlendes `file:size`.
+  - Name und Inhalt des ZIPs; Länge vorab gleich der echten Länge (`predictLength` gegen ein mit client-zip gebautes ZIP aus synthetischen Daten).
+  - Wahl des Wegs (`cors`, Worker bereit, `TypeError`).
+  - Nachrichten zwischen Seite und Worker: Abbruch, Fehler mitten im ZIP, unbekannte ID gibt `404`.
+- **Playwright (`frontend/e2e/originals-one-click.cjs`):**
+  - Ein Klick auf zwei Szenen ergibt zwei ZIPs nacheinander mit gültiger CRC, den 18 Namen, `ATTRIBUTION.txt` und `item.json`. Synthetische Bytes von einem gestellten CORS-Host.
+  - DEM-Fall: eine Datei über das iframe.
+  - Rückfall: Worker abgeschaltet.
+  - Fehler einer Quelle mitten im ZIP.
+  - Hell und dunkel, 1280, 360 und 320 px Breite.
+- **Prüfanleitung für Otto, zusätzlich:**
+  - **Firefox:** eine ganze S2-Szene als ZIP. Prüfen, ob es vollständig ankommt (Größe, Entpacken mit dem Explorer).
+  - Ein ZIP mit Windows Explorer und 7-Zip öffnen.
+  - **Safari bzw. iPhone:** Kommt das ZIP an, oder greift der Rückfall?
+  - Die Rückfrage „mehrere Dateien“ bleibt ein eigener Schritt (§6.7).
+- **Doku:**
+  - `architekturplan.md` 6.4 Nachtrag NM4-33 mit dem ZIP je Szene.
+  - `adr/0018` §9.3 Nachtrag NM4-33: Bei Token-Quellen holt der Worker mit dem Token der Seite. Das Token geht nur per `postMessage` an den eigenen Worker, nie an die Plattform.
+
+#### 6.14.8 Umfang
+
+Etwa 450–550 geänderte Zeilen mit Tests (Worker, Weg-Wahl, Asset-Regel, Fenster), dazu etwa 250 Zeilen Playwright-Skript und `package-lock.json`. Das liegt über dem Richtwert von 400 Zeilen. Vorschlag: trotzdem ein PR wie freigegeben (Frage 6), mit getrennten Commits für die Abhängigkeit, den Worker, die Oberfläche, die Tests und die Doku.
+
+#### 6.14.9 Fragen an Otto (kurz)
+
+**Z1 — Regel der Assets**
+1. Aus der Registry abgeleitet: Schlüssel von `band_units` ohne `auxiliary_assets`, außer denen der Standarddarstellung; S2 ergibt 18 Dateien (§6.14.2). Keine Änderung am Backend. **(Empfehlung)**
+2. Ein eigenes Registry-Feld `original_assets` je Datensatz (Backend, Collection, Test). Ausdrücklicher, aber eine Änderung am Backend.
+
+**Z2 — `cloud` und `snow` (Wahrscheinlichkeit in %, je unter 1 MB)**
+1. Mit ins ZIP, wie die Regel sie ergibt. **(Empfehlung)**
+2. Nicht mit; dafür bräuchte die Registry eine Ausnahme.
+
+**Z3 — Metadaten-Dateien der Szene** (`granule_metadata.xml` mit Sonnen- und Blickwinkeln, `product_metadata.xml`, `tileinfo_metadata.json`; zusammen unter 1 MB)
+1. Mit ins ZIP, ausgewählt über die STAC-Rolle `metadata` des Items, nicht über Namen. Wer die Bänder auswertet, braucht die Winkel oft. **(Empfehlung)**
+2. Nicht mit, wie vorgegeben; `item.json` nennt ihre Adressen.
+
+**Z4 — Rückfall ohne Streaming**
+1. Die Einzeldateien wie A2, bis 500 MB je Datei, mit derselben Benennung, `item.json` und `ATTRIBUTION.txt`. **(Empfehlung)**
+2. Nur die Linkliste.
+
+**Z5 — Wahl des Wegs**
+1. Aus `earthx:access.cors` der Registry, mit Rückfall bei `TypeError`; ersetzt K2. **(Empfehlung)**
+2. Wie K2 nur beim Laden erkennen.
 
 ### 6.13 Quellen
 
