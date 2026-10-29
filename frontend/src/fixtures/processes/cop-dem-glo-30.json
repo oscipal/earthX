@@ -41,6 +41,7 @@
             "description": "One input of an order: a dataset, its items in groups, and the asset keys to read.",
             "properties": {
               "assets": {
+                "description": "Recipe version 1 only. Version 2 names the bands in output.bands, and the platform reads the assets they need.",
                 "items": {
                   "maxLength": 256,
                   "minLength": 1,
@@ -80,8 +81,7 @@
             "required": [
               "name",
               "dataset",
-              "groups",
-              "assets"
+              "groups"
             ],
             "title": "InputRequest",
             "type": "object"
@@ -165,8 +165,20 @@
           },
           "RasterOutput": {
             "additionalProperties": false,
-            "description": "A job's result: one COG.",
+            "description": "A job's result: one COG, with the bands ``bands`` names, in this order (adr/0020 §5).",
             "properties": {
+              "bands": {
+                "description": "The bands the result holds, in this order: bands of the data and bands the steps add. Each once, case ignored; each has to be in the stock after the last step.",
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "title": "Bands",
+                "type": "array"
+              },
               "dtype": {
                 "enum": [
                   "uint8",
@@ -194,7 +206,8 @@
             "required": [
               "kind",
               "format",
-              "dtype"
+              "dtype",
+              "bands"
             ],
             "title": "RasterOutput",
             "type": "object"
@@ -556,5 +569,5 @@
     }
   },
   "title": "Recipe",
-  "version": "1"
+  "version": "2"
 }

@@ -57,6 +57,15 @@ def band_math_recipe(expression: str = EXPRESSION) -> dict[str, Any]:
     }
 
 
+def band_math_recipe_v2(expression: str = EXPRESSION, name: str = "Index") -> dict[str, Any]:
+    """The same recipe as :func:`band_math_recipe`, written as recipe version 2: a named result and ``output.bands``."""
+    recipe = band_math_recipe(expression)
+    recipe["recipe_version"] = 2
+    recipe["steps"] = [{"op": "band_math", "op_version": 2, "params": {"expression": expression, "name": name}}]
+    recipe["output"] = {**recipe["output"], "bands": [name]}
+    return recipe
+
+
 def reproject_recipe(resampling: str = "bilinear") -> dict[str, Any]:
     """A reprojection of one band of the CF store, decoded by the store's own attributes."""
     key = "r10m:b04"

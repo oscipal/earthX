@@ -22,9 +22,8 @@ from earthx.processing import run
 from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import estimate
-from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 
 WEST, NORTH = 9.0, 48.0
 PIXELS = 3600  # one degree at one arc second
@@ -106,7 +105,7 @@ def _recipe(
         "steps": steps,
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
-    return recipe_from_data(data, REGISTRY)
+    return recipe_of_data(data, REGISTRY)
 
 
 @pytest.mark.parametrize("target", ["EPSG:3035", "EPSG:3857"])

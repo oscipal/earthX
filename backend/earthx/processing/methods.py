@@ -30,14 +30,17 @@ from earthx.catalog.registry import Attributable, doi_name
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY
 from earthx.processing.operators.registry import OperatorRegistry
+from earthx.processing.plan import live_steps, plan_steps
 from earthx.processing.recipe import (
     CropOutput,
     Provenance,
+    RasterOutput,
     Recipe,
     document_bytes,
     loads_i_json,
     recipe_from_data,
 )
+from earthx.processing.upgrade import is_version_1, upgrade_recipe
 
 __all__ = ["DatasetFacts", "methods_of", "methods_text", "recipe_with_methods"]
 
@@ -95,7 +98,8 @@ def methods_text(
     if not isinstance(data, dict) or "provenance" not in data:
         raise RecipeInvalid("a recipe.json holds a recipe and its provenance")
     provenance_data = data.pop("provenance")
-    recipe = recipe_from_data(data, operators)
+    # The text of a recipe.json written before version 2 is written from the same recipe in version 2.
+    recipe = recipe_from_data(upgrade_recipe(data) if is_version_1(data) else data, operators)
     try:
         provenance = Provenance.model_validate_json(json.dumps(provenance_data, allow_nan=False))
     except ValueError:
@@ -174,13 +178,10 @@ def _scaling_sentences(provenance: Provenance) -> list[str]:
 
 
 def _step_sentences(recipe: Recipe, operators: OperatorRegistry) -> list[str]:
-    sentences = []
-    for step in recipe.steps:
-        operator = operators.operator(step.op, step.op_version)
-        sentences.append(
-            operator.method(operator.params.model_validate_json(json.dumps(step.params, allow_nan=False), strict=True))
-        )
-    return sentences
+    planned = plan_steps(recipe.steps, operators)
+    if isinstance(recipe.output, RasterOutput):
+        planned = live_steps(planned, recipe.output.bands)
+    return [step.operator.method(step.params) for step in planned]
 
 
 def _output_sentence(recipe: Recipe) -> str:
@@ -195,7 +196,8 @@ def _output_sentence(recipe: Recipe) -> str:
             "The scenes were cropped to the bounding box of the area of interest and the scene footprints, "
             f"{resolution}, without changing a pixel value; a mask file marks the pixels inside the area."
         )
-    return f"The result was written as a cloud-optimised GeoTIFF with {output.dtype} values."
+    bands = f" and the bands {', '.join(output.bands)}"
+    return f"The result was written as a cloud-optimised GeoTIFF with {output.dtype} values{bands}."
 
 
 def _area_sentence(recipe: Recipe) -> str:

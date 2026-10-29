@@ -14,12 +14,19 @@ host), the check `api` makes at acceptance. A recipe from a third
 party cannot send the runner to an arbitrary server, whose files GDAL would then parse on
 the user's machine (architekturplan 11).
 
+**Version 1 (NM4-43c, adr/0020 §11).** A ``recipe.json`` of recipe version 1, which someone downloaded before the
+stock of named bands, stays readable for good: it is rewritten as version 2 before it is parsed
+(:mod:`earthx.processing.upgrade`), and the file itself is kept as it is. The values are the same, except after a
+``reproject`` of version 2 or 3, whose warp the planner now gives fewer bands; then :attr:`RecipeFile.notes` says so and
+names the runner tag that gives the values of that time (F14).
+
 No text here names an address, a coordinate or a value of the file.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,8 +39,17 @@ from earthx.processing import failure_kind
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.recipe import Provenance, Recipe, input_hosts, loads_i_json, recipe_from_data
+from earthx.processing.upgrade import is_version_1, reproject_changes_values, upgrade_recipe
 
-__all__ = ["MAX_RECIPE_BYTES", "HostRefused", "RecipeFile", "check_hosts", "load_recipe", "read_recipe_file"]
+__all__ = [
+    "MAX_RECIPE_BYTES",
+    "HostRefused",
+    "RecipeFile",
+    "check_hosts",
+    "conversion_notes",
+    "load_recipe",
+    "read_recipe_file",
+]
 
 #: The body of an order is at most 1 MiB; ``resolved`` and the footprints add to it (K6).
 MAX_RECIPE_BYTES = 4 * 1024 * 1024
@@ -50,6 +66,8 @@ class RecipeFile:
     raw: bytes
     recipe: Recipe
     provenance: Provenance
+    #: What the person should know before the run starts (adr/0020 §11, F14): short texts, no value of the file.
+    notes: tuple[str, ...] = ()
 
 
 def read_recipe_file(path: Path) -> RecipeFile:
@@ -73,7 +91,28 @@ def load_recipe(raw: bytes) -> RecipeFile:
         raise RecipeInvalid("a recipe file of a result carries its provenance block")
     rest = dict(document)
     provenance = _cloud_provenance(rest.pop("provenance"))
+    if is_version_1(rest):
+        notes = conversion_notes(rest, provenance)
+        recipe = recipe_from_data(upgrade_recipe(rest), OPERATORS)
+        return RecipeFile(raw=raw, recipe=recipe, provenance=provenance, notes=notes)
     return RecipeFile(raw=raw, recipe=recipe_from_data(rest, OPERATORS), provenance=provenance)
+
+
+#: What the platform writes as ``engine.earthx``: a version such as ``0.4.3``; nothing else is put on a tag.
+_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+
+
+def conversion_notes(version_1: dict[str, Any], provenance: Provenance) -> tuple[str, ...]:
+    """The notes for a recipe of version 1 that was rewritten: only a ``reproject`` of version 2 or 3 earns one.
+
+    The tag is the runner of the version the earlier run reported (``adr/0016`` §9); where the file names none, or
+    something that is no version, the note says "an older runner tag" and puts nothing of the file on the screen.
+    """
+    if not reproject_changes_values(version_1):
+        return ()
+    version = provenance.engine.get("earthx")
+    tag = f"earthx-runner:{version}" if version is not None and _VERSION.fullmatch(version) else "an older runner tag"
+    return (f"Converted from recipe version 1. Values after reproject can differ; for identical values use {tag}.",)
 
 
 def _cloud_provenance(block: Any) -> Provenance:

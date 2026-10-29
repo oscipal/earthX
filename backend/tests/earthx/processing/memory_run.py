@@ -73,7 +73,6 @@ def main(
     import earthx.readers.access as read_access
     import earthx.readers.cog as cog_reader
     from earthx.processing import run, worker_environment
-    from earthx.processing.recipe import recipe_from_data
     from tests.earthx.processing import sources
     from tests.earthx.processing.recipes import resolved
     from tests.earthx.processing.testops import OPERATORS
@@ -104,7 +103,9 @@ def main(
         "steps": [STEPS[step]],
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
-    recipe = recipe_from_data(data, OPERATORS)
+    from tests.earthx.processing.recipes import recipe_of_data
+
+    recipe = recipe_of_data(data, OPERATORS)
     imports_mb = high_water_mb()
     started = time.monotonic()
     with worker_environment():

@@ -20,8 +20,8 @@ from typing import Any
 import pytest
 from shapely.geometry import shape
 
+from earthx.api.intake import parse_order
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
-from earthx.processing.recipe import parse_request
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, registry_with_zarr
 from tests.earthx.api.conftest import Rig
 from tests.earthx.api.test_intake import dem_item, s2_item, zarr_item
@@ -55,7 +55,9 @@ def recipe_of(path: Path) -> dict[str, Any]:
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
 def test_the_schema_takes_the_order(path: Path) -> None:
-    parse_request(json.dumps(recipe_of(path)), REAL_OPERATORS)
+    """The panel sends recipe version 1 until NM4-43e; `api` rewrites it as version 2 and validates that (adr/0020 §11)."""
+    assert recipe_of(path)["recipe_version"] == 1
+    assert parse_order(json.dumps(recipe_of(path)), REAL_OPERATORS).recipe_version == 2
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
@@ -127,8 +129,8 @@ class TestTheCheckWouldHaveFoundTheFirstBug:
 
     def test_the_schema_refuses_properties_in_the_aoi(self, body: dict[str, Any]) -> None:
         body["inputs"]["recipe"]["aoi"]["properties"] = {"source": "OpenStreetMap / Nominatim"}
-        with pytest.raises(Exception, match="extra_forbidden"):
-            parse_request(json.dumps(body["inputs"]["recipe"]), REAL_OPERATORS)
+        with pytest.raises(Exception, match="aoi.*extra_forbidden"):
+            parse_order(json.dumps(body["inputs"]["recipe"]), REAL_OPERATORS)
 
     async def test_the_estimate_route_refuses_them_with_a_400(self, rig: Rig, body: dict[str, Any]) -> None:
         with_item(rig, body["inputs"]["recipe"])

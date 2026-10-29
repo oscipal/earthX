@@ -1004,6 +1004,24 @@ noch nicht aufgeführt und entfällt. Der Text oben bleibt stehen; maßgeblich i
 - **Ältere Runner:** Ein Image vor NM4-08 kennt diese Regel nicht und weist eine Datei mit `provenance.methods` mit Exit-Code 2
   ab (`adr/0014` §15r). Dagegen hilft nur ein neu gebautes Image; die README sagt es in einem Satz.
 
+## 12 Nachtrag NM4-43c (2026-10-28): Rezeptversion 2 und das alte Format im Runner (zu §9, §12b, §12c; `adr/0020` §11, F9, F14)
+
+Der Runner rechnet `recipe_version` 2 (`adr/0014` Nachtrag NM4-43c) und **liest Version 1 dauerhaft**, damit heruntergeladene `recipe.json` lesbar
+bleiben (Otto, F9). Der Text oben bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Lesen.** `runner/recipe_file.load_recipe` deutet ein Rezept der Version 1 mit `processing.upgrade.upgrade_recipe` als Version 2 um, bevor die
+  strengen Modelle es lesen. Die Datei im Ausgabeordner bleibt die Eingabe, Byte für Byte (§12c). Die Werte sind die von Version 1, bitgleich, wenn die Kette
+  kein `reproject` der Version 2 oder 3 hat (`adr/0014` Nachtrag NM4-43c, `test_version_1_values.py`).
+- **Meldung bei `reproject` Version 2 oder 3 (F14, Option 1).** Diese Versionen warpen alle Bänder des Vorrats in einem Zug, ihre Werte hängen an der Zahl der
+  Bänder (`adr/0020` §3.4), und der Planer streicht Bänder vor dem Warp. Der Runner schreibt dann auf den Bildschirm und als Eintrag `notes` in
+  `provenance.json` (kein Hash-Teil, nur wo es Meldungen gibt): „Converted from recipe version 1. Values after reproject can differ; for identical values use
+  earthx-runner:0.4.3.“ Der Tag kommt aus `engine.earthx` des Blocks `provenance` der Datei, wenn das eine Version der Form `x.y.z` ist; sonst steht
+  „an older runner tag“ (nichts aus der Datei sonst auf dem Bildschirm). Version 2 von `reproject` ist eingeschlossen (sie rechnet wie Version 3), obwohl
+  F14 nur Version 3 nennt. Ohne diese Versionen keine Meldung, die Werte sind bitgleich.
+- **Version.** Das Image trägt `earthx-runner:0.5.0` (`adr/0016` §9); ein älterer Tag rechnet Version 1 weiter wie bisher. Ein Runner vor 0.5.0 weist
+  Version 2 mit Exit-Code 2 ab (`recipe_version 1 is the only one …`; der Text nennt die Version des Runners, `cli._checked`).
+- **Grenzen.** Aufträge kennt der Runner nicht; er liest Rezepte. Ein Rezept der Version 2 mit `reproject` Version 3 gilt, wie geschrieben, ohne Meldung.
+
 ## 13. Quellen
 
 **Im Repo [P]**

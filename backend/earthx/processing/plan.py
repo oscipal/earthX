@@ -5,6 +5,9 @@
 * :func:`segments` — the steps of a job as the core runs them: a run of ``pixel``
   steps is computed block by block in one pass, a ``grid`` step is a pass of its
   own over a file in the work directory (approved F3).
+* :func:`stock_steps` — the steps of a job on a stock of named bands (recipe version 2, adr/0020 §4): the
+  planner works from the end, drops what no later step and not ``output.bands`` needs, and puts the result
+  in the order of the output.
 * :func:`crop_window` — the output grid of the first pass: ``bbox(AOI ∩ raster
   bounds)`` in the input's own grid, snapped outward to its pixels (approved F9;
   the raster bounds stand in for the footprints, which the core does not see).
@@ -17,7 +20,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 import numpy
@@ -42,7 +45,8 @@ from earthx.access.crop_rules import (
 )
 from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
-from earthx.processing.recipe import Band, CropOutput, Recipe, ResolvedInput, Step
+from earthx.processing.operators.select import SELECT_BANDS, SelectParams
+from earthx.processing.recipe import Band, CropOutput, RasterOutput, Recipe, ResolvedInput, Step
 from earthx.processing.source import expected_band_names, units_of
 
 __all__ = [
@@ -61,9 +65,12 @@ __all__ = [
     "disk_needed",
     "estimate",
     "export_outputs",
+    "live_steps",
+    "needed_source_bands",
     "plan_steps",
     "segments",
     "split_tiers",
+    "stock_steps",
 ]
 
 #: Seconds per MB of raw input for band math, measured locally on 1024 px blocks
@@ -131,6 +138,119 @@ def plan_steps(steps: Sequence[Step], operators: OperatorRegistry) -> list[Plann
         params = operator.params.model_validate_json(json.dumps(step.params), strict=True)
         planned.append(PlannedStep(step, operator, params))
     return planned
+
+
+def _refuse_chain_of_version_1(planned: Sequence[PlannedStep]) -> None:
+    for index, step in enumerate(planned):
+        if not step.operator.stock:
+            raise RecipeInvalid(
+                f"step {index}: {step.step.op} version {step.step.op_version} replaces or removes bands, as a recipe "
+                f"of version 1 did; a recipe of version 2 takes version {step.step.op_version + 1} or later"
+            )
+
+
+def _trace(planned: Sequence[PlannedStep], output: Sequence[str]) -> tuple[list[frozenset[str]], list[bool]]:
+    """The names the stock has to hold before each step, from the end, and which steps change nothing the output keeps.
+
+    ``needed[i]`` is what step ``i`` is given (``needed[len(planned)]`` the output itself); a step is ``dead`` where
+    it adds a band nobody needs or changes none that is needed (:class:`~earthx.processing.operators.BandUse`).
+    """
+    needed = [frozenset[str]()] * (len(planned) + 1)
+    needed[-1] = frozenset(output)
+    dead = [False] * len(planned)
+    for index in reversed(range(len(planned))):
+        use = planned[index].operator.bands_used(planned[index].params)
+        after = needed[index + 1]
+        if use.adds is not None:
+            dead[index] = use.adds not in after
+            needed[index] = after if dead[index] else (after - {use.adds}) | use.reads
+        elif use.acts_on is not None and not use.acts_on & after:
+            dead[index] = True
+            needed[index] = after
+        else:
+            needed[index] = after | use.reads
+    return needed, dead
+
+
+def needed_source_bands(planned: Sequence[PlannedStep], output: Sequence[str]) -> frozenset[str]:
+    """The names the first step needs from the data: what `api` reads the assets for (adr/0020 §5).
+
+    Names a step adds are not among them; a name that no band of the data has is, and the caller refuses it.
+    """
+    _refuse_chain_of_version_1(planned)
+    return _trace(planned, output)[0][0]
+
+
+def _select(names: Sequence[str]) -> PlannedStep:
+    return PlannedStep(
+        Step(op=SELECT_BANDS.op, op_version=SELECT_BANDS.op_version, params={"names": list(names)}),
+        SELECT_BANDS,
+        SelectParams(names=tuple(names)),
+    )
+
+
+def stock_steps(meta: RasterMeta, planned: Sequence[PlannedStep], output: Sequence[str]) -> list[PlannedStep]:
+    """The steps a job runs on ``meta``'s stock: the recipe's without the dead ones, plus the planner's selections.
+
+    Every step that is run is judged first on the whole stock (:class:`RecipeInvalid`, the place of the step in the
+    text as in :func:`check_bands`), and so is an output band the stock does not hold at the end. A step that changes
+    nothing the output keeps is not run and not judged: the bands it names are not read, so they need not be there.
+
+    Then the plan: bands that no later step and not the output needs are dropped before the step that follows, so a
+    ``grid`` step warps only what is kept. The bands that stay have the values they would have had in a stock with the
+    others, because a step works per band or per pixel, and ``reproject`` since version 4 for each band alone
+    (adr/0020 §3.4). The stock is ordered like ``output`` as soon as it is narrowed, so that a last ``grid`` step needs
+    no pass of its own to sort the bands.
+    """
+    _refuse_chain_of_version_1(planned)
+    needed, dead = _trace(planned, output)
+    full = meta
+    for index, step in enumerate(planned):
+        if dead[index]:
+            continue
+        try:
+            full = step.operator.transform(full, step.params)
+        except RecipeInvalid as error:
+            if len(planned) == 1:
+                raise
+            raise RecipeInvalid(f"step {index}: {error}") from error
+    held = [band.name for band in full.bands]
+    missing = [name for name in output if name not in held]
+    if missing:
+        raise RecipeInvalid(
+            f"output.bands names unknown band(s): {', '.join(missing)}; the stock has: {', '.join(held)}"
+        )
+    position = {name: index for index, name in enumerate(output)}
+    steps: list[PlannedStep] = []
+    current = meta
+
+    def narrow(wanted: frozenset[str]) -> None:
+        nonlocal current
+        present = [band.name for band in current.bands]
+        rank = {name: (position.get(name, len(position)), index) for index, name in enumerate(present)}
+        kept = sorted((name for name in present if name in wanted), key=rank.__getitem__)
+        if kept != present:
+            steps.append(_select(kept))
+            current = SELECT_BANDS.transform(current, steps[-1].params)
+
+    narrow(needed[0])
+    for index, step in enumerate(planned):
+        if dead[index]:
+            continue
+        if step.operator.restrict is not None:
+            # The bands of the step that the planner dropped are not converted; the others are, as before.
+            step = replace(step, params=step.operator.restrict(step.params, needed[index + 1]))
+        steps.append(step)
+        current = step.operator.transform(current, step.params)
+        narrow(needed[index + 1])
+    return steps
+
+
+def live_steps(planned: Sequence[PlannedStep], output: Sequence[str]) -> list[PlannedStep]:
+    """The steps of a recipe that run: those whose result the output keeps. What a result reports (lineage,
+    expressions, methods text) is these steps and no other."""
+    _, dead = _trace(planned, output)
+    return [step for step, is_dead in zip(planned, dead, strict=True) if not is_dead]
 
 
 def split_tiers(steps: Sequence[Step], operators: OperatorRegistry) -> tuple[list[Step], list[Step]]:
@@ -326,6 +446,8 @@ def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
     """Run every step's ``transform`` on the bands the inputs will carry; ``RecipeInvalid`` for a wrong name.
 
     With several steps the refusal begins with the place of the step (``step 1: …`` for the second, counted from 0 like the other refusals of an order), as the tile of a chain says it.
+    A raster recipe also has to find every band of ``output.bands`` in the stock after the last step
+    (:func:`stock_steps`).
 
     Where the item does not say how many bands an asset has, the file does, and the
     core checks again before it reads the first block (plan M4-09 §3.3). Nothing is read.
@@ -334,6 +456,9 @@ def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
     if meta is None:
         return
     planned = plan_steps(recipe.steps, operators)
+    if isinstance(recipe.output, RasterOutput):
+        stock_steps(meta, planned, recipe.output.bands)
+        return
     for index, step in enumerate(planned):
         try:
             meta = step.operator.transform(meta, step.params)
@@ -365,8 +490,9 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         input_bytes += rows * columns * _band_bytes(entry.bands)
     meta = _input_meta(recipe, names_known=False, sized=True)
     assert meta is not None  # a recipe has at least one resolved input
-    planned = plan_steps(recipe.steps, operators)
-    for step in planned:
+    steps = stock_steps(meta, plan_steps(recipe.steps, operators), recipe.output.bands)
+    planned = [step for step in steps if step.operator is not SELECT_BANDS]
+    for step in steps:
         meta = step.operator.transform(meta, step.params)
     output_pixels = meta.width * meta.height
     dtype = getattr(recipe.output, "dtype", None)

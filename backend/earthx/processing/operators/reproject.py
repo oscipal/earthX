@@ -162,7 +162,9 @@ def _target_grid(meta: RasterMeta, params: ReprojectParams) -> tuple[Affine, int
 def _transform(meta: RasterMeta, params: BaseModel) -> RasterMeta:
     assert isinstance(params, ReprojectParams)
     transform, width, height = _target_grid(meta, params)
-    bands = tuple(BandMeta(b.name, b.data_type, b.nodata, b.unit, b.scale, b.offset) for b in meta.bands)
+    bands = tuple(
+        BandMeta(b.name, b.data_type, b.nodata, b.unit, b.scale, b.offset, resampled=True) for b in meta.bands
+    )
     return RasterMeta(params.crs, transform, width, height, bands, resampled=True)
 
 

@@ -92,6 +92,7 @@ from earthx.api.intake import (
     estimate_order,
     job_recipe_json,
     job_side_files,
+    parse_order,
     recipe_json_with_methods,
 )
 from earthx.api.item_source import ItemSource, fetch_item_or_refuse
@@ -116,7 +117,7 @@ from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvali
 from earthx.processing.methods import methods_of
 from earthx.processing.operators import OperatorRegistry
 from earthx.processing.plan import estimate
-from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json, parse_request
+from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json
 
 LOGGER = logging.getLogger("earthx.api.processing")
 
@@ -1378,7 +1379,7 @@ class PermalinkView(BaseModel):
         return self
 
 
-def _permalink_body(raw: bytes, operators: OperatorRegistry) -> dict[str, Any]:
+def _permalink_body(raw: bytes, operators: OperatorRegistry, registry: DatasetRegistry) -> dict[str, Any]:
     """``{"order": …, "view": …}`` checked: the order as an order is (strictly, no ``resolved``), the view by its model."""
     try:
         document = loads_i_json(raw)
@@ -1388,9 +1389,14 @@ def _permalink_body(raw: bytes, operators: OperatorRegistry) -> dict[str, Any]:
         raise Problem(400, "the request is a JSON object with the members order and view")
     try:
         order_text = json.dumps(document["order"], ensure_ascii=False, allow_nan=False)
-        order = parse_request(order_text, operators)
-    except (RecipeInvalid, UnicodeEncodeError) as error:
-        raise Problem(422, str(error) if isinstance(error, RecipeInvalid) else "the order is not valid text") from None
+    except (ValueError, TypeError):
+        raise Problem(422, "the order is not valid text") from None
+    try:
+        # The order is kept as it was sent, even one of recipe version 1: the frontend that sent it opens it again
+        # (adr/0020 §11). It is checked as the platform will read it.
+        order = parse_order(order_text, operators, registry=registry)
+    except OrderRefused as error:
+        raise Problem(422, error.detail) from None
     try:
         view = PermalinkView.model_validate(document["view"])
     except ValidationError as error:
@@ -1406,7 +1412,7 @@ def _permalink_body(raw: bytes, operators: OperatorRegistry) -> dict[str, Any]:
 
 @router.post("/permalinks", summary="Keep an order and a view under a link", status_code=201, responses=_PROBLEMS)
 async def create_permalink(request: Request, api: Api) -> Response:
-    body = _permalink_body(await _read_body(request), api.operators)
+    body = _permalink_body(await _read_body(request), api.operators, api.registry)
     dataset = body.pop("dataset")
     try:
         api.registry.get(dataset)

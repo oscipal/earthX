@@ -25,7 +25,6 @@ def main(cog: Path, workdir: Path, size: int, scenes: int, other_zone: Path | No
     import earthx.readers.cog as cog_reader
     from earthx.processing import run, worker_environment
     from earthx.processing.plan import estimate
-    from earthx.processing.recipe import recipe_from_data
     from tests.earthx.processing import sources
     from tests.earthx.processing.testops import OPERATORS
 
@@ -57,7 +56,9 @@ def main(cog: Path, workdir: Path, size: int, scenes: int, other_zone: Path | No
         "steps": [],
         "output": {"kind": "raster", "format": "cog", "dtype": "uint8"},
     }
-    recipe = recipe_from_data(data, OPERATORS)
+    from tests.earthx.processing.recipes import recipe_of_data
+
+    recipe = recipe_of_data(data, OPERATORS)
     estimate_seconds = estimate(recipe, OPERATORS).seconds
     started = time.monotonic()
     with worker_environment():

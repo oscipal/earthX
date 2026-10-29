@@ -25,8 +25,11 @@ class TestRegistry:
     def test_the_platform_registry_holds_the_four_operators(self) -> None:
         assert set(REGISTRY) == {
             ("band_math", 1),
+            ("band_math", 2),
             ("mask", 1),
+            ("mask", 2),
             ("normalize", 1),
+            ("normalize", 2),
             ("reproject", 2),
             ("reproject", 3),
             ("reproject", 4),
@@ -35,8 +38,11 @@ class TestRegistry:
     def test_adding_operators_leaves_the_original_alone(self) -> None:
         assert set(TEST_REGISTRY) == {
             ("band_math", 1),
+            ("band_math", 2),
             ("mask", 1),
+            ("mask", 2),
             ("normalize", 1),
+            ("normalize", 2),
             ("reproject", 2),
             ("reproject", 3),
             ("reproject", 4),
