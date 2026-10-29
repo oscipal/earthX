@@ -30,6 +30,7 @@ from earthx.gateway.policy import (
     policy_from_env,
 )
 from earthx.gateway.resolver import CachingResolver, Resolver, resolve_host
+from earthx.gateway.slots import ReadSlots
 
 __all__ = [
     "ALLOWED_HOSTS_ENV",
@@ -40,6 +41,7 @@ __all__ = [
     "GatewayError",
     "GatewayResponse",
     "Policy",
+    "ReadSlots",
     "Resolver",
     "ResponseTooLarge",
     "TooManyRedirects",
