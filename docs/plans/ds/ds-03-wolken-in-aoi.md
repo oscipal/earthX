@@ -609,3 +609,20 @@ Daten unter der offenen Copernicus-Lizenz; nichts davon liegt im Repo.
   - Collection-Felder.
 - `ruff check backend`, `lint-imports` (ohne Lockerung) und `pytest` grün; vier Pflicht-Checks grün; `main` geholt.
 - **Keine Prüfanleitung im Browser:** DS-03a1 hat keine Route. Die Prüfanleitung kommt mit DS-03a2.
+
+**Umgesetzt am 29.10.2026** (Draft-PR #235, Log-Zeile, `adr/0021` §6 Nachtrag DS-03). Gegenüber dem Umfang oben:
+- **Lange und große AOI:** Nur der Teil der AOI, der auf der Kachel liegt, wählt die Stufe und wird Pixel für Pixel maskiert. Der Teil außerhalb hat keine Daten und geht über seine Fläche in `aoi_pixels` ein.
+  - So kostet eine AOI, die viel größer ist als die Kachel (ein Land gegen 110 km), nicht mehr Speicher als die Kachel.
+  - Ein kleiner Anschnitt wird fein genug gelesen.
+  - `aoi_pixels` weicht dadurch am Rand um höchstens eine Pixelreihe von einer Zählung über Pixelmitten ab. `cloud_pixels` und `data_pixels` bleiben exakt.
+- **Cache-Schlüssel:** nimmt von der AOI nur `type` und `coordinates` (Zahlen als Gleitkommazahlen, `-0.0` als `0.0`). Weitere GeoJSON-Glieder wie `bbox` ändern ihn nicht.
+- **`nodata` nicht in der Registry:** Die Prüfung „`cloud_classes` ohne den `nodata`-Wert“ (§6.10) entfällt, weil die Registry den `nodata`-Wert der Datei nicht kennt. Die Zählung nimmt ihn aus der Datei; ein Pixel mit diesem Wert zählt nie als Wolke.
+- **Weitere `ValueError` ohne Koordinaten:** ein Polygon, das sich nicht auf das Raster legen lässt, keine Fläche hat oder ungültig ist (selbstschneidender Ring, überlappende Teile), und ein Raster ohne CRS. GEOS nennt bei solchen Fehlern eine Position; deshalb liegt auch die Verschneidung mit der Kachel im abgefangenen Teil.
+- **Nur Blöcke unter der AOI:** Gelesen und maskiert werden nur die Blöcke der Datei, die die AOI berühren. So kosten zwei weit auseinander liegende Ecken oder ein schmaler Streifen quer über die Kachel nur die Blöcke, die sie bedecken, nicht das Rechteck um sie. Die Stufenregel aus Frage 1 bleibt unverändert.
+- **Nur geprüfte Pfade:** `measure_aoi_clouds` nimmt nur einen `AssetPath`, also einen vom `gateway` geprüften Pfad (KLAERUNGEN B8, wie `access.mosaic_tiles`). Ein einfacher String ist ein `TypeError`.
+- **`min_pixels` nicht frei wählbar:** Die Grenze ist die Konstante `MIN_AOI_PIXELS` (KE2), damit ein Eintrag im Cache immer dieselbe Stufe meint.
+- **`ReadSlots`:** gibt einem Host, den die Policy nicht erlaubt, keinen Platz (`UrlRejected`). Ein Platz ist nicht wiedereintrittsfähig: Wer einen hält, fragt nicht noch einmal für denselben Host.
+- **Tests:** Einträge, die Tests aus Sentinel-2 ableiten (Zarr, Legacy, ohne Schicht), setzen den Wolkenanteil mit `tests.catalog.synthetic_zarr.without_cloud_share` ab. Der Start weist diese Kombinationen sonst zu Recht ab.
+- **Für DS-03a2:** `ReadSlots` liegt in `gateway`. `api` darf es direkt importieren, `access` nicht; die Messung in `api` nimmt also den Platz und ruft dann `access.aoi_clouds`.
+- **Review:** Der Subagent `reviewer` prüfte den Diff vor dem PR. Seine Befunde (Koordinaten im Fehlertext bei ungültiger AOI, ungeprüfter Pfad, Lesefenster bei verstreuten AOIs, `OverflowError` im Schlüssel, Strukturprüfung der Koordinaten, `min_pixels` im Schlüssel, Typ von `cloud_note`, Allowlist in `ReadSlots`, schwache Tests, echte Ortskoordinaten in Tests) sind behoben. Offen bleibt nur die Verzerrung der Fläche außerhalb der UTM-Zone der Szene; sie betrifft nur `data_percent` und steht im Docstring.
+- **Umfang:** rund 390 Zeilen Code (mit Docstrings) und 890 Zeilen Tests, über dem Richtwert von 400 Zeilen. Der größte Teil sind die geforderten Fehler- und Randfälle.

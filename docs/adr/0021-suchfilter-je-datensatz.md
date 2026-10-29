@@ -69,3 +69,10 @@ Plan, Messungen und Optionen: `docs/plans/ds/ds-03-wolken-in-aoi.md` §6. Messsk
 **Folgen:**
 - Die Reservierung `earthx:` (§2.7) wird für `earthx:aoi_cloud_cover` eingelöst; andere `earthx:`-Eigenschaften bleiben `400`.
 - Die Coverage-Karte kann den Filter nicht anwenden und zeigt mit „Within AOI“ nur die übrigen Filter.
+
+**Umsetzung DS-03a1 (29.10.2026, Plan §6.19):**
+- **Registry:** `MaskSource.cloud_classes` und `cloud_note`, `SearchFilter.within_aoi`, je ohne Vorgabewert und beim Start geprüft. Wolkenklassen sind nur für eine COG-Schicht erlaubt.
+- **Collection:** veröffentlicht `earthx:mask.cloud_classes`, `earthx:mask.cloud_note` und `within_aoi` je Filter.
+- **`access.aoi_clouds`:** Stufenwahl und Zählung. Nur der Teil der AOI auf der Kachel wird maskiert, der Rest geht über seine Fläche ein. Dazu der Cache-Schlüssel je Szene und AOI.
+- **`gateway.ReadSlots`:** höchstens `max_connections_per_host` gleichzeitige GDAL-Leser je Host.
+- Noch nutzt keine Route das; das folgt mit DS-03a2.
