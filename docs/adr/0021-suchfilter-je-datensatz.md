@@ -39,3 +39,31 @@ Otto möchte unter „Advanced search“ die Filter sehen, die zum gewählten Da
 5. **Cache:** Der Schlüssel nimmt `conditions_key` nur auf, wenn Bedingungen gesetzt sind; anders gefilterte Karten sind andere Einträge, dieselben Bedingungen in anderer Reihenfolge ein Eintrag. Der Wegfall des festen Feldes `cloud` ändert die Hashes aller bisherigen Einträge einmal; sie laufen aus (E5, kein Fehler).
 6. **Fehler der Quelle (Otto, C):** unverändert `502`/`504` mit eigenem Text; Auszug und Filterwerte erscheinen weder in der Antwort noch im Log. Das Log der Route nennt höchstens die Namen der gesetzten Filter.
 7. **Live-Abgleich:** `backend/tests_live/test_search_filters_live.py` prüft zusätzlich, dass die Aggregation mit jedem Filter genau so viele Szenen zählt, wie die Suche findet (Plan §6.2: 42/7/21/24).
+
+## 6 Nachtrag DS-03 — Wolkenanteil in der AOI (Entwurf, 29.10.2026)
+
+Plan, Messungen und Optionen: `docs/plans/ds/ds-03-wolken-in-aoi.md` §6. Messskript: `scripts/ds-03-clouds/measure.py`.
+
+**Entschieden (Otto, 29.10.2026, zu #235):**
+1. **Rechnung:** Anteil der Wolkenklassen an den gültigen Pixeln der Klassifizierung in der AOI.
+   - Stufe: die gröbste Übersicht, auf der die AOI noch mindestens 10 000 Pixel hat, sonst die volle Auflösung.
+   - Gemessen bei gemischtem Himmel: im 95. Perzentil höchstens 1,1, im Maximum 1,9 Prozentpunkte neben der vollen Auflösung.
+2. **Klassen** stehen als Daten in der Registry (`MaskSource.cloud_classes`). Sentinel-2: 8, 9, 10, dieselbe Definition wie `eo:cloud_cover` (gemessen bei 48 von 48 Szenen gleich); Schatten zählen nicht mit.
+3. **Nenner:** gültige Pixel (nicht `nodata`). Ohne gültiges Pixel in der AOI gibt es keinen Wert. Der Anteil der AOI mit Daten wird mitgeliefert.
+4. **Überflug:** Der Wert einer Gruppe kommt aus den Zählungen ihrer Szenen.
+5. **Schnitt:** DS-03a Backend, DS-03b Frontend nach DS-02c.
+6. **Ort des Filters (Frage 2, Option 2):** Der Filter wirkt in der Suche, nicht als eigene Route.
+   - Er ist ein Schalter „Within AOI“ am Wolkenfilter und braucht AOI und Zeitraum.
+   - Der Server prüft die Treffer der Quelle seitenweise und gibt nur passende zurück, jeden mit seinem Wert.
+
+**Offen bis zur erneuten Freigabe** (Plan §6.15): Ausgestaltung von Punkt 6.
+- Vorschlag: Eigenschaft `earthx:aoi_cloud_cover` in `query_by_collection`, `SearchFilter.within_aoi` in der Registry.
+- Kurze Antworten: höchstens 100 Szenen oder 8 s, mit Seitenmarke und „found / checked“.
+- Obergrenze 500 geprüfte Szenen je Suche, keine Höchstlänge des Zeitraums.
+- Messung im Prozess `api` mit höchstens 6 GDAL-Lesern je Host und Prozess (`gateway`).
+- Cache der Messung je Szene und AOI im Statistik-Cache, 7 Tage, Schlüssel nie in Log oder URL.
+- Filter je Datensatz.
+
+**Folgen:**
+- Die Reservierung `earthx:` (§2.7) wird für `earthx:aoi_cloud_cover` eingelöst; andere `earthx:`-Eigenschaften bleiben `400`.
+- Die Coverage-Karte kann den Filter nicht anwenden und zeigt mit „Within AOI“ nur die übrigen Filter.
