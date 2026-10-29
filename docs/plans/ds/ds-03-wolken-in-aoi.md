@@ -53,7 +53,13 @@ Die Wolkenangabe der Quelle (`eo:cloud_cover`) gilt für die ganze Szene (rund 1
 - **Zu 6:** In dieser Session nur DS-03a (Backend), nach erneuter Freigabe. DS-03b (Frontend, nach DS-02c) bekommt einen eigenen Abschnitt (§6.17).
 - **Messskripte** liegen unter `scripts/ds-03-clouds/` (§6.16). **ADR:** `adr/0021` „§6 Nachtrag DS-03“.
 
-Bis zur erneuten Freigabe ändert dieser PR nur Dokumente und das Messskript. Belegstufen wie in DS-02: [P] Code oder Primärquelle gelesen, [M] in der Sitzung gemessen, [A] eigene Ableitung, [S] nur aus Suchtreffern oder Foren belegt (die meisten Primärquellen waren aus der Sitzung nicht erreichbar).
+**Zweite Freigabe (Otto, 29.10.2026, zu #235):** Fragen F2a, F2b, F2d, F2e nach Option 1, F2f angenommen, F2c nach Option 1 mit Zusatz für DS-03b, F7 nach **Option 3**. KE2–KE6 angenommen, KE1 geändert. Eingearbeitet in §6.5, §6.9, §6.14, §6.15, §6.17 und §6.18:
+- **F2c, Zusatz für DS-03b:** Bei aktivem „Within AOI“ fragt das Frontend selbst mit der Seitenmarke weiter, bis die Seite gefüllt oder die Obergrenze erreicht ist. Dabei zeigt es „found / checked“, und der Vorgang ist abbrechbar. Eine leere Seite mit nur „Load more“ kommt nicht vor.
+- **KE1 geändert:** Bei einer AOI mit mehr als 1 000 Punkten bleibt „Within AOI“ bedienbar. Die Messung nutzt das echte Polygon aus dem Body, falls nötig vereinfacht mit einer Toleranz unter der Auflösung der gelesenen Stufe, auch wenn die Suche selbst das umgebende Rechteck schickt. Bei einer Punkt-AOI bleibt der Filter gesperrt, mit Grund im Tooltip.
+- **F7, Option 3:** Diese Session setzt DS-03a1 (Grundlagen) um. DS-03a2 (Filter in der Suche) ist nach dem Merge eine neue Session (§6.18).
+- Frage 2 steht im Log damit auf „entschieden“.
+
+Belegstufen wie in DS-02: [P] Code oder Primärquelle gelesen, [M] in der Sitzung gemessen, [A] eigene Ableitung, [S] nur aus Suchtreffern oder Foren belegt (die meisten Primärquellen waren aus der Sitzung nicht erreichbar).
 
 ### 6.0 Kurzfassung
 
@@ -147,6 +153,14 @@ Nach der Zahl der Pixel, die die AOI auf der gelesenen Stufe hat (alle Stufen zu
 - Anteil der Klassen 8, 9, 10 an den Pixeln mit SCL ≠ 0 über die ganze Datei = `eo:cloud_cover` des Items, bei 48 von 48 Szenen auf drei Nachkommastellen. Mit Schatten (3) wären es im Median 0,2, höchstens 13,2 Prozentpunkte mehr. Klasse 1 (gesättigt oder defekt) kam in keiner der 48 Szenen vor.
 - Abstand zwischen AOI und Szene, Klassen 8, 9, 10: AOI 1 km im Median 4,2 Prozentpunkte, bei 28 % der AOIs über 20; 10 km 4,1 bzw. 22 %; 30 km 3,0 bzw. 19 %.
 
+**6.2.6 Maske einer langen AOI** (offline, `measure.py rasterize`): Welliger Kreis von 30 km, Maske über Pixelmitten, je Aufruf:
+
+| Positionen | 20 m (2,7 Mi Pixel) | 160 m (43 000 Pixel) |
+|---|---|---|
+| 64 | 22 ms | 10 ms |
+| 1 000 | 15 ms | 11 ms |
+| 20 000 | 49 ms | 19 ms |
+
 ### 6.3 Stand der Technik
 
 - **Rechenweg:** Sentinel Hub und Copernicus Data Space rechnen den Wolkenanteil einer AOI mit der Statistical API: SCL je Pixel auf 0/1 abbilden, `dataMask` auf SCL ≠ 0, Mittelwert über die AOI, auf 20 m [S: [CDSE-Forum](https://forum.dataspace.copernicus.eu/t/cloud-percentage/438), [Planet-Community](https://community.planet.com/analysis-apis-81/statistical-api-creating-a-cloud-free-datamask-5760)]. Das ist der hier vorgeschlagene Weg. Bei Sentinel Hubs Wolkenmaske mit 160 m gibt es bei kleinen AOIs nur 0 oder 100 % ([Forum](https://community.planet.com/sentinel-hub-81/cloud-coverage-is-always-100-4218), [S]); das deckt sich mit §6.2.4.
@@ -168,7 +182,11 @@ Je Szene die gröbste Übersicht, auf der die AOI noch mindestens 10 000 Pixel h
 
 **Bedingungen, sonst `400` mit eigenem Text ohne Werte:**
 1. Ein Zeitraum mit beiden Enden (`datetime` „von/bis“, kein offenes Ende), wie von Otto verlangt.
-2. Eine Fläche: `intersects` als `Polygon` oder `MultiPolygon`, oder `bbox`. Ohne Fläche, oder mit Punkt bzw. Linie, ist `400` („the cloud share in the AOI needs an area“).
+2. Eine Fläche für die Messung (KE1, geändert am 29.10.2026):
+   - `intersects` als `Polygon` oder `MultiPolygon`, oder `bbox`.
+   - Schickt die Suche das umgebende Rechteck, weil die AOI mehr als 1 000 Positionen hat (M3-08), dann trägt der Body die AOI zusätzlich als `earthx:aoi`. Erlaubt ist `Polygon` oder `MultiPolygon` mit höchstens 20 000 Positionen, wie beim Hochladen; der ganze Body ist höchstens 1 MB groß.
+   - `earthx:aoi` dient nur der Messung, geht nie an die Quelle und erscheint nie im Log. Sie muss innerhalb von `bbox` liegen.
+   - Ohne Fläche, oder mit Punkt bzw. Linie: `400` („the cloud share in the AOI needs an area“).
 3. Die Collection hat den Filter in der Registry (§6.10); sonst `400` in `query_by_collection`, wie jede unbekannte Eigenschaft (DS-02 §6.4 Regel 3a).
 4. Grenzen wie bei jedem `RANGE`-Filter: Zahl, 0 ≤ `gte` ≤ `lte` ≤ 100.
 
@@ -282,7 +300,11 @@ Gruppenwert = Summe der Wolkenpixel / Summe der gültigen Pixel der Szenen einer
 - Der DEM hat keinen Wolkenfilter, also kein „Within AOI“.
 
 **Kleinentscheidungen** (gelten, sofern Otto nicht widerspricht):
-- **KE1 Lange AOI:** Eine AOI mit mehr als 1 000 Positionen geht heute als `bbox` statt `intersects` (§6.1). Dann wäre die gemessene Fläche das Rechteck, nicht die AOI. Deshalb ist „Within AOI“ in diesem Fall gesperrt („The AOI has too many points for this filter“). Eine Punkt-AOI sperrt ihn ebenso („Draw an area to use this filter“).
+- **KE1 Lange AOI (geändert, Otto 29.10.2026):** Eine AOI mit mehr als 1 000 Positionen geht an die Quelle weiter als `bbox` (§6.1).
+  - Gemessen wird trotzdem das echte Polygon; es steht als `earthx:aoi` im Body (§6.5).
+  - Vereinfachen ist bis 20 000 Positionen nicht nötig: Die Maske kostet auch dann höchstens 50 ms bei 2,7 Mi Pixeln zu 20 m und 19 ms bei 160 m [M, §6.2.6].
+  - Darüber nimmt der Body nichts an. Sollte die Grenze steigen, wird mit einer Toleranz unter einem halben Pixel der gelesenen Stufe vereinfacht.
+  - Eine Punkt-AOI sperrt den Schalter („Draw an area to use this filter“).
 - **KE2 Grenzen im Code:** 100 Szenen und 8 s je Antwort, 500 je Suche, 6 Leser je Host und Prozess. Konstanten mit Verweis auf diesen Plan, keine Konfiguration.
 - **KE3 Log:** eine Zeile je Antwort „aoi cloud filter“ mit Datensatz, geprüft, gefunden, aus dem Cache, unlesbar, Grenze erreicht, Stufen, Sekunden. Keine AOI, Kennung, Grenzwerte, kein Schlüssel und keine Adresse. Das Zugriffslog nennt wie bisher nur Methode, Pfad und Status.
 - **KE4 Datums-Fallback:** aus bei „Within AOI“ (F2c).
@@ -379,9 +401,14 @@ Gruppenwert = Summe der Wolkenpixel / Summe der gültigen Pixel der Szenen einer
   - `main` geholt.
 - **Doku:** `adr/0021` „§6 Nachtrag DS-03“ ergänzen; Zeile in `architekturplan.md` 5.1 (`earthx:mask.cloud_classes`, `within_aoi`).
 
-### 6.14 Schnitt (Frage 6, entschieden: Option 1)
+### 6.14 Schnitt (Frage 6 entschieden: Option 1; Frage 7 entschieden: Option 3)
 
-DS-03a (Backend) in dieser Session nach erneuter Freigabe, DS-03b (Frontend) nach DS-02c (§6.17). Mit dem Filter in der Suche wächst DS-03a: Schätzung ~450 Zeilen Code, ~600 Tests, Doku ~60. Das liegt über dem Richtwert von 400 Zeilen. Deshalb (Frage 7):
+**Entschieden (Otto, 29.10.2026):**
+- DS-03a1 (Grundlagen) in dieser Session.
+- DS-03a2 (Filter in der Suche) nach dem Merge in neuer Session (§6.18).
+- DS-03b (Frontend) nach DS-02c und DS-03a2 (§6.17).
+
+Begründung der Teilung: Mit dem Filter in der Suche wächst DS-03a auf geschätzt ~450 Zeilen Code, ~600 Tests und Doku ~60, über dem Richtwert von 400 Zeilen. Vorgelegte Optionen (Frage 7):
 
 1. **Zwei PRs in dieser Session** **(Empfehlung)**:
    - DS-03a1: Registry, Zählung in `access`, `gateway.read_slot`, Cache-Schlüssel (~180 Code, ~250 Tests).
@@ -389,7 +416,7 @@ DS-03a (Backend) in dieser Session nach erneuter Freigabe, DS-03b (Frontend) nac
 2. Ein PR mit rund 1 100 Zeilen.
 3. DS-03a1 in dieser Session, DS-03a2 nach dem Merge in neuer Session.
 
-### 6.15 Fragen an Otto (erneute Vorlage)
+### 6.15 Fragen an Otto (erneute Vorlage, beantwortet am 29.10.2026)
 
 1. **F2a Obergrenze:** (1) 500 je Suche über „Load more“ hinweg, danach Hinweis **(Empfehlung)**; (2) 500 je „Load more“; (3) 200 je Suche.
 2. **F2b Zeitraum:** (1) keine Höchstlänge, die Obergrenze genügt **(Empfehlung)**; (2) höchstens ein Jahr.
@@ -400,6 +427,8 @@ DS-03a (Backend) in dieser Session nach erneuter Freigabe, DS-03b (Frontend) nac
 7. **F7 Schnitt DS-03a:** (1) zwei PRs (a1 Grundlagen, a2 Suche) in dieser Session **(Empfehlung)**; (2) ein PR; (3) a2 in neuer Session.
 
 KE1–KE6 (§6.9) und die Registry-Form (§6.10) gelten, sofern Otto nicht widerspricht.
+
+**Antworten (Otto, 29.10.2026):** 1 Option 1; 2 Option 1; 3 Option 1 mit Zusatz für DS-03b (§6.17); 4 Option 1; 5 Option 1; 6 angenommen; 7 Option 3. KE2–KE6 angenommen; KE1 geändert (§6.9). Die Registry-Form gilt.
 
 ### 6.16 Messanhang und Skript [M]
 
@@ -432,7 +461,7 @@ Daten unter der offenen Copernicus-Lizenz; nichts davon liegt im Repo.
 
 **Stufe A**, nur Frontend. Die Entscheidungen stehen in diesem Plan (§6.0, §6.4–§6.11, Freigaben Ottos vom 29.10.2026) und in `adr/0021` „§6 Nachtrag DS-03“; dieser Abschnitt ist ohne das Gespräch zu DS-03 verständlich.
 **Modell:** Sonnet, Effort hoch.
-**Start:** nach dem Merge von DS-02c („Advanced search“ im Frontend) und von DS-03a (Backend: Filter `earthx:aoi_cloud_cover` in `POST /stac/search`). Branch von `main`, ein Draft-PR.
+**Start:** nach dem Merge von DS-02c („Advanced search“ im Frontend) und von DS-03a2 (Backend: Filter `earthx:aoi_cloud_cover` in `POST /stac/search`, §6.18). Branch von `main`, ein Draft-PR.
 **Startsatz:** „Führe Aufgabe DS-03b aus `docs/plans/ds/ds-03-wolken-in-aoi.md` §6.17 aus.“
 
 **Ausgangslage:**
@@ -448,10 +477,14 @@ Daten unter der offenen Copernicus-Lizenz; nichts davon liegt im Repo.
    - **Tooltip** nach §6.11, mit `cloud_note`.
    - **Gesperrt** mit Grund im Tooltip:
      - ohne AOI oder ohne Zeitraum mit beiden Enden: „Draw an AOI and set a date range first“;
-     - bei einer Punkt-AOI: „Draw an area to use this filter“;
-     - bei einer AOI mit mehr als 1 000 Positionen: „The AOI has too many points for this filter“.
-2. **Suche:**
-   - `searchAllPages` meldet nach jeder Antwort den Stand. Der Kopf des Abschnitts zeigt „12 found / 180 checked“ während und nach der Suche.
+     - bei einer Punkt-AOI: „Draw an area to use this filter“.
+   - Eine AOI mit mehr als 1 000 Positionen sperrt den Schalter nicht. Die Suche schickt dann `bbox` und die AOI zusätzlich als `earthx:aoi` (§6.5, KE1).
+2. **Suche (Otto, 29.10.2026):**
+   - Bei aktivem „Within AOI“ fragt das Frontend selbst mit der Seitenmarke weiter, bis die Seite gefüllt ist (wie heute bis 300 Treffer), die Obergrenze erreicht ist oder die Quelle nichts mehr hat.
+   - Eine Antwort mit wenigen oder keinen Treffern ist für das Frontend kein Ende. **Eine leere Seite mit nur „Load more“ kommt nicht vor.**
+   - Nach jeder Antwort steht der Stand im Kopf des Abschnitts: „12 found / 180 checked“, während und nach der Suche.
+   - Ein Knopf „Stop“ neben dem Stand bricht das Weiterfragen ab. Was gefunden ist, bleibt; „Load more“ setzt danach mit der Marke fort.
+   - „Load more“ füllt die nächste Seite auf dieselbe Weise.
    - Bei `limit_reached` steht der Hinweis „Checked 500 scenes back to <Datum der ältesten geprüften Szene>. Narrow the date range to search further.“ und „Load more“ verschwindet.
    - Bei `unreadable` > 0 steht „<n> scenes could not be checked“.
    - Der Datums-Fallback (±90 Tage) sucht bei „Within AOI“ nicht; ohne Treffer steht „No scenes within the AOI limit in this date range“.
@@ -464,14 +497,17 @@ Daten unter der offenen Copernicus-Lizenz; nichts davon liegt im Repo.
 
 **Abnahme:**
 - **vitest:**
-  - Schalter nur mit `within_aoi`; gesperrt mit den drei Gründen.
+  - Schalter nur mit `within_aoi`; gesperrt ohne AOI, ohne Zeitraum und bei einer Punkt-AOI.
   - Werte je Datensatz getrennt; Anfrage trägt `earthx:aoi_cloud_cover` statt `eo:cloud_cover`.
-  - „found / checked“ nach jeder Seite; Hinweis bei `limit_reached` und `unreadable`; „Load more“ weg bei Grenze.
+  - Weiterfragen, bis die Seite gefüllt ist; Antworten ohne Treffer führen nie zu einer leeren Seite mit nur „Load more“.
+  - „Stop“ bricht ab und lässt das Gefundene stehen.
+  - „found / checked“ nach jeder Antwort; Hinweis bei `limit_reached` und `unreadable`; „Load more“ weg bei Grenze.
+  - Eine AOI mit mehr als 1 000 Positionen sendet `bbox` und `earthx:aoi`.
   - kein Datums-Fallback; Coverage ohne den Wolkenfilter.
   - Gruppenwert aus den Pixelzahlen; Sortierung.
   - DEM ohne Schalter.
 - **Browser** (Chromium/Playwright der Sitzung, Antworten der Suche gemockt):
-  - Klickweg Sentinel-2: AOI zeichnen, Zeitraum setzen, „Within AOI“ an, Grenze setzen, Suche mit Fortschritt, Sortierung, Tooltip.
+  - Klickweg Sentinel-2: AOI zeichnen, Zeitraum setzen, „Within AOI“ an, Grenze setzen, Suche mit Fortschritt über mehrere Antworten, „Stop“, Sortierung, Tooltip.
   - Sperre ohne AOI.
   - Hell/Dunkel, schmales Fenster.
   - Im PR beschrieben.
@@ -481,3 +517,95 @@ Daten unter der offenen Copernicus-Lizenz; nichts davon liegt im Repo.
   - Keine AOI, Kennungen oder Hashes in URLs oder Logs.
   - Kein datensatzspezifischer Code: Alles kommt aus `within_aoi`, `cloud_classes`, `cloud_note`.
   - `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
+
+### 6.18 DS-03a2 — Filter „Within AOI“ in der Suche (Folgeaufgabe, neue Session)
+
+**Stufe A**, nur Backend. Die Entscheidungen stehen in diesem Plan (Freigaben Ottos vom 29.10.2026, §6.4–§6.10, §6.14–§6.15) und in `adr/0021` „§6 Nachtrag DS-03“; dieser Abschnitt ist ohne das Gespräch zu DS-03 verständlich.
+**Modell:** Sonnet, Effort hoch.
+**Start:** nach dem Merge von DS-03a1 (§6.19). Branch von `main`, ein Draft-PR.
+**Startsatz:** „Führe Aufgabe DS-03a2 aus `docs/plans/ds/ds-03-wolken-in-aoi.md` §6.18 aus.“
+
+**Ausgangslage (aus DS-03a1):**
+- **Registry:** Die Registry kennt `MaskSource.cloud_classes`, `MaskSource.cloud_note` und `SearchFilter.within_aoi`. Sentinel-2 setzt sie: Klassen 8, 9, 10; `within_aoi` an „Cloud cover“. Die Collection veröffentlicht sie.
+- **`access.aoi_clouds`:** zählt Wolken- und gültige Pixel einer Szene in einer AOI auf der Stufe aus Frage 1. Dazu gehören der Cache-Schlüssel je Szene und AOI und die Zahlen für `earthx:aoi_measure`.
+- **`gateway.ReadSlots`:** begrenzt gleichzeitige GDAL-Leser je Host auf `Policy.max_connections_per_host`.
+- Keine Route nutzt das bisher.
+
+**Umfang:**
+1. **Lesen der Anfrage** (`api/search_filters.py`): `earthx:aoi_cloud_cover` mit `gte`/`lte` (0–100) in `query_by_collection` und `query`, nur für Collections mit `within_aoi`. Die Bedingungen aus §6.5 gelten, sonst `400` ohne Werte im Text:
+   - ein Zeitraum mit beiden Enden;
+   - eine Fläche: `intersects` als `Polygon`/`MultiPolygon` oder `bbox`; dazu optional `earthx:aoi` mit höchstens 20 000 Positionen, innerhalb `bbox`;
+   - kein Punkt, keine Linie;
+   - Body höchstens 1 MB.
+   Andere `earthx:`-Eigenschaften bleiben `400`. `GET` weist `query` weiter ab; `/coverage` weist `earthx:` weiter ab.
+2. **Prüfschleife je Quelle** (`api`, §6.5 „Ablauf“):
+   - Seiten der Quelle zu 100 mit den übrigen Filtern holen, mit dem Such-Cache.
+   - Je Item den Wert aus dem Statistik-Cache nehmen oder messen, über `access.aoi_clouds`. Gemessen wird im Prozess `api`, in Threads, mit `gateway.ReadSlots` und den GDAL-Optionen aus `gateway`.
+   - Nur passende Items zurückgeben, mit `earthx:aoi_cloud_cover` und `earthx:aoi_measure` in `properties`.
+   - Ende einer Antwort bei: `limit` Treffern, 100 geprüften Szenen, 8 s Messzeit, 500 geprüften Szenen je Suche oder Ende der Quelle.
+3. **Seitenmarke:** Mit AOI-Filter trägt sie die Stelle in der Seite der Quelle (`i`) und die Zähler (`c`, `f`, `u`); ohne AOI-Filter bleibt sie unverändert (`TOKEN_VERSION` 2). Der Fingerabdruck nimmt den AOI-Filter und `earthx:aoi` auf. Bei 500 geprüften Szenen gibt es keine Marke mehr.
+4. **Antwort:**
+   - `earthx:aoi_filter` (`checked`, `found`, `unreadable`, `limit_reached`), bei gemischter Suche `earthx:aoi_filter_by_collection`.
+   - In der gemischten Suche misst nur die Quelle mit dem Filter, innerhalb des Budgets von 10 s.
+5. **Cache:**
+   - Messung je Szene und AOI im Statistik-Cache, 7 Tage, Schlüssel aus `access.aoi_clouds`.
+   - Gefilterte Seiten kommen nicht in den Such-Cache.
+   - Ein Fehler des Caches macht nur langsamer; geloggt wird nur die Art der Ausnahme.
+6. **Log** (KE3): eine Zeile je Antwort „aoi cloud filter“ mit Datensatz, geprüft, gefunden, aus dem Cache, unlesbar, Grenze erreicht, Stufen, Sekunden. Keine AOI, Kennung, Grenzwerte, kein Schlüssel und keine Adresse.
+7. **Unlesbare Szene** (KE5): fällt heraus, wird gezählt.
+8. **Live-Test** (`backend/tests_live/`, lokal; `.github/` bleibt unverändert): eine echte Szene, deren Anteil über die ganze Datei gleich `eo:cloud_cover` ist (§6.2.5); eine Suche mit Filter über `gateway`.
+9. **Doku:** `adr/0021` §6 Nachtrag DS-03 (Umsetzung a2), Zeilen in `architekturplan.md` 5.1 für `earthx:aoi_cloud_cover`, `earthx:aoi_measure`, `earthx:aoi_filter`; Nachtrag zu `adr/0005` Regel VI (Filter, den die Plattform rechnet).
+
+**Abnahme:** die Tests aus §6.13 außer denen, die DS-03a1 schon abdeckt (Rechnung, Stufenwahl, Registry, Leser je Host). Außerdem:
+- Prüfanleitung für Otto (PowerShell 5.1, Skript unter `scripts/checks/`, wie `nm4-19-statistics.ps1`).
+- Log-Zeile, vier Pflicht-Checks grün, `main` geholt vor „fertig“.
+- `lint-imports` ohne Lockerung. Bräuchte es eine Lockerung, ist das zuerst eine Frage an Otto.
+
+**Grenzen:**
+- Keine neue Abhängigkeit ohne Frage an Otto.
+- Keine AOI, Kennungen, Hashes, `href` oder signierten URLs in Logs oder URLs.
+- Kein datensatzspezifischer Code.
+- `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
+
+### 6.19 DS-03a1 — Grundlagen (diese Session)
+
+**Umfang:**
+1. **Registry** (`catalog/registry.py`, `catalog/datasets.py`):
+   - `MaskSource.cloud_classes: frozenset[int]` und `cloud_note: str`, ohne Vorgabewert.
+   - `SearchFilter.within_aoi: bool`, ohne Vorgabewert.
+   - **Prüfungen beim Start:**
+     - `cloud_classes` ⊆ den Werten von `classes`;
+     - nicht leer heißt: `cloud_note` nicht leer, und der Datensatz liegt als COG vor (gelesen wird über die Übersichten der Datei);
+     - `within_aoi` an höchstens einem Filter, nur `RANGE` 0–100 mit Einheit `%`, nur mit nicht leeren `cloud_classes`.
+   - **Sentinel-2:** {8, 9, 10}, `cloud_note` nach §6.10, `within_aoi` an „Cloud cover“.
+   - **Andere Einträge:** Der synthetische Zarr-Eintrag der Tests hat leere `cloud_classes`; alle anderen Filter haben `within_aoi=False`.
+2. **Collection** (`catalog/collection.py`): `earthx:mask` mit `cloud_classes` (aufsteigend) und `cloud_note`; `earthx:search_filters[]` mit `within_aoi`.
+3. **`access/aoi_clouds.py` (neu):**
+   - Stufenwahl nach Frage 1: die gröbste Übersicht der Datei, auf der die AOI noch mindestens 10 000 Pixel hat, sonst die volle Auflösung. Grundlage ist die Fläche der AOI im Raster der Szene.
+   - Zählung der Wolken- und gültigen Pixel in der AOI: Pixelmitten, `nodata` der Datei als „ohne Daten“, Pixel der AOI außerhalb der Datei als „ohne Daten“.
+   - Ergebnis: `cloud_pixels`, `data_pixels`, `aoi_pixels`, `resolution`. Daraus folgen `cloud_percent` (`None` ohne gültiges Pixel) und `data_percent`.
+   - Cache-Schlüssel je Szene und AOI (§6.9 F2e).
+   - Ohne Log, ohne eigenes GDAL-Env: Die Hülle setzt das Env, wie bei `processing.core.area_statistics`.
+4. **`gateway`:** `ReadSlots`, ein Zähler je Host für gleichzeitige GDAL-Leser mit der Grenze `Policy.max_connections_per_host`. Nichts Fachliches.
+5. **Doku:**
+   - `adr/0021` „§6 Nachtrag DS-03“ ergänzt;
+   - Zeile in `architekturplan.md` 5.1;
+   - Log-Zeile.
+
+**Abnahme DS-03a1:**
+- **Tests** (synthetische COGs im Test erzeugt, mit `MODE`-Übersichten):
+  - Anteil gegen eine unabhängige Zählung mit `numpy` auf 20 m und auf einer Übersicht;
+  - Stufenwahl an der Grenze von 10 000 Pixeln;
+  - AOI teilweise außerhalb;
+  - `MultiPolygon`;
+  - Rechteck als Polygon;
+  - AOI ganz ohne Daten;
+  - Klasse 1 im Nenner;
+  - Punkt und Linie abgewiesen;
+  - eine AOI mit 20 000 Positionen;
+  - Cache-Schlüssel gleich bei gleicher AOI in anderer Schreibweise und verschieden bei anderer AOI, Szene oder anderen Klassen; der Schlüssel enthält keine Koordinaten;
+  - `ReadSlots` lässt nie mehr als die Grenze gleichzeitig lesen;
+  - Registry-Prüfungen;
+  - Collection-Felder.
+- `ruff check backend`, `lint-imports` (ohne Lockerung) und `pytest` grün; vier Pflicht-Checks grün; `main` geholt.
+- **Keine Prüfanleitung im Browser:** DS-03a1 hat keine Route. Die Prüfanleitung kommt mit DS-03a2.

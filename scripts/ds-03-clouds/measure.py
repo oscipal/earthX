@@ -35,6 +35,7 @@ Then, from the repository root:
     PYTHONPATH=backend python scripts/ds-03-clouds/measure.py accuracy <dir>
     PYTHONPATH=backend python scripts/ds-03-clouds/measure.py timing <dir>
     PYTHONPATH=backend python scripts/ds-03-clouds/measure.py parallel <dir> --km 10 --factor 1 --workers 8
+    PYTHONPATH=backend python scripts/ds-03-clouds/measure.py rasterize <dir>
     PYTHONPATH=backend python scripts/ds-03-clouds/measure.py summary <dir>
 
 ``prepare`` keeps eight scenes per box, spread over ``eo:cloud_cover`` from the clearest to the cloudiest, with less
@@ -50,6 +51,10 @@ circle): on 20 m, on each overview (``MODE``, as the file holds them) and on eve
 ``timing`` reads, one after the other and cold (``CPL_VSIL_CURL_NON_CACHED``), the window of a circle in the middle
 of every third scene, for 1, 10, 30 and 110 km and each level; ``parallel`` reads all scenes with ``--workers``
 threads. Bytes and requests come from GDAL's debug log (``Downloading a-b`` and the size request), per thread.
+
+``rasterize`` needs no network: it times the AOI mask (pixel centres) for a wavy circle of 30 km with 64, 1 000 and
+20 000 positions on a grid of 20 m and of 160 m, the question whether a long AOI has to be simplified before it is
+counted (DS-03 plan §6.2.6).
 
 Nothing of a place is printed and nothing leaves ``<dir>``: no coordinates, no address; a failed read is recorded by
 the class of its error only, because GDAL's messages name addresses. The data are Sentinel-2 L2A under the open
@@ -312,6 +317,30 @@ def parallel(folder: Path, km: float, factor: int, workers: int) -> None:
     print(json.dumps(line))
 
 
+def rasterize(folder: Path) -> None:
+    radius, centre = 15_000.0, (500_000.0, 5_000_000.0)
+    with (folder / "rasterize.jsonl").open("w") as out:
+        for positions in (64, 1_000, 20_000):
+            ring = []
+            for i in range(positions):
+                angle = 2 * math.pi * i / positions
+                wave = radius * (1 + 0.05 * math.sin(37 * angle))
+                ring.append((centre[0] + wave * math.cos(angle), centre[1] + wave * math.sin(angle)))
+            geometry = {"type": "Polygon", "coordinates": [[*ring, ring[0]]]}
+            for metres in (NATIVE_M, 8 * NATIVE_M):
+                side = math.ceil(2.2 * radius / metres)
+                grid = rasterio.transform.from_origin(
+                    centre[0] - 1.1 * radius, centre[1] + 1.1 * radius, metres, metres
+                )
+                started = time.perf_counter()
+                for _ in range(5):
+                    geometry_mask([geometry], out_shape=(side, side), transform=grid)
+                line = {"positions": positions, "metres": metres, "pixels": side * side}
+                line["ms"] = round((time.perf_counter() - started) / 5 * 1000, 1)
+                out.write(json.dumps(line) + "\n")
+                print(json.dumps(line))
+
+
 def _stats(errors: list[float]) -> str:
     if not errors:
         return "–"
@@ -401,6 +430,10 @@ def summary(folder: Path) -> None:
         print("parallel:")
         for line in (folder / "parallel.jsonl").read_text().splitlines():
             print("  " + line)
+    if (folder / "rasterize.jsonl").exists():
+        print("AOI mask, ms per AOI:")
+        for line in (folder / "rasterize.jsonl").read_text().splitlines():
+            print("  " + line)
     if (folder / "counts").is_dir():
         print("scenes in 2024 (numberMatched):")
         for answer in sorted((folder / "counts").glob("*.json")):
@@ -409,7 +442,7 @@ def summary(folder: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("command", choices=("prepare", "accuracy", "timing", "parallel", "summary"))
+    parser.add_argument("command", choices=("prepare", "accuracy", "timing", "parallel", "rasterize", "summary"))
     parser.add_argument("folder", type=Path)
     parser.add_argument("--km", type=float, default=10)
     parser.add_argument("--factor", type=int, default=1, choices=FACTORS)
@@ -418,7 +451,14 @@ def main() -> None:
     if args.command == "parallel":
         parallel(args.folder, args.km, args.factor, args.workers)
     else:
-        {"prepare": prepare, "accuracy": accuracy, "timing": timing, "summary": summary}[args.command](args.folder)
+        commands = {
+            "prepare": prepare,
+            "accuracy": accuracy,
+            "timing": timing,
+            "rasterize": rasterize,
+            "summary": summary,
+        }
+        commands[args.command](args.folder)
 
 
 if __name__ == "__main__":

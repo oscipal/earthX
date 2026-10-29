@@ -56,13 +56,15 @@ Plan, Messungen und Optionen: `docs/plans/ds/ds-03-wolken-in-aoi.md` §6. Messsk
    - Er ist ein Schalter „Within AOI“ am Wolkenfilter und braucht AOI und Zeitraum.
    - Der Server prüft die Treffer der Quelle seitenweise und gibt nur passende zurück, jeden mit seinem Wert.
 
-**Offen bis zur erneuten Freigabe** (Plan §6.15): Ausgestaltung von Punkt 6.
-- Vorschlag: Eigenschaft `earthx:aoi_cloud_cover` in `query_by_collection`, `SearchFilter.within_aoi` in der Registry.
-- Kurze Antworten: höchstens 100 Szenen oder 8 s, mit Seitenmarke und „found / checked“.
-- Obergrenze 500 geprüfte Szenen je Suche, keine Höchstlänge des Zeitraums.
-- Messung im Prozess `api` mit höchstens 6 GDAL-Lesern je Host und Prozess (`gateway`).
-- Cache der Messung je Szene und AOI im Statistik-Cache, 7 Tage, Schlüssel nie in Log oder URL.
-- Filter je Datensatz.
+**Entschieden mit der zweiten Freigabe (Otto, 29.10.2026, zu #235; Plan §6.5, §6.9, §6.15):**
+7. **Form:** Eigenschaft `earthx:aoi_cloud_cover` (`gte`/`lte`, 0–100) in `query_by_collection` bzw. `query`. In der Registry `SearchFilter.within_aoi` an dem Filter, dessen Bereich für die AOI gelten kann. Gültig nur mit Zeitraum (beide Enden) und Fläche, sonst `400`.
+8. **Kurze Antworten:** höchstens 100 geprüfte Szenen oder 8 s je Antwort, darin „found / checked“ (`earthx:aoi_filter`). Die Seitenmarke trägt die Stelle in der Seite der Quelle und die Zähler. Das Frontend fragt selbst weiter, bis die Seite gefüllt oder die Obergrenze erreicht ist, abbrechbar; eine leere Seite mit nur „Load more“ kommt nicht vor.
+9. **Obergrenze und Zeitraum:** 500 geprüfte Szenen je Suche, über „Load more“ hinweg, danach Hinweis. Keine Höchstlänge des Zeitraums.
+10. **Last:** Messung im Prozess `api`, höchstens 6 gleichzeitige GDAL-Leser je Host und Prozess (`gateway.ReadSlots`, die Grenze von `adr/0005` §6).
+11. **Cache:** Messung je Szene und AOI im Statistik-Cache, 7 Tage. Gefilterte Seiten kommen nicht in den Such-Cache. Der Schlüssel steht nie in Log oder URL.
+12. **Mehrere Datensätze:** Filter je Datensatz, nur wo die Registry `within_aoi` setzt; Grenze und Fortschritt je Datensatz.
+13. **Lange AOI:** Schickt die Suche das umgebende Rechteck (mehr als 1 000 Positionen), misst die Plattform das echte Polygon aus dem Body (`earthx:aoi`, höchstens 20 000 Positionen). Vereinfachen ist bis dahin nicht nötig (gemessen höchstens 50 ms je Maske). Eine Punkt-AOI sperrt den Filter.
+14. **Schnitt:** DS-03a1 (Registry, Zählung in `access`, `gateway.ReadSlots`, Cache-Schlüssel), DS-03a2 (Filter in der Suche) in neuer Session, DS-03b (Frontend) nach DS-02c.
 
 **Folgen:**
 - Die Reservierung `earthx:` (§2.7) wird für `earthx:aoi_cloud_cover` eingelöst; andere `earthx:`-Eigenschaften bleiben `400`.
