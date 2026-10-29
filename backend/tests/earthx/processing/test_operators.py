@@ -29,6 +29,7 @@ class TestRegistry:
             ("normalize", 1),
             ("reproject", 2),
             ("reproject", 3),
+            ("reproject", 4),
         }
 
     def test_adding_operators_leaves_the_original_alone(self) -> None:
@@ -38,6 +39,7 @@ class TestRegistry:
             ("normalize", 1),
             ("reproject", 2),
             ("reproject", 3),
+            ("reproject", 4),
             ("scale", 1),
             ("coarsen", 1),
         }

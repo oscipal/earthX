@@ -44,13 +44,16 @@ GROWTH_LIMIT_MB = 200
 SMALL, LARGE = 2048, 8192
 
 
-def build_scene(path: Path, size: int) -> Path:
-    """§17.2 at ``size``², written row strip by row strip so the test process stays small too."""
+def build_scene(path: Path, size: int, bands: int = 2) -> Path:
+    """§17.2 at ``size``², written row strip by row strip so the test process stays small too.
+
+    More than two bands (NM4-43b) repeat red and near infrared, each a little brighter than the one two before.
+    """
     generator = numpy.random.default_rng(seed=20261006)
     profile = {
         "driver": "GTiff",
         "dtype": "uint16",
-        "count": 2,
+        "count": bands,
         "width": size,
         "height": size,
         "crs": sources.CRS,
@@ -71,11 +74,14 @@ def build_scene(path: Path, size: int) -> Path:
             nir = (
                 3400 + 900 * numpy.sin(rows / 1300) + 500 * numpy.cos(cols / 500) + generator.normal(0, 90, (512, size))
             )
-            block = numpy.stack([red, nir]).clip(1, 60000).astype("uint16")
+            fields = [red, nir]
+            for index in range(2, bands):
+                fields.append(fields[index - 2] * 1.05)
+            block = numpy.stack(fields).clip(1, 60000).astype("uint16")
             block[:, :, size // 2 : size // 2 + 40] = 0
             destination.write(block, window=Window(0, row, size, 512))
-        destination.scales = (sources.SCALE, sources.SCALE)
-        destination.offsets = (sources.OFFSET, sources.OFFSET)
+        destination.scales = (sources.SCALE,) * bands
+        destination.offsets = (sources.OFFSET,) * bands
     cog_profile = cog_profiles.get("deflate")
     cog_profile.update({"blockxsize": 512, "blockysize": 512})
     cog_translate(plain, path, cog_profile, overview_resampling="average", quiet=True)

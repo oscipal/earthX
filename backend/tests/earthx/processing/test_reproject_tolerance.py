@@ -191,19 +191,19 @@ def _params(method: str, crs: str, resolution: float) -> ReprojectParams:
     return ReprojectParams(crs=crs, resolution=resolution, resampling=method)
 
 
-def _blockwise(source, target: RasterMeta, params: ReprojectParams) -> numpy.ndarray:
+def _blockwise(source, target: RasterMeta, params: ReprojectParams, band: int = 0) -> numpy.ndarray:
     out = numpy.full((target.height, target.width), numpy.nan)
     for window in _blocks(target.width, target.height):
         block = REPROJECT.run(source, target, window, params)
         rows, cols = window.toslices()
-        out[rows, cols] = block.filled(numpy.nan)[0]
+        out[rows, cols] = block.filled(numpy.nan)[band]
     return out
 
 
-def _whole(source, target: RasterMeta, method: str) -> numpy.ndarray:
+def _whole(source, target: RasterMeta, method: str, band: int = 0) -> numpy.ndarray:
     out = numpy.full((target.height, target.width), numpy.nan)
     warp_reproject(
-        source.read(1),
+        source.read(band + 1),
         out,
         src_transform=source.transform,
         src_crs=source.crs,
@@ -258,3 +258,31 @@ def test_a_row_made_too_tight_fails(files: dict[tuple[str, str], Path], method: 
     measured = measure(files, method, dataset, case)
     with pytest.raises(AssertionError):
         row(method, dataset, case).tightened(measured).check(measured)
+
+
+def test_every_band_of_a_multi_band_file_stays_inside_the_row(files: dict[tuple[str, str], Path], tmp_path: Path) -> None:
+    """Version 4 warps each band for itself; each stays within the row of its single-band run (NM4-43b)."""
+    crs, resolution = GRIDS["ndvi"]["same"]
+    params = _params("bilinear", crs, resolution)
+    with rasterio.open(files["ndvi", "same"]) as single:
+        data = single.read(1)
+        profile = {**single.profile, "count": 4}
+    path = tmp_path / "ndvi-four-bands.tif"
+    with rasterio.open(path, "w", **profile) as destination:
+        for band in range(4):
+            destination.write(data + band * 0.01, band + 1)
+    with rasterio.open(path) as source:
+        bands = tuple(BandMeta(f"b{index}", "float64", math.nan) for index in range(4))
+        target = REPROJECT.transform(
+            RasterMeta(source.crs.to_string(), source.transform, source.width, source.height, bands), params
+        )
+        assert target.width > BLOCK_SIZE or target.height > BLOCK_SIZE
+        for band in range(4):
+            block = _blockwise(source, target, params, band).astype("float32").astype("float64")
+            whole = _whole(source, target, "bilinear", band).astype("float32").astype("float64")
+            both = ~numpy.isnan(block) & ~numpy.isnan(whole)
+            difference = numpy.abs(block - whole)[both]
+            measured = Measured(
+                float((difference == 0).mean()), float(numpy.percentile(difference, 99)), float(difference.max())
+            )
+            row("bilinear", "ndvi", "same").check(measured)
