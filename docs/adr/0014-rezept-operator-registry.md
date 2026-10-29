@@ -2655,8 +2655,13 @@ macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser N
   Spitze `cog_translate` gegen COG-Treiber 262 / 306 MB (2048²), 288 / 347 MB (4096²), 301 / 395 MB (8192²), also 44, 59 und 94 MB mehr; im Kern
   stieg dadurch das Wachstum des Speichers von 2048² auf 4096² von 59 auf 132 MB (Grenze der Tests 120 MB) und brach `test_memory_reproject.py` und
   `test_memory_mosaic.py`. Die Eigenschaft „der Speicher folgt dem Block, nicht der Szene“ (M4-07a F11) hat Vorrang; deshalb bleibt es bei
-  `cog_translate`. **Das ist ein Vorschlag, bis Otto antwortet:** Die Einheit in der Datei ist eine offene Frage an ihn (PR-Text); bis dahin gilt `adr/0020` §8
-  für die Einheit in der Datei als nicht umgesetzt.
+  `cog_translate`. **Entschieden (Otto, 29.10.2026, Option 1):** Die Einheit steht nur in den STAC-Eigenschaften und in `recipe.json`. Otto verlangte vorher zu prüfen, ob
+  `cog_translate` die Einheit übernimmt, wenn sie in der Quelldatei gesetzt ist. Gemessen (rasterio 1.5, GDAL 3.12.2, `forward_band_tags=True` wie im Kern): Die
+  **Banddeskription** und **Band-Tags** gehen durch (`update_tags(i, unit="m")` steht in der COG), die **Einheit** (`set_band_unit`, GDALs Feld `unittype`) nicht
+  (`units == (None, None)` in der COG, obwohl die Quelle `("m", "m")` hatte). Ein Tag mit dem Namen `UNITTYPE` wird zu einem gewöhnlichen Tag und nicht zur Einheit.
+  Die Einheit der fertigen COG nachträglich zu setzen geht nicht: GDAL öffnet eine COG nicht zum Ändern („Updating it will generally result in losing part of the
+  optimizations“). Damit bliebe nur ein eigener Tag, den kein Programm als Einheit liest; das ist kein Ersatz für `adr/0020` §8 und wird nicht umgesetzt. Die
+  Abweichung von `adr/0020` §8 gilt damit: Die Einheit der Bänder steht in den STAC-Eigenschaften, nicht in der Datei.
 - **Das Kennzeichen `earthx:resampled` (Backlog 51, Otto).** Es sagt nur, wo **Werte** auf ein anderes Raster gebracht wurden. Jedes Band trägt es
   (`BandMeta.resampled`: seine Quelle liegt nicht auf dem Raster des feinsten Assets oder warpt ihre Szenen; `reproject` setzt es für alle Bänder;
   `band_math` erbt es von den Bändern, die der Ausdruck nennt). Das Ergebnis ist markiert, wenn **ein Band, das in ihm steht**, es trägt. Eine Schicht,
