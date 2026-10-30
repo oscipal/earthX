@@ -1731,13 +1731,6 @@ input[type='date']:focus {
   color: var(--muted);
   cursor: not-allowed;
 }
-.lm-btn.has-tip {
-  position: relative;
-}
-.lm-btn.has-tip::after {
-  top: calc(100% + 4px);
-  right: 0;
-}
 .lm-eye {
   display: inline-flex;
   align-items: center;
@@ -1868,15 +1861,13 @@ input[type='date']:focus {
   line-height: 16px;
   text-align: center;
 }
-/* A tooltip that shows on hover and on keyboard focus (UI-01 §4): `data-tip` is its text. */
-.has-tip::after,
-.tip::after {
-  content: attr(data-tip);
-  position: absolute;
-  z-index: 30;
-  display: none;
+/* The tooltip (UI-01 §4): `TipLayer` draws the `data-tip` text of the element under the pointer or focus in
+   `body`, above everything else and inside the window. */
+.tip-layer {
+  position: fixed;
+  z-index: 1000;
   width: max-content;
-  max-width: 260px;
+  max-width: min(260px, calc(100vw - 16px));
   padding: 5px 8px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
@@ -1890,20 +1881,7 @@ input[type='date']:focus {
   text-align: left;
   pointer-events: none;
 }
-.has-tip:hover::after,
-.has-tip:focus-visible::after,
-.tip:hover::after,
-.tip:focus-visible::after {
-  display: block;
-}
-.rail-btn::after {
-  top: 50%;
-  left: calc(100% + 8px);
-  transform: translateY(-50%);
-  white-space: nowrap;
-}
 .tip {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1918,10 +1896,6 @@ input[type='date']:focus {
 .tip:focus-visible {
   outline: 1px solid var(--accent);
   border-radius: 4px;
-}
-.tip::after {
-  top: calc(100% + 4px);
-  right: 0;
 }
 /* Beside the rail, from the top to the foot of the window; the panel inside fills it. */
 .dock {
@@ -2111,15 +2085,6 @@ a.pm-icon:hover {
 .ghost-btn[aria-disabled='true'] {
   color: var(--muted);
   cursor: not-allowed;
-}
-.pm-icon.has-tip,
-.ghost-btn.has-tip {
-  position: relative;
-}
-.pm-icon.has-tip::after,
-.ghost-btn.has-tip::after {
-  top: calc(100% + 4px);
-  right: 0;
 }
 .pm-icon[aria-disabled='true']:hover,
 .pm-icon[aria-disabled='true']:focus-visible {
