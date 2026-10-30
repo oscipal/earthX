@@ -1,5 +1,5 @@
 // Playing the timeline (NM4-18), in a real browser with made-up tiles of the tiler that are slow on purpose:
-//   0. (hidden) "Hide results" while it plays ends the playing.
+//   0. (hidden) "Hide results" while it plays ends the playing; "Play" shows the results again; a click on a scene ends it.
 //   1. Every step takes 0.8 s to load: the map changes to the next step only once its tiles are in, never shows the basemap
 //      between two steps, and the timeline names the step by its date (the key of the group goes on with a scene).
 //   2. One step takes 3 s: the picture before it stays until it is there, the slider says "Loading…".
@@ -206,6 +206,16 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
     await page.waitForTimeout(2500);
     if ((await page.locator('.time-count').innerText()) !== after) problems.push('the timeline moved on after "Hide results"');
     if (notice) problems.push(`a notice with the results off the map: ${notice}`);
+    // "Play" with the results hidden shows them and plays; a click on a scene on the map ends the playing (Otto).
+    await page.locator('.play-btn').dispatchEvent('click');
+    const state = () => page.evaluate(async () => { const s = (await import('/src/store.ts')).useAppStore.getState(); return { playing: s.playing, onMap: s.resultsOnMap, ticked: s.selectedIds.length }; });
+    const started = await state();
+    if (!started.playing || !started.onMap) problems.push(`"Play" with the results hidden: ${JSON.stringify(started)}`);
+    await page.waitForTimeout(300);
+    await page.mouse.click(x, y);
+    await page.waitForTimeout(300);
+    const clicked = await state();
+    if (clicked.playing || clicked.ticked === 0) problems.push(`a click on a scene while it plays: ${JSON.stringify(clicked)}`);
     console.log(`     ${name}: counts ${[...counts].join(' ')}`);
     await context.close();
     return { name, problems };

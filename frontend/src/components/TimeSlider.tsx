@@ -9,6 +9,8 @@ export default function TimeSlider() {
   const setActiveGroupIndex = useAppStore((s) => s.setActiveGroupIndex);
   const playing = useAppStore((s) => s.playing);
   const setPlaying = useAppStore((s) => s.setPlaying);
+  const resultsOnMap = useAppStore((s) => s.resultsOnMap);
+  const toggleResultsOnMap = useAppStore((s) => s.toggleResultsOnMap);
   const shownGroupIndex = useAppStore((s) => s.shownGroupIndex);
   const revealNotBefore = useAppStore((s) => s.revealNotBefore);
   // The step asked for is not on the map yet; it is late once the picture there has had its time and a little more.
@@ -49,7 +51,11 @@ export default function TimeSlider() {
       <button
         type="button"
         className="play-btn"
-        onClick={() => setPlaying(!playing)}
+        onClick={() => {
+          // Playing shows the steps on the map: with the results hidden, "Play" shows them again (Otto, 30.10.2026).
+          if (!playing && !resultsOnMap) toggleResultsOnMap();
+          setPlaying(!playing);
+        }}
         aria-label={playing ? 'Pause' : 'Play'}
         disabled={groups.length < 2}
       >

@@ -8,6 +8,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { STEP_DWELL_MS, STEP_LATE_AFTER_MS } from '../playback';
+import CSS from '../index.css?raw';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import TimeSlider from './TimeSlider';
@@ -125,5 +126,63 @@ describe('the labels of the time slider', () => {
     expect(useAppStore.getState().playing).toBe(false);
     expect(labels()[1]).toBe('2026-07-24');
     expect(container.querySelector('.time-count')?.textContent).toBe('2/3');
+  });
+});
+
+// The bands are placed by the browser: what the CSS promises is read off the file, and `Draggable` marks each band.
+describe('the bands at the bottom of the map', () => {
+  it('lay the bar of the selection over the timeline, also where a moved timeline stays over the place of the bar', () => {
+    const start = CSS.indexOf(".draggable[data-band='selection'] {");
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(CSS.slice(start, CSS.indexOf('}', start))).toContain('z-index: 1');
+    expect(CSS).not.toMatch(/\.draggable\[data-band='timeline'\] \{[^}]*z-index/);
+  });
+});
+
+// NM4-18 (Otto, 30.10.2026): "Play" shows the results that are hidden, and a click on a scene ends the playing.
+describe('playing and the results on the map', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useAppStore.setState({
+      groups: [
+        { key: ['2026-07-25'], label: '2026-07-25', items: [item('a')] },
+        { key: ['2026-07-24'], label: '2026-07-24', items: [item('b')] },
+      ],
+      activeGroupIndex: 1,
+      expandedGroupIndex: 1,
+      selectedIds: [],
+      resultsOnMap: false,
+    });
+    act(() => root.render(<TimeSlider />));
+  });
+  afterEach(() => {
+    act(() => useAppStore.setState({ playing: false, resultsOnMap: true }));
+    vi.useRealTimers();
+  });
+  const play = () => container.querySelector<HTMLButtonElement>('.play-btn')!;
+
+  it('shows the results that are hidden when "Play" is pressed, and plays', () => {
+    act(() => play().click());
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(useAppStore.getState().playing).toBe(true);
+  });
+
+  it('leaves the results that are shown alone, and does not hide them on "Pause"', () => {
+    act(() => useAppStore.setState({ resultsOnMap: true }));
+    act(() => play().click());
+    act(() => play().click());
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(useAppStore.getState().playing).toBe(false);
+  });
+
+  it('stops when a scene is clicked, in the list or on the map, ticking or unticking', () => {
+    act(() => useAppStore.setState({ resultsOnMap: true }));
+    act(() => play().click());
+    expect(useAppStore.getState().playing).toBe(true);
+    act(() => useAppStore.getState().toggleSelected('a'));
+    expect(useAppStore.getState().playing).toBe(false);
+    act(() => play().click());
+    act(() => useAppStore.getState().toggleSelected('a'));
+    expect(useAppStore.getState().playing).toBe(false);
   });
 });

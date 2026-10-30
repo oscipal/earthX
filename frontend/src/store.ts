@@ -1920,7 +1920,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (idx >= 0) set({ activeGroupIndex: idx, expandedGroupIndex: idx });
   },
   toggleSelected: (id) =>
-    set((s) => ticking(s, s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id])),
+    // A click on a scene, in the list or on the map, ends the playing of the timeline (NM4-18, Otto, 30.10.2026).
+    set((s) => ({ ...ticking(s, s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id]), playing: false })),
   selectAllInActiveGroup: () =>
     set((s) => {
       const group = s.groups[s.activeGroupIndex];

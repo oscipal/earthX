@@ -135,6 +135,11 @@ body.dragging * {
 .draggable.fill {
   width: 100%;
 }
+/* The bar of the selection lies over the other bands where they meet: a band that was moved stays where it was put, and
+   the bar that comes with a ticked scene takes the place at the bottom of the stack, over it, not behind it. */
+.draggable[data-band='selection'] {
+  z-index: 1;
+}
 /* The labels of the timeline do not wrap: its band stays within the stack, and they give way inside it. */
 .draggable[data-band='timeline'] {
   max-width: 100%;
