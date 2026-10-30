@@ -140,9 +140,11 @@ function Get-Features {
 function Get-Coverage {
     # `total_count` of the coverage of the box and month, with the filter as the text of `query` or without.
     param([string]$Query)
-    $uri = "$ApiUrl/coverage/$Dataset" + "?zoom=4&bbox=$BoxText&datetime=" + [uri]::EscapeDataString($Period)
-    if ($Query) { $uri = $uri + '&query=' + [uri]::EscapeDataString($Query) }
-    $answer = Invoke-Http -Uri $uri
+    # An area is asked by POST and stands in the body only (NM4-57); the filter is an object there.
+    $body = '{"zoom": 4, "bbox": ' + $Box + ', "datetime": "' + $Period + '"'
+    if ($Query) { $body = $body + ', "query": ' + $Query }
+    $body = $body + '}'
+    $answer = Invoke-Http -Method 'POST' -Uri "$ApiUrl/coverage/$Dataset" -Body $body
     $parsed = ConvertFrom-JsonSafe $answer.Content
     if ($null -eq $parsed -or $null -eq $parsed.total_count) { return -1 }
     return [int]$parsed.total_count

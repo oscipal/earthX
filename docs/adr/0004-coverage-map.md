@@ -218,6 +218,20 @@ ohne AOI den sichtbaren Kartenausschnitt als räumlichen Filter mit; der
 z6-Deckel oben gilt seither nur noch für Anfragen ganz ohne Bounding Box.
 Originaltext oben unverändert.
 
+**Nachtrag NM4-57 (30.10.2026, Otto, M4 Q8):** Eine AOI steht in keiner URL. `GET /coverage/{id}`
+trug seit M3-19 deren Umriss als `bbox` und damit in Zugriffsprotokollen und Browserverläufen. Seither:
+(1) Die Coverage mit AOI ist `POST /coverage/{id}` mit der AOI (`bbox`) im Body; `zoom`, `datetime` und
+`query` (als Objekt) stehen daneben, die Prüfung ist dieselbe. (2) Das `GET` ist für den sichtbaren
+Kartenausschnitt, der keine AOI ist: Seine Kanten liegen auf dem Blockraster der Stufe `zoom − 3`, auf das
+die Oberfläche ihn rundet (`roundBboxToGrid`, Blöcke von 8 × 8 Zellen, M3-19); eine Box abseits davon und jedes
+`intersects` im GET sind `400` mit dem Hinweis auf `POST`. Eine von Hand gezeichnete Box liegt auf diesem
+Raster nur zufällig (etwa eins zu einer Million je Kante). (3) Zugriffsprotokoll, Logzeilen und Cache-Schlüssel
+tragen schon vorher keine Koordinate (Hash, siehe oben); Einträge mit AOI leben höchstens einen Tag (Gebiet
+des DEM: fünf Minuten), belegt im Test. (4) Offen und nicht lösbar: Die Anfrage an die Quelle
+(`GET /aggregate?intersects=…`, §3.4) trägt die AOI in der URL, weil die Quelle nur `GET` kennt. Sie steht
+in keinem unserer Protokolle (das Gateway loggt einen Hash der Query, `httpx` ist auf `WARNING`), aber bei
+der Quelle. Originaltext oben unverändert.
+
 **Falle 2: Eine Aufnahme zählt in genau eine Zelle.** In allen ungekappten
 Messungen ist die Summe der Zählwerte exakt gleich `total_count` — auch bei
 Geohash p12, wo die Zellen zentimetergroß sind und 3848 Aufnahmen auf 2568
