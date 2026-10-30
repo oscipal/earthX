@@ -668,6 +668,19 @@ class TestAnAddressIsNotLogged:
 
         assert hide_addresses(text) == text
 
+    @pytest.mark.parametrize(
+        "text", ["a" * 100_000, "/stac/collections/" + "a" * 100_000, "/vsi" * 25_000, "http" * 25_000]
+    )
+    def test_a_very_long_line_takes_no_time(self, text: str) -> None:
+        """A request path of 64 kB reaches the access log; the search for an address must not read it quadratically."""
+        import time
+
+        from earthx.logging import hide_addresses
+
+        started = time.monotonic()
+        hide_addresses(text)
+        assert time.monotonic() - started < 0.5
+
     def test_a_result_id_stands_in_no_path_either(self) -> None:
         from earthx.logging import hide_addresses
 

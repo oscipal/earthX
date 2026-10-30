@@ -227,10 +227,10 @@ die Oberfläche ihn rundet (`roundBboxToGrid`, Blöcke von 8 × 8 Zellen, M3-19)
 `intersects` im GET sind `400` mit dem Hinweis auf `POST`. Eine von Hand gezeichnete Box liegt auf diesem
 Raster nur zufällig (etwa eins zu einer Million je Kante). (3) Zugriffsprotokoll, Logzeilen und Cache-Schlüssel
 tragen schon vorher keine Koordinate (Hash, siehe oben); Einträge mit AOI leben höchstens einen Tag (Gebiet
-des DEM: fünf Minuten), belegt im Test. (4) Offen und nicht lösbar: Die Anfrage an die Quelle
+des DEM: fünf Minuten), belegt im Test. (4) **Offen, Frage an Otto (kein Beschluss):** Die Anfrage an die Quelle
 (`GET /aggregate?intersects=…`, §3.4) trägt die AOI in der URL, weil die Quelle nur `GET` kennt. Sie steht
 in keinem unserer Protokolle (das Gateway loggt einen Hash der Query, `httpx` ist auf `WARNING`), aber bei
-der Quelle. Originaltext oben unverändert.
+der Quelle. Der Aufruf lässt sich nicht auf `POST` umstellen; zur Wahl stehen, ihn so zu lassen oder den Umriss vorher auf das Dichtegitter zu runden. Originaltext oben unverändert.
 
 **Falle 2: Eine Aufnahme zählt in genau eine Zelle.** In allen ungekappten
 Messungen ist die Summe der Zählwerte exakt gleich `total_count` — auch bei

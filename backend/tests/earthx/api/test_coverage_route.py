@@ -433,10 +433,41 @@ class TestAnAreaIsNotInTheUrl:
         assert len(seen) == 1
 
     @pytest.mark.parametrize(("zoom", "box"), MAP_EXTENTS)
-    def test_the_same_extent_one_cell_off_is_an_area(self, zoom: int, box: list[float]) -> None:
+    def test_the_same_extent_moved_a_little_is_an_area(self, zoom: int, box: list[float]) -> None:
         shifted = [box[0] + 0.001, *box[1:]]
         gateway, seen = answering(ok("aggregate_complete"))
         assert get(client_for(gateway), zoom=zoom, bbox=box_text(shifted)).status_code == 400
+        assert not seen
+
+    @pytest.mark.parametrize("name", ["intersects", "INTERSECTS", "Intersects"])
+    def test_a_get_with_an_outline_is_refused_in_any_case(self, name: str) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = client_for(gateway).get(f"/coverage/{DATASET}", params={"zoom": 5, name: "{}"})
+        assert response.status_code == 400
+        assert not seen
+
+    @pytest.mark.parametrize(
+        "box", [[-180, -89.123456, 180, 89.987654], [-180, -90, 180, 90], [-180, -85.0, 180, 88.0]]
+    )
+    def test_a_get_with_exact_polar_latitudes_is_an_area(self, box: list[float]) -> None:
+        """Only the one row beyond the square that the interface's rounding can reach counts as an extent."""
+        gateway, seen = answering(ok("aggregate_complete"))
+        assert get(client_for(gateway), zoom=5, bbox=box_text(box)).status_code == 400
+        assert not seen
+
+    @pytest.mark.parametrize("digits", [310, 400, 4000])
+    def test_a_number_too_large_for_a_float_is_400_not_500(self, digits: int) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        client = client_for(gateway)
+        big = int("9" * digits)
+        bodies = [
+            {"query": {"eo:cloud_cover": {"lte": big}}},
+            {"intersects": {"type": "Polygon", "coordinates": [[[0, 0], [big, 0], [1, 1], [0, 0]]]}},
+        ]
+        for body in bodies:
+            response = client.post(f"/coverage/{DATASET}", content=json.dumps({"zoom": 5, **body}))
+            assert response.status_code == 400
+        assert get(client, query=json.dumps(bodies[0]["query"])).status_code == 400
         assert not seen
 
     def test_an_extent_is_checked_on_the_grid_of_its_own_level(self) -> None:

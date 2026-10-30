@@ -107,9 +107,12 @@ def new_request_id() -> str:
 # stands: a URL with any scheme, and a GDAL path such as `/vsicurl/…` or `/vsis3/…` (but not `/vsimem/`, a
 # name in memory). The formatter does this for the whole process, not a filter for one logger or thread.
 ADDRESS_PLACEHOLDER = "<address>"
-# The last character of an address is none of the marks that end a sentence or close a quotation.
+# The last character of an address is none of the marks that end a sentence or close a quotation. The scheme is
+# anchored (no letter before it) and short: without that, a long run of letters, such as a request path of 64 kB,
+# is read to its end from every position and takes seconds.
 _ADDRESS = re.compile(
-    r"(?:/vsi(?!mem/)[A-Za-z0-9_]*/|[A-Za-z][A-Za-z0-9+.-]*://)[^\s'\"<>]*[^\s'\"<>.,;:)\]]|/vsi(?!mem/)[A-Za-z0-9_]*/"
+    r"(?:/vsi(?!mem/)[A-Za-z0-9_]*/|(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}://)"
+    r"[^\s'\"<>]*[^\s'\"<>.,;:)\]]|/vsi(?!mem/)[A-Za-z0-9_]*/"
 )
 # What stays after the addresses: a query that stands without its URL, and the `result_id` in a path.
 _SIGNED_QUERY = re.compile(r"((?:X-Amz|X-Goog)-[A-Za-z0-9-]+|sig|access_token)=[A-Za-z0-9%._~+/=-]*")

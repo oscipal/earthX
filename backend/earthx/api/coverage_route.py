@@ -91,7 +91,6 @@ MAX_BODY_BYTES = 1_000_000
 # (`frontend/src/coverage.ts`, ``VIEWPORT_ROUND_LEVELS``), so a small pan asks the same question. That is
 # what makes it recognisable here: an AOI's box lies on no such grid.
 VIEWPORT_ROUND_LEVELS = 3
-_MAX_MERCATOR_LATITUDE = 85.0511287798066
 # In cells of the block grid. The interface writes the edges as shortest round-trip decimals, so the
 # arithmetic below lands within 1e-9 of a whole cell; an arbitrary coordinate does not.
 _GRID_TOLERANCE = 1e-6
@@ -107,6 +106,7 @@ def _area_path(config: Any) -> bool:
     return config.capabilities.single_coverage_product and config.coverage.provider is CoverageProvider.LOCAL_SQL
 
 
+_NUMBER_TOO_LARGE = "a number in the request is too large"
 _AREA_WITH_POST = "an area is sent with POST, in the body; GET takes only the visible map extent"
 
 
@@ -170,7 +170,7 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
     ) -> dict[str, Any]:
         # Not a parameter of the signature on purpose: an unknown one would be dropped without a word, and
         # the answer would be a world overview where an area was asked for.
-        if "intersects" in request.query_params:
+        if any(name.lower() == "intersects" for name in request.query_params):
             raise HTTPException(status_code=400, detail=_AREA_WITH_POST)
         box = _parse_bbox(bbox)
         if box is not None and not is_map_extent(box, zoom):
@@ -234,6 +234,9 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
             read = read_search_conditions(ask.filters, [dataset_id], lambda _: config.search_filters)
         except InvalidFilter as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
+        except OverflowError:
+            # A whole number of more than 300 digits has no float; the parser reads it, the checks cannot.
+            raise HTTPException(status_code=400, detail=_NUMBER_TOO_LARGE) from None
         if read.aoi_cloud_cover:
             # DS-03 plan §6.5 (KE6): the coverage counts at the source, without a raster, so it cannot apply this.
             raise HTTPException(
@@ -252,6 +255,8 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
             )
         except InvalidCoverageQuery as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
+        except OverflowError:
+            raise HTTPException(status_code=400, detail=_NUMBER_TOO_LARGE) from None
 
         # A time window this dataset structurally cannot honour is dropped here, once,
         # for every way — not left to each way to remember on its own (Otto,
@@ -361,9 +366,9 @@ def is_map_extent(bbox: tuple[float, float, float, float], zoom: int) -> bool:
     The interface rounds the extent outward to the block grid of ``zoom - VIEWPORT_ROUND_LEVELS`` before it
     asks (`coverage.ts`, ``roundBboxToGrid``): every edge lies on a cell edge of that level. A box drawn or
     uploaded by a person does not, except by a chance of about one in a million per edge. The arithmetic is
-    the geotile one of :func:`earthx.catalog.coverage.cell_bbox`, run backwards. A latitude past the
-    Web-Mercator square falls on its edge, as it does in the interface (whose world view reaches 87.7° north
-    through a rounding error at the pole): the poles say nothing about where a person looks.
+    the geotile one of :func:`earthx.catalog.coverage.cell_bbox`, run backwards, without clamping a latitude to
+    the Web-Mercator square: the interface's world view reaches 87.7° north through a rounding error at the
+    pole, which lies exactly one row beyond the square (position -1), and any other polar latitude is no row.
     """
     if not all(math.isfinite(value) for value in bbox):
         return False
@@ -376,14 +381,13 @@ def is_map_extent(bbox: tuple[float, float, float, float], zoom: int) -> bool:
         _mercator_fraction(south) * side,
     )
     return all(
-        -_GRID_TOLERANCE <= p <= side + _GRID_TOLERANCE and abs(p - round(p)) <= _GRID_TOLERANCE for p in positions
+        -1 - _GRID_TOLERANCE <= p <= side + 1 + _GRID_TOLERANCE and abs(p - round(p)) <= _GRID_TOLERANCE for p in positions
     )
 
 
 def _mercator_fraction(latitude: float) -> float:
     """How far down the Web-Mercator square a latitude falls: 0 at its north edge, 1 at its south edge."""
-    clamped = max(-_MAX_MERCATOR_LATITUDE, min(_MAX_MERCATOR_LATITUDE, latitude))
-    return (1 - math.asinh(math.tan(math.radians(clamped))) / math.pi) / 2
+    return (1 - math.asinh(math.tan(math.radians(latitude))) / math.pi) / 2
 
 
 def _parse_bbox(value: str | None) -> tuple[float, float, float, float] | None:

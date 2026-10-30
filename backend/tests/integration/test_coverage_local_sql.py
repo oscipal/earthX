@@ -246,6 +246,16 @@ class TestAreaIsTheUnionOfFootprints:
         assert len(polygon.geoms) >= 3  # block, island, ring — at least three parts
 
 
+class TestTheMapExtentByGet:
+    def test_a_box_on_the_grid_of_the_map_is_answered_by_get(self, app_client: Any) -> None:
+        """The way the interface asks without an area (NM4-57): the whole world, on the block grid of level 2."""
+        world = "-180,-85.0511287798066,180,85.0511287798066"
+        response = app_client.get(f"/coverage/{DATASET_ID}", params={"zoom": 5, "bbox": world})
+
+        assert response.status_code == 200, response.text
+        assert _multipolygon_area(response.json()["area"]) == pytest.approx(4 + 1 + 8 + 2)
+
+
 class TestSpatialCrop:
     def test_a_bbox_over_half_the_block_returns_exactly_that_half(self, app_client: Any) -> None:
         response = ask(app_client, bbox="0,0,1,2")  # the western half of the 2x2 block
