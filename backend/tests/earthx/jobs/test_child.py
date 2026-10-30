@@ -24,7 +24,8 @@ import earthx.jobs as jobs_package
 from earthx.jobs import child
 from earthx.jobs.child import high_water_mb
 from earthx.processing.operators import REGISTRY
-from earthx.processing.recipe import job_recipe_document, parse_recipe
+from earthx.processing.recipe import job_recipe_document
+from earthx.processing.upgrade import recipe_of_any_version
 from tests.earthx.jobs import child_targets
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import CROP, resolved
@@ -155,7 +156,7 @@ class TestTheReportOfADoneRun:
             )
             sent: list[Any] = []
             conn = SimpleNamespace(send=sent.append, poll=lambda: False, close=lambda: None)
-            monkeypatch.setattr(child, "parse_recipe", lambda raw, registry: SimpleNamespace(output=None))
+            monkeypatch.setattr(child, "recipe_of_any_version", lambda raw, registry: SimpleNamespace(output=None))
             monkeypatch.setattr(child, "run", lambda recipe, _result=result, **_: _result)
             monkeypatch.setattr(child, "worker_environment", nullcontext)
             child._run(tmp_path, conn)
@@ -286,7 +287,7 @@ class TestARealExport:
             assert archive.read("ATTRIBUTION.txt") == b"Synthetic\n"
             assert json.loads(archive.read("recipe.json"))["recipe_id"] == "E" * 22
             in_zip = archive.read("recipe.json")
-        body = parse_recipe((workdir / "recipe.json").read_bytes(), REGISTRY).model_dump(mode="json")
+        body = recipe_of_any_version((workdir / "recipe.json").read_bytes(), REGISTRY).model_dump(mode="json")
         served = job_recipe_document(
             body,
             attribution=done["attribution"],

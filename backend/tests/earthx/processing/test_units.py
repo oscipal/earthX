@@ -21,10 +21,9 @@ from earthx.processing.operators.band_math import BAND_MATH, BandMathParams
 from earthx.processing.operators.mask import MaskParams
 from earthx.processing.operators.normalize import NormalizeParams
 from earthx.processing.plan import _input_meta
-from earthx.processing.recipe import recipe_from_data
 from earthx.processing.source import expected_band_names, units_of
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import recipe_data, resolved
+from tests.earthx.processing.recipes import recipe_data, recipe_of_data, resolved
 from tests.earthx.processing.test_reproject import _params
 from tests.earthx.processing.testops import OPERATORS
 
@@ -51,7 +50,7 @@ def _recipe(entries: list[dict], steps: list[dict]) -> dict:
 
 
 def _run(data: dict, workdir: Path):
-    return run(recipe_from_data(data, REGISTRY), workdir=workdir, progress=lambda done, total: None, operators=REGISTRY)
+    return run(recipe_of_data(data, REGISTRY), workdir=workdir, progress=lambda done, total: None, operators=REGISTRY)
 
 
 @pytest.fixture(scope="module")
@@ -119,7 +118,11 @@ class TestTheResult:
     def test_a_band_count_that_differs_from_the_file_is_not_believed(self, tmp_path: Path) -> None:
         entry = _unit(_entry("plain", scale=None, offset=None), "m")
         entry["bands"] = entry["bands"] * 2
-        result = _run(_recipe([entry], []), tmp_path)
+        data = _recipe([entry], [])
+        # The item names two bands, the file has one: a recipe of version 1 is rewritten with the names of the
+        # item, so the output of version 2 names the band the file really has.
+        data["recipe_version"], data["output"]["bands"] = 2, ["plain"]
+        result = _run(data, tmp_path)
         assert "unit" not in result.properties["bands"][0]
 
     def test_a_unit_changes_nothing_in_the_pixels_or_their_statistics(self, tmp_path: Path) -> None:
@@ -183,30 +186,30 @@ def _undescribed() -> dict:
 
 class TestUnitsOf:
     def test_one_per_band_as_the_recipe_has_them(self) -> None:
-        entry = recipe_from_data(recipe_data(), OPERATORS).inputs[0].resolved[0]
+        entry = recipe_of_data(recipe_data(), OPERATORS).inputs[0].resolved[0]
         assert units_of(entry, 1) == [None]
         data = recipe_data()
         data["inputs"][0]["resolved"][0]["bands"][0]["unit"] = "1"
-        assert units_of(recipe_from_data(data, OPERATORS).inputs[0].resolved[0], 1) == ["1"]
+        assert units_of(recipe_of_data(data, OPERATORS).inputs[0].resolved[0], 1) == ["1"]
 
     def test_the_unit_of_the_input_is_for_every_band_of_an_asset_without_a_description(self) -> None:
-        entry = recipe_from_data(_undescribed(), OPERATORS).inputs[0].resolved[0]
+        entry = recipe_of_data(_undescribed(), OPERATORS).inputs[0].resolved[0]
         assert units_of(entry, 3) == ["m", "m", "m"]
 
     def test_a_description_of_another_length_than_the_file_is_not_believed(self) -> None:
         data = recipe_data()
         data["inputs"][0]["resolved"][0]["bands"][0]["unit"] = "1"
-        assert units_of(recipe_from_data(data, OPERATORS).inputs[0].resolved[0], 3) == [None, None, None]
+        assert units_of(recipe_of_data(data, OPERATORS).inputs[0].resolved[0], 3) == [None, None, None]
 
     def test_a_unit_on_the_input_does_not_count_as_a_band(self) -> None:
-        assert expected_band_names(recipe_from_data(_undescribed(), OPERATORS).inputs[0].resolved[0]) is None
+        assert expected_band_names(recipe_of_data(_undescribed(), OPERATORS).inputs[0].resolved[0]) is None
 
 
 class TestThePlan:
     def test_the_bands_a_check_looks_at_carry_the_units(self) -> None:
         data = recipe_data()
         data["inputs"][0]["resolved"][0]["bands"][0]["unit"] = "1"
-        meta = _input_meta(recipe_from_data(data, OPERATORS), names_known=False, sized=False)
+        meta = _input_meta(recipe_of_data(data, OPERATORS), names_known=False, sized=False)
         assert meta is not None
         assert [band.unit for band in meta.bands] == ["1", None]
 

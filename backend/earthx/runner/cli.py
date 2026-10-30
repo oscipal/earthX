@@ -117,6 +117,8 @@ def _checked(path: Path, registry: DatasetRegistry) -> tuple[RecipeFile, tuple[s
         _say(f"recipe refused: {error}")
         return EXIT_HOST
     _compare_engine(loaded)
+    for note in loaded.notes:
+        _say(note)
     return loaded, hosts
 
 
@@ -176,6 +178,7 @@ def _run(loaded: RecipeFile, out: Path) -> int:
             started=started,
             finished=datetime.now(UTC),
             dataset=_facts_of(loaded.recipe.inputs[0].dataset),
+            notes=loaded.notes,
         )
     except Exception as error:  # noqa: BLE001 - the runner's edge: every failure is named by its kind only
         folder.remove_workdir()

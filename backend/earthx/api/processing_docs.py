@@ -203,15 +203,19 @@ def _jobs_of(operators: OperatorRegistry, config: DatasetConfig | None) -> list[
     """The operators a job can run: in tier T2, and for ``config`` those it is applicable to.
 
     Only the highest version of each operator is listed; an older one the registry still
-    holds is accepted in a recipe but not offered (M4-24, Otto 20.10.2026).
+    holds is accepted in a recipe but not offered (M4-24, Otto 20.10.2026). A version the operator marks as not
+    listed is left out of that count: version 2 of ``band_math``, ``mask`` and ``normalize`` is accepted, and
+    offered once the panel sends it (NM4-43e, adr/0020 §13).
     """
     latest: dict[str, int] = {}
-    for op, version in operators:
-        latest[op] = max(version, latest.get(op, version))
+    for (op, version), operator in operators.items():
+        if operator.listed:
+            latest[op] = max(version, latest.get(op, version))
     chosen = [
         operator
         for _, operator in sorted(operators.items())
-        if operator.op_version == latest[operator.op]
+        if operator.listed
+        and operator.op_version == latest[operator.op]
         and Tier.T2 in operator.tiers
         and (config is None or not applicable(operator, config))
     ]
@@ -296,11 +300,23 @@ def order_schema(operators: OperatorRegistry, config: DatasetConfig | None = Non
     schema["properties"]["inputs"]["maxItems"] = 1
     entry = defs.get("InputRequest")
     if entry is not None:
-        entry["properties"]["assets"]["maxItems"] = MAX_ORDER_ASSETS
+        # An order of version 2 for a raster names no assets (`output.bands` and the steps say which are read); the
+        # property stays as the array of version 1, which `api` still takes and rewrites (adr/0020 §11).
+        assets = entry["properties"]["assets"] = {
+            "title": "Assets",
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "maxLength": 256},
+            "minItems": 1,
+            "maxItems": MAX_ORDER_ASSETS,
+            "description": (
+                "Recipe version 1 only. Version 2 names the bands in output.bands, "
+                "and the platform reads the assets they need."
+            ),
+        }
         if config is not None:
             entry["properties"]["dataset"] = {"const": config.dataset_id, "title": "Dataset"}
             # A Zarr asset is addressed per variable, `<asset><separator><variable>`; the panel
             # needs the separator to name the bands (M4-13 F9). Absent where there is none.
             if config.zarr is not None and config.zarr.variable_separator is not None:
-                entry["properties"]["assets"]["x-earthx-variable-separator"] = config.zarr.variable_separator
+                assets["x-earthx-variable-separator"] = config.zarr.variable_separator
     return {"$schema": JSON_SCHEMA_DIALECT, **schema}

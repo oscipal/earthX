@@ -2518,6 +2518,73 @@ der Kern aber alle Assets auf das **feinste** Raster liest (`processing/source.p
 - **Tests:** `test_plan.py` (`TestTheRasterIsTheFinestAsset`), `test_estimate_geographic.py` (zwei Pixelgrößen in Grad) und
   `test_band_math_run.py` (`TestNestedGrids`: die Schätzung gegen den Lauf auf zwei Pixelgrößen).
 
+## 15 Nachtrag NM4-43b (2026-10-28): `reproject` Version 4, je Band ein Warp (zu §3.4, §6.3, §15j)
+
+`adr/0020` §3.4 hat gemessen, dass der Wert eines Bandes nach `reproject` an der Zahl der Bänder der Zwischendatei hing. Der
+Originaltext von §3.4 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Was falsch war:** `reproject` warpte je Block alle Bänder der Zwischendatei in einem `WarpedVRT`. GDAL teilt den Warp nach
+  `warp_mem_limit` (64 MB) auf, und diese Teilung hängt an der Zahl der Bänder. Band 1 ist bei 1, 2 und 3 Bändern bitgleich;
+  ab 4 Bändern weichen 4 136 158 von 4 303 544 Pixeln ab (größte Abweichung 0,0077 bei Werten bis 0,5), zwölf Randpixel wechseln
+  zwischen gültig und NaN; 4, 18 und 34 Bänder ergeben dieselben Werte (`scripts/nm4-43-bands/warp_bands.py --op-version 3`, die Zahlen
+  aus `adr/0020` §3.4 stimmen). Mit dem Streichen ungenutzter Bänder (NM4-43c) hinge der Wert eines Bandes an dem, was die Ausgabe sonst enthält.
+- **Was jetzt gilt:** `reproject` Version 4 hat dieselben Parameter (`crs`, `resolution`, `resampling`, `align`) und denselben festen Plan
+  (Blöcke 1024 px, `tolerance` 0,125, `warp_mem_limit` 64 MB). Jedes Band bekommt einen **eigenen Warp**; der Wert eines Bandes hängt nur
+  noch an ihm selbst. Eine Zwischendatei mit einem Band wird wie bei Version 3 direkt gewarpt, bei mehreren Bändern liest der Operator
+  jedes Band durch eine Einband-Sicht (`workfile.open_workfile_band`: ein VRT-Dokument, das als Text an `rasterio.open` geht, nichts
+  wird geschrieben). Sie liegt in `workfile.py`, der einen Stelle, an der `processing` Dateien öffnet (`test_no_direct_open.py`), und
+  nimmt nur eine geöffnete Arbeitsdatei: ein Name, der keine Arbeitsdatei sein kann, oder ein Symlink wird mit `WorkfileRejected` abgewiesen.
+- **Version 3 bleibt angenommen** und rechnet wie bisher (alle Bänder in einem Warp, gleiche Bytes), wird aber nicht mehr gelistet,
+  wie Version 2 (`REPROJECT_V3` in `operators/reproject.py`; die Prozessbeschreibung listet nur die höchste Version). Das Panel nimmt
+  die gelistete Version aus der Prozessbeschreibung; ein Rezept mit Version 2 oder 3 wird dort als Version 4 gelesen (Hinweis „taken as version 4“).
+- **Bitgleichheit:** Für 1 bis 3 Bänder gibt Version 4 dieselben Bytes wie Version 3 (bestehende Einband- und Dreibandaufträge ändern
+  sich nicht); ab 4 Bändern ändern sich die Werte der Bänder 1 und folgende gegenüber Version 3. `earthx.__version__` 0.4.3 → 0.4.4
+  (`adr/0016` §9); der Cache-Schlüssel ändert sich über `op_version`. Der Methodentext bleibt.
+- **Toleranz (§6.3, §15j):** Für jedes Band einer Datei mit mehreren Bändern gilt dieselbe Zeile wie im Einbandlauf
+  (`test_reproject_tolerance.py`); die Maske (NaN) ist je Band dieselbe wie im Einbandlauf.
+- **Messung** (`scripts/nm4-43-bands/warp_bands.py --measure --op-version 3|4 [--interleave band]`, synthetisch, `bilinear`, Zwischendatei
+  mit dem Profil des Kerns: 1024-px-Kacheln, deflate, `float64`, `GDAL_CACHEMAX` 64 MB, Spitze `VmHWM` des Warp-Prozesses; Sitzung, 4 Kerne; Version 4 mit einem Band wie Version 3):
+
+  | Bänder | Version 3, Pixel-Interleave (heute) | Version 4, Pixel-Interleave | Version 3, Band-Interleave | Version 4, Band-Interleave |
+  |---|---|---|---|---|
+  | 1 | 2,4 s, 325 MB | 3,1 s, 325 MB | 2,5 s, 325 MB | 2,5 s, 325 MB |
+  | 4 | 40,0 s, 433 MB | 56,2 s, 435 MB | 34,9 s, 378 MB | 20,4 s, 319 MB |
+  | 17 | 336,7 s, 865 MB | 874,9 s, 838 MB | 281,8 s, 608 MB | 97,7 s, 541 MB |
+
+  4096² Quellpixel, 25 Blöcke des Ziels; Sekunden und Spitze des Warp-Durchgangs, die Datei wird in einem eigenen Prozess geschrieben.
+  Gleiche Reihe bei 2048² (Spitze mit dem Schreiben der Datei im selben Prozess, daher höher): Version 3 0,6 / 7,8 / 72 s, Version 4
+  1,2 / 17 / 252 s bei 1 / 4 / 17 Bändern; mit Band-Interleave Version 3 6,5 / 68 s, Version 4 5,0 / 23 s bei 4 / 17 Bändern. Die
+  1-Band-Zeile von Version 4 (3,1 gegen 2,4 s) liegt im Rauschen der Sitzung: Der Operator warpt eine Datei mit einem Band direkt.
+
+  Im Gesamtlauf des Kerns mit Pixel-Interleave (`memory_run.py`, zwei Durchgänge, Szene als COG): 4 Bänder bei 4096² 522 MB (Version 3) gegen 521 MB
+  (Version 4), 73 s gegen 75 s; 17 Bänder bei 2048² 1051 MB und 145 s (Version 3) gegen 981 MB und 216 s (Version 4).
+- **Befund zum Aufwand:** Mit GDALs Layout der Zwischendateien (Pixel-Interleave) braucht Version 4 gleich viel Speicher (bei 17 Bändern etwas
+  weniger), bei einem Band gleich lang, bei mehreren Bändern länger: im Warp-Durchgang das 1,4-fache bei 4 und das 2,6-fache bei 17 Bändern, im
+  Gesamtlauf das 1,0- und das 1,5-fache. Ein Band aus einer Pixel-Interleave-Kachel zu lesen, entpackt die ganze Kachel (`float64`, deflate), und
+  `GDAL_CACHEMAX` 64 MB hält die Bänder derselben Kachel nicht.
+- **Band-Interleave der Zwischendateien (Otto, 28.10.2026, Option 2):** Der Kern schreibt jeden Durchgang, den ein späterer liest, mit
+  `INTERLEAVE=BAND` (`core._profile`, `_Run.write_pass`). Damit ist Version 4 **schneller als Version 3 heute** (4096²: 4 Bänder 20,4 s gegen
+  40,0 s, 17 Bänder 97,7 s gegen 336,7 s) und braucht weniger Speicher (17 Bänder 541 gegen 865 MB). **Nur Zwischendateien:** der letzte
+  Durchgang, aus dem `result.tif` wird, und `mask.tif` behalten das Layout von GDAL; die Dateien eines Auftrags ändern sich im Format nicht.
+  `result.tif` und `mask.tif` sind bei 1 bis 3 Bändern bytegleich zum Lauf von Version 3 vorher, und das Layout allein ändert auch bei 4 Bändern
+  kein Byte; bei 4 Bändern weichen nur die Werte nach Version 4 ab (Profil und Maske gleich). Die ganze Suite läuft damit grün (`test_pass_interleave.py`).
+- **Kostenfaktor (Otto: anpassen, falls Version 4 mit Band-Interleave deutlich schneller ist, als der Faktor annimmt):** Er bleibt. Der Faktor
+  in `_METHODS` gilt je Pixel und Band und ist am Ein- bis Zweibandlauf gemessen; ein Band kostet in Version 4 mit Band-Interleave bei 4 und 17 Bändern
+  5,1 und 5,7 s gegen 2,5 s bei einem Band (4096²), also mehr, nicht weniger, als der Faktor annimmt. Schneller als Version 3 heute ist Version 4
+  nur, weil Version 3 bei vielen Bändern je Band 10,0 (bei 4) und 19,8 s (bei 17) brauchte. Die Zeitschätzung je Ausgabeband mit einem gemessenen
+  Wert je Band kommt mit NM4-43c, PR 2 (`adr/0020` §7).
+- **Speicher mit vielen Bändern:** Die Grenze von 500 MB (M4-07a) hält für 17 Bänder nicht, auch nicht für den Durchgang, der zuschneidet und
+  skaliert (556 MB bei 1024²). Gemessen im Gesamtlauf des Kerns (`memory_run.py`): 4 Bänder 452 MB bei 4096² (vorher 521 MB), 17 Bänder 612 MB bei
+  1024² (vorher 754 MB, Version 3: 821 MB). Die Grenze je Lauf ist Sache von NM4-43c, PR 2; Otto hat die gemessenen Grenzen der Tests angenommen:
+  `test_memory_reproject.py` hat einen Lauf mit 4 Bändern (Grenze 600 MB, Wachstum höchstens 120 MB, gemessen 60 MB) und einen mit 17 Bändern
+  (Grenze 800 MB), je mit etwa einem Drittel Reserve.
+- **Tests:** `test_reproject.py` (`TestEachBandIsWarpedForItself`: Band 1 bytegleich bei 1, 2, 3, 4, 18 und 34 Bändern, jedes Band gleich seinem
+  Einbandlauf, Version 4 gleich Version 3 bis 3 Bänder, Masken je Band; `TestVersion3IsUnchanged`: Version 3 gleich einem Warp über alle Bänder,
+  bei 4 Bändern weiter anders als Version 4), `test_reproject_tolerance.py`, `test_workfile.py` (`TestABandOfAWorkFile`), `test_pass_interleave.py` (welche Dateien band-weise geschrieben werden, Format und Bytes der
+  Ausgabedateien gegenüber vorher),
+  `test_memory_reproject.py`. **Gegenprobe:** Rechnet Version 4 wie Version 3, scheitern fünf der neuen Tests (Band 1 bei 4, 18 und 34 Bändern,
+  jedes Band gleich dem Einbandlauf, Version 3 gegen 4 bei 4 Bändern).
+
 ## 15 Nachtrag NM4-29: das Kachelraster je Kachelgröße (2026-10-28; zu §6.3, §6.4)
 
 Otto hat am 2026-10-28 entschieden, dass Mosaik und Mosaik-Vorschau mit 512 px gezeichnet werden, Szene,
@@ -2542,3 +2609,73 @@ stehen; maßgeblich ist dieser Nachtrag.
   2,1 %. Gegen den exakt nächsten Quellpixel gilt mit 512 px dieselbe Ausnahme an Grenzen (1 von 6462
   Pixeln), mit 256 px weiter keine.
 
+
+## 15 Nachtrag NM4-43c: Bandvorrat, `output.bands` und die Rezeptversion 2 (2026-10-28; zu §4, §5.2, §5.6, §6.1, §7, §9, §10.1, §15m)
+
+`adr/0020` hat den Bandvorrat entschieden (§4 bis §8, §11, §15a); dieser Nachtrag beschreibt, was der Code von NM4-43c, PR 1, daraus
+macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser Nachtrag. Der Schutz ohne Bandgrenze (§7 dort) kommt mit PR 2.
+
+- **Rezeptversion 2 (`RECIPE_VERSION = 2`).** `output.bands` (Pflicht, mindestens ein Name, ohne Rücksicht auf Groß- und Kleinschreibung
+  eindeutig) nennt, was `result.tif` enthält, in dieser Reihenfolge. Ein **Auftrag** für ein Raster nennt keine `assets` mehr (das Modell weist
+  sie ab); `api` leitet sie ab und schreibt sie ins **Rezept**, das sie weiter trägt (`Input.assets`, `resolved` wie bisher). Der Auftrag für
+  `crop` bleibt, wie er war, und nennt seine Assets. Hash und Cache-Schlüssel ändern sich einmal.
+- **Operatoren.** `band_math` Version 2 (`expression`, `name`; fügt das Band hinzu, ersetzt nichts), `mask` Version 2 (die Schicht bleibt im
+  Vorrat und wird wie jedes Band an den ausgeblendeten Klassen maskiert), `normalize` Version 2 (`bands`, Pflicht: nur diese werden umgerechnet,
+  die übrigen bleiben, wie sie sind). Die Namensregeln stehen in `band_math.check_name`: `^[A-Za-z][A-Za-z0-9_]{0,31}$`, kein Python-Schlüsselwort,
+  kein Funktionsname aus R5. Die Versionen 1 bleiben registriert (Kachel, Umdeutung) und tragen `stock=False`; ein Job lehnt sie mit dem Ort des
+  Schritts ab. Die Versionen 2 laufen bis NM4-43d nur als Job (`Tier.T2`) und werden nicht gelistet (`Operator.listed`, `processing_docs._jobs_of`
+  zählt nur gelistete Versionen): Das heutige Panel sieht weiter Version 1. Der Kern prüft einen Namen zusätzlich am Vorrat
+  (`band_math._transform_v2`: „NDVI is used twice“, auch in anderer Schreibweise).
+- **Planer (`plan.stock_steps`, `needed_source_bands`).** Der Planer geht die Kette von hinten durch
+  (`Operator.bands_used` → `BandUse`: gelesene Namen, hinzugefügter Name, geänderte Bänder). Ein Band fällt nach seiner letzten Nutzung weg; ein
+  Schritt, der nichts Gebrauchtes ändert oder hinzufügt („toter“ Schritt), wird **nicht geprüft, nicht gerechnet und nicht berichtet**: die Bänder,
+  die er nennt, werden nicht gelesen und müssen nicht da sein, und weder `processing:lineage`, `processing:expression` noch der Methodentext nennen
+  ihn (`plan.live_steps`). Jeder Schritt, der läuft, wird auf dem **ganzen** Vorrat geprüft (ein falscher Name, mit dem Ort des Schritts im Text).
+  Von der Liste `bands` eines `normalize` bekommt der Schritt nur, was nach der Kürzung noch im Vorrat steht (`Operator.restrict`); die übrigen
+  Namen der Liste sind nie nötig. Dafür setzt der Planer einen eigenen, nicht registrierten Schritt
+  `select_bands` (`operators/select.py`) vor den Schritt, der folgt, und am Ende. Der Vorrat wird dabei so geordnet wie `output.bands`, sobald er
+  schmaler wird; ein letztes `reproject` braucht deshalb keinen Durchgang, der nur sortiert. Ein `grid`-Schritt warpt nur, was bleibt (Version 4
+  warpt jedes Band für sich; der Wert eines Bandes hängt nicht am Vorrat, `adr/0020` §3.4). `estimate`, `check_bands`, `run` und
+  `area_statistics` benutzen dieselbe Planung. Kennt das Item die Bänder eines Assets nicht (nur die Datei weiß, wie viele es sind),
+  gilt es in `estimate` und `check_bands` als ein Band, das wie das Asset heißt; ein Name `<asset>_<n>` wird dort abgewiesen
+  (`test_a_band_the_item_does_not_describe_is_found_where_the_check_before_could_not_tell`). Ein umgedeuteter Auftrag der Version 1 mit so einem
+  mehrbändigen Asset scheitert deshalb im Kern am Namen `<asset>`; das ist eine bekannte Grenze, bis NM4-43e die Bänder aus der Prozessbeschreibung bestellt.
+- **`api` (`intake.derive_assets`, `band_sources`).** Aus `output.bands` und den Schritten folgen die Namen, die der erste Schritt braucht;
+  jeder Name gehört zu genau einem Asset des Items (Regel des Panels: ein COG-Asset ist ein Band mit dem Namen des Assets oder `<asset>_<n>`;
+  ein Zarr-Asset je Variable mit `<asset><Trenner><Variable>`; der Name ist die Variable; die Kerne und `expected_band_names` stimmen
+  überein). Ein Asset, dessen Bandzahl das Item nicht nennt, steht mit seinem Namen und nimmt `<asset>_<n>` dazu; die Datei entscheidet. Die
+  Assets stehen in der Reihenfolge des Items. `422` mit dem Namen (Stufe `applicable`): ein Name ohne Asset, ein Name, den zwei Assets
+  tragen, ein Name eines `band_math`-Schritts, den ein Band des Datensatzes trägt (auch ein nicht gelesenes, ohne Rücksicht auf Groß- und
+  Kleinschreibung) oder ein anderer Schritt („is used twice“). Die Grenze von 16 Assets gilt bis PR 2 für die abgeleiteten Assets.
+- **Kern.** `result.tif` trägt genau die Bänder von `output.bands`, in dieser Reihenfolge, mit dem Namen als **Banddeskription**; Datentyp und nodata
+  nach den bisherigen Regeln. **Abweichung von `adr/0020` §8: Die Einheit steht nicht in `result.tif`, sondern in den STAC-Eigenschaften
+  (`properties.bands[].unit`, M4-19b) und im Block `bands` der Datei `recipe.json`.** `rio-cogeo` (`cog_translate`) trägt Namen und Tags in die COG, aber keine Einheit.
+  GDALs COG-Treiber (`rasterio.shutil.copy(driver="COG")`) trägt sie, und die Datei ist sonst dieselbe (gleiche Werte, gleiche Block- und Übersichtsstufen,
+  266 Byte mehr, es fehlt das Tag `OVERVIEW_RESAMPLING`). Er hält aber Speicher, der mit der Fläche wächst: mit `GDAL_CACHEMAX` 64 MB, 4 Bänder `float32`,
+  Spitze `cog_translate` gegen COG-Treiber 262 / 306 MB (2048²), 288 / 347 MB (4096²), 301 / 395 MB (8192²), also 44, 59 und 94 MB mehr; im Kern
+  stieg dadurch das Wachstum des Speichers von 2048² auf 4096² von 59 auf 132 MB (Grenze der Tests 120 MB) und brach `test_memory_reproject.py` und
+  `test_memory_mosaic.py`. Die Eigenschaft „der Speicher folgt dem Block, nicht der Szene“ (M4-07a F11) hat Vorrang; deshalb bleibt es bei
+  `cog_translate`. **Entschieden (Otto, 29.10.2026, Option 1):** Die Einheit steht nur in den STAC-Eigenschaften und in `recipe.json`. Otto verlangte vorher zu prüfen, ob
+  `cog_translate` die Einheit übernimmt, wenn sie in der Quelldatei gesetzt ist. Gemessen (rasterio 1.5, GDAL 3.12.2, `forward_band_tags=True` wie im Kern): Die
+  **Banddeskription** und **Band-Tags** gehen durch (`update_tags(i, unit="m")` steht in der COG), die **Einheit** (`set_band_unit`, GDALs Feld `unittype`) nicht
+  (`units == (None, None)` in der COG, obwohl die Quelle `("m", "m")` hatte). Ein Tag mit dem Namen `UNITTYPE` wird zu einem gewöhnlichen Tag und nicht zur Einheit.
+  Die Einheit der fertigen COG nachträglich zu setzen geht nicht: GDAL öffnet eine COG nicht zum Ändern („Updating it will generally result in losing part of the
+  optimizations“). Damit bliebe nur ein eigener Tag, den kein Programm als Einheit liest; das ist kein Ersatz für `adr/0020` §8 und wird nicht umgesetzt. Die
+  Abweichung von `adr/0020` §8 gilt damit: Die Einheit der Bänder steht in den STAC-Eigenschaften, nicht in der Datei.
+- **Das Kennzeichen `earthx:resampled` (Backlog 51, Otto).** Es sagt nur, wo **Werte** auf ein anderes Raster gebracht wurden. Jedes Band trägt es
+  (`BandMeta.resampled`: seine Quelle liegt nicht auf dem Raster des feinsten Assets oder warpt ihre Szenen; `reproject` setzt es für alle Bänder;
+  `band_math` erbt es von den Bändern, die der Ausdruck nennt). Das Ergebnis ist markiert, wenn **ein Band, das in ihm steht**, es trägt. Eine Schicht,
+  die nur Pixel ausblendet (`scl` von `mask`, nächster Nachbar), markiert nichts, auch wenn sie gröber ist. Steht sie selbst in der Ausgabe, zählt sie wie
+  jedes Band. Die Annahme in `api` kennt das Kennzeichen nicht (es entsteht beim Lesen); es gehört in den Kern und ist dort umgesetzt.
+- **Umdeutung von Version 1 (`processing/upgrade.py`, eine reine Funktion über JSON-Daten).** Wie `adr/0020` §11: Namen für die `band_math`-Schritte
+  (der letzte `band_math`, frühere `band_math_<n>`, Verweise im nächsten Ausdruck auf den Namen des vorigen, token-genau), `bands` für `normalize`, die
+  Schicht von `mask` nicht mehr in `output.bands`, `output.bands` = Vorrat am Ende. Ein Auftrag verliert `assets` (der Name eines Assets ist sein
+  Name, ein Zarr-Schlüssel nennt seine Variablen), ein Rezept behält `assets` und `resolved` (die Namen kommen aus `resolved`). `api` deutet Aufträge und
+  Permalinks bis `intake.VERSION_1_ACCEPTED_UNTIL` um (ohne Datum bis NM4-43e; danach `422` „recipe_version 1 is no longer accepted; send version 2“);
+  ein Permalink bleibt, wie er gesendet wurde, nur geprüft. Der Worker deutet gespeicherte Rezepte um (`jobs/child.py`), der Methodentext und der Runner
+  lesen Version 1 dauerhaft. Werte: bitgleich zu Version 1 für Ketten ohne `reproject` (`test_version_1_values.py`, die Hashes stammen vom Kern vor
+  dieser Änderung); nach `reproject` Version 2 oder 3 können sie abweichen (`adr/0016` Nachtrag NM4-43c).
+- **Methodentext.** Er nennt die Bänder der Ausgabe („… with float32 values and the bands NDVI, NDWI.“); `band_math` und `normalize` Version 2 nennen
+  die Namen; `processing:lineage` und `processing:expression` tragen den Namen des Ergebnisses.
+- **Version.** `earthx.__version__` 0.4.4 → 0.5.0 (`result.tif` trägt Banddeskriptionen; Bytes ändern sich; `reproject` Version 4 aus 0.4.4
+  bleibt).

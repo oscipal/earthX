@@ -16,6 +16,7 @@ import rasterio
 from pydantic import ValidationError
 from rasterio.enums import Resampling
 from rasterio.transform import from_origin
+from rasterio.vrt import WarpedVRT
 from rasterio.warp import reproject as warp_reproject
 from rasterio.windows import Window
 from rio_tiler.io import Reader
@@ -27,15 +28,15 @@ from earthx.processing.operators import (
     REGISTRY,
     REPROJECT,
     REPROJECT_V2,
+    REPROJECT_V3,
     BandMeta,
     RasterMeta,
     ReprojectParams,
     applicable,
 )
 from earthx.processing.operators import reproject as reproject_module
-from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.test_reproject_tolerance import Measured, row
 from tests.earthx.processing.testops import OPERATORS
 
@@ -52,7 +53,7 @@ def _params(**overrides) -> ReprojectParams:
 
 def _step(**overrides) -> dict:
     params = {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "nearest", **overrides}
-    return {"op": "reproject", "op_version": 3, "params": params}
+    return {"op": "reproject", "op_version": 4, "params": params}
 
 
 class TestParameters:
@@ -100,12 +101,12 @@ class TestParameters:
             )
 
     def test_the_parameters_are_a_json_schema(self) -> None:
-        schema = REGISTRY.params_schema("reproject", 3)
+        schema = REGISTRY.params_schema("reproject", 4)
         assert schema["required"] == ["crs", "resolution", "resampling"]
         assert schema["additionalProperties"] is False
 
     def test_each_method_is_described_in_one_sentence_and_none_is_the_default(self) -> None:
-        resampling = REGISTRY.params_schema("reproject", 3)["properties"]["resampling"]
+        resampling = REGISTRY.params_schema("reproject", 4)["properties"]["resampling"]
         assert "default" not in resampling and "enum" not in resampling
         assert [choice["const"] for choice in resampling["oneOf"]] == list(METHODS)
         for choice in resampling["oneOf"]:
@@ -166,7 +167,8 @@ class TestTheTargetGrid:
         target = REPROJECT.transform(source, _params())
         assert target.crs == "EPSG:3035" and target.resampled is True
         assert target.resolution == (10.0, 10.0)
-        assert target.bands == source.bands
+        assert tuple(replace(band, resampled=False) for band in target.bands) == source.bands
+        assert all(band.resampled for band in target.bands)  # a reprojected band is one whose values were resampled
         left, bottom, right, top = target.bounds
         assert right - left >= WIDTH * 10 * 0.99 and top - bottom >= HEIGHT * 10 * 0.99
 
@@ -199,16 +201,25 @@ class TestTheTargetGrid:
 
     def test_the_block_plan_is_part_of_the_version_not_of_the_order(self) -> None:
         assert (reproject_module.TOLERANCE, reproject_module.WARP_MEM_LIMIT_MB) == (0.125, 64.0)
-        assert (REPROJECT.op_version, REPROJECT_V2.op_version) == (3, 2)
+        assert (REPROJECT.op_version, REPROJECT_V3.op_version, REPROJECT_V2.op_version) == (4, 3, 2)
 
     def test_a_recipe_of_version_1_is_refused(self) -> None:
         with pytest.raises(UnknownOperator):
-            recipe_from_data(_recipe({**_step(), "op_version": 1}), REGISTRY)
+            recipe_of_data(_recipe({**_step(), "op_version": 1}), REGISTRY)
 
     @pytest.mark.parametrize("method", ["cubicspline", "lanczos", "average", "mode"])
     def test_version_2_does_not_know_the_methods_of_version_3(self, method: str) -> None:
         with pytest.raises(RecipeInvalid, match="resampling"):
-            recipe_from_data(_recipe({**_step(resampling=method), "op_version": 2}), REGISTRY)
+            recipe_of_data(_recipe({**_step(resampling=method), "op_version": 2}), REGISTRY)
+
+    @pytest.mark.parametrize("version", [2, 3, 4])
+    def test_the_versions_the_registry_takes(self, version: int) -> None:
+        recipe = recipe_of_data(_recipe({**_step(), "op_version": version}), REGISTRY)
+        assert (recipe.steps[0].op, recipe.steps[0].op_version) == ("reproject", version)
+
+    def test_a_version_beyond_the_newest_is_refused(self) -> None:
+        with pytest.raises(UnknownOperator):
+            recipe_of_data(_recipe({**_step(), "op_version": 5}), REGISTRY)
 
     def test_version_2_is_the_same_operator_with_the_old_methods(self) -> None:
         for method in OLD_METHODS:
@@ -257,6 +268,141 @@ def test_a_block_is_masked_exactly_where_the_warp_left_no_value(tmp_path: Path, 
     assert numpy.array_equal(block.mask, numpy.isnan(block.data))
 
 
+#: A pass file of one block plus a margin: the warp of its 1024² block is split by ``warp_mem_limit`` from
+#: four bands on (adr/0020 §3.4), which is what version 4 has to hide.
+BANDS_SIZE = 1100
+
+
+def _band_data(index: int) -> numpy.ndarray:
+    """Band ``index`` of the files below: the same field for every file, shifted per band, with a strip of NaN."""
+    generator = numpy.random.default_rng(seed=20261028)
+    rows, cols = numpy.arange(BANDS_SIZE)[:, None], numpy.arange(BANDS_SIZE)[None, :]
+    field = 0.2 + 0.1 * numpy.sin(rows / 80) + 0.05 * numpy.cos(cols / 60) + generator.normal(0, 0.01, (BANDS_SIZE,) * 2)
+    field = field + index * 0.01
+    field[:, 300:340] = numpy.nan
+    return field
+
+
+def _bands_file(path: Path, indexes: list[int]) -> Path:
+    """A pass file as the core writes it: ``float64``, NaN as nodata, one band per entry of ``indexes``."""
+    profile = {
+        "driver": "GTiff",
+        "dtype": "float64",
+        "count": len(indexes),
+        "width": BANDS_SIZE,
+        "height": BANDS_SIZE,
+        "crs": sources.CRS,
+        "transform": from_origin(sources.ORIGIN_X, sources.ORIGIN_Y, sources.RESOLUTION, sources.RESOLUTION),
+        "nodata": float("nan"),
+        "tiled": True,
+        "blockxsize": 1024,
+        "blockysize": 1024,
+    }
+    with rasterio.open(path, "w", **profile) as destination:
+        for position, index in enumerate(indexes, start=1):
+            destination.write(_band_data(index), position)
+    return path
+
+
+def _first_block(operator, path: Path) -> numpy.ma.MaskedArray:
+    """The 1024² block at the origin of the target grid, as the core asks for it."""
+    params = _params(resampling="bilinear")
+    with rasterio.open(path) as source:
+        bands = tuple(BandMeta(f"b{index}", "float64", float("nan")) for index in range(source.count))
+        target = operator.transform(_meta(width=BANDS_SIZE, height=BANDS_SIZE, bands=bands), params)
+        return operator.run(source, target, Window(0, 0, 1024, 1024), params)
+
+
+def _same_values(one: numpy.ma.MaskedArray, other: numpy.ma.MaskedArray) -> bool:
+    return one.data.tobytes() == other.data.tobytes() and numpy.array_equal(one.mask, other.mask)
+
+
+class TestEachBandIsWarpedForItself:
+    """Version 4 (NM4-43b): what a band gets does not depend on the other bands of the file (adr/0020 §3.4)."""
+
+    @pytest.mark.parametrize("count", [1, 2, 3, 4, 18, 34])
+    def test_band_1_has_the_same_bytes_with_any_number_of_bands(self, tmp_path: Path, count: int) -> None:
+        alone = _first_block(REPROJECT, _bands_file(tmp_path / "alone.tif", [0]))
+        many = _first_block(REPROJECT, _bands_file(tmp_path / "many.tif", list(range(count))))
+        assert many.shape[0] == count
+        assert _same_values(many[0], alone[0])
+        assert alone.mask.any() and not alone.mask.all()  # the strip and the corner stay without data
+
+    def test_every_band_is_what_a_file_of_that_band_alone_gives(self, tmp_path: Path) -> None:
+        many = _first_block(REPROJECT, _bands_file(tmp_path / "many.tif", [0, 1, 2, 3, 4]))
+        for position, index in enumerate([0, 1, 2, 3, 4]):
+            alone = _first_block(REPROJECT, _bands_file(tmp_path / f"alone-{index}.tif", [index]))
+            assert _same_values(many[position], alone[0]), f"band {position + 1}"
+
+    def test_the_bands_are_not_mixed_up(self, tmp_path: Path) -> None:
+        many = _first_block(REPROJECT, _bands_file(tmp_path / "many.tif", [0, 5]))
+        assert not _same_values(many[0], many[1])
+        assert numpy.nanmean(many[1].filled(numpy.nan)) - numpy.nanmean(many[0].filled(numpy.nan)) == pytest.approx(
+            0.05, abs=1e-3
+        )
+
+    @pytest.mark.parametrize("count", [1, 2, 3])
+    def test_up_to_three_bands_version_4_gives_the_bytes_of_version_3(self, tmp_path: Path, count: int) -> None:
+        path = _bands_file(tmp_path / "bands.tif", list(range(count)))
+        assert _same_values(_first_block(REPROJECT, path), _first_block(REPROJECT_V3, path))
+
+    def test_a_work_directory_with_markup_characters_in_its_name(self, tmp_path: Path) -> None:
+        plain = _first_block(REPROJECT, _bands_file(tmp_path / "plain.tif", [0, 1]))
+        (tmp_path / "a&b <c> 'd'").mkdir()
+        odd = _first_block(REPROJECT, _bands_file(tmp_path / "a&b <c> 'd'" / "pass-0.tif", [0, 1]))
+        assert _same_values(plain, odd)
+
+    def test_the_masks_follow_each_band(self, tmp_path: Path) -> None:
+        """A NaN in one band does not mask the others, as in the single-band run."""
+        path = _bands_file(tmp_path / "bands.tif", [0, 1])
+        with rasterio.open(path, "r+") as source:
+            data = source.read(2)
+            data[500:520, 500:520] = numpy.nan
+            source.write(data, 2)
+        many = _first_block(REPROJECT, path)
+        assert many.mask[1].sum() > many.mask[0].sum()
+        alone = _first_block(REPROJECT, _bands_file(tmp_path / "alone.tif", [0]))
+        assert numpy.array_equal(many.mask[0], alone.mask[0])
+
+
+class TestVersion3IsUnchanged:
+    """Version 3 stays accepted and warps all bands in one warp, with the bytes it always gave (adr/0020 §3.4)."""
+
+    @staticmethod
+    def _one_warp(path: Path) -> numpy.ndarray:
+        """The code of version 3 before NM4-43b, written out: one ``WarpedVRT`` over every band of the file."""
+        params = _params(resampling="bilinear")
+        with rasterio.open(path) as source:
+            bands = tuple(BandMeta(f"b{index}", "float64", float("nan")) for index in range(source.count))
+            target = REPROJECT.transform(_meta(width=BANDS_SIZE, height=BANDS_SIZE, bands=bands), params)
+            with WarpedVRT(
+                source,
+                crs=target.crs,
+                transform=target.transform,
+                width=target.width,
+                height=target.height,
+                resampling=Resampling.bilinear,
+                tolerance=0.125,
+                warp_mem_limit=64.0,
+                src_nodata=float("nan"),
+                nodata=float("nan"),
+            ) as vrt:
+                return vrt.read(window=Window(0, 0, 1024, 1024))
+
+    @pytest.mark.parametrize("count", [1, 4, 5])
+    def test_it_gives_the_bytes_of_one_warp_over_all_bands(self, tmp_path: Path, count: int) -> None:
+        path = _bands_file(tmp_path / "bands.tif", list(range(count)))
+        block = _first_block(REPROJECT_V3, path)
+        assert block.data.tobytes() == self._one_warp(path).tobytes()
+
+    def test_from_four_bands_on_it_still_differs_from_version_4_for_band_1(self, tmp_path: Path) -> None:
+        """The reason for version 4. If GDAL ever stops splitting by the number of bands, this one says so."""
+        path = _bands_file(tmp_path / "bands.tif", [0, 1, 2, 3])
+        four, three = _first_block(REPROJECT, path), _first_block(REPROJECT_V3, path)
+        assert four[0].data.tobytes() != three[0].data.tobytes()
+        assert numpy.nanmax(numpy.abs(four[0].filled(numpy.nan) - three[0].filled(numpy.nan))) < 0.02
+
+
 @pytest.fixture(scope="module")
 def band(tmp_path_factory: pytest.TempPathFactory) -> Path:
     root = tmp_path_factory.mktemp("reproject")
@@ -282,7 +428,7 @@ def _recipe(*steps: dict) -> dict:
 
 
 def _run(tmp_path: Path, *steps: dict):
-    return run(recipe_from_data(_recipe(*steps), REGISTRY), workdir=tmp_path, progress=lambda done, total: None)
+    return run(recipe_of_data(_recipe(*steps), REGISTRY), workdir=tmp_path, progress=lambda done, total: None)
 
 
 def _read(path: Path) -> numpy.ma.MaskedArray:
@@ -333,7 +479,7 @@ class TestAWholeRun:
             (tmp_path / f"{method}-2").mkdir()
             (tmp_path / f"{method}-3").mkdir()
             two = _run(tmp_path / f"{method}-2", {**_step(resampling=method), "op_version": 2})
-            three = _run(tmp_path / f"{method}-3", _step(resampling=method))
+            three = _run(tmp_path / f"{method}-3", {**_step(resampling=method), "op_version": 3})
             assert _read(two.path).tobytes() == _read(three.path).tobytes()
             assert numpy.array_equal(_read(two.path).mask, _read(three.path).mask)
 
@@ -364,6 +510,6 @@ class TestAWholeRun:
 
     def test_a_step_behind_a_pixel_step(self, tmp_path: Path) -> None:
         scale = {"op": "scale", "op_version": 1, "params": {"factor": 2.0}}
-        recipe = recipe_from_data(_recipe(scale, _step(resampling="nearest")), OPERATORS)
+        recipe = recipe_of_data(_recipe(scale, _step(resampling="nearest")), OPERATORS)
         result = run(recipe, workdir=tmp_path, progress=lambda done, total: None, operators=OPERATORS)
         assert result.properties["processing:lineage"].startswith("scaled by 2.0; reprojected to EPSG:3035")

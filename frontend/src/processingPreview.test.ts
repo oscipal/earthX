@@ -68,7 +68,7 @@ function mask(key = 6, values: Record<string, string | boolean> = {}): DraftStep
 
 // The listed version of the fixtures; it runs only as a job (`T2`).
 function reproject(): DraftStep {
-  return { key: 2, op: 'reproject', opVersion: 3, values: { crs: 'EPSG:3035', resolution: '30' } };
+  return { key: 2, op: 'reproject', opVersion: 4, values: { crs: 'EPSG:3035', resolution: '30' } };
 }
 
 function item(id: string, properties: Record<string, unknown> = {}, redGsd?: number): StacItem {

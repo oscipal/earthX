@@ -37,10 +37,9 @@ from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import UpstreamError, check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
-from earthx.processing.recipe import recipe_from_data
 from tests.earthx.api.test_tiler_chain import _decode
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.readers import mini_zarr
 
 DATASET = "synthetic-mosaic-steps"
@@ -253,7 +252,7 @@ def _recipe(assets: Sequence[str], chain: Sequence[tuple[str, dict]]) -> dict:
 
 
 def _job(tmp_path: Path, assets: Sequence[str], chain: Sequence[tuple[str, dict]]) -> Path:
-    result = run(recipe_from_data(_recipe(assets, chain), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
+    result = run(recipe_of_data(_recipe(assets, chain), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
     return result.path
 
 

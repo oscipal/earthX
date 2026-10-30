@@ -16,8 +16,9 @@ import pytest
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.methods import DatasetFacts, methods_of, methods_text, recipe_with_methods
 from earthx.processing.operators import REGISTRY
-from earthx.processing.recipe import Provenance, job_recipe_document, loads_i_json, recipe_from_data, recipe_hash
+from earthx.processing.recipe import Provenance, job_recipe_document, loads_i_json, recipe_hash
 from tests.earthx.processing import recipes
+from tests.earthx.processing.recipes import recipe_of_data
 from tests.earthx.processing.testops import OPERATORS
 
 ENGINE = {"earthx": "0.4.1", "gdal": "3.12.2", "rasterio": "1.5.0", "numexpr": "2.14.1", "numpy": "2.3.0"}
@@ -51,7 +52,7 @@ class TestTheParagraph:
             "The raw values were converted to physical values with the scale and offset given in the item metadata. "
             "One band was computed per pixel from the expression '(nir - red) / (nir + red)' on physical values, "
             "in 32-bit floating point. "
-            "The result was written as a cloud-optimised GeoTIFF with float32 values. "
+            "The result was written as a cloud-optimised GeoTIFF with float32 values and the bands red, nir. "
             "The processed area covers about 0.8 km². "
             "It was processed on the EarthX platform on 2026-10-20. "
             "Software: EarthX 0.4.1, GDAL 3.12.2, rasterio 1.5.0, numexpr 2.14.1, numpy 2.3.0. "
@@ -78,6 +79,16 @@ class TestTheParagraph:
         ]
         text = methods_text(document(recipes.recipe_data(steps=steps)), operators=OPERATORS)
         assert text.index("multiplied by 2.0") < text.index("coarsened by 2")
+
+    def test_a_step_whose_result_the_output_does_not_keep_is_not_in_the_text(self) -> None:
+        steps = [
+            {"op": "band_math", "op_version": 2, "params": {"expression": "nir - red", "name": "Kept"}},
+            {"op": "band_math", "op_version": 2, "params": {"expression": "nir + red", "name": "Unused"}},
+        ]
+        data = recipes.recipe_data(steps=steps)
+        data["output"]["bands"] = ["Kept"]
+        text = methods_text(document(data), operators=REGISTRY)
+        assert "nir - red" in text and "nir + red" not in text
 
     def test_scenes_of_one_overpass_are_said_to_be_mosaicked(self) -> None:
         data = band_math()
@@ -205,17 +216,21 @@ class TestEveryOperatorSaysItsStep:
     """The guard for the next operator (M4-18): a registered operator without a sentence fails here."""
 
     SAMPLES = {
-        "band_math": {"expression": "nir - red"},
-        "mask": {"source": "scl", "classes": [3, 8, 9, 10]},
-        "normalize": {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True},
-        "reproject": {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
+        ("band_math", 1): {"expression": "nir - red"},
+        ("band_math", 2): {"expression": "nir - red", "name": "Diff"},
+        ("mask", 1): {"source": "scl", "classes": [3, 8, 9, 10]},
+        ("normalize", 1): {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True},
+        ("normalize", 2): {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True, "bands": ["red"]},
+        ("reproject", 1): {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
     }
 
     @pytest.mark.parametrize(("op", "version"), sorted(REGISTRY))
     def test_the_sentence_is_text_without_a_placeholder(self, op: str, version: int) -> None:
-        assert op in self.SAMPLES, f"{op}: give the guard sample parameters"
+        # A version without a sample of its own takes the one of version 1 (the same parameters).
+        sample = self.SAMPLES.get((op, version)) or self.SAMPLES.get((op, 1))
+        assert sample is not None, f"{op} {version}: give the guard sample parameters"
         operator = REGISTRY.operator(op, version)
-        sentence = operator.method(operator.params.model_validate(self.SAMPLES[op]))
+        sentence = operator.method(operator.params.model_validate(sample))
         assert sentence.strip() and sentence.endswith(".")
         assert "{" not in sentence and "None" not in sentence
 
@@ -250,7 +265,7 @@ class TestTheTextLiesInTheRecipe:
         hashes = []
         for data in (plain, embedded):
             data.pop("provenance")
-            hashes.append(recipe_hash(recipe_from_data(data, OPERATORS)))
+            hashes.append(recipe_hash(recipe_of_data(data, OPERATORS)))
         assert hashes[0] == hashes[1]
 
     def test_a_text_that_is_already_there_is_replaced_by_the_one_that_fits(self) -> None:

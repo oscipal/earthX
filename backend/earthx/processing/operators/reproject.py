@@ -8,7 +8,7 @@ the previous pass's file in the work directory (approved F3), through a
 (the core's ``BLOCK_SIZE``), the approximation threshold ``tolerance`` and
 ``warp_mem_limit`` (§3.4); the number of threads changes nothing. So the two are
 constants here, not parameters, and a change to either raises ``op_version`` (E2,
-§6.3 row 1): :data:`TOLERANCE` and :data:`WARP_MEM_LIMIT_MB` belong to versions 2 and 3.
+§6.3 row 1): :data:`TOLERANCE` and :data:`WARP_MEM_LIMIT_MB` belong to versions 2, 3 and 4.
 
 **One warp per block (version 2, M4-10b).** A pixel is masked where the warp left
 NaN. Version 1 read with ``masked=True``: GDAL then derived the mask from a second
@@ -19,7 +19,16 @@ few pixels at the edge of the data that had values (3 per band of 4.3 million at
 **Version 3 (M4-24)** adds ``cubicspline``, ``lanczos``, ``average`` and ``mode``, each
 measured against §6.3 (plan M4-24 §7). The block plan and the three methods of
 version 2 are unchanged, so version 2 is still accepted for them and gives the same
-bytes; only version 3 is listed (Otto, 20.10.2026).
+bytes; only version 3 was listed (Otto, 20.10.2026).
+
+**Version 4 (NM4-43b) warps each band for itself.** GDAL splits a warp by
+``warp_mem_limit``, and that split depends on how many bands the dataset has: from four
+bands on, band 1 differed from its single-band result in 96 % of its pixels (largest
+difference 0.0077 at values up to 0.5, adr/0020 §3.4). A band's values hung on the other
+bands of the file. Version 4 reads every band through a view of the work file with that
+band alone (:func:`~earthx.processing.workfile.open_workfile_band`) and warps it with the plan of version 3, so the plan
+never sees a second band. For one to three bands that is the same bytes as version 3;
+from four bands on version 3 keeps its bytes and is accepted, not listed.
 
 **What the caller has to allow.** ``reprojection`` always (R3); ``interpolation``
 for every resampling that makes values the source does not have, all but ``nearest``
@@ -45,11 +54,13 @@ from rasterio.windows import Window
 from earthx.catalog.registry import LicenseTier
 from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.operators.base import BandMeta, Operator, RasterMeta, Requirement, Tier
+from earthx.processing.workfile import open_workfile_band
 
 __all__ = [
     "MAX_SIDE_PX",
     "REPROJECT",
     "REPROJECT_V2",
+    "REPROJECT_V3",
     "TOLERANCE",
     "WARP_MEM_LIMIT_MB",
     "ReprojectParams",
@@ -151,13 +162,14 @@ def _target_grid(meta: RasterMeta, params: ReprojectParams) -> tuple[Affine, int
 def _transform(meta: RasterMeta, params: BaseModel) -> RasterMeta:
     assert isinstance(params, ReprojectParams)
     transform, width, height = _target_grid(meta, params)
-    bands = tuple(BandMeta(b.name, b.data_type, b.nodata, b.unit, b.scale, b.offset) for b in meta.bands)
+    bands = tuple(
+        BandMeta(b.name, b.data_type, b.nodata, b.unit, b.scale, b.offset, resampled=True) for b in meta.bands
+    )
     return RasterMeta(params.crs, transform, width, height, bands, resampled=True)
 
 
-def _run(source, target: RasterMeta, window: Window, params: BaseModel) -> numpy.ma.MaskedArray:
-    """One block of the target grid, read from ``source`` (an open file of the work directory)."""
-    assert isinstance(params, ReprojectParams)
+def _warp_block(source, target: RasterMeta, window: Window, params: ReprojectParams) -> numpy.ndarray:
+    """One block of ``target`` warped from ``source``, every band of ``source`` in one warp (the plan of §3.4)."""
     with WarpedVRT(
         source,
         crs=target.crs,
@@ -170,7 +182,26 @@ def _run(source, target: RasterMeta, window: Window, params: BaseModel) -> numpy
         src_nodata=math.nan,
         nodata=math.nan,
     ) as vrt:
-        data = vrt.read(window=window)
+        return vrt.read(window=window)
+
+
+def _run_v3(source, target: RasterMeta, window: Window, params: BaseModel) -> numpy.ma.MaskedArray:
+    """Version 2 and 3: one block of the target grid, all bands in one warp."""
+    assert isinstance(params, ReprojectParams)
+    data = _warp_block(source, target, window, params)
+    return numpy.ma.masked_array(data, mask=numpy.isnan(data))
+
+
+def _run(source, target: RasterMeta, window: Window, params: BaseModel) -> numpy.ma.MaskedArray:
+    """Version 4: one block of the target grid, each band warped on its own (NM4-43b)."""
+    assert isinstance(params, ReprojectParams)
+    assert set(source.dtypes) == {"float64"}, "the pass file is float64"
+    if source.count == 1:  # the file is its own single-band view
+        return _run_v3(source, target, window, params)
+    data = numpy.empty((source.count, int(window.height), int(window.width)), dtype="float64")
+    for band in range(1, source.count + 1):
+        with open_workfile_band(source, band) as view:
+            data[band - 1] = _warp_block(view, target, window, params)[0]
     return numpy.ma.masked_array(data, mask=numpy.isnan(data))
 
 
@@ -192,7 +223,7 @@ def _method(params: BaseModel) -> str:
 
 REPROJECT = Operator(
     op="reproject",
-    op_version=3,
+    op_version=4,
     category="geometry",
     title="Reproject and resample",
     description="Bring the raster into another CRS at a chosen pixel size, with a chosen resampling.",
@@ -211,5 +242,8 @@ REPROJECT = Operator(
     extra_requirements=_extra_requirements,
 )
 
+#: Accepted for recipes written before NM4-43b and computed as before: all bands in one warp, not listed.
+REPROJECT_V3 = dataclasses.replace(REPROJECT, op_version=3, run=_run_v3)
+
 #: Accepted for recipes written before M4-24, not listed (Otto, 20.10.2026).
-REPROJECT_V2 = dataclasses.replace(REPROJECT, op_version=2, params=ReprojectParamsV2)
+REPROJECT_V2 = dataclasses.replace(REPROJECT_V3, op_version=2, params=ReprojectParamsV2)

@@ -73,7 +73,7 @@ class TestWholeScenes:
         aoi = shapely_shape(accepted.recipe.aoi.model_dump(mode="json"))
         expected = box(8.9, 46.9, 9.1, 47.1).union(box(9.05, 46.95, 9.25, 47.15))
         assert aoi.equals(expected)
-        assert accepted.recipe.recipe_version == 1  # the recipe has an AOI like any other
+        assert accepted.recipe.recipe_version == 2  # the recipe has an AOI like any other
         assert accepted.skipped_items == ()
 
     async def test_one_whole_scene_is_its_footprint(self) -> None:

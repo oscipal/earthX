@@ -182,7 +182,7 @@ class TestOrderSchema:
             "#/$defs/step_coarsen_v1",
             "#/$defs/step_mask_v1",
             "#/$defs/step_normalize_v1",
-            "#/$defs/step_reproject_v3",
+            "#/$defs/step_reproject_v4",
             "#/$defs/step_scale_v1",
         ]
         step = schema["$defs"]["step_scale_v1"]
@@ -201,16 +201,16 @@ class TestOrderSchema:
 
     def test_the_real_registry_offers_reproject(self) -> None:
         schema = order_schema(REAL_OPERATORS)
-        assert "step_reproject_v3" in schema["$defs"]
-        params = schema["$defs"]["step_reproject_v3"]["properties"]["params"]
+        assert "step_reproject_v4" in schema["$defs"]
+        params = schema["$defs"]["step_reproject_v4"]["properties"]["params"]
         assert set(params["required"]) == {"crs", "resolution", "resampling"}
 
     def test_only_the_highest_version_of_an_operator_is_offered(self) -> None:
-        """Version 2 of reproject is still accepted, but not listed (M4-24, Otto 20.10.2026)."""
-        assert ("reproject", 2) in REAL_OPERATORS
+        """Versions 2 and 3 of reproject are still accepted, but not listed (M4-24, Otto 20.10.2026; NM4-43b)."""
+        assert ("reproject", 2) in REAL_OPERATORS and ("reproject", 3) in REAL_OPERATORS
         schema = order_schema(REAL_OPERATORS)
         steps = sorted(key for key in schema["$defs"] if key.startswith("step_"))
-        assert steps == ["step_band_math_v1", "step_mask_v1", "step_normalize_v1", "step_reproject_v3"]
+        assert steps == ["step_band_math_v1", "step_mask_v1", "step_normalize_v1", "step_reproject_v4"]
         assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
 
     def test_an_older_version_alone_is_offered(self) -> None:
@@ -268,8 +268,9 @@ class TestWhatThePanelReads:
 
     def test_every_step_names_its_tiers_and_kind_as_the_operator_has_them(self) -> None:
         schema = order_schema(REAL_OPERATORS)
-        latest = {op: max(version for name, version in REAL_OPERATORS if name == op) for op, _ in REAL_OPERATORS}
-        for (op, version), operator in sorted(REAL_OPERATORS.items()):
+        listed = [(key, operator) for key, operator in REAL_OPERATORS.items() if operator.listed]
+        latest = {op: max(version for (name, version), _ in listed if name == op) for (op, _), _ in listed}
+        for (op, version), operator in sorted(listed):
             if version != latest[op]:
                 continue  # accepted, not offered
             definition = schema["$defs"][f"step_{operator.op}_v{operator.op_version}"]
@@ -280,8 +281,24 @@ class TestWhatThePanelReads:
         schema = order_schema(REAL_OPERATORS)
         assert schema["$defs"]["step_band_math_v1"]["x-earthx-tiers"] == ["T1", "T2"]
         assert schema["$defs"]["step_band_math_v1"]["x-earthx-kind"] == "pixel"
-        assert schema["$defs"]["step_reproject_v3"]["x-earthx-tiers"] == ["T2"]
-        assert schema["$defs"]["step_reproject_v3"]["x-earthx-kind"] == "grid"
+        assert schema["$defs"]["step_reproject_v4"]["x-earthx-tiers"] == ["T2"]
+        assert schema["$defs"]["step_reproject_v4"]["x-earthx-kind"] == "grid"
+
+    def test_version_2_of_the_bands_steps_is_accepted_and_not_offered_until_the_panel_sends_it(self) -> None:
+        """NM4-43c: the panel of today builds version 1; NM4-43e switches the offer (adr/0020 §13)."""
+        steps = order_schema(REAL_OPERATORS)["properties"]["steps"]["items"]["oneOf"]
+        offered = sorted(entry["$ref"].rsplit("/", 1)[1] for entry in steps)
+        assert offered == ["step_band_math_v1", "step_mask_v1", "step_normalize_v1", "step_reproject_v4"]
+        for op in ("band_math", "mask", "normalize"):
+            assert REAL_OPERATORS.operator(op, 2).stock and not REAL_OPERATORS.operator(op, 2).listed
+            assert not REAL_OPERATORS.operator(op, 1).stock and REAL_OPERATORS.operator(op, 1).listed
+
+    def test_the_output_names_its_bands_and_an_order_for_a_raster_names_no_assets(self) -> None:
+        schema = order_schema(REAL_OPERATORS)
+        output = schema["$defs"]["RasterOutput"]
+        assert "bands" in output["required"] and output["properties"]["bands"]["minItems"] == 1
+        assert schema["properties"]["recipe_version"]["type"] == "integer"
+        assert "assets" not in schema["$defs"]["InputRequest"].get("required", [])
 
     def test_an_order_cannot_use_the_annotations_as_parameters(self) -> None:
         step = {**SCALE_STEP, "x-earthx-tiers": ["T1"]}

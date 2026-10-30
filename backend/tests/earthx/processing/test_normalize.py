@@ -25,9 +25,8 @@ from rio_tiler.models import ImageData
 from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.processing import run
 from earthx.processing.operators import NORMALIZE, REGISTRY, BandMeta, NormalizeParams, RasterMeta, applicable
-from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.test_band_math import _SETTING_D, _glibc_masks_features
 
 WIDTH, HEIGHT = 700, 600
@@ -189,7 +188,7 @@ def test_a_run_gives_the_formula_on_physical_values(red: Path, tmp_path: Path, m
         "steps": [{"op": "normalize", "op_version": 1, "params": {**GOOD, "in_max": 0.5}}],
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
-    result = run(recipe_from_data(data, REGISTRY), workdir=tmp_path, progress=lambda done, total: None, operators=REGISTRY)
+    result = run(recipe_of_data(data, REGISTRY), workdir=tmp_path, progress=lambda done, total: None, operators=REGISTRY)
     with Reader(str(red)) as reader:
         physical = reader.read(unscale=True).array[0]
     expected = numpy.clip((physical.astype("float64") - 0.0) / 0.5 * 255.0, 0.0, 255.0).astype("float32")
@@ -197,7 +196,7 @@ def test_a_run_gives_the_formula_on_physical_values(red: Path, tmp_path: Path, m
         got = dataset.read(1, masked=True)
     numpy.testing.assert_array_equal(numpy.ma.getmaskarray(got), numpy.ma.getmaskarray(physical))
     numpy.testing.assert_array_equal(got.compressed(), numpy.ma.getdata(expected)[~numpy.ma.getmaskarray(physical)])
-    assert result.properties["processing:lineage"] == "normalize: [0, 0.5] to [0, 255], clipped"
+    assert result.properties["processing:lineage"] == "normalize: [0, 0.5] to [0, 255], clipped of red"
     assert result.meta.resampled is False
 
 

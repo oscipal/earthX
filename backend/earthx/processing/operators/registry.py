@@ -1,9 +1,9 @@
 """The operator registry and the applicability check (adr/0014 §5.1–§5.3).
 
 An immutable mapping ``(op, op_version) → Operator``. :data:`REGISTRY` is the one
-the platform runs; it holds ``band_math`` (M4-09), ``mask`` and ``normalize`` (M4-18) and ``reproject`` (M4-10,
-versions 2 and 3 since M4-24). A caller that needs more — a test, and later the
-composition root that hands in the quad-pol operator from `datasets/` (§12) —
+the platform runs; it holds ``band_math`` (M4-09), ``mask`` and ``normalize`` (M4-18, version 2 since NM4-43c: a
+stock of named bands) and ``reproject`` (M4-10, versions 2 and 3 since M4-24, 4 since NM4-43b). A caller that needs
+more — a test, and later the composition root that hands in the quad-pol operator from `datasets/` (§12) —
 builds its own with :meth:`OperatorRegistry.with_operators`, and passes it to
 ``processing.run``.
 
@@ -23,11 +23,11 @@ from pydantic import BaseModel
 
 from earthx.catalog.registry import DatasetConfig, LicenseTier
 from earthx.processing.errors import UnknownOperator
-from earthx.processing.operators.band_math import BAND_MATH
+from earthx.processing.operators.band_math import BAND_MATH, BAND_MATH_V2
 from earthx.processing.operators.base import Operator
-from earthx.processing.operators.mask import MASK
-from earthx.processing.operators.normalize import NORMALIZE
-from earthx.processing.operators.reproject import REPROJECT, REPROJECT_V2
+from earthx.processing.operators.mask import MASK, MASK_V2
+from earthx.processing.operators.normalize import NORMALIZE, NORMALIZE_V2
+from earthx.processing.operators.reproject import REPROJECT, REPROJECT_V2, REPROJECT_V3
 
 __all__ = ["JSON_SCHEMA_DIALECT", "REGISTRY", "OperatorRegistry", "applicable"]
 
@@ -83,7 +83,9 @@ class OperatorRegistry(Mapping[tuple[str, int], Operator]):
         return {"$schema": JSON_SCHEMA_DIALECT, **schema}
 
 
-REGISTRY = OperatorRegistry([BAND_MATH, MASK, NORMALIZE, REPROJECT, REPROJECT_V2])
+REGISTRY = OperatorRegistry(
+    [BAND_MATH, BAND_MATH_V2, MASK, MASK_V2, NORMALIZE, NORMALIZE_V2, REPROJECT, REPROJECT_V2, REPROJECT_V3]
+)
 
 
 def applicable(operator: Operator, config: DatasetConfig, params: BaseModel | None = None) -> list[str]:

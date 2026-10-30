@@ -776,6 +776,12 @@ class MaskSource:
     must equal. ``classes`` lists every class the layer knows, ascending, with the names
     of ``reference``; ``suggested`` is what the panel ticks first and is never applied
     unless a recipe names it (B10). ``note`` is the help text's remark on the names.
+
+    ``cloud_classes`` are the classes that count as cloud when the search measures the cloud share inside an AOI
+    (DS-03 plan §6.6, §6.10); empty means the dataset has no such share. They are a subset of ``classes`` and the
+    layer must be a COG, because the share is read from the overviews of the file itself. ``cloud_note`` is one
+    sentence on the limits of the classification, shown as a tooltip; it may be empty only without ``cloud_classes``.
+    Neither has a default (B10): an entry says on purpose whether it offers the share.
     """
 
     asset: str
@@ -784,6 +790,8 @@ class MaskSource:
     suggested: frozenset[int]
     reference: str
     note: str
+    cloud_classes: frozenset[int]
+    cloud_note: str
 
 
 class FilterKind(Enum):
@@ -810,7 +818,10 @@ class FilterValue:
 @dataclass(frozen=True, slots=True)
 class SearchFilter:
     """A filter the search offers for one dataset (DS-02 plan §6.3). ``title`` and ``description`` are shown as they
-    stand. ``minimum``, ``maximum`` and ``integer`` belong to a ``RANGE``, ``values`` to a ``VALUES`` filter."""
+    stand. ``minimum``, ``maximum`` and ``integer`` belong to a ``RANGE``, ``values`` to a ``VALUES`` filter.
+
+    ``within_aoi`` is True on the one filter whose range may also be applied to the cloud share inside the AOI
+    (DS-03 plan §6.10); it needs ``MaskSource.cloud_classes``. No default (B10)."""
 
     property: str
     kind: FilterKind
@@ -821,6 +832,7 @@ class SearchFilter:
     maximum: float | None
     integer: bool
     values: tuple[FilterValue, ...]
+    within_aoi: bool
 
 
 def _filter_problem(search_filter: SearchFilter) -> str | None:
@@ -832,6 +844,8 @@ def _filter_problem(search_filter: SearchFilter) -> str | None:
         return f"{name!r} uses the prefix {RESERVED_FILTER_PREFIX!r}, which is kept for filters the platform computes"
     if not search_filter.title.strip() or not search_filter.description.strip():
         return f"the filter on {name!r} has a title and a description"
+    if not isinstance(search_filter.within_aoi, bool):
+        return f"within_aoi of the filter on {name!r} is True or False"
     unit = search_filter.unit
     if unit is not None and (not unit.strip() or unit != unit.strip() or len(unit) > MAX_UNIT_CHARS):
         return f"the unit of the filter on {name!r} is a short non-blank text or None"
@@ -856,6 +870,10 @@ def _filter_problem(search_filter: SearchFilter) -> str | None:
 
 def _is_finite_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _is_whole_number(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 @dataclass(frozen=True, slots=True)
@@ -953,6 +971,22 @@ class DatasetConfig:
         if names and self.source.item_holding is not ItemHolding.FEDERATED:
             # Our own items are searched by pgstac, which applies no filter of this kind yet (DS-02 plan §6.5).
             raise ConfigError(f"{self.dataset_id}: search filters need federated items")
+        self._check_within_aoi()
+
+    def _check_within_aoi(self) -> None:
+        """``within_aoi`` sits on at most one filter: a cloud-cover percentage the AOI measure can stand in for."""
+        marked = [entry for entry in self.search_filters if entry.within_aoi]
+        if not marked:
+            return
+        if len(marked) > 1:
+            raise ConfigError(f"{self.dataset_id}: within_aoi is set on more than one filter")
+        entry = marked[0]
+        if entry.kind is not FilterKind.RANGE or entry.minimum != 0 or entry.maximum != 100 or entry.unit != "%":
+            raise ConfigError(
+                f"{self.dataset_id}: within_aoi on {entry.property!r} needs a range filter from 0 to 100 in '%'"
+            )
+        if self.mask is None or not self.mask.cloud_classes:
+            raise ConfigError(f"{self.dataset_id}: within_aoi on {entry.property!r} needs a mask with cloud_classes")
 
     def band_unit(self, asset: str) -> str | None:
         """The unit the entry names for ``asset`` (one key, not a list of variables), or ``None`` where it names none.
@@ -1033,6 +1067,22 @@ class DatasetConfig:
             raise ConfigError(f"{self.dataset_id}: every mask class has a name")
         if not mask.suggested <= set(values):
             raise ConfigError(f"{self.dataset_id}: suggested mask classes are among the listed ones")
+        cloud = mask.cloud_classes
+        if not isinstance(cloud, frozenset) or not all(_is_whole_number(value) for value in cloud):
+            raise ConfigError(f"{self.dataset_id}: cloud_classes is a frozenset of whole numbers")
+        if not cloud <= set(values):
+            raise ConfigError(f"{self.dataset_id}: cloud_classes are among the listed mask classes")
+        if not isinstance(mask.cloud_note, str):
+            raise ConfigError(f"{self.dataset_id}: cloud_note is a text, empty without cloud_classes")
+        if not cloud:
+            return
+        if not mask.cloud_note.strip():
+            raise ConfigError(f"{self.dataset_id}: cloud_classes need a cloud_note on the limits of the classification")
+        if self.format is not DataFormat.COG:
+            raise ConfigError(
+                f"{self.dataset_id}: cloud_classes need a COG: the cloud share is read from the overviews of the "
+                f"file itself, and a {self.format.value} dataset needs a reader of its own first (DS-03 plan §6.19)"
+            )
 
     def _check_keywords(self) -> None:
         """At least one keyword, each a non-blank string (M3-10): the viewer's filter

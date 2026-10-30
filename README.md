@@ -464,7 +464,7 @@ Mosaik eines Überflugs); ein Zuschnitt (`crop`) kommt von der Plattform.
 `latest`; es gibt kein `docker push`):
 
 ```bash
-docker build --target runner --build-arg EARTHX_COMMIT=$(git rev-parse --short HEAD) -t earthx-runner:0.4.3 backend
+docker build --target runner --build-arg EARTHX_COMMIT=$(git rev-parse --short HEAD) -t earthx-runner:0.5.0 backend
 ```
 
 **Rechnen.** Die `recipe.json` stammt aus dem Download eines Ergebnisses (sie
@@ -472,7 +472,7 @@ liegt neben `result.tif`); sie liegt hier in `./in`, das Ergebnis kommt nach
 `./out`. Eine Zeile, damit PowerShell sie nicht anders liest:
 
 ```bash
-docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user "$(id -u):$(id -g)" -v "$PWD/in:/in:ro" -v "$PWD/out:/out" earthx-runner:0.4.3 run /in/recipe.json
+docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user "$(id -u):$(id -g)" -v "$PWD/in:/in:ro" -v "$PWD/out:/out" earthx-runner:0.5.0 run /in/recipe.json
 ```
 
 In PowerShell ohne `--user` und mit `${PWD}\in:/in:ro` bzw. `${PWD}\out:/out`.
@@ -493,7 +493,12 @@ Eine `citation.bib` liegt nicht dabei; sie stammt aus dem Download. Bricht ein
 Lauf ab, bleibt ein Ordner ohne `provenance.json` zurück.
 
 Images, die vor dem Feld `provenance.methods` gebaut wurden, weisen eine neue
-`recipe.json` mit Exit-Code 2 ab: neu bauen.
+`recipe.json` mit Exit-Code 2 ab: neu bauen. Dasselbe gilt für Images vor 0.5.0
+und eine `recipe.json` der Rezeptversion 2 (Bänder in `output.bands`). Umgekehrt
+liest der Runner ab 0.5.0 auch eine `recipe.json` der Version 1 dauerhaft; hat sie
+einen Schritt `reproject` der Version 2 oder 3, kann ein Wert abweichen, und der
+Runner sagt es und nennt den Tag für bitgleiche Werte (`docs/adr/0016-lokaler-runner.md`,
+Nachtrag NM4-43c).
 
 **Exit-Codes:**
 
