@@ -94,6 +94,22 @@ def _earthx_auxiliary_assets(config: DatasetConfig) -> list[str]:
     return list(config.auxiliary_assets)
 
 
+def _earthx_index_presets(config: DatasetConfig) -> list[dict[str, object]]:
+    """The indices the panel offers as one click each (NM4-14), ``rescale`` as the render extension writes it."""
+    return [
+        {
+            "name": preset.name,
+            "title": preset.title,
+            "expression": preset.expression,
+            "rescale": [list(preset.rescale)],
+            "colormap_name": preset.colormap_name,
+            "formula": preset.formula,
+            "reference": preset.reference,
+        }
+        for preset in config.index_presets
+    ]
+
+
 def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
     """The filters the search offers, in the words of STAC queryables (JSON Schema) where they have one (DS-02).
 
@@ -201,6 +217,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:band_units": _earthx_band_units(config),
         "earthx:auxiliary_assets": _earthx_auxiliary_assets(config),
         "earthx:search_filters": _earthx_search_filters(config),
+        "earthx:index_presets": _earthx_index_presets(config),
         "earthx:license_flags": _earthx_license_flags(config),
         "earthx:access": {
             "token_free_checked_at": config.access.token_free_checked_at.isoformat(),
