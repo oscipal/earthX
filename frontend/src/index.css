@@ -247,25 +247,31 @@ body.dragging * {
   padding: 6px 16px;
   align-self: flex-end;
 }
-/* "auto-scale" on top, "Apply" under it and "Save" beside "Apply" (a view that is no layer has no "Save"): all of one width,
-   together no higher than the row of the fields they stand beside (label, 3px, a 34px field). */
+/* "auto-scale" on top and "Apply" under it, both of one format, together as high as the fields they stand beside (the
+   input of the colormap, vmin and vmax); "Save", the one blue button, beside them and as high as the two together (Otto,
+   30.10.2026). A view that is no layer's has no "Save": the two stay in the left column. */
 .vc-buttons {
+  --row-height: 34px;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
   gap: 4px 6px;
   align-self: flex-end;
+  box-sizing: border-box;
+  height: var(--row-height);
   min-width: 0;
 }
 .vc-buttons > button {
+  align-self: stretch;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
   min-width: 0;
-  height: 22px;
+  min-height: 0;
   margin: 0;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
   white-space: nowrap;
 }
@@ -276,11 +282,20 @@ body.dragging * {
   grid-area: 2 / 1;
 }
 .vc-buttons > .vc-save {
-  grid-area: 2 / 2;
+  grid-area: 1 / 2 / 3 / 3;
+  font-size: 12px;
 }
 .vc-buttons > button[aria-disabled='true'] {
   opacity: 0.45;
   cursor: not-allowed;
+}
+.result-controls {
+  --row-height: 34px;
+}
+.result-controls .vc-field select,
+.result-controls .vc-field input[type='number'] {
+  height: var(--row-height);
+  box-sizing: border-box;
 }
 .result-controls .vc-buttons {
   width: 176px;
@@ -320,7 +335,7 @@ body.dragging * {
 }
 /* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
    head, so the rows of buttons are the same width and that width is the width of the view. Row 1: colormap three
-   columns, vmin and vmax two each, and five for "auto-scale" with "Apply" under it (`.vc-buttons`, Otto 29.10.2026). Row 2:
+   columns, vmin and vmax two each, and five for "auto-scale" with "Apply" under it and "Save" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
    four buttons, three columns each. Every field of row 1 is 34px high. Below 600 px the grid has four
    columns and the rows wrap; no text ends up outside its cell. */
 .scene-view {

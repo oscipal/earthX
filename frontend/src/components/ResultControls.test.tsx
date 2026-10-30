@@ -387,6 +387,15 @@ describe('"Apply" and "Save" of a result layer', () => {
     expect([...cluster.children].map((el) => el.textContent?.trim())).toEqual(['auto-scale', 'Apply', 'Save']);
   });
 
+  it('have one format for "auto-scale" and "Apply", and only "Save" is blue', async () => {
+    await openView();
+    const [auto, apply, save] = [...container.querySelector('.result-controls .vc-buttons')!.children] as HTMLElement[];
+    const format = (el: HTMLElement) => [...el.classList].filter((c) => !c.startsWith('vc-')).sort();
+    expect(format(apply)).toEqual(format(auto));
+    expect(format(apply)).toEqual(['ghost-btn']);
+    expect(format(save)).toEqual(['primary-btn']);
+  });
+
   it('are both locked while the fields hold what the layer draws and is saved with, with the reason as the tooltip', async () => {
     await openView();
     expect(disabled('Apply')).toBe(true);

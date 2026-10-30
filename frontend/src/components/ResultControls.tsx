@@ -111,7 +111,7 @@ function Controls({ layer }: { layer: MapLayer }) {
               <AutoScaleButton title="Put the range of the statistics of this result in the fields" onClick={auto} />
               <button
                 type="button"
-                className="primary-btn vc-apply"
+                className="ghost-btn vc-apply"
                 aria-disabled={!canApply || undefined}
                 title={canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY}
                 onClick={apply}
@@ -120,7 +120,7 @@ function Controls({ layer }: { layer: MapLayer }) {
               </button>
               <button
                 type="button"
-                className="ghost-btn vc-save"
+                className="primary-btn vc-save"
                 aria-disabled={!canSave || undefined}
                 title={canSave ? 'Keep these values for this layer and for every layer of this job' : NOTHING_TO_SAVE}
                 onClick={keep}

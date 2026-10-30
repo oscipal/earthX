@@ -285,6 +285,16 @@ describe('"Save" of the view of a pinned layer', () => {
     expect(save()!.title).toBe(NOTHING_TO_SAVE);
   });
 
+  it('is the one blue button: "Apply" has the format of "auto-scale"', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    const [auto, apply, saveButton] = [...container.querySelector('.vc-buttons')!.children] as HTMLButtonElement[];
+    const format = (el: HTMLElement) => [...el.classList].filter((c) => !c.startsWith('vc-')).sort();
+    expect(format(apply)).toEqual(format(auto));
+    expect(format(apply)).toEqual(['ghost-btn']);
+    expect(format(saveButton)).toEqual(['primary-btn']);
+    expect(container.querySelectorAll('.vc-buttons .primary-btn')).toHaveLength(1);
+  });
+
   it('opens with a change, keeps the look for the layer and is locked again', () => {
     mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
     type(vmax(), '2000');
@@ -325,13 +335,22 @@ describe('the layout contract in index.css', () => {
     expect(title).toContain('min-width: 0');
   });
 
-  it('keeps the cluster of "auto-scale", "Apply" and "Save" no higher than the row of the fields, and centres the text', () => {
+  it('makes "auto-scale" and "Apply" together as high as the fields, and "Save" as high as the two together', () => {
+    const cluster = rule('.vc-buttons');
+    const height = Number(/--row-height: (\d+)px/u.exec(cluster)?.[1]);
+    // The fields of the view and of the settings of a result are as high as the cluster.
+    expect(Number(/--row-height: (\d+)px/u.exec(rule('.scene-view'))?.[1])).toBe(height);
+    expect(Number(/--row-height: (\d+)px/u.exec(rule('.result-controls'))?.[1])).toBe(height);
+    expect(cluster).toContain('height: var(--row-height)');
+    expect(cluster).toContain('grid-template-rows: 1fr 1fr');
+    // "Save" takes both rows of the second column.
+    expect(rule('.vc-buttons > .vc-save')).toContain('grid-area: 1 / 2 / 3 / 3');
+    expect(rule('.vc-buttons > .vc-auto')).toContain('grid-area: 1 / 1');
+    expect(rule('.vc-buttons > .vc-apply')).toContain('grid-area: 2 / 1');
     const buttons = rule('.vc-buttons > button');
-    const height = Number(/height: (\d+)px/u.exec(buttons)?.[1]);
-    const gap = Number(/gap: (\d+)px/u.exec(rule('.vc-buttons'))?.[1]);
-    // The label (10px type, about 12px), the 3px between, and a field of `--row-height`.
-    const rowOfFields = 12 + 3 + Number(/--row-height: (\d+)px/u.exec(rule('.scene-view'))?.[1]);
-    expect(2 * height + gap).toBeLessThanOrEqual(rowOfFields);
+    expect(buttons).not.toMatch(/\n  height:/u);
+    // `.vc-apply` aligns itself to the end of a row: in the cluster every button fills its cell, or "Apply" is lower than "auto-scale".
+    expect(buttons).toContain('align-self: stretch');
     expect(buttons).toContain('align-items: center');
     expect(buttons).toContain('justify-content: center');
     expect(rule('.vc-buttons')).toContain('grid-template-columns: 1fr 1fr');

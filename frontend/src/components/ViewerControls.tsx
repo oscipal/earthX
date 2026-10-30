@@ -113,7 +113,7 @@ export default function ViewerControls() {
           />
           <button
             type="button"
-            className="primary-btn vc-apply"
+            className="ghost-btn vc-apply"
             aria-disabled={!changed || undefined}
             title={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
             onClick={() => {
@@ -125,7 +125,7 @@ export default function ViewerControls() {
           {layer && (
             <button
               type="button"
-              className="ghost-btn vc-save"
+              className="primary-btn vc-save"
               aria-disabled={!savable || undefined}
               title={savable ? 'Keep these values for this layer' : NOTHING_TO_SAVE}
               onClick={() => {

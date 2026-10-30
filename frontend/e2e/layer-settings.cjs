@@ -87,16 +87,27 @@ async function check(browser, { kind, theme, viewport }) {
 
   // Layout: the cluster under the fields' row height, "Apply" under "auto", "Save" beside "Apply", nothing over the edge.
   const panel = await box('');
-  const first = await page.locator(`${root} .vc-field`).first().boundingBox();
   const cluster = await box('.vc-buttons');
   const auto = await box('.vc-buttons > :nth-child(1)');
   const apply = await box('.vc-buttons > :nth-child(2)');
   const save = hasSave ? await box('.vc-buttons > :nth-child(3)') : null;
   if (Math.abs(auto.width - apply.width) > 1) problems.push(`"auto-scale" is ${auto.width.toFixed(1)} px wide, "Apply" ${apply.width.toFixed(1)} px`);
   if ((await page.locator(`${root} .vc-buttons > :nth-child(1)`).textContent())?.trim() !== 'auto-scale') problems.push('the first button is not "auto-scale"');
-  if (cluster.height > first.height + 1) problems.push(`the buttons are ${cluster.height.toFixed(1)} px high, the fields ${first.height.toFixed(1)} px`);
+  const input = await page.locator(`${root} .vc-field input`).first().boundingBox();
+  if (Math.abs(cluster.height - input.height) > 1.5) problems.push(`the buttons are ${cluster.height.toFixed(1)} px high, the input of the fields ${input.height.toFixed(1)} px`);
+  if (Math.abs(auto.height + apply.height + 4 - cluster.height) > 1.5) problems.push('"auto-scale" and "Apply" together are not as high as the buttons');
+  if (Math.abs(auto.height - apply.height) > 1 || Math.abs(auto.width - apply.width) > 1) problems.push('"auto-scale" and "Apply" are not of one size');
+  if (hasSave) {
+    const saveBox = await box('.vc-buttons > :nth-child(3)');
+    if (Math.abs(saveBox.height - cluster.height) > 1.5) problems.push(`"Save" is ${saveBox.height.toFixed(1)} px high, the buttons together ${cluster.height.toFixed(1)} px`);
+  }
+  // Of one format, and only "Save" blue (the background of a primary button).
+  const looks = await page.locator(`${root} .vc-buttons > button`).evaluateAll((els) => els.map((el) => { const c = getComputedStyle(el); return { name: el.textContent.trim(), bg: c.backgroundColor, border: c.borderTopWidth + c.borderTopStyle, size: c.fontSize, radius: c.borderRadius }; }));
+  const [lookAuto, lookApply] = looks;
+  if (lookAuto.bg !== lookApply.bg || lookAuto.border !== lookApply.border || lookAuto.size !== lookApply.size || lookAuto.radius !== lookApply.radius) problems.push(`"auto-scale" and "Apply" look different: ${JSON.stringify([lookAuto, lookApply])}`);
+  if (hasSave && looks[2].bg === lookApply.bg) problems.push('"Save" is not set off from "Apply" by its colour');
   if (apply.y < auto.y + auto.height - 0.5) problems.push('"Apply" is not under "auto"');
-  if (save && Math.abs(save.y - apply.y) > 1) problems.push('"Save" is not beside "Apply"');
+  if (save && (save.y > auto.y + 1 || save.y + save.height < apply.y + apply.height - 1)) problems.push('"Save" does not stand beside both "auto-scale" and "Apply"');
   if (save && save.x < apply.x + apply.width - 0.5) problems.push('"Save" is not right of "Apply"');
   if (save && overlap(apply, save)) problems.push('"Apply" and "Save" overlap');
   if (overlap(auto, apply)) problems.push('"auto" and "Apply" overlap');
