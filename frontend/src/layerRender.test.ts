@@ -9,6 +9,7 @@ import { datasetsFrom } from './datasets';
 import type { MapLayer } from './layers';
 import { pendingFieldsOf } from './render';
 import { useAppStore } from './store';
+import { viewLayerOf } from './viewLayer';
 import type { Collection } from './types';
 
 const CAPABILITIES = { roi: true, time_range: true, band_math: true, interpolation: true, ml_processing: true, quad_pol: false, single_coverage_product: false };
@@ -150,5 +151,125 @@ describe.each([
     expect(overlayUrl(added)).toContain('rescale=1%2C50');
     expect(overlayUrl(added)).not.toContain('plasma');
     expect(original.restore.appliedRender).toEqual({ colormapName: 'viridis', rescale: '10,2900' });
+  });
+});
+
+// Otto, 30.10.2026 (zu #234): a pinned scene layer has the settings of a result layer. Its settings are the controls of its
+// view: "Apply" draws the view with the look and leaves the layer as it was, "Save" makes the look the layer's own, and
+// what was applied and not saved goes when the settings are closed.
+describe.each([
+  ['the DEM', 'dem', 'full_resolution', false],
+  ['the DEM cropped to the AOI', 'dem', 'full_resolution', true],
+  ['Sentinel-2', 's2', 'quicklook', false],
+  ['Sentinel-2 cropped to the AOI', 's2', 'quicklook', true],
+] as const)('the settings of a pinned layer of %s', (_name, id, browse, cropped) => {
+  const AOI: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.2]]] };
+  const urlOf = (layer: MapLayer) => layer.overlays.filter((o) => o.kind === 'raster').map((o) => (o as { tileUrl: string }).tileUrl).join('|');
+  const store = () => useAppStore.getState();
+  const layer = () => store().layers.find((l) => l.id === `L-${id}`)!;
+  const OTHER = `L-other`;
+
+  beforeEach(() => {
+    const own = layerOfView(id, cropped, AOI);
+    useAppStore.setState({
+      datasets: datasetsFrom([collection(id, browse)]),
+      selectedDatasetIds: [id],
+      datasetId: id,
+      layers: [own, { ...layerOf('other', {}), id: OTHER }],
+      items: [],
+      groups: [],
+      sections: [],
+      mosaics: {},
+      focusMode: false,
+      downloaded: {},
+      appliedRender: {},
+      viewLayerId: null,
+      viewAoi: null,
+      aoi: null,
+      error: null,
+    });
+    store().selectLayer(`L-${id}`);
+  });
+
+  function layerOfView(datasetId: string, crop: boolean, aoi: GeoJSON.Geometry): MapLayer {
+    const made = layerOf(datasetId, { colormapName: 'viridis', rescale: '10,2900' });
+    made.restore = { ...made.restore, cropToAoi: crop, aoi: crop ? aoi : null };
+    const url = `/collections/${datasetId}/items/a/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual&colormap_name=viridis&rescale=10%2C2900`;
+    made.overlays = [{ kind: 'raster', tileUrl: crop ? `earthx-clip://k/${url}` : url, bounds: [0, 0, 1, 1], minZoom: 8, maxZoom: 14 }];
+    return made;
+  }
+
+  it('are the view of the layer, with its saved look in the fields', () => {
+    expect(store().viewLayerId).toBe(`L-${id}`);
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['viridis', '10', '2900']);
+    expect(store().viewAoi).toEqual(cropped ? AOI : null);
+  });
+
+  it('"Apply" draws the view and leaves the layer as it was', () => {
+    const before = layer();
+    store().setPendingColormapName('magma');
+    store().applyRender();
+    expect(store().appliedRender.colormapName).toBe('magma');
+    expect(layer()).toBe(before);
+  });
+
+  it('"Save" makes the applied look the layer\'s own: its restore and its tiles, cut the way they were', () => {
+    store().setPendingColormapName('magma');
+    store().setPendingVmin('1');
+    store().setPendingVmax('50');
+    store().applyRender();
+    store().saveViewLook();
+    expect(layer().restore.appliedRender).toMatchObject({ colormapName: 'magma', rescale: '1,50' });
+    expect(urlOf(layer())).toContain('colormap_name=magma');
+    expect(urlOf(layer())).toContain('rescale=1%2C50');
+    expect(urlOf(layer())).not.toContain('viridis');
+    expect(urlOf(layer()).startsWith('earthx-clip://')).toBe(cropped);
+    expect(layer().restore.cropToAoi).toBe(cropped);
+    // The layer is the picture of the view again, at its own place with its own eye.
+    expect(viewLayerOf(store().layers, { ...store(), aoi: store().viewAoi })?.id).toBe(`L-${id}`);
+  });
+
+  it('"Save" also draws what is typed and not applied', () => {
+    store().setPendingVmax('77');
+    store().saveViewLook();
+    expect(store().appliedRender.rescale).toBe('10,77');
+    expect(layer().restore.appliedRender.rescale).toBe('10,77');
+  });
+
+  it('loses what was applied and not saved, without asking, when the settings are closed', () => {
+    store().setPendingColormapName('magma');
+    store().applyRender();
+    store().exitFocus();
+    expect(layer().restore.appliedRender).toEqual({ colormapName: 'viridis', rescale: '10,2900' });
+    store().selectLayer(`L-${id}`);
+    expect(store().appliedRender).toEqual({ colormapName: 'viridis', rescale: '10,2900' });
+    expect(store().pendingColormapName).toBe('viridis');
+  });
+
+  it('loses it as well when another layer is chosen', () => {
+    store().setPendingColormapName('magma');
+    store().applyRender();
+    store().selectLayer(OTHER);
+    store().selectLayer(`L-${id}`);
+    expect(store().pendingColormapName).toBe('viridis');
+    expect(urlOf(layer())).toContain('viridis');
+  });
+
+  it('keeps what was saved when the settings are closed and opened again', () => {
+    store().setPendingColormapName('magma');
+    store().saveViewLook();
+    store().exitFocus();
+    store().selectLayer(`L-${id}`);
+    expect(store().appliedRender.colormapName).toBe('magma');
+    expect(store().pendingColormapName).toBe('magma');
+  });
+
+  it('does nothing for a view that is no layer\'s', () => {
+    store().exitFocus();
+    useAppStore.setState({ focusMode: true, downloaded: layer().restore.downloaded, appliedRender: {}, viewLayerId: null });
+    const before = store().layers;
+    store().setPendingColormapName('plasma');
+    store().saveViewLook();
+    expect(store().layers).toBe(before);
   });
 });

@@ -23,17 +23,24 @@ function sameRender(a: AppliedRender, b: AppliedRender): boolean {
   return [...keys].every((k) => (a[k] || '') === (b[k] || ''));
 }
 
-// The pinned layer whose picture the view is, or `null`.
-export function viewLayerOf(layers: readonly MapLayer[], s: ViewState): MapLayer | null {
+// The pinned layer the view was opened from and still shows the scenes of — whatever look it has now (NM4-50): the settings
+// of the view are the settings of this layer, "Save" keeps the look for it. `null` for a view that is no layer's.
+export function layerOfView(layers: readonly MapLayer[], s: Omit<ViewState, 'appliedRender' | 'showDownloaded'>): MapLayer | null {
   if (!s.focusMode || s.viewLayerId === null) return null;
   const layer = layers.find((l) => l.id === s.viewLayerId);
   if (!layer?.restore.focusMode) return null;
   const r = layer.restore;
   const ids = Object.keys(s.downloaded);
   if (ids.length !== Object.keys(r.downloaded).length || !ids.every((id) => id in r.downloaded)) return null;
-  if (!sameRender(s.appliedRender, r.appliedRender) || s.cropToAoi !== r.cropToAoi) return null;
+  if (s.cropToAoi !== r.cropToAoi) return null;
   if (s.cropToAoi && JSON.stringify(s.aoi) !== JSON.stringify(r.aoi)) return null;
   return layer;
+}
+
+// The pinned layer whose picture the view is, or `null`.
+export function viewLayerOf(layers: readonly MapLayer[], s: ViewState): MapLayer | null {
+  const layer = layerOfView(layers, s);
+  return layer && sameRender(s.appliedRender, layer.restore.appliedRender) ? layer : null;
 }
 
 // The list the layer manager draws: the layer that is the view also goes with the

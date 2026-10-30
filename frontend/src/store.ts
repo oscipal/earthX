@@ -52,6 +52,7 @@ import {
   withSourceState,
 } from './sections';
 import { overlaysOfPass, underlaysOf } from './searchLayers';
+import { layerOfView } from './viewLayer';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -932,6 +933,8 @@ export interface AppState {
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
   applyRender: () => void;
+  // "Save" in the view of a pinned layer: the look typed and applied becomes the layer's own (NM4-50).
+  saveViewLook: () => void;
   autoStretch: () => Promise<void>;
   zoomToView: () => void;
   setActiveGroupIndex: (i: number) => void;
@@ -1834,6 +1837,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   applyRender: () => {
     const s = get();
     set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
+  },
+  saveViewLook: () => {
+    const s = get();
+    const layer = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
+    if (!layer) return;
+    const render = { ...s.appliedRender, ...lookOfPendingFields(s) };
+    // The same scenes as the layer has, drawn with the look: its rasters are made again, its quicklook underlays stay.
+    const fresh = overlaysOfEntries({ ...s, appliedRender: render }, Object.entries(layer.restore.downloaded), layer.restore.cropToAoi ? layer.restore.aoi : null);
+    if (fresh === null) {
+      set({ error: 'The layer cannot be saved yet: its scenes are still loading.' });
+      return;
+    }
+    const overlays = [...layer.overlays.filter((o) => o.kind === 'image'), ...fresh.filter((o) => o.kind === 'raster')];
+    set({
+      appliedRender: render,
+      layers: s.layers.map((l) => (l.id === layer.id ? { ...l, overlays, restore: { ...l.restore, appliedRender: { ...render } } } : l)),
+    });
   },
   // Re-measures the stretch from `/statistics` (adr/0006 §3.4) and writes it into
   // the pending fields only — still needs "Apply" to take effect on the map.

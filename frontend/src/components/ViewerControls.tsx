@@ -9,9 +9,10 @@
 
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { COLORMAPS, lookChanged, NOTHING_TO_APPLY } from '../render';
+import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
 import { useAppStore } from '../store';
 import { viewDates, viewKind } from '../viewKind';
+import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Eye from './Eye';
 
@@ -26,6 +27,13 @@ export default function ViewerControls() {
   // Whether "Apply" would draw anything else than the map shows.
   const changed = useAppStore((s) => lookChanged(s.appliedRender, s));
   const autoStretch = useAppStore((s) => s.autoStretch);
+  // The pinned layer this view was opened from: its settings are these, and "Save" keeps the look for it (NM4-50).
+  const layer = useAppStore((s) => layerOfView(s.layers, { ...s, aoi: s.viewAoi }));
+  const saveViewLook = useAppStore((s) => s.saveViewLook);
+  const savable = useAppStore((s) => {
+    const own = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
+    return own !== null && lookChanged(own.restore.appliedRender, s);
+  });
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
   const exitFocus = useAppStore((s) => s.exitFocus);
@@ -114,6 +122,19 @@ export default function ViewerControls() {
           >
             Apply
           </button>
+          {layer && (
+            <button
+              type="button"
+              className="ghost-btn vc-save"
+              aria-disabled={!savable || undefined}
+              title={savable ? 'Keep these values for this layer' : NOTHING_TO_SAVE}
+              onClick={() => {
+                if (savable) saveViewLook();
+              }}
+            >
+              Save
+            </button>
+          )}
         </div>
       </div>
 

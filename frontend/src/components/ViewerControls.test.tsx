@@ -12,7 +12,7 @@ import { datasetsFrom } from '../datasets';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
 import { viewDates, viewKind } from '../viewKind';
-import { NOTHING_TO_APPLY } from '../render';
+import { NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -255,6 +255,50 @@ describe('"Apply" of the view', () => {
   it('counts an empty colormap and a missing one as the same, and a range of one end as none', () => {
     mount({ appliedRender: {}, pendingColormapName: '', pendingVmin: '4', pendingVmax: '' });
     expect(apply().getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
+// Otto, 30.10.2026 (zu #234): the view of a pinned layer is its settings, with a "Save" beside "Apply".
+describe('"Save" of the view of a pinned layer', () => {
+  const save = () => container.querySelector('.vc-save') as HTMLButtonElement | null;
+  const type = (input: HTMLInputElement, value: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  const vmax = () => [...container.querySelectorAll<HTMLElement>('.vc-field')].find((l) => l.textContent?.startsWith('vmax'))!.querySelector('input')!;
+  const layer = {
+    id: 'L1', name: 'Optical · day', visible: true, opacity: 1,
+    overlays: [{ kind: 'raster', tileUrl: '/t/{z}/{x}/{y}?asset=visual&rescale=0%2C3000', bounds: [0, 0, 1, 1], minZoom: 0, maxZoom: 14 }],
+    restore: { focusMode: true, downloaded: scenes(1), appliedRender: { rescale: '0,3000' }, activeGroupIndex: 0, selectedIds: [], itemIds: ['s0'], groupItemIds: [['s0']], aoi: null, cropToAoi: false, datasetId: 'optical' },
+  };
+
+  it('is not there for a view that is no layer\'s', () => {
+    mount({ appliedRender: { rescale: '0,3000' } });
+    expect(save()).toBeNull();
+  });
+
+  it('stands beside "Apply", under "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Save']);
+    expect(save()!.getAttribute('aria-disabled')).toBe('true');
+    expect(save()!.title).toBe(NOTHING_TO_SAVE);
+  });
+
+  it('opens with a change, keeps the look for the layer and is locked again', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    type(vmax(), '2000');
+    expect(save()!.hasAttribute('aria-disabled')).toBe(false);
+    act(() => save()!.click());
+    expect(useAppStore.getState().layers[0].restore.appliedRender.rescale).toBe('0,2000');
+    expect(save()!.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('does nothing when it is locked and clicked', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    const before = useAppStore.getState().layers;
+    act(() => save()!.click());
+    expect(useAppStore.getState().layers).toBe(before);
   });
 });
 
