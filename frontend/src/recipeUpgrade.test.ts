@@ -98,7 +98,7 @@ describe('an order of version 1 written as version 2', () => {
   });
 
   it('only changes the version of a crop, which has no stock', () => {
-    const crop = {
+    const crop: Record<string, unknown> = {
       ...order([], ['visual']),
       output: { kind: 'crop', format: 'cog', resolution_factor: 1, extent: 'bbox(aoi ∩ footprints)', mask: 'file' },
     };
