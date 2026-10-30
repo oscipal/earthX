@@ -120,3 +120,8 @@ REPS=7 COGS=/tmp/tb/cogs OUT=/tmp/tb/cmp scripts/tile-bench/compare.sh ff22a59 m
 - Der Job-Teil ruft `accept_order` und `submit` direkt auf, nicht über HTTP. Die Zeiten von FastAPI und `Invoke-WebRequest` fehlen in beiden Ständen gleich.
 - `moto` statt Garage: Der Upload kostet hier 10–15 ms. Gegen Garage im Stack ist er länger, aber in beiden Ständen derselbe Code (`objectstore` unverändert).
 - Die Quelle ist ein lokales Modell ohne Leitungsgrenze. Ottos Netz am 30.10. (0,6–1 MB/s) ist nicht nachgestellt. Weil beide Stände dieselben Bytes holen, ändert eine Grenze das Verhältnis nicht [A].
+
+### 5.7 Antworten Otto (30.10.2026, zu #253)
+
+1. **Annahme von `reproject`:** bleibt so. Als Backlog-Punkt für später: das Zielraster einmal berechnen und als Argument durchreichen, ohne Zustand im Worker-Kern. Den Punkt trägt der Planungs-Chat in `docs/plans/nach-m4-backlog.md` ein; dieser Branch ändert die Datei nicht (§4).
+2. **`try-job.ps1`:** Option 2. Schritt 2 nennt jetzt die Laufzeit des Jobs aus seinem Status (`started` bis `finished`) in der OK-Zeile, damit sie auch in der Zusammenfassung steht. Ein Cache-Treffer ist dort ausdrücklich so benannt, mit dem Hinweis, dass die Laufzeit die des früheren Laufs ist. Fehlt eine der beiden Zeiten oder ist sie nicht lesbar, sagt die Zeile, dass die Laufzeit unbekannt ist. Getestet in `tests/integration/test_try_job_search.py` (`TestTheJobRuntimeTheScriptPrints`, gegen eine kleine nachgebaute Plattform). Der Test läuft nur mit PowerShell, also in der CI; in der Sitzung gibt es kein `pwsh`, er war hier nicht ausführbar.

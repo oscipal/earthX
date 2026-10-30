@@ -611,7 +611,7 @@ $p4 = (Measure-Command { .\scripts\try-job.ps1 | Out-Null }).TotalMilliseconds
 
 Erwartet: P1 in der Größe von 6,0 s, P2 um 0,16 s (Messung vom 28.10.2026). P4 enthält auch den zweiten Auftrag (Cache-Treffer) und das Löschen.
 
-**Nachtrag NM4-62 (30.10.2026):** P4 eignet sich nicht für den Vergleich zweier Stände. Seit NM4-27 ist ein gelöschter Job kein Cache-Treffer mehr, und `try-job.ps1` löscht seine Jobs am Ende. Deshalb rechnet jeder Lauf den Job neu und wartet mindestens einmal die 3 s bis zur ersten Statusabfrage. Davor kam jeder Lauf nach dem ersten mit einem Treffer aus. Die Laufzeit eines Jobs vergleicht `scripts/tile-bench/compare.sh` aus den Zeitstempeln des Jobs (`docs/plans/querschnitt/nm4-62-leistungsvergleich.md` §5).
+**Nachtrag NM4-62 (30.10.2026):** P4 eignet sich nicht für den Vergleich zweier Stände. Seit NM4-27 ist ein gelöschter Job kein Cache-Treffer mehr, und `try-job.ps1` löscht seine Jobs am Ende. Deshalb rechnet jeder Lauf den Job neu und wartet mindestens einmal die 3 s bis zur ersten Statusabfrage. Davor kam jeder Lauf nach dem ersten mit einem Treffer aus. Die Laufzeit eines Jobs vergleicht `scripts/tile-bench/compare.sh` aus den Zeitstempeln des Jobs (`docs/plans/querschnitt/nm4-62-leistungsvergleich.md` §5). Seit Ottos Antwort vom 30.10.2026 nennt `try-job.ps1` in Schritt 2 die Laufzeit des Jobs aus seinem Status und kennzeichnet einen Cache-Treffer; diese Zahl ist zwischen Ständen vergleichbar, die Gesamtzeit des Skripts nicht.
 
 ### 8.3 Stufe 2 — Test-VMs in den Regionen (kostenpflichtig)
 
