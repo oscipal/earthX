@@ -126,6 +126,14 @@ class TestTheJobAndTheRunnerComputeTheSameBits:
         assert job["valid_pixels"] > 0
         _assert_same(job, folder)
 
+    @pytest.mark.parametrize("method", list(support.NORMALIZE_METHODS))
+    def test_each_method_of_normalize_with_the_numbers_of_the_recipe(self, tmp_path: Path, method: str) -> None:
+        """The runner measures nothing: the numbers in the recipe give the child's bytes (NM4-11)."""
+        recipe = support.normalize_recipe(method)
+        job, folder = _both(tmp_path, recipe, recipe)
+        assert job["valid_pixels"] > 0
+        _assert_same(job, folder)
+
     def test_reprojection_bilinear_on_a_cf_zarr(self, tmp_path: Path) -> None:
         recipe = support.reproject_recipe("bilinear")
         job, folder = _both(tmp_path, recipe, recipe)
@@ -146,6 +154,16 @@ class TestTheCounterTest:
 
     def test_another_constant_in_the_expression(self, tmp_path: Path) -> None:
         job, folder = _both(tmp_path, support.band_math_recipe(), support.band_math_recipe(support.EXPRESSION + " + 1"))
+        with pytest.raises(AssertionError):
+            _assert_same(job, folder)
+
+    @pytest.mark.parametrize("method", ["percentile", "zscore"])
+    def test_another_number_in_the_measured_values(self, tmp_path: Path, method: str) -> None:
+        other = json.loads(json.dumps(support.NORMALIZE_METHODS[method]))
+        entry = other["measured"]["bands"]["red"]
+        key = "p_high" if method == "percentile" else "mean"
+        entry[key] = entry[key] + 0.01
+        job, folder = _both(tmp_path, support.normalize_recipe(method), support.normalize_recipe(params=other))
         with pytest.raises(AssertionError):
             _assert_same(job, folder)
 

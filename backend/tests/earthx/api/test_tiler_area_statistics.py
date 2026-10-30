@@ -17,7 +17,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import numpy
 import pytest
+import rasterio
 from fastapi.testclient import TestClient
 from rasterio.errors import RasterioIOError, WarpOperationError
 from rasterio.warp import transform_bounds
@@ -274,6 +276,128 @@ class TestThePercentilesOfNormalize:
                 sort_keys=True,
             ).encode()
         ).hexdigest()
+
+
+def _order_v2(steps: list[dict], bands: list[str], *, dtype: str = "float32", aoi: dict | None = AOI) -> dict[str, Any]:
+    """An order of recipe version 2: it names the bands of the output, no assets (NM4-43c)."""
+    return {
+        "recipe_version": 2,
+        "inputs": [{"name": "input", "dataset": COG, "groups": [["ITEM_A"]]}],
+        "aoi": aoi,
+        "steps": steps,
+        "output": {"kind": "raster", "format": "cog", "dtype": dtype, "bands": bands},
+    }
+
+
+def _job_result(document: dict[str, Any], workdir: Path):
+    recipe = asyncio.run(
+        estimate_order(json.dumps(document), registry=REGISTRY, operators=OPERATORS, item_source=Fetches())
+    ).recipe
+    workdir.mkdir(exist_ok=True)
+    return run(recipe, workdir=workdir, progress=lambda done, total: None)
+
+
+def _normalize(params: dict[str, Any]) -> dict[str, Any]:
+    return {"op": "normalize", "op_version": 3, "params": params}
+
+
+class TestTheFlowOfTheMethodsOfNormalize:
+    """What the panel does for a statistical method: measure the start of the chain, put the numbers in the step, run.
+
+    The numbers of the route are the ones the step is given; the job's result then does what the method says over the
+    same area (NM4-11).
+    """
+
+    def _measured(self, client: TestClient, steps: list[dict], band: str = "red") -> dict[str, Any]:
+        response = _post(client, _order_v2(steps, [band], dtype="float64"))
+        assert response.status_code == 200, response.text
+        assert response.json()["exact"] is True
+        return response.json()["bands"][0]["statistics"]
+
+    def test_a_percentile_stretch_puts_the_ends_of_the_measured_range_on_the_ends_of_the_target(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        measured = self._measured(client, [])
+        step = _normalize(
+            {
+                "method": "percentile", "bands": ["red"], "low": 2, "high": 98, "out_min": 0.0, "out_max": 1.0,
+                "clip": True,
+                "measured": {
+                    "factor": 1,
+                    "bands": {"red": {"p_low": measured["percentile_2"], "p_high": measured["percentile_98"]}},
+                },
+            }
+        )
+        result = _job_result(_order_v2([step], ["red"]), tmp_path / "work")
+        got = result.properties["bands"][0]["statistics"]
+        assert got["minimum"] == 0.0 and got["maximum"] == 1.0
+        # The ends are bin edges of the fixed histogram: within a bin's width (0.4 % of the range here) of 0 and 1.
+        assert got["percentile_2"] == pytest.approx(0.0, abs=0.01) and got["percentile_98"] == pytest.approx(1.0, abs=0.01)
+        with rasterio.open(result.path) as dataset:
+            data = dataset.read(1, masked=True).compressed()
+        assert (data == 0.0).mean() == pytest.approx(0.02, abs=0.01) and (data == 1.0).mean() == pytest.approx(0.02, abs=0.01)
+
+    def test_a_z_score_is_centred_and_has_unit_deviation_over_the_area(self, client: TestClient, tmp_path: Path) -> None:
+        measured = self._measured(client, [])
+        step = _normalize(
+            {
+                "method": "zscore", "bands": ["red"],
+                "measured": {"factor": 1, "bands": {"red": {"mean": measured["mean"], "stddev": measured["stddev"]}}},
+            }
+        )
+        got = _job_result(_order_v2([step], ["red"]), tmp_path / "work").properties["bands"][0]["statistics"]
+        assert got["mean"] == pytest.approx(0.0, abs=1e-4) and got["stddev"] == pytest.approx(1.0, abs=1e-4)
+
+    def test_a_robust_scaling_has_median_zero_and_a_quartile_range_of_one(self, client: TestClient, tmp_path: Path) -> None:
+        measured = self._measured(client, [])
+        step = _normalize(
+            {
+                "method": "robust", "bands": ["red"],
+                "measured": {
+                    "factor": 1,
+                    "bands": {
+                        "red": {
+                            "p25": measured["percentile_25"], "median": measured["percentile_50"],
+                            "p75": measured["percentile_75"],
+                        }
+                    },
+                },
+            }
+        )
+        result = _job_result(_order_v2([step], ["red"]), tmp_path / "work")
+        with rasterio.open(result.path) as dataset:
+            data = dataset.read(1, masked=True).compressed()
+        assert float(numpy.median(data)) == pytest.approx(0.0, abs=0.02)
+        assert float(numpy.percentile(data, 75) - numpy.percentile(data, 25)) == pytest.approx(1.0, abs=0.05)
+
+    def test_the_route_measures_the_start_of_a_chain_with_a_step_of_version_3(self, client: TestClient) -> None:
+        first = _normalize(
+            {"method": "linear", "bands": ["red"], "in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 1.0, "clip": True}
+        )
+        measured = self._measured(client, [first])
+        assert 0.0 <= measured["minimum"] <= measured["percentile_50"] <= measured["maximum"] <= 1.0
+
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"method": "zscore", "bands": ["red"]},
+            {"method": "zscore", "bands": ["red"], "measured": {"factor": 1, "bands": {"red": {"mean": 0.1, "stddev": -1}}}},
+            {"method": "median", "bands": ["red"]},
+        ],
+        ids=["no numbers", "negative deviation", "unknown method"],
+    )
+    def test_a_step_that_does_not_validate_is_refused_before_any_read(
+        self, client: TestClient, fetches: Fetches, params: dict
+    ) -> None:
+        response = _post(client, _order_v2([_normalize(params)], ["red"]))
+        assert response.status_code in (400, 422), response.text
+        assert AOI_DIGITS not in response.text
+
+    def test_a_band_the_chain_does_not_have_is_a_422(self, client: TestClient) -> None:
+        params = {"method": "linear", "bands": ["red", "swir"], "in_min": 0.0, "in_max": 1.0, "out_min": 0.0,
+                  "out_max": 1.0, "clip": True}
+        response = _post(client, _order_v2([_normalize(params)], ["red"]))
+        assert response.status_code == 422 and "swir" in response.json()["detail"]
 
 
 class TestAboveTheLimit:
