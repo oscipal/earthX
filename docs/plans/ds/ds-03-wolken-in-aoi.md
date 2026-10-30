@@ -561,6 +561,16 @@ Daten unter der offenen Copernicus-Lizenz; nichts davon liegt im Repo.
 - Log-Zeile, vier Pflicht-Checks grün, `main` geholt vor „fertig“.
 - `lint-imports` ohne Lockerung. Bräuchte es eine Lockerung, ist das zuerst eine Frage an Otto.
 
+**Umgesetzt am 30.10.2026** (Draft-PR, Log-Zeile, `adr/0021` §6 Nachtrag DS-03, `adr/0005` Nachtrag zu Regel VI, `architekturplan.md` 5.1). Gegenüber dem Umfang oben:
+- **Messungen, die beim Ende einer Antwort noch laufen,** werden nicht abgebrochen, sondern lesen zu Ende und speichern ihren Wert. Ein Abbruch mitten in der Datenbankabfrage hinterließ kaputte Verbindungen des Pools (psycopg-Warnungen). Die nächste Antwort fragt genau diese Szenen zuerst und bekommt sie aus dem Cache. Die Antwort wartet nicht auf sie; `settle()` wartet in Tests darauf.
+- **Wert und Filter:** Der Bereich gilt für den Anteil mit einer Nachkommastelle, wie ihn die Antwort zeigt, damit Liste und Filter übereinstimmen.
+- **Weitere `400`:** `earthx:aoi` ohne den Filter, zusammen mit `intersects` oder ohne `bbox`; der Filter an einer Collection mit eigenen Items; eine AOI, die kein gültiges Polygon auf dem Globus ist. Ein Zeitpunkt statt eines Zeitraums zählt als offenes Ende.
+- **Marke:** eine Hülle um die Marke der Quelle (`{"v": 1, "k": "aoi", ...}`); die Marke der Quelle bleibt `TOKEN_VERSION` 2 (§6.9 F2c: „bleibt 2“ gilt für sie). Gefilterte Antworten tragen kein `numberMatched`.
+- **Adressen im Log:** GDAL nennt bei einem Lesefehler die Adresse der Datei in einer Warnung, die `rasterio` an das Logging gibt (gemessen). Die Messung hängt einen Filter an diese Logger (`hide_gdal_addresses`). Der `tiler` liest ohne ihn; unverändert gelassen, steht als Frage im PR.
+- **`access.aoi_clouds.canonical_aoi`** ist jetzt öffentlich (die Marke braucht dieselbe Schreibweise wie der Cache-Schlüssel).
+- **`api`** setzt beim Bau `earthx_policy`, `earthx_resolver`, `earthx_gdal_options` und `earthx_read_slots` wie der `tiler` seine; `gateway` ist unverändert.
+- **Nicht gelaufen in der Sitzung:** das Skript `scripts/checks/ds-03a2-aoi-clouds.ps1` (PowerShell 5.1; `pwsh` ist hier nicht installiert, ein Download ist verweigert worden) und die Live-Tests (`backend/tests_live/test_aoi_cloud_filter_live.py`; der `gateway`-Client erreicht die Quelle in dieser Sitzung nicht, nur ein Proxy). Statt dessen einmal von Hand mit denselben Klassen gegen die echte Quelle: ganze Datei 43,332 % gegen `eo:cloud_cover` 43,33207 (§6.2.5 bestätigt), 42 Szenen in 5 s.
+
 **Grenzen:**
 - Keine neue Abhängigkeit ohne Frage an Otto.
 - Keine AOI, Kennungen, Hashes, `href` oder signierten URLs in Logs oder URLs.
