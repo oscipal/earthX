@@ -132,9 +132,17 @@ export async function fetchCollections(): Promise<Collection[]> {
 // the raw request body, its name as a query parameter. `jsonOrThrow` turns a
 // `400`/`413`/other error into an `HttpError` the caller (`aoiFile.ts`) maps to
 // a message; a successful response is the bare geometry object, no envelope.
+//
+// NM4-57 (Otto, 30.10.2026): only the extension goes, as `aoi.<extension>`. A file name often names a person or a
+// place, and a URL stands in access logs; the route reads nothing but the extension anyway.
+export function uploadName(filename: string): string {
+  const extension = /\.([A-Za-z0-9]{1,8})$/.exec(filename)?.[1];
+  return extension ? `aoi.${extension}` : 'aoi';
+}
+
 export async function uploadAoi(file: Blob, filename: string): Promise<GeoJSON.Geometry> {
   return jsonOrThrow<GeoJSON.Geometry>(
-    await fetch(`${BASE}/aoi/upload?filename=${encodeURIComponent(filename)}`, {
+    await fetch(`${BASE}/aoi/upload?filename=${uploadName(filename)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
       body: file,
@@ -651,19 +659,30 @@ export interface CoverageResponse {
   ignored_filters: string[];
 }
 
-export interface CoverageParams {
+interface CoverageQuestion {
   datasetId: string;
   zoom: number;
-  // The visible map extent, rounded to the block grid of `coverage.ts` (`roundBboxToGrid`): no AOI, so it may
-  // stand in the URL of a GET. The route refuses a box that is off that grid.
-  bbox?: Bbox;
-  // The box of the AOI (NM4-57, M4 Q8): never in a URL, always in the body of a POST. Takes the place of `bbox`.
-  aoiBbox?: Bbox;
   datetime?: string;
   // DS-02c: the search filters of the dataset, as JSON in the form of the STAC query extension (`query` of
   // `GET /coverage/{id}`, DS-02b). Replaces `max_cloud_cover`.
   query?: FilterQuery;
 }
+
+// Either the visible map extent or the box of an AOI, never both (NM4-57).
+export type CoverageParams = CoverageQuestion &
+  (
+    | {
+        // The visible map extent, rounded to the block grid of `coverage.ts` (`roundBboxToGrid`): no AOI, so it may
+        // stand in the URL of a GET. The route refuses a box that is off that grid.
+        bbox?: Bbox;
+        aoiBbox?: never;
+      }
+    | {
+        // The box of the AOI (M4 Q8): never in a URL, always in the body of a POST.
+        aoiBbox: Bbox;
+        bbox?: never;
+      }
+  );
 
 const hasFilters = (query?: FilterQuery): query is FilterQuery => !!query && Object.keys(query).length > 0;
 

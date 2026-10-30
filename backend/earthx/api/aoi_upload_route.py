@@ -33,7 +33,7 @@ router = APIRouter()
 @router.post("/aoi/upload")
 async def upload_aoi(
     request: Request,
-    filename: str = Query(..., description="the original file name; only its extension is read"),
+    filename: str = Query(..., description="a name ending in the original extension (the interface sends aoi.<extension>); only the extension is read"),
 ) -> dict:
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     started = time.monotonic()

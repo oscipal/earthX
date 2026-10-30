@@ -227,10 +227,7 @@ die Oberfläche ihn rundet (`roundBboxToGrid`, Blöcke von 8 × 8 Zellen, M3-19)
 `intersects` im GET sind `400` mit dem Hinweis auf `POST`. Eine von Hand gezeichnete Box liegt auf diesem
 Raster nur zufällig (etwa eins zu einer Million je Kante). (3) Zugriffsprotokoll, Logzeilen und Cache-Schlüssel
 tragen schon vorher keine Koordinate (Hash, siehe oben); Einträge mit AOI leben höchstens einen Tag (Gebiet
-des DEM: fünf Minuten), belegt im Test. (4) **Offen, Frage an Otto (kein Beschluss):** Die Anfrage an die Quelle
-(`GET /aggregate?intersects=…`, §3.4) trägt die AOI in der URL, weil die Quelle nur `GET` kennt. Sie steht
-in keinem unserer Protokolle (das Gateway loggt einen Hash der Query, `httpx` ist auf `WARNING`), aber bei
-der Quelle. Der Aufruf lässt sich nicht auf `POST` umstellen; zur Wahl stehen, ihn so zu lassen oder den Umriss vorher auf das Dichtegitter zu runden. Originaltext oben unverändert.
+des DEM: fünf Minuten), belegt im Test. (4) **Entschieden (Otto, 30.10.2026):** Die Anfrage an die Quelle (`GET /aggregate?intersects=…` bzw. `bbox`, §3.4) trägt die AOI in der URL, weil die Quelle nur `GET` kennt. Sie steht in keinem unserer Protokolle (das Gateway loggt einen Hash der Query, `httpx` ist auf `WARNING`), aber bei der Quelle. Otto wollte die Box nach außen auf die Kanten des Dichtegitters runden lassen, **sofern die Antwort dadurch bitgleich bleibt**. Gemessen am 30.10.2026 gegen Earth Search (Sentinel-2, Zeitraum 01.–20.06.2026, vier künstliche Boxen, je auf die Stufe der Anfrage nach außen gerundet): bei dreien ändert sich die Antwort (`total_count` 22 → 42, 12 → 24, 26 → 51; Zellen 3 → 6, 1 → 2, 2 → 4), bei einer bleibt sie gleich (30 und 3 Zellen), zufällig. Die Quelle zählt jede Szene, deren Footprint die Box berührt; die größere Box zählt also Szenen, die die AOI nie berühren, und die Zahl stimmte nicht mehr mit der Suche überein (`adr/0021` §5 Nr. 7). Das Runden ist nicht verlustfrei und **unterbleibt**. Dass die Suche (`POST /stac/search`) und die Coverage die AOI an die Quelle schicken, kommt als Punkt in den Datenschutztext (M6). Originaltext oben unverändert.
 
 **Falle 2: Eine Aufnahme zählt in genau eine Zelle.** In allen ungekappten
 Messungen ist die Summe der Zählwerte exakt gleich `total_count` — auch bei

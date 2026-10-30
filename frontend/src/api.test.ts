@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  type CoverageParams,
   buildCoverageUrl,
   buildMosaicTileTemplate,
   buildSearchBody,
@@ -148,6 +149,12 @@ describe('fetchCoverage', () => {
       datetime: '2026-07-01T00:00:00Z/..',
       query,
     });
+  });
+
+  it('does not take a map extent and the box of an AOI together (checked by the type)', () => {
+    // @ts-expect-error the extent goes in the URL, the AOI in the body: one question has one of them
+    const both: CoverageParams = { datasetId: 'optical', zoom: 4, bbox: [0, 0, 1, 1], aoiBbox: [0, 0, 1, 1] };
+    expect(both.zoom).toBe(4);
   });
 
   it('asks a map extent by GET, as before', async () => {
@@ -445,7 +452,7 @@ describe('uploadAoi', () => {
     vi.unstubAllGlobals();
   });
 
-  it('POSTs the file itself as the body and the name as a ?filename= query parameter', async () => {
+  it('POSTs the file itself as the body and its extension as a ?filename= query parameter', async () => {
     const square: GeoJSON.Polygon = {
       type: 'Polygon',
       coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]],
@@ -463,14 +470,23 @@ describe('uploadAoi', () => {
     expect(new Headers(init?.headers).get('Content-Type')).toBe('application/octet-stream');
   });
 
-  it('percent-encodes spaces and reserved characters in the filename', async () => {
+  // NM4-57: the name of a file often names a person or a place and a URL stands in access logs.
+  it.each([
+    ['Haus Müller & Söhne #3.kml', 'aoi.kml'],
+    ['Flurstück 12/4 Schmidt.GeoJSON', 'aoi.GeoJSON'],
+    ['gebiet.zip', 'aoi.zip'],
+    ['no extension', 'aoi'],
+    ['ends with a dot.', 'aoi'],
+    ['name.with spaces', 'aoi'],
+    ['x.' + 'a'.repeat(20), 'aoi'],
+  ])('sends nothing of the name %j but its extension', async (name, sent) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { type: 'Point', coordinates: [0, 0] })));
-    const name = 'a b&c#d.kml';
 
     await uploadAoi(new File([], name), name);
 
     const [url] = vi.mocked(fetch).mock.calls[0];
-    expect(url).toBe(`/aoi/upload?filename=${encodeURIComponent(name)}`);
+    expect(url).toBe(`/aoi/upload?filename=${sent}`);
+    expect(String(url)).not.toMatch(/Haus|M%C3%BCller|Schmidt|Flurst|gebiet|spaces/);
   });
 
   it('rejects with an HttpError carrying the route detail on a 400', async () => {

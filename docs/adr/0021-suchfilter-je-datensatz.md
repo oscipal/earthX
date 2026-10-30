@@ -159,3 +159,4 @@ Anlass: Otto (Review zu #239, 30.10.2026): alle Felder erfassen, die die Quelle 
 
 - `POST /coverage/{id}` nimmt `query` als Objekt im Body; im `GET` bleibt es JSON-Text (§5 Nr. 1). Dieselbe Prüfung (§5 Nr. 2), ein Fehler im Body ist `400` ohne Wert im Text, nie das `422` von FastAPI, dessen Detail die Eingabe wiederholt.
 - Die Begründung und die Regel für das `GET` (nur der Kartenausschnitt) stehen in `adr/0004`, „Nachtrag NM4-57“.
+- `POST /aoi/upload?filename=…`: Die Oberfläche sendet nur `aoi.<Endung>` (Otto, 30.10.2026); der Dateiname enthält oft Personenbezug und stünde im Zugriffslog. Host und Port in `CURL error: Failed to connect to …` bleiben im Log (Otto, 30.10.2026).
