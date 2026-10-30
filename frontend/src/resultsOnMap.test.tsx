@@ -210,6 +210,25 @@ describe('a new search shows the results (Otto, 27.10.2026)', () => {
   });
 });
 
+describe('"Hide results" ends the playing of the timeline (NM4-18, Otto, 30.10.2026)', () => {
+  it('stops it when it hides the results, and starts nothing when it shows them again', () => {
+    act(() => state().setPlaying(true));
+    act(() => state().toggleResultsOnMap());
+    expect(state().resultsOnMap).toBe(false);
+    expect(state().playing).toBe(false);
+    act(() => state().toggleResultsOnMap());
+    expect(state().resultsOnMap).toBe(true);
+    expect(state().playing).toBe(false);
+  });
+
+  it('leaves the playing alone when it shows the results that are already hidden', () => {
+    act(() => state().toggleResultsOnMap());
+    act(() => state().setPlaying(true));
+    act(() => state().toggleResultsOnMap());
+    expect(state().playing).toBe(true);
+  });
+});
+
 describe('"Hide results" hides a ticked scene too, and ticking while hidden shows the results (Otto, 28.10.2026)', () => {
   it('hiding takes the ticked scenes off the map, and their ticks stay', () => {
     act(() => { state().toggleSelected('a0'); state().toggleSelected('b0'); });

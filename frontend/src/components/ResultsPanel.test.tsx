@@ -10,6 +10,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import CSS from '../index.css?raw';
 import { datasetsFrom } from '../datasets';
 import { buildSections } from '../sections';
 import { useAppStore } from '../store';
@@ -481,5 +482,43 @@ describe('"Select all" boxes (M4-29)', () => {
     const label = text(container.querySelector('.selection-row label'));
     expect(label).not.toContain('(of 40)');
     expect(label).toContain('more matched in total');
+  });
+});
+
+// Sticking cannot be laid out in jsdom: what the CSS promises is read off the file, and `e2e/group-heads.cjs` scrolls
+// it in a real browser (NM4-09).
+describe('the group heads in index.css', () => {
+  const rule = (selector: string): string => {
+    const start = CSS.indexOf(`\n${selector} {`);
+    expect(start, `no rule for ${selector}`).toBeGreaterThanOrEqual(0);
+    return CSS.slice(start, CSS.indexOf('}', start));
+  };
+
+  it('pins the row of the head, with its select box and caret, to the top of the list', () => {
+    const head = rule('.result-group-row');
+    expect(head).toContain('position: sticky');
+    expect(head).toContain('top: 0');
+  });
+
+  it('gives the pinned head a solid background, so that scenes do not show through', () => {
+    expect(rule('.result-group-row')).toMatch(/background: linear-gradient\(var\(--panel-bg\), var\(--panel-bg\)\), var\(--map-bg\)/);
+  });
+
+  it('lets the list scroll with no padding above, or the head would stop below its edge', () => {
+    const list = rule('.results-list');
+    expect(list).toContain('overflow-y: auto');
+    expect(list).toMatch(/padding: 0 \d+px \d+px/);
+  });
+
+  it('scrolls a focused scene into view below the head, not under it', () => {
+    expect(rule('.results-list')).toContain('scroll-padding-top: var(--group-head-h)');
+    expect(rule('.result-group-row')).toContain('min-height: var(--group-head-h)');
+  });
+
+  it('keeps the head in the group, in the markup, so that the next group pushes it out', () => {
+    load(MIXED);
+    const group = container.querySelector('.result-group')!;
+    expect(group.querySelector(':scope > .result-group-row .result-group-head')).not.toBeNull();
+    expect(container.querySelector('.results-list > .result-group')).not.toBeNull();
   });
 });
