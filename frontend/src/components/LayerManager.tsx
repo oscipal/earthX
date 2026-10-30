@@ -9,6 +9,7 @@ import { hasResultsPanel } from '../sections';
 import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
 import Eye from './Eye';
+import ResultsEye from './ResultsEye';
 import Tip from './Tip';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
@@ -16,8 +17,6 @@ export const RESAMPLED_LAYER_TEXT = 'Resampled to a common grid';
 export const DELETED_LAYER_TIP = 'Job deleted – restore to show';
 export const HIDE_LAYER_TIP = 'Hide layer';
 export const SHOW_LAYER_TIP = 'Show layer';
-export const HIDE_RESULTS_TIP = 'Hide results on the map';
-export const SHOW_RESULTS_TIP = 'Show results on the map';
 export const RESULTS_ENTRY_TIP = 'Search results, the view and the processing preview. Move to change what lies above.';
 
 // Marks a result layer "Expired" when the time comes (M4-13c-5): one timer for the
@@ -190,18 +189,6 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
         ✕
       </button>
     </li>
-  );
-}
-
-// The eye of the search results on the map (NM4-59): the same switch as the one in the head of the results list.
-export function ResultsEye() {
-  const on = useAppStore((s) => s.resultsOnMap);
-  const toggle = useAppStore((s) => s.toggleResultsOnMap);
-  const tip = on ? HIDE_RESULTS_TIP : SHOW_RESULTS_TIP;
-  return (
-    <button type="button" className={`lm-eye${on ? '' : ' off'}`} data-col="eye" title={tip} aria-label={tip} aria-pressed={on} onClick={() => toggle()}>
-      <Eye off={!on} />
-    </button>
   );
 }
 

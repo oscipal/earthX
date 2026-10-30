@@ -9,7 +9,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
-import { HIDE_RESULTS_TIP, RESULTS_ENTRY_TIP, SHOW_RESULTS_TIP } from './components/LayerManager';
+import { RESULTS_ENTRY_TIP } from './components/LayerManager';
+import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './components/ResultsEye';
 import { datasetsFrom } from './datasets';
 import { bboxToPolygon } from './geoUtils';
 import { resetJobs, useProcessingStore } from './processingStore';
