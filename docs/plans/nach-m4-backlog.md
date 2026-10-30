@@ -302,6 +302,8 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 47. **Item-IDs in Logs** (aus NM4-19, #218, 28.10.2026). Abgelehnte Annahmen und der Item-Abruf loggen die Item-ID; die Regel verbietet AOI, Job-/Bündel-/Permalink-Kennungen, Hashes, `href` und signierte URLs, aber keine Item-IDs. Eine Item-ID verrät grob den Ort des Interesses (MGRS-Kachel, rund 110 km).
    - **Aufgabe:** Mit der Datenschutzprüfung von M6 entscheiden (alle Routen einheitlich: behalten, kürzen oder entfernen). Bis dahin unverändert.
 48. **Datennähe: eine Hauptquelle, Rechnen und Rendern dort, wo die Daten liegen** (Otto, 28.10.2026).
+   - **Plan:** `querschnitt/nm4-48-datennaehe.md` (Stufe C, ADR).
+   - **Angenommen (Otto, 30.10.2026, PR #248):** `adr/0022` F1–F7 wie empfohlen – Rechnen in der EU (Raum Frankfurt), Quellen föderiert, `data_region` als Registry-Feld und Kriterium im M5-Plan, CDSE nur als Katalog, Sentinel-2 Wiedervorlage EOPF-Zarr (bis dahin Earth Search mit Cache), Planetary Computer nur S1-RTC; EU reicht (Rechtsfrage CH bis M6 offen). Messung Stufe 1 (Otto, 30.10.2026, ~22 Uhr, ohne VPN): Q1/Q2/Q3 ES-S2 Oregon 1226 ms / 305 ms / 1 MB/s; EU-Quellen (S1, DEM, S2-JP2, EOPF, PC) 135–188 ms / 39–49 ms / 8–12 MB/s; **S2-JP2 in Frankfurt anonym lesbar (206)**; Q4 EOPF 61, PC 97, CDSE 553, Earth Search 682 ms. P1 kalte Mosaik-Kachel 26,5/21,7/18,5 s (28.10.: 6,0 s), P2 warm 503 ms (28.10.: 160 ms), P3 Zuschnitt 10,7 s, P4 Job 12,5 s. A/B mit Stand von #215 (Otto, 30.10., schlechtes Netz): Kachel bei beiden ähnlich langsam (Netz), Job und evtl. Zuschnitt auf main langsamer – Punkt 62. Stufe 2 (Test-VMs) nur nach ausdrücklicher Freigabe.
    - **Anlass:** Lokal gemessen (28.10.2026) braucht die erste Mosaik-Kachel kalt 6,0 s, fast alles ist Weg über das Netz. Sentinel-2 von Earth Search liegt in AWS `us-west-2` (Oregon); die Plattform soll in EU/CH laufen (projektuebersicht §4).
    - **Kandidaten:** (A) Earth Search mit Rechnern in AWS `us-west-2` (schnell, aber außerhalb der EU); (B) Copernicus Data Space Ecosystem mit CloudFerro bzw. Open Telekom Cloud (EU, alle Copernicus-Daten, S3-Zugang mit kostenlosem Konto); (C) Planetary Computer mit Azure West Europe (EU, viele Datensätze, Token anonym).
    - **Aufgabe:** Stufe C, ADR mit Recherche und Messung (Latenz und Durchsatz je Region, Kosten, Abdeckung der Datensätze, Lizenz, Ausfall, Bindung an einen Anbieter; Föderation bleibt). Vor der Wahl des Cloud-Anbieters in M6, am besten zu Beginn von M5 (Auswahl der Quellen). Messung braucht Ottos Rechner oder Test-VMs, aus Cloud-Sessions sind die Quellen nicht erreichbar (adr/0002).
@@ -325,6 +327,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 56. **Paket Oberfläche** = NM4-30, NM4-21, NM4-22. Plan: `querschnitt/nm4-56-paket-oberflaeche.md`. Als letzte Frontend-Aufgabe vor M5, allein.
    - Außerdem: NM4-06 wird mit NM4-05b zusammen umgesetzt (Vermerk im Plan von NM4-05b).
 57. **Keine AOI in URLs, keine Dateiadressen in Logs** (erweitert 30.10.2026 um GDAL-Meldungen mit voller Adresse, Fund aus DS-03a2, #240) (Fund aus DS-02c, #239, 30.10.2026). `GET /coverage` trägt mit AOI deren Umriss als `bbox` in der URL (seit M3-19). Das verstößt gegen die feste Regel „keine AOI in URLs oder Logs“ (M4 Q8). Soll: Coverage mit AOI als `POST`, AOI im Body; ohne AOI (Kartenausschnitt) darf `GET` bleiben. Prüfen, ob Logs oder Cache-Schlüssel die bbox tragen.
+   - **Erledigt:** NM4-57, PR #247 (30.10.2026): Coverage mit AOI als `POST` (AOI nur im Body, Box für `/aggregate` auf das Gitter gerundet, sofern verlustfrei), `GET` nur noch für den Kartenausschnitt; AOI-Upload sendet nur die Dateiendung; GDAL-/URL-Adressen in `api`, `tiler`, `worker` werden im Log zu `<address>`; Cache-Einträge mit AOI höchstens einen Tag. Von Otto geprüft (Browser, Logs, `ds-02-filters.ps1` 19/19).
    - **Plan:** `querschnitt/nm4-57-coverage-ohne-aoi-in-url.md`
    - **Aufgabe:** Stufe A, Backend und Frontend, Vorrang vor neuen Funktionen.
 58. **Toolbar des Control-Menüs bei 320 px etwa 8 px zu breit** (Fund aus DS-02c, #239). Wird mit Paket NM4-56 erledigt.
@@ -332,6 +335,10 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-59-results-als-layer.md`
    - **Aufgabe:** Stufe B, Frontend; Code nach NM4-55 (#242), vor NM4-53 und NM4-54.
 60. **Normalize je Batch mit gleichen Werten** (Wiedervorlage aus NM4-11, #244): Option „gleiche Werte für alle Aufträge“, damit normalisierte Zeitreihen vergleichbar sind.
+61. **Annahme von Rezept-Version 1 befristen** (aus NM4-43e, #250, 30.10.2026): `intake.VERSION_1_ACCEPTED_UNTIL` beim ersten öffentlichen Deploy (M6) auf Deploy-Datum + 30 Tage setzen. Bis dahin nimmt `api` Version 1 an; der Runner liest Version 1 dauerhaft (adr/0020 F9).
+62. **Leistungsvergleich alter Stand gegen main** (Otto, 30.10.2026; aus der Messung zu Punkt 48). Job-Skript auf main 12–16 s gegen 2,8 s auf dem Stand von #215, Zuschnitt 15,6 gegen 10,5 s; Kachel bei beiden gleich (Netz). Gegen die nachgebaute Quelle messen, Ursache suchen.
+   - **Plan:** `querschnitt/nm4-62-leistungsvergleich.md`
+   - **Aufgabe:** Stufe A, Backend, Opus.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
