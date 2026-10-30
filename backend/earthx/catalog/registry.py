@@ -11,6 +11,7 @@ later on.
 
 from __future__ import annotations
 
+import keyword
 import math
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -875,6 +876,59 @@ def _filter_problem(search_filter: SearchFilter) -> str | None:
     return None
 
 
+# The name of the band a preset's step adds: the pattern of ``band_math.check_name`` (adr/0020 §6), which the start of
+# ``api`` applies in full (``processing.index_presets``); ``catalog`` cannot import ``processing``.
+INDEX_PRESET_NAME = re.compile(r"\A[A-Za-z][A-Za-z0-9_]{0,31}\Z")
+# A name in an expression that is no call: what has to be a band of the dataset. Numbers such as ``1e5`` are no name;
+# Python's keywords (``if``, ``and``) are left to band_math, which refuses them with a reason of its own.
+_EXPRESSION_BAND = re.compile(r"(?<![A-Za-z0-9_.])[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_])(?!\s*\()")
+
+
+@dataclass(frozen=True, slots=True)
+class IndexPreset:
+    """A common index the panel offers as one click, which fills an ordinary ``band_math`` step (NM4-14 plan §8.1).
+
+    ``name`` is the band the step adds and the text of the button, ``expression`` names the bands of this dataset as a
+    user would type them. ``rescale`` and ``colormap_name`` are how a band with this expression is drawn, in the field
+    names of the STAC render extension like ``DefaultRender``. ``formula`` is the formula in the words of Awesome
+    Spectral Indices, ``reference`` the source of the formula as that catalogue names it. No defaults (B10).
+    """
+
+    name: str
+    title: str
+    expression: str
+    rescale: tuple[float, float]
+    colormap_name: str
+    formula: str
+    reference: str
+
+
+def _preset_problem(preset: IndexPreset, bands: set[str], not_bands: set[str]) -> str | None:
+    """The rule an index preset breaks, as the end of a sentence about it, or None."""
+    for field_name in ("title", "expression", "colormap_name", "formula"):
+        value = getattr(preset, field_name)
+        if not isinstance(value, str) or not value.strip() or value != value.strip():
+            return f"has a non-blank {field_name}"
+    used = {name for name in _EXPRESSION_BAND.findall(preset.expression) if not keyword.iskeyword(name)}
+    if used & not_bands:
+        return f"reads {', '.join(sorted(used & not_bands))}, which is no band of the data"
+    if unknown := used - bands:
+        return f"reads {', '.join(sorted(unknown))}, which the entry does not know (band_units)"
+    if not used:
+        return "reads no band"
+    rescale = preset.rescale
+    if (
+        not isinstance(rescale, tuple)
+        or len(rescale) != 2
+        or not all(_is_finite_number(bound) for bound in rescale)
+        or not rescale[0] < rescale[1]
+    ):
+        return "has a rescale of two finite numbers, the lower first"
+    if not isinstance(preset.reference, str) or not preset.reference.startswith("https://"):
+        return "names the source of its formula with an https:// address"
+    return None
+
+
 def _is_finite_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
@@ -938,6 +992,9 @@ class DatasetConfig:
     # The filters the search offers for this dataset, in the order the panel shows them (DS-02). No default
     # (KLAERUNGEN B10): an entry says so, with an empty tuple where it offers none.
     search_filters: tuple[SearchFilter, ...]
+    # The indices the panel offers as one click each (NM4-14), in the order of the buttons. No default (KLAERUNGEN
+    # B10): an entry says so, with an empty tuple where it offers none.
+    index_presets: tuple[IndexPreset, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
@@ -955,6 +1012,7 @@ class DatasetConfig:
         self._check_band_units()
         self._check_auxiliary_assets()
         self._check_search_filters()
+        self._check_index_presets()
 
     def search_filter(self, name: str) -> SearchFilter | None:
         """The filter on the property ``name``, or None where the entry offers none."""
@@ -1048,6 +1106,35 @@ class DatasetConfig:
             raise ConfigError(f"{self.dataset_id}: auxiliary_assets names an asset twice")
         if self.mask is not None and self.mask.asset in keys:
             raise ConfigError(f"{self.dataset_id}: the mask layer {self.mask.asset!r} is named by mask, not auxiliary_assets")
+
+    def _check_index_presets(self) -> None:
+        """The presets are well formed, each name once, and name only bands of the data (NM4-14 plan §8.1).
+
+        Whether ``band_math`` takes the expression and the name, and whether the tiler knows the colormap, is
+        ``processing.index_presets.check_index_presets``' question.
+        """
+        presets = self.index_presets
+        if isinstance(presets, IndexPreset) or not isinstance(presets, tuple):
+            raise ConfigError(f"{self.dataset_id}: index_presets is a tuple of IndexPreset")
+        if presets and not self.capabilities.band_math:
+            raise ConfigError(f"{self.dataset_id}: index presets fill a band_math step, but band_math is off")
+        bands = {key for key in self.band_units if "*" not in key}
+        not_bands = set(self.auxiliary_assets) | ({self.mask.asset} if self.mask is not None else set())
+        taken = {key.casefold() for key in self.band_units}
+        seen: set[str] = set()
+        for preset in presets:
+            if not isinstance(preset, IndexPreset):
+                raise ConfigError(f"{self.dataset_id}: index_presets is a tuple of IndexPreset")
+            name = preset.name
+            if not isinstance(name, str) or not INDEX_PRESET_NAME.match(name):
+                raise ConfigError(f"{self.dataset_id}: {name!r} is not a name a band_math step can add")
+            if name.casefold() in seen:
+                raise ConfigError(f"{self.dataset_id}: the index preset {name} is named twice (case ignored)")
+            seen.add(name.casefold())
+            if name.casefold() in taken:
+                raise ConfigError(f"{self.dataset_id}: the index preset {name} has the name of a band of the data")
+            if problem := _preset_problem(preset, bands, not_bands):
+                raise ConfigError(f"{self.dataset_id}: the index preset {name} {problem}")
 
     def _check_mask(self) -> None:
         """``masking`` and ``mask`` agree, and the description of the layer is consistent (M4-18)."""
