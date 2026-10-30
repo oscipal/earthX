@@ -6,6 +6,8 @@
 **Start:** nach dem Merge von #204 (`adr/0019` angenommen). Nicht gleichzeitig mit NM4-27 oder NM4-34 (alle ändern Processing-Manager, Panel bzw. Ablage). Frontend-Aufgabe: höchstens zwei Frontend-Sessions gleichzeitig.
 **Startsatz:** „Führe Aufgabe NM4-05b aus `docs/plans/querschnitt/nm4-05b-processing-auf-ergebnis.md` aus.“
 
+**Zusammengelegt (Otto, 29.10.2026):** In derselben Session und demselben PR wird zusätzlich NM4-06 (`querschnitt/nm4-06-zuschnitt-als-ein-objekt.md`, gemergter Zuschnitt als ein Objekt im Panel) umgesetzt, als eigener Commit; beide ändern, womit das Processing-Panel geöffnet wird. Abnahme beider Pläne gilt.
+
 ## 1. Grundlage
 
 `adr/0019` (angenommen): Option 2 – ⚙ am Ergebnis-Layer öffnet das Processing-Panel mit dem Auftrag dieses Jobs (Kopie in der Ablage, bis 64 KB, UI-01b). Die bisherigen Schritte stehen gesperrt vorn, neue Schritte kommen dahinter, alles wird als **ein** normaler Auftrag neu gerechnet. API, Rezept, Hash, Cache, Runner, Permalinks und Ablauf bleiben unverändert; nur Frontend.
