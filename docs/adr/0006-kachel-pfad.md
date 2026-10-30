@@ -663,6 +663,12 @@ zusätzlich zu M4-17:
   zurück (Hinweis im Tooltip). Während die erste Kachel lädt (kalt 6,0 s gemessen), sagt ein
   Badge „Loading…“ es.
 
+**Nachtrag NM4-43d (2026-10-30, zu §3.4; [#245](https://github.com/oscipal/earthX/pull/245), `adr/0014` §15 Nachtrag NM4-43d):** Mit Schritten der Version 2
+zeigt die Kachel ein Band: der Parameter `band=<Name>` (Vorgabe: das letzte von `band_math` hinzugefügte, sonst das erste) steht auf Kachel, TileJSON, Statistik und
+Mosaik-Kachel. Die Kachel liest nur die Assets, die dieses Band braucht; die Grenzen (16 Assets, bei der Mosaik-Kachel 4) zählen diese. Das TileJSON trägt `band` und
+`unit`. Ein unbekannter Name ist ein `422` vor dem Öffnen einer Datei. Die Ergebnis-Kachel wählt ein Band über `bidx` (außerhalb der Datei `400`). Die Mosaik-Statistik
+(Otto, F4, oben) bleibt eine Item-Route.
+
 **Nachtrag NM4-19 (2026-10-28, Otto, zu #218):** Die Farbskala der Vorschau misst bei „AOI only“
 über die AOI, so wie der Job sie zählt (`plans/querschnitt/nm4-19-auto-stretch-ueber-aoi.md`
 §6–§17, `adr/0014` §15u). Neben die GET-Statistik eines Items tritt eine Route **ohne Item im
@@ -702,6 +708,9 @@ Pfad**:
   Speicher und keinem Log. Eine Änderung der AOI oder des Ausgabetyps misst neu. Der Tooltip von „Preview“ sagt „Range measured
   over the first whole scene“ (Rückfall) bzw. „Range measured on a coarser read; the result may differ“ (`exact: false`).
   „Auto stretch“ fragt nach einem Rückfall die AOI erneut.
+- **Nachtrag NM4-11 (2026-10-30, `adr/0014` Nachtrag NM4-11):** Die Antwort der Route trägt je Band zusätzlich `percentile_1`, `_5`, `_25`, `_50`, `_75`, `_95` und `_99` aus demselben
+  Histogramm, für die Methoden von `normalize` Version 3, deren Zahlen das Panel vorab misst. Das Ergebnisdokument bleibt bei 2 und 98. Der Schlüssel des Caches trägt deshalb `area-statistics/v2`; Einträge der
+  älteren Form werden nicht mehr getroffen und laufen nach 7 Tagen ab. Grenzen, Datenschutz und Log der Route bleiben (die AOI nur im Body, die Zeile ohne AOI, Item-ID und Schlüssel).
 - **Index-Regel nach Perzentilen (Frage 8, Otto, 2026-10-28):** `render.ts::scaleOf`, die eine Regel für Vorschau und
   Ergebnis: Band math und bei allen Bändern p2 ≥ −1 und p98 ≤ 1 (Minimum…Maximum, wo Perzentile fehlen) → −1…1 `rdylgn`,
   sonst 2–98 % `viridis`. Nur Anzeige: `result.tif`, seine Tags und das Ergebnisdokument tragen keine Darstellungsvorgabe

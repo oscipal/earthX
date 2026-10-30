@@ -80,6 +80,21 @@ class TestTheParagraph:
         text = methods_text(document(recipes.recipe_data(steps=steps)), operators=OPERATORS)
         assert text.index("multiplied by 2.0") < text.index("coarsened by 2")
 
+    def test_normalize_says_the_method_and_the_numbers_it_was_given(self) -> None:
+        """The numbers stand in the recipe, so the paragraph can give them (NM4-11)."""
+        params = {
+            "method": "percentile", "bands": ["red"], "low": 2, "high": 98, "out_min": 0.0, "out_max": 1.0, "clip": True,
+            "measured": {"factor": 3, "bands": {"red": {"p_low": 0.12, "p_high": 0.3}}},
+        }
+        data = recipes.recipe_data(steps=[{"op": "normalize", "op_version": 3, "params": params}])
+        data["output"]["bands"] = ["red"]
+        text = methods_text(document(data), operators=REGISTRY)
+        assert (
+            "The band red was stretched from the 2nd to the 98th percentile (red: 0.12 to 0.3; as measured before the "
+            "run, on a read 3 times coarser than the result) onto the range 0 to 1, values outside limited to the "
+            "target range, in 32-bit floating point." in text
+        )
+
     def test_a_step_whose_result_the_output_does_not_keep_is_not_in_the_text(self) -> None:
         steps = [
             {"op": "band_math", "op_version": 2, "params": {"expression": "nir - red", "name": "Kept"}},
@@ -221,6 +236,11 @@ class TestEveryOperatorSaysItsStep:
         ("mask", 1): {"source": "scl", "classes": [3, 8, 9, 10]},
         ("normalize", 1): {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True},
         ("normalize", 2): {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True, "bands": ["red"]},
+        ("normalize", 3): {
+            "method": "zscore",
+            "bands": ["red"],
+            "measured": {"factor": 1, "bands": {"red": {"mean": 0.5, "stddev": 0.25}}},
+        },
         ("reproject", 1): {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
     }
 

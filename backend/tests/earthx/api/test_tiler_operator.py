@@ -421,11 +421,11 @@ class TestRefusals:
         assert "not available" in response.json()["detail"]
 
     @pytest.mark.parametrize("op", ["band_math", "mask", "normalize"])
-    def test_version_2_of_the_bands_steps_is_a_job_for_now_and_no_tile(self, client: TestClient, op: str) -> None:
-        """They work on a stock of named bands; the tile reads them with NM4-43d (adr/0020 §13)."""
+    def test_version_2_of_the_bands_steps_runs_as_a_tile(self, client: TestClient, op: str) -> None:
+        """They work on a stock of named bands; the tile reads them since NM4-43d (adr/0020 §13): it judges the parameters."""
         response = client.get(_url((14, 1, 1), op=op, op_version="2", params="{}"))
-        assert response.status_code == 422
-        assert "does not run as a tile" in response.json()["detail"]
+        assert response.status_code == 400
+        assert response.json()["detail"].startswith("params: ")
 
     def test_an_operator_that_does_not_run_as_a_tile_is_a_422(self, client: TestClient) -> None:
         raw = '{"crs": "EPSG:3035", "resolution": 10, "resampling": "nearest"}'
@@ -490,10 +490,6 @@ class TestRefusals:
 
     def test_the_same_asset_twice_is_a_400(self, client: TestClient) -> None:
         assert client.get(_url(_tiles()[0], assets=("red", "red"), expression="red")).status_code == 400
-
-    def test_more_than_sixteen_assets_is_a_400(self, client: TestClient) -> None:
-        assets = tuple(f"a{i}" for i in range(17))
-        assert client.get(_url(_tiles()[0], assets=assets, expression="a0")).status_code == 400
 
     @pytest.mark.parametrize("option", ["bidx=1", "unscale=true", "nodata=0", "rescale=0,1&resampling=bilinear"])
     def test_options_that_would_change_the_values_are_refused(self, client: TestClient, option: str) -> None:

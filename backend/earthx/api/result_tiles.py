@@ -173,6 +173,11 @@ class ResultReader(CogReader):
         return max(RESULT_MAX_ZOOM, self._maxzoom)
 
     def tile(self, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> Any:
+        # A result holds the bands of its job's `output.bands`, named by their descriptions; the browser picks one by its
+        # `bidx` (NM4-43d). One the file lacks is the caller's mistake, not an `IndexError` out of rio-tiler (a `500`).
+        count = self.dataset.count
+        if any(not 1 <= index <= count for index in kwargs.get("indexes") or ()):
+            raise HTTPException(status_code=400, detail=f"the result has {count} band(s); bidx is 1 to {count}")
         image = super().tile(tile_x, tile_y, tile_z, **kwargs)
         with CogReader(self.input.mask, tms=self.tms) as mask:
             inside = mask.tile(

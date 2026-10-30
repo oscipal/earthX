@@ -49,6 +49,8 @@ pytestmark = pytest.mark.anyio
 EXECUTION = "/processing/processes/recipe/execution"
 ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
 FINISHED_AT = "2026-03-05 10:00:00+00"
+#: A corner of the area (9.01, 47.01) standing as a number of its own: not the tail of a longer number or of the seconds of a timestamp.
+AOI_COORDINATE = re.compile(r"(?<![\d.])(?:9|47)\.01(?!\d)")
 RESULT = {
     "properties": {"proj:code": "EPSG:32632", "processing:lineage": "scale"},
     "scaling": [{"input": "scene", "asset": "red", "source": "item", "scales": [0.0001], "offsets": [-0.1]}],
@@ -548,8 +550,28 @@ class TestStatus:
         job_id = await placed(rig)
         result_id = finish(rig.db, job_id)
         text = (await rig.client.get(f"/processing/jobs/{job_id}")).text
-        for forbidden in ("c1:", S2_HOST, "9.01", "47.01", result_id, "run_id", "cache_key", "hosts"):
+        for forbidden in ("c1:", S2_HOST, result_id, "run_id", "cache_key", "hosts"):
             assert forbidden not in text
+        assert not AOI_COORDINATE.search(text)
+
+    @pytest.mark.parametrize("created", ["2026-10-30 17:19:09.012345+00", "2026-10-30 17:19:47.019999+00"])
+    async def test_a_timestamp_that_contains_a_coordinate_of_the_area_is_not_the_area(
+        self, rig: Rig, created: str
+    ) -> None:
+        """The seconds of ``created`` with a fraction of .01… read like the AOI's corner (9.01 N, 47.01 E) as plain text.
+
+        The check above once looked for the substrings; one run in about 300 hit a clock reading like this and failed.
+        """
+        job_id = await placed(rig)
+        finish(rig.db, job_id)
+        rig.db.execute("UPDATE public.earthx_job SET created_at = %s WHERE job_id = %s", (created, job_id))
+        text = (await rig.client.get(f"/processing/jobs/{job_id}")).text
+        assert any(coordinate in text for coordinate in ("9.01", "47.01"))  # the old check would have failed here
+        assert not AOI_COORDINATE.search(text)
+
+    @pytest.mark.parametrize("leak", ['"bbox": [9.0, 47.0, 9.01, 47.01]', "POLYGON((9.01 47.01))", "[9.01,47.01]"])
+    def test_the_check_still_finds_a_coordinate_that_stands_alone(self, leak: str) -> None:
+        assert AOI_COORDINATE.search(leak)
 
     async def test_looking_at_a_job_changes_no_row(self, rig: Rig) -> None:
         job_id = await placed(rig)

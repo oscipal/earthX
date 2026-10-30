@@ -1028,6 +1028,12 @@ Die Grenze von 1,5 GB je Kindprozess und die Schätzung dazu (`plan.memory_neede
 nicht und rechnet auf der Maschine des Nutzers, so viel sie hat; eine Grenze von 16 Assets gab es dort nie. Die Spitze des Kerns ist dieselbe wie im Worker
 (gleicher Code, `adr/0014` Nachtrag NM4-43c PR 2: rund 300 MB + 33 MB je Band, nicht von der Fläche abhängig). Eine `recipe.json` aus einem angenommenen Auftrag liegt unter der Grenze; der Runner prüft sie nicht noch einmal.
 
+## 12 Nachtrag NM4-11 (2026-10-30): `normalize` Version 3 im Runner (zu §12; `adr/0014` Nachtrag NM4-11)
+
+Der Runner rechnet `normalize` Version 3 mit den Zahlen, die das Rezept trägt (`params.measured`), und **misst nichts**: keine Statistik, kein Lesen über das Rezept hinaus, kein Plattformdienst (B9). Der Kern ist der des Jobs;
+`runner/test_compare.py` vergleicht Job-Kind und Runner für jede der vier Methoden bis auf das Byte (Pixel, Maske, Profil, Band-Tags, SHA-256 von `result.tif` und `mask.tif`), und die Gegenprobe ändert eine gemessene Zahl auf der Seite des Runners und
+verlangt den Bruch. Der Methodentext in `provenance.methods` nennt die Zahlen. Das Image bleibt `earthx-runner:0.5.0` (keine Byte ändert sich, `earthx.__version__` bleibt); eine ältere Fassung weist Version 3 ab (unbekannter Operator, Exit-Code 2).
+
 ## 13. Quellen
 
 **Im Repo [P]**

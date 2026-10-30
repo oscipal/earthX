@@ -14,6 +14,9 @@ M4-19c): each source over the same bounds onto the same grid, at most :data:`MAX
 The mosaic tile with steps (NM4-04) reads as the mosaic job reads: per band and pixel the first valid
 element of the scenes, in physical values, and only then the kernels (:class:`MosaicOperatorTileReader`).
 
+Steps of version 2 work on a stock of named bands, and a picture shows one of them (NM4-43d, adr/0020 §10): the URL
+names the band (:func:`plan_band`), and the tile reads and runs what that band needs, as the planner of a job does.
+
 The tile is a *preview* below the native level: rio-tiler reads an overview there, and
 only on the native level is the tile bit-identical with the job (§6.3, F9).
 """
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from contextlib import ExitStack
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Protocol
 
@@ -40,13 +44,15 @@ from earthx.access.mosaic_tiles import MOSAIC_THREADS
 from earthx.processing.errors import GridMismatch, RecipeInvalid, ScalingMismatch, UnsupportedRecipe
 from earthx.processing.mosaic import check_alike
 from earthx.processing.operators.base import BandMeta, Operator, RasterMeta
-from earthx.processing.recipe import ResolvedInput
+from earthx.processing.plan import PlannedStep, needed_source_bands, stock_steps
+from earthx.processing.recipe import ResolvedInput, Step
 from earthx.processing.source import Source, common_grid, expected_band_names, merge_images, units_of
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
     "MAX_PREVIEW_SIDE",
+    "BandPlan",
     "MosaicOperatorTileReader",
     "MosaicTileInputs",
     "OperatorTileReader",
@@ -55,6 +61,7 @@ __all__ = [
     "TileRefused",
     "judge_described_bands",
     "judge_steps",
+    "plan_band",
 ]
 
 #: The longest side, in pixels, of the read a measurement of an operator takes (the size of the statistics of one asset).
@@ -72,21 +79,28 @@ class TileOptionRefused(TileRefused):
 
 
 class TileInputs(Protocol):
-    """What `api` hands the reader: the assets of the tile and the steps (operator, validated parameters)."""
+    """What `api` hands the reader: the assets of the tile and the steps (operator, validated parameters).
+
+    ``band`` is the band the steps leave for the picture (:func:`plan_band`); ``None`` for steps of version 1, which
+    leave the bands they leave.
+    """
 
     inputs: tuple[tuple[ResolvedInput, AssetPath | ZarrAsset], ...]
     steps: tuple[tuple[Operator, BaseModel], ...]
+    band: str | None
 
 
 class MosaicTileInputs(Protocol):
     """What `api` hands the mosaic reader: per scene, in the order of the mosaic, its assets; the steps; the extent.
 
     ``bounds`` is west, south, east, north in EPSG:4326 over every scene of the URL, not only those of the tile.
+    ``band`` as for :class:`TileInputs`.
     """
 
     scenes: tuple[tuple[tuple[ResolvedInput, AssetPath | ZarrAsset], ...], ...]
     steps: tuple[tuple[Operator, BaseModel], ...]
     bounds: tuple[float, float, float, float]
+    band: str | None
 
 
 def _as_refusal(error: BaseException) -> BaseException:
@@ -128,6 +142,70 @@ def judge_described_bands(entries: Sequence[ResolvedInput], steps: Sequence[tupl
         units = units_of(entry, len(names))
         bands += [BandMeta(name, "float32", None, unit) for name, unit in zip(names, units, strict=True)]
     judge_steps(RasterMeta(entries[0].asset.crs or "EPSG:4326", Affine.identity(), 1, 1, tuple(bands)), steps)
+
+
+@dataclass(frozen=True, slots=True)
+class BandPlan:
+    """What a tile of steps of version 2 reads and runs to show one band (adr/0020 §10)."""
+
+    #: The band the picture shows: the one the URL names, else the last that a ``band_math`` step added, else the first.
+    band: str
+    #: The assets the band needs, in the order of the URL; the tile opens no other.
+    assets: tuple[str, ...]
+    #: The steps to run on what is read: the planner's (dead steps left out, ``normalize`` narrowed, the bands nobody needs
+    #: dropped), ending in the selection of ``band``, so that the picture has this one band.
+    steps: tuple[tuple[Operator, BaseModel], ...]
+
+
+def plan_band(
+    entries: Sequence[ResolvedInput], steps: Sequence[tuple[Operator, BaseModel]], band: str | None
+) -> BandPlan | None:
+    """The plan of a tile that shows ``band`` of what ``steps`` leave of ``entries``, judged before any file is opened.
+
+    The same planner as a job's (:func:`~earthx.processing.plan.stock_steps`) with ``[band]`` as the output, so the
+    values of the band are those of a job that asks for it alone (adr/0020 §4). Where the item does not say how many
+    bands an asset has, the asset counts as one band named like it, as the estimate of a job counts it; the reader
+    judges again on the file.
+
+    ``None`` for steps one of which is of version 1 (it replaces or removes bands): nothing is dropped and no band
+    is chosen, the picture is what the steps leave. ``TileOptionRefused`` (`400`) if a ``band`` is named then, and
+    :class:`~earthx.processing.errors.RecipeInvalid` (`422`, with the name) for a band the steps do not leave.
+    """
+    if any(not operator.stock for operator, _ in steps):
+        if band is not None:
+            raise TileOptionRefused("band is for steps of version 2; a step of version 1 replaces or removes bands")
+        return None
+    names_of = [expected_band_names(entry) or [entry.asset.asset] for entry in entries]
+    meta = RasterMeta(
+        entries[0].asset.crs or "EPSG:4326",
+        Affine.identity(),
+        1,
+        1,
+        tuple(
+            BandMeta(name, "float32", None, unit)
+            for entry, names in zip(entries, names_of, strict=True)
+            for name, unit in zip(names, units_of(entry, len(names)), strict=True)
+        ),
+    )
+    planned = [
+        PlannedStep(
+            Step(op=operator.op, op_version=operator.op_version, params=params.model_dump(mode="json")), operator, params
+        )
+        for operator, params in steps
+    ]
+    held = [band_meta.name for band_meta in meta.bands]
+    added = [use.adds for step in planned if (use := step.operator.bands_used(step.params)).adds is not None]
+    held += added
+    shown = band if band is not None else (added[-1] if added else held[0])
+    if shown not in held:
+        raise RecipeInvalid(f"band {shown!r} is not among the bands the steps leave: {', '.join(held)}")
+    run = stock_steps(meta, planned, [shown])
+    needed = needed_source_bands(planned, [shown])
+    return BandPlan(
+        band=shown,
+        assets=tuple(entry.asset.asset for entry, names in zip(entries, names_of, strict=True) if needed & set(names)),
+        steps=tuple((step.operator, step.params) for step in run),
+    )
 
 
 def _tile_options(
@@ -193,6 +271,11 @@ class OperatorTileReader:
     @property
     def _first(self) -> Source:
         return self._sources[0]
+
+    @property
+    def band(self) -> str | None:
+        """The band the picture shows (:func:`plan_band`); ``None`` for steps of version 1."""
+        return self._input.band
 
     @property
     def minzoom(self) -> int:
@@ -321,6 +404,11 @@ class MosaicOperatorTileReader:
     def order(self) -> tuple[str, ...]:
         """The item ids in the order the tile reads them."""
         return tuple(assets[0][0].asset.item_id for assets in self._input.scenes)
+
+    @property
+    def band(self) -> str | None:
+        """The band the picture shows (:func:`plan_band`); ``None`` for steps of version 1."""
+        return self._input.band
 
     @property
     def units(self) -> tuple[str | None, ...]:
