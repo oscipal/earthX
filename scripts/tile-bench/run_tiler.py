@@ -43,6 +43,7 @@ import httpx  # noqa: E402
 import rasterio.session  # noqa: E402
 import titiler.core.utils  # noqa: E402
 from starlette.concurrency import run_in_threadpool  # noqa: E402
+from synthetic_item import synthetic_item  # noqa: E402
 
 import earthx.api.tiler as tiler  # noqa: E402
 import earthx.readers.cog as cog  # noqa: E402
@@ -51,43 +52,6 @@ rasterio.session.boto3 = None
 
 PHASES: contextvars.ContextVar[dict] = contextvars.ContextVar("phases")
 LOG = open(args.log, "a", buffering=1)
-ASSET_HOST = "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com"
-FOOTPRINT = [10.3119, 46.8326, 11.8028, 47.8459]
-
-
-def synthetic_item(item_id: str) -> dict:
-    """An Earth Search item as the adapter reads it, written by hand for the COGs of ``make_cogs.py``."""
-    grid = {"gsd": 10, "proj:shape": [10980, 10980], "proj:transform": [10, 0, 600000, 0, -10, 5300040]}
-    cog_type = "image/tiff; application=geotiff; profile=cloud-optimized"
-    reflectance = {"nodata": 0, "data_type": "uint16", "spatial_resolution": 10, "scale": 0.0001, "offset": -0.1}
-
-    def band(name: str, common: str) -> dict:
-        return {"name": name, "common_name": common}
-
-    west, south, east, north = FOOTPRINT
-    return {
-        "type": "Feature",
-        "stac_version": "1.0.0",
-        "id": item_id,
-        "collection": "sentinel-2-c1-l2a",
-        "bbox": FOOTPRINT,
-        "geometry": {"type": "Polygon",
-                     "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]]},
-        # One overpass for every scene, so that they make one mosaic (NM4-29): its key is day and MGRS tile, the
-        # overpass is `s2:datatake_id`.
-        "properties": {"datetime": "2026-08-01T10:20:39Z", "grid:code": "MGRS-32TPT",
-                       "s2:datatake_id": "SYNTH_20260801T102039", "proj:code": "EPSG:32632", "eo:cloud_cover": 1.0},
-        "links": [],
-        "assets": {
-            "red": {"href": f"{ASSET_HOST}/synth/{item_id}/B04.tif", "type": cog_type, "roles": ["data", "reflectance"],
-                    "eo:bands": [band("B04", "red")], "raster:bands": [reflectance], **grid},
-            "nir": {"href": f"{ASSET_HOST}/synth/{item_id}/B08.tif", "type": cog_type, "roles": ["data", "reflectance"],
-                    "eo:bands": [band("B08", "nir")], "raster:bands": [reflectance], **grid},
-            "visual": {"href": f"{ASSET_HOST}/synth/{item_id}/TCI.tif", "type": cog_type, "roles": ["visual"],
-                       "eo:bands": [band("B04", "red"), band("B03", "green"), band("B02", "blue")],
-                       "raster:bands": [{"nodata": 0, "data_type": "uint8", "spatial_resolution": 10}] * 3, **grid},
-        },
-    }
 
 
 def add(name: str, ms: float) -> None:
