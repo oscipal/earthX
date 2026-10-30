@@ -1327,6 +1327,131 @@ input[type='date']:focus {
   white-space: normal;
 }
 
+/* --- Advanced search in the control menu (DS-02c) ---
+   The dataset box is the one of the results (`DatasetSelect`), without the tinted card around it. */
+.dataset-select.plain {
+  padding: 0;
+  background: none;
+  border-bottom: none;
+}
+.advanced-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.advanced-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.advanced-head:hover,
+.advanced-head[aria-expanded='true'] {
+  color: var(--text);
+}
+.advanced-count {
+  letter-spacing: 0.5px;
+  text-transform: none;
+  color: var(--accent);
+}
+.advanced-count.wrong {
+  color: #ff6b6b;
+}
+.advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.filter-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.filter-title {
+  padding: 0;
+  font-size: 11px;
+  color: var(--text);
+  cursor: help;
+}
+/* from [  ] to [  ] unit: the fields share what the unit leaves, however narrow the panel. */
+.filter-range {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.filter-range input[type='number'] {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.filter-range input[type='number']::-webkit-inner-spin-button,
+.filter-range input[type='number']::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.filter-range input[aria-invalid='true'] {
+  border-color: #ff6b6b;
+}
+.filter-unit {
+  min-width: 1ch;
+  color: var(--text);
+}
+.filter-values {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.filter-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.filter-check input {
+  margin: 0;
+}
+.reset-filters {
+  align-self: flex-start;
+  padding: 6px 12px;
+  font-size: 11px;
+}
+
 /* --- grouped (mosaic) results --- */
 .result-group {
   border-bottom: 1px solid var(--panel-border);

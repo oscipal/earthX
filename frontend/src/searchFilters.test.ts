@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { CLOUD_FILTER, ELEVATION, LEGACY, OPTICAL, ORBIT_FILTER, RADAR, SATELLITE_FILTER } from './fixtures/searchFilters';
 import {
-  emptyInput,
   filterError,
   filterQuery,
   hasFilterError,
@@ -93,8 +92,6 @@ describe('searchFiltersOf: what the registry offers', () => {
 describe('isSet and setFilters', () => {
   it('a filter is set once a field has something in it', () => {
     expect(isSet(undefined)).toBe(false);
-    expect(isSet(emptyInput(cloud))).toBe(false);
-    expect(isSet(emptyInput(satellite))).toBe(false);
     expect(isSet(range(' ', ''))).toBe(false);
     expect(isSet(range('', '20'))).toBe(true);
     expect(isSet(range('5', ''))).toBe(true);

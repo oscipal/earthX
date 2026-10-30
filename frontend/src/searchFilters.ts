@@ -41,20 +41,26 @@ export type FilterInputs = Record<string, FilterInput>;
 // `{property: {gte, lte}}` or `{property: {in: [...]}}`, the form of the STAC query extension.
 export type FilterQuery = Record<string, Record<string, number | string[]>>;
 
+// A collection is not changed once it is loaded, and the store reads its filters on every change of state (whether
+// "Search" may be pressed): read each one once.
+const read = new WeakMap<Collection, SearchFilterDescription[]>();
+
 // The filters of a dataset, in the order of the registry. An entry that is not complete is left out rather than
 // guessed at, like every other registry field the viewer reads (`datasets.ts`): a filter with a made-up bound
 // would send the server a value it answers with `400`.
 export function searchFiltersOf(collection: Collection): SearchFilterDescription[] {
+  const known = read.get(collection);
+  if (known) return known;
   const raw = collection['earthx:search_filters'];
-  if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
   const found: SearchFilterDescription[] = [];
-  for (const entry of raw) {
+  for (const entry of Array.isArray(raw) ? raw : []) {
     const description = describe(entry);
     if (!description || seen.has(description.property)) continue;
     seen.add(description.property);
     found.push(description);
   }
+  read.set(collection, found);
   return found;
 }
 
@@ -87,10 +93,6 @@ function describe(entry: unknown): SearchFilterDescription | null {
     return { ...common, kind, minimum: 0, maximum: 0, integer: false, values };
   }
   return null;
-}
-
-export function emptyInput(filter: SearchFilterDescription): FilterInput {
-  return filter.kind === 'range' ? { kind: 'range', from: '', to: '' } : { kind: 'values', values: [] };
 }
 
 // Whether the user has put anything into the fields of this filter.
