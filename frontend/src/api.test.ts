@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  buildCoverageUrl,
   buildMosaicTileTemplate,
   buildSearchBody,
   buildStatisticsUrl,
@@ -53,14 +54,63 @@ describe('buildSearchBody', () => {
     expect(Object.keys(body)).toEqual(['collections']);
   });
 
-  it('never sends the disabled query/fields extensions (M3-13 F5)', () => {
-    // Measured against the real API (M3-13 plan §2.2): both are silently
-    // dropped on a federated collection, so the backend now refuses them by
-    // name (`_DISALLOWED_QUERY_KEYS`) — `SearchQuery` has no field for either
-    // in the first place, so `buildSearchBody` structurally cannot send them.
-    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a'] });
-    expect(body).not.toHaveProperty('query');
-    expect(body).not.toHaveProperty('fields');
+  it('never sends the shared query, CQL2 filter, sortby or fields extensions (M3-13 F5, DS-02c)', () => {
+    // Measured against the real API (M3-13 plan §2.2): they are silently
+    // dropped on a federated collection, so the backend refuses them by name
+    // (`_DISALLOWED_QUERY_KEYS`) — `SearchQuery` has no field for them. The
+    // filters go as `query_by_collection`, below.
+    const body = buildSearchBody({
+      collections: ['sentinel-2-c1-l2a'],
+      queryByCollection: { 'sentinel-2-c1-l2a': { 'eo:cloud_cover': { lte: 20 } } },
+    });
+    for (const key of ['query', 'filter', 'sortby', 'fields']) expect(body).not.toHaveProperty(key);
+  });
+
+  it('carries the filters of each dataset as query_by_collection (DS-02c)', () => {
+    const body = buildSearchBody({
+      collections: ['optical', 'radar'],
+      queryByCollection: {
+        optical: { 'eo:cloud_cover': { gte: 5, lte: 20 }, platform: { in: ['sat-a'] } },
+        radar: { 'sat:relative_orbit': { gte: 22, lte: 22 } },
+      },
+    });
+    expect(body.query_by_collection).toEqual({
+      optical: { 'eo:cloud_cover': { gte: 5, lte: 20 }, platform: { in: ['sat-a'] } },
+      radar: { 'sat:relative_orbit': { gte: 22, lte: 22 } },
+    });
+  });
+
+  it('leaves query_by_collection out when no dataset has a filter, so such a search keeps its body', () => {
+    expect(buildSearchBody({ collections: ['optical'], queryByCollection: {} })).toEqual({ collections: ['optical'] });
+    expect(buildSearchBody({ collections: ['optical'], queryByCollection: undefined })).toEqual({ collections: ['optical'] });
+  });
+});
+
+describe('buildCoverageUrl', () => {
+  it('carries the dataset, the level, the box and the dates', () => {
+    const url = new URL(
+      buildCoverageUrl({ datasetId: 'optical', zoom: 4, bbox: [10, 47, 11, 48], datetime: '2026-07-01T00:00:00Z/..' }),
+      'http://localhost',
+    );
+    expect(url.pathname).toBe('/coverage/optical');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      zoom: '4',
+      bbox: '10,47,11,48',
+      datetime: '2026-07-01T00:00:00Z/..',
+    });
+  });
+
+  it('carries the filters of the dataset as JSON in query (DS-02b)', () => {
+    const query = { 'eo:cloud_cover': { lte: 20 }, platform: { in: ['sat-a', 'sat-b'] } };
+    const url = new URL(buildCoverageUrl({ datasetId: 'optical', zoom: 4, query }), 'http://localhost');
+    expect(JSON.parse(url.searchParams.get('query')!)).toEqual(query);
+  });
+
+  it('omits query without filters, and has no max_cloud_cover any more', () => {
+    for (const query of [undefined, {}]) {
+      const url = new URL(buildCoverageUrl({ datasetId: 'optical', zoom: 4, query }), 'http://localhost');
+      expect([...url.searchParams.keys()]).toEqual(['zoom']);
+    }
   });
 });
 

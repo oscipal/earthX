@@ -6,20 +6,24 @@ gateway, for every entry with filters:
 
 * every item of a sample carries every filtered property — a filter on a property the items lack matches
   nothing without a word (plan §6.2a);
-* each filter narrows the sample, and still finds something;
-* a values filter knows every value the sample holds;
+* the source counts exactly the scenes the sample says a filter keeps (DS-02c): a filter that matches more, fewer or
+  nothing is one the source no longer applies as the registry says (adr/0021 §8);
+* a values filter knows every value the sample holds, and every value of the last 30 days: a new satellite or
+  processing baseline needs a line in the registry;
 * the coverage map follows the filter: the aggregation counts exactly the scenes the search matches (DS-02b);
 * where the queryables name a property with a type, the type fits the kind of filter.
 
-Small on purpose (adr/0005 §3.6, K5): one sample, two requests per filter (search, aggregation) and one for the
-queryables, in a closed window in the past.
+Small on purpose (adr/0005 §3.6, K5): one sample in a closed window in the past, two or three searches and one
+aggregation per filter, one search of the last 30 days per values filter and one request for the queryables.
 """
 
 from __future__ import annotations
 
+import statistics
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import httpx
 import pytest
@@ -57,12 +61,21 @@ async def gateway() -> AsyncIterator[Gateway]:
         yield gateway
 
 
-def _narrowing(search_filter: SearchFilter) -> Condition:
-    """A condition that should keep some of the sample but not all: the lower half, or the first value."""
+def _probes(search_filter: SearchFilter, found: list[Any]) -> list[Condition]:
+    """Conditions whose result the sample itself tells: both halves of a range split at its median, and for a choice
+    the value the sample holds most often and, where there is one, a value it does not hold at all."""
     if search_filter.kind is FilterKind.RANGE:
-        assert search_filter.minimum is not None and search_filter.maximum is not None
-        return RangeCondition(minimum=None, maximum=(search_filter.minimum + search_filter.maximum) / 2)
-    return ValuesCondition(values=(search_filter.values[0].value,))
+        median = statistics.median(found)
+        return [RangeCondition(minimum=None, maximum=median), RangeCondition(minimum=median, maximum=None)]
+    held = max(set(found), key=found.count)
+    absent = [entry.value for entry in search_filter.values if entry.value not in found]
+    return [ValuesCondition(values=(held,)), *([ValuesCondition(values=(absent[0],))] if absent else [])]
+
+
+def _keeps(condition: Condition, value: Any) -> bool:
+    if isinstance(condition, ValuesCondition):
+        return value in condition.values
+    return (condition.minimum is None or value >= condition.minimum) and (condition.maximum is None or value <= condition.maximum)
 
 
 async def _matched(config: DatasetConfig, gateway: Gateway, conditions: dict[str, Condition] | None) -> int:
@@ -79,6 +92,17 @@ async def _counted(config: DatasetConfig, gateway: Gateway, conditions: dict[str
     return (await coverage(query, config, adapters=ADAPTER_SPECS, gateway=gateway)).total_count
 
 
+async def _recent_values_are_known(config: DatasetConfig, gateway: Gateway, search_filter: SearchFilter) -> None:
+    """The last 30 days hold no value of a choice that the registry does not offer: a new satellite or processing
+    baseline shows here first (the closed window above cannot)."""
+    until = datetime.now(timezone.utc)
+    params = SearchParams(bbox=BBOX, start=until - timedelta(days=30), end=until, limit=SAMPLE)
+    recent = await search_items(config, params, adapters=ADAPTER_SPECS, gateway=gateway)
+    offered = {entry.value for entry in search_filter.values}
+    held = {item.get("properties", {}).get(search_filter.property) for item in recent.items}
+    assert held <= offered, f"{config.dataset_id}: the source holds a new value of {search_filter.property}: add it to the registry"
+
+
 async def test_the_registry_filters_still_fit_their_source(gateway: Gateway) -> None:
     assert FILTERED, "no registry entry offers search filters"
     for config in FILTERED:
@@ -90,6 +114,7 @@ async def test_the_registry_filters_still_fit_their_source(gateway: Gateway) -> 
         )
         assert sample.items, f"{config.dataset_id}: no items in the sample window"
         total = await _matched(config, gateway, None)
+        assert total == len(sample.items), f"{config.dataset_id}: the sample window holds more than {SAMPLE} scenes"
         for search_filter in config.search_filters:
             name = search_filter.property
             found = [item.get("properties", {}).get(name) for item in sample.items]
@@ -97,11 +122,19 @@ async def test_the_registry_filters_still_fit_their_source(gateway: Gateway) -> 
             if search_filter.kind is FilterKind.VALUES:
                 offered = {entry.value for entry in search_filter.values}
                 assert set(found) <= offered, f"{config.dataset_id}: the source holds a value of {name} not offered"
-            narrowed = await _matched(config, gateway, {name: _narrowing(search_filter)})
-            assert 0 < narrowed < total, f"{config.dataset_id}: {name} does not narrow the sample"
-            assert await _counted(config, gateway, {name: _narrowing(search_filter)}) == narrowed, (
-                f"{config.dataset_id}: the coverage count does not follow {name}"
-            )
+                await _recent_values_are_known(config, gateway, search_filter)
+            narrowed_somewhere = False
+            for number, condition in enumerate(_probes(search_filter, found)):
+                expected = sum(_keeps(condition, value) for value in found)
+                matched = await _matched(config, gateway, {name: condition})
+                assert matched == expected, f"{config.dataset_id}: {name} keeps {matched} scenes, the sample says {expected}"
+                narrowed_somewhere |= matched < total
+                if number == 0:
+                    assert await _counted(config, gateway, {name: condition}) == matched, (
+                        f"{config.dataset_id}: the coverage count does not follow {name}"
+                    )
+            if len(set(found)) > 1:
+                assert narrowed_somewhere, f"{config.dataset_id}: {name} does not narrow the sample"
 
         url = f"{config.source.endpoint.rstrip('/')}/collections/{config.source.source_collection_id}/queryables"
         queryables = (await gateway.get(url)).json().get("properties", {})

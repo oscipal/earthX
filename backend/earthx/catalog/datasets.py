@@ -89,6 +89,23 @@ _SCL_NOTE = (
 # The aerosol optical thickness is unit less as well, so it shares the "1".
 _REFLECTANCE_UNIT = "1"
 
+def _scene_share(property_name: str, title: str, description: str, *, group: str) -> SearchFilter:
+    """A share of the scene in percent, 0 to 100: the form most of the scene properties of Sentinel-2 have."""
+    return SearchFilter(
+        property=property_name,
+        kind=FilterKind.RANGE,
+        title=title,
+        description=description,
+        unit="%",
+        minimum=0.0,
+        maximum=100.0,
+        integer=False,
+        values=(),
+        within_aoi=False,
+        group=group,
+    )
+
+
 SENTINEL_2_L2A = DatasetConfig(
     # The same id as the upstream collection, by Otto's decision of 19.09.2026: the
     # shorter "sentinel-2-l2a" is the name of the older Earth Search collection that
@@ -302,8 +319,14 @@ SENTINEL_2_L2A = DatasetConfig(
     },
     # Pictures made from the bands, not bands themselves. `scl` is the mask layer (`mask` above).
     auxiliary_assets=("visual", "preview"),
-    # DS-02 plan §6.2, §6.2a (Otto 28.10.2026, question 4 option 3): measured against the source on 28.10.2026 —
-    # `query` narrows on all three. The items carry no `sat:orbit_state` or `sat:relative_orbit`, so neither is offered.
+    # DS-02 plan §6.2, §6.2a and DS-02c (Otto 28.10.2026 and 30.10.2026): every filter below was measured against the
+    # source on 30.10.2026 (`scripts/ds-02-filters/measure.py`, adr/0021 §8): over 7 regions and 2 seasons, in 252
+    # searches, `query` returned exactly the scenes the unfiltered sample says it must. Clouds first, then what the scene
+    # shows, then how it was taken. Left out on purpose, with the reason in adr/0021 §8: `s2:dark_features_percentage` (the
+    # items carry it only up to baseline 05.10, so a filter on it would drop every newer scene without a word), the parts
+    # of the cloud cover (`s2:medium_proba_clouds_percentage`, `s2:high_proba_clouds_percentage`), `s2:unclassified_percentage`,
+    # the viewing angles, the MGRS tile (a text, not a list to tick) and every identifier, timestamp and constant.
+    # The items carry no `sat:orbit_state` or `sat:relative_orbit`, so neither is offered.
     search_filters=(
         SearchFilter(
             property="eo:cloud_cover",
@@ -317,18 +340,40 @@ SENTINEL_2_L2A = DatasetConfig(
             values=(),
             # DS-03 plan §6.10: the range of this filter may also be applied to the cloud share inside the AOI.
             within_aoi=True,
+            group="Clouds",
         ),
-        SearchFilter(
-            property="s2:nodata_pixel_percentage",
-            kind=FilterKind.RANGE,
-            title="No data",
-            description="Share of the scene tile without image data, e.g. at the edge of a swath.",
-            unit="%",
-            minimum=0.0,
-            maximum=100.0,
-            integer=False,
-            values=(),
-            within_aoi=False,
+        _scene_share(
+            "s2:thin_cirrus_percentage",
+            "Thin cirrus",
+            "Share of the scene covered by thin cirrus clouds. Part of the cloud cover.",
+            group="Clouds",
+        ),
+        _scene_share(
+            "s2:cloud_shadow_percentage",
+            "Cloud shadow",
+            "Share of the scene lying in the shadow of clouds. Not part of the cloud cover.",
+            group="Clouds",
+        ),
+        _scene_share(
+            "s2:nodata_pixel_percentage",
+            "No data",
+            "Share of the scene tile without image data, e.g. at the edge of a swath.",
+            group="Scene",
+        ),
+        _scene_share("s2:snow_ice_percentage", "Snow and ice", "Share of the scene classified as snow or ice.", group="Scene"),
+        _scene_share("s2:water_percentage", "Water", "Share of the scene classified as water.", group="Scene"),
+        _scene_share("s2:vegetation_percentage", "Vegetation", "Share of the scene classified as vegetation.", group="Scene"),
+        _scene_share(
+            "s2:not_vegetated_percentage",
+            "Not vegetated",
+            "Share of the scene classified as not vegetated, e.g. bare ground or built-up areas.",
+            group="Scene",
+        ),
+        _scene_share(
+            "s2:degraded_msi_data_percentage",
+            "Degraded data",
+            "Share of the scene whose sensor data the source marks as degraded.",
+            group="Scene",
         ),
         SearchFilter(
             property="platform",
@@ -346,6 +391,47 @@ SENTINEL_2_L2A = DatasetConfig(
                 FilterValue(value="sentinel-2c", label="Sentinel-2C"),
             ),
             within_aoi=False,
+            group="Acquisition",
+        ),
+        SearchFilter(
+            property="view:sun_elevation",
+            kind=FilterKind.RANGE,
+            title="Sun elevation",
+            description="Height of the sun above the horizon when the scene was taken. Low values mean long shadows.",
+            unit="°",
+            minimum=0.0,
+            maximum=90.0,
+            integer=False,
+            values=(),
+            within_aoi=False,
+            group="Acquisition",
+        ),
+        SearchFilter(
+            property="view:sun_azimuth",
+            kind=FilterKind.RANGE,
+            title="Sun azimuth",
+            description="Direction of the sun when the scene was taken, in degrees clockwise from north.",
+            unit="°",
+            minimum=0.0,
+            maximum=360.0,
+            integer=False,
+            values=(),
+            within_aoi=False,
+            group="Acquisition",
+        ),
+        SearchFilter(
+            property="s2:processing_baseline",
+            kind=FilterKind.VALUES,
+            title="Processing baseline",
+            description="Version of the ESA processing that made the scene. A new version comes every few months.",
+            unit=None,
+            minimum=None,
+            maximum=None,
+            integer=False,
+            # Every value the source held on 30.10.2026 (measured over 2018–2026); the live test names a newer one.
+            values=tuple(FilterValue(value=version, label=version) for version in ("05.00", "05.09", "05.10", "05.11", "05.12", "05.13")),
+            within_aoi=False,
+            group="Acquisition",
         ),
     ),
 )

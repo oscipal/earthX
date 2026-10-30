@@ -8,7 +8,8 @@ import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi, searchPlaces } from '../placeSearch';
 import { focusFirstItem } from '../popover';
 import { totalItems } from '../sections';
-import { useAppStore } from '../store';
+import { searchFiltersInvalid, useAppStore } from '../store';
+import AdvancedSearch from './AdvancedSearch';
 import ClearableInput from './ClearableInput';
 import Popover from './Popover';
 import Toolbar from './Toolbar';
@@ -602,6 +603,7 @@ export default function ControlPanel() {
   const count = useAppStore((s) => totalItems(s.sections));
   const selectedCount = useAppStore((s) => s.selectedDatasetIds.length);
   const datasetId = useAppStore((s) => s.datasetId);
+  const filtersWrong = useAppStore(searchFiltersInvalid);
 
   // One button for both lookups (M2-17, Otto's redesign): a scene name in the
   // field above takes it, an AOI otherwise — the usual bbox/date search
@@ -611,7 +613,8 @@ export default function ControlPanel() {
   const hasSceneName = sceneNameQuery.trim().length > 0;
   const busy = searching || sceneLookupLoading;
   // The scene-name lookup and the search both ask every ticked dataset.
-  const canSearch = !busy && !!datasetId && selectedCount > 0 && (hasSceneName || !!aoi);
+  // The filters of "Advanced search" belong to the search of an area; the lookup of a name does not read them.
+  const canSearch = !busy && !!datasetId && selectedCount > 0 && (hasSceneName || (!!aoi && !filtersWrong));
   const search = () => {
     if (!canSearch) return;
     if (hasSceneName) void findSceneByName();
@@ -651,12 +654,14 @@ export default function ControlPanel() {
 
       {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
       <div className="control-footer">
+        <AdvancedSearch />
         <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
           {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
         </button>
 
         {count > 0 && <p className="result-count">{count} scene(s) found</p>}
         {selectedCount === 0 && <p className="hint-text">Choose a dataset to search.</p>}
+        {filtersWrong && !hasSceneName && <p className="hint-text error">Correct the filters in Advanced search.</p>}
         {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
       </div>
     </div>

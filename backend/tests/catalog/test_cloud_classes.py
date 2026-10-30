@@ -103,9 +103,9 @@ class TestWithinAoiIsRefused:
             replace(SENTINEL_2_L2A, mask=None, capabilities=unmasked)
 
     def test_on_two_filters(self) -> None:
-        first, second, third = SENTINEL_2_L2A.search_filters
+        first, second, *others = SENTINEL_2_L2A.search_filters
         with pytest.raises(ConfigError, match="more than one filter"):
-            replace(SENTINEL_2_L2A, search_filters=(first, replace(second, within_aoi=True), third))
+            replace(SENTINEL_2_L2A, search_filters=(first, replace(second, within_aoi=True), *others))
 
     @pytest.mark.parametrize(
         "changes",
@@ -154,8 +154,5 @@ class TestTheCollection:
 
     def test_the_filters_publish_within_aoi(self) -> None:
         published = to_stac_collection(SENTINEL_2_L2A)["earthx:search_filters"]
-        assert {entry["property"]: entry["within_aoi"] for entry in published} == {
-            "eo:cloud_cover": True,
-            "s2:nodata_pixel_percentage": False,
-            "platform": False,
-        }
+        assert [entry["property"] for entry in published if entry["within_aoi"]] == ["eo:cloud_cover"]
+        assert len(published) == len(SENTINEL_2_L2A.search_filters)

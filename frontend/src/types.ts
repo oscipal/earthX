@@ -208,6 +208,9 @@ export interface Collection {
   'earthx:band_units'?: Record<string, string | null> | null;
   // The assets that are no band of the data (a picture, a preview), by the asset key an order names (NM4-07).
   'earthx:auxiliary_assets'?: string[] | null;
+  // The filters the search offers for this dataset (DS-02), in the words of STAC queryables; read, and checked
+  // entry by entry, by `searchFilters.ts`. Absent on a backend before DS-02a.
+  'earthx:search_filters'?: unknown[] | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).
