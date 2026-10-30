@@ -73,6 +73,13 @@ function stateMap() {
     // The tiles of every source on the map have come in.
     arrive: () => sources.forEach((id) => loaded.add(id)),
     fire: (name: string) => [...(handlers.get(name) ?? [])].forEach((fn) => fn()),
+    listeners: (name: string) => handlers.get(name)?.size ?? 0,
+    // A style reload: the layers and sources are gone.
+    wipe: () => {
+      layers.clear();
+      sources.clear();
+      loaded.clear();
+    },
     opacity: (id: string) => layers.get(id)?.paint['raster-opacity'],
     ids: () => [...layers.keys()].sort(),
   };
@@ -183,6 +190,23 @@ describe('a time step that is played', () => {
     expect(fake.ids()).toEqual(['n-tiles-lyr-0']);
     expect(second).not.toHaveBeenCalled();
     expect(third).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves no listener on the map: not after it is shown, not after it was dropped, not after a style reload', () => {
+    const fake = stateMap();
+    showFirst(fake);
+    step(fake, 'second', { notBefore: NOW, onShown: vi.fn() });
+    step(fake, 'third', { notBefore: NOW, onShown: vi.fn() });
+    fake.arrive();
+    fake.fire('render');
+    expect(fake.listeners('render')).toBe(0);
+    // A step whose layers a style reload took away is not asked about its sources.
+    step(fake, 'fourth', { notBefore: NOW, onShown: vi.fn() });
+    const asked = vi.spyOn(fake.map, 'isSourceLoaded');
+    fake.wipe();
+    fake.fire('render');
+    expect(asked).not.toHaveBeenCalled();
+    expect(fake.listeners('render')).toBe(0);
   });
 
   it('takes the place of the picture on the map at once when nothing was drawn before it', () => {

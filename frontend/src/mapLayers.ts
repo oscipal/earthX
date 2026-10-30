@@ -522,9 +522,11 @@ function retireDynamicMosaic(map: MapLibreMap, hold = false): void {
 // Calls `done` once the layers that arrive have every tile for the part of the map in view. Only those sources count,
 // not `idle`, which waits for the basemap as well. Looked at after each frame: a source that has just been added has no
 // tile asked for until a frame has been drawn, and only then says it is loaded.
-function onceArrived(map: MapLibreMap, done: () => void): void {
+function onceArrived(map: MapLibreMap, gen: number, done: () => void): void {
   const sources = [...arriving].flatMap((lyr) => (map.getLayer(lyr) as { source?: string } | undefined)?.source ?? []);
   const check = () => {
+    // Dropped for a newer step, or its sources are gone (a style reload): nothing to wait for, and none to ask about.
+    if (gen !== syncGen || !sources.every((src) => map.getSource(src))) return map.off('render', check);
     if (!sources.every((src) => map.isSourceLoaded(src))) return;
     map.off('render', check);
     done();
@@ -547,7 +549,7 @@ function settleRetired(map: MapLibreMap): void {
     if (wait <= 0) return show();
     setTimeout(() => gen === syncGen && retiring?.id === id && show(), wait);
   };
-  if (holding && retiring) onceArrived(map, () => gen === syncGen && settle());
+  if (holding && retiring) onceArrived(map, gen, settle);
   else map.once('idle', settle);
 }
 
