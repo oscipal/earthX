@@ -715,7 +715,7 @@ class TestRefusals:
         assert source.calls == []
 
     async def test_an_operator_the_dataset_does_not_allow(self) -> None:
-        no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False))
+        no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False), index_presets=())
         source = Source((S2, s2_item()))
         error = await refused(order(), source, registry=DatasetRegistry((no_math,)))
         assert error.status_code == 422
@@ -880,7 +880,7 @@ class TestStages:
 
     @staticmethod
     async def _cases() -> dict[str, tuple[Any, ...]]:
-        no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False))
+        no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False), index_presets=())
         display = replace(S2, license=replace(S2.license, tier=LicenseTier.DISPLAY))
         foreign = s2_item()
         foreign["assets"]["red"]["href"] = f"https://{ZARR_HOST}/x.tif"

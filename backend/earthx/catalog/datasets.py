@@ -30,6 +30,7 @@ from earthx.catalog.registry import (
     FilterValue,
     HealthInfo,
     HealthStatus,
+    IndexPreset,
     ItemHolding,
     LicenseInfo,
     LicenseTier,
@@ -434,6 +435,59 @@ SENTINEL_2_L2A = DatasetConfig(
             group="Acquisition",
         ),
     ),
+    # NM4-14 plan §7.5 (Otto 30.10.2026): five indices of Awesome Spectral Indices (MIT; Montero et al. 2023, Scientific
+    # Data 10, 197, https://doi.org/10.1038/s41597-023-02096-0), `formula` and `reference` as its
+    # `spectral-indices-dict.json` holds them at commit 835fea7. The bands are the ones Earth Search names, N as `nir`
+    # (B08) like the catalogue's `bands.json` and Sentinel Hub's scripts. The ranges and colormaps are plan §8.5.
+    index_presets=(
+        IndexPreset(
+            name="NDVI",
+            title="Normalized Difference Vegetation Index",
+            expression="(nir - red) / (nir + red)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdylgn",
+            formula="(N - R)/(N + R)",
+            reference="https://ntrs.nasa.gov/citations/19740022614",
+        ),
+        IndexPreset(
+            name="NDWI",
+            title="Normalized Difference Water Index (McFeeters 1996)",
+            expression="(green - nir) / (green + nir)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdbu",
+            formula="(G - N) / (G + N)",
+            reference="https://doi.org/10.1080/01431169608948714",
+        ),
+        IndexPreset(
+            name="NDSI",
+            title="Normalized Difference Snow Index",
+            expression="(green - swir16) / (green + swir16)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdbu",
+            formula="(G - S1) / (G + S1)",
+            reference="https://doi.org/10.1109/IGARSS.1994.399618",
+        ),
+        IndexPreset(
+            name="NBR",
+            title="Normalized Burn Ratio",
+            expression="(nir - swir22) / (nir + swir22)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdylgn",
+            formula="(N - S2) / (N + S2)",
+            reference="https://doi.org/10.3133/ofr0211",
+        ),
+        # The constants are the defaults of the catalogue's `constants.json` (g 2.5, C1 6, C2 7.5, L 1), the same as in
+        # Sentinel Hub's EVI script. L = 1 holds for reflectance from 0 to 1, which is what the core computes on.
+        IndexPreset(
+            name="EVI",
+            title="Enhanced Vegetation Index",
+            expression="2.5 * (nir - red) / (nir + 6 * red - 7.5 * blue + 1)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdylgn",
+            formula="g * (N - R) / (N + C1 * R - C2 * B + L)",
+            reference="https://doi.org/10.1016/S0034-4257(96)00112-5",
+        ),
+    ),
 )
 
 # M3-11b, F1: no single acquisition instant exists for the DEM (`adr/0009`
@@ -620,6 +674,8 @@ COP_DEM_GLO_30 = DatasetConfig(
     band_units={"data": "m"},
     auxiliary_assets=(),
     search_filters=(),
+    # One band of heights: none of the indices of Awesome Spectral Indices reads it.
+    index_presets=(),
 )
 
 # The datasets that left the registry (docs/adr/0017-ein-sentinel-2-datensatz.md, rule III). An id on this
