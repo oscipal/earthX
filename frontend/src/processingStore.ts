@@ -109,6 +109,7 @@ import {
   passesOf,
   processBlockReason,
   processInfo,
+  readProblem,
   selectableAssets,
   stepOfRefusal,
   type Area,
@@ -474,10 +475,18 @@ export function selectionState(s: AppState): SelectionState {
   return { datasets, datasetId, openSectionId, sections, items, selectedIds, groups, activeGroupIndex, aoi };
 }
 
-// The first name that breaks a rule, as the tooltip of what waits for it says it.
-function nameBlockOf(steps: readonly DraftStep[], problems: Readonly<Record<number, string>>): string | null {
-  const index = steps.findIndex((step) => problems[step.key] !== undefined);
-  return index < 0 ? null : `Step ${index + 1}: ${problems[steps[index].key]}`;
+// The first thing a step has typed in that breaks a rule, as the tooltip of what waits for it says it: a name (what the name
+// fields tell the store) or an expression that names something that is no band at its place.
+function nameBlockOf(
+  steps: readonly DraftStep[],
+  problems: Readonly<Record<number, string>>,
+  data: readonly string[],
+): string | null {
+  for (const [index, step] of steps.entries()) {
+    const reason = problems[step.key] ?? (isBandMath(step) ? readProblem(step, index, steps, data)?.message : undefined);
+    if (reason !== undefined) return `Step ${index + 1}: ${reason}`;
+  }
+  return null;
 }
 
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
@@ -564,7 +573,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     lonely: lonelyBand(selectable, sources),
     results,
     output,
-    nameBlock: nameBlockOf(p.steps, p.nameProblems),
+    nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames),
     assets,
     maskLayer,
     maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,

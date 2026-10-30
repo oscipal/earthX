@@ -2,12 +2,12 @@
 // parameter schema (`schemaForm.ts`). What a field means is the tooltip of an ⓘ beside its label, not a text in the
 // box (Otto, 30.10.2026); an error of the field and the server's own refusal of this step are shown below it.
 
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { Operator } from '../processingOrder';
 import { integersIn, namesIn, type Field, type FieldValue } from '../schemaForm';
 import type { EarthxMask } from '../types';
-import { CellSize, CrsRefusal } from './CellSize';
+import { CellSize, CellSizeError, CrsRefusal } from './CellSize';
 import Tip from './Tip';
 import { useCellSizeTip } from './useCellSizeTip';
 import { useCrsLookup } from './useCrsLookup';
@@ -19,6 +19,7 @@ function FieldInput({
   inputId,
   bandTarget,
   extraTip,
+  labelNote,
   onChange,
 }: {
   field: Field;
@@ -30,6 +31,8 @@ function FieldInput({
   bandTarget?: number;
   // More for the tooltip of the label, after what the schema says of the field.
   extraTip?: string | null;
+  // Small beside the title, before the ⓘ: the unit of the resolution.
+  labelNote?: ReactNode;
   onChange: (value: FieldValue) => void;
 }) {
   // One sentence per option, from the operator's schema (M4-24); no option is recommended.
@@ -42,6 +45,7 @@ function FieldInput({
     <span className="pp-label">
       {field.title}
       {field.required || field.kind === 'boolean' ? '' : ' (optional)'}
+      {labelNote}
       {tip && <Tip text={tip} />}
     </span>
   );
@@ -404,10 +408,11 @@ export default function StepForm({
               inputId={`pp-step-${stepKey}-${field.name}`}
               bandTarget={bandMath && field.name === 'expression' ? stepKey : undefined}
               extraTip={reprojects && field.name === 'resolution' ? cellTip : undefined}
+              labelNote={reprojects && field.name === 'resolution' ? <CellSize code={values.crs} /> : undefined}
               onChange={(v) => onChange(field.name, v)}
             />
             {reprojects && field.name === 'crs' && <CrsRefusal code={values.crs} />}
-            {reprojects && field.name === 'resolution' && <CellSize code={values.crs} />}
+            {reprojects && field.name === 'resolution' && <CellSizeError code={values.crs} />}
           </Fragment>
         );
       })}

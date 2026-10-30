@@ -556,7 +556,7 @@ describe('buildOrder', () => {
 
   it('takes more than 16 bands: an order has no limit of bands (adr/0020 §7)', () => {
     const many = Array.from({ length: 40 }, (_, i) => `b${i}`);
-    const built = buildOrder({ ...base, bands: many, data: many });
+    const built = buildOrder({ ...base, bands: many, data: [...DATA, ...many] });
     expect(built.problems).toEqual([]);
     expect(built.order?.output).toMatchObject({ bands: many });
   });
@@ -686,16 +686,21 @@ describe('buildOrder', () => {
     it('refuses an expression that reads the result of a later step, naming it', () => {
       const built = buildOrder({ ...base, steps: [ndvi('First', 1, 'Second * 2'), ndvi('Second', 2)], bands: ['First', 'Second'] });
       expect(built.order).toBeNull();
-      expect(errorsOf(built)).toEqual([{ expression: 'Second is added by a later step.' }, {}]);
+      expect(errorsOf(built)).toEqual([{ expression: "'Second' is added by a later step" }, {}]);
     });
 
     it('refuses an expression that reads the band its own step adds', () => {
       const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1, 'NDVI + 1')] });
-      expect(errorsOf(built)).toEqual([{ expression: 'NDVI is the band this step adds.' }]);
+      expect(errorsOf(built)).toEqual([{ expression: "'NDVI' is the band this step adds" }]);
     });
 
     it('does not take a function call or a longer name for a read of the result', () => {
-      const longer = buildOrder({ ...base, steps: [ndvi('First', 1, 'where(nir > 0, NDVI_22, red)'), ndvi('NDVI_2', 2)], bands: ['First', 'NDVI_2'] });
+      const longer = buildOrder({
+        ...base,
+        data: [...DATA, 'NDVI_22'],
+        steps: [ndvi('First', 1, 'where(nir > 0, NDVI_22, red)'), ndvi('NDVI_2', 2)],
+        bands: ['First', 'NDVI_2'],
+      });
       expect(longer.stepProblems[0].errors).toEqual({});
       const call = buildOrder({ ...base, steps: [ndvi('First', 1, 'Ratio(red)'), ndvi('Ratio', 2)] });
       expect(call.stepProblems[0].errors).toEqual({});
@@ -705,7 +710,27 @@ describe('buildOrder', () => {
       const normalize = step('normalize', 2, { bands: 'Later', in_min: '0', in_max: '1', out_min: '0', out_max: '1', clip: false }, 1);
       const built = buildOrder({ ...base, steps: [normalize, ndvi('Later', 2)], bands: ['Later'] });
       expect(built.order).toBeNull();
-      expect(errorsOf(built)[0]).toEqual({ bands: 'Later is added by a later step.' });
+      expect(errorsOf(built)[0]).toEqual({ bands: "'Later' is added by a later step" });
+    });
+
+    it('refuses an expression that names something that is no band, with the name (review of #250)', () => {
+      const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1, 'nir - re')] });
+      expect(built.order).toBeNull();
+      expect(errorsOf(built)).toEqual([{ expression: "'re' is not a band name" }]);
+    });
+
+    it('takes the bands of the data and the results of the steps before, and numbers and functions, as bands', () => {
+      const steps = [ndvi('NDVI', 1), ndvi('Ratio', 2, 'where(NDVI > 0.5e1, sqrt(nir), minimum(red, 2)) + NDVI')];
+      expect(errorsOf(buildOrder({ ...base, steps, bands: ['NDVI', 'Ratio'] }))).toEqual([{}, {}]);
+    });
+
+    it('says a result of a later step is added later, not that it is no band', () => {
+      const built = buildOrder({ ...base, steps: [ndvi('First', 1, 'Second + re'), ndvi('Second', 2)] });
+      expect(errorsOf(built)[0]).toEqual({ expression: "'Second' is added by a later step" });
+    });
+
+    it('has nothing to compare with where the data list no bands', () => {
+      expect(errorsOf(buildOrder({ ...base, data: [], steps: [ndvi('NDVI', 1, 'whatever + 1')] }))).toEqual([{}]);
     });
 
     it('lets a normalize step name the result of an earlier step, and asks for at least one band', () => {

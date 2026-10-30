@@ -21,14 +21,18 @@ export function CrsRefusal({ code }: { code: FieldValue | undefined }) {
   );
 }
 
-// The unit of the resolution, small under its field (Otto, 30.10.2026): "in m", "in °", or the name of another unit.
-// Nothing while the lookup is on its way or where the code is none; a lookup that failed says so.
+// Under the resolution field: a lookup of the unit that failed says so.
+export function CellSizeError({ code }: { code: FieldValue | undefined }) {
+  const entry = useEntry(code);
+  if (typeof code !== 'string' || !CRS_PATTERN.test(code) || entry?.state !== 'error') return null;
+  return <p className="hint-text warn">The unit of {code} could not be looked up: {entry.message}</p>;
+}
+
+// The unit of the resolution, small beside its label (Otto, 30.10.2026): "in m", "in °", or the name of another unit.
+// Nothing while the lookup is on its way, where the code is none or the lookup failed.
 export function CellSize({ code }: { code: FieldValue | undefined }) {
   const entry = useEntry(code);
-  if (typeof code !== 'string' || !CRS_PATTERN.test(code) || !entry || entry.state === 'refused') return null;
-  if (entry.state === 'error') {
-    return <p className="hint-text warn">The unit of {code} could not be looked up: {entry.message}</p>;
-  }
+  if (typeof code !== 'string' || !CRS_PATTERN.test(code) || entry?.state !== 'ready') return null;
   const { name, kind } = entry.info.unit;
   const unit = name === 'metre' ? 'm' : kind === 'angular' && name === 'degree' ? '°' : name;
   return (

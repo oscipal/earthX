@@ -1205,4 +1205,9 @@ bleibt maßgeblich; dieser Nachtrag nennt, was daraus im Panel geworden ist, und
 - **Erklärtexte** in den Schritten stehen im Tooltip eines ⓘ neben der Beschriftung (Tooltip-Komponente aus NM4-52), nicht im Kasten. Bei „Resolution“ steht die Einheit klein darunter (`in m`, `in °`); die Zellgröße steht im Tooltip.
 - **Vorschau und Felder** zeigen immer dieselbe Skala: Wird ein Bild gezeichnet, während seine Messung noch unterwegs ist (länger als 5 s), tragen die Felder jetzt die Startskala des Bildes
   und nicht mehr die Werte der Formel davor.
+- **Zweite Runde des Reviews (Otto, 2026-10-30).** (1) Die Ergebnis-Chips an einem Schritt fügen wie die Band-Chips oben nur ein, wenn der Cursor in einem Ausdrucksfeld steht, sonst nichts
+  (kein Fokuswechsel). (2) Die Einheit der Auflösung steht klein **neben** der Beschriftung „Resolution“ (`in m`, `in °`), nicht darunter. (3) Ein EPSG-Code im falschen Format meldet
+  `Needs to be in the format "EPSG:3035"` statt des Musters. (4) Ein Ausdruck darf nur Bänder des Datensatzes und Ergebnisse früherer Schritte nennen: Alles andere meldet sofort am Feld
+  `'re' is not a band name` und sperrt wie ein ungültiger Name „Add step“, „Review“ und „Start job“ (Grund im Tooltip); ein Ergebnis eines späteren Schritts meldet `'x' is added by a later step`.
+  Wo der Datensatz keine Bänder nennt, wird nichts verglichen.
 

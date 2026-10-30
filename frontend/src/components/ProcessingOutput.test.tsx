@@ -354,17 +354,114 @@ describe('the results of band math steps', () => {
     expect(sentOrder().steps.map((s: { params: { name: string } }) => s.params.name)).toEqual(['result', 'result_1']);
   });
 
-  it('are put into an expression by the chip of the step, at the cursor or at the end', async () => {
+  it('are put into the expression that has the cursor by the chip of the step, and nowhere otherwise (review of #250)', async () => {
     select(scene());
     await openPanel();
     await addBandMath();
     await addBandMath('');
-    const second = expression(1);
-    click(button('result', container.querySelector('[aria-label="Results of earlier steps"]')!));
-    expect(second.value).toBe('result');
-    typeInto(second, 'result * 2');
-    click(button('result', container.querySelector('[aria-label="Results of earlier steps"]')!));
-    expect(expression(1).value).toBe('result * 2 result');
+    const chip = () => button('result', container.querySelector('[aria-label="Results of earlier steps"]')!);
+    // No cursor in an expression: nothing is inserted, and the focus stays where it was.
+    act(() => nameField(1).focus());
+    click(chip());
+    expect(expression(1).value).toBe('');
+    expect(document.activeElement).toBe(nameField(1));
+    act(() => nameField(1).blur());
+    click(chip());
+    expect(expression(1).value).toBe('');
+    // With the cursor in the expression, the name goes there.
+    act(() => expression(1).focus());
+    click(chip());
+    expect(expression(1).value).toBe('result');
+    typeInto(expression(1), 'result * 2');
+    expression(1).setSelectionRange(0, 0);
+    click(chip());
+    expect(expression(1).value).toBe('result result * 2');
+    expect(store().steps[1].values.expression).toBe('result result * 2');
+  });
+});
+
+describe('what an expression names', () => {
+  const problemOf = (step = 0) => container.querySelectorAll('.pp-step')[step].querySelector('.hint-text.error')?.textContent ?? null;
+
+  it('is a band of the data or a result of a step before: anything else is told at once, as a name is', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('');
+    const seen: Array<string | null> = [];
+    for (const typed of ['r', 're', 'red', 'red - ne', 'red - nir']) {
+      typeInto(expression(0), typed);
+      seen.push(problemOf());
+    }
+    expect(seen).toEqual(["'r' is not a band name", "'re' is not a band name", null, "'ne' is not a band name", null]);
+  });
+
+  it('holds back the steps, the review and the start, with the reason as their tooltips', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('red - re');
+    const why = "Step 1: 're' is not a band name";
+    expect(button('＋ Mask').disabled).toBe(true);
+    expect(button('＋ Mask').title).toBe(why);
+    expect(button('Review').disabled).toBe(true);
+    expect(button('Review').title).toBe(why);
+    expect(startButton().disabled).toBe(true);
+    expect(startButton().title).toBe(why);
+    await review();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+    typeInto(expression(0), 'red - nir');
+    expect(button('Review').disabled).toBe(false);
+    expect(button('＋ Mask').disabled).toBe(false);
+  });
+
+  it('takes the result of an earlier step and the name of a function, not a number or a longer name for a band', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('red');
+    await addBandMath('where(result > 0.5e1, sqrt(nir), minimum(red, 2))');
+    expect(problemOf(1)).toBeNull();
+    typeInto(expression(1), 'result2 + 1');
+    expect(problemOf(1)).toBe("'result2' is not a band name");
+  });
+
+  it('is not held to bands where the dataset lists none', async () => {
+    select({ ...scene(), assets: {} });
+    await openPanel();
+    await addBandMath('anything + 1');
+    expect(problemOf()).toBeNull();
+  });
+});
+
+describe('the resolution of a reproject step (review of #250)', () => {
+  beforeEach(() => {
+    const previous = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      url === '/processing/crs/EPSG%3A3035'
+        ? json({ code: 'EPSG:3035', name: 'ETRS89 / LAEA Europe', kind: 'projected', unit: { name: 'metre', kind: 'linear', toBase: 1 } })
+        : previous(url, init),
+    );
+  });
+  const field = (name: string) => container.querySelector<HTMLInputElement>(`input[id$="-${name}"]`)!;
+
+  it('has its unit small beside its label, once the code is known', async () => {
+    select(scene());
+    await openPanel();
+    click(button('＋ Reproject and resample'));
+    const label = field('resolution').closest('label')!;
+    expect(label.querySelector('[aria-label="Unit"]')).toBeNull();
+    typeInto(field('crs'), 'EPSG:3035');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    expect(label.querySelector('.pp-label [aria-label="Unit"]')?.textContent).toBe('in m');
+  });
+
+  it('says what format a code needs, not the pattern', async () => {
+    select(scene());
+    await openPanel();
+    click(button('＋ Reproject and resample'));
+    typeInto(field('crs'), 'EPSG:30');
+    expect(container.textContent).toContain('Needs to be in the format "EPSG:3035"');
+    expect(container.textContent).not.toContain('Does not match');
   });
 });
 
@@ -500,9 +597,10 @@ describe('the name of a result', () => {
   it('is refused when a step reads a result that a later step adds, with the step named', async () => {
     select(scene());
     await openPanel();
-    await addBandMath('result_1 + 1');
+    await addBandMath('red');
     await addBandMath('nir - red');
-    expect(container.textContent).toContain('result_1 is added by a later step.');
+    typeInto(expression(0), 'result_1 + 1');
+    expect(container.textContent).toContain("'result_1' is added by a later step");
   });
 });
 

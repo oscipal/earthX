@@ -458,28 +458,44 @@ export const EMPTY_OUTPUT = 'Pick at least one band for the output.';
 // sorts the list for the mosaic itself (`mosaic_order`).
 const orderedIds = (ids: readonly string[]): string[] => [...ids].sort();
 
-// What is wrong with a step beyond its form fields, by field (adr/0020 §6): the name of the band a `band_math` step adds,
-// and a name of a result that a step reads before it exists.
-function bandProblems(step: DraftStep, index: number, steps: readonly DraftStep[], data: readonly string[]): Record<string, string> {
-  const errors: Record<string, string> = {};
-  const results = steps.map((s, i) => ({ index: i, name: isBandMath(s) ? resultNameOf(s) : null }));
-  if (isBandMath(step)) {
-    const others = results.flatMap((r) => (r.index !== index && r.name !== null ? [r.name] : []));
-    const problem = nameProblem(resultNameOf(step), others, data);
-    if (problem) errors.name = problem;
-  }
+// What a step reads that is no band at its place: the field and a short hint, or `null`. An expression may name the bands
+// of the data and the results of the steps before it, nothing else; a `normalize` step likewise names only such bands
+// (review of #250). Where the data list no bands there is nothing to compare with.
+export function readProblem(
+  step: DraftStep,
+  index: number,
+  steps: readonly DraftStep[],
+  data: readonly string[],
+): { field: 'expression' | 'bands'; message: string } | null {
+  const field = step.op === 'normalize' ? 'bands' : 'expression';
   const names =
     step.op === 'band_math' && typeof step.values.expression === 'string'
       ? namesInExpression(step.values.expression)
       : step.op === 'normalize' && typeof step.values.bands === 'string'
         ? new Set(step.values.bands.split(/[\s,;]+/u).filter((n) => n !== ''))
         : new Set<string>();
-  const field = step.op === 'normalize' ? 'bands' : 'expression';
+  const results = steps.flatMap((s, i) => (isBandMath(s) ? [{ index: i, name: resultNameOf(s) }] : []));
   for (const result of results) {
-    if (result.index < index || result.name === null || !names.has(result.name) || data.includes(result.name)) continue;
-    errors[field] = result.index === index ? `${result.name} is the band this step adds.` : `${result.name} is added by a later step.`;
-    break;
+    if (result.index < index || !names.has(result.name) || data.includes(result.name)) continue;
+    return { field, message: result.index === index ? `'${result.name}' is the band this step adds` : `'${result.name}' is added by a later step` };
   }
+  if (step.op !== 'band_math' || data.length === 0) return null;
+  const known = new Set([...data, ...results.filter((r) => r.index < index).map((r) => r.name)]);
+  const unknown = [...names].find((name) => !known.has(name));
+  return unknown === undefined ? null : { field, message: `'${unknown}' is not a band name` };
+}
+
+// What is wrong with a step beyond its form fields, by field (adr/0020 §6): the name of the band a `band_math` step adds,
+// and what the step reads that is no band at its place.
+function bandProblems(step: DraftStep, index: number, steps: readonly DraftStep[], data: readonly string[]): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (isBandMath(step)) {
+    const others = steps.flatMap((s, i) => (i !== index && isBandMath(s) ? [resultNameOf(s)] : []));
+    const problem = nameProblem(resultNameOf(step), others, data);
+    if (problem) errors.name = problem;
+  }
+  const read = readProblem(step, index, steps, data);
+  if (read) errors[read.field] = read.message;
   return errors;
 }
 

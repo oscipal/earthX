@@ -235,6 +235,11 @@ export function initialValues(fields: readonly Field[]): Record<string, FieldVal
   return values;
 }
 
+// What to say of a text that does not fit a pattern the panel knows, instead of the pattern itself.
+const PATTERN_HINTS: Readonly<Record<string, string>> = {
+  '^EPSG:[0-9]{4,6}$': 'Needs to be in the format "EPSG:3035"',
+};
+
 function compiled(pattern: string): RegExp | null {
   try {
     return new RegExp(pattern, 'u');
@@ -297,7 +302,7 @@ function valueOf(field: Field, raw: FieldValue | undefined): { value?: unknown; 
       if (field.minLength !== undefined && length < field.minLength) return { error: `At least ${field.minLength} characters.` };
       if (field.maxLength !== undefined && length > field.maxLength) return { error: `At most ${field.maxLength} characters.` };
       const pattern = field.pattern ? compiled(field.pattern) : null;
-      if (pattern && !pattern.test(text)) return { error: `Does not match ${field.pattern}.` };
+      if (pattern && !pattern.test(text)) return { error: PATTERN_HINTS[field.pattern ?? ''] ?? `Does not match ${field.pattern}.` };
       return { value: text };
     }
   }

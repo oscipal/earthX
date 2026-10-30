@@ -69,10 +69,9 @@ function useNameInsert() {
     caret.current = null;
     if (pending?.field.isConnected) pending.field.setSelectionRange(pending.at, pending.at);
   });
-  // `atEnd`: the name goes behind the text instead of at the cursor, for a field that has none (a chip of a step).
-  return (field: HTMLTextAreaElement, name: string, atEnd = false) => {
-    const start = atEnd ? field.value.length : (field.selectionStart ?? field.value.length);
-    const inserted = insertName(field.value, start, atEnd ? start : (field.selectionEnd ?? start), name);
+  return (field: HTMLTextAreaElement, name: string) => {
+    const start = field.selectionStart ?? field.value.length;
+    const inserted = insertName(field.value, start, field.selectionEnd ?? start, name);
     caret.current = { field, at: inserted.caret };
     updateStep(Number(field.dataset.bandTarget), 'expression', inserted.text);
   };
@@ -694,9 +693,10 @@ export default function ProcessingPanel() {
                             }
                             onRename={(name) => p.renameResult(step.key, name)}
                             onNameProblem={(reason) => p.setNameProblem(step.key, reason)}
+                            // As the chips above: into the expression that has the cursor, nowhere otherwise.
                             onInsert={(name) => {
-                              const field = document.querySelector<HTMLTextAreaElement>(`[data-band-target="${step.key}"]`);
-                              if (field) insert(field, name, document.activeElement !== field);
+                              const field = focusedExpression();
+                              if (field) insert(field, name);
                             }}
                             onChange={(name, value) => p.updateStep(step.key, name, value)}
                             onMove={(direction) => p.moveStep(step.key, direction)}

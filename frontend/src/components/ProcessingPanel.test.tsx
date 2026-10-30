@@ -1970,7 +1970,8 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
     it('does not hold back a step that is not a reproject', async () => {
       await refused();
       click(button(/Remove/, container.querySelector('.pp-step')!));
-      await ndvi();
+      click(button('＋ Band math'));
+      typeInto(container.querySelector('textarea[id$="-expression"]')!, 'data * 2');
       expect(button('Review').disabled).toBe(false);
     });
   });
