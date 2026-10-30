@@ -19,6 +19,9 @@ export interface StacAsset {
   // the download dialog's resolution choice (F10c, M3-18 §10) — how many
   // metres each `RESOLUTION_FACTORS` step actually means for this asset.
   gsd?: number | null;
+  // STAC file extension: the byte length of the file the `href` names. Read by the download of a whole scene
+  // (NM4-33), which needs every size beforehand to tell the browser the length of the ZIP.
+  'file:size'?: number | null;
   // The band descriptions (M4-13 K7, Otto 10.10.2026), read only to name the
   // bands an expression can use and to start the output data type:
   // `raster:bands` (or the STAC 1.1 core field `bands`) says how many bands a
@@ -193,6 +196,10 @@ export interface Collection {
   // them yet. Optional — a collection served by an older backend carries none.
   keywords?: string[] | null;
   license?: string | null;
+  // STAC scientific extension (`catalog/collection.py::_scientific`): the DOI name and the citation, where the
+  // dataset has them. Written into `ATTRIBUTION.txt` of a download of original files (NM4-33).
+  'sci:doi'?: string | null;
+  'sci:citation'?: string | null;
   extent?: { temporal?: StacTemporalExtent };
   'earthx:access'?: CollectionAccess;
   'earthx:viewer'?: EarthxViewer | null;
