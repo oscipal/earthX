@@ -598,8 +598,8 @@ class TestAResultIdentifierIsNotLogged:
         assert self.ID not in line
 
 
-class TestASignedUrlIsNotLogged:
-    """M4-13c-5: GDAL names the URL it could not read in its own warning; for a result it is signed."""
+class TestAnAddressIsNotLogged:
+    """M4-13c-5, NM4-57: GDAL names the address of a file it could not read, and for a source with signed URLs it holds the token."""
 
     ID = "ZyXwVuTsRqPoNmLkJiHg_-"
     URL = (
@@ -608,43 +608,94 @@ class TestASignedUrlIsNotLogged:
         "&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=deadbeefdeadbeef"
     )
 
-    def test_the_message_loses_the_values_of_the_signature_and_the_result_id(self) -> None:
-        payload = json.loads(JsonFormatter().format(_make_record(f"CPLE_AppDefined in HTTP response code on {self.URL}: 403")))
-        message = payload["message"]
-        for secret in ("deadbeefdeadbeef", "GKabc123", self.ID):
-            assert secret not in message
-        assert message.startswith("CPLE_AppDefined in HTTP response code on http://objectstore:3900/earthx/results/{resultID}/result.tif?")
-        assert message.endswith(": 403")
-        assert "X-Amz-Signature=<hidden>" in message
+    def test_the_message_loses_the_address_with_the_signature_and_the_result_id(self) -> None:
+        payload = json.loads(
+            JsonFormatter().format(_make_record(f"CPLE_AppDefined in HTTP response code on {self.URL}: 403"))
+        )
+        assert payload["message"] == "CPLE_AppDefined in HTTP response code on <address>: 403"
 
-    def test_a_traceback_loses_them_too(self) -> None:
+    def test_a_traceback_loses_it_too(self) -> None:
         try:
             raise OSError(f"'/vsicurl/{self.URL}' not recognized")
         except OSError:
             record = logging.LogRecord("x", logging.WARNING, __file__, 1, "read failed", None, sys.exc_info())
         payload = json.loads(JsonFormatter().format(record))
         assert "deadbeefdeadbeef" not in payload["exc_info"] and self.ID not in payload["exc_info"]
-        assert "OSError" in payload["exc_info"]
+        assert "OSError: '<address>' not recognized" in payload["exc_info"]
+
+    def test_a_field_added_by_the_caller_loses_it_too(self) -> None:
+        payload = json.loads(JsonFormatter().format(_make_record("read failed", href=self.URL, attempts=3)))
+        assert payload["href"] == "<address>" and payload["attempts"] == 3
+
+    @pytest.mark.parametrize(
+        ("text", "hidden"),
+        [
+            (
+                "HTTP response code on https://host.example/a/b.tif?sig=abc&se=2026-10-30: 0",
+                "HTTP response code on <address>: 0",
+            ),
+            ("'/vsicurl/https://host.example/a/b.tif' not recognized", "'<address>' not recognized"),
+            ("`/vsicurl/http://127.0.0.1:9/a/b.tif?sig=abc' not recognized", "`<address>' not recognized"),
+            ("could not open /vsis3/bucket/key/scene.tif.", "could not open <address>."),
+            ("could not open /vsigs/bucket/key/scene.tif", "could not open <address>"),
+            ("in /vsizip//vsicurl/https://host.example/a.zip/b.tif (twice)", "in <address> (twice)"),
+            ("store s3://bucket/prefix/key and gs://bucket/key", "store <address> and <address>"),
+            ("see (https://host.example/x?token=abc), then", "see (<address>), then"),
+            ("retrying ftp://host.example:21/x", "retrying <address>"),
+            ("the query X-Amz-Signature=deadbeef stands alone", "the query X-Amz-Signature=<hidden> stands alone"),
+            ("sas sig=abc%2Fdef= and access_token=xyz", "sas sig=<hidden> and access_token=<hidden>"),
+        ],
+    )
+    def test_every_form_of_address_goes(self, text: str, hidden: str) -> None:
+        from earthx.logging import hide_addresses
+
+        assert hide_addresses(text) == hidden
 
     @pytest.mark.parametrize(
         "text",
         [
             "request handled",
             "/results/ short",
-            "https://example.org/results/short/x?a=1&b=2",
             "ordinary query ?x=y&X-Other=1",
+            "/home/user/earthx/backend/earthx/api/tiler.py line 12",
+            "opened /vsimem/in-memory-name.tif",
+            "ratio=0.5 size=3/4",
             "",
         ],
     )
     def test_any_other_text_is_left_alone(self, text: str) -> None:
-        from earthx.logging import hide_signed_urls
+        from earthx.logging import hide_addresses
 
-        assert hide_signed_urls(text) == text
+        assert hide_addresses(text) == text
 
-    def test_a_public_signed_url_of_a_download_is_hidden_the_same_way(self) -> None:
-        from earthx.logging import hide_signed_urls
+    def test_a_result_id_stands_in_no_path_either(self) -> None:
+        from earthx.logging import hide_addresses
 
-        url = f"http://localhost:3900/earthx/results/{self.ID}/result.tif?X-Amz-Signature=cafe&response-content-disposition=attachment"
-        hidden = hide_signed_urls(url)
-        assert "cafe" not in hidden and self.ID not in hidden
-        assert hidden.endswith("&response-content-disposition=attachment")
+        assert hide_addresses(f"file /results/{self.ID}/result.tif gone") == "file /results/{resultID}/result.tif gone"
+
+    def test_a_record_of_uvicorns_own_handler_is_cleaned_before_its_formatter_reads_it(self) -> None:
+        """The handler uvicorn writes its own lines with is not ours: its formatter sees what the filter left."""
+        from earthx.logging import _hide_addresses_in_uvicorn
+
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+        logger = logging.getLogger("uvicorn")
+        before = list(logger.handlers)
+        logger.handlers = [handler]
+        try:
+            _hide_addresses_in_uvicorn()
+            _hide_addresses_in_uvicorn()  # once is enough
+            assert len(handler.filters) == 1
+            try:
+                raise OSError(f"'/vsicurl/{self.URL}' not recognized")
+            except OSError:
+                logging.getLogger("uvicorn.error").error(
+                    "Exception in ASGI application for %s", self.URL, exc_info=True
+                )
+        finally:
+            logger.handlers = before
+        output = stream.getvalue()
+        assert "deadbeefdeadbeef" not in output and "objectstore" not in output
+        assert "ERROR Exception in ASGI application for <address>" in output
+        assert "OSError: '<address>' not recognized" in output
