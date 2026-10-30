@@ -2755,3 +2755,31 @@ Der Originaltext von §5.5 bleibt stehen; maßgeblich ist dieser Nachtrag.
   Je Messung ein eigener Aufruf (die Spitze gehört dem Prozess). Das Skript `measure.py` (echte Sentinel-2-Daten, Netz) rechnet jetzt mit Rezeptversion 2.
 - **Entschieden (Otto, 30.10.2026).** Die Grenze von 1,5 GB je Kindprozess bleibt; Wiedervorlage zu M6 mit der echten Worker-Größe (das 25-Szenen-Mosaik mit 17 Bändern liegt mit
   1,45 GB geschätzt knapp darunter). `units` wie oben.
+
+## 15 Nachtrag NM4-43d: Die Kachel zeigt ein Band des Vorrats (2026-10-30; zu §6.1, §15m, §15t; `adr/0020` §10, P1)
+
+Die Item-Kachel und die Mosaik-Kachel mit Schritten (`api/tiler.py`, `processing/tile.py`) rechnen Schritte der Version 2. Ein Bild zeigt ein Band, der Vorrat
+hat mehrere. Umgesetzt in [#245](https://github.com/oscipal/earthX/pull/245); Beschluss `adr/0020` §10 (F8, Option 1).
+
+- **Version 2 als Kachel.** `band_math`, `mask` und `normalize` Version 2 sind `T1` und `T2` (vorher nur `T2`, NM4-43c). Version 1 bleibt für die Dauer der
+  Übergangsfrist angenommen und rechnet wie bisher: alle genannten Assets, die Bänder, die die Schritte lassen.
+- **`band=<Name>`.** Neuer Parameter auf Kachel, TileJSON und Statistik (und auf der Mosaik-Kachel): das Band des Vorrats nach der Kette. Ohne Angabe das letzte, das ein
+  `band_math`-Schritt hinzugefügt hat, sonst das erste. Ein Name, den die Schritte nicht lassen, ist ein `422` mit dem Namen und den vorhandenen Bändern, vor dem Öffnen
+  einer Datei (das Item wird abgerufen, die Bandnamen stehen darin); doppelt, leer, über 128 Zeichen oder ohne `op` ist ein `400` vor dem Abruf des Items. Groß- und
+  Kleinschreibung zählen.
+- **Streichen wie der Planer.** `tile.plan_band` ruft `plan.stock_steps` mit dem Band als einziger Ausgabe auf (`adr/0020` §4): Geöffnet werden nur die Assets, die das
+  Band braucht; Schritte, deren Ergebnis niemand behält, laufen nicht und werden nicht geprüft; am Ende steht die Auswahl des Bandes, das Bild hat dieses eine Band.
+  Weil jeder Schritt je Band oder Pixel rechnet (und `reproject` seit Version 4 je Band), sind die Werte die eines Jobs mit `output.bands: [<Name>]` (Test: bitgleich
+  auf der nativen Ebene, 256 und 512 px). Der Planer zählt jedes Band in `normalize.bands` als gebraucht, die Kachel liest also dasselbe wie der Job.
+- **Grenzen nach dem Streichen.** 16 Assets (Item-Kachel, `MAX_OPERATOR_ASSETS`) und 4 (Mosaik-Kachel, `MAX_MOSAIC_OPERATOR_ASSETS`) zählen die gelesenen Assets, nicht
+  die genannten: NDVI mit Maske (3) passt auch bei 17 genannten. Dafür fällt die Prüfung vor dem Abruf des Items weg; ein unbekanntes Asset ist ein `404` nach dem Abruf,
+  zu viele gebrauchte Assets ein `400` vor dem Öffnen der ersten Datei. Die Längengrenze der Mosaik-Kachel (7 168 Byte) bleibt.
+- **Mosaik.** Welche Assets das Band braucht, entscheidet die erste Szene nach Kennung (die Szenen tragen dieselben Bänder, `_describe_mosaic` vergleicht sie); die
+  Reihenfolge der Szenen richtet sich nach dem ersten gelesenen Asset.
+- **TileJSON und Statistik.** Das TileJSON trägt `band` und `unit` des gezeigten Bandes; die Statistik ist die des Bandes (der Cache-Schlüssel enthält die Auswahl, zwei Bänder
+  teilen keinen Eintrag). Die Farbskala einer Ergebnis-Ebene kommt weiter aus `properties.bands[].statistics`; ein Test hält die Vorschau-Statistik eines Bandes gleich der des Jobs.
+- **Ergebnis-Kachel** (`/results/…`): `bidx` wählt das Band der `result.tif` (der Name ist die Banddeskription). Ein `bidx` außerhalb der Datei war ein `500`, jetzt `400` mit der
+  Bandzahl.
+- **Auslegungen (Claude, gelten bis Otto widerspricht).** (1) `band` neben einem Schritt der Version 1 ist ein `400`: Version 1 hat keinen Vorrat. (2) Kennt das Item die Bänder
+  eines Assets nicht, gilt das Asset in der Planung als ein Band mit dem Namen des Assets (wie die Schätzung, Grenze S1); die Datei wird vor dem ersten Pixel nochmals geprüft.
+- **Unverändert.** `earthx.__version__` (kein Byte eines Ergebnisses ändert sich), Rezept, Hash, Runner.
