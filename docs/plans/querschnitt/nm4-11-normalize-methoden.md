@@ -47,7 +47,7 @@
 
 Belegstufen wie in `adr/0009`: [M] gemessen, [P] am Primärdokument oder im Code gelesen, [S] Zusammenfassung oder Suchtreffer, [A] eigene Ableitung. Grundlage ist das Rezeptmodell aus `adr/0020` (Bandvorrat, `normalize.bands`, §4, §15a Auslegung 1). Gelesen auf `main` = `b87a9b2`.
 
-**Zeitpunkt der Umsetzung (Otto, Startsatz dieser Session, 30.10.2026):** Code erst nach NM4-43e. Bis dahin liegt hier nur der Plan; die Umsetzung beginnt nach dem Merge beider PRs von NM4-43e (Panel und Vorschau), weil sie das neue Panel, die Bandchips und die Kachel mit Bandvorrat (NM4-43d) braucht. Nachträge heißen nach der Aufgabe („§15 Nachtrag NM4-11“).
+**Zeitpunkt der Umsetzung.** Im Startsatz stand „Code erst nach NM4-43e“. Otto hat das am 30.10.2026 für das Backend aufgehoben (§13, Antwort 7): Das Backend (NM4-11a) wird jetzt umgesetzt, das Frontend (NM4-11b, §15) in einer neuen Session nach NM4-43e. Nachträge heißen nach der Aufgabe („§15 Nachtrag NM4-11“).
 
 ## 6. Kurzfassung
 
@@ -312,3 +312,71 @@ Kurz beantwortbar: je Frage eine Nummer.
 - ArcGIS Pro Stretch: https://pro.arcgis.com/en/pro-app/latest/help/analysis/raster-functions/stretch-function.htm [S]
 - Sentinel-2-Stretch je Band gegen gemeinsam: https://mdsumner.github.io/gdal-r-python/sentinel2_stretch.html [S]
 - Intern: `plans/m4/m4-18-masking-normalisierung.md` §3.3, §7 F4/F5, §8; `plans/m4/m4-32-ergebnis-statistik.md`; `plans/querschnitt/nm4-19-auto-stretch-ueber-aoi.md` §7, §8, §14; `adr/0014` §15c, §15k, §15m, §15u; `adr/0020` §4, §10, §11, §15a.
+
+## 13. Freigabe (Otto, 30.10.2026, zu #244)
+
+| Frage | Antwort |
+|---|---|
+| 1 Woher die Werte kommen | **1: W1.** Vorab über die Route von NM4-19 gemessen, die Werte stehen im Rezept |
+| 2 Methoden | **alle vier** (linear, Perzentile, Z-Score, robust) |
+| 3 Je Band oder ein Bereich | **je Band** |
+| 4 Form im Rezept | **`normalize` Version 3 mit `method`** |
+| 5 Ohne AOI und nach `reproject` | **Option 1:** statistische Methoden gesperrt, Grund im Tooltip; linear immer möglich |
+| 6 Mehrere Aufträge | **Option 1:** jeder Auftrag misst für sich. **Wiedervorlage:** Option 2 „gleiche Werte für alle Aufträge“ (Vergleichbarkeit von Zeitreihen), siehe §14 |
+| 7 Schnitt | **abweichend:** diese Session setzt das Backend um (NM4-11a), ohne auf NM4-43e zu warten; das Frontend ist NM4-11b in einer neuen Session nach NM4-43e (§15) |
+
+Die Kleinentscheidungen KE1–KE10 aus §9 gelten. Die Fragen aus §11 sind damit beantwortet.
+
+## 14. Umsetzung NM4-11a (Backend, 30.10.2026)
+
+Draft-PR [#244](https://github.com/oscipal/earthX/pull/244) trägt Plan und Backend.
+
+**Abweichungen und Auslegungen von Claude** (gelten, bis Otto widerspricht):
+
+1. **Namen im Rezept.** §8.4 nannte die gemessenen Werte des Perzentil-Stretchs `low` und `high`, dieselben Namen wie die Prozente. Das ist missverständlich. Im Rezept heißen die Prozente `low` und `high`, die gemessenen Werte je Band `p_low` und `p_high` (`measured.bands.<Band>.p_low`).
+2. **Ein flaches Modell statt einer Union.** `NormalizeParamsV3` ist ein Modell mit `method` und den Feldern aller Methoden; die Felder einer anderen Methode sind verboten und die der eigenen Pflicht (`422`/`400` mit dem Feld im Text). Grund: Der Operator verlangt ein strenges Modell mit `extra="forbid"`, das eine Union an der Wurzel nicht sein kann; so bleibt das Schema flach für das Formular.
+3. **Spanne 0.** Eine konstante Spanne (`stddev` = 0, `p25` = `p75`, `p_low` = `p_high`) ist gültig und teilt durch 1 (KE10). Gesperrt ist nur ein Band ohne gültigen Wert, und das ist Sache des Panels (keine Zahl, keine Messung).
+4. **Nicht gelistet.** `normalize` Version 3 ist `listed=False`, bis das Panel sie schickt (NM4-11b); die Prozessbeschreibung listet weiter, was sie vor dieser Aufgabe listete. Ein Test hält fest, dass sie sie nach dem Umschalten bietet.
+5. **Kachel.** Version 3 läuft als Kachel (`T1`) und als Job. Die URL trägt die Zahlen in `params`; die Grenze von 2048 Zeichen (`MAX_OPERATOR_PARAMS_CHARS`) gilt, das sind je nach Methode etwa 25 bis 40 Bänder mit Zahlen. Darüber antwortet die Kachel `400` mit dem Grund, und das Panel zeigt den Anfang der Kette bis vor den Schritt (wie bei jedem nicht zeichenbaren Schritt, `adr/0014` §15m).
+6. **Route.** `POST /collections/{dataset}/statistics` liefert je Band zusätzlich `percentile_1`, `_5`, `_25`, `_50`, `_75`, `_95`, `_99`; das Ergebnisdokument und `result.tif` tragen weiter nur 2 und 98 (keine geänderten Bytes, `__version__` bleibt). Der Cache-Schlüssel trägt `area-statistics/v2`; Einträge der älteren Form werden nicht mehr getroffen und laufen nach 7 Tagen ab.
+7. **Methodentext und Herkunft.** Der Text nennt die Zahlen der Rezeptes (`as measured before the run`, bei `factor` > 1 `on a read N times coarser than the result`). Er nennt wie bei Version 2 alle Bänder des Schritts, auch die der Planer streicht.
+
+**Wiedervorlage (Frage 6, Option 2).** „Gleiche Werte für alle Aufträge“ macht Ergebnisse mehrerer Szenen oder Überflüge vergleichbar (Zeitreihen). Sie bräuchte eine gemeinsame Messung über die Vereinigung der Aufträge, also eine Entscheidung zur Fläche (Vereinigung der Footprints oder der erste Auftrag) und zur Kennzeichnung im Methodentext. Otto legt sie wieder vor, sobald Zeitreihen gebaut werden. Das Backlog pflegt der Planungs-Chat.
+
+## 15. NM4-11b — Frontend: Methoden im Panel (Aufgabe für eine neue Session)
+
+**Stufe A**, nur Frontend und eine Zeile im Backend (die Auflistung, siehe Punkt 8), **zwei PRs** (Richtwert über 400 Zeilen): (1) Formular, Messung, Sperren; (2) mehrere Aufträge, Laden und Umdeutung. **Modell:** Sonnet, Effort hoch.
+**Start:** nach dem Merge von NM4-43e (beide PRs) und von NM4-11a (#244). Höchstens zwei Frontend-Sessions gleichzeitig; nicht gleichzeitig mit NM4-20, NM4-45 oder NM4-14 (alle ändern den Bandbereich des Panels).
+**Startsatz:** „Führe Aufgabe NM4-11b aus `docs/plans/querschnitt/nm4-11-normalize-methoden.md` §15 aus.“
+
+**Ausgangslage.** Das Backend kann `normalize` Version 3 (§14): vier Methoden, die Zahlen der statistischen stehen im Rezept (`measured`), Kachel und Job geben dieselben Bytes. Die Route `POST /collections/{dataset}/statistics` (NM4-19, Frontend NM4-19b in `processingStore.ts`/`processingPreview.ts`) misst die AOI und antwortet je Band mit `minimum`, `maximum`, `mean`, `stddev` und den Perzentilen 1, 2, 5, 25, 50, 75, 95, 98, 99, dazu `exact` und `factor`. Version 3 ist `listed=False`; das Panel nach NM4-43e schickt `normalize` Version 2 (mit `bands`). Das Panel ist nach NM4-43e das mit Bandvorrat, Bandchips und „Select Bands that are processed“ (`adr/0020` §14). Entscheidungen und Begründung: §6–§14 dieses Dokuments; `adr/0014` „§15 Nachtrag NM4-11“; Oberflächentexte nur auf Englisch, wenig Text, Erklärungen im Tooltip (UI-01 §4).
+
+**PR 1 — Formular, Messung, Sperren.**
+
+1. **Schritt „Normalize“:** eine kurze Zeile, was der Schritt tut, mit Beispiel („Rescale values, e.g. NDVI −1…1 → 0…1“), und ein Auswahlfeld „Method“ mit vier Einträgen, je mit einem Satz Hilfe: „Fixed range“ (`linear`), „Percentile stretch“ (`percentile`), „Z-score“ (`zscore`), „Robust (median, IQR)“ (`robust`). Die Formel der gewählten Methode steht im Tooltip: `(x − from) / (to − from) × (max − min) + min`; Perzentile: dieselbe mit den Werten der Perzentile; Z-score: `(x − mean) / standard deviation`; robust: `(x − median) / (p75 − p25)`; je „measured over the AOI“. Felder mit verständlichen Namen: „From“/„To“ für den festen Bereich (Rezept: `in_min`, `in_max`), „Range“ mit den Paaren 0–100, 1–99, 2–98 (Vorgabe), 5–95 % (Rezept: `low`, `high`), „To“ mit `out_min`/`out_max` und „Clip“. „Bands“ als Chips aus dem Bandvorrat (wie NM4-43e), das letzte Ergebnis als Vorschlag. Das Formular entsteht nicht aus dem Schema (`schemaForm.ts` kennt kein `oneOf` von Objekten); wie `ClassPicker` für `mask` ist es ein Sonderfall im `StepForm`.
+2. **Messung (Frage 1, W1).** Für eine statistische Methode misst das Panel automatisch, sobald sie gewählt ist und sich ändert: der Anfang der Kette (die Schritte vor dem Schritt), die AOI, die Szenen oder `bands`. Der Body ist der Auftrag, den das Panel für den Job baut, mit den Schritten **vor** dem Schritt, `output.bands` gleich den `bands` des Schritts und `dtype` `float64`. Die Abbildung aus der Antwort in `measured` (je Band):
+   - Perzentile: `p_low` ist `minimum`, wenn `low` 0 ist, sonst `percentile_<low>`; `p_high` ist `maximum`, wenn `high` 100 ist, sonst `percentile_<high>`;
+   - Z-score: `mean`, `stddev` (fehlt `stddev` in der Antwort, weil es nicht endlich ist, hat das Band keine Zahl);
+   - robust: `p25` = `percentile_25`, `median` = `percentile_50`, `p75` = `percentile_75`;
+   - `factor` ist der `factor` der Antwort. Hat ein Band keinen gültigen Wert (`count` 0, nur `valid_percent`), hat es keine Zahl.
+   Die Zahlen schreibt das Panel in `params.measured`; der Benutzer tippt sie nie (KE3). Die Antwort gilt nur im Speicher (Schlüssel nie in einer URL oder einem Log); die AOI geht nur im Body.
+3. **Warten und Sperren (KE2).** Solange eine Messung fehlt, läuft oder scheiterte, sind „Review“ und der Start-Knopf gesperrt; der Grund steht im Tooltip („Normalize: measuring the bands…“ bzw. „Normalize: the measurement failed: <Grund der Route>“, ohne AOI). Am Schritt steht während der Messung „Measuring…“. Eine Messung mit `exact: false` zeigt im Tooltip der Zahlen „measured on a read N times coarser“. Die Wartezeit der Vorschau (`MEASURE_WAIT_MS`) gilt hier nicht.
+4. **Gesperrt (Frage 5, Option 1).** Ohne AOI und nach einem `reproject` (der Schritt steht in der Kette hinter einem `reproject`) sind die drei statistischen Methoden gesperrt, nicht ausgeblendet; der Grund steht im Tooltip: „Draw an AOI; the values are measured over it“ bzw. „Move Normalize above Reproject; the values are measured before a reprojection“. „Fixed range“ geht immer.
+5. **Vorschau.** Die Kachel-Kette zeigt den Schritt mit den Zahlen in `params` (Version 3 läuft als Kachel). Wird die URL zu lang (`MAX_OPERATOR_PARAMS_CHARS` 2048, höchstens 4 Schritte) oder fehlt eine Zahl, endet die gezeigte Kette vor dem Schritt, mit dem bestehenden Hinweis „The map shows the first N steps“. Vorschau und Ergebnis zeigen dieselbe Farbskala.
+6. **Auftrag.** Das Panel schickt `normalize` Version 3 (`method`, `bands`, die Felder der Methode, `measured`); die Felder einer anderen Methode fehlen. Version 2 schickt es nicht mehr.
+7. **Tests** (vitest): Formular je Methode; der gebaute Body der Messung (Schritte davor, `float64`, `bands`); die Abbildung der Antwort in `measured` je Methode, mit `low` 0 und `high` 100; Sperre und Tooltip von „Review“/„Start“ in allen Zuständen (misst, gescheitert, fertig); Sperre ohne AOI und nach `reproject`; neu messen bei Änderung von AOI, Szenen, `bands`, vorigen Schritten; keine AOI in einer URL (Test über alle gebauten URLs); kein Zahl-Eintrag von Hand.
+8. **Backend, eine Zeile:** `NORMALIZE_V3.listed` auf `True`, `NORMALIZE_V2.listed` auf `False` (`processing/operators/normalize.py`), damit die Prozessbeschreibung Version 3 bietet; im PR begründet. Der Test `test_the_process_description_offers_it_once_it_is_listed` (`tests/earthx/processing/test_normalize_methods.py`) wird dafür von der Hilfskopie auf die echte Registry umgestellt.
+
+**PR 2 — mehrere Aufträge, Laden, Umdeutung.**
+
+9. **Mehrere Aufträge (Frage 6, Option 1).** Bei „One job per pass“ und „per scene“ misst jeder Auftrag für sich beim Schätzen („Review“), parallel wie die Schätzungen (`ESTIMATE_PARALLEL`); jedes Rezept trägt die Werte seiner Fläche. Bis 25 Aufträge. Ein Auftrag, dessen Messung scheitert, ist gesperrt, mit Grund im Tooltip dieses Auftrags.
+10. **Laden.** Beim Laden einer `recipe.json`, eines Permalinks, bei der Ablage im Browser und bei „⚙“ am Ergebnis (NM4-05b) misst das Panel neu für die aktuelle Auswahl; gespeicherte Zahlen werden nicht übernommen (KE3). Ein Schritt `normalize` Version 2 aus einer Datei wird im Panel zu Version 3 `linear` mit denselben Zahlen (KE4, bitgleich).
+11. **Tests:** Batch (n Aufträge, n Messungen, je eigener Fehler), Laden mit alten und neuen Dateien, Umdeutung Version 2 nach 3.
+
+**Abnahme (beide PRs).**
+
+- Prüfung im echten Browser (Chromium/Playwright der Sitzung), nicht nur jsdom, in Hell- und Dunkelmodus und bei schmalem Fenster, mit nachgestellten Antworten der Route; im PR beschrieben. **Bilder nicht ins Repo.**
+- Prüfanleitung für Otto im PR (Browser und/oder PowerShell 5.1: Route mit Perzentilen, Job je Methode, Methodentext in der `recipe.json`).
+- Alle vier Pflicht-Checks der CI grün: Lint (`npm run lint`), Typprüfung (`npx tsc -b --pretty false`), Tests, Backend-Tests.
+- Nachtrag `adr/0014` „§15 Nachtrag NM4-11b“ (Panel, Messung, Sperren), Log-Zeile mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern (pflegt der Planungs-Chat). Vor „fertig“ ist `main` geholt.
+- Grenzen: Oberflächentexte nur auf Englisch; keine neue Abhängigkeit ohne Frage an Otto; keine AOI, Job-, Rezept- oder Permalink-Kennungen, Hashes, `href` oder signierten URLs in Logs oder URLs; `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
