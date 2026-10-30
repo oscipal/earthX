@@ -366,7 +366,7 @@ export default function MapView() {
   const quicklooks = useSameScenes(shown.quicklooks);
   const overlay = useSameScenes(shown.overlay);
   const highlight = useSameScenes(shown.highlight);
-  // The ticked scenes whose quicklooks lie over everything else (`mapLayers.ts`, `TICKED_TOP`).
+  // The ticked scenes, whose quicklooks lie over the other results in the order they were ticked (`mapLayers.ts`).
   const ticked = useMemo(() => highlight.map((item) => item.id), [highlight]);
   const viewLayer = useMemo(
     () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi: viewAoi, showDownloaded }),
@@ -406,8 +406,8 @@ export default function MapView() {
     }
   }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
 
-  // --- the preview of the processing panel (M4-13c-2). It keeps itself on top of
-  // the rasters placed later (`mapLayers.ts::beforeAoi`); a new AOI cuts it again. ---
+  // --- the preview of the processing panel (M4-13c-2), a tier of "Results" over the results and the view
+  // (`mapLayers.ts`); a new AOI cuts it again. ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) syncPreview(map, previewTiles);
@@ -442,8 +442,8 @@ export default function MapView() {
     return () => window.clearTimeout(id);
   }, [playing, focusMode, expandedGroupIndex, activeGroupIndex, revealNotBefore]);
 
-  // --- the results over a full-resolution view, while "Show results" is on. Runs after the view's own effect
-  // above, so what it draws lies over the view. ---
+  // --- the results over a full-resolution view, while the eye of "Results" is on: over the view, in the tiers of
+  // browsing (`mapLayers.ts`). ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, openIds, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });

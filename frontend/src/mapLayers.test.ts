@@ -901,16 +901,13 @@ describe('syncLayers: the map follows the order of the list', () => {
 });
 
 describe('ensureBaseLayers', () => {
-  it('lays the end of the layer manager and, over it, the end of the results under the view, right under the AOI, once', () => {
+  it('lays one marker for the pictures, with the outlines of the results right under it and the AOI over it, once', () => {
     const { map, stack } = liveMap(['bg']);
     ensureBaseLayers(map as never);
     ensureBaseLayers(map as never);
-    expect(stack.slice(0, 9)).toEqual(['bg', 'layers-top', 'results-top', 'ticked-top', 'open-base', 'open-ticked-base', 'preview-base', 'overlays-base', 'aoi-fill']);
-    expect(stack.filter((id) => id === 'preview-base')).toHaveLength(1);
-    expect(stack.filter((id) => id === 'layers-top')).toHaveLength(1);
-    expect(stack.filter((id) => id === 'results-top')).toHaveLength(1);
-    expect(stack.filter((id) => id === 'open-base')).toHaveLength(1);
-    expect(stack.filter((id) => id === 'open-ticked-base')).toHaveLength(1);
+    expect(stack.slice(0, 4)).toEqual(['bg', 'mosaicsel-line', 'overlays-base', 'aoi-fill']);
+    expect(stack.filter((id) => id === 'overlays-base')).toHaveLength(1);
+    expect(stack.filter((id) => id === 'mosaicsel-line')).toHaveLength(1);
   });
 });
 
@@ -1008,18 +1005,7 @@ describe('syncLayers: quicklooks that arrive late', () => {
 // A map that remembers its layers in order, as MapLibre stacks them: a layer
 // added `before` another goes right under it.
 function stackedMap(initial: string[]) {
-  const stack = [...initial];
-  const sources = new Map<string, Record<string, unknown>>();
-  const map = {
-    getLayer: (id: string) => (stack.includes(id) ? { id } : undefined),
-    getSource: (id: string) => sources.get(id),
-    removeLayer: (id: string) => stack.splice(stack.indexOf(id), 1),
-    removeSource: (id: string) => sources.delete(id),
-    addSource: (id: string, spec: Record<string, unknown>) => sources.set(id, spec),
-    addLayer: (layer: { id: string }, before?: string) => {
-      stack.splice(before ? stack.indexOf(before) : stack.length, 0, layer.id);
-    },
-  };
+  const { map, stack, sources } = liveMap(initial);
   return { map, stack, sources };
 }
 

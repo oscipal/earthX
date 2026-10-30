@@ -1,7 +1,7 @@
 // NM4-50 (Otto, 30.10.2026): the dataset the results list shows lies on top of the map. From the top: the live preview, the
 // open dataset (its ticked scenes in the order they were ticked, the last on top, and under them its other quicklooks), the
-// ticked scenes of the other datasets (in the order they were ticked), then the view, the results over it and the pinned
-// layers. A change of the dataset lays the scenes out again at once, also after a style load.
+// ticked scenes of the other datasets (in the order they were ticked), then the view (NM4-59: the same tiers over a view),
+// and the pinned layers. A change of the dataset lays the scenes out again at once, also after a style load.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -54,7 +54,6 @@ const resultLayers = (live: ReturnType<typeof liveMap>, prefix = /^[mn]-(tiles|i
     const match = prefix.exec(id);
     return match ? [Number(match[2])] : [];
   });
-const below = (live: ReturnType<typeof liveMap>, id: string, marker: string) => live.stack.indexOf(id) < live.stack.indexOf(marker);
 
 describe.each([
   ['the DEM open, Sentinel-2 (coarse tiles) ticked beside it', DEM, COARSE],
@@ -77,19 +76,12 @@ describe.each([
     expect(resultLayers(live)).toEqual([3, 4, 2, 1, 0]);
   });
 
-  it('keeps the tiers apart by the markers: all over the end of the layers, the preview over all', () => {
+  it('keeps the tiers in one block right under the marker of the overlays, the outlines on top of it', () => {
     const live = freshMap();
     draw(live, ['y1', 'x2', 'y2', 'x1']);
-    const ids = (index: number) => live.stack.filter((id) => new RegExp(`^[mn]-(tiles|img)-lyr-${index}$`, 'u').test(id));
-    const [y1] = ids(3);
-    const [x3] = ids(2);
-    const [x1] = ids(0);
-    expect(live.stack.indexOf(y1)).toBeGreaterThan(live.stack.indexOf('ticked-top'));
-    expect(below(live, y1, 'open-base')).toBe(true);
-    expect(live.stack.indexOf(x3)).toBeGreaterThan(live.stack.indexOf('open-base'));
-    expect(below(live, x3, 'open-ticked-base')).toBe(true);
-    expect(live.stack.indexOf(x1)).toBeGreaterThan(live.stack.indexOf('open-ticked-base'));
-    expect(below(live, x1, 'preview-base')).toBe(true);
+    const id = (index: number) => live.stack.find((layer) => new RegExp(`^[mn]-(tiles|img)-lyr-${index}$`, 'u').test(layer));
+    const end = live.stack.indexOf('overlays-base');
+    expect(live.stack.slice(end - 6, end)).toEqual([id(3), id(4), id(2), id(1), id(0), 'mosaicsel-line']);
   });
 
   it('puts the last ticked on top, whichever order the ticks were made in', () => {
@@ -137,20 +129,12 @@ describe.each([
     }
   });
 
-  it('orders the ticked scenes over a view the same way, and leaves the other results under it', () => {
+  // NM4-59: over a view the tiers are those of browsing; before, the open dataset's other scene (x3) lay under the view and
+  // so under the ticked scenes of the other dataset.
+  it('orders the scenes over a view the same way as in browsing', () => {
     const live = freshMap();
     syncResultsOverlay(live.map as never, { items, dataset: open, datasets, selectedIds: ['y1', 'x2', 'y2', 'x1'] });
     arrive();
-    const res = live.stack.flatMap((id) => {
-      const match = /^res-(tiles|img)-lyr-(\d+)$/u.exec(id);
-      return match ? [Number(match[2])] : [];
-    });
-    // Only the ticked ones lie over the view's marker, in tiers; x3 (2) is the open dataset's other scene, under the view.
-    expect(res.indexOf(3)).toBeLessThan(res.indexOf(4));
-    expect(res.indexOf(4)).toBeLessThan(res.indexOf(1));
-    expect(res.indexOf(1)).toBeLessThan(res.indexOf(0));
-    const x3 = live.stack.findIndex((id) => /^res-(tiles|img)-lyr-2$/u.test(id));
-    expect(x3).toBeLessThan(live.stack.indexOf('results-top'));
-    expect(live.stack.findIndex((id) => /^res-(tiles|img)-lyr-3$/u.test(id))).toBeGreaterThan(live.stack.indexOf('ticked-top'));
+    expect(resultLayers(live, /^res-(tiles|img)-lyr-(\d+)$/u)).toEqual([3, 4, 2, 1, 0]);
   });
 });
