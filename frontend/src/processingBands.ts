@@ -50,26 +50,28 @@ export function assetsCarrying(sources: readonly BandSource[], names: Iterable<s
 
 // --- the names of results -------------------------------------------------------------
 
-// Why `name` cannot be the name of a band a step adds, or `null`. `others` are the other results of the chain,
-// `data` every band of the data, the ones nobody reads included; both ignore case, as the server does.
+// Why `name` cannot be the name of a band a step adds, or `null`: a short hint for the field, with the name quoted.
+// `others` are the other results of the chain, `data` every band of the data, the ones nobody reads included; both ignore
+// case, as the server does.
 export function nameProblem(name: string, others: readonly string[], data: readonly string[]): string | null {
-  if (name === '') return 'Enter a name.';
-  if (!NAME.test(name)) return `A letter, then letters, digits or _, at most ${MAX_NAME_LENGTH} characters.`;
-  if (PYTHON_KEYWORDS.has(name)) return `${name} is a Python keyword, so an expression cannot use it.`;
-  if (FUNCTIONS.has(name)) return `${name} is a function, so an expression cannot use it as a band.`;
+  if (name === '') return 'Enter a name';
+  if (!NAME.test(name)) return `Use letters, digits and _, a letter first, at most ${MAX_NAME_LENGTH} characters`;
+  if (PYTHON_KEYWORDS.has(name)) return `'${name}' cannot be used in an expression`;
+  if (FUNCTIONS.has(name)) return `'${name}' is the name of a function`;
   const folded = name.toLowerCase();
-  if (data.some((d) => d.toLowerCase() === folded)) return `${name} is a band of the data.`;
-  if (others.some((o) => o.toLowerCase() === folded)) return `${name} is used twice.`;
+  if (data.some((d) => d.toLowerCase() === folded)) return `'${name}' is already a band name`;
+  if (others.some((o) => o.toLowerCase() === folded)) return `'${name}' is already used by another step`;
   return null;
 }
 
-// The default name of the band a new `band_math` step adds: `Band_Math_<n>`, `n` the place of the step in the chain
-// from 1, the next free number from there if that name is taken.
-export function defaultName(place: number, taken: readonly string[]): string {
+// The default name of the band a new `band_math` step adds: `result`, and `result_1`, `result_2` … where that is taken
+// (adr/0020 §6, Otto 30.10.2026), the first one that is free among the bands of the data and the other results.
+export function defaultName(taken: readonly string[]): string {
   const folded = new Set(taken.map((name) => name.toLowerCase()));
-  let n = place;
-  while (folded.has(`band_math_${n}`)) n += 1;
-  return `Band_Math_${n}`;
+  if (!folded.has('result')) return 'result';
+  let n = 1;
+  while (folded.has(`result_${n}`)) n += 1;
+  return `result_${n}`;
 }
 
 export const isBandMath = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math';
@@ -81,7 +83,7 @@ export function resultNameOf(step: DraftStep): string {
 
 // The results of the chain: the name of each `band_math` step, in step order, with the step's key.
 export function resultsOf(steps: readonly DraftStep[]): Array<{ key: number; name: string }> {
-  return steps.filter(isBandMath).map((step) => ({ key: step.key, name: step.applied ?? resultNameOf(step) }));
+  return steps.filter(isBandMath).map((step) => ({ key: step.key, name: resultNameOf(step) }));
 }
 
 // The names an expression mentions that are not followed by `(`: the same reading the chips use.

@@ -270,7 +270,7 @@ describe('the preview section', () => {
     const params = new URL(preview.scenes[0].url, 'http://localhost').searchParams;
     expect(params.getAll('asset')).toEqual(['red', 'nir']);
     expect(params.get('op')).toBe('band_math');
-    expect(JSON.parse(params.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'Band_Math_1' });
+    expect(JSON.parse(params.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'result' });
     expect(params.get('rescale')).toBe('-1,1');
     expect(params.get('colormap_name')).toBe('rdylgn');
     expect(section().textContent).toContain('Where scenes overlap');
@@ -418,7 +418,7 @@ describe('the preview section', () => {
 
   it('draws a chain of tile steps and counts what the map leaves out', async () => {
     await withNdvi();
-    const normalize = { key: 900, op: 'normalize', opVersion: 2, values: { bands: 'Band_Math_1', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
+    const normalize = { key: 900, op: 'normalize', opVersion: 2, values: { bands: 'result', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
     act(() => useProcessingStore.setState({ steps: [...store().steps, normalize] }));
     await afterDebounce();
     await flush();
@@ -826,6 +826,34 @@ describe('the preview section', () => {
         await flush();
         expect(seen).toEqual(['-1,1']);
         expect(section().textContent).toContain('The range could not be measured');
+      });
+
+      it('shows in the fields the range the picture is drawn with, not the one of the formula before (review of #250)', async () => {
+        statistics = () => measured({ b1: DEM_VALUES });
+        select([scene('S2B_A')]);
+        await openPanel();
+        vi.useFakeTimers();
+        const seen = drawn();
+        click(button('＋ Band math'));
+        typeInto(expression(), 'nir');
+        await afterDebounce();
+        await flush();
+        expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
+        // The next formula is measured slowly: after the wait the picture is drawn with the start range ...
+        slow();
+        typeInto(expression(), 'nir / red');
+        await afterDebounce();
+        act(() => {
+          vi.advanceTimersByTime(5000);
+        });
+        await flush();
+        expect(seen.at(-1)).toBe('-1,1');
+        // ... and the fields say the same, until the measure comes.
+        expect(inputs().map((i) => i.value)).toEqual(['-1', '1']);
+        await act(async () => answer(measured({ b1: DEM_VALUES })));
+        await flush();
+        expect(seen.at(-1)).toBe('120,2400');
+        expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
       });
 
       it('lets a newer picture win over a measure of an older one that comes late', async () => {
@@ -1779,7 +1807,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(url.searchParams.getAll('item')).toEqual(['S2B_A', 'S2B_B', 'S2B_C']);
     expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
     expect(url.searchParams.getAll('op')).toEqual(['band_math']);
-    expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'Band_Math_1' });
+    expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'result' });
     expect(preview.scenes.map((scene) => [scene.id, scene.below])).toEqual([['S2B_B', 8], ['S2B_C', 8], ['S2B_A', 8]]);
     expect(preview.perScene).toBe(false);
     // The tiler is asked about the mosaic, not about a scene; the colour scale is measured over the scene that wins.

@@ -296,10 +296,10 @@ describe('the results of band math steps', () => {
     select(scene());
     await openPanel();
     await addBandMath();
-    expect(names(group('New bands'))).toEqual(['Band_Math_1']);
-    expect(checked()).toEqual(['Band_Math_1']);
-    expect(nameField().value).toBe('Band_Math_1');
-    expect(container.querySelector('.pp-step-title')!.textContent).toContain('1. Band_Math_1');
+    expect(names(group('New bands'))).toEqual(['result']);
+    expect(checked()).toEqual(['result']);
+    expect(nameField().value).toBe('result');
+    expect(container.querySelector('.pp-step-title')!.textContent).toContain('1. result');
   });
 
   it('are the output alone by default: no other band comes with them', async () => {
@@ -307,13 +307,13 @@ describe('the results of band math steps', () => {
     await openPanel();
     await addBandMath('(nir - red) / (nir + red)');
     await review();
-    expect(sentOrder().output.bands).toEqual(['Band_Math_1']);
+    expect(sentOrder().output.bands).toEqual(['result']);
     expect(sentOrder().inputs[0]).not.toHaveProperty('assets');
     expect(sentOrder().recipe_version).toBe(2);
     expect(sentOrder().steps[0]).toEqual({
       op: 'band_math',
       op_version: 2,
-      params: { expression: '(nir - red) / (nir + red)', name: 'Band_Math_1' },
+      params: { expression: '(nir - red) / (nir + red)', name: 'result' },
     });
   });
 
@@ -321,12 +321,12 @@ describe('the results of band math steps', () => {
     select(scene());
     await openPanel();
     await addBandMath();
-    click(outChip('Band_Math_1'));
+    click(outChip('result'));
     expect(checked()).toEqual([]);
     click(outChip('red'));
     await addBandMath('green - nir');
-    expect(names(group('New bands'))).toEqual(['Band_Math_1', 'Band_Math_2']);
-    expect(checked()).toEqual(['Band_Math_2', 'red']);
+    expect(names(group('New bands'))).toEqual(['result', 'result_1']);
+    expect(checked()).toEqual(['result_1', 'red']);
   });
 
   it('vanish from the output with their step', async () => {
@@ -334,10 +334,10 @@ describe('the results of band math steps', () => {
     await openPanel();
     await addBandMath();
     await addBandMath('green - nir');
-    expect(checked()).toEqual(['Band_Math_1', 'Band_Math_2']);
+    expect(checked()).toEqual(['result', 'result_1']);
     click(button('✕ Remove'));
-    expect(checked()).toEqual(['Band_Math_2']);
-    expect(store().output).toEqual(['Band_Math_2']);
+    expect(checked()).toEqual(['result_1']);
+    expect(store().output).toEqual(['result_1']);
   });
 
   it('are two bands of one order when two steps run one after the other, the second seeing the first', async () => {
@@ -348,10 +348,10 @@ describe('the results of band math steps', () => {
     // The second step offers the first result as a chip, the first step none.
     const chips = [...container.querySelectorAll('[aria-label="Results of earlier steps"]')];
     expect(chips).toHaveLength(1);
-    expect(names(chips[0])).toEqual(['Band_Math_1']);
+    expect(names(chips[0])).toEqual(['result']);
     await review();
-    expect(sentOrder().output.bands).toEqual(['Band_Math_1', 'Band_Math_2']);
-    expect(sentOrder().steps.map((s: { params: { name: string } }) => s.params.name)).toEqual(['Band_Math_1', 'Band_Math_2']);
+    expect(sentOrder().output.bands).toEqual(['result', 'result_1']);
+    expect(sentOrder().steps.map((s: { params: { name: string } }) => s.params.name)).toEqual(['result', 'result_1']);
   });
 
   it('are put into an expression by the chip of the step, at the cursor or at the end', async () => {
@@ -360,11 +360,11 @@ describe('the results of band math steps', () => {
     await addBandMath();
     await addBandMath('');
     const second = expression(1);
-    click(button('Band_Math_1', container.querySelector('[aria-label="Results of earlier steps"]')!));
-    expect(second.value).toBe('Band_Math_1');
-    typeInto(second, 'Band_Math_1 * 2');
-    click(button('Band_Math_1', container.querySelector('[aria-label="Results of earlier steps"]')!));
-    expect(expression(1).value).toBe('Band_Math_1 * 2 Band_Math_1');
+    click(button('result', container.querySelector('[aria-label="Results of earlier steps"]')!));
+    expect(second.value).toBe('result');
+    typeInto(second, 'result * 2');
+    click(button('result', container.querySelector('[aria-label="Results of earlier steps"]')!));
+    expect(expression(1).value).toBe('result * 2 result');
   });
 });
 
@@ -373,49 +373,126 @@ describe('the name of a result', () => {
     select(scene());
     await openPanel();
     await addBandMath('(nir - red) / (nir + red)');
-    await addBandMath('Band_Math_1 * 2');
+    await addBandMath('result * 2');
     click(button('＋ Normalize'));
   }
 
+  // The name is typed into the field and taken over when the field is left, as a person does it.
+  function rename(step: number, text: string, leave = true) {
+    act(() => nameField(step).focus());
+    typeInto(nameField(step), text);
+    if (leave) act(() => nameField(step).blur());
+  }
+  const hint = () => container.querySelector('.hint-text.error[id$="-problem"]')?.textContent ?? null;
+
+  it('is result by default, and result_1, result_2 where that is taken', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('nir');
+    await addBandMath('red');
+    await addBandMath('green');
+    expect(store().steps.map((s) => s.values.name)).toEqual(['result', 'result_1', 'result_2']);
+  });
+
+  it('takes the next free name when a band of the data is called result', async () => {
+    select(scene({ result: cog() }));
+    await openPanel();
+    await addBandMath('nir');
+    expect(store().steps[0].values.name).toBe('result_1');
+  });
+
   it('is followed by the later expressions, the normalize step and the output when it is renamed', async () => {
     await twoSteps();
-    expect(store().steps[2].values.bands).toBe('Band_Math_2');
-    typeInto(nameField(0), 'NDVI');
+    expect(store().steps[2].values.bands).toBe('result_1');
+    rename(0, 'NDVI');
     expect(store().steps[1].values.expression).toBe('NDVI * 2');
-    expect(store().output).toEqual(['NDVI', 'Band_Math_2']);
-    typeInto(nameField(1), 'Double');
+    expect(store().output).toEqual(['NDVI', 'result_1']);
+    rename(1, 'Double');
     expect(store().steps[2].values.bands).toBe('Double');
     expect(store().output).toEqual(['NDVI', 'Double']);
     expect(container.querySelectorAll('.pp-step-title')[0].textContent).toContain('1. NDVI');
   });
 
-  it('leaves the references alone while the name typed is not one yet, and takes them along once it is', async () => {
+  it('is taken over when Enter is pressed in the field', async () => {
     await twoSteps();
-    typeInto(nameField(0), '');
-    expect(nameField(0).getAttribute('aria-invalid')).toBe('true');
-    expect(store().steps[1].values.expression).toBe('Band_Math_1 * 2');
-    typeInto(nameField(0), 'N');
+    act(() => nameField(0).focus());
     typeInto(nameField(0), 'NDVI');
-    expect(store().steps[1].values.expression).toBe('NDVI * 2');
-    expect(nameField(0).getAttribute('aria-invalid')).toBe('false');
+    expect(store().steps[0].values.name).toBe('result');
+    act(() => nameField(0).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(store().steps[0].values.name).toBe('NDVI');
+  });
+
+  it('is not taken while it is typed: r, re, red leave the steps and the output with the name they had', async () => {
+    await twoSteps();
+    const seen: string[] = [];
+    const watch = () => seen.push(`${store().steps[0].values.name}|${store().steps[1].values.expression}|${store().output.join(',')}`);
+    act(() => nameField(0).focus());
+    for (const typed of ['r', 're', 'red']) {
+      typeInto(nameField(0), typed);
+      watch();
+    }
+    // `red` is a band of the data: told at once, in the field, with the frame turned to an error.
+    expect(nameField(0).getAttribute('aria-invalid')).toBe('true');
+    expect(hint()).toBe("'red' is already a band name");
+    act(() => nameField(0).blur());
+    watch();
+    expect(new Set(seen)).toEqual(new Set(['result|result * 2|result,result_1']));
+    expect(store().steps[0].values.name).toBe('result');
+    // The field keeps what was typed, so that it can be put right.
+    expect(nameField(0).value).toBe('red');
+    expect(hint()).toBe("'red' is already a band name");
+  });
+
+  it('holds back the steps, the review and the start while a name breaks a rule, and says why in their tooltips', async () => {
+    await twoSteps();
+    act(() => nameField(0).focus());
+    typeInto(nameField(0), 'red');
+    const why = "Step 1: 'red' is already a band name";
+    expect(store().nameProblems).toEqual({ [store().steps[0].key]: "'red' is already a band name" });
+    for (const label of ['＋ Band math', '＋ Mask', '＋ Normalize', '＋ Reproject and resample']) {
+      expect(button(label).disabled, label).toBe(true);
+      expect(button(label).title, label).toBe(why);
+    }
+    expect(button('Review').disabled).toBe(true);
+    expect(button('Review').title).toBe(why);
+    expect(startButton().disabled).toBe(true);
+    expect(startButton().title).toBe(why);
+    await review();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+    // Put right, everything is open again.
+    typeInto(nameField(0), 'NDVI');
+    act(() => nameField(0).blur());
+    expect(store().nameProblems).toEqual({});
+    expect(button('Review').disabled).toBe(false);
+    expect(button('＋ Band math').disabled).toBe(false);
+    expect(hint()).toBeNull();
+  });
+
+  it('is let go of with its step: a removed step holds nothing back', async () => {
+    await twoSteps();
+    act(() => nameField(1).focus());
+    typeInto(nameField(1), 'scl');
+    expect(store().nameProblems).not.toEqual({});
+    click(button('✕ Remove', container.querySelectorAll('.pp-step')[1]));
+    expect(store().nameProblems).toEqual({});
+    expect(button('Review').disabled).toBe(false);
   });
 
   it.each([
-    ['one a result has already, in another spelling', 'band_math_2', 'band_math_2 is used twice.'],
-    ['a band of the data', 'RED', 'RED is a band of the data.'],
-    ['the layer of the mask, which nobody reads', 'scl', 'scl is a band of the data.'],
-    ['a Python keyword', 'not', 'not is a Python keyword, so an expression cannot use it.'],
-    ['a function of the expressions', 'sqrt', 'sqrt is a function, so an expression cannot use it as a band.'],
-    ['too long', 'A'.repeat(33), 'A letter, then letters, digits or _, at most 32 characters.'],
-    ['not a name', '2fast', 'A letter, then letters, digits or _, at most 32 characters.'],
-  ])('is refused when it is %s: the frame turns to an error, the reason is the tooltip and nothing is sent', async (_why, typed, reason) => {
+    ['one a result has already, in another spelling', 'RESULT_1', "'RESULT_1' is already used by another step"],
+    ['a band of the data', 'RED', "'RED' is already a band name"],
+    ['the layer of the mask, which nobody reads', 'scl', "'scl' is already a band name"],
+    ['a Python keyword', 'not', "'not' cannot be used in an expression"],
+    ['a function of the expressions', 'sqrt', "'sqrt' is the name of a function"],
+    ['not a name', '2fast', 'Use letters, digits and _, a letter first, at most 32 characters'],
+    ['empty', '', 'Enter a name'],
+  ])('is never taken when it is %s: a hint under the field at once, nothing sent', async (_why, typed, reason) => {
     await twoSteps();
-    typeInto(nameField(0), typed);
+    rename(0, typed);
     expect(nameField(0).getAttribute('aria-invalid')).toBe('true');
-    expect(nameField(0).getAttribute('data-tip')).toBe(reason);
-    expect(store().steps[1].values.expression).toBe('Band_Math_1 * 2');
-    // The reason is in the tooltip and in no line below the field.
-    expect(container.textContent).not.toContain(reason);
+    expect(hint()).toBe(reason);
+    expect(store().steps[0].values.name).toBe('result');
+    expect(store().steps[1].values.expression).toBe('result * 2');
     await review();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
   });
@@ -423,9 +500,9 @@ describe('the name of a result', () => {
   it('is refused when a step reads a result that a later step adds, with the step named', async () => {
     select(scene());
     await openPanel();
-    await addBandMath('Band_Math_2 + 1');
+    await addBandMath('result_1 + 1');
     await addBandMath('nir - red');
-    expect(container.textContent).toContain('Band_Math_2 is added by a later step.');
+    expect(container.textContent).toContain('result_1 is added by a later step.');
   });
 });
 
@@ -437,11 +514,34 @@ describe('the bands of the data above', () => {
     expect(infoChip('red').hasAttribute('aria-pressed')).toBe(false);
     click(infoChip('red'));
     expect(expression().value).toBe('');
-    expect(store().output).toEqual(['Band_Math_1']);
+    expect(store().output).toEqual(['result']);
     act(() => expression().focus());
     click(infoChip('nir'));
     expect(expression().value).toBe('nir');
-    expect(store().output).toEqual(['Band_Math_1']);
+    expect(store().output).toEqual(['result']);
+  });
+
+  it('do not take the cursor from another field, and put the name nowhere else (review of #250)', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('nir');
+    act(() => nameField(0).focus());
+    click(infoChip('red'));
+    // The cursor is in the name field, not in an expression: nothing is inserted, and the cursor stays where it was.
+    expect(expression().value).toBe('nir');
+    expect(nameField(0).value).toBe('result');
+    expect(document.activeElement).toBe(nameField(0));
+    act(() => nameField(0).blur());
+    click(infoChip('red'));
+    expect(expression().value).toBe('nir');
+    expect(document.activeElement).not.toBe(expression());
+    // A press on the chip does not take the focus either, so it can be used with the cursor in an expression.
+    act(() => expression().focus());
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    act(() => {
+      infoChip('red').dispatchEvent(down);
+    });
+    expect(down.defaultPrevented).toBe(true);
   });
 
   it('have no "Select all bands", no "Clear" and no limit, and leave the auxiliary assets out', async () => {
@@ -514,12 +614,12 @@ describe('the bands a normalize step converts', () => {
     await openPanel();
     await addBandMath();
     click(button('＋ Normalize'));
-    expect(store().steps[1].values.bands).toBe('Band_Math_1');
+    expect(store().steps[1].values.bands).toBe('result');
     const picker = container.querySelector('fieldset.pp-classes')!;
-    expect(names(picker)).toEqual(['Band_Math_1', 'green', 'red', 'nir']);
+    expect(names(picker)).toEqual(['result', 'green', 'red', 'nir']);
     click(button('red', picker));
-    expect(store().steps[1].values.bands).toBe('Band_Math_1, red');
-    click(button('Band_Math_1', picker));
+    expect(store().steps[1].values.bands).toBe('result, red');
+    click(button('result', picker));
     click(button('red', picker));
     expect(store().steps[1].values.bands).toBe('');
   });

@@ -298,7 +298,7 @@ describe('reviewing a batch', () => {
     const [first, ...rest] = estimates.map((e) => e.body.inputs.recipe);
     expect(first.aoi).toBeUndefined();
     expect(first.inputs[0].assets).toBeUndefined();
-    expect(first.output.bands).toEqual(['Band_Math_1']);
+    expect(first.output.bands).toEqual(['result']);
     for (const other of rest) {
       expect(other.steps).toEqual(first.steps);
       expect(other.inputs[0].assets).toBeUndefined();

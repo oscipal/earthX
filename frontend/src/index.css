@@ -2744,7 +2744,27 @@ a.pm-icon:hover {
 .pp-step-op {
   color: var(--muted);
 }
-/* The name of a band math step that breaks a rule: the frame in the colour of an error, the reason in the tooltip. */
+/* The label of a field with the ⓘ beside it, and the unit small under the resolution (NM4-43e, review of #250). */
+.pp-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+/* A hint inside a label is a sentence, not a label: no capitals. */
+.vc-field .hint-text,
+.vc-field .pp-unit-line {
+  text-transform: none;
+  letter-spacing: normal;
+}
+.pp-unit-line {
+  font-size: 10px;
+  color: var(--muted);
+}
+.pp-class-table {
+  margin-left: 8px;
+  font-size: 10px;
+}
+/* A name that breaks a rule: the frame in the colour of an error, the reason in a hint under the field. */
 .pp-field input[aria-invalid='true'],
 .pp-field textarea[aria-invalid='true'] {
   border-color: #ff6b6b;

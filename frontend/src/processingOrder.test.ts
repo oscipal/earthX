@@ -640,15 +640,15 @@ describe('buildOrder', () => {
 
   describe('the name of the band a band_math step adds (adr/0020 §6)', () => {
     it.each([
-      ['no name', '', 'Enter a name.'],
-      ['a digit first', '1NDVI', /^A letter, then letters, digits or _/u],
-      ['a space', 'my ndvi', /^A letter, then letters, digits or _/u],
-      ['a dash', 'ndvi-1', /^A letter, then letters, digits or _/u],
+      ['no name', '', 'Enter a name'],
+      ['a digit first', '1NDVI', /^Use letters, digits and _, a letter first/u],
+      ['a space', 'my ndvi', /^Use letters, digits and _, a letter first/u],
+      ['a dash', 'ndvi-1', /^Use letters, digits and _, a letter first/u],
       ['33 characters', 'N'.repeat(33), /at most 32 characters/u],
-      ['a Python keyword', 'in', 'in is a Python keyword, so an expression cannot use it.'],
-      ['the name of a function', 'sqrt', 'sqrt is a function, so an expression cannot use it as a band.'],
-      ['the name of a band of the data', 'red', 'red is a band of the data.'],
-      ['the name of a band of the data in other case', 'RED', 'RED is a band of the data.'],
+      ['a Python keyword', 'in', "'in' cannot be used in an expression"],
+      ['the name of a function', 'sqrt', "'sqrt' is the name of a function"],
+      ['the name of a band of the data', 'red', "'red' is already a band name"],
+      ['the name of a band of the data in other case', 'RED', "'RED' is already a band name"],
     ])('refuses %s', (_, name, problem) => {
       const built = buildOrder({ ...base, steps: [ndvi(name)], bands: ['NDVI'] });
       expect(built.order).toBeNull();
@@ -663,7 +663,10 @@ describe('buildOrder', () => {
     it('refuses a name two steps share, in both of them, also in other case', () => {
       const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1), ndvi('ndvi', 2, 'nir - red')] });
       expect(built.order).toBeNull();
-      expect(errorsOf(built)).toEqual([{ name: 'NDVI is used twice.' }, { name: 'ndvi is used twice.' }]);
+      expect(errorsOf(built)).toEqual([
+        { name: "'NDVI' is already used by another step" },
+        { name: "'ndvi' is already used by another step" },
+      ]);
     });
 
     it('does not count a step against itself, and not a step of another operator', () => {

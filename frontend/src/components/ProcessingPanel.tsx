@@ -34,7 +34,7 @@ import {
   previewUnit,
   rescaleOf,
 } from '../processingPreview';
-import { isBandMath } from '../processingBands';
+import { isBandMath, nameProblem, resultNameOf } from '../processingBands';
 import { orderView, type PartOutcome, selectionState, useProcessingStore, type OrderView } from '../processingStore';
 import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
@@ -685,6 +685,15 @@ export default function ProcessingPanel() {
                             maskLayer={view.maskLayer}
                             earlier={earlier}
                             dataBands={view.selectable}
+                            checkName={(name) =>
+                              nameProblem(
+                                name,
+                                p.steps.filter((other) => other.key !== step.key && isBandMath(other)).map(resultNameOf),
+                                view.dataNames,
+                              )
+                            }
+                            onRename={(name) => p.renameResult(step.key, name)}
+                            onNameProblem={(reason) => p.setNameProblem(step.key, reason)}
                             onInsert={(name) => {
                               const field = document.querySelector<HTMLTextAreaElement>(`[data-band-target="${step.key}"]`);
                               if (field) insert(field, name, document.activeElement !== field);
@@ -706,13 +715,13 @@ export default function ProcessingPanel() {
                         ? operator.form.reason
                         : full
                           ? `At most ${info.maxSteps} steps`
-                          : (operator.description ?? operator.title);
+                          : (view.nameBlock ?? operator.description ?? operator.title);
                       return (
                         <button
                           key={`${operator.op}/${operator.opVersion}`}
                           type="button"
                           className="ghost-btn pp-add-btn"
-                          disabled={!operator.form.supported || full}
+                          disabled={!operator.form.supported || full || !!view.nameBlock}
                           title={why}
                           onClick={() => p.addStep(operator.op, operator.opVersion)}
                         >
@@ -752,8 +761,8 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="ghost-btn"
-              disabled={p.reviewing || p.starting || !!crsBlock}
-              title={crsBlock ?? 'Ask the server what this job is expected to cost'}
+              disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock}
+              title={crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost'}
               onClick={() => void p.reviewOrder()}
             >
               {p.reviewing ? 'Reviewing…' : 'Review'}
@@ -761,8 +770,8 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="primary-btn"
-              disabled={!startReady || p.starting || !!crsBlock}
-              title={crsBlock ?? startTitle}
+              disabled={!startReady || p.starting || !!crsBlock || !!view.nameBlock}
+              title={crsBlock ?? view.nameBlock ?? startTitle}
               onClick={() => void p.startJob()}
             >
               {startLabel}

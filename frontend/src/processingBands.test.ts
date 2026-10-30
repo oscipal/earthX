@@ -23,8 +23,8 @@ const source = (asset: string, names: string[] = []): BandSource => ({
   asset, names, units: names.map(() => null), unit: null, dataType: 'uint16', scaled: false, nodata: null,
 });
 
-const mathStep = (key: number, name: string, expression: string, applied?: string): DraftStep => ({
-  key, op: 'band_math', opVersion: 2, values: { expression, name }, ...(applied ? { applied } : {}),
+const mathStep = (key: number, name: string, expression: string): DraftStep => ({
+  key, op: 'band_math', opVersion: 2, values: { expression, name },
 });
 const normalizeStep = (key: number, bands: string): DraftStep => ({
   key, op: 'normalize', opVersion: 2, values: { in_min: '0', in_max: '1', out_min: '0', out_max: '1', clip: false, bands },
@@ -38,38 +38,45 @@ describe('the name of a band a step adds', () => {
     for (const bad of ['', '1ndvi', '_ndvi', 'nd vi', 'ndvi-2', 'ndvi.', 'ndvé', 'A'.repeat(33)]) {
       expect(nameProblem(bad, [], DATA), bad).not.toBeNull();
     }
-    expect(nameProblem('', [], DATA)).toBe('Enter a name.');
+    expect(nameProblem('', [], DATA)).toBe('Enter a name');
   });
 
   it('refuses a Python keyword, which an expression could not name', () => {
     for (const word of ['in', 'and', 'not', 'if', 'True', 'None', 'lambda']) {
-      expect(nameProblem(word, [], DATA)).toBe(`${word} is a Python keyword, so an expression cannot use it.`);
+      expect(nameProblem(word, [], DATA)).toBe(`'${word}' cannot be used in an expression`);
     }
   });
 
   it('refuses the name of a function of an expression', () => {
     for (const word of ['where', 'abs', 'minimum', 'maximum', 'sqrt']) {
-      expect(nameProblem(word, [], DATA)).toBe(`${word} is a function, so an expression cannot use it as a band.`);
+      expect(nameProblem(word, [], DATA)).toBe(`'${word}' is the name of a function`);
     }
   });
 
   it('refuses a band of the data, ignoring case, the ones nobody reads included', () => {
-    expect(nameProblem('red', [], DATA)).toBe('red is a band of the data.');
-    expect(nameProblem('RED', [], DATA)).toBe('RED is a band of the data.');
-    expect(nameProblem('Scl', [], DATA)).toBe('Scl is a band of the data.');
+    expect(nameProblem('red', [], DATA)).toBe("'red' is already a band name");
+    expect(nameProblem('RED', [], DATA)).toBe("'RED' is already a band name");
+    expect(nameProblem('Scl', [], DATA)).toBe("'Scl' is already a band name");
   });
 
   it('refuses a name another result has, ignoring case', () => {
-    expect(nameProblem('NDVI', ['NDVI'], DATA)).toBe('NDVI is used twice.');
-    expect(nameProblem('ndvi', ['NDVI'], DATA)).toBe('ndvi is used twice.');
+    expect(nameProblem('NDVI', ['NDVI'], DATA)).toBe("'NDVI' is already used by another step");
+    expect(nameProblem('ndvi', ['NDVI'], DATA)).toBe("'ndvi' is already used by another step");
     expect(nameProblem('NDWI', ['NDVI'], DATA)).toBeNull();
   });
 
-  it('is Band_Math_<n> by default, the next free number from the place of the step', () => {
-    expect(defaultName(1, [])).toBe('Band_Math_1');
-    expect(defaultName(2, ['Band_Math_1'])).toBe('Band_Math_2');
-    expect(defaultName(1, ['Band_Math_1', 'band_math_2'])).toBe('Band_Math_3');
-    expect(defaultName(3, ['Band_Math_3'])).toBe('Band_Math_4');
+  it('refuses a name with a character outside the rule with the rule as hint', () => {
+    expect(nameProblem('1ndvi', [], DATA)).toBe('Use letters, digits and _, a letter first, at most 32 characters');
+    expect(nameProblem('A'.repeat(33), [], DATA)).toBe('Use letters, digits and _, a letter first, at most 32 characters');
+  });
+
+  it('is result by default, and result_1, result_2 … where that is taken, ignoring case', () => {
+    expect(defaultName([])).toBe('result');
+    expect(defaultName(['red', 'nir'])).toBe('result');
+    expect(defaultName(['result'])).toBe('result_1');
+    expect(defaultName(['Result', 'RESULT_1'])).toBe('result_2');
+    expect(defaultName(['result', 'result_2'])).toBe('result_1');
+    expect(defaultName(['result', 'result_1', 'result_2'])).toBe('result_3');
   });
 });
 
@@ -83,22 +90,22 @@ describe('renaming a result', () => {
 
   it('follows into the expressions and the normalize steps after the step, and into nothing before it', () => {
     const steps = [
-      mathStep(1, 'Band_Math_1', '(nir - red) / (nir + red)'),
-      mathStep(2, 'Band_Math_2', 'Band_Math_1 * 2'),
-      normalizeStep(3, 'Band_Math_1, red'),
-      mathStep(4, 'Other', 'Band_Math_1 + Band_Math_2'),
+      mathStep(1, 'result', '(nir - red) / (nir + red)'),
+      mathStep(2, 'result_1', 'result * 2'),
+      normalizeStep(3, 'result, red'),
+      mathStep(4, 'Other', 'result + result_1'),
     ];
-    const renamed = renameResult(steps, 1, 'Band_Math_1', 'NDVI');
+    const renamed = renameResult(steps, 1, 'result', 'NDVI');
     expect(renamed[0]).toBe(steps[0]);
     expect(renamed[1].values.expression).toBe('NDVI * 2');
     expect(renamed[2].values.bands).toBe('NDVI, red');
-    expect(renamed[3].values.expression).toBe('NDVI + Band_Math_2');
-    expect(steps[1].values.expression).toBe('Band_Math_1 * 2');
+    expect(renamed[3].values.expression).toBe('NDVI + result_1');
+    expect(steps[1].values.expression).toBe('result * 2');
   });
 
   it('leaves a step before the step that adds the band alone', () => {
-    const steps = [mathStep(1, 'A', 'Band_Math_2 + 1'), mathStep(2, 'Band_Math_2', 'red')];
-    expect(renameResult(steps, 2, 'Band_Math_2', 'B')[0].values.expression).toBe('Band_Math_2 + 1');
+    const steps = [mathStep(1, 'A', 'result_1 + 1'), mathStep(2, 'result_1', 'red')];
+    expect(renameResult(steps, 2, 'result_1', 'B')[0].values.expression).toBe('result_1 + 1');
   });
 
   it('takes a removed result out of the bands of a normalize step', () => {
@@ -106,9 +113,9 @@ describe('renaming a result', () => {
     expect(dropFromNormalize(steps, 'NDVI').map((s) => s.values.bands)).toEqual(['red', '']);
   });
 
-  it('lists the name the references follow, the typed one where none was applied yet', () => {
-    const steps = [mathStep(1, 'ND', 'nir', 'NDVI'), mathStep(2, 'B', 'nir')];
-    expect(resultsOf(steps)).toEqual([{ key: 1, name: 'NDVI' }, { key: 2, name: 'B' }]);
+  it('lists the name of each band_math step in step order, with the key, and no other step', () => {
+    const steps = [mathStep(1, 'NDVI', 'nir'), normalizeStep(2, 'NDVI'), mathStep(3, 'B', 'nir')];
+    expect(resultsOf(steps)).toEqual([{ key: 1, name: 'NDVI' }, { key: 3, name: 'B' }]);
   });
 });
 

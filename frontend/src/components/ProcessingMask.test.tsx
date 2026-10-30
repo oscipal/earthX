@@ -178,6 +178,8 @@ function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) 
 }
 
 const classes = () => container.querySelector<HTMLFieldSetElement>('fieldset.pp-classes');
+// The explanations are the tooltips (ⓘ) of the fieldset, not text in it.
+const tipsOf = (root: Element) => [...root.querySelectorAll('[data-tip]')].map((tip) => tip.getAttribute('data-tip')).join(' ');
 const box = (value: number) =>
   [...classes()!.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((input) =>
     input.parentElement!.textContent!.startsWith(`${value} · `),
@@ -221,7 +223,7 @@ describe('the mask step is a form, no longer "not supported by this panel"', () 
 describe('the classes to hide', () => {
   it('shows one box per class with the registry name, the suggested ones ticked', async () => {
     await withMask();
-    expect(classes()!.querySelector('legend')!.textContent).toBe('Classes to hide');
+    expect(classes()!.querySelector('legend')!.textContent).toBe('Classes to hideⓘClass table');
     const labels = [...classes()!.querySelectorAll('label')].map((l) => l.textContent);
     expect(labels).toHaveLength(12);
     expect(labels[3]).toContain('3 · CLOUD_SHADOWS');
@@ -241,12 +243,14 @@ describe('the classes to hide', () => {
   it('takes the layer from the registry: there is no field for the band', async () => {
     await withMask();
     expect(container.querySelector('[id$="-source"]')).toBeNull();
-    expect(classes()!.textContent).toContain('The layer scl is read for it and left out of the result.');
+    expect(tipsOf(classes()!)).toContain('The layer scl is read for it.');
+    expect(classes()!.textContent).not.toContain('The layer scl is read for it');
   });
 
   it('points to the table and warns that older baselines name classes differently (plan §8)', async () => {
     await withMask();
-    expect(classes()!.textContent).toContain('Older processing baselines name some classes differently');
+    expect(tipsOf(classes()!)).toContain('Older processing baselines name some classes differently');
+    expect(classes()!.textContent).not.toContain('Older processing baselines');
     const link = classes()!.querySelector('a')!;
     expect(link.getAttribute('href')).toBe('https://sentiwiki.copernicus.eu/web/s2-processing');
     expect(link.getAttribute('rel')).toContain('noreferrer');
@@ -448,7 +452,7 @@ describe('the data type after normalize (Otto, 22.10.2026)', () => {
     expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('uint16');
     click(button('＋ Normalize'));
     // The step scales the bands it names; the type follows once one of them is in the output.
-    const bands = [...container.querySelectorAll('fieldset.pp-classes')].find((f) => f.querySelector('legend')!.textContent === 'Bands')!;
+    const bands = [...container.querySelectorAll('fieldset.pp-classes')].find((f) => f.querySelector('legend')!.textContent!.startsWith('Bands'))!;
     click([...bands.querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.textContent === 'red')!);
     expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('float32');
     const options = [...container.querySelectorAll('select option')].map((o) => o.textContent);

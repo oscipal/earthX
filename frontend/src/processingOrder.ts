@@ -437,9 +437,6 @@ export interface DraftStep {
   op: string;
   opVersion: number;
   values: Record<string, FieldValue>;
-  // `band_math` only: the name the later steps and the output refer to. It follows `values.name` while that is a name
-  // the rules allow, so that a name typed half-way (empty, taken) leaves the references alone (adr/0020 §6).
-  applied?: string;
 }
 
 export interface StepProblem {
@@ -584,13 +581,7 @@ export function draftFromOrder(
       else problems.push(`${where}: ${field.name} has the wrong type.`);
     }
     for (const [name, message] of Object.entries(paramsFrom(fields, values).errors)) problems.push(`${where}: ${name}: ${message}`);
-    steps.push({
-      key: nextKey(),
-      op: step.op,
-      opVersion: operator.opVersion,
-      values,
-      ...(step.op === 'band_math' && typeof values.name === 'string' ? { applied: values.name } : {}),
-    });
+    steps.push({ key: nextKey(), op: step.op, opVersion: operator.opVersion, values });
   });
   const input = order.inputs[0];
   return {

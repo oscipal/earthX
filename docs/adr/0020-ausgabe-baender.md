@@ -1193,3 +1193,16 @@ bleibt maßgeblich; dieser Nachtrag nennt, was daraus im Panel geworden ist, und
 - **Übergangsfrist (Otto, 2026-10-30, fest).** `intake.VERSION_1_ACCEPTED_UNTIL` bleibt ungesetzt, `api` nimmt Version 1 weiter an. Gesetzt wird die Konstante beim ersten
   öffentlichen Deploy (M6) auf 30 Tage danach (§11); vorher gibt es keine Frist, die ablaufen könnte.
 - **Annahme der Auslegungen (Otto, 2026-10-30).** Die Auslegungen 1 bis 7 oben sind angenommen.
+
+### 18.1 Änderungen nach dem Review zu #250 (Otto, 2026-10-30)
+
+- **Vorgabename `result`** (ersetzt `Band_Math_<n>` aus §6 und §14): `result`, ist der Name belegt (Band des Datensatzes oder anderes Ergebnis, ohne Rücksicht auf Groß- und
+  Kleinschreibung), dann `result_1`, `result_2`, … Eindeutig bleibt es über „der erste freie Name dieser Folge“ unabhängig von der Stelle des Schritts, so dass Verschieben und Entfernen
+  keinen Namen kollidieren lässt. Die Umdeutung von Version 1 (§11) nennt weiter `band_math` und `band_math_<n>`.
+- **Name ändern:** Ein Name wird erst beim Verlassen des Feldes (oder mit Enter) übernommen, und nur wenn er keine Regel aus §6 verletzt. Ein Name gegen die Regeln wird **nie** übernommen:
+  Das Feld bleibt mit dem Getippten stehen, der Rahmen wird rot und ein kleiner Hinweis steht sofort darunter (`'red' is already a band name`). Solange das so ist, sind „Add step“,
+  „Review“ und „Start job“ gesperrt (Grund im Tooltip, `OrderView.nameBlock`). Das ersetzt die Auslegung 4 oben (Verweise bleiben beim letzten gültigen Namen).
+- **Erklärtexte** in den Schritten stehen im Tooltip eines ⓘ neben der Beschriftung (Tooltip-Komponente aus NM4-52), nicht im Kasten. Bei „Resolution“ steht die Einheit klein darunter (`in m`, `in °`); die Zellgröße steht im Tooltip.
+- **Vorschau und Felder** zeigen immer dieselbe Skala: Wird ein Bild gezeichnet, während seine Messung noch unterwegs ist (länger als 5 s), tragen die Felder jetzt die Startskala des Bildes
+  und nicht mehr die Werte der Formel davor.
+

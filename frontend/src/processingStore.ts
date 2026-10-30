@@ -273,6 +273,9 @@ interface ProcessingState {
   // The bands the person wants in the output, by name: results of `band_math` steps and bands of the data
   // (adr/0020 §9). `OrderView.output` is the same in the order of the file.
   output: string[];
+  // The reason a name field holds a name that breaks a rule, by step: only what the person has typed and not left yet or
+  // a name a loaded recipe brought; never a name the steps and the output use (review of #250).
+  nameProblems: Record<number, string>;
   dtype: string | null;
   // The range and colormap of the map preview: applied, and as edited (F3 (1)).
   range: PreviewRange;
@@ -352,6 +355,10 @@ interface ProcessingState {
   updateStep: (key: number, name: string, value: FieldValue) => void;
   moveStep: (key: number, direction: -1 | 1) => void;
   removeStep: (key: number) => void;
+  // The name a `band_math` step gives its band, taken over once the person has left the field with a name that breaks no
+  // rule: the later steps and the output follow. A name that breaks one is not taken (`nameProblem`).
+  renameResult: (key: number, name: string) => void;
+  setNameProblem: (key: number, reason: string | null) => void;
   toggleOutput: (name: string) => void;
   setOutput: (names: string[]) => void;
   setDtype: (dtype: string) => void;
@@ -408,6 +415,8 @@ export interface OrderView {
   results: Array<{ key: number; name: string }>;
   // The output in the order of the file; what the order names as `output.bands`.
   output: string[];
+  // Why steps, "Review" and "Start job" wait: a name field holds a name that breaks a rule. `null` for none.
+  nameBlock: string | null;
   // The assets the order reads or the preview needs: those of the output, of the expressions, of `normalize` and the layer
   // of a mask, in the item's order.
   assets: string[];
@@ -465,6 +474,12 @@ export function selectionState(s: AppState): SelectionState {
   return { datasets, datasetId, openSectionId, sections, items, selectedIds, groups, activeGroupIndex, aoi };
 }
 
+// The first name that breaks a rule, as the tooltip of what waits for it says it.
+function nameBlockOf(steps: readonly DraftStep[], problems: Readonly<Record<number, string>>): string | null {
+  const index = steps.findIndex((step) => problems[step.key] !== undefined);
+  return index < 0 ? null : `Step ${index + 1}: ${problems[steps[index].key]}`;
+}
+
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
   const app = withExtraScenes(selection, p.extraScenes);
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
@@ -504,7 +519,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const choices = p.steps
     .filter((step) =>
       isBandMath(step)
-        ? inOutput.has(step.applied ?? resultNameOf(step))
+        ? inOutput.has(resultNameOf(step))
         : step.op !== 'normalize' || (typeof step.values.bands === 'string' && namesIn(step.values.bands).some((name) => inOutput.has(name))),
     )
     .map((step) => ({
@@ -549,6 +564,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     lonely: lonelyBand(selectable, sources),
     results,
     output,
+    nameBlock: nameBlockOf(p.steps, p.nameProblems),
     assets,
     maskLayer,
     maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
@@ -795,6 +811,7 @@ const EMPTY_DRAFT = {
   extraScenes: null as ExtraScenes | null,
   steps: [] as DraftStep[],
   output: [] as string[],
+  nameProblems: {} as Record<number, string>,
   dtype: null,
   range: DEFAULT_RANGE,
   rangeDraft: DEFAULT_RANGE,
@@ -1333,21 +1350,23 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const operator = description.info.operators.find((o) => o.op === op && o.opVersion === opVersion);
       if (!operator?.form.supported || get().steps.length >= description.info.maxSteps) return;
       const layer = op === 'mask' ? maskLayerOf(datasets.find((d) => d.id === datasetId)?.collection) : null;
-      const key = nextStepKey++;
       const { steps, output } = get();
       const view = orderView(selectionState(useAppStore.getState()), get());
+      // While a name breaks a rule no step is added (the button says why).
+      if (view.nameBlock) return;
+      const key = nextStepKey++;
       const values: Record<string, FieldValue> = { ...initialValues(operator.form.fields), ...(layer ? maskStepValues(layer) : {}) };
       // A band math step adds a band under a name of its own, and the band is in the output unless the person leaves it out
       // (adr/0020 §6, §9). A normalize step proposes the last result.
       let added: string | null = null;
       if (op === 'band_math') {
-        added = defaultName(steps.length + 1, [...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
+        added = defaultName([...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
         values.name = added;
       } else if (op === 'normalize' && 'bands' in values) {
         values.bands = view.results.at(-1)?.name ?? '';
       }
       set((s) => ({
-        steps: [...s.steps, { key, op, opVersion, values, ...(added ? { applied: added } : {}) }],
+        steps: [...s.steps, { key, op, opVersion, values }],
         output: added ? [...output, added] : output,
         reviewError: null,
         startError: null,
@@ -1355,23 +1374,37 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }));
     },
     updateStep: (key, name, value) =>
+      set((s) => ({
+        steps: s.steps.map((step) => (step.key === key ? { ...step, values: { ...step.values, [name]: value } } : step)),
+        reviewError: null,
+        startError: null,
+        ...dropReview(),
+      })),
+    renameResult: (key, name) =>
       set((s) => {
         const step = s.steps.find((candidate) => candidate.key === key);
-        if (!step) return {};
-        let steps = s.steps.map((candidate) => (candidate.key === key ? { ...candidate, values: { ...candidate.values, [name]: value } } : candidate));
-        let output = s.output;
-        // A name the rules allow is followed by everything that refers to the band; one typed half-way (empty, taken) is
-        // only shown, and the references stay with the last good name (adr/0020 §6).
-        if (isBandMath(step) && name === 'name' && typeof value === 'string') {
-          const view = orderView(selectionState(useAppStore.getState()), s);
-          const others = steps.filter((candidate) => candidate.key !== key && isBandMath(candidate)).map(resultNameOf);
-          if (nameProblem(value, others, view.dataNames) === null) {
-            const from = step.applied ?? resultNameOf(step);
-            steps = renameResult(steps, key, from, value).map((candidate) => (candidate.key === key ? { ...candidate, applied: value } : candidate));
-            output = output.map((band) => (band === from ? value : band));
-          }
-        }
-        return { steps, output, reviewError: null, startError: null, ...dropReview() };
+        if (!step || !isBandMath(step)) return {};
+        const from = resultNameOf(step);
+        const view = orderView(selectionState(useAppStore.getState()), s);
+        const others = s.steps.filter((candidate) => candidate.key !== key && isBandMath(candidate)).map(resultNameOf);
+        // A name that breaks a rule is never taken; one that is the name already changes nothing.
+        if (name === from || nameProblem(name, others, view.dataNames) !== null) return {};
+        const steps = renameResult(s.steps, key, from, name).map((candidate) =>
+          candidate.key === key ? { ...candidate, values: { ...candidate.values, name } } : candidate,
+        );
+        return {
+          steps,
+          output: s.output.map((band) => (band === from ? name : band)),
+          reviewError: null,
+          startError: null,
+          ...dropReview(),
+        };
+      }),
+    setNameProblem: (key, reason) =>
+      set((s) => {
+        if ((s.nameProblems[key] ?? null) === reason) return {};
+        const { [key]: _gone, ...rest } = s.nameProblems;
+        return { nameProblems: reason === null ? rest : { ...rest, [key]: reason } };
       }),
     moveStep: (key, direction) =>
       set((s) => {
@@ -1385,9 +1418,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     removeStep: (key) =>
       set((s) => {
         const step = s.steps.find((candidate) => candidate.key === key);
-        const gone = step && isBandMath(step) ? (step.applied ?? resultNameOf(step)) : null;
+        const gone = step && isBandMath(step) ? resultNameOf(step) : null;
         const left = s.steps.filter((candidate) => candidate.key !== key);
+        const { [key]: _problem, ...problems } = s.nameProblems;
         return {
+          nameProblems: problems,
           steps: gone ? dropFromNormalize(left, gone) : left,
           output: gone ? s.output.filter((band) => band !== gone) : s.output,
           reviewError: null,
@@ -1429,7 +1464,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
       abortEstimate();
       startGeneration += 1;
-      set({ steps: draft.steps, output: draft.bands, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
+      set({ steps: draft.steps, output: draft.bands, nameProblems: {}, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
       const view = orderView(selectionState(useAppStore.getState()), get());
       return { ok: true, notes: [...notes, ...missingBands(draft, view)], ...(read.converted ? { converted: true } : {}) };
     },
@@ -1483,7 +1518,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const view = orderView(useAppStore.getState(), get());
       const order = view.built?.order;
       set({ reviewAsked: true });
-      if (!order || !view.key || get().starting || crsBlockReason(get().steps, get().crs)) return;
+      if (!order || !view.key || get().starting || view.nameBlock || crsBlockReason(get().steps, get().crs)) return;
       abortEstimate();
       const controller = new AbortController();
       estimating = controller;
@@ -1521,7 +1556,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const s = get();
       const view = orderView(useAppStore.getState(), s);
       const order = view.built?.order;
-      if (!order || !view.key || s.starting || crsBlockReason(s.steps, s.crs)) return;
+      if (!order || !view.key || s.starting || view.nameBlock || crsBlockReason(s.steps, s.crs)) return;
       if (view.runAs !== 'one') {
         await startBatch(view);
         return;
@@ -1898,6 +1933,15 @@ function stillWanted(run: number, spec: PreviewSpec | null, limit: number | unde
   return run === settleRun && spec !== null && wantedPreview(limit)?.measure === spec.measure;
 }
 
+// The fields of the range say what the picture is drawn with: where no range of the user's holds and the user is not typing
+// in them, that is the range of the measure of this very picture, else the start range. A picture drawn while its measure
+// is still on its way is drawn with the start range, and the fields must not keep the range of the formula before
+// (review of #250).
+function fieldsShow(spec: PreviewSpec | null): Partial<Pick<ProcessingState, 'rangeDraft'>> {
+  const p = useProcessingStore.getState();
+  return spec && !p.rangeByHand && !p.rangeEdited ? { rangeDraft: drawnRange(p, spec.measure) } : {};
+}
+
 // Takes a measure into the state: with it the unit, and — where no range of the user's holds — the range it calls
 // for in the fields, unless the user is typing in them. Without one the panel says so.
 function adoptMeasure(measure: PreviewMeasure | null): void {
@@ -2021,7 +2065,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
     }
   }
   settledKey = settledOf(wantedPreview() ?? wanted);
-  useProcessingStore.setState({ preview: spec, previewNote: note, previewSettling: false });
+  useProcessingStore.setState({ preview: spec, previewNote: note, previewSettling: false, ...fieldsShow(spec) });
   // A measure that comes after all is taken in with one redraw, and only if it changes the picture.
   if (late) {
     const measure = await late;

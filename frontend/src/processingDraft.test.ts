@@ -68,8 +68,7 @@ describe('draftFromOrder', () => {
     if (order.output.kind !== 'raster') throw new Error('a raster order');
     expect(draft.bands).toEqual(order.output.bands);
     for (const [index, step] of draft.steps.entries()) {
-      if (step.op === 'band_math') expect(step.applied).toBe(order.steps[index].params.name);
-      else expect(step.applied).toBeUndefined();
+      if (step.op === 'band_math') expect(step.values.name).toBe(order.steps[index].params.name);
     }
   });
 

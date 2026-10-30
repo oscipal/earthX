@@ -299,7 +299,7 @@ describe('the panel built from the schema', () => {
       expect(document.activeElement).toBe(expression());
       expect(expression().selectionStart).toBe(5); // behind the name
       expect(chip('nir').hasAttribute('aria-pressed')).toBe(false);
-      expect(outputOf()).toEqual(['Band_Math_1']); // the click puts no band into the output
+      expect(outputOf()).toEqual(['result']); // the click puts no band into the output
     });
 
     it('puts a space where the name would run into its neighbours', async () => {
@@ -322,7 +322,7 @@ describe('the panel built from the schema', () => {
       act(() => expression().blur());
       click(chip('nir'));
       expect(expression().value).toBe('red * 2');
-      expect(outputOf()).toEqual(['Band_Math_1']);
+      expect(outputOf()).toEqual(['result']);
       expect(pressed('nir')).toBe('false');
     });
 
@@ -336,7 +336,7 @@ describe('the panel built from the schema', () => {
       click(chip('nir'));
       expect(resolution.value).toBe('');
       expect(expression().value).toBe('');
-      expect(outputOf()).toEqual(['Band_Math_1']);
+      expect(outputOf()).toEqual(['result']);
     });
 
     it('leaves the expression as it is when a band it names goes into the output or out of it', async () => {
@@ -345,11 +345,11 @@ describe('the panel built from the schema', () => {
       act(() => expression().blur());
       click(dataChip('red'));
       expect(pressed('red')).toBe('true');
-      expect(outputOf()).toEqual(['Band_Math_1', 'red']);
+      expect(outputOf()).toEqual(['result', 'red']);
       expect(expression().value).toBe('red + nir');
       click(dataChip('red'));
       expect(pressed('red')).toBe('false');
-      expect(outputOf()).toEqual(['Band_Math_1']);
+      expect(outputOf()).toEqual(['result']);
       expect(expression().value).toBe('red + nir');
     });
 
@@ -386,9 +386,9 @@ describe('review before start (K4)', () => {
     const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
     expect(body.inputs.recipe.inputs).toEqual([{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_A']] }]);
     expect(body.inputs.recipe.steps).toEqual([
-      { op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'Band_Math_1' } },
+      { op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'result' } },
     ]);
-    expect(body.inputs.recipe.output).toEqual({ kind: 'raster', format: 'cog', dtype: 'float32', bands: ['Band_Math_1'] });
+    expect(body.inputs.recipe.output).toEqual({ kind: 'raster', format: 'cog', dtype: 'float32', bands: ['result'] });
 
     typeInto(container.querySelector('textarea[id$="-expression"]')!, 'nir / red');
     expect(container.textContent).not.toContain('An estimate, not a promise.');
@@ -565,7 +565,7 @@ describe('review before start (K4)', () => {
     expect(pressedData()).toEqual(['red']);
     click(dataChip('red'));
     expect(dataChip('red').getAttribute('aria-pressed')).toBe('false');
-    expect(outputOf()).toEqual(['Band_Math_1']);
+    expect(outputOf()).toEqual(['result']);
     expect(container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!.value).toBe('');
   });
 
@@ -721,12 +721,13 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     expect(sent().steps[0].params).toMatchObject({ crs: 'EPSG:3035', resolution: 30, resampling: 'bilinear' });
   });
 
-  it('offers every method of the schema, each with its sentence under the field, none recommended (M4-24)', async () => {
+  it('offers every method of the schema, each with its sentence in the tooltip, none recommended (M4-24)', async () => {
     await reprojectDem();
     const options = [...resampling().options].map((o) => o.value);
     expect(options).toEqual(['', 'nearest', 'bilinear', 'cubic', 'cubicspline', 'lanczos', 'average', 'mode']);
-    const help = container.querySelector<HTMLUListElement>('ul.pp-options')!;
-    expect([...help.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+    // The sentences are the tooltip beside the label, one per method, in the order of the schema.
+    const tip = resampling().closest('label')!.querySelector('[data-tip]')!.getAttribute('data-tip')!;
+    const sentences = [
       'nearest: Value of the nearest source pixel; for class data and masks.',
       'bilinear: Distance-weighted mean of the 2x2 nearest pixels; for continuous data.',
       'cubic: Cubic convolution over 4x4 pixels; sharper than bilinear, for continuous data.',
@@ -734,8 +735,10 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
       'lanczos: Lanczos windowed sinc over 6x6 pixels; sharpest, may overshoot at edges.',
       'average: Mean of all source pixels per target pixel; for coarsening continuous data.',
       'mode: Most frequent source value per target pixel; for class data.',
-    ]);
-    expect(resampling().getAttribute('aria-describedby')).toContain(help.id);
+    ];
+    expect(tip).toContain(sentences.join(' '));
+    expect(container.querySelector('ul.pp-options')).toBeNull();
+    expect(tip).not.toContain('recommended');
     expect(resampling().value).toBe('');
     choose(resampling(), 'lanczos');
     await review();
@@ -1030,7 +1033,7 @@ describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
     await review();
     const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
     expect(body.inputs.recipe.inputs[0]).not.toHaveProperty('assets');
-    expect(body.inputs.recipe.output.bands).toEqual(['Band_Math_1', 'b08']);
+    expect(body.inputs.recipe.output.bands).toEqual(['result', 'b08']);
   });
 
   it('offers no chip and says so when the asset lists no band names, whatever an extension field says', async () => {
@@ -1705,7 +1708,7 @@ describe('bands named in an expression are read by themselves (M4-13c point 5, a
     await review();
     expect(assetsRead()).toEqual(['red']);
     expect(sentRecipe().inputs[0]).not.toHaveProperty('assets');
-    expect(sentRecipe().output.bands).toEqual(['Band_Math_1']);
+    expect(sentRecipe().output.bands).toEqual(['result']);
   });
 });
 
@@ -1771,8 +1774,12 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
   });
 
   const crsCalls = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith('/processing/crs/'));
-  const cellSize = () => container.querySelector('[aria-label="Cell size"]')?.textContent ?? null;
   const input = (name: string) => container.querySelector<HTMLInputElement>(`input[id$="-${name}"]`)!;
+  // The cell size is the end of the tooltip beside "Resolution"; the unit stands small under the field.
+  const cellSize = () =>
+    input('resolution').closest('label')!.querySelector('[data-tip]')?.getAttribute('data-tip')?.match(/Cell size:.*$/u)?.[0] ?? null;
+  const unit = () => container.querySelector('[aria-label="Unit"]')?.textContent ?? null;
+  const shown = () => [container.textContent ?? '', ...[...container.querySelectorAll('[data-tip]')].map((tip) => tip.getAttribute('data-tip'))].join(' ');
 
   async function openStep(items: StacItem[] = [southern()]) {
     select(items);
@@ -1782,7 +1789,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
 
   // Past the rest of the field (300 ms) and the answer.
   async function answered(text: string) {
-    await waitFor(() => container.textContent?.includes(text) ?? false);
+    await waitFor(() => shown().includes(text));
   }
 
   function chooseResampling(value: string) {
@@ -1806,7 +1813,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
     typeInto(input('resolution'), '10');
     await flush();
     expect(cellSize()).toBeNull();
-    expect(container.textContent).not.toContain('Looking up');
+    expect(unit()).toBeNull();
     expect(crsCalls()).toEqual([]);
   });
 
@@ -1814,9 +1821,12 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
     await openStep();
     typeInto(input('crs'), 'EPSG:3035');
     typeInto(input('resolution'), '10');
-    expect(container.textContent).toContain('Looking up the unit of EPSG:3035…');
+    // While the code is not looked up there is neither a unit nor a cell size.
+    expect(unit()).toBeNull();
+    expect(cellSize()).toBeNull();
     expect(crsCalls()).toEqual([]);
     await answered('Cell size: 10 m × 10 m');
+    expect(unit()).toBe('in m');
     expect(crsCalls()).toEqual(['/processing/crs/EPSG%3A3035']);
   });
 
@@ -1828,7 +1838,8 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
     typeInto(input('resolution'), '30');
     expect(cellSize()).toBe('Cell size: 30 m × 30 m');
     typeInto(input('resolution'), '');
-    expect(cellSize()).toBe('The resolution is in metre.');
+    expect(cellSize()).toBeNull();
+    expect(unit()).toBe('in m');
     expect(crsCalls()).toHaveLength(1);
   });
 
@@ -1837,6 +1848,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
     typeInto(input('crs'), 'EPSG:2227');
     typeInto(input('resolution'), '10');
     await answered('Cell size: 10 US survey foot × 10 US survey foot (≈ 3.05 m)');
+    expect(unit()).toBe('in US survey foot');
   });
 
   it('degrees: the size on the ground at the middle latitude of the scenes (Whole scene)', async () => {
@@ -1844,6 +1856,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
     typeInto(input('crs'), 'EPSG:4326');
     typeInto(input('resolution'), '0.0003');
     await answered('Cell size: 0.0003° × 0.0003° ≈ 33 m (N–S) × 23 m (E–W) at 47.3° N');
+    expect(unit()).toBe('in °');
   });
 
   it('recalculates at once when the area changes, with no new question', async () => {
@@ -1933,6 +1946,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
       const alert = [...container.querySelectorAll('[role="alert"]')].map((e) => e.textContent);
       expect(alert).toContain(UNKNOWN);
       expect(cellSize()).toBeNull();
+      expect(unit()).toBeNull();
       expect(button('Review').disabled).toBe(true);
       expect(button('Review').title).toBe(UNKNOWN);
       expect(button('Start job').disabled).toBe(true);
@@ -1969,6 +1983,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
     chooseResampling('bilinear');
     await answered('The unit of EPSG:3035 could not be looked up: the service is busy');
     expect(cellSize()).toBeNull();
+    expect(unit()).toBeNull();
     expect(button('Review').disabled).toBe(false);
   });
 
