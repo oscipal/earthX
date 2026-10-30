@@ -748,9 +748,11 @@ function setResultsOnMap(on: boolean) {
 
 // A scene ticked while the results are hidden shows them (Otto, 28.10.2026, zu #221): the third exception, besides a
 // search and a crop. Unticking changes nothing.
+// Any change of the ticks by a click, of a scene, a group or "Select all", ends the playing of the timeline (NM4-18, Otto,
+// 30.10.2026).
 function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap'>, selectedIds: string[]) {
   const ticked = selectedIds.some((id) => !s.selectedIds.includes(id));
-  return { selectedIds, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
+  return { selectedIds, playing: false, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
 }
 
 // What every replacement of the results resets besides the results themselves.
@@ -2003,8 +2005,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (idx >= 0) set({ activeGroupIndex: idx, expandedGroupIndex: idx });
   },
   toggleSelected: (id) =>
-    // A click on a scene, in the list or on the map, ends the playing of the timeline (NM4-18, Otto, 30.10.2026).
-    set((s) => ({ ...ticking(s, s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id]), playing: false })),
+    set((s) => ticking(s, s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id])),
   selectAllInActiveGroup: () =>
     set((s) => {
       const group = s.groups[s.activeGroupIndex];
@@ -2033,7 +2034,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearSelection: () =>
     set((s) => {
       const here = new Set(s.items.map((it) => it.id));
-      return { selectedIds: s.selectedIds.filter((id) => !here.has(id)) };
+      return { selectedIds: s.selectedIds.filter((id) => !here.has(id)), playing: false };
     }),
   setDateFrom: (dateFrom) => {
     set({ dateFrom });

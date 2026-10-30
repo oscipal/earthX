@@ -175,6 +175,22 @@ describe('playing and the results on the map', () => {
     expect(useAppStore.getState().playing).toBe(false);
   });
 
+  it('stops when "Select all", a group\'s box or "Clear selection" is used', () => {
+    act(() => useAppStore.setState({ resultsOnMap: true, items: useAppStore.getState().groups.flatMap((g) => g.items) }));
+    const actions: [string, () => void][] = [
+      ['select all', () => useAppStore.getState().selectAllLoaded()],
+      ['a group\'s box', () => useAppStore.getState().toggleGroupSelected(0)],
+      ['select all in the group', () => useAppStore.getState().selectAllInActiveGroup()],
+      ['clear selection', () => useAppStore.getState().clearSelection()],
+    ];
+    for (const [name, act1] of actions) {
+      act(() => play().click());
+      expect(useAppStore.getState().playing, `${name}: playing before`).toBe(true);
+      act(act1);
+      expect(useAppStore.getState().playing, name).toBe(false);
+    }
+  });
+
   it('stops when a scene is clicked, in the list or on the map, ticking or unticking', () => {
     act(() => useAppStore.setState({ resultsOnMap: true }));
     act(() => play().click());
