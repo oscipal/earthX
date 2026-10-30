@@ -135,6 +135,15 @@ body.dragging * {
 .draggable.fill {
   width: 100%;
 }
+/* The bar of the selection lies over the other bands where they meet: a band that was moved stays where it was put, and
+   the bar that comes with a ticked scene takes the place at the bottom of the stack, over it, not behind it. */
+.draggable[data-band='selection'] {
+  z-index: 1;
+}
+/* The labels of the timeline do not wrap: its band stays within the stack, and they give way inside it. */
+.draggable[data-band='timeline'] {
+  max-width: 100%;
+}
 /* controls inside a draggable keep their own affordance */
 .draggable button,
 .draggable input,
@@ -969,13 +978,17 @@ input[type='date']:focus {
   outline: none;
 }
 .results-list {
+  --group-head-h: 34px;
   flex: 1 1 auto;
   min-height: 0;
   list-style: none;
   margin: 0;
-  padding: 6px;
+  /* No padding at the top: a sticky head would stop that far below the edge, with rows passing above it. */
+  padding: 0 6px 6px;
   overflow-y: auto;
   overflow-x: hidden;
+  /* A row focused by keyboard scrolls into view below the pinned group head, not under it. */
+  scroll-padding-top: var(--group-head-h);
 }
 .result-row {
   display: flex;
@@ -1502,9 +1515,21 @@ input[type='date']:focus {
 .multi-select-toggle input {
   margin: 0;
 }
+.results-list > .result-group:first-child {
+  margin-top: 6px;
+}
+/* The head of the group in view stays at the top of the list until the next group's head pushes it out (NM4-09): it
+   sticks inside its own group. Opaque, as rows scroll under it: the panel colour over the map's, which is what the
+   translucent panel looks like in front of. */
 .result-group-row {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
+  box-sizing: border-box;
+  min-height: var(--group-head-h);
+  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
 }
 .rg-select {
   flex: none;
@@ -1609,6 +1634,9 @@ input[type='date']:focus {
   gap: 12px;
   padding: 10px 16px;
   width: 100%;
+  /* Room for three dates, as the labels are the date only; never wider than the space between the rail and the edge. */
+  min-width: min(380px, calc(100vw - var(--dock-offset) - 32px));
+  box-sizing: border-box;
 }
 .play-btn {
   width: 36px;
@@ -1627,17 +1655,35 @@ input[type='date']:focus {
 }
 .time-track {
   flex: 1;
+  min-width: 0;
 }
 .time-labels {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   font-size: 10px;
   color: var(--muted);
   margin-bottom: 2px;
 }
+/* The ends give way first, with an ellipsis; so does a label longer than the band (a key with no date keeps its label). */
 .time-labels strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text);
   font-size: 11px;
+  white-space: nowrap;
+}
+.time-labels span {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.time-labels span:last-child {
+  text-align: right;
 }
 .time-track input[type='range'] {
   width: 100%;
@@ -1647,6 +1693,9 @@ input[type='date']:focus {
   font-size: 11px;
   color: var(--muted);
   flex: 0 0 auto;
+  /* Room for "Loading…" (NM4-18), so that the slider does not move when it comes and goes. */
+  min-width: 7ch;
+  text-align: right;
 }
 
 /* --- download bar --- */
