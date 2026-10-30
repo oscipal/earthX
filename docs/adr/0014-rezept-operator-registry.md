@@ -2834,3 +2834,22 @@ bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist das Backend (NM4-1
   Pixeln (16 Bit exakt, `float32` innerhalb eines Fachs und nach außen gerundet); ein Lauf mit den gemessenen Zahlen tut, was die Methode sagt (Perzentil-Stretch setzt die Enden auf 0 und 1, Z-Score mittelt auf 0 mit Streuung 1, robust Median 0 und Quartilsabstand 1).
 - **Stand der Technik** (Plan §7.3): TiTiler, openEO, Earth Engine und Sentinel Hub messen die Statistik vorab und wenden dann eine feste Gerade an; QGIS und rio-tiler nehmen als Vorgabe 2–98 %.
 
+## 15 Nachtrag NM4-14: Index-Presets füllen einen gewöhnlichen `band_math`-Schritt (2026-10-30; zu §5.2, §6.1; `adr/0020` §6, §12)
+
+Otto hat den Plan von NM4-14 am 2026-10-30 freigegeben (zu [#251](https://github.com/oscipal/earthX/pull/251), `plans/querschnitt/nm4-14-index-knoepfe.md` §13). Umgesetzt ist das Backend (NM4-14a); die Knöpfe im Panel folgen als NM4-14b.
+
+- **Kein Operator, keine Version.** Ein Preset ist kein Operator. Ein Klick legt einen `band_math`-Schritt Version 2 mit `expression` und `name` aus dem Preset an. Rezept, Hash, Kachel, Job, Runner und Methodentext sind dieselben wie beim getippten Ausdruck, und nichts im Rezept zeigt, dass der Schritt aus einem Preset kommt. Es gibt keine neue `op_version`, `recipe_version` bleibt 2, `earthx.__version__` bleibt, weil kein Ergebnis andere Bytes bekommt.
+- **Daten je Datensatz.** `DatasetConfig.index_presets` (ohne Vorgabe, B10) ist ein Tupel aus `IndexPreset` mit `name`, `title`, `expression`, `rescale`, `colormap_name`, `formula` und `reference`. Die Collection liefert es als `earthx:index_presets` (`architekturplan.md` 5.1). Sentinel-2 trägt NDVI, NDWI (McFeeters), NDSI, NBR und EVI aus Awesome Spectral Indices (Commit `835fea7`, MIT; Montero et al. 2023), N ist `nir` (B08); der DEM trägt keine. Datensatzspezifischen Code gibt es nicht.
+- **Prüfung in zwei Stufen** (Importgrenze `catalog` → `processing`). `catalog` prüft die Form beim Anlegen des Eintrags:
+  - Name nach dem Muster von `adr/0020` §6, eindeutig ohne Groß-/Kleinschreibung und nicht der Name eines Bandes des Datensatzes;
+  - jeder Name im Ausdruck, der kein Aufruf ist, ist ein Schlüssel von `band_units`, kein Hilfs-Asset und nicht die Maskenschicht;
+  - `rescale` endlich mit der unteren Grenze zuerst;
+  - `reference` mit `https://`;
+  - Presets nur bei `capabilities.band_math`.
+
+  `processing.index_presets.check_index_presets` prüft beim Bau von `api`, wie `adapters.check_adapter_specs`, `check_name` und `check_expression` von `band_math` (R5) und die Colormap gegen die Namen von rio-tiler. Ein Preset, das ein Benutzer nicht tippen könnte, verhindert den Start; die Meldung nennt Datensatz und Preset. `api` liefert die Collection aus, aus der das Panel die Presets liest. Der `tiler` prüft nicht (Abweichung vom Plan §8.1): Er baut seine App beim Import, und sein Start bleibt ohne `processing` (`test_tiler_start_is_light`, M4-14).
+- **Tests.**
+  - Jedes Preset durch den Kern gegen eine Rechnung von Hand in Brüchen.
+  - Die Formel von Awesome Spectral Indices mit ihren Konstanten (g 2.5, C1 6, C2 7.5, L 1) und der Zuordnung von `bands.json` gegen den Ausdruck.
+  - Annahme: Preset und getippter Ausdruck ergeben dasselbe Rezept und denselben Hash, gelesen werden nur die genannten Assets.
+  - Fehleingaben der Form und Start von `api` mit einem kaputten Preset.

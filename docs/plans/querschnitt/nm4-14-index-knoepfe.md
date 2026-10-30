@@ -374,3 +374,61 @@ Kurz beantwortbar: je Frage eine Nummer.
 | 6 Schnitt | **abweichend:** Diese Session setzt das Backend jetzt um (NM4-14a, §14), ohne auf NM4-43e zu warten; NM4-43e läuft bereits (#250). Das Frontend ist NM4-14b in einer neuen Session nach dem Merge von NM4-43e PR 2 (§15) |
 
 Die EVI-Quelle bleibt als Suchtreffer markiert (§7.5). Die Kleinentscheidungen KE1–KE8 aus §9 gelten. Die Fragen aus §11 sind damit beantwortet.
+
+## 14. Umsetzung NM4-14a (Backend, 30.10.2026, in #251)
+
+- **Registry** (`catalog/registry.py`): `IndexPreset` (`name`, `title`, `expression`, `rescale`, `colormap_name`, `formula`, `reference`) und das Pflichtfeld `DatasetConfig.index_presets`. `_check_index_presets` prüft die Form, wie §8.1 Stufe 1 sie beschreibt.
+- **Daten** (`catalog/datasets.py`): Sentinel-2 hat die fünf Presets aus §7.5 mit den Vorgaben aus §8.5, der DEM `index_presets=()`. Am Feld stehen Herkunft (Awesome Spectral Indices, Commit `835fea7`, MIT; Montero et al. 2023) und Bandzuordnung (N = `nir`, B08).
+- **Collection** (`catalog/collection.py`): `earthx:index_presets`, `rescale` als `[[low, high]]` wie bei `earthx:default_render`.
+- **Start** (`processing/index_presets.py`): `check_index_presets(registry)` prüft `check_name` und `check_expression` von `band_math` sowie die Colormap gegen die Namen von rio-tiler. Aufgerufen wird es in `api.main.build_app` direkt nach `check_adapter_specs`. Fehler heißen `IndexPresetMismatch` (eine `ConfigError`), mit allen Problemen in einem Text.
+- **Abweichung von §8.1:** Der `tiler` prüft nicht. Er baut seine App beim Import (`app = build_app()`), und sein Start soll `processing` nicht laden (`test_tiler_start_is_light`, M4-14); die Prüfung braucht `band_math`. Es reicht `api`: Es liefert die Collection aus, aus der das Panel die Presets liest, und startet mit einem kaputten Preset nicht.
+- **Nachträge:** `architekturplan.md` 5.1 (Zeile `earthx:index_presets`), `adr/0014` „§15 Nachtrag NM4-14“.
+- **Tests:**
+  - `tests/catalog/test_index_presets.py`: Einträge, Collection, Fehleingaben der Form;
+  - `tests/earthx/processing/test_index_presets.py`: Referenzwerte in Brüchen, Formel von Awesome Spectral Indices mit Konstanten und Zuordnung von `bands.json`, Bereich der Normalized Differences, Division durch 0, Prüfung beim Start und Bau von `api`;
+  - `tests/earthx/api/test_index_presets_intake.py`: Preset gleich getipptem Ausdruck (Rezept und Hash), gelesene Assets.
+- **Bestehende Tests**, die Sentinel-2 mit `band_math=False` nachbauen, setzen dazu `index_presets=()`, weil Presets `band_math` voraussetzen.
+
+## 15. NM4-14b — Frontend: Index-Knöpfe im Panel (Aufgabe für eine neue Session)
+
+**Stufe A**, nur Frontend, ein Draft-PR (Richtwert unter 400 Zeilen; sonst zwei: Knöpfe, dann Darstellung). **Modell:** Sonnet, Effort mittel.
+**Start:** nach dem Merge von NM4-43e PR 2 (#250 und sein Folge-PR) und von NM4-14a (#251). Höchstens zwei Frontend-Sessions gleichzeitig; nicht gleichzeitig mit NM4-20, NM4-45 oder NM4-11b (alle ändern den Bandbereich des Panels).
+**Startsatz:** „Führe Aufgabe NM4-14b aus `docs/plans/querschnitt/nm4-14-index-knoepfe.md` §15 aus.“
+
+**Ausgangslage.**
+- **Backend (§14):** Die Collection liefert `earthx:index_presets`, je Eintrag `name`, `title`, `expression`, `rescale` (`[[low, high]]`), `colormap_name`, `formula` und `reference`. Sentinel-2 hat NDVI, NDWI, NDSI, NBR und EVI, der DEM eine leere Liste. Ein älteres Backend liefert das Feld nicht; das gilt dann wie eine leere Liste.
+- **Panel nach NM4-43e:** Name am Schritt (Vorgabe `Band_Math_<n>`), Namensregeln, das neue Ergebnis in der Ausgabe angehakt, „Show“ auf dem letzten Ergebnis, der Zerleger der Chips.
+- **Entschieden:** §13 (O1, D2, K1) und `adr/0020` §12 (Name aus dem Preset, bei Kollision eine Zahl dazu).
+- Texte nur auf Englisch, wenig Text, Erklärungen im Tooltip (UI-01 §4).
+
+**Umfang.**
+
+1. **Typ und Lesen:** `'earthx:index_presets'` in `types.ts`, gelesen und Eintrag für Eintrag geprüft wie `searchFilters.ts`. Ein Eintrag, der nicht passt, fällt mit einer Konsolenzeile ohne Daten weg.
+2. **Zeile „Index“** unter „Add step“ (§8.7):
+   - je Preset ein Knopf `＋ <name>`;
+   - nur sichtbar, wenn der Datensatz Presets hat und `band_math` Version 2 in der Prozessbeschreibung steht, sonst ausgeblendet;
+   - gesperrt mit demselben Grund wie „＋ Band math“ (Schritte voll, Operator nicht unterstützt);
+   - Tooltip und `aria-label` nach KE2: `<title>: <formula>. Formula: Awesome Spectral Indices.`;
+   - kein Text unter den Knöpfen.
+3. **Klick:** Er ruft dasselbe `addStep('band_math', 2)` auf, mit `expression` aus dem Preset und `name` = `name` des Presets. Ist der Name in der Kette schon vergeben (ohne Rücksicht auf Groß-/Kleinschreibung), heißt der Schritt `NDVI_2`, `NDVI_3` usw. Es gibt keinen eigenen Zustand „Preset“, und danach ist der Schritt ein gewöhnlicher Schritt.
+4. **Darstellung D2 (§8.5):**
+   - Eine gemeinsame Funktion sucht zu (Datensatz, Ausdruck) das Preset; der Vergleich ist token-gleich über den Zerleger der Chips.
+   - Reihenfolge in `resultRender` und in der Vorgabe der Vorschau: Ganzzahl → Bereich des Benutzers → Preset → Index-Regel → 2–98 %.
+   - Gilt für die Vorschau („Show“ auf einem Band mit Preset-Ausdruck), für den Ergebnis-Layer (Ausdruck je Band aus den Eigenschaften des Ergebnisses bzw. dem Rezept des Jobs) und nach dem Laden aus Datei, Permalink oder Ablage.
+   - `rdbu` kommt in `COLORMAPS` (`render.ts`).
+5. **Tests** (`vitest`), Punkte 8–12 aus §10:
+   - Klick ergibt denselben Auftrag (JSON) wie getippt;
+   - DEM ohne Zeile; ohne `band_math` keine Zeile;
+   - zweiter Klick `NDVI_2`, Ergebnis angehakt, „Show“ auf dem neuen Band, gesperrt bei vollen Schritten;
+   - D2 mit anderen Leerzeichen, geändertem Ausdruck, eigenem Bereich und einem Ausdruck eines anderen Datensatzes;
+   - Tooltips über `aria-label`;
+   - Feld fehlt oder ist kaputt.
+
+**Abnahme.**
+
+- Gegenprobe: Die neuen Tests scheitern gegen den Code vor der Änderung.
+- Prüfung im echten Browser (Chromium/Playwright der Sitzung), nicht nur jsdom, in Hell- und Dunkelmodus und bei schmalem Fenster, mit nachgestellten Antworten; im PR beschrieben. **Bilder nicht ins Repo.**
+- Prüfanleitung für Otto im PR: Browser (NDVI klicken, Vorschau −1…1 in `rdylgn`, Job, Ergebnis-Layer gleiche Farbskala) und PowerShell 5.1 (`GET /collections/sentinel-2-c1-l2a`, Feld `earthx:index_presets`).
+- Alle vier Pflicht-Checks der CI grün.
+- Nachtrag `adr/0014` „§15 Nachtrag NM4-14b“ (Knöpfe, Darstellung D2), Log-Zeile mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern (pflegt der Planungs-Chat). Vor „fertig“ ist `main` geholt.
+- Grenzen: keine neue Abhängigkeit ohne Frage an Otto; keine AOI, Job-, Rezept- oder Permalink-Kennungen, Hashes, `href` oder signierten URLs in Logs oder URLs; `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
