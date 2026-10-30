@@ -11,10 +11,10 @@ const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
 const OTHER = 'ZZZZZZZZZZZZZZZZZZZZZZ';
 const LATER = new Date(Date.now() + 7 * 86_400_000).toISOString();
 const ORDER: Order = {
-  recipe_version: 1,
-  inputs: [{ name: 'a', dataset: 'd', groups: [['s']], assets: ['red'] }],
+  recipe_version: 2,
+  inputs: [{ name: 'a', dataset: 'd', groups: [['s']] }],
   steps: [],
-  output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+  output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red'] },
 };
 
 const statusDoc = (jobID: string, status = 'running', expires = LATER) => ({

@@ -270,7 +270,7 @@ describe('the preview section', () => {
     const params = new URL(preview.scenes[0].url, 'http://localhost').searchParams;
     expect(params.getAll('asset')).toEqual(['red', 'nir']);
     expect(params.get('op')).toBe('band_math');
-    expect(JSON.parse(params.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)' });
+    expect(JSON.parse(params.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'Band_Math_1' });
     expect(params.get('rescale')).toBe('-1,1');
     expect(params.get('colormap_name')).toBe('rdylgn');
     expect(section().textContent).toContain('Where scenes overlap');
@@ -418,7 +418,7 @@ describe('the preview section', () => {
 
   it('draws a chain of tile steps and counts what the map leaves out', async () => {
     await withNdvi();
-    const normalize = { key: 900, op: 'normalize', opVersion: 1, values: { in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
+    const normalize = { key: 900, op: 'normalize', opVersion: 2, values: { bands: 'Band_Math_1', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
     act(() => useProcessingStore.setState({ steps: [...store().steps, normalize] }));
     await afterDebounce();
     await flush();
@@ -570,7 +570,7 @@ describe('the preview section', () => {
     await openPanel();
     click(button('＋ Band math'));
     typeInto(expression(), '1 + 1');
-    expect(section().textContent).toContain('Pick a band, or name it in the expression, to see the preview.');
+    expect(section().textContent).toContain('Pick a band for the output to see the preview.');
     expect(store().preview).toBeNull();
   });
 
@@ -1779,7 +1779,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(url.searchParams.getAll('item')).toEqual(['S2B_A', 'S2B_B', 'S2B_C']);
     expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
     expect(url.searchParams.getAll('op')).toEqual(['band_math']);
-    expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)' });
+    expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'Band_Math_1' });
     expect(preview.scenes.map((scene) => [scene.id, scene.below])).toEqual([['S2B_B', 8], ['S2B_C', 8], ['S2B_A', 8]]);
     expect(preview.perScene).toBe(false);
     // The tiler is asked about the mosaic, not about a scene; the colour scale is measured over the scene that wins.

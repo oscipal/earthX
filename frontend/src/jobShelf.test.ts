@@ -18,7 +18,19 @@ const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
 const OTHER = 'ZZZZZZZZZZZZZZZZZZZZZZ';
 const THIRD = 'YYYYYYYYYYYYYYYYYYYYYY';
 const now = Date.parse('2026-10-10T12:00:00Z');
-const ORDER = { recipe_version: 1, inputs: [{ name: 'a', dataset: 'd', groups: [['s']], assets: ['red'] }], steps: [] };
+const ORDER = {
+  recipe_version: 2,
+  inputs: [{ name: 'a', dataset: 'd', groups: [['s']] }],
+  steps: [],
+  output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red'] },
+};
+// A copy a browser kept before version 2 (adr/0020 §11).
+const ORDER_V1 = {
+  recipe_version: 1,
+  inputs: [{ name: 'a', dataset: 'd', groups: [['s']], assets: ['red'] }],
+  steps: [],
+  output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+};
 
 function job(jobID: string, over: Partial<ShelfJob> = {}): ShelfJob {
   return {
@@ -321,6 +333,23 @@ describe('what the shelf reads', () => {
     expect(readShelf().shelf.jobs.map((j) => j.order !== null)).toEqual([true, false, false, false]);
     expect(orderCopy(large)).toBeNull();
     expect(orderCopy(ORDER)).toEqual(ORDER);
+  });
+
+  it('writes a copy kept in version 1 as version 2, and refuses one it cannot rewrite or does not know', () => {
+    expect(orderCopy(ORDER_V1)).toEqual(ORDER);
+    const { output: _output, ...headless } = ORDER_V1;
+    expect(orderCopy(headless)).toBeNull();
+    expect(orderCopy({ ...ORDER_V1, inputs: [{ name: 'a', dataset: 'd', groups: [['s']] }] })).toBeNull();
+    expect(orderCopy({ ...ORDER, recipe_version: 3 })).toBeNull();
+    expect(orderCopy({ ...ORDER, recipe_version: '2' })).toBeNull();
+    expect(orderCopy({ ...ORDER_V1, steps: 'x' })).toBeNull();
+    const crop = { ...ORDER_V1, output: { kind: 'crop', format: 'cog' } };
+    expect(orderCopy(crop)).toEqual({ ...crop, recipe_version: 2 });
+  });
+
+  it('reads a copy kept in version 1 from the shelf as version 2', () => {
+    write({ v: 1, jobs: [entry({ order: ORDER_V1 })] });
+    expect(readShelf().shelf.jobs[0].order).toEqual(ORDER);
   });
 
   it('keeps a range only with its three texts', () => {

@@ -461,10 +461,10 @@ describe('starting the job', () => {
     expect(JSON.parse(placed()[0][1].body)).toEqual({
       inputs: {
         recipe: {
-          recipe_version: 1,
-          inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2_A', 'S2_B', 'S2_C']], assets: ['visual'] }],
+          recipe_version: 2,
+          inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2_A', 'S2_B', 'S2_C']] }],
           steps: [],
-          output: { kind: 'raster', format: 'cog', dtype: 'uint8' },
+          output: { kind: 'raster', format: 'cog', dtype: 'uint8', bands: ['visual_1', 'visual_2', 'visual_3'] },
         },
       },
     });

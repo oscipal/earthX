@@ -65,11 +65,11 @@ const option: DatasetOption = {
 };
 
 const ORDER: Order = {
-  recipe_version: 1,
-  inputs: [{ name: 'input', dataset: DATASET, groups: [['NEW_A']], assets: ['red', 'nir'] }],
+  recipe_version: 2,
+  inputs: [{ name: 'input', dataset: DATASET, groups: [['NEW_A']] }],
   aoi: SHARED_AOI as GeoJSON.Polygon,
-  steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
-  output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+  steps: [{ op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'ndvi' } }],
+  output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['ndvi'] },
 };
 const VIEW = { center: [10.15, 50.15], zoom: 11.5, range: { vmin: 0, vmax: 0.8, colormap: 'viridis' } };
 
@@ -152,7 +152,7 @@ describe('opening a link', () => {
     expect(app.flyToView).toEqual({ center: [10.15, 50.15], zoom: 11.5 });
     expect(draft().open).toBe(true);
     expect(draft().area).toBe('aoi');
-    expect(draft().picked).toEqual(['red', 'nir']);
+    expect(draft().output).toEqual(['ndvi']);
     expect(draft().steps.map((s) => s.values.expression)).toEqual(['(nir - red) / (nir + red)']);
     expect(draft().dtype).toBe('float32');
     expect(draft().range).toEqual({ vmin: '0', vmax: '0.8', colormap: 'viridis' });

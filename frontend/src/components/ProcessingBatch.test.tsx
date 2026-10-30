@@ -111,7 +111,7 @@ function statusDoc(jobID: string) {
 
 interface Sent {
   url: string;
-  body: { inputs: { recipe: { inputs: { groups: string[][]; assets: string[] }[]; aoi?: unknown; steps: unknown[]; output: { dtype: string } } } };
+  body: { inputs: { recipe: { inputs: { groups: string[][]; assets?: string[] }[]; aoi?: unknown; steps: unknown[]; output: { dtype: string; bands?: string[] } } } };
 }
 
 let estimateFor: (ids: string[]) => Response | Promise<Response>;
@@ -297,10 +297,12 @@ describe('reviewing a batch', () => {
     expect(estimates.map(idsOf)).toEqual([['S1'], ['S2'], ['S3']]);
     const [first, ...rest] = estimates.map((e) => e.body.inputs.recipe);
     expect(first.aoi).toBeUndefined();
-    expect(first.inputs[0].assets).toEqual(['red', 'nir']);
+    expect(first.inputs[0].assets).toBeUndefined();
+    expect(first.output.bands).toEqual(['Band_Math_1']);
     for (const other of rest) {
       expect(other.steps).toEqual(first.steps);
-      expect(other.inputs[0].assets).toEqual(first.inputs[0].assets);
+      expect(other.inputs[0].assets).toBeUndefined();
+      expect(other.output.bands).toEqual(first.output.bands);
       expect(other.output).toEqual(first.output);
     }
   });

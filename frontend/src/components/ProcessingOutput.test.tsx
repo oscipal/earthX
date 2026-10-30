@@ -1,0 +1,558 @@
+// @vitest-environment jsdom
+//
+// The output of the processing panel (NM4-43e, adr/0020 §6, §9, §14): "Select Bands that are processed", the names of the
+// bands a band math step adds, and the bands of the data above as information. No backend: `fetch` answers the process
+// description, the estimate and, where a test says so, a refusal.
+
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { DatasetOption } from '../datasets';
+import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
+import { bboxToPolygon } from '../geoUtils';
+import { EMPTY_OUTPUT } from '../processingOrder';
+import { useProcessingStore } from '../processingStore';
+import { useAppStore } from '../store';
+import type { Collection, EarthxMask, StacAsset, StacItem } from '../types';
+import ProcessingPanel from './ProcessingPanel';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+
+const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
+const AOI = bboxToPolygon([10.4, 50.4, 10.6, 50.6]);
+const DESCRIPTION = '/processing/processes/recipe?dataset=sentinel-2-c1-l2a';
+const ESTIMATE_URL = '/processing/processes/recipe/estimate';
+const HEADING = 'Select Bands that are processed';
+
+const SCL: EarthxMask = {
+  asset: 'scl',
+  band: 'scl',
+  classes: [{ value: 3, label: 'CLOUD_SHADOWS' }, { value: 8, label: 'CLOUD_MEDIUM_PROBABILITY' }],
+  suggested: [3, 8],
+  reference: '',
+  note: '',
+};
+
+const uint16 = { data_type: 'uint16', nodata: 0 };
+const cog = (bands: object[] = [uint16]): StacAsset => ({ href: 'https://example.org/band.tif', type: COG, 'raster:bands': bands });
+
+// The bands of the scene, by asset key: the four of the data, the layer of the mask and `visual`, which the registry calls
+// no band (three bands in one asset).
+function scene(assets: Record<string, StacAsset> = {}): StacItem {
+  const bbox: [number, number, number, number] = [10, 50, 11, 51];
+  return {
+    id: 'S2B_A',
+    collection: 'sentinel-2-c1-l2a',
+    bbox,
+    geometry: bboxToPolygon(bbox),
+    properties: { datetime: '2026-07-01T10:00:00Z', gsd: 10 },
+    assets: {
+      green: cog(),
+      red: cog(),
+      nir: cog(),
+      scl: cog([{ data_type: 'uint8', nodata: 0 }]),
+      visual: cog([uint16, uint16, uint16]),
+      ...assets,
+    },
+  };
+}
+
+function dataset(extra: Record<string, unknown> = {}): DatasetOption {
+  return {
+    id: 'sentinel-2-c1-l2a',
+    title: 'Sentinel-2 L2A',
+    viewable: true,
+    groupBy: ['datetime'],
+    zoom: { min: 8, max: 14 },
+    browse: 'quicklook',
+    quicklookNodataMax: null,
+    resultsGroupBy: ['datetime'],
+    hasTimeAxis: true,
+    collection: {
+      id: 'sentinel-2-c1-l2a',
+      'earthx:format': 'cog',
+      'earthx:license_flags': { tier: 'processing' },
+      'earthx:capabilities': { interpolation: true },
+      'earthx:mask': SCL,
+      'earthx:auxiliary_assets': ['visual'],
+      ...extra,
+    } as unknown as Collection,
+  };
+}
+
+function select(item: StacItem, option: DatasetOption = dataset()) {
+  useAppStore.setState({
+    datasets: [option],
+    datasetId: option.id,
+    items: [item],
+    groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [item] }],
+    activeGroupIndex: 0,
+    selectedIds: [item.id],
+    aoi: AOI,
+    aoiPoint: null,
+    layers: [],
+    mapZoom: 1.6,
+    viewportBbox: null,
+  });
+}
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json' },
+  });
+
+const ESTIMATE = {
+  estimate: { size: 4_000_000, duration: 'PT3.4S', outputPixels: 1_000_000, inputPixels: 2_000_000, inputBytes: 4_000_000, assets: 3, units: 1 },
+  skippedItems: [],
+};
+
+let container: HTMLDivElement;
+let root: Root;
+let fetchMock: ReturnType<typeof vi.fn>;
+let estimate: () => Response;
+
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  sessionStorage.clear();
+  localStorage.clear();
+  estimate = () => json(ESTIMATE);
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === DESCRIPTION) return json(s2);
+    if (url === ESTIMATE_URL && init?.method === 'POST') return estimate();
+    if (url.includes('/tilejson.json')) return json({ tilejson: '3.0.0' });
+    return json({ type: 'about:blank', title: 'Refused', status: 404, detail: 'no route' }, 404);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  useProcessingStore.getState().resetDraft();
+  useProcessingStore.setState({ open: false, descriptions: {}, jobs: [], preview: null, previewNote: null });
+  container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+async function flush() {
+  await act(async () => {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
+}
+
+async function openPanel() {
+  act(() => root.render(<ProcessingPanel />));
+  act(() => useProcessingStore.getState().openProcessing());
+  await flush();
+}
+
+function button(label: string | RegExp, within: ParentNode = container): HTMLButtonElement {
+  const found = [...within.querySelectorAll('button')].find((b) =>
+    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+  );
+  if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
+  return found as HTMLButtonElement;
+}
+
+const hasButton = (label: string, within: ParentNode = container) =>
+  [...within.querySelectorAll('button')].some((b) => b.textContent?.trim() === label);
+
+function click(element: HTMLElement) {
+  act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+}
+
+function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const prototype = input instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')!.set!;
+  act(() => {
+    setter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+const store = () => useProcessingStore.getState();
+const out = () => container.querySelector('section[aria-label="Output"]')!;
+const info = () => container.querySelector('section[aria-label="Bands"]')!;
+const group = (label: string) => out().querySelector(`[aria-label="${label}"]`);
+const names = (where: ParentNode | null) => [...(where?.querySelectorAll('.pp-chip') ?? [])].map((c) => c.childNodes[0].textContent);
+const checked = () =>
+  [...out().querySelectorAll<HTMLButtonElement>('.pp-chip[aria-pressed="true"]')].map((c) => c.childNodes[0].textContent);
+const outChip = (name: string) => [...out().querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.childNodes[0].textContent === name)!;
+const infoChip = (name: string) => [...info().querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.childNodes[0].textContent === name)!;
+const heading = () => out().querySelector('h3')!.textContent;
+const summary = () => out().querySelector('[aria-label="Output summary"]')!.textContent;
+const expression = (step = 0) => container.querySelectorAll<HTMLTextAreaElement>('textarea[data-band-target]')[step];
+const nameField = (step = 0) => container.querySelectorAll<HTMLInputElement>('input[id$="-name"]')[step];
+const startButton = () => button(/Start job|Starting/);
+
+async function addBandMath(text = 'nir - red') {
+  click(button('＋ Band math'));
+  typeInto(expression(store().steps.filter((s) => s.op === 'band_math').length - 1), text);
+}
+
+function sentOrder() {
+  const call = [...fetchMock.mock.calls].reverse().find(([u]) => String(u).endsWith('/estimate'));
+  return JSON.parse(call![1].body).inputs.recipe;
+}
+
+async function review() {
+  click(button('Review'));
+  await flush();
+}
+
+describe('what is in the output when the panel opens (adr/0020 §9)', () => {
+  it('is nothing for a dataset with several bands, with the heading there all the same', async () => {
+    select(scene());
+    await openPanel();
+    expect(heading()).toBe(HEADING);
+    expect(checked()).toEqual([]);
+    expect(summary()).toBe('0 bands · float32');
+  });
+
+  it('is nothing after reproject, mask or normalize either, and nothing without a step', async () => {
+    select(scene());
+    await openPanel();
+    for (const op of ['＋ Reproject and resample', '＋ Mask', '＋ Normalize']) {
+      click(button(op));
+      expect(checked(), op).toEqual([]);
+    }
+  });
+
+  it('keeps the heading whatever is chosen: empty, in part, all', async () => {
+    select(scene());
+    await openPanel();
+    expect(heading()).toBe(HEADING);
+    click(outChip('red'));
+    expect(heading()).toBe(HEADING);
+    click(button('All'));
+    expect(checked()).toEqual(['green', 'red', 'nir']);
+    expect(heading()).toBe(HEADING);
+    click(button('None'));
+    expect(heading()).toBe(HEADING);
+  });
+
+  it('locks the start while the output is empty, and says why in the tooltip', async () => {
+    select(scene());
+    await openPanel();
+    click(button('＋ Mask'));
+    expect(startButton().disabled).toBe(true);
+    expect(startButton().title).toBe(EMPTY_OUTPUT);
+    expect(EMPTY_OUTPUT).toBe('Pick at least one band for the output.');
+    click(outChip('red'));
+    expect(startButton().title).not.toBe(EMPTY_OUTPUT);
+  });
+
+  it('checks the one band of a dataset that has one, once: a later "None" stays, until the panel is opened again', async () => {
+    const dem: StacItem = { ...scene(), assets: { dem: cog([{ data_type: 'float32', nodata: -9999 }]) } };
+    select(dem, dataset({ 'earthx:mask': undefined, 'earthx:auxiliary_assets': undefined }));
+    await openPanel();
+    expect(checked()).toEqual(['dem']);
+    click(button('None'));
+    await flush();
+    expect(checked()).toEqual([]);
+    // Another step does not bring it back.
+    click(button('＋ Reproject and resample'));
+    await flush();
+    expect(checked()).toEqual([]);
+  });
+
+  it('does not count the auxiliary assets and the layer of the mask as bands to pick for the person', async () => {
+    const only: StacItem = { ...scene(), assets: { red: cog(), scl: cog([{ data_type: 'uint8', nodata: 0 }]), visual: cog([uint16, uint16, uint16]) } };
+    select(only);
+    await openPanel();
+    // `red` is the only band that is neither layer nor auxiliary asset: it is the one band of this dataset.
+    expect(checked()).toEqual(['red']);
+  });
+
+  it('lists the layer of the mask, unchecked and not part of "All", and does not list the auxiliary assets', async () => {
+    select(scene());
+    await openPanel();
+    expect(names(group('Bands of the data'))).toEqual(['green', 'red', 'nir', 'scl']);
+    click(button('All'));
+    expect(checked()).toEqual(['green', 'red', 'nir']);
+  });
+
+  it('shows an auxiliary asset that the order has already, so that it can be left out', async () => {
+    select(scene());
+    await openPanel();
+    act(() => store().setOutput(['visual_1']));
+    expect(names(group('Bands of the data'))).toContain('visual_1');
+    expect(checked()).toEqual(['visual_1']);
+    click(outChip('visual_1'));
+    expect(names(group('Bands of the data'))).not.toContain('visual_1');
+  });
+});
+
+describe('the results of band math steps', () => {
+  it('are checked as soon as the step is added, with a name of their own', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath();
+    expect(names(group('New bands'))).toEqual(['Band_Math_1']);
+    expect(checked()).toEqual(['Band_Math_1']);
+    expect(nameField().value).toBe('Band_Math_1');
+    expect(container.querySelector('.pp-step-title')!.textContent).toContain('1. Band_Math_1');
+  });
+
+  it('are the output alone by default: no other band comes with them', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('(nir - red) / (nir + red)');
+    await review();
+    expect(sentOrder().output.bands).toEqual(['Band_Math_1']);
+    expect(sentOrder().inputs[0]).not.toHaveProperty('assets');
+    expect(sentOrder().recipe_version).toBe(2);
+    expect(sentOrder().steps[0]).toEqual({
+      op: 'band_math',
+      op_version: 2,
+      params: { expression: '(nir - red) / (nir + red)', name: 'Band_Math_1' },
+    });
+  });
+
+  it('can be taken out, and are checked again when the next step adds one', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath();
+    click(outChip('Band_Math_1'));
+    expect(checked()).toEqual([]);
+    click(outChip('red'));
+    await addBandMath('green - nir');
+    expect(names(group('New bands'))).toEqual(['Band_Math_1', 'Band_Math_2']);
+    expect(checked()).toEqual(['Band_Math_2', 'red']);
+  });
+
+  it('vanish from the output with their step', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath();
+    await addBandMath('green - nir');
+    expect(checked()).toEqual(['Band_Math_1', 'Band_Math_2']);
+    click(button('✕ Remove'));
+    expect(checked()).toEqual(['Band_Math_2']);
+    expect(store().output).toEqual(['Band_Math_2']);
+  });
+
+  it('are two bands of one order when two steps run one after the other, the second seeing the first', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('(nir - red) / (nir + red)');
+    await addBandMath('(green - nir) / (green + nir)');
+    // The second step offers the first result as a chip, the first step none.
+    const chips = [...container.querySelectorAll('[aria-label="Results of earlier steps"]')];
+    expect(chips).toHaveLength(1);
+    expect(names(chips[0])).toEqual(['Band_Math_1']);
+    await review();
+    expect(sentOrder().output.bands).toEqual(['Band_Math_1', 'Band_Math_2']);
+    expect(sentOrder().steps.map((s: { params: { name: string } }) => s.params.name)).toEqual(['Band_Math_1', 'Band_Math_2']);
+  });
+
+  it('are put into an expression by the chip of the step, at the cursor or at the end', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath();
+    await addBandMath('');
+    const second = expression(1);
+    click(button('Band_Math_1', container.querySelector('[aria-label="Results of earlier steps"]')!));
+    expect(second.value).toBe('Band_Math_1');
+    typeInto(second, 'Band_Math_1 * 2');
+    click(button('Band_Math_1', container.querySelector('[aria-label="Results of earlier steps"]')!));
+    expect(expression(1).value).toBe('Band_Math_1 * 2 Band_Math_1');
+  });
+});
+
+describe('the name of a result', () => {
+  async function twoSteps() {
+    select(scene());
+    await openPanel();
+    await addBandMath('(nir - red) / (nir + red)');
+    await addBandMath('Band_Math_1 * 2');
+    click(button('＋ Normalize'));
+  }
+
+  it('is followed by the later expressions, the normalize step and the output when it is renamed', async () => {
+    await twoSteps();
+    expect(store().steps[2].values.bands).toBe('Band_Math_2');
+    typeInto(nameField(0), 'NDVI');
+    expect(store().steps[1].values.expression).toBe('NDVI * 2');
+    expect(store().output).toEqual(['NDVI', 'Band_Math_2']);
+    typeInto(nameField(1), 'Double');
+    expect(store().steps[2].values.bands).toBe('Double');
+    expect(store().output).toEqual(['NDVI', 'Double']);
+    expect(container.querySelectorAll('.pp-step-title')[0].textContent).toContain('1. NDVI');
+  });
+
+  it('leaves the references alone while the name typed is not one yet, and takes them along once it is', async () => {
+    await twoSteps();
+    typeInto(nameField(0), '');
+    expect(nameField(0).getAttribute('aria-invalid')).toBe('true');
+    expect(store().steps[1].values.expression).toBe('Band_Math_1 * 2');
+    typeInto(nameField(0), 'N');
+    typeInto(nameField(0), 'NDVI');
+    expect(store().steps[1].values.expression).toBe('NDVI * 2');
+    expect(nameField(0).getAttribute('aria-invalid')).toBe('false');
+  });
+
+  it.each([
+    ['one a result has already, in another spelling', 'band_math_2', 'band_math_2 is used twice.'],
+    ['a band of the data', 'RED', 'RED is a band of the data.'],
+    ['the layer of the mask, which nobody reads', 'scl', 'scl is a band of the data.'],
+    ['a Python keyword', 'not', 'not is a Python keyword, so an expression cannot use it.'],
+    ['a function of the expressions', 'sqrt', 'sqrt is a function, so an expression cannot use it as a band.'],
+    ['too long', 'A'.repeat(33), 'A letter, then letters, digits or _, at most 32 characters.'],
+    ['not a name', '2fast', 'A letter, then letters, digits or _, at most 32 characters.'],
+  ])('is refused when it is %s: the frame turns to an error, the reason is the tooltip and nothing is sent', async (_why, typed, reason) => {
+    await twoSteps();
+    typeInto(nameField(0), typed);
+    expect(nameField(0).getAttribute('aria-invalid')).toBe('true');
+    expect(nameField(0).getAttribute('data-tip')).toBe(reason);
+    expect(store().steps[1].values.expression).toBe('Band_Math_1 * 2');
+    // The reason is in the tooltip and in no line below the field.
+    expect(container.textContent).not.toContain(reason);
+    await review();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+  });
+
+  it('is refused when a step reads a result that a later step adds, with the step named', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('Band_Math_2 + 1');
+    await addBandMath('nir - red');
+    expect(container.textContent).toContain('Band_Math_2 is added by a later step.');
+  });
+});
+
+describe('the bands of the data above', () => {
+  it('are information: a click puts the name into the expression that has the cursor, and does nothing otherwise', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('');
+    expect(infoChip('red').hasAttribute('aria-pressed')).toBe(false);
+    click(infoChip('red'));
+    expect(expression().value).toBe('');
+    expect(store().output).toEqual(['Band_Math_1']);
+    act(() => expression().focus());
+    click(infoChip('nir'));
+    expect(expression().value).toBe('nir');
+    expect(store().output).toEqual(['Band_Math_1']);
+  });
+
+  it('have no "Select all bands", no "Clear" and no limit, and leave the auxiliary assets out', async () => {
+    select(scene());
+    await openPanel();
+    expect(hasButton('Select all bands', info())).toBe(false);
+    expect(hasButton('Clear', info())).toBe(false);
+    expect(names(info())).toEqual(['green', 'red', 'nir', 'scl']);
+    expect(container.textContent).not.toMatch(/at most 16|takes at most/);
+  });
+
+  it('say what they are in a tooltip, not in a sentence', async () => {
+    select(scene());
+    await openPanel();
+    const tip = info().querySelector('.tip');
+    expect(tip?.getAttribute('data-tip')).toBe('Bands of the data. Click one to put its name into an expression.');
+  });
+});
+
+describe('no limit of bands (adr/0020 §7)', () => {
+  const MANY = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`b${String(i + 1).padStart(2, '0')}`, cog()]));
+
+  it('takes 20 bands into one order, which was refused above 16', async () => {
+    select({ ...scene(), assets: MANY }, dataset({ 'earthx:mask': undefined, 'earthx:auxiliary_assets': undefined }));
+    await openPanel();
+    click(button('＋ Reproject and resample'));
+    expect(checked()).toEqual([]);
+    click(button('All'));
+    expect(checked()).toHaveLength(20);
+    expect(hasButton('All')).toBe(false);
+    act(() => {
+      store().updateStep(store().steps[0].key, 'crs', 'EPSG:3035');
+      store().updateStep(store().steps[0].key, 'resolution', '30');
+      store().updateStep(store().steps[0].key, 'resampling', 'nearest');
+    });
+    await review();
+    expect(sentOrder().output.bands).toHaveLength(20);
+    expect(container.textContent).not.toMatch(/At most 16 bands/);
+  });
+});
+
+describe('the memory limit of a job (adr/0020 §7)', () => {
+  const REASON = 'This job would need about 2.4 GB of memory, more than the 1.5 GB a job may use. Put fewer bands in the output.';
+
+  it('keeps the start shut with the reason of the server as its tooltip, and writes no line for it in the panel', async () => {
+    estimate = () => json({ type: 'about:blank', title: 'Too large', status: 413, detail: REASON }, 413);
+    select(scene());
+    await openPanel();
+    await addBandMath();
+    await review();
+    expect(startButton().disabled).toBe(true);
+    expect(startButton().title).toBe(REASON);
+    expect(container.textContent).not.toContain(REASON);
+    expect(container.textContent).not.toContain('The whole scene is too large');
+  });
+
+  it('still says a whole scene is too large for another 413', async () => {
+    estimate = () => json({ type: 'about:blank', title: 'Too large', status: 413, detail: 'The output would be 7 GB, more than a job may write.' }, 413);
+    select(scene());
+    await openPanel();
+    await addBandMath();
+    await review();
+    expect(container.textContent).toContain('The whole scene is too large for one job.');
+  });
+});
+
+describe('the bands a normalize step converts', () => {
+  it('start as the last result, and are chosen among the bands of the data and the results before the step', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath();
+    click(button('＋ Normalize'));
+    expect(store().steps[1].values.bands).toBe('Band_Math_1');
+    const picker = container.querySelector('fieldset.pp-classes')!;
+    expect(names(picker)).toEqual(['Band_Math_1', 'green', 'red', 'nir']);
+    click(button('red', picker));
+    expect(store().steps[1].values.bands).toBe('Band_Math_1, red');
+    click(button('Band_Math_1', picker));
+    click(button('red', picker));
+    expect(store().steps[1].values.bands).toBe('');
+  });
+
+  it('is told to pick a band when none is chosen', async () => {
+    select(scene());
+    await openPanel();
+    click(button('＋ Normalize'));
+    await review();
+    expect(container.textContent).toContain('Pick at least one band.');
+  });
+});
+
+describe('a recipe of version 1 that is loaded', () => {
+  it('is written as version 2: names for the band math steps, the output of the end of the chain, a tooltip that says so', async () => {
+    select(scene());
+    await openPanel();
+    const recipe = {
+      recipe_version: 1,
+      inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_A']], assets: ['red', 'nir'] }],
+      steps: [
+        { op: 'band_math', op_version: 1, params: { expression: 'nir - red' } },
+        { op: 'band_math', op_version: 1, params: { expression: 'band_math * 2' } },
+      ],
+      output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+    };
+    const result = await store().loadRecipe(JSON.stringify(recipe));
+    expect(result).toMatchObject({ ok: true, converted: true });
+    await flush();
+    expect(store().steps.map((s) => [s.opVersion, s.values.name])).toEqual([[2, 'band_math_1'], [2, 'band_math']]);
+    expect(store().steps[1].values.expression).toBe('band_math_1 * 2');
+    // Version 1 ended with the last result alone, and so does the output now.
+    expect(store().output).toEqual(['band_math']);
+    expect(checked()).toEqual(['band_math']);
+  });
+});

@@ -213,7 +213,7 @@ describe('the offer', () => {
     expect(JSON.parse(estimates[0][1].body as string)).toEqual({
       inputs: {
         recipe: {
-          recipe_version: 1,
+          recipe_version: 2,
           inputs: [{ name: 'input', dataset: DATASET.id, groups: [['S2_A', 'S2_B']], assets: ['visual'] }],
           aoi: AOI,
           steps: [],

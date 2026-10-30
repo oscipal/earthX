@@ -49,21 +49,22 @@ const ZARR = processInfo(zarr as unknown as ProcessDescription);
 
 const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
 
+// `band_math` adds a band `name` (adr/0020 §6); the panel names the n-th step `Band_Math_<n>`.
 function bandMath(expression: string, key = 1): DraftStep {
-  return { key, op: 'band_math', opVersion: 1, values: { expression } };
+  return { key, op: 'band_math', opVersion: 2, values: { expression, name: `Band_Math_${key}` } };
 }
 
 function normalize(key = 5, values: Record<string, string | boolean> = {}): DraftStep {
   return {
     key,
     op: 'normalize',
-    opVersion: 1,
-    values: { in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
+    opVersion: 2,
+    values: { bands: 'red', in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
   };
 }
 
 function mask(key = 6, values: Record<string, string | boolean> = {}): DraftStep {
-  return { key, op: 'mask', opVersion: 1, values: { source: 'scl', classes: '3, 8, 9, 10', ...values } };
+  return { key, op: 'mask', opVersion: 2, values: { source: 'scl', classes: '3, 8, 9, 10', ...values } };
 }
 
 // The listed version of the fixtures; it runs only as a job (`T2`).
@@ -113,7 +114,7 @@ describe('planPreview (adr/0014 §6.1)', () => {
   it('previews a complete band-math step with its parameters', () => {
     const plan = ready([bandMath('(nir - red) / (nir + red)')]);
     expect(plan.steps).toHaveLength(1);
-    expect(plan.steps[0].params).toEqual({ expression: '(nir - red) / (nir + red)' });
+    expect(plan.steps[0].params).toEqual({ expression: '(nir - red) / (nir + red)', name: 'Band_Math_1' });
     expect(plan.steps[0].operator.op).toBe('band_math');
     expect(plan.further).toBe(false);
   });
@@ -130,7 +131,7 @@ describe('planPreview (adr/0014 §6.1)', () => {
   it('shows the longest start of tile steps, and says there are more', () => {
     const plan = ready([bandMath('red + nir'), normalize(), reproject(), bandMath('red', 3)]);
     expect(plan.steps.map((s) => s.operator.op)).toEqual(['band_math', 'normalize']);
-    expect(plan.steps[1].params).toEqual({ in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
+    expect(plan.steps[1].params).toEqual({ bands: ['red'], in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
     expect(plan.further).toBe(true);
   });
 
@@ -206,7 +207,10 @@ describe('planPreview (adr/0014 §6.1)', () => {
   it('says that an operator the dataset does not list is not available, not that it is a job', () => {
     const stranger: DraftStep = { key: 9, op: 'decomp', opVersion: 1, values: {} };
     expect(planPreview([stranger], S2)).toEqual({ state: 'off', reason: NO_PREVIEW_UNLISTED });
-    expect(planPreview([{ ...mask(), opVersion: 2 }], S2)).toEqual({ state: 'off', reason: NO_PREVIEW_UNLISTED });
+    // Version 1 of the operators that changed is no longer listed (adr/0020 §9).
+    for (const old of [mask(), bandMath('red'), normalize()]) {
+      expect(planPreview([{ ...old, opVersion: 1 }], S2)).toEqual({ state: 'off', reason: NO_PREVIEW_UNLISTED });
+    }
   });
 
   it('says that the panel has no form for a tile operator, not that it runs only as a job', () => {
@@ -252,8 +256,8 @@ describe('previewSpec', () => {
     const url = new URL(spec.scenes[0].url, 'http://localhost');
     expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
     expect(url.searchParams.get('op')).toBe('band_math');
-    expect(url.searchParams.get('op_version')).toBe('1');
-    expect(url.searchParams.get('params')).toBe('{"expression":"(nir - red) / (nir + red)"}');
+    expect(url.searchParams.get('op_version')).toBe('2');
+    expect(url.searchParams.get('params')).toBe('{"expression":"(nir - red) / (nir + red)","name":"Band_Math_1"}');
     expect(url.searchParams.get('rescale')).toBe('-1,1');
     expect(url.searchParams.get('colormap_name')).toBe('rdylgn');
     expect(spec).toMatchObject({ title: 'Band math', minZoom: 8, maxZoom: 13, clipToAoi: false });
@@ -265,10 +269,10 @@ describe('previewSpec', () => {
     const url = new URL(spec.scenes[0].url, 'http://localhost');
     expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
     expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
-    expect(url.searchParams.getAll('op_version')).toEqual(['1', '1']);
+    expect(url.searchParams.getAll('op_version')).toEqual(['2', '2']);
     expect(url.searchParams.getAll('params')).toEqual([
-      '{"clip":true,"in_max":0.5,"in_min":0,"out_max":255,"out_min":0}',
-      '{"expression":"red / 2"}',
+      '{"bands":["red"],"clip":true,"in_max":0.5,"in_min":0,"out_max":255,"out_min":0}',
+      '{"expression":"red / 2","name":"Band_Math_3"}',
     ]);
     expect(spec.title).toBe('Normalize → Band math');
     const order = [...url.search.matchAll(/(?:^|&|\?)(op|op_version|params)=/g)].map((m) => m[1]);
@@ -300,7 +304,7 @@ describe('previewSpec', () => {
     const spec = previewSpec({ ...base, plan: ready([bandMath(expression)]) })!;
     const template = spec.scenes[0].url;
     expect(template).toContain('/{z}/{x}/{y}?');
-    expect(JSON.parse(new URL(template, 'http://localhost').searchParams.get('params')!)).toEqual({ expression });
+    expect(JSON.parse(new URL(template, 'http://localhost').searchParams.get('params')!)).toEqual({ expression, name: 'Band_Math_1' });
     // Only the query carries the expression; nothing of it leaks into the path.
     expect(template.split('?')[0]).not.toContain('where');
   });
@@ -382,8 +386,8 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
     expect(url.searchParams.getAll('item')).toEqual(['S2_A', 'S2_B', 'S2_C', 'S2_D']);
     expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
     expect(url.searchParams.getAll('op')).toEqual(['band_math']);
-    expect(url.searchParams.getAll('op_version')).toEqual(['1']);
-    expect(url.searchParams.get('params')).toBe('{"expression":"(nir - red) / (nir + red)"}');
+    expect(url.searchParams.getAll('op_version')).toEqual(['2']);
+    expect(url.searchParams.get('params')).toBe('{"expression":"(nir - red) / (nir + red)","name":"Band_Math_1"}');
     expect(url.searchParams.get('rescale')).toBe('-1,1');
     expect(url.searchParams.get('colormap_name')).toBe('rdylgn');
     expect(spec.mosaics[0].bounds).toEqual([10, 50, 11, 51]);
@@ -610,11 +614,11 @@ describe('previewSpec: what the range is measured on (NM4-19)', () => {
   const items = [item('S2_A', { gsd: 10 }), item('S2_B', { gsd: 10 })];
   const base = { dataset: DATASET, items, assets: ['red', 'nir'], info: S2, range: DEFAULT_RANGE };
   const order = {
-    recipe_version: 1,
-    inputs: [{ name: 'in', dataset: 'sentinel-2-c1-l2a', groups: [['S2_A', 'S2_B']], assets: ['red', 'nir'] }],
+    recipe_version: 2,
+    inputs: [{ name: 'in', dataset: 'sentinel-2-c1-l2a', groups: [['S2_A', 'S2_B']] }],
     aoi: bboxToPolygon([10.4, 50.4, 10.6, 50.6]),
-    steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
-    output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+    steps: [{ op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'Band_Math_1' } }],
+    output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['Band_Math_1'] },
   } as unknown as Order;
   const plan = ready([bandMath('(nir - red) / (nir + red)')]);
 
