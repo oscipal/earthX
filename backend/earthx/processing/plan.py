@@ -51,11 +51,13 @@ from earthx.processing.source import expected_band_names, units_of
 
 __all__ = [
     "EXPORT_FACTOR",
+    "MAX_JOB_MEMORY_BYTES",
     "RASTER_WITHOUT_STEP_FACTOR",
     "SECONDS_PER_ASSET",
     "SECONDS_PER_EXPORT_MB",
     "SECONDS_PER_EXPORT_MB_PER_ITEM",
     "SECONDS_PER_INPUT_MB",
+    "SECONDS_PER_OUTPUT_BAND_MPIXEL",
     "DISK_RESERVE_BYTES",
     "CostEstimate",
     "PlannedStep",
@@ -66,6 +68,7 @@ __all__ = [
     "estimate",
     "export_outputs",
     "live_steps",
+    "memory_needed",
     "needed_source_bands",
     "plan_steps",
     "segments",
@@ -76,6 +79,12 @@ __all__ = [
 #: Seconds per MB of raw input for band math, measured locally on 1024 px blocks
 #: (adr/0014 §3.5: 9.8 s for 2 × 134 MB). A bound for the display ("about"), no promise.
 SECONDS_PER_INPUT_MB = 0.034
+
+#: Seconds per output band and million pixels of the output: writing, statistics and the COG of each band, which the
+#: input term does not see (adr/0020 §3.2 Befund 9). Measured on synthetic scenes with up to three runs at a time on four
+#: cores, as a worker with two slots runs: 0.42–0.72 s per band and million pixels, 0.57 with 16 `band_math` steps at 5632²;
+#: the real runs of adr/0020 §3.2 give 0.55–0.7. The limit of a run is twice the estimate.
+SECONDS_PER_OUTPUT_BAND_MPIXEL = 0.75
 
 #: First open of an asset over the network (adr/0006 §3.4).
 SECONDS_PER_ASSET = 1.0
@@ -95,6 +104,19 @@ RASTER_WITHOUT_STEP_FACTOR = 1.0
 #: runtime limit's factor 2 is the reserve.
 SECONDS_PER_EXPORT_MB = 0.030
 SECONDS_PER_EXPORT_MB_PER_ITEM = 0.025
+
+#: What one child process of a job may hold at its peak (adr/0020 §7.2, F5; a starting value, Otto, 28.10.2026): a
+#: worker with two slots needs up to twice this. Over it `estimate` refuses the job with the number, a `413`.
+MAX_JOB_MEMORY_BYTES = 1_500_000_000
+
+#: The peak memory of a run, measured on synthetic scenes (`scripts/nm4-43-bands/memory.py`, the Nachtrag NM4-43c PR 2 of
+#: adr/0014): a base, a share for every band the widest pass holds, and for a mosaic a share for every scene beyond the
+#: first (an open file) and for each of its bands. It follows the 1024 px block and not the area: 17 bands peak at
+#: 727 MB from 2048² to 5632². Each constant lies above every measurement.
+MEMORY_BASE_BYTES = 300_000_000
+MEMORY_BYTES_PER_BAND = 33_000_000
+MEMORY_BYTES_PER_SCENE = 4_000_000
+MEMORY_BYTES_PER_SCENE_BAND = 1_200_000
 
 #: Bytes per value where an item names no data type, as the download estimate assumes.
 _FALLBACK_BYTES_PER_VALUE = 8
@@ -128,6 +150,22 @@ class CostEstimate:
     output_bytes: int
     seconds: float
     units: float
+    #: The peak memory of the child process that runs the job; zero for an export, which streams.
+    memory_bytes: int = 0
+
+
+def memory_needed(bands: int, scenes: int = 1) -> int:
+    """The peak memory of a run whose widest pass holds ``bands`` bands, over ``scenes`` scenes of one mosaic.
+
+    A band is held several times per block (read, scaled, masked, written), so the share is per band; a scene beyond
+    the first is an open file whose pieces are merged one at a time. Nothing here depends on the area.
+    """
+    extra_scenes = scenes - 1
+    return (
+        MEMORY_BASE_BYTES
+        + MEMORY_BYTES_PER_BAND * bands
+        + extra_scenes * (MEMORY_BYTES_PER_SCENE + MEMORY_BYTES_PER_SCENE_BAND * bands)
+    )
 
 
 def plan_steps(steps: Sequence[Step], operators: OperatorRegistry) -> list[PlannedStep]:
@@ -468,13 +506,30 @@ def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
             raise RecipeInvalid(f"step {index}: {error}") from error
 
 
+def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> tuple[RasterMeta, list[PlannedStep], int]:
+    """The raster a raster job writes, its steps without the planner's selections, and the most bands it holds at once.
+
+    Every band of the assets is read together, whatever a step drops after it, and a ``band_math`` step adds one: the
+    widest stock decides the memory of a pass and the float64 file it leaves in the work directory.
+    """
+    meta = _input_meta(recipe, names_known=False, sized=True)
+    assert meta is not None  # a recipe has at least one resolved input
+    steps = stock_steps(meta, plan_steps(recipe.steps, operators), recipe.output.bands)
+    widest = len(meta.bands)
+    for step in steps:
+        meta = step.operator.transform(meta, step.params)
+        widest = max(widest, len(meta.bands))
+    return meta, [step for step in steps if step.operator is not SELECT_BANDS], widest
+
+
 def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     """The cost of a job from AOI, ``gsd`` and data types (§5.5); reads nothing.
 
     An export (output ``crop``) is estimated as the crop estimates itself and refused
     with :class:`ExportTooLarge` above ``MAX_JOB_BYTES`` (M4-11 F5); a raster job is refused
-    with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7). A raster job
-    needs the pixel size of every asset (``gsd``); without it :class:`UnsupportedRecipe` says so (M4-25).
+    with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7), and above the memory one child
+    process may use (:func:`memory_needed`, adr/0020 §7). A raster job needs the pixel size of every asset (``gsd``);
+    without it :class:`UnsupportedRecipe` says so (M4-25). Seconds and units count the bands of the output.
     """
     if isinstance(recipe.output, CropOutput):
         return _export_estimate(recipe)
@@ -488,12 +543,7 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         rows, columns = estimate_output_dims(aoi, entry.gsd)
         input_pixels += rows * columns
         input_bytes += rows * columns * _band_bytes(entry.bands)
-    meta = _input_meta(recipe, names_known=False, sized=True)
-    assert meta is not None  # a recipe has at least one resolved input
-    steps = stock_steps(meta, plan_steps(recipe.steps, operators), recipe.output.bands)
-    planned = [step for step in steps if step.operator is not SELECT_BANDS]
-    for step in steps:
-        meta = step.operator.transform(meta, step.params)
+    meta, planned, widest = _planned_stock(recipe, operators)
     output_pixels = meta.width * meta.height
     dtype = getattr(recipe.output, "dtype", None)
     output_bytes = output_pixels * len(meta.bands) * _value_bytes(dtype)
@@ -502,15 +552,25 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
             f"This job would write about {(output_bytes + output_pixels) / 1_000_000:.0f} MB, more than the "
             f"{MAX_JOB_BYTES / 1_000_000:.0f} MB a job may write. Draw a smaller area or choose fewer assets."
         )
+    memory = memory_needed(widest, len(recipe.inputs[0].groups[0]))
+    if memory > MAX_JOB_MEMORY_BYTES:
+        raise JobTooLarge(
+            f"This job would need about {memory / 1_000_000_000:.1f} GB of memory, more than the "
+            f"{MAX_JOB_MEMORY_BYTES / 1_000_000_000:.1f} GB a job may use. Put fewer bands in the output."
+        )
     factor = sum(step.operator.cost_factor(step.params) for step in planned) if planned else RASTER_WITHOUT_STEP_FACTOR
+    band_megapixels = output_pixels / 1_000_000 * len(meta.bands)
     return CostEstimate(
         input_pixels=input_pixels,
         input_bytes=input_bytes,
         assets=assets,
         output_pixels=output_pixels,
         output_bytes=output_bytes,
-        seconds=SECONDS_PER_INPUT_MB * input_bytes / 1_000_000 + SECONDS_PER_ASSET * assets,
-        units=output_pixels / 1_000_000 * factor,
+        seconds=SECONDS_PER_INPUT_MB * input_bytes / 1_000_000
+        + SECONDS_PER_ASSET * assets
+        + SECONDS_PER_OUTPUT_BAND_MPIXEL * band_megapixels,
+        units=band_megapixels * factor,
+        memory_bytes=memory,
     )
 
 
@@ -617,8 +677,9 @@ def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
     else:
         cost = estimate(recipe, operators)
         finished = cost.output_bytes + cost.output_pixels
-        entries = _asset_entries(recipe)
-        rows, columns = estimate_output_dims(shapely_shape(recipe.aoi.model_dump(mode="json")), _finest(entries).gsd)
-        bands = sum(max(len(entry.bands), 1) for entry in entries)
+        rows, columns = estimate_output_dims(
+            shapely_shape(recipe.aoi.model_dump(mode="json")), _finest(_asset_entries(recipe)).gsd
+        )
+        bands = _planned_stock(recipe, operators)[2]
         largest = _tiles_px(rows) * _tiles_px(columns) * bands * _PASS_BYTES
     return math.ceil(finished * _WITH_OVERVIEWS) + 2 * largest + DISK_RESERVE_BYTES

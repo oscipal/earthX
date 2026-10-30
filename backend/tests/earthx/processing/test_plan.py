@@ -117,7 +117,7 @@ class TestEstimate:
         assert cost.output_pixels == pytest.approx(cost.input_pixels / 2, rel=0.05)
         assert cost.output_bytes == cost.output_pixels * 4 * 2  # two float32 bands, as the core writes them
         assert cost.seconds >= 2 * SECONDS_PER_ASSET
-        assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.0)
+        assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 2 * 1.0)  # per output band (NM4-43c)
 
     def test_a_grid_step_changes_the_output_size_and_its_factor_counts(self) -> None:
         steps = [
@@ -127,12 +127,12 @@ class TestEstimate:
         plain = estimate(recipe_of_data(recipe_data(), OPERATORS), OPERATORS)
         coarse = estimate(recipe_of_data(recipe_data(steps=steps), OPERATORS), OPERATORS)
         assert coarse.output_pixels < plain.output_pixels / 3
-        assert coarse.units == pytest.approx(coarse.output_pixels / 1e6 * 1.4)
+        assert coarse.units == pytest.approx(coarse.output_pixels / 1e6 * 2 * 1.4)
 
     def test_a_raster_without_step_counts_the_statistics_pass(self) -> None:
         cost = estimate(recipe_of_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
         assert RASTER_WITHOUT_STEP_FACTOR == 1.0  # the crop's 0.9 with the statistics pass, adr/0014 §15k
-        assert cost.units == pytest.approx(cost.output_pixels / 1e6 * RASTER_WITHOUT_STEP_FACTOR)
+        assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 2 * RASTER_WITHOUT_STEP_FACTOR)
 
     def test_an_export_writes_no_statistics_and_keeps_its_factor(self) -> None:
         cost = estimate(recipe_of_data(crop_data(), OPERATORS), OPERATORS)
