@@ -301,8 +301,9 @@ export function quicklookAsset(item: StacItem): StacAsset | null {
 // browse` (M3-12) is the registry saying which of the two applies, rather than
 // this function guessing from the released range: `preview_tiles` for a source
 // like the Zarr one, `full_resolution` for a source with neither a quicklook nor
-// a meaningful coarse tile (the DEM) — that one returns `null` here and the
-// viewer shows the AOI crop in full resolution directly instead (`store.ts`).
+// a meaningful coarse tile (the DEM) — its preview is the whole scene in full
+// resolution, at every released level and not cut to the AOI (NM4-50), drawn the
+// way a quicklook is; "Crop to AOI" is what cuts it.
 //
 // An item's own quicklook still wins first regardless of `browse`: a source that
 // starts publishing thumbnails tomorrow gets them without a change here, and one
@@ -311,20 +312,23 @@ export type QuicklookPlan =
   | { kind: 'image'; href: string }
   // `render` is the registry's standard visualisation, carried because a preview
   // tile needs the same stretch the full-resolution view uses — without it the
-  // two views of one scene do not look like the same data (M2-10 review).
-  | { kind: 'tiles'; asset: string; zoom: number; render: AppliedRender };
+  // two views of one scene do not look like the same data (M2-10 review). The
+  // levels are one for a coarse-tile preview, all released ones for the whole scene.
+  | { kind: 'tiles'; asset: string; minZoom: number; maxZoom: number; render: AppliedRender };
 
 export function quicklookPlan(item: StacItem, dataset: DatasetOption): QuicklookPlan | null {
   const asset = quicklookAsset(item);
   if (asset?.href) return { kind: 'image', href: asset.href };
-  if (!dataset.viewable || dataset.browse !== 'preview_tiles') return null;
+  if (!dataset.viewable || dataset.browse === 'quicklook') return null;
   const render = defaultRenderOf(dataset.collection);
   const rendered = render?.assets?.[0];
   if (!render || !rendered) return null;
+  const wholeScene = dataset.browse === 'full_resolution';
   return {
     kind: 'tiles',
     asset: rendered,
-    zoom: dataset.zoom.min,
+    minZoom: dataset.zoom.min,
+    maxZoom: wholeScene ? dataset.zoom.max : dataset.zoom.min,
     render: appliedRenderFrom(render),
   };
 }

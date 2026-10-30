@@ -17,7 +17,6 @@ const ids = (items: StacItem[]) => items.map((it) => it.id);
 describe('resultsOnMapOf, browsing', () => {
   it('shows the open time step with the results on the map', () => {
     expect(ids(resultsOnMapOf(state()).quicklooks)).toEqual(['a1', 'a2']);
-    expect(resultsOnMapOf(state()).cropsOf).toBeNull();
   });
 
   it('shows nothing with the results hidden and nothing ticked', () => {
@@ -26,7 +25,6 @@ describe('resultsOnMapOf, browsing', () => {
     expect(shown.overlay).toEqual([]);
     expect(shown.highlight).toEqual([]);
     expect(shown.clickable).toEqual([]);
-    expect(shown.cropsOf).toEqual([]);
   });
 
   it('shows nothing with the results hidden, a ticked scene included: its tick stays (Otto, 28.10.2026)', () => {
@@ -35,7 +33,6 @@ describe('resultsOnMapOf, browsing', () => {
     expect(shown.overlay).toEqual([]);
     expect(shown.highlight).toEqual([]);
     expect(shown.clickable).toEqual([]);
-    expect(shown.cropsOf).toEqual([]);
   });
 
   it('lists the ticked scenes in the order they were ticked, the last one on top', () => {

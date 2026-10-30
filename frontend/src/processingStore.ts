@@ -130,7 +130,7 @@ import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
 import { initialValues, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
-import { selectionItemsFrom, useAppStore, type AppState } from './store';
+import { selectionItemsFrom, ticksOfOpen, useAppStore, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
 import type { EarthxMask, StacItem, TimeStepGroup } from './types';
@@ -424,12 +424,12 @@ export function bandMathExpressions(steps: readonly DraftStep[]): string[] {
 // panel from rendering on every map move.
 export type SelectionState = Pick<
   AppState,
-  'datasets' | 'datasetId' | 'openSectionId' | 'items' | 'selectedIds' | 'groups' | 'activeGroupIndex' | 'aoi'
+  'datasets' | 'datasetId' | 'openSectionId' | 'sections' | 'items' | 'selectedIds' | 'groups' | 'activeGroupIndex' | 'aoi'
 >;
 
 export function selectionState(s: AppState): SelectionState {
-  const { datasets, datasetId, openSectionId, items, selectedIds, groups, activeGroupIndex, aoi } = s;
-  return { datasets, datasetId, openSectionId, items, selectedIds, groups, activeGroupIndex, aoi };
+  const { datasets, datasetId, openSectionId, sections, items, selectedIds, groups, activeGroupIndex, aoi } = s;
+  return { datasets, datasetId, openSectionId, sections, items, selectedIds, groups, activeGroupIndex, aoi };
 }
 
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
@@ -1695,7 +1695,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   if (!p.open || p.detailJobID) return null;
   const app = useAppStore.getState();
   const view = orderView(app, p);
-  if (!view.info || !view.pass || processBlockReason(view.dataset, app.selectedIds.length) !== null) return null;
+  if (!view.info || !view.pass || processBlockReason(view.dataset, ticksOfOpen(app).length) !== null) return null;
   const full = planPreview(p.steps, view.info);
   if (full.state !== 'ready') return null;
   const plan = limit === undefined ? full : shortenPlan(full, limit);

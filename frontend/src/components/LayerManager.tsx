@@ -6,11 +6,14 @@ import { isJobId, resultUrl } from '../processing';
 import { layerProcessBlock, useProcessingStore, ZIP_LABEL } from '../processingStore';
 import { MIN_REMAINING_MS, RESULT_ZIP } from '../resultLayer';
 import { useAppStore } from '../store';
+import Eye from './Eye';
 import Tip from './Tip';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
 export const RESAMPLED_LAYER_TEXT = 'Resampled to a common grid';
 export const DELETED_LAYER_TIP = 'Job deleted – restore to show';
+export const HIDE_LAYER_TIP = 'Hide layer';
+export const SHOW_LAYER_TIP = 'Show layer';
 
 // Marks a result layer "Expired" when the time comes (M4-13c-5): one timer for the
 // soonest of them, set again after every change to the list. The tiler's `410` is
@@ -83,6 +86,7 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
   const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
   const processBlock = layerProcessBlock(l, datasets);
   const locked = l.result?.deleted === true;
+  const shown = l.visible && !locked;
   const notes = [l.result?.expired && !locked ? EXPIRED_LAYER_TEXT : null, l.result?.resampled === true ? RESAMPLED_LAYER_TEXT : null].filter(
     (note): note is string => note !== null,
   );
@@ -90,15 +94,17 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
     <li className={`layer-row${locked ? ' locked' : ''}`}>
       <button
         type="button"
-        className={`lm-eye${l.visible && !locked ? '' : ' off'}`}
+        className={`lm-eye${shown ? '' : ' off'}`}
         data-col="eye"
-        title={locked ? DELETED_LAYER_TIP : l.visible ? 'Hide' : 'Show'}
+        title={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP}
+        aria-label={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP}
+        aria-pressed={locked ? undefined : shown}
         aria-disabled={locked || undefined}
         onClick={() => {
           if (!locked) toggleVis(l.id);
         }}
       >
-        {l.visible && !locked ? '●' : '○'}
+        <Eye off={!shown} />
       </button>
       <button
         type="button"

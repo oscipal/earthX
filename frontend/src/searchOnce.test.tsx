@@ -135,7 +135,6 @@ function resetStores() {
     focusMode: false,
     showCoverage: false,
     coverageDatasetId: null,
-    searchCrops: [],
     searchContext: null,
     searching: false,
     loadingMore: false,

@@ -7,8 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { datasetsFrom } from './datasets';
-import { layersOnMap } from './searchLayers';
+import { datasetsFrom, quicklookPlan } from './datasets';
+import { resultsOnMapOf } from './mapResults';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
 
@@ -119,7 +119,6 @@ function reset(selected: string[] = ['optical', 'optical-zarr', 'dem']) {
     appliedRender: {},
     showCoverage: false,
     coverageDatasetId: null,
-    searchCrops: [],
     coverage: null,
     coverageFootprints: null,
     error: null,
@@ -589,7 +588,7 @@ describe('setOpenSection: the dropdown of the results', () => {
     expect(useAppStore.getState().items).toBe(before.items);
   });
 
-  it('opening a section clears the scene selection and leaves the full-resolution view', async () => {
+  it('opening a section keeps the ticks (NM4-50) and leaves the full-resolution view', async () => {
     await searched();
     useAppStore.setState({
       selectedIds: ['o1'],
@@ -601,7 +600,7 @@ describe('setOpenSection: the dropdown of the results', () => {
     });
     useAppStore.getState().setOpenSection('optical-zarr');
     const state = useAppStore.getState();
-    expect(state.selectedIds).toEqual([]);
+    expect(state.selectedIds).toEqual(['o1']);
     expect(state.focusMode).toBe(false);
     expect(state.cropToAoi).toBe(false);
     expect(state.downloaded).toEqual({});
@@ -610,194 +609,66 @@ describe('setOpenSection: the dropdown of the results', () => {
   });
 });
 
-// M4-17c: the tiles of a group of several scenes are drawn as one mosaic. The crop appears at once,
-// scene by scene, and is drawn again when the TileJSON of its group has come.
-describe('the AOI crops as mosaics', () => {
-  const SAME_DAY = [demTile('d1'), demTile('d2')];
-  const TILEJSON = { bounds: [9, 46, 12, 49], minzoom: 8, maxzoom: 15, 'earthx:order': ['d2', 'd1'] };
-
-  function tilerWith(tilejson: () => Promise<Response>) {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => (String(url).includes('/mosaic/') ? tilejson() : jsonResponse(searchAnswer(SAME_DAY)))),
-    );
-  }
-  const overlayUrls = () =>
-    useAppStore.getState().searchCrops.flatMap((c) => c.overlays.map((o) => (o.kind === 'raster' ? o.tileUrl : '')));
-
-  beforeEach(() => reset(['dem']));
-
-  it('draws the group scene by scene first and as a mosaic once its TileJSON has come', async () => {
-    let answer: (r: Response) => void = () => {};
-    tilerWith(() => new Promise<Response>((resolve) => (answer = resolve)));
-    await useAppStore.getState().runSearch();
-    expect(overlayUrls()).toHaveLength(2);
-    expect(overlayUrls().every((u) => u.includes('/items/'))).toBe(true);
-
-    answer(jsonResponse(TILEJSON));
-    await vi.waitFor(() => expect(overlayUrls()).toHaveLength(3));
-    expect(overlayUrls().filter((u) => u.includes('/mosaic/tiles/'))).toHaveLength(1);
-    expect(overlayUrls().every((u) => u.startsWith('earthx-clip://'))).toBe(true);
-    expect(useAppStore.getState().searchCrops).toHaveLength(1);
-  });
-
-  it('stays as it is when the tiler refuses the mosaic', async () => {
-    tilerWith(async () => ({ ok: false, status: 422, statusText: '', json: async () => ({ detail: 'no' }) }) as Response);
-    await useAppStore.getState().runSearch();
-    await vi.waitFor(() => expect(useAppStore.getState().notice).toMatch(/Could not load the mosaic \(no\)/));
-    expect(overlayUrls()).toHaveLength(2);
-  });
-
-  it('does not put a mosaic on the map for a search that has been replaced meanwhile', async () => {
-    let answer: (r: Response) => void = () => {};
-    tilerWith(() => new Promise<Response>((resolve) => (answer = resolve)));
-    await useAppStore.getState().runSearch();
-    vi.mocked(fetch).mockImplementation(async (url) =>
-      String(url).includes('/mosaic/') ? new Promise<Response>(() => {}) : jsonResponse(searchAnswer([demTile('d9')])),
-    );
-    await useAppStore.getState().runSearch(); // one tile, no mosaic
-    answer(jsonResponse(TILEJSON));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(overlayUrls()).toHaveLength(1);
-    expect(overlayUrls()[0]).toContain('/items/d9/');
-  });
-
-  it('asks for no mosaic where every group is one scene', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([demTile('d1'), demTile('d2', '2012-06-01T00:00:00Z')]))));
-    await useAppStore.getState().runSearch();
-    expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).includes('/mosaic/'))).toBe(false);
-  });
-});
-
-// Otto, 30.09.2026 (replacing his F5 (2) of the same day): the map follows the
-// dropdown. A dataset with browse=full_resolution has its AOI crop drawn as part of
-// its results — on the map while it is the chosen dataset, not as a pinned layer.
-describe('the map follows the dropdown (AOI crops)', () => {
+// NM4-50 (Otto, 28.10.2026): a dataset with browse=full_resolution (the DEM) goes the way of every other dataset. Its
+// scenes are the preview of the open time step, the whole scene in full resolution and not cut to the AOI; nothing is drawn
+// by the search itself that the switch of the results does not govern, and nothing lands in the layer manager unasked.
+describe('a dataset without quicklooks goes the way of the others (NM4-50)', () => {
   const MIXED = [opticalScene('o1', 'optical', '2026-07-24'), demTile('d1'), demTile('d2', '2012-06-01T00:00:00Z')];
-
-  // What the map draws besides the browse view, for the current state.
-  function onMap(): string[] {
-    const s = useAppStore.getState();
-    return layersOnMap(s.layers, s.searchCrops, s.openSectionId).map((l) => l.restore.datasetId ?? '');
-  }
 
   async function searchMixed() {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer(MIXED))));
     await useAppStore.getState().runSearch();
   }
+  const shown = () => resultsOnMapOf(useAppStore.getState());
+  const ids = (items: StacItem[]) => items.map((it) => it.id);
 
-  it('keeps the DEM crop off the map while an optical dataset is the chosen one', async () => {
-    await searchMixed();
-    const state = useAppStore.getState();
-    expect(state.openSectionId).toBe('optical');
-    expect(state.searchCrops.filter((c) => c.restore.datasetId === 'dem')).toHaveLength(2);
-    expect(onMap()).toEqual([]);
-    // and nothing was pinned into the layer manager
-    expect(state.layers).toEqual([]);
-    expect(state.focusMode).toBe(false);
-  });
-
-  it('draws the crop as soon as the DEM is chosen, and takes it off again when another dataset is', async () => {
-    await searchMixed();
-    useAppStore.getState().setOpenSection('dem');
-    expect(onMap()).toEqual(['dem', 'dem']);
-    useAppStore.getState().setOpenSection('optical-zarr');
-    expect(onMap()).toEqual([]);
-    useAppStore.getState().setOpenSection('dem');
-    expect(onMap()).toEqual(['dem', 'dem']);
-  });
-
-  it('shows the crop right after a search over the DEM alone, without the single full-resolution view', async () => {
+  it('draws no crop by itself, and pins nothing into the layer manager', async () => {
     reset(['dem']);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([demTile('d1')]))));
     await useAppStore.getState().runSearch();
-    expect(useAppStore.getState().openSectionId).toBe('dem');
-    expect(onMap()).toEqual(['dem']);
-    expect(useAppStore.getState().focusMode).toBe(false);
-    expect(useAppStore.getState().layers).toEqual([]);
-  });
-
-  it('a repeat search replaces the crops instead of stacking a second set', async () => {
-    await searchMixed();
-    await useAppStore.getState().runSearch();
-    expect(useAppStore.getState().searchCrops).toHaveLength(2);
-  });
-
-  it('a repeat search that finds no DEM tiles takes the old crops away', async () => {
-    await searchMixed();
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(searchAnswer([opticalScene('o1', 'optical', '2026-07-24')])));
-    await useAppStore.getState().runSearch();
-    expect(useAppStore.getState().searchCrops).toEqual([]);
-  });
-
-  it('changing the selection, a failed search and "Clear all" take the crops away', async () => {
-    await searchMixed();
-    useAppStore.getState().toggleDatasetSelected('optical-zarr');
-    expect(useAppStore.getState().searchCrops).toEqual([]);
-    await searchMixed();
-    vi.mocked(fetch).mockRejectedValue(new Error('down'));
-    await useAppStore.getState().runSearch();
-    expect(useAppStore.getState().searchCrops).toEqual([]);
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(searchAnswer(MIXED)));
-    await useAppStore.getState().runSearch();
-    useAppStore.getState().clearAll();
-    expect(useAppStore.getState().searchCrops).toEqual([]);
-  });
-
-  it('a layer the user pinned stays on the map whatever dataset is chosen; the crop comes and goes with the dropdown', async () => {
-    const mine = { id: 'U', name: 'mine', visible: true, opacity: 1, overlays: [], restore: { datasetId: 'optical-zarr' } } as never;
-    useAppStore.setState({ layers: [mine] });
-    await searchMixed();
-    for (const open of ['optical', 'dem', 'optical-zarr', 'dem', 'optical'] as const) {
-      useAppStore.getState().setOpenSection(open);
-      const drawn = onMap();
-      expect(drawn).toContain('optical-zarr'); // the pinned one, always
-      expect(drawn.filter((d) => d === 'dem')).toHaveLength(open === 'dem' ? 2 : 0);
-    }
-  });
-
-  it('the user pins the crop of the chosen dataset themselves; it then stays when another is chosen', async () => {
-    await searchMixed();
-    useAppStore.getState().setOpenSection('dem');
-    const dockBefore = useAppStore.getState().dock;
-    useAppStore.getState().pinSearchCrops();
     const state = useAppStore.getState();
-    expect(state.layers).toHaveLength(2);
-    expect(state.layers.every((l) => l.restore.datasetId === 'dem' && l.visible)).toBe(true);
-    expect(state.dock).toBe(dockBefore); // pinning opens no panel and takes none away
-    expect(new Set(state.layers.map((l) => l.id)).size).toBe(2);
-    useAppStore.getState().setOpenSection('optical');
-    expect(onMap()).toEqual(['dem', 'dem']); // the pinned copies, not the search crops
-    expect(useAppStore.getState().searchCrops).toHaveLength(2);
+    expect(state.openSectionId).toBe('dem');
+    expect(state.layers).toEqual([]);
+    expect(state.focusMode).toBe(false);
+    expect('searchCrops' in state).toBe(false);
   });
 
-  it('pinning needs a crop: with an optical dataset chosen it says so and pins nothing', async () => {
+  it('shows the scenes of the open time step as the preview, the whole scene at every released level', async () => {
+    reset(['dem']);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([demTile('d1'), demTile('d2')]))));
+    await useAppStore.getState().runSearch();
+    expect(ids(shown().quicklooks).sort()).toEqual(['d1', 'd2']);
+    const dataset = useAppStore.getState().datasets.find((d) => d.id === 'dem')!;
+    expect(quicklookPlan(demTile('d1'), dataset)).toMatchObject({ kind: 'tiles', minZoom: 0, maxZoom: 15 });
+  });
+
+  it('follows the dropdown like any dataset: the DEM preview comes with its time step, not with the other datasets', async () => {
     await searchMixed();
-    useAppStore.getState().pinSearchCrops();
-    expect(useAppStore.getState().layers).toEqual([]);
-    expect(useAppStore.getState().error).toContain('Nothing to pin');
+    expect(useAppStore.getState().openSectionId).toBe('optical');
+    expect(ids(shown().quicklooks)).toEqual(['o1']);
+    useAppStore.getState().setOpenSection('dem');
+    expect(ids(shown().quicklooks)).toEqual(ids(useAppStore.getState().groups[0].items));
   });
 
-  it('says something else when the visualisation exists but no scene has a bounding box', async () => {
+  it('is taken off the map by "Hide results", and shown again by "Show results"', async () => {
+    reset(['dem']);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([demTile('d1')]))));
+    await useAppStore.getState().runSearch();
+    useAppStore.getState().toggleResultsOnMap();
+    expect(shown().quicklooks).toEqual([]);
+    useAppStore.getState().toggleResultsOnMap();
+    expect(ids(shown().quicklooks)).toEqual(['d1']);
+  });
+
+  it('says nothing more of a dataset whose scenes carry no bounding box: it has no preview to draw', async () => {
     reset(['dem']);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([{ ...demTile('d1'), bbox: null }]))));
     await useAppStore.getState().runSearch();
-    const state = useAppStore.getState();
-    expect(state.searchCrops).toEqual([]);
-    expect(state.notice).toContain('none of its scenes carries a bounding box');
+    expect(useAppStore.getState().layers).toEqual([]);
+    expect(useAppStore.getState().error).toBeNull();
   });
 
-  it('says so when the dataset has no standard visualisation to draw', async () => {
-    reset(['dem']);
-    useAppStore.setState({ datasets: datasetsFrom([{ ...DEM, 'earthx:default_render': null }]) });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([demTile('d1')]))));
-    await useAppStore.getState().runSearch();
-    const state = useAppStore.getState();
-    expect(state.searchCrops).toEqual([]);
-    expect(state.notice).toContain('has no default visualisation yet');
-  });
-
-  it('"Clear all" keeps what the user pinned', async () => {
+  it('keeps what the user pinned with "Clear all"', async () => {
     const mine = { id: 'U', name: 'mine', visible: true, opacity: 1, overlays: [], restore: { datasetId: 'dem' } } as never;
     useAppStore.setState({ layers: [mine] });
     await searchMixed();
@@ -827,13 +698,13 @@ describe('pinned layers of several datasets stay', () => {
     useAppStore.getState().setOpenSection('optical-zarr');
     useAppStore.getState().addCurrentToLayers(); // optical-zarr
     useAppStore.getState().setOpenSection('dem');
-    useAppStore.getState().pinSearchCrops(); // the DEM crop
+    useAppStore.getState().addCurrentToLayers(); // dem
   }
 
   function drawn(): string[] {
-    const s = useAppStore.getState();
-    return layersOnMap(s.layers, s.searchCrops, s.openSectionId)
-      .filter((l) => l.visible)
+    return useAppStore
+      .getState()
+      .layers.filter((l) => l.visible)
       .map((l) => l.restore.datasetId ?? '');
   }
 
@@ -843,16 +714,12 @@ describe('pinned layers of several datasets stay', () => {
       useAppStore.getState().setOpenSection(open);
       expect(new Set(drawn())).toEqual(new Set(['optical', 'optical-zarr', 'dem']));
     }
-    // The DEM crop was pinned: its pinned copy is drawn, the search crop is not
-    // drawn a second time (Otto, 20.10.2026) — hidden copy included.
-    useAppStore.getState().setOpenSection('dem');
-    expect(drawn().filter((d) => d === 'dem').length).toBe(1);
+    // The DEM layer is switched like every other: off it is not drawn, on again it is.
     const copy = useAppStore.getState().layers.find((l) => l.restore.datasetId === 'dem')!;
     useAppStore.getState().toggleLayerVisible(copy.id);
-    expect(drawn().filter((d) => d === 'dem').length).toBe(0);
-    // Without the copy the search crop shows again.
-    useAppStore.getState().removeLayer(copy.id);
-    expect(drawn().filter((d) => d === 'dem').length).toBe(1);
+    expect(drawn()).not.toContain('dem');
+    useAppStore.getState().toggleLayerVisible(copy.id);
+    expect(drawn()).toContain('dem');
   });
 
   it('gives every pinned layer its own id, also when several are pinned within one millisecond', async () => {
@@ -1467,15 +1334,13 @@ describe('looking up a scene by name in every ticked dataset (M3-10 F8)', () => 
     expect(state.flyToBbox).toEqual([10, 47, 11, 48]);
   });
 
-  it('has no page to load more and no crop of the last search left', async () => {
+  it('has no page to load more', async () => {
     vi.stubGlobal('fetch', routed(byToken));
     await search();
-    useAppStore.setState({ searchCrops: [{ id: 'S1', restore: { datasetId: 'dem' } } as never] });
     vi.stubGlobal('fetch', catalogues({ optical: opticalScene(NAME, 'optical', '2026-07-24') }));
     await lookUp();
     const state = useAppStore.getState();
     expect(state.searchContext).toBeNull();
-    expect(state.searchCrops).toEqual([]);
     expect(state.sections.every((s) => s.origin === 'name')).toBe(true);
   });
 

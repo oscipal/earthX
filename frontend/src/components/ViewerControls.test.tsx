@@ -12,6 +12,7 @@ import { datasetsFrom } from '../datasets';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
 import { viewDates, viewKind } from '../viewKind';
+import { NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -169,13 +170,13 @@ describe('the eye', () => {
 });
 
 describe('the rows of buttons', () => {
-  it('has five controls in the first row and four buttons in the second', () => {
+  it('has three fields and the buttons "auto-scale" and "Apply" in the first row, and four buttons in the second', () => {
     mount();
     const first = [...row('vc-render').children];
-    expect(first).toHaveLength(5);
-    expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'BUTTON', 'BUTTON']);
+    expect(first).toHaveLength(4);
+    expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'DIV']);
     expect([first[0], first[1], first[2]].map((el) => el.querySelector('span')?.textContent)).toEqual(['Colormap', 'vmin', 'vmax']);
-    expect([first[3], first[4]].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply']);
+    expect([...first[3].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply']);
     expect([...row('vc-actions').children].map((el) => el.textContent)).toEqual(['＋ Add to layers', '⚙ Process', '‹ Change image', '✕ Clear']);
   });
 
@@ -208,11 +209,106 @@ describe('the rows of buttons', () => {
     expect(s.resultsOnMap).toBe(false);
   });
 
-  it('puts "auto-scale" and "Apply" on one line: one height, centred, the same as the fields', () => {
+  it('puts "Apply" under "auto-scale", in one cluster, and has no "Save" yet (it comes with NM4-53)', () => {
     mount();
-    const [autoScale, apply] = [...row('vc-render').children].slice(3) as HTMLButtonElement[];
-    expect(autoScale.textContent).toBe('auto-scale');
-    expect(apply.parentElement).toBe(autoScale.parentElement);
+    const cluster = row('vc-render').children[3];
+    expect(cluster.classList.contains('vc-buttons')).toBe(true);
+    expect([...cluster.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply']);
+    expect(container.textContent).not.toContain('Save');
+  });
+});
+
+// Otto, 29.10.2026 (zu #234): "Apply" is locked while nothing is changed, and says why.
+describe('"Apply" of the view', () => {
+  const apply = () => container.querySelector('.vc-apply') as HTMLButtonElement;
+  const type = (input: HTMLInputElement, value: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  const field = (label: string) =>
+    [...container.querySelectorAll<HTMLElement>('.vc-field')].find((l) => l.textContent?.startsWith(label))!.querySelector('input')!;
+
+  it('is locked while the fields hold what the map shows, with the reason as its tooltip', () => {
+    mount({ appliedRender: { rescale: '0,3000' } });
+    expect(apply().getAttribute('aria-disabled')).toBe('true');
+    expect(apply().title).toBe(NOTHING_TO_APPLY);
+  });
+
+  it('is open once a field is changed, draws the view and is locked again', () => {
+    mount({ appliedRender: { rescale: '0,3000' } });
+    type(field('vmin'), '5');
+    expect(apply().hasAttribute('aria-disabled')).toBe(false);
+    expect(apply().title).not.toBe(NOTHING_TO_APPLY);
+    act(() => apply().click());
+    expect(useAppStore.getState().appliedRender.rescale).toBe('5,3000');
+    expect(apply().getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('does nothing when it is locked and clicked', () => {
+    mount({ appliedRender: { rescale: '0,3000' } });
+    const before = useAppStore.getState().appliedRender;
+    act(() => apply().click());
+    expect(useAppStore.getState().appliedRender).toBe(before);
+  });
+
+  it('counts an empty colormap and a missing one as the same, and a range of one end as none', () => {
+    mount({ appliedRender: {}, pendingColormapName: '', pendingVmin: '4', pendingVmax: '' });
+    expect(apply().getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
+// Otto, 30.10.2026 (zu #234): the view of a pinned layer is its settings, with a "Save" beside "Apply".
+describe('"Save" of the view of a pinned layer', () => {
+  const save = () => container.querySelector('.vc-save') as HTMLButtonElement | null;
+  const type = (input: HTMLInputElement, value: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  const vmax = () => [...container.querySelectorAll<HTMLElement>('.vc-field')].find((l) => l.textContent?.startsWith('vmax'))!.querySelector('input')!;
+  const layer = {
+    id: 'L1', name: 'Optical · day', visible: true, opacity: 1,
+    overlays: [{ kind: 'raster', tileUrl: '/t/{z}/{x}/{y}?asset=visual&rescale=0%2C3000', bounds: [0, 0, 1, 1], minZoom: 0, maxZoom: 14 }],
+    restore: { focusMode: true, downloaded: scenes(1), appliedRender: { rescale: '0,3000' }, activeGroupIndex: 0, selectedIds: [], itemIds: ['s0'], groupItemIds: [['s0']], aoi: null, cropToAoi: false, datasetId: 'optical' },
+  };
+
+  it('is not there for a view that is no layer\'s', () => {
+    mount({ appliedRender: { rescale: '0,3000' } });
+    expect(save()).toBeNull();
+  });
+
+  it('stands beside "Apply", under "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Save']);
+    expect(save()!.getAttribute('aria-disabled')).toBe('true');
+    expect(save()!.title).toBe(NOTHING_TO_SAVE);
+  });
+
+  it('is the one blue button: "Apply" has the format of "auto-scale"', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    const [auto, apply, saveButton] = [...container.querySelector('.vc-buttons')!.children] as HTMLButtonElement[];
+    const format = (el: HTMLElement) => [...el.classList].filter((c) => !c.startsWith('vc-')).sort();
+    expect(format(apply)).toEqual(format(auto));
+    expect(format(apply)).toEqual(['ghost-btn']);
+    expect(format(saveButton)).toEqual(['primary-btn']);
+    expect(container.querySelectorAll('.vc-buttons .primary-btn')).toHaveLength(1);
+  });
+
+  it('opens with a change, keeps the look for the layer and is locked again', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    type(vmax(), '2000');
+    expect(save()!.hasAttribute('aria-disabled')).toBe(false);
+    act(() => save()!.click());
+    expect(useAppStore.getState().layers[0].restore.appliedRender.rescale).toBe('0,2000');
+    expect(save()!.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('does nothing when it is locked and clicked', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    const before = useAppStore.getState().layers;
+    act(() => save()!.click());
+    expect(useAppStore.getState().layers).toBe(before);
   });
 });
 
@@ -239,11 +335,26 @@ describe('the layout contract in index.css', () => {
     expect(title).toContain('min-width: 0');
   });
 
-  it('gives "auto-scale" and "Apply" the height of the fields and centres their text', () => {
-    const buttons = rule('.scene-view .vc-render > button');
-    expect(buttons).toContain('height: var(--row-height)');
+  it('makes "auto-scale" and "Apply" together as high as the fields, and "Save" as high as the two together', () => {
+    const cluster = rule('.vc-buttons');
+    const height = Number(/--row-height: (\d+)px/u.exec(cluster)?.[1]);
+    // The fields of the view and of the settings of a result are as high as the cluster.
+    expect(Number(/--row-height: (\d+)px/u.exec(rule('.scene-view'))?.[1])).toBe(height);
+    expect(Number(/--row-height: (\d+)px/u.exec(rule('.result-controls'))?.[1])).toBe(height);
+    expect(cluster).toContain('height: var(--row-height)');
+    expect(cluster).toContain('grid-template-rows: 1fr 1fr');
+    // "Save" takes both rows of the second column.
+    expect(rule('.vc-buttons > .vc-save')).toContain('grid-area: 1 / 2 / 3 / 3');
+    expect(rule('.vc-buttons > .vc-auto')).toContain('grid-area: 1 / 1');
+    expect(rule('.vc-buttons > .vc-apply')).toContain('grid-area: 2 / 1');
+    const buttons = rule('.vc-buttons > button');
+    expect(buttons).not.toMatch(/\n  height:/u);
+    // `.vc-apply` aligns itself to the end of a row: in the cluster every button fills its cell, or "Apply" is lower than "auto-scale".
+    expect(buttons).toContain('align-self: stretch');
     expect(buttons).toContain('align-items: center');
     expect(buttons).toContain('justify-content: center');
+    expect(rule('.vc-buttons')).toContain('grid-template-columns: 1fr 1fr');
+    expect(rule('.scene-view .vc-render > :nth-child(4)')).toContain('grid-column: span 5');
     expect(rule('.scene-view .vc-field select,\n.scene-view .vc-field input')).toContain('height: var(--row-height)');
     expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('align-items: end');
   });

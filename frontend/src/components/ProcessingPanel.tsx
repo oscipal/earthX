@@ -50,7 +50,7 @@ import {
 } from '../processingStore';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
-import { useAppStore } from '../store';
+import { ticksOfOpen, useAppStore } from '../store';
 import type { StacItem } from '../types';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
@@ -494,7 +494,7 @@ export default function ProcessingPanel() {
 
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   // The same rule as the button in the ViewBar: scenes picked by hand.
-  const reason = processBlockReason(dataset, app.selectedIds.length);
+  const reason = processBlockReason(dataset, ticksOfOpen(app).length);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const view = orderView(app, p);
   const info = view.info;

@@ -9,19 +9,12 @@
 
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { COLORMAPS } from '../render';
+import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
 import { useAppStore } from '../store';
 import { viewDates, viewKind } from '../viewKind';
-
-function Eye({ off }: { off: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" />
-      <circle cx="12" cy="12" r="3" />
-      {off && <path d="M4 4l16 16" />}
-    </svg>
-  );
-}
+import { layerOfView } from '../viewLayer';
+import AutoScaleButton from './AutoScaleButton';
+import Eye from './Eye';
 
 export default function ViewerControls() {
   const pendingColormapName = useAppStore((s) => s.pendingColormapName);
@@ -31,7 +24,16 @@ export default function ViewerControls() {
   const setPendingVmin = useAppStore((s) => s.setPendingVmin);
   const setPendingVmax = useAppStore((s) => s.setPendingVmax);
   const applyRender = useAppStore((s) => s.applyRender);
+  // Whether "Apply" would draw anything else than the map shows.
+  const changed = useAppStore((s) => lookChanged(s.appliedRender, s));
   const autoStretch = useAppStore((s) => s.autoStretch);
+  // The pinned layer this view was opened from: its settings are these, and "Save" keeps the look for it (NM4-50).
+  const layer = useAppStore((s) => layerOfView(s.layers, { ...s, aoi: s.viewAoi }));
+  const saveViewLook = useAppStore((s) => s.saveViewLook);
+  const savable = useAppStore((s) => {
+    const own = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
+    return own !== null && lookChanged(own.restore.appliedRender, s);
+  });
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
   const exitFocus = useAppStore((s) => s.exitFocus);
@@ -103,18 +105,37 @@ export default function ViewerControls() {
             onChange={(e) => setPendingVmax(e.target.value)}
           />
         </label>
-        <button
-          type="button"
-          className="ghost-btn vc-auto"
-          disabled={focusLoading}
-          title="Measure the 2nd/98th percentile stretch from the source again"
-          onClick={() => autoStretch()}
-        >
-          {focusLoading ? 'measuring…' : 'auto-scale'}
-        </button>
-        <button type="button" className="primary-btn vc-apply" onClick={() => applyRender()}>
-          Apply
-        </button>
+        <div className="vc-buttons">
+          <AutoScaleButton
+            title={focusLoading ? 'Measuring the range…' : 'Measure the 2nd/98th percentile stretch from the source again'}
+            busy={focusLoading}
+            onClick={() => void autoStretch()}
+          />
+          <button
+            type="button"
+            className="ghost-btn vc-apply"
+            aria-disabled={!changed || undefined}
+            title={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
+            onClick={() => {
+              if (changed) applyRender();
+            }}
+          >
+            Apply
+          </button>
+          {layer && (
+            <button
+              type="button"
+              className="primary-btn vc-save"
+              aria-disabled={!savable || undefined}
+              title={savable ? 'Keep these values for this layer' : NOTHING_TO_SAVE}
+              onClick={() => {
+                if (savable) saveViewLook();
+              }}
+            >
+              Save
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="vc-actions">

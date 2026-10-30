@@ -98,7 +98,7 @@ beforeEach(async () => {
   useAppStore.setState({
     dock: 'controls', datasets: datasetsFrom([COLLECTION]), selectedDatasetIds: [DATASET], datasetId: DATASET, aoi: AOI, dateFrom: '', dateTo: '',
     sections: [], openSectionId: null, items: [], groups: [], selectedIds: [], layers: [], searchContext: null, searching: false, loadingMore: false,
-    loadMoreError: null, loadMoreUsed: false, focusMode: false, resultViewLayerId: null, searchCrops: [], error: null, notice: null, resultsOnMap: true,
+    loadMoreError: null, loadMoreUsed: false, focusMode: false, resultViewLayerId: null, error: null, notice: null, resultsOnMap: true,
   });
   useProcessingStore.setState({ open: false, jobs: [] });
   await act(() => state().runSearch());
@@ -121,7 +121,6 @@ function expectNothingOnMap() {
   expect(shown.overlay).toEqual([]);
   expect(shown.highlight).toEqual([]);
   for (const id of idsOf(shown.clickable)) expect(state().focusMode && Object.hasOwn(state().downloaded, id)).toBe(true);
-  expect(shown.cropsOf).toEqual([]);
 }
 
 // A view of the scenes open (the ticked ones, or the open time step), as the bar of the selection opens it.

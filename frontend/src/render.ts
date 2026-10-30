@@ -53,6 +53,35 @@ export function appliedRenderFrom(render: EarthxDefaultRender): AppliedRender {
   };
 }
 
+// The fields of the view's controls for a look, the other way round: what "Apply" would send back to make the same
+// picture. Where a view starts from a layer, the controls show what the layer was made with (NM4-50).
+export function pendingFieldsOf(render: AppliedRender): { pendingColormapName: string; pendingVmin: string; pendingVmax: string } {
+  const [vmin = '', vmax = ''] = (render.rescale ?? '').split(',');
+  return { pendingColormapName: render.colormapName ?? '', pendingVmin: vmin, pendingVmax: vmax };
+}
+
+// What the disabled "Apply" and "Save" say in their tooltips (the view of scenes and of a result).
+export const NOTHING_TO_APPLY = 'Nothing to apply: the map shows these values';
+export const NOTHING_TO_SAVE = 'Nothing to save: the layer is saved as it is drawn';
+
+type PendingFields = { pendingColormapName: string; pendingVmin: string; pendingVmax: string };
+
+// What the fields of the controls ask for: the colormap, and a range once both ends are typed.
+export function lookOfPendingFields(p: PendingFields): AppliedRender {
+  const vmin = p.pendingVmin.trim();
+  const vmax = p.pendingVmax.trim();
+  return {
+    colormapName: p.pendingColormapName || undefined,
+    rescale: vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
+  };
+}
+
+// Whether "Apply" would draw anything else than the map shows now.
+export function lookChanged(applied: AppliedRender, p: PendingFields): boolean {
+  const asked = lookOfPendingFields(p);
+  return (applied.colormapName || undefined) !== asked.colormapName || (applied.rescale || undefined) !== asked.rescale;
+}
+
 // --- one colour scale for a preview and a result (M4-32b, M4-19c) --------------------
 
 // What a measure says of one band, for the colour scale: the fields that are numbers. A result gets it from

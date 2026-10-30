@@ -55,7 +55,10 @@ export default function DownloadDialog() {
   const groups = useAppStore((s) => s.groups);
   const activeGroup = useAppStore((s) => s.groups[s.activeGroupIndex]);
   const selectionItems = useMemo(
-    () => (selectedIds.length ? items.filter((it) => selectedIds.includes(it.id)) : (activeGroup?.items ?? [])),
+    () => {
+      const picked = items.filter((it) => selectedIds.includes(it.id));
+      return picked.length ? picked : (activeGroup?.items ?? []);
+    },
     [selectedIds, items, activeGroup],
   );
   const selectionAoi = useAppStore((s) => s.aoi);
