@@ -26,7 +26,9 @@ export interface OrderInput {
   name: string;
   dataset: string;
   groups: string[][];
-  assets: string[];
+  // Version 2 names no assets for a raster (the platform reads what `output.bands` and the steps need); an export
+  // (a crop) still names them (adr/0020 §5).
+  assets?: string[];
 }
 
 export interface OrderStep {
@@ -39,7 +41,7 @@ export interface OrderStep {
 // any address. Without `aoi` a raster job covers the whole scenes it names
 // (M4-12: `api` puts the union of their footprints into the recipe).
 export interface Order {
-  recipe_version: 1;
+  recipe_version: 2;
   inputs: OrderInput[];
   aoi?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
   steps: OrderStep[];
@@ -50,6 +52,8 @@ export interface RasterOutput {
   kind: 'raster';
   format: 'cog';
   dtype: string;
+  // The bands the result holds, in this order (adr/0020 §5).
+  bands: string[];
 }
 
 // An export (M4-11 §3.1): the crop of the download dialog, computed as a job.

@@ -55,8 +55,8 @@ def recipe_of(path: Path) -> dict[str, Any]:
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
 def test_the_schema_takes_the_order(path: Path) -> None:
-    """The panel sends recipe version 1 until NM4-43e; `api` rewrites it as version 2 and validates that (adr/0020 §11)."""
-    assert recipe_of(path)["recipe_version"] == 1
+    """The panel sends recipe version 2 since NM4-43e, and `api` takes it as it is (adr/0020 §11)."""
+    assert recipe_of(path)["recipe_version"] == 2
     assert parse_order(json.dumps(recipe_of(path)), REAL_OPERATORS).recipe_version == 2
 
 
@@ -66,7 +66,9 @@ def test_the_order_has_exactly_the_members_of_the_schema(path: Path) -> None:
     # The AOI may be left out for the whole scenes of a pass (M4-12); where it is there, it is bare.
     assert set(recipe) - {"aoi"} == {"recipe_version", "inputs", "steps", "output"}
     assert set(recipe.get("aoi", {"type": 0, "coordinates": 0})) == {"type", "coordinates"}
-    assert set(recipe["inputs"][0]) == {"name", "dataset", "groups", "assets"}
+    # A raster order names its bands in the output and no assets (adr/0020 §5); an export names its assets.
+    assert set(recipe["inputs"][0]) == {"name", "dataset", "groups"}
+    assert recipe["output"]["kind"] == "raster" and recipe["output"]["bands"]
     assert all(set(step) == {"op", "op_version", "params"} for step in recipe["steps"])
 
 

@@ -7,11 +7,13 @@
 
 import { orderAoi } from './processingOrder';
 import type { CropOutput, Order, OrderInput, OrderStep, RasterOutput } from './processing';
+import { upgradeOrder, type NamesOf } from './recipeUpgrade';
 
 // The size the job route takes (`MAX_BODY_BYTES`).
 export const MAX_RECIPE_BYTES = 1_048_576;
 
-export type RecipeRead = { ok: true; order: Order } | { ok: false; reason: string };
+// `converted`: the file said recipe version 1 and was written as version 2 (adr/0020 §11).
+export type RecipeRead = { ok: true; order: Order; converted: boolean } | { ok: false; reason: string };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
@@ -25,14 +27,21 @@ function isCoordinates(value: unknown, depth: number): boolean {
   return value.length > 0 && value.every((inner) => isCoordinates(inner, depth - 1));
 }
 
-function readInput(raw: unknown): OrderInput | string {
+// Version 1 names the assets of every input; version 2 only for a crop (an export).
+function readInput(raw: unknown, needsAssets: boolean): OrderInput | string {
   if (!isObject(raw) || typeof raw.dataset !== 'string' || raw.dataset === '') return 'an input names no dataset';
   const { groups, assets } = raw;
   if (!Array.isArray(groups) || groups.length === 0 || !groups.every((g) => Array.isArray(g) && g.length > 0 && g.every((id) => typeof id === 'string'))) {
     return 'an input has no scenes';
   }
-  if (!Array.isArray(assets) || !assets.every((a) => typeof a === 'string')) return 'an input has no list of assets';
-  return { name: typeof raw.name === 'string' ? raw.name : 'input', dataset: raw.dataset, groups: groups as string[][], assets: assets as string[] };
+  const listed = Array.isArray(assets) && assets.every((a) => typeof a === 'string');
+  if (needsAssets && !listed) return 'an input has no list of assets';
+  return {
+    name: typeof raw.name === 'string' ? raw.name : 'input',
+    dataset: raw.dataset,
+    groups: groups as string[][],
+    ...(listed ? { assets: assets as string[] } : {}),
+  };
 }
 
 function readStep(raw: unknown, index: number): OrderStep | string {
@@ -41,7 +50,9 @@ function readStep(raw: unknown, index: number): OrderStep | string {
   return { op: raw.op, op_version: raw.op_version, params: (raw.params as Record<string, unknown> | undefined) ?? {} };
 }
 
-export function readRecipe(text: string): RecipeRead {
+// `namesOf` gives the band names of an asset key for a file of version 1 (the layout of the data the file is read onto);
+// without it every asset is one band named like its key.
+export function readRecipe(text: string, namesOf?: NamesOf): RecipeRead {
   if (new TextEncoder().encode(text).length > MAX_RECIPE_BYTES) return fail('The file is larger than 1 MB.');
   let json: unknown;
   try {
@@ -50,12 +61,14 @@ export function readRecipe(text: string): RecipeRead {
     return fail('The file is not valid JSON.');
   }
   if (!isObject(json) || json.recipe_version === undefined) return fail('This is not a recipe (no recipe_version).');
-  if (json.recipe_version !== 1) return fail(`Recipe version ${String(json.recipe_version)} is not supported.`);
+  if (json.recipe_version !== 1 && json.recipe_version !== 2) return fail(`Recipe version ${String(json.recipe_version)} is not supported.`);
+  const version = json.recipe_version;
   if (!Array.isArray(json.inputs) || json.inputs.length === 0) return fail('The recipe has no inputs.');
   if (!Array.isArray(json.steps)) return fail('The recipe has no steps list.');
   const inputs: OrderInput[] = [];
+  const crop = isObject(json.output) && json.output.kind === 'crop';
   for (const raw of json.inputs) {
-    const input = readInput(raw);
+    const input = readInput(raw, version === 1 || crop);
     if (typeof input === 'string') return fail(`The recipe is incomplete: ${input}.`);
     inputs.push(input);
   }
@@ -73,14 +86,17 @@ export function readRecipe(text: string): RecipeRead {
   }
   if (!isObject(output) || (output.kind !== 'raster' && output.kind !== 'crop')) return fail('The recipe has no known output.');
   if (output.kind === 'raster' && typeof output.dtype !== 'string') return fail('The recipe names no output data type.');
-  return {
-    ok: true,
-    order: {
-      recipe_version: 1,
-      inputs,
-      ...(aoi ? { aoi: orderAoi(aoi as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon) } : {}),
-      steps,
-      output: output as unknown as RasterOutput | CropOutput,
-    },
+  if (version === 2 && output.kind === 'raster' && !(Array.isArray(output.bands) && output.bands.every((b) => typeof b === 'string'))) {
+    return fail('The recipe names no output bands.');
+  }
+  const order = {
+    recipe_version: version,
+    inputs,
+    ...(aoi ? { aoi: orderAoi(aoi as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon) } : {}),
+    steps,
+    output: output as unknown as RasterOutput | CropOutput,
   };
+  if (version === 2) return { ok: true, order: order as Order, converted: false };
+  const upgraded = upgradeOrder(order, namesOf);
+  return upgraded ? { ok: true, order: upgraded as unknown as Order, converted: true } : fail('The recipe is incomplete: it cannot be read as version 2.');
 }

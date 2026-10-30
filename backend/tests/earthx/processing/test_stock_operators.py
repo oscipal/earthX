@@ -151,7 +151,7 @@ class TestBandMathVersion2:
 
     def test_version_1_still_replaces_everything_and_is_no_step_of_a_stock(self) -> None:
         assert not BAND_MATH.stock and BAND_MATH_V2.stock
-        assert not BAND_MATH_V2.listed and BAND_MATH.listed
+        assert BAND_MATH_V2.listed and not BAND_MATH.listed
 
 
 class TestMaskVersion2:

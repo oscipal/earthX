@@ -257,6 +257,7 @@ NORMALIZE = Operator(
     lineage=_lineage,
     method=_method,
     stock=False,
+    listed=False,
 )
 
 
@@ -275,7 +276,7 @@ def _method_v2(params: BaseModel) -> str:
     )
 
 
-#: Version 2 (NM4-43c): converts the bands it names. Not listed until the panel sends it; the tile runs it since NM4-43d.
+#: Version 2 (NM4-43c): converts the bands it names. Listed since NM4-43e, the panel sends it; version 1 is accepted, not listed.
 NORMALIZE_V2 = dataclasses.replace(
     NORMALIZE,
     op_version=2,
@@ -288,7 +289,7 @@ NORMALIZE_V2 = dataclasses.replace(
     bands_used=_bands_used_v2,
     restrict=_restrict_v2,
     stock=True,
-    listed=False,
+    listed=True,
 )
 
 

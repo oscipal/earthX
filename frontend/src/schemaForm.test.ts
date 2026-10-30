@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { initialValues, integersIn, paramsForm, paramsFrom, type Field } from './schemaForm';
+import { initialValues, integersIn, namesIn, paramsForm, paramsFrom, type Field } from './schemaForm';
 
 function fields(schema: unknown, defs = {}): Field[] {
   const form = paramsForm(schema, defs);
@@ -200,12 +200,62 @@ describe('a list of whole numbers', () => {
   });
 
   it.each([
-    ['items that are not whole numbers', { type: 'array', items: { type: 'string' } }],
+    ['items that are neither whole numbers nor texts', { type: 'array', items: { type: 'number' } }],
+    ['items that are booleans', { type: 'array', items: { type: 'boolean' } }],
     ['items with a keyword it does not know', { type: 'array', items: { type: 'integer', multipleOf: 2 } }],
     ['no items', { type: 'array' }],
     ['a list of lists', { type: 'array', items: { type: 'array', items: { type: 'integer' } } }],
   ])('stays "not supported by this panel" for %s', (_, property) => {
     const form = paramsForm({ type: 'object', properties: { x: property } });
+    expect(form.supported).toBe(false);
+  });
+});
+
+// A list of texts, as `normalize` takes its bands (adr/0020 §6).
+describe('a list of texts', () => {
+  const LIST = {
+    type: 'object',
+    properties: {
+      bands: { type: 'array', title: 'Bands', items: { type: 'string' }, minItems: 1, maxItems: 3 },
+    },
+    required: ['bands'],
+  };
+  const read = (text: string) => paramsFrom(fields(LIST), { bands: text });
+
+  it('is read as the names field, with the bounds of the list', () => {
+    expect(fields(LIST)[0]).toMatchObject({ kind: 'names', required: true, minItems: 1, maxItems: 3 });
+  });
+
+  it('writes the names in the order typed and each once', () => {
+    expect(read('nir, red;nir  red').params).toEqual({ bands: ['nir', 'red'] });
+    expect(read(' NDVI ').params).toEqual({ bands: ['NDVI'] });
+    expect(namesIn('b, a b,,')).toEqual(['b', 'a']);
+    expect(namesIn('')).toEqual([]);
+  });
+
+  it('asks for the list when it is required and empty', () => {
+    expect(read('').errors.bands).toBe('Pick at least one band.');
+    expect(read(' , ').errors.bands).toBe('Pick at least one band.');
+  });
+
+  it('leaves an optional list empty out of the params', () => {
+    const optional = fields({ type: 'object', properties: { bands: { type: 'array', items: { type: 'string' } } } });
+    expect(paramsFrom(optional, { bands: '' })).toEqual({ params: {}, errors: {} });
+  });
+
+  it('refuses more names than the list takes, counting each once', () => {
+    expect(read('a b c d').errors.bands).toBe('At most 3 bands.');
+    expect(read('a a a a b').errors.bands).toBeUndefined();
+  });
+
+  it('starts from the default of the schema, written as the field is edited', () => {
+    const withDefault = { ...LIST, properties: { bands: { ...LIST.properties.bands, default: ['red', 'nir'] } } };
+    expect(initialValues(fields(withDefault))).toEqual({ bands: 'red, nir' });
+    expect(initialValues(fields(LIST))).toEqual({ bands: '' });
+  });
+
+  it('stays "not supported by this panel" for items with a keyword it does not know', () => {
+    const form = paramsForm({ type: 'object', properties: { x: { type: 'array', items: { type: 'string', minLength: 2 } } } });
     expect(form.supported).toBe(false);
   });
 });

@@ -2,7 +2,7 @@
 // plan §3.7): the server's refusal at the CRS field, and under the resolution the
 // size of a cell with its unit — for degrees also on the ground.
 
-import { CRS_PATTERN, cellSizeText } from '../crsUnit';
+import { CRS_PATTERN } from '../crsUnit';
 import { useProcessingStore } from '../processingStore';
 import type { FieldValue } from '../schemaForm';
 
@@ -21,29 +21,23 @@ export function CrsRefusal({ code }: { code: FieldValue | undefined }) {
   );
 }
 
-// Under the resolution field, once the CRS is a valid code.
-export function CellSize({
-  code,
-  resolution,
-  latitude,
-}: {
-  code: FieldValue | undefined;
-  resolution: FieldValue | undefined;
-  // The middle latitude of the area the order covers; `null` without one.
-  latitude: number | null;
-}) {
+// Under the resolution field: a lookup of the unit that failed says so.
+export function CellSizeError({ code }: { code: FieldValue | undefined }) {
   const entry = useEntry(code);
-  if (typeof code !== 'string' || !CRS_PATTERN.test(code)) return null;
-  if (!entry) return <p className="pp-help">Looking up the unit of {code}…</p>;
-  if (entry.state === 'refused') return null;
-  if (entry.state === 'error') {
-    return <p className="hint-text warn">The unit of {code} could not be looked up: {entry.message}</p>;
-  }
-  const typed = typeof resolution === 'string' && resolution.trim() !== '';
-  const text = typed ? cellSizeText(entry.info, Number(resolution), latitude) : null;
+  if (typeof code !== 'string' || !CRS_PATTERN.test(code) || entry?.state !== 'error') return null;
+  return <p className="hint-text warn">The unit of {code} could not be looked up: {entry.message}</p>;
+}
+
+// The unit of the resolution, small beside its label (Otto, 30.10.2026): "in m", "in °", or the name of another unit.
+// Nothing while the lookup is on its way, where the code is none or the lookup failed.
+export function CellSize({ code }: { code: FieldValue | undefined }) {
+  const entry = useEntry(code);
+  if (typeof code !== 'string' || !CRS_PATTERN.test(code) || entry?.state !== 'ready') return null;
+  const { name, kind } = entry.info.unit;
+  const unit = name === 'metre' ? 'm' : kind === 'angular' && name === 'degree' ? '°' : name;
   return (
-    <p className="pp-help" role="status" aria-label="Cell size">
-      {text ?? `The resolution is in ${entry.info.unit.name}.`}
-    </p>
+    <span className="pp-unit-line" aria-label="Unit">
+      in {unit}
+    </span>
   );
 }

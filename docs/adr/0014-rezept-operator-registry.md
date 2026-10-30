@@ -2834,6 +2834,12 @@ bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist das Backend (NM4-1
   Pixeln (16 Bit exakt, `float32` innerhalb eines Fachs und nach außen gerundet); ein Lauf mit den gemessenen Zahlen tut, was die Methode sagt (Perzentil-Stretch setzt die Enden auf 0 und 1, Z-Score mittelt auf 0 mit Streuung 1, robust Median 0 und Quartilsabstand 1).
 - **Stand der Technik** (Plan §7.3): TiTiler, openEO, Earth Engine und Sentinel Hub messen die Statistik vorab und wenden dann eine feste Gerade an; QGIS und rio-tiler nehmen als Vorgabe 2–98 %.
 
+## 15 Nachtrag NM4-43e: Die Prozessbeschreibung listet Version 2 der Bandschritte (2026-10-30; zu §4, §15x; `adr/0020` §11, §13, §18)
+
+Das Panel schickt Rezeptversion 2 (`adr/0020` §18). Dafür listet die Prozessbeschreibung jetzt `band_math`, `mask` und `normalize` in Version 2 (`Operator.listed`), Version 1 der drei ist
+registriert und angenommen, aber nicht mehr gelistet (wie `reproject` 3 neben 4). `normalize` 3 (NM4-11) bleibt ungelistet bis NM4-11b. Die Prozess-Fixtures des Panels sind aus der
+Beschreibung neu geschrieben (`scripts/write-process-fixtures.py`). Ein Auftrag der Version 1 wird wie bisher umgedeutet; die Übergangsfrist beginnt mit dem Deploy (Datum offen, `adr/0020` §18).
+
 ## 15 Nachtrag NM4-14: Index-Presets füllen einen gewöhnlichen `band_math`-Schritt (2026-10-30; zu §5.2, §6.1; `adr/0020` §6, §12)
 
 Otto hat den Plan von NM4-14 am 2026-10-30 freigegeben (zu [#251](https://github.com/oscipal/earthX/pull/251), `plans/querschnitt/nm4-14-index-knoepfe.md` §13). Umgesetzt ist das Backend (NM4-14a); die Knöpfe im Panel folgen als NM4-14b.

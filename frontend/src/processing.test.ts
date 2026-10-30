@@ -21,11 +21,11 @@ import {
 const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
 
 const ORDER: Order = {
-  recipe_version: 1,
-  inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_X']], assets: ['red', 'nir'] }],
+  recipe_version: 2,
+  inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_X']] }],
   aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] },
-  steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
-  output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+  steps: [{ op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'NDVI' } }],
+  output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI'] },
 };
 
 const ESTIMATE = {
