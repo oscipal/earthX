@@ -31,7 +31,7 @@ def client_for(gateway) -> TestClient:
 
 def test_coverage_answers_an_entry_only_this_apps_registry_knows() -> None:
     gateway, seen = answering(httpx.Response(200, json=load("aggregate_complete")))
-    response = client_for(gateway).get(f"/coverage/{OWN.dataset_id}", params={"zoom": 5, "bbox": "5,45,15,55"})
+    response = client_for(gateway).post(f"/coverage/{OWN.dataset_id}", json={"zoom": 5, "bbox": [5, 45, 15, 55]})
     assert response.status_code == 200
     assert response.json()["dataset_id"] == OWN.dataset_id
     assert len(seen) == 1

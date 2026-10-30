@@ -121,9 +121,11 @@ async function check(browser, { theme, viewport }) {
     }
     if (url.pathname.startsWith('/coverage/')) {
       const dataset = decodeURIComponent(url.pathname.split('/')[2]);
-      const query = url.searchParams.get('query');
-      requests.coverage.push({ dataset, query: query === null ? null : JSON.parse(query) });
-      const n = dataset === 'sentinel-2-c1-l2a' ? SCENES.filter((item) => matches(item, query && JSON.parse(query))).length : 9;
+      // With the AOI set below the question is a POST with the filters in its body (NM4-57); without, a GET with them in the URL.
+      const asked = route.request().method() === 'POST' ? JSON.parse(route.request().postData() ?? '{}').query : url.searchParams.get('query') && JSON.parse(url.searchParams.get('query'));
+      const query = asked ?? null;
+      requests.coverage.push({ dataset, query });
+      const n = dataset === 'sentinel-2-c1-l2a' ? SCENES.filter((item) => matches(item, query)).length : 9;
       return json({
         dataset_id: dataset, grid: 'geotile', level: 4, counting: 'centroid', cells: n ? [{ k: '4/8/5', n }] : [], counted: n, total_count: n,
         completeness: 'complete', max_count: n, histogram: [], histogram_interval: 'month', footprints_advised: false, from_cache: false, extent: null, area: null, ignored_filters: [],
@@ -351,12 +353,11 @@ async function check(browser, { theme, viewport }) {
   expect('"Reset filters" took back the other dataset too', (await button.textContent()) === 'Advanced search · 2', await button.textContent());
   await done();
 
-  // 13. No scene name, no AOI, no filter in a URL the browser asked for. The one place an AOI is in a URL is the `bbox` of
-  // `GET /coverage` (M3-19, existing behaviour, not touched by DS-02c): it is left out here, the rest of that URL is checked.
+  // 13. No scene name, no AOI, no filter in a URL the browser asked for. Since NM4-57 the coverage of the AOI is a POST,
+  // so no URL is left out any more.
   for (const url of urls) {
     const asked = new URL(url);
     if (asked.pathname.startsWith('/src/') || asked.pathname.startsWith('/node_modules/') || asked.pathname.startsWith('/@')) continue;
-    if (asked.pathname.startsWith('/coverage/')) asked.searchParams.delete('bbox');
     const text = decodeURIComponent(asked.pathname + asked.search);
     for (const secret of SECRETS) expect('a URL carries something it should not', !text.includes(secret), `${secret} in ${text.slice(0, 120)}`);
     if (asked.pathname === '/stac/search') expect('the search has a query string', asked.search === '', asked.search.slice(0, 80));

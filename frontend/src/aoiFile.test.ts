@@ -153,7 +153,7 @@ describe('readAoiFile — misuse and edge cases', () => {
     expect(result.error).toBe('Could not use "empty.geojson" as an AOI: not valid JSON.');
   });
 
-  it('sends a file name with no extension as-is; the route decides it is unsupported', async () => {
+  it('sends a file name with no extension as `aoi`; the route decides it is unsupported (NM4-57: the name stays here)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(jsonResponse(400, { detail: "unsupported file type: 'noext' (expected .geojson, .kml or .zip)" })),
@@ -161,14 +161,14 @@ describe('readAoiFile — misuse and edge cases', () => {
     const result = await readAoiFile(new File(['x'], 'noext'));
     expect(result.error).toContain('Could not use "noext" as an AOI:');
     const [url] = vi.mocked(fetch).mock.calls[0];
-    expect(url).toBe('/aoi/upload?filename=noext');
+    expect(url).toBe('/aoi/upload?filename=aoi');
   });
 
-  it('percent-encodes a very long file name without truncating it', async () => {
+  it('sends a very long file name as its extension only (NM4-57)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(400, { detail: 'not valid JSON' })));
     const longName = `${'a'.repeat(300)}.geojson`;
     await readAoiFile(new File(['x'], longName));
     const [url] = vi.mocked(fetch).mock.calls[0];
-    expect(url).toBe(`/aoi/upload?filename=${encodeURIComponent(longName)}`);
+    expect(url).toBe('/aoi/upload?filename=aoi.geojson');
   });
 });

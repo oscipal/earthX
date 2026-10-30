@@ -218,6 +218,17 @@ ohne AOI den sichtbaren Kartenausschnitt als räumlichen Filter mit; der
 z6-Deckel oben gilt seither nur noch für Anfragen ganz ohne Bounding Box.
 Originaltext oben unverändert.
 
+**Nachtrag NM4-57 (30.10.2026, Otto, M4 Q8):** Eine AOI steht in keiner URL. `GET /coverage/{id}`
+trug seit M3-19 deren Umriss als `bbox` und damit in Zugriffsprotokollen und Browserverläufen. Seither:
+(1) Die Coverage mit AOI ist `POST /coverage/{id}` mit der AOI (`bbox`) im Body; `zoom`, `datetime` und
+`query` (als Objekt) stehen daneben, die Prüfung ist dieselbe. (2) Das `GET` ist für den sichtbaren
+Kartenausschnitt, der keine AOI ist: Seine Kanten liegen auf dem Blockraster der Stufe `zoom − 3`, auf das
+die Oberfläche ihn rundet (`roundBboxToGrid`, Blöcke von 8 × 8 Zellen, M3-19); eine Box abseits davon und jedes
+`intersects` im GET sind `400` mit dem Hinweis auf `POST`. Eine von Hand gezeichnete Box liegt auf diesem
+Raster nur zufällig (etwa eins zu einer Million je Kante). (3) Zugriffsprotokoll, Logzeilen und Cache-Schlüssel
+tragen schon vorher keine Koordinate (Hash, siehe oben); Einträge mit AOI leben höchstens einen Tag (Gebiet
+des DEM: fünf Minuten), belegt im Test. (4) **Entschieden (Otto, 30.10.2026):** Die Anfrage an die Quelle (`GET /aggregate?intersects=…` bzw. `bbox`, §3.4) trägt die AOI in der URL, weil die Quelle nur `GET` kennt. Sie steht in keinem unserer Protokolle (das Gateway loggt einen Hash der Query, `httpx` ist auf `WARNING`), aber bei der Quelle. Otto wollte die Box nach außen auf die Kanten des Dichtegitters runden lassen, **sofern die Antwort dadurch bitgleich bleibt**. Gemessen am 30.10.2026 gegen Earth Search (Sentinel-2, Zeitraum 01.–20.06.2026, vier künstliche Boxen, je auf die Stufe der Anfrage nach außen gerundet): bei dreien ändert sich die Antwort (`total_count` 22 → 42, 12 → 24, 26 → 51; Zellen 3 → 6, 1 → 2, 2 → 4), bei einer bleibt sie gleich (30 und 3 Zellen), zufällig. Die Quelle zählt jede Szene, deren Footprint die Box berührt; die größere Box zählt also Szenen, die die AOI nie berühren, und die Zahl stimmte nicht mehr mit der Suche überein (`adr/0021` §5 Nr. 7). Das Runden ist nicht verlustfrei und **unterbleibt**. Dass die Suche (`POST /stac/search`) und die Coverage die AOI an die Quelle schicken, kommt als Punkt in den Datenschutztext (M6). Originaltext oben unverändert.
+
 **Falle 2: Eine Aufnahme zählt in genau eine Zelle.** In allen ungekappten
 Messungen ist die Summe der Zählwerte exakt gleich `total_count` — auch bei
 Geohash p12, wo die Zellen zentimetergroß sind und 3848 Aufnahmen auf 2568

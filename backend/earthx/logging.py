@@ -99,18 +99,31 @@ def new_request_id() -> str:
     return uuid.uuid4().hex
 
 
-# M4-13c-5: GDAL writes the URL it could not read into its own warning ("HTTP response code on
-# <url>"), and rasterio passes that on to the logging module. For a job result the URL is signed:
-# it holds the `result_id`, the id of the tiler's key and a signature good for 15 minutes. The
-# formatter hides all three wherever they stand, in the message and in a traceback.
-_SIGNED_QUERY = re.compile(r"(X-Amz-[A-Za-z0-9-]+)=[A-Za-z0-9%._~+/=-]*")
+# NM4-57: GDAL writes the address of the file it could not read into its own message ("HTTP response code
+# on <url>", "'/vsicurl/<url>' not recognized"), and rasterio passes that on to the logging module, as it
+# puts the same text into the exception that carries it to a traceback. For a source with signed URLs
+# (Planetary Computer) the address holds the token; for a job result (M4-13c-5) the `result_id`, the id of
+# the tiler's key and a signature good for 15 minutes. So every address leaves a log line, wherever it
+# stands: a URL with any scheme, and a GDAL path such as `/vsicurl/…` or `/vsis3/…` (but not `/vsimem/`, a
+# name in memory). The formatter does this for the whole process, not a filter for one logger or thread.
+ADDRESS_PLACEHOLDER = "<address>"
+# The last character of an address is none of the marks that end a sentence or close a quotation. The scheme is
+# anchored (no letter before it) and short: without that, a long run of letters, such as a request path of 64 kB,
+# is read to its end from every position and takes seconds.
+_ADDRESS = re.compile(
+    r"(?:/vsi(?!mem/)[A-Za-z0-9_]*/|(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}://)"
+    r"[^\s'\"<>]*[^\s'\"<>.,;:)\]]|/vsi(?!mem/)[A-Za-z0-9_]*/"
+)
+# What stays after the addresses: a query that stands without its URL, and the `result_id` in a path.
+_SIGNED_QUERY = re.compile(r"((?:X-Amz|X-Goog)-[A-Za-z0-9-]+|sig|access_token)=[A-Za-z0-9%._~+/=-]*")
 _RESULT_ID_IN_TEXT = re.compile(r"(/results/)[A-Za-z0-9_-]{22}(?![A-Za-z0-9_-])")
 
 
-def hide_signed_urls(text: str) -> str:
-    """``text`` without the parts of a signed result URL that open the file."""
-    if "X-Amz-" not in text and "/results/" not in text:
+def hide_addresses(text: str) -> str:
+    """``text`` with every address replaced by ``<address>``, and the parts of a signed query that open a file."""
+    if "/" not in text and "=" not in text:
         return text
+    text = _ADDRESS.sub(ADDRESS_PLACEHOLDER, text)
     return _RESULT_ID_IN_TEXT.sub(r"\1{resultID}", _SIGNED_QUERY.sub(r"\1=<hidden>", text))
 
 
@@ -122,14 +135,14 @@ class JsonFormatter(logging.Formatter):
             "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": hide_signed_urls(record.getMessage()),
+            "message": hide_addresses(record.getMessage()),
             "request_id": get_request_id(),
         }
         for key, value in record.__dict__.items():
             if key not in _RESERVED_LOG_RECORD_ATTRS and key not in payload:
-                payload[key] = value
+                payload[key] = hide_addresses(value) if isinstance(value, str) else value
         if record.exc_info:
-            payload["exc_info"] = hide_signed_urls(self.formatException(record.exc_info))
+            payload["exc_info"] = hide_addresses(self.formatException(record.exc_info))
         return json.dumps(payload, default=str)
 
 
@@ -151,7 +164,10 @@ def configure_logging(level: int = logging.INFO) -> None:
     """Configure the root logger to emit one JSON object per line to stdout.
 
     Idempotent: safe to call once per process startup even if a process
-    type calls it more than once (no duplicated handlers).
+    type calls it more than once (no duplicated handlers). Every line it
+    writes leaves the addresses GDAL and its libraries name out
+    (:func:`hide_addresses`); the worker's child process, which starts without
+    the supervisor's configuration, calls it too.
     """
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
@@ -161,6 +177,7 @@ def configure_logging(level: int = logging.INFO) -> None:
     for name in _URL_LOGGING_LIBRARIES:
         logging.getLogger(name).setLevel(max(level, logging.WARNING))
     _disable_uvicorn_access_log()
+    _hide_addresses_in_uvicorn()
 
 
 def _disable_uvicorn_access_log() -> None:
@@ -179,6 +196,33 @@ def _disable_uvicorn_access_log() -> None:
     access_logger = logging.getLogger("uvicorn.access")
     access_logger.handlers = []
     access_logger.propagate = False
+
+
+class _HideAddresses(logging.Filter):
+    """Takes the addresses out of the traceback of a record on its way to a handler whose formatter is not ours.
+
+    Only the traceback: uvicorn's own message carries the address it listens on, which is meant to be read.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.exc_info:
+            # `Formatter.format` keeps the text it finds here instead of formatting the exception again.
+            record.exc_text = hide_addresses(logging.Formatter().formatException(record.exc_info))
+        return True
+
+
+def _hide_addresses_in_uvicorn() -> None:
+    """Put :class:`_HideAddresses` on the handler uvicorn writes its own lines with.
+
+    That handler prints plain text to stderr, past the formatter of :func:`configure_logging`; an unhandled
+    error from a read ("Exception in ASGI application") would carry the address GDAL names in its message
+    out of the process untouched (NM4-57). Uvicorn sets the handler up before it imports the app, so it is
+    there when this runs.
+    """
+    for name in ("uvicorn", "uvicorn.error"):
+        for handler in logging.getLogger(name).handlers:
+            if not any(isinstance(entry, _HideAddresses) for entry in handler.filters):
+                handler.addFilter(_HideAddresses())
 
 
 class RequestIdMiddleware:
