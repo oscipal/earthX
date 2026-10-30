@@ -47,11 +47,11 @@ const COLLECTION = {
 } as unknown as Collection;
 
 const ORDER: Order = {
-  recipe_version: 1,
-  inputs: [{ name: 'input', dataset: DATASET, groups: [['NEW_A']], assets: ['red', 'nir'] }],
+  recipe_version: 2,
+  inputs: [{ name: 'input', dataset: DATASET, groups: [['NEW_A']] }],
   aoi: AOI as GeoJSON.Polygon,
-  steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
-  output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+  steps: [{ op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'NDVI' } }],
+  output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI'] },
 };
 const VIEW = { center: [10.15, 50.15], zoom: 11.5, range: null };
 

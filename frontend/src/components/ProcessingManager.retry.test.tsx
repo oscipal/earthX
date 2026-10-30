@@ -26,11 +26,11 @@ const DAY = 86_400_000;
 const EXECUTION = 'POST /processing/processes/recipe/execution';
 // Synthetic; the coordinates are made up.
 const ORDER: Order = {
-  recipe_version: 1,
-  inputs: [{ name: 'a', dataset: 'sentinel-2-c1-l2a', groups: [['S1']], assets: ['red', 'nir'] }],
+  recipe_version: 2,
+  inputs: [{ name: 'a', dataset: 'sentinel-2-c1-l2a', groups: [['S1']] }],
   aoi: { type: 'Polygon', coordinates: [[[10, 50], [10.1, 50], [10.1, 50.1], [10, 50]]] },
   steps: [],
-  output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+  output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red', 'nir'] },
 };
 
 let container: HTMLDivElement;

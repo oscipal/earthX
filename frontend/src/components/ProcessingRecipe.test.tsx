@@ -56,7 +56,19 @@ const option: DatasetOption = {
   } as unknown as Collection,
 };
 
+const mathStep = (expression: string, name: string) => ({ op: 'band_math', op_version: 2, params: { expression, name } });
+
 const recipe = (patch: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    recipe_version: 2,
+    inputs: [{ name: 'input', dataset: DATASET, groups: [['NEW_A']] }],
+    steps: [mathStep('(nir - red) / (nir + red)', 'ndvi')],
+    output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['ndvi'] },
+    ...patch,
+  });
+
+// The same recipe as a file of version 1 (adr/0020 §11): it names assets, and `band_math` replaced all bands by one.
+const recipeV1 = (patch: Record<string, unknown> = {}) =>
   JSON.stringify({
     recipe_version: 1,
     inputs: [{ name: 'input', dataset: DATASET, groups: [['NEW_A']], assets: ['red', 'nir'] }],
@@ -118,28 +130,51 @@ describe('loadRecipe', () => {
   it('takes the steps and the data type and leaves the selection and the AOI alone', async () => {
     const result = await load(recipe());
     expect(result).toEqual({ ok: true, notes: [] });
-    expect(draft().steps.map((s) => [s.op, s.values.expression])).toEqual([['band_math', '(nir - red) / (nir + red)']]);
+    expect(draft().steps.map((s) => [s.op, s.values.expression, s.values.name])).toEqual([['band_math', '(nir - red) / (nir + red)', 'ndvi']]);
+    expect(draft().output).toEqual(['ndvi']);
     expect(draft().dtype).toBe('float32');
     expect(useAppStore.getState().selectedIds).toEqual([stored.id]);
     expect(useAppStore.getState().aoi).toBe(AOI);
     expect(draft().area).toBe('scene');
   });
 
+  it('takes the output of the file, naming a band of the data and a result alike', async () => {
+    const result = await load(recipe({ output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red', 'ndvi'] } }));
+    expect(result).toEqual({ ok: true, notes: [] });
+    expect(draft().output).toEqual(['red', 'ndvi']);
+  });
+
+  it('writes a file of version 1 as version 2 and says so: the result of band_math is the output, the assets are gone', async () => {
+    const result = await load(recipeV1());
+    expect(result).toEqual({ ok: true, notes: [], converted: true });
+    expect(draft().steps.map((s) => [s.op, s.opVersion, s.values.expression, s.values.name])).toEqual([
+      ['band_math', 2, '(nir - red) / (nir + red)', 'band_math'],
+    ]);
+    expect(draft().output).toEqual(['band_math']);
+    expect(draft().dtype).toBe('float32');
+  });
+
+  it('does not say "converted" for a file of version 2', async () => {
+    const result = await load(recipe());
+    expect(result.ok && result.converted).toBeUndefined();
+  });
+
   it('loads a recipe with reproject v2, which the server still takes, as the listed version', async () => {
     const step = { op: 'reproject', op_version: 2, params: { crs: 'EPSG:3035', resolution: 30, resampling: 'bilinear' } };
-    const result = await load(recipe({ steps: [step] }));
+    const result = await load(recipe({ steps: [step], output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red', 'nir'] } }));
     expect(result).toEqual({ ok: true, notes: ['Step 1 (reproject): version 2 is taken as version 4.'] });
     expect(draft().steps.map((s) => [s.op, s.opVersion, s.values.resampling])).toEqual([['reproject', 4, 'bilinear']]);
   });
 
   it('replaces the steps that were there', async () => {
     await load(recipe());
-    await load(recipe({ steps: [{ op: 'band_math', op_version: 1, params: { expression: 'nir' } }] }));
+    await load(recipe({ steps: [mathStep('nir', 'copy')], output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['copy'] } }));
     expect(draft().steps.map((s) => s.values.expression)).toEqual(['nir']);
+    expect(draft().output).toEqual(['copy']);
   });
 
   it('says a band is not in the selection and does not order anything around', async () => {
-    const result = await load(recipe({ steps: [{ op: 'band_math', op_version: 1, params: { expression: 'swir / nir' } }] }));
+    const result = await load(recipe({ steps: [mathStep('swir / nir', 'ratio')], output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['ratio'] } }));
     expect(result).toEqual({ ok: true, notes: ['Band swir is not in this selection.'] });
     expect(draft().steps[0].values.expression).toBe('swir / nir');
   });
@@ -147,7 +182,8 @@ describe('loadRecipe', () => {
   it('says "no steps" for the recipe of a crop, and keeps the draft', async () => {
     await load(recipe());
     const output = { kind: 'crop', format: 'cog', resolution_factor: 1, extent: 'bbox(aoi ∩ footprints)', mask: 'file' };
-    expect(await load(recipe({ steps: [], output }))).toEqual({ ok: false, reason: 'This recipe has no steps.' });
+    const inputs = [{ name: 'input', dataset: DATASET, groups: [['NEW_A']], assets: ['red'] }];
+    expect(await load(recipe({ inputs, steps: [], output }))).toEqual({ ok: false, reason: 'This recipe has no steps.' });
     expect(draft().steps).toHaveLength(1);
   });
 
@@ -156,7 +192,7 @@ describe('loadRecipe', () => {
     ['a GeoJSON', JSON.stringify({ type: 'FeatureCollection', features: [] }), /not a recipe/u],
     ['an unknown version', recipe({ recipe_version: 3 }), /version 3/u],
     ['an operator the dataset lacks', recipe({ steps: [{ op: 'warp', op_version: 1, params: {} }] }), /not available/u],
-    ['parameters the form refuses', recipe({ steps: [{ op: 'band_math', op_version: 1, params: { expression: '' } }] }), /Required/u],
+    ['parameters the form refuses', recipe({ steps: [mathStep('', 'ndvi')] }), /Required/u],
   ])('refuses %s and changes nothing', async (_name, text, reason) => {
     const before = draft().steps;
     const result = await load(text);
@@ -184,8 +220,16 @@ describe('the "Load recipe…" control', () => {
     await pick(text(recipe()));
     expect(draft().steps).toHaveLength(1);
     expect(container.textContent).toContain('Recipe loaded.');
+    expect(container.querySelector('.pp-recipe .tip')).toBeNull();
     expect(useAppStore.getState().aoi).toBe(AOI);
     expect(useAppStore.getState().selectedIds).toEqual([stored.id]);
+  });
+
+  it('says a file of version 1 has been converted, with a tooltip', async () => {
+    await pick(text(recipeV1()));
+    expect(draft().steps).toHaveLength(1);
+    expect(container.querySelector('.pp-recipe [role="status"]')?.textContent).toContain('Recipe loaded.');
+    expect(container.querySelector('.pp-recipe .tip')?.getAttribute('data-tip')).toBe('Converted from recipe version 1.');
   });
 
   it('says why a file is turned away before reading it', async () => {

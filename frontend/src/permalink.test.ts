@@ -26,9 +26,17 @@ import type { Order } from './processing';
 const ID = 'AbCdEfGhIjKlMnOpQrSt_-';
 const OTHER = 'ZyXwVuTsRqPoNmLkJiHg_-';
 const ORDER: Order = {
+  recipe_version: 2,
+  inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2_A']] }],
+  aoi: { type: 'Polygon', coordinates: [[[9.01, 47.01], [9.02, 47.01], [9.02, 47.02], [9.01, 47.02], [9.01, 47.01]]] },
+  steps: [{ op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'NDVI' } }],
+  output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI'] },
+};
+// The same order as a link made before version 2 (adr/0020 §11).
+const ORDER_V1 = {
   recipe_version: 1,
   inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2_A']], assets: ['red', 'nir'] }],
-  aoi: { type: 'Polygon', coordinates: [[[9.01, 47.01], [9.02, 47.01], [9.02, 47.02], [9.01, 47.02], [9.01, 47.01]]] },
+  aoi: ORDER.aoi,
   steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
   output: { kind: 'raster', format: 'cog', dtype: 'float32' },
 };
@@ -166,13 +174,28 @@ describe('the calls', () => {
     expect(fetchMock.mock.calls[0][0]).toBe(`/processing/permalinks/${ID}`);
     expect(document.order).toEqual(ORDER);
     expect(document.view).toEqual(VIEW);
+    expect(document.converted).toBe(false);
+  });
+
+  it('reads a link made in version 1 as version 2 and says so', async () => {
+    fetchMock.mockResolvedValue(json({ order: ORDER_V1, view: VIEW, expires_at: FUTURE }));
+    const document = await fetchPermalink(ID);
+    expect(document.converted).toBe(true);
+    expect(document.order).toEqual({
+      ...ORDER,
+      steps: [{ op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'band_math' } }],
+      output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['band_math'] },
+    });
+    expect(document.order.inputs[0]).not.toHaveProperty('assets');
   });
 
   it('does not ask for what cannot be an identifier, and takes no order that is none', async () => {
     await expect(fetchPermalink('../x')).rejects.toMatchObject({ status: 404, message: GONE_TEXT });
     expect(fetchMock).not.toHaveBeenCalled();
-    fetchMock.mockResolvedValue(json({ order: { recipe_version: 2 }, view: VIEW, expires_at: FUTURE }));
-    await expect(fetchPermalink(ID)).rejects.toThrow(/cannot read/u);
+    for (const order of [{ recipe_version: 2 }, { ...ORDER, recipe_version: 3 }, { ...ORDER, output: { kind: 'raster', format: 'cog', dtype: 'float32' } }]) {
+      fetchMock.mockResolvedValue(json({ order, view: VIEW, expires_at: FUTURE }));
+      await expect(fetchPermalink(ID)).rejects.toThrow(/cannot read/u);
+    }
     fetchMock.mockResolvedValue(json({ order: ORDER, view: 'x', expires_at: FUTURE }));
     await expect(fetchPermalink(ID)).rejects.toThrow(/cannot read/u);
   });

@@ -1,7 +1,7 @@
 {
   "inputs": {
     "recipe": {
-      "recipe_version": 1,
+      "recipe_version": 2,
       "inputs": [
         {
           "name": "input",
@@ -11,9 +11,6 @@
               "ITEM_A",
               "ITEM_B"
             ]
-          ],
-          "assets": [
-            "visual"
           ]
         }
       ],
@@ -21,7 +18,12 @@
       "output": {
         "kind": "raster",
         "format": "cog",
-        "dtype": "uint8"
+        "dtype": "uint8",
+        "bands": [
+          "visual_1",
+          "visual_2",
+          "visual_3"
+        ]
       }
     }
   }

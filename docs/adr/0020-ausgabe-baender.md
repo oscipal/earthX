@@ -1153,3 +1153,70 @@ PYTHONPATH=backend python scripts/nm4-43-bands/warp_bands.py --counts 1,2,3,4,18
 
 Erwartung: 1 bis 3 Bänder „differs in 0“, ab 4 Bändern „differs in 4136158 of
 4303544 pixels“.
+
+---
+
+## 18. Nachtrag NM4-43e: Panel und Auftrag (2026-10-30; zu §6, §9, §11, §12, §14, §15a)
+
+Umgesetzt ist PR 1 von NM4-43e (Auftrag und Panel); die Vorschau je Band und der Ergebnis-Layer (PR 2) folgen in einer eigenen Session. Der Text von §6 bis §14
+bleibt maßgeblich; dieser Nachtrag nennt, was daraus im Panel geworden ist, und die Auslegungen, die der Plan offen ließ.
+
+- **Rezeptversion 2 im Panel.** Das Panel schickt `recipe_version` 2: `output.bands`, `band_math` Version 2 mit `name`, `mask` Version 2, `normalize` Version 2 mit
+  `bands`, keine Asset-Liste für ein Raster. Die Mosaik-Aufträge des Download-Dialogs (`buildMosaicOrder`) nennen ihre Bänder, der Export (`crop`) behält `assets`
+  und trägt Version 2. `processingOrder.ts` leitet nichts mehr aus einer Bandauswahl ab; die Grenze von 16 Bändern und ihre Texte sind aus dem Panel entfernt.
+- **Auflistung.** Die Prozessbeschreibung listet `band_math`, `mask` und `normalize` in Version 2 (`Operator.listed`); Version 1 bleibt angenommen, nicht gelistet.
+- **Bands (oben)** sind Information und Namenshilfe: Ein Klick fügt den Namen in das Ausdrucksfeld mit Fokus ein, sonst tut er nichts. Hilfs-Assets erscheinen nicht.
+- **Schritte.** Titel „<n>. <Name>“; bei `band_math` ist der Name das Feld „Name“ (Vorgabe `Band_Math_<n>`, bei Belegung die nächste freie Zahl), bei den übrigen
+  Schritten „Mask_1“, „Normalize_3“. Die Namensregeln aus §6 prüft das Panel selbst (`processingBands.ts: nameProblem`); ein Verstoß zeigt den Rahmen in der
+  Fehlerfarbe und den Grund im Tooltip des Feldes, ohne Zeile darunter. Chips am Schritt: die Ergebnisse früherer Schritte.
+- **Ausgabe („Select Bands that are processed“)** am Ende des Panels, wie §9 und §14: Ergebnisse von `band_math` sind angehakt (auch ein neues nach Eingriffen der Person),
+  ein einziges wählbares Band einmal je Öffnen, sonst nichts. „Start job“ ist bei leerer Ausgabe gesperrt (Tooltip „Pick at least one band for the output.“).
+- **Auslegungen (Vorschlag, gelten bis Otto widerspricht).**
+  1. **Reihenfolge von `output.bands`:** erst die Ergebnisse in Schrittfolge, dann die Bänder des Datensatzes in der Reihenfolge des Items, danach Unbekanntes (ein geladenes
+     Rezept kann ein Band nennen, das die Auswahl nicht hat; der Server sagt es). Nicht die Klickfolge, damit eine Wahl genau einen Auftrag und einen Hash ergibt (K4).
+  2. **„All“** nimmt alle Ergebnisse und alle wählbaren Bänder (ohne Maskenschicht und Hilfs-Assets), **„None“** leert die ganze Ausgabe, auch die Ergebnisse.
+  3. **Datentyp (§8):** `band_math` und `normalize` erzwingen `float32` nur, wenn ihr Ergebnis in der Ausgabe steht; ein Schritt, dessen Ergebnis die Person abgewählt hat,
+     verhindert keinen ganzzahligen Typ.
+  4. **Umbenennen:** Ein Name, der die Regeln verletzt (leer, doppelt, …), wird nur angezeigt; die Verweise bleiben beim letzten gültigen Namen und ziehen erst mit, wenn
+     der Name wieder gültig ist. Ein Schritt, der ein Ergebnis eines späteren Schritts liest, bekommt den Fehler „<Name> is added by a later step.“.
+  5. **Namen, die zwei Assets tragen** (zwei Zarr-Gruppen mit derselben Variable, H2) werden in der Ausgabe nicht angeboten; der Auftrag kann sie nicht nennen.
+  6. **Speichergrenze:** Eine Antwort `413` der Schätzung mit „of memory“ sperrt „Start job“; der Grund steht nur im Tooltip des Knopfes (§14: kein Satz im Panel), nicht
+     als Zeile. Ein anderes `413` behält den Hinweis zur ganzen Szene.
+  7. **`normalize.bands`** wählt das Panel als Chips (Vorschlag: das letzte Ergebnis), bis NM4-11b das Formular der Methoden bringt.
+- **Umdeutung von Version 1 im Browser** (`recipeUpgrade.ts`, dieselbe Regel und dieselben Fälle wie `processing/upgrade.py`): hochgeladene `recipe.json` (Meldung „Recipe loaded.“
+  mit dem Tooltip „Converted from recipe version 1.“), Permalink (Hinweis „Converted from recipe version 1.“ nur, wenn sonst nichts zu sagen ist; eine Meldung dieser Art
+  hat keinen Tooltip) und Kopien der Aufträge in der Ablage des Browsers (`jobShelf.orderCopy`). Der Name eines Assets mit mehreren Bändern (`visual` → `visual_1` …) ist
+  im Browser nur bei „Load recipe…“ bekannt, wo die Auswahl die Bänder kennt; ein Zarr-Schlüssel in einem Permalink der Version 1 nennt die Variable nicht (wie S1 und H2 in
+  `adr/0014` §15, NM4-43c).
+- **Hinweis „Resampled to a common grid“ (Backlog 51).** Das Backend unterscheidet beide Fälle seit NM4-43c (`BandMeta.resampled`, `test_stock_run.py`); das Frontend liest
+  `earthx:resampled` unverändert und zeigt den Hinweis nur im Tooltip. Eine gröbere Maskenschicht allein markiert nichts, ein umgerechnetes Wertband schon.
+- **Übergangsfrist (Otto, 2026-10-30, fest).** `intake.VERSION_1_ACCEPTED_UNTIL` bleibt ungesetzt, `api` nimmt Version 1 weiter an. Gesetzt wird die Konstante beim ersten
+  öffentlichen Deploy (M6) auf 30 Tage danach (§11); vorher gibt es keine Frist, die ablaufen könnte.
+- **Annahme der Auslegungen (Otto, 2026-10-30).** Die Auslegungen 1 bis 7 oben sind angenommen.
+
+### 18.1 Änderungen nach dem Review zu #250 (Otto, 2026-10-30)
+
+- **Vorgabename `result`** (ersetzt `Band_Math_<n>` aus §6 und §14): `result`, ist der Name belegt (Band des Datensatzes oder anderes Ergebnis, ohne Rücksicht auf Groß- und
+  Kleinschreibung), dann `result_1`, `result_2`, … Eindeutig bleibt es über „der erste freie Name dieser Folge“ unabhängig von der Stelle des Schritts, so dass Verschieben und Entfernen
+  keinen Namen kollidieren lässt. Die Umdeutung von Version 1 (§11) nennt weiter `band_math` und `band_math_<n>`.
+- **Name ändern:** Ein Name wird erst beim Verlassen des Feldes (oder mit Enter) übernommen, und nur wenn er keine Regel aus §6 verletzt. Ein Name gegen die Regeln wird **nie** übernommen:
+  Das Feld bleibt mit dem Getippten stehen, der Rahmen wird rot und ein kleiner Hinweis steht sofort darunter (`'red' is already a band name`). Solange das so ist, sind „Add step“,
+  „Review“ und „Start job“ gesperrt (Grund im Tooltip, `OrderView.nameBlock`). Das ersetzt die Auslegung 4 oben (Verweise bleiben beim letzten gültigen Namen).
+- **Erklärtexte** in den Schritten stehen im Tooltip eines ⓘ neben der Beschriftung (Tooltip-Komponente aus NM4-52), nicht im Kasten. Bei „Resolution“ steht die Einheit klein darunter (`in m`, `in °`); die Zellgröße steht im Tooltip.
+- **Vorschau und Felder** zeigen immer dieselbe Skala: Wird ein Bild gezeichnet, während seine Messung noch unterwegs ist (länger als 5 s), tragen die Felder jetzt die Startskala des Bildes
+  und nicht mehr die Werte der Formel davor.
+- **Zweite Runde des Reviews (Otto, 2026-10-30).** (1) Die Ergebnis-Chips an einem Schritt fügen wie die Band-Chips oben nur ein, wenn der Cursor in einem Ausdrucksfeld steht, sonst nichts
+  (kein Fokuswechsel). (2) Die Einheit der Auflösung steht klein **neben** der Beschriftung „Resolution“ (`in m`, `in °`), nicht darunter. (3) Ein EPSG-Code im falschen Format meldet
+  `Needs to be in the format "EPSG:3035"` statt des Musters. (4) Ein Ausdruck darf nur Bänder des Datensatzes und Ergebnisse früherer Schritte nennen: Alles andere meldet sofort am Feld
+  `'re' is not a band name` und sperrt wie ein ungültiger Name „Add step“, „Review“ und „Start job“ (Grund im Tooltip); ein Ergebnis eines späteren Schritts meldet `'x' is added by a later step`.
+  Wo der Datensatz keine Bänder nennt, wird nichts verglichen.
+- **Letzte Runde des Reviews (Otto, 2026-10-30).** (1) Hat der Datensatz genau ein wählbares Band, ist es nur so lange angehakt, wie die Person die Wahl nicht angefasst hat: Das erste Ergebnis
+  eines `band_math`-Schritts nimmt seinen Platz ein, die Ausgabe sind dann die Ergebnisse. Das ersetzt den Satz in §9 Punkt 2, nach dem beide angehakt sind. Hat die Person das Band selbst
+  angehakt, bleibt es. Ein Entwurf, der schon Ergebnisse mitbringt (Rezept, Permalink), bekommt das Band beim Öffnen nicht. (2) Im Tooltip der Auflösungsmethoden stehen die Methoden untereinander,
+  mit einer Leerzeile dazwischen (Zeilenumbrüche im Tooltip bleiben erhalten). (3) Das ⓘ ist klein geschrieben (die Beschriftungen sind in Großbuchstaben, das große ⓘ ist ein anderes Zeichen).
+  (4) „Align“ ist beschrieben: Das Raster liegt auf ganzen Vielfachen der Auflösung, Ergebnisse verschiedener Flächen oder Tage passen dann Pixel auf Pixel, und das Ergebnis kann bis zu ein
+  Pixel an jeder Seite weiter reichen (Text in der Prozessbeschreibung, `reproject`).
+- **Ausdruck muss ein Ausdruck sein (Otto, 2026-10-30).** Ein Text, der kein Ausdruck ist (etwa `red red` oder `nir -`), meldet sofort am Feld `Enter a valid expression` und sperrt wie ein
+  ungültiger Name „Add step“, „Review“ und „Start job“. Das Panel prüft nur die Form (Zahlen, Bänder, `+ - * / **`, Vergleiche, `& | ~`, Aufrufe wie `where(c, a, b)`, Klammern; `processingBands.ts:
+  isExpression`); welche Namen Bänder sind, prüft `readProblem` danach, die Typen der Server. Ein leerer Ausdruck bleibt beim „Required.“ des Formulars.
+

@@ -421,13 +421,13 @@ class TestTheOperator:
 
     def test_the_process_description_offers_it_once_it_is_listed(self) -> None:
         steps = order_schema(REGISTRY)["$defs"]
-        assert "step_normalize_v1" in steps and "step_normalize_v3" not in steps
+        assert "step_normalize_v2" in steps and "step_normalize_v3" not in steps
         listed = OperatorRegistry(
             replace(operator, listed=True) if operator.op == "normalize" and operator.op_version == 3 else operator
             for operator in REGISTRY.values()
         )
         steps = order_schema(listed)["$defs"]
-        assert "step_normalize_v3" in steps and "step_normalize_v1" not in steps
+        assert "step_normalize_v3" in steps and "step_normalize_v2" not in steps
         assert {"method", "bands", "measured"} <= set(steps["step_normalize_v3"]["properties"]["params"]["properties"])
         assert {"step_normalize_v3__Measured", "step_normalize_v3__BandValues"} <= set(steps)
 

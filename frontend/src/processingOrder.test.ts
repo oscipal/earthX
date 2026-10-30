@@ -6,27 +6,33 @@ import zarr from './fixtures/processes/synthetic-zarr.json';
 import { bboxToPolygon, bufferPointToPolygon } from './geoUtils';
 import { placeAoi } from './placeSearch';
 import type { ProcessDescription } from './processing';
+import { assetsCarrying, bandNamesOf, ownersOf } from './processingBands';
 import {
   aoiProvenanceFor,
   aoiProvenanceOf,
+  auxiliaryAssetsOf,
   bandSources,
   buildExportOrder,
   buildMosaicOrder,
   buildOrder,
   candidateItems,
+  dataBandsOf,
+  EMPTY_OUTPUT,
   formatBytes,
   formatDuration,
+  lonelyBand,
   maskAssetOf,
   maskLayerOf,
   maskStepValues,
   namesInExpression,
-  orderAssets,
   passesOf,
   processBlockReason,
   processInfo,
   registryUnit,
+  selectableAssets,
   shownUnit,
   stepOfRefusal,
+  type BandSource,
   type DraftStep,
 } from './processingOrder';
 import type { Collection, StacItem, TimeStepGroup } from './types';
@@ -44,13 +50,30 @@ const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
 describe('processInfo from the fixtures (K3)', () => {
   it('lists the operators with tiers and kind, and the limits of the order', () => {
     expect(S2.operators.map((o) => [o.op, o.opVersion, o.tiers, o.kind])).toEqual([
-      ['band_math', 1, ['T1', 'T2'], 'pixel'],
-      ['mask', 1, ['T1', 'T2'], 'pixel'],
-      ['normalize', 1, ['T1', 'T2'], 'pixel'],
+      ['band_math', 2, ['T1', 'T2'], 'pixel'],
+      ['mask', 2, ['T1', 'T2'], 'pixel'],
+      ['normalize', 2, ['T1', 'T2'], 'pixel'],
       ['reproject', 4, ['T2'], 'grid'],
     ]);
-    expect(S2).toMatchObject({ maxSteps: 16, maxAssets: 16, variableSeparator: null });
+    expect(S2).toMatchObject({ maxSteps: 16, variableSeparator: null });
     expect(S2.dtypes).toContain('float32');
+  });
+
+  it('knows no limit of bands: the order takes as many as the data has (adr/0020 §7)', () => {
+    expect(S2).not.toHaveProperty('maxAssets');
+  });
+
+  it('reads the parameters band_math and normalize take in version 2: the name, and the bands as a list of names', () => {
+    const form = (info: typeof S2, op: string) => {
+      const operator = info.operators.find((o) => o.op === op)!;
+      return operator.form.supported ? operator.form.fields : [];
+    };
+    expect(form(S2, 'band_math').map((f) => [f.name, f.kind, f.required])).toEqual([
+      ['expression', 'string', true],
+      ['name', 'string', true],
+    ]);
+    expect(form(S2, 'normalize').find((f) => f.name === 'bands')).toMatchObject({ kind: 'names', required: true, minItems: 1 });
+    expect(form(S2, 'mask').map((f) => f.name).sort()).toEqual(['classes', 'source']);
   });
 
   it('reads the Zarr variable separator only where the dataset has one (F9)', () => {
@@ -254,7 +277,7 @@ describe('registryUnit', () => {
 
 describe('the assets of the order', () => {
   const plain = { units: [null], unit: null, dataType: null, scaled: false, nodata: null };
-  const sources = [
+  const sources: BandSource[] = [
     { asset: 'red', names: ['red'], ...plain },
     { asset: 'nir', names: ['nir'], ...plain },
     { asset: 'scl', names: ['scl'], ...plain },
@@ -267,22 +290,96 @@ describe('the assets of the order', () => {
     expect(namesInExpression('sqrt (red)').has('sqrt')).toBe(false);
   });
 
-  it('takes what is picked and what an expression names, in the item order', () => {
-    expect(orderAssets(sources, ['scl'], ['(nir - red)'])).toEqual(['red', 'nir', 'scl']);
+  it('reads the assets that carry the names an expression and the output use, in the item order', () => {
+    const names = [...namesInExpression('(nir - red)'), 'scl'];
+    expect(assetsCarrying(sources, names)).toEqual(['red', 'nir', 'scl']);
   });
 
   it('leaves a name two assets carry to the user', () => {
-    expect(orderAssets(sources, [], ['b04 * 2'])).toEqual([]);
+    expect(ownersOf(sources).has('b04')).toBe(false);
+    expect(assetsCarrying(sources, ['b04'])).toEqual([]);
   });
 
-  it('adds what a step needs, once, in the item order, without picking it (M4-18c)', () => {
-    expect(orderAssets(sources, ['red'], [], ['scl'])).toEqual(['red', 'scl']);
-    expect(orderAssets(sources, ['scl', 'red'], [], ['scl'])).toEqual(['red', 'scl']);
-    expect(orderAssets(sources, [], ['nir / red'], ['scl'])).toEqual(['red', 'nir', 'scl']);
+  it('takes an asset once, however many of its names are asked for', () => {
+    const visual: BandSource = { asset: 'visual', names: ['visual_1', 'visual_2', 'visual_3'], ...plain, units: [null, null, null] };
+    expect(assetsCarrying([...sources, visual], ['visual_3', 'visual_1', 'red', 'red'])).toEqual(['red', 'visual']);
   });
 
-  it('does not invent an asset the scene lacks', () => {
-    expect(orderAssets(sources, ['red'], [], ['SCL_20m:scl'])).toEqual(['red']);
+  it('does not invent an asset the scene lacks: a result, a typo, a band of another dataset', () => {
+    expect(assetsCarrying(sources, ['red', 'NDVI', 'SCL_20m:scl', 'blue'])).toEqual(['red']);
+  });
+
+  it('names an asset the item does not describe like its key', () => {
+    expect(bandNamesOf({ asset: 'data', names: [], ...plain, units: [] })).toEqual(['data']);
+    expect(assetsCarrying([{ asset: 'data', names: [], ...plain, units: [] }], ['data'])).toEqual(['data']);
+  });
+});
+
+describe('the bands of the data (adr/0020 §14)', () => {
+  const plain = { dataType: null, scaled: false, nodata: null };
+  const one = (asset: string, unit: string | null = null): BandSource => ({ asset, names: [asset], units: [unit], unit, ...plain });
+  const sources: BandSource[] = [
+    one('red', '1'),
+    one('nir'),
+    one('scl'),
+    one('visual'),
+    { asset: 'multi', names: ['multi_1', 'multi_2'], units: ['K', 'percent'], unit: null, ...plain },
+    { asset: 'dem', names: [], units: [], unit: 'm', ...plain },
+  ];
+
+  it('lists every band in the order of the item, with its asset and the unit to show', () => {
+    expect(dataBandsOf(sources, [], null)).toEqual([
+      { name: 'red', asset: 'red', unit: null, auxiliary: false, layer: false },
+      { name: 'nir', asset: 'nir', unit: null, auxiliary: false, layer: false },
+      { name: 'scl', asset: 'scl', unit: null, auxiliary: false, layer: false },
+      { name: 'visual', asset: 'visual', unit: null, auxiliary: false, layer: false },
+      { name: 'multi_1', asset: 'multi', unit: 'K', auxiliary: false, layer: false },
+      { name: 'multi_2', asset: 'multi', unit: 'percent', auxiliary: false, layer: false },
+      { name: 'dem', asset: 'dem', unit: 'm', auxiliary: false, layer: false },
+    ]);
+  });
+
+  it('marks what the registry says is no band, and the layer of the mask', () => {
+    const bands = dataBandsOf(sources, ['visual'], 'scl');
+    expect(bands.filter((b) => b.auxiliary).map((b) => b.name)).toEqual(['visual']);
+    expect(bands.filter((b) => b.layer).map((b) => b.name)).toEqual(['scl']);
+    expect(bands).toHaveLength(7);
+  });
+
+  it('leaves out a name two assets carry: an order cannot name it', () => {
+    const twins = [one('red'), { asset: 'A:b04', names: ['b04'], units: [null], unit: null, ...plain }, { asset: 'B:b04', names: ['b04'], units: [null], unit: null, ...plain }];
+    expect(dataBandsOf(twins, [], null).map((b) => b.name)).toEqual(['red']);
+  });
+
+  it('is empty for an item with no bands', () => {
+    expect(dataBandsOf([], [], null)).toEqual([]);
+  });
+
+  it('selects the assets that are bands: not the auxiliary ones, not the layer of the mask', () => {
+    expect(selectableAssets(sources, ['visual'], 'scl')).toEqual(['red', 'nir', 'multi', 'dem']);
+    expect(selectableAssets(sources, [], null)).toHaveLength(6);
+    expect(selectableAssets([], [], null)).toEqual([]);
+  });
+
+  it('knows the auxiliary assets only from the registry, and only texts', () => {
+    const collection = (field: unknown) => ({ id: 'c', 'earthx:auxiliary_assets': field }) as unknown as Collection;
+    expect(auxiliaryAssetsOf(collection(['visual', 'preview']))).toEqual(['visual', 'preview']);
+    expect(auxiliaryAssetsOf(collection(['visual', 3, null]))).toEqual(['visual']);
+    for (const field of [undefined, null, 'visual', { visual: true }]) expect(auxiliaryAssetsOf(collection(field))).toEqual([]);
+    expect(auxiliaryAssetsOf(undefined)).toEqual([]);
+  });
+
+  it('finds the one band of a dataset that has one, by its name', () => {
+    expect(lonelyBand(['dem'], [one('dem')])).toBe('dem');
+    expect(lonelyBand(['dem'], [{ asset: 'dem', names: [], units: [], unit: 'm', ...plain }])).toBe('dem');
+    expect(lonelyBand(['z:b04'], [{ asset: 'z:b04', names: ['b04'], units: [null], unit: null, ...plain }])).toBe('b04');
+  });
+
+  it('finds none where there are several bands, one asset with several, or nothing', () => {
+    expect(lonelyBand(['red', 'nir'], sources)).toBeNull();
+    expect(lonelyBand(['multi'], sources)).toBeNull();
+    expect(lonelyBand([], sources)).toBeNull();
+    expect(lonelyBand(['gone'], sources)).toBeNull();
   });
 });
 
@@ -342,7 +439,7 @@ describe('the layer a mask reads (M4-18c)', () => {
     } as unknown as StacItem;
     const sources = bandSources(zarrItem, 'zarr', ':');
     expect(sources.map((s) => s.asset)).toEqual(['SCL_20m:scl', 'reflectance:b04']);
-    expect(orderAssets(sources, ['reflectance:b04'], [], [layer.asset])).toEqual(['SCL_20m:scl', 'reflectance:b04']);
+    expect(assetsCarrying(sources, ['b04', layer.band])).toEqual(['SCL_20m:scl', 'reflectance:b04']);
   });
 
   it('needs its asset only while a mask step is in the order', () => {
@@ -418,27 +515,50 @@ describe('passesOf (M4-12b)', () => {
 });
 
 describe('buildOrder', () => {
-  const step = (op: string, opVersion: number, values: DraftStep['values']): DraftStep => ({ key: 1, op, opVersion, values });
+  const step = (op: string, opVersion: number, values: DraftStep['values'], key = 1): DraftStep => ({ key, op, opVersion, values });
+  const ndvi = (name = 'NDVI', key = 1, expression = '(nir - red) / (nir + red)') => step('band_math', 2, { expression, name }, key);
   const aoi = bboxToPolygon([10.4, 50.4, 10.6, 50.6]);
+  const DATA = ['blue', 'green', 'red', 'nir', 'scl'];
   const base = {
     datasetId: 'sentinel-2-c1-l2a',
     itemIds: ['S2B_X'],
     area: 'aoi' as const,
     aoi,
-    steps: [step('band_math', 1, { expression: '(nir - red) / (nir + red)' })],
-    assets: ['red', 'nir'],
+    steps: [ndvi()],
+    bands: ['NDVI'],
+    data: DATA,
     dtype: 'float32',
     info: S2,
   };
+  const errorsOf = (built: ReturnType<typeof buildOrder>) => built.stepProblems.map((p) => p.errors);
 
-  it('builds the envelope with one input named "input", one item and the AOI', () => {
+  it('builds the envelope of version 2: one input named "input" with one item and no assets, the AOI, the bands of the output', () => {
     expect(buildOrder(base).order).toEqual({
-      recipe_version: 1,
-      inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_X']], assets: ['red', 'nir'] }],
+      recipe_version: 2,
+      inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_X']] }],
       aoi,
-      steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
-      output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+      steps: [{ op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'NDVI' } }],
+      output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI'] },
     });
+  });
+
+  it('writes the bands of the output in the order given, results and bands of the data, each as it was named', () => {
+    const order = buildOrder({ ...base, bands: ['NDVI', 'blue', 'red'] }).order;
+    expect(order?.output).toEqual({ kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI', 'blue', 'red'] });
+  });
+
+  it('does not hold on to the list of bands it was given', () => {
+    const bands = ['NDVI'];
+    const order = buildOrder({ ...base, bands }).order!;
+    bands.push('red');
+    expect(order.output).toMatchObject({ bands: ['NDVI'] });
+  });
+
+  it('takes more than 16 bands: an order has no limit of bands (adr/0020 §7)', () => {
+    const many = Array.from({ length: 40 }, (_, i) => `b${i}`);
+    const built = buildOrder({ ...base, bands: many, data: [...DATA, ...many] });
+    expect(built.problems).toEqual([]);
+    expect(built.order?.output).toMatchObject({ bands: many });
   });
 
   it('sends no AOI for "Whole scene", and needs none (M4-13c §3.2)', () => {
@@ -465,8 +585,22 @@ describe('buildOrder', () => {
     const order = buildOrder({
       ...base,
       steps: [step('reproject', 4, { crs: 'EPSG:3035', resolution: '30', resampling: 'bilinear', align: false })],
+      bands: ['red'],
     }).order;
     expect(order?.steps[0].params).toEqual({ crs: 'EPSG:3035', resolution: 30, resampling: 'bilinear', align: false });
+  });
+
+  it('writes the bands of a normalize step as a list of names, each once, in the order typed', () => {
+    const normalize = step('normalize', 2, { bands: 'red, nir;red', in_min: '0', in_max: '1', out_min: '0', out_max: '255', clip: false });
+    const order = buildOrder({ ...base, steps: [normalize], bands: ['red', 'nir'] }).order;
+    expect(order?.steps[0].params).toMatchObject({ bands: ['red', 'nir'], in_min: 0, out_max: 255, clip: false });
+  });
+
+  it('writes a mask step with its layer band and its classes ascending', () => {
+    const mask = step('mask', 2, { source: 'scl', classes: '10, 3' });
+    const order = buildOrder({ ...base, steps: [mask, ndvi('NDVI', 2)] }).order;
+    expect(order?.steps[0]).toEqual({ op: 'mask', op_version: 2, params: { source: 'scl', classes: [3, 10] } });
+    expect(order?.output).toMatchObject({ bands: ['NDVI'] });
   });
 
   it.each([
@@ -474,8 +608,7 @@ describe('buildOrder', () => {
     ['a line as AOI', { aoi: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } }, 'Draw an area as AOI.'],
     ['no step', { steps: [] }, 'Add a step.'],
     ['17 steps', { steps: Array.from({ length: 17 }, () => base.steps[0]) }, 'At most 16 steps.'],
-    ['no band', { assets: [] }, 'Pick at least one band.'],
-    ['17 bands', { assets: Array.from({ length: 17 }, (_, i) => `b${i}`) }, 'At most 16 bands.'],
+    ['no band in the output', { bands: [] }, EMPTY_OUTPUT],
     ['no data type', { dtype: '' }, 'Pick an output data type.'],
   ])('blocks %s', (_, change, problem) => {
     const built = buildOrder({ ...base, ...change } as Parameters<typeof buildOrder>[0]);
@@ -483,8 +616,12 @@ describe('buildOrder', () => {
     expect(built.problems).toContain(problem);
   });
 
+  it('says why the output is empty, in the words of the Start button', () => {
+    expect(EMPTY_OUTPUT).toBe('Pick at least one band for the output.');
+  });
+
   it('blocks a step whose form does not fit and says where', () => {
-    const built = buildOrder({ ...base, steps: [step('band_math', 1, { expression: '' })] });
+    const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1, '')] });
     expect(built.order).toBeNull();
     expect(built.stepProblems[0].errors).toEqual({ expression: 'Required.' });
   });
@@ -494,22 +631,145 @@ describe('buildOrder', () => {
     expect(built.order).toBeNull();
     expect(built.stepProblems[0].unsupported).toMatch(/not available/);
   });
+
+  it('blocks an operator version the dataset no longer lists', () => {
+    const built = buildOrder({ ...base, steps: [step('band_math', 1, { expression: 'nir' })] });
+    expect(built.order).toBeNull();
+    expect(built.stepProblems[0].unsupported).toMatch(/not available/);
+  });
+
+  describe('the name of the band a band_math step adds (adr/0020 §6)', () => {
+    it.each([
+      ['no name', '', 'Enter a name'],
+      ['a digit first', '1NDVI', /^Use letters, digits and _, a letter first/u],
+      ['a space', 'my ndvi', /^Use letters, digits and _, a letter first/u],
+      ['a dash', 'ndvi-1', /^Use letters, digits and _, a letter first/u],
+      ['33 characters', 'N'.repeat(33), /at most 32 characters/u],
+      ['a Python keyword', 'in', "'in' cannot be used in an expression"],
+      ['the name of a function', 'sqrt', "'sqrt' is the name of a function"],
+      ['the name of a band of the data', 'red', "'red' is already a band name"],
+      ['the name of a band of the data in other case', 'RED', "'RED' is already a band name"],
+    ])('refuses %s', (_, name, problem) => {
+      const built = buildOrder({ ...base, steps: [ndvi(name)], bands: ['NDVI'] });
+      expect(built.order).toBeNull();
+      expect(built.stepProblems[0].errors.name).toMatch(problem);
+    });
+
+    it('takes 32 characters and a name that holds a band of the data as a part', () => {
+      expect(buildOrder({ ...base, steps: [ndvi('N'.repeat(32))], bands: ['NDVI'] }).stepProblems[0].errors).toEqual({});
+      expect(buildOrder({ ...base, steps: [ndvi('red_edge')], bands: ['red_edge'] }).stepProblems[0].errors).toEqual({});
+    });
+
+    it('refuses a name two steps share, in both of them, also in other case', () => {
+      const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1), ndvi('ndvi', 2, 'nir - red')] });
+      expect(built.order).toBeNull();
+      expect(errorsOf(built)).toEqual([
+        { name: "'NDVI' is already used by another step" },
+        { name: "'ndvi' is already used by another step" },
+      ]);
+    });
+
+    it('does not count a step against itself, and not a step of another operator', () => {
+      const built = buildOrder({ ...base, steps: [step('mask', 2, { source: 'scl', classes: '3' }, 1), ndvi('NDVI', 2)] });
+      expect(errorsOf(built)).toEqual([{}, {}]);
+    });
+  });
+
+  describe('the results a step reads (adr/0020 §4)', () => {
+    it('lets a later step read the result of an earlier one', () => {
+      const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1), ndvi('Ratio', 2, 'NDVI * 2')], bands: ['NDVI', 'Ratio'] });
+      expect(built.problems).toEqual([]);
+      expect(errorsOf(built)).toEqual([{}, {}]);
+      expect(built.order?.steps.map((s) => s.params.name)).toEqual(['NDVI', 'Ratio']);
+    });
+
+    it('refuses an expression that reads the result of a later step, naming it', () => {
+      const built = buildOrder({ ...base, steps: [ndvi('First', 1, 'Second * 2'), ndvi('Second', 2)], bands: ['First', 'Second'] });
+      expect(built.order).toBeNull();
+      expect(errorsOf(built)).toEqual([{ expression: "'Second' is added by a later step" }, {}]);
+    });
+
+    it('refuses an expression that reads the band its own step adds', () => {
+      const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1, 'NDVI + 1')] });
+      expect(errorsOf(built)).toEqual([{ expression: "'NDVI' is the band this step adds" }]);
+    });
+
+    it('does not take a function call or a longer name for a read of the result', () => {
+      const longer = buildOrder({
+        ...base,
+        data: [...DATA, 'NDVI_22'],
+        steps: [ndvi('First', 1, 'where(nir > 0, NDVI_22, red)'), ndvi('NDVI_2', 2)],
+        bands: ['First', 'NDVI_2'],
+      });
+      expect(longer.stepProblems[0].errors).toEqual({});
+      const call = buildOrder({ ...base, steps: [ndvi('First', 1, 'Ratio(red)'), ndvi('Ratio', 2)] });
+      expect(call.stepProblems[0].errors).toEqual({});
+    });
+
+    it('refuses the bands of a normalize step that name a result added later', () => {
+      const normalize = step('normalize', 2, { bands: 'Later', in_min: '0', in_max: '1', out_min: '0', out_max: '1', clip: false }, 1);
+      const built = buildOrder({ ...base, steps: [normalize, ndvi('Later', 2)], bands: ['Later'] });
+      expect(built.order).toBeNull();
+      expect(errorsOf(built)[0]).toEqual({ bands: "'Later' is added by a later step" });
+    });
+
+    it('refuses an expression that names something that is no band, with the name (review of #250)', () => {
+      const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1, 'nir - re')] });
+      expect(built.order).toBeNull();
+      expect(errorsOf(built)).toEqual([{ expression: "'re' is not a band name" }]);
+    });
+
+    it('refuses text that is no expression, before it looks at names (review of #250)', () => {
+      for (const text of ['red red', 'nir -', '(red', 'red nir ZZZ']) {
+        const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1, text)] });
+        expect(built.order, text).toBeNull();
+        expect(errorsOf(built), text).toEqual([{ expression: 'Enter a valid expression' }]);
+      }
+    });
+
+    it('leaves an empty expression to the form, which asks for it', () => {
+      expect(errorsOf(buildOrder({ ...base, steps: [ndvi('NDVI', 1, '')] }))).toEqual([{ expression: 'Required.' }]);
+    });
+
+    it('takes the bands of the data and the results of the steps before, and numbers and functions, as bands', () => {
+      const steps = [ndvi('NDVI', 1), ndvi('Ratio', 2, 'where(NDVI > 0.5e1, sqrt(nir), minimum(red, 2)) + NDVI')];
+      expect(errorsOf(buildOrder({ ...base, steps, bands: ['NDVI', 'Ratio'] }))).toEqual([{}, {}]);
+    });
+
+    it('says a result of a later step is added later, not that it is no band', () => {
+      const built = buildOrder({ ...base, steps: [ndvi('First', 1, 'Second + re'), ndvi('Second', 2)] });
+      expect(errorsOf(built)[0]).toEqual({ expression: "'Second' is added by a later step" });
+    });
+
+    it('has nothing to compare with where the data list no bands', () => {
+      expect(errorsOf(buildOrder({ ...base, data: [], steps: [ndvi('NDVI', 1, 'whatever + 1')] }))).toEqual([{}]);
+    });
+
+    it('lets a normalize step name the result of an earlier step, and asks for at least one band', () => {
+      const values = { in_min: '0', in_max: '1', out_min: '0', out_max: '1', clip: false };
+      const ok = buildOrder({ ...base, steps: [ndvi('NDVI', 1), step('normalize', 2, { ...values, bands: 'NDVI' }, 2)] });
+      expect(ok.problems).toEqual([]);
+      expect(errorsOf(ok)).toEqual([{}, {}]);
+      const none = buildOrder({ ...base, steps: [ndvi('NDVI', 1), step('normalize', 2, { ...values, bands: '' }, 2)] });
+      expect(errorsOf(none)[1]).toEqual({ bands: 'Pick at least one band.' });
+    });
+  });
 });
 
 describe('buildMosaicOrder (M4-12 §3.1)', () => {
-  it('names the whole scenes of one pass: one group, no AOI, no steps', () => {
+  it('names the whole scenes of one pass: one group, no AOI, no steps, no assets, the bands of the output', () => {
     expect(
-      buildMosaicOrder({ datasetId: 'sentinel-2-c1-l2a', itemIds: ['B', 'A'], assets: ['visual'], dtype: 'uint8' }),
+      buildMosaicOrder({ datasetId: 'sentinel-2-c1-l2a', itemIds: ['B', 'A'], bands: ['visual_1', 'visual_2', 'visual_3'], dtype: 'uint8' }),
     ).toEqual({
-      recipe_version: 1,
-      inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['A', 'B']], assets: ['visual'] }],
+      recipe_version: 2,
+      inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['A', 'B']] }],
       steps: [],
-      output: { kind: 'raster', format: 'cog', dtype: 'uint8' },
+      output: { kind: 'raster', format: 'cog', dtype: 'uint8', bands: ['visual_1', 'visual_2', 'visual_3'] },
     });
   });
 
   it('carries no aoi member at all', () => {
-    const order = buildMosaicOrder({ datasetId: 'd', itemIds: ['A'], assets: ['visual'], dtype: 'uint8' });
+    const order = buildMosaicOrder({ datasetId: 'd', itemIds: ['A'], bands: ['visual'], dtype: 'uint8' });
     expect('aoi' in order).toBe(false);
   });
 });
@@ -528,7 +788,7 @@ describe('buildExportOrder (M4-11 §3.1)', () => {
 
   it('is the crop as a job: the groups, assets and AOI of the request, no steps, factor 1', () => {
     expect(buildExportOrder({ datasetId: 'sentinel-2-c1-l2a', groups: [['B', 'A'], ['C']], assets: ['visual'], aoi })).toEqual({
-      recipe_version: 1,
+      recipe_version: 2,
       inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['B', 'A'], ['C']], assets: ['visual'] }],
       aoi,
       steps: [],
@@ -546,7 +806,7 @@ describe('buildExportOrder (M4-11 §3.1)', () => {
 describe('aoiProvenanceFor (M4-30)', () => {
   const place = placeAoi(PLACE);
   const withArea = buildExportOrder({ datasetId: 'd', groups: [['A']], assets: ['visual'], aoi: bboxToPolygon([10, 50, 11, 51]) });
-  const mosaic = buildMosaicOrder({ datasetId: 'd', itemIds: ['A', 'B'], assets: ['visual'], dtype: 'uint8' });
+  const mosaic = buildMosaicOrder({ datasetId: 'd', itemIds: ['A', 'B'], bands: ['visual'], dtype: 'uint8' });
 
   it('is that of the AOI for an order that carries an area', () => {
     expect(aoiProvenanceFor(withArea, place)).toEqual(aoiProvenanceOf(place));

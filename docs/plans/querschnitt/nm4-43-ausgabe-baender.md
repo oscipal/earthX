@@ -227,3 +227,32 @@ Fünf Aufgaben, alle **Stufe A** (Plan und Entscheidung stehen im ADR; ein Draft
 - Gegenprobe: Die neuen Tests scheitern gegen den Code vor der Änderung.
 - Prüfung im echten Browser (Chromium/Playwright der Sitzung) mit nachgestellten Antworten, nicht nur jsdom: hell und dunkel, schmales Fenster; im PR beschrieben.
 - Prüfanleitung für Otto (Browser und/oder PowerShell 5.1) im PR; die vier Pflicht-Checks der CI grün; Log-Zeile(n) mit PR-Nummer; `main` geholt.
+
+### 6.5a NM4-43e PR 2 — Vorschau „Show“ und Ergebnis-Layer je Band (neue Session, nach dem Merge von PR 1)
+
+**Stufe A**, nur Frontend. **Modell:** Sonnet, Effort hoch. **Start:** erst **nach dem Merge von PR 1** (Draft-PR [#250](https://github.com/oscipal/earthX/pull/250), Branch `claude/tender-heisenberg-u42uqc`) in `main`, als **neue Session mit eigenem Branch von `main`** (Otto, 30.10.2026). Höchstens zwei Frontend-Sessions gleichzeitig; nicht gleichzeitig mit NM4-20, NM4-45 oder NM4-14 (alle ändern den Bandbereich des Panels); NM4-45 (Band in der Ansicht) sollte davor fertig sein, dann übernimmt PR 2 dessen Dropdown „Band“ als Baustein.
+**Startsatz:** „Führe Aufgabe NM4-43e PR 2 aus `docs/plans/querschnitt/nm4-43-ausgabe-baender.md` §6.5a aus.“
+
+**Zuerst lesen:** `docs/ENTSCHEIDUNGEN_2026-09-18.md`, `docs/KLAERUNGEN.md`, `docs/adr/0020-ausgabe-baender.md` §10 (Vorschau und Kacheln), §14, §18 (Nachtrag NM4-43e), den Nachtrag NM4-43d in `docs/adr/0014-rezept-operator-registry.md` (§15), die Zeilen NM4-43d und NM4-43e im `docs/ENTSCHEIDUNGSLOG.md`.
+
+**Stand nach PR 1 (so ist `main`, wenn diese Aufgabe beginnt).**
+
+- Die Vorgabe eines neuen `band_math`-Schritts heißt `result` (dann `result_1`, `result_2`, …; Review zu #250), Namen werden beim Verlassen des Feldes übernommen, ein Name gegen die Regeln wird nie übernommen und sperrt Schritte, „Review“ und „Start job“ (`OrderView.nameBlock`).
+- Das Panel schickt Rezeptversion 2 und kennt den Bandvorrat: `OrderView` (`frontend/src/processingStore.ts`) hat `output` (die Bänder der Ausgabe in Dateireihenfolge), `results` (`{key, name}` je `band_math`-Schritt), `dataBands`, `assets`; Namen und Regeln in `processingBands.ts`.
+- Die Vorschau (`processingPreview.ts`, `wantedPreview` im Store) schickt der Kachel alle Assets von `view.assets` (Ausgabe, Ausdrücke, `normalize.bands`, Maskenschicht) und **kein** `band=`; die Kachel zeigt dann das letzte Ergebnis von `band_math`, sonst das erste Band (NM4-43d). Die Grenze `MAX_PREVIEW_ASSETS` (16) gilt dort noch; der Hinweis „No preview: the map takes at most 16 bands.“ ist die einzige Bandgrenze, die im Panel übrig ist.
+- Der Ergebnis-Layer im Layer-Manager (`LayerManager.tsx`, `resultLayer.ts`, `api/result_tiles.py`) zeigt das erste Band von `result.tif`; `properties.bands[].statistics` und `bidx` der Ergebnis-Kachel sind seit NM4-43d/M4-32 vorhanden, `result.tif` trägt die Banddeskription (der Name).
+- Die Einheit steht nicht in `result.tif`, nur in den STAC-Eigenschaften (`adr/0014` §15, NM4-43c).
+- Backlog 51 ist erledigt (nichts mehr zu tun).
+
+**Umfang.**
+
+1. **Vorschau:** Im Abschnitt „Preview on the map“ erscheint ein Dropdown „Show“ **links neben den Feldern min und max** (Otto, 30.10.2026, Review zu #250); die Felder min und max werden dafür schmaler. Im Dropdown stehen **alle Bänder** der Ausgabe, **die Ergebnisse der `band_math`-Schritte oben**, darunter die Bänder des Datensatzes. Vorgabe ist das **zuletzt hinzugefügte** Ergebnis (der Schritt, der zuletzt angelegt wurde, nicht der letzte der Kette), sonst das erste Band der Ausgabe; bei genau einem Band in der Ausgabe kein Dropdown. Die Skala der Felder und das Bild gehören immer zum gezeigten Band (ein Wechsel misst und färbt neu; Muster dafür ist der Test „shows in the fields the range the picture is drawn with“ aus dem Review zu #250). Die Kachel bekommt `band=<Name>` (Item-Kachel, Mosaik-Kachel, TileJSON, Statistik) und nur die Assets, die das Band braucht (Streichen wie der Planer, `adr/0020` §4); die Grenzen der Kachel (16 Assets, bei der Mosaik-Kachel 4) greifen damit nach dem Streichen, und `MAX_PREVIEW_ASSETS` wird auf die gelesenen Assets angewandt, nicht auf die der Ausgabe. Wechselt die Auswahl, misst und färbt die Vorschau neu (Farbskala je Band, „Auto stretch“ je Band). Der Hinweis „The map shows the first N steps“ bleibt. Keine Kennung in einer URL.
+2. **Ergebnis-Layer:** Im Layer-Manager ein Dropdown „Band“ in der Zeile, **nur bei mehr als einem Band** in `result.tif` (Namen aus `properties.bands[].name`, Reihenfolge der Datei); es wählt über `bidx` der Ergebnis-Kachel, die Farbskala je Band kommt aus `properties.bands[].statistics` (M4-32), „Apply“/„Save“ gelten je Band. Fehlt der Kachel-Route etwas dafür, kommt es hier dazu (Backend nur nach Rückfrage bei Otto). Mit NM4-45 teilt sich der Layer den Baustein des Dropdowns.
+3. Texte nur Englisch, wenig Text, Erklärungen im Tooltip (UI-01 §4); was grundsätzlich nicht geht, wird ausgeblendet. Nachtrag „Nachtrag NM4-43e PR 2“ in `adr/0020` (am Ende anhängen), Log-Zeile mit PR-Nummer.
+
+**Abnahme.**
+
+- `vitest`: Dropdown „Show“ nur bei mehr als einem Band in der Ausgabe; Vorgabe letztes Ergebnis von `band_math`, sonst erstes Band; die Kachel-URL trägt `band=<Name>` und nur die Assets, die das Band braucht (Beispiel: NDVI mit Maske in einem Auftrag mit 17 Bändern ergibt drei Assets und eine Vorschau trotz `MAX_PREVIEW_ASSETS`); Wechsel des Bandes ändert URL und Farbskala; Statistik und TileJSON tragen `band`; Ergebnis-Layer: Dropdown nur bei mehr als einem Band, wählt `bidx` über den Namen der Banddeskription, Farbskala je Band; Bandnamen mit Sonderzeichen werden in URLs kodiert; keine Kennung, kein Hash in einer URL.
+- Gegenprobe: Die neuen Tests scheitern gegen den Code vor der Änderung.
+- Prüfung im echten Browser (Chromium/Playwright der Sitzung) mit nachgestellten Antworten, nicht nur jsdom: hell und dunkel, schmales Fenster (360 px); im PR beschrieben, Bilder nicht ins Repo.
+- Prüfanleitung für Otto (Browser) im PR; die vier Pflicht-Checks der CI grün (`ruff check backend`, `pytest`, `lint-imports`; `npm run lint`, `npx tsc -b --pretty false`, `npm test`); Log-Zeile(n) mit PR-Nummer; `main` geholt.

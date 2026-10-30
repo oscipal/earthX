@@ -118,7 +118,12 @@ class ReprojectParams(BaseModel):
         description="No default: the choice changes the values. Anything but nearest and mode interpolates."
     )
     align: bool = Field(
-        default=False, description="Snap the target grid to whole multiples of the resolution in the target CRS."
+        default=False,
+        description=(
+            "Lay the pixel grid on whole multiples of the resolution in the target CRS, e.g. at 30 m, 60 m, 90 m for a "
+            "resolution of 30 m. Results for different areas or dates then line up pixel by pixel. The result may reach up "
+            "to one pixel further out on each side."
+        ),
     )
 
     @field_validator("crs")
