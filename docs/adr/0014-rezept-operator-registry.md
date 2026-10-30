@@ -2866,7 +2866,8 @@ Otto hat den Plan von DS-06 am 2026-10-30 freigegeben (zu [#254](https://github.
 bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist das Backend (DS-06a); das Panel folgt als DS-06b, sobald Otto einen freien Frontend-Platz meldet.
 
 - **Operator (Frage 1).** `mask_values` Version 1, `pixel`, `{T1, T2}`, Kategorie `quality`, Titel „Mask by value“. Ein eigener Operator neben `mask`: `mask` Version 2 (Klassen der `SCL`) und alle bestehenden Rezepte samt Hash bleiben unverändert.
-  `mask` heißt in der Auflistung jetzt „Mask by class“ (nur der Titel, Frage 5), die Parameter und der Kern ändern sich nicht.
+  Mit dem Panel (DS-06b) heißt `mask` in der Auflistung „Mask by class“ (nur der Titel, Frage 5); Parameter und Kern ändern sich nicht.
+- **Gelistet** wird `mask_values` erst, wenn das Panel es schickt (`listed=False`, DS-06b), wie `normalize` Version 3 bis NM4-11b: Rezept, Kachel und Runner nehmen es an, die Prozessbeschreibung bietet es noch nicht, weil `schemaForm.ts` keine Zahlenlisten kennt.
 - **Rezeptform.** Strikt, alle Felder Pflicht (B10), `extra="forbid"`:
 
   | Feld | Inhalt |

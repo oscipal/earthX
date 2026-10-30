@@ -234,6 +234,7 @@ class TestEveryOperatorSaysItsStep:
         ("band_math", 1): {"expression": "nir - red"},
         ("band_math", 2): {"expression": "nir - red", "name": "Diff"},
         ("mask", 1): {"source": "scl", "classes": [3, 8, 9, 10]},
+        ("mask_values", 1): {"band": "NDVI", "condition": "between", "values": [0.2, 0.8]},
         ("normalize", 1): {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True},
         ("normalize", 2): {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True, "bands": ["red"]},
         ("normalize", 3): {

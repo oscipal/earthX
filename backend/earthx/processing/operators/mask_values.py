@@ -210,4 +210,7 @@ MASK_VALUES = Operator(
     method=_method,
     properties=_properties,
     bands_used=_bands_used,
+    # Accepted by `api`, the tile and the runner, but not offered until the panel sends it (DS-06b flips it, as NM4-11b does
+    # for normalize version 3): a listed operator the panel cannot build a form for would show as "not supported".
+    listed=False,
 )

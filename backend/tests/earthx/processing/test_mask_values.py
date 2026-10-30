@@ -286,7 +286,7 @@ class TestMetadata:
     def test_the_cost_factor_is_the_measured_one_and_it_runs_as_tile_and_job(self) -> None:
         assert MASK_VALUES.cost_factor(_params("lt", 1)) == 0.2
         assert {tier.value for tier in MASK_VALUES.tiers} == {"T1", "T2"} and MASK_VALUES.kind == "pixel"
-        assert MASK_VALUES.stock and MASK_VALUES.listed
+        assert MASK_VALUES.stock and not MASK_VALUES.listed
 
     def test_it_is_the_one_version_of_the_registry(self) -> None:
         assert REGISTRY.operator("mask_values", 1) is MASK_VALUES

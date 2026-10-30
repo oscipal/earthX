@@ -181,7 +181,6 @@ class TestOrderSchema:
             "#/$defs/step_band_math_v2",
             "#/$defs/step_coarsen_v1",
             "#/$defs/step_mask_v2",
-            "#/$defs/step_mask_values_v1",
             "#/$defs/step_normalize_v2",
             "#/$defs/step_reproject_v4",
             "#/$defs/step_scale_v1",
@@ -211,13 +210,7 @@ class TestOrderSchema:
         assert ("reproject", 2) in REAL_OPERATORS and ("reproject", 3) in REAL_OPERATORS
         schema = order_schema(REAL_OPERATORS)
         steps = sorted(key for key in schema["$defs"] if key.startswith("step_"))
-        assert steps == [
-            "step_band_math_v2",
-            "step_mask_v2",
-            "step_mask_values_v1",
-            "step_normalize_v2",
-            "step_reproject_v4",
-        ]
+        assert steps == ["step_band_math_v2", "step_mask_v2", "step_normalize_v2", "step_reproject_v4"]
         assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
 
     def test_an_older_version_alone_is_offered(self) -> None:
@@ -295,31 +288,34 @@ class TestWhatThePanelReads:
         """NM4-43e: the panel builds version 2 (the stock of bands); version 1 stays accepted (adr/0020 §11, §13)."""
         steps = order_schema(REAL_OPERATORS)["properties"]["steps"]["items"]["oneOf"]
         offered = sorted(entry["$ref"].rsplit("/", 1)[1] for entry in steps)
-        assert offered == [
-            "step_band_math_v2",
-            "step_mask_v2",
-            "step_mask_values_v1",
-            "step_normalize_v2",
-            "step_reproject_v4",
-        ]
+        assert offered == ["step_band_math_v2", "step_mask_v2", "step_normalize_v2", "step_reproject_v4"]
         for op in ("band_math", "mask", "normalize"):
             assert REAL_OPERATORS.operator(op, 2).stock and REAL_OPERATORS.operator(op, 2).listed
             assert not REAL_OPERATORS.operator(op, 1).stock and not REAL_OPERATORS.operator(op, 1).listed
 
-    def test_mask_by_value_is_offered_beside_mask_by_class_and_both_are_named_so(self) -> None:
-        """DS-06: two buttons in the panel, "Mask by class" and "Mask by value" (Otto, 30.10.2026)."""
-        definitions = order_schema(REAL_OPERATORS)["$defs"]
-        assert definitions["step_mask_v2"]["title"] == "Mask by class"
+    def test_mask_by_value_is_accepted_but_not_offered_until_the_panel_sends_it(self) -> None:
+        """DS-06a: the operator runs (recipe, tile, runner) and is listed once DS-06b gives the panel its form."""
+        assert REAL_OPERATORS.operator("mask_values", 1).stock
+        assert "step_mask_values_v1" not in order_schema(REAL_OPERATORS)["$defs"]
+        listed = OperatorRegistry(
+            replace(operator, listed=True) if operator.op == "mask_values" else operator
+            for operator in REAL_OPERATORS.values()
+        )
+        definitions = order_schema(listed)["$defs"]
         assert definitions["step_mask_values_v1"]["title"] == "Mask by value"
         assert definitions["step_mask_values_v1"]["x-earthx-tiers"] == ["T1", "T2"]
         assert definitions["step_mask_values_v1"]["x-earthx-kind"] == "pixel"
         params = definitions["step_mask_values_v1"]["properties"]["params"]
         assert set(params["required"]) == {"band", "condition", "values"}
 
-    def test_the_dem_is_offered_the_mask_by_value_and_not_the_one_by_class(self) -> None:
+    def test_once_listed_the_dem_is_offered_the_mask_by_value_and_not_the_one_by_class(self) -> None:
         from earthx.catalog.datasets import COP_DEM_GLO_30
 
-        offered = {key for key in order_schema(REAL_OPERATORS, COP_DEM_GLO_30)["$defs"] if key.startswith("step_")}
+        listed = OperatorRegistry(
+            replace(operator, listed=True) if operator.op == "mask_values" else operator
+            for operator in REAL_OPERATORS.values()
+        )
+        offered = {key for key in order_schema(listed, COP_DEM_GLO_30)["$defs"] if key.startswith("step_")}
         assert "step_mask_values_v1" in offered and "step_mask_v2" not in offered
 
     def test_align_says_what_it_does_in_a_tooltip_of_its_own_words(self) -> None:
