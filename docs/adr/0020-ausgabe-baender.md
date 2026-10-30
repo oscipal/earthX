@@ -1210,4 +1210,10 @@ bleibt maßgeblich; dieser Nachtrag nennt, was daraus im Panel geworden ist, und
   `Needs to be in the format "EPSG:3035"` statt des Musters. (4) Ein Ausdruck darf nur Bänder des Datensatzes und Ergebnisse früherer Schritte nennen: Alles andere meldet sofort am Feld
   `'re' is not a band name` und sperrt wie ein ungültiger Name „Add step“, „Review“ und „Start job“ (Grund im Tooltip); ein Ergebnis eines späteren Schritts meldet `'x' is added by a later step`.
   Wo der Datensatz keine Bänder nennt, wird nichts verglichen.
+- **Letzte Runde des Reviews (Otto, 2026-10-30).** (1) Hat der Datensatz genau ein wählbares Band, ist es nur so lange angehakt, wie die Person die Wahl nicht angefasst hat: Das erste Ergebnis
+  eines `band_math`-Schritts nimmt seinen Platz ein, die Ausgabe sind dann die Ergebnisse. Das ersetzt den Satz in §9 Punkt 2, nach dem beide angehakt sind. Hat die Person das Band selbst
+  angehakt, bleibt es. Ein Entwurf, der schon Ergebnisse mitbringt (Rezept, Permalink), bekommt das Band beim Öffnen nicht. (2) Im Tooltip der Auflösungsmethoden stehen die Methoden untereinander,
+  mit einer Leerzeile dazwischen (Zeilenumbrüche im Tooltip bleiben erhalten). (3) Das ⓘ ist klein geschrieben (die Beschriftungen sind in Großbuchstaben, das große ⓘ ist ein anderes Zeichen).
+  (4) „Align“ ist beschrieben: Das Raster liegt auf ganzen Vielfachen der Auflösung, Ergebnisse verschiedener Flächen oder Tage passen dann Pixel auf Pixel, und das Ergebnis kann bis zu ein
+  Pixel an jeder Seite weiter reichen (Text in der Prozessbeschreibung, `reproject`).
 

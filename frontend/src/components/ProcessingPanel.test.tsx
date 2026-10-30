@@ -736,7 +736,9 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
       'average: Mean of all source pixels per target pixel; for coarsening continuous data.',
       'mode: Most frequent source value per target pixel; for class data.',
     ];
-    expect(tip).toContain(sentences.join(' '));
+    // One below the other, a blank line between (a line break in the tooltip stays one, `white-space: pre-line`).
+    expect(tip).toContain(sentences.join('\n\n'));
+    expect(tip).not.toMatch(/[^\n]\n[^\n]/u);
     expect(container.querySelector('ul.pp-options')).toBeNull();
     expect(tip).not.toContain('recommended');
     expect(resampling().value).toBe('');

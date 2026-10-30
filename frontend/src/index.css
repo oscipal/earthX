@@ -1943,11 +1943,14 @@ input[type='date']:focus {
   font-size: 11px;
   font-weight: 400;
   line-height: 1.4;
-  white-space: normal;
+  /* A line break in the text stays one: the methods of a resampling choice stand one below the other. */
+  white-space: pre-line;
   text-align: left;
   pointer-events: none;
 }
 .tip {
+  /* The labels of the panel are in capitals, and the capital of ⓘ is another sign. */
+  text-transform: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;

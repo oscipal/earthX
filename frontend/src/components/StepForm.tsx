@@ -39,8 +39,9 @@ function FieldInput({
   const options = field.options
     ?.filter((option) => field.optionHelp?.[option])
     .map((option) => `${option}: ${field.optionHelp?.[option]}`)
-    .join(' ');
-  const tip = [field.description, options, extraTip].filter(Boolean).join(' ');
+    .join('\n\n');
+  // One paragraph for what the field is, one for each method, one for the size of a cell.
+  const tip = [field.description, options, extraTip].filter(Boolean).join('\n\n');
   const label = (
     <span className="pp-label">
       {field.title}

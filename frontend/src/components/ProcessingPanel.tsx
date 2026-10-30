@@ -164,17 +164,20 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
 // band of a dataset that has only one.
 function OutputBands({ view }: { view: OrderView }) {
   const toggle = useProcessingStore((s) => s.toggleOutput);
+  const checkLonely = useProcessingStore((s) => s.checkLonely);
   const setOutput = useProcessingStore((s) => s.setOutput);
   const setDtype = useProcessingStore((s) => s.setDtype);
   // A dataset or scene with one band has it checked on opening, once: a later "None" stays.
   const lonely = view.lonely;
   const checkedOnOpening = useRef<string | null>(null);
   const checked = lonely !== null && view.output.includes(lonely);
+  // Not where the steps already add a band: the results are what is in the output then.
+  const results = view.results.length;
   useEffect(() => {
     if (lonely === null || checkedOnOpening.current === lonely) return;
     checkedOnOpening.current = lonely;
-    if (!checked) toggle(lonely);
-  }, [lonely, checked, toggle]);
+    if (!checked && results === 0) checkLonely(lonely);
+  }, [lonely, checked, results, checkLonely]);
 
   const on = new Set(view.output);
   const data = view.dataBands.filter((band) => !band.auxiliary || on.has(band.name));

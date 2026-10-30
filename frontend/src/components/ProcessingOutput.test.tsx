@@ -754,3 +754,39 @@ describe('a recipe of version 1 that is loaded', () => {
     expect(checked()).toEqual(['band_math']);
   });
 });
+
+describe('a dataset with one band (review of #250)', () => {
+  const dem = (): StacItem => ({ ...scene(), assets: { dem: cog([{ data_type: 'float32', nodata: -9999 }]) } });
+  const options = () => dataset({ 'earthx:mask': undefined, 'earthx:auxiliary_assets': undefined });
+
+  it('has its band checked on opening, and gives way to the results of a band math step', async () => {
+    select(dem(), options());
+    await openPanel();
+    expect(checked()).toEqual(['dem']);
+    await addBandMath('dem * 2');
+    expect(checked()).toEqual(['result']);
+    expect(store().output).toEqual(['result']);
+    await review();
+    expect(sentOrder().output.bands).toEqual(['result']);
+  });
+
+  it('keeps the band when the person chose it, and the next result joins it', async () => {
+    select(dem(), options());
+    await openPanel();
+    click(outChip('dem')); // off
+    click(outChip('dem')); // on, by the person now
+    await addBandMath('dem * 2');
+    expect(checked()).toEqual(['result', 'dem']);
+  });
+
+  it('does not check the band on opening where the steps already add a band', async () => {
+    select(dem(), options());
+    // A draft that comes with its steps and its output (a loaded recipe, a permalink): the panel opens on it.
+    useProcessingStore.setState({
+      steps: [{ key: 77, op: 'band_math', opVersion: 2, values: { expression: 'dem * 2', name: 'result' } }],
+      output: ['result'],
+    });
+    await openPanel();
+    expect(checked()).toEqual(['result']);
+  });
+});

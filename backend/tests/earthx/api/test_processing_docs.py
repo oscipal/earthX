@@ -293,6 +293,13 @@ class TestWhatThePanelReads:
             assert REAL_OPERATORS.operator(op, 2).stock and REAL_OPERATORS.operator(op, 2).listed
             assert not REAL_OPERATORS.operator(op, 1).stock and not REAL_OPERATORS.operator(op, 1).listed
 
+    def test_align_says_what_it_does_in_a_tooltip_of_its_own_words(self) -> None:
+        """Review of #250: the panel shows this text as the tooltip of "Align"; it says what a grid on whole multiples gives."""
+        align = order_schema(REAL_OPERATORS)["$defs"]["step_reproject_v4"]["properties"]["params"]["properties"]["align"]
+        text = align["description"]
+        assert "whole multiples of the resolution" in text and "line up pixel by pixel" in text
+        assert "one pixel further out" in text
+
     def test_the_output_names_its_bands_and_an_order_for_a_raster_names_no_assets(self) -> None:
         schema = order_schema(REAL_OPERATORS)
         output = schema["$defs"]["RasterOutput"]

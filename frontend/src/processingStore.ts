@@ -277,6 +277,9 @@ interface ProcessingState {
   // The reason a name field holds a name that breaks a rule, by step: only what the person has typed and not left yet or
   // a name a loaded recipe brought; never a name the steps and the output use (review of #250).
   nameProblems: Record<number, string>;
+  // The one band of a dataset that has only one, while it is in the output because the panel put it there on opening and
+  // the person has not touched the choice: the first result of a band math step takes its place (review of #250).
+  lonelyAuto: string | null;
   dtype: string | null;
   // The range and colormap of the map preview: applied, and as edited (F3 (1)).
   range: PreviewRange;
@@ -361,6 +364,8 @@ interface ProcessingState {
   renameResult: (key: number, name: string) => void;
   setNameProblem: (key: number, reason: string | null) => void;
   toggleOutput: (name: string) => void;
+  // Checks the one band of a dataset that has only one, on opening; `toggleOutput` and `setOutput` are the person's.
+  checkLonely: (name: string) => void;
   setOutput: (names: string[]) => void;
   setDtype: (dtype: string) => void;
   loadRecipe: (text: string) => Promise<LoadResult>;
@@ -821,6 +826,7 @@ const EMPTY_DRAFT = {
   steps: [] as DraftStep[],
   output: [] as string[],
   nameProblems: {} as Record<number, string>,
+  lonelyAuto: null as string | null,
   dtype: null,
   range: DEFAULT_RANGE,
   rangeDraft: DEFAULT_RANGE,
@@ -1376,7 +1382,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }
       set((s) => ({
         steps: [...s.steps, { key, op, opVersion, values }],
-        output: added ? [...output, added] : output,
+        // The band the panel checked on opening gives way to the first result; one the person chose stays.
+        output: added ? [...output.filter((band) => band !== s.lonelyAuto), added] : output,
+        lonelyAuto: added ? null : s.lonelyAuto,
         reviewError: null,
         startError: null,
         ...dropReview(),
@@ -1439,14 +1447,17 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           ...dropReview(),
         };
       }),
+    checkLonely: (name) =>
+      set((s) => (s.output.includes(name) ? {} : { output: [...s.output, name], lonelyAuto: name, reviewError: null, startError: null, ...dropReview() })),
     toggleOutput: (name) =>
       set((s) => ({
+        lonelyAuto: null,
         output: s.output.includes(name) ? s.output.filter((band) => band !== name) : [...s.output, name],
         reviewError: null,
         startError: null,
         ...dropReview(),
       })),
-    setOutput: (names) => set({ output: [...names], reviewError: null, startError: null, ...dropReview() }),
+    setOutput: (names) => set({ output: [...names], lonelyAuto: null, reviewError: null, startError: null, ...dropReview() }),
     setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null, ...dropReview() }),
 
     // "Load recipe…": the steps and the data type of a `recipe.json` become the draft, on the
