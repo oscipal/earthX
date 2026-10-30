@@ -184,3 +184,44 @@ async def test_the_live_smoke_replays_against_the_recorded_fixtures(path: Path) 
         )
         async with module.open_gateway() as gateway:
             await smoke(gateway=gateway)
+
+
+async def _replay_filters(handler: Callable[[httpx.Request], httpx.Response]) -> None:
+    path = next(path for path in SMOKE_FILES if path.stem == "test_search_filters_live")
+    module = _load(path)
+    _replaying(module, handler)
+    async with module.open_gateway() as gateway:
+        await module.test_the_registry_filters_still_fit_their_source(gateway=gateway)
+
+
+async def test_the_filter_smoke_fails_when_the_source_ignores_a_filter() -> None:
+    """A source that answers every `query` as if there were none is what the test is there to find (DS-02c)."""
+
+    def ignoring(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path.endswith("/search"):
+            body = json.loads(request.content)
+            body.pop("query", None)
+            return _filtering_double(httpx.Request("POST", request.url, content=json.dumps(body)))
+        if request.url.path.endswith("/aggregate"):
+            return _filtering_double(httpx.Request("GET", request.url.copy_remove_param("query")))
+        return _filtering_double(request)
+
+    with pytest.raises(AssertionError, match="the sample says|does not narrow"):
+        await _replay_filters(ignoring)
+
+
+async def test_the_filter_smoke_names_a_value_the_registry_lacks() -> None:
+    """A new processing baseline in the last 30 days is one the registry has no line for yet (DS-02c)."""
+
+    def newer(request: httpx.Request) -> httpx.Response:
+        response = _filtering_double(request)
+        if request.method == "POST" and request.url.path.endswith("/search"):
+            if not json.loads(request.content)["datetime"].startswith("2024"):
+                document = json.loads(response.content)
+                for item in document["features"]:
+                    item["properties"]["s2:processing_baseline"] = "99.99"
+                return _json(document)
+        return response
+
+    with pytest.raises(AssertionError, match="a new value of s2:processing_baseline"):
+        await _replay_filters(newer)

@@ -38,8 +38,18 @@ CLOUD = SearchFilter(
     integer=False,
     values=(),
     within_aoi=False,
+    group="Clouds",
 )
-ORBIT = replace(CLOUD, property="sat:relative_orbit", title="Relative orbit", unit=None, minimum=1, maximum=175, integer=True)
+ORBIT = replace(
+    CLOUD,
+    property="sat:relative_orbit",
+    title="Relative orbit",
+    unit=None,
+    minimum=1,
+    maximum=175,
+    integer=True,
+    group="Acquisition",
+)
 PLATFORM = SearchFilter(
     property="platform",
     kind=FilterKind.VALUES,
@@ -51,6 +61,7 @@ PLATFORM = SearchFilter(
     integer=False,
     values=(FilterValue("sentinel-2a", "Sentinel-2A"), FilterValue("sentinel-2b", "Sentinel-2B")),
     within_aoi=False,
+    group="Acquisition",
 )
 
 
@@ -59,18 +70,73 @@ def _with(*filters: SearchFilter) -> DatasetConfig:
 
 
 class TestTheEntries:
-    def test_sentinel_2_offers_cloud_cover_no_data_and_satellite(self) -> None:
-        offered = [(entry.property, entry.kind) for entry in SENTINEL_2_L2A.search_filters]
+    def test_sentinel_2_offers_what_the_source_was_measured_to_filter_by_in_groups_with_the_clouds_first(self) -> None:
+        offered = [(entry.group, entry.property, entry.kind) for entry in SENTINEL_2_L2A.search_filters]
+        range_, values = FilterKind.RANGE, FilterKind.VALUES
         assert offered == [
-            ("eo:cloud_cover", FilterKind.RANGE),
-            ("s2:nodata_pixel_percentage", FilterKind.RANGE),
-            ("platform", FilterKind.VALUES),
+            ("Clouds", "eo:cloud_cover", range_),
+            ("Clouds", "s2:thin_cirrus_percentage", range_),
+            ("Clouds", "s2:cloud_shadow_percentage", range_),
+            ("Scene", "s2:nodata_pixel_percentage", range_),
+            ("Scene", "s2:snow_ice_percentage", range_),
+            ("Scene", "s2:water_percentage", range_),
+            ("Scene", "s2:vegetation_percentage", range_),
+            ("Scene", "s2:not_vegetated_percentage", range_),
+            ("Scene", "s2:degraded_msi_data_percentage", range_),
+            ("Acquisition", "platform", values),
+            ("Acquisition", "view:sun_elevation", range_),
+            ("Acquisition", "view:sun_azimuth", range_),
+            ("Acquisition", "s2:processing_baseline", values),
         ]
         assert [value.value for value in SENTINEL_2_L2A.search_filter("platform").values] == [
             "sentinel-2a",
             "sentinel-2b",
             "sentinel-2c",
         ]
+        assert [value.value for value in SENTINEL_2_L2A.search_filter("s2:processing_baseline").values] == [
+            "05.00",
+            "05.09",
+            "05.10",
+            "05.11",
+            "05.12",
+            "05.13",
+        ]
+
+    def test_the_bounds_and_units_of_the_scene_properties(self) -> None:
+        for entry in SENTINEL_2_L2A.search_filters:
+            if entry.kind is not FilterKind.RANGE:
+                continue
+            if entry.property.startswith("view:"):
+                assert entry.unit == "°"
+            else:
+                assert (entry.unit, entry.minimum, entry.maximum) == ("%", 0.0, 100.0), entry.property
+        assert (SENTINEL_2_L2A.search_filter("view:sun_elevation").maximum, SENTINEL_2_L2A.search_filter("view:sun_azimuth").maximum) == (90.0, 360.0)
+
+    def test_the_titles_and_tooltips_are_each_their_own(self) -> None:
+        titles = [entry.title for entry in SENTINEL_2_L2A.search_filters]
+        assert len(set(titles)) == len(titles)
+        tooltips = [entry.description for entry in SENTINEL_2_L2A.search_filters]
+        assert len(set(tooltips)) == len(tooltips)
+
+    def test_only_the_cloud_cover_may_be_applied_inside_the_aoi(self) -> None:
+        assert [entry.property for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi] == ["eo:cloud_cover"]
+
+    @pytest.mark.parametrize(
+        "property_name",
+        [
+            "s2:dark_features_percentage",  # absent from the items since baseline 05.11: a filter would drop every newer scene
+            "s2:medium_proba_clouds_percentage",  # parts of the cloud cover
+            "s2:high_proba_clouds_percentage",
+            "s2:unclassified_percentage",
+            "view:azimuth",
+            "view:incidence_angle",
+            "grid:code",  # a text, not a list to tick
+            "s2:product_uri",
+            "datetime",
+        ],
+    )
+    def test_what_was_left_out_on_purpose_stays_out(self, property_name: str) -> None:
+        assert SENTINEL_2_L2A.search_filter(property_name) is None
 
     def test_no_orbit_filter_for_sentinel_2_because_its_items_carry_none(self) -> None:
         """DS-02 plan §6.2a: measured, the items have no `sat:` property; a filter on one would match nothing."""
@@ -91,6 +157,10 @@ class TestTheEntryIsRefused:
             (replace(CLOUD, property="earthx:aoi_cloud_cover"), "kept for filters the platform computes"),
             (replace(CLOUD, title=" "), "title and a description"),
             (replace(CLOUD, description=""), "title and a description"),
+            (replace(CLOUD, group=""), "group"),
+            (replace(CLOUD, group=" Clouds"), "group"),
+            (replace(CLOUD, group="x" * 25), "group"),
+            (replace(CLOUD, group=None), "group"),
             (replace(CLOUD, unit=" %"), "unit"),
             (replace(CLOUD, unit="x" * 33), "unit"),
             (replace(CLOUD, minimum=None), "finite minimum and maximum"),
@@ -109,6 +179,12 @@ class TestTheEntryIsRefused:
     def test_a_malformed_filter(self, broken: SearchFilter, message: str) -> None:
         with pytest.raises(ConfigError, match=message):
             _with(broken)
+
+    def test_the_filters_of_a_group_follow_each_other(self) -> None:
+        later = replace(CLOUD, property="s2:thin_cirrus_percentage", title="Thin cirrus", group="Clouds")
+        assert _with(CLOUD, later, PLATFORM).search_filters == (CLOUD, later, PLATFORM)
+        with pytest.raises(ConfigError, match="one group follow each other"):
+            _with(CLOUD, PLATFORM, later)
 
     def test_a_property_twice(self) -> None:
         with pytest.raises(ConfigError, match="names a property twice"):
@@ -146,6 +222,7 @@ class TestTheCollection:
                 "description": "Share of the scene covered by clouds.",
                 "unit": "%",
                 "within_aoi": False,
+                "group": "Clouds",
                 "type": "number",
                 "minimum": 0.0,
                 "maximum": 100.0,
@@ -157,6 +234,7 @@ class TestTheCollection:
                 "description": "Share of the scene covered by clouds.",
                 "unit": None,
                 "within_aoi": False,
+                "group": "Acquisition",
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 175,
@@ -168,12 +246,19 @@ class TestTheCollection:
                 "description": "The satellite that took the scene.",
                 "unit": None,
                 "within_aoi": False,
+                "group": "Acquisition",
                 "type": "string",
                 "oneOf": [
                     {"const": "sentinel-2a", "title": "Sentinel-2A"},
                     {"const": "sentinel-2b", "title": "Sentinel-2B"},
                 ],
             },
+        ]
+
+    def test_publishes_the_group_of_every_filter_in_the_order_of_the_registry(self) -> None:
+        published = to_stac_collection(SENTINEL_2_L2A)["earthx:search_filters"]
+        assert [(entry["group"], entry["property"]) for entry in published] == [
+            (entry.group, entry.property) for entry in SENTINEL_2_L2A.search_filters
         ]
 
     def test_an_entry_without_filters_publishes_an_empty_list(self) -> None:
