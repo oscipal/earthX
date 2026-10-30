@@ -33,7 +33,6 @@ from earthx.api.aoi_cloud_filter import (
     encode_cursor,
     read_aoi_request,
     run_filter,
-    without_gdal_addresses,
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition
@@ -783,26 +782,3 @@ class TestTheRequestOfAnotherSource:
                 intersects=SQUARE,
             )
         assert caught.value.status_code == 400 and "federated collection only" in caught.value.detail
-
-
-class TestNoAddressInTheLogOfAFailedRead:
-    async def test_gdals_line_with_the_address_is_dropped(self, caplog: pytest.LogCaptureFixture) -> None:
-        import rasterio
-        from rasterio.errors import RasterioIOError
-
-        with caplog.at_level(logging.DEBUG):
-            with pytest.raises(RasterioIOError), rasterio.Env(), without_gdal_addresses():
-                rasterio.open("/vsicurl/https://127.0.0.1:9/secret-scene/SCL.tif")
-        everything = " ".join(record.getMessage() for record in caplog.records)
-        assert "secret-scene" not in everything and "vsicurl" not in everything
-
-
-    async def test_outside_a_measurement_the_line_stays(self, caplog: pytest.LogCaptureFixture) -> None:
-        import rasterio
-        from rasterio.errors import RasterioIOError
-
-        module.hide_gdal_addresses()
-        with caplog.at_level(logging.DEBUG):
-            with pytest.raises(RasterioIOError), rasterio.Env():
-                rasterio.open("/vsicurl/https://127.0.0.1:9/secret-scene/SCL.tif")
-        assert "secret-scene" in " ".join(record.getMessage() for record in caplog.records)

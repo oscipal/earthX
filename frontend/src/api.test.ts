@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  type CoverageParams,
   buildCoverageUrl,
   buildMosaicTileTemplate,
   buildSearchBody,
@@ -8,6 +9,7 @@ import {
   buildTileTemplate,
   downloadCrop,
   errorDetail,
+  fetchCoverage,
   fetchItem,
   fetchMosaicTileJson,
   HttpError,
@@ -111,6 +113,67 @@ describe('buildCoverageUrl', () => {
       const url = new URL(buildCoverageUrl({ datasetId: 'optical', zoom: 4, query }), 'http://localhost');
       expect([...url.searchParams.keys()]).toEqual(['zoom']);
     }
+  });
+  // NM4-57 (M4 Q8): the box of an AOI is never in a URL.
+  it('never carries the box of an AOI', () => {
+    const url = buildCoverageUrl({ datasetId: 'optical', zoom: 4, aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234] });
+    expect(url).not.toContain('11.31234');
+    expect(new URL(url, 'http://localhost').searchParams.has('bbox')).toBe(false);
+  });
+});
+
+describe('fetchCoverage', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const answer = { ok: true, status: 200, json: async () => ({}) } as Response;
+
+  it('asks an AOI by POST: the box and the filters in the body, nothing in the URL', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+    const query = { 'eo:cloud_cover': { lte: 20 } };
+
+    await fetchCoverage({
+      datasetId: 'optical',
+      zoom: 9,
+      aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234],
+      datetime: '2026-07-01T00:00:00Z/..',
+      query,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/coverage/optical');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      zoom: 9,
+      bbox: [11.31234, 47.81234, 11.51234, 47.91234],
+      datetime: '2026-07-01T00:00:00Z/..',
+      query,
+    });
+  });
+
+  it('does not take a map extent and the box of an AOI together (checked by the type)', () => {
+    // @ts-expect-error the extent goes in the URL, the AOI in the body: one question has one of them
+    const both: CoverageParams = { datasetId: 'optical', zoom: 4, bbox: [0, 0, 1, 1], aoiBbox: [0, 0, 1, 1] };
+    expect(both.zoom).toBe(4);
+  });
+
+  it('asks a map extent by GET, as before', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCoverage({ datasetId: 'optical', zoom: 6, bbox: [-180, -85, 180, 85] });
+
+    expect(fetchMock.mock.calls[0]).toEqual(['/coverage/optical?zoom=6&bbox=-180%2C-85%2C180%2C85']);
+  });
+
+  it('leaves a body without the optional fields out', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCoverage({ datasetId: 'optical', zoom: 3, aoiBbox: [0, 0, 1, 1], query: {} });
+
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(JSON.parse(String(init.body))).toEqual({ zoom: 3, bbox: [0, 0, 1, 1] });
   });
 });
 
@@ -389,7 +452,7 @@ describe('uploadAoi', () => {
     vi.unstubAllGlobals();
   });
 
-  it('POSTs the file itself as the body and the name as a ?filename= query parameter', async () => {
+  it('POSTs the file itself as the body and its extension as a ?filename= query parameter', async () => {
     const square: GeoJSON.Polygon = {
       type: 'Polygon',
       coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]],
@@ -407,14 +470,23 @@ describe('uploadAoi', () => {
     expect(new Headers(init?.headers).get('Content-Type')).toBe('application/octet-stream');
   });
 
-  it('percent-encodes spaces and reserved characters in the filename', async () => {
+  // NM4-57: the name of a file often names a person or a place and a URL stands in access logs.
+  it.each([
+    ['Haus Müller & Söhne #3.kml', 'aoi.kml'],
+    ['Flurstück 12/4 Schmidt.GeoJSON', 'aoi.GeoJSON'],
+    ['gebiet.zip', 'aoi.zip'],
+    ['no extension', 'aoi'],
+    ['ends with a dot.', 'aoi'],
+    ['name.with spaces', 'aoi'],
+    ['x.' + 'a'.repeat(20), 'aoi'],
+  ])('sends nothing of the name %j but its extension', async (name, sent) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { type: 'Point', coordinates: [0, 0] })));
-    const name = 'a b&c#d.kml';
 
     await uploadAoi(new File([], name), name);
 
     const [url] = vi.mocked(fetch).mock.calls[0];
-    expect(url).toBe(`/aoi/upload?filename=${encodeURIComponent(name)}`);
+    expect(url).toBe(`/aoi/upload?filename=${sent}`);
+    expect(String(url)).not.toMatch(/Haus|M%C3%BCller|Schmidt|Flurst|gebiet|spaces/);
   });
 
   it('rejects with an HttpError carrying the route detail on a 400', async () => {

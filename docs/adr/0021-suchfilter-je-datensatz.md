@@ -91,6 +91,7 @@ Plan, Messungen und Optionen: `docs/plans/ds/ds-03-wolken-in-aoi.md` §6. Messsk
 - **Wert und Filter stimmen überein:** Der Bereich gilt für den Anteil mit einer Nachkommastelle, wie ihn die Antwort zeigt.
 - **Log (KE3):** eine Zeile „aoi cloud filter“ je Antwort mit Datensatz, geprüft, gefunden, aus dem Cache, unlesbar, Grenze erreicht, Stufen (Zahl der Szenen je Auflösung) und Sekunden.
 - **Adressen im Log (neu):** GDAL schreibt bei einem Lesefehler die ganze Adresse der Datei in eine Warnung, und `rasterio` gibt sie an das Logging weiter (gemessen). Die Messung filtert sie deshalb aus dem Log, nur in dem Thread, der gerade misst. Der `tiler` und der `worker` lesen ohne Filter; das löst NM4-57 für alle Prozesse (Otto, 30.10.2026), hier ist nichts weiter geändert.
+  **Nachtrag NM4-57:** Der Thread-Filter ist entfernt. An seiner Stelle ersetzt der JSON-Formatter jeder Zeile (`earthx.logging.hide_addresses`) jede URL und jeden GDAL-Pfad (`/vsicurl/…`, `/vsis3/…`) in Meldung, Traceback und Textfeldern durch `<address>`; der Handler von uvicorn bekommt denselben Filter, und das Kind des `worker`, das ohne die Einrichtung des Supervisors startet, richtet das Logging selbst ein. Nicht verdeckt bleiben Host und Port in der Meldung `CURL error: Failed to connect to … port …`.
 - **`next`-Link:** Er wiederholt den POST-Body, auch `intersects` und `earthx:aoi`. Otto, 30.10.2026: so lassen, die AOI steht nur im Body, nie in URL oder Log.
 - **Live-Smoke:** `backend/tests_live/test_aoi_cloud_filter_live.py` läuft im Job `earth-search` von `.github/workflows/live-smoke.yml` (ausdrückliche Ausnahme Ottos für `.github/`, 30.10.2026).
 - **Coverage:** `/coverage` weist den Filter mit `400` ab (KE6).
@@ -153,3 +154,9 @@ Anlass: Otto (Review zu #239, 30.10.2026): alle Felder erfassen, die die Quelle 
 3. Der Live-Test prüft jetzt für jeden Filter, dass die Quelle genau so viele Szenen findet, wie die Stichprobe sagt (beide Hälften eines Bereichs am Median, bei einer Auswahl der häufigste Wert und ein nicht vorhandener), und meldet für Auswahlfilter jeden Wert der letzten 30 Tage, den die Registry nicht kennt. Die Offline-Wiedergabe prüft beides auch mit einer Quelle, die ein Filter überhört bzw. einen neuen Wert liefert.
 4. Die Zeitgrenze der Stichprobe bleibt ein geschlossenes Fenster (`adr/0005` K5); nur die Prüfung auf neue Werte schaut auf die letzten 30 Tage.
 5. **Filter nach MGRS-Kachel: nicht jetzt** (Otto, 30.10.2026, Option 1). Wer eine Kachel will, nimmt den Szenennamen; eine Art `TEXT` kommt erst bei belegtem Bedarf (Backlog Nr. 58).
+
+## 9. Nachtrag NM4-57: Coverage ohne AOI in der URL (30.10.2026)
+
+- `POST /coverage/{id}` nimmt `query` als Objekt im Body; im `GET` bleibt es JSON-Text (§5 Nr. 1). Dieselbe Prüfung (§5 Nr. 2), ein Fehler im Body ist `400` ohne Wert im Text, nie das `422` von FastAPI, dessen Detail die Eingabe wiederholt.
+- Die Begründung und die Regel für das `GET` (nur der Kartenausschnitt) stehen in `adr/0004`, „Nachtrag NM4-57“.
+- `POST /aoi/upload?filename=…`: Die Oberfläche sendet nur `aoi.<Endung>` (Otto, 30.10.2026); der Dateiname enthält oft Personenbezug und stünde im Zugriffslog. Host und Port in `CURL error: Failed to connect to …` bleiben im Log (Otto, 30.10.2026).
