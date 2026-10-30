@@ -8,7 +8,7 @@ seams the tests use — ``vsicurl_path`` and the resolver — enters
 runs one step over every band of the COG (two, or more since NM4-43b) — the test operator ``scale``, or with ``step`` set to
 ``reproject`` the platform's ``reproject`` to EPSG:3035 with ``bilinear`` at 10 m, with
 ``reproject-lanczos`` with ``lanczos`` at 30 m, with ``normalize`` the platform's
-``normalize`` over its bands (``normalize-zscore``, ``-percentile`` and ``-robust``: version 3, NM4-11), with ``mask`` its ``mask`` over its bands and the 20 m
+``normalize`` over its bands (``normalize-zscore``, ``-percentile`` and ``-robust``: version 3, NM4-11), with ``mask-values`` the platform's ``mask_values`` (DS-06), with ``mask`` its ``mask`` over its bands and the 20 m
 classification layer ``layer`` (a second COG, M4-18) — and prints one JSON line: peak
 resident memory in MB, the resident memory after the imports, seconds and blocks.
 Nothing here opens a socket.
@@ -101,6 +101,23 @@ STEPS_V3 = {
     },
 }
 
+#: DS-06: ``mask_values`` over the two bands of the scene, in a recipe of version 2 like the methods above.
+STEPS_V2 = {
+    "mask-values": {
+        "op": "mask_values",
+        "op_version": 1,
+        "params": {"band": "big_1", "condition": "between", "values": [0.2, 0.6]},
+    },
+}
+
+
+def _step(name: str) -> dict:
+    if name in STEPS:
+        return STEPS[name]
+    if name in STEPS_V2:
+        return STEPS_V2[name]
+    return {"op": "normalize", "op_version": 3, "params": STEPS_V3[name]}
+
 
 def main(
     cog: Path, workdir: Path, size: int, cachemax_mb: int | None, step: str = "scale", layer: Path | None = None
@@ -138,10 +155,10 @@ def main(
             {"name": "s2", "dataset": "synthetic", "groups": [["ITEM_BIG"]], "assets": assets, "resolved": entries}
         ],
         "aoi": sources.whole(size, size),
-        "steps": [STEPS[step]] if step in STEPS else [{"op": "normalize", "op_version": 3, "params": STEPS_V3[step]}],
+        "steps": [_step(step)],
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
-    if step in STEPS_V3:
+    if step in STEPS_V3 or step in STEPS_V2:
         data["recipe_version"] = 2
         data["output"]["bands"] = _V3_BANDS
     from tests.earthx.processing.recipes import recipe_of_data

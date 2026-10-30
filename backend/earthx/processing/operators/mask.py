@@ -175,7 +175,8 @@ MASK = Operator(
     op="mask",
     op_version=1,
     category="quality",
-    title="Mask",
+    # "by class" since DS-06 (Otto, 30.10.2026): the panel offers "Mask by value" beside it.
+    title="Mask by class",
     description="Hide the pixels that a classification layer assigns to the chosen classes, such as cloud.",
     citation=None,
     params=MaskParams,

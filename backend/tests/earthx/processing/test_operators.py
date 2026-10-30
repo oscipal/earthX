@@ -22,12 +22,13 @@ from tests.earthx.processing.testops import OPERATORS as TEST_REGISTRY
 
 
 class TestRegistry:
-    def test_the_platform_registry_holds_the_four_operators(self) -> None:
+    def test_the_platform_registry_holds_the_five_operators(self) -> None:
         assert set(REGISTRY) == {
             ("band_math", 1),
             ("band_math", 2),
             ("mask", 1),
             ("mask", 2),
+            ("mask_values", 1),
             ("normalize", 1),
             ("normalize", 2),
             ("normalize", 3),
@@ -42,6 +43,7 @@ class TestRegistry:
             ("band_math", 2),
             ("mask", 1),
             ("mask", 2),
+            ("mask_values", 1),
             ("normalize", 1),
             ("normalize", 2),
             ("normalize", 3),
