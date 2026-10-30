@@ -9,6 +9,7 @@ properties, field for field. The rasters are the synthetic ones of the operator 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from collections.abc import Iterator
@@ -22,6 +23,7 @@ from rasterio.errors import RasterioIOError, WarpOperationError
 from rasterio.warp import transform_bounds
 from shapely.geometry import box, mapping
 
+import earthx
 from earthx.api import area_statistics as area_module
 from earthx.api.area_statistics import (
     AREA_STATISTICS_ROUTE,
@@ -38,6 +40,8 @@ from earthx.gateway import UpstreamError
 from earthx.logging import JsonFormatter
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
+from earthx.processing.recipe import recipe_hash
+from earthx.processing.statistics import MEASURE_PERCENTILES
 from tests.earthx.api.test_tiler_mask_normalize import COG_DATASET, DISPLAY_ONLY, MASK
 from tests.earthx.api.test_tiler_operator import _BAND, HEIGHT, NDVI, WIDTH
 from tests.earthx.processing import sources
@@ -202,9 +206,16 @@ def _job_statistics(document: dict[str, Any], workdir: Path) -> list[dict[str, A
     return [band["statistics"] for band in result.properties["bands"]]
 
 
+EXTRA = {f"percentile_{percent}" for percent in MEASURE_PERCENTILES}
+
+
 def _statistics(response) -> list[dict[str, Any]]:
+    """The statistics of the answer as the result carries them: without the percentiles a measure adds (NM4-11)."""
     assert response.status_code == 200, response.text
-    return [band["statistics"] for band in response.json()["bands"]]
+    return [
+        {name: value for name, value in band["statistics"].items() if name not in EXTRA}
+        for band in response.json()["bands"]
+    ]
 
 
 class TestTheJobsNumbers:
@@ -233,6 +244,36 @@ class TestTheJobsNumbers:
         steps = [{"op": "band_math", "op_version": 1, "params": {"expression": "red * 2"}}]
         document = _order(items=("PASS_B", "PASS_A"), assets=("red",), steps=steps, aoi=aoi)
         assert _statistics(_post(client, document)) == _job_statistics(document, tmp_path / "work")
+
+
+class TestThePercentilesOfNormalize:
+    def test_a_measure_carries_the_percentiles_the_methods_need(self, client: TestClient, tmp_path: Path) -> None:
+        response = _post(client, _order())
+        assert response.status_code == 200, response.text
+        measured = response.json()["bands"][0]["statistics"]
+        assert EXTRA <= measured.keys()
+        # In order, and between the ends of the band.
+        ladder = [measured[name] for name in ("minimum", "percentile_1", "percentile_2", "percentile_5", "percentile_25",
+                                              "percentile_50", "percentile_75", "percentile_95", "percentile_98",
+                                              "percentile_99", "maximum")]
+        assert ladder == sorted(ladder)
+
+    def test_the_result_of_a_job_carries_the_two_it_always_did(self, client: TestClient, tmp_path: Path) -> None:
+        job = _job_statistics(_order(), tmp_path / "work")[0]
+        assert {name for name in job if name.startswith("percentile_")} == {"percentile_2", "percentile_98"}
+
+    def test_an_answer_stored_before_the_percentiles_is_not_served(self) -> None:
+        """The key carries the version of the answer's form, so a cache of the older form is measured anew."""
+        recipe = asyncio.run(
+            estimate_order(json.dumps(_order()), registry=REGISTRY, operators=OPERATORS, item_source=Fetches())
+        ).recipe
+        assert area_statistics_cache_key(recipe) != hashlib.sha256(
+            json.dumps(
+                {"kind": "area-statistics/v1", "earthx": earthx.__version__, "recipe": recipe_hash(recipe)},
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
 
 
 class TestAboveTheLimit:
