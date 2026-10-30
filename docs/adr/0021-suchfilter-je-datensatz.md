@@ -76,3 +76,13 @@ Plan, Messungen und Optionen: `docs/plans/ds/ds-03-wolken-in-aoi.md` §6. Messsk
 - **`access.aoi_clouds`:** Stufenwahl und Zählung. Nur der Teil der AOI auf der Kachel wird maskiert, der Rest geht über seine Fläche ein. Dazu der Cache-Schlüssel je Szene und AOI.
 - **`gateway.ReadSlots`:** höchstens `max_connections_per_host` gleichzeitige GDAL-Leser je Host.
 - Noch nutzt keine Route das; das folgt mit DS-03a2.
+
+## 7. Oberfläche (DS-02c, 30.10.2026)
+
+Plan: `docs/plans/ds/ds-02-advanced-search.md` §6.7, §6.8, §6.11. Keine neue Entscheidung, die der Plan nicht trägt; die Abweichungen stehen in §6.11.
+
+1. **Quelle der Filter:** allein `earthx:search_filters` der Collection (`frontend/src/searchFilters.ts`). Ein Eintrag, dem eine Angabe fehlt, wird ausgelassen, nicht ergänzt. Kein Code kennt eine Eigenschaft oder einen Datensatz.
+2. **Sucheinstellung je Datensatz:** `searchFilters[datasetId][property]` im Store, mit dem Text der Felder. Wirkt nur für gewählte Datensätze, bleibt bei Abwahl und bei „Clear search results“ stehen, wird nicht im Browser gemerkt und geht nicht in den Permalink.
+3. **Auf der Leitung:** Suche, „Load more“, Datums-Fallback und die Footprints der Coverage senden `query_by_collection` (§2.4), jeder Datensatz nur seine Filter; die Coverage sendet `query` (§5). Ein Filter mit falschem Feld wird nicht gesendet.
+4. **Coverage-Speicher:** der Schlüssel der gemerkten Antworten für einen Ausschnitt enthält die Filter; eine andere Filterung ist eine andere Karte.
+5. **Umschalter:** `DatasetSelect` wird von „Showing dataset“ (Results) und „Advanced search“ geteilt.

@@ -1328,7 +1328,14 @@ input[type='date']:focus {
 }
 
 /* --- Advanced search in the control menu (DS-02c) ---
-   The dataset box is the one of the results (`DatasetSelect`), without the tinted card around it. */
+   The dataset box is the one of the results (`DatasetSelect`), without the tinted card around it. A wrong field is
+   red in both themes, dark enough on the light panel to be read. */
+.app[data-theme='tech'] {
+  --invalid: #ff6b6b;
+}
+.app[data-theme='normal'] {
+  --invalid: #c62f2f;
+}
 .dataset-select.plain {
   padding: 0;
   background: none;
@@ -1365,7 +1372,10 @@ input[type='date']:focus {
   color: var(--accent);
 }
 .advanced-count.wrong {
-  color: #ff6b6b;
+  color: var(--invalid);
+}
+.advanced-head .rg-caret {
+  font-size: 12px;
 }
 .advanced-body {
   display: flex;
@@ -1415,16 +1425,25 @@ input[type='date']:focus {
   color: var(--text);
   font-family: var(--mono);
   font-size: 12px;
+  outline: none;
   appearance: textfield;
   -moz-appearance: textfield;
+}
+.filter-range input[type='number']:focus {
+  border-color: var(--accent);
+  box-shadow: var(--glow);
 }
 .filter-range input[type='number']::-webkit-inner-spin-button,
 .filter-range input[type='number']::-webkit-outer-spin-button {
   appearance: none;
   margin: 0;
 }
-.filter-range input[aria-invalid='true'] {
-  border-color: #ff6b6b;
+.filter-range input[aria-invalid='true'],
+.filter-range input[aria-invalid='true']:focus {
+  border-color: var(--invalid);
+}
+.filter-field .hint-text.error {
+  color: var(--invalid);
 }
 .filter-unit {
   min-width: 1ch;

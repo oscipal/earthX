@@ -240,6 +240,15 @@ Kein Vorgabewert, auch kein voreingestellter Filterwert: Ein Filter wirkt erst, 
 2. **DS-02b, Backend Coverage (neue Session nach dem Merge von DS-02a):** Bedingungen an `/coverage`, `CoverageQuery`, `/aggregate`, Cache-Schlüssel, Wegfall von `max_cloud_cover`.
    *Umgesetzt am 28.10.2026 (Draft-PR, Log-Zeile, `adr/0021` §5).* Gegenüber dem Plan: Das Frontend verliert `maxCloudCover` schon hier, weil der Parameter der Route nicht mehr existiert; die Bedienung bleibt DS-02c. `area_coverage` verweigert Bedingungen zusätzlich selbst, weil sein Cache-Schlüssel sie nicht kennt. Der Live-Abgleich (§6.6) prüft jetzt auch, dass die Aggregation so viele Szenen zählt, wie die Suche findet.
 3. **DS-02c, Frontend (neue Session nach dem Merge von DS-02b):** „Advanced search“ mit Umschalter, Store, Suche/Load more/Fallback/Coverage, Browserprüfung.
+   *Umgesetzt am 30.10.2026 (Draft-PR, Log-Zeile, `adr/0021` §7).* Gegenüber dem Plan:
+   - Der Store hält den **Text der Felder** (`FilterInput`), nicht eine geprüfte Bedingung; sonst würde eine halb getippte Zahl unter dem Cursor umgeschrieben. Aus den Feldern entsteht das `query` erst beim Senden (`searchFilters.ts::filterQuery`).
+   - Ein Filter mit falschem Feld geht **nirgends** hinaus: „Search“ ist gesperrt (der Kopf zeigt „· check input“, unter „Search“ steht ein Satz), die Coverage-Karte fragt ohne ihn weiter. Eine Suche nach Szenenname liest keine Filter und bleibt frei.
+   - Ändert sich ein Filter eines Datensatzes, den die Suche auf dem Bildschirm abgefragt hat, verliert sie wie bei einer Datumsänderung ihre Seitenmarke („Load more“ entfällt); die Treffer bleiben. Der Datums-Fallback eines Datensatzes fragt nur ihn und nur seine Filter, weil der Server einen Schlüssel für eine nicht gesuchte Collection mit `400` abweist.
+   - Eine leere Trefferliste mit gesetzten Filtern sagt es („Search filters are set.“), damit die Leere nicht dem Gebiet zugeschrieben wird.
+   - Der Umschalter ist **eine** Komponente (`DatasetSelect`) für „Showing dataset“ und „Advanced search“; das Panel „Results“ ist dafür umgebaut, nicht kopiert.
+   - `within_aoi` liest das Frontend noch nicht; DS-03b hängt den Schalter „Within AOI“ an den Filter, an dem es gesetzt ist.
+   - Zahlenfelder sind `type="number"` ohne Pfeile. Der Fehlerton `--invalid` ist im hellen Thema dunkler (Kontrast auf weißem Grund).
+   - Browserprüfung: `frontend/e2e/advanced-search.cjs`.
 
 Je PR ein Draft-PR, Log-Zeile, Prüfanleitung, `main` holen vor „fertig“. DS-03 beginnt nach DS-02c.
 
