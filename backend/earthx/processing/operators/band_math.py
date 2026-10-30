@@ -405,13 +405,12 @@ BAND_MATH = Operator(
     stock=False,
 )
 
-#: Version 2 (NM4-43c): adds a named band to the stock. Not listed until the panel sends it (adr/0020 §13), and a
-#: job-only operator until the tile reads it (NM4-43d).
+#: Version 2 (NM4-43c): adds a named band to the stock. Not listed until the panel sends it (adr/0020 §13); the tile runs it
+#: since NM4-43d.
 BAND_MATH_V2 = dataclasses.replace(
     BAND_MATH,
     op_version=2,
     params=BandMathParamsV2,
-    tiers=frozenset({Tier.T2}),
     description="Compute a band from an expression over the bands, in physical values, and add it to the bands.",
     transform=_transform_v2,
     run=_run_v2,
