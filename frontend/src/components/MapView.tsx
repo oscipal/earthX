@@ -128,6 +128,7 @@ export default function MapView() {
   const coverageFootprints = useAppStore((s) => s.coverageFootprints);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
+  const resultsAt = useAppStore((s) => s.resultsAt);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   const playing = useAppStore((s) => s.playing);
@@ -242,7 +243,7 @@ export default function MapView() {
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
       const shown = resultsOnMapOf(st);
-      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded));
+      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded), st.resultsAt);
       syncMosaic(map, {
         // What browsing draws; a view draws its own scenes and needs the whole list for the quicklook under them.
         items: st.focusMode ? st.items : shown.quicklooks,
@@ -376,11 +377,11 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const note = overlayBudgetNote(
-        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded)),
+        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded), resultsAt),
       );
       if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
-  }, [layers, viewLayer, showDownloaded]);
+  }, [layers, resultsAt, viewLayer, showDownloaded]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload

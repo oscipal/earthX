@@ -1851,6 +1851,13 @@ input[type='date']:focus {
   background: var(--row-hover);
   color: var(--accent);
 }
+/* The entry "Results" (NM4-59): its name opens nothing. */
+.results-name,
+.results-name:hover {
+  cursor: default;
+  background: none;
+  color: var(--text);
+}
 .lm-opacity {
   width: 100%;
   min-width: 0;
