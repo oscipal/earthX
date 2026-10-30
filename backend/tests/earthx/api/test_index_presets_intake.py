@@ -1,7 +1,8 @@
 """A preset is an ordinary ``band_math`` step: the intake takes it like a typed one (NM4-14 plan §10 point 3).
 
 The panel builds the step from ``earthx:index_presets`` of the collection; nothing in the order or the recipe says
-that it came from a preset (KE1).
+that it came from a preset (KE1). What these tests hold is that the intake takes every published preset, and that
+its text is the expression a user types (``TYPED``), so the two give one recipe and one cache entry.
 """
 
 from __future__ import annotations

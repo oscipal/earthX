@@ -23,17 +23,28 @@ class IndexPresetMismatch(ConfigError):
 
 
 def check_index_presets(registry: DatasetRegistry) -> None:
-    """Refuse a registry whose presets ``band_math`` (version 2) would not take, or whose colormap the tiler lacks."""
+    """Refuse a registry whose presets ``band_math`` (version 2) would not take, or whose colormap the tiler lacks.
+
+    The bands ``band_math`` reads off the expression are matched against the entry once more, so that the text check
+    in ``catalog`` and the syntax tree here cannot drift apart unnoticed.
+    """
     colormaps = set(cmap.list())
     problems: list[str] = []
     for config in registry:
+        bands = set(config.band_units) - set(config.auxiliary_assets) - ({config.mask.asset} if config.mask else set())
         for preset in config.index_presets:
             where = f"{config.dataset_id}: the index preset {preset.name}"
-            for check, text in ((check_name, preset.name), (check_expression, preset.expression)):
-                try:
-                    check(text)
-                except ValueError as error:
-                    problems.append(f"{where}: {error}")
+            try:
+                check_name(preset.name)
+            except ValueError as error:
+                problems.append(f"{where}: {error}")
+            try:
+                read = check_expression(preset.expression)
+            except ValueError as error:
+                problems.append(f"{where}: {error}")
+            else:
+                if unknown := read - bands:
+                    problems.append(f"{where}: reads {', '.join(sorted(unknown))}, which is no band of the data")
             if preset.colormap_name not in colormaps:
                 problems.append(f"{where}: the tiler knows no colormap {preset.colormap_name!r}")
     if problems:

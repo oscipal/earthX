@@ -26,7 +26,7 @@ class TestTheEntries:
     def test_sentinel_2_offers_the_five_indices_in_the_order_of_the_buttons(self) -> None:
         assert [preset.name for preset in SENTINEL_2_L2A.index_presets] == ["NDVI", "NDWI", "NDSI", "NBR", "EVI"]
 
-    def test_n_is_the_nir_band_b08_not_nir08(self) -> None:
+    def test_n_is_the_nir_band_not_nir08(self) -> None:
         """Awesome Spectral Indices' `bands.json` maps N to B8 for Sentinel-2; B8A is N2 (plan §7.5)."""
         for preset in SENTINEL_2_L2A.index_presets:
             assert "nir08" not in preset.expression
@@ -79,7 +79,7 @@ class TestTheCheck:
 
     @pytest.mark.parametrize("second", ["NDVI", "ndvi", "Ndvi"])
     def test_a_name_twice_is_refused_ignoring_case(self, second: str) -> None:
-        with pytest.raises(ConfigError, match="NDVI is named twice|ndvi is named twice|Ndvi is named twice"):
+        with pytest.raises(ConfigError, match=f"the index preset {second} is named twice"):
             _with(NDVI, _preset(name=second))
 
     @pytest.mark.parametrize("name", ["red", "RED", "scl", "visual"])
@@ -110,16 +110,24 @@ class TestTheCheck:
 
     @pytest.mark.parametrize("field", ["title", "expression", "colormap_name", "formula"])
     @pytest.mark.parametrize("value", ["", "  ", " rdylgn", None])
-    def test_a_blank_text_is_refused(self, field: str, value: object) -> None:
+    def test_a_blank_or_untrimmed_text_is_refused(self, field: str, value: object) -> None:
         with pytest.raises(ConfigError, match=f"has a non-blank {field}"):
             _with(_preset(**{field: value}))
 
     @pytest.mark.parametrize(
-        "rescale", [(1.0, -1.0), (0.0, 0.0), (float("nan"), 1.0), (-1.0, float("inf")), (-1.0,), [-1.0, 1.0], (True, 2)]
+        "rescale",
+        [(1.0, -1.0), (0.0, 0.0), (float("nan"), 1.0), (-1.0, float("inf")), (-1.0,), [-1.0, 1.0], (True, 2), ("a", 1)],
     )
     def test_a_rescale_that_is_no_range_is_refused(self, rescale: object) -> None:
         with pytest.raises(ConfigError, match="has a rescale of two finite numbers, the lower first"):
             _with(_preset(rescale=rescale))
+
+    def test_whole_numbers_are_a_range_too(self) -> None:
+        assert _with(_preset(rescale=(-1, 1))).index_presets[0].rescale == (-1, 1)
+
+    def test_a_keyword_is_no_band_and_left_to_band_math(self) -> None:
+        """`if`/`else` are no band names: band_math refuses the expression at the start, with its own reason."""
+        assert _with(_preset(expression="nir if red else blue")).index_presets[0].expression == "nir if red else blue"
 
     @pytest.mark.parametrize("reference", ["http://ntrs.nasa.gov/citations/19740022614", "doi:10.3133/ofr0211", ""])
     def test_the_source_of_the_formula_is_an_https_address(self, reference: str) -> None:

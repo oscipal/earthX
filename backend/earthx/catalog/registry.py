@@ -11,6 +11,7 @@ later on.
 
 from __future__ import annotations
 
+import keyword
 import math
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -876,9 +877,10 @@ def _filter_problem(search_filter: SearchFilter) -> str | None:
 
 
 # The name of the band a preset's step adds: the pattern of ``band_math.check_name`` (adr/0020 §6), which the start of
-# ``api`` and ``tiler`` applies in full (``processing.index_presets``); ``catalog`` cannot import ``processing``.
+# ``api`` applies in full (``processing.index_presets``); ``catalog`` cannot import ``processing``.
 INDEX_PRESET_NAME = re.compile(r"\A[A-Za-z][A-Za-z0-9_]{0,31}\Z")
-# A name in an expression that is no call: what has to be a band of the dataset. Numbers such as ``1e5`` are no name.
+# A name in an expression that is no call: what has to be a band of the dataset. Numbers such as ``1e5`` are no name;
+# Python's keywords (``if``, ``and``) are left to band_math, which refuses them with a reason of its own.
 _EXPRESSION_BAND = re.compile(r"(?<![A-Za-z0-9_.])[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_])(?!\s*\()")
 
 
@@ -907,7 +909,7 @@ def _preset_problem(preset: IndexPreset, bands: set[str], not_bands: set[str]) -
         value = getattr(preset, field_name)
         if not isinstance(value, str) or not value.strip() or value != value.strip():
             return f"has a non-blank {field_name}"
-    used = set(_EXPRESSION_BAND.findall(preset.expression))
+    used = {name for name in _EXPRESSION_BAND.findall(preset.expression) if not keyword.iskeyword(name)}
     if used & not_bands:
         return f"reads {', '.join(sorted(used & not_bands))}, which is no band of the data"
     if unknown := used - bands:

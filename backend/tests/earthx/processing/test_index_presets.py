@@ -92,7 +92,7 @@ class TestReferenceValues:
         assert _exact(preset.expression, bands) == BY_HAND[name]
 
     @pytest.mark.parametrize("name", ["NDVI", "NDWI", "NDSI", "NBR"])
-    def test_a_normalized_difference_stays_inside_its_range(self, name: str) -> None:
+    def test_a_normalized_difference_of_reflectance_from_0_to_1_stays_inside_its_range(self, name: str) -> None:
         rng = numpy.random.default_rng(14)
         values = {band: rng.uniform(0.0, 1.0, (64, 64)) for band in REFLECTANCE}
         data = numpy.ma.masked_array(numpy.stack(list(values.values())))
@@ -119,6 +119,7 @@ class TestTheCheckAtTheStart:
             ({"expression": "nir ** 0.5 - red"}, "the exponent of"),
             ({"expression": "~nir"}, "needs a truth value"),
             ({"expression": "(nir - red"}, "not a valid expression"),
+            ({"expression": "nir if red else blue"}, "IfExp is not allowed"),
             ({"name": "where"}, "is a function"),
             ({"name": "True"}, "Python keyword"),
             ({"colormap_name": "rainbow_unicorn"}, "knows no colormap 'rainbow_unicorn'"),
@@ -128,6 +129,13 @@ class TestTheCheckAtTheStart:
         broken = replace(SENTINEL_2_L2A, index_presets=(replace(PRESETS["NDVI"], **change),))
         with pytest.raises(IndexPresetMismatch, match=f"sentinel-2-c1-l2a: the index preset .*{reason}"):
             check_index_presets(DatasetRegistry((broken, COP_DEM_GLO_30)))
+
+    def test_the_bands_band_math_reads_are_matched_against_the_entry_once_more(self) -> None:
+        """A net under the text check of `catalog`: here the bands come off the syntax tree."""
+        entry = replace(SENTINEL_2_L2A)
+        object.__setattr__(entry, "index_presets", (replace(PRESETS["NDVI"], expression="visual - red"),))
+        with pytest.raises(IndexPresetMismatch, match="preset NDVI: reads visual, which is no band of the data"):
+            check_index_presets(DatasetRegistry((entry,)))
 
     def test_every_problem_is_named_not_only_the_first(self) -> None:
         broken = replace(
