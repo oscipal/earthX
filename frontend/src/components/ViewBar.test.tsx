@@ -128,6 +128,26 @@ describe('the download buttons', () => {
     }
   });
 
+  it('originals: the tooltip says a ZIP per scene where the source lets the page read its files, with the browser prompt', () => {
+    select('cog', null);
+    const [only] = useAppStore.getState().datasets;
+    useAppStore.setState({ datasets: [{ ...only, collection: { ...only.collection, 'earthx:access': { cors: true } } }] });
+    show();
+    expect(button('⇩ Download full scenes').title).toContain('one ZIP of its original files');
+    expect(button('⇩ Download full scenes').title).toContain('may ask once to allow several downloads');
+    useAppStore.setState({ selectedIds: ['A'] });
+    show();
+    expect(button('⇩ Download full scene').title).toContain('as one ZIP');
+    expect(button('⇩ Download full scene').title).not.toContain('several downloads');
+  });
+
+  it('originals: the tooltip says "file" where the source gives no CORS, and promises no ZIP', () => {
+    select('cog', null);
+    show();
+    expect(button('⇩ Download full scenes').title).toContain('original files of the selected scenes');
+    expect(button('⇩ Download full scenes').title).not.toContain('ZIP');
+  });
+
   it('originals: disabled for Zarr, with the reason', () => {
     select('zarr', AOI);
     show();

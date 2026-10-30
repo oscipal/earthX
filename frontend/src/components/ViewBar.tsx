@@ -13,6 +13,15 @@ import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { ticksOfOpen, useAppStore } from '../store';
 
+// What a click on "Download full scenes" does (NM4-33): a ZIP of the original files of each scene where the source
+// lets the page read them, else the files themselves; either way straight from the source.
+function originalsTitle(plural: boolean, zip: boolean): string {
+  if (!zip) return `Download the original file${plural ? 's' : ''} of the selected scene${plural ? 's' : ''}, straight from the source`;
+  return plural
+    ? 'Download each selected scene as one ZIP of its original files, straight from the source. Your browser may ask once to allow several downloads.'
+    : 'Download the selected scene as one ZIP of its original files, straight from the source.';
+}
+
 export default function ViewBar() {
   const count = useAppStore((s) => ticksOfOpen(s).length);
   const aoi = useAppStore((s) => s.aoi);
@@ -75,7 +84,7 @@ export default function ViewBar() {
         disabled={!originalsAllowed}
         title={
           originalsAllowed
-            ? 'Download the whole original files of the selected scenes, straight from the source'
+            ? originalsTitle(plural, dataset?.collection['earthx:access']?.cors === true)
             : noOriginalsReason(dataset)
         }
         onClick={() => openDownloadForSelection('originals')}
