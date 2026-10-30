@@ -10,7 +10,8 @@
 
     Steps, each printed as OK or FEHLER:
       1. find one item for the area, send an order (reproject of one asset), expect 201 and a Location
-      2. poll the status until successful or failed
+      2. poll the status until successful or failed; print the job's runtime (started to finished,
+         from the status) and say whether it was a cache hit, which ran no job of its own
       3. fetch the results, follow the 303, save result.tif, mask.tif and recipe.json
       4. send the same order again: expect a cache hit (successful at once, no new run)
       5. DELETE both jobs, expect "dismissed"
@@ -263,6 +264,25 @@ function Format-Number {
     return $Value.ToString('0.0###############', $Invariant)    # always a decimal point, never a decimal comma
 }
 
+function ConvertTo-UtcTime {
+    # 5.1 leaves a time of the status as text, 7 turns it into a date.
+    param($Value)
+    if ($Value -is [datetime]) { return $Value.ToUniversalTime() }
+    return [DateTimeOffset]::Parse([string]$Value, $Invariant).UtcDateTime
+}
+
+function Get-RuntimeText {
+    # The job's runtime from its status, started to finished (NM4-62), with a decimal point.
+    param($State)
+    if ($null -eq $State -or -not $State.started -or -not $State.finished) { return 'Laufzeit unbekannt, der Status nennt started oder finished nicht' }
+    try {
+        $seconds = ((ConvertTo-UtcTime $State.finished) - (ConvertTo-UtcTime $State.started)).TotalSeconds
+    } catch {
+        return 'Laufzeit unbekannt, started oder finished ist keine lesbare Zeit'
+    }
+    return "Laufzeit $($seconds.ToString('0.0', $Invariant)) s von started bis finished"
+}
+
 function Get-ProblemText {
     param($Response)
     $problem = ConvertFrom-JsonSafe $Response.Content
@@ -508,8 +528,9 @@ if ($location -eq "/processing/jobs/$jobId") {
 } else {
     Write-Result $false "Auftrag gesendet, aber Location ist '$location' statt '/processing/jobs/<jobID>'"
 }
-if ($job.status -eq 'successful') {
-    Write-Info 'Der Auftrag war schon fertig: ein Treffer aus einem früheren Lauf (Cache, 7 Tage).'
+$cacheHit = $job.status -eq 'successful'
+if ($cacheHit) {
+    Write-Info 'Cache-Treffer: Der Auftrag war schon fertig, das Ergebnis stammt aus einem früheren Lauf (Cache, 7 Tage).'
 }
 if ($job.skippedItems -and @($job.skippedItems).Count -gt 0) {
     Write-Info "Ausgelassene Items (die Fläche berührt sie nicht): $(@($job.skippedItems) -join ', ')"
@@ -540,7 +561,11 @@ while ($true) {
 }
 $finished = $false
 if ($state.status -eq 'successful') {
-    Write-Result $true 'Job ist successful'
+    if ($cacheHit) {
+        Write-Result $true "Job ist successful als Cache-Treffer, ohne eigenen Lauf ($(Get-RuntimeText $state) des früheren Laufs)"
+    } else {
+        Write-Result $true "Job ist successful ($(Get-RuntimeText $state))"
+    }
     $finished = $true
 } elseif ($state.status -eq 'failed') {
     $why = Invoke-Http -Uri "$statusUrl/results"
