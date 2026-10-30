@@ -2859,3 +2859,38 @@ Otto hat den Plan von NM4-14 am 2026-10-30 freigegeben (zu [#251](https://github
   - Die Formel von Awesome Spectral Indices mit ihren Konstanten (g 2.5, C1 6, C2 7.5, L 1) und der Zuordnung von `bands.json` gegen den Ausdruck.
   - Annahme: Preset und getippter Ausdruck ergeben dasselbe Rezept und denselben Hash, gelesen werden nur die genannten Assets.
   - Fehleingaben der Form und Start von `api` mit einem kaputten Preset.
+
+## 15 Nachtrag DS-06: der Operator `mask_values`, Maske nach Werten eines Bandes (2026-10-30; zu §5.2, §5.3, §5.5, §6.3, §15c, §15m; `adr/0020` §4, §12)
+
+Otto hat den Plan von DS-06 am 2026-10-30 freigegeben (zu [#254](https://github.com/oscipal/earthX/pull/254), `plans/ds/ds-06-maske-nach-werten.md` §13, Fragen 1–4 nach Option 1, Frage 5 nach Option 3, Frage 6 nach Option 3). Der Originaltext von §15m
+bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist das Backend (DS-06a); das Panel folgt als DS-06b, sobald Otto einen freien Frontend-Platz meldet.
+
+- **Operator (Frage 1).** `mask_values` Version 1, `pixel`, `{T1, T2}`, Kategorie `quality`, Titel „Mask by value“. Ein eigener Operator neben `mask`: `mask` Version 2 (Klassen der `SCL`) und alle bestehenden Rezepte samt Hash bleiben unverändert.
+  `mask` heißt in der Auflistung jetzt „Mask by class“ (nur der Titel, Frage 5), die Parameter und der Kern ändern sich nicht.
+- **Rezeptform.** Strikt, alle Felder Pflicht (B10), `extra="forbid"`:
+
+  | Feld | Inhalt |
+  |---|---|
+  | `band` | Name eines Bandes des Vorrats an dieser Stelle: ein Band des Datensatzes oder das Ergebnis eines früheren Schritts; 1–64 druckbare ASCII-Zeichen ohne Leerzeichen |
+  | `condition` | `lt`, `gt`, `between`, `eq` |
+  | `values` | Zahlen in physikalischen Werten: eine für `lt`/`gt`, zwei für `between` (erst die untere, `low < high`), eine bis 64 für `eq` (aufsteigend, je einmal); endlich und auch in `float32` endlich (Betrag höchstens 3,4028235·10³⁸) |
+
+  Ein Pixel wird ausgeblendet, wo `x < v` (`lt`), `x > v` (`gt`), `low ≤ x ≤ high` (`between`, beide Grenzen eingeschlossen, wie openEO) oder `x` einer der Werte ist (`eq`). Zwei Bedingungen gleichzeitig sind zwei Schritte (`lt 0.2`, dann `gt 0.8`);
+  die Eigenschaft `earthx:mask_values` wird dann eine Liste (Regel des Kerns, `_properties`).
+- **Wirkung (`adr/0020` §12).** Wie `mask` Version 2: in **allen** Bändern des Vorrats, auch in dem, das entscheidet; es kommt kein Band dazu und keins fällt weg. `bands_used` ist `reads = {band}`, `adds = None`, `acts_on = None`; Streichen, `output.bands`, die Ableitung
+  der Assets in `api` und die Kachel brauchen nichts Neues. Das Band, das entscheidet, wird gelesen, auch wenn die Ausgabe es nicht nennt, und bleibt im Vorrat, bis der Schritt gelaufen ist.
+- **Vergleich im Datentyp des Bandes (Frage 3).** Ein Gleitkomma-Band bekommt die Werte zuerst auf seinen Typ gerundet, ein ganzzahliges Band wird exakt in `float64` verglichen (jede ganze Zahl bis 32 Bit ist dort exakt). So trifft `eq 0.2` den `float32`-Wert, den Statistik
+  und Tooltip als 0.2 zeigen; in `float64` wäre er weder gleich 0.2 noch kleiner. Ein Wert, der unter der kleinsten Zahl des Typs liegt, rundet auf 0 (`lt 1e-50` auf einem `float32`-Band ist `lt 0`). Ein Band aus Text wird abgewiesen.
+- **Pixel ohne Wert (Frage 4).** Wo das Band keinen Wert hat (maskiert oder NaN), wird das Pixel in allen Bändern ausgeblendet, wie bei `mask` (M4-18 F3) und wie openEO, wo ein no-data-Operand kein „falsch“ ergibt. Schon maskierte Pixel bleiben maskiert.
+- **Capability (B10).** Neues Flag `Capabilities.value_masking`, ohne Vorgabe, in beiden Einträgen (`sentinel-2-c1-l2a`, `cop-dem-glo-30`) `True`, in `earthx:capabilities` veröffentlicht. Es braucht keine Klassenschicht: Das DEM bekommt „Mask by value“, aber nicht „Mask by class“.
+  Kein `dataset_check`; jedes Band des Vorrats ist erlaubt, auch die Klassenschicht. Kein datensatzspezifischer Code.
+- **Faktor (§5.5, §15k).** 0,2 wie `mask`. Gemessen mit `scripts/ds-06-mask-values/measure_kernel.py` (Block 1024², kleinster Wert aus 15 Läufen, Sitzung, x86_64): `mask_values` `lt` 0,7–1,2 ms, `gt` 0,7–1,2, `between` 1,1–1,5, `eq` mit vier Werten 1,7–2,3;
+  `mask` Version 2 2,8–3,1; `band_math` NDVI 8,2–16,6 ms (numexpr-Threads streuen). Ein ganzer Band-Math-Lauf kostet 146 ms je Megapixel; der Anteil des Kerns bleibt unter 0,02, aufgerundet 0,1, mit dem Zuschlag des Statistik-Durchgangs (+12,1 %) aufgerundet 0,2.
+- **Bitstabilität (§15c).** Nur Vergleiche und Verknüpfungen von Masken, keine Gleitkommarechnung. Ein Test rechnet alle vier Bedingungen in `float32`, `float64` und `uint16` unter den Einstellungen A und D von `adr/0016` §3.3 und verlangt gleiche SHA-256. Kachel und Job sind auf der nativen Ebene bitgleich
+  (COG, 256 und 512 px, auch mit einem Band, das nicht angezeigt wird); auf Zarr gilt §15d. Der Runner gibt dieselben Bytes wie der Job (`runner/test_compare.py`).
+- **Speicher (§3.5).** Der Schritt läuft im Durchgang des Lesens, ein Block zur Zeit, und fügt kein Band hinzu. Gemessen wie in §15m (Kindprozess, `VmHWM`, `GDAL_CACHEMAX` 64 MB, zwei Bänder `uint16`, `between`): bei 4096² 372 MB, Wachstum von 2048² auf 4096² 82 MB;
+  die Grenzen 500 MB und 100 MB halten (`test_memory_mask_normalize.py`). Die Speicherschätzung (NM4-43c PR 2) bleibt unverändert.
+- **Version.** `recipe_version` bleibt 2, `earthx.__version__` bleibt 0.5.0: Für kein bestehendes Rezept ändert sich ein Byte. Ein älterer Runner weist ein Rezept mit `mask_values` als unbekannten Operator ab (`adr/0016` Nachtrag DS-06).
+- **Grenzen des Panels (DS-06b).** `values` ist eine Liste von Zahlen; `schemaForm.ts` kennt heute nur Listen ganzer Zahlen (`integers`). DS-06b braucht dafür einen Feldtyp für Zahlenlisten und bildet `lt`/`gt`/`between` als ein oder zwei Zahlenfelder ab.
+- **Tests.** Der Kern je Bedingung gegen einen Vergleich in Brüchen (`fractions.Fraction`), Grenzwerte auf der Schwelle und ein ULP daneben, `float32`, `float64`, `uint8`, `int16`; die Typregel; NaN und maskierte Pixel; die Kette mit `band_math` gegen ein unabhängiges NDVI; vor und nach dem Ergebnis dieselben Pixel; mit und ohne
+  Streichen bitgleich; Planer und `api` (gelesene Assets, Fehlernamen, Ergebnis eines späteren Schritts); Auflistung je Datensatz; Kachel gegen Job; Runner gegen Kern samt Gegenprobe mit anderer Schwelle; Fehleingaben (`422`/`400`).

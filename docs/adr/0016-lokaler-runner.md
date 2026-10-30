@@ -1034,6 +1034,11 @@ Der Runner rechnet `normalize` Version 3 mit den Zahlen, die das Rezept trägt (
 `runner/test_compare.py` vergleicht Job-Kind und Runner für jede der vier Methoden bis auf das Byte (Pixel, Maske, Profil, Band-Tags, SHA-256 von `result.tif` und `mask.tif`), und die Gegenprobe ändert eine gemessene Zahl auf der Seite des Runners und
 verlangt den Bruch. Der Methodentext in `provenance.methods` nennt die Zahlen. Das Image bleibt `earthx-runner:0.5.0` (keine Byte ändert sich, `earthx.__version__` bleibt); eine ältere Fassung weist Version 3 ab (unbekannter Operator, Exit-Code 2).
 
+## 12 Nachtrag DS-06 (2026-10-30): `mask_values` im Runner (zu §12; `adr/0014` Nachtrag DS-06)
+
+Der Runner rechnet `mask_values` Version 1 mit demselben Kern wie die Plattform (`processing`), ohne Messung und ohne Zahlen aus der Plattform: Band, Bedingung und Werte stehen im Rezept. Kern und Runner geben dieselben Bytes (`runner/test_compare.py`, Gegenprobe mit anderer Schwelle).
+Das Image bleibt `earthx-runner:0.5.0` (kein Byte eines bestehenden Rezepts ändert sich, `earthx.__version__` bleibt); eine ältere Fassung weist das Rezept als unbekannten Operator ab (Exit-Code 2).
+
 ## 13. Quellen
 
 **Im Repo [P]**

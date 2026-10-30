@@ -266,3 +266,62 @@ Kurz beantwortbar: je Frage eine Nummer.
 - numpy NEP 50, Typregel für Python-Skalare: https://raw.githubusercontent.com/numpy/numpy/main/doc/neps/nep-0050-scalar-promotion.rst [P]
 - Earth Engine `Image.updateMask`: https://developers.google.com/earth-engine/apidocs/ee-image-updatemask [S]
 - Intern: `adr/0020` §4, §6, §10, §12, §18; `adr/0014` §5.2, §5.3, §5.5, §6.3, §15c, §15d, §15m; `adr/0016` §3.3, Nachtrag NM4-11; `plans/m4/m4-18-masking-normalisierung.md` F3; `processing/operators/mask.py`, `band_math.py`, `base.py`, `processing/core.py:441`, `catalog/registry.py:1140`, `frontend/src/components/ProcessingPanel.tsx:736`, `frontend/src/schemaForm.ts:171`.
+
+## 13. Freigabe (Otto, 30.10.2026, zu #254)
+
+| Frage | Antwort |
+|---|---|
+| 1 Form im Rezept | **1:** eigener Operator `mask_values`, `mask` bleibt |
+| 2 Bedingungen | **1:** below, above, between (beide Grenzen eingeschlossen), equal to. Wirkung: ausgeblendet wird, wo die Bedingung zutrifft (wie bei der Klassenmaske); das Panel sagt es kurz („Hide where …“), die Erklärung steht im Tooltip (ⓘ wie in NM4-43e) |
+| 3 Vergleich | **1:** im Datentyp des Bandes |
+| 4 Pixel ohne Wert | **1:** werden ausgeblendet |
+| 5 Knöpfe | **3:** „＋ Mask by class“ und „＋ Mask by value“; „Mask by class“ erscheint nur bei Datensätzen mit Klassenschicht (nicht Mögliches wird ausgeblendet) |
+| 6 Schnitt | **3:** ein PR. Das Backend jetzt umsetzen und pushen; mit dem Frontend erst beginnen, wenn Otto einen freien Frontend-Platz meldet |
+
+Die Kleinentscheidungen KE1–KE9 aus §9 gelten. Nachträge heißen „Nachtrag DS-06“. Bilder kommen nicht ins Repo. Das Backlog (`nach-m4-backlog.md`) bleibt unverändert.
+
+## 14. Umsetzung DS-06a (Backend, 30.10.2026)
+
+Dieselbe Draft-PR [#254](https://github.com/oscipal/earthX/pull/254) trägt Plan und Backend; das Frontend (DS-06b, §15) kommt in dieselbe PR, sobald Otto einen freien Frontend-Platz meldet.
+
+**Abweichungen und Auslegungen von Claude** (gelten, bis Otto widerspricht):
+
+1. **Zwei Einträge statt drei.** Der Plan sprach von drei Einträgen. Das Repo hat seit NM4-15b nur `sentinel-2-c1-l2a` und `cop-dem-glo-30`; beide setzen `value_masking=True`.
+2. **Der Titel von „Mask“ ändert sich in der Auflistung.** Das Panel baut seine Knöpfe aus `operator.title`. „Mask by class“ (Frage 5) ist deshalb schon jetzt der Titel von `mask` Version 2 und Version 1; ohne Änderung am Frontend zeigt der Knopf „＋ Mask by class“, der neue „＋ Mask by value“. Parameter, Kern und Rezepte von `mask` bleiben unverändert.
+3. **NaN zählt als „kein Wert“.** Ein Gleitkomma-Pixel mit NaN, das nicht maskiert ist (etwa aus einer Datei, die NaN statt eines Nodata-Werts trägt), wird wie ein maskiertes ausgeblendet. Eine Bedingung kann über NaN nichts sagen (Frage 4).
+4. **Werte unterhalb des Typs.** Ein Wert, der kleiner als die kleinste positive Zahl des Bandtyps ist, rundet beim Vergleich im Typ des Bandes auf 0 (`lt 1e-50` auf `float32` ist `lt 0`). Das folgt aus Frage 3; die Grenze der Werte (höchstens 3,4028235·10³⁸) hält nur das Gegenstück nach oben fern von ∞.
+5. **Methodentext.** Mehrere Werte von `eq` stehen mit Komma getrennt („equal to 3, 8, 9“), nicht mit „or“; die Eigenschaft heißt `earthx:mask_values`, die Linie `mask values: NDVI < 0.2` (KE5).
+6. **Kein PowerShell-Skript im Repo.** Die Prüfanleitung für Otto (Abnahme) steht im PR. Ein Skript ließe sich in der Sitzung nicht ausführen (kein PowerShell), und ein ungeprüftes wäre mehr Last als Hilfe.
+
+**Abnahme DS-06a.**
+
+- **Bedingungen gegen eine unabhängige Rechnung** (`test_mask_values.py`): jede Bedingung auf `float32` und `float64` gegen einen Vergleich in Brüchen (`fractions.Fraction`); Grenzwerte genau auf der Schwelle und ein ULP daneben; ganzzahlige Bänder (`uint8`, `int16`) mit Schwellen unter 0 und über dem Typ; die Typregel (`float32(0.2)`); NaN, maskierte Pixel, Wirkung auf alle Bänder.
+- **Kette mit Band math** (`TestRunsThroughTheCore`): `band_math` NDVI, dann `mask_values` NDVI `lt 0.5`, gegen ein unabhängig gerechnetes NDVI; ein Band des Datensatzes, das nicht in der Ausgabe steht, entscheidet trotzdem; vor oder nach dem Ergebnis dieselben Pixel; zwei Masken; mit und ohne Streichen bitgleich; zweimal dieselben Bytes; fehlendes Band und Ergebnis eines späteren Schritts vor dem ersten Block abgewiesen.
+- **Planer und `api`** (`test_stock_plan.py`, `test_intake_stock.py`): gelesene Assets, Reihenfolge der Auswahl im Vorrat, DEM nimmt die Maske nach Werten und weist die nach Klassen ab, Fehlernamen, Fehleingaben vor dem Abruf des Items (`422`).
+- **Auflistung** (`test_processing_docs.py`): beide Knöpfe mit ihren Titeln, das DEM bietet nur „Mask by value“.
+- **Kachel gegen Job** auf der nativen Ebene bitgleich (`test_tiler_mask_values.py`, COG, 256 und 512 px; ein Band, das nicht angezeigt wird, entscheidet; liest nur, was es braucht); Ablehnungen: Datensatz ohne Flag, Anzeige-Stufe, fehlendes Band, Fehleingaben `400`, ohne Abruf der Quelle.
+- **Runner gegen Job-Kind** bitgleich, mit Gegenprobe (andere Schwelle bricht den Vergleich) (`runner/test_compare.py`).
+- **Bitstabil** unter den Einstellungen A und D (`float32`, `float64`, `uint16`, alle vier Bedingungen); **Speicher** bei 4096² 372 MB, Wachstum 82 MB (Grenzen 500 und 100 MB); Kernzeit 0,7–2,3 ms gegen 2,8–3,1 ms bei `mask` (`scripts/ds-06-mask-values/measure_kernel.py`).
+- **Registry:** `value_masking` ohne Vorgabe (fehlt es, lädt der Eintrag nicht), beide Einträge setzen es, die Collection veröffentlicht es.
+- **Gegenprobe:** Gegen den Code vor der Änderung scheitern 22 der neuen und geänderten Tests, und zwei Testdateien lassen sich dort nicht laden.
+- `ruff check backend`, `lint-imports` (16 Verträge gehalten).
+
+## 15. DS-06b — Frontend: „Mask by value“ im Panel (Aufgabe für die Fortsetzung dieser Session)
+
+**Stufe A**, nur Frontend, **derselbe PR** (Otto, Frage 6). **Start erst, wenn Otto einen freien Frontend-Platz meldet** (höchstens zwei Frontend-Sessions gleichzeitig; nicht gleichzeitig mit NM4-43e PR 2, NM4-11b, NM4-14b, NM4-20 oder NM4-45, alle ändern Bänder oder Schritte des Panels). **Modell:** Sonnet, Effort hoch.
+**Startsatz:** „Setze DS-06b um (`docs/plans/ds/ds-06-maske-nach-werten.md` §15); Frontend-Platz ist frei.“
+
+**Ausgangslage.** Das Backend kennt `mask_values` Version 1 (§14, `adr/0014` „§15 Nachtrag DS-06“): `band`, `condition` (`lt`, `gt`, `between`, `eq`) und `values` (Zahlen). Die Prozessbeschreibung listet es für jeden Datensatz mit dem Titel „Mask by value“; `mask` heißt dort „Mask by class“ und fehlt beim DEM. `StepForm.tsx` und `ProcessingPanel.tsx` bauen die Knöpfe aus `operator.title`. Die Texte sind nur Englisch, kurz; Erklärungen im Tooltip (ⓘ, Tooltip-Komponente aus NM4-52, UI-01 §4).
+
+1. **Knöpfe.** „＋ Mask by class“ und „＋ Mask by value“ kommen aus der Auflistung; nichts ist ausgegraut. Der Satz „Mask: this dataset has no classification layer to read.“ (`ProcessingPanel.tsx`, nahe Zeile 736) entfällt: Ohne Klassenschicht ist der Knopf nicht da.
+2. **Schritt „Mask by value“** (Titel „<n>. Mask_values_<n>“ wie jeder Schritt ohne eigenes Band, dahinter „mask by value“):
+   - **Band:** Auswahlfeld mit den Ergebnissen früherer Schritte zuerst, dann den Bändern des Datensatzes (ohne Hilfs-Assets). Tooltip: „The band whose values decide. Pixels are hidden in every band.“
+   - **Hide where:** Auswahl „below“ (`lt`), „above“ (`gt`), „between“ (`between`), „equal to“ (`eq`). Tooltip: „Hides the pixels where the band is below or above the value, between the two (both included), or equal to one of the values. Compared in the band's data type. Pixels where the band has no value are hidden too.“
+   - **Werte:** ein Zahlenfeld für below/above, zwei für between („from“, „to“), ein Feld für eine Liste bei equal to („3, 8, 9“; das Panel sortiert und entfernt Doppelte, höchstens 64). Die Einheit des Bandes klein neben der Beschriftung (`in m`), wenn die Registry sie kennt. Das Formular entsteht nicht aus dem Schema (`schemaForm.ts` kennt Zahlenlisten nicht): wie bei `ClassPicker` für `mask` ist es ein Sonderfall im `StepForm`.
+   - Fehler am Feld, sofort: keine Zahl, nicht endlich, `from` nicht unter `to`, mehr als 64 Werte. Ein Band, das ein späterer Schritt erst hinzufügt, oder das es nicht gibt, meldet wie ein Ausdruck (`'x' is added by a later step`, `'x' is not a band name`) und sperrt „Add step“, „Review“ und „Start job“ mit Grund im Tooltip (`adr/0020` §18.1).
+3. **Umbenennen** eines Ergebnisses zieht `band` in allen `mask_values`-Schritten mit (`adr/0020` §6), über denselben Zerleger wie für Ausdrücke und `normalize.bands`.
+4. **Auftrag und Rezept.** Der Schritt geht als `{"op": "mask_values", "op_version": 1, "params": {band, condition, values}}`; `output.bands` bleibt, was die Person wählt (das Band, das entscheidet, braucht keinen Haken). `recipe.json`, Permalink und Ablage im Browser lesen und schreiben ihn unverändert (`recipeFile.ts`, `permalink.ts`, `jobShelf.ts`: prüfen, dass kein Operator-Name fest verdrahtet ist).
+5. **Vorschau.** Der Schritt ist `T1` und `pixel` und steht in der Kette der Kachel (höchstens 4 Schritte); die URL trägt `band=`. Keine eigene Logik.
+6. **Tests** (vitest): Knöpfe aus der Auflistung (DEM ohne „Mask by class“), Formular je Bedingung und der gebaute Schritt, Zahlenlisten (Sortierung, Doppelte, Grenze 64), Fehler und Sperren, Umbenennen, `recipe.json` hin und zurück, Hinweis „no classification layer“ weg.
+7. **Prüfung im echten Browser** (Chromium/Playwright der Sitzung), nicht nur jsdom, in Hell- und Dunkelmodus und bei schmalem Fenster, mit nachgestellten Antworten; im PR beschrieben. **Bilder nicht ins Repo.**
+8. Nachtrag `adr/0014` „§15 Nachtrag DS-06b“ (Panel), Log-Zeile mit PR-Nummer; `docs/plans/nach-m4-backlog.md` nicht ändern. Vor „fertig“ ist `main` geholt; alle vier Pflicht-Checks der CI grün (Lint, Typprüfung, Frontend-Tests, Backend-Tests).
