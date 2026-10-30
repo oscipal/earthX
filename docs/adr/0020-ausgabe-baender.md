@@ -1216,4 +1216,7 @@ bleibt maßgeblich; dieser Nachtrag nennt, was daraus im Panel geworden ist, und
   mit einer Leerzeile dazwischen (Zeilenumbrüche im Tooltip bleiben erhalten). (3) Das ⓘ ist klein geschrieben (die Beschriftungen sind in Großbuchstaben, das große ⓘ ist ein anderes Zeichen).
   (4) „Align“ ist beschrieben: Das Raster liegt auf ganzen Vielfachen der Auflösung, Ergebnisse verschiedener Flächen oder Tage passen dann Pixel auf Pixel, und das Ergebnis kann bis zu ein
   Pixel an jeder Seite weiter reichen (Text in der Prozessbeschreibung, `reproject`).
+- **Ausdruck muss ein Ausdruck sein (Otto, 2026-10-30).** Ein Text, der kein Ausdruck ist (etwa `red red` oder `nir -`), meldet sofort am Feld `Enter a valid expression` und sperrt wie ein
+  ungültiger Name „Add step“, „Review“ und „Start job“. Das Panel prüft nur die Form (Zahlen, Bänder, `+ - * / **`, Vergleiche, `& | ~`, Aufrufe wie `where(c, a, b)`, Klammern; `processingBands.ts:
+  isExpression`); welche Namen Bänder sind, prüft `readProblem` danach, die Typen der Server. Ein leerer Ausdruck bleibt beim „Required.“ des Formulars.
 

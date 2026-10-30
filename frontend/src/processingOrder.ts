@@ -9,7 +9,7 @@ import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
 import type { AoiProvenance, JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
-import { bandNamesOf, isBandMath, nameProblem, ownersOf, resultNameOf } from './processingBands';
+import { bandNamesOf, isBandMath, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
 import { initialValues, paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
 import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
@@ -468,6 +468,10 @@ export function readProblem(
   data: readonly string[],
 ): { field: 'expression' | 'bands'; message: string } | null {
   const field = step.op === 'normalize' ? 'bands' : 'expression';
+  // Text that is no expression at all is told before anything else (review of #250); an empty one is the form's "Required".
+  if (step.op === 'band_math' && typeof step.values.expression === 'string' && step.values.expression.trim() !== '' && !isExpression(step.values.expression)) {
+    return { field, message: 'Enter a valid expression' };
+  }
   const names =
     step.op === 'band_math' && typeof step.values.expression === 'string'
       ? namesInExpression(step.values.expression)

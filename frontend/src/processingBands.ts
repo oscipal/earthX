@@ -136,3 +136,74 @@ export function outputBands(checked: readonly string[], results: readonly string
     ...checked.filter((name) => !known.has(name)),
   ];
 }
+
+// --- the shape of an expression ----------------------------------------------------------
+
+// What an expression of band math may be made of (`band_math.py`: numbers, bands, `+ - * / **`, comparisons, `& | ~`, and
+// calls such as `where(c, a, b)`). Only the shape is checked here, so that a text like "red red" or "nir -" is told at once; which
+// names are bands, and whether the types fit, `readProblem` and the server say.
+const TOKEN = /\s*(?:(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+)|([A-Za-z_][A-Za-z0-9_]*)|(\*\*|<=|>=|==|!=|[-+*/<>&|~(),]))/uy;
+
+type Token = { kind: 'number' | 'name' | 'op'; text: string };
+
+function tokens(text: string): Token[] | null {
+  const found: Token[] = [];
+  TOKEN.lastIndex = 0;
+  while (TOKEN.lastIndex < text.length) {
+    if (/^\s*$/u.test(text.slice(TOKEN.lastIndex))) break;
+    const match = TOKEN.exec(text);
+    if (!match) return null;
+    found.push(match[1] !== undefined ? { kind: 'number', text: match[1] } : match[2] !== undefined ? { kind: 'name', text: match[2] } : { kind: 'op', text: match[3] });
+  }
+  return found;
+}
+
+const BINARY = new Set(['+', '-', '*', '/', '**', '<', '<=', '>', '>=', '==', '!=', '&', '|']);
+const UNARY = new Set(['+', '-', '~']);
+
+// Whether `text` is built like an expression: operands joined by binary operators, signs and `~` in front of an operand,
+// parentheses and calls that close, and nothing left over. An empty text is not one.
+export function isExpression(text: string): boolean {
+  const all = tokens(text);
+  if (!all || all.length === 0) return false;
+  let at = 0;
+  const is = (op: string) => all[at]?.kind === 'op' && all[at].text === op;
+  const operand = (): boolean => {
+    while (all[at]?.kind === 'op' && UNARY.has(all[at].text)) at += 1;
+    const token = all[at];
+    if (!token) return false;
+    if (token.kind === 'number') {
+      at += 1;
+      return true;
+    }
+    if (token.kind === 'name') {
+      at += 1;
+      if (!is('(')) return true;
+      at += 1;
+      if (!sum()) return false;
+      while (is(',')) {
+        at += 1;
+        if (!sum()) return false;
+      }
+      if (!is(')')) return false;
+      at += 1;
+      return true;
+    }
+    if (token.text !== '(') return false;
+    at += 1;
+    if (!sum()) return false;
+    if (!is(')')) return false;
+    at += 1;
+    return true;
+  };
+  const sum = (): boolean => {
+    if (!operand()) return false;
+    while (all[at]?.kind === 'op' && BINARY.has(all[at].text)) {
+      at += 1;
+      if (!operand()) return false;
+    }
+    return true;
+  };
+  return sum() && at === all.length;
+}
+

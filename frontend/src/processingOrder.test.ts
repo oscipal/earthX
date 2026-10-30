@@ -719,6 +719,18 @@ describe('buildOrder', () => {
       expect(errorsOf(built)).toEqual([{ expression: "'re' is not a band name" }]);
     });
 
+    it('refuses text that is no expression, before it looks at names (review of #250)', () => {
+      for (const text of ['red red', 'nir -', '(red', 'red nir ZZZ']) {
+        const built = buildOrder({ ...base, steps: [ndvi('NDVI', 1, text)] });
+        expect(built.order, text).toBeNull();
+        expect(errorsOf(built), text).toEqual([{ expression: 'Enter a valid expression' }]);
+      }
+    });
+
+    it('leaves an empty expression to the form, which asks for it', () => {
+      expect(errorsOf(buildOrder({ ...base, steps: [ndvi('NDVI', 1, '')] }))).toEqual([{ expression: 'Required.' }]);
+    });
+
     it('takes the bands of the data and the results of the steps before, and numbers and functions, as bands', () => {
       const steps = [ndvi('NDVI', 1), ndvi('Ratio', 2, 'where(NDVI > 0.5e1, sqrt(nir), minimum(red, 2)) + NDVI')];
       expect(errorsOf(buildOrder({ ...base, steps, bands: ['NDVI', 'Ratio'] }))).toEqual([{}, {}]);

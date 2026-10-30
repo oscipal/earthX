@@ -8,6 +8,7 @@ import {
   bandNamesOf,
   defaultName,
   dropFromNormalize,
+  isExpression,
   nameProblem,
   outputBands,
   ownersOf,
@@ -163,3 +164,58 @@ describe('which asset carries a name', () => {
     expect(assetsCarrying(sources, [])).toEqual([]);
   });
 });
+
+describe('the shape of an expression', () => {
+  it.each([
+    'red',
+    '1',
+    '.5',
+    '1e5',
+    '1.5E-3',
+    'nir - red',
+    '(nir - red) / (nir + red)',
+    '-red',
+    '~(red > 1)',
+    'red ** -2',
+    '2 * 3',
+    'where(nir > 0.1, (nir - red) / (nir + red), 0)',
+    'minimum(red, 2) + abs(nir)',
+    'sqrt(red)',
+    'red<=nir & nir!=0 | red==1',
+    '  red  ',
+  ])('is one: %s', (text) => {
+    expect(isExpression(text)).toBe(true);
+  });
+
+  it.each([
+    '',
+    '   ',
+    'red red',
+    'red nir',
+    '2 3',
+    'nir -',
+    '- ',
+    '* red',
+    'red +* nir',
+    '(red',
+    'red)',
+    '()',
+    'sqrt()',
+    'where(a,)',
+    'where(,a)',
+    'abs(red',
+    'red,',
+    'red = nir',
+    'red // 2',
+    'red % 2',
+    'red ^ 2',
+    'red @ 2',
+    'red.nir',
+    '1..2',
+    '1e',
+    'red nir - 1',
+  ])('is none: "%s"', (text) => {
+    expect(isExpression(text)).toBe(false);
+  });
+});
+

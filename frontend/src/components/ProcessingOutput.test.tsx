@@ -395,6 +395,28 @@ describe('what an expression names', () => {
     expect(seen).toEqual(["'r' is not a band name", "'re' is not a band name", null, "'ne' is not a band name", null]);
   });
 
+  it('is told as no expression at once, and holds back what waits for it, until it is one (review of #250)', async () => {
+    select(scene());
+    await openPanel();
+    await addBandMath('');
+    const seen: Array<string | null> = [];
+    for (const typed of ['red', 'red red', 'red -', 'red - nir']) {
+      typeInto(expression(0), typed);
+      seen.push(problemOf());
+    }
+    expect(seen).toEqual([null, 'Enter a valid expression', 'Enter a valid expression', null]);
+    typeInto(expression(0), 'red red');
+    const why = 'Step 1: Enter a valid expression';
+    expect(button('Review').disabled).toBe(true);
+    expect(button('Review').title).toBe(why);
+    expect(startButton().title).toBe(why);
+    expect(button('＋ Mask').disabled).toBe(true);
+    await review();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+    typeInto(expression(0), 'red / nir');
+    expect(button('Review').disabled).toBe(false);
+  });
+
   it('holds back the steps, the review and the start, with the reason as their tooltips', async () => {
     select(scene());
     await openPanel();
