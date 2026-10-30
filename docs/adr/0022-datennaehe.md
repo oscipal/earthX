@@ -755,10 +755,9 @@ Stufe 1 allein beantwortet: wie weit Ottos Anschluss von jeder Quelle entfernt i
 - **DPF:** Ausgang der Berufung C-703/25 P (nur relevant für Option 3).
 - **Netzentfernungen:** Zürich ↔ Wien und Zürich ↔ Warschau.
 - **Datenhaltung in der Schweiz** (F7): Rechtsfrage, offen bis M6.
-- **Folgeänderungen aus Option 1** (angenommen; mit der nächsten Doku-Aufgabe oder durch Otto):
-  - `architekturplan.md` 12.2 (Frankfurt statt „Clouds, in denen die Copernicus-Daten liegen“);
-  - `projektuebersicht.md` §16 (Cloud-Provider: Kriterium Region, Shortlist §7.6);
-  - Plan für M5 (Kriterium `data_region`).
+- **Folgeänderungen aus Option 1:**
+  - `architekturplan.md` 12.2 und `projektuebersicht.md` §16: als Nachtrag eingetragen am 2026-10-30 (Auftrag Otto).
+  - Plan für M5 (Kriterium `data_region`): kommt in den Plan, sobald es ihn gibt (Otto, 30.10.2026), nicht vorher.
 
 ---
 

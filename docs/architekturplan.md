@@ -706,6 +706,17 @@ Dieselbe compose-Topologie (`docker compose up`) ist zugleich die Grundlage für
 
 `data_region` am Datensatz + Worker-Pools pro Region. Start mit einem EU-Standort. Für Copernicus-lastige Nutzung sind die Clouds, in denen die Copernicus-Daten liegen, der naheliegende Kandidat (Datennähe, EU-Standort). Für Bestände in AWS us-west-2 kann später ein zweiter Worker-Pool dort laufen; Katalog, API und Konten bleiben in der EU. Der Tiler ist wegen kurzer, zustandsloser Requests der beste Kandidat für serverloses Skalieren.
 
+**Nachtrag 2026-10-30 (NM4-48, `adr/0022`, angenommen):** Der Rechenort ist
+eine EU-Region im Raum Frankfurt; welcher Anbieter, entscheidet M6 nach der
+Messung (`adr/0022` §7.6, §8). Es gibt keine exklusive Hauptquelle: Die Quellen
+bleiben föderiert, und `data_region` wird ein Datenfeld der Registry mit
+Startcheck gegen `asset_hosts` (`adr/0022` §7.2, F3). Grund: Fast alle Bestände
+liegen schon in der EU, und nach dem Modell in `adr/0022` §3 bringt EU-Nähe den
+Großteil der Zeit einer kalten Kachel. Die „Clouds, in denen die
+Copernicus-Daten liegen“, sind damit kein gesetzter Kandidat mehr; CDSE dient
+nur als Katalogquelle (F4). Der zweite Worker-Pool in `us-west-2` bleibt
+Ausweichstufe, nur wenn die Messung es verlangt (`adr/0022` §8.4).
+
 ### 12.3 Caching-Ebenen
 
 | Ebene | Inhalt | Ort |
