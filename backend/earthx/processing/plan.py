@@ -506,8 +506,22 @@ def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
             raise RecipeInvalid(f"step {index}: {error}") from error
 
 
-def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> tuple[RasterMeta, list[PlannedStep], int]:
-    """The raster a raster job writes, its steps without the planner's selections, and the most bands it holds at once.
+@dataclass(frozen=True, slots=True)
+class _Stock:
+    """What a raster job is made of: the raster it writes, its steps, the widest stock and the work its bands cost."""
+
+    meta: RasterMeta
+    steps: list[PlannedStep]
+    #: The most bands the job holds at once.
+    widest: int
+    #: Bands weighted by factor: each step counts its factor for the bands it adds or changes (``band_math`` its result,
+    #: the others the bands they act on), and an output band no step touches counts as written (adr/0014 Nachtrag
+    #: NM4-43c PR 2, Otto 30.10.2026).
+    weighted_bands: float
+
+
+def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> _Stock:
+    """The raster a raster job writes, its steps without the planner's selections, and what its bands cost.
 
     Every band of the assets is read together, whatever a step drops after it, and a ``band_math`` step adds one: the
     widest stock decides the memory of a pass and the float64 file it leaves in the work directory.
@@ -516,10 +530,18 @@ def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> tuple[RasterM
     assert meta is not None  # a recipe has at least one resolved input
     steps = stock_steps(meta, plan_steps(recipe.steps, operators), recipe.output.bands)
     widest = len(meta.bands)
+    weighted, touched = 0.0, set[str]()
     for step in steps:
+        if step.operator is not SELECT_BANDS:
+            names = {band.name for band in meta.bands}
+            use = step.operator.bands_used(step.params)
+            changed = {use.adds} if use.adds is not None else names if use.acts_on is None else names & use.acts_on
+            weighted += step.operator.cost_factor(step.params) * len(changed)
+            touched |= changed
         meta = step.operator.transform(meta, step.params)
         widest = max(widest, len(meta.bands))
-    return meta, [step for step in steps if step.operator is not SELECT_BANDS], widest
+    weighted += RASTER_WITHOUT_STEP_FACTOR * len({band.name for band in meta.bands} - touched)
+    return _Stock(meta, [step for step in steps if step.operator is not SELECT_BANDS], widest, weighted)
 
 
 def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
@@ -529,7 +551,8 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     with :class:`ExportTooLarge` above ``MAX_JOB_BYTES`` (M4-11 F5); a raster job is refused
     with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7), and above the memory one child
     process may use (:func:`memory_needed`, adr/0020 §7). A raster job needs the pixel size of every asset (``gsd``);
-    without it :class:`UnsupportedRecipe` says so (M4-25). Seconds and units count the bands of the output.
+    without it :class:`UnsupportedRecipe` says so (M4-25). Seconds count the bands of the output; units count each step's factor for the bands it adds or
+    changes (:class:`_Stock`).
     """
     if isinstance(recipe.output, CropOutput):
         return _export_estimate(recipe)
@@ -543,7 +566,8 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         rows, columns = estimate_output_dims(aoi, entry.gsd)
         input_pixels += rows * columns
         input_bytes += rows * columns * _band_bytes(entry.bands)
-    meta, planned, widest = _planned_stock(recipe, operators)
+    stock = _planned_stock(recipe, operators)
+    meta, widest = stock.meta, stock.widest
     output_pixels = meta.width * meta.height
     dtype = getattr(recipe.output, "dtype", None)
     output_bytes = output_pixels * len(meta.bands) * _value_bytes(dtype)
@@ -558,7 +582,6 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
             f"This job would need about {memory / 1_000_000_000:.1f} GB of memory, more than the "
             f"{MAX_JOB_MEMORY_BYTES / 1_000_000_000:.1f} GB a job may use. Put fewer bands in the output."
         )
-    factor = sum(step.operator.cost_factor(step.params) for step in planned) if planned else RASTER_WITHOUT_STEP_FACTOR
     band_megapixels = output_pixels / 1_000_000 * len(meta.bands)
     return CostEstimate(
         input_pixels=input_pixels,
@@ -569,7 +592,7 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         seconds=SECONDS_PER_INPUT_MB * input_bytes / 1_000_000
         + SECONDS_PER_ASSET * assets
         + SECONDS_PER_OUTPUT_BAND_MPIXEL * band_megapixels,
-        units=band_megapixels * factor,
+        units=output_pixels / 1_000_000 * stock.weighted_bands,
         memory_bytes=memory,
     )
 
@@ -680,6 +703,6 @@ def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
         rows, columns = estimate_output_dims(
             shapely_shape(recipe.aoi.model_dump(mode="json")), _finest(_asset_entries(recipe)).gsd
         )
-        bands = _planned_stock(recipe, operators)[2]
+        bands = _planned_stock(recipe, operators).widest
         largest = _tiles_px(rows) * _tiles_px(columns) * bands * _PASS_BYTES
     return math.ceil(finished * _WITH_OVERVIEWS) + 2 * largest + DISK_RESERVE_BYTES

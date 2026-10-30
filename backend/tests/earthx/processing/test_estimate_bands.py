@@ -175,6 +175,41 @@ class TestTheTimeAndTheUnitsCountTheBands:
         cost = estimate(wide_job(2, steps=1, keep="results"), REGISTRY)
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.2)  # one band, band math's factor
 
+    def test_a_step_counts_its_factor_for_the_bands_it_adds_and_the_others_count_as_written(self) -> None:
+        """Otto, 30.10.2026: ``band_math`` its result only; a band no step touches is written (factor 1)."""
+        cost = estimate(wide_job(17, steps=1), REGISTRY)
+        assert cost.units == pytest.approx(cost.output_pixels / 1e6 * (1.2 + 17 * 1.0))
+
+    def test_normalize_counts_the_bands_it_acts_on_and_reproject_all_it_holds(self) -> None:
+        normalize = {
+            "op": "normalize",
+            "op_version": 2,
+            "params": {"bands": ["red"], "in_min": 0.0, "in_max": 1.0, "out_min": 0.0, "out_max": 255.0, "clip": True},
+        }
+        reproject = {
+            "op": "reproject",
+            "op_version": 4,
+            "params": {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "nearest", "align": False},
+        }
+        for step in (normalize, reproject):
+            cost = estimate(recipe_of_data(recipe_data(steps=[step]), REGISTRY), REGISTRY)
+            factor = REGISTRY.operator(step["op"], step["op_version"]).cost_factor(
+                REGISTRY.operator(step["op"], step["op_version"]).params.model_validate(step["params"])
+            )
+            acted = 1 if step is normalize else 2
+            written = 2 - acted  # nir is written, no step touches it
+            assert cost.units == pytest.approx(cost.output_pixels / 1e6 * (factor * acted + written * 1.0))
+
+    def test_sixteen_band_math_steps_over_33_bands_cost_about_what_they_take_longer(self) -> None:
+        """Measured (5632², 33 bands): 2.6 times the 17 bands without a step, 597 s against 228 s; the 16 steps do not
+        count for every band any more (they once made the job 500 times one result band)."""
+        wide = estimate(wide_job(17, steps=16, aoi=BIG), REGISTRY)
+        lone = estimate(wide_job(2, steps=1, keep="results", aoi=BIG), REGISTRY)
+        plain = estimate(wide_job(17, aoi=BIG), REGISTRY)
+        assert wide.units == pytest.approx(wide.output_pixels / 1e6 * (16 * 1.2 + 17))
+        assert wide.units / lone.units == pytest.approx(wide.seconds / lone.seconds, rel=0.3)
+        assert wide.units / plain.units == pytest.approx(wide.seconds / plain.seconds, rel=0.3)
+
     def test_a_job_at_the_size_cap_gets_a_time_that_covers_it(self) -> None:
         """adr/0020 §3.2 Befund 9: 17 bands at 30 km took 115 s where 21 s were estimated; the limit is twice the estimate."""
         thirty_km = {
