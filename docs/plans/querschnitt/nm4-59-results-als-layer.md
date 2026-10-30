@@ -218,3 +218,25 @@ Kurz beantwortbar: je Frage eine Nummer.
 **Frage 9 — Overlays (Beschriftung, Gradnetz, Relief)**
 1. Feste Plätze wie heute, im Menü „Basemap“. **(Empfehlung)**
 2. Eigene Einträge im Layer-Manager.
+
+## 7. Freigabe (Otto, 30.10.2026, zu #249)
+
+| Frage | Antwort | Folge für §6 |
+|---|---|---|
+| 1 | Option 5: Umstände unbekannt. Der Test für Ottos Klickweg genügt; die eine Ebenenfolge soll den Fehler unabhängig davon ausschließen, in welcher Reihenfolge die Bilder ankommen. | §6.9: Der Test lässt die Bilder in wechselnder Reihenfolge ankommen. |
+| 2 | Option 1: Das Auge schaltet nur die Suchergebnisse. Ansicht und Vorschau gehören in der Reihenfolge zu „Results“, behalten aber ihre eigenen Schalter. „Play“ schaltet ein. | wie §6.5 |
+| 3 | **Jede neue Suche setzt „Results“ ganz nach oben** (Vorgabe nach jeder Suche). Ein neu angehefteter Layer kommt direkt unter „Results“, wenn „Results“ oben liegt, sonst ganz oben. | §6.3: Eine Suche (`runSearch`, `findSceneByName`) setzt `resultsAt` auf 0, ebenso „Clear search results“. Der Satz „Eine neue Suche lässt den Platz, wie er ist“ gilt nicht. |
+| 4 | Option 1: Die Ansicht liegt ganz unten in „Results“; das ersetzt die Regel vom 27.10.2026 per Nachtrag. „Crop to AOI“ / „Crop & merge to AOI“ schaltet das Auge aus (bestehende Ausnahme), sodass nach dem Zuschnitt die Ansicht zu sehen ist. | wie §6.4 |
+| 5 | Option 1: Der Knopf in der Ergebnisliste wird zum selben Auge. | wie §6.5 |
+| 6 | Option 1: keine Zahl in der Zeile. | wie §6.7 |
+| 7 | Option 1: Ansicht oder Vorschau ohne Suchergebnisse haben keine Zeile und liegen am Platz von „Results“. | wie §6.7 |
+| 8 | **Option 2: alles in dieser Session und einem PR**, je Teil eigene Commits. | Ein PR (#249). Commits je Teil: (a) eine Ebenenfolge mit der Korrektur der Abweichung bei offener Ansicht, (b) `resultsAt` im Store und die Zeile „Results“ mit Auge und ▲/▼, (c) der Knopf in der Ergebnisliste als dasselbe Auge, (d) Browserprüfung, Doku und Log. |
+| 9 | Option 1: Die Overlays bleiben fest im Menü „Basemap“. | wie §6.8 |
+
+**Start des Codes:** erst, wenn Otto einen freien Frontend-Platz meldet.
+
+**Nachtrag NM4-59 zu den Regeln vom 27.10.2026** (Log-Zeilen „Antworten Otto zu §8.7 (zu #211)“, Punkt 1, und „Ein angehaktes Suchergebnis ist immer der oberste Layer“): Die Originaltexte bleiben stehen. Es gilt ab der Umsetzung:
+- Die Ansicht liegt ganz unten in „Results“, unter den Quicklooks der Suchergebnisse.
+- Angehakte Szenen liegen innerhalb von „Results“ nach §6.4 und damit nicht mehr über allen angehefteten Layern, sondern dort, wo „Results“ in der Liste steht.
+- Die Umrisse liegen oben in „Results“, unter Beschriftung, Gradnetz und AOI.
+- „Hide results“ / „Show results“ ist das Auge von „Results“.
