@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "client-zip": "^2.5.1",
     "maplibre-gl": "^5.24.0",
     "polyclip-ts": "^0.16.8",
     "proj4": "^2.22.0",
