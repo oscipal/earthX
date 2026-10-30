@@ -57,6 +57,11 @@ const RESULTS_TOP = 'results-top';
 // quicklooks and the pinned layers, whichever of them was drawn first (Otto, 27.10.2026, "immer der oberste Layer").
 // Every other raster of the app goes under this marker (`aboveAll`), the ticked quicklooks over it (`topOfAll`).
 const TICKED_TOP = 'ticked-top';
+// The search results by the dataset the list shows (Otto, 30.10.2026): over `TICKED_TOP` lie first the ticked scenes of the
+// other datasets (under `OPEN_BASE`, in the order they were ticked), over that the other quicklooks of the open dataset
+// (under `OPEN_TICKED_BASE`), over that its ticked scenes (under `PREVIEW_BASE`, the last ticked on top).
+const OPEN_BASE = 'open-base';
+const OPEN_TICKED_BASE = 'open-ticked-base';
 // Right over the quicklooks of the ticked results (they go under it, `topOfAll`): the live preview of the processing
 // panel goes over this marker, so that it lies over the ticked quicklooks and under the overlays and the AOI (Otto,
 // 28.10.2026, supplement to UI-02 8.10). A pinned preview is a layer of the manager and lies under them all.
@@ -264,6 +269,8 @@ export function ensureBaseLayers(map: MapLibreMap): void {
     map.addLayer({ id: LAYERS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: RESULTS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: TICKED_TOP, type: 'background', layout: { visibility: 'none' } });
+    map.addLayer({ id: OPEN_BASE, type: 'background', layout: { visibility: 'none' } });
+    map.addLayer({ id: OPEN_TICKED_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: PREVIEW_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: OVERLAYS_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({
@@ -491,20 +498,36 @@ const aboveAll = (map: MapLibreMap): string | undefined =>
 const topOfAll = (map: MapLibreMap): string | undefined =>
   map.getLayer(PREVIEW_BASE) ? PREVIEW_BASE : map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
-// Where the quicklook of a ticked scene goes among the others: the scenes lie over each other in the order they were
-// ticked (`ticks`, last on top), whichever picture arrives first. Just under the nearest scene ticked after it that is on
-// the map already, else on top of them all (Otto, 28.10.2026). `layersOf`: the layers a scene's quicklook can have.
+// Where a scene of the search results goes by its dataset (NM4-50, Otto 30.10.2026): the ticked ones of the open dataset
+// on top, under the live preview; the ticked ones of the other datasets under the open dataset's quicklooks; the other
+// quicklooks of the open dataset between. A map without the markers keeps the places it had before.
+const otherTickedTop = (map: MapLibreMap): string | undefined => (map.getLayer(OPEN_BASE) ? OPEN_BASE : topOfAll(map));
+const openRestTop = (map: MapLibreMap): string | undefined => (map.getLayer(OPEN_TICKED_BASE) ? OPEN_TICKED_BASE : undefined);
+
+// What decides the places of the scenes of the results: the ticks in the order they were made, and which scenes belong to
+// the dataset the list shows.
+interface ResultsOrder {
+  ticks: readonly string[];
+  isOpen: (id: string) => boolean;
+}
+
+// Where the quicklook of a ticked scene goes among the others: the scenes of its dataset lie over each other in the order
+// they were ticked (`order.ticks`, last on top), whichever picture arrives first. Just under the nearest scene of its
+// tier ticked after it that is on the map already, else on top of the tier (Otto, 28.10.2026, 30.10.2026). `layersOf`: the
+// layers a scene's quicklook can have.
 function tickedPlace(
   map: MapLibreMap,
   id: string,
-  ticks: readonly string[],
+  order: ResultsOrder,
   layersOf: ReadonlyMap<string, readonly string[]>,
 ): string | undefined {
-  for (let rank = ticks.indexOf(id) + 1; rank > 0 && rank < ticks.length; rank++) {
-    const above = layersOf.get(ticks[rank])?.find((lyr) => map.getLayer(lyr));
+  const open = order.isOpen(id);
+  const tier = order.ticks.filter((tick) => order.isOpen(tick) === open);
+  for (let rank = tier.indexOf(id) + 1; rank > 0 && rank < tier.length; rank++) {
+    const above = layersOf.get(tier[rank])?.find((lyr) => map.getLayer(lyr));
     if (above) return above;
   }
-  return topOfAll(map);
+  return open ? topOfAll(map) : otherTickedTop(map);
 }
 
 // Where the live preview goes: over everything raster, under the overlays and the AOI.
@@ -602,14 +625,14 @@ function addPreview(
   i: number,
   gen: number,
   dataset: DatasetOption,
-  ticks: readonly string[],
+  order: ResultsOrder,
   layersOf: ReadonlyMap<string, readonly string[]>,
 ): void {
   const plan = quicklookPlan(item, dataset);
   if (!plan) return;
-  // A ticked scene lies over the others, the last ticked on top; the others go where later rasters go (`undefined`: the
-  // default place).
-  const before = (): string | undefined => (ticks.includes(item.id) ? tickedPlace(map, item.id, ticks, layersOf) : undefined);
+  // A ticked scene lies over the others, the last ticked on top; the other scenes of the open dataset go under its ticked
+  // ones (`undefined`: the default place, where there is no marker).
+  const before = (): string | undefined => (order.ticks.includes(item.id) ? tickedPlace(map, item.id, order, layersOf) : openRestTop(map));
   if (plan.kind === 'tiles') {
     // Placed by the tile grid itself, not by four corner coordinates: a tile is
     // already in the map's own projection, so there is nothing to reproject and
@@ -1004,6 +1027,13 @@ const datasetOfItem = (item: StacItem, s: { dataset: DatasetOption | null; datas
 
 type PreviewState = Pick<MosaicState, 'items' | 'dataset' | 'datasets'> & { selectedIds?: readonly string[] };
 
+// The order of the scenes of the results on the map: the ticks, and which scenes are of the dataset the list shows (a scene
+// that names no dataset is).
+const resultsOrderOf = (s: PreviewState, items: readonly StacItem[]): ResultsOrder => {
+  const open = new Map(items.map((it) => [it.id, !it.collection || it.collection === s.dataset?.id]));
+  return { ticks: s.selectedIds ?? [], isOpen: (id) => open.get(id) ?? true };
+};
+
 export function syncBrowseMosaic(map: MapLibreMap, s: PreviewState): void {
   const gen = ++syncGen;
   retireDynamicMosaic(map);
@@ -1013,9 +1043,10 @@ export function syncBrowseMosaic(map: MapLibreMap, s: PreviewState): void {
   // wait for and goes at once.
   if (!dataset || items.length === 0) return dropRetired(map);
   const layersOf = new Map(items.map((it, i) => [it.id, [dynamicId('tiles-lyr', i), dynamicId('img-lyr', i)]]));
+  const order = resultsOrderOf(s, items);
   items.forEach((it, i) => {
     const own = datasetOfItem(it, s);
-    if (own) addPreview(map, it, i, gen, own, s.selectedIds ?? [], layersOf);
+    if (own) addPreview(map, it, i, gen, own, order, layersOf);
   });
   settleRetired(map);
 }
@@ -1040,14 +1071,14 @@ export function syncResultsOverlay(map: MapLibreMap, s: PreviewState): void {
   const { dataset } = s;
   if (!dataset) return;
   const shown = s.items.slice(0, MAX_MOSAIC_LAYERS);
-  const ticks = s.selectedIds ?? [];
+  const order = resultsOrderOf(s, shown);
   const layersOf = new Map(shown.map((it, i) => [it.id, [`res-img-lyr-${i}`, `res-tiles-lyr-${i}`]]));
   shown.forEach((item, i) => {
     const own = datasetOfItem(item, s);
     const plan = own && quicklookPlan(item, own);
     if (!own || !plan) return;
     // A ticked scene lies over the view as well, the last ticked on top; the others under the view.
-    const place = (): string | undefined => (ticks.includes(item.id) ? tickedPlace(map, item.id, ticks, layersOf) : underTheView(map));
+    const place = (): string | undefined => (order.ticks.includes(item.id) ? tickedPlace(map, item.id, order, layersOf) : underTheView(map));
     const [lyr, src] = [`res-${RESULTS_KINDS[plan.kind === 'tiles' ? 2 : 0]}-${i}`, `res-${RESULTS_KINDS[plan.kind === 'tiles' ? 3 : 1]}-${i}`];
     if (plan.kind === 'tiles') {
       if (!item.bbox) return;

@@ -377,12 +377,106 @@ async function checkTicks(browser, { theme, viewport }) {
   return { name: label, problems, detail: '' };
 }
 
+// The dataset the list shows lies on top (Otto, 30.10.2026): one scene of Sentinel-2 and one tile of the DEM over the same
+// footprint, both ticked; the one of the open dataset is on the map over the other whichever was ticked last, and a change of
+// the dataset or of the basemap lays them out again.
+async function checkOrder(browser, { theme, viewport }) {
+  const label = `order ${theme} ${viewport}`;
+  const problems = [];
+  const context = await browser.newContext({ viewport: VIEWPORTS[viewport] });
+  await context.addInitScript((t) => localStorage.setItem('earthx.theme', t), THEMES[theme]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(10000);
+  lastPage = page;
+  const s2 = { ...CASES.s2.items[0], id: 'a1', bbox: [10, 47, 11, 48], geometry: polygon([10, 47, 11, 48]) };
+  const dem = { ...CASES.dem.items[0], id: 'd1' };
+  await page.route('**/*', async (route) => {
+    const url = new URL(route.request().url());
+    const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (url.origin === 'https://img.test') return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: png(64, 64, COLOURS.base.s2) });
+    if (url.origin !== BASE) return route.fulfill({ status: 404, body: '' });
+    if (/^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
+    if (url.pathname === '/stac/collections') return json({ collections: [CASES.dem.collection, CASES.s2.collection] });
+    if (url.pathname === '/stac/search') return json({ type: 'FeatureCollection', features: [s2, dem], numberMatched: 2, numberReturned: 2, links: [] });
+    if (url.pathname.includes('/mosaic/') || url.pathname.endsWith('/tilejson.json')) return json({ detail: 'not made up' }, 404);
+    if (url.pathname.includes('/tiles/')) return route.fulfill({ status: 200, contentType: 'image/png', body: png(256, 256, COLOURS.base[url.pathname.includes('cop-dem') ? 'dem' : 's2']) });
+    return json({ detail: 'not made up' }, 404);
+  });
+  page.on('pageerror', (error) => problems.push(`the page failed: ${error.message.slice(0, 200)}`));
+  fs.mkdirSync(OUT, { recursive: true });
+  const shot = (step) => page.screenshot({ path: path.join(OUT, `${label.replace(/ /g, '_')}_${step}.png`) });
+  const open = async (title) => {
+    const box = page.locator('.dataset-select-box');
+    if ((await box.textContent()).includes(title)) return;
+    await box.click();
+    await page.getByRole('option', { name: new RegExp(title) }).click();
+  };
+  const tick = (id) => page.locator(`input[aria-label="Select ${id}"]`).check();
+  // Which of the two lies on top: the quicklook of Sentinel-2 (magenta) is hidden under the tile of the DEM (red) and the
+  // other way round; the tile of the DEM spills over the quicklook, so the red pixels do not tell, the magenta ones do.
+  const s2Visible = async () => {
+    await page.waitForTimeout(1800);
+    // The footprint is about 85 000 px in a wide window and about 7 000 in a narrow one; hidden, no pixel of it shows.
+    return (await count(page, COLOURS.base.s2)) > (viewport === 'narrow' ? 2500 : 20000);
+  };
+  const expectTop = async (what, top) => {
+    const visible = await s2Visible();
+    if (visible !== (top === 's2')) problems.push(`${what}: ${top === 's2' ? 'Sentinel-2' : 'the DEM'} should be on top, the quicklook of Sentinel-2 is ${visible ? 'visible' : 'hidden'}`);
+  };
+
+  await page.goto(BASE);
+  await page.waitForSelector('.dataset-toggle');
+  await page.addStyleTag({ content: '.result-thumb { visibility: hidden !important; }' });
+  await page.evaluate(async ({ aoi }) => {
+    const { useAppStore } = await import('/src/store.ts');
+    useAppStore.getState().setAoi(aoi);
+    useAppStore.getState().flyTo([9.2, 46.6, 12.2, 48.4]);
+  }, { aoi: AOI });
+  await page.getByLabel('Select multiple datasets').check();
+  await page.getByRole('button', { name: /Sentinel-2/ }).first().click();
+  await page.getByRole('button', { name: /Copernicus/ }).first().click();
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.waitForSelector('.results-panel');
+  // Sentinel-2 first, the DEM last: the DEM is the open one and lies on top.
+  await open('Sentinel-2');
+  await tick('a1');
+  await open('Copernicus');
+  await tick('d1');
+  await expectTop('the DEM open, ticked last', 'dem');
+  await shot('1-dem-open');
+  // The list shows Sentinel-2 now: it comes on top at once, though the DEM was ticked after it.
+  await open('Sentinel-2');
+  await expectTop('Sentinel-2 open', 's2');
+  await shot('2-s2-open');
+  // A change of the basemap leaves it so.
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().setBasemap('outlines'));
+  await expectTop('Sentinel-2 open, after a change of the basemap', 's2');
+  await open('Copernicus');
+  await expectTop('the DEM open again, after a change of the basemap', 'dem');
+  // "Hide results" takes both off, "Show results" brings them back in the same order.
+  await page.getByRole('button', { name: 'Hide results' }).click();
+  await page.waitForTimeout(1500);
+  if ((await count(page, COLOURS.base.s2)) > 60 || (await count(page, COLOURS.base.dem)) > 60) problems.push('"Hide results" leaves a scene on the map');
+  await page.getByRole('button', { name: 'Show results' }).click();
+  await expectTop('the DEM open, after "Show results"', 'dem');
+  await context.close();
+  return { name: label, problems, detail: '' };
+}
+
 (async () => {
   const browser = await chromium.launch();
   let failed = 0;
   const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
   for (const theme of Object.keys(THEMES)) {
     for (const viewport of Object.keys(VIEWPORTS)) {
+      if (!only || only.includes(`order ${theme} ${viewport}`)) {
+        const result = await checkOrder(browser, { theme, viewport }).catch(async (error) => {
+          await lastPage?.screenshot({ path: path.join(OUT, `order_${theme}_${viewport}_broke.png`) }).catch(() => {});
+          return { name: `order ${theme} ${viewport}`, problems: [`the check broke: ${error.message.split('\n').slice(0, 3).join(' ')}`], detail: '' };
+        });
+        failed += result.problems.length > 0 ? 1 : 0;
+        console.log(`${result.problems.length ? 'FAIL' : 'ok  '} ${result.name}${result.problems.length ? '\n     ' + result.problems.join('\n     ') : ''}`);
+      }
       if (!only || only.includes(`ticks ${theme} ${viewport}`)) {
         const result = await checkTicks(browser, { theme, viewport }).catch(async (error) => {
           await lastPage?.screenshot({ path: path.join(OUT, `ticks_${theme}_${viewport}_broke.png`) }).catch(() => {});
