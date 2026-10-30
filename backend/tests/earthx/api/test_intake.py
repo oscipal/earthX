@@ -22,7 +22,6 @@ import pytest
 from earthx.access.download import compute_crop_region, parse_aoi_geometry, plan_outputs
 from earthx.adapters.errors import UnknownCollection
 from earthx.api.intake import (
-    MAX_ORDER_ASSETS,
     MAX_ORDER_ITEMS,
     MAX_ORDER_STEPS,
     OrderRefused,
@@ -781,11 +780,23 @@ class TestRefusals:
         too_many_items = order(groups=tuple((f"S2_{i}",) for i in range(MAX_ORDER_ITEMS + 1)))
         error = await refused(too_many_items, source)
         assert error.status_code == 413
-        too_many_assets = export_order(assets=tuple(f"a{i}" for i in range(MAX_ORDER_ASSETS + 1)))
-        assert (await refused(too_many_assets, source)).status_code == 422
         too_many_steps = order(steps=[SCALE_STEP] * (MAX_ORDER_STEPS + 1))
         assert (await refused(too_many_steps, source)).status_code == 422
         assert source.calls == []
+
+    async def test_an_order_reading_more_than_sixteen_assets_is_taken(self) -> None:
+        # The cap of 16 assets fell with NM4-43c (adr/0020 §7); the memory estimate of the run guards the bands.
+        names = tuple(f"b{index:02d}" for index in range(20))
+        item = s2_item(**{name: copy.deepcopy(s2_item()["assets"]["red"]) for name in names})
+        accepted = await accept(order(assets=names, steps=[]), Source((S2, item)))
+        assert [entry.asset.asset for entry in accepted.recipe.inputs[0].resolved] == list(names)
+
+    async def test_an_export_naming_more_than_sixteen_assets_is_taken(self) -> None:
+        names = tuple(f"a{index:02d}" for index in range(18))
+        item = visual_item("S2_A")
+        item["assets"].update({name: copy.deepcopy(item["assets"]["visual"]) for name in names})
+        accepted = await accept(export_order(assets=names), Source((S2, item)))
+        assert accepted.recipe.inputs[0].assets == list(names)
 
     async def test_exactly_at_the_cap_is_fine(self) -> None:
         ids = [f"S2_{i}" for i in range(MAX_ORDER_ITEMS)]

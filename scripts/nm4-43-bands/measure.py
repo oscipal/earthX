@@ -21,11 +21,11 @@ does, and appends one line of JSON per run to ``<dir>/results.jsonl``: wall time
 (``ru_maxrss``), the bytes GDAL downloaded and the requests it sent (``CPL_VSIL_SHOW_NETWORK_STATS``),
 the size of ``result.tif``, and the platform's own estimate of the same recipe for comparison.
 
-Configurations: 2 bands (``red``, ``nir``), 16 (what "Select all bands" takes today: every data
-asset but the mask layer ``scl``) and all 17 data assets; each without a step, with ``band_math``
-as it is today (the output is the one result band) and with ``band_math_append``, a script-only
-operator that keeps every input band and adds the result as one more band — the model adr/0020
-proposes. It is not registered anywhere in the platform.
+Configurations: 2 bands (``red``, ``nir``), 16 (every data asset but the mask layer ``scl``) and all 17 data assets;
+each without a step, with ``band_math`` as the old panel used it (only the result band in the output) and with
+``band_math`` keeping every input band beside the result (recipe version 2, adr/0020 §4). Since NM4-43c the recipes
+are of version 2 and the platform's own ``band_math`` does both; the script has no operator of its own any more.
+``memory.py`` measures the same on synthetic scenes, without the network, up to the 5 GB cap and with mosaics.
 """
 
 from __future__ import annotations
@@ -41,15 +41,12 @@ import sys
 import tempfile
 import time
 from collections import Counter
-from dataclasses import replace
 from pathlib import Path
 
 import numpy
-from rio_tiler.models import ImageData
 from shapely.geometry import box, shape
 
-from earthx.processing.operators import REGISTRY, RasterMeta
-from earthx.processing.operators.band_math import BAND_MATH, BandMathParams
+from earthx.processing.operators import REGISTRY
 
 DATASET = "sentinel-2-c1-l2a"
 
@@ -62,31 +59,11 @@ ALL = [
 SIXTEEN = [band for band in ALL if band != "scl"]
 BANDS = {"2": TWO, "16": SIXTEEN, "17": ALL}
 
-EXPRESSION = "(nir-red)/(nir+red)"
-APPENDED = "Band_Math_1"
-STEPS = {
-    "none": [],
-    "bm": [{"op": "band_math", "op_version": 1, "params": {"expression": EXPRESSION}}],
-    "append": [{"op": "band_math_append", "op_version": 1, "params": {"expression": EXPRESSION}}],
-}
+RESULT = "NDVI"
+NDVI = {"op": "band_math", "op_version": 2, "params": {"expression": "(nir-red)/(nir+red)", "name": RESULT}}
+#: Per name of the step: the steps, and whether the output keeps the input bands beside the result.
+STEPS = {"none": ([], True), "bm": ([NDVI], False), "append": ([NDVI], True)}
 CONFIGS = [f"{bands}-{steps}" for bands in BANDS for steps in STEPS]
-
-
-def _append_run(image: ImageData, params: BandMathParams) -> ImageData:
-    result = BAND_MATH.run(image, params)
-    data = numpy.ma.concatenate([image.array.astype("float64"), result.array.astype("float64")])
-    return ImageData(data, bounds=image.bounds, crs=image.crs, band_names=[*image.band_names, APPENDED], nodata=None)
-
-
-def _append_transform(meta: RasterMeta, params: BandMathParams) -> RasterMeta:
-    added = BAND_MATH.transform(meta, params).bands[0]
-    bands = (*meta.bands, replace(added, name=APPENDED))
-    return RasterMeta(meta.crs, meta.transform, meta.width, meta.height, bands, meta.resampled)
-
-
-#: Band math that adds a band instead of replacing them; only here, never in the platform.
-BAND_MATH_APPEND = replace(BAND_MATH, op="band_math_append", run=_append_run, transform=_append_transform)
-OPERATORS = REGISTRY.with_operators(BAND_MATH_APPEND)
 
 
 # --- prepare ------------------------------------------------------------------
@@ -124,9 +101,6 @@ async def _prepare(out: Path, items_path: Path, km: float, scenes: int) -> None:
     from earthx.api import intake
     from earthx.catalog.datasets import REGISTRY as DATASETS
 
-    # The cap of 16 assets (M4-07b F5) is what is measured here, so it is lifted for this process only.
-    intake.MAX_ORDER_ASSETS = len(ALL)
-
     items = _items(items_path, scenes)
     common = shape(items[0]["geometry"])
     for item in items[1:]:
@@ -141,16 +115,18 @@ async def _prepare(out: Path, items_path: Path, km: float, scenes: int) -> None:
     out.mkdir(parents=True, exist_ok=True)
     for name in CONFIGS:
         bands, steps = name.split("-")
+        chain, keep = STEPS[steps]
+        output = [*BANDS[bands]] * keep + [RESULT] * bool(chain)
         for index, item in enumerate(items):
             order = {
-                "recipe_version": 1,
-                "inputs": [{"name": "s2", "dataset": DATASET, "groups": [[item["id"]]], "assets": BANDS[bands]}],
+                "recipe_version": 2,
+                "inputs": [{"name": "s2", "dataset": DATASET, "groups": [[item["id"]]]}],
                 "aoi": aoi,
-                "steps": STEPS[steps],
-                "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
+                "steps": chain,
+                "output": {"kind": "raster", "format": "cog", "dtype": "float32", "bands": output},
             }
             estimated = await intake.estimate_order(
-                json.dumps(order), registry=DATASETS, operators=OPERATORS, item_source=item_source
+                json.dumps(order), registry=DATASETS, operators=REGISTRY, item_source=item_source
             )
             (out / f"{name}.{index:02d}.json").write_text(estimated.recipe.model_dump_json())
     print(json.dumps({"configs": len(CONFIGS), "scenes": len(items), "km": km}))
@@ -166,13 +142,13 @@ def _child(path: Path) -> None:
     from earthx.processing.plan import disk_needed, estimate
     from earthx.processing.recipe import parse_recipe
 
-    recipe = parse_recipe(path.read_text(), OPERATORS)
-    cost = estimate(recipe, OPERATORS)
-    disk = disk_needed(recipe, OPERATORS)
+    recipe = parse_recipe(path.read_text(), REGISTRY)
+    cost = estimate(recipe, REGISTRY)
+    disk = disk_needed(recipe, REGISTRY)
     baseline = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     with tempfile.TemporaryDirectory() as workdir, worker_environment():
         started = time.perf_counter()
-        result = run_recipe(recipe, workdir=Path(workdir), progress=lambda done, total: None, operators=OPERATORS)
+        result = run_recipe(recipe, workdir=Path(workdir), progress=lambda done, total: None, operators=REGISTRY)
         seconds = time.perf_counter() - started
         size = result.path.stat().st_size
     print(
@@ -187,6 +163,7 @@ def _child(path: Path) -> None:
                 "est_seconds": round(cost.seconds, 2),
                 "est_input_mb": round(cost.input_bytes / 1e6, 2),
                 "est_output_mb": round(cost.output_bytes / 1e6, 2),
+                "est_memory_mb": round(cost.memory_bytes / 1e6, 1),
                 "est_disk_mb": round(disk / 1e6, 1),
             }
         ),
@@ -234,9 +211,9 @@ def _summary(directory: Path) -> None:
     print(
         "| config | runs | out bands | s (median) | s (min–max) | s (sum) | peak RSS MB (max) | baseline MB (max) "
         "| read MB (median) | read MB (sum) | GETs (median) | result MB (median) | est. s | est. output MB "
-        "| est. disk MB |"
+        "| est. memory MB | est. disk MB |"
     )
-    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for name in CONFIGS:
         runs = [line for line in lines if line["config"] == name and "error" not in line]
         errors = [line for line in lines if line["config"] == name and "error" in line]
@@ -259,7 +236,7 @@ def _summary(directory: Path) -> None:
             f"{min(seconds)}–{max(seconds)} | {total('seconds')} | {max(line['rss_mb'] for line in runs)} | "
             f"{max(line['rss_baseline_mb'] for line in runs)} | {median('read_mb')} | {total('read_mb')} | "
             f"{median('gets')} | {median('result_mb')} | {median('est_seconds')} | {median('est_output_mb')} | "
-            f"{median('est_disk_mb')} |"
+            f"{median('est_memory_mb')} | {median('est_disk_mb')} |"
         )
 
 
