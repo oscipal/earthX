@@ -13,13 +13,14 @@ const rows = (moved: { layers: typeof layers; resultsAt: number } | null) => {
   return [...ids.slice(0, moved.resultsAt), 'R', ...ids.slice(moved.resultsAt)].join('');
 };
 
+// Otto, 30.10.2026 (zu #249): new layers are always on top, over "Results" too.
 describe('a new layer', () => {
-  it('goes right under "Results" while "Results" is on top', () => {
-    expect(resultsAtAfterAdding(0, 1)).toBe(0);
-    expect(resultsAtAfterAdding(0, 3)).toBe(0);
+  it('goes on top, over "Results" on top as well', () => {
+    expect(resultsAtAfterAdding(0, 1)).toBe(1);
+    expect(resultsAtAfterAdding(0, 3)).toBe(3);
   });
 
-  it('goes on top, over "Results", once "Results" lies lower: "Results" keeps the layers above it', () => {
+  it('and over "Results" lower down, which keeps the layers above it', () => {
     expect(resultsAtAfterAdding(1, 1)).toBe(2);
     expect(resultsAtAfterAdding(2, 3)).toBe(5);
   });

@@ -1,9 +1,10 @@
 // The entry "Results" of the layer manager (NM4-59, Otto, 30.10.2026), on a real map. Three scenes of one area in three
 // groups, each one solid colour (red newest, green, blue), and a job's result in yellow over the same area; the pixel in the
 // middle of the map is read:
-//   1. Otto's click path: a group open, nothing ticked, the job pinned (it goes under "Results"), the eye of "Results"
-//      off (yellow) and on again (red), four times, by the eye in the layer manager and by the one in the results list;
-//      once with the quicklooks arriving late;
+//   1. Otto's click path: a group open, nothing ticked, the job pinned (a new layer goes on top: yellow), "Results" put on
+//      top by the button left of the eye in the results list (red), the eye of "Results" off (yellow) and on again (red),
+//      four times, by the eye in the layer manager and by the one in the results list; once with the quicklooks arriving
+//      late;
 //   2. "Results" moved under the job with ▼: yellow; back with ▲: red;
 //   3. a full-resolution view open, a scene of another group ticked, the eye on: the open group lies over the ticked scene.
 // Light and dark theme, a wide and a narrow window.
@@ -158,7 +159,7 @@ async function run(browser, { theme, viewport }) {
   };
 
   await expectColour('the open group', COLOURS[0]);
-  // 1. Otto's click path: the job pinned goes under "Results".
+  // 1. Otto's click path: the job pinned goes on top, over "Results" (Otto, zu #249).
   await page.evaluate(async (bbox) => {
     (await import('/src/store.ts')).useAppStore.getState().pinDerivedLayer({
       name: 'Job result',
@@ -169,8 +170,14 @@ async function run(browser, { theme, viewport }) {
     });
   }, BBOX);
   const rows = await page.locator('.layer-manager .layer-row [data-col="name"]').allTextContents();
-  if (rows.join('|') !== 'Results|Job result') problems.push(`the layer manager lists ${rows.join(', ')}`);
-  await expectColour('the job pinned under "Results"', COLOURS[0]);
+  if (rows.join('|') !== 'Job result|Results') problems.push(`the layer manager lists ${rows.join(', ')}`);
+  await expectColour('the job pinned over "Results"', JOB);
+  await page.locator('#rail-results').click();
+  await page.screenshot({ path: path.join(OUT, `to-top button ${name}.png`) });
+  await page.locator('#rail-results').click();
+  await click('results', page.locator('.results-head button[aria-label="Put results on top of the layers"]'), 'the button "Results" on top');
+  if ((await page.locator('.results-head button[aria-label="Put results on top of the layers"]').count()) !== 0) problems.push('the button stays after "Results" is on top');
+  await expectColour('"Results" on top again', COLOURS[0]);
   await page.screenshot({ path: path.join(OUT, `pinned ${name}.png`) });
   // The eye of the layer manager, then the one of the results list.
   const eyes = [

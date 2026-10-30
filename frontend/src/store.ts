@@ -1010,6 +1010,8 @@ export interface AppState {
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   // The entry "Results" one step up or down among the layers (NM4-59).
   moveResults: (dir: 'up' | 'down') => void;
+  // The entry "Results" on top of the layer manager, over every layer (Otto, 30.10.2026, zu #249).
+  resultsToTop: () => void;
   selectLayer: (id: string) => void;
   activateLayerContext: (id: string) => void;
   activateViewContext: () => void;
@@ -1579,6 +1581,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
   moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
   moveResults: (dir) => set((s) => moveEntry(s.layers, s.resultsAt, null, dir, hasResultsPanel(s.sections)) ?? {}),
+  resultsToTop: () => set({ resultsAt: 0 }),
   // Only what the processing panel needs of a layer (M4-13c-2, Otto 19.10.2026):
   // its dataset, if it is not the active one, and — for a layer cut to its AOI,
   // which "AOI only" sends — that AOI. The view stays as it is: the full-

@@ -961,10 +961,20 @@ input[type='date']:focus {
   color: #ff5a6e;
   font-size: 10px;
 }
-/* The eye of the results on the map (NM4-59), the same as in the entry "Results" of the layer manager. */
-.results-head .lm-eye {
+/* The eye of the results on the map (NM4-59), the same as in the entry "Results" of the layer manager, and left of it
+   "Results" on top of the layers; that place stays empty while "Results" is on top. */
+.results-head-switches {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.results-head .lm-eye,
+.results-to-top {
   width: 24px;
   height: 22px;
+}
+span.results-to-top {
+  display: block;
 }
 .results-list {
   --group-head-h: 34px;

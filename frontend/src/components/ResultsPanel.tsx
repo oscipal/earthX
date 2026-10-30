@@ -6,6 +6,7 @@ import type { StacItem, TimeStepGroup } from '../types';
 import CopyButton from './CopyButton';
 import DatasetSelect from './DatasetSelect';
 import ResultsEye from './ResultsEye';
+import ResultsToTop from './ResultsToTop';
 
 function timeOf(properties: Record<string, unknown>): string {
   const dt = properties['datetime'];
@@ -265,7 +266,10 @@ export default function ResultsPanel() {
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
         <h2 title="Selected scenes / scenes found">Results ({selected}/{totalItems(sections)})</h2>
-        <ResultsEye />
+        <div className="results-head-switches">
+          <ResultsToTop />
+          <ResultsEye />
+        </div>
       </div>
       <ResultsList sections={sections} />
     </div>
