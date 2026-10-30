@@ -188,9 +188,21 @@ def app_client(area_dataset_loaded: None) -> Any:
         yield client
 
 
-def get(client: Any, dataset_id: str = DATASET_ID, **params: Any) -> Any:
+def ask(client: Any, dataset_id: str = DATASET_ID, **params: Any) -> Any:
+    """The way the interface asks (NM4-57): an area (``bbox``, ``intersects``) as a POST with a body, anything else as a GET.
+
+    ``bbox``, ``intersects`` and ``query`` are written as the text a URL would carry them in and read here.
+    """
     params.setdefault("zoom", 5)
-    return client.get(f"/coverage/{dataset_id}", params=params)
+    if "bbox" not in params and "intersects" not in params:
+        return client.get(f"/coverage/{dataset_id}", params=params)
+    body = {**params}
+    if "bbox" in body:
+        body["bbox"] = [float(value) for value in body["bbox"].split(",")]
+    for name in ("intersects", "query"):
+        if name in body:
+            body[name] = json.loads(body[name])
+    return client.post(f"/coverage/{dataset_id}", json=body)
 
 
 def _multipolygon_area(geojson: dict[str, Any]) -> float:
@@ -201,7 +213,7 @@ def _multipolygon_area(geojson: dict[str, Any]) -> float:
 
 class TestAreaIsTheUnionOfFootprints:
     def test_the_unfiltered_area_covers_exactly_the_four_shapes(self, app_client: Any) -> None:
-        response = get(app_client)
+        response = ask(app_client)
 
         assert response.status_code == 200, response.text
         body = response.json()
@@ -215,7 +227,7 @@ class TestAreaIsTheUnionOfFootprints:
         assert body["extent"] is not None
 
     def test_the_ring_keeps_its_hole(self, app_client: Any) -> None:
-        response = get(app_client, bbox="19,19,24,24")
+        response = ask(app_client, bbox="19,19,24,24")
 
         assert response.status_code == 200
         area = response.json()["area"]
@@ -226,7 +238,7 @@ class TestAreaIsTheUnionOfFootprints:
         assert not polygon.contains(Point(21.5, 21.5))  # the missing centre tile
 
     def test_the_island_stays_disconnected_from_the_block(self, app_client: Any) -> None:
-        response = get(app_client)
+        response = ask(app_client)
         from shapely.geometry import shape
 
         polygon = shape(response.json()["area"])
@@ -236,13 +248,13 @@ class TestAreaIsTheUnionOfFootprints:
 
 class TestSpatialCrop:
     def test_a_bbox_over_half_the_block_returns_exactly_that_half(self, app_client: Any) -> None:
-        response = get(app_client, bbox="0,0,1,2")  # the western half of the 2x2 block
+        response = ask(app_client, bbox="0,0,1,2")  # the western half of the 2x2 block
 
         assert response.status_code == 200
         assert _multipolygon_area(response.json()["area"]) == pytest.approx(2.0)
 
     def test_a_bbox_over_open_ocean_is_an_empty_area_with_no_extent(self, app_client: Any) -> None:
-        response = get(app_client, bbox="-50,-50,-40,-40")
+        response = ask(app_client, bbox="-50,-50,-40,-40")
 
         assert response.status_code == 200
         body = response.json()
@@ -250,7 +262,7 @@ class TestSpatialCrop:
         assert body["extent"] is None
 
     def test_a_bbox_crossing_the_antimeridian_reaches_both_dateline_tiles(self, app_client: Any) -> None:
-        response = get(app_client, bbox="179,-61,-179,-58")  # west > east: wraps
+        response = ask(app_client, bbox="179,-61,-179,-58")  # west > east: wraps
 
         assert response.status_code == 200
         assert _multipolygon_area(response.json()["area"]) == pytest.approx(2.0)
@@ -258,7 +270,7 @@ class TestSpatialCrop:
     def test_an_intersecting_triangle_crops_to_exactly_its_overlap(self, app_client: Any) -> None:
         # A right triangle over the SW quarter of the block: half of one unit tile.
         triangle = json.dumps({"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [0, 1], [0, 0]]]})
-        response = get(app_client, intersects=triangle)
+        response = ask(app_client, intersects=triangle)
 
         assert response.status_code == 200
         assert _multipolygon_area(response.json()["area"]) == pytest.approx(0.5)
@@ -270,7 +282,7 @@ class TestSpatialCrop:
 
         caplog.set_level(logging.WARNING, logger="earthx.api.coverage")
         bowtie = json.dumps({"type": "Polygon", "coordinates": [[[0, 0], [2, 2], [2, 0], [0, 2], [0, 0]]]})
-        response = get(app_client, intersects=bowtie)
+        response = ask(app_client, intersects=bowtie)
 
         assert response.status_code == 400
         for needle in ("0, 0", "2, 2", "(0", "(2"):
@@ -280,20 +292,20 @@ class TestSpatialCrop:
 
 class TestTimeFilter:
     def test_outside_the_items_time_the_area_is_empty(self, app_client: Any) -> None:
-        response = get(app_client, datetime="2019-01-01T00:00:00Z/2019-06-30T00:00:00Z")
+        response = ask(app_client, datetime="2019-01-01T00:00:00Z/2019-06-30T00:00:00Z")
 
         assert response.status_code == 200
         assert response.json()["area"] == {"type": "MultiPolygon", "coordinates": []}
 
     def test_inside_one_windows_time_only_that_windows_shapes_appear(self, app_client: Any) -> None:
-        response = get(app_client, datetime=f"{WINDOW_B[0]}/{WINDOW_B[1]}")
+        response = ask(app_client, datetime=f"{WINDOW_B[0]}/{WINDOW_B[1]}")
 
         assert response.status_code == 200
         # Window B is only the island.
         assert _multipolygon_area(response.json()["area"]) == pytest.approx(1.0)
 
     def test_a_dataset_without_a_time_axis_ignores_the_filter_entirely(self, app_client: Any) -> None:
-        response = get(
+        response = ask(
             app_client, dataset_id=NO_TIME_DATASET_ID, datetime="2026-01-01T00:00:00Z/2026-12-31T00:00:00Z"
         )
 
@@ -305,8 +317,8 @@ class TestTimeFilter:
 
 class TestCacheAndSearchFilters:
     def test_a_second_identical_request_answers_from_the_cache(self, app_client: Any) -> None:
-        first = get(app_client, bbox="0,0,2,2")
-        second = get(app_client, bbox="0,0,2,2")
+        first = ask(app_client, bbox="0,0,2,2")
+        second = ask(app_client, bbox="0,0,2,2")
 
         assert first.json()["from_cache"] is False
         assert second.json()["from_cache"] is True
@@ -314,7 +326,7 @@ class TestCacheAndSearchFilters:
 
     def test_a_search_filter_is_refused_not_ignored(self, app_client: Any) -> None:
         """A materialized one-off product has no filters (DS-02): answering it unfiltered would look like an answer."""
-        response = get(app_client, bbox="0,0,2,2", query='{"eo:cloud_cover": {"lte": 10}}')
+        response = ask(app_client, bbox="0,0,2,2", query='{"eo:cloud_cover": {"lte": 10}}')
 
         assert response.status_code == 400
 
@@ -324,7 +336,7 @@ class TestNoCoordinateInTheLog:
         import logging
 
         caplog.set_level(logging.INFO, logger="earthx.api.coverage")
-        get(app_client, bbox="0,0,2,2")
+        ask(app_client, bbox="0,0,2,2")
 
         for needle in ("0,0,2,2", "\"west\"", "0.0, 0.0"):
             assert needle not in caplog.text

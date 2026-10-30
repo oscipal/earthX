@@ -1,4 +1,4 @@
-"""``GET /coverage/{dataset_id}``: the acceptance criteria of M2-05b, one test each.
+"""``/coverage/{dataset_id}``: the acceptance criteria of M2-05b, one test each; ``POST`` for an AOI since NM4-57.
 
 Nothing here reaches the network: the gateway's transport and resolver are under
 test control, exactly as in ``tests/earthx/adapters/test_earth_search_coverage.py``,
@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from earthx.adapters import ADAPTER_SPECS
-from earthx.api.coverage_route import build_router
+from earthx.api.coverage_route import MAX_BODY_BYTES, build_router
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
 from tests.earthx.adapters.conftest import answering, gateway_for, load
@@ -50,6 +50,12 @@ def get(client: TestClient, dataset_id: str = DATASET, **params: Any) -> httpx.R
     return client.get(f"/coverage/{dataset_id}", params=params)
 
 
+def post(client: TestClient, dataset_id: str = DATASET, **body: Any) -> httpx.Response:
+    """An AOI is asked for with ``POST`` and stands in the body only (NM4-57)."""
+    body.setdefault("zoom", 5)
+    return client.post(f"/coverage/{dataset_id}", json=body)
+
+
 class TestUnknownDataset:
     def test_answers_404(self) -> None:
         gateway, seen = answering(ok("aggregate_complete"))
@@ -61,7 +67,7 @@ class TestUnknownDataset:
 class TestHappyPath:
     def test_the_answer_is_the_compact_wire_shape(self) -> None:
         gateway, seen = answering(ok("aggregate_complete"))
-        response = get(client_for(gateway), bbox="5,45,15,55", datetime="2024-01-01T00:00:00Z/2024-12-31T00:00:00Z")
+        response = post(client_for(gateway), bbox=[5, 45, 15, 55], datetime="2024-01-01T00:00:00Z/2024-12-31T00:00:00Z")
 
         assert response.status_code == 200
         body = response.json()
@@ -83,13 +89,13 @@ class TestHappyPath:
         function; this proves the route actually calls it before building the query).
         """
         gateway, seen = answering(ok("aggregate_complete"))
-        response = get(client_for(gateway), zoom=29, bbox="5,45,15,55")
+        response = post(client_for(gateway), zoom=29, bbox=[5, 45, 15, 55])
         assert response.status_code == 200
         assert response.json()["level"] == SENTINEL_2_L2A.coverage.max_geotile_level
 
 
-BROKEN_RING = json.dumps({"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [0, 0]]]})
-OFF_GLOBE_RING = json.dumps({"type": "Polygon", "coordinates": [[[0.0, 0.0], [999.0, 0.0], [999.0, 1.0], [0.0, 0.0]]]})
+BROKEN_RING = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [0, 0]]]}
+OFF_GLOBE_RING = {"type": "Polygon", "coordinates": [[[0.0, 0.0], [999.0, 0.0], [999.0, 1.0], [0.0, 0.0]]]}
 
 
 class TestBadInput:
@@ -98,26 +104,95 @@ class TestBadInput:
     @pytest.mark.parametrize(
         "params",
         [
-            {"bbox": "5,45,15,55", "intersects": BROKEN_RING},  # two questions, adr/0004 §5
             {"bbox": "5,45,15"},  # wrong number of values
             {"bbox": "5,-95,15,55"},  # latitude outside ±90
-            {"intersects": "not json at all"},
-            {"intersects": '{"type": "Polygon", "coordinates": [[[' + "1" * 5000 + ", 0]]]}"},  # unreadable number
-            {"intersects": "[1, 2, 3]"},  # not a GeoJSON object
-            {"intersects": BROKEN_RING},  # fewer than four positions
-            {"intersects": OFF_GLOBE_RING},  # adr/0005 §3.5's lesson, applied to intersects
+            {"bbox": "a,b,c,d"},
             {"datetime": "not-a-date"},
         ],
     )
-    def test_answers_400(self, params: dict[str, object]) -> None:
+    def test_a_get_answers_400(self, params: dict[str, object]) -> None:
         gateway, seen = answering(ok("aggregate_complete"))
         response = get(client_for(gateway), **params)
         assert response.status_code == 400
         assert not seen
 
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"bbox": [5, 45, 15, 55], "intersects": BROKEN_RING},  # two questions, adr/0004 §5
+            {"bbox": [5, 45, 15]},  # wrong number of values
+            {"bbox": [5, -95, 15, 55]},  # latitude outside ±90
+            {"bbox": [5, 55, 15, 45]},  # upside down
+            {"bbox": ["5", "45", "15", "55"]},  # numbers as text
+            {"bbox": [True, 45, 15, 55]},
+            {"intersects": "not json at all"},
+            {"intersects": [1, 2, 3]},  # not a GeoJSON object
+            {"intersects": BROKEN_RING},  # fewer than four positions
+            {"intersects": OFF_GLOBE_RING},  # adr/0005 §3.5's lesson, applied to intersects
+            {"datetime": "not-a-date"},
+            {"zoom": "5"},
+            {"zoom": 5.5},
+            {"zoom": True},
+            {"area": [5, 45, 15, 55]},  # a field the question does not have
+            {"query": "not an object"},
+            {"query": [1, 2]},
+        ],
+    )
+    def test_a_post_answers_400(self, body: dict[str, object]) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = post(client_for(gateway), **body)
+        assert response.status_code == 400
+        assert not seen
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"",
+            b"not json at all",
+            b"[1, 2, 3]",
+            b"null",
+            b"{}",  # no zoom
+            b'{"zoom": 5, "bbox": [NaN, 45, 15, 55]}',
+            b'{"zoom": 5, "intersects": {"type": "Polygon", "coordinates": [[[' + b"1" * 5000 + b", 0]]]}}",
+            b"[" * 20000,  # deep enough to exhaust the parser's stack
+        ],
+    )
+    def test_a_body_that_is_no_question_answers_400(self, content: bytes) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = client_for(gateway).post(f"/coverage/{DATASET}", content=content)
+        assert response.status_code == 400
+        assert not seen
+
+    def test_a_body_over_the_cap_answers_413(self) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        content = b'{"zoom": 5, "datetime": "' + b"x" * MAX_BODY_BYTES + b'"}'
+        response = client_for(gateway).post(f"/coverage/{DATASET}", content=content)
+        assert response.status_code == 413
+        assert not seen
+
+    def test_a_post_for_an_unknown_dataset_is_404(self) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = post(client_for(gateway), dataset_id="does-not-exist", bbox=[5, 45, 15, 55])
+        assert response.status_code == 404
+        assert not seen
+
     def test_no_out_of_bounds_coordinate_reaches_the_response(self) -> None:
-        response = get(client_for(gateway_for(lambda r: ok("aggregate_complete"))), intersects=OFF_GLOBE_RING)
+        response = post(client_for(gateway_for(lambda r: ok("aggregate_complete"))), intersects=OFF_GLOBE_RING)
         assert "999" not in response.text
+
+    def test_a_400_for_a_body_quotes_nothing_of_it(self) -> None:
+        """FastAPI's own 422 would repeat the input, and the input is the AOI."""
+        gateway, _ = answering(ok("aggregate_complete"))
+        client = client_for(gateway)
+        responses = [
+            post(client, bbox=["12.3456", "45", "15", "55"]),
+            post(client, intersects={"type": "Polygon", "coordinates": "12.3456"}),
+            post(client, zoom="12.3456", bbox=[5, 45, 15, 55]),
+            post(client, unknown="12.3456"),
+        ]
+        for response in responses:
+            assert response.status_code == 400
+            assert "12.3456" not in response.text
 
 
 def query_of(**filters: Any) -> str:
@@ -129,15 +204,13 @@ class TestSearchFilters:
 
     def test_the_conditions_reach_the_source_in_the_query_extension(self) -> None:
         gateway, seen = answering(ok("aggregate_complete"))
-        query = query_of(
-            **{
-                "eo:cloud_cover": {"gte": 5, "lte": 20},
-                "s2:nodata_pixel_percentage": {"lte": 5},
-                "platform": {"in": ["sentinel-2b", "sentinel-2a"]},
-            }
-        )
+        query = {
+            "eo:cloud_cover": {"gte": 5, "lte": 20},
+            "s2:nodata_pixel_percentage": {"lte": 5},
+            "platform": {"in": ["sentinel-2b", "sentinel-2a"]},
+        }
 
-        response = get(client_for(gateway), bbox="5,45,15,55", query=query)
+        response = post(client_for(gateway), bbox=[5, 45, 15, 55], query=query)
 
         assert response.status_code == 200
         assert len(seen) == 1
@@ -207,6 +280,23 @@ class TestSearchFilters:
         for needle, body in zip(("98765", "secret-satellite", "Home Address"), bodies, strict=True):
             assert needle not in body
 
+    @pytest.mark.parametrize(
+        "query",
+        [
+            {"foo:bar": {"gte": 1}},
+            {"eo:cloud_cover": {"lt": 20}},
+            {"eo:cloud_cover": {"lte": 101}},
+            {"eo:cloud_cover": {}},
+            {"platform": {"in": ["sentinel-2z"]}},
+            {"earthx:aoi_cloud_cover": {"lte": 10}},
+        ],
+    )
+    def test_the_body_takes_the_same_filters_as_the_url_and_refuses_the_same(self, query: dict[str, Any]) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = post(client_for(gateway), bbox=[5, 45, 15, 55], query=query)
+        assert response.status_code == 400
+        assert not seen
+
     def test_a_dataset_without_filters_refuses_any(self) -> None:
         config = replace(SENTINEL_2_L2A, search_filters=())
         gateway, seen = answering(ok("aggregate_complete"))
@@ -240,10 +330,10 @@ class TestSearchFilters:
         caplog.set_level(logging.INFO, logger="earthx.api.coverage")
         gateway, _ = answering(ok("aggregate_complete"))
 
-        get(
+        post(
             client_for(gateway),
-            bbox="5.123,45.456,15,55",
-            query=query_of(**{"eo:cloud_cover": {"lte": 17.25}, "platform": {"in": ["sentinel-2c"]}}),
+            bbox=[5.123, 45.456, 15, 55],
+            query={"eo:cloud_cover": {"lte": 17.25}, "platform": {"in": ["sentinel-2c"]}},
         )
 
         record = next(record for record in caplog.records if record.name == "earthx.api.coverage")
@@ -259,6 +349,7 @@ class TestSearchFilters:
         assert "max_cloud_cover" not in parameters
         assert parameters["query"]["required"] is False
         assert parameters["query"]["schema"]["anyOf"][0] == {"type": "string"}
+        assert "intersects" not in parameters  # NM4-57: an area is not a parameter of the URL
 
 
 class TestUpstreamErrors:
@@ -284,6 +375,160 @@ class TestUpstreamErrors:
         gateway = gateway_for(lambda request: httpx.Response(200, json={"not": "an aggregation"}))
         response = get(client_for(gateway))
         assert response.status_code == 502
+
+
+# What the interface asks for as a map extent: `roundBboxToGrid` of `frontend/src/coverage.ts`, rounded outward to the
+# block grid of `zoom - 3`. The same five boxes stand in `coverage.test.ts`, which pins the other side of this check.
+MAP_EXTENTS = [
+    (10, [5.625, 47.04018214480665, 14.0625, 50.73645513701065]),
+    (8, [-22.5, 31.952162238024968, 45, 70.61261423801923]),
+    (6, [-180, -85.05112877980659, 180, 87.74250915866031]),  # the world, 87.7° north through a rounding at the pole
+    (17, [11.3818359375, 48.09275716032735, 11.6015625, 48.21003212234041]),
+    (19, [-0.054931640625, 51.4471603469801, 0.054931640625, 51.55316672962129]),
+]
+# Boxes a person draws: on no grid.
+AREA_BOXES = [
+    [5, 45, 15, 55],
+    [11.31234, 47.81234, 11.51234, 47.91234],
+    [-0.05, 51.45, 0.05, 51.55],
+    [13.4, -33.9, 13.41, -33.89],
+]
+
+
+def box_text(box: list[float]) -> str:
+    return ",".join(str(value) for value in box)
+
+
+class TestAnAreaIsNotInTheUrl:
+    """NM4-57 (M4 Q8): a GET URL stands in access logs and histories, so the area goes in the body of a POST."""
+
+    @pytest.mark.parametrize("area", [{"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}, "x"])
+    def test_a_get_with_an_outline_is_refused_and_asks_for_post(self, area: Any) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(client_for(gateway), intersects=json.dumps(area))
+        assert response.status_code == 400
+        assert "POST" in response.json()["detail"]
+        assert not seen
+
+    @pytest.mark.parametrize("box", AREA_BOXES)
+    def test_a_get_with_the_box_of_an_area_is_refused(self, box: list[float]) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(client_for(gateway), bbox=box_text(box))
+        assert response.status_code == 400
+        assert "POST" in response.json()["detail"]
+        assert not seen
+
+    @pytest.mark.parametrize("box", AREA_BOXES)
+    def test_a_refusal_does_not_repeat_the_box(self, box: list[float]) -> None:
+        gateway, _ = answering(ok("aggregate_complete"))
+        response = get(client_for(gateway), bbox=box_text(box))
+        for value in box:
+            assert str(value) not in response.text
+
+    @pytest.mark.parametrize(("zoom", "box"), MAP_EXTENTS)
+    def test_a_get_with_a_map_extent_is_answered(self, zoom: int, box: list[float]) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(client_for(gateway), zoom=zoom, bbox=box_text(box))
+        assert response.status_code == 200
+        assert len(seen) == 1
+
+    @pytest.mark.parametrize(("zoom", "box"), MAP_EXTENTS)
+    def test_the_same_extent_one_cell_off_is_an_area(self, zoom: int, box: list[float]) -> None:
+        shifted = [box[0] + 0.001, *box[1:]]
+        gateway, seen = answering(ok("aggregate_complete"))
+        assert get(client_for(gateway), zoom=zoom, bbox=box_text(shifted)).status_code == 400
+        assert not seen
+
+    def test_an_extent_is_checked_on_the_grid_of_its_own_level(self) -> None:
+        """Lying on a finer grid than the one asked for is no extent: a box a person draws could do that by chance."""
+        gateway, _ = answering(ok("aggregate_complete"))
+        zoom, box = MAP_EXTENTS[0]
+        assert get(client_for(gateway), zoom=zoom - 4, bbox=box_text(box)).status_code == 400
+
+    def test_a_get_without_an_area_is_answered_as_before(self) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(client_for(gateway), zoom=3, datetime="2024-01-01T00:00:00Z/2024-12-31T00:00:00Z")
+        assert response.status_code == 200
+        assert "bbox" not in seen[0].url.params
+
+    @pytest.mark.parametrize("box", AREA_BOXES)
+    def test_a_post_takes_any_box(self, box: list[float]) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = post(client_for(gateway), bbox=box)
+        assert response.status_code == 200
+        assert len(seen) == 1
+
+    def test_a_post_takes_an_outline_and_sends_it_to_the_source(self) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        area = {"type": "Polygon", "coordinates": [[[5.5, 45.5], [6.5, 45.5], [6.5, 46.5], [5.5, 45.5]]]}
+        response = post(client_for(gateway), intersects=area)
+        assert response.status_code == 200
+        assert json.loads(seen[0].url.params["intersects"]) == area
+
+    def test_the_answer_of_a_post_is_the_answer_of_the_get(self) -> None:
+        zoom, box = MAP_EXTENTS[0]
+        by_get = get(client_for(answering(ok("aggregate_complete"))[0]), zoom=zoom, bbox=box_text(box))
+        by_post = post(client_for(answering(ok("aggregate_complete"))[0]), zoom=zoom, bbox=box)
+        assert by_get.json() == by_post.json()
+
+    def test_the_url_of_a_post_carries_nothing_of_the_area(self) -> None:
+        gateway, _ = answering(ok("aggregate_complete"))
+        client = client_for(gateway)
+        response = post(client, bbox=[11.31234, 47.81234, 11.51234, 47.91234])
+        assert response.status_code == 200
+        assert response.request.url.query == b""
+        assert "11.31234" not in str(response.request.url)
+
+    def test_the_post_is_declared_with_a_body_and_without_url_parameters(self) -> None:
+        gateway, _ = answering(ok("aggregate_complete"))
+        operation = client_for(gateway).app.openapi()["paths"]["/coverage/{dataset_id}"]["post"]
+        assert {p["name"] for p in operation["parameters"]} == {"dataset_id"}
+        schema = operation["requestBody"]["content"]["application/json"]["schema"]
+        assert {"zoom", "bbox", "intersects", "datetime", "query"} == set(schema["properties"])
+        assert schema["required"] == ["zoom"]
+
+
+class TestNothingOfTheAoiIsLogged:
+    """NM4-57: on the way that works, too — the other tests of this file read the failing ones."""
+
+    NEEDLES = ("11.31234", "47.81234", "11.51234", "47.91234", "12.3456")
+
+    def test_no_coordinate_of_a_box_reaches_a_log_line(self, caplog: pytest.LogCaptureFixture) -> None:
+        # Our own loggers only: see `test_a_source_error_reaches_neither_the_answer_nor_the_log`.
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        gateway, _ = answering(ok("aggregate_complete"))
+
+        response = post(client_for(gateway), bbox=[11.31234, 47.81234, 11.51234, 47.91234])
+
+        assert response.status_code == 200
+        assert any(record.name == "earthx.api.coverage" for record in caplog.records)
+        for needle in self.NEEDLES:
+            assert needle not in caplog.text
+            assert all(needle not in str(record.__dict__) for record in caplog.records)
+
+    def test_no_coordinate_of_an_outline_reaches_a_log_line(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        gateway, _ = answering(ok("aggregate_complete"))
+        area = {
+            "type": "Polygon",
+            "coordinates": [[[11.31234, 47.81234], [11.51234, 47.81234], [11.51234, 47.91234], [11.31234, 47.81234]]],
+        }
+
+        post(client_for(gateway), intersects=area)
+
+        for needle in self.NEEDLES:
+            assert needle not in caplog.text
+
+    def test_no_coordinate_of_a_refused_request_reaches_a_log_line(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        gateway, _ = answering(ok("aggregate_complete"))
+        client = client_for(gateway)
+
+        get(client, bbox="11.31234,47.81234,11.51234,47.91234")
+        post(client, bbox=[11.31234, 47.81234, 11.51234, "12.3456"])
+
+        for needle in self.NEEDLES:
+            assert needle not in caplog.text
 
 
 class TestUnavailableProvider:
@@ -333,17 +578,14 @@ class TestAreaPathWithoutADatabase:
         self-intersecting polygon is refused before this ever asks for a pool —
         the ``503`` above must never mask a `400` the request itself deserves."""
         config = self._config()
-        area = json.dumps(
-            {"type": "Polygon", "coordinates": [[[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0], [0.0, 0.0]]]}
-        )
+        area = {"type": "Polygon", "coordinates": [[[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0], [0.0, 0.0]]]}
         gateway, seen = answering(ok("aggregate_complete"))
-        response = get(
+        response = post(
             client_for(gateway, registry=DatasetRegistry((config,))), dataset_id=config.dataset_id, intersects=area
         )
 
         assert response.status_code == 400
         assert not seen
-
 
     def test_a_search_filter_on_the_area_way_is_400_before_the_missing_pool_is_503(self) -> None:
         config = self._config()
@@ -401,7 +643,7 @@ class TestNoAoiReachesAnswerOrLog:
             "type": "Polygon",
             "coordinates": [[[5.123, 45.456], [6.0, 45.0], [6.0, 46.0], [5.123, 45.456]]],
         }
-        response = get(client_for(gateway), intersects=json.dumps(area))
+        response = post(client_for(gateway), intersects=area)
 
         assert response.status_code == 502
         for needle in ("5.123", "45.456"):

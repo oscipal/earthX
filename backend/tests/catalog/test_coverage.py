@@ -379,3 +379,28 @@ async def test_the_area_way_refuses_search_filters_instead_of_answering_without_
 
     with pytest.raises(InvalidCoverageQuery, match="no search filters"):
         await area_coverage(query, COP_DEM_GLO_30, conn=None)  # type: ignore[arg-type]
+
+
+class TestWhatTheAreaWayKeepsOfAnAoi:
+    """NM4-57: the entry of an AOI lives at most a week, and its key is a hash that holds no coordinate."""
+
+    def test_the_lifetime_is_under_a_week(self) -> None:
+        from earthx.catalog.local_coverage import AREA_TTL_S
+
+        assert 0 < AREA_TTL_S <= 7 * 24 * 60 * 60
+
+    def test_the_key_holds_no_coordinate(self) -> None:
+        from earthx.catalog.local_coverage import _cache_key
+
+        area = {
+            "type": "Polygon",
+            "coordinates": [[[11.31234, 47.81234], [11.51234, 47.81234], [11.51234, 47.91234], [11.31234, 47.81234]]],
+        }
+        for query in (
+            CoverageQuery(dataset_id="cop-dem-glo-30", level=3, intersects=area),
+            CoverageQuery(dataset_id="cop-dem-glo-30", level=3, bbox=(11.31234, 47.81234, 11.51234, 47.91234)),
+        ):
+            key = _cache_key(query)
+            assert key.startswith("coverage-area:") and len(key) == len("coverage-area:") + 64
+            for needle in ("11.31234", "47.81234", "11.51234", "47.91234"):
+                assert needle not in key
