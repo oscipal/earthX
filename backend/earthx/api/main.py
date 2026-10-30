@@ -35,7 +35,13 @@ from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
 from earthx.api.aoi_upload_route import router as aoi_upload_router
 from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.crs_info import switch_off_proj_network
-from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool, resolve_tiler_base
+from earthx.api.dependencies import (
+    build_gateway,
+    build_geocoder,
+    cache_pool,
+    policy_from_registry,
+    resolve_tiler_base,
+)
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
 from earthx.api.item_source import build_item_source, check_item_holdings
@@ -44,6 +50,8 @@ from earthx.api.processing_route import JobApi
 from earthx.api.processing_route import router as processing_router
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry
+from earthx.gateway import CachingResolver, ReadSlots
+from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging
 from earthx.objectstore.results import Store
 from earthx.processing.operators import REGISTRY as OPERATORS
@@ -174,6 +182,14 @@ def build_app(
     # (`earthx_job_api`) is set once the process has its pools.
     app.state.earthx_operators = operators
     app.state.earthx_job_api = None
+    # DS-03: the search measures the cloud share of a scene itself (`api.aoi_cloud_filter`), so this process reads
+    # rasters like the tiler: the registry's allowlist, the gateway's GDAL options, and one limit on the readers
+    # per host that every search of the process shares (plan §6.9 F2d).
+    policy = policy_from_registry(registry)
+    app.state.earthx_policy = policy
+    app.state.earthx_resolver = CachingResolver()
+    app.state.earthx_gdal_options = gdal_options(policy)
+    app.state.earthx_read_slots = ReadSlots(policy)
 
     @app.get("/health")
     async def health() -> dict:
