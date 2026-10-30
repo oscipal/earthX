@@ -8,8 +8,9 @@
 //     (a view opened or left, a crop, a layer removed, a change of basemap or projection, "Load more", a new search).
 //  2. (Until 28.10.2026 a ticked scene was the one exception; no more, Otto, zu #221.) "Hide results" hides the ticked
 //     scenes too, outline and quicklook; their ticks stay, for "Crop & merge" and the rest.
-//  3. Only the switch changes show/hide (`store.ts::toggleResultsOnMap`), and three things: "Search" shows, a crop hides,
-//     and ticking a scene while the results are hidden shows them (unticking changes nothing).
+//  3. Only the switch changes show/hide (`store.ts::toggleResultsOnMap`; since NM4-59 the eye of the entry "Results" in the
+//     layer manager and in the head of the results list), and four things: "Search" shows, a crop hides, ticking a scene
+//     while the results are hidden shows them (unticking changes nothing), and "Play" shows them (NM4-18).
 //  4. The ticked scenes lie over each other in the order they were ticked: the last one on top (`mapLayers.ts`).
 //  5. The ticks stay over a change of the time step and of the dataset (NM4-50): the ticked scenes of the other datasets
 //     of the search are on the map like the ticked ones of the open dataset, whichever dataset the list shows.

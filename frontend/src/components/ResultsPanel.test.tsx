@@ -16,6 +16,8 @@ import { buildSections } from '../sections';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ResultsPanel from './ResultsPanel';
+import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './ResultsEye';
+import { RESULTS_ON_TOP_TIP } from './ResultsToTop';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -276,23 +278,27 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(container.querySelector('.results-panel')).toBeNull();
   });
 
-  it('has no "Clear all" in its head, only the switch for the map', () => {
+  it('has no "Clear all" in its head, only "Results" on top of the layers and the eye of the results on the map', () => {
     load(MIXED);
-    expect([...container.querySelectorAll('.results-head button')].map((b) => b.textContent)).toEqual(['Hide results']);
+    expect([...container.querySelectorAll<HTMLButtonElement>('.results-head button')].map((b) => b.title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
   });
 
-  it('names what the switch does, never the state: "Hide results", then "Show results", and takes nothing from the list', () => {
+  // NM4-59: the eye replaces "Hide results" / "Show results"; it is the eye of the entry "Results" in the layer manager.
+  it('names in its tooltip what the eye does, shows the state by the eye, and takes nothing from the list', () => {
     load(MIXED);
-    const toggle = () => container.querySelector('.results-head button') as HTMLButtonElement;
+    const toggle = () => container.querySelector('.results-head button[aria-pressed]') as HTMLButtonElement;
     expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
     act(() => toggle().click());
     expect(useAppStore.getState().resultsOnMap).toBe(false);
-    expect(toggle().textContent).toBe('Show results');
+    expect(toggle().title).toBe(SHOW_RESULTS_TIP);
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    expect(toggle().classList.contains('off')).toBe(true);
     expect(container.querySelectorAll('.result-group')).toHaveLength(2);
     expect(container.querySelector('h2')?.textContent).toBe('Results (0/3)');
     act(() => toggle().click());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().textContent).toBe('Hide results');
+    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
   });
 });
 
