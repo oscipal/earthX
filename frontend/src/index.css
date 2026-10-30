@@ -969,13 +969,17 @@ input[type='date']:focus {
   outline: none;
 }
 .results-list {
+  --group-head-h: 34px;
   flex: 1 1 auto;
   min-height: 0;
   list-style: none;
   margin: 0;
-  padding: 6px;
+  /* No padding at the top: a sticky head would stop that far below the edge, with rows passing above it. */
+  padding: 0 6px 6px;
   overflow-y: auto;
   overflow-x: hidden;
+  /* A row focused by keyboard scrolls into view below the pinned group head, not under it. */
+  scroll-padding-top: var(--group-head-h);
 }
 .result-row {
   display: flex;
@@ -1348,9 +1352,21 @@ input[type='date']:focus {
 .multi-select-toggle input {
   margin: 0;
 }
+.results-list > .result-group:first-child {
+  margin-top: 6px;
+}
+/* The head of the group in view stays at the top of the list until the next group's head pushes it out (NM4-09): it
+   sticks inside its own group. Opaque, as rows scroll under it: the panel colour over the map's, which is what the
+   translucent panel looks like in front of. */
 .result-group-row {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
+  box-sizing: border-box;
+  min-height: var(--group-head-h);
+  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
 }
 .rg-select {
   flex: none;
