@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { RESULTS_ENTRY_TIP } from './components/LayerManager';
 import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './components/ResultsEye';
-import { RESULTS_TO_TOP_TIP } from './components/ResultsToTop';
+import { RESULTS_ON_TOP_TIP, RESULTS_TO_TOP_TIP } from './components/ResultsToTop';
 import { datasetsFrom } from './datasets';
 import { bboxToPolygon } from './geoUtils';
 import { resetJobs, useProcessingStore } from './processingStore';
@@ -216,45 +216,55 @@ describe('the eye of "Results"', () => {
 });
 
 // Otto, 30.10.2026 (zu #249): left of the eye in the head of the results list, a button puts "Results" on top of the
-// layers. While "Results" is on top it is not there, and its place stays empty, so that the eye does not move.
+// layers. While "Results" is on top it stays there, greyed out, with the reason in its tooltip.
 describe('"Results" on top, from the results list', () => {
   const head = () => container.querySelector('.results-head-switches')!;
-  const toTop = () => head().querySelector<HTMLButtonElement>(`button[title="${RESULTS_TO_TOP_TIP}"]`);
+  const toTop = () => head().querySelector<HTMLButtonElement>(`button[aria-label="${RESULTS_TO_TOP_TIP}"]`)!;
+  const greyed = () => toTop().getAttribute('aria-disabled') === 'true';
   beforeEach(() => act(() => useAppStore.setState({ dock: 'results' })));
 
-  it('is not there while "Results" is on top; its place is, left of the eye', () => {
-    expect(toTop()).toBeNull();
+  it('is there left of the eye, greyed out while "Results" is on top, the reason in its tooltip', () => {
     const [first, second] = [...head().children];
-    expect(first.classList.contains('results-to-top')).toBe(true);
-    expect(first.getAttribute('aria-hidden')).toBe('true');
+    expect(first).toBe(toTop());
     expect((second as HTMLButtonElement).title).toBe(HIDE_RESULTS_TIP);
+    expect(greyed()).toBe(true);
+    expect(toTop().title).toBe(RESULTS_ON_TOP_TIP);
   });
 
-  it('puts "Results" over every layer, and goes', () => {
+  it('does nothing while greyed out', () => {
+    pin('Job one');
+    act(() => state().resultsToTop());
+    expect(greyed()).toBe(true);
+    const before = rowNames();
+    click(toTop());
+    expect(rowNames()).toEqual(before);
+  });
+
+  it('puts "Results" over every layer, and is greyed out then', () => {
     pin('Job one');
     pin('Job two');
     expect(rowNames()).toEqual(['Job two', 'Job one', 'Results']);
-    expect(head().children[0]).toBe(toTop());
-    expect(toTop()!.getAttribute('aria-label')).toBe(RESULTS_TO_TOP_TIP);
-    click(toTop()!);
+    expect(greyed()).toBe(false);
+    expect(toTop().title).toBe(RESULTS_TO_TOP_TIP);
+    click(toTop());
     expect(rowNames()).toEqual(['Results', 'Job two', 'Job one']);
-    expect(toTop()).toBeNull();
+    expect(greyed()).toBe(true);
   });
 
   it('leaves the eye and the layers alone', () => {
     pin('Job one');
     click(resultsButton('eye'));
     const layers = state().layers;
-    click(toTop()!);
+    click(toTop());
     expect(state().resultsOnMap).toBe(false);
     expect(state().layers).toBe(layers);
   });
 
-  it('is there again once a new layer goes over "Results"', () => {
+  it('is open again once a new layer goes over "Results"', () => {
     pin('Job one');
-    click(toTop()!);
-    expect(toTop()).toBeNull();
+    click(toTop());
+    expect(greyed()).toBe(true);
     pin('Job two');
-    expect(toTop()).not.toBeNull();
+    expect(greyed()).toBe(false);
   });
 });

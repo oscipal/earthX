@@ -16,6 +16,7 @@ import { jobEntry, NOW } from './fixtures/jobEntries';
 import { bboxToPolygon } from './geoUtils';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './components/ResultsEye';
+import { RESULTS_ON_TOP_TIP } from './components/ResultsToTop';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
 
@@ -309,7 +310,7 @@ describe('everything the list could do is in the panel', () => {
   });
 
   it('has no "Clear all" in its head', () => {
-    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([HIDE_RESULTS_TIP]);
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
   });
 
   it('goes back to the control menu when the search is cleared', () => {
@@ -336,7 +337,7 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
     expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (1/300)');
-    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([HIDE_RESULTS_TIP]);
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
     expect(useAppStore.getState().sections).toHaveLength(1);
     expect(symbol('results').getAttribute('aria-label')).toBe('Results, 300');
     act(() => useAppStore.setState({ focusMode: false, cropToAoi: false }));
@@ -384,7 +385,7 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
 });
 
 describe('the results on the map (Otto, 26.10.2026)', () => {
-  const toggle = () => [...slot('results').querySelectorAll('.results-head button')][0] as HTMLButtonElement;
+  const toggle = () => slot('results').querySelector('.results-head button[aria-pressed]') as HTMLButtonElement;
 
   beforeEach(async () => {
     // A search no longer puts the switch back, so each test starts from "on".

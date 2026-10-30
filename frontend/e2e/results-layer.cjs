@@ -2,9 +2,9 @@
 // groups, each one solid colour (red newest, green, blue), and a job's result in yellow over the same area; the pixel in the
 // middle of the map is read:
 //   1. Otto's click path: a group open, nothing ticked, the job pinned (a new layer goes on top: yellow), "Results" put on
-//      top by the button left of the eye in the results list (red), the eye of "Results" off (yellow) and on again (red),
-//      four times, by the eye in the layer manager and by the one in the results list; once with the quicklooks arriving
-//      late;
+//      top by the button left of the eye in the results list (red; the button greyed out then), the eye of "Results" off
+//      (yellow) and on again (red), four times, by the eye in the layer manager and by the one in the results list; once
+//      with the quicklooks arriving late;
 //   2. "Results" moved under the job with ▼: yellow; back with ▲: red;
 //   3. a full-resolution view open, a scene of another group ticked, the eye on: the open group lies over the ticked scene.
 // Light and dark theme, a wide and a narrow window.
@@ -175,14 +175,19 @@ async function run(browser, { theme, viewport }) {
   await page.locator('#rail-results').click();
   await page.screenshot({ path: path.join(OUT, `to-top button ${name}.png`) });
   await page.locator('#rail-results').click();
+  const greyed = () => page.locator('.results-head button[aria-label="Put results on top of the layers"]').getAttribute('aria-disabled');
+  if ((await greyed()) !== null) problems.push('the button is greyed out with a layer over "Results"');
   await click('results', page.locator('.results-head button[aria-label="Put results on top of the layers"]'), 'the button "Results" on top');
-  if ((await page.locator('.results-head button[aria-label="Put results on top of the layers"]').count()) !== 0) problems.push('the button stays after "Results" is on top');
+  if ((await greyed()) !== 'true') problems.push('the button is not greyed out with "Results" on top');
+  await page.locator('#rail-results').click();
+  await page.screenshot({ path: path.join(OUT, `to-top greyed ${name}.png`) });
+  await page.locator('#rail-results').click();
   await expectColour('"Results" on top again', COLOURS[0]);
   await page.screenshot({ path: path.join(OUT, `pinned ${name}.png`) });
   // The eye of the layer manager, then the one of the results list.
   const eyes = [
     ['layers', resultsRow.locator('[data-col="eye"]')],
-    ['results', page.locator('.results-head .lm-eye')],
+    ['results', page.locator('.results-head .lm-eye[aria-pressed]')],
   ];
   for (let round = 0; round < 4; round++) {
     if (round === 3) slow = 400;

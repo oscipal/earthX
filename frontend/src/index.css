@@ -962,7 +962,7 @@ input[type='date']:focus {
   font-size: 10px;
 }
 /* The eye of the results on the map (NM4-59), the same as in the entry "Results" of the layer manager, and left of it
-   "Results" on top of the layers; that place stays empty while "Results" is on top. */
+   "Results" on top of the layers, greyed out while "Results" is on top. */
 .results-head-switches {
   display: flex;
   align-items: center;
@@ -973,8 +973,9 @@ input[type='date']:focus {
   width: 24px;
   height: 22px;
 }
-span.results-to-top {
-  display: block;
+.results-to-top[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: not-allowed;
 }
 .results-list {
   --group-head-h: 34px;
