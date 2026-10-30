@@ -14,6 +14,8 @@
 | 2 | NM4-21 Einheitliches Zahlenformat in der ganzen Web-App | `querschnitt/nm4-21-zahlenformat.md` |
 | 3 | NM4-22 Weniger Text in der Oberfläche | `querschnitt/nm4-22-weniger-text.md` |
 
+Zusätzlich (Backlog-Punkt 58): Bei 320 px Breite ragen die Toolbar-Knöpfe des Control-Menüs etwa 8 px über den Rand (Fund aus DS-02c, #239); beheben, mit Browserprüfung bei 320 px.
+
 Zuerst eine Bestandsaufnahme über alle Panels (Tabelle im PR: Stelle, heute, künftig), dann die drei Durchgänge. Der Hinweis „resampled to common grid“ (Backlog-Punkt 51) ist Sache von NM4-43e, nicht dieses Pakets.
 
 ## Grenzen
