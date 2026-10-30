@@ -7,7 +7,7 @@ import zarr from './fixtures/processes/synthetic-zarr.json';
 import { bboxToPolygon } from './geoUtils';
 import { canonicalJson, type Order, type ProcessDescription } from './processing';
 import { MAX_MOSAIC_OPERATOR_ASSETS, MAX_MOSAIC_REQUEST_BYTES, MAX_MOSAIC_SCENES, mosaicRequestBytes } from './mosaic';
-import { processInfo, type DraftStep, type ProcessInfo } from './processingOrder';
+import { processInfo, type BandSource, type DraftStep, type ProcessInfo } from './processingOrder';
 import {
   areaMeasureOf,
   assetGsd,
@@ -27,6 +27,8 @@ import {
   NO_PREVIEW_UNLISTED,
   measuredRange,
   measureHint,
+  namesNeeded,
+  previewRead,
   measureOf,
   planPreview,
   previewOverlays,
@@ -959,5 +961,198 @@ describe('a chain the tiler refuses', () => {
     expect(url.pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2_A/WebMercatorQuad/tilejson.json');
     expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
     expect(url.searchParams.has('rescale')).toBe(false);
+  });
+});
+
+// NM4-43e PR 2: the band the map shows, and what it reads for it (adr/0020 §4, §10).
+describe('namesNeeded', () => {
+  const named = (key: number, name: string, expression: string): DraftStep => ({
+    key,
+    op: 'band_math',
+    opVersion: 2,
+    values: { expression, name },
+  });
+
+  it('is the band itself for a band of the data', () => {
+    expect([...namesNeeded([named(1, 'ndvi', '(nir - red) / (nir + red)')], 'blue')]).toEqual(['blue']);
+  });
+
+  it('is what the expression reads for a result, and not the result itself', () => {
+    expect([...namesNeeded([named(1, 'ndvi', '(nir - red) / (nir + red)')], 'ndvi')].sort()).toEqual(['nir', 'red']);
+  });
+
+  it('follows a result through the results it reads, back to the data', () => {
+    const steps = [named(1, 'ndvi', '(nir - red) / (nir + red)'), named(2, 'twice', 'ndvi * 2'), named(3, 'ndwi', '(green - nir) / (green + nir)')];
+    expect([...namesNeeded(steps, 'twice')].sort()).toEqual(['nir', 'red']);
+    expect([...namesNeeded(steps, 'ndwi')].sort()).toEqual(['green', 'nir']);
+  });
+
+  it('does not read what a step after the band reads, and knows no band of a step that comes later', () => {
+    const steps = [named(1, 'a', 'red + 1'), named(2, 'b', 'a + green')];
+    expect([...namesNeeded(steps, 'a')]).toEqual(['red']);
+  });
+
+  it('keeps the bands a normalize or a reproject is given', () => {
+    const steps = [named(1, 'ndvi', 'nir - red'), normalize(2, { bands: 'ndvi' }), reproject()];
+    expect([...namesNeeded(steps, 'ndvi')].sort()).toEqual(['nir', 'red']);
+  });
+});
+
+describe('previewRead', () => {
+  const source = (asset: string, names = [asset]): BandSource => ({
+    asset,
+    names,
+    units: names.map(() => null),
+    unit: null,
+    dataType: 'uint16',
+    scaled: false,
+    nodata: null,
+  });
+  const sources = ['blue', 'green', 'red', 'nir', 'scl'].map((asset) => source(asset));
+  const dataNames = sources.map((s) => s.asset);
+  const first = (key: number, name: string, expression: string): DraftStep => ({ key, op: 'band_math', opVersion: 2, values: { expression, name } });
+  const read = (over: Partial<Parameters<typeof previewRead>[0]>) =>
+    previewRead({
+      output: ['ndvi'],
+      dataNames,
+      sources,
+      maskAsset: null,
+      all: ['everything'],
+      steps: [first(1, 'ndvi', '(nir - red) / (nir + red)')],
+      pick: null,
+      ...over,
+    });
+
+  it('shows the result of the only step and reads its two assets, in the order of the item', () => {
+    expect(read({})).toEqual({ choices: ['ndvi'], band: 'ndvi', assets: ['red', 'nir'] });
+  });
+
+  it('lists the results above the bands of the data, as the output holds them', () => {
+    const steps = [first(1, 'ndvi', '(nir - red) / (nir + red)'), first(2, 'ndwi', '(green - nir) / (green + nir)')];
+    expect(read({ output: ['ndvi', 'ndwi', 'blue', 'red'], steps }).choices).toEqual(['ndvi', 'ndwi', 'blue', 'red']);
+  });
+
+  it('shows the result created last, not the last of the chain', () => {
+    // The step with key 2 was created after the step with key 1, then moved in front of it.
+    const steps = [first(2, 'ndwi', '(green - nir) / (green + nir)'), first(1, 'ndvi', '(nir - red) / (nir + red)')];
+    const output = ['ndwi', 'ndvi', 'blue'];
+    expect(read({ output, steps }).band).toBe('ndwi');
+  });
+
+  it('shows the first band of the output where no result is in it', () => {
+    expect(read({ output: ['green', 'red'], steps: [first(1, 'ndvi', 'nir - red')] })).toMatchObject({
+      choices: ['green', 'red'],
+      band: 'green',
+      assets: ['green'],
+    });
+  });
+
+  it('shows a result of a step in the output only', () => {
+    const steps = [first(1, 'ndvi', 'nir - red'), first(2, 'ndwi', 'green - nir')];
+    expect(read({ output: ['ndvi', 'blue'], steps })).toMatchObject({ choices: ['ndvi', 'blue'], band: 'ndvi' });
+  });
+
+  it('shows the pick while it is a choice, and the default when it is not', () => {
+    const steps = [first(1, 'ndvi', 'nir - red')];
+    expect(read({ output: ['ndvi', 'blue'], steps, pick: 'blue' })).toMatchObject({ band: 'blue', assets: ['blue'] });
+    expect(read({ output: ['ndvi', 'blue'], steps, pick: 'green' })).toMatchObject({ band: 'ndvi' });
+    expect(read({ output: ['ndvi'], steps, pick: 'blue' })).toMatchObject({ band: 'ndvi' });
+  });
+
+  it('does not offer a result of a step the map does not draw, nor a band the data does not have', () => {
+    const steps = [first(1, 'ndvi', 'nir - red')];
+    expect(read({ output: ['ndvi', 'later', 'blue', 'ghost'], steps }).choices).toEqual(['ndvi', 'blue']);
+  });
+
+  it('adds the layer of a mask step to what is read, for any band, and leaves it out without one', () => {
+    const steps = [{ key: 1, op: 'mask', opVersion: 2, values: { source: 'scl', classes: '3' } }, first(2, 'ndvi', 'nir - red')];
+    expect(read({ steps, maskAsset: 'scl' }).assets).toEqual(['red', 'nir', 'scl']);
+    expect(read({ steps, output: ['blue'], maskAsset: 'scl' }).assets).toEqual(['blue', 'scl']);
+    expect(read({ steps: [first(2, 'ndvi', 'nir - red')], maskAsset: null }).assets).toEqual(['red', 'nir']);
+  });
+
+  it('reads the assets of the order where the output is empty, and shows no band', () => {
+    expect(read({ output: [] })).toEqual({ choices: [], band: null, assets: ['everything'] });
+  });
+
+  it('reads only the assets of the band from a wide output', () => {
+    const wide = Array.from({ length: 20 }, (_, i) => `b${i}`);
+    const many = [...sources, ...wide.map((asset) => source(asset))];
+    const steps = [first(1, 'ndvi', '(nir - red) / (nir + red)')];
+    const found = read({ output: ['ndvi', ...wide], dataNames: many.map((s) => s.asset), sources: many, steps });
+    expect(found.choices).toHaveLength(21);
+    expect(found.assets).toEqual(['red', 'nir']);
+  });
+
+  it('reads an asset that carries several bands once', () => {
+    const rgb = source('visual', ['visual_1', 'visual_2', 'visual_3']);
+    expect(read({ output: ['visual_2'], dataNames: ['visual_1', 'visual_2', 'visual_3'], sources: [rgb], steps: [] })).toMatchObject({
+      band: 'visual_2',
+      assets: ['visual'],
+    });
+  });
+});
+
+describe('previewSpec: the band shown (NM4-43e PR 2)', () => {
+  const items = [item('S2_A', { gsd: 10 }), item('S2_B', { gsd: 10 })];
+  const base = { dataset: DATASET, items, assets: ['red', 'nir'], info: S2, range: DEFAULT_RANGE, area: 'scene' as const };
+  const plan = ready([bandMath('(nir - red) / (nir + red)')]);
+
+  it('puts the band in every address of the picture: tiles, TileJSON and statistics', () => {
+    const spec = previewSpec({ ...base, plan, band: 'Band_Math_1' })!;
+    for (const url of [spec.scenes[0].url, spec.probe, spec.sceneMeasure]) {
+      expect(new URL(url, 'http://localhost').searchParams.getAll('band')).toEqual(['Band_Math_1']);
+    }
+    expect(spec.band).toBe('Band_Math_1');
+  });
+
+  it('puts it in the address of a mosaic as well', () => {
+    const jobs = [items];
+    const spec = previewSpec({ ...base, plan, band: 'Band_Math_1', jobs })!;
+    expect(spec.mosaics).toHaveLength(1);
+    for (const url of [spec.mosaics[0].url, spec.mosaics[0].probe]) {
+      expect(new URL(url, 'http://localhost').searchParams.getAll('band')).toEqual(['Band_Math_1']);
+    }
+  });
+
+  it('writes a name with signs that mean something in an address so that it arrives whole', () => {
+    const spec = previewSpec({ ...base, plan, band: 'SR_10m:b04&x=1 #' })!;
+    const url = new URL(spec.scenes[0].url, 'http://localhost');
+    expect(url.searchParams.getAll('band')).toEqual(['SR_10m:b04&x=1 #']);
+    expect(url.searchParams.has('x')).toBe(false);
+    expect(spec.scenes[0].url).not.toContain(' #');
+  });
+
+  it('names no band where none is chosen', () => {
+    const spec = previewSpec({ ...base, plan })!;
+    expect(spec.band).toBeNull();
+    expect(spec.scenes[0].url).not.toContain('band=');
+  });
+
+  it('judges the values as an index only for a result of Band math', () => {
+    expect(previewSpec({ ...base, plan, band: 'Band_Math_1' })!.expression).toBe(true);
+    expect(previewSpec({ ...base, plan, band: 'red' })!.expression).toBe(false);
+    expect(previewSpec({ ...base, plan })!.expression).toBe(true);
+  });
+
+  it('has a measure of its own per band, also over the AOI, and one text for the same band', () => {
+    const order = { recipe_version: 2, steps: [], output: { bands: ['x'] } } as unknown as Order;
+    const over = { ...base, plan, area: 'aoi' as const, order };
+    const a = previewSpec({ ...over, band: 'Band_Math_1' })!;
+    const b = previewSpec({ ...over, band: 'red' })!;
+    expect(a.measure).not.toBe(b.measure);
+    expect(a.sceneMeasure).not.toBe(b.sceneMeasure);
+    expect(previewSpec({ ...over, band: 'red' })!.measure).toBe(b.measure);
+  });
+
+  it('names the picture after the band where the output has several', () => {
+    expect(previewSpec({ ...base, plan, band: 'Band_Math_1' })!.title).toBe('Band math');
+    expect(previewSpec({ ...base, plan, band: 'Band_Math_1', named: true })!.title).toBe('Band math · Band_Math_1');
+  });
+
+  it('reads no more than the limit of the tile in the assets it is given', () => {
+    const wide = Array.from({ length: 17 }, (_, i) => `b${i}`);
+    expect(previewSpec({ ...base, plan, assets: wide })).toBeNull();
+    expect(previewSpec({ ...base, plan, assets: ['red', 'nir'], band: 'Band_Math_1' })).not.toBeNull();
   });
 });
