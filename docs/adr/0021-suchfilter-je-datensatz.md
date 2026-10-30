@@ -133,5 +133,5 @@ Anlass: Otto (Review zu #239, 30.10.2026): alle Felder erfassen, die die Quelle 
 2. Sentinel-2 L2A bietet 13 Filter in den Gruppen „Clouds“ (3), „Scene“ (6), „Acquisition“ (4); Wolken zuerst.
 3. Der Live-Test prüft jetzt für jeden Filter, dass die Quelle genau so viele Szenen findet, wie die Stichprobe sagt (beide Hälften eines Bereichs am Median, bei einer Auswahl der häufigste Wert und ein nicht vorhandener), und meldet für Auswahlfilter jeden Wert der letzten 30 Tage, den die Registry nicht kennt. Die Offline-Wiedergabe prüft beides auch mit einer Quelle, die ein Filter überhört bzw. einen neuen Wert liefert.
 4. Die Zeitgrenze der Stichprobe bleibt ein geschlossenes Fenster (`adr/0005` K5); nur die Prüfung auf neue Werte schaut auf die letzten 30 Tage.
-5. **Offen, Frage an Otto:** Filter nach MGRS-Kachel (siehe Tabelle).
+5. **Filter nach MGRS-Kachel: nicht jetzt** (Otto, 30.10.2026, Option 1). Wer eine Kachel will, nimmt den Szenennamen; eine Art `TEXT` kommt erst bei belegtem Bedarf (Backlog Nr. 58).
 
