@@ -12,6 +12,7 @@ import { useProcessingStore } from '../processingStore';
 import { COLORMAPS, lookChanged, NOTHING_TO_APPLY } from '../render';
 import { useAppStore } from '../store';
 import { viewDates, viewKind } from '../viewKind';
+import AutoScaleButton from './AutoScaleButton';
 import Eye from './Eye';
 
 export default function ViewerControls() {
@@ -97,15 +98,11 @@ export default function ViewerControls() {
           />
         </label>
         <div className="vc-buttons">
-          <button
-            type="button"
-            className="ghost-btn vc-auto"
-            disabled={focusLoading}
-            title="Measure the 2nd/98th percentile stretch from the source again"
-            onClick={() => autoStretch()}
-          >
-            {focusLoading ? 'measuring…' : 'auto-scale'}
-          </button>
+          <AutoScaleButton
+            title={focusLoading ? 'Measuring the range…' : 'Measure the 2nd/98th percentile stretch from the source again'}
+            busy={focusLoading}
+            onClick={() => void autoStretch()}
+          />
           <button
             type="button"
             className="primary-btn vc-apply"

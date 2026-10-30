@@ -12,6 +12,7 @@ import { useProcessingStore } from '../processingStore';
 import { COLORMAPS, NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
 import { defaultRange, rangeOfTileUrl, renderOfRange } from '../resultLayer';
 import { useAppStore } from '../store';
+import AutoScaleButton from './AutoScaleButton';
 import Tip from './Tip';
 
 const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap;
@@ -107,9 +108,7 @@ function Controls({ layer }: { layer: MapLayer }) {
               <input type="number" value={draft.vmax} onChange={(e) => edit({ vmax: e.target.value })} />
             </label>
             <div className="vc-buttons">
-              <button type="button" className="link-btn vc-auto" title="Put the range of the statistics of this result in the fields" onClick={auto}>
-                auto
-              </button>
+              <AutoScaleButton title="Put the range of the statistics of this result in the fields" onClick={auto} />
               <button
                 type="button"
                 className="primary-btn vc-apply"

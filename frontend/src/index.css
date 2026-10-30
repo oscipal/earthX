@@ -247,8 +247,8 @@ body.dragging * {
   padding: 6px 16px;
   align-self: flex-end;
 }
-/* "auto" on top, "Apply" under it and "Save" beside "Apply" (the view of scenes has no "Save" yet): together no higher
-   than the row of the fields they stand beside (label, 3px, a 34px field). */
+/* "auto-scale" on top, "Apply" under it and "Save" beside "Apply" (a view that is no layer has no "Save"): all of one width,
+   together no higher than the row of the fields they stand beside (label, 3px, a 34px field). */
 .vc-buttons {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -270,7 +270,13 @@ body.dragging * {
   white-space: nowrap;
 }
 .vc-buttons > .vc-auto {
-  grid-column: 1 / -1;
+  grid-area: 1 / 1;
+}
+.vc-buttons > .vc-apply {
+  grid-area: 2 / 1;
+}
+.vc-buttons > .vc-save {
+  grid-area: 2 / 2;
 }
 .vc-buttons > button[aria-disabled='true'] {
   opacity: 0.45;

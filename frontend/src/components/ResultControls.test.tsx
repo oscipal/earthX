@@ -173,7 +173,7 @@ describe('a click on a result layer', () => {
     expect(field('vmin').value).toBe('180');
     expect(field('vmax').value).toBe('1900');
     expect(button('Apply')).toBeDefined();
-    expect(button('auto')).toBeDefined();
+    expect(button('auto-scale')).toBeDefined();
   });
 
   it('shows no unit, in the row or in the view', async () => {
@@ -282,26 +282,26 @@ describe('the range of a result layer', () => {
     expect(urlOf()).toContain('rescale=180%2C1900');
   });
 
-  it('"auto" puts the default of the statistics in the fields and changes nothing else', async () => {
+  it('"auto-scale" puts the default of the statistics in the fields and changes nothing else', async () => {
     await openView();
     type(field('vmin'), '50');
     type(field('vmax'), '60');
     click(button('Apply'));
     click(button('Save'));
-    click(button('auto'));
+    click(button('auto-scale'));
     expect(field('vmin').value).toBe('180');
     expect(field('vmax').value).toBe('1900');
     expect(urlOf()).toContain('rescale=50%2C60');
     expect(keptRange()).toEqual({ vmin: '50', vmax: '60', colormap: 'viridis' });
   });
 
-  it('"auto", applied and saved, goes back to the default and forgets the range of the job', async () => {
+  it('"auto-scale", applied and saved, goes back to the default and forgets the range of the job', async () => {
     await openView();
     type(field('vmin'), '50');
     type(field('vmax'), '60');
     click(button('Apply'));
     click(button('Save'));
-    click(button('auto'));
+    click(button('auto-scale'));
     click(button('Save'));
     expect(urlOf()).toContain('colormap_name=viridis&rescale=180%2C1900');
     expect(keptRange()).toBeNull();
@@ -309,10 +309,10 @@ describe('the range of a result layer', () => {
     expect(unsaved()).toBeUndefined();
   });
 
-  it('"auto" also drops what was typed and not applied', async () => {
+  it('"auto-scale" also drops what was typed and not applied', async () => {
     await openView();
     type(field('vmin'), '7');
-    click(button('auto'));
+    click(button('auto-scale'));
     expect(field('vmin').value).toBe('180');
   });
 
@@ -381,10 +381,10 @@ describe('the range of a result layer', () => {
 describe('"Apply" and "Save" of a result layer', () => {
   const disabled = (label: string) => button(label)?.getAttribute('aria-disabled') === 'true';
 
-  it('stand under "auto" and beside each other, in one cluster', async () => {
+  it('stand under "auto-scale" and beside each other, in one cluster', async () => {
     await openView();
     const cluster = container.querySelector('.result-controls .vc-buttons')!;
-    expect([...cluster.children].map((el) => el.textContent?.trim())).toEqual(['auto', 'Apply', 'Save']);
+    expect([...cluster.children].map((el) => el.textContent?.trim())).toEqual(['auto-scale', 'Apply', 'Save']);
   });
 
   it('are both locked while the fields hold what the layer draws and is saved with, with the reason as the tooltip', async () => {
@@ -486,7 +486,7 @@ describe('a result drawn as it is, or gone', () => {
     expect(container.querySelector('.vc-num')).toBeNull();
     expect(container.querySelector('select')).toBeNull();
     expect(button('Apply')).toBeUndefined();
-    expect(button('auto')).toBeUndefined();
+    expect(button('auto-scale')).toBeUndefined();
     expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toMatch(/whole numbers/u);
     // The opacity stays, and the way out.
     expect(field('Opacity').disabled).toBe(false);
@@ -500,7 +500,7 @@ describe('a result drawn as it is, or gone', () => {
     expect(container.querySelector('.vc-num')).toBeNull();
     expect(container.querySelector('select')).toBeNull();
     expect(button('Apply')).toBeUndefined();
-    expect(button('auto')).toBeUndefined();
+    expect(button('auto-scale')).toBeUndefined();
     expect(field('Opacity').disabled).toBe(false);
   });
 });
