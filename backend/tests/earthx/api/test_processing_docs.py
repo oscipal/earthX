@@ -231,7 +231,7 @@ class TestOrderSchema:
     def test_it_limits_what_the_intake_limits(self) -> None:
         schema = order_schema(OPERATORS)
         assert schema["properties"]["inputs"]["maxItems"] == 1
-        assert schema["$defs"]["InputRequest"]["properties"]["assets"]["maxItems"] == 16
+        assert "maxItems" not in schema["$defs"]["InputRequest"]["properties"]["assets"]
         assert schema["properties"]["steps"]["maxItems"] == 16
 
     def test_a_job_has_a_raster_output_and_no_crop(self) -> None:

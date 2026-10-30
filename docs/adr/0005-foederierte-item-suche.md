@@ -434,6 +434,17 @@ CQL2 etwas leisten könnte.
 > und die Items-Route weisen `query` weiter ab; `filter`, `sortby` und `fields`
 > bleiben aus.
 
+> **Nachtrag (DS-03a2, 30.10.2026, `adr/0021` §6):** Ein Filter darf auch einer
+> sein, den die Plattform selbst rechnet: `earthx:aoi_cloud_cover`, der Anteil
+> der Wolken in der AOI. Die Quelle bekommt ihn nie. `api` holt die Seiten der
+> Quelle mit den übrigen Filtern, misst jede Szene (über `gateway`: Adresse
+> geprüft, GDAL-Optionen und höchstens sechs Leser je Host) und gibt nur die
+> passenden zurück. Das ist die Ausnahme von „beantwortet wird, was die Quelle
+> selbst filtern kann“: Sie gilt nur für Collections, deren Registry `within_aoi`
+> setzt, nur mit Zeitraum und Fläche, und mit eigener Obergrenze (500 geprüfte
+> Szenen je Suche). Die Seitenmarke bleibt unsere eigene; sie trägt zusätzlich
+> die Stelle in der Seite der Quelle und die Zähler, nie die AOI.
+
 ---
 
 ## 6. Folgen

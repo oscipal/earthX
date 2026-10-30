@@ -36,6 +36,7 @@ from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
 from earthx.processing.recipe import cache_key, run_key
 from tests.earthx.jobs.support import ATTACHMENTS, HOST, add_run, make_export, make_recipe, run_row, status_of
 from tests.earthx.processing.recipes import recipe_data, recipe_of_data
+from tests.earthx.processing.test_estimate_bands import NEAR_THE_CAP, wide_job
 from tests.earthx.processing.testops import OPERATORS
 
 ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
@@ -68,6 +69,15 @@ class TestSubmit:
         assert (status, hosts, cacheable, attempt, expires) == ("accepted", [HOST], True, 0, True)
         assert key == cache_key(recipe) == run_key(recipe)
         assert max_seconds >= MIN_RUNTIME_SECONDS
+
+    def test_a_job_with_many_bands_gets_a_time_limit_above_the_floor(self, db: psycopg.Connection) -> None:
+        """17 bands near the cap on the output: about 70 million pixels, which the floor of 600 s would cut off
+        (adr/0020 §3.2 Befund 9); the limit follows the estimate, and the estimate counts the bands."""
+        recipe = wide_job(17, aoi=NEAR_THE_CAP)
+        submit(db, recipe)
+        row = db.execute("SELECT max_seconds FROM public.earthx_run").fetchone()
+        assert row is not None
+        assert row[0] > MIN_RUNTIME_SECONDS
 
     def test_every_order_gets_a_recipe_id_of_its_own(self, db: psycopg.Connection) -> None:
         first = submit(db, make_recipe())

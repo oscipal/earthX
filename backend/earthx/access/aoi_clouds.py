@@ -147,7 +147,7 @@ def aoi_clouds_cache_key(
             "item": item_id,
             "asset": asset,
             "classes": sorted(cloud_classes),
-            "aoi": _canonical_aoi(aoi),
+            "aoi": canonical_aoi(aoi),
         },
         separators=(",", ":"),
         sort_keys=True,
@@ -155,8 +155,11 @@ def aoi_clouds_cache_key(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _canonical_aoi(aoi: Mapping[str, Any]) -> str:
-    """The AOI's type and coordinates as normalised JSON text; nothing else of the document is measured."""
+def canonical_aoi(aoi: Mapping[str, Any]) -> str:
+    """The AOI's type and coordinates as normalised JSON text; nothing else of the document is measured.
+
+    Public for the callers that bind a page marker to the AOI (``api.aoi_cloud_filter``); like the cache key, what is
+    built from it is never logged and never in a URL."""
     if not isinstance(aoi, Mapping) or aoi.get("type") not in _AREA_TYPES or "coordinates" not in aoi:
         raise ValueError("the AOI must be a Polygon or MultiPolygon")
     try:

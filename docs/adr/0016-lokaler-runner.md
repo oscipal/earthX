@@ -1022,6 +1022,12 @@ bleiben (Otto, F9). Der Text oben bleibt stehen; maßgeblich ist dieser Nachtrag
   Version 2 mit Exit-Code 2 ab (`recipe_version 1 is the only one …`; der Text nennt die Version des Runners, `cli._checked`).
 - **Grenzen.** Aufträge kennt der Runner nicht; er liest Rezepte. Ein Rezept der Version 2 mit `reproject` Version 3 gilt, wie geschrieben, ohne Meldung.
 
+## 12 Nachtrag NM4-43c PR 2 (2026-10-30): die Speichergrenze gilt der Plattform, nicht dem Runner (zu §12; `adr/0014` Nachtrag NM4-43c PR 2, `adr/0020` §7)
+
+Die Grenze von 1,5 GB je Kindprozess und die Schätzung dazu (`plan.memory_needed`) schützen den Worker der Plattform. Der Runner ruft `plan.estimate` nicht auf, kennt die Grenze
+nicht und rechnet auf der Maschine des Nutzers, so viel sie hat; eine Grenze von 16 Assets gab es dort nie. Die Spitze des Kerns ist dieselbe wie im Worker
+(gleicher Code, `adr/0014` Nachtrag NM4-43c PR 2: rund 300 MB + 33 MB je Band, nicht von der Fläche abhängig). Eine `recipe.json` aus einem angenommenen Auftrag liegt unter der Grenze; der Runner prüft sie nicht noch einmal.
+
 ## 13. Quellen
 
 **Im Repo [P]**
