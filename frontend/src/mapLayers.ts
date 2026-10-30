@@ -57,9 +57,10 @@ const RESULTS_TOP = 'results-top';
 // quicklooks and the pinned layers, whichever of them was drawn first (Otto, 27.10.2026, "immer der oberste Layer").
 // Every other raster of the app goes under this marker (`aboveAll`), the ticked quicklooks over it (`topOfAll`).
 const TICKED_TOP = 'ticked-top';
-// The search results by the dataset the list shows (Otto, 30.10.2026): over `TICKED_TOP` lie first the ticked scenes of the
-// other datasets (under `OPEN_BASE`, in the order they were ticked), over that the other quicklooks of the open dataset
-// (under `OPEN_TICKED_BASE`), over that its ticked scenes (under `PREVIEW_BASE`, the last ticked on top).
+// The search results by what is looked at (NM4-50, NM4-55, Otto, 30.10.2026): over `TICKED_TOP` lie first the ticked scenes
+// of the other groups and datasets (under `OPEN_BASE`, in the order they were ticked), over that the other quicklooks of
+// the group that is open (the step that is played; under `OPEN_TICKED_BASE`), over that its ticked scenes (under
+// `PREVIEW_BASE`, the last ticked on top).
 const OPEN_BASE = 'open-base';
 const OPEN_TICKED_BASE = 'open-ticked-base';
 // Right over the quicklooks of the ticked results (they go under it, `topOfAll`): the live preview of the processing
@@ -414,6 +415,18 @@ let retired = 0;
 let pendingImages = 0;
 let drawnNew = false;
 
+// A time step that is played (NM4-18) arrives over the picture it replaces without being seen: its layers are laid at
+// opacity 0, `holding` says when and to whom the step is shown, and the step is shown, with the old picture taken away
+// in the same breath, once it has loaded for the part of the map in view and `notBefore` has passed. Until then the old
+// picture stays, never the basemap. A step that is asked for before the one before has arrived drops that one.
+interface Hold {
+  // The earliest time (ms since the epoch) the step may be shown: the picture before it was shown at least that long.
+  notBefore: number;
+  onShown: () => void;
+}
+let holding: Hold | null = null;
+const arriving = new Set<string>();
+
 const dynamicId = (kind: (typeof DYNAMIC_KINDS)[number], i: number): string => `${bank}-${kind}-${i}`;
 
 function hasDynamic(map: MapLibreMap, which: DynamicBank): boolean {
@@ -439,24 +452,66 @@ function removeDynamic(map: MapLibreMap, which: DynamicBank): void {
   }
 }
 
+function revealArriving(map: MapLibreMap): void {
+  for (const lyr of arriving) if (map.getLayer(lyr)) map.setPaintProperty(lyr, 'raster-opacity', 1);
+  arriving.clear();
+}
+
+// The step that was held back is on the map: said once, to whoever asked for it to be held.
+function announceShown(): void {
+  const done = holding?.onShown;
+  holding = null;
+  done?.();
+}
+
 function finishRetired(map: MapLibreMap): void {
-  if (!retiring) return;
-  clearTimeout(retiring.timer);
-  removeDynamic(map, retiring.bank);
+  if (retiring) clearTimeout(retiring.timer);
+  revealArriving(map);
+  if (retiring) removeDynamic(map, retiring.bank);
   retiring = null;
+  announceShown();
+}
+
+const retireTimer = (map: MapLibreMap, id: number) => setTimeout(() => retiring?.id === id && finishRetired(map), RETIRE_AFTER_MS);
+
+// Lays a layer of the step being held at opacity 0 (`finishRetired` shows it), when there is a picture to hold.
+function holdBack(map: MapLibreMap, lyrId: string): void {
+  if (!holding || !retiring || !map.getLayer(lyrId)) return;
+  // No fade to opacity 1 (MapLibre's 300 ms): the old picture goes at once, and the new one must be there at once.
+  map.setPaintProperty(lyrId, 'raster-opacity-transition', { duration: 0, delay: 0 });
+  map.setPaintProperty(lyrId, 'raster-opacity', 0);
+  arriving.add(lyrId);
 }
 
 // Start of a sync of the view: what the view drew is taken away at once where the map cannot say when the new picture is
 // there, else it stays, under the new one, until `settleRetired`.
-function retireDynamicMosaic(map: MapLibreMap): void {
+function retireDynamicMosaic(map: MapLibreMap, hold = false): void {
   pendingImages = 0;
+  if (!hold) holding = null;
   // A style reload (a theme switch) wipes the layers a picture was waiting to be taken away from.
   if (retiring && (retiring.map !== map || !hasDynamic(map, retiring.bank))) {
     clearTimeout(retiring.timer);
     retiring = null;
+    arriving.clear();
   }
-  // The last sync drew nothing yet (a mosaic still on its way): the picture before it waits on for this one.
-  if (retiring && !drawnNew) return;
+  // The last sync drew nothing yet (a mosaic still on its way): the picture before it waits on for this one. A step that
+  // is asked for after a step that is still on its way gets its own time.
+  if (retiring && !drawnNew) {
+    if (hold) {
+      clearTimeout(retiring.timer);
+      retiring.timer = retireTimer(map, retiring.id);
+    }
+    return;
+  }
+  // The step before this one has not arrived: it is dropped, the picture on the map stays, and the wait starts anew.
+  if (retiring && hold && arriving.size > 0) {
+    removeDynamic(map, bank);
+    arriving.clear();
+    drawnNew = false;
+    clearTimeout(retiring.timer);
+    retiring.timer = retireTimer(map, retiring.id);
+    return;
+  }
   finishRetired(map);
   drawnNew = false;
   if (!hasDynamic(map, bank)) {
@@ -468,17 +523,50 @@ function retireDynamicMosaic(map: MapLibreMap): void {
     return;
   }
   const id = ++retired;
-  retiring = { id, map, bank, timer: setTimeout(() => retiring?.id === id && finishRetired(map), RETIRE_AFTER_MS) };
+  retiring = { id, map, bank, timer: retireTimer(map, id) };
   bank = bank === 'm' ? 'n' : 'm';
 }
 
+// Calls `done` once the layers that arrive have every tile for the part of the map in view. Only those sources count,
+// not `idle`, which waits for the basemap as well. Looked at after each frame: a source that has just been added has no
+// tile asked for until a frame has been drawn, and only then says it is loaded.
+function onceArrived(map: MapLibreMap, gen: number, done: () => void): void {
+  const sources = [...arriving].flatMap((lyr) => (map.getLayer(lyr) as { source?: string } | undefined)?.source ?? []);
+  const check = () => {
+    // Dropped for a newer step, or its sources are gone (a style reload): nothing to wait for, and none to ask about.
+    if (gen !== syncGen || !sources.every((src) => map.getSource(src))) return map.off('render', check);
+    if (!sources.every((src) => map.isSourceLoaded(src))) return;
+    map.off('render', check);
+    done();
+  };
+  map.on('render', check);
+}
+
 // The new picture is on the map once the quicklooks it waits for have arrived and the map has no tile left to load.
+// A step that is held waits for the tiles of its own layers and for `notBefore` instead; one with no picture to hold is
+// only announced.
 function settleRetired(map: MapLibreMap): void {
-  if (!retiring || !drawnNew || pendingImages > 0) return;
-  const { id } = retiring;
-  map.once('idle', () => {
-    if (retiring?.id === id && pendingImages === 0) finishRetired(map);
-  });
+  if (!drawnNew || pendingImages > 0 || (!retiring && !holding)) return;
+  const id = retiring?.id;
+  const gen = syncGen;
+  const show = () => (retiring ? finishRetired(map) : announceShown());
+  const settle = () => {
+    if (pendingImages !== 0 || retiring?.id !== id) return;
+    // The minimum time is the picture before it's: with none, there is nothing to wait for.
+    const wait = retiring ? (holding?.notBefore ?? 0) - Date.now() : 0;
+    if (wait <= 0) return show();
+    setTimeout(() => gen === syncGen && retiring?.id === id && show(), wait);
+  };
+  if (holding && retiring) onceArrived(map, gen, settle);
+  else map.once('idle', settle);
+}
+
+// A held step that draws nothing (no preview, or the results are off the map) is shown, which takes the picture before it
+// away, once that picture has had its time.
+function finishWhenDue(map: MapLibreMap, gen: number): void {
+  const wait = (holding?.notBefore ?? 0) - Date.now();
+  if (wait <= 0) return finishRetired(map);
+  setTimeout(() => gen === syncGen && finishRetired(map), wait);
 }
 
 // A sync that draws nothing new has nothing to wait for.
@@ -642,6 +730,7 @@ function addPreview(
     const zoom = { minZoom: plan.minZoom, maxZoom: plan.maxZoom };
     const lyrId = dynamicId('tiles-lyr', i);
     placeRaster(map, dynamicId('tiles-src', i), lyrId, tileUrl, item.bbox, 1, zoom, before());
+    holdBack(map, lyrId);
     drawsPicture(map, lyrId, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
     return;
   }
@@ -656,6 +745,7 @@ function addPreview(
     pendingImages--;
     try {
       placeImage(map, srcId, lyrId, dataUrl, coords, 1, before());
+      holdBack(map, lyrId);
       drawsPicture(map, lyrId, overlaySignature({ kind: 'image', url: plan.href, coords, nodataMax }));
     } catch {
       /* map/style went away while loading */
@@ -915,6 +1005,9 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
 
 export interface MosaicState {
   items: StacItem[]; // items of the active time step
+  // The ids of the scenes of the group that is open in the list, which lies on top of the other results (`mapResults.ts::openIdsOf`,
+  // Otto, 30.10.2026). Left out, every scene of the open dataset counts as open.
+  openIds?: ReadonlySet<string>;
   // The scenes outlined as ticked, where that is not the same list as `items` (`mapResults.ts`).
   highlight?: StacItem[];
   // The dataset those items belong to: the browse preview reads its released
@@ -1025,29 +1118,37 @@ export function syncFocusRaster(
 const datasetOfItem = (item: StacItem, s: { dataset: DatasetOption | null; datasets?: readonly DatasetOption[] }): DatasetOption | null =>
   s.datasets?.find((d) => d.id === item.collection) ?? s.dataset;
 
-type PreviewState = Pick<MosaicState, 'items' | 'dataset' | 'datasets'> & { selectedIds?: readonly string[] };
+type PreviewState = Pick<MosaicState, 'items' | 'dataset' | 'datasets' | 'openIds'> & {
+  selectedIds?: readonly string[];
+  // Draw the step hidden over the picture on the map and show it once it has loaded (NM4-18).
+  hold?: Hold;
+};
 
 // The order of the scenes of the results on the map: the ticks, and which scenes are of the dataset the list shows (a scene
 // that names no dataset is).
 const resultsOrderOf = (s: PreviewState, items: readonly StacItem[]): ResultsOrder => {
-  const open = new Map(items.map((it) => [it.id, !it.collection || it.collection === s.dataset?.id]));
+  // The scenes of the group that is open (the step that is played), where the caller says which; else all of the dataset.
+  const open = new Map(items.map((it) => [it.id, s.openIds ? s.openIds.has(it.id) : !it.collection || it.collection === s.dataset?.id]));
   return { ticks: s.selectedIds ?? [], isOpen: (id) => open.get(id) ?? true };
 };
 
 export function syncBrowseMosaic(map: MapLibreMap, s: PreviewState): void {
   const gen = ++syncGen;
-  retireDynamicMosaic(map);
+  retireDynamicMosaic(map, s.hold !== undefined);
+  holding = s.hold ?? null;
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
   const { dataset } = s;
   // Nothing to draw (no dataset, or the results are off the map, UI-01g): the picture before it has nothing to
   // wait for and goes at once.
-  if (!dataset || items.length === 0) return dropRetired(map);
+  if (!dataset || items.length === 0) return s.hold ? finishWhenDue(map, gen) : dropRetired(map);
   const layersOf = new Map(items.map((it, i) => [it.id, [dynamicId('tiles-lyr', i), dynamicId('img-lyr', i)]]));
   const order = resultsOrderOf(s, items);
   items.forEach((it, i) => {
     const own = datasetOfItem(it, s);
     if (own) addPreview(map, it, i, gen, own, order, layersOf);
   });
+  // A held step none of whose scenes has a preview has nothing to arrive.
+  if (s.hold && !drawnNew && pendingImages === 0) return finishWhenDue(map, gen);
   settleRetired(map);
 }
 

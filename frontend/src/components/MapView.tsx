@@ -12,7 +12,7 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
 import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
-import { resultsOnMapOf } from '../mapResults';
+import { openIdsOf, resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
 import type { CoverageDisplay } from '../mapLayers';
 import {
@@ -90,11 +90,18 @@ function useSameScenes(items: StacItem[]): StacItem[] {
   return ref.current;
 }
 
+// The step of the timeline that is on the map, told to the playing (`playback.ts`) while it plays.
+const reportShown = (index: number) => {
+  if (useAppStore.getState().playing) useAppStore.setState({ shownGroupIndex: index });
+};
+
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const readyRef = useRef(false);
+  // The time step the browse preview was last synced for, while the timeline plays.
+  const heldIndexRef = useRef<number | null>(null);
   const basemapRef = useRef<ReturnType<typeof createBasemapSwitcher> | null>(null);
 
   // Reactive slices used to drive the imperative map updates.
@@ -123,6 +130,9 @@ export default function MapView() {
   const layers = useAppStore((s) => s.layers);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
+  const playing = useAppStore((s) => s.playing);
+  const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
+  const revealNotBefore = useAppStore((s) => s.revealNotBefore);
   const sections = useAppStore((s) => s.sections);
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
@@ -248,8 +258,9 @@ export default function MapView() {
         cropToAoi: st.cropToAoi,
         groups: st.groups,
         datasets: st.datasets,
+        openIds: openIdsOf(st.groups, st.expandedGroupIndex),
       });
-      syncResultsOverlay(map, { items: shown.overlay, selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null, datasets: st.datasets });
+      syncResultsOverlay(map, { items: shown.overlay, openIds: openIdsOf(st.groups, st.expandedGroupIndex), selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null, datasets: st.datasets });
       syncPreview(map, previewTilesRef.current);
       initDraw();
       readyRef.current = true;
@@ -350,6 +361,8 @@ export default function MapView() {
     () => resultsOnMapOf({ resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded, sections, openSectionId }),
     [resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded, sections, openSectionId],
   );
+  // The scenes of the group that is open lie on top of the other results; a change of group lays them out again.
+  const openIds = useMemo(() => openIdsOf(groups, expandedGroupIndex), [groups, expandedGroupIndex]);
   const quicklooks = useSameScenes(shown.quicklooks);
   const overlay = useSameScenes(shown.overlay);
   const highlight = useSameScenes(shown.highlight);
@@ -406,16 +419,35 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
-      syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });
+      // While the timeline plays, the step arrives out of sight and says when it is on the map (`playback.ts`).
+      const now = useAppStore.getState();
+      const shownIndex = now.expandedGroupIndex ?? now.activeGroupIndex;
+      const hold = now.playing ? { notBefore: now.revealNotBefore, onShown: () => reportShown(shownIndex) } : undefined;
+      heldIndexRef.current = shownIndex;
+      syncBrowseMosaic(map, { items: quicklooks, openIds, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets, hold });
     }
-  }, [focusMode, quicklooks, ticked, datasets, datasetId]);
+  }, [focusMode, quicklooks, openIds, ticked, datasets, datasetId]);
+
+  // --- a step of the timeline that the effect above did not draw (the results are off the map, or the step is the same
+  // scenes as the one before): there is nothing to wait for, and the playing is told once the picture before it has had
+  // its time ---
+  useEffect(() => {
+    if (!playing || focusMode) return;
+    const index = expandedGroupIndex ?? activeGroupIndex;
+    if (heldIndexRef.current === index) return;
+    const id = window.setTimeout(() => {
+      heldIndexRef.current = index;
+      reportShown(index);
+    }, Math.max(0, revealNotBefore - Date.now()));
+    return () => window.clearTimeout(id);
+  }, [playing, focusMode, expandedGroupIndex, activeGroupIndex, revealNotBefore]);
 
   // --- the results over a full-resolution view, while "Show results" is on. Runs after the view's own effect
   // above, so what it draws lies over the view. ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });
-  }, [focusMode, overlay, ticked, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
+    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, openIds, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });
+  }, [focusMode, overlay, openIds, ticked, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. In a cropped focus view

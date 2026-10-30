@@ -748,9 +748,11 @@ function setResultsOnMap(on: boolean) {
 
 // A scene ticked while the results are hidden shows them (Otto, 28.10.2026, zu #221): the third exception, besides a
 // search and a crop. Unticking changes nothing.
+// Any change of the ticks by a click, of a scene, a group or "Select all", ends the playing of the timeline (NM4-18, Otto,
+// 30.10.2026).
 function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap'>, selectedIds: string[]) {
   const ticked = selectedIds.some((id) => !s.selectedIds.includes(id));
-  return { selectedIds, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
+  return { selectedIds, playing: false, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
 }
 
 // What every replacement of the results resets besides the results themselves.
@@ -951,6 +953,10 @@ export interface AppState {
   searching: boolean;
   downloading: boolean; // no operation in 07a sets this; 07d's download will
   playing: boolean;
+  // While playing (`playback.ts`): the time step on the map, which is behind `activeGroupIndex` while the next one
+  // loads, and the earliest time the next may be shown (ms since the epoch).
+  shownGroupIndex: number | null;
+  revealNotBefore: number;
   error: string | null;
   notice: string | null;
 
@@ -1128,6 +1134,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   searching: false,
   downloading: false,
   playing: false,
+  shownGroupIndex: null,
+  revealNotBefore: 0,
   error: null,
   notice: null,
 
@@ -1245,7 +1253,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleResultsOnMap: () => {
     const resultsOnMap = !get().resultsOnMap;
     saveResultsOnMap(resultsOnMap);
-    set({ resultsOnMap });
+    // Nothing of the timeline is on the map with the results off it: the playing ends (NM4-18, Otto, 30.10.2026).
+    set(resultsOnMap ? { resultsOnMap } : { resultsOnMap, playing: false });
   },
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
   clearSearchResults: () => {
@@ -1986,10 +1995,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // quicklooks/preview tiles until something is expanded again. Opening a
   // different (collapsed) group goes through `setActiveGroupIndex` instead,
   // keeping both in sync as usual.
+  // A click on a group's head, open or close, ends the playing of the timeline (NM4-18, Otto, 30.10.2026); the playing itself
+  // moves the step with `setActiveGroupIndex`.
   toggleResultsGroup: (index) => {
     const s = get();
-    if (index === s.expandedGroupIndex) set({ expandedGroupIndex: null });
-    else s.setActiveGroupIndex(index);
+    if (index === s.expandedGroupIndex) set({ expandedGroupIndex: null, playing: false });
+    // In one change with the step, or the playing would take the step it is at for one that has arrived.
+    else set({ activeGroupIndex: index, expandedGroupIndex: index, playing: false });
   },
   focusItem: (id) => {
     const idx = groupIndexOfItem(get().groups, id);
@@ -2025,7 +2037,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearSelection: () =>
     set((s) => {
       const here = new Set(s.items.map((it) => it.id));
-      return { selectedIds: s.selectedIds.filter((id) => !here.has(id)) };
+      return { selectedIds: s.selectedIds.filter((id) => !here.has(id)), playing: false };
     }),
   setDateFrom: (dateFrom) => {
     set({ dateFrom });
