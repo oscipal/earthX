@@ -1153,3 +1153,41 @@ PYTHONPATH=backend python scripts/nm4-43-bands/warp_bands.py --counts 1,2,3,4,18
 
 Erwartung: 1 bis 3 Bänder „differs in 0“, ab 4 Bändern „differs in 4136158 of
 4303544 pixels“.
+
+---
+
+## 18. Nachtrag NM4-43e: Panel und Auftrag (2026-10-30; zu §6, §9, §11, §12, §14, §15a)
+
+Umgesetzt ist PR 1 von NM4-43e (Auftrag und Panel); die Vorschau je Band und der Ergebnis-Layer (PR 2) folgen in einer eigenen Session. Der Text von §6 bis §14
+bleibt maßgeblich; dieser Nachtrag nennt, was daraus im Panel geworden ist, und die Auslegungen, die der Plan offen ließ.
+
+- **Rezeptversion 2 im Panel.** Das Panel schickt `recipe_version` 2: `output.bands`, `band_math` Version 2 mit `name`, `mask` Version 2, `normalize` Version 2 mit
+  `bands`, keine Asset-Liste für ein Raster. Die Mosaik-Aufträge des Download-Dialogs (`buildMosaicOrder`) nennen ihre Bänder, der Export (`crop`) behält `assets`
+  und trägt Version 2. `processingOrder.ts` leitet nichts mehr aus einer Bandauswahl ab; die Grenze von 16 Bändern und ihre Texte sind aus dem Panel entfernt.
+- **Auflistung.** Die Prozessbeschreibung listet `band_math`, `mask` und `normalize` in Version 2 (`Operator.listed`); Version 1 bleibt angenommen, nicht gelistet.
+- **Bands (oben)** sind Information und Namenshilfe: Ein Klick fügt den Namen in das Ausdrucksfeld mit Fokus ein, sonst tut er nichts. Hilfs-Assets erscheinen nicht.
+- **Schritte.** Titel „<n>. <Name>“; bei `band_math` ist der Name das Feld „Name“ (Vorgabe `Band_Math_<n>`, bei Belegung die nächste freie Zahl), bei den übrigen
+  Schritten „Mask_1“, „Normalize_3“. Die Namensregeln aus §6 prüft das Panel selbst (`processingBands.ts: nameProblem`); ein Verstoß zeigt den Rahmen in der
+  Fehlerfarbe und den Grund im Tooltip des Feldes, ohne Zeile darunter. Chips am Schritt: die Ergebnisse früherer Schritte.
+- **Ausgabe („Select Bands that are processed“)** am Ende des Panels, wie §9 und §14: Ergebnisse von `band_math` sind angehakt (auch ein neues nach Eingriffen der Person),
+  ein einziges wählbares Band einmal je Öffnen, sonst nichts. „Start job“ ist bei leerer Ausgabe gesperrt (Tooltip „Pick at least one band for the output.“).
+- **Auslegungen (Vorschlag, gelten bis Otto widerspricht).**
+  1. **Reihenfolge von `output.bands`:** erst die Ergebnisse in Schrittfolge, dann die Bänder des Datensatzes in der Reihenfolge des Items, danach Unbekanntes (ein geladenes
+     Rezept kann ein Band nennen, das die Auswahl nicht hat; der Server sagt es). Nicht die Klickfolge, damit eine Wahl genau einen Auftrag und einen Hash ergibt (K4).
+  2. **„All“** nimmt alle Ergebnisse und alle wählbaren Bänder (ohne Maskenschicht und Hilfs-Assets), **„None“** leert die ganze Ausgabe, auch die Ergebnisse.
+  3. **Datentyp (§8):** `band_math` und `normalize` erzwingen `float32` nur, wenn ihr Ergebnis in der Ausgabe steht; ein Schritt, dessen Ergebnis die Person abgewählt hat,
+     verhindert keinen ganzzahligen Typ.
+  4. **Umbenennen:** Ein Name, der die Regeln verletzt (leer, doppelt, …), wird nur angezeigt; die Verweise bleiben beim letzten gültigen Namen und ziehen erst mit, wenn
+     der Name wieder gültig ist. Ein Schritt, der ein Ergebnis eines späteren Schritts liest, bekommt den Fehler „<Name> is added by a later step.“.
+  5. **Namen, die zwei Assets tragen** (zwei Zarr-Gruppen mit derselben Variable, H2) werden in der Ausgabe nicht angeboten; der Auftrag kann sie nicht nennen.
+  6. **Speichergrenze:** Eine Antwort `413` der Schätzung mit „of memory“ sperrt „Start job“; der Grund steht nur im Tooltip des Knopfes (§14: kein Satz im Panel), nicht
+     als Zeile. Ein anderes `413` behält den Hinweis zur ganzen Szene.
+  7. **`normalize.bands`** wählt das Panel als Chips (Vorschlag: das letzte Ergebnis), bis NM4-11b das Formular der Methoden bringt.
+- **Umdeutung von Version 1 im Browser** (`recipeUpgrade.ts`, dieselbe Regel und dieselben Fälle wie `processing/upgrade.py`): hochgeladene `recipe.json` (Meldung „Recipe loaded.“
+  mit dem Tooltip „Converted from recipe version 1.“), Permalink (Hinweis „Converted from recipe version 1.“ nur, wenn sonst nichts zu sagen ist; eine Meldung dieser Art
+  hat keinen Tooltip) und Kopien der Aufträge in der Ablage des Browsers (`jobShelf.orderCopy`). Der Name eines Assets mit mehreren Bändern (`visual` → `visual_1` …) ist
+  im Browser nur bei „Load recipe…“ bekannt, wo die Auswahl die Bänder kennt; ein Zarr-Schlüssel in einem Permalink der Version 1 nennt die Variable nicht (wie S1 und H2 in
+  `adr/0014` §15, NM4-43c).
+- **Hinweis „Resampled to a common grid“ (Backlog 51).** Das Backend unterscheidet beide Fälle seit NM4-43c (`BandMeta.resampled`, `test_stock_run.py`); das Frontend liest
+  `earthx:resampled` unverändert und zeigt den Hinweis nur im Tooltip. Eine gröbere Maskenschicht allein markiert nichts, ein umgerechnetes Wertband schon.
+- **Übergangsfrist.** Die Konstante `intake.VERSION_1_ACCEPTED_UNTIL` ist **nicht** gesetzt: Das Deploy-Datum von NM4-43e nennt Otto (§11). Bis dahin nimmt `api` Version 1 an.
