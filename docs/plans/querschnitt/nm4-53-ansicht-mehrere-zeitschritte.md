@@ -20,11 +20,21 @@ Der erste Teil (Haken verschwinden beim Wechsel der Gruppe bzw. des Datensatzes)
 - **„Add all to layers“** (neu) heftet alle Zeitschritte aller Datensätze der Ansicht an.
 - **Nicht Mögliches ausblenden:** Gibt es nur einen Zeitschritt, erscheinen keine Pfeile; nur ein Datensatz, kein Dropdown; „Add all to layers“ nur bei mehr als einem Zeitschritt insgesamt.
 
+### 2.1 „Apply“ und „Save“ in der Ansicht (Otto, 29.10.2026, entschieden)
+
+- Änderungen an Colormap, vmin/vmax wirken erst mit **„Apply“**, und zwar nur auf das gerade angezeigte Bild (Zeitschritt).
+- **„Save“** übernimmt die Einstellung für **alle geladenen Bilder dieses Datensatzes in der Ansicht** (alle Zeitschritte des Datensatzes). Nichts wird dauerhaft gespeichert: Wird ein anderer Quicklook gewählt und die Ansicht neu geladen, gilt wieder die Vorgabe.
+- Nur angewendet, nicht gespeichert: Die Änderung gilt nur für das Bild, auf das sie angewendet wurde; andere Zeitschritte zeigen den gespeicherten Stand bzw. die Vorgabe. Beim Verlassen der Ansicht („Clear“, „Change image“) verfallen ungespeicherte Änderungen ohne Rückfrage.
+- „Apply“ ist gesperrt, solange nichts geändert ist; „Save“ ist gesperrt, solange es nichts zu übernehmen gibt (Grund im Tooltip). Bei nur einem Bild eines Datensatzes in der Ansicht erscheint „Save“ nicht (nicht Mögliches ausblenden).
+- **Anordnung:** „Apply“ steht unter „auto-scale“, „Save“ daneben; beide zusammen nicht höher als die Zeile mit Colormap, vmin und vmax.
+- „Add to layers“ / „Add all to layers“ übernehmen die jeweils sichtbare Darstellung.
+- Der Layer-Manager hat dasselbe Muster (Apply zeigt, Save speichert dauerhaft); das kommt mit NM4-50 (#234).
+
 ## 3. Im Plan klären (Optionen, Empfehlung)
 
 1. **Was ein Zeitschritt ist:** je Datensatz eine Gruppe (Überflug) mit ihren angehakten Szenen, gemergt; Datensätze ohne Zeitachse (DEM) haben einen Zeitschritt. Reihenfolge nach Datum.
 2. **Welcher Zeitschritt zuerst:** etwa der früheste oder der zuletzt angehakte.
-3. **Darstellung je Zeitschritt oder je Datensatz:** gelten Colormap und vmin/vmax für alle Zeitschritte eines Datensatzes gemeinsam (Vorschlag, vergleichbar) oder je Zeitschritt?
+3. **Darstellung je Zeitschritt oder je Datensatz:** entschieden in §2.1 (Apply je Bild, Save für alle Bilder des Datensatzes).
 4. **Die übrigen Knöpfe:** Was tun „Download merged crop“, „Process“, „Clear“, „Change image“ bei mehreren Zeitschritten (nur den angezeigten, alle, je Datensatz)? Zusammenhang mit NM4-06 (gemergter Zuschnitt als ein Objekt) und dem Batch (UI-01).
 5. **Namen der angehefteten Layer** (Datensatz, Datum, Satellit) und ihre Reihenfolge im Layer-Manager.
 6. **Tastatur:** Pfeiltasten bei Fokus in der Leiste; Verhältnis zur Zeitleiste der Suchergebnisse (NM4-18).

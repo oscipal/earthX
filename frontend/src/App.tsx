@@ -14,6 +14,7 @@ import ResultControls from './components/ResultControls';
 import ResultsPanel from './components/ResultsPanel';
 import StatusBar from './components/StatusBar';
 import TimeSlider from './components/TimeSlider';
+import TipLayer from './components/TipLayer';
 import ViewBar from './components/ViewBar';
 import ViewerControls from './components/ViewerControls';
 import { dockPanelId, railButtonId } from './dock';
@@ -66,6 +67,7 @@ export default function App() {
       <MapView />
 
       <AppRail />
+      <TipLayer />
 
       {/* The control menu, the layer manager and the results stay mounted (what they hold survives a change
           of panel); the job manager follows jobs, so it exists only while it is open. */}
