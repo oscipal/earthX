@@ -361,3 +361,16 @@ Kurz beantwortbar: je Frage eine Nummer.
 - rio-tiler 9.4.6, `rio_tiler.colormap.cmap.list()` in der Sitzung [M]
 - Gesperrt oder nicht auflösbar: `www.usgs.gov`, `www.ncbi.nlm.nih.gov`, `developers.google.com`, `open-eo.github.io`, `cogeotiff.github.io`.
 - Intern: `adr/0020` §4, §6, §9, §10, §12; `adr/0014` §5.4, §15c; `plans/querschnitt/nm4-43-ausgabe-baender.md` §6.5; `plans/querschnitt/nm4-04-mosaik-mit-operator.md` §6; `plans/vp3/ui-01-app-rahmen.md` §4, §6.11; `projektuebersicht.md` §8; `KLAERUNGEN.md` B10, B13.
+
+## 13. Freigabe (Otto, 30.10.2026, zu #251)
+
+| Frage | Antwort |
+|---|---|
+| 1 Wo die Presets stehen | **1: R1.** Feld `index_presets` je Datensatz, Ausdruck in den Bandnamen des Datensatzes |
+| 2 Indizes zuerst | **1:** NDVI, NDWI (McFeeters), NDSI, NBR, EVI |
+| 3 Ort der Knöpfe | **1: O1.** Zeile „Index“ im Panel unter „Add step“ |
+| 4 Darstellung | **1: D2.** Bereich und Colormap des Presets für jedes Band mit gleichem Ausdruck, in Vorschau und Ergebnis |
+| 5 „NDVI cloud-free“ | **1: K1.** Knopf = nur `band_math`, Maske mit „＋ Mask“ dazu |
+| 6 Schnitt | **abweichend:** Diese Session setzt das Backend jetzt um (NM4-14a, §14), ohne auf NM4-43e zu warten; NM4-43e läuft bereits (#250). Das Frontend ist NM4-14b in einer neuen Session nach dem Merge von NM4-43e PR 2 (§15) |
+
+Die EVI-Quelle bleibt als Suchtreffer markiert (§7.5). Die Kleinentscheidungen KE1–KE8 aus §9 gelten. Die Fragen aus §11 sind damit beantwortet.
