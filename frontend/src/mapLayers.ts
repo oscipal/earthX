@@ -57,9 +57,10 @@ const RESULTS_TOP = 'results-top';
 // quicklooks and the pinned layers, whichever of them was drawn first (Otto, 27.10.2026, "immer der oberste Layer").
 // Every other raster of the app goes under this marker (`aboveAll`), the ticked quicklooks over it (`topOfAll`).
 const TICKED_TOP = 'ticked-top';
-// The search results by the dataset the list shows (Otto, 30.10.2026): over `TICKED_TOP` lie first the ticked scenes of the
-// other datasets (under `OPEN_BASE`, in the order they were ticked), over that the other quicklooks of the open dataset
-// (under `OPEN_TICKED_BASE`), over that its ticked scenes (under `PREVIEW_BASE`, the last ticked on top).
+// The search results by what is looked at (NM4-50, NM4-55, Otto, 30.10.2026): over `TICKED_TOP` lie first the ticked scenes
+// of the other groups and datasets (under `OPEN_BASE`, in the order they were ticked), over that the other quicklooks of
+// the group that is open (the step that is played; under `OPEN_TICKED_BASE`), over that its ticked scenes (under
+// `PREVIEW_BASE`, the last ticked on top).
 const OPEN_BASE = 'open-base';
 const OPEN_TICKED_BASE = 'open-ticked-base';
 // Right over the quicklooks of the ticked results (they go under it, `topOfAll`): the live preview of the processing
@@ -1004,6 +1005,9 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
 
 export interface MosaicState {
   items: StacItem[]; // items of the active time step
+  // The ids of the scenes of the group that is open in the list, which lies on top of the other results (`mapResults.ts::openIdsOf`,
+  // Otto, 30.10.2026). Left out, every scene of the open dataset counts as open.
+  openIds?: ReadonlySet<string>;
   // The scenes outlined as ticked, where that is not the same list as `items` (`mapResults.ts`).
   highlight?: StacItem[];
   // The dataset those items belong to: the browse preview reads its released
@@ -1114,7 +1118,7 @@ export function syncFocusRaster(
 const datasetOfItem = (item: StacItem, s: { dataset: DatasetOption | null; datasets?: readonly DatasetOption[] }): DatasetOption | null =>
   s.datasets?.find((d) => d.id === item.collection) ?? s.dataset;
 
-type PreviewState = Pick<MosaicState, 'items' | 'dataset' | 'datasets'> & {
+type PreviewState = Pick<MosaicState, 'items' | 'dataset' | 'datasets' | 'openIds'> & {
   selectedIds?: readonly string[];
   // Draw the step hidden over the picture on the map and show it once it has loaded (NM4-18).
   hold?: Hold;
@@ -1123,7 +1127,8 @@ type PreviewState = Pick<MosaicState, 'items' | 'dataset' | 'datasets'> & {
 // The order of the scenes of the results on the map: the ticks, and which scenes are of the dataset the list shows (a scene
 // that names no dataset is).
 const resultsOrderOf = (s: PreviewState, items: readonly StacItem[]): ResultsOrder => {
-  const open = new Map(items.map((it) => [it.id, !it.collection || it.collection === s.dataset?.id]));
+  // The scenes of the group that is open (the step that is played), where the caller says which; else all of the dataset.
+  const open = new Map(items.map((it) => [it.id, s.openIds ? s.openIds.has(it.id) : !it.collection || it.collection === s.dataset?.id]));
   return { ticks: s.selectedIds ?? [], isOpen: (id) => open.get(id) ?? true };
 };
 

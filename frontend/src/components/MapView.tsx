@@ -12,7 +12,7 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
 import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
-import { resultsOnMapOf } from '../mapResults';
+import { openIdsOf, resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
 import type { CoverageDisplay } from '../mapLayers';
 import {
@@ -258,8 +258,9 @@ export default function MapView() {
         cropToAoi: st.cropToAoi,
         groups: st.groups,
         datasets: st.datasets,
+        openIds: openIdsOf(st.groups, st.expandedGroupIndex),
       });
-      syncResultsOverlay(map, { items: shown.overlay, selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null, datasets: st.datasets });
+      syncResultsOverlay(map, { items: shown.overlay, openIds: openIdsOf(st.groups, st.expandedGroupIndex), selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null, datasets: st.datasets });
       syncPreview(map, previewTilesRef.current);
       initDraw();
       readyRef.current = true;
@@ -360,6 +361,8 @@ export default function MapView() {
     () => resultsOnMapOf({ resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded, sections, openSectionId }),
     [resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded, sections, openSectionId],
   );
+  // The scenes of the group that is open lie on top of the other results; a change of group lays them out again.
+  const openIds = useMemo(() => openIdsOf(groups, expandedGroupIndex), [groups, expandedGroupIndex]);
   const quicklooks = useSameScenes(shown.quicklooks);
   const overlay = useSameScenes(shown.overlay);
   const highlight = useSameScenes(shown.highlight);
@@ -421,9 +424,9 @@ export default function MapView() {
       const shownIndex = now.expandedGroupIndex ?? now.activeGroupIndex;
       const hold = now.playing ? { notBefore: now.revealNotBefore, onShown: () => reportShown(shownIndex) } : undefined;
       heldIndexRef.current = shownIndex;
-      syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets, hold });
+      syncBrowseMosaic(map, { items: quicklooks, openIds, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets, hold });
     }
-  }, [focusMode, quicklooks, ticked, datasets, datasetId]);
+  }, [focusMode, quicklooks, openIds, ticked, datasets, datasetId]);
 
   // --- a step of the timeline that the effect above did not draw (the results are off the map, or the step is the same
   // scenes as the one before): there is nothing to wait for, and the playing is told once the picture before it has had
@@ -443,8 +446,8 @@ export default function MapView() {
   // above, so what it draws lies over the view. ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });
-  }, [focusMode, overlay, ticked, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
+    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, openIds, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });
+  }, [focusMode, overlay, openIds, ticked, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. In a cropped focus view
