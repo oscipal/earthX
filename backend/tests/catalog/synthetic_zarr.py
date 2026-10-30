@@ -86,6 +86,7 @@ SYNTHETIC_ZARR: DatasetConfig = replace(
     auxiliary_assets=(),
     # The Zarr layer has no cloud classes (DS-03 plan §6.19), so none of the inherited filters is "within AOI".
     search_filters=tuple(replace(entry, within_aoi=False) for entry in SENTINEL_2_L2A.search_filters),
+    index_presets=(),
 )
 
 TEST_ENTRIES: tuple[DatasetConfig, ...] = (*REGISTRY, SYNTHETIC_ZARR)
