@@ -318,7 +318,7 @@ Maßstab für "Jetzt": Was beweist den Kern Suche → Verarbeitung → Download 
 | ESA-only-Scope vs. ursprüngliche Quellenbreite | Empfehlung: mindestens eine Nicht-STAC-Quelle (Hansen-Bucket oder Zenodo), bevor das Adapter-Interface vereinheitlicht wird |
 | Konkrete Auswahl der nächsten 2–4 Datenquellen | offen |
 | Eigene Processing-Schicht vs. titiler/openEO | zu evaluieren, bevor viel Eigenbau entsteht |
-| Cloud-Provider/Orchestrierung (Managed vs. eigenes K8s) | offen; Kriterien: Nähe zu den Daten, Egress-Kosten, EU/CH-Standort, kein Lock-in (portable Bausteine) |
+| Cloud-Provider/Orchestrierung (Managed vs. eigenes K8s) | offen; Kriterien: Nähe zu den Daten, Egress-Kosten, EU/CH-Standort, kein Lock-in (portable Bausteine) *Nachtrag (`adr/0022`, 30.10.2026): Region entschieden: EU im Raum Frankfurt, Föderation ohne exklusive Hauptquelle. Die Wahl des Anbieters bleibt M6, nach Messung; die Shortlist steht in `adr/0022` §7.6. Ob Konten und AOIs in der Schweiz bleiben müssen, ist eine Rechtsfrage, offen bis M6 (F7).* |
 | Aufbewahrungsdauer für Ergebnisse und Logs | offen (Kosten + Datenschutz) |
 | Rechtliche Prüfung Redistribution/Aggregation (ToS je Quelle) | laufend, pro Quelle |
 | Zielarchitektur `DataSourceAdapter` (Methodensignaturen) | wird aus der Erfahrung mit realen Quellen abgeleitet |
