@@ -211,19 +211,19 @@
             "title": "RasterOutput",
             "type": "object"
           },
-          "step_band_math_v1": {
+          "step_band_math_v2": {
             "additionalProperties": false,
-            "description": "Compute one band from an expression over the bands, in physical values.",
+            "description": "Compute a band from an expression over the bands, in physical values, and add it to the bands.",
             "properties": {
               "op": {
                 "const": "band_math"
               },
               "op_version": {
-                "const": 1
+                "const": 2
               },
               "params": {
                 "additionalProperties": false,
-                "description": "The panel's form (K8): one expression over the bands, in physical values.",
+                "description": "Version 2: the expression and the name of the band it adds, always given (B10).",
                 "properties": {
                   "expression": {
                     "description": "Band names, numbers, + - * / **, comparisons, & | ~ on comparisons, and where(c, a, b), abs, minimum, maximum, sqrt. Evaluated on physical values.",
@@ -231,12 +231,20 @@
                     "minLength": 1,
                     "title": "Expression",
                     "type": "string"
+                  },
+                  "name": {
+                    "description": "Name of the new band, such as NDVI: a letter, then letters, digits or _. It is free in the data and in the other results (case ignored); later steps and the output name the band by it.",
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "title": "Name",
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "expression"
+                  "expression",
+                  "name"
                 ],
-                "title": "BandMathParams",
+                "title": "BandMathParamsV2",
                 "type": "object"
               }
             },
@@ -253,20 +261,30 @@
               "T2"
             ]
           },
-          "step_normalize_v1": {
+          "step_normalize_v2": {
             "additionalProperties": false,
-            "description": "Map a fixed range of values linearly onto another range, for all bands alike.",
+            "description": "Map a fixed range of values linearly onto another range, for the bands named.",
             "properties": {
               "op": {
                 "const": "normalize"
               },
               "op_version": {
-                "const": 1
+                "const": 2
               },
               "params": {
                 "additionalProperties": false,
-                "description": "The panel's form (K8): both ranges and whether to clip, always given (B10).",
+                "description": "Version 2: the two ranges and the bands the step converts, always given (B10).",
                 "properties": {
+                  "bands": {
+                    "description": "Names of the bands to convert, each once; the others of the stock are left as they are.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 256,
+                    "minItems": 1,
+                    "title": "Bands",
+                    "type": "array"
+                  },
                   "clip": {
                     "description": "Limit the result to the target range instead of continuing the line.",
                     "title": "Clip",
@@ -298,9 +316,10 @@
                   "in_max",
                   "out_min",
                   "out_max",
-                  "clip"
+                  "clip",
+                  "bands"
                 ],
-                "title": "NormalizeParams",
+                "title": "NormalizeParamsV2",
                 "type": "object"
               }
             },
@@ -468,10 +487,10 @@
               },
               "oneOf": [
                 {
-                  "$ref": "#/$defs/step_band_math_v1"
+                  "$ref": "#/$defs/step_band_math_v2"
                 },
                 {
-                  "$ref": "#/$defs/step_normalize_v1"
+                  "$ref": "#/$defs/step_normalize_v2"
                 },
                 {
                   "$ref": "#/$defs/step_reproject_v4"

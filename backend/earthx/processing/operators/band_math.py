@@ -403,10 +403,11 @@ BAND_MATH = Operator(
     method=_method,
     properties=_properties,
     stock=False,
+    listed=False,
 )
 
-#: Version 2 (NM4-43c): adds a named band to the stock. Not listed until the panel sends it (adr/0020 §13); the tile runs it
-#: since NM4-43d.
+#: Version 2 (NM4-43c): adds a named band to the stock. Listed since NM4-43e, the panel sends it (adr/0020 §13); version 1 is
+#: accepted, not listed.
 BAND_MATH_V2 = dataclasses.replace(
     BAND_MATH,
     op_version=2,
@@ -419,5 +420,5 @@ BAND_MATH_V2 = dataclasses.replace(
     properties=_properties_v2,
     bands_used=_bands_used_v2,
     stock=True,
-    listed=False,
+    listed=True,
 )

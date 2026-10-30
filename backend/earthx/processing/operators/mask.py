@@ -192,9 +192,10 @@ MASK = Operator(
     properties=_properties,
     dataset_check=_dataset_check,
     stock=False,
+    listed=False,
 )
 
-#: Version 2 (NM4-43c): the layer stays in the stock. Not listed until the panel sends it; the tile runs it since NM4-43d.
+#: Version 2 (NM4-43c): the layer stays in the stock. Listed since NM4-43e, the panel sends it; version 1 is accepted, not listed.
 MASK_V2 = dataclasses.replace(
     MASK,
     op_version=2,
@@ -204,5 +205,5 @@ MASK_V2 = dataclasses.replace(
     method=_method_v2,
     bands_used=_bands_used_v2,
     stock=True,
-    listed=False,
+    listed=True,
 )

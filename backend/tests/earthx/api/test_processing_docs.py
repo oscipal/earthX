@@ -178,10 +178,10 @@ class TestOrderSchema:
         refs = [entry["$ref"] for entry in schema["properties"]["steps"]["items"]["oneOf"]]
         # The test registry holds the real operators too, and its own two (testops).
         assert refs == [
-            "#/$defs/step_band_math_v1",
+            "#/$defs/step_band_math_v2",
             "#/$defs/step_coarsen_v1",
-            "#/$defs/step_mask_v1",
-            "#/$defs/step_normalize_v1",
+            "#/$defs/step_mask_v2",
+            "#/$defs/step_normalize_v2",
             "#/$defs/step_reproject_v4",
             "#/$defs/step_scale_v1",
         ]
@@ -210,7 +210,7 @@ class TestOrderSchema:
         assert ("reproject", 2) in REAL_OPERATORS and ("reproject", 3) in REAL_OPERATORS
         schema = order_schema(REAL_OPERATORS)
         steps = sorted(key for key in schema["$defs"] if key.startswith("step_"))
-        assert steps == ["step_band_math_v1", "step_mask_v1", "step_normalize_v1", "step_reproject_v4"]
+        assert steps == ["step_band_math_v2", "step_mask_v2", "step_normalize_v2", "step_reproject_v4"]
         assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
 
     def test_an_older_version_alone_is_offered(self) -> None:
@@ -279,19 +279,19 @@ class TestWhatThePanelReads:
 
     def test_the_real_operators_are_what_the_planner_expects(self) -> None:
         schema = order_schema(REAL_OPERATORS)
-        assert schema["$defs"]["step_band_math_v1"]["x-earthx-tiers"] == ["T1", "T2"]
-        assert schema["$defs"]["step_band_math_v1"]["x-earthx-kind"] == "pixel"
+        assert schema["$defs"]["step_band_math_v2"]["x-earthx-tiers"] == ["T1", "T2"]
+        assert schema["$defs"]["step_band_math_v2"]["x-earthx-kind"] == "pixel"
         assert schema["$defs"]["step_reproject_v4"]["x-earthx-tiers"] == ["T2"]
         assert schema["$defs"]["step_reproject_v4"]["x-earthx-kind"] == "grid"
 
-    def test_version_2_of_the_bands_steps_is_accepted_and_not_offered_until_the_panel_sends_it(self) -> None:
-        """NM4-43c: the panel of today builds version 1; NM4-43e switches the offer (adr/0020 §13)."""
+    def test_version_2_of_the_bands_steps_is_offered_and_version_1_is_accepted_only(self) -> None:
+        """NM4-43e: the panel builds version 2 (the stock of bands); version 1 stays accepted (adr/0020 §11, §13)."""
         steps = order_schema(REAL_OPERATORS)["properties"]["steps"]["items"]["oneOf"]
         offered = sorted(entry["$ref"].rsplit("/", 1)[1] for entry in steps)
-        assert offered == ["step_band_math_v1", "step_mask_v1", "step_normalize_v1", "step_reproject_v4"]
+        assert offered == ["step_band_math_v2", "step_mask_v2", "step_normalize_v2", "step_reproject_v4"]
         for op in ("band_math", "mask", "normalize"):
-            assert REAL_OPERATORS.operator(op, 2).stock and not REAL_OPERATORS.operator(op, 2).listed
-            assert not REAL_OPERATORS.operator(op, 1).stock and REAL_OPERATORS.operator(op, 1).listed
+            assert REAL_OPERATORS.operator(op, 2).stock and REAL_OPERATORS.operator(op, 2).listed
+            assert not REAL_OPERATORS.operator(op, 1).stock and not REAL_OPERATORS.operator(op, 1).listed
 
     def test_the_output_names_its_bands_and_an_order_for_a_raster_names_no_assets(self) -> None:
         schema = order_schema(REAL_OPERATORS)
