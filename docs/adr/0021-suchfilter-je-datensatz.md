@@ -86,3 +86,51 @@ Plan: `docs/plans/ds/ds-02-advanced-search.md` §6.7, §6.8, §6.11. Keine neue 
 3. **Auf der Leitung:** Suche, „Load more“, Datums-Fallback und die Footprints der Coverage senden `query_by_collection` (§2.4), jeder Datensatz nur seine Filter; die Coverage sendet `query` (§5). Ein Filter mit falschem Feld wird nicht gesendet.
 4. **Coverage-Speicher:** der Schlüssel der gemerkten Antworten für einen Ausschnitt enthält die Filter; eine andere Filterung ist eine andere Karte.
 5. **Umschalter:** `DatasetSelect` wird von „Showing dataset“ (Results) und „Advanced search“ geteilt.
+
+## 8. Nachtrag DS-02c: alle filterbaren Felder von Earth Search (Sentinel-2 L2A, 30.10.2026)
+
+Anlass: Otto (Review zu #239, 30.10.2026): alle Felder erfassen, die die Quelle filtern kann, und aufnehmen, was wirkt und Nutzern etwas nützt. Messskript: `scripts/ds-02-filters/measure.py`.
+
+**Verfahren (Einmal-Schritt nach `adr/0002`).** Das Skript macht keinen eigenen Aufruf: Die Antworten sind vorher mit `curl` gespeichert (Befehle im Kopf des Skripts), danach liest `inventory` sie, `commands` schreibt die Probe-Befehle, `analyze` vergleicht. Stichprobe: 756 Items aus 7 Gebieten zu einem Grad Kantenlänge (Alpen, Amazonas, Sahara, Norwegen, Portugal-Küste, Ganges, Australien) in zwei Jahreszeiten (Juni und Dezember 2024), dazu Probemonate 2017–2026 für die Werte der Baseline und die Queryables der Collection. Je Kandidat und Gebiet drei Filter (ab Median, bis Median, zwischen den Quartilen) bzw. je Wert einer; **252 Suchen**. Ein Feld **wirkt**, wenn jede Antwort genau die Szenen enthält, die die ungefilterte Stichprobe für diesen Filter vorhersagt, und mindestens ein Filter die Trefferzahl senkt.
+
+**Befunde.**
+- Die Queryables der Quelle nennen weiter nur `eo:cloud_cover`; die Items tragen 46 Eigenschaften.
+- Alle 18 Kandidaten wirken. Eine Eigenschaft, die ein Item nicht trägt, schließt es aus (so bei `s2:dark_features_percentage`).
+- `eo:cloud_cover` ist exakt `s2:medium_proba_clouds_percentage + s2:high_proba_clouds_percentage + s2:thin_cirrus_percentage` (größte Abweichung 1·10⁻⁵ bei 756 Items); die Wolkenschatten zählen nicht mit.
+- **Baselines** der Items nach Zeit: 05.00 (2018–2021), 05.09 (2023), 05.10 (bis 03/2024), 05.11 (ab 09/2024), 05.12 (ab 02/2026), 05.13 (10/2026). Neue Versionen kommen alle paar Monate: Die Liste der Registry braucht dann eine Zeile, der Live-Test nennt den Wert.
+- `s2:dark_features_percentage` tragen nur Items bis Baseline 05.10 (364 von 756; ab 09/2024 keines).
+
+| Eigenschaft | Typ | Bereich in der Stichprobe | wirkt | Entscheidung | Beschriftung · Einheit · Gruppe |
+|---|---|---|---|---|---|
+| `eo:cloud_cover` | Zahl | 0 … 100 | ja | **aufgenommen** | Cloud cover · % · Clouds |
+| `s2:thin_cirrus_percentage` | Zahl | 0 … 71,9 | ja | **aufgenommen** (Otto: dünne Zirren) | Thin cirrus · % · Clouds |
+| `s2:cloud_shadow_percentage` | Zahl | 0 … 27,3 | ja | **aufgenommen** (Otto: Wolkenschatten) | Cloud shadow · % · Clouds |
+| `s2:nodata_pixel_percentage` | Zahl | 0 … 99,9 | ja | **aufgenommen** (DS-02a) | No data · % · Scene |
+| `s2:snow_ice_percentage` | Zahl | 0 … 53,9 | ja | **aufgenommen** (Otto: Schnee/Eis) | Snow and ice · % · Scene |
+| `s2:water_percentage` | Zahl | 0 … 89,1 | ja | **aufgenommen** (Otto: Wasser) | Water · % · Scene |
+| `s2:vegetation_percentage` | Zahl | 0 … 99,9 | ja | **aufgenommen** (Otto: Vegetation) | Vegetation · % · Scene |
+| `s2:not_vegetated_percentage` | Zahl | 0 … 100 | ja | **aufgenommen** (Gegenstück zur Vegetation: Boden, Bebauung) | Not vegetated · % · Scene |
+| `s2:degraded_msi_data_percentage` | Zahl | 0 … 14,8 (83 % der Items > 0) | ja | **aufgenommen** (Qualitätsfilter, `projektuebersicht.md` §7) | Degraded data · % · Scene |
+| `platform` | Wert | `sentinel-2a`, `-2b`, `-2c` | ja | **aufgenommen** (DS-02a) | Satellite · Acquisition |
+| `view:sun_elevation` | Zahl | 4,6 … 75,1 (Skala 0 … 90) | ja | **aufgenommen** (Otto: Sonnenhöhe) | Sun elevation · ° · Acquisition |
+| `view:sun_azimuth` | Zahl | 29,7 … 177,7 (Skala 0 … 360) | ja | **aufgenommen** (Otto: Sonnenazimut) | Sun azimuth · ° · Acquisition |
+| `s2:processing_baseline` | Wert | 05.00 … 05.13 (6 Werte) | ja | **aufgenommen** (Otto: Verarbeitungs-Baseline) | Processing baseline · Acquisition |
+| `s2:dark_features_percentage` | Zahl | 0 … 1,8 | ja, nur für Items, die es tragen | **nicht aufgenommen:** fehlt in allen Items ab Baseline 05.11; ein Filter schlösse jede neuere Szene ohne Hinweis aus | |
+| `s2:medium_proba_clouds_percentage`, `s2:high_proba_clouds_percentage` | Zahl | 0 … 100 | ja | **nicht aufgenommen:** Teile von „Cloud cover“, ohne eigenen Nutzen neben diesem und „Thin cirrus“ | |
+| `s2:unclassified_percentage` | Zahl | 0 … 18,9 | ja | **nicht aufgenommen:** Rest der Klassifizierung, ohne Frage, die ein Nutzer damit stellt | |
+| `grid:code` (MGRS-Kachel) | Text | 36 Werte in der Stichprobe, weltweit Tausende | ja | **nicht aufgenommen:** wirkt, braucht aber ein Textfeld statt einer Liste (neue Art `FilterKind`); Frage an Otto | |
+| `mgrs:utm_zone`, `mgrs:latitude_band`, `mgrs:grid_square`, `proj:epsg` | Zahl/Text | | – | **nicht aufgenommen:** Teile der Kachel, technisch | |
+| `view:azimuth`, `view:incidence_angle` | Zahl | 97,5 … 300,3 · 2,7 … 11,8 | – | **nicht aufgenommen:** Blickgeometrie, bei Sentinel-2 nahezu senkrecht | |
+| `s2:reflectance_conversion_factor` | Zahl | 0,968 … 1,034 | – | **nicht aufgenommen:** technischer Faktor | |
+| `s2:saturated_defective_pixel_percentage`, `constellation`, `instruments`, `s2:datatake_type`, `s2:product_type`, `storage:*` | | ein Wert in jedem Item | – | **nicht aufgenommen:** Konstanten | |
+| `created`, `updated`, `datetime`, `s2:generation_time` | Zeitstempel | | – | **nicht aufgenommen:** Zeitstempel (`datetime` hat sein eigenes Feld) | |
+| `earthsearch:payload_id`, `s2:product_uri`, `s2:tile_id`, `s2:datastrip_id`, `s2:datatake_id` | Text | je Item eigener Wert | – | **nicht aufgenommen:** Kennungen | |
+| `processing:software`, `proj:centroid` | Objekt | | – | **nicht aufgenommen:** Objekte, nicht filterbar als Wert oder Bereich | |
+
+**Folgen.**
+1. `SearchFilter` bekommt `group` (ohne Vorgabewert, beim Start geprüft: kurzer nicht leerer Text, die Filter einer Gruppe stehen beieinander). Die Collection veröffentlicht es als `group`; die Oberfläche gliedert danach und zeigt Überschriften nur bei mehr als einer Gruppe. Die Reihenfolge der Registry ist die Reihenfolge der Anzeige.
+2. Sentinel-2 L2A bietet 13 Filter in den Gruppen „Clouds“ (3), „Scene“ (6), „Acquisition“ (4); Wolken zuerst.
+3. Der Live-Test prüft jetzt für jeden Filter, dass die Quelle genau so viele Szenen findet, wie die Stichprobe sagt (beide Hälften eines Bereichs am Median, bei einer Auswahl der häufigste Wert und ein nicht vorhandener), und meldet für Auswahlfilter jeden Wert der letzten 30 Tage, den die Registry nicht kennt. Die Offline-Wiedergabe prüft beides auch mit einer Quelle, die ein Filter überhört bzw. einen neuen Wert liefert.
+4. Die Zeitgrenze der Stichprobe bleibt ein geschlossenes Fenster (`adr/0005` K5); nur die Prüfung auf neue Werte schaut auf die letzten 30 Tage.
+5. **Offen, Frage an Otto:** Filter nach MGRS-Kachel (siehe Tabelle).
+
