@@ -240,3 +240,42 @@ Kurz beantwortbar: je Frage eine Nummer.
 - Angehakte Szenen liegen innerhalb von „Results“ nach §6.4 und damit nicht mehr über allen angehefteten Layern, sondern dort, wo „Results“ in der Liste steht.
 - Die Umrisse liegen oben in „Results“, unter Beschriftung, Gradnetz und AOI.
 - „Hide results“ / „Show results“ ist das Auge von „Results“.
+
+## 8. Umsetzung (30.10.2026, PR #249)
+
+Ein PR mit je einem Commit pro Teil (Antwort 8).
+
+| Teil | Was | Dateien |
+|---|---|---|
+| a | **Eine Ebenenfolge.** Jede Ebene bekommt beim Platzieren einen Schlüssel: Platz in der Liste (über oder unter „Results“), Stufe in „Results“ (§6.4), Rang (Index im Anhaken, sonst Reihenfolge des Platzierens). `restackAll` legt alles unter dem einzigen Marker `overlays-base` aus und bewegt nur, was nicht am Platz ist; eine Bewegung lädt keine Kachel nach. Entfallen: die Marker `layers-top`, `results-top`, `ticked-top`, `open-base`, `open-ticked-base`, `preview-base` und die Platz-Hilfen `tickedPlace`, `topOfAll`, `otherTickedTop`, `openRestTop`, `underTheView`, `aboveAll`, `beforeAoi`, `previewTop`, `layerAbove`, `restack`. Die Umrisse (`mosaicsel-line`) sind die oberste Stufe von „Results“. Über einer Ansicht gelten dieselben Stufen wie beim Blättern; damit ist die Abweichung aus §6.1 behoben. | `mapLayers.ts`, `MapView.tsx` |
+| b | **Zeile „Results“.** Im Store steht `resultsAt` (Zahl der Layer über „Results“), die reine Logik in `resultsEntry.ts`. Die Zeile hat das Auge und ▲/▼; die übrigen Plätze bleiben leer (`Slot`). Jede Suche und jeder Schritt, der die Ergebnisse verwirft, setzt `resultsAt` auf 0 (`forgetSearch`). Ein neuer Layer kommt direkt unter „Results“, wenn „Results“ oben liegt, sonst ganz oben. Wird ein Layer über „Results“ entfernt, rückt „Results“ nach. | `store.ts`, `resultsEntry.ts`, `LayerManager.tsx`, `index.css` |
+| c | **Knopf der Ergebnisliste = dasselbe Auge.** Eine Komponente `ResultsEye`; Tooltip „Hide results on the map“ / „Show results on the map“. Der veraltete Tooltip („ticked scenes still show“) entfällt. | `ResultsEye.tsx`, `ResultsPanel.tsx`, `mapResults.ts` (Regelkommentar) |
+| d | **Browserprüfung** `frontend/e2e/results-layer.cjs`; `dem-layers.cjs` überspringt die Zeile „Results“. Nachtrag in `plans/vp3/ui-02-basemap-projektion.md` nach §8, Log. | `e2e/`, `docs/` |
+
+### 8.1 Auslegungen (Vorschlag, gelten bis Otto widerspricht)
+
+1. **Ohne Suchergebnisse** gibt es keine Zeile „Results“ (Antwort 7). ▲/▼ eines Layers tauscht dann nur mit dem Nachbarlayer und zieht nicht unsichtbar an „Results“ vorbei; `resultsAt` bleibt, nach „Clear“ also 0 (Ansicht und Vorschau oben).
+2. **„Load more“ ist keine neue Suche:** Der Platz von „Results“ bleibt. Eine andere Wahl der Datensätze verwirft die Ergebnisse und setzt „Results“ wie „Clear“ nach oben.
+3. **Umrisse** liegen oben in „Results“ und damit unter Beschriftung und Gradnetz (vorher über der AOI). Die Coverage-Ebenen bleiben über der AOI; sie gehören nicht zu „Results“.
+4. **Quicklook unter der Ansicht (O5):** Er bekommt seinen Schlüssel vor den Kacheln seiner Szene und liegt deshalb darunter, egal wann sein Bild ankommt.
+5. **Die Zahl im Kopf des Layer-Managers** zählt nur die angehefteten Layer; „No layers yet …“ erscheint nur ohne Layer und ohne Zeile „Results“.
+
+### 8.2 Tests
+
+- `mapLayers.resultsPlace.test.ts` (neu): Ottos Klickweg auf Kartenebene, viermal aus/an mit Bildern in wechselnder Reihenfolge, auch mit Anheften, während die Bilder noch unterwegs sind; Gegenprobe mit „Results“ unter dem Job; Lage bei 0–3 Layern darüber; keine Kachel neu beim Verschieben; Platz außerhalb der Liste; Ansicht, Vorschau und Umrisse wandern mit „Results“.
+- `mapLayers.resultsTiers.test.ts` (umbenannt aus `…resultsUnderView…`, Regeln nach Antwort 4), `mapLayers.datasetOrder.test.ts` (die Stufen über einer Ansicht wie beim Blättern: die Abweichung aus §6.1), `mapLayers.groupOrder.test.ts`, `mapLayers.test.ts` (ein Marker).
+- `resultsEntry.test.ts` (neu): Anheften, Entfernen, Begrenzen, ▲/▼ an beiden Enden, Tausch mit „Results“, ohne Zeile „Results“, unbekannte Kennung.
+- `resultsLayerEntry.test.tsx` (neu, ganze App): Zeile mit Auge und ▲/▼ und nichts sonst; Anheften unter bzw. über „Results“; Verschieben; Entfernen darüber und darunter; Suche setzt nach oben, „Load more“ nicht; „Clear search results“; Auge mit Tooltip; Ausnahmen (Crop aus, Haken an, Suche an, „Play“ an); Verschieben ändert das Auge nicht.
+- Angepasst auf das Auge: `ResultsPanel.test.tsx`, `ResultsDock.test.tsx`, `resultsOnMap.test.tsx`.
+- Gegenprobe: Gegen `mapLayers.ts` vor Teil a schlagen 22 der Ebenen-Tests fehl, darunter die Abweichung bei offener Ansicht. Ottos Klickweg selbst besteht dort auch (er war nicht nachstellbar, §6.1).
+- Browser (Chromium, echtes MapLibre): `results-layer.cjs` hell/dunkel × breit/schmal grün; `layer-order.cjs`, `dem-layers.cjs`, `group-heads.cjs`, `play-steps.cjs`, `layer-rows.cjs`, `tooltips.cjs` grün.
+
+### 8.3 Prüfanleitung für Otto
+
+1. Sentinel-2 suchen, eine Gruppe in den Ergebnissen öffnen, nichts anhaken.
+2. Einen fertigen Job „Add to layers“: Im Layer-Manager steht „Results“ oben, der Job darunter; auf der Karte liegen die Quicklooks über dem Job.
+3. Auge von „Results“ aus: Der Job ist zu sehen. Auge an: Die Quicklooks liegen wieder darüber. Mehrmals, auch über das Auge im Kopf der Ergebnisliste.
+4. „Results“ mit ▼ unter den Job schieben: Der Job liegt oben. Mit ▲ zurück.
+5. Einen weiteren Job anheften, während „Results“ unten liegt: Er kommt ganz nach oben. Neue Suche: „Results“ springt nach oben.
+6. Szenen anhaken und „Crop & merge to AOI“: Das Auge geht aus, die Ansicht ist zu sehen. Auge an: Die offene Gruppe liegt über der Ansicht. Eine Szene einer anderen Gruppe anhaken: Sie liegt unter der offenen Gruppe, über der Ansicht.
+7. Basemap wechseln, Labels an: Die Reihenfolge bleibt, die Beschriftung liegt über den Bildern.
