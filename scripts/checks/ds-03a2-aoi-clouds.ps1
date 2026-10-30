@@ -218,6 +218,8 @@ $counts = $document.'earthx:aoi_filter'
 # Every scene of the search, over as many responses as it takes (one response checks at most 100 scenes or 8 s).
 $all = Read-All -Limit 100 -Upper 100
 if ($null -eq $all) { Stop-Run 'Alle Antworten der Suche lesen' 'HTTP 200 in hoechstens 40 Antworten' 'Fehler' }
+# With limit 3 every response may carry three scenes: room for as many responses as the scenes need.
+$MaxResponses = [math]::Max($MaxResponses, $all.Count + 10)
 $firstScenes = Get-Scenes $document
 Test-Step ($all.Count -gt 0) 'Die Suche liefert Szenen' 'mindestens eine Szene im Sommer 2025' "$($all.Count) Szenen"
 Test-Step ($null -ne $counts -and $counts.checked -ge $firstScenes.Count -and $counts.found -eq $firstScenes.Count) 'Die Antwort zaehlt: geprueft >= gefunden = zurueckgegeben' 'earthx:aoi_filter mit checked und found' 'fehlt oder passt nicht'

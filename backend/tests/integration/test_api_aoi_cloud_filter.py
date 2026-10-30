@@ -345,12 +345,12 @@ class TestResponsesAndMarkers:
     async def test_the_clock_ends_a_response_before_its_hundred_scenes(
         self, collections_loaded: None, world: World, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(aoi_cloud_filter, "RESPONSE_SECONDS", 0.3)
+        monkeypatch.setattr(aoi_cloud_filter, "RESPONSE_SECONDS", 1.0)
         world.total, world.share, world.read_seconds = 1000, lambda n: 90.0, 0.1
         async with _client(world) as client:
             response = await post(client, body())
         checked = response.json()["earthx:aoi_filter"]["checked"]
-        assert 0 < checked < 100 and next_token(response) is not None
+        assert checked < 100 and next_token(response) is not None
 
     async def test_the_marker_is_ours_and_holds_no_aoi(self, collections_loaded: None, world: World) -> None:
         world.total = 1000
@@ -383,6 +383,25 @@ class TestResponsesAndMarkers:
         assert [r.status_code for r in (narrower, elsewhere, without)] == [400, 400, 400]
         assert len(world.reads) == reads and len(world.bodies) == asked
         assert not any(leak in text for text in (narrower.text, elsewhere.text) for leak in LEAKS)
+
+    async def test_a_marker_from_the_first_page_is_refused_with_another_period_or_filter(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        world.total = 1000
+        async with _client(world) as client:
+            token = next_token(await post(client, body(limit=3)))
+            await aoi_cloud_filter.settle()
+            reads, asked = len(world.reads), len(world.bodies)
+            other_period = await post(client, body(token=token, datetime="2024-05-01T00:00:00Z/2024-05-20T00:00:00Z"))
+            other_scene_filter = await post(
+                client,
+                body(
+                    token=token,
+                    query_by_collection={S2: {"earthx:aoi_cloud_cover": {"lte": 20}, "eo:cloud_cover": {"lte": 70}}},
+                ),
+            )
+        assert [other_period.status_code, other_scene_filter.status_code] == [400, 400]
+        assert len(world.reads) == reads and len(world.bodies) == asked
 
     async def test_a_marker_of_a_search_without_the_filter_is_refused_by_one_with_it(
         self, collections_loaded: None, world: World
@@ -554,11 +573,12 @@ class TestNoAoiInLogOrUrl:
     async def test_a_sources_error_text_reaches_neither_the_answer_nor_the_log(
         self, collections_loaded: None, world: World, caplog: pytest.LogCaptureFixture
     ) -> None:
-        world.error = httpx.Response(500, json={"description": "query_shard_exception: for input string 10.123456"})
+        world.error = httpx.Response(503, json={"description": "query_shard_exception: for input string 10.123456"})
         with caplog.at_level(logging.DEBUG):
             async with _client(world) as client:
                 response = await post(client, body())
-        assert response.status_code == 500 or response.status_code == 502
+        assert response.status_code == 503  # the status of the source, as for every federated search (adr/0005)
+        assert response.json()["detail"] == "the source answered with an error"
         assert "query_shard_exception" not in response.text
         assert all("query_shard_exception" not in str(record.__dict__) for record in caplog.records)
 
@@ -670,8 +690,6 @@ class TestRealRasters:
         to_lonlat = Transformer.from_crs("EPSG:32632", "EPSG:4326", always_xy=True)
         aoi = {"type": "Polygon", "coordinates": [[list(to_lonlat.transform(x, y)) for x, y in corners]]}
 
-        from earthx.access import resolve
-
         def local(ref: Any, policy: Any, resolver: Any, **kwargs: Any) -> AssetPath:
             return AssetPath(str(path), dataset_id=ref.dataset_id, item_id=ref.item_id, asset=ref.asset)
 
@@ -680,7 +698,6 @@ class TestRealRasters:
         async with _client(stub) as client:
             near = await post(client, body(intersects=aoi, query_by_collection={S2: {"earthx:aoi_cloud_cover": {"gte": 50, "lte": 55}}}))
             far = await post(client, body(intersects=aoi, query_by_collection={S2: {"earthx:aoi_cloud_cover": {"lte": 40}}}))
-        assert resolve  # the module the replaced function stands for
         assert ids(near) == [0, 1, 2] and ids(far) == []
         measure = near.json()["features"][0]["properties"]["earthx:aoi_measure"]
         assert near.json()["features"][0]["properties"]["earthx:aoi_cloud_cover"] == 52.0

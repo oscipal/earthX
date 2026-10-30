@@ -13,9 +13,11 @@ Small on purpose (adr/0005 §3.6, K5): one scene read whole (about a megabyte), 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import numpy
+import numpy.typing
 import pytest
 import rasterio
 
@@ -26,7 +28,7 @@ from earthx.api.aoi_cloud_filter import AoiMeasurer, read_aoi_request, run_filte
 from earthx.api.dependencies import policy_from_registry
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.search_filters import RangeCondition
-from earthx.gateway import CachingResolver, Gateway, ReadSlots
+from earthx.gateway import CachingResolver, Gateway, ReadSlots, Resolver
 from earthx.gateway.gdal import gdal_options
 
 pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("sentinel-2-c1-l2a")]
@@ -43,10 +45,29 @@ AOI = {
 CONFIG = SENTINEL_2_L2A
 
 
-@pytest.fixture
-async def gateway() -> AsyncIterator[Gateway]:
+# What the replay of `tests/test_live_smoke_dry_run.py` puts a double in place of: the resolver and the reading of a
+# raster, neither of which goes through the gateway's transport.
+RESOLVER: Resolver = CachingResolver()
+
+
+@asynccontextmanager
+async def open_gateway() -> AsyncIterator[Gateway]:
     async with Gateway(policy_from_registry(REGISTRY)) as gateway:
         yield gateway
+
+
+@pytest.fixture
+async def gateway() -> AsyncIterator[Gateway]:
+    async with open_gateway() as gateway:
+        yield gateway
+
+
+def read_whole_file(scene: dict) -> tuple[numpy.typing.NDArray, float | None]:
+    """The classification of ``scene`` at full resolution, and its nodata value."""
+    policy = policy_from_registry(REGISTRY)
+    path = open_asset_ref(resolve_asset(scene, CONFIG, CONFIG.mask.asset), policy, RESOLVER)
+    with rasterio.Env(**gdal_options(policy)), rasterio.open(path) as source:
+        return source.read(1), source.nodata
 
 
 async def _sample(gateway: Gateway, limit: int) -> list[dict]:
@@ -55,15 +76,16 @@ async def _sample(gateway: Gateway, limit: int) -> list[dict]:
     return list(page.items)
 
 
+def _mixed_sky(items: list[dict]) -> dict:
+    scene = next((item for item in items if 20 <= item["properties"]["eo:cloud_cover"] <= 80), None)
+    assert scene is not None, "no scene of the sample has between 20 and 80 % clouds"
+    return scene
+
+
 async def test_the_classes_of_the_registry_count_what_the_source_calls_cloud(gateway: Gateway) -> None:
     items = await _sample(gateway, 20)
-    scene = next(item for item in items if 20 <= item["properties"]["eo:cloud_cover"] <= 80)
-    policy = policy_from_registry(REGISTRY)
-    ref = resolve_asset(scene, CONFIG, CONFIG.mask.asset)
-    path = open_asset_ref(ref, policy, CachingResolver())
-    with rasterio.Env(**gdal_options(policy)), rasterio.open(path) as source:
-        values = source.read(1)
-        nodata = source.nodata
+    scene = _mixed_sky(items)
+    values, nodata = read_whole_file(scene)
     valid = values != nodata
     share = 100 * numpy.isin(values, list(CONFIG.mask.cloud_classes))[valid].sum() / valid.sum()
     assert share == pytest.approx(scene["properties"]["eo:cloud_cover"], abs=0.05)
@@ -83,7 +105,7 @@ async def test_a_search_with_a_range_on_the_share_in_the_aoi_keeps_what_it_measu
         CONFIG,
         request.aoi,
         policy=policy,
-        resolver=CachingResolver(),
+        resolver=RESOLVER,
         gdal_options=gdal_options(policy),
         slots=ReadSlots(policy),
         cache=None,
@@ -107,9 +129,9 @@ async def test_a_search_with_a_range_on_the_share_in_the_aoi_keeps_what_it_measu
 
 async def test_the_whole_footprint_of_a_scene_is_close_to_its_cloud_cover(gateway: Gateway) -> None:
     items = await _sample(gateway, 20)
-    scene = next(item for item in items if 20 <= item["properties"]["eo:cloud_cover"] <= 80)
+    scene = _mixed_sky(items)
     policy = policy_from_registry(REGISTRY)
-    path = open_asset_ref(resolve_asset(scene, CONFIG, CONFIG.mask.asset), policy, CachingResolver())
+    path = open_asset_ref(resolve_asset(scene, CONFIG, CONFIG.mask.asset), policy, RESOLVER)
     with rasterio.Env(**gdal_options(policy)):
         counts = measure_aoi_clouds(path, scene["geometry"], CONFIG.mask.cloud_classes)
     # A coarse level of MODE overviews, not the file: the plan's measured error at mixed sky is at most 1.9 points.

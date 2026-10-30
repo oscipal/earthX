@@ -21,6 +21,7 @@ keeps working unchanged.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -32,6 +33,7 @@ from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
 from stac_fastapi.pgstac.models.extensions import Extensions
 
 from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
+from earthx.api.aoi_cloud_filter import hide_gdal_addresses, settle
 from earthx.api.aoi_upload_route import router as aoi_upload_router
 from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.crs_info import switch_off_proj_network
@@ -57,6 +59,8 @@ from earthx.objectstore.results import Store
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.operators import OperatorRegistry
 
+LOGGER = logging.getLogger("earthx.api.main")
+
 # adr/0005 rule VI, plan §6 F2, M3-13 F5: `pagination` describes our own paging;
 # `filter` (CQL2) and `sort` are two extensions the federated path cannot yet honour,
 # and `query`/`fields` turned out (M3-13 plan §2.2) to be a third and fourth — both
@@ -73,6 +77,8 @@ _PREFIX_PATH = "/stac"
 _JOB_POOL_MIN_SIZE = 1
 _JOB_POOL_MAX_SIZE = 4
 _JOB_POOL_TIMEOUT_S = 5.0
+# DS-03a2: how long the end of the process waits for the cloud-share measures a response left running.
+_SETTLE_TIMEOUT_S = 10.0
 
 
 @asynccontextmanager
@@ -132,6 +138,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 try:
                     yield
                 finally:
+                    # Measures of the cloud share that a response left running store into the pool closed below.
+                    try:
+                        await asyncio.wait_for(settle(), _SETTLE_TIMEOUT_S)
+                    except TimeoutError:
+                        LOGGER.warning("measures of the cloud share still running at shutdown")
                     if geocoder is not None:
                         await geocoder_gateway.aclose()
             finally:
@@ -190,6 +201,7 @@ def build_app(
     app.state.earthx_resolver = CachingResolver()
     app.state.earthx_gdal_options = gdal_options(policy)
     app.state.earthx_read_slots = ReadSlots(policy)
+    hide_gdal_addresses()
 
     @app.get("/health")
     async def health() -> dict:

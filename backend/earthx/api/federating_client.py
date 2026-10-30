@@ -36,6 +36,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+import anyio
 from fastapi import HTTPException, Request
 from pydantic import ValidationError
 from stac_fastapi.pgstac.core import CoreCrudClient
@@ -56,6 +57,7 @@ from earthx.adapters import (
     dataset_config,
 )
 from earthx.adapters import search_items as adapter_search_items
+from earthx.adapters.federated_search import search_fingerprint
 from earthx.api import mixed_search
 from earthx.api.aoi_cloud_filter import (
     MAX_BODY_BYTES,
@@ -455,7 +457,9 @@ def _apply_outcome_extras(result: dict[str, Any], outcome: DispatchOutcome) -> N
     if outcome.aoi_filter:
         # DS-03 plan §6.5: one collection's counts stand alone, a mixed search names each collection.
         if outcome.aoi_filter_mixed:
-            result["earthx:aoi_filter_by_collection"] = {cid: dict(counts) for cid, counts in outcome.aoi_filter.items()}
+            result["earthx:aoi_filter_by_collection"] = {
+                cid: dict(counts) for cid, counts in outcome.aoi_filter.items()
+            }
         else:
             result["earthx:aoi_filter"] = dict(next(iter(outcome.aoi_filter.values())))
 
@@ -592,6 +596,21 @@ def _state_of(request: Request, name: str) -> Any:
     if value is None:
         raise RuntimeError(f"earthx.api.main did not set request.app.state.{name}")
     return value
+
+
+def _read_limiter(request: Request) -> anyio.CapacityLimiter:
+    """The one limit on the threads that read rasters for the cloud share, for the whole process.
+
+    Made on first use because a limiter belongs to the event loop that runs; as large as the readers one host may
+    have (``Policy.max_connections_per_host``), so a search waits for a reader here, in the loop, and not in a
+    thread of the pool every other route shares.
+    """
+    state = request.app.state
+    limiter = getattr(state, "earthx_read_limiter", None)
+    if limiter is None:
+        limiter = anyio.CapacityLimiter(_state_of(request, "earthx_policy").max_connections_per_host)
+        state.earthx_read_limiter = limiter
+    return limiter
 
 
 def _gateway_of(request: Request):
@@ -989,6 +1008,20 @@ class FederatingCoreCrudClient(CoreCrudClient):
             raise InvalidQuery(f"limit {wanted} is outside 1..{MAX_LIMIT} (adr/0005 rule V)")
         config = dataset_config(_registry_of(request), source.collection_id)
         pool = getattr(request.app.state, "earthx_cache_pool", None)
+        start, end = _datetime_bounds(source.effective_datetime)
+        # What the source's own marker will say from the second page on, known from the first: the search without
+        # its page size and without the filter on the AOI.
+        binding = search_fingerprint(
+            source.collection_id,
+            SearchParams(
+                bbox=tuple(bbox) if bbox else None,
+                intersects=intersects,
+                ids=ids,
+                start=start,
+                end=end,
+                conditions=source.conditions,
+            ),
+        )
         measurer = AoiMeasurer(
             config,
             aoi.aoi,
@@ -997,6 +1030,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             gdal_options=_state_of(request, "earthx_gdal_options"),
             slots=_state_of(request, "earthx_read_slots"),
             cache=None if pool is None else PooledStatsCache(pool),
+            limiter=_read_limiter(request),
         )
 
         async def fetch_page(marker: str | None) -> ItemPage:
@@ -1006,7 +1040,12 @@ class FederatingCoreCrudClient(CoreCrudClient):
             )
 
         outcome = await run_filter(
-            aoi, fetch_page=fetch_page, measure=measurer, limit=wanted, token=_strip_forward_token(token)
+            aoi,
+            fetch_page=fetch_page,
+            measure=measurer,
+            limit=wanted,
+            token=_strip_forward_token(token),
+            binding=binding,
         )
         page = ItemPage(
             items=tuple(outcome.items), matched=None, next_page_token=outcome.next_token, from_cache=False

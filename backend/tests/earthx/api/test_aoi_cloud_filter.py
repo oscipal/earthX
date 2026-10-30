@@ -332,6 +332,12 @@ def every_fourth(number: int) -> float:
     return 5.0 if number % 4 == 0 else 60.0
 
 
+def _bound_key(binding: str) -> str:
+    import hashlib
+
+    return hashlib.sha256((request_for().key + binding).encode("ascii")).hexdigest()
+
+
 def numbers(outcome) -> list[int]:
     return [number_of(item) for item in outcome.items]
 
@@ -367,7 +373,7 @@ class TestTheLoop:
         outcome = await respond(source, Measures(every_fourth), limit=3)
         assert numbers(outcome) == [0, 4, 8]
         assert outcome.summary() == {"checked": 9, "found": 3, "unreadable": 0, "limit_reached": False}
-        assert decode_cursor(outcome.next_token, request_for().key) == Cursor(None, 9, 9, 3, 0)
+        assert decode_cursor(outcome.next_token, _bound_key("")) == Cursor(None, 9, 9, 3, 0)
 
     async def test_the_next_response_misses_none_and_repeats_none(self) -> None:
         source = Source(300)
@@ -397,19 +403,52 @@ class TestTheLoop:
     async def test_a_marker_in_the_middle_of_a_page_fetches_that_page_again_and_goes_on_inside_it(self) -> None:
         source, measures = Source(300), Measures(lambda n: 90.0)
         first = await respond(source, measures, limit=100)
-        assert decode_cursor(first.next_token, request_for().key) == Cursor("100", 0, 100, 0, 0)  # page end: next page
+        assert decode_cursor(first.next_token, _bound_key("")) == Cursor("100", 0, 100, 0, 0)  # page end: next page
         source.asked.clear()
-        measures.measured.clear()
-        second = await respond(source, Measures(every_fourth), limit=3, token=encode_cursor(request_for().key, Cursor("100", 37, 137, 0, 0)))
+        second = await respond(source, Measures(every_fourth), limit=3, token=encode_cursor(_bound_key(""), Cursor("100", 37, 137, 0, 0)))
         assert source.asked == ["100"]
         assert numbers(second) == [140, 144, 148]
+
+    async def test_a_marker_is_bound_to_the_search_of_the_source_on_the_first_page_too(self) -> None:
+        source = Source(300)
+        first = await run_filter(
+            request_for(), fetch_page=source.fetch, measure=Measures(every_fourth), limit=3, token=None, binding="a"
+        )
+        assert decode_cursor(first.next_token, _bound_key("a")).page is None, "the position lies on the first page"
+        with pytest.raises(InvalidQuery, match="different search"):
+            await run_filter(
+                request_for(), fetch_page=source.fetch, measure=Measures(every_fourth), limit=3,
+                token=first.next_token, binding="b",
+            )
+        again = await run_filter(
+            request_for(), fetch_page=source.fetch, measure=Measures(every_fourth), limit=3,
+            token=first.next_token, binding="a",
+        )
+        assert numbers(again) == [12, 16, 20]
+        await module.settle()
+
+    async def test_no_new_page_is_fetched_with_less_than_the_margin_left(self) -> None:
+        clock = Clock()
+
+        class SlowSource(Source):
+            async def fetch(self, marker: str | None) -> ItemPage:
+                page = await super().fetch(marker)
+                clock.now += 7.0  # a cold page of the source
+                return page
+
+        source = SlowSource(300)
+        cursor = encode_cursor(_bound_key(""), Cursor(None, 70, 70, 0, 0))
+        outcome = await respond(source, Measures(lambda n: 90.0), limit=100, token=cursor, clock=clock)
+        assert source.asked == [None], "the second page would have cost the response its 10 s"
+        assert outcome.summary()["checked"] == 100  # the 30 left of the first page
+        assert decode_cursor(outcome.next_token, _bound_key("")) == Cursor("100", 0, 100, 0, 0)
 
     async def test_a_hundred_scenes_end_a_response(self) -> None:
         source = Source(1000)
         outcome = await respond(source, Measures(lambda n: 90.0), limit=100)
         assert outcome.items == []
         assert outcome.summary() == {"checked": RESPONSE_SCENES, "found": 0, "unreadable": 0, "limit_reached": False}
-        assert decode_cursor(outcome.next_token, request_for().key).checked == RESPONSE_SCENES
+        assert decode_cursor(outcome.next_token, _bound_key("")).checked == RESPONSE_SCENES
 
     async def test_eight_seconds_of_the_clock_end_a_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(module, "CONCURRENT_READS", 1)  # one at a time: each scene costs its 3 s in turn
@@ -418,7 +457,7 @@ class TestTheLoop:
         outcome = await respond(Source(1000), measures, limit=100, clock=clock)
         assert outcome.summary()["checked"] == 3  # 3 s each: the fourth would start at 9 s
         assert outcome.next_token is not None
-        assert decode_cursor(outcome.next_token, request_for().key).offset == 3
+        assert decode_cursor(outcome.next_token, _bound_key("")).offset == 3
 
     async def test_five_hundred_scenes_end_the_search_with_no_marker(self) -> None:
         source, measures = Source(2000), Measures(lambda n: 90.0)
@@ -504,7 +543,7 @@ class TestTheLoop:
         outcome = await respond(Source(50), measures, limit=2)
         assert numbers(outcome) == [0, 1]
         assert outcome.summary()["checked"] == 2
-        assert decode_cursor(outcome.next_token, request_for().key).offset == 2
+        assert decode_cursor(outcome.next_token, _bound_key("")).offset == 2
 
     async def test_one_log_line_per_response_without_the_area_or_a_name_of_a_scene(
         self, caplog: pytest.LogCaptureFixture
@@ -697,6 +736,53 @@ class TestMeasuringAScene:
         scenes = [scene(number) for number in range(1, 25)]
         await asyncio.gather(*(m(item) for m in (first, second) for item in scenes))
         assert 1 < peak <= POLICY.max_connections_per_host
+
+
+    async def test_a_limiter_bounds_the_threads_that_read_and_the_rest_wait_in_the_loop(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import anyio
+
+        lock = threading.Lock()
+        running = peak = 0
+
+        def slow(path: Any, aoi: Any, classes: Any) -> AoiClouds:
+            nonlocal running, peak
+            with lock:
+                running += 1
+                peak = max(peak, running)
+            time.sleep(0.02)
+            with lock:
+                running -= 1
+            return AoiClouds(1, 2, 3, 80.0)
+
+        monkeypatch.setattr(module, "measure_aoi_clouds", slow)
+        limited = AoiMeasurer(
+            SENTINEL_2_L2A, SQUARE, policy=POLICY, resolver=public, gdal_options={}, slots=ReadSlots(POLICY),
+            cache=None, limiter=anyio.CapacityLimiter(2),
+        )
+        await asyncio.gather(*(limited(scene(number)) for number in range(1, 17)))
+        assert peak == 2
+
+
+class TestTheRequestOfAnotherSource:
+    async def test_the_filter_on_a_collection_with_its_own_items_is_a_400(self) -> None:
+        from fastapi import HTTPException
+
+        from earthx.api.federating_client import _aoi_requests
+        from earthx.catalog.registry import ItemHolding
+
+        class Stub:
+            async def body(self) -> bytes:
+                return b"{}"
+
+        infos = {"native": (ItemHolding.MATERIALIZED, True)}
+        with pytest.raises(HTTPException) as caught:
+            await _aoi_requests(
+                Stub(), {"native": RangeCondition(None, 5.0)}, infos, {}, datetime_value=PERIOD, bbox=None,
+                intersects=SQUARE,
+            )
+        assert caught.value.status_code == 400 and "federated collection only" in caught.value.detail
 
 
 class TestNoAddressInTheLogOfAFailedRead:

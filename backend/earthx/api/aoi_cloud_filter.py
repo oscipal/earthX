@@ -1,4 +1,4 @@
-"""The filter "Within AOI" of the search: scenes kept by the cloud share inside the AOI (DS-03 plan §6.5, §6.9, §6.18).
+"""The filter "Within AOI" of the search: scenes kept by the cloud share inside the AOI (DS-03 plan §6.5, §6.18).
 
 ``earthx:aoi_cloud_cover`` is no property of the source, so the source never hears of it. ``api`` asks the source
 for pages of 100 with every other filter, measures each scene in the order the source gives them
@@ -28,13 +28,14 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+import anyio
+import anyio.to_thread
 import rasterio
 import shapely
 from rasterio.errors import RasterioError
 from shapely.errors import ShapelyError
 from shapely.geometry import MultiPolygon, box, shape
 from stac_fastapi.types.rfc3339 import str_to_interval
-from starlette.concurrency import run_in_threadpool
 
 from earthx.access.aoi_clouds import AoiClouds, aoi_clouds_cache_key, canonical_aoi, measure_aoi_clouds
 from earthx.access.aoi_upload import MAX_AOI_POINTS
@@ -45,6 +46,7 @@ from earthx.catalog.registry import DatasetConfig
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition
 from earthx.gateway import GatewayError, Policy, ReadSlots, Resolver, host_of
 from earthx.readers import AssetRejected
+from earthx.readers.cog import AssetPath
 
 LOGGER = logging.getLogger("earthx.api.aoi_cloud_filter")
 
@@ -55,6 +57,9 @@ RESPONSE_SCENES = 100
 RESPONSE_SECONDS = 8.0
 #: Scenes checked in the whole search, over every response (F2a).
 SEARCH_SCENES = 500
+#: A new page of the source is not fetched with less than this left of the response: a cold page can take seconds, and
+#: the mixed search cuts a source off at ``SOURCE_TIMEOUT_S``, which would lose the scenes already found.
+FETCH_MARGIN_S = 2.0
 #: Scenes measured ahead at once. `ReadSlots` holds the real limit per host; this keeps the readers busy.
 CONCURRENT_READS = 6
 #: A measure lives at most seven days: its key can be recomputed from the AOI (F2e).
@@ -139,11 +144,9 @@ def _bbox_polygon(bbox: Sequence[float]) -> Any:
         raise InvalidFilter("bbox is outside the globe or upside down")
     if west > east:  # across the antimeridian
         return MultiPolygon([box(west, south, 180, north), box(-180, south, east, north)])
-    return box(west, south, east, north) if west < east else _no_area("bbox")
-
-
-def _no_area(label: str) -> Any:
-    raise InvalidFilter(f"{label} has no area")
+    if west == east:
+        raise InvalidFilter("bbox has no area")
+    return box(west, south, east, north)
 
 
 def _polygonal(geometry: Any, label: str) -> Any:
@@ -251,16 +254,6 @@ def decode_cursor(token: str, key: str) -> Cursor:
     return Cursor(page=page, offset=offset, checked=checked, found=found, unreadable=unreadable)
 
 
-def is_cursor_token(token: str) -> bool:
-    """Whether ``token`` is shaped like a marker of this module; no check of what it belongs to."""
-    padded = token + "=" * (-len(token) % 4)
-    try:
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
-    except (ValueError, binascii.Error):
-        return False
-    return isinstance(payload, dict) and payload.get("k") == "aoi"
-
-
 # -- measuring one scene ----------------------------------------------------------------------------------------
 
 
@@ -302,7 +295,8 @@ class SceneMeasure:
         percent, resolution = value.get("data_percent"), value.get("resolution")
         if not all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in (cloud, data)) or cloud > data:
             return None
-        if not all(isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n) for n in (percent, resolution)):
+        numbers = (percent, resolution)
+        if not all(isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n) for n in numbers):
             return None
         return cls(cloud, data, float(percent), float(resolution), cached=True)
 
@@ -313,7 +307,7 @@ Measure = Callable[[Mapping[str, Any]], Awaitable[SceneMeasure | None]]
 class _HideAddresses(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage().lower()
-        return "http" not in message and "/vsi" not in message
+        return not any(part in message for part in ("http", "/vsi", "curl error", "gdal signalled"))
 
 
 def hide_gdal_addresses() -> None:
@@ -329,7 +323,8 @@ class AoiMeasurer:
 
     A scene it cannot read gives ``None`` (counted as unreadable, §6.9 KE5): no asset on the item, an address the
     gateway refuses, a read that fails, an AOI that does not fit the raster. Reading runs in a thread, inside a slot
-    of the host (``gateway.ReadSlots``) and the GDAL environment of the gateway.
+    of the host (``gateway.ReadSlots``) and the GDAL environment of the gateway. ``limiter`` bounds the threads
+    that read, for the whole process; without one the shared pool of the process is used.
     """
 
     def __init__(
@@ -342,6 +337,7 @@ class AoiMeasurer:
         gdal_options: Mapping[str, str | int],
         slots: ReadSlots,
         cache: StatsCache | None,
+        limiter: anyio.CapacityLimiter | None = None,
     ) -> None:
         mask = config.mask
         if mask is None or not mask.cloud_classes:
@@ -355,7 +351,7 @@ class AoiMeasurer:
         self._options = dict(gdal_options)
         self._slots = slots
         self._cache = cache
-        hide_gdal_addresses()
+        self._limiter = limiter
 
     async def __call__(self, item: Mapping[str, Any]) -> SceneMeasure | None:
         try:
@@ -366,7 +362,8 @@ class AoiMeasurer:
         stored = SceneMeasure.stored(await self._cached(key))
         if stored is not None:
             return stored
-        counts = await run_in_threadpool(self._read, ref)
+        # Waiting for a free reader happens here, in the event loop, not in a thread of the shared pool.
+        counts = await anyio.to_thread.run_sync(self._read, ref, limiter=self._limiter)
         if counts is None:
             return None
         measure = SceneMeasure.of(counts)
@@ -380,7 +377,8 @@ class AoiMeasurer:
         try:
             path = open_asset_ref(ref, self._policy, self._resolver)
             with self._slots.slot(host_of(ref.href)), rasterio.Env(**self._options):
-                return measure_aoi_clouds(path, self._aoi, self._classes)  # type: ignore[arg-type]
+                assert isinstance(path, AssetPath)  # a COG, as checked above
+                return measure_aoi_clouds(path, self._aoi, self._classes)
         except (AssetRejected, GatewayError, RasterioError, ValueError, OSError):
             # GDAL's text and the AOI's errors can name the address or a position: the fact only, counted by the caller.
             return None
@@ -441,7 +439,7 @@ class _Tally:
     kept: list[dict[str, Any]] = field(default_factory=list)
 
     def done(self, limit: int) -> bool:
-        """The response has what it may take: ``limit`` scenes kept, or the scenes it may check, here or in the search."""
+        """The response has what it may take: ``limit`` scenes kept, or all the scenes it may check."""
         return len(self.kept) >= limit or self.scenes >= RESPONSE_SCENES or self.checked >= SEARCH_SCENES
 
     def take(self, item: Mapping[str, Any], measure: SceneMeasure | None, condition: RangeCondition) -> None:
@@ -467,7 +465,11 @@ def _within(percent: float, condition: RangeCondition) -> bool:
 
 
 def _with_measure(item: Mapping[str, Any], percent: float, measure: SceneMeasure) -> dict[str, Any]:
-    properties = {**(item.get("properties") or {}), "earthx:aoi_cloud_cover": percent, "earthx:aoi_measure": measure.as_measure()}
+    properties = {
+        **(item.get("properties") or {}),
+        "earthx:aoi_cloud_cover": percent,
+        "earthx:aoi_measure": measure.as_measure(),
+    }
     return {**item, "properties": properties}
 
 
@@ -478,9 +480,14 @@ async def run_filter(
     measure: Measure,
     limit: int,
     token: str | None,
+    binding: str = "",
     clock: Callable[[], float] = time.monotonic,
 ) -> FilterOutcome:
     """One response of a search with the filter, from the position ``token`` names (``None``: the beginning).
+
+    ``binding`` is what else the marker belongs to (the source's own search: period, area, other filters), hashed
+    into its key so that a marker sent with another search is refused on the first page too, where the source's
+    marker does not yet say which search it came from.
 
     ``fetch_page(marker)`` is the source's page (of :data:`PAGE_SIZE`) for the marker of its own; ``measure(item)`` is
     :class:`AoiMeasurer`'s call. Scenes are taken in the source's order and the position moves past a scene only
@@ -489,11 +496,16 @@ async def run_filter(
     """
     started = clock()
     deadline = started + RESPONSE_SECONDS
-    cursor = decode_cursor(token, request.key) if token else Cursor()
+    key = hashlib.sha256((request.key + binding).encode("ascii")).hexdigest()
+    cursor = decode_cursor(token, key) if token else Cursor()
     tally = _Tally(cursor.checked, cursor.found, cursor.unreadable)
     position: tuple[str | None, int] | None = (cursor.page, cursor.offset)
+    fetched = False
     while position is not None and not tally.done(limit) and clock() < deadline:
+        if fetched and deadline - clock() < FETCH_MARGIN_S:
+            break
         page = await fetch_page(position[0])
+        fetched = True
         taken = await _take_page(page.items[position[1] :], tally, request.condition, measure, limit, clock, deadline)
         if position[1] + taken < len(page.items):
             position = (position[0], position[1] + taken)
@@ -503,7 +515,7 @@ async def run_filter(
     next_token = None
     if position is not None and not limit_reached:
         next_token = encode_cursor(
-            request.key, Cursor(position[0], position[1], tally.checked, tally.found, tally.unreadable)
+            key, Cursor(position[0], position[1], tally.checked, tally.found, tally.unreadable)
         )
     outcome = FilterOutcome(tally.kept, next_token, tally.checked, tally.found, tally.unreadable, limit_reached)
     LOGGER.info(
@@ -577,6 +589,6 @@ def _settled(task: asyncio.Future[SceneMeasure | None]) -> None:
 
 
 async def settle() -> None:
-    """Wait for the measurements the responses left running; the end of a process, or a test, calls this."""
+    """Wait for the measurements the responses left running; the lifespan of ``api`` and the tests call this."""
     while _DETACHED:
         await asyncio.wait(set(_DETACHED))
