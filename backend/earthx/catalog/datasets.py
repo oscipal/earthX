@@ -150,6 +150,8 @@ SENTINEL_2_L2A = DatasetConfig(
         reprojection=True,
         # M4-18 (Otto, 20.10.2026): the layer is described in `mask` below.
         masking=True,
+        # DS-06 (Otto, 30.10.2026): a mask by value needs no layer, so every entry has it.
+        value_masking=True,
         normalization=True,
         ml_processing=True,
         # No complex quad-pol data — decomp.py stays out (ENTSCHEIDUNGEN §3).
@@ -559,6 +561,8 @@ COP_DEM_GLO_30 = DatasetConfig(
         reprojection=True,
         # M4-18: the bucket holds elevation only, no classification layer.
         masking=False,
+        # DS-06 (Otto, 30.10.2026): a mask by value needs no layer, so every entry has it.
+        value_masking=True,
         normalization=True,
         ml_processing=True,
         # No complex quad-pol data — decomp.py stays out (ENTSCHEIDUNGEN §3).
