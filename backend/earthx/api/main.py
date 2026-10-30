@@ -33,7 +33,7 @@ from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
 from stac_fastapi.pgstac.models.extensions import Extensions
 
 from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
-from earthx.api.aoi_cloud_filter import hide_gdal_addresses, settle
+from earthx.api.aoi_cloud_filter import settle
 from earthx.api.aoi_upload_route import router as aoi_upload_router
 from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.crs_info import switch_off_proj_network
@@ -201,7 +201,6 @@ def build_app(
     app.state.earthx_resolver = CachingResolver()
     app.state.earthx_gdal_options = gdal_options(policy)
     app.state.earthx_read_slots = ReadSlots(policy)
-    hide_gdal_addresses()
 
     @app.get("/health")
     async def health() -> dict:

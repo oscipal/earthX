@@ -22,9 +22,11 @@ import hashlib
 import json
 import logging
 import math
+import threading
 import time
 from collections import Counter
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -304,14 +306,36 @@ class SceneMeasure:
 Measure = Callable[[Mapping[str, Any]], Awaitable[SceneMeasure | None]]
 
 
+_READING = threading.local()
+
+
 class _HideAddresses(logging.Filter):
+    """Drops a log line with an address in it, but only in a thread that is measuring a scene."""
+
     def filter(self, record: logging.LogRecord) -> bool:
+        if not getattr(_READING, "active", False):
+            return True
         message = record.getMessage().lower()
         return not any(part in message for part in ("http", "/vsi", "curl error", "gdal signalled"))
 
 
+@contextmanager
+def without_gdal_addresses() -> Iterator[None]:
+    """Inside the block, the log lines of GDAL's errors in this thread leave out the address of the file."""
+    hide_gdal_addresses()
+    _READING.active = True
+    try:
+        yield
+    finally:
+        _READING.active = False
+
+
 def hide_gdal_addresses() -> None:
-    """Keep the address of an asset out of the log lines GDAL's errors become; idempotent."""
+    """Put the filter on the loggers of ``rasterio``, where GDAL's errors become lines; idempotent.
+
+    The filter works only in a thread inside :func:`without_gdal_addresses`, so it changes nothing for the rest of
+    the process (the tests of other routes read GDAL's own warning there).
+    """
     for name in _GDAL_LOGGERS:
         logger = logging.getLogger(name)
         if not any(isinstance(entry, _HideAddresses) for entry in logger.filters):
@@ -376,7 +400,7 @@ class AoiMeasurer:
             return None
         try:
             path = open_asset_ref(ref, self._policy, self._resolver)
-            with self._slots.slot(host_of(ref.href)), rasterio.Env(**self._options):
+            with self._slots.slot(host_of(ref.href)), rasterio.Env(**self._options), without_gdal_addresses():
                 assert isinstance(path, AssetPath)  # a COG, as checked above
                 return measure_aoi_clouds(path, self._aoi, self._classes)
         except (AssetRejected, GatewayError, RasterioError, ValueError, OSError):
