@@ -174,29 +174,31 @@ class TestWhatTheScriptRelaysOn:
 PWSH = shutil.which("pwsh")
 
 
+async def run_script(base: str, *arguments: str, search_only: bool = True, cwd: Path | None = None) -> tuple[int, str]:
+    environment = {**os.environ, "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT": "1", "NO_COLOR": "1"}
+    process = await asyncio.create_subprocess_exec(
+        PWSH or "pwsh",
+        "-NoProfile",
+        "-File",
+        str(SCRIPT),
+        "-BaseUrl",
+        base,
+        *(["-SearchOnly"] if search_only else []),
+        *arguments,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        env=environment,
+        cwd=cwd,
+    )
+    output, _ = await asyncio.wait_for(process.communicate(), 120)
+    return process.returncode or 0, output.decode("utf-8", errors="replace")
+
+
 @pytest.mark.skipif(PWSH is None, reason="PowerShell (pwsh) is not installed; the CI image has it")
 class TestTheScriptItself:
-    async def run_script(self, base: str, *arguments: str) -> tuple[int, str]:
-        environment = {**os.environ, "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT": "1", "NO_COLOR": "1"}
-        process = await asyncio.create_subprocess_exec(
-            PWSH or "pwsh",
-            "-NoProfile",
-            "-File",
-            str(SCRIPT),
-            "-BaseUrl",
-            base,
-            "-SearchOnly",
-            *arguments,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            env=environment,
-        )
-        output, _ = await asyncio.wait_for(process.communicate(), 120)
-        return process.returncode or 0, output.decode("utf-8", errors="replace")
-
     async def test_it_finds_a_scene_over_zurich_like_the_viewer(self, require_catalog_loaded: None) -> None:
         async with platform(geo_json(real_shape())) as (base, seen):
-            code, output = await self.run_script(base, "-Verbose", "-Bbox", ZURICH, "-Datetime", SUMMER)
+            code, output = await run_script(base, "-Verbose", "-Bbox", ZURICH, "-Datetime", SUMMER)
         assert code == 0, output
         assert "[OK    ] Item gefunden" in output and real_shape()["features"][0]["id"] in output
         (request,) = seen
@@ -208,14 +210,14 @@ class TestTheScriptItself:
 
     async def test_without_verbose_the_area_is_not_printed(self, require_catalog_loaded: None) -> None:
         async with platform(geo_json(real_shape())) as (base, _):
-            code, output = await self.run_script(base, "-Bbox", ZURICH, "-Datetime", SUMMER)
+            code, output = await run_script(base, "-Bbox", ZURICH, "-Datetime", SUMMER)
         assert code == 0, output
         assert "8.535" not in output and "47.365" not in output
 
     async def test_an_empty_answer_is_no_item_not_an_unreadable_answer(self, require_catalog_loaded: None) -> None:
         empty = json.loads((FIXTURES / "search_empty.json").read_text(encoding="utf-8"))
         async with platform(geo_json(empty)) as (base, _):
-            code, output = await self.run_script(base)
+            code, output = await run_script(base)
         assert code == 1
         assert "kein Item gefunden" in output and "kein lesbares JSON" not in output
 
@@ -246,7 +248,7 @@ class TestTheScriptItself:
 
     async def test_an_answer_that_is_not_json_is_named_as_such(self) -> None:
         with self.source_answering("text/html", b"<html>not stac</html>") as base:
-            code, output = await self.run_script(base)
+            code, output = await run_script(base)
         assert code == 1 and "kein lesbares JSON" in output and "kein Item gefunden" not in output
 
     @pytest.mark.parametrize(
@@ -256,7 +258,7 @@ class TestTheScriptItself:
         """PowerShell hands `.Content` of a type it does not know as text back as bytes (5.1 does so for
         application/geo+json, where the platform's search lives); the script reads the bytes itself."""
         with self.source_answering(content_type, json.dumps(real_shape()).encode()) as base:
-            code, output = await self.run_script(base)
+            code, output = await run_script(base)
         assert code == 0, output
         assert "[OK    ] Item gefunden" in output and real_shape()["features"][0]["id"] in output
 
@@ -264,6 +266,114 @@ class TestTheScriptItself:
         shape = real_shape()
         shape["features"][0]["id"] = "SYNTH_ÄÖÜ_é"
         with self.source_answering("application/geo+json", json.dumps(shape, ensure_ascii=False).encode()) as base:
-            code, output = await self.run_script(base)
+            code, output = await run_script(base)
         assert code == 0, output
         assert "SYNTH_ÄÖÜ_é" in output
+
+
+def job_info(job_id: str, status: str, **times: str) -> dict[str, Any]:
+    """A status document as the job API writes it; ``times`` are ``started`` and ``finished``."""
+    return {"jobID": job_id, "type": "process", "status": status, "progress": 100 if status == "successful" else 0,
+            "created": "2026-10-30T09:59:59Z", **times}  # fmt: skip
+
+
+RUN = {"started": "2026-10-30T10:00:00Z", "finished": "2026-10-30T10:00:04.3Z"}
+
+
+@pytest.mark.skipif(PWSH is None, reason="PowerShell (pwsh) is not installed; the CI image has it")
+class TestTheJobRuntimeTheScriptPrints:
+    """NM4-62 (Otto, 30.10.2026): step 2 names the job's runtime from its status and says when it was a cache hit.
+
+    Against a tiny platform: the search answers the real shape, the first order ``placed`` and its status ``polled``,
+    the second order is a hit at once; results are ``404`` and ``DELETE`` dismisses. Steps 3 and 6 fail there, which
+    is not what these tests look at.
+    """
+
+    @contextmanager
+    def platform_with_jobs(self, placed: dict[str, Any], polled: dict[str, Any]) -> Iterator[str]:
+        jobs = {placed["jobID"]: polled, "JOB_SECOND": job_info("JOB_SECOND", "successful", **RUN)}
+        orders: list[str] = []
+        deleted: set[str] = set()
+
+        class Page(BaseHTTPRequestHandler):
+            def answer(self, status: int, body: dict[str, Any], **headers: str) -> None:
+                content = json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(content)))
+                for name, value in headers.items():
+                    self.send_header(name, value)
+                self.end_headers()
+                self.wfile.write(content)
+
+            def do_POST(self) -> None:
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                if self.path.endswith("/stac/search"):
+                    self.answer(200, real_shape())
+                    return
+                orders.append(self.path)
+                job = placed if len(orders) == 1 else jobs["JOB_SECOND"]
+                self.answer(201, job, Location=f"/processing/jobs/{job['jobID']}")
+
+            def do_GET(self) -> None:
+                job_id = self.path.rsplit("/jobs/", 1)[-1]
+                if job_id in jobs and job_id not in deleted:
+                    self.answer(200, jobs[job_id])
+                else:
+                    self.answer(404, {"title": "Not Found", "detail": "no such job", "type": "about:blank"})
+
+            def do_DELETE(self) -> None:
+                job_id = self.path.rsplit("/", 1)[-1]
+                deleted.add(job_id)
+                self.answer(200, job_info(job_id, "dismissed"))
+
+            def log_message(self, *args: Any) -> None:
+                return None
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Page)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_address[1]}"
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    async def run_job_part(self, placed: dict[str, Any], polled: dict[str, Any], workdir: Path) -> str:
+        """The whole script; ``workdir`` takes the folder it saves results in."""
+        with self.platform_with_jobs(placed, polled) as base:
+            _, output = await run_script(base, search_only=False, cwd=workdir)
+        return output
+
+    async def test_a_run_of_its_own_names_its_runtime(self, tmp_path: Path) -> None:
+        output = await self.run_job_part(
+            job_info("JOB_FIRST", "accepted"), job_info("JOB_FIRST", "successful", **RUN), tmp_path
+        )
+        assert "[OK    ] Job ist successful (Laufzeit 4.3 s von started bis finished)" in output, output
+        assert "Cache-Treffer: Der Auftrag war schon fertig" not in output
+
+    async def test_a_cache_hit_says_so_and_that_the_runtime_is_the_earlier_runs(self, tmp_path: Path) -> None:
+        hit = job_info("JOB_FIRST", "successful", **RUN)
+        output = await self.run_job_part(hit, hit, tmp_path)
+        assert "Cache-Treffer: Der Auftrag war schon fertig" in output, output
+        assert (
+            "[OK    ] Job ist successful als Cache-Treffer, ohne eigenen Lauf "
+            "(Laufzeit 4.3 s von started bis finished des früheren Laufs)"
+        ) in output
+
+    @pytest.mark.parametrize(
+        ("times", "text"),
+        [
+            ({}, "Laufzeit unbekannt, der Status nennt started oder finished nicht"),
+            ({"started": RUN["started"]}, "Laufzeit unbekannt, der Status nennt started oder finished nicht"),
+            ({"started": "not a time", "finished": RUN["finished"]}, "Laufzeit unbekannt, started oder finished ist keine lesbare Zeit"),
+        ],
+        ids=["no-times", "no-finish", "unreadable"],
+    )  # fmt: skip
+    async def test_a_status_without_readable_times_says_the_runtime_is_unknown(
+        self, times: dict[str, str], text: str, tmp_path: Path
+    ) -> None:
+        output = await self.run_job_part(
+            job_info("JOB_FIRST", "accepted"), job_info("JOB_FIRST", "successful", **times), tmp_path
+        )
+        assert f"[OK    ] Job ist successful ({text})" in output, output
