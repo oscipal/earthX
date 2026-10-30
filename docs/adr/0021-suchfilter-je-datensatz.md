@@ -94,10 +94,10 @@ Anlass: Otto (Review zu #239, 30.10.2026): alle Felder erfassen, die die Quelle 
 **Verfahren (Einmal-Schritt nach `adr/0002`).** Das Skript macht keinen eigenen Aufruf: Die Antworten sind vorher mit `curl` gespeichert (Befehle im Kopf des Skripts), danach liest `inventory` sie, `commands` schreibt die Probe-Befehle, `analyze` vergleicht. Stichprobe: 756 Items aus 7 Gebieten zu einem Grad Kantenlänge (Alpen, Amazonas, Sahara, Norwegen, Portugal-Küste, Ganges, Australien) in zwei Jahreszeiten (Juni und Dezember 2024), dazu Probemonate 2017–2026 für die Werte der Baseline und die Queryables der Collection. Je Kandidat und Gebiet drei Filter (ab Median, bis Median, zwischen den Quartilen) bzw. je Wert einer; **252 Suchen**. Ein Feld **wirkt**, wenn jede Antwort genau die Szenen enthält, die die ungefilterte Stichprobe für diesen Filter vorhersagt, und mindestens ein Filter die Trefferzahl senkt.
 
 **Befunde.**
-- Die Queryables der Quelle nennen weiter nur `eo:cloud_cover`; die Items tragen 46 Eigenschaften.
+- Die Queryables der Quelle nennen weiter nur `eo:cloud_cover`; die Items tragen 44 Eigenschaften.
 - Alle 18 Kandidaten wirken. Eine Eigenschaft, die ein Item nicht trägt, schließt es aus (so bei `s2:dark_features_percentage`).
 - `eo:cloud_cover` ist exakt `s2:medium_proba_clouds_percentage + s2:high_proba_clouds_percentage + s2:thin_cirrus_percentage` (größte Abweichung 1·10⁻⁵ bei 756 Items); die Wolkenschatten zählen nicht mit.
-- **Baselines** der Items nach Zeit: 05.00 (2018–2021), 05.09 (2023), 05.10 (bis 03/2024), 05.11 (ab 09/2024), 05.12 (ab 02/2026), 05.13 (10/2026). Neue Versionen kommen alle paar Monate: Die Liste der Registry braucht dann eine Zeile, der Live-Test nennt den Wert.
+- **Baselines** der Items nach Zeit: 05.00 (2018–2021), 05.09 (2023), 05.10 (bis 06/2024), 05.11 (ab 09/2024), 05.12 (ab 02/2026), 05.13 (10/2026). Neue Versionen kommen alle paar Monate: Die Liste der Registry braucht dann eine Zeile, der Live-Test nennt den Wert.
 - `s2:dark_features_percentage` tragen nur Items bis Baseline 05.10 (364 von 756; ab 09/2024 keines).
 
 | Eigenschaft | Typ | Bereich in der Stichprobe | wirkt | Entscheidung | Beschriftung · Einheit · Gruppe |
