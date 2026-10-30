@@ -86,6 +86,7 @@ Plan: `docs/plans/ds/ds-02-advanced-search.md` §6.7, §6.8, §6.11. Keine neue 
 3. **Auf der Leitung:** Suche, „Load more“, Datums-Fallback und die Footprints der Coverage senden `query_by_collection` (§2.4), jeder Datensatz nur seine Filter; die Coverage sendet `query` (§5). Ein Filter mit falschem Feld wird nicht gesendet.
 4. **Coverage-Speicher:** der Schlüssel der gemerkten Antworten für einen Ausschnitt enthält die Filter; eine andere Filterung ist eine andere Karte.
 5. **Umschalter:** `DatasetSelect` wird von „Showing dataset“ (Results) und „Advanced search“ geteilt.
+6. **Änderung nach dem Review (Otto, 30.10.2026, zu #239):** Nicht mehr ein Aufklapper im scrollenden Menü, sondern ein Knopf über „Search“ („Advanced search · N“, N = gesetzte Filter) und ein Popup mit Umschalter, den Filtern unter den Überschriften der Registry, „Reset filters“ und „Done“ (`components/AdvancedSearch.tsx`, `Popover` mit `form`). Die Werte gehören dem Store, nicht dem Popup; alles andere in diesem Abschnitt gilt unverändert. Die Gliederung kommt aus `SearchFilter.group` (§8).
 
 ## 8. Nachtrag DS-02c: alle filterbaren Felder von Earth Search (Sentinel-2 L2A, 30.10.2026)
 

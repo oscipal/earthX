@@ -249,7 +249,11 @@ Kein Vorgabewert, auch kein voreingestellter Filterwert: Ein Filter wirkt erst, 
    - `within_aoi` liest das Frontend noch nicht; DS-03b hängt den Schalter „Within AOI“ an den Filter, an dem es gesetzt ist.
    - Die Zahlenfelder sind Textfelder mit `inputMode`, nicht `type="number"`: Ein Zahlenfeld meldet für halb getippten Text („20-“) einen leeren Wert und der Filter verschwände still, das Feld zeigte ihn aber weiter; im Textfeld sagt „Enter a number“, was los ist. Der Fehlerton `--invalid` ist im hellen Thema dunkler (Kontrast auf weißem Grund).
    - Browserprüfung: `frontend/e2e/advanced-search.cjs`.
-
+   - **Review Otto (30.10.2026, zu #239), beides in diesem PR:**
+     - **Oberfläche (ersetzt den Aufklapper aus §6.7):** „Advanced search“ ist ein Knopf direkt über „Search“, gleich breit, mit der Zahl der gesetzten Filter („Advanced search · 2“; über alle gewählten Datensätze, der Tooltip nennt sie), und nur da, wenn ein gewählter Datensatz Filter hat. Ein Klick öffnet ein Popup über der Karte: oben der Umschalter je Datensatz (`DatasetSelect`), darunter die Filter dieses Datensatzes unter den Überschriften der Registry (scrollbar), unten „Reset filters“ (je Datensatz, nur wenn etwas gesetzt ist) und „Done“. Esc, „Done“ und ein Klick daneben schließen und behalten die Werte. Ein falsches Feld bleibt rot, „Done“ schließt trotzdem, „Search“ bleibt gesperrt (der Knopf wird rot). Der Kopf „· check input“ des Aufklappers entfällt.
+     - **Gliederung aus der Registry:** `SearchFilter.group` (ohne Vorgabewert, beim Start geprüft, die Filter einer Gruppe stehen beieinander), veröffentlicht als `group`; Überschriften nur bei mehr als einer Gruppe. Ein neuer Filter der Registry erscheint ohne Änderung am Frontend; `FilterRow` ist die eine Stelle, an der DS-03b „Within AOI“ ergänzt.
+     - **Alle filterbaren Felder von Sentinel-2:** Messung und Entscheidung je Feld in `adr/0021` §8; Messskript `scripts/ds-02-filters/measure.py`; 13 Filter in „Clouds“, „Scene“, „Acquisition“. Der Live-Test vergleicht jetzt die Trefferzahl der Quelle mit der der Stichprobe und meldet neue Werte der letzten 30 Tage.
+     - Prüfskript PowerShell 5.1: `scripts/checks/ds-02-filters.ps1` (in der Sitzung nicht gelaufen, kein `pwsh`).
 Je PR ein Draft-PR, Log-Zeile, Prüfanleitung, `main` holen vor „fertig“. DS-03 beginnt nach DS-02c.
 
 ### 6.12 Fragen an Otto (beantwortet am 28.10.2026)
