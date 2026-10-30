@@ -76,7 +76,21 @@ Belegstufen wie in `adr/0009`: [M] gemessen, [P] am Primärdokument oder im Code
 
 ### 7.3 Stand der Technik [P] [S]
 
-_Folgt im nächsten Commit (Recherche läuft)._
+Abgerufen am 30.10.2026 über `raw.githubusercontent.com` (Quelltext der Doku bzw. Code, Stand `master`/`main`); die gerenderten Seiten von `gdal.org`, `developers.google.com` und `pro.arcgis.com` sind aus der Sitzung nicht erreichbar, dort nur Suchtreffer [S]. Die Lesung [P] lief über das Abrufwerkzeug der Sitzung, nicht Zeile für Zeile.
+
+| Methode | GDAL | rio-tiler / TiTiler | scikit-learn | openEO | Earth Engine | QGIS |
+|---|---|---|---|---|---|---|
+| linear | `gdal raster scale` (ab 3.11) begrenzt ohne `--no-clip` auf den Eingabebereich; `gdal_translate -scale` begrenzt nur mit `-exponent` [P] | `linear_rescale` begrenzt auf `in_range`, dann linear: die heutige Formel mit `clip` [P] | `MinMaxScaler`, `clip=False` [P] | `linear_scale_range` begrenzt auf `[inputMin, inputMax]` [P] | `unitScale` ohne Begrenzung [S] | „Stretch to MinMax“ [P] |
+| Perzentile | kein Befehl; `gdalinfo --stats`/`--hist` ohne Perzentile [P] | Statistik mit `percentiles` [2, 98] (Vorgabe), dann `rescale` vom Client [P] | — (`QuantileTransformer` hat ein anderes Ziel und zieht eine Zufallsstichprobe) [P] | `quantiles` (Hyndman-Fan Typ 7), dann `linear_scale_range` [P] | `Reducer.percentile`, große Mengen aus einem Histogramm (`maxBuckets`, `maxRaw`) [P] | „Cumulative count cut“, Vorgabe 2–98 %, aus einem Histogramm [P] |
+| Z-Score | — | `mean`, `std` (÷ N) [P] | `StandardScaler`, ÷ N; Varianz 0 → Teiler 1 [P] | kein Prozess gefunden | `mean`, `stdDev`, Rest selbst [S] | „Mean ± n · σ“, n = 2,0; σ mit ÷ (N − 1) [P] |
+| robust | — | — | `RobustScaler`, `quantile_range` (25, 75), Median; `unit_variance` optional [P] | über `quantiles` | über `Reducer.percentile` | — |
+
+- **Zwei Schritte sind üblich:** erst die Statistik über das Gebiet, dann die Gerade als reiner Pixel-Schritt mit festen Zahlen. So TiTiler (`/statistics`, dann `rescale`), openEO (`quantiles`, dann `linear_scale_range`), Earth Engine (`reduceRegion`, dann `unitScale`) und Sentinel Hub (Statistical API, dann feste Zahlen im Evalscript [S]). Eine Kachel trägt keine Statistik des Gebiets. Das stützt W1 [A].
+- **Histogramm statt Sortieren** für große Mengen: GDAL (`GetHistogram`, 256 Fächer), QGIS (Perzentile aus dem Histogramm, Ganzzahlen nach außen gerundet), Earth Engine. Unser festes Histogramm (M4-32) ist von dieser Art und dazu bitgleich über Rechner.
+- **Standardabweichung:** GDAL, rio-tiler und scikit-learn teilen durch N wie `processing/statistics.py`; QGIS durch N − 1. Der Plan bleibt bei N; der Methodentext sagt „population standard deviation“.
+- **Konstantes Band:** scikit-learn setzt den Teiler bei Spanne 0 auf 1 (`StandardScaler`, `MinMaxScaler`), statt abzulehnen. Übernommen in KE10.
+- **Je Band oder gemeinsam:** Alle Werkzeuge rechnen die Statistik je Band. Ein Praxistext zu Sentinel-2-Echtfarbe rät für RGB zu gemeinsamen Grenzen, weil sich je Band die Farbbalance verschiebt [S]; eine zweite Quelle fehlt. Das spricht für Option 2 von Frage 3 als spätere Ergänzung für Komposite, nicht für Analysebänder.
+- **ArcGIS** (Percent Clip, Standard Deviation) ist nur über Suchtreffer belegt, die Vorgaben nicht; daher nicht als Bezug genommen.
 
 ### 7.4 Jede Methode als Gerade [A]
 
@@ -89,7 +103,7 @@ _Folgt im nächsten Commit (Recherche läuft)._
 
 - 0–100 % ist „Minimum–Maximum der AOI“; ein eigener Eintrag „min–max“ entfällt damit.
 - Z-Score und robust teilen einen Kern (`subtract`, `divide`); Perzentile teilen den Kern von linear. Es kommen keine Rechenarten dazu, die vom Prozessor abhängen; die Bitstabilität von §15c gilt weiter, ein Test unter A und D von `adr/0016` §3.3 hält sie fest.
-- Nicht definiert sind `stddev` = 0, `p75 = p25` und `p_low = p_high` (konstantes Band in der AOI) und ein Band ohne gültigen Wert. Dann misst das Panel keine Zahl, der Schritt nennt den Grund, „Start“ ist gesperrt; das Rezept lehnt solche Werte ab (`422`).
+- Ist die Spanne 0 (`stddev` = 0, `p75 = p25`, `p_low = p_high`: ein konstantes Band in der AOI), teilt der Kern durch 1, wie scikit-learn (KE10). Ein Band ohne gültigen Wert in der AOI hat keine Zahl; der Schritt nennt den Grund, „Start“ ist gesperrt.
 
 ## 8. Optionen und Empfehlung
 
@@ -151,7 +165,7 @@ Ein Bereich für alle bleibt für linear wie heute (`in_min` … gelten für all
 
 (Zahlen erfunden, nur zur Form.)
 
-- `measured.bands` nennt genau die Bänder von `bands`, je mit den Werten der Methode (endlich; `low < high`, `stddev > 0`, `p25 < p75`, `p25 ≤ median ≤ p75`); `factor` ist das k der Route (1 = exakt), damit der Methodentext ehrlich ist.
+- `measured.bands` nennt genau die Bänder von `bands`, je mit den Werten der Methode (endlich; `low ≤ high`, `stddev ≥ 0`, `p25 ≤ median ≤ p75`); `factor` ist das k der Route (1 = exakt), damit der Methodentext ehrlich ist.
 - Das Streichen des Planers (`restrict`) nimmt mit einem Band auch seinen Eintrag aus `measured.bands`.
 - Version 2 bleibt registriert und angenommen (Rezepte ab NM4-43e), wird nicht mehr gelistet (wie `reproject` 3 neben 4). Das Panel liest einen Schritt Version 2 aus einer `recipe.json` als Version 3 `linear` mit denselben Zahlen; der Kern ist derselbe, die Werte sind bitgleich (KE4). Die Python-Umdeutung von Version 1 (`processing/upgrade.py`) bleibt, wie sie ist.
 - `earthx.__version__` bleibt: Kein bestehendes Rezept ändert seine Bytes (KE5).
@@ -216,6 +230,7 @@ Gelten, sofern du nicht widersprichst:
 - **KE7 Faktor:** je Methode auf einem Block 1024² gemessen wie §15m (kleinster Wert aus 15 Läufen) und mit dem Zuschlag des Statistik-Durchgangs (+12,1 %) aufgerundet; erwartet 0,3 für alle vier, weil der Kern derselbe ist [A]. Die Messung im Panel kostet den Job nichts.
 - **KE8 Methodentext** (NM4-08), z. B.: „The band NDVI was stretched from its 2nd to 98th percentile over the AOI (−0.12 to 0.83, as measured before the run) onto 0 to 1, values outside limited to the target range, in 32-bit floating point.“ Bei `factor` > 1 dazu „measured on a read 3 times coarser than the result“. Z-Score: „… standardized with its mean and standard deviation over the AOI (mean …, standard deviation …), (x − mean) / standard deviation …“.
 - **KE9 Log:** nichts Neues; die Route loggt wie bisher eine Zeile ohne AOI, Item-ID und Schlüssel. Gemessene Werte stehen in keinem Log.
+- **KE10 Spanne 0:** Teiler 1 wie scikit-learn (`StandardScaler`, `MinMaxScaler`): Z-Score und robust geben dann `x − mean` bzw. `x − median`, Perzentile `out_min` plus den Abstand zu p_low; ein Test hält es fest. Der Methodentext nennt es („constant over the AOI“).
 
 ## 10. Tests (Abnahme)
 
@@ -226,7 +241,7 @@ Backend (`pytest`, synthetische Raster wie `processing/test_core_statistics.py`)
 3. **Ende zu Ende:** Auftrag mit den gemessenen Zahlen als Job: Statistik des Ergebnisses passt zur Methode (Perzentile: p_low → `out_min`, p_high → `out_max` bis auf ein Fach; Z-Score: Mittel ~0, Streuung ~1 über die AOI).
 4. **Bitgleich:** derselbe Auftrag zweimal → gleiche SHA-256 von `result.tif`; Einstellungen A und D von `adr/0016` §3.3; Runner gegen Kern (`runner/test_compare.py`) je Methode; Kachel gegen Job auf der nativen Ebene (COG).
 5. **Speicher:** `test_memory_mask_normalize.py` um Version 3 (Z-Score, vier Bänder, 4096²) unter 500 MB.
-6. **Fehleingaben (`422`):** unbekannte Methode; Felder einer anderen Methode (`extra="forbid"`); `measured.bands` ohne ein Band von `bands` oder mit einem fremden; `stddev` 0, negativ, NaN, ∞; `low ≥ high`; `p25 > median`; `low` 3 (kein erlaubtes Paar); `factor` 0; leere `bands`; Groß-/Kleinschreibung doppelt. Version 2 weiter angenommen und bitgleich zu Version 3 `linear`.
+6. **Fehleingaben (`422`):** unbekannte Methode; Felder einer anderen Methode (`extra="forbid"`); `measured.bands` ohne ein Band von `bands` oder mit einem fremden; `stddev` negativ, NaN, ∞; `low > high`; `p25 > median`; `low` 3 (kein erlaubtes Paar); `factor` 0; leere `bands`; Groß-/Kleinschreibung doppelt. Version 2 weiter angenommen und bitgleich zu Version 3 `linear`.
 7. **Streichen:** Ein gestrichenes Band verlässt `bands` und `measured.bands`; mit und ohne Streichen bitgleich (`adr/0020` §4).
 8. **Zweckfremd:** Route mit `normalize` statistisch im Anfang der Kette ohne Zahlen → `422`; Methode auf einer Maskenschicht (`scl`) geht (Zahlen), ist aber kein Sonderfall; Auftrag mit 17 Dateien → `413` wie bisher.
 9. **Gegenprobe:** Tests 1–8 laufen gegen den Code vor der Änderung und scheitern (Version 3 unbekannt, Perzentile fehlen in der Antwort); Ergebnis im PR.
@@ -276,4 +291,24 @@ Kurz beantwortbar: je Frage eine Nummer.
 
 ## 12. Quellen
 
-_Folgen mit §7.3._
+- GDAL `gdal raster scale`: https://raw.githubusercontent.com/OSGeo/gdal/master/doc/source/programs/gdal_raster_scale.rst [P]
+- GDAL `gdal_translate`: https://raw.githubusercontent.com/OSGeo/gdal/master/doc/source/programs/gdal_translate.rst [P]
+- GDAL `gdal raster info`: https://raw.githubusercontent.com/OSGeo/gdal/master/doc/source/programs/gdal_raster_info.rst [P]
+- GDAL `gdal raster`: https://raw.githubusercontent.com/OSGeo/gdal/master/doc/source/programs/gdal_raster.rst [P]
+- GDAL VRT (`ScaleRatio`, `LUT`): https://raw.githubusercontent.com/OSGeo/gdal/master/doc/source/drivers/raster/vrt.rst [P]
+- GDAL `ComputeStatistics`, `GetHistogram`, `GetDefaultHistogram`: https://raw.githubusercontent.com/OSGeo/gdal/master/gcore/gdalrasterband.cpp [P]
+- rio-tiler `get_array_statistics`, `linear_rescale`: https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/utils.py [P]
+- rio-tiler `ImageData.statistics`, `rescale`: https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/models.py [P]
+- TiTiler `rescale`, `percentiles`: https://raw.githubusercontent.com/developmentseed/titiler/main/src/titiler/core/titiler/core/dependencies.py [P]
+- scikit-learn Skalierer: https://raw.githubusercontent.com/scikit-learn/scikit-learn/main/sklearn/preprocessing/_data.py [P]
+- openEO `linear_scale_range`: https://raw.githubusercontent.com/Open-EO/openeo-processes/master/linear_scale_range.json [P]
+- openEO `quantiles`: https://raw.githubusercontent.com/Open-EO/openeo-processes/master/quantiles.json [P]
+- Earth Engine `Reducer.percentile`: https://raw.githubusercontent.com/google/earthengine-api/master/python/ee/reducer.py [P]
+- Earth Engine `unitScale`: https://developers.google.com/earth-engine/apidocs/ee-image-unitscale [S]
+- QGIS Vorgaben (`CUMULATIVE_CUT_LOWER/UPPER`, `DEFAULT_STDDEV_FACTOR`): https://raw.githubusercontent.com/qgis/QGIS/master/src/core/raster/qgsrasterminmaxorigin.h [P]
+- QGIS `cumulativeCut`: https://raw.githubusercontent.com/qgis/QGIS/master/src/core/raster/qgsrasterinterface.cpp [P]
+- QGIS Handbuch, Raster-Eigenschaften: https://raw.githubusercontent.com/qgis/QGIS-Documentation/master/docs/user_manual/working_with_raster/raster_properties.rst [P]
+- Sentinel Hub Statistical API: https://docs.sentinel-hub.com/api/latest/api/statistical [S]
+- ArcGIS Pro Stretch: https://pro.arcgis.com/en/pro-app/latest/help/analysis/raster-functions/stretch-function.htm [S]
+- Sentinel-2-Stretch je Band gegen gemeinsam: https://mdsumner.github.io/gdal-r-python/sentinel2_stretch.html [S]
+- Intern: `plans/m4/m4-18-masking-normalisierung.md` §3.3, §7 F4/F5, §8; `plans/m4/m4-32-ergebnis-statistik.md`; `plans/querschnitt/nm4-19-auto-stretch-ueber-aoi.md` §7, §8, §14; `adr/0014` §15c, §15k, §15m, §15u; `adr/0020` §4, §10, §11, §15a.
