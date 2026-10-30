@@ -57,6 +57,52 @@ def band_math_recipe(expression: str = EXPRESSION) -> dict[str, Any]:
     }
 
 
+def band_math_recipe_v2(expression: str = EXPRESSION, name: str = "Index") -> dict[str, Any]:
+    """The same recipe as :func:`band_math_recipe`, written as recipe version 2: a named result and ``output.bands``."""
+    recipe = band_math_recipe(expression)
+    recipe["recipe_version"] = 2
+    recipe["steps"] = [{"op": "band_math", "op_version": 2, "params": {"expression": expression, "name": name}}]
+    recipe["output"] = {**recipe["output"], "bands": [name]}
+    return recipe
+
+
+NORMALIZE_METHODS: dict[str, dict[str, Any]] = {
+    "linear": {"method": "linear", "bands": ["red", "nir"], "in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True},
+    "percentile": {
+        "method": "percentile",
+        "bands": ["red", "nir"],
+        "low": 2,
+        "high": 98,
+        "out_min": 0.0,
+        "out_max": 1.0,
+        "clip": True,
+        "measured": {"factor": 1, "bands": {"red": {"p_low": 0.12, "p_high": 0.3}, "nir": {"p_low": 0.35, "p_high": 0.5}}},
+    },
+    "zscore": {
+        "method": "zscore",
+        "bands": ["red", "nir"],
+        "measured": {"factor": 1, "bands": {"red": {"mean": 0.2, "stddev": 0.05}, "nir": {"mean": 0.4, "stddev": 0.08}}},
+    },
+    "robust": {
+        "method": "robust",
+        "bands": ["red", "nir"],
+        "measured": {
+            "factor": 3,
+            "bands": {"red": {"p25": 0.15, "median": 0.2, "p75": 0.25}, "nir": {"p25": 0.35, "median": 0.4, "p75": 0.46}},
+        },
+    },
+}
+
+
+def normalize_recipe(method: str = "percentile", params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Version 3 of ``normalize`` over two scaled COG bands (NM4-11): the numbers of the method stand in the recipe."""
+    recipe = band_math_recipe()
+    recipe["recipe_version"] = 2
+    recipe["steps"] = [{"op": "normalize", "op_version": 3, "params": params or NORMALIZE_METHODS[method]}]
+    recipe["output"] = {**recipe["output"], "bands": ["red", "nir"]}
+    return recipe
+
+
 def reproject_recipe(resampling: str = "bilinear") -> dict[str, Any]:
     """A reprojection of one band of the CF store, decoded by the store's own attributes."""
     key = "r10m:b04"

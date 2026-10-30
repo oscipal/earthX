@@ -5,12 +5,19 @@ import type { MapLayer } from '../layers';
 import { isJobId, resultUrl } from '../processing';
 import { layerProcessBlock, useProcessingStore, ZIP_LABEL } from '../processingStore';
 import { MIN_REMAINING_MS, RESULT_ZIP } from '../resultLayer';
+import { hasResultsPanel } from '../sections';
+import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
+import Eye from './Eye';
+import ResultsEye from './ResultsEye';
 import Tip from './Tip';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
 export const RESAMPLED_LAYER_TEXT = 'Resampled to a common grid';
 export const DELETED_LAYER_TIP = 'Job deleted – restore to show';
+export const HIDE_LAYER_TIP = 'Hide layer';
+export const SHOW_LAYER_TIP = 'Show layer';
+export const RESULTS_ENTRY_TIP = 'Search results, the view and the processing preview. Move to change what lies above.';
 
 // Marks a result layer "Expired" when the time comes (M4-13c-5): one timer for the
 // soonest of them, set again after every change to the list. The tiler's `410` is
@@ -83,6 +90,7 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
   const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
   const processBlock = layerProcessBlock(l, datasets);
   const locked = l.result?.deleted === true;
+  const shown = l.visible && !locked;
   const notes = [l.result?.expired && !locked ? EXPIRED_LAYER_TEXT : null, l.result?.resampled === true ? RESAMPLED_LAYER_TEXT : null].filter(
     (note): note is string => note !== null,
   );
@@ -90,15 +98,17 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
     <li className={`layer-row${locked ? ' locked' : ''}`}>
       <button
         type="button"
-        className={`lm-eye${l.visible && !locked ? '' : ' off'}`}
+        className={`lm-eye${shown ? '' : ' off'}`}
         data-col="eye"
-        title={locked ? DELETED_LAYER_TIP : l.visible ? 'Hide' : 'Show'}
+        title={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP}
+        aria-label={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP}
+        aria-pressed={locked ? undefined : shown}
         aria-disabled={locked || undefined}
         onClick={() => {
           if (!locked) toggleVis(l.id);
         }}
       >
-        {l.visible && !locked ? '●' : '○'}
+        <Eye off={!shown} />
       </button>
       <button
         type="button"
@@ -182,10 +192,44 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
   );
 }
 
+// The entry "Results" (NM4-59): the search results, the view and the live preview, moved among the layers as one. It has
+// an eye and ▲/▼ only; the other places stay empty.
+function ResultsRow({ first, last }: { first: boolean; last: boolean }) {
+  const move = useAppStore((s) => s.moveResults);
+  return (
+    <li className="layer-row results-row">
+      <ResultsEye />
+      <span className="lm-name results-name" data-col="name" title={RESULTS_ENTRY_TIP}>
+        Results
+      </span>
+      <Slot col="opacity" />
+      <button type="button" className="lm-btn" data-col="up" title="Move up" disabled={first} onClick={() => move('up')}>
+        ▲
+      </button>
+      <button type="button" className="lm-btn" data-col="down" title="Move down" disabled={last} onClick={() => move('down')}>
+        ▼
+      </button>
+      <Slot col="process" />
+      <Slot col="download" />
+      <Slot col="note" />
+      <Slot col="remove" />
+    </li>
+  );
+}
+
 export default function LayerManager() {
   const layers = useAppStore((s) => s.layers);
+  // The entry "Results" is there while the search has results (NM4-59); without them the view and the preview lie at its
+  // place all the same.
+  const hasResults = useAppStore((s) => hasResultsPanel(s.sections));
+  const resultsAt = useAppStore((s) => clampResultsAt(s.resultsAt, s.layers));
   useResultExpiry();
   useDeletedResults();
+  const rows = layers.length + (hasResults ? 1 : 0);
+  const rowOf = (l: MapLayer, i: number) => {
+    const row = hasResults && i >= resultsAt ? i + 1 : i;
+    return <LayerRow key={l.id} layer={l} index={row} last={row === rows - 1} />;
+  };
 
   // Docked beside the rail (UI-01 §6.9). It stays mounted when another panel is open: the timer of the
   // result layers above runs either way.
@@ -199,15 +243,15 @@ export default function LayerManager() {
           </div>
         </div>
 
-        {layers.length === 0 ? (
+        {rows === 0 ? (
           <p className="hint-text lm-empty">
             No layers yet — select an image and “Add to layers”.
           </p>
         ) : (
           <ul className="layer-list">
-            {layers.map((l, i) => (
-              <LayerRow key={l.id} layer={l} index={i} last={i === layers.length - 1} />
-            ))}
+            {layers.slice(0, resultsAt).map(rowOf)}
+            {hasResults && <ResultsRow first={resultsAt === 0} last={resultsAt === layers.length} />}
+            {layers.slice(resultsAt).map((l, i) => rowOf(l, i + resultsAt))}
           </ul>
         )}
       </div>

@@ -24,14 +24,14 @@ declare global {
 
 // A polygon with coordinates that must not show up on screen.
 const ORDER: Order = {
-  recipe_version: 1,
-  inputs: [{ name: 'a', dataset: 'sentinel-2-c1-l2a', groups: [['S1', 'S2']], assets: ['red', 'nir'] }],
+  recipe_version: 2,
+  inputs: [{ name: 'a', dataset: 'sentinel-2-c1-l2a', groups: [['S1', 'S2']] }],
   aoi: { type: 'Polygon', coordinates: [[[10.4123, 50.4123], [10.6, 50.4123], [10.6, 50.6], [10.4123, 50.4123]]] },
   steps: [
-    { op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)', output: 'ndvi', nodata: 0 } },
-    { op: 'reproject', op_version: 1, params: { crs: 'EPSG:3035', geometry: { type: 'Point', coordinates: [1.23456, 2.34567] }, bands: ['a', 'b'] } },
+    { op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'NDVI', nodata: 0 } },
+    { op: 'reproject', op_version: 4, params: { crs: 'EPSG:3035', geometry: { type: 'Point', coordinates: [1.23456, 2.34567] }, bands: ['a', 'b'] } },
   ],
-  output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+  output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI'] },
 };
 
 // The actions a test replaces by a spy, put back after it.
@@ -90,7 +90,7 @@ const key = (target: Element, name: string) => act(() => target.dispatchEvent(ne
 
 describe('the window', () => {
   it('takes the place of the order in the processing window, and "‹ Order" brings the order back, unchanged', () => {
-    act(() => useProcessingStore.setState({ steps: [{ key: 1, op: 'band_math', opVersion: 1, values: { expression: 'a' } }] }));
+    act(() => useProcessingStore.setState({ steps: [{ key: 1, op: 'band_math', opVersion: 2, values: { expression: 'a', name: 'NDVI' } }] }));
     show(jobEntry(1), <ProcessingPanel />);
     expect(container.querySelector('[aria-label="Job"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Processing"]')).toBeNull();
@@ -319,7 +319,7 @@ describe('the steps', () => {
     show(jobEntry(1, { order: ORDER }));
     const lines = [...container.querySelectorAll('.pm-step')].map((l) => [l.querySelector('strong')?.textContent, l.querySelector('.pm-step-values')?.textContent]);
     expect(lines).toEqual([
-      ['Band math', 'expression: (nir - red) / (nir + red) · output: ndvi · nodata: 0'],
+      ['Band math', 'expression: (nir - red) / (nir + red) · name: NDVI · nodata: 0'],
       ['Reproject', 'crs: EPSG:3035 · bands: a, b'],
     ]);
     expect(container.querySelector('.pp-summary')?.textContent).toBe('sentinel-2-c1-l2a · 2 scenes · AOI only');
@@ -338,7 +338,7 @@ describe('the steps', () => {
   });
 
   it('cut a long value and leave out what is not plain text', () => {
-    const long: Order = { ...ORDER, steps: [{ op: 'band_math', op_version: 1, params: { expression: 'x'.repeat(300), nested: { a: 1 }, mixed: [1, { b: 2 }] } }] };
+    const long: Order = { ...ORDER, steps: [{ op: 'band_math', op_version: 2, params: { expression: 'x'.repeat(300), nested: { a: 1 }, mixed: [1, { b: 2 }] } }] };
     show(jobEntry(1, { order: long }));
     const values = container.querySelector('.pm-step-values')!.textContent!;
     expect(values).toBe(`expression: ${'x'.repeat(120)}…`);

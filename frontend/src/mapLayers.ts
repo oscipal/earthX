@@ -22,6 +22,7 @@ import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './t
 
 const AOI_SRC = 'aoi-src';
 const SEL_SRC = 'mosaicsel-src'; // highlighted (selected-for-download) footprints
+const SEL_LYR = 'mosaicsel-line';
 const COVERAGE_SRC = 'coverage-src'; // the density grid (M2-07c)
 const COVERAGE_FOOTPRINTS_SRC = 'coverage-footprints-src'; // real footprints once footprints_advised
 const COVERAGE_AREA_SRC = 'coverage-area-src'; // a one-off product's extent (M3-12, F-07)
@@ -45,25 +46,61 @@ const viewTwinsHidden = new Set<string>();
 // it has been superseded before it touches the map.
 let syncGen = 0;
 const MAX_LAYER_OVERLAYS = 200;
-// Where the layer manager's rasters end: a hidden background layer right under
-// the AOI. Every pinned layer is stacked directly under it, so the active view
-// (browse mosaic, full-resolution tiles: `beforeAoi`) is always above them.
-const LAYERS_TOP = 'layers-top';
-// Right above `LAYERS_TOP`, under the view: the quicklooks of the search results over a view go just under this marker, so
-// that the full-resolution view (placed `beforeAoi`) lies over them, and the outlines of the results stay over both
-// (Otto, 27.10.2026).
-const RESULTS_TOP = 'results-top';
-// Right under the AOI, over everything else: a search result that is ticked has its quicklook over the view, the other
-// quicklooks and the pinned layers, whichever of them was drawn first (Otto, 27.10.2026, "immer der oberste Layer").
-// Every other raster of the app goes under this marker (`aboveAll`), the ticked quicklooks over it (`topOfAll`).
-const TICKED_TOP = 'ticked-top';
-// Right over the quicklooks of the ticked results (they go under it, `topOfAll`): the live preview of the processing
-// panel goes over this marker, so that it lies over the ticked quicklooks and under the overlays and the AOI (Otto,
-// 28.10.2026, supplement to UI-02 8.10). A pinned preview is a layer of the manager and lies under them all.
-const PREVIEW_BASE = 'preview-base';
-// Right over the live preview and under the area of interest: the overlays of the "Basemap" menu (names,
-// graticule) lie between this marker and the AOI, so that they stay over every picture (UI-02b, `mapStyles.ts`).
+// The one marker of the app's pictures: every raster of the app and the outlines of the results lie right under it, in
+// the order `restackAll` makes; the overlays of the "Basemap" menu (names, graticule) lie between it and the AOI, so that
+// they stay over every picture (UI-02b, `mapStyles.ts`).
 const OVERLAYS_BASE = 'overlays-base';
+
+// --- one order of the pictures (NM4-59, Otto, 30.10.2026) ---
+//
+// The layer manager holds the pinned layers and one entry "Results": the search results, the view and the live preview.
+// `resultsAt` pinned layers lie above "Results", the others below it. Within "Results" the tiers below are fixed, bottom
+// to top; in a tier the rank decides (the order of the ticks, the last ticked on top), and of equal rank the layer that
+// was placed later. Every layer is placed at the top and given its key; `restackAll` then lays all of them out from the
+// state alone, whatever was on the map when a picture arrived.
+const TIERS = ['view', 'otherTicked', 'openRest', 'openTicked', 'preview', 'outline'] as const;
+type Tier = (typeof TIERS)[number];
+interface ResultsKey {
+  tier: number;
+  rank: number;
+  seq: number;
+}
+const resultsKeys = new Map<string, ResultsKey>();
+let placedSeq = 0;
+
+function keyResults(lyrId: string, tier: Tier, rank = 0): void {
+  resultsKeys.set(lyrId, { tier: TIERS.indexOf(tier), rank, seq: ++placedSeq });
+}
+
+const byKey = ([, a]: [string, ResultsKey], [, b]: [string, ResultsKey]) => a.tier - b.tier || a.rank - b.rank || a.seq - b.seq;
+
+// Where a new picture of the app goes before `restackAll` gives it its place: under the marker, or under the AOI where
+// the marker is not there (a map without it, as in the tests of the older functions).
+const rastersTop = (map: MapLibreMap): string | undefined =>
+  map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
+
+// Lays the pictures of the app out in the order the state asks for, right under `rastersTop`, bottom to top: the pinned
+// layers below "Results", "Results" by tier, the pinned layers above it. Moves only what is out of place; a move reloads
+// no tile. A map that cannot tell its order is left as it is.
+function restackAll(map: MapLibreMap): void {
+  if (typeof map.getLayersOrder !== 'function') return;
+  const pinned = wantedOverlays.filter((w) => isPlaced(map, w));
+  const results = [...resultsKeys].filter(([id]) => map.getLayer(id)).sort(byKey).map(([id]) => id);
+  const want = [...pinned.filter((w) => !w.above).map((w) => w.lyrId), ...results, ...pinned.filter((w) => w.above).map((w) => w.lyrId)];
+  const order = map.getLayersOrder();
+  const top = rastersTop(map);
+  let above = top;
+  for (let i = want.length - 1; i >= 0; i--) {
+    const id = want[i];
+    const at = above === undefined ? order.length : order.indexOf(above);
+    if (order[at - 1] !== id) {
+      map.moveLayer(id, above);
+      order.splice(order.indexOf(id), 1);
+      order.splice(above === undefined ? order.length : order.indexOf(above), 0, id);
+    }
+    above = id;
+  }
+}
 // Cache of processed quicklook data URLs, keyed by URL + the parameters that
 // change what gets drawn (freistellung threshold, AOI clip) so the same
 // source image loaded plain (browse mode, a pinned layer) and clipped to an
@@ -176,7 +213,6 @@ function placeImage(
   // in `aoiClip.ts` for why), and `paint` itself accepts one loosely already
   // (`coverage-heat`'s `fill-color` above).
   opacity: number | unknown[],
-  before: string | undefined = beforeAoi(map),
 ): void {
   if (map.getSource(srcId)) return;
   map.addSource(srcId, { type: 'image', url: dataUrl, coordinates: coords });
@@ -187,7 +223,7 @@ function placeImage(
       source: srcId,
       paint: { 'raster-opacity': opacity as never, 'raster-fade-duration': 0 },
     },
-    before,
+    rastersTop(map),
   );
 }
 
@@ -214,7 +250,6 @@ function placeRaster(
   bounds: [number, number, number, number],
   opacity: number,
   zoom: RasterZoom,
-  before: string | undefined = beforeAoi(map),
 ): void {
   if (map.getSource(srcId)) return;
   map.addSource(srcId, {
@@ -233,7 +268,7 @@ function placeRaster(
       ...(zoom.hideFrom === undefined ? {} : { maxzoom: zoom.hideFrom }),
       paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 },
     },
-    before,
+    rastersTop(map),
   );
 }
 
@@ -261,10 +296,6 @@ export function hasOwnLayers(map: MapLibreMap): boolean {
 export function ensureBaseLayers(map: MapLibreMap): void {
   if (!map.getSource(AOI_SRC)) {
     map.addSource(AOI_SRC, { type: 'geojson', data: EMPTY_FC });
-    map.addLayer({ id: LAYERS_TOP, type: 'background', layout: { visibility: 'none' } });
-    map.addLayer({ id: RESULTS_TOP, type: 'background', layout: { visibility: 'none' } });
-    map.addLayer({ id: TICKED_TOP, type: 'background', layout: { visibility: 'none' } });
-    map.addLayer({ id: PREVIEW_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({ id: OVERLAYS_BASE, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({
       id: 'aoi-fill',
@@ -338,12 +369,17 @@ export function ensureBaseLayers(map: MapLibreMap): void {
   }
   if (!map.getSource(SEL_SRC)) {
     map.addSource(SEL_SRC, { type: 'geojson', data: EMPTY_FC });
-    map.addLayer({
-      id: 'mosaicsel-line',
-      type: 'line',
-      source: SEL_SRC,
-      paint: { 'line-color': '#ffd166', 'line-width': 3, 'line-blur': 1, 'line-opacity': 0.95 },
-    });
+    // The outlines of the ticked scenes are the top tier of "Results" (NM4-59): under the overlays and the AOI.
+    map.addLayer(
+      {
+        id: SEL_LYR,
+        type: 'line',
+        source: SEL_SRC,
+        paint: { 'line-color': '#ffd166', 'line-width': 3, 'line-blur': 1, 'line-opacity': 0.95 },
+      },
+      rastersTop(map),
+    );
+    keyResults(SEL_LYR, 'outline');
   }
 }
 
@@ -407,6 +443,18 @@ let retired = 0;
 let pendingImages = 0;
 let drawnNew = false;
 
+// A time step that is played (NM4-18) arrives over the picture it replaces without being seen: its layers are laid at
+// opacity 0, `holding` says when and to whom the step is shown, and the step is shown, with the old picture taken away
+// in the same breath, once it has loaded for the part of the map in view and `notBefore` has passed. Until then the old
+// picture stays, never the basemap. A step that is asked for before the one before has arrived drops that one.
+interface Hold {
+  // The earliest time (ms since the epoch) the step may be shown: the picture before it was shown at least that long.
+  notBefore: number;
+  onShown: () => void;
+}
+let holding: Hold | null = null;
+const arriving = new Set<string>();
+
 const dynamicId = (kind: (typeof DYNAMIC_KINDS)[number], i: number): string => `${bank}-${kind}-${i}`;
 
 function hasDynamic(map: MapLibreMap, which: DynamicBank): boolean {
@@ -425,6 +473,7 @@ function removeDynamic(map: MapLibreMap, which: DynamicBank): void {
       if (map.getLayer(lyr)) map.removeLayer(lyr);
       viewPictures.delete(lyr);
       viewTwinsHidden.delete(lyr);
+      resultsKeys.delete(lyr);
     }
     for (const src of [`${which}-img-src-${i}`, `${which}-tiles-src-${i}`]) {
       if (map.getSource(src)) map.removeSource(src);
@@ -432,24 +481,66 @@ function removeDynamic(map: MapLibreMap, which: DynamicBank): void {
   }
 }
 
+function revealArriving(map: MapLibreMap): void {
+  for (const lyr of arriving) if (map.getLayer(lyr)) map.setPaintProperty(lyr, 'raster-opacity', 1);
+  arriving.clear();
+}
+
+// The step that was held back is on the map: said once, to whoever asked for it to be held.
+function announceShown(): void {
+  const done = holding?.onShown;
+  holding = null;
+  done?.();
+}
+
 function finishRetired(map: MapLibreMap): void {
-  if (!retiring) return;
-  clearTimeout(retiring.timer);
-  removeDynamic(map, retiring.bank);
+  if (retiring) clearTimeout(retiring.timer);
+  revealArriving(map);
+  if (retiring) removeDynamic(map, retiring.bank);
   retiring = null;
+  announceShown();
+}
+
+const retireTimer = (map: MapLibreMap, id: number) => setTimeout(() => retiring?.id === id && finishRetired(map), RETIRE_AFTER_MS);
+
+// Lays a layer of the step being held at opacity 0 (`finishRetired` shows it), when there is a picture to hold.
+function holdBack(map: MapLibreMap, lyrId: string): void {
+  if (!holding || !retiring || !map.getLayer(lyrId)) return;
+  // No fade to opacity 1 (MapLibre's 300 ms): the old picture goes at once, and the new one must be there at once.
+  map.setPaintProperty(lyrId, 'raster-opacity-transition', { duration: 0, delay: 0 });
+  map.setPaintProperty(lyrId, 'raster-opacity', 0);
+  arriving.add(lyrId);
 }
 
 // Start of a sync of the view: what the view drew is taken away at once where the map cannot say when the new picture is
 // there, else it stays, under the new one, until `settleRetired`.
-function retireDynamicMosaic(map: MapLibreMap): void {
+function retireDynamicMosaic(map: MapLibreMap, hold = false): void {
   pendingImages = 0;
+  if (!hold) holding = null;
   // A style reload (a theme switch) wipes the layers a picture was waiting to be taken away from.
   if (retiring && (retiring.map !== map || !hasDynamic(map, retiring.bank))) {
     clearTimeout(retiring.timer);
     retiring = null;
+    arriving.clear();
   }
-  // The last sync drew nothing yet (a mosaic still on its way): the picture before it waits on for this one.
-  if (retiring && !drawnNew) return;
+  // The last sync drew nothing yet (a mosaic still on its way): the picture before it waits on for this one. A step that
+  // is asked for after a step that is still on its way gets its own time.
+  if (retiring && !drawnNew) {
+    if (hold) {
+      clearTimeout(retiring.timer);
+      retiring.timer = retireTimer(map, retiring.id);
+    }
+    return;
+  }
+  // The step before this one has not arrived: it is dropped, the picture on the map stays, and the wait starts anew.
+  if (retiring && hold && arriving.size > 0) {
+    removeDynamic(map, bank);
+    arriving.clear();
+    drawnNew = false;
+    clearTimeout(retiring.timer);
+    retiring.timer = retireTimer(map, retiring.id);
+    return;
+  }
   finishRetired(map);
   drawnNew = false;
   if (!hasDynamic(map, bank)) {
@@ -461,17 +552,50 @@ function retireDynamicMosaic(map: MapLibreMap): void {
     return;
   }
   const id = ++retired;
-  retiring = { id, map, bank, timer: setTimeout(() => retiring?.id === id && finishRetired(map), RETIRE_AFTER_MS) };
+  retiring = { id, map, bank, timer: retireTimer(map, id) };
   bank = bank === 'm' ? 'n' : 'm';
 }
 
+// Calls `done` once the layers that arrive have every tile for the part of the map in view. Only those sources count,
+// not `idle`, which waits for the basemap as well. Looked at after each frame: a source that has just been added has no
+// tile asked for until a frame has been drawn, and only then says it is loaded.
+function onceArrived(map: MapLibreMap, gen: number, done: () => void): void {
+  const sources = [...arriving].flatMap((lyr) => (map.getLayer(lyr) as { source?: string } | undefined)?.source ?? []);
+  const check = () => {
+    // Dropped for a newer step, or its sources are gone (a style reload): nothing to wait for, and none to ask about.
+    if (gen !== syncGen || !sources.every((src) => map.getSource(src))) return map.off('render', check);
+    if (!sources.every((src) => map.isSourceLoaded(src))) return;
+    map.off('render', check);
+    done();
+  };
+  map.on('render', check);
+}
+
 // The new picture is on the map once the quicklooks it waits for have arrived and the map has no tile left to load.
+// A step that is held waits for the tiles of its own layers and for `notBefore` instead; one with no picture to hold is
+// only announced.
 function settleRetired(map: MapLibreMap): void {
-  if (!retiring || !drawnNew || pendingImages > 0) return;
-  const { id } = retiring;
-  map.once('idle', () => {
-    if (retiring?.id === id && pendingImages === 0) finishRetired(map);
-  });
+  if (!drawnNew || pendingImages > 0 || (!retiring && !holding)) return;
+  const id = retiring?.id;
+  const gen = syncGen;
+  const show = () => (retiring ? finishRetired(map) : announceShown());
+  const settle = () => {
+    if (pendingImages !== 0 || retiring?.id !== id) return;
+    // The minimum time is the picture before it's: with none, there is nothing to wait for.
+    const wait = retiring ? (holding?.notBefore ?? 0) - Date.now() : 0;
+    if (wait <= 0) return show();
+    setTimeout(() => gen === syncGen && retiring?.id === id && show(), wait);
+  };
+  if (holding && retiring) onceArrived(map, gen, settle);
+  else map.once('idle', settle);
+}
+
+// A held step that draws nothing (no preview, or the results are off the map) is shown, which takes the picture before it
+// away, once that picture has had its time.
+function finishWhenDue(map: MapLibreMap, gen: number): void {
+  const wait = (holding?.notBefore ?? 0) - Date.now();
+  if (wait <= 0) return finishRetired(map);
+  setTimeout(() => gen === syncGen && finishRetired(map), wait);
 }
 
 // A sync that draws nothing new has nothing to wait for.
@@ -479,46 +603,25 @@ function dropRetired(map: MapLibreMap): void {
   finishRetired(map);
 }
 
-// Where the quicklooks of the results go while a view is open: under the marker above the layer manager's stack.
-const underTheView = (map: MapLibreMap): string | undefined => (map.getLayer(RESULTS_TOP) ? RESULTS_TOP : beforeAoi(map));
-
-// What a new raster of the app goes under: the marker of the ticked quicklooks, or the AOI where the marker is not
-// there (a map without it, as in the tests of the older functions).
-const aboveAll = (map: MapLibreMap): string | undefined =>
-  map.getLayer(TICKED_TOP) ? TICKED_TOP : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
-
-// Where the quicklook of a ticked search result goes: over `TICKED_TOP`, under the marker of the live preview.
-const topOfAll = (map: MapLibreMap): string | undefined =>
-  map.getLayer(PREVIEW_BASE) ? PREVIEW_BASE : map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
-
-// Where the quicklook of a ticked scene goes among the others: the scenes lie over each other in the order they were
-// ticked (`ticks`, last on top), whichever picture arrives first. Just under the nearest scene ticked after it that is on
-// the map already, else on top of them all (Otto, 28.10.2026). `layersOf`: the layers a scene's quicklook can have.
-function tickedPlace(
-  map: MapLibreMap,
-  id: string,
-  ticks: readonly string[],
-  layersOf: ReadonlyMap<string, readonly string[]>,
-): string | undefined {
-  for (let rank = ticks.indexOf(id) + 1; rank > 0 && rank < ticks.length; rank++) {
-    const above = layersOf.get(ticks[rank])?.find((lyr) => map.getLayer(lyr));
-    if (above) return above;
-  }
-  return topOfAll(map);
+// What decides the places of the scenes of the results: the ticks in the order they were made, and which scenes belong to
+// the group that is open.
+interface ResultsOrder {
+  ticks: readonly string[];
+  isOpen: (id: string) => boolean;
 }
 
-// Where the live preview goes: over everything raster, under the overlays and the AOI.
-const previewTop = (map: MapLibreMap): string | undefined =>
-  map.getLayer(OVERLAYS_BASE) ? OVERLAYS_BASE : map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
-
-// Where a new raster goes: under the marker of the ticked quicklooks, and so under the preview, which lies over it. On a
-// map without the markers the preview stays on top of whatever loads after it (a quicklook is placed when its image has
-// arrived).
-const beforeAoi = (map: MapLibreMap): string | undefined =>
-  map.getLayer(TICKED_TOP) ? TICKED_TOP : map.getLayer(`${PREVIEW_LYR}0`) ? `${PREVIEW_LYR}0` : aboveAll(map);
+// The tier of a scene of the results within "Results" (NM4-55, NM4-59, Otto, 30.10.2026): a ticked scene of the open group
+// on top, then the other scenes of the open group, then the ticked scenes of the other groups and datasets; ticked ones in
+// the order they were ticked, the last on top. In a view the same as in browsing.
+function keyScene(lyrId: string, id: string, order: ResultsOrder): void {
+  const rank = order.ticks.indexOf(id);
+  if (rank < 0) keyResults(lyrId, 'openRest');
+  else keyResults(lyrId, order.isOpen(id) ? 'openTicked' : 'otherTicked', rank);
+}
 
 function clearPreview(map: MapLibreMap): void {
   for (let i = 0; i < MAX_MOSAIC_LAYERS; i++) {
+    resultsKeys.delete(`${PREVIEW_LYR}${i}`);
     if (map.getLayer(`${PREVIEW_LYR}${i}`)) map.removeLayer(`${PREVIEW_LYR}${i}`);
     if (map.getSource(`${PREVIEW_SRC}${i}`)) map.removeSource(`${PREVIEW_SRC}${i}`);
   }
@@ -532,7 +635,7 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
   clearPreview(map);
   // Drawn from the last scene to the first, so the first ends up topmost: the
   // order of the full-resolution view (`syncFocusRaster`). The lowest layer is
-  // `preview-lyr-0`; on a map with the markers the preview lies over `PREVIEW_BASE`, over every other raster.
+  // `preview-lyr-0`; the preview is the tier of "Results" under the outlines.
   [...overlays]
     .slice(0, MAX_MOSAIC_LAYERS)
     .reverse()
@@ -556,9 +659,11 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
           ...(overlay.hideFrom === undefined ? {} : { maxzoom: overlay.hideFrom }),
           paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
         },
-        previewTop(map),
+        rastersTop(map),
       );
+      keyResults(lyrId, 'preview', i);
     });
+  restackAll(map);
 }
 
 // Tells whether the tiles of the preview are on their way: from the first one the map asks for until every source of
@@ -602,23 +707,21 @@ function addPreview(
   i: number,
   gen: number,
   dataset: DatasetOption,
-  ticks: readonly string[],
-  layersOf: ReadonlyMap<string, readonly string[]>,
+  order: ResultsOrder,
 ): void {
   const plan = quicklookPlan(item, dataset);
   if (!plan) return;
-  // A ticked scene lies over the others, the last ticked on top; the others go where later rasters go (`undefined`: the
-  // default place).
-  const before = (): string | undefined => (ticks.includes(item.id) ? tickedPlace(map, item.id, ticks, layersOf) : undefined);
   if (plan.kind === 'tiles') {
     // Placed by the tile grid itself, not by four corner coordinates: a tile is
     // already in the map's own projection, so there is nothing to reproject and
     // nothing to get wrong at a scene's rotated edges (the M2-16 bug).
     if (!item.bbox) return;
     const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
-    const zoom = { minZoom: plan.zoom, maxZoom: plan.zoom };
+    const zoom = { minZoom: plan.minZoom, maxZoom: plan.maxZoom };
     const lyrId = dynamicId('tiles-lyr', i);
-    placeRaster(map, dynamicId('tiles-src', i), lyrId, tileUrl, item.bbox, 1, zoom, before());
+    keyScene(lyrId, item.id, order);
+    placeRaster(map, dynamicId('tiles-src', i), lyrId, tileUrl, item.bbox, 1, zoom);
+    holdBack(map, lyrId);
     drawsPicture(map, lyrId, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
     return;
   }
@@ -627,13 +730,17 @@ function addPreview(
   const srcId = dynamicId('img-src', i);
   const lyrId = dynamicId('img-lyr', i);
   const nodataMax = dataset.viewable ? dataset.quicklookNodataMax : null;
+  // Keyed when asked for, not when the picture arrives: its place does not depend on when that is.
+  keyScene(lyrId, item.id, order);
   pendingImages++;
   loadProcessed(plan.href, nodataMax, null, (dataUrl) => {
     if (gen !== syncGen) return; // a newer sync superseded this group
     pendingImages--;
     try {
-      placeImage(map, srcId, lyrId, dataUrl, coords, 1, before());
+      placeImage(map, srcId, lyrId, dataUrl, coords, 1);
+      holdBack(map, lyrId);
       drawsPicture(map, lyrId, overlaySignature({ kind: 'image', url: plan.href, coords, nodataMax }));
+      restackAll(map);
     } catch {
       /* map/style went away while loading */
     }
@@ -650,6 +757,8 @@ function addPreview(
 function addQuicklookUnderlay(map: MapLibreMap, underlay: ImageOverlay, i: number, gen: number): void {
   const srcId = dynamicId('img-src', i);
   const lyrId = dynamicId('img-lyr', i);
+  // Keyed before the tiles of its scene are placed, so that it lies under them whenever it arrives.
+  keyResults(lyrId, 'view');
   pendingImages++;
   loadProcessed(underlay.url, underlay.nodataMax, underlay.clipRings ?? null, (dataUrl) => {
     if (gen !== syncGen) return; // a newer sync superseded this one
@@ -658,6 +767,7 @@ function addQuicklookUnderlay(map: MapLibreMap, underlay: ImageOverlay, i: numbe
       placeImage(map, srcId, lyrId, dataUrl, underlay.coords, 1);
       // The quicklook of a pinned layer of the same scene takes its place (`drawsPicture`).
       drawsPicture(map, lyrId, overlaySignature(underlay));
+      restackAll(map);
     } catch {
       /* map/style went away while loading */
     }
@@ -678,6 +788,7 @@ function addTiles(
 ): void {
   const srcId = dynamicId('tiles-src', i);
   const lyrId = dynamicId('tiles-lyr', i);
+  keyResults(lyrId, 'view');
   placeRaster(map, srcId, lyrId, clipTileUrl(buildTileUrl(info.tileUrl, render), clip), info.bounds, 1, info);
   drawsPicture(map, lyrId, tilesPicture(info, render, clip));
 }
@@ -711,6 +822,8 @@ interface WantedOverlay {
   opacity: number;
   // Everything the source is built from; a different one means a different source.
   sig: string;
+  // Of a layer above "Results" in the list (NM4-59).
+  above: boolean;
 }
 
 interface PlacedOverlay {
@@ -724,8 +837,6 @@ const placedOverlays = new Map<string, PlacedOverlay>();
 // The pinned layers' overlays, bottom to top, as of the last `syncLayers`; the
 // quicklooks that arrive later read their place from here.
 let wantedOverlays: WantedOverlay[] = [];
-// The order the map holds them in, to move layers only where the list changed.
-let stackedOrder: string[] = [];
 
 function overlaySignature(ov: LayerOverlay): string {
   return ov.kind === 'raster'
@@ -736,10 +847,10 @@ function overlaySignature(ov: LayerOverlay): string {
 // The overlays up to the budget, bottom to top, and how many did not fit. The budget is spent from the
 // top: the layers on top of the list, and of a layer its topmost overlays (the mosaic of a time step),
 // are always whole; what is left out is the bottom of the stack.
-function wantedOverlaysOf(layers: MapLayer[]): { wanted: WantedOverlay[]; notDrawn: number } {
+function wantedOverlaysOf(layers: MapLayer[], above: number): { wanted: WantedOverlay[]; notDrawn: number } {
   const wanted: WantedOverlay[] = [];
   let notDrawn = 0;
-  for (const layer of layers) {
+  for (const [index, layer] of layers.entries()) {
     // A result whose job's results are going, or whose job is deleted: no more tiles (M4-13c-5, NM4-27).
     if (layer.result?.expired || layer.result?.deleted) continue;
     for (let n = layer.overlays.length - 1; n >= 0; n--) {
@@ -755,6 +866,7 @@ function wantedOverlaysOf(layers: MapLayer[]): { wanted: WantedOverlay[]; notDra
         visible: layer.visible,
         opacity: layer.opacity,
         sig: overlaySignature(overlay),
+        above: index < above,
       });
     }
   }
@@ -800,22 +912,12 @@ function removePlaced(map: MapLibreMap, lyrId: string, placed: PlacedOverlay): v
   placedOverlays.delete(lyrId);
 }
 
-// The layer right above `index` that is on the map, or the top of the manager's
-// stack: what a new layer goes under.
-function layerAbove(map: MapLibreMap, wanted: readonly WantedOverlay[], index: number): string | undefined {
-  for (let j = index + 1; j < wanted.length; j++) {
-    if (isPlaced(map, wanted[j])) return wanted[j].lyrId;
-  }
-  return map.getLayer(LAYERS_TOP) ? LAYERS_TOP : aboveAll(map);
-}
-
-function placeWanted(map: MapLibreMap, wanted: readonly WantedOverlay[], index: number, dataUrl?: string): void {
-  const w = wanted[index];
-  const before = layerAbove(map, wanted, index);
+// A new layer goes on top; `restackAll` gives it its place in the list.
+function placeWanted(map: MapLibreMap, w: WantedOverlay, dataUrl?: string): void {
   if (w.overlay.kind === 'raster') {
-    placeRaster(map, w.srcId, w.lyrId, w.overlay.tileUrl, w.overlay.bounds, w.opacity, w.overlay, before);
+    placeRaster(map, w.srcId, w.lyrId, w.overlay.tileUrl, w.overlay.bounds, w.opacity, w.overlay);
   } else if (dataUrl !== undefined) {
-    placeImage(map, w.srcId, w.lyrId, dataUrl, w.overlay.coords, w.opacity, before);
+    placeImage(map, w.srcId, w.lyrId, dataUrl, w.overlay.coords, w.opacity);
   } else {
     return;
   }
@@ -823,31 +925,10 @@ function placeWanted(map: MapLibreMap, wanted: readonly WantedOverlay[], index: 
   placedOverlays.set(w.lyrId, { srcId: w.srcId, sig: w.sig, visible: w.visible, opacity: w.opacity });
 }
 
-function placedOrder(map: MapLibreMap, wanted: readonly WantedOverlay[]): string[] {
-  return wanted.filter((w) => isPlaced(map, w)).map((w) => w.lyrId);
-}
-
-// After a move in the list: lay the layers out again in the list's order, each
-// right under the one above it. Nothing is reloaded by that.
-function restack(map: MapLibreMap, wanted: readonly WantedOverlay[]): void {
-  const order = placedOrder(map, wanted);
-  const kept = new Set(order);
-  const before = stackedOrder.filter((id) => kept.has(id));
-  const known = new Set(before);
-  const now = order.filter((id) => known.has(id));
-  if (before.length !== now.length || before.some((id, i) => id !== now[i])) {
-    let above = map.getLayer(LAYERS_TOP) ? LAYERS_TOP : aboveAll(map);
-    for (let i = order.length - 1; i >= 0; i--) {
-      map.moveLayer(order[i], above);
-      above = order[i];
-    }
-  }
-  stackedOrder = order;
-}
-
-// Returns how many overlays the budget left out (`overlayBudgetNote`).
-export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
-  const { wanted, notDrawn } = wantedOverlaysOf(layers);
+// Returns how many overlays the budget left out (`overlayBudgetNote`). `resultsAt`: how many layers of the list lie
+// above "Results" (`store.ts`); none where it is left out, as before NM4-59.
+export function syncLayers(map: MapLibreMap, layers: MapLayer[], resultsAt = 0): number {
+  const { wanted, notDrawn } = wantedOverlaysOf(layers, resultsAt);
   wantedOverlays = wanted;
   const known = new Map(wanted.map((w) => [w.lyrId, w]));
   // Gone from the list, or built from something else now: out.
@@ -855,21 +936,19 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
     if (known.get(lyrId)?.sig === placed.sig) continue;
     removePlaced(map, lyrId, placed);
   }
-  // Top to bottom, so every new layer finds the one above it on the map already.
-  for (let i = wanted.length - 1; i >= 0; i--) {
-    const w = wanted[i];
+  for (const w of wanted) {
     if (isPlaced(map, w)) continue;
     if (w.overlay.kind === 'raster') {
-      placeWanted(map, wanted, i);
+      placeWanted(map, w);
     } else if (w.visible) {
       // A hidden quicklook is not even fetched; it is the next sync that finds it missing.
       const ov = w.overlay;
       loadProcessed(ov.url, ov.nodataMax, ov.clipRings ?? null, (dataUrl) => {
-        const index = wantedOverlays.findIndex((x) => x.lyrId === w.lyrId && x.sig === w.sig);
-        if (index < 0) return; // gone from the list, or a newer one took its place
+        const now = wantedOverlays.find((x) => x.lyrId === w.lyrId && x.sig === w.sig);
+        if (!now) return; // gone from the list, or a newer one took its place
         try {
-          if (!isPlaced(map, wantedOverlays[index])) placeWanted(map, wantedOverlays, index, dataUrl);
-          restack(map, wantedOverlays);
+          if (!isPlaced(map, now)) placeWanted(map, now, dataUrl);
+          restackAll(map);
           settleViewTwins(map);
         } catch {
           /* map/style went away while loading */
@@ -885,19 +964,24 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
     placed.visible = w.visible;
     placed.opacity = w.opacity;
   }
-  restack(map, wanted);
+  restackAll(map);
   settleViewTwins(map);
   return notDrawn;
 }
 
 export interface MosaicState {
   items: StacItem[]; // items of the active time step
+  // The ids of the scenes of the group that is open in the list, which lies on top of the other results (`mapResults.ts::openIdsOf`,
+  // Otto, 30.10.2026). Left out, every scene of the open dataset counts as open.
+  openIds?: ReadonlySet<string>;
   // The scenes outlined as ticked, where that is not the same list as `items` (`mapResults.ts`).
   highlight?: StacItem[];
   // The dataset those items belong to: the browse preview reads its released
   // levels and its standard visualisation from here rather than from a branch
   // on the dataset id (M2-10).
   dataset: DatasetOption | null;
+  // Every dataset of the search, for the ticked scenes of the ones the list does not show (`datasetOfItem`).
+  datasets?: readonly DatasetOption[];
   downloaded: Record<string, DownloadedInfo>;
   selectedIds: string[];
   render: AppliedRender;
@@ -976,9 +1060,9 @@ export function syncFocusRaster(
   for (const { entries, view } of stackLikeView(drawn)) {
     if (view.kind === 'pending' && !s.tilesInLayer) continue;
     stackLikeView(entries).forEach(([itemId, info]) => {
-      // O5: the underlay goes down first, so `addTiles` right after it ends up
-      // on top (`beforeAoi` puts each newly added layer just below the AOI
-      // layer, so whichever is added later of the two is the more on top).
+      // O5: the underlay is keyed first, so `addTiles` right after it ends up
+      // on top (of equal tier and rank, the later key lies higher), whenever
+      // the underlay's image arrives.
       const item = underlays < MAX_DYNAMIC_LAYERS ? s.items.find((it) => it.id === itemId) : undefined;
       const underlay = item && underlayOf(item, dataset, clip);
       if (underlay) addQuicklookUnderlay(map, underlay, underlays++, gen);
@@ -988,6 +1072,7 @@ export function syncFocusRaster(
       (wanted > MAX_DYNAMIC_LAYERS ? view.rasters.slice(-1) : view.rasters).forEach(place);
     }
   }
+  restackAll(map);
   settleRetired(map);
 }
 
@@ -995,65 +1080,96 @@ export function syncFocusRaster(
 // step, plus any scene pinned onto the map by a cross-group selection — see
 // `itemsForMap`, V-3 finding 2). Without a dataset there is nothing to
 // preview *from* — the registry decides both the image and the level.
-export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'> & { selectedIds?: readonly string[] }): void {
+// The dataset of a scene: its own where the search has several (the ticks stay over a change of the dataset), else the one
+// the list shows.
+const datasetOfItem = (item: StacItem, s: { dataset: DatasetOption | null; datasets?: readonly DatasetOption[] }): DatasetOption | null =>
+  s.datasets?.find((d) => d.id === item.collection) ?? s.dataset;
+
+type PreviewState = Pick<MosaicState, 'items' | 'dataset' | 'datasets' | 'openIds'> & {
+  selectedIds?: readonly string[];
+  // Draw the step hidden over the picture on the map and show it once it has loaded (NM4-18).
+  hold?: Hold;
+};
+
+// The order of the scenes of the results on the map: the ticks, and which scenes are of the dataset the list shows (a scene
+// that names no dataset is).
+const resultsOrderOf = (s: PreviewState, items: readonly StacItem[]): ResultsOrder => {
+  // The scenes of the group that is open (the step that is played), where the caller says which; else all of the dataset.
+  const open = new Map(items.map((it) => [it.id, s.openIds ? s.openIds.has(it.id) : !it.collection || it.collection === s.dataset?.id]));
+  return { ticks: s.selectedIds ?? [], isOpen: (id) => open.get(id) ?? true };
+};
+
+export function syncBrowseMosaic(map: MapLibreMap, s: PreviewState): void {
   const gen = ++syncGen;
-  retireDynamicMosaic(map);
+  retireDynamicMosaic(map, s.hold !== undefined);
+  holding = s.hold ?? null;
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
   const { dataset } = s;
   // Nothing to draw (no dataset, or the results are off the map, UI-01g): the picture before it has nothing to
   // wait for and goes at once.
-  if (!dataset || items.length === 0) return dropRetired(map);
-  const layersOf = new Map(items.map((it, i) => [it.id, [dynamicId('tiles-lyr', i), dynamicId('img-lyr', i)]]));
-  items.forEach((it, i) => addPreview(map, it, i, gen, dataset, s.selectedIds ?? [], layersOf));
+  if (!dataset || items.length === 0) return s.hold ? finishWhenDue(map, gen) : dropRetired(map);
+  const order = resultsOrderOf(s, items);
+  items.forEach((it, i) => {
+    const own = datasetOfItem(it, s);
+    if (own) addPreview(map, it, i, gen, own, order);
+  });
+  restackAll(map);
+  // A held step none of whose scenes has a preview has nothing to arrive.
+  if (s.hold && !drawnNew && pendingImages === 0) return finishWhenDue(map, gen);
   settleRetired(map);
 }
 
-// The quicklooks of the search results under the full-resolution view (Otto, 26.10.2026, turned over on 27.10.2026):
-// "Show results" in the results panel draws them while a view is open, and the view lies over them. Their own id range
-// (`res-…`), apart from the view's two banks, so that neither sync takes the other's layers away; placed under
-// `RESULTS_TOP`, which is under every layer the view adds, whichever sync came first.
+// The quicklooks of the search results while a full-resolution view is open, with the eye of "Results" on: over the
+// view, which is the bottom tier of "Results" (NM4-59, Otto, 30.10.2026; replaces the view over them of 27.10.2026). Their
+// own id range (`res-…`), apart from the view's two banks, so that neither sync takes the other's layers away.
 const RESULTS_KINDS = ['img-lyr', 'img-src', 'tiles-lyr', 'tiles-src'] as const;
 let resultsGen = 0;
 
 function removeResultsOverlay(map: MapLibreMap): void {
   for (let i = 0; i < MAX_MOSAIC_LAYERS; i++) {
-    for (const lyr of [`res-img-lyr-${i}`, `res-tiles-lyr-${i}`]) if (map.getLayer(lyr)) map.removeLayer(lyr);
+    for (const lyr of [`res-img-lyr-${i}`, `res-tiles-lyr-${i}`]) {
+      resultsKeys.delete(lyr);
+      if (map.getLayer(lyr)) map.removeLayer(lyr);
+    }
     for (const src of [`res-img-src-${i}`, `res-tiles-src-${i}`]) if (map.getSource(src)) map.removeSource(src);
   }
 }
 
-export function syncResultsOverlay(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'> & { selectedIds?: readonly string[] }): void {
+export function syncResultsOverlay(map: MapLibreMap, s: PreviewState): void {
   const gen = ++resultsGen;
   removeResultsOverlay(map);
   const { dataset } = s;
   if (!dataset) return;
   const shown = s.items.slice(0, MAX_MOSAIC_LAYERS);
-  const ticks = s.selectedIds ?? [];
-  const layersOf = new Map(shown.map((it, i) => [it.id, [`res-img-lyr-${i}`, `res-tiles-lyr-${i}`]]));
+  const order = resultsOrderOf(s, shown);
   shown.forEach((item, i) => {
-    const plan = quicklookPlan(item, dataset);
-    if (!plan) return;
-    // A ticked scene lies over the view as well, the last ticked on top; the others under the view.
-    const place = (): string | undefined => (ticks.includes(item.id) ? tickedPlace(map, item.id, ticks, layersOf) : underTheView(map));
+    const own = datasetOfItem(item, s);
+    const plan = own && quicklookPlan(item, own);
+    if (!own || !plan) return;
+    // Over the view, in the tiers of browsing (NM4-59): the open group over the ticked scenes of the other groups.
     const [lyr, src] = [`res-${RESULTS_KINDS[plan.kind === 'tiles' ? 2 : 0]}-${i}`, `res-${RESULTS_KINDS[plan.kind === 'tiles' ? 3 : 1]}-${i}`];
     if (plan.kind === 'tiles') {
       if (!item.bbox) return;
-      const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
-      placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.zoom, maxZoom: plan.zoom }, place());
+      const tileUrl = buildTileUrl(buildTileTemplate(own.id, item.id, plan.asset), plan.render);
+      keyScene(lyr, item.id, order);
+      placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.minZoom, maxZoom: plan.maxZoom });
       return;
     }
-    const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
+    const coords = quicklookCoords(item, preferredGeoreferencedAsset(own));
     if (!coords) return;
-    const nodataMax = dataset.viewable ? dataset.quicklookNodataMax : null;
+    const nodataMax = own.viewable ? own.quicklookNodataMax : null;
+    keyScene(lyr, item.id, order);
     loadProcessed(plan.href, nodataMax, null, (dataUrl) => {
       if (gen !== resultsGen) return; // a newer sync superseded this one
       try {
-        placeImage(map, src, lyr, dataUrl, coords, 1, place());
+        placeImage(map, src, lyr, dataUrl, coords, 1);
+        restackAll(map);
       } catch {
         /* map/style went away while loading */
       }
     });
   });
+  restackAll(map);
 }
 
 // The yellow outline around selected scenes, in either mode. A plain GeoJSON

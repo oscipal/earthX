@@ -34,7 +34,12 @@ function draft(description: unknown, op: string, values: Record<string, FieldVal
   return { key: 1, op, opVersion: operator.opVersion, values: { ...initialValues(operator.form.fields), ...values } };
 }
 
-const NDVI = { expression: '(nir - red) / (nir + red)' };
+// `band_math` adds the band `name`; the output names it (adr/0020 §5).
+const NDVI = { expression: '(nir - red) / (nir + red)', name: 'NDVI' };
+// The bands of the data the panel offers, as the item names them: a result may not take one of these names.
+const S2_DATA = ['blue', 'green', 'red', 'rededge1', 'rededge2', 'rededge3', 'nir', 'nir08', 'nir09', 'swir16', 'swir22', 'scl'];
+const DEM_DATA = ['data'];
+const ZARR_DATA = ['b04', 'b08'];
 const REPROJECT = { crs: 'EPSG:3035', resolution: '30', resampling: 'bilinear' };
 
 interface Case {
@@ -43,7 +48,9 @@ interface Case {
   itemIds?: string[];
   datasetId: string;
   description: unknown;
-  assets: string[];
+  // The bands of the output in the order of the file, and every band of the data.
+  bands: string[];
+  data: string[];
   // `null`: "Whole scene" (M4-13c §3.2), the order names no AOI.
   aoi: GeoJSON.Geometry | null;
   steps: DraftStep[];
@@ -55,7 +62,8 @@ const CASES: Case[] = [
     name: 'ndvi-with-place-search-aoi',
     datasetId: 'sentinel-2-c1-l2a',
     description: s2,
-    assets: ['red', 'nir'],
+    bands: ['NDVI'],
+    data: S2_DATA,
     // The outline a place search hands out, with its provenance in `properties`.
     aoi: placeAoi({
       name: 'x',
@@ -72,7 +80,8 @@ const CASES: Case[] = [
     name: 'reproject-dem-with-drawn-aoi',
     datasetId: 'cop-dem-glo-30',
     description: cop,
-    assets: ['data'],
+    bands: ['data'],
+    data: DEM_DATA,
     aoi: SQUARE,
     steps: [draft(cop, 'reproject', REPROJECT)],
     dtype: 'float32',
@@ -81,7 +90,8 @@ const CASES: Case[] = [
     name: 'band-math-then-reproject-with-multipolygon',
     datasetId: 'sentinel-2-c1-l2a',
     description: s2,
-    assets: ['red', 'nir'],
+    bands: ['NDVI'],
+    data: S2_DATA,
     // Altitudes in the positions and a `bbox` member, as an uploaded file can have them.
     aoi: {
       type: 'MultiPolygon',
@@ -98,9 +108,32 @@ const CASES: Case[] = [
     name: 'band-math-on-zarr-variables',
     datasetId: 'synthetic-zarr',
     description: zarr,
-    assets: ['SR_10m:b04', 'SR_10m:b08'],
+    bands: ['NDVI'],
+    data: ZARR_DATA,
     aoi: SQUARE,
-    steps: [draft(zarr, 'band_math', { expression: '(b08 - b04) / (b08 + b04)' })],
+    steps: [draft(zarr, 'band_math', { expression: '(b08 - b04) / (b08 + b04)', name: 'NDVI' })],
+    dtype: 'float32',
+  },
+  {
+    // A mask in front of the index: the layer the mask reads stays in the stock but not in the output (M4-18c, adr/0020 §4).
+    name: 'masked-ndvi-with-drawn-aoi',
+    datasetId: 'sentinel-2-c1-l2a',
+    description: s2,
+    bands: ['NDVI'],
+    data: S2_DATA,
+    aoi: SQUARE,
+    steps: [draft(s2, 'mask', { source: 'scl', classes: '3, 8, 9, 10' }), { ...draft(s2, 'band_math', NDVI), key: 2 }],
+    dtype: 'float32',
+  },
+  {
+    // A DEM with a step that keeps the grid, so that the area can be measured (no `reproject`).
+    name: 'normalize-dem-with-drawn-aoi',
+    datasetId: 'cop-dem-glo-30',
+    description: cop,
+    bands: ['data'],
+    data: DEM_DATA,
+    aoi: SQUARE,
+    steps: [draft(cop, 'normalize', { bands: 'data', in_min: '0', in_max: '3000', out_min: '0', out_max: '1', clip: true })],
     dtype: 'float32',
   },
   {
@@ -109,7 +142,9 @@ const CASES: Case[] = [
     itemIds: ['ITEM_C', 'ITEM_A', 'ITEM_B'],
     datasetId: 'sentinel-2-c1-l2a',
     description: s2,
-    assets: ['red', 'nir'],
+    // A band of the data next to the result: the results come first, then the bands of the data.
+    bands: ['NDVI', 'red'],
+    data: S2_DATA,
     aoi: SQUARE,
     steps: [draft(s2, 'band_math', NDVI)],
     dtype: 'float32',
@@ -120,7 +155,8 @@ const CASES: Case[] = [
     itemIds: ['ITEM_B', 'ITEM_A'],
     datasetId: 'sentinel-2-c1-l2a',
     description: s2,
-    assets: ['red', 'nir'],
+    bands: ['NDVI'],
+    data: S2_DATA,
     aoi: null,
     steps: [draft(s2, 'band_math', NDVI)],
     dtype: 'float32',
@@ -132,7 +168,8 @@ const CASES: Case[] = [
     itemIds: ['ITEM_B'],
     datasetId: 'sentinel-2-c1-l2a',
     description: s2,
-    assets: ['red', 'nir'],
+    bands: ['NDVI'],
+    data: S2_DATA,
     aoi: null,
     steps: [draft(s2, 'band_math', NDVI)],
     dtype: 'float32',
@@ -168,7 +205,8 @@ describe('the order the panel sends', () => {
       area: area(c),
       aoi: c.aoi,
       steps: c.steps,
-      assets: c.assets,
+      bands: c.bands,
+      data: c.data,
       dtype: c.dtype,
       info: processInfo(c.description as ProcessDescription),
     });
@@ -185,6 +223,24 @@ describe('the order the panel sends', () => {
     await expect(`${JSON.stringify(bodies[0].body, null, 2)}\n`).toMatchFileSnapshot(`./fixtures/orders/${c.name}.json`);
   });
 
+  it.each(CASES)('$name: is version 2, names no assets and holds the bands of the output', (c) => {
+    const built = buildOrder({
+      datasetId: c.datasetId,
+      itemIds: c.itemIds ?? ['ITEM_A'],
+      area: area(c),
+      aoi: c.aoi,
+      steps: c.steps,
+      bands: c.bands,
+      data: c.data,
+      dtype: c.dtype,
+      info: processInfo(c.description as ProcessDescription),
+    });
+    const order = built.order!;
+    expect(order.recipe_version).toBe(2);
+    expect(order.inputs.every((input) => !('assets' in input))).toBe(true);
+    expect(order.output).toEqual({ kind: 'raster', format: 'cog', dtype: c.dtype, bands: c.bands });
+  });
+
   it.each(CASES.filter((c) => c.aoi))('$name: the AOI is a bare 2D geometry', (c) => {
     const built = buildOrder({
       datasetId: c.datasetId,
@@ -192,7 +248,8 @@ describe('the order the panel sends', () => {
       area: area(c),
       aoi: c.aoi,
       steps: c.steps,
-      assets: c.assets,
+      bands: c.bands,
+      data: c.data,
       dtype: c.dtype,
       info: processInfo(c.description as ProcessDescription),
     });
@@ -211,7 +268,8 @@ describe('the order the panel sends', () => {
       area: 'aoi',
       aoi,
       steps: CASES[0].steps,
-      assets: CASES[0].assets,
+      bands: CASES[0].bands,
+      data: CASES[0].data,
       dtype: 'float32',
       info: processInfo(s2 as unknown as ProcessDescription),
     });
@@ -225,7 +283,8 @@ describe('the order the download dialog sends for the whole scenes of a pass', (
     buildMosaicOrder({
       datasetId: 'sentinel-2-c1-l2a',
       itemIds: ['ITEM_B', 'ITEM_A'],
-      assets: ['visual'],
+      // The three bands of the asset `visual`, as the dialog names them (`bandNamesOf`).
+      bands: ['visual_1', 'visual_2', 'visual_3'],
       dtype: 'uint8',
     });
 
@@ -239,6 +298,12 @@ describe('the order the download dialog sends for the whole scenes of a pass', (
   it('has no aoi member and no steps', () => {
     expect(Object.keys(order()).sort()).toEqual(['inputs', 'output', 'recipe_version', 'steps']);
     expect(order().steps).toEqual([]);
+  });
+
+  it('is version 2: no assets in the input, the bands in the output', () => {
+    expect(order().recipe_version).toBe(2);
+    expect('assets' in order().inputs[0]).toBe(false);
+    expect(order().output).toEqual({ kind: 'raster', format: 'cog', dtype: 'uint8', bands: ['visual_1', 'visual_2', 'visual_3'] });
   });
 });
 

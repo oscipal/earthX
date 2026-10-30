@@ -118,6 +118,7 @@ export default function AppRail() {
             }}
             className={`rail-btn has-tip${open ? ' on' : ''}`}
             data-tip={locked ? NO_RESULTS : item.label}
+            data-tip-side="right"
             aria-label={locked ? `${item.label}, ${NO_RESULTS}` : count > 0 ? `${item.label}, ${count}` : item.label}
             aria-disabled={locked || undefined}
             aria-expanded={open}

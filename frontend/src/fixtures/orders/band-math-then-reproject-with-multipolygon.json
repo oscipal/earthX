@@ -1,7 +1,7 @@
 {
   "inputs": {
     "recipe": {
-      "recipe_version": 1,
+      "recipe_version": 2,
       "inputs": [
         {
           "name": "input",
@@ -10,10 +10,6 @@
             [
               "ITEM_A"
             ]
-          ],
-          "assets": [
-            "red",
-            "nir"
           ]
         }
       ],
@@ -73,9 +69,10 @@
       "steps": [
         {
           "op": "band_math",
-          "op_version": 1,
+          "op_version": 2,
           "params": {
-            "expression": "(nir - red) / (nir + red)"
+            "expression": "(nir - red) / (nir + red)",
+            "name": "NDVI"
           }
         },
         {
@@ -92,7 +89,10 @@
       "output": {
         "kind": "raster",
         "format": "cog",
-        "dtype": "float32"
+        "dtype": "float32",
+        "bands": [
+          "NDVI"
+        ]
       }
     }
   }

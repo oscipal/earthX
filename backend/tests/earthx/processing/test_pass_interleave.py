@@ -17,9 +17,8 @@ import rasterio
 
 from earthx.processing import core, run
 from earthx.processing.operators import REGISTRY
-from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 
 WIDTH, HEIGHT = 1300, 1100
 ASSETS = ("red", "nir", "swir", "green")
@@ -66,7 +65,7 @@ def _run(tmp_path: Path, count: int, version: int = 4, *, gdal_layout: bool = Fa
         monkeypatch.setattr(core, "_profile", lambda meta, dtype, nodata, interleave=None: original(meta, dtype, nodata))
     tmp_path.mkdir()
     return run(
-        recipe_from_data(_recipe(count, version), REGISTRY), workdir=tmp_path, progress=lambda done, total: None
+        recipe_of_data(_recipe(count, version), REGISTRY), workdir=tmp_path, progress=lambda done, total: None
     )
 
 

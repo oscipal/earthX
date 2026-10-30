@@ -11,6 +11,7 @@ import type { Order } from './processing';
 import type { Bbox } from './types';
 import { useProcessingStore } from './processingStore';
 import { readRecipe } from './recipeFile';
+import { CONVERTED_NOTE } from './recipeUpgrade';
 import { useAppStore } from './store';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
@@ -37,6 +38,8 @@ export interface PermalinkDocument {
   order: Order;
   view: PermalinkView;
   expiresAt: string;
+  // The link was made in recipe version 1 and is read as version 2 (adr/0020 §11).
+  converted: boolean;
 }
 
 export interface Created {
@@ -124,7 +127,7 @@ export async function fetchPermalink(id: string): Promise<PermalinkDocument> {
   const read = readRecipe(JSON.stringify(body.order));
   const view = parseView(body.view);
   if (!read.ok || !view || typeof body.expires_at !== 'string') throw new Error('the server answered with a link the panel cannot read');
-  return { order: read.order, view, expiresAt: body.expires_at };
+  return { order: read.order, view, expiresAt: body.expires_at, converted: read.converted };
 }
 
 export async function deletePermalink(id: string, key: string): Promise<void> {
@@ -194,9 +197,11 @@ export async function openPermalinkInAddress(): Promise<void> {
   const app = useAppStore.getState();
   try {
     const document = await fetchPermalink(id);
-    const result = await useProcessingStore.getState().restoreOrder(document.order, document.view);
+    const result = await useProcessingStore.getState().restoreOrder(document.order, document.view, { converted: document.converted });
     if (!result.ok) app.setError(result.reason);
+    // A notice is a line that fades and has no tooltip: the conversion is told there only where it is all there is to say.
     else if (result.notes.length > 0) app.setNotice(result.notes.join(' '));
+    else if (result.converted) app.setNotice(CONVERTED_NOTE);
   } catch (error) {
     app.setError(error instanceof HttpError && error.status === 404 ? GONE_TEXT : `The link could not be opened: ${error instanceof Error ? error.message : String(error)}`);
   } finally {

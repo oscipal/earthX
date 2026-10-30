@@ -22,7 +22,6 @@ import pytest
 from earthx.access.download import compute_crop_region, parse_aoi_geometry, plan_outputs
 from earthx.adapters.errors import UnknownCollection
 from earthx.api.intake import (
-    MAX_ORDER_ASSETS,
     MAX_ORDER_ITEMS,
     MAX_ORDER_STEPS,
     OrderRefused,
@@ -63,7 +62,7 @@ SQUARE = {
     "type": "Polygon",
     "coordinates": [[[9.0, 47.0], [9.01, 47.0], [9.01, 47.01], [9.0, 47.01], [9.0, 47.0]]],
 }
-RASTER = {"kind": "raster", "format": "cog", "dtype": "float32"}
+RASTER = {"kind": "raster", "format": "cog", "dtype": "float32", "bands": ["red", "nir"]}
 SCALE_STEP = {"op": "scale", "op_version": 1, "params": {"factor": 2.0}}
 
 # --- synthetic items ---------------------------------------------------------
@@ -193,20 +192,33 @@ def gateway_for(heads: Heads) -> Gateway:
     )
 
 
+def band_math(expression: str, name: str) -> dict[str, Any]:
+    return {"op": "band_math", "op_version": 2, "params": {"expression": expression, "name": name}}
+
+
+def band_names(assets: tuple[str, ...]) -> list[str]:
+    """The names the bands of these asset keys carry: one band named like the key, a Zarr key names its variables."""
+    return [name for asset in assets for name in (asset.partition(":")[2].split(",") if ":" in asset else [asset])]
+
+
 def order(
     dataset: str = "sentinel-2-c1-l2a",
     groups: tuple[tuple[str, ...], ...] = (("S2_A",),),
     assets: tuple[str, ...] = ("red", "nir"),
+    bands: list[str] | None = None,
     **override: Any,
 ) -> dict[str, Any]:
+    """An order of recipe version 2: it names the bands of the output (by default those of ``assets``), no assets."""
     document: dict[str, Any] = {
-        "recipe_version": 1,
-        "inputs": [{"name": "scene", "dataset": dataset, "groups": [list(g) for g in groups], "assets": list(assets)}],
+        "recipe_version": 2,
+        "inputs": [{"name": "scene", "dataset": dataset, "groups": [list(g) for g in groups]}],
         "aoi": SQUARE,
         "steps": [SCALE_STEP],
-        "output": RASTER,
+        "output": {**RASTER, "bands": band_names(assets) if bands is None else bands},
     }
     document.update(override)
+    if document["output"].get("kind") == "crop":  # a crop names its assets, it has no stock and no bands to choose
+        document["inputs"][0]["assets"] = list(assets)
     return document
 
 
@@ -295,15 +307,17 @@ class TestZarr:
     async def test_updated_is_the_version_and_the_store_decides_the_scaling(self) -> None:
         heads = Heads()
         accepted = await accept(order(ZARR_ID, (("ZARR_A",),), (self.KEY,)), Source((ZARR, zarr_item())), heads)
-        resolved = accepted.recipe.inputs[0].resolved[0]
-        assert resolved.version is not None
-        assert (resolved.version.kind, resolved.version.value) == ("updated", "2026-06-03T00:00:00Z")
-        assert resolved.scaling == "store-cf"
-        assert (resolved.asset.reader, resolved.asset.variable) == ("zarr", "b04,b08")
-        assert resolved.gsd == 10.0
-        # One unnamed entry describes the whole asset and holds for each variable (F3).
-        assert len(resolved.bands) == 2
-        assert {(band.data_type, band.nodata) for band in resolved.bands} == {("uint16", 0.0)}
+        # The order names the bands b04 and b08; each is read from its own variable (adr/0020 §5).
+        assert [entry.asset.variable for entry in accepted.recipe.inputs[0].resolved] == ["b04", "b08"]
+        assert accepted.recipe.inputs[0].assets == ["SR_10m:b04", "SR_10m:b08"]
+        for resolved in accepted.recipe.inputs[0].resolved:
+            assert resolved.version is not None
+            assert (resolved.version.kind, resolved.version.value) == ("updated", "2026-06-03T00:00:00Z")
+            assert resolved.scaling == "store-cf"
+            assert resolved.asset.reader == "zarr"
+            assert resolved.gsd == 10.0
+            # One unnamed entry describes the whole asset and holds for each variable (F3).
+            assert [(band.data_type, band.nodata) for band in resolved.bands] == [("uint16", 0.0)]
         assert heads.requests == [], "an ETag on a group of objects would not describe the data (F2)"
         assert accepted.cacheable
 
@@ -314,18 +328,20 @@ class TestZarr:
             {"name": "b04", "raster:scale": 0.0001, "raster:offset": -0.1, "data_type": "uint16", "nodata": 0},
             {"name": "b08", "raster:scale": 0.0002, "raster:offset": 0.0, "data_type": "uint16", "nodata": 0},
         ]
-        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b08,b04",)), Source((ZARR, item)))
-        resolved = accepted.recipe.inputs[0].resolved[0]
-        assert [band.scale for band in resolved.bands] == [0.0002, 0.0001]
-        assert resolved.scaling == "item"
+        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), bands=["b08", "b04"]), Source((ZARR, item)))
+        resolved = accepted.recipe.inputs[0].resolved
+        # The assets come in the order of the item, the bands of the output in the order the order gave them.
+        assert [(entry.asset.variable, entry.bands[0].scale) for entry in resolved] == [("b04", 0.0001), ("b08", 0.0002)]
+        assert {entry.scaling for entry in resolved} == {"item"}
+        assert accepted.recipe.output.bands == ["b08", "b04"]
 
     async def test_two_unnamed_entries_for_other_variables_describe_nothing(self) -> None:
         item = zarr_item()
         item["assets"]["SR_10m"]["raster:bands"] = [{"data_type": "uint16"}, {"data_type": "uint8"}]
         accepted = await accept(order(ZARR_ID, (("ZARR_A",),), (self.KEY,)), Source((ZARR, item)))
-        resolved = accepted.recipe.inputs[0].resolved[0]
-        assert [(band.data_type, band.scale) for band in resolved.bands] == [(None, None), (None, None)]
-        assert resolved.scaling == "store-cf"
+        for resolved in accepted.recipe.inputs[0].resolved:
+            assert [(band.data_type, band.scale) for band in resolved.bands] == [(None, None)]
+            assert resolved.scaling == "store-cf"
 
     async def test_a_group_key_without_a_variable_is_the_callers_mistake(self) -> None:
         error = await refused(order(ZARR_ID, (("ZARR_A",),), ("SR_10m",)), Source((ZARR, zarr_item())))
@@ -506,23 +522,26 @@ class TestUnits:
 
     async def test_a_zarr_variable_has_its_own_unit_by_key(self) -> None:
         accepted = await accept(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b04,b08",)), Source((ZARR, zarr_item())))
-        assert [band.unit for band in accepted.recipe.inputs[0].resolved[0].bands] == ["1", "1"]
+        assert [band.unit for resolved in accepted.recipe.inputs[0].resolved for band in resolved.bands] == ["1", "1"]
 
     async def test_a_named_item_unit_is_matched_by_variable_name(self) -> None:
         item = zarr_item()
         item["assets"]["SR_10m"].pop("raster:bands")
         item["assets"]["SR_10m"]["bands"] = [{"name": "b04", "unit": "percent"}, {"name": "b08"}]
         accepted = await accept(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b08,b04",)), Source((ZARR, item)))
-        assert [band.unit for band in accepted.recipe.inputs[0].resolved[0].bands] == ["1", "percent"]
+        assert [band.unit for resolved in accepted.recipe.inputs[0].resolved for band in resolved.bands] == [
+            "percent",
+            "1",
+        ]
 
-    async def test_a_variable_the_item_does_not_describe_has_the_registrys_unit_alone(self) -> None:
+    async def test_a_variable_the_item_does_not_describe_cannot_be_ordered(self) -> None:
         item = zarr_item()
         item["assets"]["SR_10m"].pop("raster:bands")
         item["assets"]["SR_10m"]["bands"] = [{"name": "b04", "unit": "percent"}]
-        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b04,b08",)), Source((ZARR, item)))
-        first, second = accepted.recipe.inputs[0].resolved[0].bands
-        assert (first.unit, second.unit) == ("percent", "1")
-        assert (second.data_type, second.scale) == (None, None)
+        item["assets"]["SR_10m"].pop("eo:bands")
+        error = await refused(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b04,b08",)), Source((ZARR, item)))
+        assert (error.status_code, error.stage) == (422, "applicable")
+        assert "b08" in error.detail and "b04" not in error.detail.split(";")[0]
 
     async def test_the_unit_is_part_of_the_hash(self) -> None:
         plain = await accept(order(), Source((S2, s2_item())))
@@ -659,7 +678,7 @@ class TestRefusals:
     async def test_an_unknown_field_a_wrong_version_or_a_string_for_a_number(self, source: Source) -> None:
         for broken in (
             order(extra="x"),
-            order(recipe_version=2),
+            order(recipe_version=3),
             order(steps=[{"op": "scale", "op_version": 1, "params": {"factor": "2"}}]),
             order(aoi={"type": "Point", "coordinates": [9.0, 47.0]}),
         ):
@@ -696,7 +715,7 @@ class TestRefusals:
         assert source.calls == []
 
     async def test_an_operator_the_dataset_does_not_allow(self) -> None:
-        no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False))
+        no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False), index_presets=())
         source = Source((S2, s2_item()))
         error = await refused(order(), source, registry=DatasetRegistry((no_math,)))
         assert error.status_code == 422
@@ -713,29 +732,34 @@ class TestRefusals:
     async def test_a_band_the_inputs_do_not_have_is_refused_naming_the_bands_before_any_job(
         self, source: Source
     ) -> None:
-        step = {"op": "band_math", "op_version": 1, "params": {"expression": "(swir - red) / (swir + red)"}}
-        error = await refused(order(steps=[step]), source)
+        step = band_math("(swir - red) / (swir + red)", "SW")
+        error = await refused(order(steps=[step], bands=["SW"]), source)
         assert (error.status_code, error.stage) == (422, "applicable")
-        assert "swir" in error.detail and "red, nir" in error.detail
+        assert "swir" in error.detail and "nir, red" in error.detail
+
+    async def test_an_output_band_that_nothing_provides_is_named(self, source: Source) -> None:
+        error = await refused(order(steps=[], bands=["red", "swir"]), source)
+        assert (error.status_code, error.stage) == (422, "applicable")
+        assert "swir" in error.detail and "red" not in error.detail.split(";")[0]
 
     async def test_an_expression_outside_r5_is_refused_with_the_reason(self, source: Source) -> None:
-        step = {"op": "band_math", "op_version": 1, "params": {"expression": "log(red)"}}
-        error = await refused(order(steps=[step]), source)
+        step = band_math("log(red)", "L")
+        error = await refused(order(steps=[step], bands=["L"]), source)
         # The order layer names the field and the kind of error, never the text (adr/0014 §4.7).
         assert error.status_code == 422 and "step 0 (band_math)" in error.detail and "expression" in error.detail
         assert "log" not in error.detail
 
     async def test_band_math_over_the_bands_of_the_order_is_accepted(self, source: Source) -> None:
-        step = {"op": "band_math", "op_version": 1, "params": {"expression": "(nir - red) / (nir + red)"}}
-        accepted = await accept(order(steps=[step]), source)
+        step = band_math("(nir - red) / (nir + red)", "NDVI")
+        accepted = await accept(order(steps=[step], bands=["NDVI"]), source)
         assert [s.op for s in accepted.recipe.steps] == ["band_math"]
 
     async def test_where_the_item_does_not_count_the_bands_the_name_check_waits_for_the_file(self) -> None:
         """The DEM item describes no bands: a COG may hold several, so the core checks when it has the file."""
-        step = {"op": "band_math", "op_version": 1, "params": {"expression": "data_2 - data_1"}}
+        step = band_math("data_2 - data_1", "Diff")
         source = Source((DEM, dem_item("DEM_N47_E009")))
-        accepted = await accept(order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",), steps=[step]), source)
-        assert accepted.recipe.steps[0].op == "band_math"
+        accepted = await accept(order("cop-dem-glo-30", (("DEM_N47_E009",),), steps=[step], bands=["Diff"]), source)
+        assert accepted.recipe.steps[0].op == "band_math" and accepted.recipe.inputs[0].assets == ["data"]
 
     async def test_an_operator_that_only_runs_as_a_tile_is_no_job(self, source: Source) -> None:
         tile_only = replace(SCALE, op="tile_only", tiers=frozenset({Tier.T1}))
@@ -756,11 +780,23 @@ class TestRefusals:
         too_many_items = order(groups=tuple((f"S2_{i}",) for i in range(MAX_ORDER_ITEMS + 1)))
         error = await refused(too_many_items, source)
         assert error.status_code == 413
-        too_many_assets = order(assets=tuple(f"a{i}" for i in range(MAX_ORDER_ASSETS + 1)))
-        assert (await refused(too_many_assets, source)).status_code == 422
         too_many_steps = order(steps=[SCALE_STEP] * (MAX_ORDER_STEPS + 1))
         assert (await refused(too_many_steps, source)).status_code == 422
         assert source.calls == []
+
+    async def test_an_order_reading_more_than_sixteen_assets_is_taken(self) -> None:
+        # The cap of 16 assets fell with NM4-43c (adr/0020 §7); the memory estimate of the run guards the bands.
+        names = tuple(f"b{index:02d}" for index in range(20))
+        item = s2_item(**{name: copy.deepcopy(s2_item()["assets"]["red"]) for name in names})
+        accepted = await accept(order(assets=names, steps=[]), Source((S2, item)))
+        assert [entry.asset.asset for entry in accepted.recipe.inputs[0].resolved] == list(names)
+
+    async def test_an_export_naming_more_than_sixteen_assets_is_taken(self) -> None:
+        names = tuple(f"a{index:02d}" for index in range(18))
+        item = visual_item("S2_A")
+        item["assets"].update({name: copy.deepcopy(item["assets"]["visual"]) for name in names})
+        accepted = await accept(export_order(assets=names), Source((S2, item)))
+        assert accepted.recipe.inputs[0].assets == list(names)
 
     async def test_exactly_at_the_cap_is_fine(self) -> None:
         ids = [f"S2_{i}" for i in range(MAX_ORDER_ITEMS)]
@@ -844,7 +880,7 @@ class TestStages:
 
     @staticmethod
     async def _cases() -> dict[str, tuple[Any, ...]]:
-        no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False))
+        no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False), index_presets=())
         display = replace(S2, license=replace(S2.license, tier=LicenseTier.DISPLAY))
         foreign = s2_item()
         foreign["assets"]["red"]["href"] = f"https://{ZARR_HOST}/x.tif"
@@ -858,14 +894,14 @@ class TestStages:
         }
         good = Source((S2, s2_item()))
         return {
-            "order": (order(recipe_version=2), good, {}),
+            "order": (order(recipe_version=3), good, {}),
             "size": (order(groups=tuple((f"S2_{i}",) for i in range(MAX_ORDER_ITEMS + 1))), good, {}),
             "dataset": (order("no-such-dataset"), good, {}),
             "license": (order(), good, {"registry": DatasetRegistry((display,))}),
             "applicable": (order(), good, {"registry": DatasetRegistry((no_math,))}),
             "items": (order(), Source(), {}),
             "aoi": (order(aoi=far), good, {}),
-            "resolve": (order(assets=("swir",)), good, {}),
+            "resolve": (export_order(assets=("swir",)), good, {}),
             "hosts": (order(assets=("red",)), Source((S2, foreign)), {}),
             "bands": (order(assets=("red",)), Source((S2, odd_bands)), {}),
             "recipe": (order(assets=("red",)), Source((S2, long_crs)), {}),
@@ -1210,8 +1246,10 @@ CROP = {"kind": "crop", "format": "cog", "resolution_factor": 1, "extent": "bbox
 PLACE = {"attribution": "© OpenStreetMap contributors", "license": "ODbL-1.0", "source": "Nominatim"}
 
 
-def export_order(groups: tuple[tuple[str, ...], ...] = (("S2_A",),), **override: Any) -> dict[str, Any]:
-    return order(groups=groups, assets=("visual",), **{"steps": [], "output": CROP, **override})
+def export_order(
+    groups: tuple[tuple[str, ...], ...] = (("S2_A",),), assets: tuple[str, ...] = ("visual",), **override: Any
+) -> dict[str, Any]:
+    return order(groups=groups, assets=assets, **{"steps": [], "output": CROP, **override})
 
 
 def visual_item(item_id: str, bbox: tuple[float, float, float, float] = NEAR) -> dict[str, Any]:

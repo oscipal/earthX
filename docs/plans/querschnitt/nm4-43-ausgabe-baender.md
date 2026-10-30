@@ -127,7 +127,7 @@ Fünf Aufgaben, alle **Stufe A** (Plan und Entscheidung stehen im ADR; ein Draft
 6. **Umdeutung von Version 1** (`adr/0020` §11): ein Modul in `processing`, das ein Rezept oder einen Auftrag der Version 1 als Version 2 schreibt (Namen der `band_math`-Schritte, `normalize.bands`, `output.bands`). Benutzt von `api` (Aufträge, Permalink anlegen; **bis 30 Tage nach dem Deploy von NM4-43e**, Konstante mit Datum, die NM4-43e setzt; danach `422` „recipe_version 1 is no longer accepted; send version 2“), vom Worker (gespeicherte Rezepte der Warteschlange und der Wiederherstellung) und vom **Runner dauerhaft** (`runner/recipe_file.py`; heruntergeladene `recipe.json` bleiben lesbar). **Entschieden (Otto, F14, Option 1):** Hat ein umgedeutetes Rezept einen Schritt `reproject` Version 3, meldet der Runner kurz auf dem Bildschirm (`runner/cli.py`), dass Werte nach `reproject` abweichen können, und nennt den Runner-Tag für bitgleiche Werte: `earthx-runner:<Version aus source_engine.earthx>` des früheren Laufs, aus dem Provenienzblock der `recipe.json` (`adr/0016` §9; fehlt sie dort, „an older runner tag“). Dieselbe Meldung steht als Eintrag `notes` (Liste kurzer Texte) in `provenance.json` des Laufs (`runner/output.py: provenance_document`; kein Teil des Hash). Beispiel: „Converted from recipe version 1. Values after reproject can differ; for identical values use earthx-runner:0.4.3.“ Ohne `reproject` Version 3 keine Meldung, die Werte sind bitgleich.
 7. `earthx.__version__` 0.5.0; Nachtrag `adr/0014` §15x, Nachtrag `adr/0016` §12d; Methodentext und `recipe.json` tragen die neuen Felder; `docs/`-Verweise auf „16 Assets“ bleiben bis PR 2.
 
-**PR 2 — Schutz ohne Bandgrenze** (`adr/0020` §7).
+**PR 2 — Schutz ohne Bandgrenze** (`adr/0020` §7; Start als eigene Session, ausgeschrieben in §6.3a).
 
 1. `MAX_ORDER_ASSETS` und die `maxItems` der Assets in der Prozessbeschreibung entfallen (`api/intake.py`, `api/processing_docs.py`). Das heutige Panel fällt bei fehlendem Wert auf 16 zurück (`frontend/src/processingOrder.ts`) und bleibt bis NM4-43e funktionsfähig; die Grenzen der Kachel (`api/tiler.py`: 16 Assets, `api/mosaic_tiles.py`: 4) bleiben.
 2. **Speicherschätzung je Lauf** gegen eine Grenze je Kindprozess, Startwert **1,5 GB**, als Konstante mit Verweis auf das ADR; darüber `413` mit Grund und Zahl, z. B. „This job would need about 2.4 GB of memory, more than the 1.5 GB a job may use. Put fewer bands in the output.“ Die Formel nimmt den Befund aus `adr/0020` §3.2 (rund 300 MB + 21 MB je Band im breitesten Durchgang bei 9,5 Mio. Pixeln) und **misst neu**: mit dem echten Anhängen von `band_math` (nicht dem naiven Anhängen des Messskripts), bis zur 5-GB-Grenze (rund 72 Mio. Pixel bei 17 Bändern) und für ein Mosaik von 25 Szenen in einem Lauf, was `adr/0020` nicht gemessen hat. `scripts/nm4-43-bands/measure.py` ist der Ausgangspunkt.
@@ -139,6 +139,44 @@ Fünf Aufgaben, alle **Stufe A** (Plan und Entscheidung stehen im ADR; ein Draft
 - Tests: Version 2 rechnet NDVI und NDWI als zwei Ergebnisse neben den Eingaben, nur `output.bands` im Ergebnis (Reihenfolge, Banddeskription, Einheit, nodata); ein Name doppelt, in anderer Schreibweise doppelt, gleich einem Band des Datensatzes, ein Schlüsselwort, zu lang, unbekannt in `output.bands` → `422` mit dem Namen; leere `output.bands`; Streichen bitgleich zum Lauf ohne Streichen; ein nicht gelesenes Asset wird nicht geöffnet (Test über die Zahl der Öffnungen); Auftrag von Version 1 → umgedeutet, Werte **bitgleich** zum Lauf von vorher für Ketten ohne `reproject` (Fixtures der Version 1 aus den vorhandenen Tests); `api` nimmt Version 1 vor und weist sie nach der Frist ab (Uhr festgesetzt); der Runner liest ein Rezept der Version 1 (ohne `reproject`: bitgleich, keine Meldung; mit `reproject` Version 3: Meldung auf dem Bildschirm und `notes` in `provenance.json` mit dem Tag aus `source_engine.earthx`, ohne diese Version „an older runner tag“; kein Pfad, keine Kennung in der Meldung); der Hash ändert sich einmal, ein zweiter gleicher Auftrag ist ein Cache-Treffer.
 - PR 2: 17 Bänder ohne Schritt werden angenommen (vorher `422`); eine Ausgabe über der Speichergrenze wird mit `413` und dem Grund abgewiesen; die Zeitschätzung wächst mit den Ausgabebändern.
 - Gegenprobe, die üblichen Prüfungen, Log-Zeilen, Nachträge in `adr/0014` (§15x) und `adr/0016` (§12d), `main` geholt.
+
+### 6.3a NM4-43c PR 2 — Schutz ohne Bandgrenze (neue Session, nach dem Merge von PR 1)
+
+**Stufe A**, nur Backend. **Modell:** Sonnet, Effort hoch. **Start:** erst **nach dem Merge von PR 1** (Draft-PR [#236](https://github.com/oscipal/earthX/pull/236), Branch `claude/sharp-pascal-6kch3f`) in `main`, als **neue Session mit eigenem Branch von `main`** (Otto, 29.10.2026: eine Session pusht nur auf ihren eigenen Branch, kein gestapelter Branch). Nicht gleichzeitig mit anderen Aufgaben an `api/intake.py`, `processing/plan.py` und `jobs/submit.py`.
+**Startsatz:** „Führe Aufgabe NM4-43c PR 2 aus `docs/plans/querschnitt/nm4-43-ausgabe-baender.md` §6.3a aus.“
+
+**Zuerst lesen:** `docs/ENTSCHEIDUNGEN_2026-09-18.md`, `docs/KLAERUNGEN.md`, `docs/adr/0020-ausgabe-baender.md` §3.2, §3.4, §7, den Nachtrag NM4-43c in `docs/adr/0014-rezept-operator-registry.md` (§15 am Ende) und in `docs/adr/0016-lokaler-runner.md` (§12), die Zeilen NM4-43 im `docs/ENTSCHEIDUNGSLOG.md`.
+
+**Stand nach PR 1 (so ist `main`, wenn diese Aufgabe beginnt).**
+
+- Rezeptversion 2 gilt: `output.bands` ist Pflicht, Aufträge für ein Raster nennen keine Assets, `api` leitet sie ab (`api/intake.py`, `derive_assets`). `band_math`, `mask` und `normalize` gibt es in Version 2; die Prozessbeschreibung listet weiter Version 1 (`Operator.listed`), bis NM4-43e kommt.
+- Der Planer (`processing/plan.py`: `stock_steps`, `live_steps`, `needed_source_bands`, `estimate`) streicht von hinten; ein Schritt, dessen Ergebnis niemand behält, wird nicht geprüft, nicht gerechnet und nicht berichtet. `core.py` schreibt genau `output.bands` mit dem Namen als Banddeskription.
+- **Die Einheit steht nicht in `result.tif`**, nur in den STAC-Eigenschaften (`properties.bands[].unit`) und im Block `bands` der `recipe.json` (Otto, 29.10.2026, Option 1; Messung im Nachtrag NM4-43c von `adr/0014`). Daran ändert PR 2 nichts.
+- Die Grenze von 16 Assets gilt noch an zwei Stellen in `api/intake.py` (`MAX_ORDER_ASSETS`: Prüfung der Assets eines Auftrags und Prüfung der abgeleiteten Assets) und als `maxItems` in `api/processing_docs.py`.
+- `scripts/nm4-43-bands/measure.py` benutzt noch die alte Schnittstelle des Kerns (Rezeptversion 1) und muss für die Neumessung angepasst werden. Die Speicherskripte `tests/earthx/processing/memory_*.py` importieren ihre Hilfen innerhalb von `main`, damit der Import den Speicher der Messung nicht verändert; das beibehalten.
+
+**Umfang.**
+
+1. `MAX_ORDER_ASSETS` und die `maxItems` der Assets in der Prozessbeschreibung entfallen (`api/intake.py`, `api/processing_docs.py`; beide Prüfungen). Das heutige Panel fällt bei fehlendem Wert auf 16 zurück (`frontend/src/processingOrder.ts`) und bleibt bis NM4-43e funktionsfähig; die Grenzen der Kachel (`api/tiler.py`: 16 Assets, `api/mosaic_tiles.py`: 4) bleiben.
+2. **Speicherschätzung je Lauf** gegen eine Grenze je Kindprozess, Startwert **1,5 GB**, als Konstante mit Verweis auf das ADR; darüber `413` mit Grund und Zahl, z. B. „This job would need about 2.4 GB of memory, more than the 1.5 GB a job may use. Put fewer bands in the output.“ Die Formel nimmt den Befund aus `adr/0020` §3.2 (rund 300 MB + 21 MB je Band im breitesten Durchgang bei 9,5 Mio. Pixeln) und **misst neu**: mit dem echten Anhängen von `band_math` (der Vorrat wächst wirklich), bis zur 5-GB-Grenze (rund 72 Mio. Pixel bei 17 Bändern) und für ein Mosaik von 25 Szenen in einem Lauf, was `adr/0020` nicht gemessen hat (synthetische Szenen genügen).
+3. **Zeitschätzung** zählt die Ausgabebänder (`adr/0020` §3.2 Befund 9: bei 30 km und 17 Bändern 21 s geschätzt, 115 s gemessen), mit einem gemessenen Wert je Band; die Laufzeitgrenze (`jobs/submit.py: _runtime_limit`, 2 × Schätzung, mindestens 600 s) hält damit auch für viele Bänder. `units` zählt Ausgabepixel mal Bänder mal Faktor.
+4. Die Speichertests (`test_memory_*`) bekommen einen Lauf mit 17 Bändern; die Messung bleibt unter der Schätzung.
+5. Entscheidungslog (eine Zeile je neue Entscheidung, etwa der Wert der Speichergrenze und der Zeit je Band), Nachtrag NM4-43c in `adr/0014` (§15, am Ende anhängen) und `adr/0016`, Verweise auf „16 Assets“ in `docs/` anpassen.
+
+**Offene Punkte aus dem Review von PR 1 — von Otto als Grenzen angenommen (29.10.2026), hier nicht lösen, aber nicht verschlimmern.**
+
+- **S1:** Kennt das Item die Bänder eines Assets nicht, gilt das Asset in `estimate` und `check_bands` als ein Band, das wie das Asset heißt; `<asset>_<n>` wird dort abgewiesen. Ein umgedeuteter Auftrag der Version 1 mit so einem mehrbändigen Asset scheitert im Kern am Namen. Die Speicher- und Zeitschätzung rechnet für solche Assets mit einem Band; sie ist dort eine Untergrenze.
+- **H2:** Aufträge der Version 1 für Zarr verlieren die Gruppe: aus dem Schlüssel `<Gruppe>:<Variablen>` werden die Variablennamen. Gibt es dieselbe Variable in zwei Gruppen, ist der Name in Version 2 mehrdeutig.
+- **H4:** Gemischte Datentypen im Vorrat (etwa die `uint8`-Schicht von `mask` neben `float32`-Bändern) sind im Kern nicht eigens geprüft; offen, ob ein Test oder eine Regel nötig ist.
+- **H3:** Das heutige Panel lehnt eine `recipe.json` der Version 2 beim Laden ab (`frontend/src/recipeFile.ts`), bis NM4-43e kommt.
+
+**Entschieden (Otto, 30.10.2026, zu #241).** Die Grenze von 1,5 GB je Kindprozess bleibt; **Wiedervorlage zu M6** mit der echten Worker-Größe. `units` zählt den Faktor eines Schritts nur für die Bänder, die er erzeugt oder bearbeitet (Abweichung von `adr/0020` §7.2; Nachtrag NM4-43c PR 2 in `adr/0014`).
+
+**Abnahme.**
+
+- 17 Bänder ohne Schritt werden angenommen (vorher `422`), auch über 16 Assets in der Prozessbeschreibung; eine Ausgabe über der Speichergrenze wird mit `413` und dem Grund abgewiesen; die Zeitschätzung wächst mit den Ausgabebändern; `units` wächst mit den Bändern.
+- Neumessung (Speicher, Zeit) mit echtem `band_math`, 5-GB-Grenze und Mosaik von 25 Szenen, Zahlen im Nachtrag; die gemessene Spitze bleibt unter der Schätzung.
+- Tests decken Fehlerfälle ab (Grenze genau erreicht, knapp darüber, fehlende `gsd`, Mosaik); Gegenprobe (Test schlägt ohne die Änderung fehl), Lint, Importregeln, ganze Suite, `main` geholt, Draft-PR unter 400 Zeilen ohne generierte Dateien.
 
 ### 6.4 NM4-43d — Kachel: ein Band, Schritte der Version 2
 
@@ -189,3 +227,32 @@ Fünf Aufgaben, alle **Stufe A** (Plan und Entscheidung stehen im ADR; ein Draft
 - Gegenprobe: Die neuen Tests scheitern gegen den Code vor der Änderung.
 - Prüfung im echten Browser (Chromium/Playwright der Sitzung) mit nachgestellten Antworten, nicht nur jsdom: hell und dunkel, schmales Fenster; im PR beschrieben.
 - Prüfanleitung für Otto (Browser und/oder PowerShell 5.1) im PR; die vier Pflicht-Checks der CI grün; Log-Zeile(n) mit PR-Nummer; `main` geholt.
+
+### 6.5a NM4-43e PR 2 — Vorschau „Show“ und Ergebnis-Layer je Band (neue Session, nach dem Merge von PR 1)
+
+**Stufe A**, nur Frontend. **Modell:** Sonnet, Effort hoch. **Start:** erst **nach dem Merge von PR 1** (Draft-PR [#250](https://github.com/oscipal/earthX/pull/250), Branch `claude/tender-heisenberg-u42uqc`) in `main`, als **neue Session mit eigenem Branch von `main`** (Otto, 30.10.2026). Höchstens zwei Frontend-Sessions gleichzeitig; nicht gleichzeitig mit NM4-20, NM4-45 oder NM4-14 (alle ändern den Bandbereich des Panels); NM4-45 (Band in der Ansicht) sollte davor fertig sein, dann übernimmt PR 2 dessen Dropdown „Band“ als Baustein.
+**Startsatz:** „Führe Aufgabe NM4-43e PR 2 aus `docs/plans/querschnitt/nm4-43-ausgabe-baender.md` §6.5a aus.“
+
+**Zuerst lesen:** `docs/ENTSCHEIDUNGEN_2026-09-18.md`, `docs/KLAERUNGEN.md`, `docs/adr/0020-ausgabe-baender.md` §10 (Vorschau und Kacheln), §14, §18 (Nachtrag NM4-43e), den Nachtrag NM4-43d in `docs/adr/0014-rezept-operator-registry.md` (§15), die Zeilen NM4-43d und NM4-43e im `docs/ENTSCHEIDUNGSLOG.md`.
+
+**Stand nach PR 1 (so ist `main`, wenn diese Aufgabe beginnt).**
+
+- Die Vorgabe eines neuen `band_math`-Schritts heißt `result` (dann `result_1`, `result_2`, …; Review zu #250), Namen werden beim Verlassen des Feldes übernommen, ein Name gegen die Regeln wird nie übernommen und sperrt Schritte, „Review“ und „Start job“ (`OrderView.nameBlock`).
+- Das Panel schickt Rezeptversion 2 und kennt den Bandvorrat: `OrderView` (`frontend/src/processingStore.ts`) hat `output` (die Bänder der Ausgabe in Dateireihenfolge), `results` (`{key, name}` je `band_math`-Schritt), `dataBands`, `assets`; Namen und Regeln in `processingBands.ts`.
+- Die Vorschau (`processingPreview.ts`, `wantedPreview` im Store) schickt der Kachel alle Assets von `view.assets` (Ausgabe, Ausdrücke, `normalize.bands`, Maskenschicht) und **kein** `band=`; die Kachel zeigt dann das letzte Ergebnis von `band_math`, sonst das erste Band (NM4-43d). Die Grenze `MAX_PREVIEW_ASSETS` (16) gilt dort noch; der Hinweis „No preview: the map takes at most 16 bands.“ ist die einzige Bandgrenze, die im Panel übrig ist.
+- Der Ergebnis-Layer im Layer-Manager (`LayerManager.tsx`, `resultLayer.ts`, `api/result_tiles.py`) zeigt das erste Band von `result.tif`; `properties.bands[].statistics` und `bidx` der Ergebnis-Kachel sind seit NM4-43d/M4-32 vorhanden, `result.tif` trägt die Banddeskription (der Name).
+- Die Einheit steht nicht in `result.tif`, nur in den STAC-Eigenschaften (`adr/0014` §15, NM4-43c).
+- Backlog 51 ist erledigt (nichts mehr zu tun).
+
+**Umfang.**
+
+1. **Vorschau:** Im Abschnitt „Preview on the map“ erscheint ein Dropdown „Show“ **links neben den Feldern min und max** (Otto, 30.10.2026, Review zu #250); die Felder min und max werden dafür schmaler. Im Dropdown stehen **alle Bänder** der Ausgabe, **die Ergebnisse der `band_math`-Schritte oben**, darunter die Bänder des Datensatzes. Vorgabe ist das **zuletzt hinzugefügte** Ergebnis (der Schritt, der zuletzt angelegt wurde, nicht der letzte der Kette), sonst das erste Band der Ausgabe; bei genau einem Band in der Ausgabe kein Dropdown. Die Skala der Felder und das Bild gehören immer zum gezeigten Band (ein Wechsel misst und färbt neu; Muster dafür ist der Test „shows in the fields the range the picture is drawn with“ aus dem Review zu #250). Die Kachel bekommt `band=<Name>` (Item-Kachel, Mosaik-Kachel, TileJSON, Statistik) und nur die Assets, die das Band braucht (Streichen wie der Planer, `adr/0020` §4); die Grenzen der Kachel (16 Assets, bei der Mosaik-Kachel 4) greifen damit nach dem Streichen, und `MAX_PREVIEW_ASSETS` wird auf die gelesenen Assets angewandt, nicht auf die der Ausgabe. Wechselt die Auswahl, misst und färbt die Vorschau neu (Farbskala je Band, „Auto stretch“ je Band). Der Hinweis „The map shows the first N steps“ bleibt. Keine Kennung in einer URL.
+2. **Ergebnis-Layer:** Im Layer-Manager ein Dropdown „Band“ in der Zeile, **nur bei mehr als einem Band** in `result.tif` (Namen aus `properties.bands[].name`, Reihenfolge der Datei); es wählt über `bidx` der Ergebnis-Kachel, die Farbskala je Band kommt aus `properties.bands[].statistics` (M4-32), „Apply“/„Save“ gelten je Band. Fehlt der Kachel-Route etwas dafür, kommt es hier dazu (Backend nur nach Rückfrage bei Otto). Mit NM4-45 teilt sich der Layer den Baustein des Dropdowns.
+3. Texte nur Englisch, wenig Text, Erklärungen im Tooltip (UI-01 §4); was grundsätzlich nicht geht, wird ausgeblendet. Nachtrag „Nachtrag NM4-43e PR 2“ in `adr/0020` (am Ende anhängen), Log-Zeile mit PR-Nummer.
+
+**Abnahme.**
+
+- `vitest`: Dropdown „Show“ nur bei mehr als einem Band in der Ausgabe; Vorgabe letztes Ergebnis von `band_math`, sonst erstes Band; die Kachel-URL trägt `band=<Name>` und nur die Assets, die das Band braucht (Beispiel: NDVI mit Maske in einem Auftrag mit 17 Bändern ergibt drei Assets und eine Vorschau trotz `MAX_PREVIEW_ASSETS`); Wechsel des Bandes ändert URL und Farbskala; Statistik und TileJSON tragen `band`; Ergebnis-Layer: Dropdown nur bei mehr als einem Band, wählt `bidx` über den Namen der Banddeskription, Farbskala je Band; Bandnamen mit Sonderzeichen werden in URLs kodiert; keine Kennung, kein Hash in einer URL.
+- Gegenprobe: Die neuen Tests scheitern gegen den Code vor der Änderung.
+- Prüfung im echten Browser (Chromium/Playwright der Sitzung) mit nachgestellten Antworten, nicht nur jsdom: hell und dunkel, schmales Fenster (360 px); im PR beschrieben, Bilder nicht ins Repo.
+- Prüfanleitung für Otto (Browser) im PR; die vier Pflicht-Checks der CI grün (`ruff check backend`, `pytest`, `lint-imports`; `npm run lint`, `npx tsc -b --pretty false`, `npm test`); Log-Zeile(n) mit PR-Nummer; `main` geholt.

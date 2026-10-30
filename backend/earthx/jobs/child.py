@@ -1,8 +1,8 @@
 """The child process of one run: the worker core and nothing else (adr/0013 §5.3, §6.2).
 
 `jobs` starts it with ``multiprocessing.get_context("spawn")`` and a pipe. It knows no
-database, no queue and no object store (KLAERUNGEN B9): this module imports `processing`
-and the standard library, and `earthx/jobs/__init__.py` imports nothing, so a child never
+database, no queue and no object store (KLAERUNGEN B9): this module imports `processing`,
+`earthx.logging` and the standard library, and `earthx/jobs/__init__.py` imports nothing, so a child never
 loads psycopg or the supervisor. ``test_child.py`` starts one and reads ``sys.modules``.
 
 What goes over the pipe, child to supervisor:
@@ -27,10 +27,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from earthx.logging import configure_logging
 from earthx.processing import RunCancelled, failure_kind, run, worker_environment
 from earthx.processing.export import ExportResult, read_attachments
 from earthx.processing.operators import REGISTRY
-from earthx.processing.recipe import CropOutput, parse_recipe
+from earthx.processing.recipe import CropOutput
+from earthx.processing.upgrade import recipe_of_any_version
 
 __all__ = ["guard", "high_water_mb", "run_child"]
 
@@ -62,7 +64,8 @@ def guard(conn: Any, work: Callable[[], None]) -> None:
 
 
 def _run(workdir: Path, conn: Any) -> None:
-    recipe = parse_recipe((workdir / RECIPE_NAME).read_bytes(), REGISTRY)
+    # A recipe the queue still holds from before version 2 is rewritten here, and gives the same values (adr/0020 §11).
+    recipe = recipe_of_any_version((workdir / RECIPE_NAME).read_bytes(), REGISTRY)
 
     def progress(done: int, total: int) -> None:
         conn.send(("progress", done, total, high_water_mb()))
@@ -119,4 +122,7 @@ def _export_info(result: ExportResult) -> dict[str, Any]:
 
 def run_child(workdir: str, conn: Any) -> None:
     """The target of the child process: run the recipe in ``workdir/recipe.json`` there."""
+    # A spawned child starts without the logging of its supervisor, and GDAL names the address of a file it could
+    # not read in its messages; the lines would go to stderr as plain text (NM4-57).
+    configure_logging()
     guard(conn, lambda: _run(Path(workdir), conn))

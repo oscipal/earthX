@@ -1,16 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  type CoverageParams,
+  buildCoverageUrl,
   buildMosaicTileTemplate,
   buildSearchBody,
   buildStatisticsUrl,
   buildTileTemplate,
   downloadCrop,
   errorDetail,
+  fetchCoverage,
   fetchItem,
   fetchMosaicTileJson,
   HttpError,
   nextTokenFrom,
+  parseAreaStatistics,
+  postAreaStatistics,
   searchAllPages,
   searchItems,
   uploadAoi,
@@ -51,14 +56,124 @@ describe('buildSearchBody', () => {
     expect(Object.keys(body)).toEqual(['collections']);
   });
 
-  it('never sends the disabled query/fields extensions (M3-13 F5)', () => {
-    // Measured against the real API (M3-13 plan §2.2): both are silently
-    // dropped on a federated collection, so the backend now refuses them by
-    // name (`_DISALLOWED_QUERY_KEYS`) — `SearchQuery` has no field for either
-    // in the first place, so `buildSearchBody` structurally cannot send them.
-    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a'] });
-    expect(body).not.toHaveProperty('query');
-    expect(body).not.toHaveProperty('fields');
+  it('never sends the shared query, CQL2 filter, sortby or fields extensions (M3-13 F5, DS-02c)', () => {
+    // Measured against the real API (M3-13 plan §2.2): they are silently
+    // dropped on a federated collection, so the backend refuses them by name
+    // (`_DISALLOWED_QUERY_KEYS`) — `SearchQuery` has no field for them. The
+    // filters go as `query_by_collection`, below.
+    const body = buildSearchBody({
+      collections: ['sentinel-2-c1-l2a'],
+      queryByCollection: { 'sentinel-2-c1-l2a': { 'eo:cloud_cover': { lte: 20 } } },
+    });
+    for (const key of ['query', 'filter', 'sortby', 'fields']) expect(body).not.toHaveProperty(key);
+  });
+
+  it('carries the filters of each dataset as query_by_collection (DS-02c)', () => {
+    const body = buildSearchBody({
+      collections: ['optical', 'radar'],
+      queryByCollection: {
+        optical: { 'eo:cloud_cover': { gte: 5, lte: 20 }, platform: { in: ['sat-a'] } },
+        radar: { 'sat:relative_orbit': { gte: 22, lte: 22 } },
+      },
+    });
+    expect(body.query_by_collection).toEqual({
+      optical: { 'eo:cloud_cover': { gte: 5, lte: 20 }, platform: { in: ['sat-a'] } },
+      radar: { 'sat:relative_orbit': { gte: 22, lte: 22 } },
+    });
+  });
+
+  it('leaves query_by_collection out when no dataset has a filter, so such a search keeps its body', () => {
+    expect(buildSearchBody({ collections: ['optical'], queryByCollection: {} })).toEqual({ collections: ['optical'] });
+    expect(buildSearchBody({ collections: ['optical'], queryByCollection: undefined })).toEqual({ collections: ['optical'] });
+  });
+});
+
+describe('buildCoverageUrl', () => {
+  it('carries the dataset, the level, the box and the dates', () => {
+    const url = new URL(
+      buildCoverageUrl({ datasetId: 'optical', zoom: 4, bbox: [10, 47, 11, 48], datetime: '2026-07-01T00:00:00Z/..' }),
+      'http://localhost',
+    );
+    expect(url.pathname).toBe('/coverage/optical');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      zoom: '4',
+      bbox: '10,47,11,48',
+      datetime: '2026-07-01T00:00:00Z/..',
+    });
+  });
+
+  it('carries the filters of the dataset as JSON in query (DS-02b)', () => {
+    const query = { 'eo:cloud_cover': { lte: 20 }, platform: { in: ['sat-a', 'sat-b'] } };
+    const url = new URL(buildCoverageUrl({ datasetId: 'optical', zoom: 4, query }), 'http://localhost');
+    expect(JSON.parse(url.searchParams.get('query')!)).toEqual(query);
+  });
+
+  it('omits query without filters, and has no max_cloud_cover any more', () => {
+    for (const query of [undefined, {}]) {
+      const url = new URL(buildCoverageUrl({ datasetId: 'optical', zoom: 4, query }), 'http://localhost');
+      expect([...url.searchParams.keys()]).toEqual(['zoom']);
+    }
+  });
+  // NM4-57 (M4 Q8): the box of an AOI is never in a URL.
+  it('never carries the box of an AOI', () => {
+    const url = buildCoverageUrl({ datasetId: 'optical', zoom: 4, aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234] });
+    expect(url).not.toContain('11.31234');
+    expect(new URL(url, 'http://localhost').searchParams.has('bbox')).toBe(false);
+  });
+});
+
+describe('fetchCoverage', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const answer = { ok: true, status: 200, json: async () => ({}) } as Response;
+
+  it('asks an AOI by POST: the box and the filters in the body, nothing in the URL', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+    const query = { 'eo:cloud_cover': { lte: 20 } };
+
+    await fetchCoverage({
+      datasetId: 'optical',
+      zoom: 9,
+      aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234],
+      datetime: '2026-07-01T00:00:00Z/..',
+      query,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/coverage/optical');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      zoom: 9,
+      bbox: [11.31234, 47.81234, 11.51234, 47.91234],
+      datetime: '2026-07-01T00:00:00Z/..',
+      query,
+    });
+  });
+
+  it('does not take a map extent and the box of an AOI together (checked by the type)', () => {
+    // @ts-expect-error the extent goes in the URL, the AOI in the body: one question has one of them
+    const both: CoverageParams = { datasetId: 'optical', zoom: 4, bbox: [0, 0, 1, 1], aoiBbox: [0, 0, 1, 1] };
+    expect(both.zoom).toBe(4);
+  });
+
+  it('asks a map extent by GET, as before', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCoverage({ datasetId: 'optical', zoom: 6, bbox: [-180, -85, 180, 85] });
+
+    expect(fetchMock.mock.calls[0]).toEqual(['/coverage/optical?zoom=6&bbox=-180%2C-85%2C180%2C85']);
+  });
+
+  it('leaves a body without the optional fields out', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCoverage({ datasetId: 'optical', zoom: 3, aoiBbox: [0, 0, 1, 1], query: {} });
+
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(JSON.parse(String(init.body))).toEqual({ zoom: 3, bbox: [0, 0, 1, 1] });
   });
 });
 
@@ -337,7 +452,7 @@ describe('uploadAoi', () => {
     vi.unstubAllGlobals();
   });
 
-  it('POSTs the file itself as the body and the name as a ?filename= query parameter', async () => {
+  it('POSTs the file itself as the body and its extension as a ?filename= query parameter', async () => {
     const square: GeoJSON.Polygon = {
       type: 'Polygon',
       coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]],
@@ -355,14 +470,23 @@ describe('uploadAoi', () => {
     expect(new Headers(init?.headers).get('Content-Type')).toBe('application/octet-stream');
   });
 
-  it('percent-encodes spaces and reserved characters in the filename', async () => {
+  // NM4-57: the name of a file often names a person or a place and a URL stands in access logs.
+  it.each([
+    ['Haus Müller & Söhne #3.kml', 'aoi.kml'],
+    ['Flurstück 12/4 Schmidt.GeoJSON', 'aoi.GeoJSON'],
+    ['gebiet.zip', 'aoi.zip'],
+    ['no extension', 'aoi'],
+    ['ends with a dot.', 'aoi'],
+    ['name.with spaces', 'aoi'],
+    ['x.' + 'a'.repeat(20), 'aoi'],
+  ])('sends nothing of the name %j but its extension', async (name, sent) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { type: 'Point', coordinates: [0, 0] })));
-    const name = 'a b&c#d.kml';
 
     await uploadAoi(new File([], name), name);
 
     const [url] = vi.mocked(fetch).mock.calls[0];
-    expect(url).toBe(`/aoi/upload?filename=${encodeURIComponent(name)}`);
+    expect(url).toBe(`/aoi/upload?filename=${sent}`);
+    expect(String(url)).not.toMatch(/Haus|M%C3%BCller|Schmidt|Flurst|gebiet|spaces/);
   });
 
   it('rejects with an HttpError carrying the route detail on a 400', async () => {
@@ -667,5 +791,68 @@ describe('fetchMosaicTileJson', () => {
   ])('refuses an answer with %s rather than drawing from it', async (_name, body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, body)));
     await expect(fetchMosaicTileJson('d', ['A', 'B'], 'visual')).rejects.toThrow(/cannot read/);
+  });
+});
+
+// NM4-19: the statistics over the AOI of an order, the AOI in the body and nowhere else.
+describe('postAreaStatistics', () => {
+  const answer = { bands: [{ name: 'b1', unit: 'm', statistics: { minimum: 1, maximum: 2, count: 3 } }, { name: 'b2', statistics: {} }], exact: false, factor: 2 };
+  const reply = (status: number, body: unknown) =>
+    ({ ok: status < 300, status, statusText: 'x', headers: new Headers(), json: async () => body }) as unknown as Response;
+  const order = { recipe_version: 1, aoi: { type: 'Polygon', coordinates: [[[10.4, 50.4], [10.6, 50.4], [10.6, 50.6], [10.4, 50.4]]] }, steps: [] };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('posts the order as the JSON body to the path of the dataset, with no query', async () => {
+    const fetchMock = vi.fn(async () => reply(200, answer));
+    vi.stubGlobal('fetch', fetchMock);
+    const read = await postAreaStatistics('sentinel-2-c1-l2a', order);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/collections/sentinel-2-c1-l2a/statistics');
+    expect(init).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    expect(JSON.parse(String(init.body))).toEqual(order);
+    expect(read).toEqual({
+      bands: [
+        { name: 'b1', unit: 'm', statistics: { minimum: 1, maximum: 2, count: 3 } },
+        { name: 'b2', unit: null, statistics: {} },
+      ],
+      exact: false,
+      factor: 2,
+    });
+  });
+
+  it('writes the dataset into the path as one segment, whatever it is called', async () => {
+    const fetchMock = vi.fn(async () => reply(200, answer));
+    vi.stubGlobal('fetch', fetchMock);
+    await postAreaStatistics('a/b?c', order);
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe('/collections/a%2Fb%3Fc/statistics');
+  });
+
+  it.each([
+    [413, { detail: 'too many positions' }],
+    [422, { detail: 'step 1: expression names unknown band(s)' }],
+    [502, {}],
+  ])('throws an HttpError for status %s', async (status, body) => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(status, body)));
+    await expect(postAreaStatistics('d', order)).rejects.toMatchObject({ status });
+  });
+
+  it.each([
+    ['no object', null],
+    ['no bands', { bands: [], exact: true, factor: 1 }],
+    ['bands that are no list', { bands: 'x', exact: true, factor: 1 }],
+    ['no statement whether it is exact', { bands: answer.bands, factor: 1 }],
+  ])('refuses an answer with %s', (_, body) => {
+    expect(() => parseAreaStatistics(body)).toThrow('cannot read');
+  });
+
+  it('takes a factor that is no number as 1, and a band that is no object as an empty one', () => {
+    expect(parseAreaStatistics({ bands: [null], exact: true, factor: 'x' })).toEqual({
+      bands: [{ name: '', unit: null, statistics: {} }],
+      exact: true,
+      factor: 1,
+    });
   });
 });

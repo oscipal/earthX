@@ -33,9 +33,10 @@ from earthx.jobs.submit import (
 from earthx.processing.errors import UnknownOperator
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
-from earthx.processing.recipe import cache_key, recipe_from_data, run_key
+from earthx.processing.recipe import cache_key, run_key
 from tests.earthx.jobs.support import ATTACHMENTS, HOST, add_run, make_export, make_recipe, run_row, status_of
-from tests.earthx.processing.recipes import recipe_data
+from tests.earthx.processing.recipes import recipe_data, recipe_of_data
+from tests.earthx.processing.test_estimate_bands import NEAR_THE_CAP, wide_job
 from tests.earthx.processing.testops import OPERATORS
 
 ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
@@ -69,6 +70,15 @@ class TestSubmit:
         assert key == cache_key(recipe) == run_key(recipe)
         assert max_seconds >= MIN_RUNTIME_SECONDS
 
+    def test_a_job_with_many_bands_gets_a_time_limit_above_the_floor(self, db: psycopg.Connection) -> None:
+        """17 bands near the cap on the output: about 70 million pixels, which the floor of 600 s would cut off
+        (adr/0020 §3.2 Befund 9); the limit follows the estimate, and the estimate counts the bands."""
+        recipe = wide_job(17, aoi=NEAR_THE_CAP)
+        submit(db, recipe)
+        row = db.execute("SELECT max_seconds FROM public.earthx_run").fetchone()
+        assert row is not None
+        assert row[0] > MIN_RUNTIME_SECONDS
+
     def test_every_order_gets_a_recipe_id_of_its_own(self, db: psycopg.Connection) -> None:
         first = submit(db, make_recipe())
         second = submit(db, make_recipe())
@@ -84,13 +94,12 @@ class TestSubmit:
 
     def test_the_stored_recipe_reads_back_as_the_recipe_that_was_given(self, db: psycopg.Connection) -> None:
         from earthx.processing.operators import REGISTRY
-        from earthx.processing.recipe import recipe_from_data
 
         recipe = make_recipe()
         submit(db, recipe)
         body = db.execute("SELECT body FROM public.earthx_recipe").fetchone()
         assert body is not None
-        again = recipe_from_data(body[0], REGISTRY)
+        again = recipe_of_data(body[0], REGISTRY)
         assert run_key(again) == run_key(recipe)
 
     def test_a_recipe_id_that_exists_is_refused_without_naming_it_and_leaves_nothing_behind(
@@ -201,9 +210,8 @@ class TestCacheHit:
         data = old.model_dump(mode="json")
         data["inputs"][0]["resolved"][0]["version"] = {"kind": "etag", "value": "newer"}
         from earthx.processing.operators import REGISTRY
-        from earthx.processing.recipe import recipe_from_data
 
-        submit(db, recipe_from_data(data, REGISTRY))
+        submit(db, recipe_of_data(data, REGISTRY))
         assert _count(db, "earthx_run") == 2
 
 
@@ -400,7 +408,7 @@ class TestTheRegistryTheLimitIsEstimatedWith:
 
     def test_a_recipe_with_an_operator_of_the_given_registry_is_placed(self, db: psycopg.Connection) -> None:
         step = {"op": "scale", "op_version": 1, "params": {"factor": 2.0, "label": None}}
-        recipe = recipe_from_data(recipe_data(steps=[step]), OPERATORS)
+        recipe = recipe_of_data(recipe_data(steps=[step]), OPERATORS)
         job_id = submit(db, recipe, operators=OPERATORS)
         assert job_status(db, job_id) is not None
         assert db.execute("SELECT max_seconds FROM public.earthx_run").fetchone() is not None
@@ -409,7 +417,7 @@ class TestTheRegistryTheLimitIsEstimatedWith:
         self, db: psycopg.Connection
     ) -> None:
         step = {"op": "scale", "op_version": 1, "params": {"factor": 2.0, "label": None}}
-        recipe = recipe_from_data(recipe_data(steps=[step]), OPERATORS)
+        recipe = recipe_of_data(recipe_data(steps=[step]), OPERATORS)
         with pytest.raises(UnknownOperator):
             submit(db, recipe)
         assert _count(db, "earthx_run") == 0, "nothing was written"

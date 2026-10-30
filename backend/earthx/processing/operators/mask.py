@@ -11,10 +11,14 @@ is exact, ``numpy.isin`` on the values as read; a coarser layer has been brought
 ``nearest`` before, which only repeats pixels, so it holds no value the file does not (plan §8).
 
 Nothing here is a float computation, which is why the result is bit-stable across machines (R5, §15c).
+
+**Version 2 (NM4-43c)** keeps the layer in the stock, where version 1 removed it: it is masked at its own hidden
+classes like every other band, and whether it goes into the result is for ``output.bands`` to say (adr/0020 §4).
 """
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Annotated, Any
 
 import numpy
@@ -23,9 +27,9 @@ from rio_tiler.models import ImageData
 
 from earthx.catalog.registry import MAX_MASK_VALUE, DatasetConfig, LicenseTier
 from earthx.processing.errors import RecipeInvalid
-from earthx.processing.operators.base import Operator, RasterMeta, Requirement, Tier
+from earthx.processing.operators.base import BandUse, Operator, RasterMeta, Requirement, Tier
 
-__all__ = ["MASK", "MAX_CLASSES", "MaskParams"]
+__all__ = ["MASK", "MASK_V2", "MAX_CLASSES", "MaskParams"]
 
 MAX_CLASSES = 64
 
@@ -96,6 +100,44 @@ def _transform(meta: RasterMeta, params: BaseModel) -> RasterMeta:
     return RasterMeta(meta.crs, meta.transform, meta.width, meta.height, bands, meta.resampled)
 
 
+def _layer(names: list[str], source: str) -> int:
+    if source not in names:
+        raise RecipeInvalid(f"mask source {source!r} is not among the bands: {', '.join(names)}")
+    return names.index(source)
+
+
+def _run_v2(image: ImageData, params: BaseModel) -> ImageData:
+    """Every band of the stock, the layer included, masked where the layer holds a hidden class or has no value."""
+    assert isinstance(params, MaskParams)
+    names = list(image.band_names)
+    layer = image.array[_layer(names, params.source)]
+    hidden = numpy.isin(numpy.ma.getdata(layer), params.classes) | numpy.ma.getmaskarray(layer)
+    array = numpy.ma.MaskedArray(
+        numpy.ma.getdata(image.array), mask=numpy.ma.getmaskarray(image.array) | hidden[None]
+    )
+    return ImageData(array, bounds=image.bounds, crs=image.crs, band_names=names, nodata=image.nodata)
+
+
+def _transform_v2(meta: RasterMeta, params: BaseModel) -> RasterMeta:
+    """The same bands; also the check, before any block is read, that the layer is there."""
+    assert isinstance(params, MaskParams)
+    _layer([band.name for band in meta.bands], params.source)
+    return meta
+
+
+def _bands_used_v2(params: BaseModel) -> BandUse:
+    assert isinstance(params, MaskParams)
+    return BandUse(reads=frozenset({params.source}))
+
+
+def _method_v2(params: BaseModel) -> str:
+    assert isinstance(params, MaskParams)
+    return (
+        f"Pixels were hidden in every band where the classification layer {params.source} held class "
+        f"{', '.join(map(str, params.classes))} or had no value."
+    )
+
+
 def _lineage(params: BaseModel) -> str:
     assert isinstance(params, MaskParams)
     return f"mask: {params.source} classes {', '.join(map(str, params.classes))}"
@@ -149,4 +191,19 @@ MASK = Operator(
     method=_method,
     properties=_properties,
     dataset_check=_dataset_check,
+    stock=False,
+    listed=False,
+)
+
+#: Version 2 (NM4-43c): the layer stays in the stock. Listed since NM4-43e, the panel sends it; version 1 is accepted, not listed.
+MASK_V2 = dataclasses.replace(
+    MASK,
+    op_version=2,
+    description="Hide the pixels that a classification layer assigns to the chosen classes, such as cloud.",
+    transform=_transform_v2,
+    run=_run_v2,
+    method=_method_v2,
+    bands_used=_bands_used_v2,
+    stock=True,
+    listed=True,
 )

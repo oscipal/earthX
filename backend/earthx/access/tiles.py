@@ -190,9 +190,13 @@ class EarthxTilerFactory(TilerFactory):
     supported_tms: TileMatrixSets = TileMatrixSets({"WebMercatorQuad": morecantile.tms.get("WebMercatorQuad")})
 
     def tilejson_extras(self, src_dst: BaseReader) -> dict[str, Any]:
-        """Fields a factory adds to its TileJSON beyond TiTiler's: the ``unit`` of an operator's tile, if it has one."""
-        unit = getattr(src_dst, "unit", None)
-        return {} if unit is None else {"unit": unit}
+        """Fields a factory adds to its TileJSON beyond TiTiler's: of an operator's tile the ``band`` it shows and its ``unit``."""
+        extras = {}
+        if (band := getattr(src_dst, "band", None)) is not None:
+            extras["band"] = band
+        if (unit := getattr(src_dst, "unit", None)) is not None:
+            extras["unit"] = unit
+        return extras
 
     def statistics(self) -> None:
         """Register ``GET /statistics`` — the same answer as TiTiler's, with a cache.

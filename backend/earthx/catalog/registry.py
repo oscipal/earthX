@@ -11,6 +11,7 @@ later on.
 
 from __future__ import annotations
 
+import keyword
 import math
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -34,6 +35,7 @@ MAX_TILE_ZOOM = 22
 
 # A unit is a symbol, not a sentence (UCUM: "m", "1", "mm/h"); the longest in use stays far below this.
 MAX_UNIT_CHARS = 32
+MAX_GROUP_CHARS = 24
 
 
 class DataClass(Enum):
@@ -776,6 +778,12 @@ class MaskSource:
     must equal. ``classes`` lists every class the layer knows, ascending, with the names
     of ``reference``; ``suggested`` is what the panel ticks first and is never applied
     unless a recipe names it (B10). ``note`` is the help text's remark on the names.
+
+    ``cloud_classes`` are the classes that count as cloud when the search measures the cloud share inside an AOI
+    (DS-03 plan §6.6, §6.10); empty means the dataset has no such share. They are a subset of ``classes`` and the
+    layer must be a COG, because the share is read from the overviews of the file itself. ``cloud_note`` is one
+    sentence on the limits of the classification, shown as a tooltip; it may be empty only without ``cloud_classes``.
+    Neither has a default (B10): an entry says on purpose whether it offers the share.
     """
 
     asset: str
@@ -784,6 +792,8 @@ class MaskSource:
     suggested: frozenset[int]
     reference: str
     note: str
+    cloud_classes: frozenset[int]
+    cloud_note: str
 
 
 class FilterKind(Enum):
@@ -810,7 +820,12 @@ class FilterValue:
 @dataclass(frozen=True, slots=True)
 class SearchFilter:
     """A filter the search offers for one dataset (DS-02 plan §6.3). ``title`` and ``description`` are shown as they
-    stand. ``minimum``, ``maximum`` and ``integer`` belong to a ``RANGE``, ``values`` to a ``VALUES`` filter."""
+    stand. ``minimum``, ``maximum`` and ``integer`` belong to a ``RANGE``, ``values`` to a ``VALUES`` filter.
+
+    ``within_aoi`` is True on the one filter whose range may also be applied to the cloud share inside the AOI
+    (DS-03 plan §6.10); it needs ``MaskSource.cloud_classes``. ``group`` is the heading the filter stands under in the
+    pop-up (DS-02c), e.g. "Clouds": the filters of one group follow each other, and the order of the registry is the
+    order shown. No defaults (B10)."""
 
     property: str
     kind: FilterKind
@@ -821,6 +836,8 @@ class SearchFilter:
     maximum: float | None
     integer: bool
     values: tuple[FilterValue, ...]
+    within_aoi: bool
+    group: str
 
 
 def _filter_problem(search_filter: SearchFilter) -> str | None:
@@ -832,6 +849,11 @@ def _filter_problem(search_filter: SearchFilter) -> str | None:
         return f"{name!r} uses the prefix {RESERVED_FILTER_PREFIX!r}, which is kept for filters the platform computes"
     if not search_filter.title.strip() or not search_filter.description.strip():
         return f"the filter on {name!r} has a title and a description"
+    if not isinstance(search_filter.within_aoi, bool):
+        return f"within_aoi of the filter on {name!r} is True or False"
+    group = search_filter.group
+    if not isinstance(group, str) or not group.strip() or group != group.strip() or len(group) > MAX_GROUP_CHARS:
+        return f"the group of the filter on {name!r} is a short non-blank text"
     unit = search_filter.unit
     if unit is not None and (not unit.strip() or unit != unit.strip() or len(unit) > MAX_UNIT_CHARS):
         return f"the unit of the filter on {name!r} is a short non-blank text or None"
@@ -854,8 +876,65 @@ def _filter_problem(search_filter: SearchFilter) -> str | None:
     return None
 
 
+# The name of the band a preset's step adds: the pattern of ``band_math.check_name`` (adr/0020 §6), which the start of
+# ``api`` applies in full (``processing.index_presets``); ``catalog`` cannot import ``processing``.
+INDEX_PRESET_NAME = re.compile(r"\A[A-Za-z][A-Za-z0-9_]{0,31}\Z")
+# A name in an expression that is no call: what has to be a band of the dataset. Numbers such as ``1e5`` are no name;
+# Python's keywords (``if``, ``and``) are left to band_math, which refuses them with a reason of its own.
+_EXPRESSION_BAND = re.compile(r"(?<![A-Za-z0-9_.])[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_])(?!\s*\()")
+
+
+@dataclass(frozen=True, slots=True)
+class IndexPreset:
+    """A common index the panel offers as one click, which fills an ordinary ``band_math`` step (NM4-14 plan §8.1).
+
+    ``name`` is the band the step adds and the text of the button, ``expression`` names the bands of this dataset as a
+    user would type them. ``rescale`` and ``colormap_name`` are how a band with this expression is drawn, in the field
+    names of the STAC render extension like ``DefaultRender``. ``formula`` is the formula in the words of Awesome
+    Spectral Indices, ``reference`` the source of the formula as that catalogue names it. No defaults (B10).
+    """
+
+    name: str
+    title: str
+    expression: str
+    rescale: tuple[float, float]
+    colormap_name: str
+    formula: str
+    reference: str
+
+
+def _preset_problem(preset: IndexPreset, bands: set[str], not_bands: set[str]) -> str | None:
+    """The rule an index preset breaks, as the end of a sentence about it, or None."""
+    for field_name in ("title", "expression", "colormap_name", "formula"):
+        value = getattr(preset, field_name)
+        if not isinstance(value, str) or not value.strip() or value != value.strip():
+            return f"has a non-blank {field_name}"
+    used = {name for name in _EXPRESSION_BAND.findall(preset.expression) if not keyword.iskeyword(name)}
+    if used & not_bands:
+        return f"reads {', '.join(sorted(used & not_bands))}, which is no band of the data"
+    if unknown := used - bands:
+        return f"reads {', '.join(sorted(unknown))}, which the entry does not know (band_units)"
+    if not used:
+        return "reads no band"
+    rescale = preset.rescale
+    if (
+        not isinstance(rescale, tuple)
+        or len(rescale) != 2
+        or not all(_is_finite_number(bound) for bound in rescale)
+        or not rescale[0] < rescale[1]
+    ):
+        return "has a rescale of two finite numbers, the lower first"
+    if not isinstance(preset.reference, str) or not preset.reference.startswith("https://"):
+        return "names the source of its formula with an https:// address"
+    return None
+
+
 def _is_finite_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _is_whole_number(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 @dataclass(frozen=True, slots=True)
@@ -913,6 +992,9 @@ class DatasetConfig:
     # The filters the search offers for this dataset, in the order the panel shows them (DS-02). No default
     # (KLAERUNGEN B10): an entry says so, with an empty tuple where it offers none.
     search_filters: tuple[SearchFilter, ...]
+    # The indices the panel offers as one click each (NM4-14), in the order of the buttons. No default (KLAERUNGEN
+    # B10): an entry says so, with an empty tuple where it offers none.
+    index_presets: tuple[IndexPreset, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
@@ -930,6 +1012,7 @@ class DatasetConfig:
         self._check_band_units()
         self._check_auxiliary_assets()
         self._check_search_filters()
+        self._check_index_presets()
 
     def search_filter(self, name: str) -> SearchFilter | None:
         """The filter on the property ``name``, or None where the entry offers none."""
@@ -950,9 +1033,28 @@ class DatasetConfig:
         names = [entry.property for entry in self.search_filters]
         if len(set(names)) != len(names):
             raise ConfigError(f"{self.dataset_id}: search_filters names a property twice")
+        groups = [entry.group for entry in self.search_filters]
+        if any(group != groups[i - 1] and group in groups[: i - 1] for i, group in enumerate(groups) if i):
+            raise ConfigError(f"{self.dataset_id}: the filters of one group follow each other")
         if names and self.source.item_holding is not ItemHolding.FEDERATED:
             # Our own items are searched by pgstac, which applies no filter of this kind yet (DS-02 plan §6.5).
             raise ConfigError(f"{self.dataset_id}: search filters need federated items")
+        self._check_within_aoi()
+
+    def _check_within_aoi(self) -> None:
+        """``within_aoi`` sits on at most one filter: a cloud-cover percentage the AOI measure can stand in for."""
+        marked = [entry for entry in self.search_filters if entry.within_aoi]
+        if not marked:
+            return
+        if len(marked) > 1:
+            raise ConfigError(f"{self.dataset_id}: within_aoi is set on more than one filter")
+        entry = marked[0]
+        if entry.kind is not FilterKind.RANGE or entry.minimum != 0 or entry.maximum != 100 or entry.unit != "%":
+            raise ConfigError(
+                f"{self.dataset_id}: within_aoi on {entry.property!r} needs a range filter from 0 to 100 in '%'"
+            )
+        if self.mask is None or not self.mask.cloud_classes:
+            raise ConfigError(f"{self.dataset_id}: within_aoi on {entry.property!r} needs a mask with cloud_classes")
 
     def band_unit(self, asset: str) -> str | None:
         """The unit the entry names for ``asset`` (one key, not a list of variables), or ``None`` where it names none.
@@ -1005,6 +1107,35 @@ class DatasetConfig:
         if self.mask is not None and self.mask.asset in keys:
             raise ConfigError(f"{self.dataset_id}: the mask layer {self.mask.asset!r} is named by mask, not auxiliary_assets")
 
+    def _check_index_presets(self) -> None:
+        """The presets are well formed, each name once, and name only bands of the data (NM4-14 plan §8.1).
+
+        Whether ``band_math`` takes the expression and the name, and whether the tiler knows the colormap, is
+        ``processing.index_presets.check_index_presets``' question.
+        """
+        presets = self.index_presets
+        if isinstance(presets, IndexPreset) or not isinstance(presets, tuple):
+            raise ConfigError(f"{self.dataset_id}: index_presets is a tuple of IndexPreset")
+        if presets and not self.capabilities.band_math:
+            raise ConfigError(f"{self.dataset_id}: index presets fill a band_math step, but band_math is off")
+        bands = {key for key in self.band_units if "*" not in key}
+        not_bands = set(self.auxiliary_assets) | ({self.mask.asset} if self.mask is not None else set())
+        taken = {key.casefold() for key in self.band_units}
+        seen: set[str] = set()
+        for preset in presets:
+            if not isinstance(preset, IndexPreset):
+                raise ConfigError(f"{self.dataset_id}: index_presets is a tuple of IndexPreset")
+            name = preset.name
+            if not isinstance(name, str) or not INDEX_PRESET_NAME.match(name):
+                raise ConfigError(f"{self.dataset_id}: {name!r} is not a name a band_math step can add")
+            if name.casefold() in seen:
+                raise ConfigError(f"{self.dataset_id}: the index preset {name} is named twice (case ignored)")
+            seen.add(name.casefold())
+            if name.casefold() in taken:
+                raise ConfigError(f"{self.dataset_id}: the index preset {name} has the name of a band of the data")
+            if problem := _preset_problem(preset, bands, not_bands):
+                raise ConfigError(f"{self.dataset_id}: the index preset {name} {problem}")
+
     def _check_mask(self) -> None:
         """``masking`` and ``mask`` agree, and the description of the layer is consistent (M4-18)."""
         mask = self.mask
@@ -1033,6 +1164,22 @@ class DatasetConfig:
             raise ConfigError(f"{self.dataset_id}: every mask class has a name")
         if not mask.suggested <= set(values):
             raise ConfigError(f"{self.dataset_id}: suggested mask classes are among the listed ones")
+        cloud = mask.cloud_classes
+        if not isinstance(cloud, frozenset) or not all(_is_whole_number(value) for value in cloud):
+            raise ConfigError(f"{self.dataset_id}: cloud_classes is a frozenset of whole numbers")
+        if not cloud <= set(values):
+            raise ConfigError(f"{self.dataset_id}: cloud_classes are among the listed mask classes")
+        if not isinstance(mask.cloud_note, str):
+            raise ConfigError(f"{self.dataset_id}: cloud_note is a text, empty without cloud_classes")
+        if not cloud:
+            return
+        if not mask.cloud_note.strip():
+            raise ConfigError(f"{self.dataset_id}: cloud_classes need a cloud_note on the limits of the classification")
+        if self.format is not DataFormat.COG:
+            raise ConfigError(
+                f"{self.dataset_id}: cloud_classes need a COG: the cloud share is read from the overviews of the "
+                f"file itself, and a {self.format.value} dataset needs a reader of its own first (DS-03 plan §6.19)"
+            )
 
     def _check_keywords(self) -> None:
         """At least one keyword, each a non-blank string (M3-10): the viewer's filter

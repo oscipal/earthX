@@ -8,7 +8,7 @@ seams the tests use — ``vsicurl_path`` and the resolver — enters
 runs one step over every band of the COG (two, or more since NM4-43b) — the test operator ``scale``, or with ``step`` set to
 ``reproject`` the platform's ``reproject`` to EPSG:3035 with ``bilinear`` at 10 m, with
 ``reproject-lanczos`` with ``lanczos`` at 30 m, with ``normalize`` the platform's
-``normalize`` over its bands, with ``mask`` its ``mask`` over its bands and the 20 m
+``normalize`` over its bands (``normalize-zscore``, ``-percentile`` and ``-robust``: version 3, NM4-11), with ``mask`` its ``mask`` over its bands and the 20 m
 classification layer ``layer`` (a second COG, M4-18) — and prints one JSON line: peak
 resident memory in MB, the resident memory after the imports, seconds and blocks.
 Nothing here opens a socket.
@@ -63,6 +63,44 @@ STEPS = {
     "mask": {"op": "mask", "op_version": 1, "params": {"source": "scl", "classes": [3, 8, 9, 10]}},
 }
 
+#: NM4-11: the methods of ``normalize`` version 3 over the two bands of the scene (``big_1``, ``big_2``). A recipe of
+#: version 2, because only it names the bands the step converts.
+_V3_BANDS = ["big_1", "big_2"]
+STEPS_V3 = {
+    "normalize-zscore": {
+        "method": "zscore",
+        "bands": _V3_BANDS,
+        "measured": {
+            "factor": 1,
+            "bands": {"big_1": {"mean": 0.3, "stddev": 0.1}, "big_2": {"mean": 0.5, "stddev": 0.2}},
+        },
+    },
+    "normalize-percentile": {
+        "method": "percentile",
+        "bands": _V3_BANDS,
+        "low": 2,
+        "high": 98,
+        "out_min": 0.0,
+        "out_max": 1.0,
+        "clip": True,
+        "measured": {
+            "factor": 1,
+            "bands": {"big_1": {"p_low": 0.1, "p_high": 0.6}, "big_2": {"p_low": 0.2, "p_high": 0.9}},
+        },
+    },
+    "normalize-robust": {
+        "method": "robust",
+        "bands": _V3_BANDS,
+        "measured": {
+            "factor": 1,
+            "bands": {
+                "big_1": {"p25": 0.2, "median": 0.3, "p75": 0.4},
+                "big_2": {"p25": 0.3, "median": 0.5, "p75": 0.7},
+            },
+        },
+    },
+}
+
 
 def main(
     cog: Path, workdir: Path, size: int, cachemax_mb: int | None, step: str = "scale", layer: Path | None = None
@@ -73,7 +111,6 @@ def main(
     import earthx.readers.access as read_access
     import earthx.readers.cog as cog_reader
     from earthx.processing import run, worker_environment
-    from earthx.processing.recipe import recipe_from_data
     from tests.earthx.processing import sources
     from tests.earthx.processing.recipes import resolved
     from tests.earthx.processing.testops import OPERATORS
@@ -101,10 +138,15 @@ def main(
             {"name": "s2", "dataset": "synthetic", "groups": [["ITEM_BIG"]], "assets": assets, "resolved": entries}
         ],
         "aoi": sources.whole(size, size),
-        "steps": [STEPS[step]],
+        "steps": [STEPS[step]] if step in STEPS else [{"op": "normalize", "op_version": 3, "params": STEPS_V3[step]}],
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
-    recipe = recipe_from_data(data, OPERATORS)
+    if step in STEPS_V3:
+        data["recipe_version"] = 2
+        data["output"]["bands"] = _V3_BANDS
+    from tests.earthx.processing.recipes import recipe_of_data
+
+    recipe = recipe_of_data(data, OPERATORS)
     imports_mb = high_water_mb()
     started = time.monotonic()
     with worker_environment():

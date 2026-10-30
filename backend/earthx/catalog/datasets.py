@@ -30,6 +30,7 @@ from earthx.catalog.registry import (
     FilterValue,
     HealthInfo,
     HealthStatus,
+    IndexPreset,
     ItemHolding,
     LicenseInfo,
     LicenseTier,
@@ -88,6 +89,23 @@ _SCL_NOTE = (
 # unit (its values name classes, `mask` below), and the TCI `visual` is the 8-bit picture the default render shows.
 # The aerosol optical thickness is unit less as well, so it shares the "1".
 _REFLECTANCE_UNIT = "1"
+
+def _scene_share(property_name: str, title: str, description: str, *, group: str) -> SearchFilter:
+    """A share of the scene in percent, 0 to 100: the form most of the scene properties of Sentinel-2 have."""
+    return SearchFilter(
+        property=property_name,
+        kind=FilterKind.RANGE,
+        title=title,
+        description=description,
+        unit="%",
+        minimum=0.0,
+        maximum=100.0,
+        integer=False,
+        values=(),
+        within_aoi=False,
+        group=group,
+    )
+
 
 SENTINEL_2_L2A = DatasetConfig(
     # The same id as the upstream collection, by Otto's decision of 19.09.2026: the
@@ -274,6 +292,10 @@ SENTINEL_2_L2A = DatasetConfig(
         suggested=_SCL_SUGGESTED,
         reference=_SCL_REFERENCE,
         note=_SCL_NOTE,
+        # DS-03 plan §6.6, §6.10: 8, 9, 10 is the definition of `eo:cloud_cover`, measured equal on 48 of 48 scenes
+        # (plan §6.2.5); cloud shadows (3) do not count.
+        cloud_classes=frozenset({8, 9, 10}),
+        cloud_note="Sen2Cor's classification can miss thin cirrus and can take snow or bright ground for clouds.",
     ),
     # The twelve reflectance bands of the L2A product (surface reflectance, scaled by the item), then the other
     # assets. Sources: Sen2Cor L2A IODD (S2-PDGS-MPC-L2A-IODD-2.4, issue 02) Tables 6 and 7 (cloud and snow
@@ -298,8 +320,14 @@ SENTINEL_2_L2A = DatasetConfig(
     },
     # Pictures made from the bands, not bands themselves. `scl` is the mask layer (`mask` above).
     auxiliary_assets=("visual", "preview"),
-    # DS-02 plan §6.2, §6.2a (Otto 28.10.2026, question 4 option 3): measured against the source on 28.10.2026 —
-    # `query` narrows on all three. The items carry no `sat:orbit_state` or `sat:relative_orbit`, so neither is offered.
+    # DS-02 plan §6.2, §6.2a and DS-02c (Otto 28.10.2026 and 30.10.2026): every filter below was measured against the
+    # source on 30.10.2026 (`scripts/ds-02-filters/measure.py`, adr/0021 §8): over 7 regions and 2 seasons, in 252
+    # searches, `query` returned exactly the scenes the unfiltered sample says it must. Clouds first, then what the scene
+    # shows, then how it was taken. Left out on purpose, with the reason in adr/0021 §8: `s2:dark_features_percentage` (the
+    # items carry it only up to baseline 05.10, so a filter on it would drop every newer scene without a word), the parts
+    # of the cloud cover (`s2:medium_proba_clouds_percentage`, `s2:high_proba_clouds_percentage`), `s2:unclassified_percentage`,
+    # the viewing angles, the MGRS tile (a text, not a list to tick) and every identifier, timestamp and constant.
+    # The items carry no `sat:orbit_state` or `sat:relative_orbit`, so neither is offered.
     search_filters=(
         SearchFilter(
             property="eo:cloud_cover",
@@ -311,17 +339,42 @@ SENTINEL_2_L2A = DatasetConfig(
             maximum=100.0,
             integer=False,
             values=(),
+            # DS-03 plan §6.10: the range of this filter may also be applied to the cloud share inside the AOI.
+            within_aoi=True,
+            group="Clouds",
         ),
-        SearchFilter(
-            property="s2:nodata_pixel_percentage",
-            kind=FilterKind.RANGE,
-            title="No data",
-            description="Share of the scene tile without image data, e.g. at the edge of a swath.",
-            unit="%",
-            minimum=0.0,
-            maximum=100.0,
-            integer=False,
-            values=(),
+        _scene_share(
+            "s2:thin_cirrus_percentage",
+            "Thin cirrus",
+            "Share of the scene covered by thin cirrus clouds. Part of the cloud cover.",
+            group="Clouds",
+        ),
+        _scene_share(
+            "s2:cloud_shadow_percentage",
+            "Cloud shadow",
+            "Share of the scene lying in the shadow of clouds. Not part of the cloud cover.",
+            group="Clouds",
+        ),
+        _scene_share(
+            "s2:nodata_pixel_percentage",
+            "No data",
+            "Share of the scene tile without image data, e.g. at the edge of a swath.",
+            group="Scene",
+        ),
+        _scene_share("s2:snow_ice_percentage", "Snow and ice", "Share of the scene classified as snow or ice.", group="Scene"),
+        _scene_share("s2:water_percentage", "Water", "Share of the scene classified as water.", group="Scene"),
+        _scene_share("s2:vegetation_percentage", "Vegetation", "Share of the scene classified as vegetation.", group="Scene"),
+        _scene_share(
+            "s2:not_vegetated_percentage",
+            "Not vegetated",
+            "Share of the scene classified as not vegetated, e.g. bare ground or built-up areas.",
+            group="Scene",
+        ),
+        _scene_share(
+            "s2:degraded_msi_data_percentage",
+            "Degraded data",
+            "Share of the scene whose sensor data the source marks as degraded.",
+            group="Scene",
         ),
         SearchFilter(
             property="platform",
@@ -338,6 +391,101 @@ SENTINEL_2_L2A = DatasetConfig(
                 FilterValue(value="sentinel-2b", label="Sentinel-2B"),
                 FilterValue(value="sentinel-2c", label="Sentinel-2C"),
             ),
+            within_aoi=False,
+            group="Acquisition",
+        ),
+        SearchFilter(
+            property="view:sun_elevation",
+            kind=FilterKind.RANGE,
+            title="Sun elevation",
+            description="Height of the sun above the horizon when the scene was taken. Low values mean long shadows.",
+            unit="°",
+            minimum=0.0,
+            maximum=90.0,
+            integer=False,
+            values=(),
+            within_aoi=False,
+            group="Acquisition",
+        ),
+        SearchFilter(
+            property="view:sun_azimuth",
+            kind=FilterKind.RANGE,
+            title="Sun azimuth",
+            description="Direction of the sun when the scene was taken, in degrees clockwise from north.",
+            unit="°",
+            minimum=0.0,
+            maximum=360.0,
+            integer=False,
+            values=(),
+            within_aoi=False,
+            group="Acquisition",
+        ),
+        SearchFilter(
+            property="s2:processing_baseline",
+            kind=FilterKind.VALUES,
+            title="Processing baseline",
+            description="Version of the ESA processing that made the scene. A new version comes every few months.",
+            unit=None,
+            minimum=None,
+            maximum=None,
+            integer=False,
+            # Every value the source held on 30.10.2026 (measured over 2018–2026); the live test names a newer one.
+            values=tuple(FilterValue(value=version, label=version) for version in ("05.00", "05.09", "05.10", "05.11", "05.12", "05.13")),
+            within_aoi=False,
+            group="Acquisition",
+        ),
+    ),
+    # NM4-14 plan §7.5 (Otto 30.10.2026): five indices of Awesome Spectral Indices (MIT; Montero et al. 2023, Scientific
+    # Data 10, 197, https://doi.org/10.1038/s41597-023-02096-0), `formula` and `reference` as its
+    # `spectral-indices-dict.json` holds them at commit 835fea7. The bands are the ones Earth Search names, N as `nir`
+    # (B08) like the catalogue's `bands.json` and Sentinel Hub's scripts. The ranges and colormaps are plan §8.5.
+    index_presets=(
+        IndexPreset(
+            name="NDVI",
+            title="Normalized Difference Vegetation Index",
+            expression="(nir - red) / (nir + red)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdylgn",
+            formula="(N - R)/(N + R)",
+            reference="https://ntrs.nasa.gov/citations/19740022614",
+        ),
+        IndexPreset(
+            name="NDWI",
+            title="Normalized Difference Water Index (McFeeters 1996)",
+            expression="(green - nir) / (green + nir)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdbu",
+            formula="(G - N) / (G + N)",
+            reference="https://doi.org/10.1080/01431169608948714",
+        ),
+        IndexPreset(
+            name="NDSI",
+            title="Normalized Difference Snow Index",
+            expression="(green - swir16) / (green + swir16)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdbu",
+            formula="(G - S1) / (G + S1)",
+            reference="https://doi.org/10.1109/IGARSS.1994.399618",
+        ),
+        IndexPreset(
+            name="NBR",
+            title="Normalized Burn Ratio",
+            expression="(nir - swir22) / (nir + swir22)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdylgn",
+            formula="(N - S2) / (N + S2)",
+            reference="https://doi.org/10.3133/ofr0211",
+        ),
+        # The constants are the defaults of the catalogue's `constants.json` (g 2.5, C1 6, C2 7.5, L 1), the same as in
+        # Sentinel Hub's EVI script. L = 1 holds for reflectance from 0 to 1, which is what the core computes on.
+        IndexPreset(
+            name="EVI",
+            title="Enhanced Vegetation Index",
+            expression="2.5 * (nir - red) / (nir + 6 * red - 7.5 * blue + 1)",
+            rescale=(-1.0, 1.0),
+            colormap_name="rdylgn",
+            formula="g * (N - R) / (N + C1 * R - C2 * B + L)",
+            reference="https://doi.org/10.1016/S0034-4257(96)00112-5",
         ),
     ),
 )
@@ -526,6 +674,8 @@ COP_DEM_GLO_30 = DatasetConfig(
     band_units={"data": "m"},
     auxiliary_assets=(),
     search_filters=(),
+    # One band of heights: none of the indices of Awesome Spectral Indices reads it.
+    index_presets=(),
 )
 
 # The datasets that left the registry (docs/adr/0017-ein-sentinel-2-datensatz.md, rule III). An id on this

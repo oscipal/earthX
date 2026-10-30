@@ -94,11 +94,35 @@ class TestSearchAccessLog:
 
 
 class TestCoverageAccessLog:
-    async def test_a_bbox_coverage_query_leaves_no_coordinate_or_query_string_in_the_access_log(
+    async def test_an_area_is_asked_by_post_and_leaves_no_coordinate_or_query_string_in_the_access_log(
+        self, require_catalog_loaded: None, access_log_lines: list[str]
+    ) -> None:
+        """NM4-57: the area stands in the body, so neither the URL nor the access log line has it."""
+        handler = lambda request: httpx.Response(200, json=load_earth_search_fixture("aggregate_complete"))  # noqa: E731
+        box = [float(value) for value in BBOX.split(",")]
+        async with _client(handler) as client:
+            response = await client.post(f"/coverage/{DATASET_ID}", json={"zoom": 5, "bbox": box})
+        assert response.status_code == 200
+        assert response.request.url.query == b""
+        _assert_clean_access_log(access_log_lines, method="POST")
+
+    async def test_an_area_in_the_url_is_refused_and_leaves_no_coordinate_in_the_access_log(
         self, require_catalog_loaded: None, access_log_lines: list[str]
     ) -> None:
         handler = lambda request: httpx.Response(200, json=load_earth_search_fixture("aggregate_complete"))  # noqa: E731
         async with _client(handler) as client:
             response = await client.get(f"/coverage/{DATASET_ID}", params={"zoom": 5, "bbox": BBOX})
-        assert response.status_code == 200
+        assert response.status_code == 400
+        assert _EXACT_LON not in response.text
         _assert_clean_access_log(access_log_lines, method="GET")
+
+    async def test_a_map_extent_by_get_is_answered(
+        self, require_catalog_loaded: None, access_log_lines: list[str]
+    ) -> None:
+        handler = lambda request: httpx.Response(200, json=load_earth_search_fixture("aggregate_complete"))  # noqa: E731
+        async with _client(handler) as client:
+            response = await client.get(
+                f"/coverage/{DATASET_ID}",
+                params={"zoom": 10, "bbox": "5.625,47.04018214480665,14.0625,50.73645513701065"},
+            )
+        assert response.status_code == 200

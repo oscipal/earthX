@@ -4,7 +4,7 @@
 // scenes, the panel opens by itself after a search, one panel at a time, and everything the list could do
 // before is still there: groups, "Select all", "Load more", the dataset box, and the bar of the selection
 // (view, download) at the bottom. "Clear all" is gone from the head (Otto, 26.10.2026), where the switch
-// "Hide results" / "Show results" for the map is now.
+// for the map is now: since NM4-59 the eye of the results, the same as in the entry "Results" of the layer manager.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -15,6 +15,8 @@ import { datasetsFrom } from './datasets';
 import { jobEntry, NOW } from './fixtures/jobEntries';
 import { bboxToPolygon } from './geoUtils';
 import { resetJobs, useProcessingStore } from './processingStore';
+import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './components/ResultsEye';
+import { RESULTS_ON_TOP_TIP } from './components/ResultsToTop';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
 
@@ -121,7 +123,6 @@ beforeEach(async () => {
     loadMoreUsed: false,
     focusMode: false,
     resultViewLayerId: null,
-    searchCrops: [],
     error: null,
     notice: null,
   });
@@ -309,7 +310,7 @@ describe('everything the list could do is in the panel', () => {
   });
 
   it('has no "Clear all" in its head', () => {
-    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => b.textContent)).toEqual(['Hide results']);
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
   });
 
   it('goes back to the control menu when the search is cleared', () => {
@@ -336,7 +337,7 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
     expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (1/300)');
-    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => b.textContent)).toEqual(['Hide results']);
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
     expect(useAppStore.getState().sections).toHaveLength(1);
     expect(symbol('results').getAttribute('aria-label')).toBe('Results, 300');
     act(() => useAppStore.setState({ focusMode: false, cropToAoi: false }));
@@ -384,7 +385,7 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
 });
 
 describe('the results on the map (Otto, 26.10.2026)', () => {
-  const toggle = () => [...slot('results').querySelectorAll('.results-head button')][0] as HTMLButtonElement;
+  const toggle = () => slot('results').querySelector('.results-head button[aria-pressed]') as HTMLButtonElement;
 
   beforeEach(async () => {
     // A search no longer puts the switch back, so each test starts from "on".
@@ -393,20 +394,20 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     await search();
   });
 
-  it('are on after a search, and the switch offers to hide them', () => {
+  it('are on after a search, and the eye offers to hide them', () => {
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().textContent).toBe('Hide results');
+    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
   });
 
-  it('go off and on with the switch, which always names the next step; the list does not change', () => {
+  it('go off and on with the eye, whose tooltip names the next step; the list does not change', () => {
     click(toggle());
     expect(useAppStore.getState().resultsOnMap).toBe(false);
-    expect(toggle().textContent).toBe('Show results');
+    expect(toggle().title).toBe(SHOW_RESULTS_TIP);
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
     expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (0/300)');
     click(toggle());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().textContent).toBe('Hide results');
+    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
   });
 
   it('a scene ticked while they are off is ticked as usual, with the bar of the selection, and shows them (Otto, 28.10.2026)', () => {
@@ -414,7 +415,7 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     click(slot('results').querySelector('.result-row input')!);
     expect(useAppStore.getState().selectedIds).toHaveLength(1);
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().textContent).toBe('Hide results');
+    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
     expect(container.querySelector('.download-count strong')?.textContent).toBe('1');
     expect(container.querySelector('.download-count span')?.textContent).toBe('scene selected');
   });
@@ -455,7 +456,6 @@ describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
   });
 
   it('takes the list away, and what it drew on the map, and opens the control menu', () => {
-    useAppStore.setState({ searchCrops: [{ id: 'c', name: 'c', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET } } as never] });
     click(slot('results').querySelector('.result-row input')!);
     useAppStore.setState({ resultsOnMap: false });
     click(clearButton());
@@ -464,7 +464,6 @@ describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
     expect(s.items).toEqual([]);
     expect(s.groups).toEqual([]);
     expect(s.selectedIds).toEqual([]);
-    expect(s.searchCrops).toEqual([]);
     // Clearing the results is not the switch: hidden stays hidden.
     expect(s.resultsOnMap).toBe(false);
     expect(s.dock).toBe('controls');

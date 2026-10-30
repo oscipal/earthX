@@ -12,7 +12,7 @@ import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
 import { jobEntry, jobId, NOW } from '../fixtures/jobEntries';
 import { resetJobs, useProcessingStore } from '../processingStore';
-import LayerManager, { DELETED_LAYER_TIP, EXPIRED_LAYER_TEXT, RESAMPLED_LAYER_TEXT } from './LayerManager';
+import LayerManager, { DELETED_LAYER_TIP, EXPIRED_LAYER_TEXT, HIDE_LAYER_TIP, RESAMPLED_LAYER_TEXT, SHOW_LAYER_TIP } from './LayerManager';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -238,6 +238,52 @@ describe('LayerManager', () => {
 
 // NM4-27 (Otto, 27.10.2026): while a job is deleted its result stays in the list, locked and not drawn; "Restore" shows it
 // again, and when the day is over the entry goes.
+// NM4-50 (Otto, 28.10.2026): the switch of a layer is an eye, open while the layer is shown and struck through while it is
+// hidden; the tooltip says what a click does.
+describe('the eye of a layer', () => {
+  const scene = (id: string, visible: boolean): MapLayer => ({
+    id,
+    name: id,
+    visible,
+    opacity: 1,
+    overlays: [{ kind: 'raster', tileUrl: 'https://t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], minZoom: 0, maxZoom: 12 }],
+    restore: { datasetId: 'dem', itemIds: [] } as never,
+  });
+  const eye = (id: string) => container.querySelectorAll('.layer-row')[id === 'shown' ? 0 : 1].querySelector('[data-col="eye"]') as HTMLButtonElement;
+
+  beforeEach(() => {
+    useAppStore.setState({ layers: [scene('shown', true), scene('hidden', false)], dock: 'layers' });
+    act(() => root.render(<LayerManager />));
+  });
+
+  it('is open for a shown layer and struck through for a hidden one, with a drawing and no text glyph', () => {
+    expect(eye('shown').querySelector('svg')).not.toBeNull();
+    expect(eye('shown').querySelectorAll('svg path')).toHaveLength(1);
+    expect(eye('shown').classList.contains('off')).toBe(false);
+    expect(eye('hidden').querySelectorAll('svg path')).toHaveLength(2);
+    expect(eye('hidden').classList.contains('off')).toBe(true);
+    expect(eye('shown').textContent).toBe('');
+  });
+
+  it('says "Hide layer" while shown and "Show layer" while hidden', () => {
+    expect(eye('shown').getAttribute('title')).toBe(HIDE_LAYER_TIP);
+    expect(eye('shown').getAttribute('aria-label')).toBe(HIDE_LAYER_TIP);
+    expect(eye('hidden').getAttribute('title')).toBe(SHOW_LAYER_TIP);
+    expect(eye('shown').getAttribute('aria-pressed')).toBe('true');
+    expect(eye('hidden').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('switches the layer with a click, and the eye follows', () => {
+    act(() => eye('shown').click());
+    expect(useAppStore.getState().layers.map((l) => l.visible)).toEqual([false, false]);
+    expect(eye('shown').getAttribute('title')).toBe(SHOW_LAYER_TIP);
+    expect(eye('shown').querySelectorAll('svg path')).toHaveLength(2);
+    act(() => eye('hidden').click());
+    expect(useAppStore.getState().layers.map((l) => l.visible)).toEqual([false, true]);
+    expect(eye('hidden').getAttribute('title')).toBe(HIDE_LAYER_TIP);
+  });
+});
+
 describe('the result layer of a deleted job', () => {
   const DAY = 86_400_000;
   const restore = { datasetId: 'ds', itemIds: [], groupItemIds: [], aoi: null, cropToAoi: false } as unknown as MapLayer['restore'];
@@ -306,7 +352,7 @@ describe('the result layer of a deleted job', () => {
     expect(layer.result?.deleted).toBe(false);
     expect(layer.visible).toBe(true);
     expect(rows()[0].classList.contains('locked')).toBe(false);
-    expect(rows()[0].querySelector('[data-col="eye"]')?.getAttribute('title')).toBe('Hide');
+    expect(rows()[0].querySelector('[data-col="eye"]')?.getAttribute('title')).toBe('Hide layer');
   });
 
   it('goes from the list when the day is over, on the minute and not before', () => {

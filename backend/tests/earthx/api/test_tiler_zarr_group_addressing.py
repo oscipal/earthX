@@ -30,7 +30,7 @@ from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DataFormat, ZarrInfo
 from earthx.gateway import Policy
 from earthx.readers.zarr_reader import ZarrReader
-from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, without_cloud_share
 from tests.earthx.readers import mini_zarr_composite, mini_zarr_multiscales
 from tests.earthx.readers.mini_zarr_composite import GROUP as COMPOSITE_GROUP
 from tests.earthx.readers.mini_zarr_multiscales import BASE_URL, GROUPS, HOST, ITEM_CRS, PARENT_GROUP, group_size
@@ -40,7 +40,7 @@ ITEM = "SYNTH_GROUPS_20260102T100000"
 ITEM_ASSET = "SR_10m"
 
 CONFIG = replace(
-    SENTINEL_2_L2A,
+    without_cloud_share(SENTINEL_2_L2A),
     dataset_id=DATASET,
     format=DataFormat.ZARR,
     source=replace(SENTINEL_2_L2A.source, asset_hosts=(HOST,)),

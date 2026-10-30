@@ -424,7 +424,8 @@ describe('quicklookPlan', () => {
     expect(quicklookPlan(scene, option(zarrLike))).toEqual({
       kind: 'tiles',
       asset: 'SR_10m:b04,b03,b02',
-      zoom: 8,
+      minZoom: 8,
+      maxZoom: 8,
       // The registry's stretch travels with it: a preview rendered without it
       // does not look like the full-resolution view of the same scene.
       render: { rescale: '0,0.3', colormapName: undefined, expression: undefined },
@@ -451,16 +452,22 @@ describe('quicklookPlan', () => {
     expect(quicklookPlan(scene, option(empty))).toBeNull();
   });
 
-  it('is null for browse: full_resolution, even with a default visualisation set', () => {
-    // The DEM's case (M3-12): no coarse-tile substitute either, because it would
-    // be a near-empty world tile clipped to one item (M3-02 F-05) — the viewer
-    // shows the AOI crop in full resolution directly instead (`store.ts`).
+  it('is the whole scene at every released level for browse: full_resolution (NM4-50)', () => {
+    // The DEM's case (M3-12): no quicklook and no coarse-tile substitute (it would be a near-empty world tile clipped
+    // to one item, M3-02 F-05). The preview is the scene in full resolution, as the quicklook of any other dataset is
+    // the scene: not cut to the AOI, and read at every level the dataset releases.
     const noPreview = collection({
-      'earthx:viewer': viewer({ browse: 'full_resolution' }),
+      'earthx:viewer': viewer({ browse: 'full_resolution', min_zoom: 0, max_zoom: 15 }),
       'earthx:default_render': render,
     });
     const scene = item({ data: { href: 'https://example.test/x.tif', roles: ['data'] } });
-    expect(quicklookPlan(scene, option(noPreview))).toBeNull();
+    expect(quicklookPlan(scene, option(noPreview))).toMatchObject({ kind: 'tiles', minZoom: 0, maxZoom: 15 });
+  });
+
+  it('is null for browse: full_resolution without a standard visualisation to draw', () => {
+    const bare = collection({ 'earthx:viewer': viewer({ browse: 'full_resolution' }) });
+    const scene = item({ data: { href: 'https://example.test/x.tif', roles: ['data'] } });
+    expect(quicklookPlan(scene, option(bare))).toBeNull();
   });
 
   it('is null for browse: quicklook when the item carries no quicklook of its own', () => {

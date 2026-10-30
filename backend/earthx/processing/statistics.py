@@ -13,7 +13,8 @@ whole file come from the same summaries, without reading anything twice
   block the mean, then the sum of squared deviations (numpy's pairwise sums); across blocks
   Chan's parallel formula; divided by ``count``. Deterministic for a fixed order of blocks,
   not exact. GDAL reads stored statistics only with it (plan §6.1).
-* ``percentile_2`` and ``percentile_98`` come from a fixed histogram: one bin per value
+* ``percentile_2`` and ``percentile_98`` (and, where a measure asks for them, other whole percents) come from a fixed
+  histogram: one bin per value
   for integers of up to 16 bits (exact), otherwise the upper 16 bits of the
   order-preserving pattern of the ``float32`` value — 65 536 bins of relative width
   2⁻⁷. The rank is the nearest rank; the 2 % value is the lower edge of its bin, the
@@ -26,15 +27,20 @@ whole file come from the same summaries, without reading anything twice
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
 
 import numpy
 
-__all__ = ["BandStatistics", "BlockSummary", "PERCENTILES", "gdal_tags", "summarize"]
+__all__ = ["BandStatistics", "BlockSummary", "MEASURE_PERCENTILES", "PERCENTILES", "gdal_tags", "summarize"]
 
 PERCENTILES = (2, 98)
+
+#: What a measure of the area adds to :data:`PERCENTILES` for the methods of ``normalize`` (NM4-11): the ends of the
+#: stretches (1 and 5, 95 and 99) and the quartiles. A result carries the two of :data:`PERCENTILES` only.
+MEASURE_PERCENTILES = (1, 5, 25, 50, 75, 95, 99)
 
 #: Bins of the float histogram: the upper 16 bits of the order-preserving float32 pattern.
 _KEY_BITS = 16
@@ -265,8 +271,15 @@ class BandStatistics:
         edge = float(edge) + 0.0  # no -0.0 from a bin edge
         return min(edge, maximum) if upper else max(edge, minimum)
 
-    def summary(self, pixels: int) -> dict[str, Any]:
-        """The STAC statistics object (1.1, extended by the two percentiles) over ``pixels`` in all."""
+    def summary(self, pixels: int, extra_percentiles: Sequence[int] = ()) -> dict[str, Any]:
+        """The STAC statistics object (1.1, extended by the two percentiles) over ``pixels`` in all.
+
+        ``extra_percentiles`` are whole percents from 1 to 99 that come on top of :data:`PERCENTILES`, from the same
+        histogram: the bin's lower edge up to the median, its upper edge above it (:meth:`_percentile`).
+        """
+        for percent in extra_percentiles:
+            if not 1 <= percent <= 99:
+                raise ValueError(f"a percentile is a whole percent from 1 to 99, not {percent}")
         if pixels <= 0:
             raise ValueError("statistics need at least one pixel")
         if self.count > pixels:
@@ -291,7 +304,7 @@ class BandStatistics:
             result["stddev"] = stddev
         result["count"] = self.count
         result["valid_percent"] = valid_percent
-        for percent in PERCENTILES:
+        for percent in sorted({*PERCENTILES, *extra_percentiles}):
             result[f"percentile_{percent}"] = self._percentile(percent, minimum, maximum)
         return result
 

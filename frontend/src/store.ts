@@ -39,7 +39,7 @@ import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
-import { appliedRenderFrom, autoRescale } from './render';
+import { appliedRenderFrom, autoRescale, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
   buildSections,
@@ -51,7 +51,20 @@ import {
   needsFallback,
   withSourceState,
 } from './sections';
-import { cropPasses, fullResolutionLayers, overlaysOfPass, underlaysOf } from './searchLayers';
+import { overlaysOfPass, underlaysOf } from './searchLayers';
+import { moveEntry, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
+import {
+  filterQuery,
+  hasFilterError,
+  isEmptyQuery,
+  isSet,
+  searchFiltersOf,
+  type FilterInput,
+  type FilterInputs,
+  type FilterQuery,
+  type FilterQueryByCollection,
+} from './searchFilters';
+import { layerOfView } from './viewLayer';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -74,7 +87,18 @@ const COVERAGE_DEBOUNCE_MS = 400;
 // offers its scenes from that same set.
 export function selectionItemsFrom(s: Pick<AppState, 'groups' | 'activeGroupIndex' | 'selectedIds' | 'items'>): StacItem[] {
   const group = s.groups[s.activeGroupIndex];
-  return s.selectedIds.length ? s.items.filter((it) => s.selectedIds.includes(it.id)) : (group?.items ?? []);
+  const picked = s.items.filter((it) => s.selectedIds.includes(it.id));
+  return picked.length ? picked : (group?.items ?? []);
+}
+
+// The ticks that are not on scenes of another dataset of the search (NM4-50): the ticks stay over a change of the
+// dataset, and what acts on the picked scenes — the bar of the selection, a view, a job — acts on the open one's.
+export function ticksOfOpen(s: Pick<AppState, 'sections' | 'openSectionId' | 'selectedIds'>): string[] {
+  if (s.selectedIds.length === 0) return s.selectedIds;
+  const others = s.sections.filter((section) => section.datasetId !== s.openSectionId);
+  if (others.length === 0) return s.selectedIds;
+  const elsewhere = new Set(others.flatMap((section) => section.items.map((it) => it.id)));
+  return s.selectedIds.filter((id) => !elsewhere.has(id));
 }
 
 function buildDatetime(from: string, to: string): string | undefined {
@@ -98,7 +122,7 @@ let coverageGen = 0;
 
 // M3-19 §3: the last few viewport (no-AOI) answers, so a pan/zoom that stays
 // inside a bbox already asked for skips the request instead of repeating it.
-// Keyed on dataset/level/datetime — an AOI query never reads or writes this,
+// Keyed on dataset/level/datetime/filters — an AOI query never reads or writes this,
 // it always asks fresh (`plans/m3/m3-19-weltueberblick-ausschnitt.md`: "mit AOI
 // bleibt alles wie heute"). Module-level like `coverageGen` above: it holds
 // no more than the interaction needs to feel warm, nothing a reload should
@@ -107,6 +131,8 @@ interface ViewportCoverageEntry {
   datasetId: string;
   level: number;
   datetime: string | undefined;
+  // The search filters it was asked with (DS-02c), `JSON.stringify` of the query: another filter is another map.
+  filters: string;
   bbox: Bbox;
   coverage: CoverageResponse;
   footprints: GeoJSON.FeatureCollection | null;
@@ -118,10 +144,16 @@ function cachedViewportCoverage(
   datasetId: string,
   level: number,
   datetime: string | undefined,
+  filters: string,
   viewport: Bbox,
 ): ViewportCoverageEntry | undefined {
   return viewportCoverageCache.find(
-    (e) => e.datasetId === datasetId && e.level === level && e.datetime === datetime && bboxContains(e.bbox, viewport),
+    (e) =>
+      e.datasetId === datasetId &&
+      e.level === level &&
+      e.datetime === datetime &&
+      e.filters === filters &&
+      bboxContains(e.bbox, viewport),
   );
 }
 
@@ -141,7 +173,8 @@ function scheduleCoverageRefresh(set: SetState, get: GetState): void {
 //
 // M3-19 (Otto, 23.09.2026, replacing adr/0010 answer 6a): with an AOI,
 // `bbox` is that AOI (`aoi`, drawn/uploaded) and the level follows the map's
-// floored zoom, unchanged from before. Without an AOI, `bbox` is the
+// floored zoom, unchanged from before. Since NM4-57 the AOI's box goes in the
+// body of a POST (`aoiBbox`), never in a URL (M4 Q8). Without an AOI, `bbox` is the
 // *visible map extent* instead — banded across the antimeridian and rounded
 // outward to a coarser block (`coverage.ts`) so nearby viewports ask the
 // same question — and the level is derived from the viewport's own size so
@@ -167,6 +200,9 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   const { aoi } = s;
   const hasAoi = aoi !== null;
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
+  // The filters of the coverage's dataset (DS-02c, adr/0004 K1): the map counts what the search would find.
+  const query = filterQueryOf(s, datasetId);
+  const filters = JSON.stringify(query);
 
   let bbox: Bbox | undefined;
   let level: number;
@@ -192,7 +228,7 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   const gen = ++coverageGen;
 
   if (!hasAoi && viewport) {
-    const cached = cachedViewportCoverage(datasetId, level, datetime, viewport);
+    const cached = cachedViewportCoverage(datasetId, level, datetime, filters, viewport);
     if (cached) {
       set({ coverage: cached.coverage, coverageFootprints: cached.footprints, coverageLoading: false, coverageError: null });
       return;
@@ -202,7 +238,8 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   set({ coverageLoading: true, coverageError: null });
   let coverage: CoverageResponse;
   try {
-    coverage = await api.fetchCoverage({ datasetId, zoom: level, bbox, datetime });
+    const area = hasAoi ? { aoiBbox: bbox } : { bbox };
+    coverage = await api.fetchCoverage({ datasetId, zoom: level, ...area, datetime, query });
   } catch (e) {
     if (gen !== coverageGen) return;
     set({
@@ -218,7 +255,10 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   let footprints: GeoJSON.FeatureCollection | null = null;
   if (showFootprints(coverage, get().mapZoom)) {
     try {
-      const { features } = await api.searchAllPages({ collections: [datasetId], bbox, datetime }, FOOTPRINT_FETCH_LIMIT);
+      const { features } = await api.searchAllPages(
+        { collections: [datasetId], bbox, datetime, ...queryByCollectionOf({ [datasetId]: query }) },
+        FOOTPRINT_FETCH_LIMIT,
+      );
       if (gen === coverageGen) {
         footprints = footprintsFC(features);
         set({ coverageFootprints: footprints });
@@ -229,7 +269,7 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
     }
   }
   if (!hasAoi && viewport && gen === coverageGen && bbox) {
-    rememberViewportCoverage({ datasetId, level, datetime, bbox, coverage, footprints });
+    rememberViewportCoverage({ datasetId, level, datetime, filters, bbox, coverage, footprints });
   }
 }
 
@@ -346,6 +386,35 @@ function viewableDatasets(datasets: DatasetOption[], ids: readonly string[]): Vi
     .filter((d): d is ViewableDataset => d?.viewable === true);
 }
 
+// The search filters the user has set and got right, for one dataset or for these datasets (DS-02c). A filter with a
+// wrong field is not sent: the search is held back until it is right (`searchFiltersInvalid`), the coverage map
+// goes without it meanwhile.
+type FilterState = Pick<AppState, 'datasets' | 'searchFilters'>;
+
+function filterQueryOf(s: FilterState, datasetId: string): FilterQuery {
+  const dataset = s.datasets.find((d) => d.id === datasetId);
+  return dataset ? filterQuery(searchFiltersOf(dataset.collection), s.searchFilters[datasetId]) : {};
+}
+
+// What each of these datasets is asked with, `{}` where nothing is set.
+function filterQueriesOf(s: FilterState, ids: readonly string[]): FilterQueryByCollection {
+  return Object.fromEntries(ids.map((id) => [id, filterQueryOf(s, id)]));
+}
+
+// `{queryByCollection}` for a request, or nothing when no dataset has a filter set: a search without filters
+// keeps the body it always had.
+function queryByCollectionOf(queries: FilterQueryByCollection): { queryByCollection?: FilterQueryByCollection } {
+  const named = Object.entries(queries).filter(([, query]) => !isEmptyQuery(query));
+  return named.length > 0 ? { queryByCollection: Object.fromEntries(named) } : {};
+}
+
+// Whether a ticked dataset has a filter with a wrong field. "Search" waits for it (plan §6.7).
+export function searchFiltersInvalid(s: Pick<AppState, 'datasets' | 'selectedDatasetIds' | 'searchFilters'>): boolean {
+  return s.datasets.some(
+    (d) => s.selectedDatasetIds.includes(d.id) && hasFilterError(searchFiltersOf(d.collection), s.searchFilters[d.id]),
+  );
+}
+
 // The search the results belong to (M3-10b): what "Load more" continues and what
 // the ±90-day fallback of a chosen dataset asks again. Its AOI and dates are the
 // ones it ran with; changing them in the control panel afterwards drops only the
@@ -382,34 +451,6 @@ let searchGen = 0;
 
 // Item ids are unique only within a collection.
 const sceneKey = (item: StacItem) => `${item.collection ?? ''}\u0000${item.id}`;
-
-// The AOI crops of every dataset without a browsable preview (`browse:
-// 'full_resolution'`, the DEM): part of that dataset's results, on the map while
-// it is the one chosen in the dropdown (Otto, 30.09.2026). `problems` names a
-// dataset whose scenes could not be drawn.
-function cropsForSearch(
-  datasets: ViewableDataset[],
-  sections: ResultSection[],
-  aoi: GeoJSON.Geometry,
-  mosaics?: Mosaics,
-): { crops: MapLayer[]; problems: string[] } {
-  const batchId = nextBatchId();
-  const problems: string[] = [];
-  const crops = datasets.flatMap((dataset) => {
-    const section = sections.find((x) => x.datasetId === dataset.id);
-    if (dataset.browse !== 'full_resolution' || !section || section.items.length === 0) return [];
-    const drawn = fullResolutionLayers(dataset, section, aoi, batchId, mosaics);
-    if (drawn.length === 0) {
-      problems.push(
-        defaultRenderOf(dataset.collection)?.assets[0]
-          ? `${dataset.title}: none of its scenes carries a bounding box to draw.`
-          : `${dataset.title} has no default visualisation yet (earthx:default_render).`,
-      );
-    }
-    return drawn;
-  });
-  return { crops, problems };
-}
 
 // The overlays for these scenes, split by time step and stacked the way the view draws them
 // (`stackLikeView`); `null` while the mosaic of one is not known.
@@ -484,28 +525,14 @@ async function fetchMosaics(
   if (failures.length > 0) set({ notice: `Could not load the mosaic (${failures[0]}); its scenes are drawn one by one.` });
 }
 
-// The AOI crops are drawn scene by scene until the mosaics of their groups have loaded, and then again.
-function upgradeCrops(
-  set: SetState,
-  get: GetState,
-  datasets: ViewableDataset[],
-  sections: ResultSection[],
-  aoi: GeoJSON.Geometry,
-): void {
-  const requests = cropPasses(datasets, sections).filter((r) => isMosaicPass(r.entries));
-  if (requests.length === 0) return;
-  void fetchMosaics(set, get, requests).then(() => {
-    if (get().sections !== sections) return; // another search has taken the results over
-    const loaded = requests.some((r) => get().mosaics[mosaicTemplateOf(r.datasetId, r.entries) ?? '']);
-    if (loaded) set({ searchCrops: cropsForSearch(datasets, sections, aoi, get().mosaics).crops });
-  });
-}
-
 function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections: ResultSection[]): string {
   if (ctx.features.length === 0) {
-    return datasets.length === 1 || (!ctx.dateFrom && !ctx.dateTo)
-      ? 'No scenes found for this area.'
-      : 'No scenes found for this area and date range.';
+    const base =
+      datasets.length === 1 || (!ctx.dateFrom && !ctx.dateTo)
+        ? 'No scenes found for this area.'
+        : 'No scenes found for this area and date range.';
+    // A filter may be what leaves nothing (DS-02c); the notice says that one is set, not which.
+    return ctx.query.queryByCollection ? `${base} Search filters are set.` : base;
   }
   if (datasets.length === 1) {
     return foundNotice(sections[0].items, sections[0].groups, ctx.numberMatched, ctx.nextToken !== null);
@@ -517,8 +544,8 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
   return `${found} scene(s) in ${steps} time step(s) across ${datasets.length} datasets.`;
 }
 
-// Lays out the scenes a search has loaded: one section per dataset asked, their
-// AOI crops and the search notice. A new search opens the first dataset with
+// Lays out the scenes a search has loaded: one section per dataset asked and
+// the search notice. A new search opens the first dataset with
 // scenes, else the active one. "Load more" (`keepOpen`) keeps the dataset and
 // time step that are open; a dataset showing its ±90-day fallback keeps it while
 // the search still has nothing of its own for it, and a dataset whose new scenes
@@ -532,7 +559,6 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     set({
       ...openSectionState(null),
       sections: [],
-      searchCrops: [],
       selectedIds: [],
       searchContext: null,
       dock: withoutResults(s.dock),
@@ -568,13 +594,11 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     single && !single.hasTimeAxis && ctx.answer.ignoredFilters.includes('datetime')
       ? acquisitionNote(single.collection)
       : null;
-  const { crops, problems } = cropsForSearch(datasets, sections, ctx.aoi, s.mosaics);
   const notice = [
     resultsNotice(ctx, datasets, sections),
     ctx.truncatedNotice,
     timeNote && `${timeNote}.`,
     stray > 0 ? `${stray} scene(s) of other datasets were left out.` : null,
-    ...problems,
   ]
     .filter(Boolean)
     .join(' ');
@@ -582,15 +606,13 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     sections,
     ...(keepOpen ? reopenedSectionState(s, open) : openSectionState(open)),
     ...(open ? { datasetId: open.datasetId } : {}),
-    searchCrops: crops,
-    selectedIds: keepOpen ? s.selectedIds.filter((id) => open?.items.some((it) => it.id === id)) : [],
+    selectedIds: keepOpen ? s.selectedIds.filter((id) => sections.some((section) => section.items.some((it) => it.id === id))) : [],
     searchContext: ctx,
     // A new search shows its results; "Load more" leaves the panels as they are.
     ...(!keepOpen && hasResultsPanel(sections) ? { dock: 'results' as const } : {}),
     error: null,
     notice,
   });
-  upgradeCrops(set, get, datasets, sections, ctx.aoi);
 }
 
 // A new set of ticked datasets (M4-29): the results of the last search go, the
@@ -621,7 +643,6 @@ function applyDatasetSelection(
     notice: null,
     playing: false,
     ...LEAVE_FOCUS,
-    searchCrops: [],
   });
   // The coverage map is for a dataset that is picked; dropping that one drops it.
   if (s.coverageDatasetId && !selectedDatasetIds.includes(s.coverageDatasetId)) get().hideCoverage();
@@ -656,7 +677,9 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
   const withoutNoScenes = (current: ResultSection) =>
     current.notes.filter((note) => note !== NO_SCENES_NOTE && note !== LOAD_MORE_NOTE);
   try {
-    const query = { ...ctx.query, collections: [datasetId] };
+    // Only the dataset's own filters: the server refuses a filter for a collection the search does not name.
+    const { queryByCollection, ...rest } = ctx.query;
+    const query = { ...rest, collections: [datasetId], ...queryByCollectionOf({ [datasetId]: queryByCollection?.[datasetId] ?? {} }) };
     const found = await findFallback(
       (w) =>
         api.searchItems({ ...query, datetime: `${w.start}T00:00:00Z/${w.end}T23:59:59Z`, limit: PAGE_LIMIT }),
@@ -678,17 +701,14 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
     );
     if (!done) return;
     const { now, replacement, sections } = done;
-    const { crops, problems } = cropsForSearch(viewableDatasets(now.datasets, ctx.datasetIds), sections, ctx.aoi, now.mosaics);
     const singleNotice = replacement.groupingError
       ? { error: `Grouping failed: ${replacement.groupingError}`, notice: null }
-      : { notice: [replacement.notes[0], ctx.truncatedNotice, ...problems].filter(Boolean).join(' ') };
+      : { notice: [replacement.notes[0], ctx.truncatedNotice].filter(Boolean).join(' ') };
     set({
       sections,
       ...(now.openSectionId === datasetId ? openSectionState(replacement) : {}),
-      searchCrops: crops,
       ...(ctx.datasetIds.length === 1 ? singleNotice : {}),
     });
-    upgradeCrops(set, get, viewableDatasets(now.datasets, ctx.datasetIds), sections, ctx.aoi);
   } catch (e) {
     if (rethrow) throw e;
     // Not tried again for this search.
@@ -708,6 +728,20 @@ function dropPageToken(set: SetState, get: GetState): void {
   if (ctx?.nextToken) set({ searchContext: { ...ctx, nextToken: null } });
 }
 
+// The filters of one dataset changed (DS-02c). Like the dates they are read at the next "Search", so a search on
+// screen that ran with others cannot be continued; the coverage map of this dataset follows at once, debounced.
+function changeSearchFilters(set: SetState, get: GetState, datasetId: string, inputs: FilterInputs): void {
+  const { searchFilters, searchContext } = get();
+  // A change that changes nothing (a wrong field made wrong another way, a box ticked and unticked) leaves the search
+  // and the map alone.
+  if (JSON.stringify(searchFilters[datasetId] ?? {}) === JSON.stringify(inputs)) return;
+  const { [datasetId]: _before, ...others } = searchFilters;
+  set({ searchFilters: Object.keys(inputs).length > 0 ? { ...others, [datasetId]: inputs } : others });
+  if (searchContext?.datasetIds.includes(datasetId)) dropPageToken(set, get);
+  const { showCoverage, coverageDatasetId } = get();
+  if (showCoverage && datasetId === (coverageDatasetId ?? get().datasetId)) scheduleCoverageRefresh(set, get);
+}
+
 // Show or hide of the results is the switch's, with three exceptions (Otto, 27.10.2026 and 28.10.2026): a new search shows them, a ticked scene shows them (`ticking`), and a
 // crop of the chosen scenes ("Crop to AOI", "Crop & merge to AOI") hides them. Kept in the browser like the switch.
 function setResultsOnMap(on: boolean) {
@@ -717,15 +751,20 @@ function setResultsOnMap(on: boolean) {
 
 // A scene ticked while the results are hidden shows them (Otto, 28.10.2026, zu #221): the third exception, besides a
 // search and a crop. Unticking changes nothing.
+// Any change of the ticks by a click, of a scene, a group or "Select all", ends the playing of the timeline (NM4-18, Otto,
+// 30.10.2026).
 function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap'>, selectedIds: string[]) {
   const ticked = selectedIds.some((id) => !s.selectedIds.includes(id));
-  return { selectedIds, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
+  return { selectedIds, playing: false, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
 }
 
 // What every replacement of the results resets besides the results themselves.
 function forgetSearch() {
   searchGen += 1;
   return {
+    // Every search, and every step that drops the results, puts "Results" on top of the layer manager (NM4-59, Otto,
+    // 30.10.2026).
+    resultsAt: 0,
     searchContext: null,
     loadingMore: false,
     loadMoreError: null,
@@ -787,7 +826,7 @@ export interface AppState {
   // --- ui layout ---
   // The panel beside the rail (UI-01 §6.9): one at a time, or none.
   dock: DockPanel | null;
-  // The search results (quicklooks, crops) are drawn on the map (UI-01g). Off, only the scenes ticked in the
+  // The search results (quicklooks) are drawn on the map (UI-01g). Off, only the scenes ticked in the
   // list are; the list itself is the same. Every new search starts with it on.
   resultsOnMap: boolean;
   // Viewing a full-resolution raster (M2-07b) instead of browsing quicklooks —
@@ -807,6 +846,8 @@ export interface AppState {
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
+  // How many of `layers` lie above the entry "Results" (`resultsEntry.ts`, NM4-59): 0 is on top.
+  resultsAt: number;
   // The layer whose scenes `selectLayer` put into the full-resolution view. While
   // the view still shows exactly what it pinned (`viewLayer.ts::viewLayerOf`), that
   // layer draws the picture, at its place in the list and with its eye.
@@ -815,11 +856,6 @@ export interface AppState {
   // `selectLayer` sets it for a result layer. The results list is folded away meanwhile, as in the
   // full-resolution view, which this is not (`focusMode` stays off).
   resultViewLayerId: string | null;
-  // The AOI crops a search draws by itself for a dataset with no browsable preview
-  // (`browse: 'full_resolution'`): part of that dataset's results, on the map only
-  // while that dataset is the one chosen in the results dropdown. Not in `layers`;
-  // `pinSearchCrops` copies them there.
-  searchCrops: MapLayer[];
   // The layer the download dialog (M2-07d) is open for, `null` when closed.
   downloadDialogLayerId: string | null;
   // The dialog open for the current selection (V-4) rather than a pinned
@@ -911,6 +947,11 @@ export interface AppState {
   // --- filters ---
   dateFrom: string;
   dateTo: string;
+  // The search filters of each dataset (DS-02c), by dataset and then by property: what stands in the fields of
+  // "Advanced search". A search setting like the dates: it stays when a dataset is unticked (and does nothing
+  // until it is ticked again), when the results are cleared and when the page is not reloaded; it is not kept in
+  // the browser and not in the permalink.
+  searchFilters: Record<string, FilterInputs>;
 
   // --- scene lookup by name (M2-17) ---
   sceneNameQuery: string;
@@ -920,6 +961,10 @@ export interface AppState {
   searching: boolean;
   downloading: boolean; // no operation in 07a sets this; 07d's download will
   playing: boolean;
+  // While playing (`playback.ts`): the time step on the map, which is behind `activeGroupIndex` while the next one
+  // loads, and the earliest time the next may be shown (ms since the epoch).
+  shownGroupIndex: number | null;
+  revealNotBefore: number;
   error: string | null;
   notice: string | null;
 
@@ -954,11 +999,19 @@ export interface AppState {
   syncDeletedResults: (until: ReadonlyMap<string, number>, now: number) => void;
   // Draws a result layer another way: the tile URL is rebuilt, so the map makes a new source of it.
   restyleResultLayer: (id: string, render: AppliedRender) => void;
+  // "Save" of a result's settings: what "Apply" draws is the layer's own look from now on.
+  saveResultLayer: (id: string) => void;
+  // The settings are closed: a look that was applied and not saved goes, the layer is drawn as saved again.
+  revertResultLayer: (id: string) => void;
   closeResultView: () => void;
   removeLayer: (id: string) => void;
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
+  // The entry "Results" one step up or down among the layers (NM4-59).
+  moveResults: (dir: 'up' | 'down') => void;
+  // The entry "Results" on top of the layer manager, over every layer (Otto, 30.10.2026, zu #249).
+  resultsToTop: () => void;
   selectLayer: (id: string) => void;
   activateLayerContext: (id: string) => void;
   activateViewContext: () => void;
@@ -976,6 +1029,8 @@ export interface AppState {
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
   applyRender: () => void;
+  // "Save" in the view of a pinned layer: the look typed and applied becomes the layer's own (NM4-50).
+  saveViewLook: () => void;
   autoStretch: () => Promise<void>;
   zoomToView: () => void;
   setActiveGroupIndex: (i: number) => void;
@@ -988,6 +1043,10 @@ export interface AppState {
   clearSelection: () => void;
   setDateFrom: (v: string) => void;
   setDateTo: (v: string) => void;
+  // Puts what is in the fields of one filter of a dataset; an input with nothing in it takes the filter away.
+  setSearchFilter: (datasetId: string, property: string, input: FilterInput) => void;
+  // "Reset filters" of a dataset.
+  resetSearchFilters: (datasetId: string) => void;
   setPlaying: (v: boolean) => void;
   setError: (v: string | null) => void;
   setNotice: (v: string | null) => void;
@@ -997,7 +1056,6 @@ export interface AppState {
   findSceneByName: () => Promise<void>;
   showCoverageFor: (datasetId: string) => void;
   hideCoverage: () => void;
-  pinSearchCrops: () => void;
   setMapViewport: (zoom: number, bbox: Bbox, size: { width: number; height: number }) => void;
   toggleTheme: () => void;
   setProjection: (projection: Projection) => void;
@@ -1040,9 +1098,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewAoi: null,
 
   layers: [],
+  resultsAt: 0,
   viewLayerId: null,
   resultViewLayerId: null,
-  searchCrops: [],
   downloadDialogLayerId: null,
   downloadSelection: false,
   downloadResolution: 1,
@@ -1081,6 +1139,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   dateFrom: '',
   dateTo: '',
+  searchFilters: {},
 
   sceneNameQuery: '',
   sceneLookupLoading: false,
@@ -1088,6 +1147,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   searching: false,
   downloading: false,
   playing: false,
+  shownGroupIndex: null,
+  revealNotBefore: 0,
   error: null,
   notice: null,
 
@@ -1153,7 +1214,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       ...openSectionState(section),
       datasetId: section.datasetId,
-      selectedIds: [],
       playing: false,
       ...LEAVE_FOCUS,
     });
@@ -1206,7 +1266,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleResultsOnMap: () => {
     const resultsOnMap = !get().resultsOnMap;
     saveResultsOnMap(resultsOnMap);
-    set({ resultsOnMap });
+    // Nothing of the timeline is on the map with the results off it: the playing ends (NM4-18, Otto, 30.10.2026).
+    set(resultsOnMap ? { resultsOnMap } : { resultsOnMap, playing: false });
   },
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
   clearSearchResults: () => {
@@ -1214,8 +1275,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       sections: [],
       openSectionId: null,
       ...forgetSearch(),
-      // The crops a search drew go with it; what the user pinned stays.
-      searchCrops: [],
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -1235,8 +1294,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       sections: [],
       openSectionId: null,
       ...forgetSearch(),
-      // The crops a search drew go with it; what the user pinned stays.
-      searchCrops: [],
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -1273,9 +1330,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     if (s.focusMode) {
-      const entries = s.selectedIds.length
-        ? Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id))
-        : Object.entries(s.downloaded);
+      const ticked = Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id));
+      const entries = ticked.length ? ticked : Object.entries(s.downloaded);
       if (entries.length === 0) {
         set({ error: 'Nothing to add — search and pick a time step first.' });
         return;
@@ -1324,6 +1380,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         set({
           layers: [...newLayers, ...s.layers],
+          resultsAt: resultsAtAfterAdding(s.resultsAt, newLayers.length),
           ...(newLayers.length === 1 && newLayers[0].restore.itemIds.length === Object.keys(s.downloaded).length
             ? { viewLayerId: newLayers[0].id }
             : {}),
@@ -1347,7 +1404,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           downloaded: { ...s.downloaded },
           appliedRender: { ...s.appliedRender },
           activeGroupIndex: s.activeGroupIndex,
-          selectedIds: [...s.selectedIds],
+          selectedIds: ticksOfOpen(s),
           itemIds,
           groupItemIds: groupItemIdsFor(itemIds, s.groups),
           aoi: s.aoi,
@@ -1358,6 +1415,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
       set({
         layers: [layer, ...s.layers],
+        resultsAt: resultsAtAfterAdding(s.resultsAt, 1),
         // The layer is the view's picture, so it takes the view's place in the list (`viewLayer.ts`),
         // unless it holds only some of the scenes the view draws.
         ...(entries.length === Object.keys(s.downloaded).length ? { viewLayerId: layer.id } : {}),
@@ -1367,9 +1425,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    const items = s.selectedIds.length
-      ? s.items.filter((it) => s.selectedIds.includes(it.id))
-      : (activeGroup?.items ?? []);
+    const items = selectionItemsFrom(s);
     const itemIds = items.map((it) => it.id);
     const overlays: LayerOverlay[] = [];
     const browsed = s.datasets.find((d) => d.id === s.datasetId);
@@ -1388,9 +1444,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         continue;
       }
-      // The preview substitute (M2-10): pinned at the one level it is read on,
+      // The preview substitute (M2-10): pinned at the levels it is read on,
       // so a pinned preview stays a preview and never turns into a full-
-      // resolution read when the map zooms in on it.
+      // resolution read when the map zooms in on it (the whole scene of a
+      // `full_resolution` dataset is read at every level already).
       // `browsed` is already non-null here (a plan needs one), named again so
       // TypeScript can narrow it for the call below.
       if (!it.bbox || !browsed) continue;
@@ -1398,8 +1455,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         kind: 'raster',
         tileUrl: buildTileUrl(api.buildTileTemplate(browsed.id, it.id, plan.asset), plan.render),
         bounds: it.bbox,
-        minZoom: plan.zoom,
-        maxZoom: plan.zoom,
+        minZoom: plan.minZoom,
+        maxZoom: plan.maxZoom,
       });
     }
     if (overlays.length === 0) {
@@ -1415,7 +1472,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloaded: { ...s.downloaded },
         appliedRender: { ...s.appliedRender },
         activeGroupIndex: s.activeGroupIndex,
-        selectedIds: [...s.selectedIds],
+        selectedIds: ticksOfOpen(s),
         itemIds,
         groupItemIds: groupItemIdsFor(itemIds, s.groups),
         aoi: s.aoi,
@@ -1424,7 +1481,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
       0,
     );
-    set({ layers: [layer, ...s.layers], notice: `Added "${name}" to layers.` });
+    set({ layers: [layer, ...s.layers], resultsAt: resultsAtAfterAdding(s.resultsAt, 1), notice: `Added "${name}" to layers.` });
   },
   // Pins a derived picture at the top of the list.
   pinDerivedLayer: (input) => {
@@ -1451,7 +1508,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datasetId: s.datasetId,
       },
     };
-    set({ layers: [layer, ...s.layers], notice: `Added "${input.name}" to layers.` });
+    set({ layers: [layer, ...s.layers], resultsAt: resultsAtAfterAdding(s.resultsAt, 1), notice: `Added "${input.name}" to layers.` });
   },
   expireResultLayers: (now) =>
     set((s) => {
@@ -1470,36 +1527,61 @@ export const useAppStore = create<AppState>((set, get) => ({
       const removed = new Set(s.layers.filter(gone).map((l) => l.id));
       return {
         layers: kept.map((l) => (l.result && locked(l) !== (l.result.deleted === true) ? { ...l, result: { ...l.result, deleted: locked(l) } } : l)),
+        resultsAt: resultsAtAfterRemoving(s.layers, s.resultsAt, (l) => !gone(l)),
         ...(s.resultViewLayerId !== null && removed.has(s.resultViewLayerId) ? { resultViewLayerId: null } : {}),
       };
     }),
+  // "Apply": draws the result with this look. The look it was saved with is kept until "Save" or until the settings close.
   restyleResultLayer: (id, render) =>
     set((s) => ({
-      layers: s.layers.map((l) =>
-        l.id === id && l.derived === 'result'
-          ? { ...l, overlays: l.overlays.map((o) => (o.kind === 'raster' ? { ...o, tileUrl: restyledTileUrl(o.tileUrl, render) } : o)) }
-          : l,
-      ),
+      layers: s.layers.map((l) => {
+        if (l.id !== id || l.derived !== 'result' || !l.result) return l;
+        const was = l.overlays.find((o) => o.kind === 'raster')?.tileUrl;
+        const overlays = l.overlays.map((o) => (o.kind === 'raster' ? { ...o, tileUrl: restyledTileUrl(o.tileUrl, render) } : o));
+        const now = overlays.find((o) => o.kind === 'raster')?.tileUrl;
+        const saved = l.result.savedTileUrl ?? was;
+        // Back at the saved look: nothing is unsaved.
+        const { savedTileUrl: _kept, ...info } = l.result;
+        return { ...l, overlays, result: saved === undefined || saved === now ? info : { ...info, savedTileUrl: saved } };
+      }),
+    })),
+  saveResultLayer: (id) =>
+    set((s) => ({
+      layers: s.layers.map((l) => {
+        if (l.id !== id || !l.result?.savedTileUrl) return l;
+        const { savedTileUrl: _saved, ...info } = l.result;
+        return { ...l, result: info };
+      }),
+    })),
+  revertResultLayer: (id) =>
+    set((s) => ({
+      layers: s.layers.map((l) => {
+        const saved = l.id === id ? l.result?.savedTileUrl : undefined;
+        if (!l.result || saved === undefined) return l;
+        const { savedTileUrl: _saved, ...info } = l.result;
+        let first = true;
+        const overlays = l.overlays.map((o) => {
+          if (o.kind !== 'raster' || !first) return o;
+          first = false;
+          return { ...o, tileUrl: saved };
+        });
+        return { ...l, overlays, result: info };
+      }),
     })),
   closeResultView: () => set({ resultViewLayerId: null }),
   removeLayer: (id) =>
     set((s) => ({
       layers: s.layers.filter((l) => l.id !== id),
+      resultsAt: resultsAtAfterRemoving(s.layers, s.resultsAt, (l) => l.id !== id),
       ...(s.resultViewLayerId === id ? { resultViewLayerId: null } : {}),
     })),
   toggleLayerVisible: (id) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
   setLayerOpacity: (id, opacity) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
-  moveLayer: (id, dir) =>
-    set((s) => {
-      const arr = [...s.layers];
-      const i = arr.findIndex((l) => l.id === id);
-      const j = dir === 'up' ? i - 1 : i + 1;
-      if (i < 0 || j < 0 || j >= arr.length) return {};
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-      return { layers: arr };
-    }),
+  moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
+  moveResults: (dir) => set((s) => moveEntry(s.layers, s.resultsAt, null, dir, hasResultsPanel(s.sections)) ?? {}),
+  resultsToTop: () => set({ resultsAt: 0 }),
   // Only what the processing panel needs of a layer (M4-13c-2, Otto 19.10.2026):
   // its dataset, if it is not the active one, and — for a layer cut to its AOI,
   // which "AOI only" sends — that AOI. The view stays as it is: the full-
@@ -1545,6 +1627,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       focusMode: r.focusMode,
       downloaded: r.downloaded,
       appliedRender: r.appliedRender,
+      // The controls show what the layer was made with, not what the last view had in them.
+      ...pendingFieldsOf(r.appliedRender),
       aoi,
       cropToAoi: r.cropToAoi,
       viewAoi: r.cropToAoi && r.aoi ? r.aoi : null,
@@ -1766,10 +1850,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // (`mapLayers.ts::syncFocusRaster`), never here.
   enterFocus: async (cropToAoi) => {
     const s = get();
-    const group = s.groups[s.activeGroupIndex];
-    const items = s.selectedIds.length
-      ? s.items.filter((it) => s.selectedIds.includes(it.id))
-      : (group?.items ?? []);
+    const items = selectionItemsFrom(s);
     if (items.length === 0) {
       set({ error: 'Nothing to view — pick a time step or select scenes first.' });
       return;
@@ -1804,7 +1885,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'None of the selected scenes carry a bounding box to render.' });
       return;
     }
-    const rescale = render.rescale?.[0];
+    const applied = appliedRenderFrom(render);
     // Scenes of a time step too big for one mosaic are drawn one by one, and only so many of those.
     const passes = passesOf(Object.entries(downloaded), s.groups);
     const oneByOne = passes.filter((pass) => !isMosaicPass(pass)).reduce((sum, pass) => sum + pass.length, 0);
@@ -1820,13 +1901,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       // A crop takes the results off the map and drops the tick of the scenes it was made of, so that their quicklooks
       // do not lie beside the crop; the view does not hang on the choice any more, and a scene ticked again shows like any
       // other (Otto, 27.10.2026). The whole scene keeps the tick and the switch.
-      ...(cropToAoi ? { selectedIds: [], ...setResultsOnMap(false) } : {}),
+      ...(cropToAoi ? { selectedIds: s.selectedIds.filter((id) => !(id in downloaded)), ...setResultsOnMap(false) } : {}),
       showDownloaded: true,
       downloaded,
-      appliedRender: appliedRenderFrom(render),
-      pendingColormapName: render.colormap_name ?? '',
-      pendingVmin: rescale ? String(rescale[0]) : '',
-      pendingVmax: rescale ? String(rescale[1]) : '',
+      appliedRender: applied,
+      ...pendingFieldsOf(applied),
     });
     // The stretch and the mosaics are asked for together; the view says "Loading…" until both are here,
     // because a time step draws nothing until its mosaic has answered.
@@ -1860,14 +1939,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   // runs, which is the point of an explicit "Apply".
   applyRender: () => {
     const s = get();
-    const vmin = s.pendingVmin.trim();
-    const vmax = s.pendingVmax.trim();
+    set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
+  },
+  saveViewLook: () => {
+    const s = get();
+    const layer = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
+    if (!layer) return;
+    const render = { ...s.appliedRender, ...lookOfPendingFields(s) };
+    // The same scenes as the layer has, drawn with the look: its rasters are made again, its quicklook underlays stay.
+    const fresh = overlaysOfEntries({ ...s, appliedRender: render }, Object.entries(layer.restore.downloaded), layer.restore.cropToAoi ? layer.restore.aoi : null);
+    if (fresh === null) {
+      set({ error: 'The layer cannot be saved yet: its scenes are still loading.' });
+      return;
+    }
+    const overlays = [...layer.overlays.filter((o) => o.kind === 'image'), ...fresh.filter((o) => o.kind === 'raster')];
     set({
-      appliedRender: {
-        ...s.appliedRender,
-        colormapName: s.pendingColormapName || undefined,
-        rescale: vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
-      },
+      appliedRender: render,
+      layers: s.layers.map((l) => (l.id === layer.id ? { ...l, overlays, restore: { ...l.restore, appliedRender: { ...render } } } : l)),
     });
   },
   // Re-measures the stretch from `/statistics` (adr/0006 §3.4) and writes it into
@@ -1918,10 +2006,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // quicklooks/preview tiles until something is expanded again. Opening a
   // different (collapsed) group goes through `setActiveGroupIndex` instead,
   // keeping both in sync as usual.
+  // A click on a group's head, open or close, ends the playing of the timeline (NM4-18, Otto, 30.10.2026); the playing itself
+  // moves the step with `setActiveGroupIndex`.
   toggleResultsGroup: (index) => {
     const s = get();
-    if (index === s.expandedGroupIndex) set({ expandedGroupIndex: null });
-    else s.setActiveGroupIndex(index);
+    if (index === s.expandedGroupIndex) set({ expandedGroupIndex: null, playing: false });
+    // In one change with the step, or the playing would take the step it is at for one that has arrived.
+    else set({ activeGroupIndex: index, expandedGroupIndex: index, playing: false });
   },
   focusItem: (id) => {
     const idx = groupIndexOfItem(get().groups, id);
@@ -1938,7 +2029,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   // M4-29: "Select all" takes the loaded scenes only — never more pages — and
   // the limits (merge, job size, batch) still answer where they always did.
-  selectAllLoaded: () => set((s) => ticking(s, s.items.map((it) => it.id))),
+  selectAllLoaded: () =>
+    set((s) => {
+      const here = new Set(s.items.map((it) => it.id));
+      return ticking(s, [...s.selectedIds.filter((id) => !here.has(id)), ...here]);
+    }),
   toggleGroupSelected: (index) =>
     set((s) => {
       const ids = s.groups[index]?.items.map((it) => it.id) ?? [];
@@ -1949,7 +2044,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         all ? s.selectedIds.filter((id) => !ids.includes(id)) : [...s.selectedIds, ...ids.filter((id) => !s.selectedIds.includes(id))],
       );
     }),
-  clearSelection: () => set({ selectedIds: [] }),
+  // The ticks of the scenes the list shows; those on other datasets stay (NM4-50).
+  clearSelection: () =>
+    set((s) => {
+      const here = new Set(s.items.map((it) => it.id));
+      return { selectedIds: s.selectedIds.filter((id) => !here.has(id)), playing: false };
+    }),
   setDateFrom: (dateFrom) => {
     set({ dateFrom });
     dropPageToken(set, get);
@@ -1960,6 +2060,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
+  setSearchFilter: (datasetId, property, input) => {
+    const { [property]: _before, ...others } = get().searchFilters[datasetId] ?? {};
+    changeSearchFilters(set, get, datasetId, isSet(input) ? { ...others, [property]: input } : others);
+  },
+  resetSearchFilters: (datasetId) => changeSearchFilters(set, get, datasetId, {}),
   // The "Coverage" button (M3-10): draws the coverage of one of the picked datasets.
   showCoverageFor: (datasetId) => {
     if (!get().selectedDatasetIds.includes(datasetId)) return;
@@ -1980,24 +2085,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       coverageFootprints: null,
       coverageError: null,
       coverageLoading: false,
-    });
-  },
-  // Copies the AOI crops of the dataset shown in the results into the layer
-  // manager, where they stay whichever dataset is chosen next. The user's own
-  // step: a search never pins anything by itself.
-  pinSearchCrops: () => {
-    const s = get();
-    const crops = s.searchCrops.filter((c) => c.restore.datasetId === s.openSectionId);
-    if (crops.length === 0) {
-      set({ error: 'Nothing to pin — this dataset has no crop to show.' });
-      return;
-    }
-    const batchId = nextBatchId();
-    const pinned = crops.map((c, i) => ({ ...c, id: `L${batchId}${i}` }));
-    set({
-      layers: [...pinned, ...s.layers],
-      error: null,
-      notice: `Pinned ${pinned.length} layer${pinned.length === 1 ? '' : 's'} (${pinned[0].name.split(' · ')[0]}).`,
     });
   },
   setMapViewport: (mapZoom, viewportBbox, viewportSize) => {
@@ -2042,6 +2129,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Choose a dataset to search.' });
       return;
     }
+    if (searchFiltersInvalid(get())) {
+      set({ error: 'Correct the marked search filters first.' });
+      return;
+    }
     // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its
     // true shape, a rectangle by its bbox — `aoiPoint` is only ever read here,
     // never for display or the download crop, which stay on `aoi`.
@@ -2063,14 +2154,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     // "Clear all" or another step that drops the results may come before the answer.
     const gen = searchGen;
     try {
+      const ids = chosen.map((d) => d.id);
+      const asked = filterQueriesOf(get(), ids);
       const query = {
-        collections: chosen.map((d) => d.id),
+        collections: ids,
         bbox: area.bbox,
         intersects: area.intersects,
         datetime: buildDatetime(dateFrom, dateTo),
+        ...queryByCollectionOf(asked),
       };
       const page = await api.searchAllPages(query, MAX_SEARCH_ITEMS);
       if (gen !== searchGen) return;
+      // Filters changed while the search ran (the page token cannot be dropped yet, there is no search on screen):
+      // "Load more" would go on with filters the fields no longer show.
+      const filtersKept = JSON.stringify(filterQueriesOf(get(), ids)) === JSON.stringify(asked);
       showSearchResults(
         set,
         get,
@@ -2088,7 +2185,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             incompleteCollections: page.incompleteCollections,
           },
           numberMatched: page.numberMatched,
-          nextToken: page.nextToken,
+          nextToken: filtersKept ? page.nextToken : null,
           openCollections: page.openCollections,
         },
         false,
@@ -2105,7 +2202,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         error: `Search failed: ${(e as Error).message}`,
         sections: [],
-        searchCrops: [],
         searchContext: null,
         ...openSectionState(null),
         dock: withoutResults(get().dock) ?? 'controls',
@@ -2246,8 +2342,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...openSectionState(open),
       ...forgetSearch(),
       datasetId: open.datasetId,
-      // A lookup carries no AOI, so there is no crop of the last search to keep.
-      searchCrops: [],
       selectedIds: [item.id],
       dock: 'results',
       playing: false,
@@ -2264,3 +2358,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (dataset?.browse === 'full_resolution') await get().enterFocus(false);
   },
 }));
+
+// The settings of a result are closed — another layer chosen, the view left, the panel shut: what was applied and not saved
+// goes without asking, and the layer is drawn as saved again (NM4-50).
+useAppStore.subscribe((s, prev) => {
+  if (prev.resultViewLayerId !== null && prev.resultViewLayerId !== s.resultViewLayerId) s.revertResultLayer(prev.resultViewLayerId);
+});

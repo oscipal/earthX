@@ -49,6 +49,8 @@ pytestmark = pytest.mark.anyio
 EXECUTION = "/processing/processes/recipe/execution"
 ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
 FINISHED_AT = "2026-03-05 10:00:00+00"
+#: A corner of the area (9.01, 47.01) standing as a number of its own: not the tail of a longer number or of the seconds of a timestamp.
+AOI_COORDINATE = re.compile(r"(?<![\d.])(?:9|47)\.01(?!\d)")
 RESULT = {
     "properties": {"proj:code": "EPSG:32632", "processing:lineage": "scale"},
     "scaling": [{"input": "scene", "asset": "red", "source": "item", "scales": [0.0001], "offsets": [-0.1]}],
@@ -405,8 +407,12 @@ class TestWhatTheOrderMayNotBe:
         await self.refused(rig, order(groups=((*ids,),)), 413, "size")
         assert rig.source.calls == [], "no item was fetched for an order that is too big"
 
-    async def test_an_unknown_asset_is_a_422(self, rig: Rig) -> None:
-        await self.refused(rig, order(assets=("no_such_asset",)), 422, "resolve")
+    async def test_an_unknown_band_is_a_422(self, rig: Rig) -> None:
+        body = await self.refused(rig, order(assets=("no_such_asset",)), 422, "applicable")
+        assert "no_such_asset" in body["detail"]
+
+    async def test_an_unknown_asset_of_an_export_is_a_422(self, rig: Rig) -> None:
+        await self.refused(rig, order(assets=("no_such_asset",), steps=[], output=CROP), 422, "resolve")
 
     async def test_a_dataset_whose_licence_does_not_reach_processing_is_a_403(self, rig: Rig) -> None:
         S2 = REGISTRY.get("sentinel-2-c1-l2a")
@@ -446,9 +452,9 @@ class TestWhatTheOrderMayNotBe:
         item["assets"]["red"].pop("raster:bands")
         item["assets"]["red"]["gsd"] = 10  # the pixel size was in the band description; the estimate needs it
         rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = item
-        step = {"op": "band_math", "op_version": 1, "params": {"expression": "red_2 + 1"}}
+        step = {"op": "band_math", "op_version": 2, "params": {"expression": "red_2 + 1", "name": "Plus"}}
         async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
-            response = await client.post(EXECUTION, json=envelope(order(assets=("red",), steps=[step])))
+            response = await client.post(EXECUTION, json=envelope(order(steps=[step], bands=["Plus"])))
         body = problem(response, 422)
         assert body["type"] == "urn:earthx:order-refused:applicable" and "red_2" in body["detail"]
         assert (count(rig.db, "earthx_recipe"), count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0, 0)
@@ -544,8 +550,28 @@ class TestStatus:
         job_id = await placed(rig)
         result_id = finish(rig.db, job_id)
         text = (await rig.client.get(f"/processing/jobs/{job_id}")).text
-        for forbidden in ("c1:", S2_HOST, "9.01", "47.01", result_id, "run_id", "cache_key", "hosts"):
+        for forbidden in ("c1:", S2_HOST, result_id, "run_id", "cache_key", "hosts"):
             assert forbidden not in text
+        assert not AOI_COORDINATE.search(text)
+
+    @pytest.mark.parametrize("created", ["2026-10-30 17:19:09.012345+00", "2026-10-30 17:19:47.019999+00"])
+    async def test_a_timestamp_that_contains_a_coordinate_of_the_area_is_not_the_area(
+        self, rig: Rig, created: str
+    ) -> None:
+        """The seconds of ``created`` with a fraction of .01… read like the AOI's corner (9.01 N, 47.01 E) as plain text.
+
+        The check above once looked for the substrings; one run in about 300 hit a clock reading like this and failed.
+        """
+        job_id = await placed(rig)
+        finish(rig.db, job_id)
+        rig.db.execute("UPDATE public.earthx_job SET created_at = %s WHERE job_id = %s", (created, job_id))
+        text = (await rig.client.get(f"/processing/jobs/{job_id}")).text
+        assert any(coordinate in text for coordinate in ("9.01", "47.01"))  # the old check would have failed here
+        assert not AOI_COORDINATE.search(text)
+
+    @pytest.mark.parametrize("leak", ['"bbox": [9.0, 47.0, 9.01, 47.01]', "POLYGON((9.01 47.01))", "[9.01,47.01]"])
+    def test_the_check_still_finds_a_coordinate_that_stands_alone(self, leak: str) -> None:
+        assert AOI_COORDINATE.search(leak)
 
     async def test_looking_at_a_job_changes_no_row(self, rig: Rig) -> None:
         job_id = await placed(rig)
@@ -1775,30 +1801,31 @@ class TestTheOriginOfTheAreaOfARasterJob:
         assert response.status_code == 200
 
 
-class TestAChainThatNamesABandAnEarlierStepRemoved:
+class TestAChainThatNamesABandNobodyHas:
     """"Review" (the estimate) and "Start" (the execution) turn away what the tile of the same chain turns away (M4-18b).
 
     The panel shows the steps before the refused one as a preview, from the answer of the tiler; the order itself
-    must never reach the queue. Both routes run the same check (`processing.plan.check_bands`) and name the step.
+    must never reach the queue. Both routes run the same check and name the band (NM4-43c: the stock keeps every band
+    a step does not replace, so the chain that failed when a step removed a band now fails for a band nobody has).
     """
 
     STEPS = [
-        {"op": "band_math", "op_version": 1, "params": {"expression": "nir - red"}},
-        {"op": "band_math", "op_version": 1, "params": {"expression": "red + 1"}},
+        {"op": "band_math", "op_version": 2, "params": {"expression": "nir - red", "name": "Diff"}},
+        {"op": "band_math", "op_version": 2, "params": {"expression": "Diff + swir", "name": "Out"}},
     ]
 
     @pytest.mark.parametrize("path", [EXECUTION, "/processing/processes/recipe/estimate"], ids=["start", "review"])
-    async def test_the_order_is_a_422_that_names_the_step_and_the_band(self, rig: Rig, path: str) -> None:
+    async def test_the_order_is_a_422_that_names_the_band(self, rig: Rig, path: str) -> None:
         async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
-            response = await client.post(path, json=envelope(order(steps=self.STEPS)))
+            response = await client.post(path, json=envelope(order(steps=self.STEPS, bands=["Out"])))
         body = problem(response, 422)
         assert body["type"] == "urn:earthx:order-refused:applicable"
-        assert body["detail"].startswith("step 1: ") and "red" in body["detail"]
+        assert "swir" in body["detail"]
         assert (count(rig.db, "earthx_recipe"), count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0, 0)
 
     @pytest.mark.parametrize("path", [EXECUTION, "/processing/processes/recipe/estimate"], ids=["start", "review"])
-    async def test_the_same_steps_in_a_chain_that_keeps_the_band_are_accepted(self, rig: Rig, path: str) -> None:
-        steps = [self.STEPS[0], {**self.STEPS[1], "params": {"expression": "band_math + 1"}}]
+    async def test_the_same_steps_over_a_band_the_data_has_are_accepted(self, rig: Rig, path: str) -> None:
+        steps = [self.STEPS[0], {**self.STEPS[1], "params": {"expression": "Diff * 2", "name": "Out"}}]
         async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
-            response = await client.post(path, json=envelope(order(steps=steps)))
+            response = await client.post(path, json=envelope(order(steps=steps, bands=["Out"])))
         assert response.status_code in (200, 201), response.text

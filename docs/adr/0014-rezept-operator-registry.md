@@ -2609,3 +2609,253 @@ stehen; maßgeblich ist dieser Nachtrag.
   2,1 %. Gegen den exakt nächsten Quellpixel gilt mit 512 px dieselbe Ausnahme an Grenzen (1 von 6462
   Pixeln), mit 256 px weiter keine.
 
+
+## 15 Nachtrag NM4-43c: Bandvorrat, `output.bands` und die Rezeptversion 2 (2026-10-28; zu §4, §5.2, §5.6, §6.1, §7, §9, §10.1, §15m)
+
+`adr/0020` hat den Bandvorrat entschieden (§4 bis §8, §11, §15a); dieser Nachtrag beschreibt, was der Code von NM4-43c, PR 1, daraus
+macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser Nachtrag. Der Schutz ohne Bandgrenze (§7 dort) kommt mit PR 2.
+
+- **Rezeptversion 2 (`RECIPE_VERSION = 2`).** `output.bands` (Pflicht, mindestens ein Name, ohne Rücksicht auf Groß- und Kleinschreibung
+  eindeutig) nennt, was `result.tif` enthält, in dieser Reihenfolge. Ein **Auftrag** für ein Raster nennt keine `assets` mehr (das Modell weist
+  sie ab); `api` leitet sie ab und schreibt sie ins **Rezept**, das sie weiter trägt (`Input.assets`, `resolved` wie bisher). Der Auftrag für
+  `crop` bleibt, wie er war, und nennt seine Assets. Hash und Cache-Schlüssel ändern sich einmal.
+- **Operatoren.** `band_math` Version 2 (`expression`, `name`; fügt das Band hinzu, ersetzt nichts), `mask` Version 2 (die Schicht bleibt im
+  Vorrat und wird wie jedes Band an den ausgeblendeten Klassen maskiert), `normalize` Version 2 (`bands`, Pflicht: nur diese werden umgerechnet,
+  die übrigen bleiben, wie sie sind). Die Namensregeln stehen in `band_math.check_name`: `^[A-Za-z][A-Za-z0-9_]{0,31}$`, kein Python-Schlüsselwort,
+  kein Funktionsname aus R5. Die Versionen 1 bleiben registriert (Kachel, Umdeutung) und tragen `stock=False`; ein Job lehnt sie mit dem Ort des
+  Schritts ab. Die Versionen 2 laufen bis NM4-43d nur als Job (`Tier.T2`) und werden nicht gelistet (`Operator.listed`, `processing_docs._jobs_of`
+  zählt nur gelistete Versionen): Das heutige Panel sieht weiter Version 1. Der Kern prüft einen Namen zusätzlich am Vorrat
+  (`band_math._transform_v2`: „NDVI is used twice“, auch in anderer Schreibweise).
+- **Planer (`plan.stock_steps`, `needed_source_bands`).** Der Planer geht die Kette von hinten durch
+  (`Operator.bands_used` → `BandUse`: gelesene Namen, hinzugefügter Name, geänderte Bänder). Ein Band fällt nach seiner letzten Nutzung weg; ein
+  Schritt, der nichts Gebrauchtes ändert oder hinzufügt („toter“ Schritt), wird **nicht geprüft, nicht gerechnet und nicht berichtet**: die Bänder,
+  die er nennt, werden nicht gelesen und müssen nicht da sein, und weder `processing:lineage`, `processing:expression` noch der Methodentext nennen
+  ihn (`plan.live_steps`). Jeder Schritt, der läuft, wird auf dem **ganzen** Vorrat geprüft (ein falscher Name, mit dem Ort des Schritts im Text).
+  Von der Liste `bands` eines `normalize` bekommt der Schritt nur, was nach der Kürzung noch im Vorrat steht (`Operator.restrict`); die übrigen
+  Namen der Liste sind nie nötig. Dafür setzt der Planer einen eigenen, nicht registrierten Schritt
+  `select_bands` (`operators/select.py`) vor den Schritt, der folgt, und am Ende. Der Vorrat wird dabei so geordnet wie `output.bands`, sobald er
+  schmaler wird; ein letztes `reproject` braucht deshalb keinen Durchgang, der nur sortiert. Ein `grid`-Schritt warpt nur, was bleibt (Version 4
+  warpt jedes Band für sich; der Wert eines Bandes hängt nicht am Vorrat, `adr/0020` §3.4). `estimate`, `check_bands`, `run` und
+  `area_statistics` benutzen dieselbe Planung. Kennt das Item die Bänder eines Assets nicht (nur die Datei weiß, wie viele es sind),
+  gilt es in `estimate` und `check_bands` als ein Band, das wie das Asset heißt; ein Name `<asset>_<n>` wird dort abgewiesen
+  (`test_a_band_the_item_does_not_describe_is_found_where_the_check_before_could_not_tell`). Ein umgedeuteter Auftrag der Version 1 mit so einem
+  mehrbändigen Asset scheitert deshalb im Kern am Namen `<asset>`; das ist eine bekannte Grenze, bis NM4-43e die Bänder aus der Prozessbeschreibung bestellt.
+- **`api` (`intake.derive_assets`, `band_sources`).** Aus `output.bands` und den Schritten folgen die Namen, die der erste Schritt braucht;
+  jeder Name gehört zu genau einem Asset des Items (Regel des Panels: ein COG-Asset ist ein Band mit dem Namen des Assets oder `<asset>_<n>`;
+  ein Zarr-Asset je Variable mit `<asset><Trenner><Variable>`; der Name ist die Variable; die Kerne und `expected_band_names` stimmen
+  überein). Ein Asset, dessen Bandzahl das Item nicht nennt, steht mit seinem Namen und nimmt `<asset>_<n>` dazu; die Datei entscheidet. Die
+  Assets stehen in der Reihenfolge des Items. `422` mit dem Namen (Stufe `applicable`): ein Name ohne Asset, ein Name, den zwei Assets
+  tragen, ein Name eines `band_math`-Schritts, den ein Band des Datensatzes trägt (auch ein nicht gelesenes, ohne Rücksicht auf Groß- und
+  Kleinschreibung) oder ein anderer Schritt („is used twice“). Die Grenze von 16 Assets galt bis PR 2 für die abgeleiteten Assets (entfallen, Nachtrag NM4-43c PR 2).
+- **Kern.** `result.tif` trägt genau die Bänder von `output.bands`, in dieser Reihenfolge, mit dem Namen als **Banddeskription**; Datentyp und nodata
+  nach den bisherigen Regeln. **Abweichung von `adr/0020` §8: Die Einheit steht nicht in `result.tif`, sondern in den STAC-Eigenschaften
+  (`properties.bands[].unit`, M4-19b) und im Block `bands` der Datei `recipe.json`.** `rio-cogeo` (`cog_translate`) trägt Namen und Tags in die COG, aber keine Einheit.
+  GDALs COG-Treiber (`rasterio.shutil.copy(driver="COG")`) trägt sie, und die Datei ist sonst dieselbe (gleiche Werte, gleiche Block- und Übersichtsstufen,
+  266 Byte mehr, es fehlt das Tag `OVERVIEW_RESAMPLING`). Er hält aber Speicher, der mit der Fläche wächst: mit `GDAL_CACHEMAX` 64 MB, 4 Bänder `float32`,
+  Spitze `cog_translate` gegen COG-Treiber 262 / 306 MB (2048²), 288 / 347 MB (4096²), 301 / 395 MB (8192²), also 44, 59 und 94 MB mehr; im Kern
+  stieg dadurch das Wachstum des Speichers von 2048² auf 4096² von 59 auf 132 MB (Grenze der Tests 120 MB) und brach `test_memory_reproject.py` und
+  `test_memory_mosaic.py`. Die Eigenschaft „der Speicher folgt dem Block, nicht der Szene“ (M4-07a F11) hat Vorrang; deshalb bleibt es bei
+  `cog_translate`. **Entschieden (Otto, 29.10.2026, Option 1):** Die Einheit steht nur in den STAC-Eigenschaften und in `recipe.json`. Otto verlangte vorher zu prüfen, ob
+  `cog_translate` die Einheit übernimmt, wenn sie in der Quelldatei gesetzt ist. Gemessen (rasterio 1.5, GDAL 3.12.2, `forward_band_tags=True` wie im Kern): Die
+  **Banddeskription** und **Band-Tags** gehen durch (`update_tags(i, unit="m")` steht in der COG), die **Einheit** (`set_band_unit`, GDALs Feld `unittype`) nicht
+  (`units == (None, None)` in der COG, obwohl die Quelle `("m", "m")` hatte). Ein Tag mit dem Namen `UNITTYPE` wird zu einem gewöhnlichen Tag und nicht zur Einheit.
+  Die Einheit der fertigen COG nachträglich zu setzen geht nicht: GDAL öffnet eine COG nicht zum Ändern („Updating it will generally result in losing part of the
+  optimizations“). Damit bliebe nur ein eigener Tag, den kein Programm als Einheit liest; das ist kein Ersatz für `adr/0020` §8 und wird nicht umgesetzt. Die
+  Abweichung von `adr/0020` §8 gilt damit: Die Einheit der Bänder steht in den STAC-Eigenschaften, nicht in der Datei.
+- **Das Kennzeichen `earthx:resampled` (Backlog 51, Otto).** Es sagt nur, wo **Werte** auf ein anderes Raster gebracht wurden. Jedes Band trägt es
+  (`BandMeta.resampled`: seine Quelle liegt nicht auf dem Raster des feinsten Assets oder warpt ihre Szenen; `reproject` setzt es für alle Bänder;
+  `band_math` erbt es von den Bändern, die der Ausdruck nennt). Das Ergebnis ist markiert, wenn **ein Band, das in ihm steht**, es trägt. Eine Schicht,
+  die nur Pixel ausblendet (`scl` von `mask`, nächster Nachbar), markiert nichts, auch wenn sie gröber ist. Steht sie selbst in der Ausgabe, zählt sie wie
+  jedes Band. Die Annahme in `api` kennt das Kennzeichen nicht (es entsteht beim Lesen); es gehört in den Kern und ist dort umgesetzt.
+- **Umdeutung von Version 1 (`processing/upgrade.py`, eine reine Funktion über JSON-Daten).** Wie `adr/0020` §11: Namen für die `band_math`-Schritte
+  (der letzte `band_math`, frühere `band_math_<n>`, Verweise im nächsten Ausdruck auf den Namen des vorigen, token-genau), `bands` für `normalize`, die
+  Schicht von `mask` nicht mehr in `output.bands`, `output.bands` = Vorrat am Ende. Ein Auftrag verliert `assets` (der Name eines Assets ist sein
+  Name, ein Zarr-Schlüssel nennt seine Variablen), ein Rezept behält `assets` und `resolved` (die Namen kommen aus `resolved`). `api` deutet Aufträge und
+  Permalinks bis `intake.VERSION_1_ACCEPTED_UNTIL` um (ohne Datum bis NM4-43e; danach `422` „recipe_version 1 is no longer accepted; send version 2“);
+  ein Permalink bleibt, wie er gesendet wurde, nur geprüft. Der Worker deutet gespeicherte Rezepte um (`jobs/child.py`), der Methodentext und der Runner
+  lesen Version 1 dauerhaft. Werte: bitgleich zu Version 1 für Ketten ohne `reproject` (`test_version_1_values.py`, die Hashes stammen vom Kern vor
+  dieser Änderung); nach `reproject` Version 2 oder 3 können sie abweichen (`adr/0016` Nachtrag NM4-43c).
+- **Methodentext.** Er nennt die Bänder der Ausgabe („… with float32 values and the bands NDVI, NDWI.“); `band_math` und `normalize` Version 2 nennen
+  die Namen; `processing:lineage` und `processing:expression` tragen den Namen des Ergebnisses.
+- **Version.** `earthx.__version__` 0.4.4 → 0.5.0 (`result.tif` trägt Banddeskriptionen; Bytes ändern sich; `reproject` Version 4 aus 0.4.4
+  bleibt).
+
+## 15 Nachtrag NM4-43c PR 2: Schutz ohne Bandgrenze (2026-10-30; zu §5.5, §15i, §15v; `adr/0020` §3.2, §7, G2)
+
+Die Grenze von 16 Assets ist weg; die Last der Bänder trägt jetzt die Schätzung vor dem Lauf (`adr/0020` §7.2, Empfehlung G2, angenommen).
+Der Originaltext von §5.5 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Entfallen.** `intake.MAX_ORDER_ASSETS` und beide Prüfungen (die Assets eines Auftrags, auch eines Exports, und die aus `output.bands`
+  abgeleiteten) sowie das `maxItems` der Assets in der Prozessbeschreibung. Das heutige Panel fällt bei fehlendem Wert auf 16 zurück
+  (`processingOrder.ts`) und bleibt bis NM4-43e unverändert; die Grenzen der Kachel (16 Assets, bei der Mosaik-Kachel 4) bleiben.
+- **Speicherschätzung (`plan.memory_needed`, `MAX_JOB_MEMORY_BYTES` = 1,5 GB).** Ein Wert je Kindprozess (`adr/0020` F5); ein Worker mit zwei
+  Slots braucht bis zu 3 GB. `estimate` weist darüber mit `JobTooLarge` ab (`413`, Stufe `size`), mit Zahl und Rat: „This job would need about
+  2.4 GB of memory, more than the 1.5 GB a job may use. Put fewer bands in the output.“ Die Formel
+  **300 MB + 33 MB je Band + (Szenen − 1) × (4 MB + 1,2 MB je Band)**; „Band“ ist das breiteste, was ein Durchgang hält: alle Bänder der Assets,
+  die gelesen werden (der Planer streicht erst danach), und jedes Ergebnis eines `band_math`, solange der Vorrat es hält
+  (`plan._planned_stock`). Ein Asset, dessen Bänder das Item nicht nennt, zählt als ein Band (Grenze S1, unverändert): die Schätzung ist dort eine
+  Untergrenze. Jede Konstante liegt über jeder Messung (`test_estimate_bands.py`, `MEASURED`).
+- **Messung (neu, mit echtem `band_math` Version 2, bis zur 5-GB-Grenze, Mosaik von 25 Szenen).** Synthetische Szenen, `uint16`, 17 Bänder in
+  einem COG, Ausgabe `float32`, `GDAL_CACHEMAX` 64 MB, ein Kindprozess je Messung, Spitze `VmHWM` (nicht `ru_maxrss`); Skript
+  `scripts/nm4-43-bands/memory.py` und `tests/earthx/processing/memory_bands.py`:
+
+  | Bänder im Durchgang | Fläche | Spitze MB |
+  |---|---|---|
+  | 2 / 4 / 8 / 17, kein Schritt | 2048² | 289 / 345 / 482 / 726 |
+  | 17, kein Schritt | 1024² / 2048² / 4096² / 5632² / 8192² | 556 / 726 / 727 / 727 / 727 |
+  | 33 (17 Bänder, 16 `band_math`, alles behalten) | 2048² / 4096² / 5632² | 1146 / 1148 / 1149 |
+  | 18 (2 + 16) / 24 (8 + 16) | 2048² | 615 / 859 |
+
+  **Der Speicher folgt den Bändern und dem Block (1024²), nicht der Fläche:** 17 Bänder brauchen von 2048² bis 8192² (67,1 Mio.
+  Pixel, `float32`: 4,6 GB Ausgabe, dicht unter der 5-GB-Grenze) dieselben 727 MB; ein Flächenanteil ist nicht nötig, und die Vermutung [A] in `adr/0020` §3.2 Befund 8 (ein Flächenanteil
+  vom COG-Schritt) bestätigt sich in dieser Messung nicht. Ein Band kostet 27–34 MB bei Quellbändern und 20–26 MB bei Ergebnissen; 33 Bänder kommen auf
+  rund 1,15 GB, Sentinel-2 mit 16 `band_math`-Schritten passt also unter 1,5 GB.
+
+  | Mosaik, alle Szenen je Block gelesen (Streifen ohne Daten) | Spitze MB |
+  |---|---|
+  | 17 Bänder, 1024², 1 / 2 / 3 / 5 / 8 / 12 / 25 Szenen | 556 / 656 / 785 / 816 / 862 / 924 / 1125 |
+  | 17 Bänder, 25 Szenen, 2048² / 4096² | 1369 / 1371 |
+  | 17 + 16 Ergebnisse, 25 Szenen, 1024² / 2048² | 1310 / 1625 |
+  | 2 Bänder, 1 / 5 / 25 Szenen; 6 Bänder, 1 / 5 / 25 Szenen, 1024² | 234 / 269 / 393; 337 / 456 / 586 |
+
+  Das ist der ungünstigste Fall: Der Kern liest je Block nur die Szenen, die ihn berühren, und hört auf, sobald alle Pixel gefüllt sind; hier bleibt
+  ein Streifen leer, also werden alle gelesen. Der Zuwachs je Szene sinkt (bei 17 Bändern kosten die ersten beiden weiteren Szenen etwa 100 und 130 MB, jede spätere etwa 15 MB);
+  die Formel ist eine Gerade darüber. **Ein Mosaik von 25 Szenen mit 17 Bändern kommt auf 1,37 GB gemessen, 1,45 GB geschätzt und wird angenommen;** mit
+  16 behaltenen Ergebnissen (33 Bänder, 1,63 GB gemessen bei 2048², 2,4 GB geschätzt) wird es mit `413` abgewiesen.
+- **Zeitschätzung.** `seconds` zählt zusätzlich `SECONDS_PER_OUTPUT_BAND_MPIXEL` = 0,75 s je Ausgabeband und Million Ausgabepixel (Schreiben, Statistik
+  und COG je Band; der Eingabeterm sieht sie nicht). Gemessen 0,42–0,72 s (17 Bänder: 0,55 / 0,47 / 0,42 s bei 2048² / 4096² / 5632²; 33 Bänder mit
+  16 `band_math`: 0,72 / 0,63 / 0,57 s), mit bis zu drei Läufen gleichzeitig auf vier Kernen, wie ein Worker mit zwei Slots läuft; die echten Läufe von
+  `adr/0020` §3.2 geben 0,55–0,7. Damit schätzt die Plattform für 17 Bänder bei 30 km (9,5 Mio. Pixel) rund 145 s statt 21 s (gemessen 115 s), und
+  an der 5-GB-Grenze (8192², 17 Bänder) sind 480 s gemessen (0,42 s) und 939 s geschätzt. Die Laufzeitgrenze (`jobs/submit._runtime_limit`, 2 × Schätzung, mindestens 600 s) liegt für einen Auftrag nahe der 5-GB-Grenze mit 17 Bändern über
+  den 600 s der Untergrenze (Test in `test_submit.py`). Die Zeit der Schritte selbst steckt im Wert (33 Bänder mit 16 Schritten werden nicht
+  unterschätzt).
+- **`units`** (**Abweichung von `adr/0020` §7.2, Otto, 30.10.2026**): Ausgabepixel (Mio.) mal die **gewichteten Bänder**. Jeder Schritt zählt seinen
+  Faktor nur für die Bänder, die er selbst erzeugt oder bearbeitet (`band_math`: sein Ergebnisband; `normalize`: die Bänder in `bands`, die nach dem Streichen noch
+  da sind; `reproject`, `mask` und die übrigen: alle Bänder des Vorrats an dieser Stelle); ein Ausgabeband, das kein Schritt anfasst, zählt wie geschrieben
+  (`RASTER_WITHOUT_STEP_FACTOR`, 1,0). Ohne Schritt bleibt es Bänder × 1,0, ein Auftrag mit einem Ergebnisband und einem `band_math` bleibt bei 1,2 je Million
+  Pixel, ein Export zählt wie bisher. Vorher (wörtlich nach §7.2) zählte der Faktor jedes Schritts für jedes Ausgabeband: 16 `band_math` mit 33 Bändern kamen auf das
+  Fünfhundertfache eines Ergebnisbandes bei 2,6-facher Laufzeit. Jetzt sind es 36,2 gegen 1,2 je Million Pixel (das 30-Fache; die Zeitschätzung gibt das
+  24-Fache) und das 2,1-Fache der 17 Bänder ohne Schritt (Zeit: 1,7-fach geschätzt, 2,6-fach gemessen bei 5632²); `test_estimate_bands.py` hält das Verhältnis
+  zur Zeitschätzung auf ±30 %. Die Einheiten sind bis M6 (Quoten) nur eine Anzeige.
+- **Platte.** `disk_needed` bemisst den `float64`-Durchgang nach dem breitesten Vorrat (`plan._planned_stock`) statt nach den Bändern der Assets: Ein
+  `band_math` fügt dem Vorrat Bänder hinzu, und die Zwischendatei (rechnerisch 8,4 GB bei 31,7 Mio. Pixeln und 33 Bändern) wuchs über die Schätzung, die nur die Bänder der Assets zählte.
+- **Unverändert.** 25 Items, 16 Schritte, 5 GB Ausgabe, Deckel je Host, Wiederholung in `gateway`; ein Export (`crop`) hat keine Speicherschätzung
+  (`memory_bytes` 0). `earthx.__version__` bleibt (kein Byte eines Ergebnisses ändert sich). Der Runner schätzt nicht und kennt die Grenze nicht.
+- **Tests.** `test_estimate_bands.py` (17 Bänder angenommen; Speichergrenze auf das Byte, `413` mit Zahl und Rat, Hyperspektral mit 224 Bändern in einem
+  Asset abgewiesen, die Formel über jeder Messung, Zeit und `units` wachsen mit den Bändern, Platte folgt dem Vorrat), `test_memory_bands.py` (die Spitze
+  bleibt unter der Schätzung: 17 Bänder, 17 + 16 Ergebnisse, 5 Szenen), `test_intake.py` (mehr als 16 Assets werden angenommen), `test_processing_estimate.py`
+  (`413` über die Route), `test_submit.py` (Laufzeitgrenze über der Untergrenze).
+- **Reproduzierbar.**
+
+  ```bash
+  PYTHONPATH=backend python scripts/nm4-43-bands/memory.py scene scene.tif --size 4096 --bands 17
+  PYTHONPATH=backend python scripts/nm4-43-bands/memory.py run scene.tif work --size 4096 --bands 17 --results 16 --scenes 1
+  ```
+
+  Je Messung ein eigener Aufruf (die Spitze gehört dem Prozess). Das Skript `measure.py` (echte Sentinel-2-Daten, Netz) rechnet jetzt mit Rezeptversion 2.
+- **Entschieden (Otto, 30.10.2026).** Die Grenze von 1,5 GB je Kindprozess bleibt; Wiedervorlage zu M6 mit der echten Worker-Größe (das 25-Szenen-Mosaik mit 17 Bändern liegt mit
+  1,45 GB geschätzt knapp darunter). `units` wie oben.
+
+## 15 Nachtrag NM4-43d: Die Kachel zeigt ein Band des Vorrats (2026-10-30; zu §6.1, §15m, §15t; `adr/0020` §10, P1)
+
+Die Item-Kachel und die Mosaik-Kachel mit Schritten (`api/tiler.py`, `processing/tile.py`) rechnen Schritte der Version 2. Ein Bild zeigt ein Band, der Vorrat
+hat mehrere. Umgesetzt in [#245](https://github.com/oscipal/earthX/pull/245); Beschluss `adr/0020` §10 (F8, Option 1).
+
+- **Version 2 als Kachel.** `band_math`, `mask` und `normalize` Version 2 sind `T1` und `T2` (vorher nur `T2`, NM4-43c). Version 1 bleibt für die Dauer der
+  Übergangsfrist angenommen und rechnet wie bisher: alle genannten Assets, die Bänder, die die Schritte lassen.
+- **`band=<Name>`.** Neuer Parameter auf Kachel, TileJSON und Statistik (und auf der Mosaik-Kachel): das Band des Vorrats nach der Kette. Ohne Angabe das letzte, das ein
+  `band_math`-Schritt hinzugefügt hat, sonst das erste. Ein Name, den die Schritte nicht lassen, ist ein `422` mit dem Namen und den vorhandenen Bändern, vor dem Öffnen
+  einer Datei (das Item wird abgerufen, die Bandnamen stehen darin); doppelt, leer, über 128 Zeichen oder ohne `op` ist ein `400` vor dem Abruf des Items. Groß- und
+  Kleinschreibung zählen.
+- **Streichen wie der Planer.** `tile.plan_band` ruft `plan.stock_steps` mit dem Band als einziger Ausgabe auf (`adr/0020` §4): Geöffnet werden nur die Assets, die das
+  Band braucht; Schritte, deren Ergebnis niemand behält, laufen nicht und werden nicht geprüft; am Ende steht die Auswahl des Bandes, das Bild hat dieses eine Band.
+  Weil jeder Schritt je Band oder Pixel rechnet (und `reproject` seit Version 4 je Band), sind die Werte die eines Jobs mit `output.bands: [<Name>]` (Test: bitgleich
+  auf der nativen Ebene, 256 und 512 px). Der Planer zählt jedes Band in `normalize.bands` als gebraucht, die Kachel liest also dasselbe wie der Job.
+- **Grenzen nach dem Streichen.** 16 Assets (Item-Kachel, `MAX_OPERATOR_ASSETS`) und 4 (Mosaik-Kachel, `MAX_MOSAIC_OPERATOR_ASSETS`) zählen die gelesenen Assets, nicht
+  die genannten: NDVI mit Maske (3) passt auch bei 17 genannten. Dafür fällt die Prüfung vor dem Abruf des Items weg; ein unbekanntes Asset ist ein `404` nach dem Abruf,
+  zu viele gebrauchte Assets ein `400` vor dem Öffnen der ersten Datei. Die Längengrenze der Mosaik-Kachel (7 168 Byte) bleibt.
+- **Mosaik.** Welche Assets das Band braucht, entscheidet die erste Szene nach Kennung (die Szenen tragen dieselben Bänder, `_describe_mosaic` vergleicht sie); die
+  Reihenfolge der Szenen richtet sich nach dem ersten gelesenen Asset.
+- **TileJSON und Statistik.** Das TileJSON trägt `band` und `unit` des gezeigten Bandes; die Statistik ist die des Bandes (der Cache-Schlüssel enthält die Auswahl, zwei Bänder
+  teilen keinen Eintrag). Die Farbskala einer Ergebnis-Ebene kommt weiter aus `properties.bands[].statistics`; ein Test hält die Vorschau-Statistik eines Bandes gleich der des Jobs.
+- **Ergebnis-Kachel** (`/results/…`): `bidx` wählt das Band der `result.tif` (der Name ist die Banddeskription). Ein `bidx` außerhalb der Datei war ein `500`, jetzt `400` mit der
+  Bandzahl.
+- **Auslegungen (Claude, gelten bis Otto widerspricht).** (1) `band` neben einem Schritt der Version 1 ist ein `400`: Version 1 hat keinen Vorrat. (2) Kennt das Item die Bänder
+  eines Assets nicht, gilt das Asset in der Planung als ein Band mit dem Namen des Assets (wie die Schätzung, Grenze S1); die Datei wird vor dem ersten Pixel nochmals geprüft.
+- **Unverändert.** `earthx.__version__` (kein Byte eines Ergebnisses ändert sich), Rezept, Hash, Runner.
+
+## 15 Nachtrag NM4-11: `normalize` Version 3, die Methoden (2026-10-30; zu §5.2, §6.1, §6.3, §15c, §15m, §15u; `adr/0020` §4, §15a)
+
+Otto hat den Plan von NM4-11 am 2026-10-30 freigegeben (zu [#244](https://github.com/oscipal/earthX/pull/244), `plans/querschnitt/nm4-11-normalize-methoden.md` §13). Der Originaltext von §15m
+bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist das Backend (NM4-11a); das Panel folgt als NM4-11b.
+
+- **Grundsatz (W1).** Jede Methode ist eine Gerade je Band. Die Zahlen einer statistischen Methode stehen **im Rezept** (`params.measured`), gemessen vor dem Lauf mit der Route
+  `POST /collections/{dataset}/statistics` (§15u). Damit bleibt `normalize` ein reiner Pixel-Schritt: Kachel (T1) und Job (T2) geben dieselben Bytes, der Runner misst nichts
+  (`adr/0016` Nachtrag NM4-11), Rezept und Ergebnis sind eindeutig, der Speicher des Jobs ändert sich nicht. Das setzt M4-18 F5 („im Rezept stehen feste Zahlen“) fort; neu ist, dass das Panel
+  die Zahlen misst statt vorschlägt.
+- **Rezeptform.** `normalize` `op_version` 3, strikt, alle Felder der Methode Pflicht (B10), die Felder einer anderen Methode verboten (`extra="forbid"` und eine Prüfung im Modell):
+
+  | `method` | Felder | gemessen je Band (`measured.bands.<Band>`) |
+  |---|---|---|
+  | `linear` | `bands`, `in_min`, `in_max`, `out_min`, `out_max`, `clip` | keine, `measured` fehlt |
+  | `percentile` | `bands`, `low` ∈ {0, 1, 2, 5}, `high` ∈ {95, 98, 99, 100}, `out_min`, `out_max`, `clip`, `measured` | `p_low`, `p_high` (Werte an den Perzentilen; 0 und 100 sind Minimum und Maximum) |
+  | `zscore` | `bands`, `measured` | `mean`, `stddev` (Populations-Standardabweichung, ÷ N) |
+  | `robust` | `bands`, `measured` | `p25`, `median`, `p75` |
+
+  `measured` trägt `factor` (ganze Zahl ≥ 1 bis 10 000: 1, wenn auf dem Raster des Ergebnisses gemessen, sonst um wie viel gröber, `exact: false` der Route) und die Zahlen genau der Bänder von `bands`
+  (Namen buchstabengleich). Zusicherungen: endlich; `p_low` ≤ `p_high`; `stddev` ≥ 0; `p25` ≤ `median` ≤ `p75`; Spannen endlich. Gegenüber dem Plan §8.4 heißen die gemessenen Werte des
+  Perzentil-Stretchs `p_low`/`p_high`, damit sie nicht mit den Prozenten `low`/`high` zusammenfallen.
+- **Rechnung.** Je Band in `float64`, jeder Schritt eine eigene numpy-Operation, Ergebnis `float32` mit NaN als nodata; maskiert bleibt maskiert, nicht Endliches (Überlauf) wird maskiert:
+
+  | Methode | Formel |
+  |---|---|
+  | linear | `(x − in_min) / (in_max − in_min) · (out_max − out_min) + out_min`, mit `clip` auf den Zielbereich |
+  | percentile | dieselbe Gerade mit `in_min` = `p_low`, `in_max` = `p_high` |
+  | zscore | `(x − mean) / stddev` |
+  | robust | `(x − median) / (p75 − p25)` |
+
+  **Spanne 0** (`stddev` = 0, `p25` = `p75`, `p_low` = `p_high`, ein konstantes Band über der AOI) teilt durch 1, wie `StandardScaler`, `RobustScaler` und `MinMaxScaler` von scikit-learn (KE10); das
+  Rezept bleibt gültig. Der Kern von `linear` ist der von Version 1 und 2 (`_line`), ihre Bytes ändern sich nicht (Test: Version 1, 2 und 3 `linear` bitgleich).
+- **Die Route (§15u) liefert dafür mehr.** Je Band zusätzlich `percentile_1`, `_5`, `_25`, `_50`, `_75`, `_95`, `_99` aus demselben festen Histogramm (M4-32, §15k), nach außen gerundet über dem Median, sonst
+  nach unten. Das Ergebnisdokument und `result.tif` tragen weiter 2 und 98: **keine Byte ändert sich, `earthx.__version__` bleibt.** Der Cache-Schlüssel trägt `area-statistics/v2` (die Antwort hat eine andere
+  Form); Einträge der älteren Form werden nicht mehr getroffen und laufen nach 7 Tagen ab. Ist die Messung gröber (`factor` > 1), liegen die Perzentile bis rund 3 % der Spanne neben den exakten (NM4-19 §7.6 [M]);
+  das Rezept bleibt eindeutig, der Methodentext nennt es.
+- **Streichen (`adr/0020` §4).** `bands_used` ist `acts_on = bands`; `restrict` nimmt mit einem gestrichenen Band auch seine Zahlen aus `measured`. Mit und ohne Streichen sind die Werte eines Bandes bitgleich (Test je Methode).
+- **Kachel.** Version 3 läuft als Kachel (`T1`, `pixel`) und als Job; `params` trägt die Zahlen in der URL, und die Grenze von 2048 Zeichen (`MAX_OPERATOR_PARAMS_CHARS`) gilt: etwa 25 bis 40 Bänder mit Zahlen. Darüber antwortet die Kachel `400` mit
+  dem Grund; das Panel zeigt dann den Anfang der Kette. Kachel und Job sind auf der nativen Ebene bitgleich (COG, 256 und 512 px, jede Methode, auch nach `mask`).
+- **Gelistet** wird Version 3 erst, wenn das Panel sie schickt (`listed=False`, NM4-11b); Version 2 bleibt angenommen. Die Prozessbeschreibung bietet bis dahin, was sie vorher bot.
+- **Ehrlichkeit des Rezepts.** `api` prüft nicht, ob die Zahlen die Perzentile der AOI sind (das hieße messen). Ein von Hand gebautes Rezept rechnet trotzdem eindeutig; der Methodentext nennt die Zahlen als
+  „as measured before the run“, bei `factor` > 1 „on a read N times coarser than the result“. Er nennt wie bei Version 2 alle Bänder des Schritts, auch die der Planer streicht.
+- **Faktor (§5.5, §15k).** 0,3 für alle vier Methoden. Gemessen mit `scripts/nm4-11-normalize/measure_kernel.py` (ein Block 1024², zwei Bänder `float32`, kleinster Wert aus 15 Läufen, Sitzung): Version 2 (fester Bereich) 21,0 ms; Version 3 `linear` 21,2,
+  `percentile` 21,2, `zscore` 15,0, `robust` 14,4 ms (ein zweiter Lauf, ohne anderen Betrieb auf der Sitzung; der erste mit Last: 19,3 / 20,3 / 19,8 / 15,8 / 17,7). Kein Kern kostet mehr als der feste Bereich (innerhalb des Rauschens, `zscore` und `robust` weniger), der Faktor 0,3 nach §15m und §15k bleibt.
+- **Bitstabilität (§15c).** Nur Grundrechenarten und Vergleiche in getrennten numpy-Schritten. Ein Test rechnet alle vier Methoden unter den Einstellungen A und D von `adr/0016` §3.3 (`float32` und `float64`, mit umgekehrtem Zielbereich) und verlangt gleiche SHA-256.
+- **Speicher (§3.5).** Der Schritt läuft im Durchgang des Lesens, ein Block zur Zeit. Gemessen wie in §15m (Kindprozess, `VmHWM`, `GDAL_CACHEMAX` 64 MB, zwei Bänder `uint16`, `test_memory_mask_normalize.py`): bei 4096² Version 1 367 MB, `percentile` 356 MB, `zscore` und `robust` 372 MB; Wachstum von 2048² auf 4096² 76 MB (Version 1), 74 MB (`percentile`), 81 MB (`zscore`, `robust`). Die Grenzen 500 MB und 100 MB halten, das Rezept mit den Zahlen kostet keinen Speicher.
+- **Geprüft gegen eine unabhängige Rechnung.** Der Kern je Methode gegen Python-`float` (IEEE-Double, ein Schritt nach dem anderen) und gegen exakte Brüche; die Perzentile der Route gegen `numpy.percentile(method="inverted_cdf")` auf denselben
+  Pixeln (16 Bit exakt, `float32` innerhalb eines Fachs und nach außen gerundet); ein Lauf mit den gemessenen Zahlen tut, was die Methode sagt (Perzentil-Stretch setzt die Enden auf 0 und 1, Z-Score mittelt auf 0 mit Streuung 1, robust Median 0 und Quartilsabstand 1).
+- **Stand der Technik** (Plan §7.3): TiTiler, openEO, Earth Engine und Sentinel Hub messen die Statistik vorab und wenden dann eine feste Gerade an; QGIS und rio-tiler nehmen als Vorgabe 2–98 %.
+
+## 15 Nachtrag NM4-43e: Die Prozessbeschreibung listet Version 2 der Bandschritte (2026-10-30; zu §4, §15x; `adr/0020` §11, §13, §18)
+
+Das Panel schickt Rezeptversion 2 (`adr/0020` §18). Dafür listet die Prozessbeschreibung jetzt `band_math`, `mask` und `normalize` in Version 2 (`Operator.listed`), Version 1 der drei ist
+registriert und angenommen, aber nicht mehr gelistet (wie `reproject` 3 neben 4). `normalize` 3 (NM4-11) bleibt ungelistet bis NM4-11b. Die Prozess-Fixtures des Panels sind aus der
+Beschreibung neu geschrieben (`scripts/write-process-fixtures.py`). Ein Auftrag der Version 1 wird wie bisher umgedeutet; die Übergangsfrist beginnt mit dem Deploy (Datum offen, `adr/0020` §18).
+
+## 15 Nachtrag NM4-14: Index-Presets füllen einen gewöhnlichen `band_math`-Schritt (2026-10-30; zu §5.2, §6.1; `adr/0020` §6, §12)
+
+Otto hat den Plan von NM4-14 am 2026-10-30 freigegeben (zu [#251](https://github.com/oscipal/earthX/pull/251), `plans/querschnitt/nm4-14-index-knoepfe.md` §13). Umgesetzt ist das Backend (NM4-14a); die Knöpfe im Panel folgen als NM4-14b.
+
+- **Kein Operator, keine Version.** Ein Preset ist kein Operator. Ein Klick legt einen `band_math`-Schritt Version 2 mit `expression` und `name` aus dem Preset an. Rezept, Hash, Kachel, Job, Runner und Methodentext sind dieselben wie beim getippten Ausdruck, und nichts im Rezept zeigt, dass der Schritt aus einem Preset kommt. Es gibt keine neue `op_version`, `recipe_version` bleibt 2, `earthx.__version__` bleibt, weil kein Ergebnis andere Bytes bekommt.
+- **Daten je Datensatz.** `DatasetConfig.index_presets` (ohne Vorgabe, B10) ist ein Tupel aus `IndexPreset` mit `name`, `title`, `expression`, `rescale`, `colormap_name`, `formula` und `reference`. Die Collection liefert es als `earthx:index_presets` (`architekturplan.md` 5.1). Sentinel-2 trägt NDVI, NDWI (McFeeters), NDSI, NBR und EVI aus Awesome Spectral Indices (Commit `835fea7`, MIT; Montero et al. 2023), N ist `nir` (B08); der DEM trägt keine. Datensatzspezifischen Code gibt es nicht.
+- **Prüfung in zwei Stufen** (Importgrenze `catalog` → `processing`). `catalog` prüft die Form beim Anlegen des Eintrags:
+  - Name nach dem Muster von `adr/0020` §6, eindeutig ohne Groß-/Kleinschreibung und nicht der Name eines Bandes des Datensatzes;
+  - jeder Name im Ausdruck, der kein Aufruf ist, ist ein Schlüssel von `band_units`, kein Hilfs-Asset und nicht die Maskenschicht;
+  - `rescale` endlich mit der unteren Grenze zuerst;
+  - `reference` mit `https://`;
+  - Presets nur bei `capabilities.band_math`.
+
+  `processing.index_presets.check_index_presets` prüft beim Bau von `api`, wie `adapters.check_adapter_specs`, `check_name` und `check_expression` von `band_math` (R5), die Bänder, die `check_expression` aus dem Syntaxbaum liest, noch einmal gegen den Eintrag, und die Colormap gegen die Namen von rio-tiler. Ein Preset, das ein Benutzer nicht tippen könnte, verhindert den Start; die Meldung nennt Datensatz und Preset. `api` liefert die Collection aus, aus der das Panel die Presets liest. Der `tiler` prüft nicht (Abweichung vom Plan §8.1): Er baut seine App beim Import, und sein Start bleibt ohne `processing` (`test_tiler_start_is_light`, M4-14).
+- **Tests.**
+  - Jedes Preset durch den Kern gegen eine Rechnung von Hand in Brüchen.
+  - Die Formel von Awesome Spectral Indices mit ihren Konstanten (g 2.5, C1 6, C2 7.5, L 1) und der Zuordnung von `bands.json` gegen den Ausdruck.
+  - Annahme: Preset und getippter Ausdruck ergeben dasselbe Rezept und denselben Hash, gelesen werden nur die genannten Assets.
+  - Fehleingaben der Form und Start von `api` mit einem kaputten Preset.

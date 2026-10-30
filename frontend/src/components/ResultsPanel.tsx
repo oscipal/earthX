@@ -1,12 +1,12 @@
-import { useCallback, useRef, useState } from 'react';
-
 import { maturityLabel, quicklookAsset } from '../datasets';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
 import CopyButton from './CopyButton';
-import Popover from './Popover';
+import DatasetSelect from './DatasetSelect';
+import ResultsEye from './ResultsEye';
+import ResultsToTop from './ResultsToTop';
 
 function timeOf(properties: Record<string, unknown>): string {
   const dt = properties['datetime'];
@@ -180,68 +180,20 @@ function SectionSummary({ section }: { section: ResultSection }) {
 // The box at the top of the results (M3-10, Otto 30.09.2026): it names the
 // dataset whose scenes the list shows — the active dataset, which heatmap,
 // quicklooks and full resolution follow — and opens a list of every searched
-// dataset to switch. The list lies over the scenes below it (`Popover`).
-// Choosing never closes the panel.
+// dataset to switch (`DatasetSelect`). Choosing never closes the panel.
 function DatasetDropdown({ sections, openId }: { sections: ResultSection[]; openId: string | null }) {
   const setOpenSection = useAppStore((s) => s.setOpenSection);
-  const [listOpen, setListOpen] = useState(false);
-  const boxRef = useRef<HTMLButtonElement>(null);
-  const close = useCallback(() => setListOpen(false), []);
   const shown = sections.find((section) => section.datasetId === openId) ?? sections[0];
-
   if (!shown) return null;
-  const several = sections.length > 1;
   return (
-    <div className="dataset-select">
-      <span className="eyebrow" id="dataset-select-label">
-        Showing dataset
-      </span>
-      <button
-        ref={boxRef}
-        type="button"
-        className="dataset-select-box"
-        aria-haspopup={several ? 'listbox' : undefined}
-        aria-expanded={several ? listOpen : undefined}
-        aria-labelledby="dataset-select-label"
-        disabled={!several}
-        onClick={() => setListOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (several && e.key === 'ArrowDown') {
-            e.preventDefault();
-            setListOpen(true);
-          }
-        }}
-      >
-        <SectionSummary section={shown} />
-        {several && <span className="rg-caret">{listOpen ? '▴' : '▾'}</span>}
-      </button>
-      <Popover
-        anchorRef={boxRef}
-        open={several && listOpen}
-        onClose={close}
-        className="dataset-select-list"
-        role="listbox"
-        ariaLabel="Searched datasets"
-        focusOnOpen
-      >
-        {sections.map((section) => (
-          <button
-            key={section.datasetId}
-            type="button"
-            role="option"
-            aria-selected={section.datasetId === shown.datasetId}
-            className={`dataset-select-option${section.datasetId === shown.datasetId ? ' selected' : ''}`}
-            onClick={() => {
-              setOpenSection(section.datasetId);
-              setListOpen(false);
-              boxRef.current?.focus();
-            }}
-          >
-            <SectionSummary section={section} />
-          </button>
-        ))}
-      </Popover>
-    </div>
+    <DatasetSelect
+      label="Showing dataset"
+      labelId="dataset-select-label"
+      listLabel="Searched datasets"
+      choices={sections.map((section) => ({ id: section.datasetId, content: <SectionSummary section={section} /> }))}
+      shownId={shown.datasetId}
+      onChoose={setOpenSection}
+    />
   );
 }
 
@@ -302,13 +254,11 @@ function SelectionRow() {
 
 export default function ResultsPanel() {
   const sections = useAppStore((s) => s.sections);
-  const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   // Of the scenes found, the ones ticked (a tick on a scene that is not in the results counts for nothing).
   const selected = useAppStore((s) => {
     const ids = new Set(s.selectedIds);
     return s.sections.reduce((n, section) => n + section.items.filter((it) => ids.has(it.id)).length, 0);
   });
-  const toggleResultsOnMap = useAppStore((s) => s.toggleResultsOnMap);
 
   if (!hasResultsPanel(sections)) return null;
 
@@ -316,18 +266,10 @@ export default function ResultsPanel() {
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
         <h2 title="Selected scenes / scenes found">Results ({selected}/{totalItems(sections)})</h2>
-        <button
-          type="button"
-          className="results-map-toggle"
-          title={
-            resultsOnMap
-              ? 'Take the search results off the map; the list stays, and ticked scenes still show'
-              : 'Show the search results on the map again, over the layers'
-          }
-          onClick={() => toggleResultsOnMap()}
-        >
-          {resultsOnMap ? 'Hide results' : 'Show results'}
-        </button>
+        <div className="results-head-switches">
+          <ResultsToTop />
+          <ResultsEye />
+        </div>
       </div>
       <ResultsList sections={sections} />
     </div>

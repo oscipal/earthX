@@ -11,10 +11,10 @@
 import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { useAppStore } from '../store';
+import { ticksOfOpen, useAppStore } from '../store';
 
 export default function ViewBar() {
-  const selectedIds = useAppStore((s) => s.selectedIds);
+  const count = useAppStore((s) => ticksOfOpen(s).length);
   const aoi = useAppStore((s) => s.aoi);
   const focusLoading = useAppStore((s) => s.focusLoading);
   const enterFocus = useAppStore((s) => s.enterFocus);
@@ -22,20 +22,20 @@ export default function ViewBar() {
   const dataset = useAppStore((s) => s.datasets.find((d) => d.id === s.datasetId));
   const openProcessing = useProcessingStore((s) => s.openProcessing);
 
-  if (selectedIds.length === 0) return null;
+  if (count === 0) return null;
 
-  const plural = selectedIds.length > 1;
+  const plural = count > 1;
   // Two buttons whatever the AOI (Zusatz 1a, Otto 14.10.2026): the crop to the
   // AOI, and the whole original files, which an AOI does not change.
   const originalsAllowed = isCogFormat(dataset);
   // M4-13b K12: a job for the selection, next to the download buttons; the reason it
   // cannot start (licence tier) is the button's own title. No AOI needed (M4-13c K1).
-  const processBlocked = processBlockReason(dataset, selectedIds.length);
+  const processBlocked = processBlockReason(dataset, count);
 
   return (
     <div className="panel download-bar" role="group" aria-label="Selected scenes, full resolution">
       <span className="download-count">
-        <strong>{selectedIds.length}</strong>
+        <strong>{count}</strong>
         <span>scene{plural ? 's' : ''} selected</span>
       </span>
       <button

@@ -25,7 +25,6 @@ def main(cog: Path, workdir: Path, size: int, items: int) -> None:
     from earthx.processing import run, worker_environment
     from earthx.processing.export import Attachments
     from earthx.processing.plan import estimate
-    from earthx.processing.recipe import recipe_from_data
     from tests.earthx.processing import sources
     from tests.earthx.processing.recipes import CROP
     from tests.earthx.processing.testops import OPERATORS
@@ -62,7 +61,9 @@ def main(cog: Path, workdir: Path, size: int, items: int) -> None:
         "steps": [],
         "output": CROP,
     }
-    recipe = recipe_from_data(data, OPERATORS)
+    from tests.earthx.processing.recipes import recipe_of_data
+
+    recipe = recipe_of_data(data, OPERATORS)
     estimate_seconds = estimate(recipe, OPERATORS).seconds
     attachments = Attachments(
         files={"ATTRIBUTION.txt": "synthetic\n", "citation.bib": "@misc{synthetic}\n", "aoi.geojson": json.dumps(aoi)},

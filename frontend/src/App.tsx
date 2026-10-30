@@ -14,12 +14,13 @@ import ResultControls from './components/ResultControls';
 import ResultsPanel from './components/ResultsPanel';
 import StatusBar from './components/StatusBar';
 import TimeSlider from './components/TimeSlider';
+import TipLayer from './components/TipLayer';
 import ViewBar from './components/ViewBar';
 import ViewerControls from './components/ViewerControls';
 import { dockPanelId, railButtonId } from './dock';
 import { openPermalinkInAddress } from './permalink';
 import { useProcessingStore } from './processingStore';
-import { useAppStore } from './store';
+import { ticksOfOpen, useAppStore } from './store';
 
 export default function App() {
   const loadDatasets = useAppStore((s) => s.loadDatasets);
@@ -29,10 +30,10 @@ export default function App() {
   const resultView = useAppStore((s) => s.resultViewLayerId !== null);
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
-  const hasSelection = useAppStore((s) => s.selectedIds.length > 0);
+  const hasSelection = useAppStore((s) => ticksOfOpen(s).length > 0);
   // A scene ticked in the list while a view is open that the view does not draw: the bar of the selection shows
   // above the controls of the view, as it does after any click on a result.
-  const tickedBesideView = useAppStore((s) => s.selectedIds.some((id) => !(id in s.downloaded)));
+  const tickedBesideView = useAppStore((s) => ticksOfOpen(s).some((id) => !(id in s.downloaded)));
   // "Zoom to selection" zooms to the AOI, else the pinned layer images;
   // with neither, it stays visibly disabled (store.ts::zoomToView).
   const canZoom = useAppStore((s) => !!s.aoi || s.layers.length > 0);
@@ -66,6 +67,7 @@ export default function App() {
       <MapView />
 
       <AppRail />
+      <TipLayer />
 
       {/* The control menu, the layer manager and the results stay mounted (what they hold survives a change
           of panel); the job manager follows jobs, so it exists only while it is open. */}

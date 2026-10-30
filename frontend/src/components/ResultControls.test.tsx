@@ -173,7 +173,7 @@ describe('a click on a result layer', () => {
     expect(field('vmin').value).toBe('180');
     expect(field('vmax').value).toBe('1900');
     expect(button('Apply')).toBeDefined();
-    expect(button('auto')).toBeDefined();
+    expect(button('auto-scale')).toBeDefined();
   });
 
   it('shows no unit, in the row or in the view', async () => {
@@ -221,7 +221,10 @@ describe('a click on a result layer', () => {
 });
 
 describe('the range of a result layer', () => {
-  it('"Apply" draws the result with what is typed and keeps it for the job', async () => {
+  const unsaved = () => layers()[0].result?.savedTileUrl;
+  const keptRange = () => useProcessingStore.getState().jobs[0].range;
+
+  it('"Apply" draws the result with what is typed, and keeps nothing: layer and job are as they were saved', async () => {
     await openView();
     type(field('Colormap'), 'terrain');
     type(field('vmin'), '0');
@@ -230,40 +233,86 @@ describe('the range of a result layer', () => {
     expect(urlOf()).toContain('colormap_name=viridis&rescale=180%2C1900');
     click(button('Apply'));
     expect(urlOf()).toContain('colormap_name=terrain&rescale=0%2C3000');
-    expect(useProcessingStore.getState().jobs[0].range).toEqual({ vmin: '0', vmax: '3000', colormap: 'terrain' });
-    // Kept in the browser, with the job.
-    expect(loadShelf().shelf.jobs.find((j) => j.jobID === JOB)?.range).toEqual({ vmin: '0', vmax: '3000', colormap: 'terrain' });
+    expect(unsaved()).toContain('colormap_name=viridis&rescale=180%2C1900');
+    expect(keptRange()).toBeNull();
+    expect(loadShelf().shelf.jobs.find((j) => j.jobID === JOB)?.range ?? null).toBeNull();
     // The fields show what the layer draws now.
     expect(field('vmax').value).toBe('3000');
   });
 
-  it('holds for every later layer of the same job', async () => {
+  it('"Save" keeps the applied look for the layer and for the job, also in the browser', async () => {
+    await openView();
+    type(field('Colormap'), 'terrain');
+    type(field('vmin'), '0');
+    type(field('vmax'), '3000');
+    click(button('Apply'));
+    click(button('Save'));
+    expect(unsaved()).toBeUndefined();
+    expect(urlOf()).toContain('colormap_name=terrain&rescale=0%2C3000');
+    expect(keptRange()).toEqual({ vmin: '0', vmax: '3000', colormap: 'terrain' });
+    expect(loadShelf().shelf.jobs.find((j) => j.jobID === JOB)?.range).toEqual({ vmin: '0', vmax: '3000', colormap: 'terrain' });
+  });
+
+  it('"Save" also draws what is typed and not applied yet, and keeps it', async () => {
+    await openView();
+    type(field('vmin'), '50');
+    click(button('Save'));
+    expect(urlOf()).toContain('rescale=50%2C1900');
+    expect(unsaved()).toBeUndefined();
+    expect(keptRange()).toEqual({ vmin: '50', vmax: '1900', colormap: 'viridis' });
+  });
+
+  it('holds for every later layer of the same job once it is saved', async () => {
     await openView();
     type(field('vmin'), '50');
     click(button('Apply'));
+    click(button('Save'));
     click(container.querySelector('button[title="Remove layer"]'));
     expect(layers()).toEqual([]);
     await showOnMap();
     expect(urlOf()).toContain('colormap_name=viridis&rescale=50%2C1900');
   });
 
-  it('"auto" goes back to the default of the statistics and forgets the range of the job', async () => {
+  it('is not held for a later layer when it was only applied', async () => {
+    await openView();
+    type(field('vmin'), '50');
+    click(button('Apply'));
+    click(container.querySelector('button[title="Remove layer"]'));
+    await showOnMap();
+    expect(urlOf()).toContain('rescale=180%2C1900');
+  });
+
+  it('"auto-scale" puts the default of the statistics in the fields and changes nothing else', async () => {
     await openView();
     type(field('vmin'), '50');
     type(field('vmax'), '60');
     click(button('Apply'));
-    expect(urlOf()).toContain('rescale=50%2C60');
-    click(button('auto'));
-    expect(urlOf()).toContain('colormap_name=viridis&rescale=180%2C1900');
-    expect(useProcessingStore.getState().jobs[0].range).toBeNull();
-    expect(loadShelf().shelf.jobs.find((j) => j.jobID === JOB)?.range ?? null).toBeNull();
+    click(button('Save'));
+    click(button('auto-scale'));
     expect(field('vmin').value).toBe('180');
+    expect(field('vmax').value).toBe('1900');
+    expect(urlOf()).toContain('rescale=50%2C60');
+    expect(keptRange()).toEqual({ vmin: '50', vmax: '60', colormap: 'viridis' });
   });
 
-  it('"auto" also drops what was typed and not applied', async () => {
+  it('"auto-scale", applied and saved, goes back to the default and forgets the range of the job', async () => {
+    await openView();
+    type(field('vmin'), '50');
+    type(field('vmax'), '60');
+    click(button('Apply'));
+    click(button('Save'));
+    click(button('auto-scale'));
+    click(button('Save'));
+    expect(urlOf()).toContain('colormap_name=viridis&rescale=180%2C1900');
+    expect(keptRange()).toBeNull();
+    expect(loadShelf().shelf.jobs.find((j) => j.jobID === JOB)?.range ?? null).toBeNull();
+    expect(unsaved()).toBeUndefined();
+  });
+
+  it('"auto-scale" also drops what was typed and not applied', async () => {
     await openView();
     type(field('vmin'), '7');
-    click(button('auto'));
+    click(button('auto-scale'));
     expect(field('vmin').value).toBe('180');
   });
 
@@ -278,6 +327,7 @@ describe('the range of a result layer', () => {
     type(field('vmin'), vmin);
     type(field('vmax'), vmax);
     click(button('Apply'));
+    click(button('Save'));
     expect(urlOf()).toBe(before);
     expect(useProcessingStore.getState().jobs[0].range).toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/range/u);
@@ -306,6 +356,7 @@ describe('the range of a result layer', () => {
     useProcessingStore.setState({ jobs: [] });
     type(field('vmin'), '1');
     click(button('Apply'));
+    click(button('Save'));
     expect(urlOf()).toContain('rescale=1%2C1900');
     expect(useProcessingStore.getState().jobs).toEqual([]);
   });
@@ -325,6 +376,117 @@ describe('the range of a result layer', () => {
   });
 });
 
+// Otto, 29.10.2026 (zu #234): "Apply" and "Save" are locked while there is nothing to do, and say why; what was applied and
+// not saved goes without asking when the settings are closed.
+describe('"Apply" and "Save" of a result layer', () => {
+  const disabled = (label: string) => button(label)?.getAttribute('aria-disabled') === 'true';
+
+  it('stand under "auto-scale" and beside each other, in one cluster', async () => {
+    await openView();
+    const cluster = container.querySelector('.result-controls .vc-buttons')!;
+    expect([...cluster.children].map((el) => el.textContent?.trim())).toEqual(['auto-scale', 'Apply', 'Save']);
+  });
+
+  it('have one format for "auto-scale" and "Apply", and only "Save" is blue', async () => {
+    await openView();
+    const [auto, apply, save] = [...container.querySelector('.result-controls .vc-buttons')!.children] as HTMLElement[];
+    const format = (el: HTMLElement) => [...el.classList].filter((c) => !c.startsWith('vc-')).sort();
+    expect(format(apply)).toEqual(format(auto));
+    expect(format(apply)).toEqual(['ghost-btn']);
+    expect(format(save)).toEqual(['primary-btn']);
+  });
+
+  it('are both locked while the fields hold what the layer draws and is saved with, with the reason as the tooltip', async () => {
+    await openView();
+    expect(disabled('Apply')).toBe(true);
+    expect(disabled('Save')).toBe(true);
+    expect(button('Apply')?.title).toBe('Nothing to apply: the map shows these values');
+    expect(button('Save')?.title).toBe('Nothing to save: the layer is saved as it is drawn');
+  });
+
+  it('are both open once something is typed, and do nothing when they are locked and clicked', async () => {
+    await openView();
+    click(button('Apply'));
+    click(button('Save'));
+    expect(urlOf()).toContain('rescale=180%2C1900');
+    type(field('vmax'), '2000');
+    expect(disabled('Apply')).toBe(false);
+    expect(disabled('Save')).toBe(false);
+    expect(button('Apply')?.title).not.toMatch(/Nothing/u);
+  });
+
+  it('lock "Apply" after it was used, and keep "Save" open until the look is saved', async () => {
+    await openView();
+    type(field('vmax'), '2000');
+    click(button('Apply'));
+    expect(disabled('Apply')).toBe(true);
+    expect(disabled('Save')).toBe(false);
+    click(button('Save'));
+    expect(disabled('Save')).toBe(true);
+  });
+
+  it('lock "Save" when what is typed is what the layer is saved with, though another look is applied', async () => {
+    await openView();
+    type(field('vmax'), '2000');
+    click(button('Apply'));
+    type(field('vmax'), '1900');
+    expect(disabled('Save')).toBe(true);
+    expect(disabled('Apply')).toBe(false);
+    click(button('Apply'));
+    expect(unsavedUrl()).toBeUndefined();
+  });
+
+  const unsavedUrl = () => layers()[0].result?.savedTileUrl;
+
+  it.each([
+    ['"‹ Close" is pressed', () => click(button('‹ Close'))],
+    ['the view of scenes is left', () => useAppStore.getState().exitFocus()],
+    ['the layer is chosen away from', () => useAppStore.getState().selectLayer('other')],
+  ])('lose what was applied and not saved, without asking, when %s', async (_when, close) => {
+    const other: MapLayer = {
+      id: 'other',
+      name: 'Optical · scene',
+      visible: true,
+      opacity: 1,
+      overlays: [{ kind: 'raster', tileUrl: 'https://t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], minZoom: 0, maxZoom: 12 }],
+      restore: { focusMode: false, downloaded: {}, appliedRender: {}, activeGroupIndex: 0, selectedIds: [], itemIds: [], groupItemIds: [], aoi: null, cropToAoi: false, datasetId: null },
+    };
+    await openView();
+    useAppStore.setState({ layers: [...layers(), other] });
+    const saved = urlOf();
+    type(field('vmax'), '2000');
+    click(button('Apply'));
+    expect(urlOf()).not.toBe(saved);
+    close();
+    expect(urlOf()).toBe(saved);
+    expect(layers()[0].result?.savedTileUrl).toBeUndefined();
+    expect(useAppStore.getState().resultViewLayerId).toBeNull();
+    // Opened again, the layer shows the saved look.
+    click(container.querySelector('.layer-row .lm-name'));
+    expect(field('vmax').value).toBe('1900');
+  });
+
+  it('keep what was saved when the settings are closed', async () => {
+    await openView();
+    type(field('vmax'), '2000');
+    click(button('Apply'));
+    click(button('Save'));
+    click(button('‹ Close'));
+    expect(urlOf()).toContain('rescale=180%2C2000');
+  });
+
+  it('go back to the saved look, not to the first one, when something was saved and then applied again', async () => {
+    await openView();
+    type(field('vmax'), '2000');
+    click(button('Apply'));
+    click(button('Save'));
+    type(field('vmax'), '2500');
+    click(button('Apply'));
+    click(button('‹ Close'));
+    expect(urlOf()).toContain('rescale=180%2C2000');
+  });
+});
+
 describe('a result drawn as it is, or gone', () => {
   it('shows no range, colormap or "Apply" for whole numbers, and says why', async () => {
     tileJsonBody = { ...TILE_JSON, data_type: 'uint16' };
@@ -333,7 +495,7 @@ describe('a result drawn as it is, or gone', () => {
     expect(container.querySelector('.vc-num')).toBeNull();
     expect(container.querySelector('select')).toBeNull();
     expect(button('Apply')).toBeUndefined();
-    expect(button('auto')).toBeUndefined();
+    expect(button('auto-scale')).toBeUndefined();
     expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toMatch(/whole numbers/u);
     // The opacity stays, and the way out.
     expect(field('Opacity').disabled).toBe(false);
@@ -347,7 +509,7 @@ describe('a result drawn as it is, or gone', () => {
     expect(container.querySelector('.vc-num')).toBeNull();
     expect(container.querySelector('select')).toBeNull();
     expect(button('Apply')).toBeUndefined();
-    expect(button('auto')).toBeUndefined();
+    expect(button('auto-scale')).toBeUndefined();
     expect(field('Opacity').disabled).toBe(false);
   });
 });

@@ -6,7 +6,7 @@
 import type { ResultLayerInfo } from './layers';
 import { buildTileUrl } from './mapLayers';
 import { rescaleOf, type PreviewRange } from './processingPreview';
-import { scaleOf, type BandStats, type ResultStats } from './render';
+import { scaleOf, statsFrom, type ResultStats } from './render';
 import type { AppliedRender, Bbox } from './types';
 
 // The path of the output `tiles` (`api/processing_docs.py::TILES_HREF`), in the shape the
@@ -54,26 +54,10 @@ export function resultTileTemplate(href: string): string {
 
 const FLOAT = /^float/;
 
-const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-
 // The statistics in the `properties` of the `result` link; `null` for a result from before
 // they were written, or for a document that does not carry them in this shape.
 export function resultStats(properties: Record<string, unknown> | undefined): ResultStats | null {
-  const bands = properties?.bands;
-  if (!Array.isArray(bands) || bands.length === 0) return null;
-  const read = bands.map((band): BandStats => {
-    const stats = (band as { statistics?: Record<string, unknown> } | null)?.statistics;
-    // `count` 0: the band has no valid pixel, and its statistics name no value.
-    const usable = stats !== null && typeof stats === 'object' && (finite(stats.count) ?? 0) > 0;
-    return {
-      minimum: usable ? finite(stats.minimum) : null,
-      maximum: usable ? finite(stats.maximum) : null,
-      percentile2: usable ? finite(stats.percentile_2) : null,
-      percentile98: usable ? finite(stats.percentile_98) : null,
-    };
-  });
-  if (read.every((band) => band.minimum === null && band.maximum === null)) return null;
-  return { bands: read, expression: properties?.['processing:expression'] != null };
+  return statsFrom(properties?.bands, properties?.['processing:expression'] != null);
 }
 
 function drawnWith(range: PreviewRange): AppliedRender {
@@ -88,7 +72,7 @@ function drawnWith(range: PreviewRange): AppliedRender {
 // colormap to become a picture; an integer result is drawn as it is. For a float, in order:
 //  1. an integer result is drawn as it is;
 //  2. the range the user had set by hand when the job started holds for this result only (`own`);
-//  3. an index (a Band math result whose values all lie in −1…1) is drawn at −1…1 in `rdylgn`,
+//  3. an index (a Band math result whose 2–98 % lie in −1…1, `render.ts::scaleOf`) is drawn at −1…1 in `rdylgn`,
 //     so that jobs can be compared with one another;
 //  4. otherwise the 2–98 % of the AOI from the statistics, in `viridis`;
 //  5. a result without statistics is drawn with the range of the panel, as before M4-32.

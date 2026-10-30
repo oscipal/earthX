@@ -380,10 +380,10 @@ class TestARecipeFileThatIsNotOne:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         document = _document()
-        document["recipe_version"] = 2
+        document["recipe_version"] = 3
         assert _main("check", _file(tmp_path, json.dumps(document).encode())) == EXIT_RECIPE
         error = capsys.readouterr().err
-        assert "recipe_version 1" in error and output.runner_version() in error
+        assert "recipe_version 2" in error and output.runner_version() in error
 
     def test_an_unknown_op_version(self, tmp_path: Path) -> None:
         document = _document()

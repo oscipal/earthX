@@ -12,7 +12,7 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
 import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
-import { resultsOnMapOf } from '../mapResults';
+import { openIdsOf, resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
 import type { CoverageDisplay } from '../mapLayers';
 import {
@@ -34,7 +34,6 @@ import { DEFAULT_BASEMAP } from '../basemaps';
 import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
 import { previewOverlays } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
-import { layersOnMap } from '../searchLayers';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
 import { useAppStore } from '../store';
 import type { StacItem, ToolMode } from '../types';
@@ -91,11 +90,18 @@ function useSameScenes(items: StacItem[]): StacItem[] {
   return ref.current;
 }
 
+// The step of the timeline that is on the map, told to the playing (`playback.ts`) while it plays.
+const reportShown = (index: number) => {
+  if (useAppStore.getState().playing) useAppStore.setState({ shownGroupIndex: index });
+};
+
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const readyRef = useRef(false);
+  // The time step the browse preview was last synced for, while the timeline plays.
+  const heldIndexRef = useRef<number | null>(null);
   const basemapRef = useRef<ReturnType<typeof createBasemapSwitcher> | null>(null);
 
   // Reactive slices used to drive the imperative map updates.
@@ -122,9 +128,13 @@ export default function MapView() {
   const coverageFootprints = useAppStore((s) => s.coverageFootprints);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
+  const resultsAt = useAppStore((s) => s.resultsAt);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
-  const searchCrops = useAppStore((s) => s.searchCrops);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
+  const playing = useAppStore((s) => s.playing);
+  const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
+  const revealNotBefore = useAppStore((s) => s.revealNotBefore);
+  const sections = useAppStore((s) => s.sections);
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
   const basemap = useAppStore((s) => s.basemap);
@@ -233,7 +243,7 @@ export default function MapView() {
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
       const shown = resultsOnMapOf(st);
-      syncLayers(map, layersForMap(layersOnMap(st.layers, st.searchCrops, st.openSectionId, shown.cropsOf), viewLayer, st.showDownloaded));
+      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded), st.resultsAt);
       syncMosaic(map, {
         // What browsing draws; a view draws its own scenes and needs the whole list for the quicklook under them.
         items: st.focusMode ? st.items : shown.quicklooks,
@@ -248,8 +258,10 @@ export default function MapView() {
         aoi: st.viewAoi,
         cropToAoi: st.cropToAoi,
         groups: st.groups,
+        datasets: st.datasets,
+        openIds: openIdsOf(st.groups, st.expandedGroupIndex),
       });
-      syncResultsOverlay(map, { items: shown.overlay, selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null });
+      syncResultsOverlay(map, { items: shown.overlay, openIds: openIdsOf(st.groups, st.expandedGroupIndex), selectedIds: st.selectedIds, dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null, datasets: st.datasets });
       syncPreview(map, previewTilesRef.current);
       initDraw();
       readyRef.current = true;
@@ -333,9 +345,7 @@ export default function MapView() {
     }
   }, [showCoverage, coverage, coverageFootprints, mapZoom, focusMode]);
 
-  // --- pinned layers (layer manager), and under them the AOI crops of the
-  // dataset chosen in the results dropdown (M3-10): the map shows that dataset
-  // only, plus whatever the user pinned. ---
+  // --- pinned layers (layer manager) ---
   // The mosaics this view asks for, the same object until one of them changes: another view's
   // TileJSON arriving must not tear this view's tiles down.
   const picked = useMemo(
@@ -349,15 +359,16 @@ export default function MapView() {
   // place, with its eye.
   // Which of the search results are on the map: `mapResults.ts` alone says.
   const shown = useMemo(
-    () => resultsOnMapOf({ resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded }),
-    [resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded],
+    () => resultsOnMapOf({ resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded, sections, openSectionId }),
+    [resultsOnMap, focusMode, groups, expandedGroupIndex, selectedIds, downloaded, sections, openSectionId],
   );
+  // The scenes of the group that is open lie on top of the other results; a change of group lays them out again.
+  const openIds = useMemo(() => openIdsOf(groups, expandedGroupIndex), [groups, expandedGroupIndex]);
   const quicklooks = useSameScenes(shown.quicklooks);
   const overlay = useSameScenes(shown.overlay);
   const highlight = useSameScenes(shown.highlight);
-  // The ticked scenes whose quicklooks lie over everything else (`mapLayers.ts`, `TICKED_TOP`).
+  // The ticked scenes, whose quicklooks lie over the other results in the order they were ticked (`mapLayers.ts`).
   const ticked = useMemo(() => highlight.map((item) => item.id), [highlight]);
-  const cropFilter = shown.cropsOf;
   const viewLayer = useMemo(
     () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi: viewAoi, showDownloaded }),
     [layers, viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, viewAoi, showDownloaded],
@@ -366,11 +377,11 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const note = overlayBudgetNote(
-        syncLayers(map, layersForMap(layersOnMap(layers, searchCrops, openSectionId, cropFilter), viewLayer, showDownloaded)),
+        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded), resultsAt),
       );
       if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
-  }, [layers, searchCrops, openSectionId, viewLayer, showDownloaded, cropFilter]);
+  }, [layers, resultsAt, viewLayer, showDownloaded]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
@@ -396,8 +407,8 @@ export default function MapView() {
     }
   }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
 
-  // --- the preview of the processing panel (M4-13c-2). It keeps itself on top of
-  // the rasters placed later (`mapLayers.ts::beforeAoi`); a new AOI cuts it again. ---
+  // --- the preview of the processing panel (M4-13c-2), a tier of "Results" over the results and the view
+  // (`mapLayers.ts`); a new AOI cuts it again. ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) syncPreview(map, previewTiles);
@@ -409,16 +420,35 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
-      syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null });
+      // While the timeline plays, the step arrives out of sight and says when it is on the map (`playback.ts`).
+      const now = useAppStore.getState();
+      const shownIndex = now.expandedGroupIndex ?? now.activeGroupIndex;
+      const hold = now.playing ? { notBefore: now.revealNotBefore, onShown: () => reportShown(shownIndex) } : undefined;
+      heldIndexRef.current = shownIndex;
+      syncBrowseMosaic(map, { items: quicklooks, openIds, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets, hold });
     }
-  }, [focusMode, quicklooks, ticked, datasets, datasetId]);
+  }, [focusMode, quicklooks, openIds, ticked, datasets, datasetId]);
 
-  // --- the results over a full-resolution view, while "Show results" is on. Runs after the view's own effect
-  // above, so what it draws lies over the view. ---
+  // --- a step of the timeline that the effect above did not draw (the results are off the map, or the step is the same
+  // scenes as the one before): there is nothing to wait for, and the playing is told once the picture before it has had
+  // its time ---
+  useEffect(() => {
+    if (!playing || focusMode) return;
+    const index = expandedGroupIndex ?? activeGroupIndex;
+    if (heldIndexRef.current === index) return;
+    const id = window.setTimeout(() => {
+      heldIndexRef.current = index;
+      reportShown(index);
+    }, Math.max(0, revealNotBefore - Date.now()));
+    return () => window.clearTimeout(id);
+  }, [playing, focusMode, expandedGroupIndex, activeGroupIndex, revealNotBefore]);
+
+  // --- the results over a full-resolution view, while the eye of "Results" is on: over the view, in the tiers of
+  // browsing (`mapLayers.ts`). ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null });
-  }, [focusMode, overlay, ticked, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
+    if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, openIds, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });
+  }, [focusMode, overlay, openIds, ticked, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. In a cropped focus view

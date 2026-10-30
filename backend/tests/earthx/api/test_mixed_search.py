@@ -152,3 +152,22 @@ class TestMixedToken:
         token = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode("ascii").rstrip("=")
         with pytest.raises(InvalidQuery, match="malformed"):
             decode_mixed_token(token, "fp", {"a"}, set())
+
+
+class TestFingerprintWithTheCloudShareFilter:
+    """DS-03 plan §6.18 step 3: the filter and its AOI are part of the search a marker belongs to; a search without
+    the filter keeps the fingerprint it always had."""
+
+    BASE = (["a", "b"], None, None, None, "2024-06-01T00:00:00Z/2024-07-01T00:00:00Z")
+
+    def test_without_the_filter_nothing_changes(self) -> None:
+        plain = mixed_fingerprint(*self.BASE)
+        assert mixed_fingerprint(*self.BASE, None, None) == plain
+        assert mixed_fingerprint(*self.BASE, {}, {}) == plain
+
+    def test_the_filter_makes_another_search(self) -> None:
+        plain = mixed_fingerprint(*self.BASE)
+        one = mixed_fingerprint(*self.BASE, None, {"a": "k1"})
+        assert one != plain
+        assert mixed_fingerprint(*self.BASE, None, {"a": "k2"}) != one
+        assert mixed_fingerprint(*self.BASE, None, {"a": "k1"}) == one

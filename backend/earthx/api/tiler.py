@@ -358,6 +358,8 @@ class OperatorInput:
 
     inputs: tuple[tuple[Any, AssetPath | ZarrAsset], ...]
     steps: tuple[tuple[Any, Any], ...]
+    #: The band the picture shows, with the steps made to leave it (NM4-43d); ``None`` for steps of version 1.
+    band: str | None = None
 
     @property
     def dataset_id(self) -> str:
@@ -386,6 +388,8 @@ class MosaicOperatorInput:
     scenes: tuple[tuple[tuple[Any, AssetPath | ZarrAsset], ...], ...]
     steps: tuple[tuple[Any, Any], ...]
     bounds: tuple[float, float, float, float]
+    #: The band the picture shows, as for :class:`OperatorInput`.
+    band: str | None = None
 
 
 def _operator_support() -> Any:
@@ -409,6 +413,8 @@ def _operator_support() -> Any:
         reader=tile.OperatorTileReader,
         mosaic_reader=tile.MosaicOperatorTileReader,
         judge_described_bands=tile.judge_described_bands,
+        plan_band=tile.plan_band,
+        option_refused=tile.TileOptionRefused,
         recipe_invalid=RecipeInvalid,
         describe_bands=describe_bands,
     )
@@ -421,6 +427,8 @@ def _operator_support() -> Any:
 MAX_OPERATOR_ASSETS = 16
 MAX_OPERATOR_PARAMS_CHARS = 2048
 MAX_OPERATOR_STEPS = 4
+#: The longest name of a band a tile URL may ask for; the bands of a dataset are named by its assets, variables and steps.
+MAX_BAND_CHARS = 128
 _OPERATOR_ROUTES = frozenset({"tile", "tilejson", "statistics"})
 
 # TiTiler's free band-math and algorithm parameters. They computed on raw values with
@@ -506,6 +514,35 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
     ]
 
 
+def _band_request(request: Request) -> str | None:
+    """The ``band`` of the query: the one band of the stock a tile shows (NM4-43d), or ``None`` where the URL names none.
+
+    ``400`` for a name given twice or empty or longer than :data:`MAX_BAND_CHARS`; whether the steps leave such a
+    band is for :func:`_band_plan`.
+    """
+    given = request.query_params.getlist("band")
+    if not given:
+        return None
+    if len(given) > 1 or not 1 <= len(given[0]) <= MAX_BAND_CHARS:
+        raise HTTPException(status_code=400, detail=f"name one band of at most {MAX_BAND_CHARS} characters")
+    return given[0]
+
+
+def _band_plan(support: Any, entries: list[Any], steps: list[tuple[Any, Any]], band: str | None) -> Any:
+    """The plan of the band a tile shows (:func:`~earthx.processing.tile.plan_band`), or the ``HTTPException`` of its refusal.
+
+    Judged on what the items describe, before any file is opened: ``422`` with the name for a band the steps do not leave
+    or a step that does not fit the bands, ``400`` for a ``band`` next to a step of version 1. ``None`` for steps of
+    version 1 without a ``band``: they leave the bands they leave and nothing is dropped.
+    """
+    try:
+        return support.plan_band(entries, steps, band)
+    except support.option_refused as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except support.recipe_invalid as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+
+
 def _operator_input(
     state: Any,
     stac_item: dict[str, Any],
@@ -514,32 +551,53 @@ def _operator_input(
     item: str,
     assets: list[str],
     steps: list[tuple[Any, Any]],
+    band: str | None,
     target_gsd: float | None,
 ) -> OperatorInput:
-    """The assets of an operator tile, each with the bands and scaling source the item describes."""
+    """The assets of an operator tile, each with the bands and scaling source the item describes.
+
+    With steps of version 2 only the assets the shown band needs are opened (NM4-43d), and the limit of
+    :data:`MAX_OPERATOR_ASSETS` is the limit of those.
+    """
     support = _operator_support()
-    inputs = []
+    refs, entries = [], []
     for key in assets:
         ref = _resolve_ref(stac_item, config=config, item=item, asset=key)
         try:
             bands, scaling, unit = support.describe_bands(stac_item, config, ref)
-            # Item scaling is applied by the core, so the reader reads raw; without it the
-            # reader's own CF decoding applies (adr/0014 §5.4, F7a) — the job's rule.
-            target = _open_ref(state, ref, target_gsd=target_gsd, decode_cf=scaling == "store-cf")
-            entry = support.resolved_input(
-                asset=support.resolved_asset(**ref.to_json()),
-                version=None,
-                bands=bands,
-                scaling=scaling,
-                unit=unit,
-                gsd=None,
+            entries.append(
+                support.resolved_input(
+                    asset=support.resolved_asset(**ref.to_json()),
+                    version=None,
+                    bands=bands,
+                    scaling=scaling,
+                    unit=unit,
+                    gsd=None,
+                )
             )
         except OrderRefused as error:
             raise HTTPException(status_code=error.status_code, detail=error.detail) from None
         except ValidationError:
             raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
+        refs.append(ref)
+    plan = _band_plan(support, entries, steps, band)
+    wanted = set(assets if plan is None else plan.assets)
+    if len(wanted) > MAX_OPERATOR_ASSETS:
+        raise HTTPException(status_code=400, detail=f"the tile reads {len(wanted)} assets, at most {MAX_OPERATOR_ASSETS}")
+    inputs = []
+    for ref, entry in zip(refs, entries, strict=True):
+        if entry.asset.asset not in wanted:
+            continue
+        try:
+            # Item scaling is applied by the core, so the reader reads raw; without it the
+            # reader's own CF decoding applies (adr/0014 §5.4, F7a) — the job's rule.
+            target = _open_ref(state, ref, target_gsd=target_gsd, decode_cf=entry.scaling == "store-cf")
+        except OrderRefused as error:
+            raise HTTPException(status_code=error.status_code, detail=error.detail) from None
         inputs.append((entry, target))
-    return OperatorInput(tuple(inputs), tuple(steps))
+    if plan is None:
+        return OperatorInput(tuple(inputs), tuple(steps))
+    return OperatorInput(tuple(inputs), plan.steps, plan.band)
 
 
 async def dataset_asset_path(
@@ -574,6 +632,8 @@ async def dataset_asset_path(
     _refuse_free_parameters(request)
     requested = _operator_request(request, config)
     if requested is None:
+        if "band" in request.query_params:
+            raise HTTPException(status_code=400, detail="band is for tiles with op")
         if len(asset) != 1:
             raise HTTPException(status_code=400, detail="name one asset, or several together with op")
         stac_item = await _fetch_item(state, dataset, item)
@@ -582,10 +642,9 @@ async def dataset_asset_path(
     route = request.scope.get("route")
     if getattr(route, "name", None) not in _OPERATOR_ROUTES:
         raise HTTPException(status_code=400, detail="op is for tiles, their TileJSON and statistics only")
-    if len(asset) > MAX_OPERATOR_ASSETS or len(set(asset)) != len(asset):
-        raise HTTPException(
-            status_code=400, detail=f"name each asset once, at most {MAX_OPERATOR_ASSETS} of them"
-        )
+    if len(set(asset)) != len(asset):
+        raise HTTPException(status_code=400, detail="name each asset once")
+    band = _band_request(request)
     stac_item = await _fetch_item(state, dataset, item)
     target_gsd = target_gsd_for(request, stac_item)
     return _operator_input(
@@ -595,6 +654,7 @@ async def dataset_asset_path(
         item=item,
         assets=asset,
         steps=requested,
+        band=band,
         target_gsd=target_gsd,
     )
 
@@ -608,6 +668,18 @@ _OpVersionQuery = Annotated[
 _ParamsQuery = Annotated[
     list[str] | None,
     Query(description=f"its parameters, as JSON, once per `op`; at most {MAX_OPERATOR_PARAMS_CHARS} characters each"),
+]
+
+
+_BandQuery = Annotated[
+    str | None,
+    Query(
+        description=(
+            "the band of the stock a tile with steps of version 2 shows; the last band a `band_math` step added if none is "
+            f"named, else the first. At most {MAX_BAND_CHARS} characters"
+        ),
+        max_length=MAX_BAND_CHARS,
+    ),
 ]
 
 
@@ -625,10 +697,11 @@ def operator_post_process(
     op: _OpQuery = None,
     op_version: _OpVersionQuery = None,
     params: _ParamsQuery = None,
+    band: _BandQuery = None,
 ) -> Callable[[ImageData], ImageData] | None:
     """TiTiler's ``process_dependency`` for our tile: the operators' kernels, the ones a job calls.
 
-    The path dependency has already validated ``op`` and built the inputs, so this only
+    The path dependency has already validated ``op`` and ``band`` and built the inputs, so this only
     hands the kernels, one after the other, to the factory. TiTiler's own ``algorithm``
     parameters are gone (plan M4-09, F3).
     """
@@ -757,6 +830,9 @@ async def mosaic_scenes(
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
     steps = _operator_request(request, config)
+    band = _band_request(request) if steps is not None else None
+    if steps is None and "band" in request.query_params:
+        raise HTTPException(status_code=400, detail="band is for tiles with op")
     try:
         if steps is not None and not config.capabilities.reprojection:
             # The words of the mosaic job's order (`api.intake._one_overpass`): the tile shows nothing it refuses.
@@ -776,6 +852,21 @@ async def mosaic_scenes(
             for key in asset
         }
         outlines = mosaic_tiles.footprints_of(items)
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    plan = None
+    if steps is not None:
+        # The scenes carry the same bands (`_describe_mosaic` compares them), so the first by id says which assets the
+        # shown band needs; only those are described, ordered and opened (NM4-43d).
+        entries = [_describe_one(items, refs, config, ids[0], key) for key in asset]
+        plan = _band_plan(_operator_support(), entries, steps, band)
+        asset = list(asset if plan is None else plan.assets)
+        if len(asset) > mosaic_tiles.MAX_MOSAIC_OPERATOR_ASSETS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"the tile reads {len(asset)} assets, at most {mosaic_tiles.MAX_MOSAIC_OPERATOR_ASSETS}",
+            )
+    try:
         order = mosaic_order({item_id: refs[(item_id, asset[0])].crs for item_id in ids})
         read = order if grid is None else mosaic_tiles.scenes_touching(order, outlines, grid)
     except OrderRefused as error:
@@ -787,7 +878,8 @@ async def mosaic_scenes(
             for item_id in read
         )
         return MosaicScenes(dataset, scenes, bounds)
-    described = _describe_mosaic(items, refs, config=config, order=order, assets=asset, steps=steps)
+    run_steps = steps if plan is None else list(plan.steps)
+    described = _describe_mosaic(items, refs, config=config, order=order, assets=asset, steps=run_steps)
     scenes_with_steps = tuple(
         tuple(
             (
@@ -803,7 +895,33 @@ async def mosaic_scenes(
         )
         for item_id in read
     )
-    return MosaicOperatorInput(dataset, scenes_with_steps, tuple(steps), bounds)
+    return MosaicOperatorInput(dataset, scenes_with_steps, tuple(run_steps), bounds, None if plan is None else plan.band)
+
+
+def _describe_one(
+    items: dict[str, dict[str, Any]],
+    refs: dict[tuple[str, str], ResolvedAsset],
+    config: DatasetConfig,
+    item_id: str,
+    key: str,
+) -> Any:
+    """One asset of one item as a resolved input with the bands and scaling its item describes; nothing is opened."""
+    support = _operator_support()
+    ref = refs[(item_id, key)]
+    try:
+        bands, scaling, unit = support.describe_bands(items[item_id], config, ref)
+        return support.resolved_input(
+            asset=support.resolved_asset(**ref.to_json()),
+            version=None,
+            bands=bands,
+            scaling=scaling,
+            unit=unit,
+            gsd=None,
+        )
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    except ValidationError:
+        raise HTTPException(status_code=502, detail=malformed_item_detail(item_id)) from None
 
 
 def _describe_mosaic(
@@ -822,24 +940,7 @@ def _describe_mosaic(
     ``check_alike`` the items decide; the files are compared by the reader), a Zarr mosaic lies in one CRS
     (``check_scope``), and the steps know the bands the first scene's items name (KE1). Nothing is opened.
     """
-    support = _operator_support()
-    described: dict[tuple[str, str], Any] = {}
-    for item_id in order:
-        for key in assets:
-            try:
-                bands, scaling, unit = support.describe_bands(items[item_id], config, refs[(item_id, key)])
-                described[(item_id, key)] = support.resolved_input(
-                    asset=support.resolved_asset(**refs[(item_id, key)].to_json()),
-                    version=None,
-                    bands=bands,
-                    scaling=scaling,
-                    unit=unit,
-                    gsd=None,
-                )
-            except OrderRefused as error:
-                raise HTTPException(status_code=error.status_code, detail=error.detail) from None
-            except ValidationError:
-                raise HTTPException(status_code=502, detail=malformed_item_detail(item_id)) from None
+    described = {(item_id, key): _describe_one(items, refs, config, item_id, key) for item_id in order for key in assets}
     first = order[0]
     for key in assets:
         anchor = described[(first, key)]
@@ -855,11 +956,13 @@ def _describe_mosaic(
                     status_code=422,
                     detail=f"the scenes of the mosaic differ in the bands, data type, nodata or unit of {key!r}",
                 )
-    if any(ref.reader == "zarr" for ref in refs.values()) and len({ref.crs for ref in refs.values()}) > 1:
+    read = [refs[(item_id, key)] for item_id in order for key in assets]
+    if any(ref.reader == "zarr" for ref in read) and len({ref.crs for ref in read}) > 1:
         raise HTTPException(
             status_code=422,
             detail="a mosaic of Zarr scenes needs all scenes in one CRS; warping Zarr is not done yet",
         )
+    support = _operator_support()
     try:
         support.judge_described_bands([described[(first, key)] for key in assets], steps)
     except support.recipe_invalid as error:
@@ -872,6 +975,7 @@ def mosaic_post_process(
     op: _OpQuery = None,
     op_version: _OpVersionQuery = None,
     params: _ParamsQuery = None,
+    band: _BandQuery = None,
 ) -> Callable[[ImageData], ImageData] | None:
     """The ``process_dependency`` of the mosaic tile: the kernels of the steps after the mosaic, as in the job."""
     if not isinstance(src_path, MosaicOperatorInput):

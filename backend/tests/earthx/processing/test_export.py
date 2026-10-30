@@ -40,12 +40,11 @@ from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.export import EXPORT_NAME, Attachments, AttachmentsInvalid, read_attachments
 from earthx.processing.methods import DatasetFacts, methods_of, methods_text
 from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
-from earthx.processing.recipe import recipe_from_data
 from earthx.readers import Policy
 from earthx.readers.cog import asset_path
 from tests.conftest import own_log_text
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import CROP
+from tests.earthx.processing.recipes import CROP, recipe_of_data
 from tests.earthx.processing.testops import OPERATORS
 
 WIDTH, HEIGHT = 700, 600
@@ -194,7 +193,7 @@ def _recipe(groups: list[list[str]]) -> Any:
         "output": dict(CROP),
         "recipe_id": "R" * 22,
     }  # fmt: skip
-    return recipe_from_data(json.loads(json.dumps(data)), OPERATORS)
+    return recipe_of_data(json.loads(json.dumps(data)), OPERATORS)
 
 
 def _attachments(crop: zipfile.ZipFile) -> Attachments:

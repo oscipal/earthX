@@ -16,7 +16,10 @@ reading thread.
 
 **What it writes (approved F9, as M3-18 §11/§13).** ``result.tif``, a deflate COG
 over ``bbox(AOI ∩ raster bounds)`` that keeps every value inside that box, and
-``mask.tif``, ``uint8`` on the same grid, ``1`` inside the AOI polygon.
+``mask.tif``, ``uint8`` on the same grid, ``1`` inside the AOI polygon. The bands of ``result.tif`` are those of
+``output.bands``, in that order, each with its name as band description (NM4-43c, adr/0020 §8; the unit is in the
+STAC properties, see :meth:`_Run.write_pass`). The steps run on a stock of named bands that the planner narrows to
+what the output needs (:func:`~earthx.processing.plan.stock_steps`).
 
 **Statistics (M4-32).** The last pass counts every band as it writes it
 (:mod:`earthx.processing.statistics`): over the whole file into GDAL's ``STATISTICS_*``
@@ -44,7 +47,7 @@ import logging
 import math
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -68,7 +71,7 @@ from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.export import Attachments, ExportResult, check_export, export
 from earthx.processing.mosaic import open_mosaic
 from earthx.processing.operators import REGISTRY, BandMeta, OperatorRegistry, RasterMeta
-from earthx.processing.plan import PlannedStep, Segment, crop_window, plan_steps, segments
+from earthx.processing.plan import PlannedStep, Segment, crop_window, live_steps, plan_steps, segments, stock_steps
 from earthx.processing.recipe import AppliedScaling, CropOutput, RasterOutput, Recipe, engine_versions
 from earthx.processing.source import Source, common_grid, merge_images
 from earthx.processing.statistics import BandStatistics, gdal_tags, summarize
@@ -319,6 +322,12 @@ class _Run:
                 open_workfile(self.workdir, self.new_file(name), "w", **_profile(meta, dtype, nodata, interleave))
             )
             mask = files.enter_context(open_workfile(self.workdir, MASK_NAME)) if count_valid else None
+            if count_valid:
+                # The name of the band, which rio-cogeo carries into the COG; the unit stays in the properties:
+                # ``cog_translate`` drops it, and GDAL's COG driver, which keeps it, holds memory that grows with the
+                # area (adr/0014 Nachtrag NM4-43c).
+                for index, band in enumerate(meta.bands, start=1):
+                    dst.set_band_description(index, band.name)
             whole = [BandStatistics(dtype) for _ in meta.bands] if count_valid else []
             area = [BandStatistics(dtype) for _ in meta.bands] if count_valid else []
             inside_pixels = 0
@@ -383,19 +392,22 @@ def _transform_meta(meta: RasterMeta, steps: tuple[PlannedStep, ...]) -> RasterM
     return meta
 
 
-def _source_meta(
-    sources: list[Source], finest: Source, resampled: bool, window: Window, transform: Affine
-) -> RasterMeta:
+def _source_meta(sources: list[Source], finest: Source, window: Window, transform: Affine) -> RasterMeta:
+    """The bands the sources give, on the grid of the finest.
+
+    A band counts as resampled where its own source is not on that grid or warps its scenes. The flag of the
+    whole raster is for a step that resamples all of it (a ``grid`` step); the result is marked where that or a band
+    in it is (backlog 51, adr/0014 Nachtrag NM4-43c).
+    """
     bands = []
     for source in sources:
+        moved = source.warps or not finest.same_grid(source)
         for name, data_type, nodata, unit in zip(
             source.names, source.data_types, source.nodata, source.units, strict=True
         ):
             data_type = "float32" if source.scaling.applied_by_core else data_type
-            bands.append(BandMeta(name=name, data_type=data_type, nodata=nodata, unit=unit))
-    return RasterMeta(
-        finest.crs.to_string(), transform, int(window.width), int(window.height), tuple(bands), resampled
-    )
+            bands.append(BandMeta(name=name, data_type=data_type, nodata=nodata, unit=unit, resampled=moved))
+    return RasterMeta(finest.crs.to_string(), transform, int(window.width), int(window.height), tuple(bands))
 
 
 def _properties(
@@ -474,7 +486,6 @@ def run(
             raise UnsupportedRecipe("an export needs the attachments api builds for it")
         return export(recipe, workdir=workdir, progress=progress, attachments=attachments)
     planned = plan_steps(recipe.steps, operators)
-    passes = segments(planned)
     state = _Run(workdir, progress)
     started = time.monotonic()
     dataset = recipe.inputs[0].dataset
@@ -486,12 +497,12 @@ def run(
         with ExitStack() as stack:
             stack.enter_context(rasterio.Env(**process_gdal_options()))
             sources = _open_sources(recipe, stack)
-            finest, resampled = common_grid(sources)
-            resampled = resampled or any(source.warps for source in sources)
+            finest, _ = common_grid(sources)  # refuses assets that are neither one grid nor nested
             window, transform = crop_window(
                 recipe.aoi.model_dump(mode="json"), finest.crs.to_string(), finest.transform, finest.width, finest.height
             )
-            metas = [_source_meta(sources, finest, resampled, window, transform)]
+            metas = [_source_meta(sources, finest, window, transform)]
+            passes = segments(stock_steps(metas[0], planned, output.bands))
             for segment in passes:
                 metas.append(_transform_meta(metas[-1], segment.steps))
             state.total = sum(_block_count(meta) for meta in metas[1:])
@@ -513,9 +524,11 @@ def run(
                     last,
                 )
             nodata = _nodata_for(output.dtype, metas[-1])
+            # The honesty flag of the result is that of the bands in it, not of every band that was read (backlog 51).
             final = replace(
                 metas[-1],
                 bands=tuple(replace(band, data_type=output.dtype, nodata=nodata) for band in metas[-1].bands),
+                resampled=metas[-1].resampled or any(band.resampled for band in metas[-1].bands),
             )
             result = state.new_file(RESULT_NAME)
             with open_workfile(workdir, previous) as plain:
@@ -560,7 +573,7 @@ def run(
         path=workfile_path(workdir, RESULT_NAME),
         mask_path=workfile_path(workdir, MASK_NAME),
         meta=final,
-        properties=_properties(final, planned, engine, _scenes(recipe), state.statistics),
+        properties=_properties(final, live_steps(planned, output.bands), engine, _scenes(recipe), state.statistics),
         scaling=scaling,
         blocks=state.done,
         valid_pixels=state.valid_pixels,
@@ -585,7 +598,11 @@ def area_factor(width: int, height: int, max_pixels: int = MAX_AREA_PIXELS) -> i
 
 
 def area_statistics(
-    recipe: Recipe, *, operators: OperatorRegistry = REGISTRY, max_pixels: int = MAX_AREA_PIXELS
+    recipe: Recipe,
+    *,
+    operators: OperatorRegistry = REGISTRY,
+    max_pixels: int = MAX_AREA_PIXELS,
+    extra_percentiles: Sequence[int] = (),
 ) -> AreaStatistics:
     """The statistics of the AOI the result of ``recipe`` would carry, read and counted as :func:`run` does (NM4-19).
 
@@ -603,17 +620,17 @@ def area_statistics(
     output = check_scope(recipe)
     if isinstance(output, CropOutput):
         raise UnsupportedRecipe("an export has no statistics of its area; measure a raster order")
-    passes = segments(plan_steps(recipe.steps, operators))
-    if any(segment.kind == "grid" for segment in passes):
+    planned = plan_steps(recipe.steps, operators)
+    if any(step.operator.kind == "grid" for step in planned):
         raise UnsupportedRecipe("the area is measured for pixel steps only; a grid step changes the grid of the result")
-    steps = passes[0].steps
     aoi = recipe.aoi.model_dump(mode="json")
     with ExitStack() as stack:
         sources = _open_sources(recipe, stack)
-        finest, resampled = common_grid(sources)
-        resampled = resampled or any(source.warps for source in sources)
+        finest, _ = common_grid(sources)
         window, transform = crop_window(aoi, finest.crs.to_string(), finest.transform, finest.width, finest.height)
-        meta = _transform_meta(_source_meta(sources, finest, resampled, window, transform), steps)
+        source_meta = _source_meta(sources, finest, window, transform)
+        steps = tuple(stock_steps(source_meta, planned, output.bands))
+        meta = _transform_meta(source_meta, steps)
         nodata = _nodata_for(output.dtype, meta)
         factor = area_factor(meta.width, meta.height, max_pixels)
         width, height = -(-meta.width // factor), -(-meta.height // factor)
@@ -634,7 +651,7 @@ def area_statistics(
         {
             "name": band.name,
             **({} if band.unit is None else {"unit": band.unit}),
-            "statistics": statistics.summary(max(inside_pixels, 1)),
+            "statistics": statistics.summary(max(inside_pixels, 1), extra_percentiles),
         }
         for band, statistics in zip(meta.bands, area, strict=True)
     ]

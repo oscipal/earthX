@@ -29,6 +29,20 @@ from tests.earthx.readers import mini_zarr
 
 DATASET_ID = "synthetic-zarr"
 
+
+def without_cloud_share(entry: DatasetConfig) -> DatasetConfig:
+    """``entry`` with no cloud classes and no filter within the AOI (DS-03 plan §6.19).
+
+    A test that makes a Zarr, legacy or mask-less entry out of Sentinel-2's needs this: the share is offered only
+    for a COG with cloud classes, and the registry refuses the other combinations at the start.
+    """
+    return replace(
+        entry,
+        mask=replace(entry.mask, cloud_classes=frozenset(), cloud_note=""),
+        search_filters=tuple(replace(item, within_aoi=False) for item in entry.search_filters),
+    )
+
+
 SYNTHETIC_ZARR: DatasetConfig = replace(
     SENTINEL_2_L2A,
     dataset_id=DATASET_ID,
@@ -65,9 +79,14 @@ SYNTHETIC_ZARR: DatasetConfig = replace(
         suggested=SENTINEL_2_L2A.mask.suggested,
         reference=SENTINEL_2_L2A.mask.reference,
         note=SENTINEL_2_L2A.mask.note,
+        cloud_classes=frozenset(),
+        cloud_note="",
     ),
     band_units={"SR_*": "1", "SCL_20m:scl": None},
     auxiliary_assets=(),
+    # The Zarr layer has no cloud classes (DS-03 plan §6.19), so none of the inherited filters is "within AOI".
+    search_filters=tuple(replace(entry, within_aoi=False) for entry in SENTINEL_2_L2A.search_filters),
+    index_presets=(),
 )
 
 TEST_ENTRIES: tuple[DatasetConfig, ...] = (*REGISTRY, SYNTHETIC_ZARR)

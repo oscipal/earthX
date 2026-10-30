@@ -20,8 +20,8 @@ from typing import Any
 import pytest
 from shapely.geometry import shape
 
+from earthx.api.intake import parse_order
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
-from earthx.processing.recipe import parse_request
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, registry_with_zarr
 from tests.earthx.api.conftest import Rig
 from tests.earthx.api.test_intake import dem_item, s2_item, zarr_item
@@ -55,7 +55,9 @@ def recipe_of(path: Path) -> dict[str, Any]:
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
 def test_the_schema_takes_the_order(path: Path) -> None:
-    parse_request(json.dumps(recipe_of(path)), REAL_OPERATORS)
+    """The panel sends recipe version 2 since NM4-43e, and `api` takes it as it is (adr/0020 §11)."""
+    assert recipe_of(path)["recipe_version"] == 2
+    assert parse_order(json.dumps(recipe_of(path)), REAL_OPERATORS).recipe_version == 2
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
@@ -64,12 +66,14 @@ def test_the_order_has_exactly_the_members_of_the_schema(path: Path) -> None:
     # The AOI may be left out for the whole scenes of a pass (M4-12); where it is there, it is bare.
     assert set(recipe) - {"aoi"} == {"recipe_version", "inputs", "steps", "output"}
     assert set(recipe.get("aoi", {"type": 0, "coordinates": 0})) == {"type", "coordinates"}
-    assert set(recipe["inputs"][0]) == {"name", "dataset", "groups", "assets"}
+    # A raster order names its bands in the output and no assets (adr/0020 §5); an export names its assets.
+    assert set(recipe["inputs"][0]) == {"name", "dataset", "groups"}
+    assert recipe["output"]["kind"] == "raster" and recipe["output"]["bands"]
     assert all(set(step) == {"op", "op_version", "params"} for step in recipe["steps"])
 
 
-def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
-    """Make the items the order names, covering the area of the order (or a shared one without an AOI).
+def items_of(recipe: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    """The items the order names, covering the area of the order (or a shared one without an AOI).
 
     The scenes of a group are one overpass: they carry the same day and datatake, the key of ``results_group_by``.
     """
@@ -78,6 +82,7 @@ def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
     west, south, east, north = shape(area).bounds if area else (8.9, 46.9, 9.1, 47.1)
     box = (west - 0.1, south - 0.1, east + 0.1, north + 0.1)
     make = {"sentinel-2-c1-l2a": s2_item, "cop-dem-glo-30": dem_item, SYNTHETIC_ZARR.dataset_id: zarr_item}
+    items = {}
     for item_id in entry["groups"][0]:
         item = make[entry["dataset"]](item_id, box)
         if entry["dataset"] == "sentinel-2-c1-l2a":
@@ -87,7 +92,18 @@ def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
                 "gsd": 10,  # the pixel size was in the band description, which this asset replaces
                 "raster:bands": [{"nodata": 0, "data_type": "uint8"}] * 3,
             }
-        rig.source.items[(entry["dataset"], item_id)] = item
+            # The layer a mask reads (`earthx:mask`): classes, no scaling, a pixel of 20 m.
+            item["assets"]["scl"] = {
+                "href": item["assets"]["red"]["href"].replace("B04", "SCL"),
+                "gsd": 20,
+                "raster:bands": [{"nodata": 0, "data_type": "uint8", "spatial_resolution": 20}],
+            }
+        items[(entry["dataset"], item_id)] = item
+    return items
+
+
+def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
+    rig.source.items.update(items_of(recipe))
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
@@ -127,8 +143,8 @@ class TestTheCheckWouldHaveFoundTheFirstBug:
 
     def test_the_schema_refuses_properties_in_the_aoi(self, body: dict[str, Any]) -> None:
         body["inputs"]["recipe"]["aoi"]["properties"] = {"source": "OpenStreetMap / Nominatim"}
-        with pytest.raises(Exception, match="extra_forbidden"):
-            parse_request(json.dumps(body["inputs"]["recipe"]), REAL_OPERATORS)
+        with pytest.raises(Exception, match="aoi.*extra_forbidden"):
+            parse_order(json.dumps(body["inputs"]["recipe"]), REAL_OPERATORS)
 
     async def test_the_estimate_route_refuses_them_with_a_400(self, rig: Rig, body: dict[str, Any]) -> None:
         with_item(rig, body["inputs"]["recipe"])

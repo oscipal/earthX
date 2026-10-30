@@ -149,7 +149,8 @@ class TestWhatItTurnsAway:
             (order("no-such-dataset"), 422, "dataset"),
             (order(steps=[{"op": "no_such_operator", "op_version": 1, "params": {}}]), 422, "order"),
             (order(groups=(("NO_SUCH_ITEM",),)), 422, "items"),
-            (order(assets=("no_such_asset",)), 422, "resolve"),
+            (order(assets=("no_such_asset",)), 422, "applicable"),  # a band no asset carries
+            (order(assets=("no_such_asset",), steps=[], output=CROP), 422, "resolve"),  # an asset the item lacks
         ]
         for document, status, stage in cases:
             placed = problem(await place(rig, document), status)
@@ -166,6 +167,20 @@ class TestWhatItTurnsAway:
         monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", 1)
         body = await self.refused(rig, order(assets=("red",), steps=[], output=CROP), 413, "size")
         assert "an export job may write" in body["detail"]
+
+    async def test_a_raster_order_over_the_memory_a_job_may_use_is_a_413_with_the_number(
+        self, rig: Rig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """NM4-43c: no cap on the bands, but the memory of the run is estimated and a wide job is refused (adr/0020 §7)."""
+        monkeypatch.setattr("earthx.processing.plan.MAX_JOB_MEMORY_BYTES", 1_000_000_000)
+        cube = s2_item()["assets"]["red"] | {
+            "raster:bands": [{"nodata": 0, "data_type": "uint16", "spatial_resolution": 10}] * 40
+        }
+        rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = s2_item(cube=cube)
+        bands = [f"cube_{index + 1}" for index in range(40)]
+        body = await self.refused(rig, order(assets=("cube",), bands=bands, steps=[]), 413, "size")
+        assert "GB of memory, more than the 1.0 GB a job may use" in body["detail"]
+        assert "Put fewer bands in the output" in body["detail"]
 
     async def test_aoi_provenance_with_a_raster_order_with_an_area_is_checked_and_taken(self, rig: Rig) -> None:
         """M4-30: the origin of the area goes with a raster order too; an estimate only checks it."""
@@ -243,9 +258,9 @@ class TestWhatItTurnsAway:
         item["assets"]["red"].pop("raster:bands")
         item["assets"]["red"]["gsd"] = 10  # the pixel size was in the band description; the estimate needs it
         rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = item
-        step = {"op": "band_math", "op_version": 1, "params": {"expression": "red_2 + 1"}}
+        step = {"op": "band_math", "op_version": 2, "params": {"expression": "red_2 + 1", "name": "Plus"}}
         async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
-            response = await client.post(ESTIMATE, json=envelope(order(assets=("red",), steps=[step])))
+            response = await client.post(ESTIMATE, json=envelope(order(steps=[step], bands=["Plus"])))
         body = problem(response, 422)
         assert body["type"] == "urn:earthx:order-refused:applicable" and "red_2" in body["detail"]
 

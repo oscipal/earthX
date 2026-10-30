@@ -1,4 +1,4 @@
-"""``GET /coverage/{dataset_id}``: the coverage seam wired to `api` (M2-05b).
+"""``/coverage/{dataset_id}``: the coverage seam wired to `api` (M2-05b), ``GET`` for a map extent, ``POST`` for an AOI.
 
 At the base app, beside ``/health`` and outside ``/stac`` (plans/m2/m2-05-coverage.md
 §6.6, F1 a): the answer is not a STAC object, and ``/stac`` stays the namespace of
@@ -19,6 +19,11 @@ things the scope names explicitly:
   ``dataset_id``, the clamped ``level``, ``completeness`` and the answer's origin —
   never ``bbox``, ``intersects`` or a value of ``query``, only the *names* of the
   search filters that were set (DS-02 plan §6.4, rule 8).
+* **An AOI is never in the URL** (NM4-57, M4 Q8): a ``GET`` URL stands in access logs, proxies and the
+  browser's history. With an AOI the question is a ``POST`` and the area stands in the body only. The
+  ``GET`` is for the visible map extent, which is no AOI: it is a box on the grid the interface rounds it
+  to (:func:`is_map_extent`), and a ``GET`` with ``intersects``, or with a box that is off that grid, is
+  refused with a ``400`` that says to send the area with ``POST``.
 * **A time window this dataset cannot honour is dropped, not silently applied**
   (M3-11c, Otto 26.09.2026): ``datetime`` for a dataset with
   ``capabilities.time_range=False`` is named in the answer's ``ignored_filters``
@@ -36,10 +41,12 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import replace
+import math
+from dataclasses import dataclass, replace
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, ValidationError
 from stac_fastapi.types.rfc3339 import str_to_interval
 
 from earthx.adapters import AdapterSpecs
@@ -48,6 +55,7 @@ from earthx.adapters.errors import UpstreamShapeError
 from earthx.api.search_filters import read_search_conditions
 from earthx.catalog.coverage import (
     HISTOGRAM_INTERVAL,
+    MAX_GEOTILE_LEVEL,
     CoverageProviderMismatch,
     CoverageQuery,
     CoverageResult,
@@ -75,6 +83,18 @@ LOGGER = logging.getLogger("earthx.api.coverage")
 # (projektuebersicht.md §5, D4).
 IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION})
 
+# NM4-57: a body larger than this is no coverage question. An AOI outline of a few thousand points fits
+# many times over; the cap only keeps a request from holding the process while it is read.
+MAX_BODY_BYTES = 1_000_000
+
+# The map extent the interface asks for is rounded outward to blocks of ``2^3 x 2^3`` cells of its level
+# (`frontend/src/coverage.ts`, ``VIEWPORT_ROUND_LEVELS``), so a small pan asks the same question. That is
+# what makes it recognisable here: an AOI's box lies on no such grid.
+VIEWPORT_ROUND_LEVELS = 3
+# In cells of the block grid. The interface writes the edges as shortest round-trip decimals, so the
+# arithmetic below lands within 1e-9 of a whole cell; an arbitrary coordinate does not.
+_GRID_TOLERANCE = 1e-6
+
 
 def _area_path(config: Any) -> bool:
     """Whether this entry answers through the ``local-sql`` area way (M3-11c):
@@ -84,6 +104,38 @@ def _area_path(config: Any) -> bool:
     one-off product with upstream aggregation cannot be registered (adr/0004 §5).
     """
     return config.capabilities.single_coverage_product and config.coverage.provider is CoverageProvider.LOCAL_SQL
+
+
+_NUMBER_TOO_LARGE = "a number in the request is too large"
+_AREA_WITH_POST = "an area is sent with POST, in the body; GET takes only the visible map extent"
+
+
+class CoverageBody(BaseModel):
+    """The body of ``POST /coverage/{dataset_id}``: the query parameters of the ``GET``, the area among them.
+
+    ``query`` is the search filters as an object here, not as the JSON text a URL needs. Strict, so a
+    number sent as text is refused and not read; unknown fields are refused too.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    zoom: int
+    bbox: tuple[float, float, float, float] | None = None
+    intersects: dict[str, Any] | None = None
+    datetime: str | None = None
+    query: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _Ask:
+    """One coverage question as both routes hand it on: read, not yet checked against the registry."""
+
+    zoom: int
+    bbox: tuple[float, float, float, float] | None
+    intersects: dict[str, Any] | None
+    interval: str | None
+    # The body `read_search_conditions` takes: `{}` or `{"query": ...}`.
+    filters: dict[str, Any]
 
 
 def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter:
@@ -98,8 +150,13 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
         request: Request,
         dataset_id: str,
         zoom: Annotated[int, Query(description="viewport zoom; the geotile level before adr/0004 §5's caps clamp it")],
-        bbox: Annotated[str | None, Query(description="west,south,east,north")] = None,
-        intersects: Annotated[str | None, Query(description="a GeoJSON Polygon or MultiPolygon")] = None,
+        bbox: Annotated[
+            str | None,
+            Query(
+                description="west,south,east,north of the visible map extent, on the grid of its level "
+                "(no AOI: an area is sent with POST)"
+            ),
+        ] = None,
         datetime: Annotated[
             str | None, Query(description="a STAC interval: an instant, start/end, start/.. or ../end")
         ] = None,
@@ -111,6 +168,50 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
             ),
         ] = None,
     ) -> dict[str, Any]:
+        # Not a parameter of the signature on purpose: an unknown one would be dropped without a word, and
+        # the answer would be a world overview where an area was asked for.
+        if any(name.lower() == "intersects" for name in request.query_params):
+            raise HTTPException(status_code=400, detail=_AREA_WITH_POST)
+        box = _parse_bbox(bbox)
+        if box is not None and not is_map_extent(box, zoom):
+            raise HTTPException(status_code=400, detail=_AREA_WITH_POST)
+        return await answer(
+            request,
+            dataset_id,
+            _Ask(
+                zoom=zoom,
+                bbox=box,
+                intersects=None,
+                interval=datetime,
+                filters={} if search_filters is None else {"query": _parse_query(search_filters)},
+            ),
+        )
+
+    @router.post(
+        "/coverage/{dataset_id}",
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {"application/json": {"schema": CoverageBody.model_json_schema()}},
+            }
+        },
+    )
+    async def post_coverage(request: Request, dataset_id: str) -> dict[str, Any]:
+        """The coverage of an AOI: the same question as ``GET``, with the area in the body (NM4-57)."""
+        body = await _read_body(request)
+        return await answer(
+            request,
+            dataset_id,
+            _Ask(
+                zoom=body.zoom,
+                bbox=body.bbox,
+                intersects=body.intersects,
+                interval=body.datetime,
+                filters={} if body.query is None else {"query": body.query},
+            ),
+        )
+
+    async def answer(request: Request, dataset_id: str, ask: _Ask) -> dict[str, Any]:
         try:
             config = registry.get(dataset_id)
         except RetiredDatasetError as error:
@@ -127,28 +228,35 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
                 detail=f"{dataset_id!r} has no coverage answer yet ({config.coverage.provider.value})",
             )
 
-        has_spatial_filter = bbox is not None or intersects is not None
-        start, end = _datetime_bounds(datetime)
+        has_spatial_filter = ask.bbox is not None or ask.intersects is not None
+        start, end = _datetime_bounds(ask.interval)
         try:
-            conditions = read_search_conditions(
-                {} if search_filters is None else {"query": _parse_query(search_filters)},
-                [dataset_id],
-                lambda _: config.search_filters,
-            ).by_collection.get(dataset_id)
+            read = read_search_conditions(ask.filters, [dataset_id], lambda _: config.search_filters)
         except InvalidFilter as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
+        except OverflowError:
+            # A whole number of more than 300 digits has no float; the parser reads it, the checks cannot.
+            raise HTTPException(status_code=400, detail=_NUMBER_TOO_LARGE) from None
+        if read.aoi_cloud_cover:
+            # DS-03 plan §6.5 (KE6): the coverage counts at the source, without a raster, so it cannot apply this.
+            raise HTTPException(
+                status_code=400, detail="the coverage map cannot apply the cloud share in the AOI; search for scenes"
+            )
+        conditions = read.by_collection.get(dataset_id)
         try:
             query = CoverageQuery(
                 dataset_id=dataset_id,
-                level=level_for_viewport(zoom, config, has_spatial_filter=has_spatial_filter),
-                bbox=_parse_bbox(bbox),
-                intersects=_parse_intersects(intersects),
+                level=level_for_viewport(ask.zoom, config, has_spatial_filter=has_spatial_filter),
+                bbox=ask.bbox,
+                intersects=ask.intersects,
                 start=start,
                 end=end,
                 conditions=conditions,
             )
         except InvalidCoverageQuery as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
+        except OverflowError:
+            raise HTTPException(status_code=400, detail=_NUMBER_TOO_LARGE) from None
 
         # A time window this dataset structurally cannot honour is dropped here, once,
         # for every way — not left to each way to remember on its own (Otto,
@@ -235,6 +343,53 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
     return router
 
 
+async def _read_body(request: Request) -> CoverageBody:
+    """The body as a checked :class:`CoverageBody`, or a ``400`` in our own words.
+
+    Never FastAPI's own ``422``: its detail quotes the input, and the input is the AOI.
+    """
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail=f"the body is over the {MAX_BODY_BYTES} byte cap")
+    try:
+        return CoverageBody.model_validate_json(bytes(content))
+    except ValidationError:
+        # Not the error's text: it quotes the document.
+        raise HTTPException(status_code=400, detail="the body is not a coverage question") from None
+
+
+def is_map_extent(bbox: tuple[float, float, float, float], zoom: int) -> bool:
+    """Whether ``bbox`` is a visible map extent as the interface asks for it, and so no AOI.
+
+    The interface rounds the extent outward to the block grid of ``zoom - VIEWPORT_ROUND_LEVELS`` before it
+    asks (`coverage.ts`, ``roundBboxToGrid``): every edge lies on a cell edge of that level. A box drawn or
+    uploaded by a person does not, except by a chance of about one in a million per edge. The arithmetic is
+    the geotile one of :func:`earthx.catalog.coverage.cell_bbox`, run backwards, without clamping a latitude to
+    the Web-Mercator square: the interface's world view reaches 87.7° north through a rounding error at the
+    pole, which lies exactly one row beyond the square (position -1), and any other polar latitude is no row.
+    """
+    if not all(math.isfinite(value) for value in bbox):
+        return False
+    west, south, east, north = bbox
+    side = 2 ** min(max(zoom - VIEWPORT_ROUND_LEVELS, 0), MAX_GEOTILE_LEVEL)
+    positions = (
+        (west + 180) / 360 * side,
+        (east + 180) / 360 * side,
+        _mercator_fraction(north) * side,
+        _mercator_fraction(south) * side,
+    )
+    return all(
+        -1 - _GRID_TOLERANCE <= p <= side + 1 + _GRID_TOLERANCE and abs(p - round(p)) <= _GRID_TOLERANCE for p in positions
+    )
+
+
+def _mercator_fraction(latitude: float) -> float:
+    """How far down the Web-Mercator square a latitude falls: 0 at its north edge, 1 at its south edge."""
+    return (1 - math.asinh(math.tan(math.radians(latitude))) / math.pi) / 2
+
+
 def _parse_bbox(value: str | None) -> tuple[float, float, float, float] | None:
     if value is None:
         return None
@@ -246,18 +401,6 @@ def _parse_bbox(value: str | None) -> tuple[float, float, float, float] | None:
     except ValueError:
         raise HTTPException(status_code=400, detail="bbox values must be numbers") from None
     return (west, south, east, north)
-
-
-def _parse_intersects(value: str | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    try:
-        parsed = json.loads(value)
-    except (ValueError, RecursionError):
-        raise HTTPException(status_code=400, detail="intersects is not valid JSON") from None
-    if not isinstance(parsed, dict):
-        raise HTTPException(status_code=400, detail="intersects is not a GeoJSON object")
-    return parsed
 
 
 def _parse_query(value: str) -> Any:

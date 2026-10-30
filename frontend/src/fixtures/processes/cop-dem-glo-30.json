@@ -41,12 +41,12 @@
             "description": "One input of an order: a dataset, its items in groups, and the asset keys to read.",
             "properties": {
               "assets": {
+                "description": "Recipe version 1 only. Version 2 names the bands in output.bands, and the platform reads the assets they need.",
                 "items": {
                   "maxLength": 256,
                   "minLength": 1,
                   "type": "string"
                 },
-                "maxItems": 16,
                 "minItems": 1,
                 "title": "Assets",
                 "type": "array"
@@ -80,8 +80,7 @@
             "required": [
               "name",
               "dataset",
-              "groups",
-              "assets"
+              "groups"
             ],
             "title": "InputRequest",
             "type": "object"
@@ -165,8 +164,20 @@
           },
           "RasterOutput": {
             "additionalProperties": false,
-            "description": "A job's result: one COG.",
+            "description": "A job's result: one COG, with the bands ``bands`` names, in this order (adr/0020 §5).",
             "properties": {
+              "bands": {
+                "description": "The bands the result holds, in this order: bands of the data and bands the steps add. Each once, case ignored; each has to be in the stock after the last step.",
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "title": "Bands",
+                "type": "array"
+              },
               "dtype": {
                 "enum": [
                   "uint8",
@@ -194,24 +205,25 @@
             "required": [
               "kind",
               "format",
-              "dtype"
+              "dtype",
+              "bands"
             ],
             "title": "RasterOutput",
             "type": "object"
           },
-          "step_band_math_v1": {
+          "step_band_math_v2": {
             "additionalProperties": false,
-            "description": "Compute one band from an expression over the bands, in physical values.",
+            "description": "Compute a band from an expression over the bands, in physical values, and add it to the bands.",
             "properties": {
               "op": {
                 "const": "band_math"
               },
               "op_version": {
-                "const": 1
+                "const": 2
               },
               "params": {
                 "additionalProperties": false,
-                "description": "The panel's form (K8): one expression over the bands, in physical values.",
+                "description": "Version 2: the expression and the name of the band it adds, always given (B10).",
                 "properties": {
                   "expression": {
                     "description": "Band names, numbers, + - * / **, comparisons, & | ~ on comparisons, and where(c, a, b), abs, minimum, maximum, sqrt. Evaluated on physical values.",
@@ -219,12 +231,20 @@
                     "minLength": 1,
                     "title": "Expression",
                     "type": "string"
+                  },
+                  "name": {
+                    "description": "Name of the new band, such as NDVI: a letter, then letters, digits or _. It is free in the data and in the other results (case ignored); later steps and the output name the band by it.",
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "title": "Name",
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "expression"
+                  "expression",
+                  "name"
                 ],
-                "title": "BandMathParams",
+                "title": "BandMathParamsV2",
                 "type": "object"
               }
             },
@@ -241,20 +261,30 @@
               "T2"
             ]
           },
-          "step_normalize_v1": {
+          "step_normalize_v2": {
             "additionalProperties": false,
-            "description": "Map a fixed range of values linearly onto another range, for all bands alike.",
+            "description": "Map a fixed range of values linearly onto another range, for the bands named.",
             "properties": {
               "op": {
                 "const": "normalize"
               },
               "op_version": {
-                "const": 1
+                "const": 2
               },
               "params": {
                 "additionalProperties": false,
-                "description": "The panel's form (K8): both ranges and whether to clip, always given (B10).",
+                "description": "Version 2: the two ranges and the bands the step converts, always given (B10).",
                 "properties": {
+                  "bands": {
+                    "description": "Names of the bands to convert, each once; the others of the stock are left as they are.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 256,
+                    "minItems": 1,
+                    "title": "Bands",
+                    "type": "array"
+                  },
                   "clip": {
                     "description": "Limit the result to the target range instead of continuing the line.",
                     "title": "Clip",
@@ -286,9 +316,10 @@
                   "in_max",
                   "out_min",
                   "out_max",
-                  "clip"
+                  "clip",
+                  "bands"
                 ],
-                "title": "NormalizeParams",
+                "title": "NormalizeParamsV2",
                 "type": "object"
               }
             },
@@ -321,7 +352,7 @@
                 "properties": {
                   "align": {
                     "default": false,
-                    "description": "Snap the target grid to whole multiples of the resolution in the target CRS.",
+                    "description": "Lay the pixel grid on whole multiples of the resolution in the target CRS, e.g. at 30 m, 60 m, 90 m for a resolution of 30 m. Results for different areas or dates then line up pixel by pixel. The result may reach up to one pixel further out on each side.",
                     "title": "Align",
                     "type": "boolean"
                   },
@@ -456,10 +487,10 @@
               },
               "oneOf": [
                 {
-                  "$ref": "#/$defs/step_band_math_v1"
+                  "$ref": "#/$defs/step_band_math_v2"
                 },
                 {
-                  "$ref": "#/$defs/step_normalize_v1"
+                  "$ref": "#/$defs/step_normalize_v2"
                 },
                 {
                   "$ref": "#/$defs/step_reproject_v4"
@@ -556,5 +587,5 @@
     }
   },
   "title": "Recipe",
-  "version": "1"
+  "version": "2"
 }

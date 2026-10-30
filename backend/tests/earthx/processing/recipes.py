@@ -7,7 +7,11 @@ synthetic square, and nothing here names a real item.
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any, Literal
+
+from earthx.processing.recipe import Recipe
+from earthx.processing.upgrade import OperatorLookup, recipe_of_any_version
 
 HOST = "store.example.invalid"
 
@@ -48,7 +52,7 @@ def resolved(
 
 def recipe_data(**overrides: Any) -> dict[str, Any]:
     data: dict[str, Any] = {
-        "recipe_version": 1,
+        "recipe_version": 2,
         "inputs": [
             {
                 "name": "s2",
@@ -60,16 +64,26 @@ def recipe_data(**overrides: Any) -> dict[str, Any]:
         ],
         "aoi": copy.deepcopy(SQUARE),
         "steps": [{"op": "scale", "op_version": 1, "params": {"factor": 2.0}}],
-        "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
+        "output": {"kind": "raster", "format": "cog", "dtype": "float32", "bands": ["red", "nir"]},
     }
     data.update(overrides)
     return data
 
 
+def recipe_data_v1(**overrides: Any) -> dict[str, Any]:
+    """:func:`recipe_data` as a recipe of version 1 was written: no ``bands`` in the output (`recipe_of_data` rewrites it)."""
+    data = recipe_data(**overrides)
+    data["recipe_version"] = 1
+    data["output"] = {key: value for key, value in data["output"].items() if key != "bands"}
+    return data
+
+
 def request_data() -> dict[str, Any]:
+    """An order for a raster: no addresses and, in version 2, no assets (they follow from ``output.bands``)."""
     data = recipe_data()
     for entry in data["inputs"]:
         del entry["resolved"]
+        del entry["assets"]
     return data
 
 
@@ -102,3 +116,8 @@ def crop_data(groups: list[list[str]] | None = None, assets: tuple[str, ...] = (
         steps=[],
         output=dict(CROP),
     )
+
+
+def recipe_of_data(data: dict[str, Any], operators: OperatorLookup) -> Recipe:
+    """The recipe of ``data`` of version 1 or 2; version 1 is rewritten as the platform rewrites it (adr/0020 §11)."""
+    return recipe_of_any_version(json.dumps(data), operators)

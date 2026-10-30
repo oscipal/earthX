@@ -10,15 +10,17 @@ next one costs anything (the status in brackets):
 
 1. the order parses and validates (422); it carries no address and no ``recipe_id``
    (400, F1), a job wants a raster output or a crop — an export, without steps and at
-   native resolution (422, M4-11a);
+   native resolution (422, M4-11a). An order of recipe version 1 is rewritten as version 2 first, up to
+   :data:`VERSION_1_ACCEPTED_UNTIL` (:func:`parse_order`, adr/0020 §11);
 2. its size is within the caps (413, 422) — no network yet;
 3. the dataset exists (422), its licence reaches *processing* (403, B11), every step
    is an operator this platform runs as a job and ``applicable`` to this dataset
    (422) — still no network;
 4. the items are fetched through the item source (422 for one the source lacks,
    502/503/504 for the source's own failures);
-5. a group the AOI does not touch drops out, as in the crop (M3-17); none left is
-   422;
+5. a raster order names no assets: they are derived from ``output.bands`` and the steps, only those that a band of
+   the output needs are read (:func:`derive_assets`, adr/0020 §5); a group the AOI does not touch drops out, as in the
+   crop (M3-17); none left is 422;
 6. each asset is resolved (:func:`~earthx.access.resolve.resolve_asset`), its host
    checked against the ``asset_hosts`` of **its own dataset** (502, adr/0014 §8), its
    bands, scaling source and ground sample distance read off the item (adr/0014
@@ -47,6 +49,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import secrets
 from collections.abc import Awaitable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -104,8 +107,9 @@ from earthx.processing.export import Attachments
 from earthx.processing.methods import DatasetFacts, recipe_with_methods
 from earthx.processing.mosaic import lies_on_grid
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
-from earthx.processing.plan import check_bands, estimate
+from earthx.processing.plan import check_bands, estimate, needed_source_bands, plan_steps
 from earthx.processing.recipe import (
+    RECIPE_VERSION,
     Band,
     CropOutput,
     InputRequest,
@@ -119,17 +123,19 @@ from earthx.processing.recipe import (
     engine_versions,
     input_version,
     job_recipe_document,
+    loads_i_json,
     parse_request,
     recipe_from_data,
 )
+from earthx.processing.upgrade import NamesOf, is_version_1, key_names, upgrade_order
 from earthx.readers.zarr_reader import split_asset_key
 
 LOGGER = logging.getLogger("earthx.api.intake")
 
 __all__ = [
-    "MAX_ORDER_ASSETS",
     "MAX_ORDER_ITEMS",
     "MAX_ORDER_STEPS",
+    "VERSION_1_ACCEPTED_UNTIL",
     "AcceptedOrder",
     "EstimatedOrder",
     "OrderRefused",
@@ -141,17 +147,25 @@ __all__ = [
     "estimate_order",
     "export_attachments",
     "footprint_of",
+    "band_sources",
     "job_recipe_json",
     "job_side_files",
+    "parse_order",
     "recipe_json_with_methods",
+    "version_1_accepted",
 ]
 
-# The starting values of an order's size (Otto, M4-07b F5). One input per order until
+# The starting values of an order's size (Otto, M4-07b F5; the cap of 16 assets fell with NM4-43c, adr/0020 §7: the
+# memory estimate of a run guards the bands, `processing.plan.MAX_JOB_MEMORY_BYTES`). One input per order until
 # the licence of a combination is decided (architekturplan 7.1). M4-12 may raise the
 # item cap, with its own reason: whole scenes per overpass are more than a crop's 25.
 MAX_ORDER_ITEMS = 25
-MAX_ORDER_ASSETS = 16
 MAX_ORDER_STEPS = 16
+
+#: The last day `api` takes an order of recipe version 1 and rewrites it (adr/0020 §11): 30 days after NM4-43e, the
+#: panel that sends version 2, is deployed. Until that is, there is no day and version 1 is taken; NM4-43e sets it
+#: and logs it, and one line here closes the door.
+VERSION_1_ACCEPTED_UNTIL: date | None = None
 
 # What a version may hold (`processing.recipe.Text`).
 _ETAG_MAX_CHARS = 256
@@ -301,10 +315,7 @@ async def _prepare(
     aoi_provenance: Mapping[str, str] | None = None,
 ) -> _Prepared:
     _refuse_a_recipe(raw)
-    try:
-        request = parse_request(raw, operators)
-    except RecipeInvalid as error:
-        raise OrderRefused(422, str(error), "order") from None
+    request, legacy = _parse_order(raw, operators, registry, None)
     entry = _check_scope(request)
     export = isinstance(request.output, CropOutput)
     if aoi_provenance is not None and request.aoi is None:
@@ -330,6 +341,10 @@ async def _prepare(
     ids = [item for group in entry.groups for item in group]
     fetched = await _gather(fetch_item_or_refuse(item_source, entry.dataset, item, not_found=422) for item in ids)
     items = dict(zip(ids, fetched, strict=True))
+    if not export:
+        if legacy is not None:
+            request = _rewritten_for(legacy, items[ids[0]], config, operators)
+        entry = entry.model_copy(update={"assets": derive_assets(request, items[ids[0]], config, operators)})
     aoi = request.aoi.model_dump(mode="json") if request.aoi is not None else _whole_scenes_aoi(list(items.values()))
     groups, skipped = _groups_the_aoi_touches(entry.groups, items, aoi, export)
 
@@ -635,8 +650,6 @@ def _check_scope(request: RecipeRequest) -> InputRequest:
     if len(request.steps) > MAX_ORDER_STEPS:
         raise OrderRefused(422, f"an order has at most {MAX_ORDER_STEPS} steps", "size")
     entry = request.inputs[0]
-    if len(entry.assets) > MAX_ORDER_ASSETS:
-        raise OrderRefused(422, f"an order names at most {MAX_ORDER_ASSETS} assets", "size")
     count = sum(len(group) for group in entry.groups)
     if count > MAX_ORDER_ITEMS:
         raise OrderRefused(413, f"this order names {count} items; at most {MAX_ORDER_ITEMS} fit in one order", "size")
@@ -651,6 +664,13 @@ def _check_steps(request: RecipeRequest, config: DatasetConfig, operators: Opera
             raise OrderRefused(422, str(error), "applicable") from None
         if Tier.T2 not in operator.tiers:
             raise OrderRefused(422, f"step {index}: {step.op!r} does not run as a job", "applicable")
+        if not operator.stock and not isinstance(request.output, CropOutput):
+            raise OrderRefused(
+                422,
+                f"step {index}: {step.op!r} version {step.op_version} replaces or removes bands, as recipe version 1 "
+                f"did; an order of version {RECIPE_VERSION} takes version {step.op_version + 1} or later",
+                "applicable",
+            )
         params = operator.params.model_validate_json(json.dumps(step.params), strict=True)
         reasons = applicable(operator, config, params)
         if reasons:
@@ -907,6 +927,188 @@ def _check_hosts_of(recipe: Recipe, config: DatasetConfig) -> None:
                 raise OrderRefused(400, "the recipe names an address its dataset does not declare", "hosts") from None
 
 
+# --- orders of version 1, the assets of a raster order -----------------------
+
+
+def version_1_accepted(today: date | None = None) -> bool:
+    """Whether an order of recipe version 1 is still taken today (UTC), up to and including the last day."""
+    if VERSION_1_ACCEPTED_UNTIL is None:
+        return True
+    return (today or datetime.now(UTC).date()) <= VERSION_1_ACCEPTED_UNTIL
+
+
+def _names_of(registry: DatasetRegistry | None, document: Any) -> NamesOf | None:
+    """How an asset key gets its band names, where the dataset of the order is known (a Zarr key names variables)."""
+    if registry is None:
+        return None
+    try:
+        config = registry.get(document["inputs"][0]["dataset"])
+    except (LookupError, TypeError, KeyError, IndexError):
+        return None  # the order is refused for its dataset later, with the words that belong to that
+    return key_names(config.zarr.variable_separator if config.zarr is not None else None)
+
+
+def parse_order(
+    raw: bytes | str,
+    operators: OperatorRegistry,
+    *,
+    registry: DatasetRegistry | None = None,
+    today: date | None = None,
+) -> RecipeRequest:
+    """The order of ``raw`` as a :class:`RecipeRequest`; an order of version 1 is rewritten as version 2 first.
+
+    Version 1 is taken until :data:`VERSION_1_ACCEPTED_UNTIL` (adr/0020 §11), after that it is refused with the way
+    out. The refusals name no value of the order (:class:`OrderRefused`, 422).
+    """
+    return _parse_order(raw, operators, registry, today)[0]
+
+
+def _parse_order(
+    raw: bytes | str, operators: OperatorRegistry, registry: DatasetRegistry | None, today: date | None
+) -> tuple[RecipeRequest, dict[str, Any] | None]:
+    """The request and, for an order of version 1, the document as it came: the assets of its items are not known yet,
+    so the names it was rewritten with are those of the asset keys, and :func:`_rewritten_for` writes it again once the
+    first item is there."""
+    try:
+        document = loads_i_json(raw)
+        if is_version_1(document):
+            if not version_1_accepted(today):
+                raise OrderRefused(422, "recipe_version 1 is no longer accepted; send version 2", "order")
+            upgraded = json.dumps(upgrade_order(document, _names_of(registry, document)), allow_nan=False)
+            return parse_request(upgraded, operators), document
+        return parse_request(raw, operators), None
+    except RecipeInvalid as error:
+        raise OrderRefused(422, str(error), "order") from None
+
+
+def _rewritten_for(
+    legacy: dict[str, Any], item: Mapping[str, Any], config: DatasetConfig, operators: OperatorRegistry
+) -> RecipeRequest:
+    """An order of version 1 written again with the band names its first item gives its assets.
+
+    The panel orders assets, and an asset can hold several bands (``visual`` is ``visual_1`` … ``visual_3``): what
+    the order asked for is every band of the assets it named, as version 1 read it. The names of a key come from the
+    item where it lists the key, else from the key (:func:`~earthx.processing.upgrade.key_names`).
+    """
+    separator = config.zarr.variable_separator if config.zarr is not None else None
+    known = dict(band_sources(item, config))
+    fallback = key_names(separator)
+
+    def names(key: str) -> list[str]:
+        return known.get(key) or list(fallback(key))
+
+    try:
+        return parse_request(json.dumps(upgrade_order(legacy, names), allow_nan=False), operators)
+    except RecipeInvalid as error:
+        raise OrderRefused(422, str(error), "order") from None
+
+
+def _may_carry_bands(asset: Mapping[str, Any]) -> bool:
+    """An asset that is no thumbnail and, where it names a media type, a GeoTIFF; the panel offers the same, less
+    strictly for an item that names no type at all (a dataset's own items do, the panel's filter is for the mixed bag
+    of a catalogue)."""
+    kind, roles = asset.get("type"), asset.get("roles")
+    typed = not isinstance(kind, str) or kind.lower().startswith("image/tiff")
+    return typed and "thumbnail" not in (roles or [])
+
+
+def band_sources(item: Mapping[str, Any], config: DatasetConfig) -> list[tuple[str, list[str]]]:
+    """Every asset key an order can read from ``item``, and the names its bands carry, in the item's own order.
+
+    The rule of the panel (``bandSources`` in ``processingOrder.ts``) and of the core
+    (:func:`~earthx.processing.source.expected_band_names`): a COG asset is one band named like the asset or
+    ``<asset>_1`` … per band; a Zarr group is addressed per variable as ``<asset><separator><variable>``, named by
+    the variable. An asset the item does not count the bands of is listed with its own name, and
+    :func:`derive_assets` takes ``<asset>_<n>`` for it as well: only the file knows how many there are.
+    """
+    sources: list[tuple[str, list[str]]] = []
+    assets = item.get("assets")
+    for key, asset in (assets.items() if isinstance(assets, Mapping) else ()):
+        if not isinstance(asset, Mapping):
+            continue
+        if config.zarr is None:
+            if not _may_carry_bands(asset):
+                continue
+            try:
+                count = len(_entries(asset))
+            except OrderRefused:
+                count = 0  # an asset nobody asked for is not refused for how it describes itself
+            sources.append((key, [key] if count <= 1 else [f"{key}_{i + 1}" for i in range(count)]))
+            continue
+        separator = config.zarr.variable_separator
+        # The adapters mirror ``eo:bands`` into ``bands`` (M4-23); an item that did not pass one still names them.
+        bands = asset.get("bands") if isinstance(asset.get("bands"), list) else asset.get("eo:bands")
+        if separator is None or not isinstance(bands, list):
+            continue
+        for band in bands:
+            name = band.get("name") if isinstance(band, Mapping) else None
+            if isinstance(name, str) and name:
+                sources.append((f"{key}{separator}{name}", [name]))
+    return sources
+
+
+def _uncounted(item: Mapping[str, Any], key: str) -> bool:
+    """Whether the item says nothing of how many bands the COG asset ``key`` has: only the file knows."""
+    asset = item["assets"][key]
+    try:
+        return not _entries(asset)
+    except OrderRefused:
+        return True
+
+
+def derive_assets(
+    request: RecipeRequest, item: Mapping[str, Any], config: DatasetConfig, operators: OperatorRegistry
+) -> list[str]:
+    """The assets a raster order reads, from ``output.bands`` and the steps (adr/0020 §4, §5), in the item's order.
+
+    Only the bands the output needs are read: the planner works the chain from the end
+    (:func:`~earthx.processing.plan.needed_source_bands`), and each name maps to the one asset that carries it. The
+    names of the bands the steps add are checked here against every band of the data, the ones nobody reads included
+    (adr/0020 §6): they are free, and each is used once, ignoring case. ``422`` with the name for a band that no asset
+    carries, or that two assets carry (two Zarr groups can both have ``b04``: the order does not choose for the person).
+    """
+    assert isinstance(request.output, RasterOutput)
+    sources = band_sources(item, config)
+    owners: dict[str, str | None] = {}
+    for key, names in sources:
+        for name in names:
+            owners[name] = key if owners.get(name, key) == key else None
+    uncounted = {
+        key: re.compile(rf"{re.escape(key)}_[0-9]+")
+        for key, _ in sources
+        if config.zarr is None and _uncounted(item, key)
+    }
+    taken = {name.casefold() for name in owners}
+    added: set[str] = set()
+    for index, step in enumerate(request.steps):
+        name = step.params.get("name") if step.op == "band_math" and step.op_version >= 2 else None
+        if not isinstance(name, str):
+            continue
+        if name.casefold() in taken:
+            raise OrderRefused(422, f"step {index}: {name} is a band of the data", "applicable")
+        if name.casefold() in added:
+            raise OrderRefused(422, f"step {index}: {name} is used twice", "applicable")
+        added.add(name.casefold())
+    needed = needed_source_bands(plan_steps(request.steps, operators), request.output.bands)
+    for name in needed - owners.keys():
+        # ``dem_2`` of an asset the item does not count: the file decides whether it exists (the core checks it).
+        owner = next((key for key, pattern in uncounted.items() if pattern.fullmatch(name)), None)
+        if owner is not None:
+            owners[name] = owner
+    unknown = sorted(name for name in needed if name not in owners)
+    if unknown:
+        raise OrderRefused(
+            422,
+            f"the order names unknown band(s): {', '.join(unknown)}; the data has: {', '.join(sorted(owners))}",
+            "applicable",
+        )
+    shared = sorted(name for name in needed if owners[name] is None)
+    if shared:
+        raise OrderRefused(422, f"the band(s) {', '.join(shared)} are carried by more than one asset", "applicable")
+    wanted = {owners[name] for name in needed}
+    return [key for key, _ in sources if key in wanted]
+
+
 # --- bands, scaling source, version ------------------------------------------
 
 
@@ -1153,7 +1355,7 @@ def crop_recipe_json(
         for asset in assets
     ]
     data = {
-        "recipe_version": 1,
+        "recipe_version": RECIPE_VERSION,
         "inputs": [
             {
                 "name": "input",

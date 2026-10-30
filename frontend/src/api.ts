@@ -2,6 +2,7 @@
 // by default (the Vite dev server proxies /stac to the backend). Override
 // with VITE_API_BASE. Never talks to the prototype's `/api/…` routes.
 
+import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
 import type { Bbox, Collection, StacItem } from './types';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
@@ -131,9 +132,17 @@ export async function fetchCollections(): Promise<Collection[]> {
 // the raw request body, its name as a query parameter. `jsonOrThrow` turns a
 // `400`/`413`/other error into an `HttpError` the caller (`aoiFile.ts`) maps to
 // a message; a successful response is the bare geometry object, no envelope.
+//
+// NM4-57 (Otto, 30.10.2026): only the extension goes, as `aoi.<extension>`. A file name often names a person or a
+// place, and a URL stands in access logs; the route reads nothing but the extension anyway.
+export function uploadName(filename: string): string {
+  const extension = /\.([A-Za-z0-9]{1,8})$/.exec(filename)?.[1];
+  return extension ? `aoi.${extension}` : 'aoi';
+}
+
 export async function uploadAoi(file: Blob, filename: string): Promise<GeoJSON.Geometry> {
   return jsonOrThrow<GeoJSON.Geometry>(
-    await fetch(`${BASE}/aoi/upload?filename=${encodeURIComponent(filename)}`, {
+    await fetch(`${BASE}/aoi/upload?filename=${uploadName(filename)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
       body: file,
@@ -186,6 +195,10 @@ export interface SearchQuery {
   // parameter, only in the `POST` body below.
   intersects?: GeoJSON.Geometry;
   datetime?: string;
+  // DS-02c: the search filters of each dataset on its own (`query_by_collection`, plan §6.4 rule 3a) — a dataset
+  // gets only what its registry entry offers, so nothing is dropped on the way. Only datasets with a filter set
+  // are named; every key must be one of `collections`.
+  queryByCollection?: FilterQueryByCollection;
   limit?: number;
   token?: string;
 }
@@ -264,6 +277,7 @@ export function buildSearchBody(q: SearchQuery): Record<string, unknown> {
   if (q.bbox) body.bbox = q.bbox;
   if (q.intersects) body.intersects = q.intersects;
   if (q.datetime) body.datetime = q.datetime;
+  if (q.queryByCollection && Object.keys(q.queryByCollection).length > 0) body.query_by_collection = q.queryByCollection;
   if (q.limit) body.limit = q.limit;
   if (q.token) body.token = q.token;
   return body;
@@ -505,6 +519,45 @@ export async function fetchStatisticsAt(url: string): Promise<Record<string, Ban
   return jsonOrThrow(await fetch(url));
 }
 
+// The statistics over the AOI of an order (NM4-19, `api/area_statistics.py`): the tiler counts them as the job does,
+// so that the colour scale of the preview is the one of the result. The AOI goes in the body and nowhere else: the
+// path names the dataset alone, and no error text of the answer is kept.
+export interface AreaStatistics {
+  bands: { name: string; unit: string | null; statistics: Record<string, unknown> }[];
+  // `false`: read on a coarser raster (a window above 2048² pixels), the values can differ from the result's.
+  exact: boolean;
+  factor: number;
+}
+
+export function parseAreaStatistics(body: unknown): AreaStatistics {
+  const { bands, exact, factor } = (body ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(bands) || bands.length === 0 || typeof exact !== 'boolean') {
+    throw new Error('the server answered with statistics the panel cannot read');
+  }
+  return {
+    bands: bands.map((band) => {
+      const { name, unit, statistics } = (band ?? {}) as Record<string, unknown>;
+      return {
+        name: typeof name === 'string' ? name : '',
+        unit: typeof unit === 'string' ? unit : null,
+        statistics: statistics !== null && typeof statistics === 'object' ? (statistics as Record<string, unknown>) : {},
+      };
+    }),
+    exact,
+    factor: typeof factor === 'number' && Number.isFinite(factor) ? factor : 1,
+  };
+}
+
+// `order`: the order of the job (`processing.ts::Order`), without the envelope of the job route.
+export async function postAreaStatistics(datasetId: string, order: unknown): Promise<AreaStatistics> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(datasetId)}/statistics`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(order),
+  });
+  return parseAreaStatistics(await jsonOrThrow<unknown>(res));
+}
+
 // Pages through `nextToken` until the result is complete or `maxItems` is
 // reached — the API never sorts (D8, `earthx.api.main`), so both "the nearest
 // date" (runSearch) and "the footprints for a coverage cell" (M2-07c) have to
@@ -565,9 +618,9 @@ export async function searchAllPages(
   };
 }
 
-// The coverage route (`GET /coverage/{dataset_id}`, M2-05b) lives on the
-// `api` process's base app, outside `/stac` — a different namespace, same
-// same-origin dev-proxy pattern (vite.config.ts).
+// The coverage route (`/coverage/{dataset_id}`, M2-05b: GET for the map extent, POST for an AOI since NM4-57)
+// lives on the `api` process's base app, outside `/stac` — a different namespace, same same-origin dev-proxy
+// pattern (vite.config.ts).
 export type CoverageCompleteness = 'complete' | 'truncated' | 'sample';
 
 export interface CoverageCell {
@@ -606,22 +659,61 @@ export interface CoverageResponse {
   ignored_filters: string[];
 }
 
-export interface CoverageParams {
+interface CoverageQuestion {
   datasetId: string;
   zoom: number;
-  bbox?: Bbox;
   datetime?: string;
+  // DS-02c: the search filters of the dataset, as JSON in the form of the STAC query extension (`query` of
+  // `GET /coverage/{id}`, DS-02b). Replaces `max_cloud_cover`.
+  query?: FilterQuery;
 }
 
+// Either the visible map extent or the box of an AOI, never both (NM4-57).
+export type CoverageParams = CoverageQuestion &
+  (
+    | {
+        // The visible map extent, rounded to the block grid of `coverage.ts` (`roundBboxToGrid`): no AOI, so it may
+        // stand in the URL of a GET. The route refuses a box that is off that grid.
+        bbox?: Bbox;
+        aoiBbox?: never;
+      }
+    | {
+        // The box of the AOI (M4 Q8): never in a URL, always in the body of a POST.
+        aoiBbox: Bbox;
+        bbox?: never;
+      }
+  );
+
+const hasFilters = (query?: FilterQuery): query is FilterQuery => !!query && Object.keys(query).length > 0;
+
+// The URL of a coverage question without an AOI. It never carries `aoiBbox`.
 export function buildCoverageUrl(p: CoverageParams): string {
   const params = new URLSearchParams({ zoom: String(p.zoom) });
   if (p.bbox) params.set('bbox', p.bbox.join(','));
   if (p.datetime) params.set('datetime', p.datetime);
+  if (hasFilters(p.query)) params.set('query', JSON.stringify(p.query));
   return `${BASE}/coverage/${encodeURIComponent(p.datasetId)}?${params.toString()}`;
 }
 
+// The body of `POST /coverage/{id}` (`CoverageBody` in `api/coverage_route.py`): the AOI, and what the GET
+// carries in its query string, with the filters as an object.
+export function buildCoverageBody(p: CoverageParams): Record<string, unknown> {
+  const body: Record<string, unknown> = { zoom: p.zoom };
+  if (p.aoiBbox) body.bbox = p.aoiBbox;
+  if (p.datetime) body.datetime = p.datetime;
+  if (hasFilters(p.query)) body.query = p.query;
+  return body;
+}
+
 export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse> {
-  return jsonOrThrow(await fetch(buildCoverageUrl(p)));
+  if (!p.aoiBbox) return jsonOrThrow(await fetch(buildCoverageUrl(p)));
+  return jsonOrThrow(
+    await fetch(`${BASE}/coverage/${encodeURIComponent(p.datasetId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildCoverageBody(p)),
+    }),
+  );
 }
 
 // POST /collections/{dataset}/download (M2-06): the AOI crop as a ZIP, streamed

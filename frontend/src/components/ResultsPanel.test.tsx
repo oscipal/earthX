@@ -10,11 +10,14 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import CSS from '../index.css?raw';
 import { datasetsFrom } from '../datasets';
 import { buildSections } from '../sections';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ResultsPanel from './ResultsPanel';
+import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './ResultsEye';
+import { RESULTS_ON_TOP_TIP } from './ResultsToTop';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -275,33 +278,27 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(container.querySelector('.results-panel')).toBeNull();
   });
 
-  it('has no "Pin to layers" row for a dataset drawn as a crop', () => {
+  it('has no "Clear all" in its head, only "Results" on top of the layers and the eye of the results on the map', () => {
     load(MIXED);
-    const crop = { id: 'c', name: 'Elevation model · x', visible: true, opacity: 1, overlays: [], restore: { datasetId: 'dem' } } as never;
-    useAppStore.setState({ searchCrops: [crop] });
-    openList();
-    act(() => options()[2].click());
-    expect(container.textContent).not.toContain('Pin to layers');
-    useAppStore.setState({ searchCrops: [] });
+    expect([...container.querySelectorAll<HTMLButtonElement>('.results-head button')].map((b) => b.title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
   });
 
-  it('has no "Clear all" in its head, only the switch for the map', () => {
+  // NM4-59: the eye replaces "Hide results" / "Show results"; it is the eye of the entry "Results" in the layer manager.
+  it('names in its tooltip what the eye does, shows the state by the eye, and takes nothing from the list', () => {
     load(MIXED);
-    expect([...container.querySelectorAll('.results-head button')].map((b) => b.textContent)).toEqual(['Hide results']);
-  });
-
-  it('names what the switch does, never the state: "Hide results", then "Show results", and takes nothing from the list', () => {
-    load(MIXED);
-    const toggle = () => container.querySelector('.results-head button') as HTMLButtonElement;
+    const toggle = () => container.querySelector('.results-head button[aria-pressed]') as HTMLButtonElement;
     expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
     act(() => toggle().click());
     expect(useAppStore.getState().resultsOnMap).toBe(false);
-    expect(toggle().textContent).toBe('Show results');
+    expect(toggle().title).toBe(SHOW_RESULTS_TIP);
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    expect(toggle().classList.contains('off')).toBe(true);
     expect(container.querySelectorAll('.result-group')).toHaveLength(2);
     expect(container.querySelector('h2')?.textContent).toBe('Results (0/3)');
     act(() => toggle().click());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().textContent).toBe('Hide results');
+    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
   });
 });
 
@@ -491,5 +488,43 @@ describe('"Select all" boxes (M4-29)', () => {
     const label = text(container.querySelector('.selection-row label'));
     expect(label).not.toContain('(of 40)');
     expect(label).toContain('more matched in total');
+  });
+});
+
+// Sticking cannot be laid out in jsdom: what the CSS promises is read off the file, and `e2e/group-heads.cjs` scrolls
+// it in a real browser (NM4-09).
+describe('the group heads in index.css', () => {
+  const rule = (selector: string): string => {
+    const start = CSS.indexOf(`\n${selector} {`);
+    expect(start, `no rule for ${selector}`).toBeGreaterThanOrEqual(0);
+    return CSS.slice(start, CSS.indexOf('}', start));
+  };
+
+  it('pins the row of the head, with its select box and caret, to the top of the list', () => {
+    const head = rule('.result-group-row');
+    expect(head).toContain('position: sticky');
+    expect(head).toContain('top: 0');
+  });
+
+  it('gives the pinned head a solid background, so that scenes do not show through', () => {
+    expect(rule('.result-group-row')).toMatch(/background: linear-gradient\(var\(--panel-bg\), var\(--panel-bg\)\), var\(--map-bg\)/);
+  });
+
+  it('lets the list scroll with no padding above, or the head would stop below its edge', () => {
+    const list = rule('.results-list');
+    expect(list).toContain('overflow-y: auto');
+    expect(list).toMatch(/padding: 0 \d+px \d+px/);
+  });
+
+  it('scrolls a focused scene into view below the head, not under it', () => {
+    expect(rule('.results-list')).toContain('scroll-padding-top: var(--group-head-h)');
+    expect(rule('.result-group-row')).toContain('min-height: var(--group-head-h)');
+  });
+
+  it('keeps the head in the group, in the markup, so that the next group pushes it out', () => {
+    load(MIXED);
+    const group = container.querySelector('.result-group')!;
+    expect(group.querySelector(':scope > .result-group-row .result-group-head')).not.toBeNull();
+    expect(container.querySelector('.results-list > .result-group')).not.toBeNull();
   });
 });

@@ -29,11 +29,10 @@ from earthx.processing import RunCancelled, run
 from earthx.processing import core as core_module
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
-from earthx.processing.recipe import recipe_from_data
 from earthx.processing.source import Source
 from tests.conftest import own_log_text
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.testops import OPERATORS
 
 ZONE_32, ZONE_33 = "EPSG:32632", "EPSG:32633"
@@ -118,7 +117,7 @@ def _recipe(items: list[str], *, steps: list | None = None, scale: float | None 
 
 
 def _run(data: dict, workdir: Path, progress=lambda done, total: None):
-    return run(recipe_from_data(data, OPERATORS), workdir=workdir, progress=progress, operators=OPERATORS)
+    return run(recipe_of_data(data, OPERATORS), workdir=workdir, progress=progress, operators=OPERATORS)
 
 
 def _at(dataset: rasterio.DatasetReader, data: numpy.ma.MaskedArray, x: float, y: float) -> float | None:
@@ -410,7 +409,7 @@ class TestTheOrderOfAnOverpass:
 def test_the_work_directory_stays_within_what_the_supervisor_checked(tmp_path: Path) -> None:
     """The disk check of M4-11a (``disk_needed``) holds for a mosaic: the peak is below need minus reserve."""
     data = _recipe(["A", "B", "C"])
-    recipe = recipe_from_data(data, OPERATORS)
+    recipe = recipe_of_data(data, OPERATORS)
     peak = 0
     done = threading.Event()
 
@@ -434,8 +433,8 @@ def test_the_work_directory_stays_within_what_the_supervisor_checked(tmp_path: P
 
 
 def test_the_need_does_not_grow_with_the_scenes_but_with_the_area() -> None:
-    one = disk_needed(recipe_from_data(_recipe(["A"]), OPERATORS), OPERATORS)
-    three = disk_needed(recipe_from_data(_recipe(["A", "B", "C"]), OPERATORS), OPERATORS)
+    one = disk_needed(recipe_of_data(_recipe(["A"]), OPERATORS), OPERATORS)
+    three = disk_needed(recipe_of_data(_recipe(["A", "B", "C"]), OPERATORS), OPERATORS)
     assert one == three  # the same AOI and the same bands: the same output
 
 
@@ -498,14 +497,14 @@ class TestTheRuleOfTheExport:
         export_dir.mkdir()
         raster = {"kind": "raster", "format": "cog", "dtype": "uint8"}
         mosaic = run(
-            recipe_from_data(self._recipes(items, raster, footprints=False), OPERATORS),
+            recipe_of_data(self._recipes(items, raster, footprints=False), OPERATORS),
             workdir=mosaic_dir, progress=lambda done, total: None, operators=OPERATORS,
         )  # fmt: skip
         attachments = Attachments(
             files={"ATTRIBUTION.txt": "x", "citation.bib": "x", "aoi.geojson": "{}"}, attribution=("synthetic",)
         )
         export = run(
-            recipe_from_data(self._recipes(items, dict(CROP), footprints=True) | {"recipe_id": "R" * 22}, OPERATORS),
+            recipe_of_data(self._recipes(items, dict(CROP), footprints=True) | {"recipe_id": "R" * 22}, OPERATORS),
             workdir=export_dir, progress=lambda done, total: None, operators=OPERATORS, attachments=attachments,
         )  # fmt: skip
         with zipfile.ZipFile(export.path) as archive:

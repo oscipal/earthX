@@ -70,8 +70,9 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 
 const state = () => useAppStore.getState();
 const click = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+// By its text, or by its tooltip for a button without text (the eye of the results, NM4-59).
 const buttonWith = (text: string): HTMLButtonElement => {
-  const found = [...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes(text));
+  const found = [...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes(text) || b.title.includes(text));
   if (!found) throw new Error(`no button "${text}" in ${container.textContent?.slice(0, 200)}`);
   return found;
 };
@@ -98,7 +99,7 @@ beforeEach(async () => {
   useAppStore.setState({
     dock: 'controls', datasets: datasetsFrom([COLLECTION]), selectedDatasetIds: [DATASET], datasetId: DATASET, aoi: AOI, dateFrom: '', dateTo: '',
     sections: [], openSectionId: null, items: [], groups: [], selectedIds: [], layers: [], searchContext: null, searching: false, loadingMore: false,
-    loadMoreError: null, loadMoreUsed: false, focusMode: false, resultViewLayerId: null, searchCrops: [], error: null, notice: null, resultsOnMap: true,
+    loadMoreError: null, loadMoreUsed: false, focusMode: false, resultViewLayerId: null, error: null, notice: null, resultsOnMap: true,
   });
   useProcessingStore.setState({ open: false, jobs: [] });
   await act(() => state().runSearch());
@@ -121,7 +122,6 @@ function expectNothingOnMap() {
   expect(shown.overlay).toEqual([]);
   expect(shown.highlight).toEqual([]);
   for (const id of idsOf(shown.clickable)) expect(state().focusMode && Object.hasOwn(state().downloaded, id)).toBe(true);
-  expect(shown.cropsOf).toEqual([]);
 }
 
 // A view of the scenes open (the ticked ones, or the open time step), as the bar of the selection opens it.
@@ -211,6 +211,25 @@ describe('a new search shows the results (Otto, 27.10.2026)', () => {
   });
 });
 
+describe('"Hide results" ends the playing of the timeline (NM4-18, Otto, 30.10.2026)', () => {
+  it('stops it when it hides the results, and starts nothing when it shows them again', () => {
+    act(() => state().setPlaying(true));
+    act(() => state().toggleResultsOnMap());
+    expect(state().resultsOnMap).toBe(false);
+    expect(state().playing).toBe(false);
+    act(() => state().toggleResultsOnMap());
+    expect(state().resultsOnMap).toBe(true);
+    expect(state().playing).toBe(false);
+  });
+
+  it('leaves the playing alone when it shows the results that are already hidden', () => {
+    act(() => state().toggleResultsOnMap());
+    act(() => state().setPlaying(true));
+    act(() => state().toggleResultsOnMap());
+    expect(state().playing).toBe(true);
+  });
+});
+
 describe('"Hide results" hides a ticked scene too, and ticking while hidden shows the results (Otto, 28.10.2026)', () => {
   it('hiding takes the ticked scenes off the map, and their ticks stay', () => {
     act(() => { state().toggleSelected('a0'); state().toggleSelected('b0'); });
@@ -236,12 +255,12 @@ describe('"Hide results" hides a ticked scene too, and ticking while hidden show
       expect(state().resultsOnMap).toBe(false);
     });
 
-    it('switches to "Show results", in the button too and in the browser', () => {
+    it('opens the eye, in the button too and in the browser', () => {
       act(() => useAppStore.setState({ dock: 'results' }));
-      expect(buttonWith('Show results').textContent).toBe('Show results');
+      expect(buttonWith('Show results').title).toBe('Show results on the map');
       act(() => state().toggleSelected('a0'));
       expect(state().resultsOnMap).toBe(true);
-      expect(buttonWith('Hide results').textContent).toBe('Hide results');
+      expect(buttonWith('Hide results').title).toBe('Hide results on the map');
       expect(window.localStorage.getItem('earthx.results')).toBe('show');
       expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['a1', 'a0']);
     });
@@ -304,7 +323,7 @@ describe('Otto\'s click path (27.10.2026)', () => {
     await flush();
     expect(state().focusMode).toBe(true);
     expect(state().resultsOnMap).toBe(false);
-    expect(buttonWith('Show results').textContent).toBe('Show results');
+    expect(buttonWith('Show results').title).toBe('Show results on the map');
     expect(state().selectedIds).toEqual([]);
     const shown = resultsOnMapOf(state());
     expect(shown.quicklooks).toEqual([]);
@@ -330,7 +349,7 @@ describe('Otto\'s click path (27.10.2026)', () => {
     expect(resultsOnMapOf(state()).overlay).toEqual([]);
   });
 
-  it('"Show results" with the view open lays the results over the quicklooks of browsing, under the view', async () => {
+  it('the eye with the view open puts the results on the map again (over the view, NM4-59)', async () => {
     act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
     click(buttonWith('Crop to AOI'));
     await flush();
@@ -354,12 +373,12 @@ describe('Otto\'s click path (27.10.2026)', () => {
     expect(state().downloaded).toEqual({});
   });
 
-  it('the switch says what a click does, and hiding takes everything off the map, a ticked scene included', async () => {
+  it('the eye says what a click does, and hiding takes everything off the map, a ticked scene included', async () => {
     act(() => useAppStore.setState({ dock: 'results' }));
-    expect(buttonWith('Hide results').textContent).toBe('Hide results');
+    expect(buttonWith('Hide results').title).toBe('Hide results on the map');
     act(() => state().toggleSelected('a0'));
     click(buttonWith('Hide results'));
-    expect(buttonWith('Show results').textContent).toBe('Show results');
+    expect(buttonWith('Show results').title).toBe('Show results on the map');
     expectNothingOnMap();
     // Leaving a view brings nothing back, and the tick stays.
     await openView();

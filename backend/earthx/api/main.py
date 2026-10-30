@@ -21,6 +21,7 @@ keeps working unchanged.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -32,10 +33,17 @@ from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
 from stac_fastapi.pgstac.models.extensions import Extensions
 
 from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
+from earthx.api.aoi_cloud_filter import settle
 from earthx.api.aoi_upload_route import router as aoi_upload_router
 from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.crs_info import switch_off_proj_network
-from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool, resolve_tiler_base
+from earthx.api.dependencies import (
+    build_gateway,
+    build_geocoder,
+    cache_pool,
+    policy_from_registry,
+    resolve_tiler_base,
+)
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
 from earthx.api.item_source import build_item_source, check_item_holdings
@@ -44,10 +52,15 @@ from earthx.api.processing_route import JobApi
 from earthx.api.processing_route import router as processing_router
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry
+from earthx.gateway import CachingResolver, ReadSlots
+from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging
 from earthx.objectstore.results import Store
+from earthx.processing.index_presets import check_index_presets
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.operators import OperatorRegistry
+
+LOGGER = logging.getLogger("earthx.api.main")
 
 # adr/0005 rule VI, plan §6 F2, M3-13 F5: `pagination` describes our own paging;
 # `filter` (CQL2) and `sort` are two extensions the federated path cannot yet honour,
@@ -65,6 +78,8 @@ _PREFIX_PATH = "/stac"
 _JOB_POOL_MIN_SIZE = 1
 _JOB_POOL_MAX_SIZE = 4
 _JOB_POOL_TIMEOUT_S = 5.0
+# DS-03a2: how long the end of the process waits for the cloud-share measures a response left running.
+_SETTLE_TIMEOUT_S = 10.0
 
 
 @asynccontextmanager
@@ -124,6 +139,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 try:
                     yield
                 finally:
+                    # Measures of the cloud share that a response left running store into the pool closed below.
+                    try:
+                        await asyncio.wait_for(settle(), _SETTLE_TIMEOUT_S)
+                    except TimeoutError:
+                        LOGGER.warning("measures of the cloud share still running at shutdown")
                     if geocoder is not None:
                         await geocoder_gateway.aclose()
             finally:
@@ -145,9 +165,11 @@ def build_app(
     shape ``api.tiler.build_app`` has; the process entrypoint below takes the defaults.
 
     A registry entry that asks an adapter for something ``adapters`` lacks stops
-    the build (:func:`~earthx.adapters.check_adapter_specs`, M4-01b F1).
+    the build (:func:`~earthx.adapters.check_adapter_specs`, M4-01b F1), and so does an index preset
+    ``band_math`` would refuse (:func:`~earthx.processing.index_presets.check_index_presets`, NM4-14).
     """
     check_adapter_specs(registry, adapters)
+    check_index_presets(registry)
     # M3-16: this process's own JSON logging, before anything can log a line
     # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
     # `RequestIdMiddleware` below is this process's only access log.
@@ -174,6 +196,14 @@ def build_app(
     # (`earthx_job_api`) is set once the process has its pools.
     app.state.earthx_operators = operators
     app.state.earthx_job_api = None
+    # DS-03: the search measures the cloud share of a scene itself (`api.aoi_cloud_filter`), so this process reads
+    # rasters like the tiler: the registry's allowlist, the gateway's GDAL options, and one limit on the readers
+    # per host that every search of the process shares (plan §6.9 F2d).
+    policy = policy_from_registry(registry)
+    app.state.earthx_policy = policy
+    app.state.earthx_resolver = CachingResolver()
+    app.state.earthx_gdal_options = gdal_options(policy)
+    app.state.earthx_read_slots = ReadSlots(policy)
 
     @app.get("/health")
     async def health() -> dict:

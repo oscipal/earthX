@@ -135,6 +135,15 @@ body.dragging * {
 .draggable.fill {
   width: 100%;
 }
+/* The bar of the selection lies over the other bands where they meet: a band that was moved stays where it was put, and
+   the bar that comes with a ticked scene takes the place at the bottom of the stack, over it, not behind it. */
+.draggable[data-band='selection'] {
+  z-index: 1;
+}
+/* The labels of the timeline do not wrap: its band stays within the stack, and they give way inside it. */
+.draggable[data-band='timeline'] {
+  max-width: 100%;
+}
 /* controls inside a draggable keep their own affordance */
 .draggable button,
 .draggable input,
@@ -247,6 +256,59 @@ body.dragging * {
   padding: 6px 16px;
   align-self: flex-end;
 }
+/* "auto-scale" on top and "Apply" under it, both of one format, together as high as the fields they stand beside (the
+   input of the colormap, vmin and vmax); "Save", the one blue button, beside them and as high as the two together (Otto,
+   30.10.2026). A view that is no layer's has no "Save": the two stay in the left column. */
+.vc-buttons {
+  --row-height: 34px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 4px 6px;
+  align-self: flex-end;
+  box-sizing: border-box;
+  height: var(--row-height);
+  min-width: 0;
+}
+.vc-buttons > button {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0 8px;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.vc-buttons > .vc-auto {
+  grid-area: 1 / 1;
+}
+.vc-buttons > .vc-apply {
+  grid-area: 2 / 1;
+}
+.vc-buttons > .vc-save {
+  grid-area: 1 / 2 / 3 / 3;
+  font-size: 12px;
+}
+.vc-buttons > button[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.result-controls {
+  --row-height: 34px;
+}
+.result-controls .vc-field select,
+.result-controls .vc-field input[type='number'] {
+  height: var(--row-height);
+  box-sizing: border-box;
+}
+.result-controls .vc-buttons {
+  width: 176px;
+}
 .vc-field {
   display: flex;
   flex-direction: column;
@@ -282,8 +344,8 @@ body.dragging * {
 }
 /* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
    head, so the rows of buttons are the same width and that width is the width of the view. Row 1: colormap three
-   columns, vmin and vmax two each, "auto-scale" three, "Apply" two. Row 2: four buttons, three columns each. Every
-   control of row 1 is as high as "Apply", which stands on the same line as the fields. Below 600 px the grid has four
+   columns, vmin and vmax two each, and five for "auto-scale" with "Apply" under it and "Save" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
+   four buttons, three columns each. Every field of row 1 is 34px high. Below 600 px the grid has four
    columns and the rows wrap; no text ends up outside its cell. */
 .scene-view {
   --cell: 36px;
@@ -352,10 +414,7 @@ body.dragging * {
   grid-column: span 2;
 }
 .scene-view .vc-render > :nth-child(4) {
-  grid-column: span 3;
-}
-.scene-view .vc-render > :nth-child(5) {
-  grid-column: span 2;
+  grid-column: span 5;
 }
 .scene-view .vc-actions > * {
   grid-column: span 3;
@@ -373,19 +432,6 @@ body.dragging * {
   height: var(--row-height);
   box-sizing: border-box;
 }
-/* "auto-scale" and "Apply": one height, the text in the middle, on the line the fields stand on. */
-.scene-view .vc-render > button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-width: 0;
-  height: var(--row-height);
-  padding: 0 6px;
-  font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
-}
 @media (max-width: 599px) {
   .scene-view {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -393,8 +439,11 @@ body.dragging * {
   .scene-view .vc-render > :nth-child(1) {
     grid-column: span 4;
   }
-  .scene-view .vc-render > :nth-child(n + 2) {
+  .scene-view .vc-render > :nth-child(n + 2):nth-child(-n + 3) {
     grid-column: span 2;
+  }
+  .scene-view .vc-render > :nth-child(4) {
+    grid-column: span 4;
   }
   .scene-view .vc-actions > * {
     grid-column: span 2;
@@ -912,30 +961,34 @@ input[type='date']:focus {
   color: #ff5a6e;
   font-size: 10px;
 }
-.results-map-toggle {
-  padding: 0 10px;
-  background: none;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.2;
-  cursor: pointer;
+/* The eye of the results on the map (NM4-59), the same as in the entry "Results" of the layer manager, and left of it
+   "Results" on top of the layers, greyed out while "Results" is on top. */
+.results-head-switches {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
-.results-map-toggle:hover,
-.results-map-toggle:focus-visible {
-  background: var(--row-hover);
-  outline: none;
+.results-head .lm-eye,
+.results-to-top {
+  width: 24px;
+  height: 22px;
+}
+.results-to-top[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: not-allowed;
 }
 .results-list {
+  --group-head-h: 34px;
   flex: 1 1 auto;
   min-height: 0;
   list-style: none;
   margin: 0;
-  padding: 6px;
+  /* No padding at the top: a sticky head would stop that far below the edge, with rows passing above it. */
+  padding: 0 6px 6px;
   overflow-y: auto;
   overflow-x: hidden;
+  /* A row focused by keyboard scrolls into view below the pinned group head, not under it. */
+  scroll-padding-top: var(--group-head-h);
 }
 .result-row {
   display: flex;
@@ -1287,6 +1340,160 @@ input[type='date']:focus {
   white-space: normal;
 }
 
+/* --- Advanced search in the control menu (DS-02c) ---
+   The dataset box is the one of the results (`DatasetSelect`), without the tinted card around it. A wrong field is
+   red in both themes, dark enough on the light panel to be read. */
+.app[data-theme='tech'] {
+  --invalid: #ff6b6b;
+}
+.app[data-theme='normal'] {
+  --invalid: #c62f2f;
+}
+.dataset-select.plain {
+  padding: 0;
+  background: none;
+  border-bottom: none;
+}
+.advanced-btn {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.advanced-btn[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.advanced-btn.wrong {
+  border-color: var(--invalid);
+  color: var(--invalid);
+}
+/* The pop-up lies over the map, as wide as the button it opens from; the heading (the dataset box) and the buttons stay
+   in view, the fields between them scroll. */
+.popover.advanced-popup {
+  overflow: hidden;
+  padding: 10px;
+}
+.advanced-popup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.advanced-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.filter-group-title {
+  margin: 0;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--panel-border);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.advanced-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.advanced-actions .ghost-btn,
+.advanced-actions .primary-btn {
+  padding: 8px 16px;
+  font-size: 11px;
+}
+.filter-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.filter-title {
+  padding: 0;
+  font-size: 11px;
+  color: var(--text);
+  cursor: help;
+}
+/* from [  ] to [  ] unit: the fields share what the unit leaves, however narrow the panel. */
+.filter-range {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.filter-range input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+.filter-range input[type='text']:focus {
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+.filter-range input[aria-invalid='true'],
+.filter-range input[aria-invalid='true']:focus {
+  border-color: var(--invalid);
+}
+.filter-field .hint-text.error {
+  color: var(--invalid);
+}
+.filter-unit {
+  min-width: 1ch;
+  color: var(--text);
+}
+.filter-values {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.filter-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.filter-check input {
+  margin: 0;
+}
+
 /* --- grouped (mosaic) results --- */
 .result-group {
   border-bottom: 1px solid var(--panel-border);
@@ -1308,9 +1515,21 @@ input[type='date']:focus {
 .multi-select-toggle input {
   margin: 0;
 }
+.results-list > .result-group:first-child {
+  margin-top: 6px;
+}
+/* The head of the group in view stays at the top of the list until the next group's head pushes it out (NM4-09): it
+   sticks inside its own group. Opaque, as rows scroll under it: the panel colour over the map's, which is what the
+   translucent panel looks like in front of. */
 .result-group-row {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
+  box-sizing: border-box;
+  min-height: var(--group-head-h);
+  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
 }
 .rg-select {
   flex: none;
@@ -1415,6 +1634,9 @@ input[type='date']:focus {
   gap: 12px;
   padding: 10px 16px;
   width: 100%;
+  /* Room for three dates, as the labels are the date only; never wider than the space between the rail and the edge. */
+  min-width: min(380px, calc(100vw - var(--dock-offset) - 32px));
+  box-sizing: border-box;
 }
 .play-btn {
   width: 36px;
@@ -1433,17 +1655,35 @@ input[type='date']:focus {
 }
 .time-track {
   flex: 1;
+  min-width: 0;
 }
 .time-labels {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   font-size: 10px;
   color: var(--muted);
   margin-bottom: 2px;
 }
+/* The ends give way first, with an ellipsis; so does a label longer than the band (a key with no date keeps its label). */
 .time-labels strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text);
   font-size: 11px;
+  white-space: nowrap;
+}
+.time-labels span {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.time-labels span:last-child {
+  text-align: right;
 }
 .time-track input[type='range'] {
   width: 100%;
@@ -1453,6 +1693,9 @@ input[type='date']:focus {
   font-size: 11px;
   color: var(--muted);
   flex: 0 0 auto;
+  /* Room for "Loading…" (NM4-18), so that the slider does not move when it comes and goes. */
+  min-width: 7ch;
+  text-align: right;
 }
 
 /* --- download bar --- */
@@ -1554,12 +1797,16 @@ input[type='date']:focus {
   color: var(--muted);
   cursor: not-allowed;
 }
-.lm-btn.has-tip {
-  position: relative;
+.lm-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
 }
-.lm-btn.has-tip::after {
-  top: calc(100% + 4px);
-  right: 0;
+.lm-eye:hover:not([aria-disabled='true']),
+.lm-eye:focus-visible {
+  border-color: var(--accent);
+  outline: none;
 }
 .lm-eye.off {
   color: var(--muted);
@@ -1603,6 +1850,13 @@ input[type='date']:focus {
 .lm-name:hover {
   background: var(--row-hover);
   color: var(--accent);
+}
+/* The entry "Results" (NM4-59): its name opens nothing. */
+.results-name,
+.results-name:hover {
+  cursor: default;
+  background: none;
+  color: var(--text);
 }
 .lm-opacity {
   width: 100%;
@@ -1680,15 +1934,13 @@ input[type='date']:focus {
   line-height: 16px;
   text-align: center;
 }
-/* A tooltip that shows on hover and on keyboard focus (UI-01 §4): `data-tip` is its text. */
-.has-tip::after,
-.tip::after {
-  content: attr(data-tip);
-  position: absolute;
-  z-index: 30;
-  display: none;
+/* The tooltip (UI-01 §4): `TipLayer` draws the `data-tip` text of the element under the pointer or focus in
+   `body`, above everything else and inside the window. */
+.tip-layer {
+  position: fixed;
+  z-index: 1000;
   width: max-content;
-  max-width: 260px;
+  max-width: min(260px, calc(100vw - 16px));
   padding: 5px 8px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
@@ -1698,24 +1950,14 @@ input[type='date']:focus {
   font-size: 11px;
   font-weight: 400;
   line-height: 1.4;
-  white-space: normal;
+  /* A line break in the text stays one: the methods of a resampling choice stand one below the other. */
+  white-space: pre-line;
   text-align: left;
   pointer-events: none;
 }
-.has-tip:hover::after,
-.has-tip:focus-visible::after,
-.tip:hover::after,
-.tip:focus-visible::after {
-  display: block;
-}
-.rail-btn::after {
-  top: 50%;
-  left: calc(100% + 8px);
-  transform: translateY(-50%);
-  white-space: nowrap;
-}
 .tip {
-  position: relative;
+  /* The labels of the panel are in capitals, and the capital of ⓘ is another sign. */
+  text-transform: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1730,10 +1972,6 @@ input[type='date']:focus {
 .tip:focus-visible {
   outline: 1px solid var(--accent);
   border-radius: 4px;
-}
-.tip::after {
-  top: calc(100% + 4px);
-  right: 0;
 }
 /* Beside the rail, from the top to the foot of the window; the panel inside fills it. */
 .dock {
@@ -1923,15 +2161,6 @@ a.pm-icon:hover {
 .ghost-btn[aria-disabled='true'] {
   color: var(--muted);
   cursor: not-allowed;
-}
-.pm-icon.has-tip,
-.ghost-btn.has-tip {
-  position: relative;
-}
-.pm-icon.has-tip::after,
-.ghost-btn.has-tip::after {
-  top: calc(100% + 4px);
-  right: 0;
 }
 .pm-icon[aria-disabled='true']:hover,
 .pm-icon[aria-disabled='true']:focus-visible {
@@ -2511,6 +2740,44 @@ a.pm-icon:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+/* A label ("New", "Data") and the chips of the output list (NM4-43e). */
+.pp-chip-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.pp-chip-row > .pp-help {
+  flex: none;
+  min-width: 32px;
+}
+.pp-step-op {
+  color: var(--muted);
+}
+/* The label of a field with the ⓘ beside it, and the unit small under the resolution (NM4-43e, review of #250). */
+.pp-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+/* A hint inside a label is a sentence, not a label: no capitals. */
+.vc-field .hint-text,
+.vc-field .pp-unit-line {
+  text-transform: none;
+  letter-spacing: normal;
+}
+.pp-unit-line {
+  font-size: 10px;
+  color: var(--muted);
+}
+.pp-class-table {
+  margin-left: 8px;
+  font-size: 10px;
+}
+/* A name that breaks a rule: the frame in the colour of an error, the reason in a hint under the field. */
+.pp-field input[aria-invalid='true'],
+.pp-field textarea[aria-invalid='true'] {
+  border-color: #ff6b6b;
 }
 .pp-chip,
 .pp-seg {

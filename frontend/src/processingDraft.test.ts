@@ -20,6 +20,12 @@ const INFOS: Record<string, unknown> = {
   'synthetic-zarr': zarr,
   'cop-dem-glo-30': cop,
 };
+// Every band of the data, as the panel offers them (the names a result may not take).
+const DATA: Record<string, string[]> = {
+  'sentinel-2-c1-l2a': ['blue', 'green', 'red', 'rededge1', 'rededge2', 'rededge3', 'nir', 'nir08', 'nir09', 'swir16', 'swir22', 'scl'],
+  'synthetic-zarr': ['b04', 'b08'],
+  'cop-dem-glo-30': ['data'],
+};
 const infoOf = (datasetId: string) => processInfo(INFOS[datasetId] as ProcessDescription);
 const keys = () => {
   let key = 0;
@@ -35,7 +41,8 @@ function roundTrip(order: Order) {
     area: draft.aoi ? 'aoi' : 'scene',
     aoi: draft.aoi,
     steps: draft.steps,
-    assets: draft.assets,
+    bands: draft.bands,
+    data: DATA[draft.datasetId],
     dtype: draft.dtype ?? '',
     info,
   });
@@ -53,6 +60,16 @@ describe('draftFromOrder', () => {
     const { problems, built } = roundTrip(fixture.inputs.recipe);
     expect(problems).toEqual([]);
     expect(built.order).toEqual(fixture.inputs.recipe);
+  });
+
+  it.each(withSteps)('takes the bands of the output of %s and the name of each band_math step as they are', (_name, fixture) => {
+    const order = fixture.inputs.recipe;
+    const { draft } = draftFromOrder(order, infoOf(order.inputs[0].dataset), keys());
+    if (order.output.kind !== 'raster') throw new Error('a raster order');
+    expect(draft.bands).toEqual(order.output.bands);
+    for (const [index, step] of draft.steps.entries()) {
+      if (step.op === 'band_math') expect(step.values.name).toBe(order.steps[index].params.name);
+    }
   });
 
   it('survives the file the user would save', () => {
@@ -104,7 +121,9 @@ describe('draftFromOrder', () => {
       steps: [],
       output: { kind: 'crop', format: 'cog', resolution_factor: 1, extent: 'bbox(aoi ∩ footprints)', mask: 'file' },
     } as Order;
-    expect(draftFromOrder(order, infoOf(order.inputs[0].dataset), keys()).draft.dtype).toBeNull();
+    const { draft } = draftFromOrder(order, infoOf(order.inputs[0].dataset), keys());
+    expect(draft.dtype).toBeNull();
+    expect(draft.bands).toEqual([]);
   });
 
   it('names an operator the dataset does not list', () => {
@@ -122,12 +141,38 @@ describe('draftFromOrder', () => {
       order.steps[0] = { ...order.steps[0], params };
       return draftFromOrder(order, info, keys()).problems;
     };
-    expect(check({ expression: 'nir', extra: 1 })).toEqual(['Step 1 (band_math): unknown parameter extra.']);
-    expect(check({ expression: '' })).toEqual(['Step 1 (band_math): expression: Required.']);
-    expect(check({ expression: { not: 'text' } })).toEqual([
+    expect(check({ expression: 'nir', name: 'NDVI', extra: 1 })).toEqual(['Step 1 (band_math): unknown parameter extra.']);
+    expect(check({ expression: '', name: 'NDVI' })).toEqual(['Step 1 (band_math): expression: Required.']);
+    expect(check({ expression: 'nir' })).toEqual(['Step 1 (band_math): name: Required.']);
+    expect(check({ expression: { not: 'text' }, name: 'NDVI' })).toEqual([
       'Step 1 (band_math): expression has the wrong type.',
       'Step 1 (band_math): expression: Required.',
     ]);
+    expect(check({ expression: 'nir', name: ['NDVI'] })).toEqual([
+      'Step 1 (band_math): name has the wrong type.',
+      'Step 1 (band_math): name: Required.',
+    ]);
+  });
+
+  describe('the bands of a normalize step (adr/0020 §4)', () => {
+    const normalize = () => structuredClone(FIXTURES['./fixtures/orders/normalize-dem-with-drawn-aoi.json'].inputs.recipe);
+    const check = (bands: unknown) => {
+      const order = normalize();
+      order.steps[0] = { ...order.steps[0], params: { ...order.steps[0].params, bands } };
+      return draftFromOrder(order, infoOf('cop-dem-glo-30'), keys());
+    };
+
+    it('are read as the text they would have been picked as, and written back as the list', () => {
+      const { draft, problems } = check(['data', 'extra']);
+      expect(problems).toEqual([]);
+      expect(draft.steps[0].values.bands).toBe('data, extra');
+    });
+
+    it('are refused as an object, a list of numbers, or an empty list', () => {
+      expect(check({ data: true }).problems).toEqual(['Step 1 (normalize): bands has the wrong type.', 'Step 1 (normalize): bands: Pick at least one band.']);
+      expect(check([1, 2]).problems.join(' ')).toMatch(/bands has the wrong type/u);
+      expect(check([]).problems).toEqual(['Step 1 (normalize): bands: Pick at least one band.']);
+    });
   });
 
   describe('an older version the server still takes (reproject v2)', () => {

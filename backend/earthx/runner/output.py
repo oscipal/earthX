@@ -25,6 +25,7 @@ import platform
 import re
 import secrets
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -96,12 +97,13 @@ class RunFolder:
         started: datetime,
         finished: datetime,
         dataset: DatasetFacts | None = None,
+        notes: Sequence[str] = (),
     ) -> None:
         """Move the result up, write the recipe as given, then the provenance with the methods text; then drop the work directory."""
         for name in _RESULT_FILES:
             (self.workdir / name).replace(self.path / name)
         (self.path / RECIPE_NAME).write_bytes(recipe_raw)
-        provenance = provenance_document(result, source=source, started=started, finished=finished)
+        provenance = provenance_document(result, source=source, started=started, finished=finished, notes=notes)
         provenance["methods"] = methods_text(_local_document(recipe_raw, provenance), dataset=dataset).removesuffix("\n")
         (self.path / PROVENANCE_NAME).write_bytes(document_bytes(provenance))
         self.remove_workdir()
@@ -115,12 +117,13 @@ def _local_document(recipe_raw: bytes, provenance: dict[str, Any]) -> dict[str, 
 
 
 def provenance_document(
-    result: RunResult, *, source: Provenance, started: datetime, finished: datetime
+    result: RunResult, *, source: Provenance, started: datetime, finished: datetime, notes: Sequence[str] = ()
 ) -> dict[str, Any]:
     """``provenance.json``: the model of adr/0014 §4.1 for a local run, the platform, the result's properties.
 
     ``attribution`` is the one of the cloud run, which `api` built from the registry;
-    ``source_engine`` the versions that run reported (K1).
+    ``source_engine`` the versions that run reported (K1). ``notes`` are short texts the runner said on the screen
+    (a recipe of version 1 rewritten, adr/0020 §11); the entry is there only where there are some, and no hash input.
     """
     local = Provenance(
         execution="local",
@@ -133,9 +136,12 @@ def provenance_document(
         finished=finished,
         attribution=list(source.attribution),
     )
-    return {
+    document = {
         **local.model_dump(mode="json"),
         "platform": platform_info(),
         "properties": dict(result.properties),
         "source_engine": dict(source.engine),
     }
+    if notes:
+        document["notes"] = list(notes)
+    return document

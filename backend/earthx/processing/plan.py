@@ -5,6 +5,9 @@
 * :func:`segments` — the steps of a job as the core runs them: a run of ``pixel``
   steps is computed block by block in one pass, a ``grid`` step is a pass of its
   own over a file in the work directory (approved F3).
+* :func:`stock_steps` — the steps of a job on a stock of named bands (recipe version 2, adr/0020 §4): the
+  planner works from the end, drops what no later step and not ``output.bands`` needs, and puts the result
+  in the order of the output.
 * :func:`crop_window` — the output grid of the first pass: ``bbox(AOI ∩ raster
   bounds)`` in the input's own grid, snapped outward to its pixels (approved F9;
   the raster bounds stand in for the footprints, which the core does not see).
@@ -17,7 +20,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 import numpy
@@ -42,16 +45,19 @@ from earthx.access.crop_rules import (
 )
 from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
-from earthx.processing.recipe import Band, CropOutput, Recipe, ResolvedInput, Step
+from earthx.processing.operators.select import SELECT_BANDS, SelectParams
+from earthx.processing.recipe import Band, CropOutput, RasterOutput, Recipe, ResolvedInput, Step
 from earthx.processing.source import expected_band_names, units_of
 
 __all__ = [
     "EXPORT_FACTOR",
+    "MAX_JOB_MEMORY_BYTES",
     "RASTER_WITHOUT_STEP_FACTOR",
     "SECONDS_PER_ASSET",
     "SECONDS_PER_EXPORT_MB",
     "SECONDS_PER_EXPORT_MB_PER_ITEM",
     "SECONDS_PER_INPUT_MB",
+    "SECONDS_PER_OUTPUT_BAND_MPIXEL",
     "DISK_RESERVE_BYTES",
     "CostEstimate",
     "PlannedStep",
@@ -61,14 +67,24 @@ __all__ = [
     "disk_needed",
     "estimate",
     "export_outputs",
+    "live_steps",
+    "memory_needed",
+    "needed_source_bands",
     "plan_steps",
     "segments",
     "split_tiers",
+    "stock_steps",
 ]
 
 #: Seconds per MB of raw input for band math, measured locally on 1024 px blocks
 #: (adr/0014 §3.5: 9.8 s for 2 × 134 MB). A bound for the display ("about"), no promise.
 SECONDS_PER_INPUT_MB = 0.034
+
+#: Seconds per output band and million pixels of the output: writing, statistics and the COG of each band, which the
+#: input term does not see (adr/0020 §3.2 Befund 9). Measured on synthetic scenes with up to three runs at a time on four
+#: cores, as a worker with two slots runs: 0.42–0.72 s per band and million pixels, 0.57 with 16 `band_math` steps at 5632²;
+#: the real runs of adr/0020 §3.2 give 0.55–0.7. The limit of a run is twice the estimate.
+SECONDS_PER_OUTPUT_BAND_MPIXEL = 0.75
 
 #: First open of an asset over the network (adr/0006 §3.4).
 SECONDS_PER_ASSET = 1.0
@@ -88,6 +104,19 @@ RASTER_WITHOUT_STEP_FACTOR = 1.0
 #: runtime limit's factor 2 is the reserve.
 SECONDS_PER_EXPORT_MB = 0.030
 SECONDS_PER_EXPORT_MB_PER_ITEM = 0.025
+
+#: What one child process of a job may hold at its peak (adr/0020 §7.2, F5; a starting value, Otto, 28.10.2026): a
+#: worker with two slots needs up to twice this. Over it `estimate` refuses the job with the number, a `413`.
+MAX_JOB_MEMORY_BYTES = 1_500_000_000
+
+#: The peak memory of a run, measured on synthetic scenes (`scripts/nm4-43-bands/memory.py`, the Nachtrag NM4-43c PR 2 of
+#: adr/0014): a base, a share for every band the widest pass holds, and for a mosaic a share for every scene beyond the
+#: first (an open file) and for each of its bands. It follows the 1024 px block and not the area: 17 bands peak at
+#: 727 MB from 2048² to 5632². Each constant lies above every measurement.
+MEMORY_BASE_BYTES = 300_000_000
+MEMORY_BYTES_PER_BAND = 33_000_000
+MEMORY_BYTES_PER_SCENE = 4_000_000
+MEMORY_BYTES_PER_SCENE_BAND = 1_200_000
 
 #: Bytes per value where an item names no data type, as the download estimate assumes.
 _FALLBACK_BYTES_PER_VALUE = 8
@@ -121,6 +150,22 @@ class CostEstimate:
     output_bytes: int
     seconds: float
     units: float
+    #: The peak memory of the child process that runs the job; zero for an export, which streams.
+    memory_bytes: int = 0
+
+
+def memory_needed(bands: int, scenes: int = 1) -> int:
+    """The peak memory of a run whose widest pass holds ``bands`` bands, over ``scenes`` scenes of one mosaic.
+
+    A band is held several times per block (read, scaled, masked, written), so the share is per band; a scene beyond
+    the first is an open file whose pieces are merged one at a time. Nothing here depends on the area.
+    """
+    extra_scenes = scenes - 1
+    return (
+        MEMORY_BASE_BYTES
+        + MEMORY_BYTES_PER_BAND * bands
+        + extra_scenes * (MEMORY_BYTES_PER_SCENE + MEMORY_BYTES_PER_SCENE_BAND * bands)
+    )
 
 
 def plan_steps(steps: Sequence[Step], operators: OperatorRegistry) -> list[PlannedStep]:
@@ -131,6 +176,119 @@ def plan_steps(steps: Sequence[Step], operators: OperatorRegistry) -> list[Plann
         params = operator.params.model_validate_json(json.dumps(step.params), strict=True)
         planned.append(PlannedStep(step, operator, params))
     return planned
+
+
+def _refuse_chain_of_version_1(planned: Sequence[PlannedStep]) -> None:
+    for index, step in enumerate(planned):
+        if not step.operator.stock:
+            raise RecipeInvalid(
+                f"step {index}: {step.step.op} version {step.step.op_version} replaces or removes bands, as a recipe "
+                f"of version 1 did; a recipe of version 2 takes version {step.step.op_version + 1} or later"
+            )
+
+
+def _trace(planned: Sequence[PlannedStep], output: Sequence[str]) -> tuple[list[frozenset[str]], list[bool]]:
+    """The names the stock has to hold before each step, from the end, and which steps change nothing the output keeps.
+
+    ``needed[i]`` is what step ``i`` is given (``needed[len(planned)]`` the output itself); a step is ``dead`` where
+    it adds a band nobody needs or changes none that is needed (:class:`~earthx.processing.operators.BandUse`).
+    """
+    needed = [frozenset[str]()] * (len(planned) + 1)
+    needed[-1] = frozenset(output)
+    dead = [False] * len(planned)
+    for index in reversed(range(len(planned))):
+        use = planned[index].operator.bands_used(planned[index].params)
+        after = needed[index + 1]
+        if use.adds is not None:
+            dead[index] = use.adds not in after
+            needed[index] = after if dead[index] else (after - {use.adds}) | use.reads
+        elif use.acts_on is not None and not use.acts_on & after:
+            dead[index] = True
+            needed[index] = after
+        else:
+            needed[index] = after | use.reads
+    return needed, dead
+
+
+def needed_source_bands(planned: Sequence[PlannedStep], output: Sequence[str]) -> frozenset[str]:
+    """The names the first step needs from the data: what `api` reads the assets for (adr/0020 §5).
+
+    Names a step adds are not among them; a name that no band of the data has is, and the caller refuses it.
+    """
+    _refuse_chain_of_version_1(planned)
+    return _trace(planned, output)[0][0]
+
+
+def _select(names: Sequence[str]) -> PlannedStep:
+    return PlannedStep(
+        Step(op=SELECT_BANDS.op, op_version=SELECT_BANDS.op_version, params={"names": list(names)}),
+        SELECT_BANDS,
+        SelectParams(names=tuple(names)),
+    )
+
+
+def stock_steps(meta: RasterMeta, planned: Sequence[PlannedStep], output: Sequence[str]) -> list[PlannedStep]:
+    """The steps a job runs on ``meta``'s stock: the recipe's without the dead ones, plus the planner's selections.
+
+    Every step that is run is judged first on the whole stock (:class:`RecipeInvalid`, the place of the step in the
+    text as in :func:`check_bands`), and so is an output band the stock does not hold at the end. A step that changes
+    nothing the output keeps is not run and not judged: the bands it names are not read, so they need not be there.
+
+    Then the plan: bands that no later step and not the output needs are dropped before the step that follows, so a
+    ``grid`` step warps only what is kept. The bands that stay have the values they would have had in a stock with the
+    others, because a step works per band or per pixel, and ``reproject`` since version 4 for each band alone
+    (adr/0020 §3.4). The stock is ordered like ``output`` as soon as it is narrowed, so that a last ``grid`` step needs
+    no pass of its own to sort the bands.
+    """
+    _refuse_chain_of_version_1(planned)
+    needed, dead = _trace(planned, output)
+    full = meta
+    for index, step in enumerate(planned):
+        if dead[index]:
+            continue
+        try:
+            full = step.operator.transform(full, step.params)
+        except RecipeInvalid as error:
+            if len(planned) == 1:
+                raise
+            raise RecipeInvalid(f"step {index}: {error}") from error
+    held = [band.name for band in full.bands]
+    missing = [name for name in output if name not in held]
+    if missing:
+        raise RecipeInvalid(
+            f"output.bands names unknown band(s): {', '.join(missing)}; the stock has: {', '.join(held)}"
+        )
+    position = {name: index for index, name in enumerate(output)}
+    steps: list[PlannedStep] = []
+    current = meta
+
+    def narrow(wanted: frozenset[str]) -> None:
+        nonlocal current
+        present = [band.name for band in current.bands]
+        rank = {name: (position.get(name, len(position)), index) for index, name in enumerate(present)}
+        kept = sorted((name for name in present if name in wanted), key=rank.__getitem__)
+        if kept != present:
+            steps.append(_select(kept))
+            current = SELECT_BANDS.transform(current, steps[-1].params)
+
+    narrow(needed[0])
+    for index, step in enumerate(planned):
+        if dead[index]:
+            continue
+        if step.operator.restrict is not None:
+            # The bands of the step that the planner dropped are not converted; the others are, as before.
+            step = replace(step, params=step.operator.restrict(step.params, needed[index + 1]))
+        steps.append(step)
+        current = step.operator.transform(current, step.params)
+        narrow(needed[index + 1])
+    return steps
+
+
+def live_steps(planned: Sequence[PlannedStep], output: Sequence[str]) -> list[PlannedStep]:
+    """The steps of a recipe that run: those whose result the output keeps. What a result reports (lineage,
+    expressions, methods text) is these steps and no other."""
+    _, dead = _trace(planned, output)
+    return [step for step, is_dead in zip(planned, dead, strict=True) if not is_dead]
 
 
 def split_tiers(steps: Sequence[Step], operators: OperatorRegistry) -> tuple[list[Step], list[Step]]:
@@ -326,6 +484,8 @@ def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
     """Run every step's ``transform`` on the bands the inputs will carry; ``RecipeInvalid`` for a wrong name.
 
     With several steps the refusal begins with the place of the step (``step 1: …`` for the second, counted from 0 like the other refusals of an order), as the tile of a chain says it.
+    A raster recipe also has to find every band of ``output.bands`` in the stock after the last step
+    (:func:`stock_steps`).
 
     Where the item does not say how many bands an asset has, the file does, and the
     core checks again before it reads the first block (plan M4-09 §3.3). Nothing is read.
@@ -334,6 +494,9 @@ def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
     if meta is None:
         return
     planned = plan_steps(recipe.steps, operators)
+    if isinstance(recipe.output, RasterOutput):
+        stock_steps(meta, planned, recipe.output.bands)
+        return
     for index, step in enumerate(planned):
         try:
             meta = step.operator.transform(meta, step.params)
@@ -343,13 +506,53 @@ def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
             raise RecipeInvalid(f"step {index}: {error}") from error
 
 
+@dataclass(frozen=True, slots=True)
+class _Stock:
+    """What a raster job is made of: the raster it writes, its steps, the widest stock and the work its bands cost."""
+
+    meta: RasterMeta
+    steps: list[PlannedStep]
+    #: The most bands the job holds at once.
+    widest: int
+    #: Bands weighted by factor: each step counts its factor for the bands it adds or changes (``band_math`` its result,
+    #: the others the bands they act on), and an output band no step touches counts as written (adr/0014 Nachtrag
+    #: NM4-43c PR 2, Otto 30.10.2026).
+    weighted_bands: float
+
+
+def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> _Stock:
+    """The raster a raster job writes, its steps without the planner's selections, and what its bands cost.
+
+    Every band of the assets is read together, whatever a step drops after it, and a ``band_math`` step adds one: the
+    widest stock decides the memory of a pass and the float64 file it leaves in the work directory.
+    """
+    meta = _input_meta(recipe, names_known=False, sized=True)
+    assert meta is not None  # a recipe has at least one resolved input
+    steps = stock_steps(meta, plan_steps(recipe.steps, operators), recipe.output.bands)
+    widest = len(meta.bands)
+    weighted, touched = 0.0, set[str]()
+    for step in steps:
+        if step.operator is not SELECT_BANDS:
+            names = {band.name for band in meta.bands}
+            use = step.operator.bands_used(step.params)
+            changed = {use.adds} if use.adds is not None else names if use.acts_on is None else names & use.acts_on
+            weighted += step.operator.cost_factor(step.params) * len(changed)
+            touched |= changed
+        meta = step.operator.transform(meta, step.params)
+        widest = max(widest, len(meta.bands))
+    weighted += RASTER_WITHOUT_STEP_FACTOR * len({band.name for band in meta.bands} - touched)
+    return _Stock(meta, [step for step in steps if step.operator is not SELECT_BANDS], widest, weighted)
+
+
 def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     """The cost of a job from AOI, ``gsd`` and data types (§5.5); reads nothing.
 
     An export (output ``crop``) is estimated as the crop estimates itself and refused
     with :class:`ExportTooLarge` above ``MAX_JOB_BYTES`` (M4-11 F5); a raster job is refused
-    with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7). A raster job
-    needs the pixel size of every asset (``gsd``); without it :class:`UnsupportedRecipe` says so (M4-25).
+    with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7), and above the memory one child
+    process may use (:func:`memory_needed`, adr/0020 §7). A raster job needs the pixel size of every asset (``gsd``);
+    without it :class:`UnsupportedRecipe` says so (M4-25). Seconds count the bands of the output; units count each step's factor for the bands it adds or
+    changes (:class:`_Stock`).
     """
     if isinstance(recipe.output, CropOutput):
         return _export_estimate(recipe)
@@ -363,11 +566,8 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         rows, columns = estimate_output_dims(aoi, entry.gsd)
         input_pixels += rows * columns
         input_bytes += rows * columns * _band_bytes(entry.bands)
-    meta = _input_meta(recipe, names_known=False, sized=True)
-    assert meta is not None  # a recipe has at least one resolved input
-    planned = plan_steps(recipe.steps, operators)
-    for step in planned:
-        meta = step.operator.transform(meta, step.params)
+    stock = _planned_stock(recipe, operators)
+    meta, widest = stock.meta, stock.widest
     output_pixels = meta.width * meta.height
     dtype = getattr(recipe.output, "dtype", None)
     output_bytes = output_pixels * len(meta.bands) * _value_bytes(dtype)
@@ -376,15 +576,24 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
             f"This job would write about {(output_bytes + output_pixels) / 1_000_000:.0f} MB, more than the "
             f"{MAX_JOB_BYTES / 1_000_000:.0f} MB a job may write. Draw a smaller area or choose fewer assets."
         )
-    factor = sum(step.operator.cost_factor(step.params) for step in planned) if planned else RASTER_WITHOUT_STEP_FACTOR
+    memory = memory_needed(widest, len(recipe.inputs[0].groups[0]))
+    if memory > MAX_JOB_MEMORY_BYTES:
+        raise JobTooLarge(
+            f"This job would need about {memory / 1_000_000_000:.1f} GB of memory, more than the "
+            f"{MAX_JOB_MEMORY_BYTES / 1_000_000_000:.1f} GB a job may use. Put fewer bands in the output."
+        )
+    band_megapixels = output_pixels / 1_000_000 * len(meta.bands)
     return CostEstimate(
         input_pixels=input_pixels,
         input_bytes=input_bytes,
         assets=assets,
         output_pixels=output_pixels,
         output_bytes=output_bytes,
-        seconds=SECONDS_PER_INPUT_MB * input_bytes / 1_000_000 + SECONDS_PER_ASSET * assets,
-        units=output_pixels / 1_000_000 * factor,
+        seconds=SECONDS_PER_INPUT_MB * input_bytes / 1_000_000
+        + SECONDS_PER_ASSET * assets
+        + SECONDS_PER_OUTPUT_BAND_MPIXEL * band_megapixels,
+        units=output_pixels / 1_000_000 * stock.weighted_bands,
+        memory_bytes=memory,
     )
 
 
@@ -491,8 +700,9 @@ def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
     else:
         cost = estimate(recipe, operators)
         finished = cost.output_bytes + cost.output_pixels
-        entries = _asset_entries(recipe)
-        rows, columns = estimate_output_dims(shapely_shape(recipe.aoi.model_dump(mode="json")), _finest(entries).gsd)
-        bands = sum(max(len(entry.bands), 1) for entry in entries)
+        rows, columns = estimate_output_dims(
+            shapely_shape(recipe.aoi.model_dump(mode="json")), _finest(_asset_entries(recipe)).gsd
+        )
+        bands = _planned_stock(recipe, operators).widest
         largest = _tiles_px(rows) * _tiles_px(columns) * bands * _PASS_BYTES
     return math.ceil(finished * _WITH_OVERVIEWS) + 2 * largest + DISK_RESERVE_BYTES

@@ -178,6 +178,8 @@ function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) 
 }
 
 const classes = () => container.querySelector<HTMLFieldSetElement>('fieldset.pp-classes');
+// The explanations are the tooltips (ⓘ) of the fieldset, not text in it.
+const tipsOf = (root: Element) => [...root.querySelectorAll('[data-tip]')].map((tip) => tip.getAttribute('data-tip')).join(' ');
 const box = (value: number) =>
   [...classes()!.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((input) =>
     input.parentElement!.textContent!.startsWith(`${value} · `),
@@ -186,8 +188,10 @@ const ticked = () =>
   [...classes()!.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
     .filter((input) => input.checked)
     .map((input) => Number(input.parentElement!.textContent!.split(' · ')[0]));
-const chip = (name: string) => [...container.querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.textContent === name)!;
-const chips = () => [...container.querySelectorAll('.pp-chip')].map((c) => c.textContent);
+// The bands of the data in the output section; the chips of the section "Bands" only help to write an expression.
+const dataGroup = () => container.querySelector('section[aria-label="Output"] [aria-label="Bands of the data"]')!;
+const chip = (name: string) => [...dataGroup().querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.textContent === name)!;
+const chips = () => [...dataGroup().querySelectorAll('.pp-chip')].map((c) => c.textContent);
 const section = () => container.querySelector('section[aria-label="Preview on the map"]')!;
 const store = () => useProcessingStore.getState();
 
@@ -219,7 +223,7 @@ describe('the mask step is a form, no longer "not supported by this panel"', () 
 describe('the classes to hide', () => {
   it('shows one box per class with the registry name, the suggested ones ticked', async () => {
     await withMask();
-    expect(classes()!.querySelector('legend')!.textContent).toBe('Classes to hide');
+    expect(classes()!.querySelector('legend')!.textContent).toBe('Classes to hideⓘClass table');
     const labels = [...classes()!.querySelectorAll('label')].map((l) => l.textContent);
     expect(labels).toHaveLength(12);
     expect(labels[3]).toContain('3 · CLOUD_SHADOWS');
@@ -239,12 +243,14 @@ describe('the classes to hide', () => {
   it('takes the layer from the registry: there is no field for the band', async () => {
     await withMask();
     expect(container.querySelector('[id$="-source"]')).toBeNull();
-    expect(classes()!.textContent).toContain('The layer scl is read for it and left out of the result.');
+    expect(tipsOf(classes()!)).toContain('The layer scl is read for it.');
+    expect(classes()!.textContent).not.toContain('The layer scl is read for it');
   });
 
   it('points to the table and warns that older baselines name classes differently (plan §8)', async () => {
     await withMask();
-    expect(classes()!.textContent).toContain('Older processing baselines name some classes differently');
+    expect(tipsOf(classes()!)).toContain('Older processing baselines name some classes differently');
+    expect(classes()!.textContent).not.toContain('Older processing baselines');
     const link = classes()!.querySelector('a')!;
     expect(link.getAttribute('href')).toBe('https://sentiwiki.copernicus.eu/web/s2-processing');
     expect(link.getAttribute('rel')).toContain('noreferrer');
@@ -257,9 +263,10 @@ describe('the classes to hide', () => {
     click(box(0));
     click(box(3)); // off
     expect(ticked()).toEqual([0, 8, 9, 10, 11]);
+    click(chip('red'));
     await review();
     const mask = sentOrder().steps[0];
-    expect(mask).toEqual({ op: 'mask', op_version: 1, params: { source: 'scl', classes: [0, 8, 9, 10, 11] } });
+    expect(mask).toEqual({ op: 'mask', op_version: 2, params: { source: 'scl', classes: [0, 8, 9, 10, 11] } });
   });
 
   it('does not send an order with no class ticked, and says why', async () => {
@@ -296,21 +303,35 @@ describe('the layer in the order', () => {
     expect(chips()).toEqual(['red', 'nir', 'scl']);
     expect(chip('scl').getAttribute('aria-pressed')).toBe('false');
     click(button('＋ Mask'));
-    expect(chip('scl').getAttribute('aria-pressed')).toBe('true');
+    expect(chip('scl').getAttribute('aria-pressed')).toBe('false');
     expect(chip('red').getAttribute('aria-pressed')).toBe('false');
     click(chip('red'));
     await review();
-    expect(sentOrder().inputs[0].assets).toEqual(['red', 'scl']);
+    // The order names the output only; the platform reads the layer the mask step needs.
+    expect(sentOrder().inputs[0].assets).toBeUndefined();
+    expect(sentOrder().output.bands).toEqual(['red']);
   });
 
-  it('cannot be left out while a mask step needs it, and can once the step is gone', async () => {
+  it('is not part of "All" and is ticked by the user alone', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(button('All'));
+    expect(store().output).toEqual(['red', 'nir']);
+    expect(chip('scl').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('is in the result only if the user ticks it, and the order reads it either way while a mask step needs it', async () => {
     await withMask();
-    expect(chip('scl').title).toContain('layer of the mask step');
+    const foot = () => container.querySelector('section[aria-label="Review"]')!.textContent;
+    expect(foot()).toContain('The order also reads the mask layer scl; it is not in the result.');
     click(chip('scl'));
     expect(chip('scl').getAttribute('aria-pressed')).toBe('true');
-    expect(store().picked).toEqual([]);
-    click(button('✕ Remove'));
+    expect(store().output).toEqual(['scl']);
+    expect(foot()).not.toContain('it is not in the result');
+    click(chip('scl'));
     expect(chip('scl').getAttribute('aria-pressed')).toBe('false');
+    expect(store().output).toEqual([]);
+    expect(foot()).toContain('The order also reads the mask layer scl; it is not in the result.');
   });
 
   it('says in the review that the order reads it and the result does not hold it', async () => {
@@ -326,6 +347,7 @@ describe('the layer in the order', () => {
     click(button('＋ Mask'));
     click(button('✕ Remove'));
     expect(chip('scl').getAttribute('aria-pressed')).toBe('true');
+    expect(store().output).toEqual(['scl']);
   });
 
   it('says so where the scene has no such layer, and does not invent one', async () => {
@@ -333,7 +355,7 @@ describe('the layer in the order', () => {
     expect(chips()).toEqual(['red', 'nir']);
     const foot = container.querySelector('section[aria-label="Review"]')!.textContent;
     expect(foot).toContain('The scenes have no mask layer scl');
-    expect(store().picked).toEqual([]);
+    expect(store().output).toEqual([]);
   });
 
   it('does not decide the data type: the layer leaves the result', async () => {
@@ -429,6 +451,9 @@ describe('the data type after normalize (Otto, 22.10.2026)', () => {
     // Without a step the source type is kept: uint16, nodata stated, no scaling.
     expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('uint16');
     click(button('＋ Normalize'));
+    // The step scales the bands it names; the type follows once one of them is in the output.
+    const bands = [...container.querySelectorAll('fieldset.pp-classes')].find((f) => f.querySelector('legend')!.textContent!.startsWith('Bands'))!;
+    click([...bands.querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.textContent === 'red')!);
     expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('float32');
     const options = [...container.querySelectorAll('select option')].map((o) => o.textContent);
     expect(options).toContain('uint16 (not after normalize)');
