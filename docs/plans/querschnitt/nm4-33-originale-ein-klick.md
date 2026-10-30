@@ -43,7 +43,7 @@
 
 ## 6. Plan (28.10.2026, von Otto am 29.10.2026 freigegeben)
 
-**Freigabe (Otto, 29.10.2026, zu #233):** alle sechs Fragen mit Option 1 (A2, Rückfall über iframes mit Linkliste, „Merged per pass (job)“ als zweiter Knopf, 500 MB je Datei, Token-Weg erst mit dem Datensatz, ein PR); K1–K6 angenommen. ZIP über die Plattform: nein. Dazu drei Aufträge: die Rückfrage „mehrere Dateien“ in Chrome/Edge und Firefox prüfen und im PR beschreiben (§6.11), Wiedervorlage zu DS-04 (§6.12), Nachträge heißen „Nachtrag NM4-33“. Antworten in §6.10. Der Code ist Frontend und beginnt erst, wenn Otto einen freien Frontend-Platz meldet.
+**Freigabe (Otto, 29.10.2026, zu #233):** alle sechs Fragen mit Option 1 (A2, Rückfall über iframes mit Linkliste, „Merged per pass (job)“ als zweiter Knopf, 500 MB je Datei, Token-Weg erst mit dem Datensatz, ein PR); K1–K6 angenommen. ZIP über die Plattform: nein. Dazu drei Aufträge: die Rückfrage „mehrere Dateien“ in Chrome/Edge und Firefox prüfen und im PR beschreiben (§6.11), Wiedervorlage zu DS-04 (§6.12), Nachträge heißen „Nachtrag NM4-33“. Antworten in §6.10. Der Code ist Frontend und beginnt erst, wenn Otto einen freien Frontend-Platz meldet; er ist am 30.10.2026 umgesetzt (§6.15).
 
 **Änderung (Otto, 29.10.2026, zu #233): Für Quellen mit CORS ersetzt ein ZIP je Szene den Weg A2.** Das ZIP wird im Browser gebaut, ist unkomprimiert (STORE) und wird über einen Service Worker in den Download gestreamt. client-zip ist erlaubt. Quellen ohne CORS bleiben wie freigegeben. Der überarbeitete Plan steht in §6.14; Otto hat ihn am 29.10.2026 freigegeben (§6.14.10). §6.0–§6.12 bleiben als Stand der ersten Freigabe stehen; wo §6.14 abweicht, gilt §6.14.
 
@@ -496,6 +496,84 @@ Etwa 450–550 geänderte Zeilen mit Tests (Worker, Weg-Wahl, Asset-Regel, Fenst
 | Firefox | prüft Otto selbst (Schritt in der Prüfanleitung, §6.14.7) |
 
 Ein ZIP einer S2-Szene enthält damit 23 Einträge: 18 `.tif`, 3 Metadaten-Dateien, `ATTRIBUTION.txt` und `item.json`. Der Code beginnt, sobald Otto einen freien Frontend-Platz meldet.
+
+### 6.15 Umsetzung (30.10.2026, Draft-PR [#233](https://github.com/oscipal/earthX/pull/233))
+
+Otto meldete am 30.10.2026 einen freien Frontend-Platz. Umgesetzt ist §6.14 mit Ottos Antworten (§6.14.10), in getrennten Commits.
+
+#### 6.15.1 Was gebaut ist
+
+| Datei | Aufgabe |
+|---|---|
+| `originals.ts` (rein) | Regel der Assets aus der Collection, Namen, Weg-Wahl, Text von `ATTRIBUTION.txt`, Auftrag für den Worker |
+| `originalsZip.ts` | `zipResponse`: STORE-ZIP aus den Dateien der Quelle mit client-zip, mit angekündigter Länge, Fortschritt und genau einer Meldung am Ende |
+| `originalsWorker.ts` | der Service Worker; beantwortet nur `<Ordner>/__originals/<Zufalls-ID>` |
+| `originalsClient.ts` | Seite: registriert den Worker, Kanal zum Worker, Speichern und Weiterreichen einzelner Dateien |
+| `originalsRun.ts` | der Ablauf: Szene für Szene, Weg-Wahl und Rückfälle, Abbruch, „Retry failed“ |
+| `components/OriginalFiles.tsx` | eine Zeile je Szene mit Stand, „Cancel“, „Retry failed“, „Merged per pass (job)“, „Save link list“, Links |
+| `DownloadDialog.tsx`, `ViewBar.tsx`, `index.css` | Titel, Tooltips, Stil |
+| `types.ts` | `file:size` am Asset, `sci:doi` und `sci:citation` an der Collection |
+
+- **Asset-Regel:** wie §6.14.2 mit Z3. Für S2 ergibt sie 18 `.tif` und 3 Metadaten-Dateien; mit `ATTRIBUTION.txt` und `item.json` hat ein ZIP 23 Einträge (gemessen an einer echten Szene, §6.15.3).
+- **Worker:**
+  - Klassisches Skript im Build (`originalsWorker-<Hash>.js`, 8,8 kB mit client-zip), Modul im Dev-Server. Der Gültigkeitsbereich ist der Ordner des Skripts (`/assets/` im Build, `/src/` im Dev-Server); die Download-Adresse liegt darin als `__originals/<Zufalls-ID>`. Kein Seitenaufruf der App liegt in diesem Ordner.
+  - Der Worker hält keinen Zustand außer dem einen Auftrag, schreibt kein Log und meldet Fehler nur als Art und Status.
+  - Während des Downloads schickt die Seite alle 10 s eine Nachricht an den Worker (für Firefox, §6.14.4a). Meldet der Worker nicht binnen 10 s, dass der Browser die Datei angefragt hat, gilt er als nicht verfügbar, und die Szene geht den Weg der Einzeldateien.
+- **Weg-Wahl (Z5):** `earthx:access.cors` und ob die Seite streamen kann; vor dem ersten Abruf ein `HEAD` auf die erste Datei. Scheitert er mit `TypeError`, gilt der Weg ohne CORS für den Rest des Laufs. Eine HTTP-Fehlerantwort auf dem `HEAD` ist kein CORS-Fall: dann scheitert die Szene mit dem Status.
+- **Der Lauf tut vor dem nächsten Tick nichts** in der Seite: React startet und stoppt ihn im Dev-Modus (`StrictMode`) im selben Atemzug, und ein Lauf ohne diese Vorsicht speicherte `ATTRIBUTION.txt` und startete jede Datei doppelt (im Browser gefunden, mit Test abgesichert).
+- **Schließen des Dialogs bricht den Lauf ab** (§6.5 Punkt 4), das ✕ nennt es im Tooltip. Schon gespeicherte Dateien bleiben.
+- **Blob-Adressen** (Weg der Einzeldateien) gibt die Seite 30 s nach dem Klick frei, siehe §6.15.3.
+- **Merged per pass (job):** zweiter Knopf, wenn ein Überflug mindestens zwei Szenen hat; er öffnet den Abschnitt der Jobs wie bisher und stoppt den Download nicht.
+- **Keine Änderung** am Backend, an der Registry und an den Importregeln.
+
+#### 6.15.2 Tests
+
+- **vitest:** 3 857 Tests grün in 112 Dateien (vorher 3 763 in 108). Neu: `originals.test.ts` (Regel, Namen, Weg-Tabelle, `ATTRIBUTION.txt`, Auftrag), `originalsZip.test.ts` (ein ZIP-Leser im Test prüft STORE, jede CRC, jedes Byte und die Länge; 404, falsche Länge, Netzfehler, Abbruch, Abbruch durch den Browser), `originalsRun.test.ts` (alle Wege und Rückfälle, Abbruch, Wiederholen, fehlendes Datum), `originalsClient.test.ts` (Protokoll mit einem nachgestellten Worker). Angepasst: `DownloadDialog.test.tsx`, `MosaicJobs.test.tsx`, `ViewBar.test.tsx`.
+- **Playwright im echten Chromium (`frontend/e2e/originals-one-click.cjs`, nicht in der CI):** elf Fälle grün, mit der echten App, dem echten Knopf und lokalen HTTPS-Quellen mit und ohne CORS:
+  - ZIP hell/dunkel × breit/schmal: zwei Szenen, zwei ZIPs nacheinander, STORE, jede CRC, jedes Byte, `ATTRIBUTION.txt` nur mit der eigenen Szene, `item.json`, Name in der Zeile;
+  - Datensatz ohne CORS und Quelle ohne CORS: Downloads des Browsers, `ATTRIBUTION.txt` einmal, keine Metadaten-Dateien;
+  - Worker gesperrt: Einzeldateien unter ihren Namen mit `item.json`, Byte für Byte gleich;
+  - Quelle antwortet `500`: die Szene scheitert mit Grund, die andere läuft durch, „Retry failed“ lädt nur die gescheiterte;
+  - „Cancel“ und ✕: das ZIP endet als fehlgeschlagen, die Quelle sendet nichts mehr, die zweite Szene wird nie begonnen;
+  - 14 Szenen im schmalen Fenster: die Liste scrollt im Dialog, nichts überlappt oder läuft über.
+- **Produktions-Build:** `npm run build` liefert den Worker als eigene Datei; im `vite preview` streamt der gebaute Worker (Gültigkeitsbereich `/assets/`) ein gültiges STORE-ZIP.
+- **Prüfungen:** `npm run lint`, `npx tsc -b`, `npm test` grün; Backend und Importregeln unverändert (Ergebnis im PR).
+
+#### 6.15.3 Messungen mit dem fertigen Code
+
+- **Ganze echte S2-Szene durch die App** (Chromium 153, `REAL_ITEM`): 887 MB in 132 s, Speicher der Browser-Prozesse 569 → 696 MB (+127 MB), 23 Einträge, alle STORE, alle CRC richtig.
+- **Rückfrage „mehrere Dateien“ mit echtem Klick auf „Allow“** (Chromium 153 mit Fenster, frisches Profil, XTest-Klick auf die Schaltfläche):
+  - Nach dem ersten Download fragt Chromium; die übrigen warten.
+  - **Nach „Allow“ kommen alle an**, auch wenn die Blob-Adresse inzwischen freigegeben war (3 von 3 bei Freigabe nach 300 ms). Deshalb gibt die Seite gespeicherte Dateien nach 30 s frei, statt sie bis zum Schließen zu halten.
+  - **Ein zweiter Klick fragt nicht wieder**, und die Erlaubnis gilt auch nach dem Neuladen der Seite im selben Profil (9 von 9 Dateien). Chromium merkt sich „Allow“ je Website. Edge: gleiche Engine, nicht gemessen; Firefox: prüft Otto.
+
+#### 6.15.4 Abweichungen, Risiken und was offen ist
+
+- **Umfang:** 2 790 geänderte Zeilen ohne `package-lock.json` (Schätzung §6.14.8: 450–550 Code und Tests, dazu 250 Playwright). Davon Produktivcode etwa 1 050, Tests und Fixture etwa 1 300, Playwright-Skript 437. Die Commits sind getrennt: Abhängigkeit, Regel, Worker mit Ablauf, Oberfläche, Fehlerbehebung, Browser-Prüfung, Doku. Der Richtwert von 400 Zeilen ist weit überschritten; Otto hatte einen PR freigegeben.
+- **Viele Szenen, ein Klick:** Der Klick startet alle gewählten Szenen nacheinander; das Fenster nennt oben die Zahl der Szenen und die Summe der Größen, „Cancel“ stoppt. Es gibt keine Obergrenze und keine Frage vorab (Ottos Vorgabe „ohne extra Steps“). 40 Szenen wären etwa 35 GB. Ob eine Grenze oder eine Bestätigung ab einer Summe gewünscht ist, entscheidet Otto.
+- **Fortsetzen** geht nur je Szene („Retry failed“ lädt das ZIP der Szene von vorn); ein ZIP aus dem Service Worker setzt Chrome nicht fort.
+- **Safari und Firefox** sind nicht gemessen (Prüfanleitung, §6.15.5).
+- **`item.json`** ist das Item, wie die Seite es hat, mit den Links der eigenen API (`self`, `collection`) und den Adressen der Quelle; es enthält keine AOI.
+
+#### 6.15.5 Prüfanleitung für Otto
+
+Ein Browser genügt; schmales Fenster und beide Themes sind in der Sitzung geprüft.
+
+1. **Ein Klick, ein ZIP (Chrome oder Edge).** Datensatz Sentinel-2, zwei Szenen wählen, „⇩ Download full scenes“. Erwartet: Das Fenster zeigt je Szene eine Zeile mit „Loading n %“, danach „Done“; im Download-Ordner liegen `<Szenen-ID>.zip` für beide. Das zweite ZIP kommt erst, wenn das erste fertig ist.
+2. **Rückfrage „mehrere Dateien“ (eigener Schritt).** In Chrome oder Edge und in Firefox je in einem privaten Fenster: Beim zweiten ZIP fragt Chrome/Edge „Download multiple files“; mit „Allow“ läuft es weiter. Notieren: fragt der Browser (Firefox: ja/nein)? Fragt ein zweiter Klick wieder? Danach entscheidest du, ob die einmalige Erlaubnis je Website tragbar ist oder Chromium ein ZIP im Browser bekommt (Frage 1, Option 3 der ersten Freigabe).
+3. **Inhalt.** Ein ZIP mit dem Windows Explorer und mit 7-Zip öffnen: 18 `.tif`, `granule_metadata.xml`, `product_metadata.xml`, `tileinfo_metadata.json`, `ATTRIBUTION.txt`, `item.json`; kein `preview`, kein `thumbnail`. In `ATTRIBUTION.txt` stehen die Attribution mit dem Jahr der Szene, die Bedingungen und die DOI.
+4. **Firefox, eine ganze Szene** (rund 0,9 GB): kommt das ZIP vollständig an? Das Fenster darf dabei offen bleiben; ein Firefox, der den Worker beendet, würde „Failed“ zeigen.
+5. **Abbruch.** „Cancel“ während des Ladens: das ZIP endet als „Failed“ im Download-Fenster des Browsers, die Zeilen zeigen „Cancelled“, „Retry failed“ erscheint. ✕ im Kopf des Fensters stoppt ebenfalls.
+6. **Safari (Mac oder iPhone).** Kommt das ZIP an, oder greift der Rückfall („The files come one by one.“ bzw. „Your browser downloads each file.“)? Bei den Downloads des Browsers zeigt Safari TIFF eventuell im Tab an: Dann hilft „Save link list“ unter dem Fenster.
+7. **Ohne CORS: Copernicus DEM.** Eine DEM-Kachel wählen: Die Zeile zeigt „Started in your browser“, der Browser lädt die Kachel selbst unter dem Namen der Quelle (`Copernicus_DSM_COG_…_DEM.tif`), daneben `cop-dem-glo-30_ATTRIBUTION.txt`; kein ZIP. Die Hinweiszeile sagt „Your browser downloads each file.“
+8. **CORS-Kopfzeile eines Hosts prüfen (PowerShell 5.1).** Eine Adresse aus „Links to the files“ im Fenster kopieren:
+
+```powershell
+$u = 'HIER-EINE-ADRESSE-AUS-DEM-FENSTER'
+$r = Invoke-WebRequest -Uri $u -Method Head -Headers @{ Origin = 'https://example.org' } -UseBasicParsing
+$r.Headers['Access-Control-Allow-Origin']   # * heißt: die Seite darf lesen; leer heißt: kein CORS, dann gilt der Weg ohne ZIP
+$r.Headers['Content-Length']                # die Größe der Datei in Byte
+```
 
 ### 6.13 Quellen
 

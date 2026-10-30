@@ -444,6 +444,25 @@ Begleitdatei für Downloads bleiben M4.
 zusätzlich `recipe.json` und `citation.bib`; den Inhalt legt `adr/0014` fest, die
 Umsetzung ist M4-14.
 
+**Nachtrag NM4-33 (2026-10-30, `plans/querschnitt/nm4-33-originale-ein-klick.md`):**
+„Download full scene(s)“ lädt die Originale ganzer Szenen mit einem Klick, und der
+Browser holt jede Datei selbst von der Quelle. Kein Byte läuft durch das eigene
+Backend; ein ZIP über die Plattform gibt es nicht (Otto, 29.10.2026).
+- **Quelle mit CORS** (`earthx:access.cors = true`): je Szene ein ZIP
+  `<Szenen-ID>.zip`, im Browser gebaut, ohne Kompression (STORE), von einem Service Worker
+  mit client-zip in den Download gestreamt (kein Arbeitsspeicher, keine Grenze je Datei). Inhalt:
+  alle Daten-Assets der Szene als `<Szenen-ID>_<Asset>.tif`, die Dateien der Szene mit der
+  STAC-Rolle `metadata`, `ATTRIBUTION.txt` und `item.json`. Welche Assets das sind, folgt aus
+  der Collection (`earthx:band_units` ohne `earthx:auxiliary_assets`, außer denen der
+  Standarddarstellung), nicht aus einer Namensliste im Frontend.
+- **Quelle ohne CORS:** jede Datei ein Download des Browsers unter dem Namen der Quelle,
+  `<Datensatz>_ATTRIBUTION.txt` daneben; Metadaten-Dateien, die ein Browser anzeigen statt
+  speichern würde, bleiben draußen.
+- **Browser ohne Service Worker:** die Einzeldateien unter denselben Namen; bis 500 MB je
+  Datei über den Speicher der Seite, darüber als Download des Browsers.
+- Die Modulgrenzen ändern sich nicht (reines Frontend). Das Fenster setzt die Rückfrage
+  „mehrere Dateien herunterladen?“ des Browsers voraus; Chromium fragt einmal je Website.
+
 ### 6.5 Fetch-Gateway
 
 Einziger Weg nach außen für `adapters`, `readers`, `discovery` und Health-Checks:
