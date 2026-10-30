@@ -9,6 +9,7 @@ import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
 import type { AoiProvenance, JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
+import { bandNamesOf, isBandMath, nameProblem, ownersOf, resultNameOf } from './processingBands';
 import { initialValues, paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
 import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
@@ -29,7 +30,6 @@ export interface Operator {
 export interface ProcessInfo {
   operators: Operator[];
   maxSteps: number;
-  maxAssets: number;
   dtypes: string[];
   // `x-earthx-variable-separator` (F9); `null` where the dataset has none.
   variableSeparator: string | null;
@@ -83,7 +83,6 @@ export function processInfo(description: ProcessDescription): ProcessInfo {
   return {
     operators,
     maxSteps: typeof steps.maxItems === 'number' ? steps.maxItems : 16,
-    maxAssets: typeof assets.maxItems === 'number' ? assets.maxItems : 16,
     dtypes: Array.isArray(dtype.enum) ? dtype.enum.filter((d) => typeof d === 'string') : [],
     variableSeparator:
       typeof assets['x-earthx-variable-separator'] === 'string' ? assets['x-earthx-variable-separator'] : null,
@@ -232,37 +231,6 @@ export function insertName(value: string, start: number, end: number, name: stri
   return { text: `${before}${lead}${name}${trail}${after}`, caret: before.length + lead.length + name.length };
 }
 
-// A name maps to an asset only if exactly one source carries it (two Zarr
-// groups can both carry `b04`; the panel does not choose for the user).
-export function uniqueNames(sources: readonly BandSource[]): Map<string, string> {
-  const owners = new Map<string, string | null>();
-  for (const source of sources) {
-    for (const name of source.names) owners.set(name, owners.has(name) ? null : source.asset);
-  }
-  const unique = new Map<string, string>();
-  for (const [name, asset] of owners) if (asset !== null) unique.set(name, asset);
-  return unique;
-}
-
-// The assets of the order: those the user picked, those an expression names and
-// those a step needs (the layer of a mask), in the item's own order.
-export function orderAssets(
-  sources: readonly BandSource[],
-  picked: readonly string[],
-  expressions: readonly string[],
-  needed: readonly string[] = [],
-): string[] {
-  const unique = uniqueNames(sources);
-  const wanted = new Set([...picked, ...needed]);
-  for (const expression of expressions) {
-    for (const name of namesInExpression(expression)) {
-      const asset = unique.get(name);
-      if (asset) wanted.add(asset);
-    }
-  }
-  return sources.map((s) => s.asset).filter((asset) => wanted.has(asset));
-}
-
 // --- which assets are bands (NM4-07) ----------------------------------------------
 
 // `earthx:auxiliary_assets` of the collection: what the registry says is no band. Nothing guessed from the names.
@@ -271,8 +239,8 @@ export function auxiliaryAssetsOf(collection: Collection | undefined): string[] 
   return Array.isArray(raw) ? raw.filter((key): key is string => typeof key === 'string') : [];
 }
 
-// The assets "Select all" would take: the bands of the data, in the item's order — not the auxiliary assets of the
-// registry and not the layer of the mask, which a mask step brings along itself.
+// The assets that are bands of the data, in the item's order — not the auxiliary assets of the registry and not the layer
+// of the mask: those are in the output list, but not part of "All" and not checked for the person.
 export function selectableAssets(
   sources: readonly BandSource[],
   auxiliary: readonly string[],
@@ -281,29 +249,45 @@ export function selectableAssets(
   return sources.map((s) => s.asset).filter((asset) => asset !== maskLayerAsset && !auxiliary.includes(asset));
 }
 
-// The one band of a dataset that has only one, so the panel can pick it on opening; `null` otherwise. An asset with
+// The one band of a dataset that has only one, so the panel can check it on opening; `null` otherwise. An asset with
 // several bands is not "one band", even where it is the only asset.
 export function lonelyBand(selectable: readonly string[], sources: readonly BandSource[]): string | null {
   const only = selectable.length === 1 ? sources.find((s) => s.asset === selectable[0]) : undefined;
-  return only && only.names.length <= 1 ? only.asset : null;
+  return only && only.names.length <= 1 ? bandNamesOf(only)[0] : null;
 }
 
-export type SelectAll = { assets: string[] } | { reason: string };
+// A band of the data as the output list and the chips show it (adr/0020 §14).
+export interface DataBand {
+  name: string;
+  asset: string;
+  // The unit to write beside the name, `null` for none (`shownUnit`).
+  unit: string | null;
+  // What the registry says is no band (`visual`, `preview`): offered only where the order has it already.
+  auxiliary: boolean;
+  // The layer of the mask: in the list, never checked for the person.
+  layer: boolean;
+}
 
-// All bands, or the short reason there is no such pick: an order takes at most `max` assets, and what an expression or a
-// mask step brings along counts as well. Never a part of the bands in silence.
-export function selectAllBands(
+// Every band of the data, in the item's order; a name two assets carry is left out, the order cannot name it.
+export function dataBandsOf(
   sources: readonly BandSource[],
-  selectable: readonly string[],
-  expressions: readonly string[],
-  needed: readonly string[],
-  max: number,
-): SelectAll {
-  const total = orderAssets(sources, selectable, expressions, needed).length;
-  if (total > max) {
-    return { reason: `${total} bands – an order takes at most ${max}` };
-  }
-  return { assets: [...selectable] };
+  auxiliary: readonly string[],
+  maskLayerAsset: string | null,
+): DataBand[] {
+  const owners = ownersOf(sources);
+  return sources.flatMap((source) =>
+    bandNamesOf(source).flatMap((name, index) =>
+      owners.get(name) === source.asset
+        ? [{
+            name,
+            asset: source.asset,
+            unit: shownUnit(source.names.length === 0 ? source.unit : source.units[index]),
+            auxiliary: auxiliary.includes(source.asset),
+            layer: source.asset === maskLayerAsset,
+          }]
+        : [],
+    ),
+  );
 }
 
 // --- the layer a mask reads (M4-18c) ----------------------------------------------
@@ -453,6 +437,9 @@ export interface DraftStep {
   op: string;
   opVersion: number;
   values: Record<string, FieldValue>;
+  // `band_math` only: the name the later steps and the output refer to. It follows `values.name` while that is a name
+  // the rules allow, so that a name typed half-way (empty, taken) leaves the references alone (adr/0020 §6).
+  applied?: string;
 }
 
 export interface StepProblem {
@@ -466,10 +453,38 @@ export interface BuiltOrder {
   problems: string[];
 }
 
+// Why the job cannot start while the output holds no band (adr/0020 §9).
+export const EMPTY_OUTPUT = 'Pick at least one band for the output.';
+
 // The scenes of a group in one fixed order, so that the same selection is the
 // same order text (an estimate belongs to exactly one order, K4). The server
 // sorts the list for the mosaic itself (`mosaic_order`).
 const orderedIds = (ids: readonly string[]): string[] => [...ids].sort();
+
+// What is wrong with a step beyond its form fields, by field (adr/0020 §6): the name of the band a `band_math` step adds,
+// and a name of a result that a step reads before it exists.
+function bandProblems(step: DraftStep, index: number, steps: readonly DraftStep[], data: readonly string[]): Record<string, string> {
+  const errors: Record<string, string> = {};
+  const results = steps.map((s, i) => ({ index: i, name: isBandMath(s) ? resultNameOf(s) : null }));
+  if (isBandMath(step)) {
+    const others = results.flatMap((r) => (r.index !== index && r.name !== null ? [r.name] : []));
+    const problem = nameProblem(resultNameOf(step), others, data);
+    if (problem) errors.name = problem;
+  }
+  const names =
+    step.op === 'band_math' && typeof step.values.expression === 'string'
+      ? namesInExpression(step.values.expression)
+      : step.op === 'normalize' && typeof step.values.bands === 'string'
+        ? new Set(step.values.bands.split(/[\s,;]+/u).filter((n) => n !== ''))
+        : new Set<string>();
+  const field = step.op === 'normalize' ? 'bands' : 'expression';
+  for (const result of results) {
+    if (result.index < index || result.name === null || !names.has(result.name) || data.includes(result.name)) continue;
+    errors[field] = result.index === index ? `${result.name} is the band this step adds.` : `${result.name} is added by a later step.`;
+    break;
+  }
+  return errors;
+}
 
 export function buildOrder(args: {
   datasetId: string;
@@ -477,37 +492,38 @@ export function buildOrder(args: {
   area: Area;
   aoi: GeoJSON.Geometry | null;
   steps: readonly DraftStep[];
-  assets: readonly string[];
+  // The bands of the output in the order of the file, and every band of the data (the names a result may not take).
+  bands: readonly string[];
+  data: readonly string[];
   dtype: string;
   info: ProcessInfo;
 }): BuiltOrder {
-  const { datasetId, itemIds, area, aoi, steps, assets, dtype, info } = args;
+  const { datasetId, itemIds, area, aoi, steps, bands, data, dtype, info } = args;
   const problems: string[] = [];
   const built: OrderStep[] = [];
-  const stepProblems: StepProblem[] = steps.map((step) => {
+  const stepProblems: StepProblem[] = steps.map((step, index) => {
     const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
     if (!operator) return { errors: {}, unsupported: 'this operator is not available for this dataset' };
     if (!operator.form.supported) return { errors: {}, unsupported: operator.form.reason };
     const { params, errors } = paramsFrom(operator.form.fields, step.values);
     built.push({ op: step.op, op_version: step.opVersion, params });
-    return { errors };
+    return { errors: { ...errors, ...bandProblems(step, index, steps, data) } };
   });
   if (itemIds.length === 0) problems.push('Pick a pass.');
   if (area === 'aoi' && !isArea(aoi)) problems.push('Draw an area as AOI.');
   if (steps.length === 0) problems.push('Add a step.');
   if (steps.length > info.maxSteps) problems.push(`At most ${info.maxSteps} steps.`);
-  if (assets.length === 0) problems.push('Pick at least one band.');
-  if (assets.length > info.maxAssets) problems.push(`At most ${info.maxAssets} bands.`);
+  if (bands.length === 0) problems.push(EMPTY_OUTPUT);
   if (!dtype) problems.push('Pick an output data type.');
   const stepsOk = stepProblems.every((p) => !p.unsupported && Object.keys(p.errors).length === 0);
   if (problems.length > 0 || !stepsOk) return { order: null, stepProblems, problems };
   return {
     order: {
-      recipe_version: 1,
-      inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)], assets: [...assets] }],
+      recipe_version: 2,
+      inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)] }],
       ...(area === 'aoi' && isArea(aoi) ? { aoi: orderAoi(aoi) } : {}),
       steps: built,
-      output: { kind: 'raster', format: 'cog', dtype },
+      output: { kind: 'raster', format: 'cog', dtype, bands: [...bands] },
     },
     stepProblems,
     problems,
@@ -522,7 +538,8 @@ export interface Draft {
   groups: string[][];
   aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   steps: DraftStep[];
-  assets: string[];
+  // The bands of the output; empty for a crop, which names assets.
+  bands: string[];
   // `null` for an output without a data type (a crop).
   dtype: string | null;
 }
@@ -562,10 +579,18 @@ export function draftFromOrder(
       else if (field.kind !== 'boolean' && (typeof raw === 'string' || typeof raw === 'number')) values[field.name] = String(raw);
       // The classes of a mask: the order holds them as a list, the form as the text it would have been typed as.
       else if (field.kind === 'integers' && Array.isArray(raw) && raw.every((n) => typeof n === 'number')) values[field.name] = raw.join(', ');
+      // The bands of a normalize step, likewise.
+      else if (field.kind === 'names' && Array.isArray(raw) && raw.every((n) => typeof n === 'string')) values[field.name] = raw.join(', ');
       else problems.push(`${where}: ${field.name} has the wrong type.`);
     }
     for (const [name, message] of Object.entries(paramsFrom(fields, values).errors)) problems.push(`${where}: ${name}: ${message}`);
-    steps.push({ key: nextKey(), op: step.op, opVersion: operator.opVersion, values });
+    steps.push({
+      key: nextKey(),
+      op: step.op,
+      opVersion: operator.opVersion,
+      values,
+      ...(step.op === 'band_math' && typeof values.name === 'string' ? { applied: values.name } : {}),
+    });
   });
   const input = order.inputs[0];
   return {
@@ -574,7 +599,7 @@ export function draftFromOrder(
       groups: input.groups.map((group) => [...group]),
       aoi: order.aoi ?? null,
       steps,
-      assets: [...input.assets],
+      bands: order.output.kind === 'raster' ? [...order.output.bands] : [],
       dtype: order.output.kind === 'raster' ? order.output.dtype : null,
     },
     problems,
@@ -587,15 +612,15 @@ export function draftFromOrder(
 export function buildMosaicOrder(args: {
   datasetId: string;
   itemIds: readonly string[];
-  assets: readonly string[];
+  bands: readonly string[];
   dtype: string;
 }): Order {
-  const { datasetId, itemIds, assets, dtype } = args;
+  const { datasetId, itemIds, bands, dtype } = args;
   return {
-    recipe_version: 1,
-    inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)], assets: [...assets] }],
+    recipe_version: 2,
+    inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)] }],
     steps: [],
-    output: { kind: 'raster', format: 'cog', dtype },
+    output: { kind: 'raster', format: 'cog', dtype, bands: [...bands] },
   };
 }
 
@@ -610,7 +635,7 @@ export function buildExportOrder(args: {
 }): Order {
   const { datasetId, groups, assets, aoi } = args;
   return {
-    recipe_version: 1,
+    recipe_version: 2,
     inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: groups.map((g) => [...g]), assets: [...assets] }],
     aoi: orderAoi(aoi),
     steps: [],

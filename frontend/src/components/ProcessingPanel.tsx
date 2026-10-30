@@ -16,21 +16,15 @@ import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
 import { totalOf } from '../processingBatch';
 import {
-  auxiliaryAssetsOf,
+  EMPTY_OUTPUT,
   formatBytes,
   formatDuration,
   formatMegapixels,
   insertName,
   isArea,
-  lonelyBand,
-  namesInExpression,
   processBlockReason,
-  selectableAssets,
-  selectAllBands,
-  shownUnit,
-  uniqueNames,
   type Area,
-  type BandSource,
+  type DataBand,
 } from '../processingOrder';
 import {
   furtherNote,
@@ -40,14 +34,9 @@ import {
   previewUnit,
   rescaleOf,
 } from '../processingPreview';
-import {
-  bandMathExpressions,
-  orderView,
-  type PartOutcome,
-  selectionState,
-  useProcessingStore,
-  type OrderView,
-} from '../processingStore';
+import { isBandMath } from '../processingBands';
+import { orderView, type PartOutcome, selectionState, useProcessingStore, type OrderView } from '../processingStore';
+import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
 import { ticksOfOpen, useAppStore } from '../store';
@@ -55,7 +44,11 @@ import type { StacItem } from '../types';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
+import Tip from './Tip';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
+
+// What the server says when the output needs more memory than a job may use (`plan.py`, 413).
+const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
 
@@ -66,11 +59,30 @@ function focusedExpression(): HTMLTextAreaElement | null {
   return active instanceof HTMLTextAreaElement && active.dataset.bandTarget !== undefined ? active : null;
 }
 
+// A name put into an expression (`insertName`) and the cursor behind it. A controlled field moves its cursor to the end
+// when its value changes, so the cursor is set after the commit; the component that calls this renders again then.
+function useNameInsert() {
+  const updateStep = useProcessingStore((s) => s.updateStep);
+  const caret = useRef<{ field: HTMLTextAreaElement; at: number } | null>(null);
+  useLayoutEffect(() => {
+    const pending = caret.current;
+    caret.current = null;
+    if (pending?.field.isConnected) pending.field.setSelectionRange(pending.at, pending.at);
+  });
+  // `atEnd`: the name goes behind the text instead of at the cursor, for a field that has none (a chip of a step).
+  return (field: HTMLTextAreaElement, name: string, atEnd = false) => {
+    const start = atEnd ? field.value.length : (field.selectionStart ?? field.value.length);
+    const inserted = insertName(field.value, start, atEnd ? start : (field.selectionEnd ?? start), name);
+    caret.current = { field, at: inserted.caret };
+    updateStep(Number(field.dataset.bandTarget), 'expression', inserted.text);
+  };
+}
+
 // "Load recipe…" (M4-19d): the steps and the data type of a `recipe.json` of the user's
 // own, onto the current selection. The file is read here, nothing leaves the browser.
 function RecipeLoader() {
   const load = useProcessingStore((s) => s.loadRecipe);
-  const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null);
+  const [outcome, setOutcome] = useState<{ ok: boolean; message: string; converted?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const pick = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -85,52 +97,30 @@ function RecipeLoader() {
     setBusy(false);
     setOutcome(
       result.ok
-        ? { ok: true, message: ['Recipe loaded.', ...result.notes].join(' ') }
+        ? { ok: true, message: ['Recipe loaded.', ...result.notes].join(' '), ...(result.converted ? { converted: true } : {}) }
         : { ok: false, message: result.reason },
     );
   };
 
   return (
     <div className="pp-recipe">
-      <label className={`ghost-btn pp-recipe-btn${busy ? ' disabled' : ''}`} title="Take the steps and the data type from a recipe.json, onto the current selection">
+      <label className={`ghost-btn pp-recipe-btn${busy ? ' disabled' : ''}`} title="Take the steps, the output bands and the data type from a recipe.json, onto the current selection">
         ⬆ Load recipe…
         <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => void pick(e)} />
       </label>
       {outcome && (
         <p className={outcome.ok ? 'pp-help' : 'hint-text error'} role="status">
           {outcome.message}
+          {outcome.converted && <Tip text={CONVERTED_NOTE} />}
         </p>
       )}
     </div>
   );
 }
 
-function Bands({ view }: { view: OrderView }) {
-  const steps = useProcessingStore((s) => s.steps);
-  const picked = useProcessingStore((s) => s.picked);
-  const togglePick = useProcessingStore((s) => s.togglePick);
-  const setPicked = useProcessingStore((s) => s.setPicked);
-  const updateStep = useProcessingStore((s) => s.updateStep);
-  // Where the cursor goes once the expression has its new text: a controlled
-  // field moves it to the end when its value changes, so it is set after the commit.
-  const caret = useRef<{ field: HTMLTextAreaElement; at: number } | null>(null);
-  useLayoutEffect(() => {
-    const pending = caret.current;
-    caret.current = null;
-    if (pending?.field.isConnected) pending.field.setSelectionRange(pending.at, pending.at);
-  });
-  const unique = uniqueNames(view.sources);
-  const auxiliary = auxiliaryAssetsOf(view.dataset?.collection);
-  const selectable = selectableAssets(view.sources, auxiliary, view.maskLayer?.asset ?? null);
-  // A dataset or scene with one band has it picked on opening, once: a later "Clear" stays cleared.
-  const lonely = lonelyBand(selectable, view.sources);
-  const autoPicked = useRef<string | null>(null);
-  useEffect(() => {
-    if (lonely === null || autoPicked.current === lonely) return;
-    autoPicked.current = lonely;
-    if (picked.length === 0) setPicked([lonely]);
-  }, [lonely, picked.length, setPicked]);
-  const named = new Set(bandMathExpressions(steps).flatMap((e) => [...namesInExpression(e)]));
+// The bands of the data, for information and as a help to write an expression (adr/0020 §14): a click puts the name into
+// the expression that has the cursor, and does nothing otherwise. What the output holds is chosen at the end of the panel.
+function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextAreaElement, name: string) => void }) {
   if (!view.pass) return null;
   if (view.sources.length === 0) {
     return (
@@ -140,89 +130,127 @@ function Bands({ view }: { view: OrderView }) {
       </section>
     );
   }
-
-  // A click with the cursor in an expression inserts the name there; any other
-  // click adds the band to the order or leaves it out and changes no expression.
-  const click = (source: BandSource, name: string | null) => {
-    if (source.asset === view.maskAsset?.asset) return;
-    const field = name !== null && unique.get(name) === source.asset ? focusedExpression() : null;
-    if (field && name !== null) {
-      const start = field.selectionStart ?? field.value.length;
-      const inserted = insertName(field.value, start, field.selectionEnd ?? start, name);
-      caret.current = { field, at: inserted.caret };
-      updateStep(Number(field.dataset.bandTarget), 'expression', inserted.text);
-      return;
-    }
-    const byExpression = source.names.some((n) => named.has(n)) && !picked.includes(source.asset);
-    if (!byExpression) togglePick(source.asset);
-  };
-
-  const chip = (source: BandSource, name: string | null) => {
-    const pressed = view.assets.includes(source.asset);
-    const byMask = pressed && source.asset === view.maskAsset?.asset;
-    const byExpression = pressed && !byMask && !picked.includes(source.asset);
-    const label = name !== null && unique.get(name) === source.asset ? name : source.asset;
-    const unit = shownUnit(name === null ? source.unit : source.units[source.names.indexOf(name)]);
-    return (
-      <button
-        key={`${source.asset}/${name ?? ''}`}
-        type="button"
-        className={`pp-chip${pressed ? ' on' : ''}`}
-        aria-pressed={pressed}
-        title={
-          byMask
-            ? `${source.asset} is the layer of the mask step: remove that step to leave it out`
-            : byExpression
-              ? `${source.asset} is named in an expression: take the name out there to leave it out`
-              : name === null
-                ? `${pressed ? 'Leave out' : 'Add'} ${source.asset} (it describes no band names to insert)`
-                : `${pressed ? 'Leave out' : 'Add'} ${source.asset}`
-        }
-        // Keep the cursor where it is: a click on a button would take the focus,
-        // and with it the field a name is inserted into.
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => click(source, name)}
-      >
-        {label}
-        {unit && <span className="pp-chip-unit"> · {unit}</span>}
-      </button>
-    );
-  };
-
-  // "Select all" takes every band, or is out of reach with the reason; it never takes a part of them in silence.
-  const needed = view.maskAsset ? [view.maskAsset.asset] : [];
-  const all = selectAllBands(view.sources, selectable, bandMathExpressions(steps), needed, view.info?.maxAssets ?? 16);
-  // What is no band of the data is not offered, unless it is in the order already (a loaded recipe can name it).
-  const shown = view.sources.filter((s) => !auxiliary.includes(s.asset) || view.assets.includes(s.asset));
-
   return (
     <section className="pp-section" aria-label="Bands">
       <div className="pp-bands-head">
         <h3 className="pp-heading">Bands</h3>
-        <button
-          type="button"
-          className="link-btn"
-          disabled={selectable.length === 0 || 'reason' in all}
-          title={'reason' in all ? all.reason : 'Pick every band of the data'}
-          onClick={() => 'assets' in all && setPicked(all.assets)}
-        >
-          Select all bands
-        </button>
-        <button
-          type="button"
-          className="link-btn"
-          disabled={picked.length === 0}
-          title="Leave out the bands you picked. Bands named in an expression or needed by a step stay."
-          onClick={() => setPicked([])}
-        >
-          Clear
-        </button>
+        <Tip text="Bands of the data. Click one to put its name into an expression." />
       </div>
       <div className="pp-chips">
-        {shown.flatMap((source) =>
-          source.names.length === 0 ? [chip(source, null)] : source.names.map((name) => chip(source, name)),
-        )}
+        {view.dataBands
+          .filter((band) => !band.auxiliary)
+          .map((band) => (
+            <button
+              key={`${band.asset}/${band.name}`}
+              type="button"
+              className="pp-chip"
+              // Keep the cursor where it is: a click on a button would take the focus, and with it the field a name goes into.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                const field = focusedExpression();
+                if (field) insert(field, band.name);
+              }}
+            >
+              {band.name}
+              {band.unit && <span className="pp-chip-unit"> · {band.unit}</span>}
+            </button>
+          ))}
       </div>
+    </section>
+  );
+}
+
+// "Select Bands that are processed" (adr/0020 §9, §14): the bands of the output, the results of the steps ("New") and
+// the bands of the data ("Data"), a click each. Nothing is checked for the person, but the result of a step and the one
+// band of a dataset that has only one.
+function OutputBands({ view }: { view: OrderView }) {
+  const toggle = useProcessingStore((s) => s.toggleOutput);
+  const setOutput = useProcessingStore((s) => s.setOutput);
+  const setDtype = useProcessingStore((s) => s.setDtype);
+  // A dataset or scene with one band has it checked on opening, once: a later "None" stays.
+  const lonely = view.lonely;
+  const checkedOnOpening = useRef<string | null>(null);
+  const checked = lonely !== null && view.output.includes(lonely);
+  useEffect(() => {
+    if (lonely === null || checkedOnOpening.current === lonely) return;
+    checkedOnOpening.current = lonely;
+    if (!checked) toggle(lonely);
+  }, [lonely, checked, toggle]);
+
+  const on = new Set(view.output);
+  const data = view.dataBands.filter((band) => !band.auxiliary || on.has(band.name));
+  // What "All" takes: every result and every band of the data that is no layer and no auxiliary asset.
+  const everything = [...view.results.map((result) => result.name), ...view.selectable];
+  const chip = (name: string, band?: DataBand) => (
+    <button key={name} type="button" className={`pp-chip${on.has(name) ? ' on' : ''}`} aria-pressed={on.has(name)} onClick={() => toggle(name)}>
+      {name}
+      {band?.unit && <span className="pp-chip-unit"> · {band.unit}</span>}
+    </button>
+  );
+  const count = view.output.length;
+  return (
+    <section className="pp-section" aria-label="Output">
+      <div className="pp-bands-head">
+        <h3 className="pp-heading">Select Bands that are processed</h3>
+        <Tip text="The bands of the result. Click a band to put it into the output or take it out." />
+        <span className="pp-help" aria-label="Output summary">
+          {count} band{count === 1 ? '' : 's'} · {view.dtype}
+        </span>
+      </div>
+      {view.results.length > 0 && (
+        <div className="pp-chip-row" role="group" aria-label="New bands">
+          <span className="pp-help">New</span>
+          <div className="pp-chips">{view.results.map((result) => chip(result.name))}</div>
+        </div>
+      )}
+      {data.length > 0 && (
+        <div className="pp-chip-row" role="group" aria-label="Bands of the data">
+          <span className="pp-help">Data</span>
+          <div className="pp-chips">{data.map((band) => chip(band.name, band))}</div>
+        </div>
+      )}
+      {(everything.some((name) => !on.has(name)) || count > 0) && (
+        <div className="pp-bands-head">
+          {everything.some((name) => !on.has(name)) && (
+            <button
+              type="button"
+              className="link-btn"
+              title="Put every band into the output"
+              onClick={() => setOutput([...everything, ...view.output.filter((name) => !everything.includes(name))])}
+            >
+              All
+            </button>
+          )}
+          {count > 0 && (
+            <button type="button" className="link-btn" title="Take every band out of the output" onClick={() => setOutput([])}>
+              None
+            </button>
+          )}
+        </div>
+      )}
+      <p className="pp-summary" aria-label="Data type">
+        Data type: <strong>{view.dtype}</strong>
+        {view.dtypeChosen ? ' (your choice)' : ' (chosen automatically)'}
+      </p>
+      {view.dtypeAutomatic && !view.dtypeChosen && <span className="pp-help">{view.dtypeAutomatic.reason}</span>}
+      {view.dtypeNote && <p className="hint-text warn">{view.dtypeNote}</p>}
+      <details className="pp-details">
+        <summary>Change the data type</summary>
+        <label className="vc-field pp-field">
+          Data type
+          <select value={view.dtypeChosen ? view.dtype : ''} onChange={(e) => setDtype(e.target.value)}>
+            <option value="">Automatic{view.dtypeAutomatic ? `: ${view.dtypeAutomatic.value}` : ''}</option>
+            {view.dtypeOptions.map((option) => (
+              <option key={option.value} value={option.value} disabled={option.disabledReason !== null} title={option.disabledReason ?? undefined}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {view.dtypeOptions.find((o) => o.disabledReason) && (
+          <span className="pp-help">{view.dtypeOptions.find((o) => o.disabledReason)!.disabledReason} These types are not offered.</span>
+        )}
+      </details>
     </section>
   );
 }
@@ -418,9 +446,7 @@ function PreviewSection({ view }: { view: OrderView }) {
           </div>
           {'problem' in range && <p className="hint-text error">{range.problem}</p>}
           {rangeNote && <p className="hint-text">{rangeNote}</p>}
-          {view.assets.length === 0 && (
-            <p className="hint-text">Pick a band, or name it in the expression, to see the preview.</p>
-          )}
+          {view.assets.length === 0 && <p className="hint-text">Pick a band for the output to see the preview.</p>}
           {view.assets.length > MAX_PREVIEW_ASSETS && (
             <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
           )}
@@ -456,7 +482,7 @@ function MaskLayerNote({ view }: { view: OrderView }) {
   const mask = view.maskAsset;
   if (!mask || !view.pass) return null;
   return mask.inOrder ? (
-    <p className="pp-help">The order also reads the mask layer {mask.asset}; it is not in the result.</p>
+    view.output.includes(view.maskLayer?.band ?? mask.asset) ? null : <p className="pp-help">The order also reads the mask layer {mask.asset}; it is not in the result.</p>
   ) : (
     <p className="hint-text error">The scenes have no mask layer {mask.asset}: the job cannot hide anything.</p>
   );
@@ -489,6 +515,7 @@ export default function ProcessingPanel() {
   const p = useProcessingStore();
   // Narrow screens only: the sheet from below folds down to its head.
   const [folded, setFolded] = useState(false);
+  const insert = useNameInsert();
   if (!open) return null;
   if (p.detailJobID) return <JobDetails />;
 
@@ -510,22 +537,31 @@ export default function ProcessingPanel() {
       ? 'Start job'
       : `Start ${batch && taken < view.parts.length ? `${taken} of ${view.parts.length}` : view.parts.length} jobs`;
   const startReady = view.runAs === 'one' ? !!estimate : taken > 0;
-  const startTitle = startReady
-    ? view.runAs === 'one'
-      ? 'Start this order as a job'
-      : 'Start the jobs the server took'
-    : batch
-      ? 'The server refused every job'
-      : 'Review the order first';
   const showErrors = p.reviewAsked;
   const sceneCount = view.pass?.items.length ?? 0;
   // A refusal belongs to the order it refused; a changed draft hides it.
   const refusals = [p.reviewError, p.startError].filter((r) => r !== null && r.key === view.key);
   const refusalAt = (index: number) => refusals.find((r) => r!.step === index)?.message ?? null;
-  const orderRefusals = refusals.filter((r) => r!.step === null);
+  // The server's estimate said the output needs more memory than a job may use (adr/0020 §7): the start stays shut and
+  // the reason is the tooltip of the button, not a line of the panel.
+  const memory = refusals.find((r) => r!.step === null && r!.status === 413 && isMemoryRefusal(r!.message))?.message ?? null;
+  const orderRefusals = refusals.filter((r) => r!.step === null && r!.message !== memory);
   const tooLarge =
     p.area === 'scene' &&
-    (refusals.some((r) => r!.status === 413) || (batch?.some((part) => part.refusal?.status === 413) ?? false));
+    (refusals.some((r) => r!.status === 413 && r!.message !== memory) ||
+      (batch?.some((part) => part.refusal?.status === 413 && !isMemoryRefusal(part.refusal.message)) ?? false));
+  const startTitle =
+    view.output.length === 0
+      ? EMPTY_OUTPUT
+      : memory
+        ? memory
+        : startReady
+          ? view.runAs === 'one'
+            ? 'Start this order as a job'
+            : 'Start the jobs the server took'
+          : batch
+            ? 'The server refused every job'
+            : 'Review the order first';
   // A target CRS the server turned away holds the review back (M4-13c-3).
   const crsBlock = crsBlockReason(p.steps, p.crs);
   const latitude = areaLatitude(p.area, hasAoi ? app.aoi : null, view.pass?.items ?? []);
@@ -622,7 +658,7 @@ export default function ProcessingPanel() {
 
             {info && (
               <>
-                <Bands view={view} />
+                <Bands view={view} insert={insert} />
 
                 <section className="pp-section" aria-label="Processing steps">
                   <h3 className="pp-heading">Processing steps</h3>
@@ -631,6 +667,8 @@ export default function ProcessingPanel() {
                       {p.steps.map((step, index) => {
                         const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
                         const problem = built?.stepProblems[index];
+                        // The results of the steps before this one: the bands this step may name besides those of the data.
+                        const earlier = view.results.slice(0, p.steps.slice(0, index).filter(isBandMath).length).map((r) => r.name);
                         return (
                           <StepForm
                             key={step.key}
@@ -645,6 +683,12 @@ export default function ProcessingPanel() {
                             refusal={refusalAt(index)}
                             latitude={latitude}
                             maskLayer={view.maskLayer}
+                            earlier={earlier}
+                            dataBands={view.selectable}
+                            onInsert={(name) => {
+                              const field = document.querySelector<HTMLTextAreaElement>(`[data-band-target="${step.key}"]`);
+                              if (field) insert(field, name, document.activeElement !== field);
+                            }}
                             onChange={(name, value) => p.updateStep(step.key, name, value)}
                             onMove={(direction) => p.moveStep(step.key, direction)}
                             onRemove={() => p.removeStep(step.key)}
@@ -689,41 +733,7 @@ export default function ProcessingPanel() {
                   )}
                 </section>
 
-                <section className="pp-section" aria-label="Output">
-                  <h3 className="pp-heading">Output</h3>
-                  <p className="pp-summary" aria-label="Data type">
-                    Data type: <strong>{view.dtype}</strong>
-                    {view.dtypeChosen ? ' (your choice)' : ' (chosen automatically)'}
-                  </p>
-                  {view.dtypeAutomatic && !view.dtypeChosen && (
-                    <span className="pp-help">{view.dtypeAutomatic.reason}</span>
-                  )}
-                  {view.dtypeNote && <p className="hint-text warn">{view.dtypeNote}</p>}
-                  <details className="pp-details">
-                    <summary>Change the data type</summary>
-                    <label className="vc-field pp-field">
-                      Data type
-                      <select value={view.dtypeChosen ? view.dtype : ''} onChange={(e) => p.setDtype(e.target.value)}>
-                        <option value="">Automatic{view.dtypeAutomatic ? `: ${view.dtypeAutomatic.value}` : ''}</option>
-                        {view.dtypeOptions.map((option) => (
-                          <option
-                            key={option.value}
-                            value={option.value}
-                            disabled={option.disabledReason !== null}
-                            title={option.disabledReason ?? undefined}
-                          >
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {view.dtypeOptions.find((o) => o.disabledReason) && (
-                      <span className="pp-help">
-                        {view.dtypeOptions.find((o) => o.disabledReason)!.disabledReason} These types are not offered.
-                      </span>
-                    )}
-                  </details>
-                </section>
+                <OutputBands view={view} />
 
                 <PreviewSection view={view} />
               </>

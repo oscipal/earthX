@@ -13,6 +13,7 @@ import {
 } from '../download';
 import { jobTitle, titleDay } from '../processingBatch';
 import { chooseDtype } from '../processingDefaults';
+import { bandNamesOf } from '../processingBands';
 import { bandSources, buildMosaicOrder } from '../processingOrder';
 import { orderStands, useProcessingStore } from '../processingStore';
 import { JobRow } from './JobRow';
@@ -75,7 +76,13 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
     const dtype = chooseDtype({ steps: [], bands, allowed: info.dtypes }).value;
     onStarted(index, { state: 'starting' });
     const answer = await placeOrder(
-      buildMosaicOrder({ datasetId: dataset.id, itemIds: pass.items.map((i) => i.id), assets: [asset], dtype }),
+      buildMosaicOrder({
+        datasetId: dataset.id,
+        itemIds: pass.items.map((i) => i.id),
+        // The platform reads the assets the bands come from (adr/0020 §5); an asset the item does not describe is one band.
+        bands: bands.length > 0 ? bands.flatMap(bandNamesOf) : [asset],
+        dtype,
+      }),
       { title: jobTitle({ operators: ['Mosaic'], dataset: dataset.title, day: titleDay(pass.items, resultsGroupByOfOption(dataset)) }) },
     );
     onStarted(

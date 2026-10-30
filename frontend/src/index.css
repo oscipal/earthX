@@ -2731,6 +2731,24 @@ a.pm-icon:hover {
   flex-wrap: wrap;
   gap: 4px;
 }
+/* A label ("New", "Data") and the chips of the output list (NM4-43e). */
+.pp-chip-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.pp-chip-row > .pp-help {
+  flex: none;
+  min-width: 32px;
+}
+.pp-step-op {
+  color: var(--muted);
+}
+/* The name of a band math step that breaks a rule: the frame in the colour of an error, the reason in the tooltip. */
+.pp-field input[aria-invalid='true'],
+.pp-field textarea[aria-invalid='true'] {
+  border-color: #ff6b6b;
+}
 .pp-chip,
 .pp-seg {
   padding: 3px 8px;

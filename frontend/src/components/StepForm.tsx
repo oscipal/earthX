@@ -5,7 +5,7 @@
 import { Fragment } from 'react';
 
 import type { Operator } from '../processingOrder';
-import { integersIn, type Field, type FieldValue } from '../schemaForm';
+import { integersIn, namesIn, type Field, type FieldValue } from '../schemaForm';
 import type { EarthxMask } from '../types';
 import { CellSize, CrsRefusal } from './CellSize';
 import { useCrsLookup } from './useCrsLookup';
@@ -16,12 +16,15 @@ function FieldInput({
   error,
   inputId,
   bandTarget,
+  errorAsTip = false,
   onChange,
 }: {
   field: Field;
   value: FieldValue | undefined;
   error: string | undefined;
   inputId: string;
+  // The reason is the tooltip of the field and its frame turns the colour of an error, instead of a line below it.
+  errorAsTip?: boolean;
   // Set on the expression of a band-math step: the key of its step. A band chip
   // inserts its name only into the field that has the cursor and carries this.
   bandTarget?: number;
@@ -49,7 +52,7 @@ function FieldInput({
             ))}
         </ul>
       )}
-      {error && <span className="hint-text error">{error}</span>}
+      {error && !errorAsTip && <span className="hint-text error">{error}</span>}
     </>
   );
   if (field.kind === 'boolean') {
@@ -114,11 +117,59 @@ function FieldInput({
           spellCheck={false}
           aria-describedby={describedBy}
           aria-invalid={!!error}
+          data-tip={errorAsTip && error ? error : undefined}
           onChange={(e) => onChange(e.target.value)}
         />
       )}
       {help}
     </label>
+  );
+}
+
+// "Bands" of a normalize step: the bands it converts, chosen from the bands of the data and the results of the steps
+// before it. The value is the list as text, like the classes of a mask.
+function BandChoice({
+  field,
+  names,
+  value,
+  error,
+  inputId,
+  onChange,
+}: {
+  field: Field;
+  names: readonly string[];
+  value: FieldValue | undefined;
+  error: string | undefined;
+  inputId: string;
+  onChange: (value: FieldValue) => void;
+}) {
+  const chosen = namesIn(typeof value === 'string' ? value : '');
+  const toggle = (name: string) => onChange((chosen.includes(name) ? chosen.filter((n) => n !== name) : [...chosen, name]).join(', '));
+  // A band the list names that cannot be offered here (typed in a recipe, or taken from this selection) stays visible.
+  const shown = [...names, ...chosen.filter((name) => !names.includes(name))];
+  return (
+    <fieldset className="pp-classes" aria-describedby={field.description ? `${inputId}-help` : undefined}>
+      <legend>{field.title}</legend>
+      <div className="pp-chips">
+        {shown.map((name) => (
+          <button
+            key={name}
+            type="button"
+            className={`pp-chip${chosen.includes(name) ? ' on' : ''}`}
+            aria-pressed={chosen.includes(name)}
+            onClick={() => toggle(name)}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+      {field.description && (
+        <span id={`${inputId}-help`} className="pp-help">
+          {field.description}
+        </span>
+      )}
+      {error && <span className="hint-text error">{error}</span>}
+    </fieldset>
   );
 }
 
@@ -187,6 +238,9 @@ export default function StepForm({
   refusal,
   latitude,
   maskLayer,
+  earlier,
+  dataBands,
+  onInsert,
   onChange,
   onMove,
   onRemove,
@@ -206,6 +260,11 @@ export default function StepForm({
   latitude: number | null;
   // `earthx:mask` of the dataset, for the classes of a mask step.
   maskLayer: EarthxMask | null;
+  // The names of the bands the steps before this one add, and the bands of the data a step may name (adr/0020 §14).
+  earlier: readonly string[];
+  dataBands: readonly string[];
+  // A name put into this step's expression.
+  onInsert: (name: string) => void;
   onChange: (name: string, value: FieldValue) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
@@ -218,11 +277,17 @@ export default function StepForm({
   // `reproject` (M4-13c-3): what the target CRS and the resolution mean.
   const reprojects = operator?.op === 'reproject';
   useCrsLookup(reprojects ? values.crs : undefined);
+  const bandMath = operator?.op === 'band_math';
+  // The title is the number and the name of the step: the band a band math step adds, or "Mask_1" and the like for a
+  // step that adds none (adr/0020 §14).
+  const own = operator ? operator.op.charAt(0).toUpperCase() + operator.op.slice(1) : 'Unknown operator';
+  const name = bandMath ? (typeof values.name === 'string' && values.name !== '' ? values.name : '…') : `${own}_${index + 1}`;
   return (
     <li className="pp-step" aria-label={`Step ${index + 1}: ${operator?.title ?? 'unknown operator'}`}>
       <div className="pp-step-head">
         <span className="pp-step-title">
-          {index + 1}. {operator?.title ?? 'Unknown operator'}
+          {index + 1}. {name}
+          {operator && <span className="pp-step-op"> {operator.title.toLowerCase()}</span>}
         </span>
         <span className="pp-step-actions">
           <button type="button" className="link-btn" title="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
@@ -259,14 +324,30 @@ export default function StepForm({
             />
           );
         }
+        if (field.kind === 'names') {
+          return (
+            <BandChoice
+              key={field.name}
+              field={field}
+              names={[...earlier, ...dataBands.filter((band) => !earlier.includes(band))]}
+              value={value}
+              error={showErrors || touched ? errors[field.name] : undefined}
+              inputId={`pp-step-${stepKey}-${field.name}`}
+              onChange={(v) => onChange(field.name, v)}
+            />
+          );
+        }
+        // The name of a band math step always has a value, so what is wrong with it is the person's doing: shown at once.
+        const ownName = bandMath && field.name === 'name';
         return (
           <Fragment key={field.name}>
             <FieldInput
               field={field}
               value={value}
-              error={showErrors || touched ? errors[field.name] : undefined}
+              error={ownName || showErrors || touched ? errors[field.name] : undefined}
               inputId={`pp-step-${stepKey}-${field.name}`}
-              bandTarget={operator?.op === 'band_math' && field.name === 'expression' ? stepKey : undefined}
+              bandTarget={bandMath && field.name === 'expression' ? stepKey : undefined}
+              errorAsTip={ownName}
               onChange={(v) => onChange(field.name, v)}
             />
             {reprojects && field.name === 'crs' && <CrsRefusal code={values.crs} />}
@@ -276,6 +357,22 @@ export default function StepForm({
           </Fragment>
         );
       })}
+      {bandMath && earlier.length > 0 && (
+        <div className="pp-chips" role="group" aria-label="Results of earlier steps">
+          {earlier.map((band) => (
+            <button
+              key={band}
+              type="button"
+              className="pp-chip"
+              // Keep the cursor where it is: a click on a button would take the focus, and with it the field.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onInsert(band)}
+            >
+              {band}
+            </button>
+          ))}
+        </div>
+      )}
       {refusal && (
         <p className="hint-text error" role="alert">
           {refusal}

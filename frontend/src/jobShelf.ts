@@ -15,6 +15,7 @@
 
 import { isJobId, type Order } from './processing';
 import type { PreviewRange } from './processingPreview';
+import { upgradeOrder } from './recipeUpgrade';
 
 export const SHELF_KEY = 'earthx.processing.manager';
 export const LEGACY_KEY = 'earthx.processing.jobs';
@@ -117,10 +118,12 @@ function local(): Storage | null {
   }
 }
 
-// The order as far as a copy of it is kept: a recipe with its inputs and steps, and not too large.
+// The order as far as a copy of it is kept: a recipe with its inputs and steps, and not too large. A copy a browser
+// kept in version 1 is written as version 2 (adr/0020 §11), so that "Run again" sends what the platform takes.
 export function orderCopy(order: unknown): Order | null {
-  if (!record(order) || order.recipe_version !== 1 || !Array.isArray(order.inputs) || !Array.isArray(order.steps)) return null;
-  return JSON.stringify(order).length <= MAX_ORDER_BYTES ? (order as unknown as Order) : null;
+  if (!record(order) || !Array.isArray(order.inputs) || !Array.isArray(order.steps)) return null;
+  const current = order.recipe_version === 2 ? order : upgradeOrder(order);
+  return current && JSON.stringify(current).length <= MAX_ORDER_BYTES ? (current as unknown as Order) : null;
 }
 
 function rangeOf(value: unknown): PreviewRange | null {

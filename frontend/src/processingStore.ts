@@ -81,24 +81,40 @@ import {
   tilesHref,
 } from './resultLayer';
 import {
+  assetsCarrying,
+  bandNamesOf,
+  defaultName,
+  dropFromNormalize,
+  isBandMath,
+  nameProblem,
+  outputBands,
+  renameResult,
+  resultNameOf,
+  resultsOf,
+} from './processingBands';
+import {
   aoiProvenanceFor,
+  auxiliaryAssetsOf,
   bandSources,
   buildOrder,
   candidateItems,
+  dataBandsOf,
   draftFromOrder,
   isArea,
+  lonelyBand,
   maskAssetOf,
   maskLayerOf,
   maskStepValues,
   namesInExpression,
-  orderAssets,
   passesOf,
   processBlockReason,
   processInfo,
+  selectableAssets,
   stepOfRefusal,
   type Area,
   type BandSource,
   type BuiltOrder,
+  type DataBand,
   type DraftStep,
   type Pass,
   type ProcessInfo,
@@ -129,7 +145,8 @@ import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, ty
 import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
-import { initialValues, type FieldValue } from './schemaForm';
+import { keyNames } from './recipeUpgrade';
+import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
 import { selectionItemsFrom, ticksOfOpen, useAppStore, type AppState } from './store';
 import { buildGroups } from './grouping';
@@ -253,7 +270,9 @@ interface ProcessingState {
   runAs: RunAs;
   extraScenes: ExtraScenes | null;
   steps: DraftStep[];
-  picked: string[];
+  // The bands the person wants in the output, by name: results of `band_math` steps and bands of the data
+  // (adr/0020 §9). `OrderView.output` is the same in the order of the file.
+  output: string[];
   dtype: string | null;
   // The range and colormap of the map preview: applied, and as edited (F3 (1)).
   range: PreviewRange;
@@ -333,11 +352,11 @@ interface ProcessingState {
   updateStep: (key: number, name: string, value: FieldValue) => void;
   moveStep: (key: number, direction: -1 | 1) => void;
   removeStep: (key: number) => void;
-  togglePick: (asset: string) => void;
-  setPicked: (assets: string[]) => void;
+  toggleOutput: (name: string) => void;
+  setOutput: (names: string[]) => void;
   setDtype: (dtype: string) => void;
   loadRecipe: (text: string) => Promise<LoadResult>;
-  restoreOrder: (order: Order, view: PermalinkView) => Promise<LoadResult>;
+  restoreOrder: (order: Order, view: PermalinkView, options?: { converted?: boolean }) => Promise<LoadResult>;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
   placeOrder: (
@@ -358,8 +377,9 @@ interface ProcessingState {
   followJob: (jobID: string) => void;
 }
 
-// "Load recipe…" (M4-19d): the steps of a recipe on the current selection.
-export type LoadResult = { ok: true; notes: string[] } | { ok: false; reason: string };
+// "Load recipe…" (M4-19d): the steps of a recipe on the current selection. `converted`: the recipe was one of version 1,
+// written as version 2 (adr/0020 §11); the message says so in a tooltip.
+export type LoadResult = { ok: true; notes: string[]; converted?: boolean } | { ok: false; reason: string };
 
 // --- the order as the panel sees it --------------------------------------------
 
@@ -378,6 +398,18 @@ export interface OrderView {
   runAs: RunAs;
   parts: OrderPart[];
   sources: BandSource[];
+  // The bands of the data, the results of the steps and the choice of the output (adr/0020 §9, §14): every band of
+  // the data by name (`dataNames`, for the rule that a result may not take one), those the output list offers, the
+  // one a dataset with a single band has (`lonely`) and what "All" takes (`selectable`); the results in step order.
+  dataNames: string[];
+  dataBands: DataBand[];
+  selectable: string[];
+  lonely: string | null;
+  results: Array<{ key: number; name: string }>;
+  // The output in the order of the file; what the order names as `output.bands`.
+  output: string[];
+  // The assets the order reads or the preview needs: those of the output, of the expressions, of `normalize` and the layer
+  // of a mask, in the item's order.
   assets: string[];
   // The layer the mask steps read (`earthx:mask`), `null` for a dataset without one; and, once
   // there is a mask step, whether the scene offers its asset — the order then reads it, apart
@@ -449,15 +481,36 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const sources = pass ? bandSources(pass.items[0], format, info?.variableSeparator ?? null, dataset?.collection) : [];
   const maskLayer = maskLayerOf(dataset?.collection);
   const maskAsset = maskAssetOf(p.steps, maskLayer);
-  const assets = orderAssets(sources, p.picked, bandMathExpressions(p.steps), maskAsset ? [maskAsset] : []);
+  const auxiliary = auxiliaryAssetsOf(dataset?.collection);
+  const dataBands = dataBandsOf(sources, auxiliary, maskLayer?.asset ?? null);
+  const dataNames = sources.flatMap(bandNamesOf);
+  const selectable = selectableAssets(sources, auxiliary, maskLayer?.asset ?? null);
+  const results = resultsOf(p.steps);
+  const output = outputBands(p.output, results.map((r) => r.name), dataBands.map((b) => b.name));
+  const inOutput = new Set(output);
+  // What the order reads: the bands of the output, those an expression or a `normalize` names, the layer of a mask.
+  const named = [
+    ...output,
+    ...bandMathExpressions(p.steps).flatMap((expression) => [...namesInExpression(expression)]),
+    ...p.steps.flatMap((step) => (step.op === 'normalize' && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [])),
+  ];
+  const carried = new Set([...assetsCarrying(sources, named), ...(maskAsset ? [maskAsset] : [])]);
+  const assets = sources.map((s) => s.asset).filter((asset) => carried.has(asset));
   // The output type follows the data and the steps as they will be sent (Otto,
   // 12.10.2026); the resampling is the user's own choice and recommended nowhere.
-  // The layer of a mask is no band of the result, so it does not decide the type.
-  const inOrder = sources.filter((s) => assets.includes(s.asset) && s.asset !== maskAsset);
-  const choices = p.steps.map((step) => ({
-    op: step.op,
-    ...(typeof step.values.resampling === 'string' ? { resampling: step.values.resampling } : {}),
-  }));
+  // A step that gives fractions counts only where its result is in the output (adr/0020 §8); the layer of a mask is
+  // no band of the result unless it is in the output itself.
+  const inOrder = sources.filter((s) => bandNamesOf(s).some((name) => inOutput.has(name)));
+  const choices = p.steps
+    .filter((step) =>
+      isBandMath(step)
+        ? inOutput.has(step.applied ?? resultNameOf(step))
+        : step.op !== 'normalize' || (typeof step.values.bands === 'string' && namesIn(step.values.bands).some((name) => inOutput.has(name))),
+    )
+    .map((step) => ({
+      op: step.op,
+      ...(typeof step.values.resampling === 'string' ? { resampling: step.values.resampling } : {}),
+    }));
   const dtypes = info?.dtypes ?? [];
   const automatic = info ? chooseDtype({ steps: choices, bands: inOrder, allowed: dtypes }) : null;
   const options = automatic ? dtypeOptions({ dtypes, steps: choices }) : [];
@@ -469,7 +522,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const foreign = dataset ? foreignScenes(dataset.id, pass?.items ?? [], foundUnder) : [];
   const buildFor = (itemIds: string[]): BuiltOrder | null => {
     if (!info || !dataset) return null;
-    const result = buildOrder({ datasetId: dataset.id, itemIds, area: p.area, aoi: app.aoi, steps: p.steps, assets, dtype, info });
+    const result = buildOrder({ datasetId: dataset.id, itemIds, area: p.area, aoi: app.aoi, steps: p.steps, bands: output, data: dataNames, dtype, info });
     return foreign.length === 0 ? result : { ...result, order: null, problems: [...result.problems, foreignReason(foreign)] };
   };
   const builtParts = units.map((unit) => ({ unit, built: buildFor(unit.items.map((i) => i.id)) }));
@@ -490,6 +543,12 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     runAs,
     parts,
     sources,
+    dataNames,
+    dataBands,
+    selectable: dataBands.filter((b) => !b.auxiliary && !b.layer).map((b) => b.name),
+    lonely: lonelyBand(selectable, sources),
+    results,
+    output,
     assets,
     maskLayer,
     maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
@@ -715,6 +774,19 @@ export function orderRetired(job: JobEntry, descriptions: Record<string, Descrip
   return description?.state === 'error' && description.retired !== undefined;
 }
 
+// The names a draft uses that this selection has no band for: the notes of a loaded recipe. Where the data lists no
+// bands at all there is nothing to compare with.
+function missingBands(draft: { steps: readonly DraftStep[]; bands: readonly string[] }, view: OrderView): string[] {
+  const known = new Set([...view.dataNames, ...view.results.map((result) => result.name)]);
+  if (view.dataNames.length === 0) return [];
+  const used = [
+    ...draft.bands,
+    ...bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)]),
+    ...draft.steps.flatMap((step) => (step.op === 'normalize' && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [])),
+  ];
+  return [...new Set(used.filter((name) => !known.has(name)))].map((name) => `Band ${name} is not in this selection.`);
+}
+
 const EMPTY_DRAFT = {
   passKey: null,
   // "Whole scene" first (Otto, 12.10.2026).
@@ -722,7 +794,7 @@ const EMPTY_DRAFT = {
   runAs: 'one' as RunAs,
   extraScenes: null as ExtraScenes | null,
   steps: [] as DraftStep[],
-  picked: [] as string[],
+  output: [] as string[],
   dtype: null,
   range: DEFAULT_RANGE,
   rangeDraft: DEFAULT_RANGE,
@@ -1251,7 +1323,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       measuring.clear();
       set({ ...EMPTY_DRAFT });
     },
-    choosePass: (passKey) => set({ passKey, picked: [], reviewError: null, startError: null, ...dropReview() }),
+    choosePass: (passKey) => set({ passKey, reviewError: null, startError: null, ...dropReview() }),
     setArea: (area) => set({ area, reviewError: null, startError: null, ...dropReview() }),
     setRunAs: (runAs) => set({ runAs, reviewError: null, startError: null, ...dropReview() }),
     addStep: (op, opVersion) => {
@@ -1261,22 +1333,46 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const operator = description.info.operators.find((o) => o.op === op && o.opVersion === opVersion);
       if (!operator?.form.supported || get().steps.length >= description.info.maxSteps) return;
       const layer = op === 'mask' ? maskLayerOf(datasets.find((d) => d.id === datasetId)?.collection) : null;
-      const values = { ...initialValues(operator.form.fields), ...(layer ? maskStepValues(layer) : {}) };
       const key = nextStepKey++;
+      const { steps, output } = get();
+      const view = orderView(selectionState(useAppStore.getState()), get());
+      const values: Record<string, FieldValue> = { ...initialValues(operator.form.fields), ...(layer ? maskStepValues(layer) : {}) };
+      // A band math step adds a band under a name of its own, and the band is in the output unless the person leaves it out
+      // (adr/0020 §6, §9). A normalize step proposes the last result.
+      let added: string | null = null;
+      if (op === 'band_math') {
+        added = defaultName(steps.length + 1, [...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
+        values.name = added;
+      } else if (op === 'normalize' && 'bands' in values) {
+        values.bands = view.results.at(-1)?.name ?? '';
+      }
       set((s) => ({
-        steps: [...s.steps, { key, op, opVersion, values }],
+        steps: [...s.steps, { key, op, opVersion, values, ...(added ? { applied: added } : {}) }],
+        output: added ? [...output, added] : output,
         reviewError: null,
         startError: null,
         ...dropReview(),
       }));
     },
     updateStep: (key, name, value) =>
-      set((s) => ({
-        steps: s.steps.map((step) => (step.key === key ? { ...step, values: { ...step.values, [name]: value } } : step)),
-        reviewError: null,
-        startError: null,
-        ...dropReview(),
-      })),
+      set((s) => {
+        const step = s.steps.find((candidate) => candidate.key === key);
+        if (!step) return {};
+        let steps = s.steps.map((candidate) => (candidate.key === key ? { ...candidate, values: { ...candidate.values, [name]: value } } : candidate));
+        let output = s.output;
+        // A name the rules allow is followed by everything that refers to the band; one typed half-way (empty, taken) is
+        // only shown, and the references stay with the last good name (adr/0020 §6).
+        if (isBandMath(step) && name === 'name' && typeof value === 'string') {
+          const view = orderView(selectionState(useAppStore.getState()), s);
+          const others = steps.filter((candidate) => candidate.key !== key && isBandMath(candidate)).map(resultNameOf);
+          if (nameProblem(value, others, view.dataNames) === null) {
+            const from = step.applied ?? resultNameOf(step);
+            steps = renameResult(steps, key, from, value).map((candidate) => (candidate.key === key ? { ...candidate, applied: value } : candidate));
+            output = output.map((band) => (band === from ? value : band));
+          }
+        }
+        return { steps, output, reviewError: null, startError: null, ...dropReview() };
+      }),
     moveStep: (key, direction) =>
       set((s) => {
         const index = s.steps.findIndex((step) => step.key === key);
@@ -1287,20 +1383,26 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         return { steps, reviewError: null, startError: null, ...dropReview() };
       }),
     removeStep: (key) =>
+      set((s) => {
+        const step = s.steps.find((candidate) => candidate.key === key);
+        const gone = step && isBandMath(step) ? (step.applied ?? resultNameOf(step)) : null;
+        const left = s.steps.filter((candidate) => candidate.key !== key);
+        return {
+          steps: gone ? dropFromNormalize(left, gone) : left,
+          output: gone ? s.output.filter((band) => band !== gone) : s.output,
+          reviewError: null,
+          startError: null,
+          ...dropReview(),
+        };
+      }),
+    toggleOutput: (name) =>
       set((s) => ({
-        steps: s.steps.filter((step) => step.key !== key),
+        output: s.output.includes(name) ? s.output.filter((band) => band !== name) : [...s.output, name],
         reviewError: null,
         startError: null,
         ...dropReview(),
       })),
-    togglePick: (asset) =>
-      set((s) => ({
-        picked: s.picked.includes(asset) ? s.picked.filter((a) => a !== asset) : [...s.picked, asset],
-        reviewError: null,
-        startError: null,
-        ...dropReview(),
-      })),
-    setPicked: (assets) => set({ picked: [...assets], reviewError: null, startError: null, ...dropReview() }),
+    setOutput: (names) => set({ output: [...names], reviewError: null, startError: null, ...dropReview() }),
     setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null, ...dropReview() }),
 
     // "Load recipe…": the steps and the data type of a `recipe.json` become the draft, on the
@@ -1308,7 +1410,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     // as a whole; what cannot be checked here (band names of another dataset) comes back as
     // notes, the server decides on the order.
     loadRecipe: async (text) => {
-      const read = readRecipe(text);
+      // A file of version 1 names assets, version 2 names bands: what an asset's bands are called, the selection knows.
+      const current = orderView(selectionState(useAppStore.getState()), get());
+      const named = new Map(current.sources.filter((source) => source.names.length > 0).map((source) => [source.asset, source.names]));
+      const byKey = keyNames(current.info?.variableSeparator ?? null);
+      const read = readRecipe(text, (key) => named.get(key) ?? byKey(key));
       if (!read.ok) return { ok: false, reason: read.reason };
       const { order } = read;
       const datasetId = useAppStore.getState().datasetId;
@@ -1323,13 +1429,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
       abortEstimate();
       startGeneration += 1;
-      set({ steps: draft.steps, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
-      const known = new Set(orderView(selectionState(useAppStore.getState()), get()).sources.flatMap((source) => source.names));
-      const missing = new Set(
-        bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)].filter((name) => known.size > 0 && !known.has(name))),
-      );
-      for (const name of missing) notes.push(`Band ${name} is not in this selection.`);
-      return { ok: true, notes };
+      set({ steps: draft.steps, output: draft.bands, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
+      const view = orderView(selectionState(useAppStore.getState()), get());
+      return { ok: true, notes: [...notes, ...missingBands(draft, view)], ...(read.converted ? { converted: true } : {}) };
     },
 
     // A permalink (M4-19e): the order and the view come back as they were shared. Unlike "Load recipe…"
@@ -1337,7 +1439,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     // AOI and the steps. Several groups select all their scenes and the user picks the pass; an order
     // without an AOI keeps the AOI on the map and covers the whole scenes. Nothing is changed unless
     // the order is taken up as a whole.
-    restoreOrder: async (order, view) => {
+    restoreOrder: async (order, view, options) => {
       const datasetId = order.inputs[0].dataset;
       const dataset = useAppStore.getState().datasets.find((d) => d.id === datasetId);
       if (!dataset) {
@@ -1369,12 +1471,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         area: draft.aoi ? 'aoi' : 'scene',
         extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
         steps: draft.steps,
-        picked: draft.assets,
+        output: draft.bands,
         dtype,
       });
       useAppStore.setState({ flyToView: { center: view.center, zoom: view.zoom } });
       useAppStore.getState().showSharedLook(view);
-      return { ok: true, notes };
+      return { ok: true, notes, ...(options?.converted ? { converted: true } : {}) };
     },
 
     reviewOrder: async () => {
@@ -1975,7 +2077,7 @@ useProcessingStore.subscribe((s, prev) => {
     s.area !== prev.area ||
     s.runAs !== prev.runAs ||
     s.steps !== prev.steps ||
-    s.picked !== prev.picked ||
+    s.output !== prev.output ||
     s.dtype !== prev.dtype ||
     s.range !== prev.range
   ) {

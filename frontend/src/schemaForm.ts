@@ -9,7 +9,7 @@
 
 import type { JsonSchema } from './processing';
 
-export type FieldKind = 'string' | 'number' | 'integer' | 'integers' | 'boolean' | 'enum' | 'const';
+export type FieldKind = 'string' | 'number' | 'integer' | 'integers' | 'names' | 'boolean' | 'enum' | 'const';
 
 export interface Field {
   name: string;
@@ -29,7 +29,7 @@ export interface Field {
   maximum?: number;
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
-  // `integers`: a list of whole numbers, with the bounds of the list and of each value.
+  // `integers` and `names`: a list of whole numbers or of texts, with the bounds of the list (and of each number).
   minItems?: number;
   maxItems?: number;
   itemMinimum?: number;
@@ -127,18 +127,22 @@ function fieldOf(name: string, schema: JsonSchema, required: boolean): Field | s
     case 'boolean':
       return { ...base, kind: 'boolean' };
     case 'array':
-      return integerList(name, schema, base);
+      return listField(name, schema, base);
     default:
       return `type ${JSON.stringify(schema.type ?? null)} of ${name}`;
   }
 }
 
 // A list of whole numbers, as `mask` takes its classes: `items` is an integer with bounds, nothing
-// else. It is edited as text, "3, 8, 9, 10".
+// else. It is edited as text, "3, 8, 9, 10". Or a list of texts, as `normalize` takes its bands: `items` is a plain
+// string, and the panel offers the names to pick from (`StepForm`).
 const ITEM_KEYWORDS = new Set(['type', 'minimum', 'maximum']);
 
-function integerList(name: string, schema: JsonSchema, base: Omit<Field, 'kind'>): Field | string {
+function listField(name: string, schema: JsonSchema, base: Omit<Field, 'kind'>): Field | string {
   const items = schema.items;
+  if (isObject(items) && items.type === 'string' && Object.keys(items).length === 1) {
+    return { ...base, kind: 'names', minItems: numberOrUndefined(schema.minItems), maxItems: numberOrUndefined(schema.maxItems) };
+  }
   if (!isObject(items) || items.type !== 'integer' || Object.keys(items).some((key) => !ITEM_KEYWORDS.has(key))) {
     return `items of ${name} are not whole numbers`;
   }
@@ -157,6 +161,11 @@ export function integersIn(text: string): number[] | null {
   const parts = text.split(/[\s,;]+/u).filter((part) => part !== '');
   const numbers = parts.map((part) => (/^[+-]?\d+$/u.test(part) ? Number(part) : NaN));
   return numbers.every(Number.isSafeInteger) ? numbers : null;
+}
+
+// The names of a list field's text ("a, b"), each once, in the order typed.
+export function namesIn(text: string): string[] {
+  return [...new Set(text.split(/[\s,;]+/u).filter((part) => part !== ''))];
 }
 
 // A choice written as `oneOf` of constants, each with its own `title` and
@@ -255,7 +264,7 @@ function valueOf(field: Field, raw: FieldValue | undefined): { value?: unknown; 
   if (field.kind === 'const') return { value: field.constValue };
   if (field.kind === 'boolean') return { value: raw === true };
   const text = typeof raw === 'string' ? raw : '';
-  if (text === '') return field.required ? { error: 'Required.' } : {};
+  if (text === '') return field.required ? { error: field.kind === 'names' ? 'Pick at least one band.' : 'Required.' } : {};
   switch (field.kind) {
     case 'enum':
       return field.options?.includes(text) ? { value: text } : { error: 'Pick one of the options.' };
@@ -275,6 +284,12 @@ function valueOf(field: Field, raw: FieldValue | undefined): { value?: unknown; 
       const value = [...new Set(numbers)].sort((a, b) => a - b);
       if (field.minItems !== undefined && value.length < field.minItems) return { error: `At least ${field.minItems} values.` };
       if (field.maxItems !== undefined && value.length > field.maxItems) return { error: `At most ${field.maxItems} values.` };
+      return { value };
+    }
+    case 'names': {
+      const value = namesIn(text);
+      if (field.minItems !== undefined && value.length < field.minItems) return { error: 'Pick at least one band.' };
+      if (field.maxItems !== undefined && value.length > field.maxItems) return { error: `At most ${field.maxItems} bands.` };
       return { value };
     }
     case 'string': {
