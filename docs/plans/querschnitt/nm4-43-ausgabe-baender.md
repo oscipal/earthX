@@ -170,6 +170,8 @@ Fünf Aufgaben, alle **Stufe A** (Plan und Entscheidung stehen im ADR; ein Draft
 - **H4:** Gemischte Datentypen im Vorrat (etwa die `uint8`-Schicht von `mask` neben `float32`-Bändern) sind im Kern nicht eigens geprüft; offen, ob ein Test oder eine Regel nötig ist.
 - **H3:** Das heutige Panel lehnt eine `recipe.json` der Version 2 beim Laden ab (`frontend/src/recipeFile.ts`), bis NM4-43e kommt.
 
+**Entschieden (Otto, 30.10.2026, zu #241).** Die Grenze von 1,5 GB je Kindprozess bleibt; **Wiedervorlage zu M6** mit der echten Worker-Größe. `units` zählt den Faktor eines Schritts nur für die Bänder, die er erzeugt oder bearbeitet (Abweichung von `adr/0020` §7.2; Nachtrag NM4-43c PR 2 in `adr/0014`).
+
 **Abnahme.**
 
 - 17 Bänder ohne Schritt werden angenommen (vorher `422`), auch über 16 Assets in der Prozessbeschreibung; eine Ausgabe über der Speichergrenze wird mit `413` und dem Grund abgewiesen; die Zeitschätzung wächst mit den Ausgabebändern; `units` wächst mit den Bändern.

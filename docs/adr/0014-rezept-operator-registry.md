@@ -2729,11 +2729,14 @@ Der Originaltext von §5.5 bleibt stehen; maßgeblich ist dieser Nachtrag.
   an der 5-GB-Grenze (8192², 17 Bänder) sind 480 s gemessen (0,42 s) und 939 s geschätzt. Die Laufzeitgrenze (`jobs/submit._runtime_limit`, 2 × Schätzung, mindestens 600 s) liegt für einen Auftrag nahe der 5-GB-Grenze mit 17 Bändern über
   den 600 s der Untergrenze (Test in `test_submit.py`). Die Zeit der Schritte selbst steckt im Wert (33 Bänder mit 16 Schritten werden nicht
   unterschätzt).
-- **`units`** zählen Ausgabepixel (Mio.) **mal Bänder der Ausgabe** mal Faktor der Schritte (`adr/0020` §7.2). Ein Auftrag mit einem Ergebnisband und einem
-  `band_math` bleibt bei 1,2 je Million Pixel; ein Export zählt wie bisher. **Zur Kenntnis:** Der Faktor jedes Schritts zählt für jedes Ausgabeband, auch
-  für ein `band_math`, das nur ein Band rechnet; 16 Schritte mit 33 Ausgabebändern geben so rund das Fünfhundertfache eines Ergebnisbandes, obwohl der Lauf
-  nur 2,6-mal länger dauert als der mit 17 Bändern ohne Schritt. Die Einheiten sind bis M6 (Quoten) nur eine Anzeige; Otto entscheidet vor M6, ob der Faktor
-  je Schritt statt je Band und Schritt gezählt wird.
+- **`units`** (**Abweichung von `adr/0020` §7.2, Otto, 30.10.2026**): Ausgabepixel (Mio.) mal die **gewichteten Bänder**. Jeder Schritt zählt seinen
+  Faktor nur für die Bänder, die er selbst erzeugt oder bearbeitet (`band_math`: sein Ergebnisband; `normalize`: die Bänder in `bands`, die nach dem Streichen noch
+  da sind; `reproject`, `mask` und die übrigen: alle Bänder des Vorrats an dieser Stelle); ein Ausgabeband, das kein Schritt anfasst, zählt wie geschrieben
+  (`RASTER_WITHOUT_STEP_FACTOR`, 1,0). Ohne Schritt bleibt es Bänder × 1,0, ein Auftrag mit einem Ergebnisband und einem `band_math` bleibt bei 1,2 je Million
+  Pixel, ein Export zählt wie bisher. Vorher (wörtlich nach §7.2) zählte der Faktor jedes Schritts für jedes Ausgabeband: 16 `band_math` mit 33 Bändern kamen auf das
+  Fünfhundertfache eines Ergebnisbandes bei 2,6-facher Laufzeit. Jetzt sind es 36,2 gegen 1,2 je Million Pixel (das 30-Fache; die Zeitschätzung gibt das
+  24-Fache) und das 2,1-Fache der 17 Bänder ohne Schritt (Zeit: 1,7-fach geschätzt, 2,6-fach gemessen bei 5632²); `test_estimate_bands.py` hält das Verhältnis
+  zur Zeitschätzung auf ±30 %. Die Einheiten sind bis M6 (Quoten) nur eine Anzeige.
 - **Platte.** `disk_needed` bemisst den `float64`-Durchgang nach dem breitesten Vorrat (`plan._planned_stock`) statt nach den Bändern der Assets: Ein
   `band_math` fügt dem Vorrat Bänder hinzu, und die Zwischendatei (rechnerisch 8,4 GB bei 31,7 Mio. Pixeln und 33 Bändern) wuchs über die Schätzung, die nur die Bänder der Assets zählte.
 - **Unverändert.** 25 Items, 16 Schritte, 5 GB Ausgabe, Deckel je Host, Wiederholung in `gateway`; ein Export (`crop`) hat keine Speicherschätzung
@@ -2750,4 +2753,5 @@ Der Originaltext von §5.5 bleibt stehen; maßgeblich ist dieser Nachtrag.
   ```
 
   Je Messung ein eigener Aufruf (die Spitze gehört dem Prozess). Das Skript `measure.py` (echte Sentinel-2-Daten, Netz) rechnet jetzt mit Rezeptversion 2.
-- **Offen für Otto.** Die Grenze von 1,5 GB ist der Startwert aus `adr/0020`; das 25-Szenen-Mosaik mit 17 Bändern liegt mit 1,45 GB geschätzt knapp darunter.
+- **Entschieden (Otto, 30.10.2026).** Die Grenze von 1,5 GB je Kindprozess bleibt; Wiedervorlage zu M6 mit der echten Worker-Größe (das 25-Szenen-Mosaik mit 17 Bändern liegt mit
+  1,45 GB geschätzt knapp darunter). `units` wie oben.
