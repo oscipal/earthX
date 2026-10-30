@@ -34,6 +34,7 @@ export function jobEntry(n: number, over: Partial<JobEntry> = {}): JobEntry {
     batchId: null,
     part: null,
     range: null,
+    bandRanges: {},
     order: null,
     status: status({ jobID: jobId(n), expires }),
     phase: 'active',
@@ -55,6 +56,7 @@ export function jobEntry(n: number, over: Partial<JobEntry> = {}): JobEntry {
     expired: false,
     tiles: null,
     statistics: null,
+    bands: [],
     ...over,
   };
 }

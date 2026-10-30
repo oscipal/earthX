@@ -53,7 +53,9 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     title: 'Band math · Sentinel-2 L2A',
     tiles: { href: HREF, width: 1000, gsd: 10 },
     statistics: null,
+    bands: [],
     range: null,
+    bandRanges: {},
     archived: false,
     groupId: null,
     batchId: null,
@@ -287,7 +289,7 @@ describe('the layer a result becomes', () => {
           jobs: [
             {
               jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM', titleDefault: null, createdAt: '2026-10-10T12:00:00Z',
-              archived: false, groupId: null, batchId: null, part: null, range, order: null,
+              archived: false, groupId: null, batchId: null, part: null, range, bandRanges: {}, order: null,
               deletedUntil: null, serverDeleted: false, lost: false, superseded: false,
             },
           ],
@@ -630,7 +632,7 @@ describe('"Overview" over the map', () => {
 
     it('says it for the preview of the panel too, beside "Preview"', () => {
       useProcessingStore.setState({
-        preview: { key: 'k', title: 'Band math', stepCount: 1, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, mosaics: [], scenes: [{ id: 'A', bbox: [10, 50, 11, 51], url: 'u' }], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false },
+        preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, mosaics: [], scenes: [{ id: 'A', bbox: [10, 50, 11, 51], url: 'u' }], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false },
       });
       act(() => useAppStore.setState({ mapZoom: 3 }));
       act(() => root.render(<PreviewBadge />));
@@ -650,7 +652,7 @@ describe('"Overview" over the map', () => {
 
   it('stands beside "Preview" when both are on the map', () => {
     result();
-    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, mosaics: [], scenes: [], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false } });
+    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, mosaics: [], scenes: [], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false } });
     act(() => root.render(<PreviewBadge />));
     expect(badge()).toBe('PreviewOverview');
   });

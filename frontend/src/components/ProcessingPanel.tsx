@@ -30,6 +30,7 @@ import {
   furtherNote,
   MAX_PREVIEW_ASSETS,
   planPreview,
+  previewRead,
   previewTitle,
   previewUnit,
   rescaleOf,
@@ -41,6 +42,7 @@ import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
 import { ticksOfOpen, useAppStore } from '../store';
 import type { StacItem } from '../types';
+import BandSelect from './BandSelect';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
@@ -382,10 +384,25 @@ function PreviewSection({ view }: { view: OrderView }) {
   const rangeNote = useProcessingStore((s) => s.rangeNote);
   const measure = useProcessingStore((s) => s.measure);
   const autoStretch = useProcessingStore((s) => s.autoStretch);
+  const shown = useProcessingStore((s) => s.shown);
+  const setShown = useProcessingStore((s) => s.setShown);
   const unit = previewUnit(preview, measure);
   const loading = usePreviewLoading();
   const plan = planPreview(steps, view.info);
   const range = rescaleOf(rangeDraft);
+  // The band the map shows, and what it reads for it (adr/0020 §10): the limit of the tile is that of these assets.
+  const read =
+    plan.state === 'ready'
+      ? previewRead({
+          output: view.output,
+          dataNames: view.dataNames,
+          sources: view.sources,
+          maskAsset: view.maskAsset?.asset ?? null,
+          all: view.assets,
+          steps: plan.steps.map(({ step }) => step),
+          pick: shown,
+        })
+      : null;
   const sceneCount = view.pass?.items.length ?? 0;
   return (
     <section className="pp-section" aria-label="Preview on the map">
@@ -407,6 +424,16 @@ function PreviewSection({ view }: { view: OrderView }) {
       ) : (
         <>
           <div className="pp-range" role="group" aria-label="Range and colormap">
+            {read && read.choices.length > 1 && read.band !== null && (
+              <BandSelect
+                label="Show"
+                className="pp-show"
+                title="The band the map shows"
+                value={read.band}
+                options={read.choices.map((name) => ({ value: name, label: name }))}
+                onChange={setShown}
+              />
+            )}
             <label className="vc-field vc-num">
               <span>min</span>
               <input type="number" value={rangeDraft.vmin} onChange={(e) => setRangeDraft({ vmin: e.target.value })} />
@@ -448,8 +475,8 @@ function PreviewSection({ view }: { view: OrderView }) {
           </div>
           {'problem' in range && <p className="hint-text error">{range.problem}</p>}
           {rangeNote && <p className="hint-text">{rangeNote}</p>}
-          {view.assets.length === 0 && <p className="hint-text">Pick a band for the output to see the preview.</p>}
-          {view.assets.length > MAX_PREVIEW_ASSETS && (
+          {read?.assets.length === 0 && <p className="hint-text">Pick a band for the output to see the preview.</p>}
+          {read && read.assets.length > MAX_PREVIEW_ASSETS && (
             <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
           )}
           {!view.pass && <p className="hint-text">Choose a pass to see the preview.</p>}

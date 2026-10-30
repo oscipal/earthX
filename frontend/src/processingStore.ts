@@ -18,7 +18,7 @@
 
 import { create } from 'zustand';
 
-import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics } from './api';
+import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, type AreaStatistics } from './api';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import { resultsGroupByOfOption, type DatasetOption } from './datasets';
 import {
@@ -71,14 +71,18 @@ import {
   type StatusInfo,
 } from './processing';
 import {
+  bandTileUrl,
   isResultExpired,
+  ownRangeOf,
   positive,
+  resultBands,
   resultGsd,
   resultLayerName,
   resultRender,
   resultStats,
   resultTileTemplate,
   tilesHref,
+  type ResultBand,
 } from './resultLayer';
 import {
   assetsCarrying,
@@ -127,6 +131,9 @@ import {
   measureOf,
   NO_MEASURE,
   planPreview,
+  previewRead,
+  type PreviewPlan,
+  type PreviewRead,
   probeChain,
   probeMosaic,
   previewOverlays,
@@ -231,6 +238,9 @@ export interface JobEntry extends ShelfJob {
   // The statistics of the AOI per band, for the colour scale of the layer (M4-32b); `null` until the
   // results are read, and for a result from before they were written.
   statistics: ResultStats | null;
+  // The bands of the raster in the order of the file, each with its statistics, for the colour scale of the layer
+  // (NM4-43e PR 2); empty until the results are read, and for a result from before the bands were named.
+  bands: ResultBand[];
 }
 
 // The jobs of one batch (M4-13c-4) are one entry of the manager (UI-01 §6.10).
@@ -281,6 +291,9 @@ interface ProcessingState {
   // the person has not touched the choice: the first result of a band math step takes its place (review of #250).
   lonelyAuto: string | null;
   dtype: string | null;
+  // The band of the output the person picked to see on the map; the preview falls back to the result added last while it
+  // is not among the bands the map can show (`previewRead`).
+  shown: string | null;
   // The range and colormap of the map preview: applied, and as edited (F3 (1)).
   range: PreviewRange;
   rangeDraft: PreviewRange;
@@ -332,7 +345,11 @@ interface ProcessingState {
   closeJobDetails: () => void;
   // The range and colormap set by hand in the view of a result (UI-01 §6.11): they hold for this job and for
   // every layer made of it later; `null` goes back to the default of the statistics. Kept in the browser.
-  setJobRange: (jobID: string, range: PreviewRange | null) => void;
+  // For a result of several bands the range is that of the band `band`, saved by its name.
+  setJobRange: (jobID: string, range: PreviewRange | null, band?: string) => void;
+  // The band a result layer draws, by its place in the file (NM4-43e PR 2): the layer is drawn from that band, with the scale
+  // the person saved for it or else the one its statistics call for.
+  chooseResultBand: (layerId: string, place: number) => void;
   // The manager of the jobs (UI-01 §6.10). A job is never deleted, only archived and put in a group.
   renameJob: (jobID: string, title: string) => void;
   renameBatch: (batchId: string, title: string) => void;
@@ -368,6 +385,8 @@ interface ProcessingState {
   checkLonely: (name: string) => void;
   setOutput: (names: string[]) => void;
   setDtype: (dtype: string) => void;
+  // "Show": the band the preview draws. Its range is its own, so a range applied by hand for another band goes.
+  setShown: (name: string) => void;
   loadRecipe: (text: string) => Promise<LoadResult>;
   restoreOrder: (order: Order, view: PermalinkView, options?: { converted?: boolean }) => Promise<LoadResult>;
   reviewOrder: () => Promise<void>;
@@ -828,6 +847,7 @@ const EMPTY_DRAFT = {
   nameProblems: {} as Record<number, string>,
   lonelyAuto: null as string | null,
   dtype: null,
+  shown: null as string | null,
   range: DEFAULT_RANGE,
   rangeDraft: DEFAULT_RANGE,
   preview: null as PreviewSpec | null,
@@ -906,6 +926,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           ? { href, width: typeof doc.result?.width === 'number' ? doc.result.width : null, gsd: positive(properties?.gsd) }
           : null,
         statistics: resultStats(properties),
+        bands: resultBands(properties, get().jobs.find((j) => j.jobID === jobID)?.order ?? null),
       });
     } catch (error) {
       if (error instanceof HttpError && error.status === 410) {
@@ -973,6 +994,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       expired: over,
       tiles: null,
       statistics: null,
+      bands: [],
     };
   };
 
@@ -989,6 +1011,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       batchId: null,
       part: null,
       range: null,
+      bandRanges: {},
       order: null,
       deletedUntil: null,
       serverDeleted: false,
@@ -1024,7 +1047,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     const batch = get().batch;
     if (!view.key || batch?.key !== view.key) return;
     const title = titleOf(view);
-    const own = handRangeOf(get());
+    const own = startRange(view, get());
     const mine = ++startGeneration;
     set({ starting: true, startError: null, batchStartRefusals: null });
     // One entry for the batch, made with its first job; the jobs themselves stay jobs of their own.
@@ -1048,7 +1071,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           expires: status.expires,
           status,
           title,
-          range: own,
+          ...own,
           batchId,
           part: part.unit.label,
           order: orderCopy(part.order),
@@ -1211,6 +1234,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     autoStretch: () => {
       failedMeasures.clear();
       measuring.clear();
+      areaAnswers.clear();
       // The measure over the AOI is asked again where it fell back to the scene.
       for (const [key, measure] of measures) if (measure.source === 'fallback') measures.delete(key);
       settledKey = null;
@@ -1268,6 +1292,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }
       // A second click while the TileJSON was coming: one layer.
       if (shown(useAppStore.getState().layers)) return;
+      // A result of several bands starts with the first of the file; the layer says which bands it has.
+      const several = job.bands.length > 1;
+      const render = resultRender(tileJson.dataType, get().range, several ? job.bands[0].stats : job.statistics, ownRangeOf(job, job.bands, 0));
+      const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
         name: resultLayerName(job.title),
         derived: 'result',
@@ -1278,12 +1306,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           resampled: job.resampled,
           expired: false,
           dataType: tileJson.dataType,
-          stats: job.statistics,
+          stats: several ? job.bands[0].stats : job.statistics,
+          ...(several ? { bands: job.bands, band: 0 } : {}),
         },
         overlays: [
           {
             kind: 'raster',
-            tileUrl: buildTileUrl(resultTileTemplate(href), resultRender(tileJson.dataType, get().range, job.statistics, job.range)),
+            tileUrl: several ? bandTileUrl(template, 0, render) : buildTileUrl(template, render),
             bounds: tileJson.bounds,
             // The tiler names every level, from a tile of the coarsest overview to the finest source's
             // (`result_tiles.py::RESULT_MIN_ZOOM`/`RESULT_MAX_ZOOM`): the result stays on the map at every
@@ -1353,6 +1382,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       measures.clear();
       failedMeasures.clear();
       measuring.clear();
+      areaAnswers.clear();
       set({ ...EMPTY_DRAFT });
     },
     choosePass: (passKey) => set({ passKey, reviewError: null, startError: null, ...dropReview() }),
@@ -1459,6 +1489,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       })),
     setOutput: (names) => set({ output: [...names], lonelyAuto: null, reviewError: null, startError: null, ...dropReview() }),
     setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null, ...dropReview() }),
+    setShown: (name) => {
+      if (get().shown === name) return;
+      set({ shown: name, range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false });
+    },
 
     // "Load recipe…": the steps and the data type of a `recipe.json` become the draft, on the
     // current selection, which stays as it is. Nothing is changed unless the recipe is taken up
@@ -1583,7 +1617,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }
       if (s.estimate?.key !== view.key) return;
       const title = titleOf(view);
-      const own = handRangeOf(s);
+      const own = startRange(view, s);
       const mine = ++startGeneration;
       set({ starting: true, startError: null });
       try {
@@ -1592,7 +1626,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         });
         // One estimate, one job: a second identical job needs its own review.
         if (mine === startGeneration) set({ starting: false, estimate: null });
-        addJob({ jobID: status.jobID, expires: status.expires, status, title, range: own, order: orderCopy(order) });
+        addJob({ jobID: status.jobID, expires: status.expires, status, title, ...own, order: orderCopy(order) });
       } catch (error) {
         if (mine === startGeneration) set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
       }
@@ -1656,10 +1690,39 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         }
       }
     },
-    setJobRange: (jobID, range) => {
-      if (!get().jobs.some((j) => j.jobID === jobID)) return;
-      updateJob(jobID, { range });
+    setJobRange: (jobID, range, band) => {
+      const job = get().jobs.find((j) => j.jobID === jobID);
+      if (!job) return;
+      if (band === undefined) {
+        updateJob(jobID, { range });
+      } else {
+        const { [band]: _dropped, ...others } = job.bandRanges;
+        updateJob(jobID, { bandRanges: range ? { ...others, [band]: range } : others });
+      }
       persist();
+    },
+    chooseResultBand: (layerId, place) => {
+      const app = useAppStore.getState();
+      const layer = app.layers.find((l) => l.id === layerId && l.derived === 'result');
+      const info = layer?.result;
+      const band = info?.bands?.[place];
+      const job = info && get().jobs.find((j) => j.jobID === info.jobID);
+      if (!layer || !info || !info.bands || !band || !job || info.band === place) return;
+      const render = resultRender(info.dataType, get().range, band.stats, ownRangeOf(job, info.bands, place));
+      useAppStore.setState({
+        layers: app.layers.map((l) => {
+          if (l.id !== layerId || !l.result) return l;
+          // What was applied and not saved belongs to the band it was applied to: it goes with it.
+          const { savedTileUrl: _unsaved, ...kept } = l.result;
+          let first = true;
+          const overlays = l.overlays.map((o) => {
+            if (o.kind !== 'raster' || !first) return o;
+            first = false;
+            return { ...o, tileUrl: bandTileUrl(o.tileUrl, place, render) };
+          });
+          return { ...l, overlays, result: { ...kept, band: place, stats: band.stats } };
+        }),
+      });
     },
     renameJob: (jobID, title) => {
       const name = title.trim().slice(0, MAX_TITLE_LENGTH);
@@ -1744,6 +1807,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             batchId: job.batchId,
             part: job.part,
             range: job.range,
+            bandRanges: job.bandRanges,
             order: job.order,
           },
           jobID,
@@ -1849,6 +1913,28 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined;
 // What the map should show now: the longest start of the draft's steps that runs as
 // tiles, on the scenes of the order, while the panel is open and its steps are complete.
 // `limit` cuts it to the first steps (what the tiler accepted of a chain).
+function previewReadOf(view: OrderView, plan: Extract<PreviewPlan, { state: 'ready' }>, pick: string | null): PreviewRead {
+  return previewRead({
+    output: view.output,
+    dataNames: view.dataNames,
+    sources: view.sources,
+    maskAsset: view.maskAsset?.asset ?? null,
+    all: view.assets,
+    steps: plan.steps.map(({ step }) => step),
+    pick,
+  });
+}
+
+// The range a job keeps from the panel: the one set by hand, which was set for the band the map showed. A result of one
+// band keeps it as the job's; of several, as the range of that band by its name (NM4-43e PR 2).
+function startRange(view: OrderView, p: ProcessingState): { range: PreviewRange | null; bandRanges: Record<string, PreviewRange> } {
+  const own = handRangeOf(p);
+  if (!own || view.output.length <= 1) return { range: own, bandRanges: {} };
+  const plan = planPreview(p.steps, view.info);
+  const band = plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
+  return { range: null, bandRanges: band === null ? {} : { [band]: own } };
+}
+
 function wantedPreview(limit?: number): PreviewSpec | null {
   const p = useProcessingStore.getState();
   // The details of a job are not the order: the draft draws nothing while they are shown.
@@ -1862,7 +1948,21 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   if (plan === null) return null;
   const jobs = view.parts.map((part) => part.unit.items);
   const order = view.parts[0]?.order ?? null;
-  const args = { dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, area: p.area, jobs, answers: mosaicAnswers, order };
+  // The map reads what the band it shows needs, not all that the order reads (adr/0020 §4, §10).
+  const read = previewReadOf(view, plan, p.shown);
+  const args = {
+    dataset: view.dataset,
+    items: view.pass.items,
+    assets: read.assets,
+    info: view.info,
+    plan,
+    area: p.area,
+    jobs,
+    answers: mosaicAnswers,
+    order,
+    band: read.band,
+    named: read.choices.length > 1,
+  };
   const spec = previewSpec({ ...args, range: p.range });
   if (spec === null) return null;
   const range = drawnRange(p, spec.measure);
@@ -1892,12 +1992,36 @@ const measures = new Map<string, PreviewMeasure>();
 const failedMeasures = new Set<string>();
 const measuring = new Map<string, Promise<PreviewMeasure | null>>();
 
+// The answer of the tiler for the statistics of an order, once per order: it holds every band, so that a change of the
+// band shown asks nothing new. Like the keys of the measures, the text of the order lives here in memory only.
+const AREA_ANSWERS_KEPT = 8;
+const areaAnswers = new Map<string, Promise<AreaStatistics>>();
+
+function areaStatisticsOf({ datasetId, order }: { datasetId: string; order: Order }): Promise<AreaStatistics> {
+  const key = canonicalJson(order);
+  let answer = areaAnswers.get(key);
+  if (!answer) {
+    if (areaAnswers.size >= AREA_ANSWERS_KEPT) areaAnswers.delete(areaAnswers.keys().next().value!);
+    answer = postAreaStatistics(datasetId, order);
+    areaAnswers.set(key, answer);
+    // A failed question is asked again at the next measure.
+    answer.catch(() => {
+      if (areaAnswers.get(key) === answer) areaAnswers.delete(key);
+    });
+  }
+  return answer;
+}
+
 // The measure over the AOI; where the tiler does not give it (an order it refuses, a source that fails, a network
 // that fails, an answer the panel cannot read) the first whole scene as before, marked as the fall-back (KE1).
 async function measureOver(spec: PreviewSpec): Promise<PreviewMeasure> {
   if (spec.areaOrder) {
     try {
-      return areaMeasureOf(spec.measure, await postAreaStatistics(spec.areaOrder.datasetId, spec.areaOrder.order), spec.expression);
+      const answer = await areaStatisticsOf(spec.areaOrder);
+      // The answer holds every band of the order; the colour scale is the one of the band the map shows.
+      const bands = spec.band === null ? answer.bands : answer.bands.filter((band) => band.name === spec.band);
+      if (bands.length === 0) throw new Error('the statistics do not name the band');
+      return areaMeasureOf(spec.measure, { ...answer, bands }, spec.expression);
     } catch (error) {
       // The status alone: an order the panel built wrongly (422) must not pass unnoticed, but the text of an answer and
       // the order carry what was sent, the AOI among it.
@@ -2143,6 +2267,7 @@ useProcessingStore.subscribe((s, prev) => {
     s.steps !== prev.steps ||
     s.output !== prev.output ||
     s.dtype !== prev.dtype ||
+    s.shown !== prev.shown ||
     s.range !== prev.range
   ) {
     refreshPreview();

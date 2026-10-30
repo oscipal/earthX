@@ -128,9 +128,11 @@ const measured = (body: unknown) => ({ ok: true, status: 200, json: async () => 
 // What it answers to the statistics over the AOI of the order (NM4-19, `POST /collections/{dataset}/statistics`): the same
 // values as the scene's by default, as the object of a results document says them.
 let areaStatistics: (order: Record<string, unknown>) => Response | Promise<Response>;
+// The band the preview shows in these tests: the area statistics name every band of the order, the preview takes its own.
+const shownBand = 'result';
 const areaBand = (values: Record<string, unknown>) => {
   const { min, max, unit, ...rest } = values;
-  return { name: 'b1', ...(typeof unit === 'string' ? { unit } : {}), statistics: { minimum: min, maximum: max, mean: 0.3, valid_percent: 100, ...rest } };
+  return { name: shownBand, ...(typeof unit === 'string' ? { unit } : {}), statistics: { minimum: min, maximum: max, mean: 0.3, valid_percent: 100, ...rest } };
 };
 const areaAnswer = (bands: unknown[], exact = true, factor = 1) => measured({ bands, exact, factor });
 const ITEM_URL = '/stac/collections/sentinel-2-c1-l2a/items/';
@@ -558,7 +560,7 @@ describe('the preview section', () => {
     await flush();
     expect(store().previewNote).toContain('Preview shows step 1 of 2');
     tilejson = () => json({ tilejson: '3.0.0' });
-    typeInto(expression(1), 'band_math + 1');
+    typeInto(expression(1), 'result + 1');
     await afterDebounce();
     await flush();
     expect(store().preview!.stepCount).toBe(2);

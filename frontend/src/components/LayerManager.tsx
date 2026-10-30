@@ -6,6 +6,7 @@ import { isJobId, resultUrl } from '../processing';
 import { layerProcessBlock, useProcessingStore, ZIP_LABEL } from '../processingStore';
 import { MIN_REMAINING_MS, RESULT_ZIP } from '../resultLayer';
 import { useAppStore } from '../store';
+import BandSelect from './BandSelect';
 import Eye from './Eye';
 import Tip from './Tip';
 
@@ -83,9 +84,12 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
   const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasets = useAppStore((s) => s.datasets);
   const processLayer = useProcessingStore((s) => s.processLayer);
+  const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
   const processBlock = layerProcessBlock(l, datasets);
   const locked = l.result?.deleted === true;
+  // A result of several bands draws one of them (NM4-43e PR 2).
+  const bands = l.result?.bands;
   const shown = l.visible && !locked;
   const notes = [l.result?.expired && !locked ? EXPIRED_LAYER_TEXT : null, l.result?.resampled === true ? RESAMPLED_LAYER_TEXT : null].filter(
     (note): note is string => note !== null,
@@ -184,6 +188,17 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
       <button type="button" className="lm-btn danger" data-col="remove" title="Remove layer" onClick={() => remove(l.id)}>
         ✕
       </button>
+      {bands && bands.length > 1 && (
+        <BandSelect
+          label="Band"
+          className="lm-band"
+          title="The band of the result this layer draws"
+          value={String(l.result?.band ?? 0)}
+          options={bands.map((b, place) => ({ value: String(place), label: b.name || `Band ${place + 1}` }))}
+          disabled={locked || l.result?.expired === true}
+          onChange={(place) => chooseBand(l.id, Number(place))}
+        />
+      )}
     </li>
   );
 }

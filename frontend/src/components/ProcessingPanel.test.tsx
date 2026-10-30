@@ -1207,6 +1207,30 @@ describe('starting and following a job', () => {
       expect((await startOne()).range).toBeNull();
     });
 
+    it('stores it, with several bands in the output, under the name of the band the map shows and not as the range of the job', async () => {
+      routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
+      useProcessingStore.setState({ range: HAND, rangeDraft: HAND, rangeByHand: true });
+      select([scene('S2B_A')]);
+      await openPanel();
+      await ndvi();
+      act(() => useProcessingStore.getState().setOutput(['result', 'red', 'nir']));
+      act(() => useProcessingStore.getState().setShown('nir'));
+      useProcessingStore.setState({ range: HAND, rangeDraft: HAND, rangeByHand: true });
+      await review();
+      click(button('Start job'));
+      await flush();
+      const job = useProcessingStore.getState().jobs[0];
+      expect(job.range).toBeNull();
+      expect(job.bandRanges).toEqual({ nir: HAND });
+    });
+
+    it('stores it as the range of the job when the output has one band', async () => {
+      useProcessingStore.setState({ range: HAND, rangeDraft: HAND, rangeByHand: true });
+      const job = await startOne();
+      expect(job.range).toEqual(HAND);
+      expect(job.bandRanges).toEqual({});
+    });
+
     it('does not change the range of a started job when the panel is changed after', async () => {
       useProcessingStore.setState({ range: HAND, rangeDraft: HAND, rangeByHand: true });
       const job = await startOne();
@@ -1456,7 +1480,9 @@ describe('a finished job row (K6)', () => {
       expired: false,
       tiles: null,
       statistics: null,
+      bands: [],
       range: null,
+      bandRanges: {},
       archived: false,
       groupId: null,
       batchId: null,
