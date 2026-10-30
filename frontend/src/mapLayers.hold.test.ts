@@ -209,6 +209,32 @@ describe('a time step that is played', () => {
     expect(fake.listeners('render')).toBe(0);
   });
 
+  it('leaves no listener behind when the step dropped has more scenes than the one that follows', () => {
+    const fake = stateMap();
+    showFirst(fake);
+    L.syncBrowseMosaic(fake.map as never, { items: [scene('a'), scene('b'), scene('c')], dataset, hold: { notBefore: NOW, onShown: vi.fn() } });
+    step(fake, 'one', { notBefore: NOW, onShown: vi.fn() });
+    // The dropped step's sources `n-tiles-src-1` and `-2` are gone; its listener must not ask about them.
+    const asked = vi.spyOn(fake.map, 'isSourceLoaded');
+    fake.arrive();
+    fake.fire('render');
+    expect(asked.mock.calls.map(([id]) => id)).toEqual(['n-tiles-src-0']);
+    expect(fake.listeners('render')).toBe(0);
+  });
+
+  it('shows a step with no preview, and takes the picture before it away, once that picture has had its time', () => {
+    const fake = stateMap();
+    showFirst(fake);
+    const onShown = vi.fn();
+    // No bbox: nothing the map can draw for it.
+    L.syncBrowseMosaic(fake.map as never, { items: [{ ...scene('none'), bbox: undefined }], dataset, hold: { notBefore: NOW + 1400, onShown } });
+    expect(onShown).not.toHaveBeenCalled();
+    expect(fake.ids()).toEqual(['m-tiles-lyr-0']);
+    vi.advanceTimersByTime(1400);
+    expect(onShown).toHaveBeenCalledTimes(1);
+    expect(fake.ids()).toEqual([]);
+  });
+
   it('takes the place of the picture on the map at once when nothing was drawn before it', () => {
     const fake = stateMap();
     const onShown = vi.fn();
@@ -245,11 +271,13 @@ describe('a time step that is played', () => {
     expect(third).toHaveBeenCalledTimes(1);
   });
 
-  it('is said to be there at once when it draws nothing at all', () => {
+  it('is said to be there when it draws nothing at all, once the picture before it has had its time', () => {
     const fake = stateMap();
     showFirst(fake);
     const onShown = vi.fn();
-    L.syncBrowseMosaic(fake.map as never, { items: [], dataset, hold: { notBefore: NOW, onShown } });
+    L.syncBrowseMosaic(fake.map as never, { items: [], dataset, hold: { notBefore: NOW + 1000, onShown } });
+    expect(onShown).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
     expect(fake.ids()).toEqual([]);
     expect(onShown).toHaveBeenCalledTimes(1);
   });

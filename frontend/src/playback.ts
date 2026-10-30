@@ -34,6 +34,8 @@ export function playLabel(group: TimeStepGroup | undefined): string {
 // timeline — the slider runs from oldest to newest, `groups` is newest first — and round at the end.
 export function runPlayback(now: () => number = Date.now): () => void {
   const { getState, setState, subscribe } = useAppStore;
+  // The steps it plays: a new search, another dataset or more results are another list, and the playing starts again.
+  const groups = getState().groups;
   let shownAt = now();
   let skipped = 0;
   let waiting = false;
@@ -43,6 +45,7 @@ export function runPlayback(now: () => number = Date.now): () => void {
 
   const request = () => {
     const s = getState();
+    if (s.groups !== groups || s.groups.length < 2) return;
     const next = (s.activeGroupIndex - 1 + s.groups.length) % s.groups.length;
     const notBefore = shownAt + STEP_DWELL_MS;
     asking = true;
@@ -74,7 +77,7 @@ export function runPlayback(now: () => number = Date.now): () => void {
 
   setState({ shownGroupIndex: getState().activeGroupIndex });
   const unsubscribe = subscribe((s) => {
-    if (waiting && !asking && s.shownGroupIndex === s.activeGroupIndex) onShown();
+    if (waiting && !asking && s.playing && s.groups === groups && s.shownGroupIndex === s.activeGroupIndex) onShown();
   });
   request();
   return () => {

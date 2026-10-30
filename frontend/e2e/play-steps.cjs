@@ -71,7 +71,7 @@ async function colourAt(page, x, y) {
 
 const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 12);
 
-async function run(browser, { theme, viewport, name: caseName, delays, seconds, expect }) {
+async function run(browser, { theme, viewport, name: caseName, delays, seconds, expect, hideResults }) {
   const name = `${caseName} ${theme} ${viewport}`;
   const problems = [];
   const win = VIEWPORTS[viewport];
@@ -152,10 +152,12 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
   }
   if (first === null) problems.push('the first step never came on the map');
 
+  if (hideResults) await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ resultsOnMap: false }));
   await page.locator('.play-btn').dispatchEvent('click'); // in a narrow window the rail lies over the button, as it does in the app
   const t0 = Date.now();
   const samples = [];
   const labels = new Set();
+  const counts = new Set();
   let sawLoading = false;
   let notice = null;
   while (Date.now() - t0 < (Number(process.env.SECONDS) || seconds) * 1000) {
@@ -163,7 +165,9 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
     const step = COLOURS.findIndex((k) => near(c, k));
     samples.push({ t: Date.now() - t0, step, c, openNow: [...open] });
     labels.add(await page.locator('.time-labels strong').innerText());
-    if ((await page.locator('.time-count').innerText()) === 'Loading…') sawLoading = true;
+    const count = await page.locator('.time-count').innerText();
+    counts.add(count);
+    if (count === 'Loading…') sawLoading = true;
     const toast = page.locator('.toast.notice');
     if ((await toast.count()) > 0) notice = await toast.first().innerText();
     await page.waitForTimeout(40);
@@ -171,7 +175,7 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
   await page.screenshot({ path: path.join(OUT, `${name}.png`) });
 
   // 1. Never the basemap, never a half-drawn step: every sample is the colour of a step.
-  const gaps = samples.filter((s) => s.step === -1);
+  const gaps = hideResults ? [] : samples.filter((s) => s.step === -1);
   if (gaps.length > 0 && process.env.DEBUG) {
     const i = samples.indexOf(gaps[0]);
     console.log(samples.slice(Math.max(0, i - 4), i + 5).map((x) => `${x.t}:${x.step}`).join(' '));
@@ -187,6 +191,14 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
   }
   // 3. The name of a step is its date.
   for (const label of labels) if (!/^\d{4}-\d{2}-\d{2}$/.test(label)) problems.push(`the timeline names a step "${label}"`);
+  if (hideResults) {
+    // Nothing of the results is on the map, so nothing is to be waited for: the timeline runs on at its own pace.
+    if (counts.size < 3) problems.push(`the timeline stood still with the results off the map: ${[...counts].join(', ')}`);
+    if (notice) problems.push(`a notice with the results off the map: ${notice}`);
+    console.log(`     ${name}: counts ${[...counts].join(' ')}`);
+    await context.close();
+    return { name, problems };
+  }
   const order = samples.map((s) => s.step).filter((s, i, all) => s !== -1 && s !== all[i - 1]);
   const when = samples.filter((s, i, all) => s.step !== -1 && s.step !== all[i - 1]?.step).map((s) => `${s.step}@${(s.t / 1000).toFixed(1)}`);
   if (expect.loading && !sawLoading) problems.push('no "Loading…" while a step was on its way');
@@ -206,6 +218,7 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
   const cases = [
     { name: 'quick', delays: COLOURS.map(() => 800), seconds: 9, expect: { steps: 3, loading: false } },
     { name: 'slow', delays: [800, 800, 800, 3000, 800], seconds: 9, expect: { loading: true, steps: 2 } },
+    { name: 'hidden', delays: COLOURS.map(() => 800), seconds: 7, hideResults: true, expect: {} },
     { name: 'stuck', delays: [800, 800, 800, NEVER, 800], seconds: 18, expect: { skipped: true, steps: 2, never: 3 } },
   ];
   for (const theme of Object.keys(THEMES)) {

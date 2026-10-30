@@ -127,6 +127,25 @@ describe('runPlayback', () => {
     expect(useAppStore.getState().activeGroupIndex).toBe(2);
   });
 
+  it('asks for nothing when the results are cleared while it waits: no step is made of an empty list', () => {
+    useAppStore.setState({ activeGroupIndex: 0, expandedGroupIndex: 0, shownGroupIndex: null });
+    stop = runPlayback();
+    // `clearSearchResults` empties the list, goes to step 0 and stops the playing in one change.
+    useAppStore.setState({ groups: [], activeGroupIndex: 0, expandedGroupIndex: 0, playing: false });
+    expect(useAppStore.getState().activeGroupIndex).toBe(0);
+    vi.advanceTimersByTime(60_000);
+    expect(useAppStore.getState().activeGroupIndex).toBe(0);
+  });
+
+  it('does not take a step of another list for one that arrived: another dataset opens at its own first step', () => {
+    useAppStore.setState({ activeGroupIndex: 1, expandedGroupIndex: 1 });
+    stop = runPlayback();
+    expect(useAppStore.getState().activeGroupIndex).toBe(0);
+    // The dataset changes: another list, open at step 0, which is the step the map was said to show.
+    useAppStore.setState({ groups: [...GROUPS], activeGroupIndex: 0, expandedGroupIndex: 0, shownGroupIndex: 0 });
+    expect(useAppStore.getState().activeGroupIndex).toBe(0);
+  });
+
   it('asks for nothing more once stopped, and leaves nothing of itself in the state', () => {
     stop = runPlayback();
     stop();

@@ -493,8 +493,15 @@ function retireDynamicMosaic(map: MapLibreMap, hold = false): void {
     retiring = null;
     arriving.clear();
   }
-  // The last sync drew nothing yet (a mosaic still on its way): the picture before it waits on for this one.
-  if (retiring && !drawnNew) return;
+  // The last sync drew nothing yet (a mosaic still on its way): the picture before it waits on for this one. A step that
+  // is asked for after a step that is still on its way gets its own time.
+  if (retiring && !drawnNew) {
+    if (hold) {
+      clearTimeout(retiring.timer);
+      retiring.timer = retireTimer(map, retiring.id);
+    }
+    return;
+  }
   // The step before this one has not arrived: it is dropped, the picture on the map stays, and the wait starts anew.
   if (retiring && hold && arriving.size > 0) {
     removeDynamic(map, bank);
@@ -551,6 +558,14 @@ function settleRetired(map: MapLibreMap): void {
   };
   if (holding && retiring) onceArrived(map, gen, settle);
   else map.once('idle', settle);
+}
+
+// A held step that draws nothing (no preview, or the results are off the map) is shown, which takes the picture before it
+// away, once that picture has had its time.
+function finishWhenDue(map: MapLibreMap, gen: number): void {
+  const wait = (holding?.notBefore ?? 0) - Date.now();
+  if (wait <= 0) return finishRetired(map);
+  setTimeout(() => gen === syncGen && finishRetired(map), wait);
 }
 
 // A sync that draws nothing new has nothing to wait for.
@@ -1120,13 +1135,15 @@ export function syncBrowseMosaic(map: MapLibreMap, s: PreviewState): void {
   const { dataset } = s;
   // Nothing to draw (no dataset, or the results are off the map, UI-01g): the picture before it has nothing to
   // wait for and goes at once.
-  if (!dataset || items.length === 0) return dropRetired(map);
+  if (!dataset || items.length === 0) return s.hold ? finishWhenDue(map, gen) : dropRetired(map);
   const layersOf = new Map(items.map((it, i) => [it.id, [dynamicId('tiles-lyr', i), dynamicId('img-lyr', i)]]));
   const order = resultsOrderOf(s, items);
   items.forEach((it, i) => {
     const own = datasetOfItem(it, s);
     if (own) addPreview(map, it, i, gen, own, order, layersOf);
   });
+  // A held step none of whose scenes has a preview has nothing to arrive.
+  if (s.hold && !drawnNew && pendingImages === 0) return finishWhenDue(map, gen);
   settleRetired(map);
 }
 

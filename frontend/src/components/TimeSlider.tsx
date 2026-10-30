@@ -26,7 +26,7 @@ export default function TimeSlider() {
   useEffect(() => {
     if (!playing || groups.length < 2) return;
     return runPlayback();
-  }, [playing, groups.length]);
+  }, [playing, groups]);
 
   useEffect(() => {
     setLate(false);

@@ -1506,9 +1506,12 @@ input[type='date']:focus {
   color: var(--muted);
   margin-bottom: 2px;
 }
-/* The step on the map is always whole; the ends give way, with an ellipsis, in a narrow window. */
+/* The ends give way first, with an ellipsis; a label longer than the band (the full label of a step, paused) gives way too. */
 .time-labels strong {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text);
   font-size: 11px;
   white-space: nowrap;

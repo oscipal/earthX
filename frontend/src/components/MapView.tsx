@@ -90,11 +90,18 @@ function useSameScenes(items: StacItem[]): StacItem[] {
   return ref.current;
 }
 
+// The step of the timeline that is on the map, told to the playing (`playback.ts`) while it plays.
+const reportShown = (index: number) => {
+  if (useAppStore.getState().playing) useAppStore.setState({ shownGroupIndex: index });
+};
+
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const readyRef = useRef(false);
+  // The time step the browse preview was last synced for, while the timeline plays.
+  const heldIndexRef = useRef<number | null>(null);
   const basemapRef = useRef<ReturnType<typeof createBasemapSwitcher> | null>(null);
 
   // Reactive slices used to drive the imperative map updates.
@@ -123,6 +130,9 @@ export default function MapView() {
   const layers = useAppStore((s) => s.layers);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
+  const playing = useAppStore((s) => s.playing);
+  const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
+  const revealNotBefore = useAppStore((s) => s.revealNotBefore);
   const sections = useAppStore((s) => s.sections);
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
@@ -407,12 +417,27 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
       // While the timeline plays, the step arrives out of sight and says when it is on the map (`playback.ts`).
-      const { playing, revealNotBefore, expandedGroupIndex: open, activeGroupIndex } = useAppStore.getState();
-      const shownIndex = open ?? activeGroupIndex;
-      const hold = playing ? { notBefore: revealNotBefore, onShown: () => useAppStore.setState({ shownGroupIndex: shownIndex }) } : undefined;
+      const now = useAppStore.getState();
+      const shownIndex = now.expandedGroupIndex ?? now.activeGroupIndex;
+      const hold = now.playing ? { notBefore: now.revealNotBefore, onShown: () => reportShown(shownIndex) } : undefined;
+      heldIndexRef.current = shownIndex;
       syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets, hold });
     }
   }, [focusMode, quicklooks, ticked, datasets, datasetId]);
+
+  // --- a step of the timeline that the effect above did not draw (the results are off the map, or the step is the same
+  // scenes as the one before): there is nothing to wait for, and the playing is told once the picture before it has had
+  // its time ---
+  useEffect(() => {
+    if (!playing || focusMode) return;
+    const index = expandedGroupIndex ?? activeGroupIndex;
+    if (heldIndexRef.current === index) return;
+    const id = window.setTimeout(() => {
+      heldIndexRef.current = index;
+      reportShown(index);
+    }, Math.max(0, revealNotBefore - Date.now()));
+    return () => window.clearTimeout(id);
+  }, [playing, focusMode, expandedGroupIndex, activeGroupIndex, revealNotBefore]);
 
   // --- the results over a full-resolution view, while "Show results" is on. Runs after the view's own effect
   // above, so what it draws lies over the view. ---
