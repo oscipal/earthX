@@ -406,7 +406,11 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
-      syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });
+      // While the timeline plays, the step arrives out of sight and says when it is on the map (`playback.ts`).
+      const { playing, revealNotBefore, expandedGroupIndex: open, activeGroupIndex } = useAppStore.getState();
+      const shownIndex = open ?? activeGroupIndex;
+      const hold = playing ? { notBefore: revealNotBefore, onShown: () => useAppStore.setState({ shownGroupIndex: shownIndex }) } : undefined;
+      syncBrowseMosaic(map, { items: quicklooks, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets, hold });
     }
   }, [focusMode, quicklooks, ticked, datasets, datasetId]);
 

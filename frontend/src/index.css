@@ -135,6 +135,10 @@ body.dragging * {
 .draggable.fill {
   width: 100%;
 }
+/* The labels of the timeline do not wrap: its band stays within the stack, and they give way inside it. */
+.draggable[data-band='timeline'] {
+  max-width: 100%;
+}
 /* controls inside a draggable keep their own affordance */
 .draggable button,
 .draggable input,
@@ -1471,6 +1475,9 @@ input[type='date']:focus {
   gap: 12px;
   padding: 10px 16px;
   width: 100%;
+  /* Room for three dates, as the labels are the date only; never wider than the space between the rail and the edge. */
+  min-width: min(380px, calc(100vw - var(--dock-offset) - 32px));
+  box-sizing: border-box;
 }
 .play-btn {
   width: 36px;
@@ -1489,17 +1496,32 @@ input[type='date']:focus {
 }
 .time-track {
   flex: 1;
+  min-width: 0;
 }
 .time-labels {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   font-size: 10px;
   color: var(--muted);
   margin-bottom: 2px;
 }
+/* The step on the map is always whole; the ends give way, with an ellipsis, in a narrow window. */
 .time-labels strong {
+  flex: none;
   color: var(--text);
   font-size: 11px;
+  white-space: nowrap;
+}
+.time-labels span {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.time-labels span:last-child {
+  text-align: right;
 }
 .time-track input[type='range'] {
   width: 100%;
@@ -1509,6 +1531,9 @@ input[type='date']:focus {
   font-size: 11px;
   color: var(--muted);
   flex: 0 0 auto;
+  /* Room for "Loading…" (NM4-18), so that the slider does not move when it comes and goes. */
+  min-width: 7ch;
+  text-align: right;
 }
 
 /* --- download bar --- */

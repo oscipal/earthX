@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
+import { playLabel, runPlayback, STEP_LATE_AFTER_MS } from '../playback';
 import { useAppStore } from '../store';
 
 export default function TimeSlider() {
@@ -8,28 +9,39 @@ export default function TimeSlider() {
   const setActiveGroupIndex = useAppStore((s) => s.setActiveGroupIndex);
   const playing = useAppStore((s) => s.playing);
   const setPlaying = useAppStore((s) => s.setPlaying);
+  const shownGroupIndex = useAppStore((s) => s.shownGroupIndex);
+  const revealNotBefore = useAppStore((s) => s.revealNotBefore);
+  // The step asked for is not on the map yet; it is late once the picture there has had its time and a little more.
+  const behind = playing && shownGroupIndex !== null && shownGroupIndex !== activeGroupIndex;
+  const [late, setLate] = useState(false);
 
   // Auto-advance through mosaic groups while playing, left to right along
   // the slider — oldest to newest, starting wherever the slider already is
-  // (V-9). `groups` is newest-first (index 0 = newest = the slider's right
-  // end, see `sliderValue` below), so moving right means *decreasing*
+  // (V-9), each step once it is on the map (`playback.ts`). `groups` is
+  // newest-first (index 0 = newest = the slider's right end, see
+  // `sliderValue` below), so moving right means *decreasing*
   // `activeGroupIndex`; wrapping that below 0 back to `groups.length - 1`
   // is also what makes pressing play at the default, rightmost position
   // (the newest scene) restart from the leftmost (oldest) one.
   useEffect(() => {
     if (!playing || groups.length < 2) return;
-    const id = window.setInterval(() => {
-      const s = useAppStore.getState();
-      s.setActiveGroupIndex((s.activeGroupIndex - 1 + s.groups.length) % s.groups.length);
-    }, 1400);
-    return () => window.clearInterval(id);
+    return runPlayback();
   }, [playing, groups.length]);
+
+  useEffect(() => {
+    setLate(false);
+    if (!behind) return;
+    const id = window.setTimeout(() => setLate(true), Math.max(0, revealNotBefore - Date.now()) + STEP_LATE_AFTER_MS);
+    return () => window.clearTimeout(id);
+  }, [behind, activeGroupIndex, revealNotBefore]);
 
   if (groups.length === 0) return null;
 
-  const active = groups[activeGroupIndex];
   // groups are newest-first; show oldest→newest left→right.
   const sliderValue = groups.length - 1 - activeGroupIndex;
+  // Playing, the date of the pass on the map names the step, and the slider is ahead of it while the next one loads.
+  const name = (index: number) => (playing ? playLabel(groups[index]) : groups[index]?.label);
+  const loading = behind && late;
 
   return (
     <div className="panel time-slider">
@@ -44,9 +56,9 @@ export default function TimeSlider() {
       </button>
       <div className="time-track">
         <div className="time-labels">
-          <span>{groups[groups.length - 1]?.label}</span>
-          <strong>{active?.label}</strong>
-          <span>{groups[0]?.label}</span>
+          <span>{name(groups.length - 1)}</span>
+          <strong>{name(playing && shownGroupIndex !== null ? shownGroupIndex : activeGroupIndex)}</strong>
+          <span>{name(0)}</span>
         </div>
         <input
           type="range"
@@ -58,8 +70,8 @@ export default function TimeSlider() {
           aria-label="Timeline (mosaic groups)"
         />
       </div>
-      <span className="time-count">
-        {activeGroupIndex + 1}/{groups.length}
+      <span className="time-count" title={loading ? 'Waiting for the next step to load; the picture stays until it has' : undefined}>
+        {loading ? 'Loading…' : `${activeGroupIndex + 1}/${groups.length}`}
       </span>
     </div>
   );

@@ -873,6 +873,10 @@ export interface AppState {
   searching: boolean;
   downloading: boolean; // no operation in 07a sets this; 07d's download will
   playing: boolean;
+  // While playing (`playback.ts`): the time step on the map, which is behind `activeGroupIndex` while the next one
+  // loads, and the earliest time the next may be shown (ms since the epoch).
+  shownGroupIndex: number | null;
+  revealNotBefore: number;
   error: string | null;
   notice: string | null;
 
@@ -1045,6 +1049,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   searching: false,
   downloading: false,
   playing: false,
+  shownGroupIndex: null,
+  revealNotBefore: 0,
   error: null,
   notice: null,
 
