@@ -111,12 +111,15 @@ def _url(
     dataset: str = COG,
     assets: Sequence[str] = ("red", "nir"),
     size: int | None = None,
+    band: str | None = None,
 ) -> str:
     z, x, y = tile
     query = [f"asset={quote(a)}" for a in assets]
     for op, version, params in steps:
         raw = params if isinstance(params, str) else json.dumps(params)
         query += [f"op={op}", f"op_version={version}", f"params={quote(raw)}"]
+    if band is not None:
+        query.append(f"band={quote(band)}")
     if size is not None:
         query.append(f"tilesize={size}")
     return f"/collections/{dataset}/items/{ITEM}/tiles/WebMercatorQuad/{z}/{x}/{y}.tif?{'&'.join(query)}"
@@ -156,17 +159,20 @@ def _recipe(assets: Sequence[str], steps: Sequence[dict], bands: Sequence[str]) 
 
 
 def _compare(client: TestClient, result_path: Path, tile_steps, assets, size: int) -> tuple[int, int]:
+    """Each band of the job's result against the tile of that band (``band=``: a tile of version 2 shows one, NM4-43d)."""
     compared = masked = 0
     for tile in _tiles(NATIVE[size]):
-        response = client.get(_url(tile, tile_steps, assets=assets, size=size))
-        assert response.status_code == 200, response.text
-        from_tile, from_job = _decode(response.content), _job_bands(result_path, tile, size)
-        assert from_tile.shape == from_job.shape, tile
-        assert numpy.array_equal(from_tile.mask, numpy.ma.getmaskarray(from_job)), tile
-        valid = ~from_tile.mask
-        assert numpy.array_equal(from_tile.data[valid], from_job.data[valid]), tile
-        compared += int(valid.sum())
-        masked += int(from_tile.mask.sum())
+        from_job = _job_bands(result_path, tile, size)
+        for index, band in enumerate(BOTH):
+            response = client.get(_url(tile, tile_steps, assets=assets, size=size, band=band))
+            assert response.status_code == 200, response.text
+            from_tile = _decode(response.content)
+            assert from_tile.shape == (1, *from_job.shape[1:]), (tile, band)
+            assert numpy.array_equal(from_tile.mask[0], numpy.ma.getmaskarray(from_job)[index]), (tile, band)
+            valid = ~from_tile.mask[0]
+            assert numpy.array_equal(from_tile.data[0][valid], from_job.data[index][valid]), (tile, band)
+            compared += int(valid.sum())
+            masked += int(from_tile.mask.sum())
     return compared, masked
 
 
@@ -185,7 +191,7 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
 
     @pytest.mark.parametrize("size", NATIVE)
     def test_a_mask_before_the_method_reaches_its_values(self, client: TestClient, tmp_path: Path, size: int) -> None:
-        """The tile's ``mask`` (version 1) drops the layer; the job's (version 2) keeps it unless the output leaves it out."""
+        """Both the tile and the job mask with version 2: the layer stays in the stock, the output leaves it out."""
         steps = [
             {"op": "mask", "op_version": 2, "params": MASK},
             {"op": "normalize", "op_version": 3, "params": METHODS["percentile"]},
@@ -195,7 +201,7 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
             recipe_of_data(_recipe(assets, steps, BOTH), OPERATORS), workdir=tmp_path, progress=lambda d, t: None
         )
         compared, masked = _compare(
-            client, result.path, [("mask", 1, MASK), ("normalize", 3, METHODS["percentile"])], assets, size
+            client, result.path, [("mask", 2, MASK), ("normalize", 3, METHODS["percentile"])], assets, size
         )
         assert compared > 10_000 and masked > 0
 
@@ -208,18 +214,23 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
             "bands": ["red"],
             "measured": {"factor": 1, "bands": {"red": METHODS["zscore"]["measured"]["bands"]["red"]}},
         }
-        both = _decode(client.get(_url(tile, [("normalize", 3, METHODS["zscore"])])).content)
-        red = _decode(client.get(_url(tile, [("normalize", 3, red_only)])).content)
-        assert both.shape == red.shape and both.shape[0] == 2
+        def shown(params: dict, band: str) -> numpy.ma.MaskedArray:
+            response = client.get(_url(tile, [("normalize", 3, params)], band=band))
+            assert response.status_code == 200, response.text
+            return _decode(response.content)
+
+        both_red, both_nir = (shown(METHODS["zscore"], band) for band in BOTH)
+        red, nir = (shown(red_only, band) for band in BOTH)
+        assert both_red.shape == red.shape == nir.shape and both_red.shape[0] == 1
         valid = ~red.mask[0]
         assert valid.sum() > 5_000
         # The converted band is the same either way; the other is the physical band when nobody converts it.
-        assert numpy.array_equal(both.data[0][valid], red.data[0][valid])
+        assert numpy.array_equal(both_red.data[0][valid], red.data[0][valid])
         raw = _job_bands(files["nir"], tile).data[0].astype("float64")
         numpy.testing.assert_allclose(
-            red.data[1][valid], (raw * sources.SCALE + sources.OFFSET)[valid], rtol=1e-6, atol=1e-7
+            nir.data[0][valid], (raw * sources.SCALE + sources.OFFSET)[valid], rtol=1e-6, atol=1e-7
         )
-        assert not numpy.array_equal(both.data[1][valid], red.data[1][valid])
+        assert not numpy.array_equal(both_nir.data[0][valid], nir.data[0][valid])
 
 
 class TestRefusals:
