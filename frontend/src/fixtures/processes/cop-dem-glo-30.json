@@ -47,7 +47,6 @@
                   "minLength": 1,
                   "type": "string"
                 },
-                "maxItems": 16,
                 "minItems": 1,
                 "title": "Assets",
                 "type": "array"

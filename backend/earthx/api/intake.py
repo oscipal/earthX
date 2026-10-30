@@ -133,7 +133,6 @@ from earthx.readers.zarr_reader import split_asset_key
 LOGGER = logging.getLogger("earthx.api.intake")
 
 __all__ = [
-    "MAX_ORDER_ASSETS",
     "MAX_ORDER_ITEMS",
     "MAX_ORDER_STEPS",
     "VERSION_1_ACCEPTED_UNTIL",
@@ -156,11 +155,11 @@ __all__ = [
     "version_1_accepted",
 ]
 
-# The starting values of an order's size (Otto, M4-07b F5). One input per order until
+# The starting values of an order's size (Otto, M4-07b F5; the cap of 16 assets fell with NM4-43c, adr/0020 §7: the
+# memory estimate of a run guards the bands, `processing.plan.MAX_JOB_MEMORY_BYTES`). One input per order until
 # the licence of a combination is decided (architekturplan 7.1). M4-12 may raise the
 # item cap, with its own reason: whole scenes per overpass are more than a crop's 25.
 MAX_ORDER_ITEMS = 25
-MAX_ORDER_ASSETS = 16
 MAX_ORDER_STEPS = 16
 
 #: The last day `api` takes an order of recipe version 1 and rewrites it (adr/0020 §11): 30 days after NM4-43e, the
@@ -651,8 +650,6 @@ def _check_scope(request: RecipeRequest) -> InputRequest:
     if len(request.steps) > MAX_ORDER_STEPS:
         raise OrderRefused(422, f"an order has at most {MAX_ORDER_STEPS} steps", "size")
     entry = request.inputs[0]
-    if entry.assets is not None and len(entry.assets) > MAX_ORDER_ASSETS:
-        raise OrderRefused(422, f"an order names at most {MAX_ORDER_ASSETS} assets", "size")
     count = sum(len(group) for group in entry.groups)
     if count > MAX_ORDER_ITEMS:
         raise OrderRefused(413, f"this order names {count} items; at most {MAX_ORDER_ITEMS} fit in one order", "size")
@@ -1109,12 +1106,7 @@ def derive_assets(
     if shared:
         raise OrderRefused(422, f"the band(s) {', '.join(shared)} are carried by more than one asset", "applicable")
     wanted = {owners[name] for name in needed}
-    assets = [key for key, _ in sources if key in wanted]
-    if len(assets) > MAX_ORDER_ASSETS:
-        raise OrderRefused(
-            422, f"an order reads at most {MAX_ORDER_ASSETS} assets; this one needs {len(assets)}", "size"
-        )
-    return assets
+    return [key for key, _ in sources if key in wanted]
 
 
 # --- bands, scaling source, version ------------------------------------------
