@@ -731,20 +731,27 @@ describe('a draft that changes while the batch is on its way', () => {
     selectPasses([sceneIds(12)]);
     await openPanel();
     await ndvi();
-    click(button('One job per scene (12)'));
-    click(button('Review'));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    typeInto(container.querySelector('textarea[id$="-expression"]')!, 'nir - red');
-    const seen = calls;
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
-    });
-    expect(calls).toBeLessThanOrEqual(seen + 4);
-    expect(calls).toBeLessThan(12);
-    expect(useProcessingStore.getState().reviewing).toBe(false);
-    expect(useProcessingStore.getState().batch).toBeNull();
+    // The clock is the test's: with the real one, a wait that ran long on a busy machine let all twelve estimates
+    // (four at a time, 20 ms each) finish before the step changed.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      click(button('One job per scene (12)'));
+      click(button('Review'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30);
+      });
+      expect(calls).toBe(8); // two rounds of four have been asked, the first answered
+      typeInto(container.querySelector('textarea[id$="-expression"]')!, 'nir - red');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(150);
+      });
+      expect(calls).toBeLessThanOrEqual(8 + 4);
+      expect(calls).toBeLessThan(12);
+      expect(useProcessingStore.getState().reviewing).toBe(false);
+      expect(useProcessingStore.getState().batch).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('stops asking for estimates when "Run as" changes', async () => {
