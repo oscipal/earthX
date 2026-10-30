@@ -49,3 +49,172 @@
 - Alle vier Pflicht-Checks grün.
 - Log-Zeilen mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern (pflegt der Planungs-Chat).
 - Vor „fertig“ ist main geholt.
+
+## 6. Plan (30.10.2026; Stufe B, kein Produktivcode)
+
+Kennzeichnung: [P] im Code geprüft, [M] im echten Browser gemessen, [A] Auslegung bzw. Vorschlag von Claude.
+
+### 6.0 Kurzfassung
+
+- **Fehler (§2.1):** Ottos Klickweg ist im echten Browser (Chromium, echtes MapLibre, synthetische Szenen) in 22 Läufen **nicht** nachstellbar: „Show results“ bringt die offene Gruppe jedes Mal über den Job-Layer zurück (§6.1). Die Ursache ist damit **nicht belegt**; Frage 1 bittet um die fehlenden Umstände. Gefunden wurde dabei eine **andere Abweichung**: In einer offenen Ansicht liegt eine angehakte Szene einer anderen Gruppe über der offenen Gruppe, entgegen §2.5 [M].
+- **Kern des Entwurfs:** Im Layer-Manager steht eine Zeile „Results“ zwischen den angehefteten Layern. Ihr Auge ist der bisherige Schalter `resultsOnMap`, ▲/▼ verschieben sie. Auf der Karte gibt es **eine** Ebenenfolge, berechnet aus Liste und Platz von „Results“; sechs der sieben Marker entfallen (§6.6).
+- **Innerhalb von „Results“** gilt die feste Folge aus §3.2 (§6.4). Die Ausnahmen aus §2.7 bleiben, wie sie im Store schon stehen (§6.5).
+- **Schnitt:** zwei PRs in dieser Session (Frage 8): erst die eine Ebenenfolge ohne sichtbare Änderung außer der Korrektur, dann die Zeile „Results“ mit Auge.
+
+### 6.1 Nachstellung des Fehlers [M]
+
+Werkzeug: ein Playwright-Skript nach dem Muster von `frontend/e2e/layer-order.cjs`. Der Dev-Server läuft ohne Backend, die Antworten sind erfunden: drei Szenen gleicher Fläche in drei Gruppen, je eine Vollfarbe (rot = Gruppe 0, grün, blau), dazu ein Job-Layer in Gelb, angeheftet wie `processingStore.ts::showResultOnMap` (`pinDerivedLayer`, `derived: 'result'`, oben in der Liste). Gemessen wird die Farbe in der Kartenmitte. Ablauf wie Ottos Klickweg: Gruppe 0 offen, nichts angehakt → Job anheften → viermal „Hide results“ / „Show results“ (`toggleResultsOnMap`), einmal mit Warten auf Gelb zwischen den Klicks, einmal ohne.
+
+| Variante | Ergebnis |
+|---|---|
+| Datensatz mit Quicklook (Bild) bzw. ganze Szene als Kacheln, je mit und ohne Warten | ok |
+| Quicklooks 1,5 s verzögert (nicht im Cache) | ok |
+| Job-Kacheln 3 s verzögert, Umschalten vor dem Laden (Karte nie `idle`) | ok |
+| vorher Gruppenwechsel 0 → 1 → 0 ohne Warten, Quicklooks 0,8 s und Job 3 s verzögert | ok |
+| Ansicht offen („full resolution“ einer anderen Szene), Ergebnisse darüber eingeblendet; auch verzögert und mit Gruppenwechsel | ok |
+| Szene der offenen Gruppe angehakt, im Browse-Modus und in der Ansicht | ok |
+| Szene einer **anderen** Gruppe angehakt, Browse-Modus | ok (offene Gruppe oben) |
+| Szene einer **anderen** Gruppe angehakt, **Ansicht offen** | **Abweichung:** die angehakte Szene liegt über der offenen Gruppe |
+
+Ursache der Abweichung [P]: In einer Ansicht zeichnet `mapLayers.ts::syncResultsOverlay` die Ergebnisse. Die nicht angehakten Szenen der offenen Gruppe legt es unter die Ansicht (`results-top`, Regel vom 27.10.2026), die angehakten Szenen aller Gruppen über sie (`tickedPlace` → `open-base`). Die Regel „offene Gruppe über angehakten Szenen anderer Gruppen“ (NM4-55) gilt nur im Browse-Modus (`syncBrowseMosaic`). Die neue Ebenenfolge (§6.4) behebt das, weil beide Wege dieselben Stufen benutzen.
+
+Was der Code für Ottos Klickweg als Ursache hergäbe, ohne dass es sich zeigen ließ [P]:
+- Zwei getrennte Zeichenwege für dieselben Ergebnisse (`syncBrowseMosaic` mit zwei Id-Bänken `m-`/`n-` und verzögertem Abbau, `syncResultsOverlay` mit `res-`), dazu `tickedPlace`, das den Platz eines spät ankommenden Bildes nach den Nachbarn wählt, die *gerade* auf der Karte liegen. Die Lage hängt damit von der Reihenfolge ab, in der Bilder ankommen.
+- Die Lage gegenüber den angehefteten Layern hängt an sieben Markern (`layers-top` … `overlays-base`), die nur `ensureBaseLayers` beim ersten Laden setzt.
+
+Der Entwurf ersetzt beides durch eine Ebenenfolge, die nur vom Zustand abhängt und nach jeder Änderung vollständig hergestellt wird (§6.6). Ottos Klickweg wird als Browserprüfung und als Test mit Gegenprobe Teil der Abnahme (§6.9). Lässt er sich mit Ottos Angaben (Frage 1) nachstellen, kommt der Befund vor dem Code in diesen Plan.
+
+### 6.2 Stand im Code [P]
+
+Ebenen der App von unten nach oben (`mapLayers.ts::ensureBaseLayers`, `mapStyles.ts::composeStyle`):
+
+| Platz | Was | gesetzt von |
+|---|---|---|
+| über der Basiskarte | Relief-Schattierung (Overlay) | `composeStyle` |
+| unter `layers-top` | angeheftete Layer in Listenfolge | `syncLayers`/`restack` |
+| unter `results-top` | Quicklooks der Ergebnisse unter einer Ansicht | `syncResultsOverlay` |
+| unter `ticked-top` | Ansicht (Kacheln, Quicklook darunter) | `syncFocusRaster` (`beforeAoi`) |
+| unter `open-base` | angehakte Szenen anderer Gruppen | `tickedPlace` |
+| unter `open-ticked-base` | übrige Quicklooks (Browse-Modus) | `openRestTop` |
+| unter `preview-base` | angehakte Szenen der offenen Gruppe | `tickedPlace` |
+| unter `overlays-base` | Live-Vorschau des Processing-Panels | `syncPreview` |
+| unter `aoi-fill` | Beschriftung, Gradnetz | `composeStyle` |
+| darüber | AOI, Coverage, gelbe Umrisse (`mosaicsel-line`), Zeichenwerkzeug | `ensureBaseLayers`, terra-draw |
+
+- „Results“ liegt damit heute immer über allen angehefteten Layern. Eine Ausnahme ist die Ansicht, die ein angehefteter Layer selbst zeichnet (`viewLayer.ts`): Sie liegt am Platz dieses Layers.
+- Sichtbarkeit: `store.resultsOnMap` (im Browser gespeichert), gelesen nur in `mapResults.ts::resultsOnMapOf`. Ausnahmen im Store: Suche zeigt (`runSearch`, `findSceneByName`), Crop verbirgt (`enterFocus`), Anhaken zeigt (`ticking`). Seit NM4-18 zeigt auch „Play“ die Ergebnisse (`TimeSlider.tsx`, Otto 30.10.2026).
+- Die angehefteten Layer werden nicht gespeichert; die Liste lebt nur in der Sitzung.
+
+### 6.3 Modell: „Results“ in der Liste
+
+- Im Store kommt `resultsAt` dazu: die Zahl der angehefteten Layer **über** „Results“ (0 = ganz oben). Die Liste `layers` bleibt, wie sie ist. Der Layer-Manager zeichnet `layers[0 … resultsAt)`, dann die Zeile „Results“, dann den Rest.
+- ▲/▼ an „Results“ ändern `resultsAt` um 1. ▲/▼ an einem Layer direkt neben „Results“ tauscht ihn mit „Results“ (gleiche Funktion `moveEntry` für alle Zeilen).
+- **Neuer Layer** (`addCurrentToLayers`, `pinDerivedLayer`, Frage 3): Er kommt wie heute an die Spitze der angehefteten Layer. Liegt „Results“ ganz oben, bleibt es dort, und der neue Layer liegt direkt darunter (wie heute). Liegt „Results“ tiefer, bleibt es unter denselben Layern (`resultsAt + 1`).
+- Entfernen eines Layers über „Results“: `resultsAt − 1`.
+- „Clear search results“ setzt `resultsAt` auf 0. Eine neue Suche lässt den Platz, wie er ist (Frage 3).
+
+### 6.4 Reihenfolge innerhalb von „Results“ (fest nach §3.2) [A]
+
+Von oben nach unten, als Stufen eines Blocks:
+
+1. gelbe Umrisse der angehakten Szenen (`mosaicsel-line`); Auslegung: Umrisse gehören laut §3.1 zu „Results“ und liegen dort ganz oben.
+2. Live-Vorschau des Processing-Panels.
+3. angehakte Szenen der offenen Gruppe (bzw. des gespielten Zeitschritts), die zuletzt angehakte oben.
+4. übrige Quicklooks der offenen Gruppe.
+5. angehakte Szenen anderer Gruppen und Datensätze, die zuletzt angehakte oben.
+6. Ansicht (Kacheln, Mosaik, Quicklook darunter), innen wie heute (erste Szene oben, `stackLikeView`).
+
+Folge [A]: Mit eingeblendeten Ergebnissen liegt die offene Gruppe in einer Ansicht **über** der Ansicht. Das ersetzt die Regel vom 27.10.2026 („die Ansicht liegt über den Quicklooks der Ergebnisse“, #211) und braucht einen Nachtrag im Log. Weil „Crop“ die Ergebnisse ausschaltet, ändert sich nach einem Zuschnitt nichts, bis Otto das Auge wieder einschaltet. Frage 4 bestätigt das.
+
+Die Ansicht eines angehefteten Layers (`viewLayer.ts`, unverändert) liegt weiter am Platz dieses Layers, nicht in „Results“.
+
+### 6.5 Auge und Ausnahmen (fest nach §2.7)
+
+- Das Auge der Zeile „Results“ **ist** `resultsOnMap`; es schaltet, was es heute schaltet: Quicklooks, angehakte Szenen, Umrisse. Die Store-Aktion `toggleResultsOnMap` bleibt; die Ausnahmen bleiben unverändert im Store (Suche, Crop, Anhaken). Das Auge zeigt also nach „Crop“ zu und nach „Search“ offen.
+- **Ansicht und Live-Vorschau** liegen in „Results“, behalten aber ihre eigenen Schalter („Hide image“ der Ansicht; die Vorschau gehört zum offenen Panel). Grund [A]: „Crop“ schaltet das Auge aus (§2.7). Schaltete es auch die Ansicht aus, zeigte ein Zuschnitt nichts. Frage 2.
+- „Play“ schaltet das Auge ein (NM4-18, Otto 30.10.2026). Das ist eine vierte Ausnahme neben §2.7 und bleibt [A], Frage 2.
+- Der Knopf „Hide results / Show results“ im Kopf der Ergebnisliste wird zum selben Auge (Eye-Symbol, gleicher Zustand, Tooltip „Hide results on the map“ / „Show results on the map“). Der veraltete Tooltip („ticked scenes still show“, vor #221) entfällt damit. Frage 5.
+
+### 6.6 Eine Ebenenfolge auf der Karte [A]
+
+- **Ein Marker bleibt:** `overlays-base`. Jedes Raster der App und die Umrisse liegen darunter; Beschriftung und Gradnetz liegen darüber (Overlays, `composeStyle` setzt sie vor `aoi-fill`), darüber AOI und Zeichnung. `layers-top`, `results-top`, `ticked-top`, `open-base`, `open-ticked-base` und `preview-base` entfallen.
+- **Jede Ebene bekommt beim Hinzufügen einen Schlüssel:** Platz in der Liste (Layer bzw. „Results“), Stufe in „Results“ (§6.4), Rang in der Stufe (Index der Szene in den Haken, Nummer des Platzierens für die Ansicht, Index des Overlays für einen Layer). Die Schlüssel stehen in einer Tabelle in `mapLayers.ts`.
+- **`restackAll(map)`** sortiert alle Ebenen der App nach Schlüssel und legt sie, nur wenn die Folge abweicht, von oben nach unten unter `overlays-base` (`moveLayer`, lädt keine Kachel nach, wie heute `restack`). Jede Sync-Funktion ruft es am Ende auf, ebenso jedes Bild, das später ankommt. Damit hängt die Lage nicht mehr davon ab, was beim Ankommen eines Bildes schon auf der Karte liegt; `tickedPlace`, `topOfAll`, `otherTickedTop`, `openRestTop`, `underTheView`, `aboveAll`, `beforeAoi` und `previewTop` entfallen.
+- **Zwei Wege bleiben zwei Funktionen, aber mit denselben Stufen:** `syncBrowseMosaic` (Browse, mit Bänken und Halten beim Abspielen, NM4-18) und `syncResultsOverlay` (über einer Ansicht). Zusammenlegen wäre eine weitere Vereinfachung, ändert aber das Abspielen; nicht in dieser Aufgabe [A].
+- **`style.load`:** Beim ersten Laden setzt `ensureBaseLayers` nur `overlays-base` und die festen Ebenen, alle Syncs folgen, dann `restackAll`. Beim Wechsel der Basiskarte trägt `composeStyle` die Ebenen der App in ihrer Folge mit (heute schon); ein Test hält fest, dass die Folge danach gleich ist und `restackAll` nichts bewegt.
+- **Umrisse:** `mosaicsel-line` kommt aus dem Bereich über der AOI in die oberste Stufe von „Results“. Die Coverage-Ebenen bleiben, wo sie sind (gehören nicht zu „Results“).
+
+### 6.7 Zeile im Layer-Manager [A]
+
+- Gleiches Raster wie die übrigen Zeilen (neun Plätze, `LayerRow`): Auge, Name „Results“, ▲, ▼. Deckkraft, Process, Download, Hinweis und ✕ bleiben leere Plätze (`Slot`). Kein Colormap-/Skala-Menü (§3.6). „Clear search results“ bleibt in der Ergebnisliste.
+- Tooltip des Namens: „Search results, the view and the processing preview. Move to change what lies above.“
+- Keine Zahl in der Zeile (die Ergebnisliste zeigt sie schon); Frage 6.
+- Die Zeile erscheint, sobald es Suchergebnisse gibt, und verschwindet mit „Clear search results“ (§3.5). Eine Ansicht oder Vorschau ohne Suchergebnisse (z. B. aus einem angehefteten Layer) liegt am Platz, den „Results“ hätte (`resultsAt`, nach „Clear“ oben), ohne Zeile; Frage 7.
+- Die Zahl im Kopf des Layer-Managers zählt weiter nur die angehefteten Layer; der Hinweis „No layers yet …“ erscheint nur ohne Layer und ohne „Results“.
+
+### 6.8 Folgen für andere Aufgaben (§3.8)
+
+- **NM4-53** (Zeitschritte der Ansicht): Die Zeitschritte sind Stufe 6 von „Results“. „Add to layers“ und „Add all to layers“ heften nach §6.3 an. Plan §3 Punkt 8 („Show/Hide … bleiben“) heißt danach „Auge von ‚Results‘“.
+- **NM4-54:** NM4-12 (Anheften ohne zweiten Klick) heftet nach §6.3 an. NM4-24 (Rückfall „Szene für Szene“) und NM4-25 (Quicklook nach Zuschnitt) ordnen innerhalb von Stufe 6 über den Rang, ohne eigene Marker. NM4-45 ist nicht betroffen. Wo der Plan „Show/Hide“ sagt, gilt das Auge.
+- **NM4-43e** (Panel-Umbau): Die Live-Vorschau bleibt Stufe 2; „Pin preview“ heftet nach §6.3 an. Sonst keine Folge.
+- **DS-03b** (Wolken in der AOI, Oberfläche): ändert den Kopf der Ergebnisliste; der Knopf dort ist nach NM4-59 das Auge (§6.5). Nicht gleichzeitig mit dem zweiten PR dieser Aufgabe.
+- **Overlays** (Beschriftung, Gradnetz, Relief) bleiben feste Plätze, wie heute, im Menü „Basemap“ (Frage 9).
+
+### 6.9 Tests und Abnahme
+
+Vitest mit `fixtures/liveMap.ts` (Ebenenfolge), Komponententests für Layer-Manager und Ergebnisliste; jeweils mit Gegenprobe gegen den Code vor der Änderung.
+
+- **Ottos Klickweg:** Gruppe offen, nichts angehakt, Job-Layer anheften, Auge aus, Auge an: die offene Gruppe liegt über dem Job-Layer; viermal hintereinander und mit spät ankommenden Bildern. Gegenprobe: „Results“ unter den Job-Layer verschoben → der Job-Layer liegt oben.
+- **Lage per Reihenfolge:** „Results“ ▲/▼ zwischen drei Layern; neuer Layer bei „Results“ oben bzw. tiefer (§6.3); Entfernen eines Layers darüber; „Clear“ setzt zurück; neue Suche behält den Platz.
+- **Auge:** schaltet Quicklooks, angehakte Szenen und Umrisse; Ansicht und Vorschau bleiben (bzw. nach Antwort 2).
+- **Ausnahmen:** Suche schaltet ein, „Crop to AOI“ und „Crop & merge to AOI“ schalten aus, Anhaken bei ausgeschaltetem Auge schaltet ein, Abhaken ändert nichts, „Play“ schaltet ein.
+- **Innerhalb von „Results“:** die sechs Stufen in Browse-Modus und Ansicht, die zuletzt angehakte oben, offene Gruppe über angehakten Szenen anderer Gruppen auch in der Ansicht (die Abweichung aus §6.1), egal in welcher Reihenfolge die Bilder ankommen.
+- **`style.load` und Basiskarte:** erstes Laden und Wechsel der Basiskarte mit und ohne Beschriftung/Gradnetz: gleiche Folge, Overlays über allen Rastern, AOI ganz oben.
+- **Zweckfremd:** ▲ an „Results“ ganz oben und ▼ ganz unten tun nichts; `resultsAt` außerhalb der Liste wird begrenzt; ein Layer, dessen Bild nach dem Entfernen ankommt, landet nicht auf der Karte.
+- **Browser (Playwright, `frontend/e2e/results-layer.cjs`):** Ottos Klickweg über die Knöpfe der Oberfläche, Lage von „Results“ per ▲/▼, Hell/Dunkel, breites und schmales Fenster. Bilder nur im PR beschrieben.
+- **Prüfanleitung für Otto** im PR mit seinem Klickweg (Sentinel-2, eine Gruppe offen, Job anheften, Auge aus/an, „Results“ unter den Job schieben).
+- `ruff check backend`, `pytest`, `lint-imports`, `npm run lint`, `npx tsc -b`, `npx vitest run`.
+
+### 6.10 Fragen an Otto
+
+Kurz beantwortbar: je Frage eine Nummer.
+
+**Frage 1 — Umstände des Fehlers** (nicht nachstellbar, §6.1). Was traf zu? Mehrfachnennung möglich.
+1. Eine Ansicht war offen („Crop to AOI“ o. Ä.).
+2. Das Processing-Panel war offen (Live-Vorschau).
+3. „angeklickt“ hieß: Szenen angehakt (nicht nur „Show results“ gedrückt).
+4. Mehrere Datensätze in der Suche.
+5. Weiß ich nicht mehr; der Test aus §6.9 genügt. **(Empfehlung, wenn keine der anderen sicher ist)**
+
+**Frage 2 — Was das Auge von „Results“ schaltet**
+1. Nur die Suchergebnisse (Quicklooks, angehakte Szenen, Umrisse); Ansicht und Vorschau behalten ihre Schalter; „Play“ schaltet ein. **(Empfehlung)**
+2. Alles in „Results“, auch Ansicht und Vorschau („Crop“ zeigt dann erst nach Klick aufs Auge etwas).
+
+**Frage 3 — Neuer Layer und neue Suche**
+1. Neuer Layer direkt unter „Results“, wenn „Results“ oben liegt, sonst ganz oben; neue Suche behält den Platz, „Clear“ setzt „Results“ nach oben. **(Empfehlung)**
+2. Neuer Layer immer ganz oben, auch über „Results“.
+3. Neue Suche setzt „Results“ immer nach oben.
+
+**Frage 4 — Ansicht in „Results“ ganz unten (§3.2, ersetzt die Regel vom 27.10.2026)**
+1. Ja: mit eingeschaltetem Auge liegt die offene Gruppe über der Ansicht. **(Empfehlung, so in §3.2)**
+2. Nein: die übrigen Quicklooks bleiben unter der Ansicht, nur angehakte Szenen darüber.
+
+**Frage 5 — Knopf in der Ergebnisliste**
+1. Wird zum selben Auge. **(Empfehlung)**
+2. Entfällt, nur das Auge im Layer-Manager.
+
+**Frage 6 — Zahl in der Zeile „Results“**
+1. Keine. **(Empfehlung)**
+2. Zahl der Szenen auf der Karte.
+
+**Frage 7 — Ansicht oder Vorschau ohne Suchergebnisse**
+1. Keine Zeile; sie liegen am Platz von „Results“. **(Empfehlung)**
+2. Zeile „Results“ erscheint auch dann.
+
+**Frage 8 — Schnitt**
+1. Zwei PRs in dieser Session: (a) eine Ebenenfolge mit Korrektur, (b) Zeile „Results“ mit Auge. **(Empfehlung, je unter etwa 400 Zeilen)**
+2. Ein PR.
+
+**Frage 9 — Overlays (Beschriftung, Gradnetz, Relief)**
+1. Feste Plätze wie heute, im Menü „Basemap“. **(Empfehlung)**
+2. Eigene Einträge im Layer-Manager.
