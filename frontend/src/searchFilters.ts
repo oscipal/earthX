@@ -19,6 +19,8 @@ export interface SearchFilterDescription {
   property: string;
   kind: 'range' | 'values';
   title: string;
+  // The heading the filter stands under in "Advanced search" ("Clouds"); the registry keeps a group together.
+  group: string;
   // The tooltip.
   description: string;
   unit: string | null;
@@ -71,10 +73,10 @@ const isText = (value: unknown): value is string => typeof value === 'string' &&
 
 function describe(entry: unknown): SearchFilterDescription | null {
   if (!isObject(entry)) return null;
-  const { property, kind, title, description, unit } = entry;
-  if (!isText(property) || !isText(title) || !isText(description)) return null;
+  const { property, kind, title, description, unit, group } = entry;
+  if (!isText(property) || !isText(title) || !isText(description) || !isText(group)) return null;
   if (unit !== null && unit !== undefined && !isText(unit)) return null;
-  const common = { property, title, description, unit: unit ?? null };
+  const common = { property, title, group, description, unit: unit ?? null };
   if (kind === 'range') {
     const { minimum, maximum } = entry;
     if (typeof minimum !== 'number' || typeof maximum !== 'number') return null;
@@ -93,6 +95,17 @@ function describe(entry: unknown): SearchFilterDescription | null {
     return { ...common, kind, minimum: 0, maximum: 0, integer: false, values };
   }
   return null;
+}
+
+// The filters under their headings, in the order of the registry (which keeps a group together).
+export function groupsOf(filters: SearchFilterDescription[]): { name: string; filters: SearchFilterDescription[] }[] {
+  const groups: { name: string; filters: SearchFilterDescription[] }[] = [];
+  for (const filter of filters) {
+    const known = groups.find((group) => group.name === filter.group);
+    if (known) known.filters.push(filter);
+    else groups.push({ name: filter.group, filters: [filter] });
+  }
+  return groups;
 }
 
 // Whether the user has put anything into the fields of this filter.

@@ -4,6 +4,7 @@ import { CLOUD_FILTER, ELEVATION, LEGACY, OPTICAL, ORBIT_FILTER, RADAR, SATELLIT
 import {
   filterError,
   filterQuery,
+  groupsOf,
   hasFilterError,
   isEmptyQuery,
   isSet,
@@ -13,41 +14,46 @@ import {
 } from './searchFilters';
 import type { Collection } from './types';
 
-const [cloud, satellite] = searchFiltersOf(OPTICAL);
+const [cloud, , satellite] = searchFiltersOf(OPTICAL);
 const [orbit] = searchFiltersOf(RADAR);
 const range = (from: string, to: string): FilterInput => ({ kind: 'range', from, to });
 const values = (...ticked: string[]): FilterInput => ({ kind: 'values', values: ticked });
 const withFilters = (filters: unknown): Collection => ({ id: 'x', 'earthx:search_filters': filters as unknown[] });
 
 describe('searchFiltersOf: what the registry offers', () => {
-  it('reads a range and a choice in the order of the registry', () => {
-    expect(searchFiltersOf(OPTICAL)).toEqual([
-      {
-        property: 'test:cloud',
-        kind: 'range',
-        title: 'Cloud cover',
-        description: 'Share of the scene covered by clouds.',
-        unit: '%',
-        minimum: 0,
-        maximum: 100,
-        integer: false,
-        values: [],
-      },
-      {
-        property: 'platform',
-        kind: 'values',
-        title: 'Satellite',
-        description: 'The satellite that took the scene.',
-        unit: null,
-        minimum: 0,
-        maximum: 0,
-        integer: false,
-        values: [
-          { value: 'sat-a', label: 'Satellite A' },
-          { value: 'sat-b', label: 'Satellite B' },
-        ],
-      },
+  it('reads a range and a choice in the order of the registry, each with its group', () => {
+    expect(searchFiltersOf(OPTICAL).map((f) => [f.group, f.property, f.kind])).toEqual([
+      ['Clouds', 'test:cloud', 'range'],
+      ['Scene', 'test:nodata', 'range'],
+      ['Acquisition', 'platform', 'values'],
     ]);
+    expect(cloud).toEqual({
+      property: 'test:cloud',
+      kind: 'range',
+      title: 'Cloud cover',
+      group: 'Clouds',
+      description: 'Share of the scene covered by clouds.',
+      unit: '%',
+      minimum: 0,
+      maximum: 100,
+      integer: false,
+      values: [],
+    });
+    expect(satellite).toEqual({
+      property: 'platform',
+      kind: 'values',
+      title: 'Satellite',
+      group: 'Acquisition',
+      description: 'The satellite that took the scene.',
+      unit: null,
+      minimum: 0,
+      maximum: 0,
+      integer: false,
+      values: [
+        { value: 'sat-a', label: 'Satellite A' },
+        { value: 'sat-b', label: 'Satellite B' },
+      ],
+    });
   });
 
   it('knows whole numbers from the type of the queryable', () => {
@@ -64,6 +70,9 @@ describe('searchFiltersOf: what the registry offers', () => {
   it.each([
     ['no property', { ...CLOUD_FILTER, property: '' }],
     ['no title', { ...CLOUD_FILTER, title: '' }],
+    ['no group', { ...CLOUD_FILTER, group: undefined }],
+    ['an empty group', { ...CLOUD_FILTER, group: '' }],
+    ['a group that is no text', { ...CLOUD_FILTER, group: 3 }],
     ['no tooltip', { ...CLOUD_FILTER, description: undefined }],
     ['a unit that is no text', { ...CLOUD_FILTER, unit: 5 }],
     ['an unknown kind', { ...CLOUD_FILTER, kind: 'slider' }],
@@ -86,6 +95,22 @@ describe('searchFiltersOf: what the registry offers', () => {
   it('keeps the first of two entries for one property', () => {
     const second = { ...CLOUD_FILTER, title: 'Clouds again' };
     expect(searchFiltersOf(withFilters([CLOUD_FILTER, second])).map((f) => f.title)).toEqual(['Cloud cover']);
+  });
+});
+
+describe('groupsOf: the headings of the pop-up', () => {
+  it('keeps the order of the registry and puts each filter under its heading', () => {
+    expect(groupsOf(searchFiltersOf(OPTICAL)).map((g) => [g.name, g.filters.map((f) => f.title)])).toEqual([
+      ['Clouds', ['Cloud cover']],
+      ['Scene', ['No data']],
+      ['Acquisition', ['Satellite']],
+    ]);
+  });
+
+  it('gathers the filters of a group, and has none for no filters', () => {
+    const more = { ...CLOUD_FILTER, property: 'test:cirrus', title: 'Thin cirrus' };
+    expect(groupsOf(searchFiltersOf(withFilters([CLOUD_FILTER, more, SATELLITE_FILTER]))).map((g) => g.filters.length)).toEqual([2, 1]);
+    expect(groupsOf([])).toEqual([]);
   });
 });
 

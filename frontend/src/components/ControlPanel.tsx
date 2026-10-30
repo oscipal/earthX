@@ -650,11 +650,11 @@ export default function ControlPanel() {
         <CoverageLegend />
 
         <AcquisitionDateFields />
-        <AdvancedSearch />
       </div>
 
       {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
       <div className="control-footer">
+        <AdvancedSearch />
         <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
           {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
         </button>

@@ -1341,47 +1341,69 @@ input[type='date']:focus {
   background: none;
   border-bottom: none;
 }
-.advanced-search {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.advanced-head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  text-align: left;
-  cursor: pointer;
-}
-.advanced-head:hover,
-.advanced-head[aria-expanded='true'] {
-  color: var(--text);
-}
-.advanced-count {
+.advanced-btn {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  font-weight: 700;
   letter-spacing: 0.5px;
-  text-transform: none;
+}
+.advanced-btn[aria-expanded='true'] {
+  border-color: var(--accent);
   color: var(--accent);
 }
-.advanced-count.wrong {
+.advanced-btn.wrong {
+  border-color: var(--invalid);
   color: var(--invalid);
 }
-.advanced-head .rg-caret {
-  font-size: 12px;
+/* The pop-up lies over the map, as wide as the button it opens from; the heading (the dataset box) and the buttons stay
+   in view, the fields between them scroll. */
+.popover.advanced-popup {
+  overflow: hidden;
+  padding: 10px;
 }
-.advanced-body {
+.advanced-popup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.advanced-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.filter-group {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+}
+.filter-group-title {
+  margin: 0;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--panel-border);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.advanced-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.advanced-actions .ghost-btn,
+.advanced-actions .primary-btn {
+  padding: 8px 16px;
+  font-size: 11px;
 }
 .filter-dot {
   flex: none;
@@ -1457,11 +1479,6 @@ input[type='date']:focus {
 }
 .filter-check input {
   margin: 0;
-}
-.reset-filters {
-  align-self: flex-start;
-  padding: 6px 12px;
-  font-size: 11px;
 }
 
 /* --- grouped (mosaic) results --- */
