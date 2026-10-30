@@ -22,6 +22,7 @@ from types import ModuleType
 from typing import Any
 
 import httpx
+import numpy
 import pytest
 
 from earthx.catalog.datasets import SENTINEL_2_L2A
@@ -124,11 +125,57 @@ def _filtering_double(request: httpx.Request) -> httpx.Response:
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
 
 
+def _scl_scenes() -> list[dict[str, Any]]:
+    """Six synthetic scenes with a classification asset on an allowed asset host and a footprint, 50 % clouds each."""
+    host = SENTINEL_2_L2A.source.asset_hosts[0]
+    footprint = {"type": "Polygon", "coordinates": [[[10.0, 47.0], [11.0, 47.0], [11.0, 48.0], [10.0, 48.0], [10.0, 47.0]]]}
+    return [
+        {
+            **_fixture("earth_search", "item"),
+            "id": f"SYNTH_SCL_{index}",
+            "geometry": footprint,
+            "properties": {"datetime": "2024-06-01T10:00:00Z", "eo:cloud_cover": 50.0},
+            "assets": {"scl": {"href": f"https://{host}/synth/{index}/SCL.tif"}},
+        }
+        for index in range(6)
+    ]
+
+
+def _scl_double(request: httpx.Request) -> httpx.Response:
+    if request.method == "POST" and request.url.path.endswith("/search"):
+        return _json({"type": "FeatureCollection", "features": _scl_scenes(), "links": []})
+    raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+
+
+def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The reading of a raster does not go through the gateway: stand a synthetic classification in its place."""
+    from earthx.access.aoi_clouds import AoiClouds
+    from earthx.api import aoi_cloud_filter
+
+    def counts(path: Any, aoi: Any, classes: Any) -> AoiClouds:
+        # The whole footprint of a scene (west edge at 10 E, east edge at 11 E) is 50 % clouds like the scene; any AOI 10 %.
+        on_footprint = aoi["coordinates"][0][1] == [11.0, 47.0]
+        return AoiClouds(cloud_pixels=50 if on_footprint else 10, data_pixels=100, aoi_pixels=100, resolution=80.0)
+
+    # Four valid pixels, two of them in a cloud class (8 and 9): the share of the scenes above, 50 %.
+    monkeypatch.setattr(module, "RESOLVER", lambda host, port: ("93.184.216.34",))
+    monkeypatch.setattr(module, "read_whole_file", lambda scene: (numpy.array([8, 9, 4, 5, 0], dtype="uint8"), 0))
+    monkeypatch.setattr(module, "measure_aoi_clouds", counts)
+    monkeypatch.setattr(aoi_cloud_filter, "measure_aoi_clouds", counts)
+    monkeypatch.setattr(module, "open_asset_ref", lambda ref, policy, resolver, **kwargs: str(ref.href))
+
+
+# Where a smoke test also reads a raster, the replay patches that step as well.
+RASTER_REPLAYS: dict[str, Callable[[ModuleType, pytest.MonkeyPatch], None]] = {
+    "test_aoi_cloud_filter_live": _replay_rasters,
+}
+
 DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_earth_search_smoke": _stac_double("earth_search"),
     "test_coverage_smoke": _coverage_double,
     "test_cop_dem_smoke": _dem_double,
     "test_search_filters_live": _filtering_double,
+    "test_aoi_cloud_filter_live": _scl_double,
 }
 
 
@@ -172,11 +219,15 @@ def test_every_smoke_file_has_a_double() -> None:
 
 
 @pytest.mark.parametrize("path", SMOKE_FILES, ids=lambda path: path.stem)
-async def test_the_live_smoke_replays_against_the_recorded_fixtures(path: Path) -> None:
+async def test_the_live_smoke_replays_against_the_recorded_fixtures(
+    path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     module = _load(path)
     tests = _smoke_tests(module)
     assert tests, f"{path.name} holds no smoke test"
     _replaying(module, DOUBLES[path.stem])
+    if path.stem in RASTER_REPLAYS:
+        RASTER_REPLAYS[path.stem](module, monkeypatch)
 
     for smoke in tests:
         assert list(inspect.signature(smoke).parameters) == ["gateway"], (

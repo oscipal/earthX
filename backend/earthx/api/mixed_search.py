@@ -80,6 +80,7 @@ def mixed_fingerprint(
     ids: Sequence[str] | None,
     datetime_value: str | None,
     conditions: Mapping[str, FilterConditions] | None = None,
+    aoi_filters: Mapping[str, str] | None = None,
 ) -> str:
     """A hash of the *whole* mixed search — the raw request, before any per-source
     splitting or per-source datetime dropping (`_apply_time_axis` in
@@ -99,6 +100,9 @@ def mixed_fingerprint(
     if conditions:
         # DS-02: only when set, so a mixed search without filters hashes as before.
         payload["conditions"] = {cid: conditions_key(conditions[cid]) for cid in sorted(conditions)}
+    if aoi_filters:
+        # DS-03: the key of each collection's cloud-share filter, which already hashes its range and its AOI.
+        payload["aoi_filters"] = {cid: aoi_filters[cid] for cid in sorted(aoi_filters)}
     return hashlib.sha256(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
 
 

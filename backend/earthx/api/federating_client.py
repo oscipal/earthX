@@ -33,9 +33,10 @@ import json
 import logging
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
+import anyio
 from fastapi import HTTPException, Request
 from pydantic import ValidationError
 from stac_fastapi.pgstac.core import CoreCrudClient
@@ -44,6 +45,7 @@ from stac_fastapi.types.rfc3339 import str_to_interval
 from stac_fastapi.types.stac import Item, ItemCollection
 
 from earthx.adapters import (
+    MAX_LIMIT,
     AdapterSpecs,
     InvalidQuery,
     ItemPage,
@@ -55,7 +57,16 @@ from earthx.adapters import (
     dataset_config,
 )
 from earthx.adapters import search_items as adapter_search_items
+from earthx.adapters.federated_search import search_fingerprint
 from earthx.api import mixed_search
+from earthx.api.aoi_cloud_filter import (
+    MAX_BODY_BYTES,
+    PAGE_SIZE,
+    AoiFilterRequest,
+    AoiMeasurer,
+    read_aoi_request,
+    run_filter,
+)
 from earthx.api.item_source import build_item_source, item_holding_of
 from earthx.api.mixed_search import (
     REASON_TIMEOUT,
@@ -69,10 +80,11 @@ from earthx.api.mixed_search import (
     is_mixed_token,
     mixed_fingerprint,
 )
-from earthx.api.search_filters import FILTER_KEYS, read_search_conditions
+from earthx.api.search_filters import AOI_KEY, BODY_KEYS, read_search_conditions
 from earthx.catalog.registry import DatasetRegistry, ItemHolding, SearchFilter, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
-from earthx.catalog.search_filters import FilterConditions, InvalidFilter
+from earthx.catalog.search_filters import FilterConditions, InvalidFilter, RangeCondition
+from earthx.catalog.stats_cache import PooledStatsCache
 from earthx.gateway import UpstreamError, UpstreamTimeout, UpstreamUnreachable
 
 LOGGER = logging.getLogger("earthx.api.federating_client")
@@ -92,7 +104,7 @@ LOGGER = logging.getLogger("earthx.api.federating_client")
 _DISALLOWED_QUERY_KEYS = frozenset({"filter", "filter-lang", "filter_lang", "sortby", "query", "fields"})
 # DS-02: a POST body may carry the search filters of the registry (`api/search_filters.py`); a GET query string
 # may not, so `query` stays refused there and on the items endpoint.
-_DISALLOWED_BODY_KEYS = _DISALLOWED_QUERY_KEYS - FILTER_KEYS
+_DISALLOWED_BODY_KEYS = _DISALLOWED_QUERY_KEYS - BODY_KEYS
 
 # M3-08: `/search` forwards `ids`/`intersects` to a federated source now (§4 of the
 # M3-08 plan), but OGC API Features' items endpoint (`GET /collections/{id}/items`)
@@ -101,6 +113,18 @@ _DISALLOWED_BODY_KEYS = _DISALLOWED_QUERY_KEYS - FILTER_KEYS
 # M2-17's now-obsolete blanket rejection) so `item_collection` still says no, with
 # its own reason, while `/search` says yes.
 _ITEMS_ENDPOINT_DISALLOWED_KEYS = frozenset({"ids", "intersects"})
+
+
+# What a source's answer can be instead of a page: a mistake of the caller or a source that fails.
+_SOURCE_ERRORS = (
+    InvalidQuery,
+    UnsupportedFilter,
+    UnknownCollection,
+    UpstreamError,
+    UpstreamTimeout,
+    UpstreamUnreachable,
+    UpstreamShapeError,
+)
 
 
 def _reject_keys(keys: object, disallowed: frozenset[str], reason: str) -> None:
@@ -112,8 +136,8 @@ def _reject_keys(keys: object, disallowed: frozenset[str], reason: str) -> None:
 def _reject_disallowed_keys(keys: object) -> None:
     _reject_keys(
         frozenset(keys),
-        FILTER_KEYS,
-        "is taken in the body of POST /stac/search only (DS-02)",
+        BODY_KEYS,
+        "is taken in the body of POST /stac/search only (DS-02, DS-03)",
     )
     _reject_keys(
         frozenset(keys),
@@ -140,7 +164,7 @@ async def _search_filters_of_body(request: Request) -> dict[str, Any]:
         _DISALLOWED_BODY_KEYS,
         "is not available in M1 (adr/0005 rule VI; docs/plans/m1/m1-07-stac-api.md §6)",
     )
-    return {key: body[key] for key in FILTER_KEYS if key in body}
+    return {key: body[key] for key in BODY_KEYS if key in body}
 
 
 def _dump_intersects(geometry: Any) -> dict[str, Any] | None:
@@ -250,12 +274,14 @@ class _NativeGroup:
 @dataclass(frozen=True, slots=True)
 class _FederatedSource:
     """One federated collection — always its own source (M3-13 §4.2) — with the
-    conditions on its own search filters (DS-02), ``None`` where it has none."""
+    conditions on its own search filters (DS-02), ``None`` where it has none, and the cloud-share filter
+    that ``api`` measures itself (DS-03), ``None`` where it has none."""
 
     collection_id: str
     effective_datetime: str | None
     dropped_datetime: bool
     conditions: FilterConditions | None = None
+    aoi: AoiFilterRequest | None = None
 
     @property
     def key(self) -> str:
@@ -265,11 +291,52 @@ class _FederatedSource:
 _Source = _NativeGroup | _FederatedSource
 
 
+async def _aoi_requests(
+    request: Request,
+    ranges: Mapping[str, RangeCondition],
+    infos: Mapping[str, tuple[ItemHolding, bool]],
+    body: Mapping[str, Any],
+    *,
+    datetime_value: str | None,
+    bbox: tuple[float, ...] | None,
+    intersects: Mapping[str, Any] | None,
+) -> dict[str, AoiFilterRequest]:
+    """The cloud-share filter of each collection that has one, with the AOI it is measured in (DS-03 plan §6.5).
+
+    A request that cannot be measured is a ``400`` with a text that names no value: no date range with both ends, no
+    area, ``earthx:aoi`` without the filter, a body over the cap, or a collection whose items this platform holds
+    itself (the measure reads the assets of a federated source).
+    """
+    earthx_aoi = body.get(AOI_KEY)
+    if not ranges:
+        if earthx_aoi is not None:
+            raise HTTPException(status_code=400, detail=f"{AOI_KEY} goes with the cloud share in the AOI only")
+        return {}
+    if any(infos[cid][0] is not ItemHolding.FEDERATED for cid in ranges):
+        raise HTTPException(
+            status_code=400, detail="the cloud share in the AOI is measured on a federated collection only"
+        )
+    if len(await request.body()) > MAX_BODY_BYTES:
+        raise HTTPException(
+            status_code=400, detail=f"a search with the cloud share in the AOI is at most {MAX_BODY_BYTES} bytes"
+        )
+    try:
+        return {
+            cid: read_aoi_request(
+                cid, condition, datetime_value=datetime_value, bbox=bbox, intersects=intersects, earthx_aoi=earthx_aoi
+            )
+            for cid, condition in ranges.items()
+        }
+    except InvalidFilter as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+
 def _partition_sources(
     target_ids: list[str],
     infos: Mapping[str, tuple[ItemHolding, bool]],
     datetime_value: str | None,
     conditions: Mapping[str, FilterConditions],
+    aoi_filters: Mapping[str, AoiFilterRequest] | None = None,
 ) -> list[_Source]:
     """The distinct *sources* a search over ``target_ids`` reaches (M3-13 §4.2):
     this platform's own collections, split into at most two groups by whether
@@ -301,6 +368,7 @@ def _partition_sources(
                 effective_datetime=effective,
                 dropped_datetime=bool(ignored),
                 conditions=conditions.get(collection_id) or None,
+                aoi=(aoi_filters or {}).get(collection_id),
             )
         )
     return sources
@@ -345,6 +413,9 @@ class DispatchOutcome:
     # while it links a next page — `searched` are that source's collections.
     open_collections: tuple[str, ...] | None = None
     searched: tuple[str, ...] = ()
+    # The counts of the cloud-share filter per collection (DS-03); `aoi_filter_mixed` says which key they go under.
+    aoi_filter: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    aoi_filter_mixed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -355,6 +426,7 @@ class _MixedResult:
     page: ItemCollection
     incomplete: tuple[IncompleteSource, ...]
     open_collections: tuple[str, ...]
+    aoi_filter: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
 
 def _collections_of(source: _Source) -> tuple[str, ...]:
@@ -382,6 +454,14 @@ def _apply_outcome_extras(result: dict[str, Any], outcome: DispatchOutcome) -> N
         }
     if outcome.incomplete:
         result["incomplete_collections"] = [dict(entry) for entry in outcome.incomplete]
+    if outcome.aoi_filter:
+        # DS-03 plan §6.5: one collection's counts stand alone, a mixed search names each collection.
+        if outcome.aoi_filter_mixed:
+            result["earthx:aoi_filter_by_collection"] = {
+                cid: dict(counts) for cid, counts in outcome.aoi_filter.items()
+            }
+        else:
+            result["earthx:aoi_filter"] = dict(next(iter(outcome.aoi_filter.values())))
 
 
 def _unquote_percent(value: str) -> str:
@@ -509,6 +589,28 @@ def _adapters_of(request: Request) -> AdapterSpecs:
     if adapters is None:
         raise RuntimeError("earthx.api.main did not set request.app.state.earthx_adapters")
     return adapters
+
+
+def _state_of(request: Request, name: str) -> Any:
+    value = getattr(request.app.state, name, None)
+    if value is None:
+        raise RuntimeError(f"earthx.api.main did not set request.app.state.{name}")
+    return value
+
+
+def _read_limiter(request: Request) -> anyio.CapacityLimiter:
+    """The one limit on the threads that read rasters for the cloud share, for the whole process.
+
+    Made on first use because a limiter belongs to the event loop that runs; as large as the readers one host may
+    have (``Policy.max_connections_per_host``), so a search waits for a reader here, in the loop, and not in a
+    thread of the pool every other route shares.
+    """
+    state = request.app.state
+    limiter = getattr(state, "earthx_read_limiter", None)
+    if limiter is None:
+        limiter = anyio.CapacityLimiter(_state_of(request, "earthx_policy").max_connections_per_host)
+        state.earthx_read_limiter = limiter
+    return limiter
 
 
 def _gateway_of(request: Request):
@@ -758,7 +860,16 @@ class FederatingCoreCrudClient(CoreCrudClient):
             )
         except InvalidFilter as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
-        sources = _partition_sources(target_ids, infos, datetime_value, conditions.by_collection)
+        aoi_filters = await _aoi_requests(
+            request,
+            conditions.aoi_cloud_cover,
+            infos,
+            search_filters or {},
+            datetime_value=datetime_value,
+            bbox=bbox,
+            intersects=intersects,
+        )
+        sources = _partition_sources(target_ids, infos, datetime_value, conditions.by_collection, aoi_filters)
         ignored_filters, ignored_by_collection = _ignored_filters_of(sources, conditions.dropped)
 
         if len(sources) <= 1:
@@ -780,6 +891,18 @@ class FederatingCoreCrudClient(CoreCrudClient):
                     )
                 return DispatchOutcome(
                     None, source.effective_datetime, ignored_filters, ignored_by_collection, searched=searched
+                )
+            if source.aoi is not None:
+                page, counts = await self._filtered_federated_page(
+                    source, request, bbox=bbox, intersects=intersects, ids=ids, limit=limit, token=token
+                )
+                return DispatchOutcome(
+                    page,
+                    source.effective_datetime,
+                    ignored_filters,
+                    ignored_by_collection,
+                    searched=searched,
+                    aoi_filter={source.collection_id: counts},
                 )
             page = await self._federated_page(
                 source.collection_id,
@@ -814,6 +937,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
             ignored_by_collection,
             mixed.incomplete,
             open_collections=mixed.open_collections,
+            aoi_filter=mixed.aoi_filter,
+            aoi_filter_mixed=True,
         )
 
     async def _federated_page(
@@ -834,17 +959,98 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
                 datetime_value=datetime_value, limit=limit, token=token, conditions=conditions,
             )
-        except (
-            InvalidQuery,
-            UnsupportedFilter,
-            UnknownCollection,
-            UpstreamError,
-            UpstreamTimeout,
-            UpstreamUnreachable,
-            UpstreamShapeError,
-        ) as error:
+        except _SOURCE_ERRORS as error:
             raise _adapter_error_to_http(error) from error
         return await self._to_item_collection(page, request, collection_id=collection_id)
+
+    async def _filtered_federated_page(
+        self,
+        source: _FederatedSource,
+        request: Request,
+        *,
+        bbox: tuple[float, ...] | None,
+        intersects: Mapping[str, Any] | None,
+        ids: tuple[str, ...] | None,
+        limit: int | None,
+        token: str | None,
+    ) -> tuple[ItemCollection, dict[str, Any]]:
+        """A response of a lone federated search with the cloud-share filter, and the counts it reports."""
+        try:
+            page, counts = await self._filtered_search_raw(
+                source, request, bbox=bbox, intersects=intersects, ids=ids, limit=limit, token=token
+            )
+        except _SOURCE_ERRORS as error:
+            raise _adapter_error_to_http(error) from error
+        return await self._to_item_collection(page, request, collection_id=source.collection_id), counts
+
+    async def _filtered_search_raw(
+        self,
+        source: _FederatedSource,
+        request: Request,
+        *,
+        bbox: tuple[float, ...] | None,
+        intersects: Mapping[str, Any] | None,
+        ids: tuple[str, ...] | None,
+        limit: int | None,
+        token: str | None,
+    ) -> tuple[ItemPage, dict[str, Any]]:
+        """One response of the cloud-share filter (DS-03 plan §6.5), none of the source's exceptions caught.
+
+        Pages of the source come through :meth:`_federated_search_raw` with the other filters of the source and
+        its own page cache; the scenes of a page are measured by ``api.aoi_cloud_filter``. The page it returns holds
+        the scenes kept, with the marker to go on at, and no ``matched``: the source cannot count what it has not
+        measured.
+        """
+        aoi = source.aoi
+        assert aoi is not None
+        wanted = limit if limit is not None else SearchParams().limit
+        if not 1 <= wanted <= MAX_LIMIT:
+            raise InvalidQuery(f"limit {wanted} is outside 1..{MAX_LIMIT} (adr/0005 rule V)")
+        config = dataset_config(_registry_of(request), source.collection_id)
+        pool = getattr(request.app.state, "earthx_cache_pool", None)
+        start, end = _datetime_bounds(source.effective_datetime)
+        # What the source's own marker will say from the second page on, known from the first: the search without
+        # its page size and without the filter on the AOI.
+        binding = search_fingerprint(
+            source.collection_id,
+            SearchParams(
+                bbox=tuple(bbox) if bbox else None,
+                intersects=intersects,
+                ids=ids,
+                start=start,
+                end=end,
+                conditions=source.conditions,
+            ),
+        )
+        measurer = AoiMeasurer(
+            config,
+            aoi.aoi,
+            policy=_state_of(request, "earthx_policy"),
+            resolver=_state_of(request, "earthx_resolver"),
+            gdal_options=_state_of(request, "earthx_gdal_options"),
+            slots=_state_of(request, "earthx_read_slots"),
+            cache=None if pool is None else PooledStatsCache(pool),
+            limiter=_read_limiter(request),
+        )
+
+        async def fetch_page(marker: str | None) -> ItemPage:
+            return await self._federated_search_raw(
+                source.collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
+                datetime_value=source.effective_datetime, limit=PAGE_SIZE, token=marker, conditions=source.conditions,
+            )
+
+        outcome = await run_filter(
+            aoi,
+            fetch_page=fetch_page,
+            measure=measurer,
+            limit=wanted,
+            token=_strip_forward_token(token),
+            binding=binding,
+        )
+        page = ItemPage(
+            items=tuple(outcome.items), matched=None, next_page_token=outcome.next_token, from_cache=False
+        )
+        return page, outcome.summary()
 
     async def _federated_search_raw(
         self,
@@ -956,7 +1162,12 @@ class FederatingCoreCrudClient(CoreCrudClient):
             for source in sources
             if isinstance(source, _FederatedSource) and source.conditions is not None
         }
-        fingerprint = mixed_fingerprint(collection_ids, bbox, intersects, ids, datetime_value, conditions)
+        aoi_keys = {
+            source.collection_id: source.aoi.key
+            for source in sources
+            if isinstance(source, _FederatedSource) and source.aoi is not None
+        }
+        fingerprint = mixed_fingerprint(collection_ids, bbox, intersects, ids, datetime_value, conditions, aoi_keys)
         known_source_keys = {source.key for source in sources}
         by_key = {source.key: source for source in sources}
 
@@ -971,48 +1182,58 @@ class FederatingCoreCrudClient(CoreCrudClient):
         page_limit = limit if limit is not None else SearchParams().limit
         shares = dict(zip((source.key for source in to_query), compute_shares(page_limit, len(to_query)), strict=True))
 
-        async def run(source: _Source) -> tuple[list[dict[str, Any]], str | None, str | None]:
-            """``(features, next inner marker, failure reason)``."""
+        async def run(source: _Source) -> tuple[list[dict[str, Any]], str | None, str | None, dict[str, Any] | None]:
+            """``(features, next inner marker, failure reason, counts of the cloud-share filter)``."""
             share = shares[source.key]
             marker = pending[source.key]
             if share <= 0:
                 # Plan §4.2 step 3: no share this page, no call — carried forward
                 # unchanged by the caller below.
-                return [], marker, None
+                return [], marker, None, None
             if isinstance(source, _NativeGroup):
                 features, next_marker = await self._native_group_page(
                     source, request, bbox=bbox, intersects=intersects, ids=ids, limit=share, marker=marker
                 )
-                return features, next_marker, None
+                return features, next_marker, None, None
+            counts: dict[str, Any] | None = None
             try:
-                page = await asyncio.wait_for(
-                    self._federated_search_raw(
-                        source.collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
-                        datetime_value=source.effective_datetime, limit=share, token=marker,
-                        conditions=source.conditions,
-                    ),
-                    # Read off the module, not a name imported at load time
-                    # (`from ... import SOURCE_TIMEOUT_S`): a test's monkeypatch of
-                    # `mixed_search.SOURCE_TIMEOUT_S` would otherwise never reach a
-                    # constant this module already bound its own copy of.
-                    timeout=mixed_search.SOURCE_TIMEOUT_S,
-                )
+                if source.aoi is not None:
+                    # The measure keeps its own 8 s inside this budget (`aoi_cloud_filter.RESPONSE_SECONDS`).
+                    page, counts = await asyncio.wait_for(
+                        self._filtered_search_raw(
+                            source, request, bbox=bbox, intersects=intersects, ids=ids, limit=share, token=marker
+                        ),
+                        timeout=mixed_search.SOURCE_TIMEOUT_S,
+                    )
+                else:
+                    page = await asyncio.wait_for(
+                        self._federated_search_raw(
+                            source.collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
+                            datetime_value=source.effective_datetime, limit=share, token=marker,
+                            conditions=source.conditions,
+                        ),
+                        # Read off the module, not a name imported at load time
+                        # (`from ... import SOURCE_TIMEOUT_S`): a test's monkeypatch of
+                        # `mixed_search.SOURCE_TIMEOUT_S` would otherwise never reach a
+                        # constant this module already bound its own copy of.
+                        timeout=mixed_search.SOURCE_TIMEOUT_S,
+                    )
             except (InvalidQuery, UnsupportedFilter, UnknownCollection) as error:
                 # A client mistake, not a source outage — fails the whole request,
                 # the same as a lone federated search would (`_federated_page`).
                 raise _adapter_error_to_http(error) from error
             except TimeoutError:
-                return [], None, REASON_TIMEOUT
+                return [], None, REASON_TIMEOUT, None
             except UpstreamTimeout:
-                return [], None, REASON_TIMEOUT
+                return [], None, REASON_TIMEOUT, None
             except UpstreamUnreachable:
-                return [], None, REASON_UNREACHABLE
+                return [], None, REASON_UNREACHABLE, None
             except UpstreamError:
-                return [], None, REASON_UPSTREAM_ERROR
+                return [], None, REASON_UPSTREAM_ERROR, None
             except UpstreamShapeError:
-                return [], None, REASON_UNRECOGNISED_ANSWER
+                return [], None, REASON_UNRECOGNISED_ANSWER, None
             item_collection = await self._to_item_collection(page, request, collection_id=source.collection_id)
-            return item_collection["features"], page.next_page_token, None
+            return item_collection["features"], page.next_page_token, None, counts
 
         tasks = [asyncio.ensure_future(run(source)) for source in to_query]
         try:
@@ -1027,8 +1248,11 @@ class FederatingCoreCrudClient(CoreCrudClient):
         combined_features: list[dict[str, Any]] = []
         next_pending: dict[str, str | None] = {}
         newly_failed: dict[str, str] = {}
-        for source, (features, next_marker, reason) in zip(to_query, outcomes, strict=True):
+        aoi_counts: dict[str, Mapping[str, Any]] = {}
+        for source, (features, next_marker, reason, counts) in zip(to_query, outcomes, strict=True):
             combined_features.extend(features)
+            if counts is not None and isinstance(source, _FederatedSource):
+                aoi_counts[source.collection_id] = counts
             if reason is not None:
                 newly_failed[source.key] = reason
             elif next_marker is not None:
@@ -1056,7 +1280,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
             for collection_id, reason in sorted(failed_total.items())
         )
         open_collections = tuple(cid for source in sources if source.key in next_pending for cid in _collections_of(source))
-        return _MixedResult(page=page, incomplete=incomplete, open_collections=open_collections)
+        return _MixedResult(
+            page=page, incomplete=incomplete, open_collections=open_collections, aoi_filter=aoi_counts
+        )
 
     async def _to_item_collection(
         self, page: ItemPage, request: Request, *, collection_id: str

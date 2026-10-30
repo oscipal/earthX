@@ -135,7 +135,7 @@ class TestOneCollection:
             {"query": {"eo:cloud_cover": {"lt": 20}}},
             {"query": {"platform": {"in": ["sentinel-9z"]}}},
             {"query": {"sat:orbit_state": {"in": ["descending"]}}},
-            {"query": {"earthx:aoi_cloud_cover": {"lte": 5}}},
+            {"query": {"earthx:something_else": {"lte": 5}}},
             {"query": {"eo:cloud_cover": {"lte": 20}}, "query_by_collection": {}},
             {"query_by_collection": {SYNTHETIC_ZARR.dataset_id: {"eo:cloud_cover": {"lte": 20}}}},
         ],
