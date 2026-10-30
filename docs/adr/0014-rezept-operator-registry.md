@@ -2646,7 +2646,7 @@ macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser N
   überein). Ein Asset, dessen Bandzahl das Item nicht nennt, steht mit seinem Namen und nimmt `<asset>_<n>` dazu; die Datei entscheidet. Die
   Assets stehen in der Reihenfolge des Items. `422` mit dem Namen (Stufe `applicable`): ein Name ohne Asset, ein Name, den zwei Assets
   tragen, ein Name eines `band_math`-Schritts, den ein Band des Datensatzes trägt (auch ein nicht gelesenes, ohne Rücksicht auf Groß- und
-  Kleinschreibung) oder ein anderer Schritt („is used twice“). Die Grenze von 16 Assets gilt bis PR 2 für die abgeleiteten Assets.
+  Kleinschreibung) oder ein anderer Schritt („is used twice“). Die Grenze von 16 Assets galt bis PR 2 für die abgeleiteten Assets (entfallen, Nachtrag NM4-43c PR 2).
 - **Kern.** `result.tif` trägt genau die Bänder von `output.bands`, in dieser Reihenfolge, mit dem Namen als **Banddeskription**; Datentyp und nodata
   nach den bisherigen Regeln. **Abweichung von `adr/0020` §8: Die Einheit steht nicht in `result.tif`, sondern in den STAC-Eigenschaften
   (`properties.bands[].unit`, M4-19b) und im Block `bands` der Datei `recipe.json`.** `rio-cogeo` (`cog_translate`) trägt Namen und Tags in die COG, aber keine Einheit.
@@ -2679,3 +2679,75 @@ macht. Der Originaltext von §4 bis §10 bleibt stehen; maßgeblich ist dieser N
   die Namen; `processing:lineage` und `processing:expression` tragen den Namen des Ergebnisses.
 - **Version.** `earthx.__version__` 0.4.4 → 0.5.0 (`result.tif` trägt Banddeskriptionen; Bytes ändern sich; `reproject` Version 4 aus 0.4.4
   bleibt).
+
+## 15 Nachtrag NM4-43c PR 2: Schutz ohne Bandgrenze (2026-10-30; zu §5.5, §15i, §15v; `adr/0020` §3.2, §7, G2)
+
+Die Grenze von 16 Assets ist weg; die Last der Bänder trägt jetzt die Schätzung vor dem Lauf (`adr/0020` §7.2, Empfehlung G2, angenommen).
+Der Originaltext von §5.5 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Entfallen.** `intake.MAX_ORDER_ASSETS` und beide Prüfungen (die Assets eines Auftrags, auch eines Exports, und die aus `output.bands`
+  abgeleiteten) sowie das `maxItems` der Assets in der Prozessbeschreibung. Das heutige Panel fällt bei fehlendem Wert auf 16 zurück
+  (`processingOrder.ts`) und bleibt bis NM4-43e unverändert; die Grenzen der Kachel (16 Assets, bei der Mosaik-Kachel 4) bleiben.
+- **Speicherschätzung (`plan.memory_needed`, `MAX_JOB_MEMORY_BYTES` = 1,5 GB).** Ein Wert je Kindprozess (`adr/0020` F5); ein Worker mit zwei
+  Slots braucht bis zu 3 GB. `estimate` weist darüber mit `JobTooLarge` ab (`413`, Stufe `size`), mit Zahl und Rat: „This job would need about
+  2.4 GB of memory, more than the 1.5 GB a job may use. Put fewer bands in the output.“ Die Formel
+  **300 MB + 33 MB je Band + (Szenen − 1) × (4 MB + 1,2 MB je Band)**; „Band“ ist das breiteste, was ein Durchgang hält: alle Bänder der Assets,
+  die gelesen werden (der Planer streicht erst danach), und jedes Ergebnis eines `band_math`, solange der Vorrat es hält
+  (`plan._planned_stock`). Ein Asset, dessen Bänder das Item nicht nennt, zählt als ein Band (Grenze S1, unverändert): die Schätzung ist dort eine
+  Untergrenze. Jede Konstante liegt über jeder Messung (`test_estimate_bands.py`, `MEASURED`).
+- **Messung (neu, mit echtem `band_math` Version 2, bis zur 5-GB-Grenze, Mosaik von 25 Szenen).** Synthetische Szenen, `uint16`, 17 Bänder in
+  einem COG, Ausgabe `float32`, `GDAL_CACHEMAX` 64 MB, ein Kindprozess je Messung, Spitze `VmHWM` (nicht `ru_maxrss`); Skript
+  `scripts/nm4-43-bands/memory.py` und `tests/earthx/processing/memory_bands.py`:
+
+  | Bänder im Durchgang | Fläche | Spitze MB |
+  |---|---|---|
+  | 2 / 4 / 8 / 17, kein Schritt | 2048² | 289 / 345 / 482 / 726 |
+  | 17, kein Schritt | 1024² / 2048² / 4096² / 5632² / 8192² | 556 / 726 / 727 / 727 / 727 |
+  | 33 (17 Bänder, 16 `band_math`, alles behalten) | 2048² / 4096² / 5632² | 1146 / 1148 / 1149 |
+  | 18 (2 + 16) / 24 (8 + 16) | 2048² | 615 / 859 |
+
+  **Der Speicher folgt den Bändern und dem Block (1024²), nicht der Fläche:** 17 Bänder brauchen von 2048² bis 8192² (67,1 Mio.
+  Pixel, `float32`: 4,6 GB Ausgabe, dicht unter der 5-GB-Grenze) dieselben 727 MB; ein Flächenanteil ist nicht nötig, und die Vermutung [A] in `adr/0020` §3.2 Befund 8 (ein Flächenanteil
+  vom COG-Schritt) bestätigt sich in dieser Messung nicht. Ein Band kostet 27–34 MB bei Quellbändern und 20–26 MB bei Ergebnissen; 33 Bänder kommen auf
+  rund 1,15 GB, Sentinel-2 mit 16 `band_math`-Schritten passt also unter 1,5 GB.
+
+  | Mosaik, alle Szenen je Block gelesen (Streifen ohne Daten) | Spitze MB |
+  |---|---|
+  | 17 Bänder, 1024², 1 / 2 / 3 / 5 / 8 / 12 / 25 Szenen | 556 / 656 / 785 / 816 / 862 / 924 / 1125 |
+  | 17 Bänder, 25 Szenen, 2048² / 4096² | 1369 / 1371 |
+  | 17 + 16 Ergebnisse, 25 Szenen, 1024² / 2048² | 1310 / 1625 |
+  | 2 Bänder, 1 / 5 / 25 Szenen; 6 Bänder, 1 / 5 / 25 Szenen, 1024² | 234 / 269 / 393; 337 / 456 / 586 |
+
+  Das ist der ungünstigste Fall: Der Kern liest je Block nur die Szenen, die ihn berühren, und hört auf, sobald alle Pixel gefüllt sind; hier bleibt
+  ein Streifen leer, also werden alle gelesen. Der Zuwachs je Szene sinkt (bei 17 Bändern kosten die ersten beiden weiteren Szenen etwa 100 und 130 MB, jede spätere etwa 15 MB);
+  die Formel ist eine Gerade darüber. **Ein Mosaik von 25 Szenen mit 17 Bändern kommt auf 1,37 GB gemessen, 1,45 GB geschätzt und wird angenommen;** mit
+  16 behaltenen Ergebnissen (33 Bänder, 1,63 GB gemessen bei 2048², 2,4 GB geschätzt) wird es mit `413` abgewiesen.
+- **Zeitschätzung.** `seconds` zählt zusätzlich `SECONDS_PER_OUTPUT_BAND_MPIXEL` = 0,75 s je Ausgabeband und Million Ausgabepixel (Schreiben, Statistik
+  und COG je Band; der Eingabeterm sieht sie nicht). Gemessen 0,42–0,72 s (17 Bänder: 0,55 / 0,47 / 0,42 s bei 2048² / 4096² / 5632²; 33 Bänder mit
+  16 `band_math`: 0,72 / 0,63 / 0,57 s), mit bis zu drei Läufen gleichzeitig auf vier Kernen, wie ein Worker mit zwei Slots läuft; die echten Läufe von
+  `adr/0020` §3.2 geben 0,55–0,7. Damit schätzt die Plattform für 17 Bänder bei 30 km (9,5 Mio. Pixel) rund 145 s statt 21 s (gemessen 115 s), und
+  an der 5-GB-Grenze (8192², 17 Bänder) sind 480 s gemessen (0,42 s) und 939 s geschätzt. Die Laufzeitgrenze (`jobs/submit._runtime_limit`, 2 × Schätzung, mindestens 600 s) liegt für einen Auftrag nahe der 5-GB-Grenze mit 17 Bändern über
+  den 600 s der Untergrenze (Test in `test_submit.py`). Die Zeit der Schritte selbst steckt im Wert (33 Bänder mit 16 Schritten werden nicht
+  unterschätzt).
+- **`units`** zählen Ausgabepixel (Mio.) **mal Bänder der Ausgabe** mal Faktor der Schritte (`adr/0020` §7.2). Ein Auftrag mit einem Ergebnisband und einem
+  `band_math` bleibt bei 1,2 je Million Pixel; ein Export zählt wie bisher. **Zur Kenntnis:** Der Faktor jedes Schritts zählt für jedes Ausgabeband, auch
+  für ein `band_math`, das nur ein Band rechnet; 16 Schritte mit 33 Ausgabebändern geben so rund das Fünfhundertfache eines Ergebnisbandes, obwohl der Lauf
+  nur 2,6-mal länger dauert als der mit 17 Bändern ohne Schritt. Die Einheiten sind bis M6 (Quoten) nur eine Anzeige; Otto entscheidet vor M6, ob der Faktor
+  je Schritt statt je Band und Schritt gezählt wird.
+- **Platte.** `disk_needed` bemisst den `float64`-Durchgang nach dem breitesten Vorrat (`plan._planned_stock`) statt nach den Bändern der Assets: Ein
+  `band_math` fügt dem Vorrat Bänder hinzu, und die Zwischendatei (rechnerisch 8,4 GB bei 31,7 Mio. Pixeln und 33 Bändern) wuchs über die Schätzung, die nur die Bänder der Assets zählte.
+- **Unverändert.** 25 Items, 16 Schritte, 5 GB Ausgabe, Deckel je Host, Wiederholung in `gateway`; ein Export (`crop`) hat keine Speicherschätzung
+  (`memory_bytes` 0). `earthx.__version__` bleibt (kein Byte eines Ergebnisses ändert sich). Der Runner schätzt nicht und kennt die Grenze nicht.
+- **Tests.** `test_estimate_bands.py` (17 Bänder angenommen; Speichergrenze auf das Byte, `413` mit Zahl und Rat, Hyperspektral mit 224 Bändern in einem
+  Asset abgewiesen, die Formel über jeder Messung, Zeit und `units` wachsen mit den Bändern, Platte folgt dem Vorrat), `test_memory_bands.py` (die Spitze
+  bleibt unter der Schätzung: 17 Bänder, 17 + 16 Ergebnisse, 5 Szenen), `test_intake.py` (mehr als 16 Assets werden angenommen), `test_processing_estimate.py`
+  (`413` über die Route), `test_submit.py` (Laufzeitgrenze über der Untergrenze).
+- **Reproduzierbar.**
+
+  ```bash
+  PYTHONPATH=backend python scripts/nm4-43-bands/memory.py scene scene.tif --size 4096 --bands 17
+  PYTHONPATH=backend python scripts/nm4-43-bands/memory.py run scene.tif work --size 4096 --bands 17 --results 16 --scenes 1
+  ```
+
+  Je Messung ein eigener Aufruf (die Spitze gehört dem Prozess). Das Skript `measure.py` (echte Sentinel-2-Daten, Netz) rechnet jetzt mit Rezeptversion 2.
+- **Offen für Otto.** Die Grenze von 1,5 GB ist der Startwert aus `adr/0020`; das 25-Szenen-Mosaik mit 17 Bändern liegt mit 1,45 GB geschätzt knapp darunter.
