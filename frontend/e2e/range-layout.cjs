@@ -1,5 +1,6 @@
-// Layout check of the range row of the preview (M4-19c): in a real browser, with DEM-like and NDVI-like values,
-// in the light and the dark theme, at a wide and a narrow panel. Fails when a field, the unit, the colormap or a
+// Layout check of the range row of the preview (M4-19c, with "Show" since NM4-43e PR 2): in a real browser, with DEM-like
+// and NDVI-like values, with and without the dropdown "Show" left of the range, in the light and the dark theme, at a wide
+// and a narrow panel. Fails when a field, the unit, the colormap or a
 // button overlaps another, leaves the panel, or cuts a value off; writes a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -28,8 +29,8 @@ const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, he
 
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 
-async function check(browser, { measure, theme, viewport, values }) {
-  const name = `${measure} ${theme} ${viewport} ${values}`;
+async function check(browser, { measure, theme, viewport, values, show }) {
+  const name = `${measure} ${theme} ${viewport} ${values} ${show}`;
   const context = await browser.newContext({ viewport: VIEWPORTS[viewport] });
   await context.addInitScript((t) => localStorage.setItem('earthx.theme', t), THEMES[theme]);
   const page = await context.newPage();
@@ -71,6 +72,8 @@ async function check(browser, { measure, theme, viewport, values }) {
   await page.getByRole('button', { name: /Band math/ }).first().click();
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
   await page.waitForSelector('.pp-range input[type=number]', { timeout: 15000 });
+  // A second band in the output brings the dropdown "Show" (the names of the bands are long on purpose).
+  if (show === 'with') await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().setOutput(['result', 'red']));
   await page.waitForTimeout(700);
   if (values === 'typed') {
     const [low, high] = TYPED[measure];
@@ -84,7 +87,7 @@ async function check(browser, { measure, theme, viewport, values }) {
     const leaves = [
       ...[...row.querySelectorAll('input')].map((e) => ({ what: `field ${e.value}`, e })),
       ...[...row.querySelectorAll('.pp-unit')].map((e) => ({ what: `unit ${e.textContent}`, e })),
-      ...[...row.querySelectorAll('select')].map((e) => ({ what: 'colormap', e })),
+      ...[...row.querySelectorAll('select')].map((e) => ({ what: e.closest('.pp-show') ? 'show' : 'colormap', e })),
       ...[...row.querySelectorAll('button')].map((e) => ({ what: `button ${e.textContent}`, e })),
     ].map(({ what, e }) => ({ what, ...box(e), cutOff: e.tagName === 'INPUT' && e.scrollWidth > e.clientWidth }));
     const panel = document.querySelector('.processing-panel');
@@ -98,6 +101,13 @@ async function check(browser, { measure, theme, viewport, values }) {
     if (leaves[i].x < panel.x - 0.5 || leaves[i].x + leaves[i].width > panel.x + panel.width + 0.5) problems.push(`${leaves[i].what} leaves the panel`);
     if (leaves[i].cutOff) problems.push(`${leaves[i].what} is cut off`);
   }
+  const named = (what) => leaves.find((leaf) => leaf.what === what || leaf.what.startsWith(`${what} `));
+  if (show === 'with') {
+    const dropdown = named('show');
+    const first = leaves.find((leaf) => leaf.what.startsWith('field'));
+    if (!dropdown) problems.push('the dropdown "Show" is missing');
+    else if (!(dropdown.y < first.y - 0.5 || dropdown.x + dropdown.width <= first.x + 0.5)) problems.push('"Show" does not stand left of min');
+  } else if (named('show')) problems.push('"Show" is there with one band in the output');
   if (report.theme !== THEMES[theme]) problems.push(`the app shows the theme ${report.theme}, not ${THEMES[theme]}`);
   if (report.scrolls) problems.push('the panel scrolls sideways');
   if (measure === 'DEM-like' && report.unit !== 'm') problems.push(`the unit is ${JSON.stringify(report.unit)}, not "m"`);
@@ -111,8 +121,8 @@ async function check(browser, { measure, theme, viewport, values }) {
 (async () => {
   const browser = await chromium.launch();
   let failed = 0;
-  for (const measure of Object.keys(MEASURES)) for (const theme of ['light', 'dark']) for (const viewport of Object.keys(VIEWPORTS)) for (const values of ['measured', 'typed']) {
-    const result = await check(browser, { measure, theme, viewport, values });
+  for (const measure of Object.keys(MEASURES)) for (const theme of ['light', 'dark']) for (const viewport of Object.keys(VIEWPORTS)) for (const values of ['measured', 'typed']) for (const show of ['without', 'with']) {
+    const result = await check(browser, { measure, theme, viewport, values, show });
     failed += result.problems.length > 0 ? 1 : 0;
     console.log(`${result.problems.length ? 'FAIL' : 'ok  '} ${result.name} [${result.fields.join(' … ')}]${result.problems.length ? '\n     ' + result.problems.join('\n     ') : ''}`);
   }
