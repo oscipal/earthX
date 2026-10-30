@@ -648,3 +648,54 @@ async def test_bound_to_its_collaborators_it_fits_the_seam(dataset_id: str) -> N
     assert isinstance(answer, CoverageResult)
     assert answer.grid == "geotile"
     assert answer.counting == "centroid"
+
+
+class TestWhatTheCacheKeepsOfAnAoi:
+    """NM4-57: an entry that belongs to an AOI is not kept longer than a week, and neither its key nor its value says where."""
+
+    SEVEN_DAYS_S = 7 * 24 * 60 * 60
+    AREA = {
+        "type": "Polygon",
+        "coordinates": [[[11.31234, 47.81234], [11.51234, 47.81234], [11.51234, 47.91234], [11.31234, 47.81234]]],
+    }
+    NEEDLES = ("11.31234", "47.81234", "11.51234", "47.91234")
+
+    @pytest.mark.parametrize("end", [None, datetime(2020, 1, 31, tzinfo=timezone.utc)])
+    @pytest.mark.parametrize("shape", ["bbox", "intersects"])
+    async def test_it_lives_at_most_seven_days(self, dataset_id: str, shape: str, end: datetime | None) -> None:
+        gateway, _ = answering(ok("aggregate_complete"))
+        cache = FakeCache()
+        area = {"bbox": (11.31234, 47.81234, 11.51234, 47.91234)} if shape == "bbox" else {"intersects": self.AREA}
+
+        await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, end=end, **area), SENTINEL_2_L2A, gateway=gateway, cache=cache
+        )
+
+        assert len(cache.ttls) == 1
+        assert 0 < next(iter(cache.ttls.values())) <= self.SEVEN_DAYS_S
+
+    @pytest.mark.parametrize("shape", ["bbox", "intersects"])
+    async def test_neither_the_key_nor_the_value_holds_a_coordinate(self, dataset_id: str, shape: str) -> None:
+        gateway, _ = answering(ok("aggregate_complete"))
+        cache = FakeCache()
+        area = {"bbox": (11.31234, 47.81234, 11.51234, 47.91234)} if shape == "bbox" else {"intersects": self.AREA}
+
+        await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, **area), SENTINEL_2_L2A, gateway=gateway, cache=cache
+        )
+
+        (key,) = cache.entries
+        assert key.startswith("coverage:") and len(key) == len("coverage:") + 64
+        text = key + json.dumps(cache.entries)
+        for needle in self.NEEDLES:
+            assert needle not in text
+
+    async def test_the_same_area_asked_twice_is_one_entry(self, dataset_id: str) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        cache = FakeCache()
+        query = CoverageQuery(dataset_id=dataset_id, level=8, intersects=self.AREA)
+
+        await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=cache)
+        again = await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=cache)
+
+        assert again.from_cache is True and len(seen) == 1 and len(cache.entries) == 1

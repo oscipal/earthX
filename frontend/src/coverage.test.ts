@@ -17,7 +17,9 @@ import {
   MIN_VIEWPORT_LEVEL,
   roundBboxToGrid,
   showFootprints,
+  VIEWPORT_ROUND_LEVELS,
 } from './coverage';
+import type { Bbox } from './types';
 
 // The 4 worked examples of backend/tests/catalog/test_coverage.py's
 // TestGridArithmetic, mirrored one to one so a cell key means the same box on
@@ -271,6 +273,23 @@ describe('roundBboxToGrid', () => {
     const b = roundBboxToGrid([-5, 10, 60, 60], 1);
     expect(a).not.toEqual(b);
   });
+
+  // NM4-57: the route of the backend takes a box in a URL only if it lies on this grid
+  // (`is_map_extent` in `api/coverage_route.py`). The same five extents stand in
+  // `tests/earthx/api/test_coverage_route.py::MAP_EXTENTS`; if the arithmetic here changes, both break.
+  it.each([
+    [[8.2, 47.1, 13.9, 50.3], 5.2, 1280, 800, 10, [5.625, 47.04018214480665, 14.0625, 50.73645513701065]],
+    [[-12.5, 35.0, 40.0, 70.0], 3.1, 1280, 800, 8, [-22.5, 31.952162238024968, 45, 70.61261423801923]],
+    [[-300, -89, 300, 89], 1.0, 1280, 800, 6, [-180, -85.05112877980659, 180, 87.74250915866031]],
+    [[11.4, 48.1, 11.6, 48.2], 12.0, 1280, 800, 17, [11.3818359375, 48.09275716032735, 11.6015625, 48.21003212234041]],
+    [[-0.05, 51.45, 0.05, 51.55], 15.0, 1920, 1080, 19, [-0.054931640625, 51.4471603469801, 0.054931640625, 51.55316672962129]],
+  ] as [Bbox, number, number, number, number, Bbox][])(
+    'rounds the viewport %j at zoom %d to the extent the backend knows',
+    (viewport, mapZoom, width, height, level, extent) => {
+      expect(levelForViewport(mapZoom, width, height)).toBe(level);
+      expect(roundBboxToGrid(bandViewportBbox(viewport), level - VIEWPORT_ROUND_LEVELS)).toEqual(extent);
+    },
+  );
 });
 
 describe('bandViewportBbox', () => {
