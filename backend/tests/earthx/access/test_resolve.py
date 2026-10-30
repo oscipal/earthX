@@ -29,7 +29,7 @@ from earthx.gateway import Policy, UrlRejected
 from earthx.readers import AssetRejected
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
-from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, without_cloud_share
 
 HOST = "assets.example.invalid"
 POLICY = Policy(allowed_hosts=frozenset({HOST}))
@@ -95,7 +95,7 @@ class TestResolveAsset:
         assert resolve_asset({**COG_ITEM, "properties": {}}, COG, "visual").crs is None
 
     def test_a_format_without_a_reader_is_refused_before_anything_else(self) -> None:
-        legacy = replace(COG, format=DataFormat.LEGACY)
+        legacy = replace(without_cloud_share(COG), format=DataFormat.LEGACY)
         with pytest.raises(NoReader, match="no reader"):
             resolve_asset({}, legacy, "visual")
 
