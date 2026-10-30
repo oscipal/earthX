@@ -1,6 +1,7 @@
 # ADR 0022 — Datennähe: Hauptquelle und Rechenort
 
-- **Status:** Entwurf, wartet auf Otto (Fragen F1–F7, §9). Nummer 0022: Am 30.10.2026 gab es weder auf `main` noch in einem offenen PR ein `adr/0022`.
+- **Status:** **Angenommen** von Otto am 2026-10-30. F1–F7 jeweils nach Empfehlung (§9); die Rechtsfrage zur Datenhaltung in der Schweiz (F7) bleibt bis M6 offen. **Stufe 2 der Messung (Test-VMs, kostet Geld) läuft nur nach ausdrücklicher Freigabe durch Otto** (§8.3).
+  - Nummer 0022: Am 30.10.2026 gab es weder auf `main` noch in einem offenen PR ein `adr/0022`.
 - **Datum:** 2026-10-30
 - **Aufgabe:** NM4-48 laut `docs/plans/querschnitt/nm4-48-datennaehe.md` (Backlog Nr. 48).
 - **Autonomiestufe:** C. Kein Produktivcode. Es gibt keine Änderung an `backend/`, `frontend/`, `scripts/`, Fixtures, `.github/`, `.claude/` oder `CLAUDE.md`. Gemessen wurde nur lokal mit dem vorhandenen Gerüst `scripts/tile-bench/` gegen eine synthetische Quelle (§3).
@@ -58,14 +59,14 @@ Belegstufen wie in `adr/0018`:
 3. **Keine der drei Kandidaten taugt als „eine Hauptquelle mit Server daneben“:**
    - **A** (AWS `us-west-2`): verletzt EU/CH-Hosting (AOIs sind personenbezogen); nur für Sentinel-2 und Landsat schneller.
    - **B** (CDSE + CloudFerro/OTC): Download nur mit Konto (Regel §1). Das Kontingent gilt je Konto, nicht je Plattform: 4 Verbindungen, 20 MB/s je Verbindung, 12 TB je 30 Tage, **50 000 direkte COG-Anfragen im Monat** [P\*]. Eine kalte Kachel braucht rund 32 Anfragen [M]. Sentinel-2 gibt es nur als SAFE/JP2.
-   - **C** (Planetary Computer + Azure): Der Token ist laut Bedingungen nicht an Dritte weiterzugeben [P\*]. Die Dienstbedingungen sind die einer Preview. Der Betrieb war 2026 wackelig (fehlerhafte Sentinel-2-Werte seit 27.10.2026, Sentinel-1 RTC ohne Aktualisierung seit 25.06.2026) [P\*].
+   - **C** (Planetary Computer + Azure): Der Token ist laut Bedingungen nicht an Dritte weiterzugeben [P\*]. Die Dienstbedingungen sind die einer Preview. Der Betrieb war 2026 wackelig: Sentinel-1 RTC ohne Aktualisierung seit 25.06.2026 (Issue #489) [P\*]; eine Datenqualitätsmeldung vom 29.10.2026 nennt Sentinel-2-L2A-Bilder seit dem 27.10.2026 „potentially affected“ durch eine fehlerhafte Umrechnung (Issue #516) [P\*]. Einzelheiten in §4.3.
 4. **Empfehlung (§6):** **Region statt Anbieter.**
    - Rechenort in der EU im Raum Frankfurt; Kandidaten: AWS `eu-central-1` und andere Anbieter mit Rechenzentrum dort, Auswahl in M6.
    - Föderation ohne exklusive Hauptquelle. Die Lage der Daten wird ein Feld der Registry (`data_region`) und ein Kriterium der Quellenauswahl in M5.
    - Sentinel-2 als einziger großer Bestand in Oregon wandert in die EU, sobald EOPF-Zarr operativ ist (Wiedervorlage aus `adr/0017`). Bis dahin bleibt es bei Earth Search mit Cache.
    - CDSE wird Katalogquelle mit Link, keine Lesequelle.
    - Planetary Computer bleibt auf Teil B von `adr/0018` beschränkt.
-5. **Messplan (§8):** Stufe 1 auf Ottos Rechner, kostenlos, PowerShell 5.1. Stufe 2 auf Test-VMs in drei bis vier Regionen, kostenpflichtig (grob unter 10 €), nur mit Ottos Freigabe (F2). Messgrößen und Schwellen stehen vorab fest, damit die Zahlen entscheiden.
+5. **Messplan (§8):** Stufe 1 auf Ottos Rechner, kostenlos, PowerShell 5.1. Stufe 2 auf Test-VMs in drei bis vier Regionen, kostenpflichtig (grob unter 10 €), **nur nach ausdrücklicher Freigabe durch Otto**. Messgrößen und Schwellen stehen vorab fest, damit die Zahlen entscheiden.
 
 ---
 
@@ -269,7 +270,7 @@ Ob diese Sätze für anonyme Daten-Tokens gelten, ist offen.
 - Suche ab Mai mit vielen Timeouts (#476, #498).
 - Sentinel-1 RTC ohne Aktualisierung seit 25.06.2026 (#489).
 - Sentinel-2 seit 17.04.2026 ohne `nodata=0` (#513).
-- Sentinel-2-Werte seit 27.10.2026 „incorrectly converted through uint8“ (#516).
+- Sentinel-2 L2A: Issue #516 „Data quality alert: Sentinel-2 Level-2A data conversion issue - 10/27/2026 21:00 UTC“, eröffnet am 29.10.2026, offen, am 30.10.2026 ohne Kommentare [P\*]. Wortlaut: „pixel values were incorrectly converted through uint8“; Bilder „published since approximately 21:00 UTC on October 27“ seien „potentially affected until the scope is confirmed“ und bräuchten „reprocessing“. Die Ursache nennt der Text „October 27 update to our processing pipeline“. Das klingt nach dem Betreiber; ob der Autor zu Microsoft gehört, zeigt die Seite nicht. Umfang und Behebung: offen.
 - Antworten der Maintainer: selten.
 
 **Rechenort [S]:**
@@ -610,7 +611,9 @@ $p4 = (Measure-Command { .\scripts\try-job.ps1 | Out-Null }).TotalMilliseconds
 
 Erwartet: P1 in der Größe von 6,0 s, P2 um 0,16 s (Messung vom 28.10.2026). P4 enthält auch den zweiten Auftrag (Cache-Treffer) und das Löschen.
 
-### 8.3 Stufe 2 — Test-VMs in den Regionen (kostenpflichtig, nur nach F2)
+### 8.3 Stufe 2 — Test-VMs in den Regionen (kostenpflichtig)
+
+**Nur nach ausdrücklicher Freigabe durch Otto** (Otto, 30.10.2026). Die Antwort F2 = 1 legt den Umfang fest (R1 und R2 vor der Wahl in M6), gibt aber keine Kosten frei. Vor dem Start nennt eine Session Regionen, VM-Typ, Dauer und geschätzte Kosten und wartet auf Ottos Freigabe. Keine Session legt Konten, VMs oder kostenpflichtige Dienste selbst an.
 
 **Regionen**, je eine VM mit 4 vCPU, 16 GB und Ubuntu LTS:
 
@@ -692,7 +695,9 @@ Stufe 1 allein beantwortet: wie weit Ottos Anschluss von jeder Quelle entfernt i
 
 ---
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 2026-10-30
+
+**Antworten (Otto, 30.10.2026):** F1 = 1, F2 = 1, F3 = 1, F4 = 2, F5 = 1, F6 = 1, F7 = 1, jeweils wie empfohlen. Die Rechtsfrage zur Datenhaltung in der Schweiz (F7) bleibt bis M6 offen. Stufe 2 der Messung nur nach ausdrücklicher Freigabe durch Otto (§8.3).
 
 **F1 — Grundsatz Rechenort und Hauptquelle?**
 1. Rechnen in der EU im Raum Frankfurt, Föderation ohne exklusive Hauptquelle, EU-Quellen bevorzugen (Option 1) **(Empfehlung)**
@@ -731,7 +736,7 @@ Stufe 1 allein beantwortet: wie weit Ottos Anschluss von jeder Quelle entfernt i
 
 ## 10. Was offen bleibt
 
-- **Messung** Stufe 1 und 2 (§8). Die Zahlen in §3 sind ein Modell.
+- **Messung:** Stufe 1 durch Otto; Stufe 2 erst nach seiner ausdrücklichen Freigabe (§8.3). Die Zahlen in §3 sind ein Modell.
 - **CDSE:**
   - Form der `href` im STAC;
   - Filter nach Orbit, Polarisation und MGRS;
@@ -749,7 +754,8 @@ Stufe 1 allein beantwortet: wie weit Ottos Anschluss von jeder Quelle entfernt i
 - **EOPF:** ob das Archiv seit 2017 tatsächlich gefüllt ist; Termin des Betriebs.
 - **DPF:** Ausgang der Berufung C-703/25 P (nur relevant für Option 3).
 - **Netzentfernungen:** Zürich ↔ Wien und Zürich ↔ Warschau.
-- **Folgeänderungen bei Annahme von Option 1** (erst nach Ottos Antwort):
+- **Datenhaltung in der Schweiz** (F7): Rechtsfrage, offen bis M6.
+- **Folgeänderungen aus Option 1** (angenommen; mit der nächsten Doku-Aufgabe oder durch Otto):
   - `architekturplan.md` 12.2 (Frankfurt statt „Clouds, in denen die Copernicus-Daten liegen“);
   - `projektuebersicht.md` §16 (Cloud-Provider: Kriterium Region, Shortlist §7.6);
   - Plan für M5 (Kriterium `data_region`).
