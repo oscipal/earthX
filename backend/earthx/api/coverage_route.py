@@ -130,13 +130,19 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
         has_spatial_filter = bbox is not None or intersects is not None
         start, end = _datetime_bounds(datetime)
         try:
-            conditions = read_search_conditions(
+            read = read_search_conditions(
                 {} if search_filters is None else {"query": _parse_query(search_filters)},
                 [dataset_id],
                 lambda _: config.search_filters,
-            ).by_collection.get(dataset_id)
+            )
         except InvalidFilter as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
+        if read.aoi_cloud_cover:
+            # DS-03 plan §6.5 (KE6): the coverage counts at the source, without a raster, so it cannot apply this.
+            raise HTTPException(
+                status_code=400, detail="the coverage map cannot apply the cloud share in the AOI; search for scenes"
+            )
+        conditions = read.by_collection.get(dataset_id)
         try:
             query = CoverageQuery(
                 dataset_id=dataset_id,
