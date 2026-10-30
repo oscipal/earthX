@@ -303,7 +303,7 @@ Dieselbe Draft-PR [#254](https://github.com/oscipal/earthX/pull/254) trägt Plan
 - **Runner gegen Job-Kind** bitgleich, mit Gegenprobe (andere Schwelle bricht den Vergleich) (`runner/test_compare.py`).
 - **Bitstabil** unter den Einstellungen A und D (`float32`, `float64`, `uint16`, alle vier Bedingungen); **Speicher** bei 4096² 372 MB, Wachstum 82 MB (Grenzen 500 und 100 MB); Kernzeit 0,7–2,3 ms gegen 2,8–3,1 ms bei `mask` (`scripts/ds-06-mask-values/measure_kernel.py`).
 - **Registry:** `value_masking` ohne Vorgabe (fehlt es, lädt der Eintrag nicht), beide Einträge setzen es, die Collection veröffentlicht es.
-- **Gegenprobe:** Gegen den Code vor der Änderung scheitern 22 der neuen und geänderten Tests, und zwei Testdateien lassen sich dort nicht laden.
+- **Gegenprobe:** Die neuen und geänderten Testdateien gegen den Code vor der Änderung (`ca3b58f`): 30 Tests scheitern, 44 laufen nicht an (die Registry kennt `value_masking` nicht), und mehrere Testdateien lassen sich nicht laden (`MASK_VALUES` fehlt).
 - `ruff check backend`, `lint-imports` (16 Verträge gehalten).
 
 ## 15. DS-06b — Frontend: „Mask by value“ im Panel (Aufgabe für die Fortsetzung dieser Session)
