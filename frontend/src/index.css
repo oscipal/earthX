@@ -1414,7 +1414,7 @@ input[type='date']:focus {
   font-size: 10px;
   color: var(--muted);
 }
-.filter-range input[type='number'] {
+.filter-range input[type='text'] {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -1426,17 +1426,10 @@ input[type='date']:focus {
   font-family: var(--mono);
   font-size: 12px;
   outline: none;
-  appearance: textfield;
-  -moz-appearance: textfield;
 }
-.filter-range input[type='number']:focus {
+.filter-range input[type='text']:focus {
   border-color: var(--accent);
   box-shadow: var(--glow);
-}
-.filter-range input[type='number']::-webkit-inner-spin-button,
-.filter-range input[type='number']::-webkit-outer-spin-button {
-  appearance: none;
-  margin: 0;
 }
 .filter-range input[aria-invalid='true'],
 .filter-range input[aria-invalid='true']:focus {

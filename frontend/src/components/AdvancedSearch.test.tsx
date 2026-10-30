@@ -105,7 +105,9 @@ describe('when "Advanced search" is there', () => {
 
   it('opens and closes by its head, and shows a caret for it', () => {
     pick('optical');
+    expect(head()!.hasAttribute('aria-controls')).toBe(false);
     open();
+    expect(head()!.getAttribute('aria-controls')).toBe(body()!.id);
     expect(head()!.getAttribute('aria-expanded')).toBe('true');
     expect(text(head())).toBe('▾Advanced search');
     expect(body()).not.toBeNull();
@@ -129,20 +131,20 @@ describe('the filters of the dataset shown', () => {
     expect(container.querySelector('.filter-title')!.getAttribute('title')).toBe('Share of the scene covered by clouds.');
   });
 
-  it('shows a range as two number fields with the bounds as placeholders and the unit', () => {
+  it('shows a range as two fields with the bounds as placeholders and the unit', () => {
     pick('optical');
     open();
     const from = field('Cloud cover, from');
     const to = field('Cloud cover, to');
-    expect([from.type, from.placeholder, to.placeholder, from.value, to.value]).toEqual(['number', '0', '100', '', '']);
+    expect([from.type, from.placeholder, to.placeholder, from.value, to.value]).toEqual(['text', '0', '100', '', '']);
     expect(text(container.querySelector('.filter-range'))).toBe('fromto%');
-    expect([from.min, from.max, from.step]).toEqual(['0', '100', 'any']);
+    expect(from.inputMode).toBe('decimal');
   });
 
   it('asks for whole numbers where the registry says so', () => {
     pick('radar');
     open();
-    expect(field('Relative orbit, from').step).toBe('1');
+    expect(field('Relative orbit, from').inputMode).toBe('numeric');
     expect(container.querySelector('.filter-unit')).toBeNull();
   });
 
@@ -161,7 +163,7 @@ describe('the filters of the dataset shown', () => {
     tick('Satellite B');
     expect(useAppStore.getState().searchFilters).toEqual({
       optical: {
-        'eo:cloud_cover': { kind: 'range', from: '', to: '20' },
+        'test:cloud': { kind: 'range', from: '', to: '20' },
         platform: { kind: 'values', values: ['sat-b'] },
       },
     });
@@ -176,7 +178,7 @@ describe('the filters of the dataset shown', () => {
     open();
     type(field('Cloud cover, from'), '5');
     type(field('Cloud cover, to'), '20');
-    expect(useAppStore.getState().searchFilters.optical['eo:cloud_cover']).toEqual({ kind: 'range', from: '5', to: '20' });
+    expect(useAppStore.getState().searchFilters.optical['test:cloud']).toEqual({ kind: 'range', from: '5', to: '20' });
   });
 });
 
@@ -234,8 +236,8 @@ describe('one dataset at a time, each with its own values', () => {
     act(() => options()[0].click());
     expect(field('Cloud cover, to').value).toBe('20');
     expect(useAppStore.getState().searchFilters).toEqual({
-      optical: { 'eo:cloud_cover': { kind: 'range', from: '', to: '20' } },
-      radar: { 'sat:relative_orbit': { kind: 'range', from: '22', to: '' } },
+      optical: { 'test:cloud': { kind: 'range', from: '', to: '20' } },
+      radar: { 'test:track': { kind: 'range', from: '22', to: '' } },
     });
   });
 
@@ -331,6 +333,14 @@ describe('fields that are wrong', () => {
     });
   });
 
+  it.each(['20-', '-', '1e', '--5', '1,5', 'abc'])('marks half-typed or wrong text "%s" instead of dropping the filter', (text) => {
+    pick('optical');
+    open();
+    type(field('Cloud cover, to'), text);
+    expect(field('Cloud cover, to').value).toBe(text);
+    expect(states()).toEqual({ search: true, invalid: ['Cloud cover, to'], messages: ['Enter a number'] });
+  });
+
   it('says so for a fraction where only whole numbers are asked for', () => {
     pick('radar');
     open();
@@ -379,6 +389,16 @@ describe('"Reset filters"', () => {
     expect(text(container.querySelector('.reset-filters'))).toBe('Reset filters');
   });
 
+  it('keeps the focus in the section when the button goes with the filters', () => {
+    pick('optical');
+    open();
+    type(field('Cloud cover, to'), '20');
+    act(() => container.querySelector<HTMLButtonElement>('.reset-filters')!.focus());
+    act(() => container.querySelector<HTMLButtonElement>('.reset-filters')!.click());
+    expect(container.querySelector('.reset-filters')).toBeNull();
+    expect(container.querySelector('.advanced-body')!.contains(document.activeElement)).toBe(true);
+  });
+
   it('takes back the filters of the dataset shown only', () => {
     pick('optical', 'radar');
     open();
@@ -393,7 +413,7 @@ describe('"Reset filters"', () => {
     act(() => container.querySelector<HTMLButtonElement>('.reset-filters')!.click());
 
     expect(useAppStore.getState().searchFilters).toEqual({
-      radar: { 'sat:relative_orbit': { kind: 'range', from: '22', to: '' } },
+      radar: { 'test:track': { kind: 'range', from: '22', to: '' } },
     });
     expect(field('Cloud cover, to').value).toBe('');
     expect(container.querySelector('.reset-filters')).toBeNull();
@@ -437,8 +457,8 @@ describe('"Search" sends what the fields say', () => {
     const searches = calls.filter(([url]) => url === '/stac/search').map(([, init]) => JSON.parse(init.body as string));
     expect(searches[0].collections).toEqual(['optical', 'radar', 'elevation']);
     expect(searches[0].query_by_collection).toEqual({
-      optical: { 'eo:cloud_cover': { lte: 20 }, platform: { in: ['sat-b'] } },
-      radar: { 'sat:relative_orbit': { gte: 22, lte: 22 } },
+      optical: { 'test:cloud': { lte: 20 }, platform: { in: ['sat-b'] } },
+      radar: { 'test:track': { gte: 22, lte: 22 } },
     });
   });
 });

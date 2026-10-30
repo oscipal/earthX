@@ -5,7 +5,7 @@
 //   - the dataset box lists the DEM, or the values of one dataset show up in another;
 //   - the search, "Load more"-style repeat or the coverage map do not carry the filters of their own dataset
 //     (and only those), or carry a filter whose field is wrong;
-//   - a wrong field is not marked, or "Search" is not held back;
+//   - a wrong field (also half-typed text such as "20-") is not marked, or "Search" is not held back;
 //   - "Clear search results" drops the filters, or "Reset filters" does not;
 //   - a field, the unit or the box overlaps another or leaves the panel; the page scrolls sideways;
 //   - an item id or the AOI shows up in a URL the browser asks for (the filters go in the body of a POST);
@@ -204,6 +204,12 @@ async function check(browser, { theme, viewport }) {
   expect('the coverage asked with the wrong field', JSON.stringify(requests.coverage.at(-1).query) === JSON.stringify({ platform: { in: ['sentinel-2a'] } }), JSON.stringify(requests.coverage.at(-1)));
   await page.locator('.advanced-body').scrollIntoViewIfNeeded();
   await shot('5-wrong');
+  // Typed key by key, as a user does: "20-" is no number, and the field says so instead of dropping the filter.
+  await fields('Cloud cover, to').fill('');
+  await fields('Cloud cover, to').pressSequentially('20-');
+  expect('half-typed text is not marked', (await fields('Cloud cover, to').getAttribute('aria-invalid')) === 'true' && (await page.locator('.advanced-body .hint-text.error').textContent()) === 'Enter a number');
+  expect('half-typed text does not hold "Search" back', await page.getByRole('button', { name: 'Search', exact: true }).isDisabled());
+  expect('half-typed text was dropped from the head', (await page.locator('.advanced-head').textContent()).includes('· 1 dataset'), await page.locator('.advanced-head').textContent());
   await fields('Cloud cover, from').fill('50');
   await fields('Cloud cover, to').fill('20');
   expect('"from above to" is not marked on both', (await fields('Cloud cover, from').getAttribute('aria-invalid')) === 'true' && (await fields('Cloud cover, to').getAttribute('aria-invalid')) === 'true');

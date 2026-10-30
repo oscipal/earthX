@@ -23,7 +23,7 @@ describe('searchFiltersOf: what the registry offers', () => {
   it('reads a range and a choice in the order of the registry', () => {
     expect(searchFiltersOf(OPTICAL)).toEqual([
       {
-        property: 'eo:cloud_cover',
+        property: 'test:cloud',
         kind: 'range',
         title: 'Cloud cover',
         description: 'Share of the scene covered by clouds.',
@@ -76,11 +76,11 @@ describe('searchFiltersOf: what the registry offers', () => {
     ['a choice of one value', { ...SATELLITE_FILTER, oneOf: [{ const: 'sat-a', title: 'A' }] }],
     ['a value without a label', { ...SATELLITE_FILTER, oneOf: [{ const: 'sat-a', title: 'A' }, { const: 'sat-b' }] }],
     ['a value twice', { ...SATELLITE_FILTER, oneOf: [{ const: 'a', title: 'A' }, { const: 'a', title: 'B' }] }],
-    ['an entry that is no object', 'eo:cloud_cover'],
+    ['an entry that is no object', 'test:cloud'],
     ['an entry that is null', null],
   ])('leaves out an entry with %s instead of guessing', (_name, entry) => {
     // Next to a good one, which stays.
-    expect(searchFiltersOf(withFilters([entry, ORBIT_FILTER])).map((f) => f.property)).toEqual(['sat:relative_orbit']);
+    expect(searchFiltersOf(withFilters([entry, ORBIT_FILTER])).map((f) => f.property)).toEqual(['test:track']);
   });
 
   it('keeps the first of two entries for one property', () => {
@@ -102,7 +102,7 @@ describe('isSet and setFilters', () => {
   it('lists the filters with something in them, wrong or not', () => {
     const filters = [cloud, satellite];
     expect(setFilters(filters, undefined)).toEqual([]);
-    expect(setFilters(filters, { 'eo:cloud_cover': range('abc', '') })).toEqual([cloud]);
+    expect(setFilters(filters, { 'test:cloud': range('abc', '') })).toEqual([cloud]);
     expect(setFilters(filters, { platform: values('sat-b') })).toEqual([satellite]);
   });
 });
@@ -148,23 +148,23 @@ describe('filterError: what is wrong with the fields', () => {
 
   it('has nothing to say about a choice, whatever is ticked', () => {
     expect(filterError(satellite, values('sat-a', 'not-offered'))).toBeNull();
-    expect(hasFilterError([cloud, satellite], { 'eo:cloud_cover': range('', '20'), platform: values('sat-a') })).toBe(false);
-    expect(hasFilterError([cloud, satellite], { 'eo:cloud_cover': range('', 'x') })).toBe(true);
+    expect(hasFilterError([cloud, satellite], { 'test:cloud': range('', '20'), platform: values('sat-a') })).toBe(false);
+    expect(hasFilterError([cloud, satellite], { 'test:cloud': range('', 'x') })).toBe(true);
   });
 });
 
 describe('filterQuery: the query extension for the fields', () => {
   it('is empty when nothing is set', () => {
     expect(filterQuery([cloud, satellite], undefined)).toEqual({});
-    expect(filterQuery([cloud, satellite], { 'eo:cloud_cover': range('', ''), platform: values() })).toEqual({});
+    expect(filterQuery([cloud, satellite], { 'test:cloud': range('', ''), platform: values() })).toEqual({});
     expect(isEmptyQuery(filterQuery([cloud], undefined))).toBe(true);
   });
 
   it('sends gte and lte for the bounds that are set, as numbers', () => {
-    expect(filterQuery([cloud], { 'eo:cloud_cover': range('5', '20') })).toEqual({ 'eo:cloud_cover': { gte: 5, lte: 20 } });
-    expect(filterQuery([cloud], { 'eo:cloud_cover': range('', '20') })).toEqual({ 'eo:cloud_cover': { lte: 20 } });
-    expect(filterQuery([cloud], { 'eo:cloud_cover': range(' 7.5', '') })).toEqual({ 'eo:cloud_cover': { gte: 7.5 } });
-    expect(filterQuery([cloud], { 'eo:cloud_cover': range('0', '100') })).toEqual({ 'eo:cloud_cover': { gte: 0, lte: 100 } });
+    expect(filterQuery([cloud], { 'test:cloud': range('5', '20') })).toEqual({ 'test:cloud': { gte: 5, lte: 20 } });
+    expect(filterQuery([cloud], { 'test:cloud': range('', '20') })).toEqual({ 'test:cloud': { lte: 20 } });
+    expect(filterQuery([cloud], { 'test:cloud': range(' 7.5', '') })).toEqual({ 'test:cloud': { gte: 7.5 } });
+    expect(filterQuery([cloud], { 'test:cloud': range('0', '100') })).toEqual({ 'test:cloud': { gte: 0, lte: 100 } });
   });
 
   it('sends the ticked values in the order of the registry', () => {
@@ -173,18 +173,18 @@ describe('filterQuery: the query extension for the fields', () => {
   });
 
   it('leaves out a filter with a wrong field, and keeps the others', () => {
-    const inputs = { 'eo:cloud_cover': range('50', '20'), platform: values('sat-a') };
+    const inputs = { 'test:cloud': range('50', '20'), platform: values('sat-a') };
     expect(filterQuery([cloud, satellite], inputs)).toEqual({ platform: { in: ['sat-a'] } });
   });
 
   it('sends nothing for a property the dataset does not offer, nor a value it does not know', () => {
-    expect(filterQuery([cloud], { 'sat:relative_orbit': range('1', '5') })).toEqual({});
+    expect(filterQuery([cloud], { 'test:track': range('1', '5') })).toEqual({});
     expect(filterQuery([satellite], { platform: values('not-offered') })).toEqual({});
     expect(filterQuery([satellite], { platform: values('sat-a', 'not-offered') })).toEqual({ platform: { in: ['sat-a'] } });
   });
 
   it('sends nothing when the fields belong to the other kind of filter', () => {
-    expect(filterQuery([cloud], { 'eo:cloud_cover': values('sat-a') })).toEqual({});
+    expect(filterQuery([cloud], { 'test:cloud': values('sat-a') })).toEqual({});
     expect(filterQuery([satellite], { platform: range('1', '2') })).toEqual({});
   });
 });

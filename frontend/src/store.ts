@@ -393,6 +393,11 @@ function filterQueryOf(s: FilterState, datasetId: string): FilterQuery {
   return dataset ? filterQuery(searchFiltersOf(dataset.collection), s.searchFilters[datasetId]) : {};
 }
 
+// What each of these datasets is asked with, `{}` where nothing is set.
+function filterQueriesOf(s: FilterState, ids: readonly string[]): FilterQueryByCollection {
+  return Object.fromEntries(ids.map((id) => [id, filterQueryOf(s, id)]));
+}
+
 // `{queryByCollection}` for a request, or nothing when no dataset has a filter set: a search without filters
 // keeps the body it always had.
 function queryByCollectionOf(queries: FilterQueryByCollection): { queryByCollection?: FilterQueryByCollection } {
@@ -724,6 +729,9 @@ function dropPageToken(set: SetState, get: GetState): void {
 // screen that ran with others cannot be continued; the coverage map of this dataset follows at once, debounced.
 function changeSearchFilters(set: SetState, get: GetState, datasetId: string, inputs: FilterInputs): void {
   const { searchFilters, searchContext } = get();
+  // A change that changes nothing (a wrong field made wrong another way, a box ticked and unticked) leaves the search
+  // and the map alone.
+  if (JSON.stringify(searchFilters[datasetId] ?? {}) === JSON.stringify(inputs)) return;
   const { [datasetId]: _before, ...others } = searchFilters;
   set({ searchFilters: Object.keys(inputs).length > 0 ? { ...others, [datasetId]: inputs } : others });
   if (searchContext?.datasetIds.includes(datasetId)) dropPageToken(set, get);
@@ -2123,15 +2131,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     // "Clear all" or another step that drops the results may come before the answer.
     const gen = searchGen;
     try {
+      const ids = chosen.map((d) => d.id);
+      const asked = filterQueriesOf(get(), ids);
       const query = {
-        collections: chosen.map((d) => d.id),
+        collections: ids,
         bbox: area.bbox,
         intersects: area.intersects,
         datetime: buildDatetime(dateFrom, dateTo),
-        ...queryByCollectionOf(Object.fromEntries(chosen.map((d) => [d.id, filterQueryOf(get(), d.id)]))),
+        ...queryByCollectionOf(asked),
       };
       const page = await api.searchAllPages(query, MAX_SEARCH_ITEMS);
       if (gen !== searchGen) return;
+      // Filters changed while the search ran (the page token cannot be dropped yet, there is no search on screen):
+      // "Load more" would go on with filters the fields no longer show.
+      const filtersKept = JSON.stringify(filterQueriesOf(get(), ids)) === JSON.stringify(asked);
       showSearchResults(
         set,
         get,
@@ -2149,7 +2162,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             incompleteCollections: page.incompleteCollections,
           },
           numberMatched: page.numberMatched,
-          nextToken: page.nextToken,
+          nextToken: filtersKept ? page.nextToken : null,
           openCollections: page.openCollections,
         },
         false,

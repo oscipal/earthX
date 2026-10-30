@@ -1,11 +1,11 @@
 // Synthetic datasets with search filters (DS-02c), in the form the collection publishes them as
 // `earthx:search_filters` (`backend/earthx/catalog/collection.py::_earthx_search_filters`). Made up for the tests: two
-// datasets with filters of their own and one without, so that nothing here depends on a real dataset.
+// datasets with filters of their own and one without, so that nothing here depends on a real dataset (and no source-specific property name stands in this file, `test_frontend_no_dataset_literals`).
 
 import type { Collection } from '../types';
 
 export const CLOUD_FILTER = {
-  property: 'eo:cloud_cover',
+  property: 'test:cloud',
   kind: 'range',
   title: 'Cloud cover',
   description: 'Share of the scene covered by clouds.',
@@ -31,7 +31,7 @@ export const SATELLITE_FILTER = {
 };
 
 export const ORBIT_FILTER = {
-  property: 'sat:relative_orbit',
+  property: 'test:track',
   kind: 'range',
   title: 'Relative orbit',
   description: 'The orbit track the scene lies on.',

@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 
 import type { DatasetOption } from '../datasets';
 import {
@@ -26,7 +26,9 @@ function RangeField({
   const from = input?.kind === 'range' ? input.from : '';
   const to = input?.kind === 'range' ? input.to : '';
   const error = filterError(filter, input);
-  const bounds = { min: filter.minimum, max: filter.maximum, step: filter.integer ? 1 : 'any', inputMode: 'decimal' } as const;
+  // Text, not `type="number"`: a number field hands over "" for "20-" and keeps showing it, so a half-typed value would
+  // silently drop the filter. The keyboard of a phone has no minus on `decimal` and `numeric`.
+  const inputMode = filter.minimum < 0 ? 'text' : filter.integer ? 'numeric' : 'decimal';
   const edit = (next: { from?: string; to?: string }) => onChange({ kind: 'range', from, to, ...next });
   return (
     <div className="filter-field">
@@ -36,8 +38,8 @@ function RangeField({
       <div className="filter-range">
         <span>from</span>
         <input
-          type="number"
-          {...bounds}
+          type="text"
+          inputMode={inputMode}
           value={from}
           placeholder={String(filter.minimum)}
           aria-label={`${filter.title}, from`}
@@ -47,8 +49,8 @@ function RangeField({
         />
         <span>to</span>
         <input
-          type="number"
-          {...bounds}
+          type="text"
+          inputMode={inputMode}
           value={to}
           placeholder={String(filter.maximum)}
           aria-label={`${filter.title}, to`}
@@ -121,6 +123,7 @@ export default function AdvancedSearch() {
   const [open, setOpen] = useState(false);
   const [shownId, setShownId] = useState<string | null>(null);
   const bodyId = useId();
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   const offers = useMemo<Offer[]>(
     () =>
@@ -148,7 +151,7 @@ export default function AdvancedSearch() {
         type="button"
         className="advanced-head"
         aria-expanded={open}
-        aria-controls={bodyId}
+        aria-controls={open ? bodyId : undefined}
         title={tooltip}
         onClick={() => setOpen((v) => !v)}
       >
@@ -162,7 +165,7 @@ export default function AdvancedSearch() {
         {wrong && <span className="advanced-count wrong">· check input</span>}
       </button>
       {open && (
-        <div className="advanced-body" id={bodyId}>
+        <div className="advanced-body" id={bodyId} ref={bodyRef}>
           <DatasetSelect
             className="plain"
             label="Dataset"
@@ -185,7 +188,12 @@ export default function AdvancedSearch() {
             );
           })}
           {setOf(shown).length > 0 && (
-            <button type="button" className="ghost-btn reset-filters" onClick={() => resetSearchFilters(shown.dataset.id)}>
+            <button type="button" className="ghost-btn reset-filters" onClick={() => {
+                resetSearchFilters(shown.dataset.id);
+                // The button goes with the filters; the keyboard user stays in the section.
+                bodyRef.current?.querySelector<HTMLElement>('input')?.focus();
+              }}
+            >
               Reset filters
             </button>
           )}
