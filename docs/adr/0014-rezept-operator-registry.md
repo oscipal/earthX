@@ -2847,7 +2847,7 @@ Otto hat den Plan von NM4-14 am 2026-10-30 freigegeben (zu [#251](https://github
   - `reference` mit `https://`;
   - Presets nur bei `capabilities.band_math`.
 
-  `processing.index_presets.check_index_presets` prüft beim Bau von `api`, wie `adapters.check_adapter_specs`, `check_name` und `check_expression` von `band_math` (R5) und die Colormap gegen die Namen von rio-tiler. Ein Preset, das ein Benutzer nicht tippen könnte, verhindert den Start; die Meldung nennt Datensatz und Preset. `api` liefert die Collection aus, aus der das Panel die Presets liest. Der `tiler` prüft nicht (Abweichung vom Plan §8.1): Er baut seine App beim Import, und sein Start bleibt ohne `processing` (`test_tiler_start_is_light`, M4-14).
+  `processing.index_presets.check_index_presets` prüft beim Bau von `api`, wie `adapters.check_adapter_specs`, `check_name` und `check_expression` von `band_math` (R5), die Bänder, die `check_expression` aus dem Syntaxbaum liest, noch einmal gegen den Eintrag, und die Colormap gegen die Namen von rio-tiler. Ein Preset, das ein Benutzer nicht tippen könnte, verhindert den Start; die Meldung nennt Datensatz und Preset. `api` liefert die Collection aus, aus der das Panel die Presets liest. Der `tiler` prüft nicht (Abweichung vom Plan §8.1): Er baut seine App beim Import, und sein Start bleibt ohne `processing` (`test_tiler_start_is_light`, M4-14).
 - **Tests.**
   - Jedes Preset durch den Kern gegen eine Rechnung von Hand in Brüchen.
   - Die Formel von Awesome Spectral Indices mit ihren Konstanten (g 2.5, C1 6, C2 7.5, L 1) und der Zuordnung von `bands.json` gegen den Ausdruck.
