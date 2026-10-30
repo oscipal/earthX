@@ -708,6 +708,9 @@ Pfad**:
   Speicher und keinem Log. Eine Änderung der AOI oder des Ausgabetyps misst neu. Der Tooltip von „Preview“ sagt „Range measured
   over the first whole scene“ (Rückfall) bzw. „Range measured on a coarser read; the result may differ“ (`exact: false`).
   „Auto stretch“ fragt nach einem Rückfall die AOI erneut.
+- **Nachtrag NM4-11 (2026-10-30, `adr/0014` Nachtrag NM4-11):** Die Antwort der Route trägt je Band zusätzlich `percentile_1`, `_5`, `_25`, `_50`, `_75`, `_95` und `_99` aus demselben
+  Histogramm, für die Methoden von `normalize` Version 3, deren Zahlen das Panel vorab misst. Das Ergebnisdokument bleibt bei 2 und 98. Der Schlüssel des Caches trägt deshalb `area-statistics/v2`; Einträge der
+  älteren Form werden nicht mehr getroffen und laufen nach 7 Tagen ab. Grenzen, Datenschutz und Log der Route bleiben (die AOI nur im Body, die Zeile ohne AOI, Item-ID und Schlüssel).
 - **Index-Regel nach Perzentilen (Frage 8, Otto, 2026-10-28):** `render.ts::scaleOf`, die eine Regel für Vorschau und
   Ergebnis: Band math und bei allen Bändern p2 ≥ −1 und p98 ≤ 1 (Minimum…Maximum, wo Perzentile fehlen) → −1…1 `rdylgn`,
   sonst 2–98 % `viridis`. Nur Anzeige: `result.tif`, seine Tags und das Ergebnisdokument tragen keine Darstellungsvorgabe

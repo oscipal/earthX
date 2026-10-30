@@ -47,7 +47,7 @@ import logging
 import math
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -598,7 +598,11 @@ def area_factor(width: int, height: int, max_pixels: int = MAX_AREA_PIXELS) -> i
 
 
 def area_statistics(
-    recipe: Recipe, *, operators: OperatorRegistry = REGISTRY, max_pixels: int = MAX_AREA_PIXELS
+    recipe: Recipe,
+    *,
+    operators: OperatorRegistry = REGISTRY,
+    max_pixels: int = MAX_AREA_PIXELS,
+    extra_percentiles: Sequence[int] = (),
 ) -> AreaStatistics:
     """The statistics of the AOI the result of ``recipe`` would carry, read and counted as :func:`run` does (NM4-19).
 
@@ -647,7 +651,7 @@ def area_statistics(
         {
             "name": band.name,
             **({} if band.unit is None else {"unit": band.unit}),
-            "statistics": statistics.summary(max(inside_pixels, 1)),
+            "statistics": statistics.summary(max(inside_pixels, 1), extra_percentiles),
         }
         for band, statistics in zip(meta.bands, area, strict=True)
     ]

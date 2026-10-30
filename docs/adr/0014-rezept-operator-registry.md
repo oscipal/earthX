@@ -2783,3 +2783,54 @@ hat mehrere. Umgesetzt in [#245](https://github.com/oscipal/earthX/pull/245); Be
 - **Auslegungen (Claude, gelten bis Otto widerspricht).** (1) `band` neben einem Schritt der Version 1 ist ein `400`: Version 1 hat keinen Vorrat. (2) Kennt das Item die Bänder
   eines Assets nicht, gilt das Asset in der Planung als ein Band mit dem Namen des Assets (wie die Schätzung, Grenze S1); die Datei wird vor dem ersten Pixel nochmals geprüft.
 - **Unverändert.** `earthx.__version__` (kein Byte eines Ergebnisses ändert sich), Rezept, Hash, Runner.
+
+## 15 Nachtrag NM4-11: `normalize` Version 3, die Methoden (2026-10-30; zu §5.2, §6.1, §6.3, §15c, §15m, §15u; `adr/0020` §4, §15a)
+
+Otto hat den Plan von NM4-11 am 2026-10-30 freigegeben (zu [#244](https://github.com/oscipal/earthX/pull/244), `plans/querschnitt/nm4-11-normalize-methoden.md` §13). Der Originaltext von §15m
+bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist das Backend (NM4-11a); das Panel folgt als NM4-11b.
+
+- **Grundsatz (W1).** Jede Methode ist eine Gerade je Band. Die Zahlen einer statistischen Methode stehen **im Rezept** (`params.measured`), gemessen vor dem Lauf mit der Route
+  `POST /collections/{dataset}/statistics` (§15u). Damit bleibt `normalize` ein reiner Pixel-Schritt: Kachel (T1) und Job (T2) geben dieselben Bytes, der Runner misst nichts
+  (`adr/0016` Nachtrag NM4-11), Rezept und Ergebnis sind eindeutig, der Speicher des Jobs ändert sich nicht. Das setzt M4-18 F5 („im Rezept stehen feste Zahlen“) fort; neu ist, dass das Panel
+  die Zahlen misst statt vorschlägt.
+- **Rezeptform.** `normalize` `op_version` 3, strikt, alle Felder der Methode Pflicht (B10), die Felder einer anderen Methode verboten (`extra="forbid"` und eine Prüfung im Modell):
+
+  | `method` | Felder | gemessen je Band (`measured.bands.<Band>`) |
+  |---|---|---|
+  | `linear` | `bands`, `in_min`, `in_max`, `out_min`, `out_max`, `clip` | keine, `measured` fehlt |
+  | `percentile` | `bands`, `low` ∈ {0, 1, 2, 5}, `high` ∈ {95, 98, 99, 100}, `out_min`, `out_max`, `clip`, `measured` | `p_low`, `p_high` (Werte an den Perzentilen; 0 und 100 sind Minimum und Maximum) |
+  | `zscore` | `bands`, `measured` | `mean`, `stddev` (Populations-Standardabweichung, ÷ N) |
+  | `robust` | `bands`, `measured` | `p25`, `median`, `p75` |
+
+  `measured` trägt `factor` (ganze Zahl ≥ 1 bis 10 000: 1, wenn auf dem Raster des Ergebnisses gemessen, sonst um wie viel gröber, `exact: false` der Route) und die Zahlen genau der Bänder von `bands`
+  (Namen buchstabengleich). Zusicherungen: endlich; `p_low` ≤ `p_high`; `stddev` ≥ 0; `p25` ≤ `median` ≤ `p75`; Spannen endlich. Gegenüber dem Plan §8.4 heißen die gemessenen Werte des
+  Perzentil-Stretchs `p_low`/`p_high`, damit sie nicht mit den Prozenten `low`/`high` zusammenfallen.
+- **Rechnung.** Je Band in `float64`, jeder Schritt eine eigene numpy-Operation, Ergebnis `float32` mit NaN als nodata; maskiert bleibt maskiert, nicht Endliches (Überlauf) wird maskiert:
+
+  | Methode | Formel |
+  |---|---|
+  | linear | `(x − in_min) / (in_max − in_min) · (out_max − out_min) + out_min`, mit `clip` auf den Zielbereich |
+  | percentile | dieselbe Gerade mit `in_min` = `p_low`, `in_max` = `p_high` |
+  | zscore | `(x − mean) / stddev` |
+  | robust | `(x − median) / (p75 − p25)` |
+
+  **Spanne 0** (`stddev` = 0, `p25` = `p75`, `p_low` = `p_high`, ein konstantes Band über der AOI) teilt durch 1, wie `StandardScaler`, `RobustScaler` und `MinMaxScaler` von scikit-learn (KE10); das
+  Rezept bleibt gültig. Der Kern von `linear` ist der von Version 1 und 2 (`_line`), ihre Bytes ändern sich nicht (Test: Version 1, 2 und 3 `linear` bitgleich).
+- **Die Route (§15u) liefert dafür mehr.** Je Band zusätzlich `percentile_1`, `_5`, `_25`, `_50`, `_75`, `_95`, `_99` aus demselben festen Histogramm (M4-32, §15k), nach außen gerundet über dem Median, sonst
+  nach unten. Das Ergebnisdokument und `result.tif` tragen weiter 2 und 98: **keine Byte ändert sich, `earthx.__version__` bleibt.** Der Cache-Schlüssel trägt `area-statistics/v2` (die Antwort hat eine andere
+  Form); Einträge der älteren Form werden nicht mehr getroffen und laufen nach 7 Tagen ab. Ist die Messung gröber (`factor` > 1), liegen die Perzentile bis rund 3 % der Spanne neben den exakten (NM4-19 §7.6 [M]);
+  das Rezept bleibt eindeutig, der Methodentext nennt es.
+- **Streichen (`adr/0020` §4).** `bands_used` ist `acts_on = bands`; `restrict` nimmt mit einem gestrichenen Band auch seine Zahlen aus `measured`. Mit und ohne Streichen sind die Werte eines Bandes bitgleich (Test je Methode).
+- **Kachel.** Version 3 läuft als Kachel (`T1`, `pixel`) und als Job; `params` trägt die Zahlen in der URL, und die Grenze von 2048 Zeichen (`MAX_OPERATOR_PARAMS_CHARS`) gilt: etwa 25 bis 40 Bänder mit Zahlen. Darüber antwortet die Kachel `400` mit
+  dem Grund; das Panel zeigt dann den Anfang der Kette. Kachel und Job sind auf der nativen Ebene bitgleich (COG, 256 und 512 px, jede Methode, auch nach `mask`).
+- **Gelistet** wird Version 3 erst, wenn das Panel sie schickt (`listed=False`, NM4-11b); Version 2 bleibt angenommen. Die Prozessbeschreibung bietet bis dahin, was sie vorher bot.
+- **Ehrlichkeit des Rezepts.** `api` prüft nicht, ob die Zahlen die Perzentile der AOI sind (das hieße messen). Ein von Hand gebautes Rezept rechnet trotzdem eindeutig; der Methodentext nennt die Zahlen als
+  „as measured before the run“, bei `factor` > 1 „on a read N times coarser than the result“. Er nennt wie bei Version 2 alle Bänder des Schritts, auch die der Planer streicht.
+- **Faktor (§5.5, §15k).** 0,3 für alle vier Methoden. Gemessen mit `scripts/nm4-11-normalize/measure_kernel.py` (ein Block 1024², zwei Bänder `float32`, kleinster Wert aus 15 Läufen, Sitzung): Version 2 (fester Bereich) 21,0 ms; Version 3 `linear` 21,2,
+  `percentile` 21,2, `zscore` 15,0, `robust` 14,4 ms (ein zweiter Lauf, ohne anderen Betrieb auf der Sitzung; der erste mit Last: 19,3 / 20,3 / 19,8 / 15,8 / 17,7). Kein Kern kostet mehr als der feste Bereich (innerhalb des Rauschens, `zscore` und `robust` weniger), der Faktor 0,3 nach §15m und §15k bleibt.
+- **Bitstabilität (§15c).** Nur Grundrechenarten und Vergleiche in getrennten numpy-Schritten. Ein Test rechnet alle vier Methoden unter den Einstellungen A und D von `adr/0016` §3.3 (`float32` und `float64`, mit umgekehrtem Zielbereich) und verlangt gleiche SHA-256.
+- **Speicher (§3.5).** Der Schritt läuft im Durchgang des Lesens, ein Block zur Zeit. Gemessen wie in §15m (Kindprozess, `VmHWM`, `GDAL_CACHEMAX` 64 MB, zwei Bänder `uint16`, `test_memory_mask_normalize.py`): bei 4096² Version 1 367 MB, `percentile` 356 MB, `zscore` und `robust` 372 MB; Wachstum von 2048² auf 4096² 76 MB (Version 1), 74 MB (`percentile`), 81 MB (`zscore`, `robust`). Die Grenzen 500 MB und 100 MB halten, das Rezept mit den Zahlen kostet keinen Speicher.
+- **Geprüft gegen eine unabhängige Rechnung.** Der Kern je Methode gegen Python-`float` (IEEE-Double, ein Schritt nach dem anderen) und gegen exakte Brüche; die Perzentile der Route gegen `numpy.percentile(method="inverted_cdf")` auf denselben
+  Pixeln (16 Bit exakt, `float32` innerhalb eines Fachs und nach außen gerundet); ein Lauf mit den gemessenen Zahlen tut, was die Methode sagt (Perzentil-Stretch setzt die Enden auf 0 und 1, Z-Score mittelt auf 0 mit Streuung 1, robust Median 0 und Quartilsabstand 1).
+- **Stand der Technik** (Plan §7.3): TiTiler, openEO, Earth Engine und Sentinel Hub messen die Statistik vorab und wenden dann eine feste Gerade an; QGIS und rio-tiler nehmen als Vorgabe 2–98 %.
+

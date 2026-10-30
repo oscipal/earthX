@@ -70,7 +70,7 @@ def area_statistics_cache_key(recipe: Any) -> str:
     from earthx.processing.recipe import recipe_hash
 
     payload = json.dumps(
-        {"kind": "area-statistics/v1", "earthx": earthx.__version__, "recipe": recipe_hash(recipe)},
+        {"kind": "area-statistics/v2", "earthx": earthx.__version__, "recipe": recipe_hash(recipe)},
         separators=(",", ":"),
         sort_keys=True,
     )
@@ -140,11 +140,14 @@ def _check_order(raw: bytes, dataset: str) -> None:
 
 def _measure(recipe: Any, env: dict[str, str]) -> Any:
     from earthx.processing import core
+    from earthx.processing.statistics import MEASURE_PERCENTILES
 
     for attempt in range(_READ_ATTEMPTS):
         try:
             with rasterio.Env(**env):
-                return core.area_statistics(recipe, max_pixels=core.MAX_AREA_PIXELS)
+                return core.area_statistics(
+                    recipe, max_pixels=core.MAX_AREA_PIXELS, extra_percentiles=MEASURE_PERCENTILES
+                )
         except RasterioIOError:
             # GDAL's text names the address it could not read; only the fact goes to the log.
             if attempt + 1 == _READ_ATTEMPTS:
