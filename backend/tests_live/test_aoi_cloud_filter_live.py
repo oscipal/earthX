@@ -1,0 +1,116 @@
+"""T-D, DS-03: does the cloud share in the AOI still fit the real classification? (plan §6.13)
+
+Two things only the source can answer, through the gateway and a real read of the classification:
+
+* the classes of the registry (``mask.cloud_classes``) count the same pixels as the source's own ``eo:cloud_cover``:
+  over the whole file the share is equal to a few thousandths (plan §6.2.5);
+* the filter of the search works against the real thing: a search with a range on the share inside an AOI keeps
+  scenes whose measured share lies in it, and a second response goes on where the first stopped.
+
+Small on purpose (adr/0005 §3.6, K5): one scene read whole (about a megabyte), one search of two responses.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from datetime import datetime, timezone
+
+import numpy
+import pytest
+import rasterio
+
+from earthx.access.aoi_clouds import measure_aoi_clouds
+from earthx.access.resolve import open_asset_ref, resolve_asset
+from earthx.adapters import ADAPTER_SPECS, SearchParams, search_items
+from earthx.api.aoi_cloud_filter import AoiMeasurer, read_aoi_request, run_filter
+from earthx.api.dependencies import policy_from_registry
+from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
+from earthx.catalog.search_filters import RangeCondition
+from earthx.gateway import CachingResolver, Gateway, ReadSlots
+from earthx.gateway.gdal import gdal_options
+
+pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("sentinel-2-c1-l2a")]
+
+# The box and month of the plan's measurement (DS-02 §6.2): 42 scenes of mixed sky, in a window long closed.
+BBOX = (10.0, 47.0, 11.0, 48.0)
+WINDOW = (datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 6, 30, 23, 59, 59, tzinfo=timezone.utc))
+PERIOD = "2024-06-01T00:00:00Z/2024-06-30T23:59:59Z"
+# 10 km by 10 km inside the box.
+AOI = {
+    "type": "Polygon",
+    "coordinates": [[[10.4, 47.4], [10.55, 47.4], [10.55, 47.5], [10.4, 47.5], [10.4, 47.4]]],
+}
+CONFIG = SENTINEL_2_L2A
+
+
+@pytest.fixture
+async def gateway() -> AsyncIterator[Gateway]:
+    async with Gateway(policy_from_registry(REGISTRY)) as gateway:
+        yield gateway
+
+
+async def _sample(gateway: Gateway, limit: int) -> list[dict]:
+    params = SearchParams(bbox=BBOX, start=WINDOW[0], end=WINDOW[1], limit=limit)
+    page = await search_items(CONFIG, params, adapters=ADAPTER_SPECS, gateway=gateway)
+    return list(page.items)
+
+
+async def test_the_classes_of_the_registry_count_what_the_source_calls_cloud(gateway: Gateway) -> None:
+    items = await _sample(gateway, 20)
+    scene = next(item for item in items if 20 <= item["properties"]["eo:cloud_cover"] <= 80)
+    policy = policy_from_registry(REGISTRY)
+    ref = resolve_asset(scene, CONFIG, CONFIG.mask.asset)
+    path = open_asset_ref(ref, policy, CachingResolver())
+    with rasterio.Env(**gdal_options(policy)), rasterio.open(path) as source:
+        values = source.read(1)
+        nodata = source.nodata
+    valid = values != nodata
+    share = 100 * numpy.isin(values, list(CONFIG.mask.cloud_classes))[valid].sum() / valid.sum()
+    assert share == pytest.approx(scene["properties"]["eo:cloud_cover"], abs=0.05)
+
+
+async def test_a_search_with_a_range_on_the_share_in_the_aoi_keeps_what_it_measures(gateway: Gateway) -> None:
+    request = read_aoi_request(
+        CONFIG.dataset_id,
+        RangeCondition(None, 50.0),
+        datetime_value=PERIOD,
+        bbox=None,
+        intersects=AOI,
+        earthx_aoi=None,
+    )
+    policy = policy_from_registry(REGISTRY)
+    measurer = AoiMeasurer(
+        CONFIG,
+        request.aoi,
+        policy=policy,
+        resolver=CachingResolver(),
+        gdal_options=gdal_options(policy),
+        slots=ReadSlots(policy),
+        cache=None,
+    )
+
+    async def fetch_page(marker: str | None):
+        params = SearchParams(intersects=AOI, start=WINDOW[0], end=WINDOW[1], limit=100, page_token=marker)
+        return await search_items(CONFIG, params, adapters=ADAPTER_SPECS, gateway=gateway)
+
+    first = await run_filter(request, fetch_page=fetch_page, measure=measurer, limit=3, token=None)
+    assert first.items, "no scene of the sample is under 50 % clouds in the AOI"
+    assert first.unreadable == 0
+    for item in first.items:
+        assert item["properties"]["earthx:aoi_cloud_cover"] <= 50.0
+        assert item["properties"]["earthx:aoi_measure"]["data_pixels"] > 0
+    assert first.next_token is not None
+    second = await run_filter(request, fetch_page=fetch_page, measure=measurer, limit=3, token=first.next_token)
+    assert {item["id"] for item in first.items}.isdisjoint(item["id"] for item in second.items)
+    assert second.checked > first.checked
+
+
+async def test_the_whole_footprint_of_a_scene_is_close_to_its_cloud_cover(gateway: Gateway) -> None:
+    items = await _sample(gateway, 20)
+    scene = next(item for item in items if 20 <= item["properties"]["eo:cloud_cover"] <= 80)
+    policy = policy_from_registry(REGISTRY)
+    path = open_asset_ref(resolve_asset(scene, CONFIG, CONFIG.mask.asset), policy, CachingResolver())
+    with rasterio.Env(**gdal_options(policy)):
+        counts = measure_aoi_clouds(path, scene["geometry"], CONFIG.mask.cloud_classes)
+    # A coarse level of MODE overviews, not the file: the plan's measured error at mixed sky is at most 1.9 points.
+    assert counts.cloud_percent == pytest.approx(scene["properties"]["eo:cloud_cover"], abs=2.5)
