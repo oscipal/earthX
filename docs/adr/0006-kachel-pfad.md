@@ -663,6 +663,12 @@ zusätzlich zu M4-17:
   zurück (Hinweis im Tooltip). Während die erste Kachel lädt (kalt 6,0 s gemessen), sagt ein
   Badge „Loading…“ es.
 
+**Nachtrag NM4-43d (2026-10-30, zu §3.4; [#245](https://github.com/oscipal/earthX/pull/245), `adr/0014` §15 Nachtrag NM4-43d):** Mit Schritten der Version 2
+zeigt die Kachel ein Band: der Parameter `band=<Name>` (Vorgabe: das letzte von `band_math` hinzugefügte, sonst das erste) steht auf Kachel, TileJSON, Statistik und
+Mosaik-Kachel. Die Kachel liest nur die Assets, die dieses Band braucht; die Grenzen (16 Assets, bei der Mosaik-Kachel 4) zählen diese. Das TileJSON trägt `band` und
+`unit`. Ein unbekannter Name ist ein `422` vor dem Öffnen einer Datei. Die Ergebnis-Kachel wählt ein Band über `bidx` (außerhalb der Datei `400`). Die Mosaik-Statistik
+(Otto, F4, oben) bleibt eine Item-Route.
+
 **Nachtrag NM4-19 (2026-10-28, Otto, zu #218):** Die Farbskala der Vorschau misst bei „AOI only“
 über die AOI, so wie der Job sie zählt (`plans/querschnitt/nm4-19-auto-stretch-ueber-aoi.md`
 §6–§17, `adr/0014` §15u). Neben die GET-Statistik eines Items tritt eine Route **ohne Item im

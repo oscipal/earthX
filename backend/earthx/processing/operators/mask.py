@@ -194,12 +194,10 @@ MASK = Operator(
     stock=False,
 )
 
-#: Version 2 (NM4-43c): the layer stays in the stock. Not listed until the panel sends it, a job-only operator until
-#: the tile reads it (NM4-43d).
+#: Version 2 (NM4-43c): the layer stays in the stock. Not listed until the panel sends it; the tile runs it since NM4-43d.
 MASK_V2 = dataclasses.replace(
     MASK,
     op_version=2,
-    tiers=frozenset({Tier.T2}),
     description="Hide the pixels that a classification layer assigns to the chosen classes, such as cloud.",
     transform=_transform_v2,
     run=_run_v2,

@@ -349,7 +349,6 @@ class TestRefusedBeforeTheFirstItemIsFetched:
         ("change", "status"),
         [
             ({"steps": [("band_math", NDVI)] * 5}, 400),
-            ({"assets": ("red", "nir", "scl", "blue", "green")}, 400),
             ({"steps": [("band_math", "{")]}, 400),
             ({"steps": [("no_such_operator", NDVI)]}, 422),
             ({"steps": [("reproject", {"crs": "EPSG:3035"}, 2)]}, 422),
@@ -360,7 +359,6 @@ class TestRefusedBeforeTheFirstItemIsFetched:
         ],
         ids=[
             "five steps",
-            "five assets",
             "params not JSON",
             "unknown operator",
             "not a tile operator",

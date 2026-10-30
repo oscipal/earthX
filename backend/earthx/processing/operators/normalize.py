@@ -275,13 +275,11 @@ def _method_v2(params: BaseModel) -> str:
     )
 
 
-#: Version 2 (NM4-43c): converts the bands it names. Not listed until the panel sends it, a job-only operator until the
-#: tile reads it (NM4-43d).
+#: Version 2 (NM4-43c): converts the bands it names. Not listed until the panel sends it; the tile runs it since NM4-43d.
 NORMALIZE_V2 = dataclasses.replace(
     NORMALIZE,
     op_version=2,
     params=NormalizeParamsV2,
-    tiers=frozenset({Tier.T2}),
     description="Map a fixed range of values linearly onto another range, for the bands named.",
     transform=_transform_v2,
     run=_run_v2,

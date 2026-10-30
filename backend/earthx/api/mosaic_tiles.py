@@ -75,8 +75,9 @@ MIN_MOSAIC_ZOOM = 8
 #: Item fetches at the source at the same time, in the whole process: under the five connections of the
 #: cache pool (`api.dependencies`) and the six per host of the gateway (`gateway.policy`).
 MAX_ITEM_FETCHES = 4
-#: Assets of a mosaic tile with steps (NM4-04 F3): 12 scenes x 4 assets = 48 files at most for one tile. NDVI
-#: takes 2, a masked NDVI 3, a masked EVI 4; the item tile takes 16, but reads one scene.
+#: Assets a mosaic tile with steps reads (NM4-04 F3): 12 scenes x 4 assets = 48 files at most for one tile. NDVI
+#: takes 2, a masked NDVI 3, a masked EVI 4; the item tile takes 16, but reads one scene. The limit counts the assets
+#: the shown band needs, not those the URL names (NM4-43d).
 MAX_MOSAIC_OPERATOR_ASSETS = 4
 #: Path and query of a mosaic request as they arrive (NM4-04 F5): uvicorn takes 65 535 bytes, nginx and the CDNs
 #: in front of it in M6 often 8 kB for the whole request line; 1 kB is left for a prefix, method and version.
@@ -114,8 +115,9 @@ def check_query(
     parameter a route does not declare without a word, and a mosaic that quietly ignored ``bbox``, a
     ``filter`` or ``BBOX `` would look like an answer to a question it never heard — and the TileJSON
     would copy it into the tile URLs it hands out (Q8, plan §4.1). The list of what is allowed, not of
-    what is forbidden: no spelling of an area gets past it. With ``steps`` (``op`` in the query) a tile reads one
-    to :data:`MAX_MOSAIC_OPERATOR_ASSETS` assets, as the job reads the assets of its order.
+    what is forbidden: no spelling of an area gets past it. With ``steps`` (``op`` in the query) a tile names one
+    or more assets, each once; how many of them it reads (at most :data:`MAX_MOSAIC_OPERATOR_ASSETS`) is judged
+    after the band it shows is known, because it reads only the assets that band needs (NM4-43d).
 
     Sorting makes the answer to an error independent of the order the client wrote its ids in; the
     order of the pixels never depends on it either (§4.4).
@@ -124,10 +126,8 @@ def check_query(
         if name not in declared:
             raise OrderRefused(400, "a mosaic tile takes item, asset and the parameters of its display only", "order")
     if steps:
-        if not 1 <= len(assets) <= MAX_MOSAIC_OPERATOR_ASSETS or len(set(assets)) != len(assets):
-            raise OrderRefused(
-                400, f"with op, name each asset once, at most {MAX_MOSAIC_OPERATOR_ASSETS} of them", "order"
-            )
+        if not assets or len(set(assets)) != len(assets):
+            raise OrderRefused(400, "with op, name each asset once", "order")
     elif len(assets) != 1:
         raise OrderRefused(400, "name one asset", "order")
     if not MIN_MOSAIC_ITEMS <= len(items) <= MAX_MOSAIC_ITEMS:
