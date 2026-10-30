@@ -1190,4 +1190,6 @@ bleibt maßgeblich; dieser Nachtrag nennt, was daraus im Panel geworden ist, und
   `adr/0014` §15, NM4-43c).
 - **Hinweis „Resampled to a common grid“ (Backlog 51).** Das Backend unterscheidet beide Fälle seit NM4-43c (`BandMeta.resampled`, `test_stock_run.py`); das Frontend liest
   `earthx:resampled` unverändert und zeigt den Hinweis nur im Tooltip. Eine gröbere Maskenschicht allein markiert nichts, ein umgerechnetes Wertband schon.
-- **Übergangsfrist.** Die Konstante `intake.VERSION_1_ACCEPTED_UNTIL` ist **nicht** gesetzt: Das Deploy-Datum von NM4-43e nennt Otto (§11). Bis dahin nimmt `api` Version 1 an.
+- **Übergangsfrist (Otto, 2026-10-30, fest).** `intake.VERSION_1_ACCEPTED_UNTIL` bleibt ungesetzt, `api` nimmt Version 1 weiter an. Gesetzt wird die Konstante beim ersten
+  öffentlichen Deploy (M6) auf 30 Tage danach (§11); vorher gibt es keine Frist, die ablaufen könnte.
+- **Annahme der Auslegungen (Otto, 2026-10-30).** Die Auslegungen 1 bis 7 oben sind angenommen.
