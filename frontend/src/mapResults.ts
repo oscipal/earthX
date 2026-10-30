@@ -67,3 +67,8 @@ export function resultsOnMapOf(s: ResultsState): ResultsOnMap {
     clickable,
   };
 }
+
+// The scenes of the group that is open in the list (the step that is played): what lies on top of the other results on the
+// map. All closed: none.
+export const openIdsOf = (groups: readonly TimeStepGroup[], expandedGroupIndex: number | null): ReadonlySet<string> =>
+  new Set(expandedGroupIndex === null ? [] : (groups[expandedGroupIndex]?.items ?? []).map((item) => item.id));
