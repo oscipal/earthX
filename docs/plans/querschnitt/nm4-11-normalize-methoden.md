@@ -341,6 +341,15 @@ Draft-PR [#244](https://github.com/oscipal/earthX/pull/244) trägt Plan und Back
 6. **Route.** `POST /collections/{dataset}/statistics` liefert je Band zusätzlich `percentile_1`, `_5`, `_25`, `_50`, `_75`, `_95`, `_99`; das Ergebnisdokument und `result.tif` tragen weiter nur 2 und 98 (keine geänderten Bytes, `__version__` bleibt). Der Cache-Schlüssel trägt `area-statistics/v2`; Einträge der älteren Form werden nicht mehr getroffen und laufen nach 7 Tagen ab.
 7. **Methodentext und Herkunft.** Der Text nennt die Zahlen der Rezeptes (`as measured before the run`, bei `factor` > 1 `on a read N times coarser than the result`). Er nennt wie bei Version 2 alle Bänder des Schritts, auch die der Planer streicht.
 
+**Abnahme NM4-11a.**
+
+- **Je Methode gegen eine unabhängige Rechnung** (`test_normalize_methods.py`): der Kern gegen Python-`float` und exakte Brüche; die Perzentile der Route gegen `numpy.percentile(method="inverted_cdf")` (16 Bit exakt, `float32` innerhalb eines Fachs); ein Lauf mit den gemessenen Zahlen tut, was die Methode sagt.
+- **Bitgleich:** zweimal derselbe Lauf; Einstellungen A und D von `adr/0016` §3.3; Kachel gegen Job auf der nativen Ebene (`test_tiler_normalize_methods.py`, 256 und 512 px, jede Methode und nach `mask`); Runner gegen Job-Kind (`runner/test_compare.py`, jede Methode, mit Gegenprobe); Version 1, 2 und 3 `linear` bitgleich.
+- **Speicher** unter 500 MB (bei 4096² 356 bis 372 MB, Wachstum höchstens 81 MB von 2048² auf 4096²); Kernzeit nicht über der des festen Bereichs, Faktor 0,3 bleibt (`scripts/nm4-11-normalize/measure_kernel.py`, `adr/0014` Nachtrag NM4-11).
+- **Fehlerfälle und zweckfremde Nutzung:** unbekannte Methode, Felder einer anderen Methode, fehlende, fremde oder doppelte Bänder in `measured`, negative Streuung, Quartile in falscher Ordnung, nicht endliche Zahlen, `factor` 0 oder zu groß, zu viele Bänder, zu lange Kachel-URL, Band, das der Vorrat nicht hat, Datensatz ohne `normalization`; die Annahme (`422`/`400`) und die Kachel (`400`/`422`) sagen den Grund, die AOI steht in keiner Antwort.
+- **Gegenprobe:** Gegen den Code vor dieser Aufgabe (`6df083b`) scheitern 28 der neuen und geänderten Tests, und zwei Testdateien lassen sich dort nicht einmal laden (`NORMALIZE_V3`, `MEASURE_PERCENTILES` fehlen).
+- `ruff check backend`, `lint-imports` (16 Verträge gehalten), ganze Backend-Suite grün.
+
 **Wiedervorlage (Frage 6, Option 2).** „Gleiche Werte für alle Aufträge“ macht Ergebnisse mehrerer Szenen oder Überflüge vergleichbar (Zeitreihen). Sie bräuchte eine gemeinsame Messung über die Vereinigung der Aufträge, also eine Entscheidung zur Fläche (Vereinigung der Footprints oder der erste Auftrag) und zur Kennzeichnung im Methodentext. Otto legt sie wieder vor, sobald Zeitreihen gebaut werden. Das Backlog pflegt der Planungs-Chat.
 
 ## 15. NM4-11b — Frontend: Methoden im Panel (Aufgabe für eine neue Session)
