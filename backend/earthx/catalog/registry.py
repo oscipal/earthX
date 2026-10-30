@@ -34,6 +34,7 @@ MAX_TILE_ZOOM = 22
 
 # A unit is a symbol, not a sentence (UCUM: "m", "1", "mm/h"); the longest in use stays far below this.
 MAX_UNIT_CHARS = 32
+MAX_GROUP_CHARS = 24
 
 
 class DataClass(Enum):
@@ -821,7 +822,9 @@ class SearchFilter:
     stand. ``minimum``, ``maximum`` and ``integer`` belong to a ``RANGE``, ``values`` to a ``VALUES`` filter.
 
     ``within_aoi`` is True on the one filter whose range may also be applied to the cloud share inside the AOI
-    (DS-03 plan §6.10); it needs ``MaskSource.cloud_classes``. No default (B10)."""
+    (DS-03 plan §6.10); it needs ``MaskSource.cloud_classes``. ``group`` is the heading the filter stands under in the
+    pop-up (DS-02c), e.g. "Clouds": the filters of one group follow each other, and the order of the registry is the
+    order shown. No defaults (B10)."""
 
     property: str
     kind: FilterKind
@@ -833,6 +836,7 @@ class SearchFilter:
     integer: bool
     values: tuple[FilterValue, ...]
     within_aoi: bool
+    group: str
 
 
 def _filter_problem(search_filter: SearchFilter) -> str | None:
@@ -846,6 +850,9 @@ def _filter_problem(search_filter: SearchFilter) -> str | None:
         return f"the filter on {name!r} has a title and a description"
     if not isinstance(search_filter.within_aoi, bool):
         return f"within_aoi of the filter on {name!r} is True or False"
+    group = search_filter.group
+    if not isinstance(group, str) or not group.strip() or group != group.strip() or len(group) > MAX_GROUP_CHARS:
+        return f"the group of the filter on {name!r} is a short non-blank text"
     unit = search_filter.unit
     if unit is not None and (not unit.strip() or unit != unit.strip() or len(unit) > MAX_UNIT_CHARS):
         return f"the unit of the filter on {name!r} is a short non-blank text or None"
@@ -968,6 +975,9 @@ class DatasetConfig:
         names = [entry.property for entry in self.search_filters]
         if len(set(names)) != len(names):
             raise ConfigError(f"{self.dataset_id}: search_filters names a property twice")
+        groups = [entry.group for entry in self.search_filters]
+        if any(group != groups[i - 1] and group in groups[: i - 1] for i, group in enumerate(groups) if i):
+            raise ConfigError(f"{self.dataset_id}: the filters of one group follow each other")
         if names and self.source.item_holding is not ItemHolding.FEDERATED:
             # Our own items are searched by pgstac, which applies no filter of this kind yet (DS-02 plan §6.5).
             raise ConfigError(f"{self.dataset_id}: search filters need federated items")

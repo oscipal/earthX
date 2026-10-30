@@ -21,6 +21,7 @@ export default function Popover({
   role,
   ariaLabel,
   focusOnOpen = false,
+  form = false,
   children,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
@@ -34,6 +35,9 @@ export default function Popover({
   // Move the focus into the dropdown when it opens (a button opened it); a text
   // field that opens one keeps the focus until the user presses the down arrow.
   focusOnOpen?: boolean;
+  // A pop-up with fields in it (DS-02c): Tab and the arrow keys stay with the fields, and a dropdown that opens inside
+  // it (its own `Popover`, lying over this one) is no click or key "beside" it.
+  form?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -79,19 +83,23 @@ export default function Popover({
     }
     if (focusOnOpen && placement && !focused.current) {
       focused.current = true;
-      focusFirstItem(ref.current);
+      if (form) ref.current?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled)')?.focus();
+      else focusFirstItem(ref.current);
     }
-  }, [open, focusOnOpen, placement]);
+  }, [open, focusOnOpen, form, placement]);
 
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {
       const target = e.target as Node;
       if (ref.current?.contains(target) || anchorRef.current?.contains(target)) return;
+      if (form && (target as Element).closest?.('.popover')) return;
       onClose();
     };
     const escape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // The dropdown inside a pop-up takes this key first; this one stays.
+      if (form && document.activeElement?.closest('.popover') && !ref.current?.contains(document.activeElement)) return;
       onClose();
       if (ref.current?.contains(document.activeElement)) triggerRef.current?.focus();
     };
@@ -101,12 +109,13 @@ export default function Popover({
       document.removeEventListener('pointerdown', away);
       document.removeEventListener('keydown', escape);
     };
-  }, [open, onClose, anchorRef, triggerRef]);
+  }, [open, onClose, anchorRef, triggerRef, form]);
 
   if (!open) return null;
   const host = anchorRef.current?.closest('.app') ?? document.body;
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (form) return;
     const all = popoverItems(ref.current);
     const at = all.indexOf(document.activeElement as HTMLElement);
     const go = (index: number) => {

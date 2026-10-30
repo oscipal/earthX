@@ -2,6 +2,7 @@
 // by default (the Vite dev server proxies /stac to the backend). Override
 // with VITE_API_BASE. Never talks to the prototype's `/api/…` routes.
 
+import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
 import type { Bbox, Collection, StacItem } from './types';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
@@ -186,6 +187,10 @@ export interface SearchQuery {
   // parameter, only in the `POST` body below.
   intersects?: GeoJSON.Geometry;
   datetime?: string;
+  // DS-02c: the search filters of each dataset on its own (`query_by_collection`, plan §6.4 rule 3a) — a dataset
+  // gets only what its registry entry offers, so nothing is dropped on the way. Only datasets with a filter set
+  // are named; every key must be one of `collections`.
+  queryByCollection?: FilterQueryByCollection;
   limit?: number;
   token?: string;
 }
@@ -264,6 +269,7 @@ export function buildSearchBody(q: SearchQuery): Record<string, unknown> {
   if (q.bbox) body.bbox = q.bbox;
   if (q.intersects) body.intersects = q.intersects;
   if (q.datetime) body.datetime = q.datetime;
+  if (q.queryByCollection && Object.keys(q.queryByCollection).length > 0) body.query_by_collection = q.queryByCollection;
   if (q.limit) body.limit = q.limit;
   if (q.token) body.token = q.token;
   return body;
@@ -650,12 +656,16 @@ export interface CoverageParams {
   zoom: number;
   bbox?: Bbox;
   datetime?: string;
+  // DS-02c: the search filters of the dataset, as JSON in the form of the STAC query extension (`query` of
+  // `GET /coverage/{id}`, DS-02b). Replaces `max_cloud_cover`.
+  query?: FilterQuery;
 }
 
 export function buildCoverageUrl(p: CoverageParams): string {
   const params = new URLSearchParams({ zoom: String(p.zoom) });
   if (p.bbox) params.set('bbox', p.bbox.join(','));
   if (p.datetime) params.set('datetime', p.datetime);
+  if (p.query && Object.keys(p.query).length > 0) params.set('query', JSON.stringify(p.query));
   return `${BASE}/coverage/${encodeURIComponent(p.datasetId)}?${params.toString()}`;
 }
 

@@ -52,6 +52,17 @@ import {
   withSourceState,
 } from './sections';
 import { overlaysOfPass, underlaysOf } from './searchLayers';
+import {
+  filterQuery,
+  hasFilterError,
+  isEmptyQuery,
+  isSet,
+  searchFiltersOf,
+  type FilterInput,
+  type FilterInputs,
+  type FilterQuery,
+  type FilterQueryByCollection,
+} from './searchFilters';
 import { layerOfView } from './viewLayer';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
@@ -110,7 +121,7 @@ let coverageGen = 0;
 
 // M3-19 §3: the last few viewport (no-AOI) answers, so a pan/zoom that stays
 // inside a bbox already asked for skips the request instead of repeating it.
-// Keyed on dataset/level/datetime — an AOI query never reads or writes this,
+// Keyed on dataset/level/datetime/filters — an AOI query never reads or writes this,
 // it always asks fresh (`plans/m3/m3-19-weltueberblick-ausschnitt.md`: "mit AOI
 // bleibt alles wie heute"). Module-level like `coverageGen` above: it holds
 // no more than the interaction needs to feel warm, nothing a reload should
@@ -119,6 +130,8 @@ interface ViewportCoverageEntry {
   datasetId: string;
   level: number;
   datetime: string | undefined;
+  // The search filters it was asked with (DS-02c), `JSON.stringify` of the query: another filter is another map.
+  filters: string;
   bbox: Bbox;
   coverage: CoverageResponse;
   footprints: GeoJSON.FeatureCollection | null;
@@ -130,10 +143,16 @@ function cachedViewportCoverage(
   datasetId: string,
   level: number,
   datetime: string | undefined,
+  filters: string,
   viewport: Bbox,
 ): ViewportCoverageEntry | undefined {
   return viewportCoverageCache.find(
-    (e) => e.datasetId === datasetId && e.level === level && e.datetime === datetime && bboxContains(e.bbox, viewport),
+    (e) =>
+      e.datasetId === datasetId &&
+      e.level === level &&
+      e.datetime === datetime &&
+      e.filters === filters &&
+      bboxContains(e.bbox, viewport),
   );
 }
 
@@ -179,6 +198,9 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   const { aoi } = s;
   const hasAoi = aoi !== null;
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
+  // The filters of the coverage's dataset (DS-02c, adr/0004 K1): the map counts what the search would find.
+  const query = filterQueryOf(s, datasetId);
+  const filters = JSON.stringify(query);
 
   let bbox: Bbox | undefined;
   let level: number;
@@ -204,7 +226,7 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   const gen = ++coverageGen;
 
   if (!hasAoi && viewport) {
-    const cached = cachedViewportCoverage(datasetId, level, datetime, viewport);
+    const cached = cachedViewportCoverage(datasetId, level, datetime, filters, viewport);
     if (cached) {
       set({ coverage: cached.coverage, coverageFootprints: cached.footprints, coverageLoading: false, coverageError: null });
       return;
@@ -214,7 +236,7 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   set({ coverageLoading: true, coverageError: null });
   let coverage: CoverageResponse;
   try {
-    coverage = await api.fetchCoverage({ datasetId, zoom: level, bbox, datetime });
+    coverage = await api.fetchCoverage({ datasetId, zoom: level, bbox, datetime, query });
   } catch (e) {
     if (gen !== coverageGen) return;
     set({
@@ -230,7 +252,10 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   let footprints: GeoJSON.FeatureCollection | null = null;
   if (showFootprints(coverage, get().mapZoom)) {
     try {
-      const { features } = await api.searchAllPages({ collections: [datasetId], bbox, datetime }, FOOTPRINT_FETCH_LIMIT);
+      const { features } = await api.searchAllPages(
+        { collections: [datasetId], bbox, datetime, ...queryByCollectionOf({ [datasetId]: query }) },
+        FOOTPRINT_FETCH_LIMIT,
+      );
       if (gen === coverageGen) {
         footprints = footprintsFC(features);
         set({ coverageFootprints: footprints });
@@ -241,7 +266,7 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
     }
   }
   if (!hasAoi && viewport && gen === coverageGen && bbox) {
-    rememberViewportCoverage({ datasetId, level, datetime, bbox, coverage, footprints });
+    rememberViewportCoverage({ datasetId, level, datetime, filters, bbox, coverage, footprints });
   }
 }
 
@@ -358,6 +383,35 @@ function viewableDatasets(datasets: DatasetOption[], ids: readonly string[]): Vi
     .filter((d): d is ViewableDataset => d?.viewable === true);
 }
 
+// The search filters the user has set and got right, for one dataset or for these datasets (DS-02c). A filter with a
+// wrong field is not sent: the search is held back until it is right (`searchFiltersInvalid`), the coverage map
+// goes without it meanwhile.
+type FilterState = Pick<AppState, 'datasets' | 'searchFilters'>;
+
+function filterQueryOf(s: FilterState, datasetId: string): FilterQuery {
+  const dataset = s.datasets.find((d) => d.id === datasetId);
+  return dataset ? filterQuery(searchFiltersOf(dataset.collection), s.searchFilters[datasetId]) : {};
+}
+
+// What each of these datasets is asked with, `{}` where nothing is set.
+function filterQueriesOf(s: FilterState, ids: readonly string[]): FilterQueryByCollection {
+  return Object.fromEntries(ids.map((id) => [id, filterQueryOf(s, id)]));
+}
+
+// `{queryByCollection}` for a request, or nothing when no dataset has a filter set: a search without filters
+// keeps the body it always had.
+function queryByCollectionOf(queries: FilterQueryByCollection): { queryByCollection?: FilterQueryByCollection } {
+  const named = Object.entries(queries).filter(([, query]) => !isEmptyQuery(query));
+  return named.length > 0 ? { queryByCollection: Object.fromEntries(named) } : {};
+}
+
+// Whether a ticked dataset has a filter with a wrong field. "Search" waits for it (plan §6.7).
+export function searchFiltersInvalid(s: Pick<AppState, 'datasets' | 'selectedDatasetIds' | 'searchFilters'>): boolean {
+  return s.datasets.some(
+    (d) => s.selectedDatasetIds.includes(d.id) && hasFilterError(searchFiltersOf(d.collection), s.searchFilters[d.id]),
+  );
+}
+
 // The search the results belong to (M3-10b): what "Load more" continues and what
 // the ±90-day fallback of a chosen dataset asks again. Its AOI and dates are the
 // ones it ran with; changing them in the control panel afterwards drops only the
@@ -470,9 +524,12 @@ async function fetchMosaics(
 
 function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections: ResultSection[]): string {
   if (ctx.features.length === 0) {
-    return datasets.length === 1 || (!ctx.dateFrom && !ctx.dateTo)
-      ? 'No scenes found for this area.'
-      : 'No scenes found for this area and date range.';
+    const base =
+      datasets.length === 1 || (!ctx.dateFrom && !ctx.dateTo)
+        ? 'No scenes found for this area.'
+        : 'No scenes found for this area and date range.';
+    // A filter may be what leaves nothing (DS-02c); the notice says that one is set, not which.
+    return ctx.query.queryByCollection ? `${base} Search filters are set.` : base;
   }
   if (datasets.length === 1) {
     return foundNotice(sections[0].items, sections[0].groups, ctx.numberMatched, ctx.nextToken !== null);
@@ -617,7 +674,9 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
   const withoutNoScenes = (current: ResultSection) =>
     current.notes.filter((note) => note !== NO_SCENES_NOTE && note !== LOAD_MORE_NOTE);
   try {
-    const query = { ...ctx.query, collections: [datasetId] };
+    // Only the dataset's own filters: the server refuses a filter for a collection the search does not name.
+    const { queryByCollection, ...rest } = ctx.query;
+    const query = { ...rest, collections: [datasetId], ...queryByCollectionOf({ [datasetId]: queryByCollection?.[datasetId] ?? {} }) };
     const found = await findFallback(
       (w) =>
         api.searchItems({ ...query, datetime: `${w.start}T00:00:00Z/${w.end}T23:59:59Z`, limit: PAGE_LIMIT }),
@@ -664,6 +723,20 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
 function dropPageToken(set: SetState, get: GetState): void {
   const ctx = get().searchContext;
   if (ctx?.nextToken) set({ searchContext: { ...ctx, nextToken: null } });
+}
+
+// The filters of one dataset changed (DS-02c). Like the dates they are read at the next "Search", so a search on
+// screen that ran with others cannot be continued; the coverage map of this dataset follows at once, debounced.
+function changeSearchFilters(set: SetState, get: GetState, datasetId: string, inputs: FilterInputs): void {
+  const { searchFilters, searchContext } = get();
+  // A change that changes nothing (a wrong field made wrong another way, a box ticked and unticked) leaves the search
+  // and the map alone.
+  if (JSON.stringify(searchFilters[datasetId] ?? {}) === JSON.stringify(inputs)) return;
+  const { [datasetId]: _before, ...others } = searchFilters;
+  set({ searchFilters: Object.keys(inputs).length > 0 ? { ...others, [datasetId]: inputs } : others });
+  if (searchContext?.datasetIds.includes(datasetId)) dropPageToken(set, get);
+  const { showCoverage, coverageDatasetId } = get();
+  if (showCoverage && datasetId === (coverageDatasetId ?? get().datasetId)) scheduleCoverageRefresh(set, get);
 }
 
 // Show or hide of the results is the switch's, with three exceptions (Otto, 27.10.2026 and 28.10.2026): a new search shows them, a ticked scene shows them (`ticking`), and a
@@ -864,6 +937,11 @@ export interface AppState {
   // --- filters ---
   dateFrom: string;
   dateTo: string;
+  // The search filters of each dataset (DS-02c), by dataset and then by property: what stands in the fields of
+  // "Advanced search". A search setting like the dates: it stays when a dataset is unticked (and does nothing
+  // until it is ticked again), when the results are cleared and when the page is not reloaded; it is not kept in
+  // the browser and not in the permalink.
+  searchFilters: Record<string, FilterInputs>;
 
   // --- scene lookup by name (M2-17) ---
   sceneNameQuery: string;
@@ -951,6 +1029,10 @@ export interface AppState {
   clearSelection: () => void;
   setDateFrom: (v: string) => void;
   setDateTo: (v: string) => void;
+  // Puts what is in the fields of one filter of a dataset; an input with nothing in it takes the filter away.
+  setSearchFilter: (datasetId: string, property: string, input: FilterInput) => void;
+  // "Reset filters" of a dataset.
+  resetSearchFilters: (datasetId: string) => void;
   setPlaying: (v: boolean) => void;
   setError: (v: string | null) => void;
   setNotice: (v: string | null) => void;
@@ -1042,6 +1124,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   dateFrom: '',
   dateTo: '',
+  searchFilters: {},
 
   sceneNameQuery: '',
   sceneLookupLoading: false,
@@ -1962,6 +2045,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
+  setSearchFilter: (datasetId, property, input) => {
+    const { [property]: _before, ...others } = get().searchFilters[datasetId] ?? {};
+    changeSearchFilters(set, get, datasetId, isSet(input) ? { ...others, [property]: input } : others);
+  },
+  resetSearchFilters: (datasetId) => changeSearchFilters(set, get, datasetId, {}),
   // The "Coverage" button (M3-10): draws the coverage of one of the picked datasets.
   showCoverageFor: (datasetId) => {
     if (!get().selectedDatasetIds.includes(datasetId)) return;
@@ -2026,6 +2114,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Choose a dataset to search.' });
       return;
     }
+    if (searchFiltersInvalid(get())) {
+      set({ error: 'Correct the marked search filters first.' });
+      return;
+    }
     // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its
     // true shape, a rectangle by its bbox — `aoiPoint` is only ever read here,
     // never for display or the download crop, which stay on `aoi`.
@@ -2047,14 +2139,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     // "Clear all" or another step that drops the results may come before the answer.
     const gen = searchGen;
     try {
+      const ids = chosen.map((d) => d.id);
+      const asked = filterQueriesOf(get(), ids);
       const query = {
-        collections: chosen.map((d) => d.id),
+        collections: ids,
         bbox: area.bbox,
         intersects: area.intersects,
         datetime: buildDatetime(dateFrom, dateTo),
+        ...queryByCollectionOf(asked),
       };
       const page = await api.searchAllPages(query, MAX_SEARCH_ITEMS);
       if (gen !== searchGen) return;
+      // Filters changed while the search ran (the page token cannot be dropped yet, there is no search on screen):
+      // "Load more" would go on with filters the fields no longer show.
+      const filtersKept = JSON.stringify(filterQueriesOf(get(), ids)) === JSON.stringify(asked);
       showSearchResults(
         set,
         get,
@@ -2072,7 +2170,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             incompleteCollections: page.incompleteCollections,
           },
           numberMatched: page.numberMatched,
-          nextToken: page.nextToken,
+          nextToken: filtersKept ? page.nextToken : null,
           openCollections: page.openCollections,
         },
         false,

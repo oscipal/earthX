@@ -1340,6 +1340,160 @@ input[type='date']:focus {
   white-space: normal;
 }
 
+/* --- Advanced search in the control menu (DS-02c) ---
+   The dataset box is the one of the results (`DatasetSelect`), without the tinted card around it. A wrong field is
+   red in both themes, dark enough on the light panel to be read. */
+.app[data-theme='tech'] {
+  --invalid: #ff6b6b;
+}
+.app[data-theme='normal'] {
+  --invalid: #c62f2f;
+}
+.dataset-select.plain {
+  padding: 0;
+  background: none;
+  border-bottom: none;
+}
+.advanced-btn {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.advanced-btn[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.advanced-btn.wrong {
+  border-color: var(--invalid);
+  color: var(--invalid);
+}
+/* The pop-up lies over the map, as wide as the button it opens from; the heading (the dataset box) and the buttons stay
+   in view, the fields between them scroll. */
+.popover.advanced-popup {
+  overflow: hidden;
+  padding: 10px;
+}
+.advanced-popup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.advanced-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.filter-group-title {
+  margin: 0;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--panel-border);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.advanced-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.advanced-actions .ghost-btn,
+.advanced-actions .primary-btn {
+  padding: 8px 16px;
+  font-size: 11px;
+}
+.filter-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.filter-title {
+  padding: 0;
+  font-size: 11px;
+  color: var(--text);
+  cursor: help;
+}
+/* from [  ] to [  ] unit: the fields share what the unit leaves, however narrow the panel. */
+.filter-range {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.filter-range input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+.filter-range input[type='text']:focus {
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+.filter-range input[aria-invalid='true'],
+.filter-range input[aria-invalid='true']:focus {
+  border-color: var(--invalid);
+}
+.filter-field .hint-text.error {
+  color: var(--invalid);
+}
+.filter-unit {
+  min-width: 1ch;
+  color: var(--text);
+}
+.filter-values {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.filter-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.filter-check input {
+  margin: 0;
+}
+
 /* --- grouped (mosaic) results --- */
 .result-group {
   border-bottom: 1px solid var(--panel-border);
