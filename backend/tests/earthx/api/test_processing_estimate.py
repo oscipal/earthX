@@ -173,7 +173,9 @@ class TestWhatItTurnsAway:
     ) -> None:
         """NM4-43c: no cap on the bands, but the memory of the run is estimated and a wide job is refused (adr/0020 §7)."""
         monkeypatch.setattr("earthx.processing.plan.MAX_JOB_MEMORY_BYTES", 1_000_000_000)
-        cube = s2_item()["assets"]["red"] | {"raster:bands": [{"nodata": 0, "data_type": "uint16", "spatial_resolution": 10}] * 40}
+        cube = s2_item()["assets"]["red"] | {
+            "raster:bands": [{"nodata": 0, "data_type": "uint16", "spatial_resolution": 10}] * 40
+        }
         rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = s2_item(cube=cube)
         bands = [f"cube_{index + 1}" for index in range(40)]
         body = await self.refused(rig, order(assets=("cube",), bands=bands, steps=[]), 413, "size")
