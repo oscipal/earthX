@@ -16,6 +16,7 @@ export function liveMap(initial: string[] = ['layers-top', 'aoi-fill', 'aoi-line
   };
   const map = {
     getLayer: (id: string) => (stack.includes(id) ? (layers.get(id) ?? { id }) : undefined),
+    getLayersOrder: () => [...stack],
     getSource: (id: string) => sources.get(id),
     addSource: (id: string, spec: Record<string, unknown>) => {
       sources.set(id, spec);

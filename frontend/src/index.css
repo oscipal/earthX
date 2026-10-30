@@ -961,21 +961,21 @@ input[type='date']:focus {
   color: #ff5a6e;
   font-size: 10px;
 }
-.results-map-toggle {
-  padding: 0 10px;
-  background: none;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.2;
-  cursor: pointer;
+/* The eye of the results on the map (NM4-59), the same as in the entry "Results" of the layer manager, and left of it
+   "Results" on top of the layers, greyed out while "Results" is on top. */
+.results-head-switches {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
-.results-map-toggle:hover,
-.results-map-toggle:focus-visible {
-  background: var(--row-hover);
-  outline: none;
+.results-head .lm-eye,
+.results-to-top {
+  width: 24px;
+  height: 22px;
+}
+.results-to-top[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: not-allowed;
 }
 .results-list {
   --group-head-h: 34px;
@@ -1850,6 +1850,13 @@ input[type='date']:focus {
 .lm-name:hover {
   background: var(--row-hover);
   color: var(--accent);
+}
+/* The entry "Results" (NM4-59): its name opens nothing. */
+.results-name,
+.results-name:hover {
+  cursor: default;
+  background: none;
+  color: var(--text);
 }
 .lm-opacity {
   width: 100%;

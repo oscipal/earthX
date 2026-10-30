@@ -128,6 +128,7 @@ export default function MapView() {
   const coverageFootprints = useAppStore((s) => s.coverageFootprints);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
+  const resultsAt = useAppStore((s) => s.resultsAt);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   const playing = useAppStore((s) => s.playing);
@@ -242,7 +243,7 @@ export default function MapView() {
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
       const shown = resultsOnMapOf(st);
-      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded));
+      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded), st.resultsAt);
       syncMosaic(map, {
         // What browsing draws; a view draws its own scenes and needs the whole list for the quicklook under them.
         items: st.focusMode ? st.items : shown.quicklooks,
@@ -366,7 +367,7 @@ export default function MapView() {
   const quicklooks = useSameScenes(shown.quicklooks);
   const overlay = useSameScenes(shown.overlay);
   const highlight = useSameScenes(shown.highlight);
-  // The ticked scenes whose quicklooks lie over everything else (`mapLayers.ts`, `TICKED_TOP`).
+  // The ticked scenes, whose quicklooks lie over the other results in the order they were ticked (`mapLayers.ts`).
   const ticked = useMemo(() => highlight.map((item) => item.id), [highlight]);
   const viewLayer = useMemo(
     () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi: viewAoi, showDownloaded }),
@@ -376,11 +377,11 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const note = overlayBudgetNote(
-        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded)),
+        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded), resultsAt),
       );
       if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
-  }, [layers, viewLayer, showDownloaded]);
+  }, [layers, resultsAt, viewLayer, showDownloaded]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
@@ -406,8 +407,8 @@ export default function MapView() {
     }
   }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
 
-  // --- the preview of the processing panel (M4-13c-2). It keeps itself on top of
-  // the rasters placed later (`mapLayers.ts::beforeAoi`); a new AOI cuts it again. ---
+  // --- the preview of the processing panel (M4-13c-2), a tier of "Results" over the results and the view
+  // (`mapLayers.ts`); a new AOI cuts it again. ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) syncPreview(map, previewTiles);
@@ -442,8 +443,8 @@ export default function MapView() {
     return () => window.clearTimeout(id);
   }, [playing, focusMode, expandedGroupIndex, activeGroupIndex, revealNotBefore]);
 
-  // --- the results over a full-resolution view, while "Show results" is on. Runs after the view's own effect
-  // above, so what it draws lies over the view. ---
+  // --- the results over a full-resolution view, while the eye of "Results" is on: over the view, in the tiers of
+  // browsing (`mapLayers.ts`). ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) syncResultsOverlay(map, { items: overlay, openIds, selectedIds: ticked, dataset: datasets.find((d) => d.id === datasetId) ?? null, datasets });

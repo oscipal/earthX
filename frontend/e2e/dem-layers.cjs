@@ -205,15 +205,15 @@ async function check(browser, { name, theme, viewport }) {
   void cropless;
 
   // 2. "Hide results" takes it off the map; "Show results" brings it back.
-  await page.getByRole('button', { name: 'Hide results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Hide results' }).click();
   await expectOff('"Hide results"', BASE_COLOUR);
-  await page.getByRole('button', { name: 'Show results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Show results' }).click();
   await expectOn('"Show results"', BASE_COLOUR);
 
   // 3. Crop to AOI, a colormap, pin it.
   await page.getByRole('button', { name: /Crop( & merge)? to AOI/ }).click();
   await page.waitForSelector('.viewer-controls');
-  await page.getByRole('button', { name: 'Hide results' }).click().catch(() => {});
+  await page.locator('.results-head').getByRole('button', { name: 'Hide results' }).click().catch(() => {});
   await page.locator('.viewer-controls select').selectOption('viridis');
   await page.locator('.viewer-controls .vc-apply').click();
   await expectOn('the view after "Apply"', COLOURS.viridis);
@@ -223,13 +223,13 @@ async function check(browser, { name, theme, viewport }) {
   await shot('3-view');
   await page.getByRole('button', { name: /Add to layers/ }).click();
   await page.getByRole('button', { name: /^Layers/ }).click();
-  await page.waitForSelector('.layer-row');
+  await page.waitForSelector('.layer-row:not(.results-row)');
   await shot('4-layer');
-  const rows = await page.locator('.layer-row').count();
+  const rows = await page.locator('.layer-row:not(.results-row)').count();
   if (rows !== 1) problems.push(`${rows} layers after "Add to layers"`);
 
   // 4. The eye.
-  const eye = page.locator('.layer-row [data-col="eye"]').first();
+  const eye = page.locator('.layer-row:not(.results-row) [data-col="eye"]').first();
   await eye.click();
   await expectOff('the eye switched off (view still open)', COLOURS.viridis);
   await shot('5-hidden');
@@ -249,14 +249,14 @@ async function check(browser, { name, theme, viewport }) {
   // Another colormap and range in a view of its own, then back to the layer: its controls show what the layer was made with.
   await page.getByRole('button', { name: /Change image|Clear/ }).first().click().catch(() => {});
   await page.getByRole('button', { name: new RegExp(`^${spec.title}|Copernicus|Sentinel`) }).first().isVisible().catch(() => false);
-  await page.locator('.layer-row .lm-name').first().click();
+  await page.locator('.layer-row:not(.results-row) .lm-name').first().click();
   await page.waitForSelector('.viewer-controls');
   await page.locator('.viewer-controls select').selectOption('magma');
   await page.locator('.viewer-controls input[type="number"]').first().fill('5');
   await page.locator('.viewer-controls .vc-apply').click();
   await page.waitForTimeout(500);
   await page.getByRole('button', { name: /Clear/ }).click();
-  await page.locator('.layer-row .lm-name').first().click();
+  await page.locator('.layer-row:not(.results-row) .lm-name').first().click();
   await page.waitForSelector('.viewer-controls');
   await page.waitForTimeout(800);
   const controls = await page.evaluate(() => ({
@@ -366,11 +366,11 @@ async function checkTicks(browser, { theme, viewport }) {
   await shot('1-both');
 
   // "Hide results" takes all of them off, the ticks stay; "Clear search results" takes the ticks.
-  await page.getByRole('button', { name: 'Hide results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Hide results' }).click();
   await page.waitForTimeout(1500);
   if ((await count(page, COLOURS.base.dem)) > 60 || (await count(page, COLOURS.base.s2)) > 60) problems.push('"Hide results" leaves a ticked scene on the map');
   await expectTicks('after "Hide results"', ['DEM_N47_E010', 'b1', 'a2']);
-  await page.getByRole('button', { name: 'Show results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Show results' }).click();
   await page.getByRole('button', { name: /Clear search results/ }).click();
   await expectTicks('after "Clear search results"', []);
   await context.close();
@@ -454,10 +454,10 @@ async function checkOrder(browser, { theme, viewport }) {
   await open('Copernicus');
   await expectTop('the DEM open again, after a change of the basemap', 'dem');
   // "Hide results" takes both off, "Show results" brings them back in the same order.
-  await page.getByRole('button', { name: 'Hide results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Hide results' }).click();
   await page.waitForTimeout(1500);
   if ((await count(page, COLOURS.base.s2)) > 60 || (await count(page, COLOURS.base.dem)) > 60) problems.push('"Hide results" leaves a scene on the map');
-  await page.getByRole('button', { name: 'Show results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Show results' }).click();
   await expectTop('the DEM open, after "Show results"', 'dem');
   await context.close();
   return { name: label, problems, detail: '' };
