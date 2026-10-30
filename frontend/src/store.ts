@@ -172,7 +172,8 @@ function scheduleCoverageRefresh(set: SetState, get: GetState): void {
 //
 // M3-19 (Otto, 23.09.2026, replacing adr/0010 answer 6a): with an AOI,
 // `bbox` is that AOI (`aoi`, drawn/uploaded) and the level follows the map's
-// floored zoom, unchanged from before. Without an AOI, `bbox` is the
+// floored zoom, unchanged from before. Since NM4-57 the AOI's box goes in the
+// body of a POST (`aoiBbox`), never in a URL (M4 Q8). Without an AOI, `bbox` is the
 // *visible map extent* instead — banded across the antimeridian and rounded
 // outward to a coarser block (`coverage.ts`) so nearby viewports ask the
 // same question — and the level is derived from the viewport's own size so
@@ -236,7 +237,8 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   set({ coverageLoading: true, coverageError: null });
   let coverage: CoverageResponse;
   try {
-    coverage = await api.fetchCoverage({ datasetId, zoom: level, bbox, datetime, query });
+    const area = hasAoi ? { aoiBbox: bbox } : { bbox };
+    coverage = await api.fetchCoverage({ datasetId, zoom: level, ...area, datetime, query });
   } catch (e) {
     if (gen !== coverageGen) return;
     set({

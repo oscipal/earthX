@@ -691,8 +691,11 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     vi.stubGlobal('window', { setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args), clearTimeout });
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string) => {
-        const zoom = Number(new URL(url, 'http://x').searchParams.get('zoom'));
+      vi.fn(async (url: string, init?: RequestInit) => {
+        // A POST (an AOI) carries the zoom in its body, a GET in its query string (NM4-57).
+        const zoom = init?.body
+          ? (JSON.parse(String(init.body)) as { zoom: number }).zoom
+          : Number(new URL(url, 'http://x').searchParams.get('zoom'));
         return jsonResponse(200, coverageResponse(DATASET_ID, zoom));
       }),
     );
@@ -766,6 +769,38 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  // NM4-57 (M4 Q8): the box of an AOI stands in the body of a POST; the map extent, which is no AOI, in the URL.
+  it('asks with an AOI by POST, and no coordinate of it stands in a URL', async () => {
+    const aoi: GeoJSON.Geometry = {
+      type: 'Polygon',
+      coordinates: [[[11.31234, 47.81234], [11.51234, 47.81234], [11.51234, 47.91234], [11.31234, 47.91234], [11.31234, 47.81234]]],
+    };
+    useAppStore.setState({ aoi });
+    const { setMapViewport } = useAppStore.getState();
+
+    setMapViewport(8, [10, 47, 12, 48], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body)).bbox).toEqual([11.31234, 47.81234, 11.51234, 47.91234]);
+    for (const [asked] of vi.mocked(fetch).mock.calls) {
+      expect(String(asked)).not.toMatch(/11\.31234|47\.81234|11\.51234|47\.91234/);
+    }
+    expect(url).toBe(`/coverage/${DATASET_ID}`);
+  });
+
+  it('asks without an AOI by GET, with the map extent in the URL', async () => {
+    const { setMapViewport } = useAppStore.getState();
+
+    setMapViewport(0, [10, 10, 60, 60], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as unknown as [string, RequestInit | undefined];
+    expect(init).toBeUndefined();
+    expect(new URL(url, 'http://x').searchParams.get('bbox')).toBe('0,0,180,85.05112877980659');
   });
 });
 

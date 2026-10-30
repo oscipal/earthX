@@ -610,9 +610,9 @@ export async function searchAllPages(
   };
 }
 
-// The coverage route (`GET /coverage/{dataset_id}`, M2-05b) lives on the
-// `api` process's base app, outside `/stac` — a different namespace, same
-// same-origin dev-proxy pattern (vite.config.ts).
+// The coverage route (`/coverage/{dataset_id}`, M2-05b: GET for the map extent, POST for an AOI since NM4-57)
+// lives on the `api` process's base app, outside `/stac` — a different namespace, same same-origin dev-proxy
+// pattern (vite.config.ts).
 export type CoverageCompleteness = 'complete' | 'truncated' | 'sample';
 
 export interface CoverageCell {
@@ -654,23 +654,47 @@ export interface CoverageResponse {
 export interface CoverageParams {
   datasetId: string;
   zoom: number;
+  // The visible map extent, rounded to the block grid of `coverage.ts` (`roundBboxToGrid`): no AOI, so it may
+  // stand in the URL of a GET. The route refuses a box that is off that grid.
   bbox?: Bbox;
+  // The box of the AOI (NM4-57, M4 Q8): never in a URL, always in the body of a POST. Takes the place of `bbox`.
+  aoiBbox?: Bbox;
   datetime?: string;
   // DS-02c: the search filters of the dataset, as JSON in the form of the STAC query extension (`query` of
   // `GET /coverage/{id}`, DS-02b). Replaces `max_cloud_cover`.
   query?: FilterQuery;
 }
 
+const hasFilters = (query?: FilterQuery): query is FilterQuery => !!query && Object.keys(query).length > 0;
+
+// The URL of a coverage question without an AOI. It never carries `aoiBbox`.
 export function buildCoverageUrl(p: CoverageParams): string {
   const params = new URLSearchParams({ zoom: String(p.zoom) });
   if (p.bbox) params.set('bbox', p.bbox.join(','));
   if (p.datetime) params.set('datetime', p.datetime);
-  if (p.query && Object.keys(p.query).length > 0) params.set('query', JSON.stringify(p.query));
+  if (hasFilters(p.query)) params.set('query', JSON.stringify(p.query));
   return `${BASE}/coverage/${encodeURIComponent(p.datasetId)}?${params.toString()}`;
 }
 
+// The body of `POST /coverage/{id}` (`CoverageBody` in `api/coverage_route.py`): the AOI, and what the GET
+// carries in its query string, with the filters as an object.
+export function buildCoverageBody(p: CoverageParams): Record<string, unknown> {
+  const body: Record<string, unknown> = { zoom: p.zoom };
+  if (p.aoiBbox) body.bbox = p.aoiBbox;
+  if (p.datetime) body.datetime = p.datetime;
+  if (hasFilters(p.query)) body.query = p.query;
+  return body;
+}
+
 export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse> {
-  return jsonOrThrow(await fetch(buildCoverageUrl(p)));
+  if (!p.aoiBbox) return jsonOrThrow(await fetch(buildCoverageUrl(p)));
+  return jsonOrThrow(
+    await fetch(`${BASE}/coverage/${encodeURIComponent(p.datasetId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildCoverageBody(p)),
+    }),
+  );
 }
 
 // POST /collections/{dataset}/download (M2-06): the AOI crop as a ZIP, streamed

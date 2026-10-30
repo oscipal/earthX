@@ -8,6 +8,7 @@ import {
   buildTileTemplate,
   downloadCrop,
   errorDetail,
+  fetchCoverage,
   fetchItem,
   fetchMosaicTileJson,
   HttpError,
@@ -111,6 +112,61 @@ describe('buildCoverageUrl', () => {
       const url = new URL(buildCoverageUrl({ datasetId: 'optical', zoom: 4, query }), 'http://localhost');
       expect([...url.searchParams.keys()]).toEqual(['zoom']);
     }
+  });
+  // NM4-57 (M4 Q8): the box of an AOI is never in a URL.
+  it('never carries the box of an AOI', () => {
+    const url = buildCoverageUrl({ datasetId: 'optical', zoom: 4, aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234] });
+    expect(url).not.toContain('11.31234');
+    expect(new URL(url, 'http://localhost').searchParams.has('bbox')).toBe(false);
+  });
+});
+
+describe('fetchCoverage', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const answer = { ok: true, status: 200, json: async () => ({}) } as Response;
+
+  it('asks an AOI by POST: the box and the filters in the body, nothing in the URL', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+    const query = { 'eo:cloud_cover': { lte: 20 } };
+
+    await fetchCoverage({
+      datasetId: 'optical',
+      zoom: 9,
+      aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234],
+      datetime: '2026-07-01T00:00:00Z/..',
+      query,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/coverage/optical');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      zoom: 9,
+      bbox: [11.31234, 47.81234, 11.51234, 47.91234],
+      datetime: '2026-07-01T00:00:00Z/..',
+      query,
+    });
+  });
+
+  it('asks a map extent by GET, as before', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCoverage({ datasetId: 'optical', zoom: 6, bbox: [-180, -85, 180, 85] });
+
+    expect(fetchMock.mock.calls[0]).toEqual(['/coverage/optical?zoom=6&bbox=-180%2C-85%2C180%2C85']);
+  });
+
+  it('leaves a body without the optional fields out', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCoverage({ datasetId: 'optical', zoom: 3, aoiBbox: [0, 0, 1, 1], query: {} });
+
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(JSON.parse(String(init.body))).toEqual({ zoom: 3, bbox: [0, 0, 1, 1] });
   });
 });
 
