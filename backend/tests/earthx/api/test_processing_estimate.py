@@ -149,7 +149,8 @@ class TestWhatItTurnsAway:
             (order("no-such-dataset"), 422, "dataset"),
             (order(steps=[{"op": "no_such_operator", "op_version": 1, "params": {}}]), 422, "order"),
             (order(groups=(("NO_SUCH_ITEM",),)), 422, "items"),
-            (order(assets=("no_such_asset",)), 422, "resolve"),
+            (order(assets=("no_such_asset",)), 422, "applicable"),  # a band no asset carries
+            (order(assets=("no_such_asset",), steps=[], output=CROP), 422, "resolve"),  # an asset the item lacks
         ]
         for document, status, stage in cases:
             placed = problem(await place(rig, document), status)
@@ -243,9 +244,9 @@ class TestWhatItTurnsAway:
         item["assets"]["red"].pop("raster:bands")
         item["assets"]["red"]["gsd"] = 10  # the pixel size was in the band description; the estimate needs it
         rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = item
-        step = {"op": "band_math", "op_version": 1, "params": {"expression": "red_2 + 1"}}
+        step = {"op": "band_math", "op_version": 2, "params": {"expression": "red_2 + 1", "name": "Plus"}}
         async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
-            response = await client.post(ESTIMATE, json=envelope(order(assets=("red",), steps=[step])))
+            response = await client.post(ESTIMATE, json=envelope(order(steps=[step], bands=["Plus"])))
         body = problem(response, 422)
         assert body["type"] == "urn:earthx:order-refused:applicable" and "red_2" in body["detail"]
 

@@ -81,8 +81,10 @@ __all__ = [
     "run_key",
 ]
 
-#: The one recipe version this core runs (§4.3). An incompatible change raises it.
-RECIPE_VERSION = 1
+#: The one recipe version this core runs (§4.3). An incompatible change raises it. Version 2 (NM4-43c, adr/0020):
+#: ``output.bands`` names what the result holds, and an order for a raster names no assets, `api` derives them. A recipe
+#: of version 1 is rewritten as version 2 before it is parsed (:mod:`earthx.processing.upgrade`).
+RECIPE_VERSION = 2
 
 #: Prefix of every hash, so a later change of method never silently hits old keys (§4.4).
 HASH_METHOD = "c1"
@@ -174,11 +176,24 @@ class Step(_Model):
 
 
 class RasterOutput(_Model):
-    """A job's result: one COG."""
+    """A job's result: one COG, with the bands ``bands`` names, in this order (adr/0020 §5)."""
 
     kind: Literal["raster"]
     format: Literal["cog"]
     dtype: Literal["uint8", "uint16", "int16", "uint32", "int32", "float32", "float64"]
+    bands: list[Name] = Field(
+        min_length=1,
+        description=(
+            "The bands the result holds, in this order: bands of the data and bands the steps add. Each once, "
+            "case ignored; each has to be in the stock after the last step."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _unique(self) -> RasterOutput:
+        if len({name.casefold() for name in self.bands}) != len(self.bands):
+            raise ValueError("a band appears more than once in bands, case ignored")
+        return self
 
 
 class CropOutput(_Model):
@@ -279,14 +294,16 @@ class InputRequest(_Model):
     name: Name
     dataset: Text
     groups: list[Annotated[list[Text], Field(min_length=1)]] = Field(min_length=1)
-    assets: list[Text] = Field(min_length=1)
+    #: Only for the output ``crop``. An order for a raster names no assets: they follow from ``output.bands`` and the
+    #: steps, and `api` writes them into the recipe (adr/0020 §5).
+    assets: list[Text] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _unique(self) -> InputRequest:
         items = [item for group in self.groups for item in group]
         if len(set(items)) != len(items):
             raise ValueError("an item appears more than once")
-        if len(set(self.assets)) != len(self.assets):
+        if self.assets is not None and len(set(self.assets)) != len(self.assets):
             raise ValueError("an asset appears more than once")
         return self
 
@@ -311,6 +328,8 @@ class Input(InputRequest):
     nor the ``recipe.json`` of a raster recipe changes.
     """
 
+    #: A recipe always names its assets: for a raster the ones `api` derived, for a crop the ones the order named.
+    assets: list[Text] = Field(min_length=1)
     resolved: list[ResolvedInput] = Field(min_length=1)
     footprints: dict[str, Footprint | None] | None = None
 
@@ -372,6 +391,12 @@ class RecipeRequest(_Common):
     @model_validator(mode="after")
     def _names(self) -> RecipeRequest:
         self._unique_inputs(self.inputs)
+        named = [entry for entry in self.inputs if entry.assets is not None]
+        if isinstance(self.output, CropOutput):
+            if len(named) != len(self.inputs):
+                raise ValueError("a crop names the assets it cuts out")
+        elif named:
+            raise ValueError("an order for a raster names no assets: they follow from output.bands and the steps")
         return self
 
 

@@ -38,11 +38,15 @@ from tests.earthx.processing.testops import OPERATORS
 #: every recipe carries two more keys (``"unit":null``) and every key computed before misses once. The method
 #: itself did not change: ``OLD`` below are the values before, and ``test_only_the_two_unit_keys_changed_them``
 #: derives them from the new core by taking those keys out.
+#:
+#: Renewed on purpose again by NM4-43c (adr/0014 Nachtrag NM4-43c): ``recipe_version`` is 2 and the output carries
+#: ``bands``, so every key computed before misses once. The method did not change: the test derives ``OLD`` from the new
+#: core by setting the version back to 1 and taking ``bands`` out.
 EXPECTED = {
-    "base": "c1:0b03ffb4f3a8eb886ca9c88cfc1a70c4ca187dbf91d57e56a71c1ec791dfd917",
-    "non_ascii": "c1:e3842389856c075e37dea8bec47c2f804cc8af5a741282beddcffc38ec323f83",
-    "small_float": "c1:43ab077b6d72cc318cf12fbae2656ec7f58df19bc8b110d3f882350a48d1a940",
-    "zarr": "c1:027eabb452c999f2e8574f8239e35926bda6fef4dd8929cc24716ebc93ea6f5b",
+    "base": "c1:20a37ee4aa8a77c4551d618b4b817b17f9a95dc072d6bec0a0350cfca6620580",
+    "non_ascii": "c1:dd15544153ae28ea7e705d35c349d4f8522fa1a880600910b9118f818d6f0b1a",
+    "small_float": "c1:32c72e7d488a480547556f67446b6945d380fcc4507a5abf1ca3f0f095a5b536",
+    "zarr": "c1:8adb17e3139f7c6f82dc065e2ce6dfc6a9f4d1a05d8887730b65a75afaff8681",
 }
 OLD = {
     "base": "c1:db05e56f9323422467188e8899b4d4c69772794d785e9c7ecf27041b3666467d",
@@ -76,7 +80,8 @@ def _zarr_recipe() -> dict:
                 "assets": ["r10m:b04,b08"],
                 "resolved": [entry],
             }
-        ]
+        ],
+        output={**recipe_data()["output"], "bands": ["b04", "b08"]},
     )
 
 
@@ -106,8 +111,10 @@ class TestFixedHashes:
             ("zarr", _zarr_recipe()),
         ],
     )
-    def test_only_the_two_unit_keys_changed_them(self, case: str, data: dict) -> None:
+    def test_only_the_unit_keys_and_the_bands_of_version_2_changed_them(self, case: str, data: dict) -> None:
         core = recipe_from_data(data, OPERATORS).model_dump(mode="json", exclude={"recipe_id"})
+        core["recipe_version"] = 1
+        assert core["output"].pop("bands")
         for entry in core["inputs"]:
             for asset in entry["resolved"]:
                 assert asset.pop("unit") is None
@@ -196,7 +203,8 @@ class TestRefusals:
     @pytest.mark.parametrize(
         ("path", "value"),
         [
-            (("recipe_version",), 2),
+            (("recipe_version",), 1),
+            (("recipe_version",), 3),
             (("recipe_version",), 1.0),
             (("recipe_version",), True),
             (("recipe_version",), "1"),
@@ -210,6 +218,14 @@ class TestRefusals:
             (("inputs", 0, "groups"), [["ITEM_A"], ["ITEM_A"]]),
             (("output", "kind"), "vector"),
             (("output", "dtype"), "complex64"),
+            (("output", "bands"), []),
+            (("output", "bands"), ["red", "RED"]),
+            (("output", "bands"), ["red", "red"]),
+            (("output", "bands"), "red"),
+            (("output", "bands"), [1]),
+            (("output", "bands"), ["1st"]),
+            (("output", "bands"), ["red band"]),
+            (("output", "bands"), [""]),
             (("aoi", "type"), "Point"),
             (("aoi", "coordinates"), [[[9.0, 47.0], [9.01, 47.0], [9.0, 47.0]]]),
             (("aoi", "coordinates"), [[[9.0, 47.0], [9.01, 47.0], [9.01, 47.01], [9.0, 47.01]]]),
@@ -318,9 +334,34 @@ class TestRefusals:
         assert "store.example.invalid" not in text
 
     def test_a_request_carries_no_resolved_entries(self) -> None:
-        assert parse_request(json.dumps(request_data()), OPERATORS).inputs[0].assets == ["red", "nir"]
+        assert parse_request(json.dumps(request_data()), OPERATORS).output.bands == ["red", "nir"]
         with pytest.raises(RecipeInvalid):
             parse_request(json.dumps(recipe_data()), OPERATORS)
+
+    def test_an_order_for_a_raster_names_no_assets_a_recipe_always_does(self) -> None:
+        assert parse_request(json.dumps(request_data()), OPERATORS).inputs[0].assets is None
+        named = request_data()
+        named["inputs"][0]["assets"] = ["red"]
+        with pytest.raises(RecipeInvalid, match="value_error"):
+            parse_request(json.dumps(named), OPERATORS)
+        recipe = recipe_data()
+        del recipe["inputs"][0]["assets"]
+        with pytest.raises(RecipeInvalid, match="assets: missing"):
+            parse_recipe(json.dumps(recipe), OPERATORS)
+
+    def test_an_order_for_a_crop_names_its_assets(self) -> None:
+        crop = request_data()
+        crop["output"] = {
+            "kind": "crop",
+            "format": "cog",
+            "resolution_factor": 1,
+            "extent": "bbox(aoi ∩ footprints)",
+            "mask": "file",
+        }
+        with pytest.raises(RecipeInvalid, match="value_error"):
+            parse_request(json.dumps(crop), OPERATORS)
+        crop["inputs"][0]["assets"] = ["visual"]
+        assert parse_request(json.dumps(crop), OPERATORS).inputs[0].assets == ["visual"]
 
 
 class TestCacheKey:

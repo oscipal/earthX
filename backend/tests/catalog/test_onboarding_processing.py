@@ -197,6 +197,9 @@ def _zarr_pair(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.Monkey
     # The item carries no scaling: the store's CF attributes do (F7a).
     item = synthetic_chain.stac_item("SR_10m", mini_zarr_cf.GROUP_URL, bounds, mini_zarr_cf.RESOLUTION_M)
     item["properties"]["updated"] = "2026-01-03T00:00:00Z"
+    # The variables a Zarr group offers, as the adapters mirror them into `bands` (M4-23): an order names bands, and
+    # the asset of a band is found from these names (adr/0020 §5).
+    item["assets"]["SR_10m"]["bands"] = [{"name": "b04"}, {"name": "b08"}]
     return _federated(
         config, item, [ZARR_ASSET], _whole(bounds), _ndvi("b04", "b08"),
         scaling="store-cf", result_bands=["band_math"], tile=_central_tile(bounds, mini_zarr_cf.ITEM_CRS),

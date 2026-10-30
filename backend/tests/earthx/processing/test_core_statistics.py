@@ -16,10 +16,9 @@ import rasterio
 from rasterio.warp import transform_geom
 
 from earthx.processing import run
-from earthx.processing.recipe import recipe_from_data
 from earthx.processing.statistics import gdal_tags
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.testops import OPERATORS
 
 SIZE = 700
@@ -49,7 +48,7 @@ def _recipe(aoi: dict, *, dtype: str = "float32", step: dict = SCALE_2, **entry_
 
 def _run(data: dict, workdir: Path):
     workdir.mkdir(exist_ok=True)
-    return run(recipe_from_data(data, OPERATORS), workdir=workdir, progress=lambda done, total: None, operators=OPERATORS)
+    return run(recipe_of_data(data, OPERATORS), workdir=workdir, progress=lambda done, total: None, operators=OPERATORS)
 
 
 def _triangle() -> dict:

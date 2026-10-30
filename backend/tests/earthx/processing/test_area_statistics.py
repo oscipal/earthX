@@ -16,22 +16,21 @@ import pytest
 from earthx.processing import run
 from earthx.processing.core import MAX_AREA_PIXELS, area_factor, area_statistics
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
-from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
 from tests.earthx.processing import test_core_statistics as single
 from tests.earthx.processing import test_mosaic as mosaic
-from tests.earthx.processing.recipes import crop_data
+from tests.earthx.processing.recipes import crop_data, recipe_of_data
 from tests.earthx.processing.test_mosaic import scenes, served  # noqa: F401  (fixtures)
 from tests.earthx.processing.testops import OPERATORS
 
 
 def _run(data: dict, workdir: Path):
     workdir.mkdir(exist_ok=True)
-    return run(recipe_from_data(data, OPERATORS), workdir=workdir, progress=lambda done, total: None, operators=OPERATORS)
+    return run(recipe_of_data(data, OPERATORS), workdir=workdir, progress=lambda done, total: None, operators=OPERATORS)
 
 
 def _measure(data: dict, **options):
-    return area_statistics(recipe_from_data(data, OPERATORS), operators=OPERATORS, **options)
+    return area_statistics(recipe_of_data(data, OPERATORS), operators=OPERATORS, **options)
 
 
 def _statistics_of(result) -> list[dict]:

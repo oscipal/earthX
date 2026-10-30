@@ -35,9 +35,8 @@ from earthx.processing.operators import (
     applicable,
 )
 from earthx.processing.operators import reproject as reproject_module
-from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.test_reproject_tolerance import Measured, row
 from tests.earthx.processing.testops import OPERATORS
 
@@ -168,7 +167,8 @@ class TestTheTargetGrid:
         target = REPROJECT.transform(source, _params())
         assert target.crs == "EPSG:3035" and target.resampled is True
         assert target.resolution == (10.0, 10.0)
-        assert target.bands == source.bands
+        assert tuple(replace(band, resampled=False) for band in target.bands) == source.bands
+        assert all(band.resampled for band in target.bands)  # a reprojected band is one whose values were resampled
         left, bottom, right, top = target.bounds
         assert right - left >= WIDTH * 10 * 0.99 and top - bottom >= HEIGHT * 10 * 0.99
 
@@ -205,21 +205,21 @@ class TestTheTargetGrid:
 
     def test_a_recipe_of_version_1_is_refused(self) -> None:
         with pytest.raises(UnknownOperator):
-            recipe_from_data(_recipe({**_step(), "op_version": 1}), REGISTRY)
+            recipe_of_data(_recipe({**_step(), "op_version": 1}), REGISTRY)
 
     @pytest.mark.parametrize("method", ["cubicspline", "lanczos", "average", "mode"])
     def test_version_2_does_not_know_the_methods_of_version_3(self, method: str) -> None:
         with pytest.raises(RecipeInvalid, match="resampling"):
-            recipe_from_data(_recipe({**_step(resampling=method), "op_version": 2}), REGISTRY)
+            recipe_of_data(_recipe({**_step(resampling=method), "op_version": 2}), REGISTRY)
 
     @pytest.mark.parametrize("version", [2, 3, 4])
     def test_the_versions_the_registry_takes(self, version: int) -> None:
-        recipe = recipe_from_data(_recipe({**_step(), "op_version": version}), REGISTRY)
+        recipe = recipe_of_data(_recipe({**_step(), "op_version": version}), REGISTRY)
         assert (recipe.steps[0].op, recipe.steps[0].op_version) == ("reproject", version)
 
     def test_a_version_beyond_the_newest_is_refused(self) -> None:
         with pytest.raises(UnknownOperator):
-            recipe_from_data(_recipe({**_step(), "op_version": 5}), REGISTRY)
+            recipe_of_data(_recipe({**_step(), "op_version": 5}), REGISTRY)
 
     def test_version_2_is_the_same_operator_with_the_old_methods(self) -> None:
         for method in OLD_METHODS:
@@ -428,7 +428,7 @@ def _recipe(*steps: dict) -> dict:
 
 
 def _run(tmp_path: Path, *steps: dict):
-    return run(recipe_from_data(_recipe(*steps), REGISTRY), workdir=tmp_path, progress=lambda done, total: None)
+    return run(recipe_of_data(_recipe(*steps), REGISTRY), workdir=tmp_path, progress=lambda done, total: None)
 
 
 def _read(path: Path) -> numpy.ma.MaskedArray:
@@ -510,6 +510,6 @@ class TestAWholeRun:
 
     def test_a_step_behind_a_pixel_step(self, tmp_path: Path) -> None:
         scale = {"op": "scale", "op_version": 1, "params": {"factor": 2.0}}
-        recipe = recipe_from_data(_recipe(scale, _step(resampling="nearest")), OPERATORS)
+        recipe = recipe_of_data(_recipe(scale, _step(resampling="nearest")), OPERATORS)
         result = run(recipe, workdir=tmp_path, progress=lambda done, total: None, operators=OPERATORS)
         assert result.properties["processing:lineage"].startswith("scaled by 2.0; reprojected to EPSG:3035")

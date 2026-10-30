@@ -17,9 +17,8 @@ from earthx.processing import run
 from earthx.processing.errors import GridMismatch, RecipeInvalid, ScalingMismatch, UnsupportedRecipe
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import estimate
-from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.readers import mini_zarr_cf
 
 WIDTH, HEIGHT = 1300, 1100
@@ -40,7 +39,7 @@ def _recipe(steps: list, *, assets=("red", "nir"), dtype="float32", **entry_opti
 
 
 def _run(data: dict, workdir: Path, progress=lambda done, total: None):
-    return run(recipe_from_data(data, REGISTRY), workdir=workdir, progress=progress, operators=REGISTRY)
+    return run(recipe_of_data(data, REGISTRY), workdir=workdir, progress=progress, operators=REGISTRY)
 
 
 def _read(path: Path) -> numpy.ma.MaskedArray:
@@ -104,8 +103,9 @@ class TestOnCogs:
         assert result.properties["processing:expression"] == {
             "format": "numexpr",
             "expression": "(nir - red) / (nir + red)",
+            "name": "band_math",  # a recipe of version 1 is rewritten: its one expression is called band_math
         }
-        assert result.properties["processing:lineage"] == "band math: (nir - red) / (nir + red)"
+        assert result.properties["processing:lineage"] == "band math: band_math = (nir - red) / (nir + red)"
         assert result.properties["earthx:resampled"] is False
         assert result.meta.resampled is False
         assert [band["name"] for band in result.properties["bands"]] == ["band_math"]
@@ -115,7 +115,7 @@ class TestOnCogs:
         result = _run(_recipe([NDVI, second]), tmp_path)
         assert [entry["expression"] for entry in result.properties["processing:expression"]] == [
             "(nir - red) / (nir + red)",
-            "band_math + 1",
+            "band_math_1 + 1",  # version 1 named the earlier result band_math, the rewrite names it band_math_1
         ]
 
     def test_the_valid_pixels_are_those_where_both_bands_are(self, tmp_path: Path) -> None:
@@ -196,7 +196,7 @@ class TestNestedGrids:
         data = _recipe([step], assets=assets)
         for entry in data["inputs"][0]["resolved"]:
             entry["gsd"] = 20.0 if entry["asset"]["asset"] == "b11" else sources.RESOLUTION
-        recipe = recipe_from_data(data, REGISTRY)
+        recipe = recipe_of_data(data, REGISTRY)
         estimated = estimate(recipe, REGISTRY).output_pixels
         result = run(recipe, workdir=tmp_path, progress=lambda done, total: None, operators=REGISTRY)
         assert result.meta.resampled
