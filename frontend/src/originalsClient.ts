@@ -12,6 +12,10 @@ const START_TIMEOUT_MS = 10_000;
 // nothing for about half a minute, in the middle of a download (client-zip, "Known issues").
 const KEEP_ALIVE_MS = 10_000;
 const ACTIVATION_TIMEOUT_MS = 10_000;
+// A file saved by the page is freed this long after the click. Chromium starts a download that waits for the answer
+// to "download several files?" even when its blob address has been freed meanwhile (measured with a real click on
+// "Allow", plan section 6.11), so the files of a whole run do not pile up in memory.
+const FREE_SAVED_AFTER_MS = 30_000;
 
 export function canStream(): boolean {
   return typeof navigator !== 'undefined' && 'serviceWorker' in navigator && globalThis.isSecureContext === true;
@@ -108,18 +112,24 @@ function zipChannel(hidden: HTMLIFrameElement[]): ZipChannel {
   };
 }
 
-// The things a run needs from the page. `dispose` removes what it put into the page and frees the files it saved: it
-// is called when the dialog closes, which also ends the run. A saved file is only freed then, not right after the
-// click, because a browser that asks "download several files?" starts the later ones only after the answer.
+// The things a run needs from the page. `dispose` removes what it put into the page and frees the files it saved that
+// are not yet freed: it is called when the dialog closes, which also ends the run.
 export function browserDeps(): { deps: RunDeps; dispose(): void } {
-  const urls: string[] = [];
+  const urls = new Set<string>();
+  const timers = new Set<ReturnType<typeof setTimeout>>();
   const frames: HTMLIFrameElement[] = [];
   const deps: RunDeps = {
     fetch: (input, init) => fetch(input, init),
     zip: canStream() ? zipChannel(frames) : null,
     saveBlob(name, blob) {
       const href = URL.createObjectURL(blob);
-      urls.push(href);
+      urls.add(href);
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        urls.delete(href);
+        URL.revokeObjectURL(href);
+      }, FREE_SAVED_AFTER_MS);
+      timers.add(timer);
       const link = Object.assign(document.createElement('a'), { href, download: name, hidden: true });
       document.body.append(link);
       link.click();
@@ -135,7 +145,10 @@ export function browserDeps(): { deps: RunDeps; dispose(): void } {
   return {
     deps,
     dispose() {
-      for (const url of urls.splice(0)) URL.revokeObjectURL(url);
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+      for (const url of urls) URL.revokeObjectURL(url);
+      urls.clear();
       for (const frame of frames.splice(0)) frame.remove();
     },
   };
