@@ -196,10 +196,12 @@ def _disable_uvicorn_access_log() -> None:
 
 
 class _HideAddresses(logging.Filter):
-    """Takes the addresses out of a record on its way to a handler whose formatter is not ours."""
+    """Takes the addresses out of the traceback of a record on its way to a handler whose formatter is not ours.
+
+    Only the traceback: uvicorn's own message carries the address it listens on, which is meant to be read.
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.msg, record.args = hide_addresses(record.getMessage()), None
         if record.exc_info:
             # `Formatter.format` keeps the text it finds here instead of formatting the exception again.
             record.exc_text = hide_addresses(logging.Formatter().formatException(record.exc_info))

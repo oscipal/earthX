@@ -673,7 +673,7 @@ class TestAnAddressIsNotLogged:
 
         assert hide_addresses(f"file /results/{self.ID}/result.tif gone") == "file /results/{resultID}/result.tif gone"
 
-    def test_a_record_of_uvicorns_own_handler_is_cleaned_before_its_formatter_reads_it(self) -> None:
+    def test_the_traceback_on_uvicorns_own_handler_is_cleaned_before_its_formatter_reads_it(self) -> None:
         """The handler uvicorn writes its own lines with is not ours: its formatter sees what the filter left."""
         from earthx.logging import _hide_addresses_in_uvicorn
 
@@ -681,21 +681,20 @@ class TestAnAddressIsNotLogged:
         handler = logging.StreamHandler(stream)
         handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
         logger = logging.getLogger("uvicorn")
-        before = list(logger.handlers)
-        logger.handlers = [handler]
+        before, level = list(logger.handlers), logger.level
+        logger.handlers, logger.level = [handler], logging.INFO
         try:
             _hide_addresses_in_uvicorn()
             _hide_addresses_in_uvicorn()  # once is enough
             assert len(handler.filters) == 1
+            logging.getLogger("uvicorn.error").info("Uvicorn running on %s://%s:%d", "http", "0.0.0.0", 8000)
             try:
                 raise OSError(f"'/vsicurl/{self.URL}' not recognized")
             except OSError:
-                logging.getLogger("uvicorn.error").error(
-                    "Exception in ASGI application for %s", self.URL, exc_info=True
-                )
+                logging.getLogger("uvicorn.error").error("Exception in ASGI application", exc_info=True)
         finally:
-            logger.handlers = before
+            logger.handlers, logger.level = before, level
         output = stream.getvalue()
+        assert "INFO Uvicorn running on http://0.0.0.0:8000" in output
         assert "deadbeefdeadbeef" not in output and "objectstore" not in output
-        assert "ERROR Exception in ASGI application for <address>" in output
         assert "OSError: '<address>' not recognized" in output
