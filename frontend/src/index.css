@@ -1506,7 +1506,7 @@ input[type='date']:focus {
   color: var(--muted);
   margin-bottom: 2px;
 }
-/* The ends give way first, with an ellipsis; a label longer than the band (the full label of a step, paused) gives way too. */
+/* The ends give way first, with an ellipsis; so does a label longer than the band (a key with no date keeps its label). */
 .time-labels strong {
   flex: 0 1 auto;
   min-width: 0;

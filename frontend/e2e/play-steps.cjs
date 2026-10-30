@@ -1,4 +1,5 @@
 // Playing the timeline (NM4-18), in a real browser with made-up tiles of the tiler that are slow on purpose:
+//   0. (hidden) "Hide results" while it plays ends the playing.
 //   1. Every step takes 0.8 s to load: the map changes to the next step only once its tiles are in, never shows the basemap
 //      between two steps, and the timeline names the step by its date (the key of the group goes on with a scene).
 //   2. One step takes 3 s: the picture before it stays until it is there, the slider says "Loading…".
@@ -152,7 +153,6 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
   }
   if (first === null) problems.push('the first step never came on the map');
 
-  if (hideResults) await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ resultsOnMap: false }));
   await page.locator('.play-btn').dispatchEvent('click'); // in a narrow window the rail lies over the button, as it does in the app
   const t0 = Date.now();
   const samples = [];
@@ -160,6 +160,7 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
   const counts = new Set();
   let sawLoading = false;
   let notice = null;
+  let hidden = false;
   while (Date.now() - t0 < (Number(process.env.SECONDS) || seconds) * 1000) {
     const c = await colourAt(page, x, y);
     const step = COLOURS.findIndex((k) => near(c, k));
@@ -171,6 +172,11 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
     const toast = page.locator('.toast.notice');
     if ((await toast.count()) > 0) notice = await toast.first().innerText();
     await page.waitForTimeout(40);
+    // "Hide results" while it plays (Otto): the playing ends, and the timeline stands where it was.
+    if (hideResults && !hidden && Date.now() - t0 > 2500) {
+      hidden = true;
+      await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().toggleResultsOnMap());
+    }
   }
   await page.screenshot({ path: path.join(OUT, `${name}.png`) });
 
@@ -189,11 +195,16 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
       last = s.step;
     }
   }
-  // 3. The name of a step is its date.
+  // The name of a step is its date.
   for (const label of labels) if (!/^\d{4}-\d{2}-\d{2}$/.test(label)) problems.push(`the timeline names a step "${label}"`);
   if (hideResults) {
-    // Nothing of the results is on the map, so nothing is to be waited for: the timeline runs on at its own pace.
-    if (counts.size < 3) problems.push(`the timeline stood still with the results off the map: ${[...counts].join(', ')}`);
+    // Playing ends with "Hide results": the button says "Play" again and the timeline stood still for the last seconds.
+    const label = await page.locator('.play-btn').getAttribute('aria-label');
+    if (label !== 'Play') problems.push(`the playing went on after "Hide results": the button says "${label}"`);
+    if (counts.size < 2) problems.push(`the timeline did not move before "Hide results": ${[...counts].join(', ')}`);
+    const after = await page.locator('.time-count').innerText();
+    await page.waitForTimeout(2500);
+    if ((await page.locator('.time-count').innerText()) !== after) problems.push('the timeline moved on after "Hide results"');
     if (notice) problems.push(`a notice with the results off the map: ${notice}`);
     console.log(`     ${name}: counts ${[...counts].join(' ')}`);
     await context.close();
@@ -218,7 +229,7 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
   const cases = [
     { name: 'quick', delays: COLOURS.map(() => 800), seconds: 9, expect: { steps: 3, loading: false } },
     { name: 'slow', delays: [800, 800, 800, 3000, 800], seconds: 9, expect: { loading: true, steps: 2 } },
-    { name: 'hidden', delays: COLOURS.map(() => 800), seconds: 7, hideResults: true, expect: {} },
+    { name: 'hidden', delays: COLOURS.map(() => 800), seconds: 6, hideResults: true, expect: {} },
     { name: 'stuck', delays: [800, 800, 800, NEVER, 800], seconds: 18, expect: { skipped: true, steps: 2, never: 3 } },
   ];
   for (const theme of Object.keys(THEMES)) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { playLabel, runPlayback, STEP_LATE_AFTER_MS } from '../playback';
+import { stepLabel, runPlayback, STEP_LATE_AFTER_MS } from '../playback';
 import { useAppStore } from '../store';
 
 export default function TimeSlider() {
@@ -39,8 +39,9 @@ export default function TimeSlider() {
 
   // groups are newest-first; show oldest→newest left→right.
   const sliderValue = groups.length - 1 - activeGroupIndex;
-  // Playing, the date of the pass on the map names the step, and the slider is ahead of it while the next one loads.
-  const name = (index: number) => (playing ? playLabel(groups[index]) : groups[index]?.label);
+  // A step is named by the date of its pass, never by the scene (Otto, 30.10.2026). Playing, the pass on the map names
+  // the step, and the slider is ahead of it while the next one loads.
+  const name = (index: number) => stepLabel(groups[index]);
   const loading = behind && late;
 
   return (

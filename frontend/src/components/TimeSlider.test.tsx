@@ -60,9 +60,9 @@ describe('the time slider', () => {
   });
 });
 
-// NM4-18 (Otto): playing, the timeline names a step by the date of the pass and nothing of the scene, and says so when
-// the picture on the map is behind the slider.
-describe('the time slider while it plays', () => {
+// NM4-18 (Otto): the timeline names a step by the date of the pass and nothing of the scene, playing or not, and says so
+// when the picture on the map is behind the slider.
+describe('the labels of the time slider', () => {
   const NAMED = [
     { key: ['2026-07-25', 'GS2B_SCENE_NAME_C'], label: '2026-07-25 · GS2B_SCENE_NAME_C', items: [item('a')] },
     { key: ['2026-07-24', 'GS2A_SCENE_NAME_B'], label: '2026-07-24 · GS2A_SCENE_NAME_B', items: [item('b')] },
@@ -79,12 +79,13 @@ describe('the time slider while it plays', () => {
     vi.useRealTimers();
   });
 
-  it('names the steps by their full label while it does not', () => {
+  it('names the steps by their date only, both ends and the step, while it does not play', () => {
     act(() => root.render(<TimeSlider />));
-    expect(labels()).toEqual(['2026-07-23 · GS2A_SCENE_NAME_A', '2026-07-23 · GS2A_SCENE_NAME_A', '2026-07-25 · GS2B_SCENE_NAME_C']);
+    expect(labels()).toEqual(['2026-07-23', '2026-07-23', '2026-07-25']);
+    expect(container.textContent).not.toMatch(/GS2/);
   });
 
-  it('names them by their date only: both ends and the step on the map', () => {
+  it('names them by their date only while it plays as well', () => {
     act(() => root.render(<TimeSlider />));
     act(() => useAppStore.setState({ playing: true }));
     expect(labels()).toEqual(['2026-07-23', '2026-07-23', '2026-07-25']);
@@ -117,12 +118,12 @@ describe('the time slider while it plays', () => {
     expect(count()?.textContent).toBe('1/3');
   });
 
-  it('has the full label again, and no "Loading…", when it is paused', () => {
+  it('has the date only, and no "Loading…", when it is paused', () => {
     act(() => root.render(<TimeSlider />));
     act(() => useAppStore.setState({ playing: true }));
     act(() => container.querySelector<HTMLButtonElement>('.play-btn')!.click());
     expect(useAppStore.getState().playing).toBe(false);
-    expect(labels()[1]).toMatch(/GS2A_SCENE_NAME_B/);
+    expect(labels()[1]).toBe('2026-07-24');
     expect(container.querySelector('.time-count')?.textContent).toBe('2/3');
   });
 });

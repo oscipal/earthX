@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   MAX_SKIPPED_IN_A_ROW,
-  playLabel,
+  stepLabel,
   runPlayback,
   SKIPPED_NOTICE,
   STEP_DWELL_MS,
@@ -40,16 +40,16 @@ afterEach(() => {
   useAppStore.setState({ playing: false });
 });
 
-describe('playLabel', () => {
+describe('stepLabel', () => {
   it('is the date of the pass, whatever the key goes on with', () => {
-    expect(playLabel(group(['2026-07-25', 'GS2B_20260725T103021_N0511']))).toBe('2026-07-25');
-    expect(playLabel(group(['2026-07-25T10:30:21Z']))).toBe('2026-07-25');
+    expect(stepLabel(group(['2026-07-25', 'GS2B_20260725T103021_N0511']))).toBe('2026-07-25');
+    expect(stepLabel(group(['2026-07-25T10:30:21Z']))).toBe('2026-07-25');
   });
 
   it('keeps the label of a key that starts with no date, and of nothing', () => {
-    expect(playLabel(group(['orbit 12', '2026-07-25']))).toBe('orbit 12 · 2026-07-25');
-    expect(playLabel(group([], 'all'))).toBe('all');
-    expect(playLabel(undefined)).toBe('');
+    expect(stepLabel(group(['orbit 12', '2026-07-25']))).toBe('orbit 12 · 2026-07-25');
+    expect(stepLabel(group([], 'all'))).toBe('all');
+    expect(stepLabel(undefined)).toBe('');
   });
 });
 

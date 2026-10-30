@@ -1168,7 +1168,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleResultsOnMap: () => {
     const resultsOnMap = !get().resultsOnMap;
     saveResultsOnMap(resultsOnMap);
-    set({ resultsOnMap });
+    // Nothing of the timeline is on the map with the results off it: the playing ends (NM4-18, Otto, 30.10.2026).
+    set(resultsOnMap ? { resultsOnMap } : { resultsOnMap, playing: false });
   },
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
   clearSearchResults: () => {

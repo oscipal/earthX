@@ -22,9 +22,9 @@ export const STOPPED_NOTICE = 'Playback stopped: the next steps do not load.';
 
 const DATE = /^\d{4}-\d{2}-\d{2}/;
 
-// What the timeline names a step by while it plays: the date of the pass, and nothing of the scene it was made of
+// What the timeline names a step by, playing or not: the date of the pass, and nothing of the scene it was made of
 // (the key of a group can go on after its date, with a scene or data take). A key without a date keeps its label.
-export function playLabel(group: TimeStepGroup | undefined): string {
+export function stepLabel(group: TimeStepGroup | undefined): string {
   if (!group) return '';
   const first = group.key[0] ?? '';
   return DATE.test(first) ? first.slice(0, 10) : group.label;
