@@ -281,8 +281,22 @@ describe('stopping and trying again', () => {
     const h = harness({ answer: () => 'throw' });
     await run(h, { signal: abort.signal }).done;
     expect([0, 1].map((index) => last(h, index)?.status)).toEqual(['cancelled', 'cancelled']);
-    expect(h.ways.map((w) => w.way)).toEqual(['zip']);
+    expect(h.ways).toEqual([]);
     expect(h.navigated).toEqual([]);
+  });
+
+  it('a run stopped in the same breath it was started has done nothing: no file, no download, no request', async () => {
+    for (const cors of [false, true]) {
+      const abort = new AbortController();
+      const h = harness({ zip: null });
+      const { done } = run(h, { signal: abort.signal, collection: collection({ 'earthx:access': { cors } }) });
+      abort.abort();
+      await done;
+      expect(h.saved).toEqual([]);
+      expect(h.navigated).toEqual([]);
+      expect(h.fetchFn).not.toHaveBeenCalled();
+      expect([0, 1].map((index) => last(h, index)?.status)).toEqual(['cancelled', 'cancelled']);
+    }
   });
 
   it('"Retry failed" runs only the scenes it is given and touches no other row', async () => {

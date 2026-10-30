@@ -113,6 +113,14 @@ export async function runOriginals(args: RunArgs): Promise<void> {
   const set = args.onScene;
   for (const index of order) set(index, { status: 'waiting' });
 
+  // A run does nothing in the page before the next tick: React may start a run and stop it in the same breath (in
+  // development, `StrictMode` does), and a run that is stopped must not have saved or started a download by then.
+  await Promise.resolve();
+  if (signal.aborted) {
+    for (const index of order) set(index, { status: 'cancelled' });
+    return;
+  }
+
   const blocker = attributionBlocker(collection['earthx:license_flags'], years);
   if (blocker) {
     for (const index of order) set(index, { status: 'failed', reason: blocker });
