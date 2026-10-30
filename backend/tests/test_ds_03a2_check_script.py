@@ -44,7 +44,7 @@ def test_no_syntax_or_parameter_of_powershell_7(pattern: str) -> None:
 def test_bodies_go_as_bytes_and_errors_are_caught() -> None:
     text = SCRIPT.read_text(encoding="ascii")
     assert "[System.Text.Encoding]::UTF8.GetBytes($Body)" in text
-    assert "$_.Exception.Response" in text and "UseBasicParsing = $true" in text
+    assert "$problem.Exception.Response" in text and "UseBasicParsing = $true" in text
 
 
 def test_braces_and_brackets_balance_outside_strings_and_comments() -> None:
@@ -62,3 +62,15 @@ def test_the_script_names_the_filter_and_prints_no_value_of_the_request() -> Non
     text = SCRIPT.read_text(encoding="ascii")
     assert "earthx:aoi_cloud_cover" in text and "aoi cloud filter" in text
     assert "Write-Host $body" not in text.lower() and "Write-Host $token" not in text.lower()
+
+
+def test_a_refusal_is_read_from_error_details_first_because_5_1_has_consumed_the_stream() -> None:
+    """Otto's run of 30.10.2026: six refusals were 400 but their text came back empty (the stream was read already)."""
+    text = SCRIPT.read_text(encoding="ascii")
+    assert "$problem.ErrorDetails.Message" in text
+    assert text.index("$problem.ErrorDetails.Message") < text.index("GetResponseStream()")
+
+
+def test_a_failed_refusal_prints_what_came_with_numbers_of_the_request_hidden() -> None:
+    text = SCRIPT.read_text(encoding="ascii")
+    assert "Body leer" in text and "<zahl>" in text and "Substring(0, 300)" in text

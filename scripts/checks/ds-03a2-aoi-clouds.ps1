@@ -97,16 +97,26 @@ function Invoke-Http {
         $response = Invoke-WebRequest @request
         return [pscustomobject]@{ Status = [int]$response.StatusCode; Content = (Read-Content $response) }
     } catch {
-        $failure = $_.Exception.Response
+        $problem = $_
+        $failure = $problem.Exception.Response
         if ($null -eq $failure) {
-            return [pscustomobject]@{ Status = 0; Content = $_.Exception.Message }
+            return [pscustomobject]@{ Status = 0; Content = $problem.Exception.Message }
         }
+        # 5.1 has read the body of a refusal already when it throws: it stands in ErrorDetails.Message, and the
+        # response stream is then empty. The stream is the way where ErrorDetails is not filled.
         $text = ''
-        try {
-            $reader = New-Object System.IO.StreamReader($failure.GetResponseStream(), [System.Text.Encoding]::UTF8)
-            $text = $reader.ReadToEnd()
-            $reader.Close()
-        } catch { }
+        if ($null -ne $problem.ErrorDetails -and -not [string]::IsNullOrEmpty($problem.ErrorDetails.Message)) {
+            $text = [string]$problem.ErrorDetails.Message
+        }
+        if ([string]::IsNullOrEmpty($text)) {
+            try {
+                $stream = $failure.GetResponseStream()
+                if ($stream.CanSeek) { $stream.Position = 0 }
+                $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+                $text = $reader.ReadToEnd()
+                $reader.Close()
+            } catch { }
+        }
         return [pscustomobject]@{ Status = [int]$failure.StatusCode; Content = $text }
     }
 }
@@ -134,7 +144,13 @@ function Get-Detail {
     $problem = ConvertFrom-JsonSafe $Answer.Content
     if ($null -ne $problem -and $problem.detail -is [string]) { return "HTTP $($Answer.Status): $($problem.detail)" }
     if ($Answer.Status -eq 0) { return 'keine Antwort' }
-    return "HTTP $($Answer.Status)"
+    # No text of ours in the answer: say what did come, so that a FAIL can be read. Cut short, and every number
+    # with four decimals or more hidden, in case a body ever repeats part of the request.
+    $raw = [string]$Answer.Content
+    if ([string]::IsNullOrWhiteSpace($raw)) { return "HTTP $($Answer.Status), Body leer" }
+    $raw = [regex]::Replace($raw, '-?[0-9]+\.[0-9]{4,}', '<zahl>')
+    if ($raw.Length -gt 300) { $raw = $raw.Substring(0, 300) + '...' }
+    return "HTTP $($Answer.Status), Body: $raw"
 }
 
 # ---- the search -------------------------------------------------------------------------------------
