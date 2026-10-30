@@ -5,17 +5,20 @@ import type { DatasetOption } from './datasets';
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from './fixtures/processes/synthetic-zarr.json';
 import { bboxToPolygon } from './geoUtils';
-import type { ProcessDescription } from './processing';
+import { canonicalJson, type Order, type ProcessDescription } from './processing';
 import { MAX_MOSAIC_OPERATOR_ASSETS, MAX_MOSAIC_REQUEST_BYTES, MAX_MOSAIC_SCENES, mosaicRequestBytes } from './mosaic';
 import { processInfo, type DraftStep, type ProcessInfo } from './processingOrder';
 import {
+  areaMeasureOf,
   assetGsd,
+  COARSE_MEASURE_HINT,
   DEFAULT_RANGE,
   finestGsd,
   furtherNote,
   MAX_PREVIEW_SCENES,
   MAX_PREVIEW_STEPS,
   probeMosaic,
+  SCENE_MEASURE_HINT,
   SCENE_PREVIEW_HINT,
   type MosaicAnswer,
   previewMaxZoom,
@@ -23,9 +26,11 @@ import {
   NO_PREVIEW_FORM,
   NO_PREVIEW_UNLISTED,
   measuredRange,
+  measureHint,
   measureOf,
   planPreview,
   previewOverlays,
+  previewTitle,
   previewUnit,
   probeChain,
   refusedNote,
@@ -600,6 +605,122 @@ describe('probeMosaic (NM4-04b)', () => {
   });
 });
 
+// NM4-19b: what "AOI only" measures its range on.
+describe('previewSpec: what the range is measured on (NM4-19)', () => {
+  const items = [item('S2_A', { gsd: 10 }), item('S2_B', { gsd: 10 })];
+  const base = { dataset: DATASET, items, assets: ['red', 'nir'], info: S2, range: DEFAULT_RANGE };
+  const order = {
+    recipe_version: 1,
+    inputs: [{ name: 'in', dataset: 'sentinel-2-c1-l2a', groups: [['S2_A', 'S2_B']], assets: ['red', 'nir'] }],
+    aoi: bboxToPolygon([10.4, 50.4, 10.6, 50.6]),
+    steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
+    output: { kind: 'raster', format: 'cog', dtype: 'float32' },
+  } as unknown as Order;
+  const plan = ready([bandMath('(nir - red) / (nir + red)')]);
+
+  it('is the order of the first job, kept in memory, for "AOI only" and a complete chain', () => {
+    const spec = previewSpec({ ...base, plan, area: 'aoi', order })!;
+    expect(spec.areaOrder).toEqual({ datasetId: 'sentinel-2-c1-l2a', order });
+    expect(spec.measure).toBe(canonicalJson(order));
+    // The scene it falls back on is the first scene's as ever.
+    expect(spec.sceneMeasure).toContain('/collections/sentinel-2-c1-l2a/items/S2_A/statistics?');
+  });
+
+  it('puts neither the AOI nor the order into a URL of the preview', () => {
+    const spec = previewSpec({ ...base, plan, area: 'aoi', order })!;
+    const urls = [spec.sceneMeasure, spec.probe, ...spec.scenes.map((scene) => scene.url), ...spec.mosaics.flatMap((m) => [m.url, m.probe])];
+    for (const url of urls) {
+      expect(url).not.toMatch(/10\.4|50\.6|coordinates|recipe_version|aoi/i);
+      expect(url).not.toContain(encodeURIComponent(spec.measure));
+    }
+  });
+
+  it.each([
+    ['"Whole scene"', { area: 'scene' as const, order }],
+    ['no complete order', { area: 'aoi' as const, order: null }],
+    ['a start of the chain', { area: 'aoi' as const, order, plan: { ...plan, further: true } }],
+  ])('is the first scene for %s', (_, args) => {
+    const spec = previewSpec({ ...base, plan, ...args })!;
+    expect(spec.areaOrder).toBeNull();
+    expect(spec.measure).toBe(spec.sceneMeasure);
+  });
+
+  it('is the first scene without an order at all, as before', () => {
+    const spec = previewSpec({ ...base, plan, area: 'aoi' })!;
+    expect(spec.areaOrder).toBeNull();
+  });
+
+  it('does not change the picture: the key of the tiles ignores the order', () => {
+    const a = previewSpec({ ...base, plan, area: 'aoi', order })!;
+    const b = previewSpec({ ...base, plan, area: 'aoi', order: { ...order, aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) } })!;
+    expect(a.key).toBe(b.key);
+    expect(a.measure).not.toBe(b.measure);
+  });
+});
+
+describe('the measure over the AOI (NM4-19)', () => {
+  const answer = (statistics: Record<string, unknown>, unit: string | null = null, exact = true) => ({
+    bands: [{ name: 'b1', unit, statistics }],
+    exact,
+    factor: exact ? 1 : 2,
+  });
+  const ndvi = { minimum: -1.3, maximum: 1.5, mean: 0.3, stddev: 0.2, count: 900, valid_percent: 100, percentile_2: 0, percentile_98: 0.91 };
+
+  it('reads the statistics of the results document: the numbers a colour scale is chosen from, the unit, whether it is exact', () => {
+    expect(areaMeasureOf('K', answer(ndvi, 'm', false), true)).toEqual({
+      key: 'K',
+      stats: { bands: [{ minimum: -1.3, maximum: 1.5, percentile2: 0, percentile98: 0.91 }], expression: true },
+      unit: 'm',
+      source: 'area',
+      exact: false,
+    });
+  });
+
+  it('names no value of a band without a valid pixel, and one unit only where all bands share it', () => {
+    const none = { count: 0, valid_percent: 0 };
+    expect(areaMeasureOf('K', answer(none), true).stats).toBeNull();
+    const two = { bands: [answer(ndvi, 'K').bands[0], answer(ndvi, 'm').bands[0]], exact: true, factor: 1 };
+    expect(areaMeasureOf('K', two, false).unit).toBeNull();
+  });
+
+  it('gives the scale of a result of the same statistics: the NDVI with outliers is an index', () => {
+    expect(measuredRange(areaMeasureOf('K', answer(ndvi), true))).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdylgn' });
+    expect(measuredRange(areaMeasureOf('K', answer(ndvi), false))).toEqual({ vmin: '0', vmax: '0.91', colormap: 'viridis' });
+  });
+
+  describe('the hint', () => {
+    const spec = { measure: 'M', clipToAoi: true, perScene: false } as PreviewSpec;
+    const measure = (source: 'area' | 'scene' | 'fallback', exact = true) => ({ key: 'M', stats: null, unit: null, source, exact });
+
+    it('says nothing for an exact measure over the AOI', () => {
+      expect(measureHint(spec, measure('area'))).toBeNull();
+      expect(previewTitle(spec, measure('area'))).toBeUndefined();
+    });
+
+    it('says the read was coarser', () => {
+      expect(measureHint(spec, measure('area', false))).toBe(COARSE_MEASURE_HINT);
+      expect(COARSE_MEASURE_HINT).toBe('Range measured on a coarser read; the result may differ');
+    });
+
+    it.each(['scene', 'fallback'] as const)('says the range is the first whole scene\'s for a measure of the %s with "AOI only"', (source) => {
+      expect(measureHint(spec, measure(source))).toBe(SCENE_MEASURE_HINT);
+      expect(SCENE_MEASURE_HINT).toBe('Range measured over the first whole scene');
+    });
+
+    it('says nothing for "Whole scene", for no measure, or for the measure of another preview', () => {
+      expect(measureHint({ ...spec, clipToAoi: false }, measure('scene'))).toBeNull();
+      expect(measureHint(spec, null)).toBeNull();
+      expect(measureHint(spec, { ...measure('fallback'), key: 'other' })).toBeNull();
+      expect(measureHint(null, measure('fallback'))).toBeNull();
+    });
+
+    it('stands below the hint of a preview drawn scene by scene', () => {
+      expect(previewTitle({ ...spec, perScene: true }, measure('area', false))).toBe(`${SCENE_PREVIEW_HINT}\n${COARSE_MEASURE_HINT}`);
+      expect(previewTitle({ ...spec, perScene: true }, null)).toBe(SCENE_PREVIEW_HINT);
+    });
+  });
+});
+
 describe('the measure of a preview (M4-19c)', () => {
   const band = { count: 900, min: -0.2, max: 0.9, percentile_2: -0.1, percentile_98: 0.8 };
   const ask = (...bands: Array<Record<string, unknown>>) =>
@@ -610,6 +731,8 @@ describe('the measure of a preview (M4-19c)', () => {
       key: 'K',
       stats: { bands: [{ minimum: -0.2, maximum: 0.9, percentile2: -0.1, percentile98: 0.8 }], expression: true },
       unit: 'm',
+      source: 'scene',
+      exact: true,
     });
   });
 
@@ -644,13 +767,13 @@ describe('the measure of a preview (M4-19c)', () => {
     ['', null],
     [null, null],
   ])('shows the unit %j beside the range as %j', (unit, shown) => {
-    expect(previewUnit(spec, { key: 'M', stats: null, unit })).toBe(shown);
+    expect(previewUnit(spec, { key: 'M', stats: null, unit, source: 'scene', exact: true })).toBe(shown);
   });
 
   it('shows the unit of the measure of this preview and of no other', () => {
-    expect(previewUnit(spec, { key: 'other', stats: null, unit: 'm' })).toBeNull();
+    expect(previewUnit(spec, { key: 'other', stats: null, unit: 'm', source: 'scene', exact: true })).toBeNull();
     expect(previewUnit(spec, null)).toBeNull();
-    expect(previewUnit(null, { key: 'M', stats: null, unit: 'm' })).toBeNull();
+    expect(previewUnit(null, { key: 'M', stats: null, unit: 'm', source: 'scene', exact: true })).toBeNull();
   });
 });
 

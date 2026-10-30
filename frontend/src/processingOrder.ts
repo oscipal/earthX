@@ -560,6 +560,8 @@ export function draftFromOrder(
       if (raw === undefined || field.kind === 'const') continue;
       if (field.kind === 'boolean' && typeof raw === 'boolean') values[field.name] = raw;
       else if (field.kind !== 'boolean' && (typeof raw === 'string' || typeof raw === 'number')) values[field.name] = String(raw);
+      // The classes of a mask: the order holds them as a list, the form as the text it would have been typed as.
+      else if (field.kind === 'integers' && Array.isArray(raw) && raw.every((n) => typeof n === 'number')) values[field.name] = raw.join(', ');
       else problems.push(`${where}: ${field.name} has the wrong type.`);
     }
     for (const [name, message] of Object.entries(paramsFrom(fields, values).errors)) problems.push(`${where}: ${name}: ${message}`);

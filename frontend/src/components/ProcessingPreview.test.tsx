@@ -12,7 +12,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import type { MapLayer } from '../layers';
+import { DEFAULT_RANGE } from '../processingPreview';
 import { layerProcessBlock, orderView, useProcessingStore } from '../processingStore';
+import { resultRender, resultStats } from '../resultLayer';
 import { bboxToPolygon } from '../geoUtils';
 import { useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
@@ -123,6 +125,14 @@ let statistics: (url: string) => Response;
 const INDEX_VALUES = { count: 900, min: -0.2, max: 0.9, percentile_2: -0.1, percentile_98: 0.8, unit: null };
 // Answers at once, with no stream to wait for: a test settles the preview in microtasks.
 const measured = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
+// What it answers to the statistics over the AOI of the order (NM4-19, `POST /collections/{dataset}/statistics`): the same
+// values as the scene's by default, as the object of a results document says them.
+let areaStatistics: (order: Record<string, unknown>) => Response | Promise<Response>;
+const areaBand = (values: Record<string, unknown>) => {
+  const { min, max, unit, ...rest } = values;
+  return { name: 'b1', ...(typeof unit === 'string' ? { unit } : {}), statistics: { minimum: min, maximum: max, mean: 0.3, valid_percent: 100, ...rest } };
+};
+const areaAnswer = (bands: unknown[], exact = true, factor = 1) => measured({ bands, exact, factor });
 const ITEM_URL = '/stac/collections/sentinel-2-c1-l2a/items/';
 
 beforeEach(() => {
@@ -133,8 +143,10 @@ beforeEach(() => {
   pending = {};
   tilejson = () => json({ tilejson: '3.0.0' });
   statistics = () => measured({ b1: INDEX_VALUES });
-  fetchMock = vi.fn(async (url: string) => {
+  areaStatistics = () => areaAnswer([areaBand(INDEX_VALUES)]);
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/processing/processes/recipe?dataset=sentinel-2-c1-l2a') return json(s2);
+    if (init?.method === 'POST' && url.endsWith('/statistics')) return areaStatistics(JSON.parse(String(init.body)));
     if (url.includes('/tilejson.json')) return tilejson(url);
     if (url.includes('/statistics?')) return statistics(url);
     if (pending[url]) return pending[url];
@@ -913,6 +925,331 @@ describe('the preview section', () => {
       act(() => managerRoot.unmount());
       manager.remove();
     });
+  });
+});
+
+// NM4-19b: with "AOI only" the preview measures its colour scale over the AOI, as the job counts it.
+describe('the range measured over the AOI (NM4-19b)', () => {
+  const SCENE_HINT = 'Range measured over the first whole scene';
+  const COARSE_HINT = 'Range measured on a coarser read; the result may differ';
+  const COORDINATES = ['10.4', '10.6', '50.4', '50.6'];
+  const posted = () =>
+    fetchMock.mock.calls.filter(([url, init]) => (init as RequestInit | undefined)?.method === 'POST' && String(url).endsWith('/statistics'));
+  const sceneAsked = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/statistics?'));
+  const rescale = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale');
+  const colormap = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('colormap_name');
+  const title = () => section().querySelector('.pp-badge:not(.loading)')?.getAttribute('title') ?? null;
+  const unit = () => section().querySelector('.pp-unit')?.textContent ?? null;
+  const DEM = { count: 900, min: 100, max: 2500, percentile_2: 120, percentile_98: 2400, unit: 'm' };
+  const OUTLIERS = { count: 900, min: -1.3, max: 1.5, percentile_2: 0, percentile_98: 0.91, unit: null };
+  const body = (call: unknown[]) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>;
+  const groupsOf = (call: unknown[]) => (body(call).inputs as { groups: string[][] }[])[0].groups;
+  const orderOfFirstJob = () => orderView(useAppStore.getState(), store()).parts[0].order;
+  const both = () =>
+    act(() =>
+      root.render(
+        <>
+          <ProcessingPanel />
+          <PreviewBadge />
+        </>,
+      ),
+    );
+
+  async function aoiOnly(items = [scene('S2B_A')]) {
+    await withNdvi(items);
+    click(button('AOI only'));
+    await afterDebounce();
+  }
+
+  it('says nothing in the console where the route answers', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    warn.mockClear();
+    await aoiOnly();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('posts the order of the job once, as the body of the dataset route, and asks no statistics of a scene for it', async () => {
+    await withNdvi();
+    const before = sceneAsked().length;
+    expect(posted()).toHaveLength(0);
+    click(button('AOI only'));
+    await afterDebounce();
+    expect(posted()).toHaveLength(1);
+    const [url, init] = posted()[0] as [string, RequestInit];
+    expect(url).toBe('/collections/sentinel-2-c1-l2a/statistics');
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+    const order = orderOfFirstJob()!;
+    expect(order.aoi).toBeDefined();
+    expect(body(posted()[0])).toEqual(order);
+    expect(sceneAsked()).toHaveLength(before);
+  });
+
+  it('puts the AOI into no URL, no storage and no log line, and the order text into none of them either', async () => {
+    const logged = (['log', 'info', 'warn', 'error', 'debug'] as const).map((method) => vi.spyOn(console, method).mockImplementation(() => {}));
+    await aoiOnly();
+    const preview = store().preview!;
+    const urls = [
+      ...fetchMock.mock.calls.map(([u]) => String(u)),
+      ...preview.scenes.map((scene) => scene.url),
+      ...preview.mosaics.flatMap((mosaic) => [mosaic.url, mosaic.probe]),
+      preview.probe,
+      preview.sceneMeasure,
+    ];
+    const text = [...urls, ...[localStorage, sessionStorage].flatMap((area) => Object.keys(area).map((key) => `${key}=${area.getItem(key)}`))];
+    for (const entry of text) {
+      for (const coordinate of COORDINATES) expect(entry.includes(coordinate), `${entry} names ${coordinate}`).toBe(false);
+      expect(entry).not.toContain('recipe_version');
+      expect(entry).not.toContain(preview.measure);
+    }
+    // Only the POST itself carries the order, and only in its body.
+    expect(posted().map(([u]) => String(u))).toEqual(['/collections/sentinel-2-c1-l2a/statistics']);
+    expect(logged.flatMap((spy) => spy.mock.calls.map((call) => JSON.stringify(call))).join('')).not.toMatch(/10\.4|50\.4|recipe_version/);
+  });
+
+  it.each([
+    ['values with outliers beyond ±1', OUTLIERS],
+    ['values of a DEM', DEM],
+    ['an index above 1', { ...OUTLIERS, percentile_98: 1.2 }],
+  ])('draws the scale a result of the same statistics gets: %s', async (_, values) => {
+    areaStatistics = () => areaAnswer([areaBand(values)]);
+    await aoiOnly();
+    const result = resultRender('float32', DEFAULT_RANGE, resultStats({ bands: [areaBand(values)], 'processing:expression': { format: 'numexpr', expression: 'a' } }));
+    expect({ rescale: rescale(), colormapName: colormap() }).toEqual(result);
+  });
+
+  it('calls a NDVI with outliers beyond ±1 an index: -1 to 1 in rdylgn, as its result is', async () => {
+    areaStatistics = () => areaAnswer([areaBand(OUTLIERS)]);
+    await aoiOnly();
+    expect([rescale(), colormap()]).toEqual(['-1,1', 'rdylgn']);
+    expect(title()).toBeNull();
+  });
+
+  it('takes the unit from the answer, and shows its range in the fields', async () => {
+    areaStatistics = () => areaAnswer([areaBand(DEM)]);
+    await aoiOnly();
+    expect(unit()).toBe('m');
+    expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
+    expect([...section().querySelectorAll<HTMLInputElement>('input[type="number"]')].map((i) => i.value)).toEqual(['120', '2400']);
+  });
+
+  it('measures the order of the mosaic of a pass: all its scenes in one group', async () => {
+    await aoiOnly([scene('S2B_A'), scene('S2B_B')]);
+    expect(posted()).toHaveLength(1);
+    expect(groupsOf(posted()[0])).toEqual([['S2B_A', 'S2B_B']]);
+  });
+
+  it('measures the first job of "One job per scene"', async () => {
+    const items = [scene('S2B_A'), scene('S2B_B')];
+    select(items);
+    await openPanel();
+    act(() => useProcessingStore.setState({ runAs: 'scene' }));
+    vi.useFakeTimers();
+    click(button('＋ Band math'));
+    typeInto(expression(), '(nir - red) / (nir + red)');
+    click(button('AOI only'));
+    await afterDebounce();
+    expect(posted()).toHaveLength(1);
+    expect(groupsOf(posted()[0])).toEqual([['S2B_A']]);
+    expect(store().measure).toMatchObject({ source: 'area' });
+  });
+
+  it('leaves "Whole scene" as it was: the first scene, no order posted, no hint', async () => {
+    await withNdvi();
+    expect(posted()).toHaveLength(0);
+    expect(sceneAsked()).toHaveLength(1);
+    expect(store().measure).toMatchObject({ source: 'scene' });
+    expect(title()).toBeNull();
+  });
+
+  describe("says in the tooltip of \"Preview\" when the range is not the job's", () => {
+    it('keeps no hint for an exact measure, on the panel or on the map', async () => {
+      await aoiOnly();
+      expect(store().measure).toMatchObject({ source: 'area', exact: true });
+      both();
+      expect(title()).toBeNull();
+      expect(container.querySelector('.preview-badge')!.getAttribute('title')).toBeNull();
+    });
+
+    it('says the tiler read a coarser raster, on the panel and on the map', async () => {
+      areaStatistics = () => areaAnswer([areaBand(DEM)], false, 4);
+      await aoiOnly();
+      expect(store().measure).toMatchObject({ source: 'area', exact: false });
+      both();
+      expect(title()).toBe(COARSE_HINT);
+      expect(container.querySelector('.preview-badge')!.getAttribute('title')).toBe(COARSE_HINT);
+      // The range of a coarse read is drawn all the same: it is better than the first whole scene's.
+      expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
+    });
+
+    it('drops the hint again with "Whole scene"', async () => {
+      areaStatistics = () => areaAnswer([areaBand(DEM)], false, 4);
+      await aoiOnly();
+      expect(title()).toBe(COARSE_HINT);
+      click(button('Whole scene'));
+      await afterDebounce();
+      expect(title()).toBeNull();
+    });
+
+    it('puts it below the hint of a preview drawn scene by scene', async () => {
+      areaStatistics = () => areaAnswer([areaBand(DEM)], false, 2);
+      tilejson = (url) => (url.includes('/mosaic/') ? new Response(JSON.stringify({ detail: 'no mosaic' }), { status: 501 }) : json({ tilejson: '3.0.0' }));
+      await aoiOnly([scene('S2B_A'), scene('S2B_B')]);
+      expect(title()).toBe(`Preview per scene – may differ from the job where scenes overlap\n${COARSE_HINT}`);
+    });
+  });
+
+  describe('falls back to the first whole scene, as before, and says so', () => {
+    let warn: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      statistics = () => measured({ b1: DEM });
+      warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      warn.mockClear();
+    });
+    // One line with the status and nothing of the answer or the order, so that an order built wrongly (422) shows in the console.
+    const warned = (what: string) => {
+      expect(warn.mock.calls).toEqual([[`area statistics: ${what}; measuring the first whole scene`]]);
+    };
+    const fellBack = () => {
+      expect(posted()).toHaveLength(1);
+      expect(sceneAsked()).toHaveLength(2); // the scene measure of "Whole scene" first, then that of the fall-back
+      expect(store().measure).toMatchObject({ source: 'fallback' });
+      expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
+      expect(title()).toBe(SCENE_HINT);
+      expect(section().textContent).not.toContain('could not be measured');
+    };
+
+    it.each([
+      ['an order that is too large', 413],
+      ['a failing source', 502],
+      ['a tiler that fails', 500],
+      ['an order it refuses', 422],
+      ['a dataset under another licence', 403],
+    ])('for %s', async (_, status) => {
+      areaStatistics = () => new Response(JSON.stringify({ detail: 'refused 10.4 recipe_version' }), { status, headers: { 'Content-Type': 'application/json' } });
+      await aoiOnly();
+      fellBack();
+      warned(`status ${status}`);
+    });
+
+    it('for a network that fails', async () => {
+      areaStatistics = () => Promise.reject(new TypeError('failed to fetch 10.4'));
+      await aoiOnly();
+      fellBack();
+      warned('no readable answer');
+    });
+
+    it.each([
+      ['no JSON', null],
+      ['no bands', { bands: [], exact: true, factor: 1 }],
+      ['no statement whether it is exact', { bands: [areaBand(DEM)] }],
+    ])('for an answer that is %s', async (_, answer) => {
+      areaStatistics = () => measured(answer);
+      await aoiOnly();
+      fellBack();
+      warned('no readable answer');
+    });
+
+    it('for a chain the tiler takes only in part: the preview shows less than the order runs', async () => {
+      tilejson = (url) =>
+        url.split('op=').length > 2
+          ? new Response(JSON.stringify({ detail: 'step 1: expression names unknown band(s): red' }), { status: 422, headers: { 'Content-Type': 'application/json' } })
+          : json({ tilejson: '3.0.0' });
+      await withNdvi();
+      click(button('AOI only'));
+      await afterDebounce();
+      expect(posted()).toHaveLength(1);
+      click(button('＋ Band math'));
+      typeInto(expression(1), 'red + 1');
+      await afterDebounce();
+      await flush();
+      expect(store().preview!.stepCount).toBe(1);
+      expect(posted()).toHaveLength(1); // the longer chain is not measured over the AOI: the preview shows one step
+      expect(title()).toBe(SCENE_HINT);
+    });
+
+    it('measures over the AOI again with "Auto stretch", which a fall-back enables', async () => {
+      areaStatistics = () => new Response('{}', { status: 502 });
+      await aoiOnly();
+      fellBack();
+      warned('status 502');
+      expect(button('Auto stretch').disabled).toBe(false);
+      areaStatistics = () => areaAnswer([areaBand({ ...DEM, percentile_2: 130 })]);
+      click(button('Auto stretch'));
+      await afterDebounce();
+      expect(posted()).toHaveLength(2);
+      expect(store().measure).toMatchObject({ source: 'area' });
+      expect(rescale()).toBe('130,2400');
+      expect(title()).toBeNull();
+    });
+  });
+
+  it('measures a state once: an expression typed back asks for no new POST', async () => {
+    await aoiOnly();
+    typeInto(expression(), 'nir / red');
+    await afterDebounce();
+    expect(posted()).toHaveLength(2);
+    typeInto(expression(), '(nir - red) / (nir + red)');
+    await afterDebounce();
+    expect(posted()).toHaveLength(2);
+  });
+
+  it('measures again where the AOI changes, for the order is another', async () => {
+    await aoiOnly();
+    act(() => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) }));
+    await afterDebounce();
+    expect(posted()).toHaveLength(2);
+    expect(body(posted()[0]).aoi).not.toEqual(body(posted()[1]).aoi);
+  });
+
+  it('measures again where the output type changes: the job counts the values in that type', async () => {
+    await aoiOnly();
+    const type = orderOfFirstJob()!.output;
+    const other = orderView(useAppStore.getState(), store()).dtypeOptions.find(
+      (option) => option.disabledReason === null && option.value !== (type as { dtype: string }).dtype,
+    )!;
+    act(() => store().setDtype(other.value));
+    await afterDebounce();
+    expect(posted()).toHaveLength(2);
+    expect((body(posted()[1]).output as { dtype: string }).dtype).toBe(other.value);
+  });
+
+  it('does not take the measure of the order before for the one typed while the 400 ms run', async () => {
+    let answer!: (response: Response) => void;
+    areaStatistics = () => new Promise<Response>((resolve) => (answer = resolve));
+    select([scene('S2B_A')]);
+    await openPanel();
+    vi.useFakeTimers();
+    click(button('＋ Band math'));
+    typeInto(expression(), 'nir - red');
+    click(button('AOI only'));
+    await afterDebounce();
+    typeInto(expression(), 'nir / red'); // inside the 400 ms of the next picture
+    await act(async () => answer(areaAnswer([areaBand(DEM)])));
+    await flush();
+    expect(store().preview).toBeNull();
+    expect(store().measure).toBeNull();
+  });
+
+  it('draws once with the start range when the measure over the AOI takes more than 5 s, and takes it in afterwards', async () => {
+    let answer!: (response: Response) => void;
+    areaStatistics = () => new Promise<Response>((resolve) => (answer = resolve));
+    select([scene('S2B_A')]);
+    await openPanel();
+    vi.useFakeTimers();
+    click(button('＋ Band math'));
+    typeInto(expression(), 'nir / red');
+    click(button('AOI only'));
+    await afterDebounce();
+    expect(store().preview).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    await flush();
+    expect(rescale()).toBe('-1,1');
+    await act(async () => answer(areaAnswer([areaBand(DEM)])));
+    await flush();
+    expect(rescale()).toBe('120,2400');
+    expect(posted()).toHaveLength(1);
   });
 });
 

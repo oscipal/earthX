@@ -36,9 +36,9 @@ import {
   furtherNote,
   MAX_PREVIEW_ASSETS,
   planPreview,
+  previewTitle,
   previewUnit,
   rescaleOf,
-  SCENE_PREVIEW_HINT,
 } from '../processingPreview';
 import {
   bandMathExpressions,
@@ -362,7 +362,7 @@ function PreviewSection({ view }: { view: OrderView }) {
       <h3 className="pp-heading">
         Preview on the map{' '}
         {preview && (
-          <span className="pp-badge" title={preview.perScene ? SCENE_PREVIEW_HINT : undefined}>
+          <span className="pp-badge" title={previewTitle(preview, measure)}>
             Preview
           </span>
         )}
@@ -409,8 +409,8 @@ function PreviewSection({ view }: { view: OrderView }) {
             <button
               type="button"
               className="link-btn"
-              disabled={!rangeByHand && !rangeEdited && rangeNote === null}
-              title="Use the range measured on the first scene (the 2nd to 98th percentile, or −1 to 1 for an index)"
+              disabled={!rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
+              title="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
               onClick={() => autoStretch()}
             >
               Auto stretch

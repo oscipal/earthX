@@ -70,8 +70,8 @@ def test_the_order_has_exactly_the_members_of_the_schema(path: Path) -> None:
     assert all(set(step) == {"op", "op_version", "params"} for step in recipe["steps"])
 
 
-def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
-    """Make the items the order names, covering the area of the order (or a shared one without an AOI).
+def items_of(recipe: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    """The items the order names, covering the area of the order (or a shared one without an AOI).
 
     The scenes of a group are one overpass: they carry the same day and datatake, the key of ``results_group_by``.
     """
@@ -80,6 +80,7 @@ def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
     west, south, east, north = shape(area).bounds if area else (8.9, 46.9, 9.1, 47.1)
     box = (west - 0.1, south - 0.1, east + 0.1, north + 0.1)
     make = {"sentinel-2-c1-l2a": s2_item, "cop-dem-glo-30": dem_item, SYNTHETIC_ZARR.dataset_id: zarr_item}
+    items = {}
     for item_id in entry["groups"][0]:
         item = make[entry["dataset"]](item_id, box)
         if entry["dataset"] == "sentinel-2-c1-l2a":
@@ -89,7 +90,18 @@ def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
                 "gsd": 10,  # the pixel size was in the band description, which this asset replaces
                 "raster:bands": [{"nodata": 0, "data_type": "uint8"}] * 3,
             }
-        rig.source.items[(entry["dataset"], item_id)] = item
+            # The layer a mask reads (`earthx:mask`): classes, no scaling, a pixel of 20 m.
+            item["assets"]["scl"] = {
+                "href": item["assets"]["red"]["href"].replace("B04", "SCL"),
+                "gsd": 20,
+                "raster:bands": [{"nodata": 0, "data_type": "uint8", "spatial_resolution": 20}],
+            }
+        items[(entry["dataset"], item_id)] = item
+    return items
+
+
+def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
+    rig.source.items.update(items_of(recipe))
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)

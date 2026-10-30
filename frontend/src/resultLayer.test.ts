@@ -152,13 +152,33 @@ describe('the colour scale of a result (plan §6.7)', () => {
   });
 
   it.each([
-    ['a value above 1', { ...ndvi, maximum: 1.2 }],
-    ['a value below −1', { ...ndvi, minimum: -1.5 }],
+    ['a 98th percentile above 1', { ...ndvi, percentile_98: 1.2 }],
+    ['a 2nd percentile below −1', { ...ndvi, percentile_2: -1.5 }],
   ])('does not call a Band math result an index with %s', (_, statistics) => {
+    const { percentile_2: low, percentile_98: high } = statistics;
     expect(resultRender('float32', DEFAULT_RANGE, stats(statistics, true))).toEqual({
-      rescale: '-0.05,0.8',
+      rescale: `${low},${high}`,
       colormapName: 'viridis',
     });
+  });
+
+  // NM4-19, Frage 8 (Otto, 28.10.2026): the NDVI of a real scene has single pixels beyond ±1 (exactly −1.3…1.5 here), and a
+  // coarser read smooths them away. The index is judged by the 2–98 %, so that the exact and the coarse measure agree.
+  it('calls a Band math result an index when only single pixels lie beyond −1…1 (the 2–98 % do not)', () => {
+    const outliers = { ...ndvi, minimum: -1.3, maximum: 1.5, percentile_2: 0, percentile_98: 0.91 };
+    expect(resultRender('float32', DEFAULT_RANGE, stats(outliers, true))).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+    expect(defaultRange({ dataType: 'float32', stats: stats(outliers, true) }, DEFAULT_RANGE)).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdylgn' });
+  });
+
+  it('never calls the outlier case an index without a Band math step', () => {
+    const outliers = { ...ndvi, minimum: -1.3, maximum: 1.5, percentile_2: 0, percentile_98: 0.91 };
+    expect(resultRender('float32', DEFAULT_RANGE, stats(outliers))).toEqual({ rescale: '0,0.91', colormapName: 'viridis' });
+  });
+
+  it('judges an index by the minimum and maximum where a band has no percentiles', () => {
+    const flat = { ...ndvi, percentile_2: null, percentile_98: null };
+    expect(resultRender('float32', DEFAULT_RANGE, stats(flat, true))).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+    expect(resultRender('float32', DEFAULT_RANGE, stats({ ...flat, maximum: 1.5 }, true))).toEqual({ rescale: '-0.3,1.5', colormapName: 'viridis' });
   });
 
   it('does not call a result an index by its values alone: a DEM scaled into 0…1 without an expression is not one', () => {
