@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from earthx.api.intake import MAX_ORDER_ASSETS, MAX_ORDER_STEPS
+from earthx.api.intake import MAX_ORDER_STEPS
 from earthx.catalog.registry import DatasetConfig
 from earthx.objectstore.results import RESULT_NAMES
 from earthx.processing.operators import JSON_SCHEMA_DIALECT, Operator, OperatorRegistry, Tier, applicable
@@ -296,7 +296,7 @@ def order_schema(operators: OperatorRegistry, config: DatasetConfig | None = Non
         schema["properties"]["steps"] = {"type": "array", "title": "Steps", "maxItems": MAX_ORDER_STEPS, "items": items}
     else:
         schema["properties"]["steps"] = {"type": "array", "title": "Steps", "maxItems": 0}
-    # One input per order, a few assets (api/intake.py): what the schema can say about the size.
+    # One input per order (api/intake.py): what the schema can say about the size. The bands are not capped (adr/0020 §7).
     schema["properties"]["inputs"]["maxItems"] = 1
     entry = defs.get("InputRequest")
     if entry is not None:
@@ -307,7 +307,6 @@ def order_schema(operators: OperatorRegistry, config: DatasetConfig | None = Non
             "type": "array",
             "items": {"type": "string", "minLength": 1, "maxLength": 256},
             "minItems": 1,
-            "maxItems": MAX_ORDER_ASSETS,
             "description": (
                 "Recipe version 1 only. Version 2 names the bands in output.bands, "
                 "and the platform reads the assets they need."
