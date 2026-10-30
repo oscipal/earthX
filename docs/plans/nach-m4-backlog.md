@@ -4,6 +4,8 @@
 
 Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20) fertig zu machen. Danach werden diese Punkte der Reihe nach aufgegriffen. Reihenfolge laut Log vom 24.10.2026: DOC-01, dann UI-01 und UI-02; NM4-01 und NM4-02 als Stufe A daneben. Für die übrigen Punkte entscheidet Otto die Reihenfolge.
 
+> **Regel für alle Pläne (Otto, 30.10.2026):** Screenshots und andere Bilder der Browserprüfung kommen nicht ins Repo; die Prüfung wird im PR beschrieben.
+
 ## Neu (Plan-Dateien unter `docs/plans/querschnitt/`)
 
 1. **Jahr in der Copernicus-Attribution** (Fund vom 20.10.2026, `provenance.json` des Runners).
@@ -167,6 +169,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
      - Verhalten beim Zoomen oder Verschieben während des Abspielens.
    - **Aufgabe:** Stufe A, nur Frontend; Test, dass der Wechsel erst nach dem Laden erfolgt (mit verzögerten Kacheln).
 19. **Auto stretch der Vorschau über die AOI** (Otto, 24.10.2026).
+   - **Erledigt:** NM4-19b, PR #230 (30.10.2026): Vorschau misst bei „AOI only“ über die Route aus #218 (POST, AOI nur im Body), Rückfall auf die erste Szene mit Konsolenzeile nur mit Statuscode; Index-Regel nach Perzentilen in Vorschau und Ergebnis (nur Frontend, keine neue Version). Von Otto im Browser geprüft.
    - **Backend erledigt:** PR #218 (28.10.2026): `POST /collections/{dataset}/statistics` im `tiler`, Body = Auftrag, Zählung mit dem Code des Jobs, exakt bis 2048² Pixel, darüber `exact: false`; Cache 7 Tage. Frontend und Index-Regel nach Perzentilen: NM4-19b (§15 des Plans), nach dem Merge in neuer Session.
    - **Plan:** `querschnitt/nm4-19-auto-stretch-ueber-aoi.md`
    - **Heute (M4-19c):** Die Messung für die Farbskala der Vorschau gilt für die erste Szene der Karte, auch bei „AOI only“ für die ganze Szene. Das Job-Ergebnis nimmt dagegen die Statistik über die AOI-Maske (M4-32). Vorschau und Ergebnis können sich deshalb unterscheiden.
@@ -247,6 +250,8 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe (Stufe A, eigener PR):** prüfen, ob der Zweig für eine künftige Quelle ohne Aggregation gebraucht wird; sonst mit seinen Tests entfernen.
    - **Erledigt:** NM4-31, PR #203 (26.10.2026): `extent_result`, Zweig in `coverage_route.py` und die Klausel in `check_adapter_specs` entfernt; Feld `extent` der Antwort bleibt; Nachtrag `adr/0004`.
 32. **Paket „Datensatzabhängige Suche und Prozessierung“ (DS)** (Otto, 26.10.2026). DS-02, DS-03, DS-06 nach VP3 und vor M5; DS-04 und DS-05 (Sentinel-1) erst mit oder nach M5.
+   - **DS-03a1 erledigt** (PR #235, 30.10.2026): Grundlagen der Wolkenmessung in der AOI (SCL, Klassen 8/9/10, Stufe mit ≥ 10 000 Pixeln), `adr/0021` „§6 Nachtrag DS-03“. Offen: DS-03a2 (Filter „Within AOI“ in der Suche, nur mit AOI und Zeitraum), DS-03b (Oberfläche).
+   - **DS-02c** (PR #239, 30.10.2026): „Advanced search“ im Control-Menü, Filter je Datensatz aus `earthx:search_filters`, Umschalter wie „Showing dataset“, Filter nicht im Permalink und nicht gemerkt.
    - **DS-02a erledigt** (PR #217, gemergt 28.10.2026): Filter je Datensatz in der Registry (`earthx:search_filters`; S2: Cloud cover, No data, Satellite), `query_by_collection`, `adr/0021`; Live-Abgleich `tests_live/test_search_filters_live.py`, eingetragen im Job `earth-search` von `live-smoke.yml` (ausdrückliche Ausnahme für `.github/`, Otto 28.10.2026). Orbit-Richtung und relative Umlaufbahn tragen S2-Items nicht, kommen mit DS-04 für S1. Offen: DS-02b (Coverage), DS-02c (Oberfläche, Umschalter je Datensatz).
    - **DS-02b erledigt** (PR #226, 28.10.2026): `GET /coverage/{id}` nimmt `query` wie die Suche, `max_cloud_cover` entfällt; Prüfung gegen die Registry, Fehler der Quelle nur als Status.
    - **DS-01 erledigt:** `adr/0018` Fassung 2 (PR #200): keine regionale Quelle; Earth Search `sentinel-1-grd` als Level-1-Datensatz mit TPS-Georeferenz überall und Hinweisen „Approximate geolocation“/„Uncalibrated (DN)“; Planetary Computer RTC nur nach positiver Messung durch Otto (anonymes Token zulässig unter Bedingungen, Originale per Klick); eigene Geländekorrektur als eigenes ADR nach DS-04.
@@ -274,7 +279,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-43-ausgabe-baender.md`
    - **Soll (Otto):** keine Obergrenze für die Zahl der Bänder; ein `band_math`-Ergebnis wird ein eigenes Band; oben keine Auswahl mehr, nur Info und Namenshilfe; am Ende des Panels alle Bänder des Datensatzes und alle neu gerechneten, per Klick in die Ausgabe. Standardmäßig ist nur das Band-Math-Ergebnis in der Ausgabe; mehrere `band_math`-Schritte hintereinander mit unterschiedlichen Bändern sind möglich.
    - **Aufgabe:** Stufe C, ADR-Entwurf `adr/0020` mit Messung und Recherche (Schutz ohne Bandgrenze, Ausgabedatei mit gemischten Typen, Vorschau, Hash, alte Rezepte). Nimmt NM4-10 in sich auf; NM4-11, NM4-14, NM4-20, DS-06 warten auf die Entscheidung.
-   - **Entschieden (Otto, 28.10.2026, PR #219):** `adr/0020` angenommen, F1–F13 Option 1 außer F7 Option 2 (ohne `band_math` alle wählbaren Bänder angehakt). Aufgaben in §6 des Plans: NM4-43a (Schätzung nach feinstem Asset; erledigt #224, `adr/0014` §15v) und NM4-43b (`reproject` Version 4 je Band; erledigt #229, band-Interleave für Zwischendateien, Version 0.4.4, „§15 Nachtrag NM4-43b“) sofort und unabhängig; dann NM4-43c (Kern, zwei PRs), NM4-43d (Kachel), NM4-43e (Frontend). Runner liest Rezept-Version 1 dauerhaft; `api` bis 30 Tage nach dem Deploy von NM4-43e. NM4-11, NM4-14, NM4-20, DS-06 nach NM4-43c.
+   - **Entschieden (Otto, 28.10.2026, PR #219):** `adr/0020` angenommen, F1–F13 Option 1 außer F7 Option 2 (ohne `band_math` alle wählbaren Bänder angehakt). Aufgaben in §6 des Plans: NM4-43a (Schätzung nach feinstem Asset; erledigt #224, `adr/0014` §15v) und NM4-43b (`reproject` Version 4 je Band; erledigt #229, band-Interleave für Zwischendateien, Version 0.4.4, „§15 Nachtrag NM4-43b“) sofort und unabhängig; dann NM4-43c (Kern, zwei PRs; PR 1 erledigt #236, 30.10.2026), NM4-43d (Kachel), NM4-43e (Frontend). Runner liest Rezept-Version 1 dauerhaft; `api` bis 30 Tage nach dem Deploy von NM4-43e. NM4-11, NM4-14, NM4-20, DS-06 nach NM4-43c.
 44. **Schwachstellen der Frontend-Pakete prüfen (`npm audit`)** (Otto, 27.10.2026; 8 Meldungen bei `npm install`, dazu Node-Version für `jsdom`).
    - **Plan:** `querschnitt/nm4-44-npm-audit.md`
    - **Aufgabe:** Stufe A, nach UI-02a (#211). Gezielt aktualisieren, kein `npm audit fix --force`; Hauptversionssprung nur nach Ottos Freigabe.
@@ -300,6 +305,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe C, ADR mit Recherche und Messung (Latenz und Durchsatz je Region, Kosten, Abdeckung der Datensätze, Lizenz, Ausfall, Bindung an einen Anbieter; Föderation bleibt). Vor der Wahl des Cloud-Anbieters in M6, am besten zu Beginn von M5 (Auswahl der Quellen). Messung braucht Ottos Rechner oder Test-VMs, aus Cloud-Sessions sind die Quellen nicht erreichbar (adr/0002).
 49. **Unbekannte Query-Parameter abweisen** (aus DS-02b, #226, 28.10.2026). Heute ignorieren Routen unbekannte Parameter still; ein alter Client mit `max_cloud_cover` bekäme eine ungefilterte Coverage-Karte. Solange das eigene Frontend der einzige Client ist, bleibt es so (Otto). Mit der öffentlichen API (M6) einheitlich entscheiden: unbekannte Parameter mit `400` und Namen des Parameters (ohne Wert) abweisen.
 50. **DEM: Layer-Manager und Ergebnisse wie bei Sentinel-2; Augen-Symbol** (Otto, 28.10.2026). Beim DEM wird ein Layer nicht immer ausgeblendet, Colormap und Skala werden nicht gespeichert, Show/Hide results verhält sich anders als bei S2. Der Sichtbarkeits-Schalter im Layer-Manager wird ein Auge. Die Vorschau eines DEM-Ergebnisses zeigt die ganze Kachel statt des Zuschnitts (ersetzt teilweise die Entscheidung vom 26.09.2026, M3-12).
+   - **Erledigt:** NM4-50, PR #234 (30.10.2026): eigener DEM-Weg (`searchCrops`) ausgebaut, Vorschau ganze Kachel, Haken über Datensätze, Auge im Layer-Manager, „Apply“/„Save“, „auto-scale“ einheitlich, offener Datensatz liegt oben.
    - **Zusatz (Otto, 29.10.2026, an #234):** Layer-Manager mit „Apply“ (zeigt auf der Karte) und „Save“ (speichert für den Layer dauerhaft); ungespeicherte Änderungen verfallen beim Schließen der Einstellungen ohne Rückfrage.
    - **Plan:** `querschnitt/nm4-50-dem-layer-und-ergebnisse.md`
    - **Aufgabe:** Stufe A, Frontend, Vorrang vor neuen Funktionen. Ein Weg für alle Datensätze, keine Zweige je Datensatz.
@@ -315,6 +321,10 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 55. **Paket Suchergebnisse und Zeitleiste** = NM4-09, NM4-18. Plan: `querschnitt/nm4-55-paket-suchergebnisse.md`. Sofort möglich, nicht gleichzeitig mit DS-03b.
 56. **Paket Oberfläche** = NM4-30, NM4-21, NM4-22. Plan: `querschnitt/nm4-56-paket-oberflaeche.md`. Als letzte Frontend-Aufgabe vor M5, allein.
    - Außerdem: NM4-06 wird mit NM4-05b zusammen umgesetzt (Vermerk im Plan von NM4-05b).
+57. **Coverage mit AOI: keine AOI in der URL** (Fund aus DS-02c, #239, 30.10.2026). `GET /coverage` trägt mit AOI deren Umriss als `bbox` in der URL (seit M3-19). Das verstößt gegen die feste Regel „keine AOI in URLs oder Logs“ (M4 Q8). Soll: Coverage mit AOI als `POST`, AOI im Body; ohne AOI (Kartenausschnitt) darf `GET` bleiben. Prüfen, ob Logs oder Cache-Schlüssel die bbox tragen.
+   - **Plan:** `querschnitt/nm4-57-coverage-ohne-aoi-in-url.md`
+   - **Aufgabe:** Stufe A, Backend und Frontend, Vorrang vor neuen Funktionen.
+58. **Toolbar des Control-Menüs bei 320 px etwa 8 px zu breit** (Fund aus DS-02c, #239). Wird mit Paket NM4-56 erledigt.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
