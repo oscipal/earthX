@@ -1995,10 +1995,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // quicklooks/preview tiles until something is expanded again. Opening a
   // different (collapsed) group goes through `setActiveGroupIndex` instead,
   // keeping both in sync as usual.
+  // A click on a group's head, open or close, ends the playing of the timeline (NM4-18, Otto, 30.10.2026); the playing itself
+  // moves the step with `setActiveGroupIndex`.
   toggleResultsGroup: (index) => {
     const s = get();
-    if (index === s.expandedGroupIndex) set({ expandedGroupIndex: null });
-    else s.setActiveGroupIndex(index);
+    if (index === s.expandedGroupIndex) set({ expandedGroupIndex: null, playing: false });
+    // In one change with the step, or the playing would take the step it is at for one that has arrived.
+    else set({ activeGroupIndex: index, expandedGroupIndex: index, playing: false });
   },
   focusItem: (id) => {
     const idx = groupIndexOfItem(get().groups, id);

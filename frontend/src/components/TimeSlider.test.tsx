@@ -191,6 +191,21 @@ describe('playing and the results on the map', () => {
     }
   });
 
+  it('stops when a group is opened or closed in the list, but not when the playing itself moves on', () => {
+    act(() => useAppStore.setState({ resultsOnMap: true }));
+    act(() => play().click());
+    // The playing asked for the next step by itself: it goes on.
+    expect(useAppStore.getState().activeGroupIndex).toBe(0);
+    expect(useAppStore.getState().playing).toBe(true);
+    act(() => useAppStore.getState().toggleResultsGroup(1));
+    expect(useAppStore.getState().activeGroupIndex).toBe(1);
+    expect(useAppStore.getState().playing).toBe(false);
+    act(() => play().click());
+    act(() => useAppStore.getState().toggleResultsGroup(useAppStore.getState().expandedGroupIndex!));
+    expect(useAppStore.getState().expandedGroupIndex).toBeNull();
+    expect(useAppStore.getState().playing).toBe(false);
+  });
+
   it('stops when a scene is clicked, in the list or on the map, ticking or unticking', () => {
     act(() => useAppStore.setState({ resultsOnMap: true }));
     act(() => play().click());
