@@ -38,6 +38,10 @@ NDWI = band_math("(green - nir) / (green + nir)", "NDWI")
 MASK = {"op": "mask", "op_version": 2, "params": {"source": "scl", "classes": [3, 8, 9, 10]}}
 
 
+def mask_values(band: str, condition: str, *values: float) -> dict[str, Any]:
+    return {"op": "mask_values", "op_version": 1, "params": {"band": band, "condition": condition, "values": list(values)}}
+
+
 def _item(**more: Any) -> dict[str, Any]:
     """Sentinel-2 as the source serves it, with the bands the chains below name; ``more`` adds assets."""
     item = s2_item()
@@ -171,6 +175,61 @@ def intake_operators():
     from earthx.processing.operators import REGISTRY
 
     return REGISTRY
+
+
+class TestMaskByValue:
+    """DS-06: the band a ``mask_values`` step looks at is read, whether or not the output names it."""
+
+    async def test_a_mask_over_a_result_reads_what_the_result_needs(self) -> None:
+        accepted = await accept(_order([NDVI, mask_values("NDVI", "lt", 0.2)], ["NDVI"]), Source((S2, _item())))
+        assert accepted.recipe.inputs[0].assets == ["red", "nir"]
+
+    async def test_a_band_of_the_data_that_decides_is_read_though_the_output_leaves_it_out(self) -> None:
+        accepted = await accept(_order([mask_values("green", "gt", 0.3)], ["red"]), Source((S2, _item())))
+        assert accepted.recipe.inputs[0].assets == ["red", "green"]
+
+    async def test_the_step_is_in_the_recipe_as_it_was_sent(self) -> None:
+        accepted = await accept(_order([mask_values("red", "between", 0.1, 0.3)], ["red"]), Source((S2, _item())))
+        step = accepted.recipe.steps[0]
+        assert (step.op, step.op_version) == ("mask_values", 1)
+        assert step.params == {"band": "red", "condition": "between", "values": [0.1, 0.3]}
+
+    async def test_the_dem_has_no_classification_layer_and_takes_a_mask_by_value(self) -> None:
+        source = Source((DEM, dem_item("DEM_N47_E009")))
+        step = mask_values("data", "gt", 2000)
+        accepted = await accept(order("cop-dem-glo-30", (("DEM_N47_E009",),), steps=[step], bands=["data"]), source)
+        assert accepted.recipe.inputs[0].assets == ["data"]
+
+    async def test_the_dem_still_refuses_a_mask_by_class(self) -> None:
+        source = Source((DEM, dem_item("DEM_N47_E009")))
+        error = await refused(
+            order("cop-dem-glo-30", (("DEM_N47_E009",),), steps=[MASK], bands=["data"]), source
+        )
+        assert (error.status_code, error.stage) == (422, "applicable") and "masking" in error.detail
+
+    async def test_a_band_nothing_provides_is_named(self) -> None:
+        error = await refused(_order([mask_values("blue", "lt", 1)], ["red"]), Source((S2, _item())))
+        assert (error.status_code, error.stage) == (422, "applicable") and "blue" in error.detail
+
+    async def test_a_result_that_a_later_step_adds_is_not_there_yet(self) -> None:
+        error = await refused(_order([mask_values("NDVI", "lt", 0.2), NDVI], ["red"]), Source((S2, _item())))
+        assert error.status_code == 422 and "NDVI" in error.detail
+
+    @pytest.mark.parametrize(
+        "step",
+        [
+            mask_values("red", "le", 1),
+            mask_values("red", "between", 2, 1),
+            mask_values("red", "eq", 3, 1),
+            mask_values("red", "lt"),
+            {"op": "mask_values", "op_version": 1, "params": {"source": "scl", "classes": [3]}},
+            {"op": "mask_values", "op_version": 1, "params": {"band": "red", "condition": "lt", "values": [1], "x": 1}},
+        ],
+    )
+    async def test_malformed_parameters_are_refused_before_anything_is_fetched(self, step: dict[str, Any]) -> None:
+        source = Source((S2, _item()))
+        error = await refused(_order([step], ["red"]), source)
+        assert error.status_code == 422 and source.calls == []
 
 
 class TestAssetsTheItemDoesNotCount:

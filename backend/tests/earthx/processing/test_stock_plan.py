@@ -30,6 +30,7 @@ MASK = _step("mask", 2, source="scl", classes=[3, 8])
 NORMALIZE = {"in_min": 0.0, "in_max": 1.0, "out_min": 0.0, "out_max": 255.0, "clip": True}
 NDVI = _math("(nir - red) / (nir + red)", "NDVI")
 NDWI = _math("(green - nir) / (green + nir)", "NDWI")
+DARK = _step("mask_values", 1, band="NDVI", condition="lt", values=[0.2])
 REPROJECT = _step("reproject", 4, crs="EPSG:3035", resolution=20.0, resampling="nearest", align=False)
 
 
@@ -72,6 +73,46 @@ class TestWhatTheOutputNeeds:
         planned = plan_steps([_step("band_math", 1, expression="red + nir")], REGISTRY)
         with pytest.raises(RecipeInvalid, match=r"step 0: band_math version 1 replaces or removes bands"):
             needed_source_bands(planned, ["band_math"])
+
+
+class TestMaskByValue:
+    """DS-06: the band looked at is read and kept in the stock until the step has run, whatever the output says."""
+
+    def test_a_band_of_the_data_that_decides_is_needed_though_the_output_leaves_it_out(self) -> None:
+        planned = plan_steps([_step("mask_values", 1, band="green", condition="gt", values=[0.3])], REGISTRY)
+        assert needed_source_bands(planned, ["red"]) == {"red", "green"}
+
+    def test_a_mask_over_a_result_needs_what_the_result_needs(self) -> None:
+        planned = plan_steps([NDVI, DARK], REGISTRY)
+        assert needed_source_bands(planned, ["NDVI"]) == {"nir", "red"}
+        assert needed_source_bands(planned, ["red"]) == {"nir", "red"}
+
+    def test_the_step_hides_in_the_bands_the_output_keeps_and_the_source_of_a_result_leaves_before_it(self) -> None:
+        chain, trace, meta = _plan([NDVI, DARK], ["red", "NDVI"])
+        assert _ops(chain) == ["select_bands", "band_math", "select_bands", "mask_values"]
+        assert next(names for op, names, _ in trace if op == "mask_values") == ["red", "NDVI"]
+        assert [band.name for band in meta.bands] == ["red", "NDVI"]
+
+    def test_the_band_looked_at_stays_until_the_step_has_run_and_leaves_after_it_when_the_output_leaves_it_out(
+        self,
+    ) -> None:
+        chain, trace, meta = _plan([NDVI, DARK], ["red"])
+        assert _ops(chain)[-2:] == ["mask_values", "select_bands"]
+        assert next(before for op, before, _ in trace if op == "mask_values") == ["red", "NDVI"]
+        assert [band.name for band in meta.bands] == ["red"]
+
+    def test_a_result_after_the_step_is_computed_from_the_hidden_pixels(self) -> None:
+        chain, _, meta = _plan([NDVI, DARK, _math("NDVI + red", "Out")], ["Out"])
+        assert _ops(chain) == ["select_bands", "band_math", "select_bands", "mask_values", "band_math", "select_bands"]
+        assert [band.name for band in meta.bands] == ["Out"]
+
+    def test_a_result_that_a_later_step_adds_is_not_in_the_stock_yet(self) -> None:
+        with pytest.raises(RecipeInvalid, match=r"mask_values band 'NDVI' is not among the bands: red, nir"):
+            _plan([DARK, NDVI], ["red"], names=("red", "nir"))
+
+    def test_a_band_that_is_not_in_the_stock_is_named_with_the_bands_it_has(self) -> None:
+        with pytest.raises(RecipeInvalid, match=r"mask_values band 'blue' is not among the bands: red, nir"):
+            _plan([_step("mask_values", 1, band="blue", condition="lt", values=[1])], ["red", "nir"], names=("red", "nir"))
 
 
 class TestDroppingWhatNobodyNeeds:

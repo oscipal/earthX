@@ -3,6 +3,7 @@
 from earthx.processing.operators.band_math import BAND_MATH, BAND_MATH_V2, BandMathParams, BandMathParamsV2
 from earthx.processing.operators.base import BandMeta, BandUse, Operator, RasterMeta, Requirement, Tier
 from earthx.processing.operators.mask import MASK, MASK_V2, MaskParams
+from earthx.processing.operators.mask_values import MASK_VALUES, MaskValuesParams
 from earthx.processing.operators.normalize import (
     NORMALIZE,
     NORMALIZE_V2,
@@ -31,10 +32,12 @@ __all__ = [
     "BandUse",
     "MASK",
     "MASK_V2",
+    "MASK_VALUES",
     "NORMALIZE",
     "NORMALIZE_V2",
     "NORMALIZE_V3",
     "MaskParams",
+    "MaskValuesParams",
     "NormalizeParams",
     "NormalizeParamsV2",
     "NormalizeParamsV3",

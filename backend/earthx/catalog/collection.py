@@ -57,6 +57,7 @@ def _earthx_capabilities(config: DatasetConfig) -> dict[str, bool]:
         "interpolation": caps.interpolation,
         "reprojection": caps.reprojection,
         "masking": caps.masking,
+        "value_masking": caps.value_masking,
         "normalization": caps.normalization,
         "ml_processing": caps.ml_processing,
         "quad_pol": caps.quad_pol,

@@ -103,6 +103,21 @@ def normalize_recipe(method: str = "percentile", params: dict[str, Any] | None =
     return recipe
 
 
+MASK_VALUES: dict[str, Any] = {"band": "red", "condition": "gt", "values": [0.2]}
+
+
+def mask_values_recipe(params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """NDVI as a result, then ``mask_values`` over two scaled COG bands (DS-06): the output is both bands and the result."""
+    recipe = band_math_recipe()
+    recipe["recipe_version"] = 2
+    recipe["steps"] = [
+        {"op": "band_math", "op_version": 2, "params": {"expression": "(nir - red) / (nir + red)", "name": "NDVI"}},
+        {"op": "mask_values", "op_version": 1, "params": params or MASK_VALUES},
+    ]
+    recipe["output"] = {**recipe["output"], "bands": ["NDVI", "red"]}
+    return recipe
+
+
 def reproject_recipe(resampling: str = "bilinear") -> dict[str, Any]:
     """A reprojection of one band of the CF store, decoded by the store's own attributes."""
     key = "r10m:b04"
