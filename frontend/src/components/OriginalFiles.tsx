@@ -78,19 +78,26 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
   latest.current = states;
   const retry = useRef<number[] | undefined>(undefined);
 
-  const years = useMemo(() => acquisitionYears(scenes.map((scene) => scene.item)), [scenes]);
+  // What a run reads is taken from here when it starts; only another selection or "Retry failed" starts one, never a
+  // new object for the same scenes (the dataset list may be loaded again while the dialog is open).
+  const input = useRef({ collection, datasetId: dataset.id, scenes, years: acquisitionYears(scenes.map((scene) => scene.item)) });
+  input.current = { collection, datasetId: dataset.id, scenes, years: acquisitionYears(scenes.map((scene) => scene.item)) };
+  const selection = scenes.map((scene) => scene.item.id).join('\n');
 
   useEffect(() => {
+    const { collection, datasetId, scenes, years } = input.current;
     if (scenes.length === 0) return;
     let current = true;
     const abort = new AbortController();
     control.current = abort;
+    const only = retry.current;
+    retry.current = undefined;
     const { deps, dispose } = browserDeps();
-    void runOriginals({
+    runOriginals({
       collection,
-      datasetId: dataset.id,
+      datasetId,
       scenes,
-      only: retry.current,
+      only,
       years,
       deps,
       signal: abort.signal,
@@ -100,6 +107,9 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
       onWay: (next, reason) => {
         if (current) setWay({ way: next, reason });
       },
+    }).catch(() => {
+      // Whatever the run could not foresee: the rows do not stay on "Waiting".
+      if (current) setStates((all) => all.map((was) => (isOpen(was) ? { status: 'failed', reason: 'The download failed.' } : was)));
     });
     return () => {
       // Closing the dialog, or a run that is being replaced: nothing more is read from the source, and what the page
@@ -108,7 +118,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
       abort.abort();
       dispose();
     };
-  }, [scenes, collection, dataset.id, years, attempt]);
+  }, [selection, attempt]);
 
   const running = states.some(isOpen);
   const failed = states.some(isRetryable);

@@ -16,6 +16,7 @@ const ACTIVATION_TIMEOUT_MS = 10_000;
 // to "download several files?" even when its blob address has been freed meanwhile (measured with a real click on
 // "Allow", plan section 6.11), so the files of a whole run do not pile up in memory.
 const FREE_SAVED_AFTER_MS = 30_000;
+const REMOVE_DOWNLOAD_FRAME_AFTER_MS = 10 * 60_000;
 
 export function canStream(): boolean {
   return typeof navigator !== 'undefined' && 'serviceWorker' in navigator && globalThis.isSecureContext === true;
@@ -27,15 +28,16 @@ function scopeOf(script: URL): string {
   return new URL('./', script).pathname;
 }
 
+// After a new version of the app the old worker may still be the active one while the new one installs and takes over
+// (`skipWaiting`): the job has to go to the one that will answer the request of the download, so one that is on its way
+// is waited for.
 function waitActive(registration: ServiceWorkerRegistration): Promise<ServiceWorker> {
-  const worker = registration.active;
-  if (worker) return Promise.resolve(worker);
   const installing = registration.installing ?? registration.waiting;
+  if (!installing || installing.state === 'activated') {
+    const worker = installing ?? registration.active;
+    return worker ? Promise.resolve(worker) : Promise.reject(new ZipError('unavailable'));
+  }
   return new Promise((resolve, reject) => {
-    if (!installing) {
-      reject(new ZipError('unavailable'));
-      return;
-    }
     const timer = setTimeout(() => reject(new ZipError('unavailable')), ACTIVATION_TIMEOUT_MS);
     installing.addEventListener('statechange', () => {
       if (installing.state === 'activated') {
@@ -53,7 +55,9 @@ async function activeWorker(): Promise<{ worker: ServiceWorker; scope: string }>
   const script = new URL(workerUrl, location.href);
   const scope = scopeOf(script);
   try {
-    const registration = await navigator.serviceWorker.register(script.href, { type: 'module', scope });
+    // The build writes the worker as one classic script, the dev server serves it as a module.
+    const type = import.meta.env.DEV ? 'module' : 'classic';
+    const registration = await navigator.serviceWorker.register(script.href, { type, scope });
     return { worker: await waitActive(registration), scope };
   } catch (error) {
     throw error instanceof ZipError ? error : new ZipError('unavailable');
@@ -70,7 +74,8 @@ function zipChannel(hidden: HTMLIFrameElement[]): ZipChannel {
       const send = (command: ZipCommand) => channel.port1.postMessage(command);
       return new Promise<void>((resolve, reject) => {
         let startTimer: ReturnType<typeof setTimeout> | undefined;
-        const keepAlive = setInterval(() => send({ type: 'ping' }), KEEP_ALIVE_MS);
+        // To the worker itself, not over the channel: only an event of the worker's own scope starts its idle time anew.
+        const keepAlive = setInterval(() => worker.postMessage({ type: 'ping' } satisfies ZipCommand), KEEP_ALIVE_MS);
         const finish = (error?: ZipError) => {
           clearInterval(keepAlive);
           clearTimeout(startTimer);
@@ -113,7 +118,9 @@ function zipChannel(hidden: HTMLIFrameElement[]): ZipChannel {
 }
 
 // The things a run needs from the page. `dispose` removes what it put into the page and frees the files it saved that
-// are not yet freed: it is called when the dialog closes, which also ends the run.
+// are not yet freed: it is called when the dialog closes, which also ends the run. The frames of the downloads the
+// browser makes itself are not taken away then: a download that waits for a free connection (a browser keeps six per
+// host) would be dropped, and it is the browser's by now. They are removed after a while.
 export function browserDeps(): { deps: RunDeps; dispose(): void } {
   const urls = new Set<string>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -138,7 +145,7 @@ export function browserDeps(): { deps: RunDeps; dispose(): void } {
     navigate(href) {
       const frame = Object.assign(document.createElement('iframe'), { hidden: true, src: href });
       document.body.append(frame);
-      frames.push(frame);
+      setTimeout(() => frame.remove(), REMOVE_DOWNLOAD_FRAME_AFTER_MS);
     },
     now: () => new Date(),
   };

@@ -16,7 +16,13 @@ const JOB: ZipJob = {
 class FakeWorker {
   jobs: { command: ZipCommand; port: MessagePort }[] = [];
   received: ZipCommand[] = [];
-  postMessage(command: ZipCommand, transfer: MessagePort[]) {
+  // Messages to the worker itself, which have no port; the page keeps it awake with them.
+  pings = 0;
+  postMessage(command: ZipCommand, transfer: MessagePort[] = []) {
+    if (command.type === 'ping') {
+      this.pings += 1;
+      return;
+    }
     const port = transfer[0];
     this.jobs.push({ command, port });
     port.onmessage = (event: MessageEvent<ZipCommand>) => this.received.push(event.data);
@@ -93,17 +99,25 @@ describe('the files the page saves and hands over', () => {
     expect(revoked).toEqual(['blob:file-1']);
   });
 
-  it('dispose frees what is not yet freed, once, and removes the frames', () => {
+  it('dispose frees what is not yet freed, once', () => {
     const { deps, dispose } = browserDeps();
     deps.saveBlob('a', new Blob(['x']));
     deps.saveBlob('b', new Blob(['y']));
-    deps.navigate('https://data.test/red.tif');
-    expect(document.querySelectorAll('iframe')).toHaveLength(1);
     dispose();
     expect(revoked.sort()).toEqual(['blob:file-1', 'blob:file-2']);
-    expect(document.querySelector('iframe')).toBeNull();
     vi.advanceTimersByTime(60_000);
     expect(revoked).toHaveLength(2);
+  });
+
+  it('the frame of a download the browser makes itself stays when the dialog closes, and goes after ten minutes', () => {
+    const { deps, dispose } = browserDeps();
+    deps.navigate('https://data.test/red.tif');
+    dispose();
+    expect(document.querySelectorAll('iframe')).toHaveLength(1);
+    vi.advanceTimersByTime(9 * 60_000);
+    expect(document.querySelectorAll('iframe')).toHaveLength(1);
+    vi.advanceTimersByTime(2 * 60_000);
+    expect(document.querySelector('iframe')).toBeNull();
   });
 
   it('navigate adds a hidden frame at the address of the file', () => {
@@ -125,9 +139,22 @@ describe('the ZIP through the service worker', () => {
     return { run, outcome, loaded, dispose };
   }
 
-  it('registers the worker as a module below the folder it is served from', async () => {
+  it('registers the worker below the folder it is served from: a module for the dev server, a classic script in the build', async () => {
     await started();
     expect(register).toHaveBeenCalledWith(expect.stringMatching(/\/assets\/originalsWorker-abc\.js$/), { type: 'module', scope: '/assets/' });
+    vi.stubEnv('DEV', false);
+    register.mockClear();
+    await started();
+    expect(register).toHaveBeenCalledWith(expect.any(String), { type: 'classic', scope: '/assets/' });
+    vi.unstubAllEnvs();
+  });
+
+  it('a ZIP frame is taken away when the dialog closes', async () => {
+    const { dispose } = await started();
+    worker.reply({ type: 'ready' });
+    await vi.waitFor(() => expect(document.querySelector('iframe')).not.toBeNull());
+    dispose();
+    expect(document.querySelector('iframe')).toBeNull();
   });
 
   it('hands over the job with a port, and opens the download only once the worker has it', async () => {
@@ -165,12 +192,11 @@ describe('the ZIP through the service worker', () => {
     worker.reply({ type: 'ready' });
     worker.reply({ type: 'started' });
     await vi.advanceTimersByTimeAsync(25_000);
-    await vi.waitFor(() => expect(worker.received.filter((c) => c.type === 'ping')).toHaveLength(2));
+    expect(worker.pings).toBe(2);
     worker.reply({ type: 'done' });
     await outcome;
-    const before = worker.received.length;
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(worker.received).toHaveLength(before);
+    expect(worker.pings).toBe(2);
   });
 
   it('a worker that never asks for the download is unavailable after ten seconds, and is told to drop the job', async () => {
@@ -205,6 +231,22 @@ describe('the ZIP through the service worker', () => {
     const { deps } = browserDeps();
     await expect(deps.zip!.run(JOB, () => undefined, new AbortController().signal)).rejects.toMatchObject({ code: 'unavailable' });
     expect(document.querySelector('iframe')).toBeNull();
+  });
+
+  it('after a new version it waits for the worker that is installing, not the old active one', async () => {
+    const old = new FakeWorker();
+    let listener: () => void = () => undefined;
+    const fresh = Object.assign(worker, { state: 'installing', addEventListener: (_: string, fn: () => void) => (listener = fn) });
+    register.mockResolvedValue({ active: old, installing: fresh, waiting: null });
+    const { deps } = browserDeps();
+    deps.zip!.run(JOB, () => undefined, new AbortController().signal).catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(old.jobs).toHaveLength(0);
+    expect(worker.jobs).toHaveLength(0);
+    fresh.state = 'activated';
+    listener();
+    await vi.waitFor(() => expect(worker.jobs).toHaveLength(1));
+    expect(old.jobs).toHaveLength(0);
   });
 
   it('waits for a worker that is still installing, and gives up when it never becomes active', async () => {
