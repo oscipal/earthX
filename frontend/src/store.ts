@@ -31,6 +31,7 @@ import {
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
 import { datesOfIds, dateOf, knownItems } from './layerDate';
+import { flipNext, flipStart } from './layerFlip';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
 import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
@@ -1226,6 +1227,14 @@ export interface AppState {
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
+  // "Flip through layers" (NM4-65 part 9): on, the layer `flipLayerId` is drawn over all the others and the list stays as it is.
+  flipThrough: boolean;
+  flipLayerId: string | null;
+  setFlipThrough: (on: boolean) => void;
+  // The layer to draw on top, by a click on its row; only while flipping is on.
+  flipTo: (id: string) => void;
+  // One step down (1) or up (-1) the list; stops at the ends.
+  flipStep: (dir: 1 | -1) => void;
   // The band a result layer draws as a layer of its own, named after the band and drawn as the band is now (NM4-65 part 2).
   addBandAsLayer: (id: string) => void;
   // A layer (or "Results", `null`) to a place of the list as it is drawn, by the grip of its row (NM4-65).
@@ -1732,6 +1741,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLayerOpacity: (id, opacity) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
   moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
+  flipThrough: false,
+  flipLayerId: null,
+  setFlipThrough: (on) =>
+    set((s) => {
+      if (!on) return { flipThrough: false, flipLayerId: null };
+      // One layer has nothing to flip through.
+      // It starts with the layer that was worked on last: the one whose settings are open, else the one of the view.
+      return s.layers.length < 2 ? {} : { flipThrough: true, flipLayerId: flipStart(s.layers, s.flipLayerId ?? s.resultViewLayerId ?? s.viewLayerId) };
+    }),
+  flipTo: (id) =>
+    set((s) => (s.flipThrough && s.layers.some((l) => l.id === id) ? { flipLayerId: id } : {})),
+  flipStep: (dir) =>
+    set((s) => {
+      if (!s.flipThrough) return {};
+      const next = flipNext(s.layers, s.flipLayerId, dir);
+      return next === null || next === s.flipLayerId ? {} : { flipLayerId: next };
+    }),
   addBandAsLayer: (id) => {
     const s = get();
     const at = s.layers.findIndex((l) => l.id === id);

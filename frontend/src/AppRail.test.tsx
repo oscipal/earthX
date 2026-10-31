@@ -231,6 +231,30 @@ describe('the keyboard', () => {
     expect(document.activeElement).toBe(symbol('controls'));
   });
 
+  // NM4-65 part 9: while "Flip through layers" is on, the first Escape ends it and the panel stays; the next one closes it.
+  it('ends "Flip through layers" with Escape from inside the layer manager and leaves the panel open', () => {
+    act(() => useAppStore.setState({ layers: [layer('a'), layer('b')], flipThrough: false, flipLayerId: null }));
+    click(symbol('layers'));
+    act(() => useAppStore.getState().setFlipThrough(true));
+    key(container.querySelector<HTMLElement>('.layer-manager h2')!, 'Escape');
+    expect(useAppStore.getState().flipThrough).toBe(false);
+    expect(useAppStore.getState().dock).toBe('layers');
+    key(container.querySelector<HTMLElement>('.layer-manager h2')!, 'Escape');
+    expect(useAppStore.getState().dock).toBeNull();
+  });
+
+  it('ends "Flip through layers" with Escape from the symbol of the layers, and the panel stays', () => {
+    act(() => useAppStore.setState({ layers: [layer('a'), layer('b')], flipThrough: false, flipLayerId: null }));
+    click(symbol('layers'));
+    act(() => useAppStore.getState().setFlipThrough(true));
+    act(() => symbol('layers').focus());
+    key(symbol('layers'), 'Escape');
+    expect(useAppStore.getState().flipThrough).toBe(false);
+    expect(useAppStore.getState().dock).toBe('layers');
+    key(symbol('layers'), 'Escape');
+    expect(useAppStore.getState().dock).toBeNull();
+  });
+
   it('leaves the panel open when Escape closes the menu of a job row, and closes it with the next Escape', () => {
     act(() => useProcessingStore.setState({ jobs: [jobEntry(1)] }));
     click(symbol('jobs'));

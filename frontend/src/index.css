@@ -2054,6 +2054,25 @@ input[type='date']:focus {
   background: var(--row-hover);
   color: var(--accent);
 }
+/* "Flip through layers" (NM4-65 part 9): the toggle in the head, and the row that is drawn on top. */
+.lm-flip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  margin-right: 6px;
+  padding: 0;
+}
+.lm-flip[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--panel-bg, #fff);
+}
+.layer-row.flip {
+  background: var(--row-hover);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 /* The entry "Results" (NM4-59): its name opens nothing. */
 .results-name,
 .results-name:hover {

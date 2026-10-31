@@ -34,6 +34,7 @@ import { DEFAULT_BASEMAP } from '../basemaps';
 import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
 import { previewOverlays } from '../processingPreview';
 import { clipAoiOf, useProcessingStore } from '../processingStore';
+import { flipIdOf } from '../layerFlip';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
 import { shownViewOf, useAppStore } from '../store';
 import type { StacItem, ToolMode } from '../types';
@@ -129,6 +130,8 @@ export default function MapView() {
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
   const resultsAt = useAppStore((s) => s.resultsAt);
+  // The layer "Flip through layers" draws over the others (NM4-65 part 9).
+  const flipId = useAppStore(flipIdOf);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   const playing = useAppStore((s) => s.playing);
@@ -245,7 +248,7 @@ export default function MapView() {
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
       const shown = resultsOnMapOf(st);
-      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded), st.resultsAt);
+      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded), st.resultsAt, flipIdOf(st));
       // A view draws the image that is shown, of the dataset of that image (NM4-53).
       const drawn = st.focusMode ? shownViewOf(st) : null;
       syncMosaic(map, {
@@ -386,11 +389,11 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const note = overlayBudgetNote(
-        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded), resultsAt),
+        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded), resultsAt, flipId),
       );
       if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
-  }, [layers, resultsAt, viewLayer, showDownloaded]);
+  }, [layers, resultsAt, viewLayer, showDownloaded, flipId]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload

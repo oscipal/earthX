@@ -73,6 +73,8 @@ export default function AppRail() {
   const dock = useAppStore((s) => s.dock);
   const toggleDock = useAppStore((s) => s.toggleDock);
   const closeDock = useAppStore((s) => s.closeDock);
+  const flipping = useAppStore((s) => s.flipThrough);
+  const setFlipThrough = useAppStore((s) => s.setFlipThrough);
   const layerCount = useAppStore((s) => s.layers.length);
   // A job whose state is not known yet (an archived one, one of another tab) is not counted as running.
   const running = useProcessingStore((s) => s.jobs.filter((j) => j.phase === 'active' && j.status !== null).length);
@@ -96,6 +98,8 @@ export default function AppRail() {
     else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') go(at - 1);
     else if (event.key === 'Home') go(0);
     else if (event.key === 'End') go(ITEMS.length - 1);
+    // "Flip through layers" ends first (NM4-65 part 9); the panel closes with the next Esc.
+    else if (event.key === 'Escape' && dock && flipping) setFlipThrough(false);
     else if (event.key === 'Escape' && dock) closeDock();
     else return;
     event.preventDefault();

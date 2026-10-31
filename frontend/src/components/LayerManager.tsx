@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
 import { indexDownloadBlock, indexOfLayer } from '../indexDownload';
+import { flipIdOf } from '../layerFlip';
 import type { MapLayer } from '../layers';
 import { isJobId, resultUrl } from '../processing';
 import { RGB, RGB_LABEL } from '../processingBands';
@@ -22,6 +23,8 @@ export const DELETED_LAYER_TIP = 'Job deleted – restore to show';
 export const HIDE_LAYER_TIP = 'Hide layer';
 export const SHOW_LAYER_TIP = 'Show layer';
 export const ADD_BAND_TIP = 'Add this band as a layer of its own';
+export const FLIP_TIP = 'Flip through layers (↑/↓ or the mouse wheel over the list, Esc to stop)';
+export const FLIP_ROW_TIP = 'Draw this layer on top of the others';
 export const RESULTS_ENTRY_TIP = 'Search results, the view and the processing preview. Move to change what lies above.';
 
 // Marks a result layer "Expired" when the time comes (M4-13c-5): one timer for the
@@ -103,12 +106,13 @@ function ResultDownload({ jobID, expired }: { jobID: string; expired: boolean })
 }
 
 // One row, ten places in a fixed order: grip, eye, name, opacity, up, down, process, download, note, remove.
-function LayerRow({ layer: l, index, last, dnd }: { layer: MapLayer; index: number; last: boolean; dnd: RowDnd }) {
+function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: MapLayer; index: number; last: boolean; dnd: RowDnd; flipped: boolean; flipping: boolean }) {
   const remove = useAppStore((s) => s.removeLayer);
   const toggleVis = useAppStore((s) => s.toggleLayerVisible);
   const setOpacity = useAppStore((s) => s.setLayerOpacity);
   const move = useAppStore((s) => s.moveLayer);
   const select = useAppStore((s) => s.selectLayer);
+  const flipTo = useAppStore((s) => s.flipTo);
   const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasets = useAppStore((s) => s.datasets);
   const processLayer = useProcessingStore((s) => s.processLayer);
@@ -125,7 +129,7 @@ function LayerRow({ layer: l, index, last, dnd }: { layer: MapLayer; index: numb
     (note): note is string => note !== null,
   );
   return (
-    <li className={`layer-row${locked ? ' locked' : ''}${dnd.className}`}>
+    <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>
       <Grip dnd={dnd} />
       <button
         type="button"
@@ -146,10 +150,10 @@ function LayerRow({ layer: l, index, last, dnd }: { layer: MapLayer; index: numb
         className="lm-name"
         data-col="name"
         title={
-          (locked ? `${l.name} — ${DELETED_LAYER_TIP}` : `${l.name} — view this layer / continue working on it`) +
+          (locked ? `${l.name} — ${DELETED_LAYER_TIP}` : `${l.name} — ${flipping ? FLIP_ROW_TIP : 'view this layer / continue working on it'}`) +
           (l.note ? `\n${l.note}` : '')
         }
-        onClick={() => select(l.id)}
+        onClick={() => (flipping ? flipTo(l.id) : select(l.id))}
       >
         {l.name}
       </button>
@@ -276,6 +280,86 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
   );
 }
 
+// The toggle of "Flip through layers" in the head of the manager (NM4-65 part 9): up and down arrows around a layer.
+function FlipToggle() {
+  const on = useAppStore((s) => s.flipThrough);
+  const set = useAppStore((s) => s.setFlipThrough);
+  return (
+    <button type="button" className="lm-btn lm-flip" aria-pressed={on} title={FLIP_TIP} aria-label="Flip through layers" onClick={() => set(!on)}>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+        <path d="M8 1.5 11.5 5h-7z" fill="currentColor" />
+        <path d="M8 14.5 4.5 11h7z" fill="currentColor" />
+        <rect x="3" y="7" width="10" height="2" rx="1" fill="currentColor" />
+      </svg>
+    </button>
+  );
+}
+
+// What flipping answers to while it is on: the mouse wheel over the list steps (a native listener, so that the list does not
+// scroll along), Escape ends it unless another part of the page took the key (a pop-up, a tooltip), and it ends of itself when
+// fewer than two layers are left. The row that is flipped to is kept in sight.
+function useFlipping(listRef: RefObject<HTMLUListElement | null>) {
+  const flipping = useAppStore((s) => s.flipThrough);
+  const flipId = useAppStore((s) => s.flipLayerId);
+  const count = useAppStore((s) => s.layers.length);
+  const step = useAppStore((s) => s.flipStep);
+  const setFlip = useAppStore((s) => s.setFlipThrough);
+
+  useEffect(() => {
+    if (flipping && count < 2) setFlip(false);
+  }, [flipping, count, setFlip]);
+
+  useEffect(() => {
+    if (!flipping) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) setFlip(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [flipping, setFlip]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!flipping || !list) return undefined;
+    let travelled = 0;
+    let last = 0;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      // A pause starts a new turn of the wheel; a turn of about one notch (or a flick of a touchpad) is one step.
+      if (event.timeStamp - last > WHEEL_PAUSE_MS) travelled = 0;
+      last = event.timeStamp;
+      travelled += event.deltaY;
+      if (Math.abs(travelled) < WHEEL_NOTCH) return;
+      step(travelled > 0 ? 1 : -1);
+      travelled = 0;
+    };
+    list.addEventListener('wheel', onWheel, { passive: false });
+    return () => list.removeEventListener('wheel', onWheel);
+  }, [flipping, listRef, step]);
+
+  useEffect(() => {
+    if (flipping) listRef.current?.querySelector('.layer-row.flip')?.scrollIntoView?.({ block: 'nearest' });
+  }, [flipping, flipId, listRef]);
+  return flipping;
+}
+
+const WHEEL_NOTCH = 40;
+const WHEEL_PAUSE_MS = 180;
+
+// Keys in the manager while flipping. Esc ends it and, taken here, does not close the panel as well (`App.tsx` leaves a key
+// that was taken alone). ↑/↓ step, but not in a field, where the arrows are the field's (the opacity slider, a dropdown).
+function onFlipKeys(event: ReactKeyboardEvent<HTMLElement>, step: (dir: 1 | -1) => void, end: () => void) {
+  if (event.key === 'Escape' && !event.defaultPrevented && !(event.target as HTMLElement).closest('input, textarea, select, .popover, [role="menu"]')) {
+    event.preventDefault();
+    end();
+    return;
+  }
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  if ((event.target as HTMLElement).closest('input, select, textarea')) return;
+  event.preventDefault();
+  step(event.key === 'ArrowDown' ? 1 : -1);
+}
+
 // How the row at `index` stands in the drag: held, or the place it would take (a line above the row where the row held comes
 // from below, under it where it comes from above).
 function dndClass(drag: RowDrag | null, index: number): string {
@@ -299,20 +383,25 @@ export default function LayerManager() {
   const order: (string | null)[] = [...layers.slice(0, resultsAt).map((l) => l.id), ...(hasResults ? [null] : []), ...layers.slice(resultsAt).map((l) => l.id)];
   const listRef = useRef<HTMLUListElement>(null);
   const { drag, grip } = useRowDrag(listRef, (from, to) => moveRowTo(order[from] ?? null, to));
+  const flipping = useFlipping(listRef);
+  const flipId = useAppStore(flipIdOf);
+  const flipStep = useAppStore((s) => s.flipStep);
+  const setFlip = useAppStore((s) => s.setFlipThrough);
   const dndOf = (row: number): RowDnd => ({ className: dndClass(drag, row), grip: rows > 1 ? grip(row) : null });
   const rowOf = (l: MapLayer, i: number) => {
     const row = hasResults && i >= resultsAt ? i + 1 : i;
-    return <LayerRow key={l.id} layer={l} index={row} last={row === rows - 1} dnd={dndOf(row)} />;
+    return <LayerRow key={l.id} layer={l} index={row} last={row === rows - 1} dnd={dndOf(row)} flipped={flipId === l.id} flipping={flipping} />;
   };
 
   // Docked beside the rail (UI-01 §6.9). It stays mounted when another panel is open: the timer of the
   // result layers above runs either way.
   return (
-    <div className="layer-dock" role="region" aria-label="Layers">
+    <div className="layer-dock" role="region" aria-label="Layers" onKeyDown={flipping ? (event) => onFlipKeys(event, flipStep, () => setFlip(false)) : undefined}>
       <div className="panel dock-panel layer-manager">
         <div className="results-head">
           <h2>Layers</h2>
           <div className="results-head-right">
+            {(layers.length > 1 || flipping) && <FlipToggle />}
             <span>{layers.length}</span>
           </div>
         </div>
