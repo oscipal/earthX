@@ -82,7 +82,7 @@ export default function ViewBar() {
   const processBlocked = processBlockReason(dataset, openCount);
 
   return (
-    <div className="panel download-bar" role="group" aria-label="Selected scenes, full resolution">
+    <div className="download-bar" role="group" aria-label="Selected scenes, full resolution">
       <span className="download-count" title={spread || undefined}>
         <strong>{count}</strong>
         <span>scene{plural ? 's' : ''} selected</span>
