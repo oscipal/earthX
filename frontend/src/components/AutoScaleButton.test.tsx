@@ -64,7 +64,7 @@ describe('"auto-scale"', () => {
     act(() => {
       useAppStore.setState({
         datasets: datasetsFrom([collection] as never), datasetId: 'optical', focusMode: true, cropToAoi: false, showDownloaded: true, groups: [], selectedIds: [],
-        downloaded: { s0: { tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 } },
+        downloaded: { s0: { datasetId: 'sentinel-2-c1-l2a', tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 } },
         pendingColormapName: '', pendingVmin: '0', pendingVmax: '3000', focusLoading: false, resultViewLayerId: null, layers: [],
       });
       root.render(<ViewerControls />);

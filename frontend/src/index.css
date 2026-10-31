@@ -320,7 +320,8 @@ body.dragging * {
 }
 .vc-field select,
 .vc-field input,
-.vc-field textarea {
+.vc-field textarea,
+.vc-dataset {
   padding: 6px 8px;
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
@@ -332,7 +333,8 @@ body.dragging * {
 }
 .vc-field select:focus,
 .vc-field input:focus,
-.vc-field textarea:focus {
+.vc-field textarea:focus,
+.vc-dataset:focus {
   border-color: var(--accent);
 }
 .vc-num input {
@@ -344,11 +346,12 @@ body.dragging * {
 }
 /* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
    head, so the rows of buttons are the same width and that width is the width of the view. Row 1: colormap three
-   columns, vmin and vmax two each, and five for "auto-scale" with "Apply" under it and "Save" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
-   four buttons, three columns each. Every field of row 1 is 34px high. Below 600 px the grid has four
+   columns, vmin and vmax two each, and five for "auto-scale" with "Apply" under it and "Apply to all" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
+   the buttons in one row, four or with several images five of one width (Otto, 1.11.2026: the view is two rows high under its head,
+   wider rather than taller). Every field of row 1 is 34px high. Below 600 px the grid has four
    columns and the rows wrap; no text ends up outside its cell. */
 .scene-view {
-  --cell: 36px;
+  --cell: 46px;
   --row-height: 34px;
   box-sizing: border-box;
   width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--dock-offset) - 24px));
@@ -369,7 +372,7 @@ body.dragging * {
   min-width: 0;
 }
 .scene-view .vc-title {
-  flex: 1 1 0;
+  flex: 1 1 120px;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -398,13 +401,93 @@ body.dragging * {
 .vc-eye.off {
   color: var(--muted);
 }
-.scene-view .vc-render,
-.scene-view .vc-actions {
+.scene-view .vc-head {
+  flex-wrap: wrap;
+}
+/* In the head, between the title and the eye (NM4-53, Otto 31.10.2026): the dataset to choose and the date with the arrows.
+   Where they do not fit beside the title (a narrow window) they take a line of their own under it, the eye staying with the
+   title. The title is what gives way: it is cut with "…" and given in full as its tooltip. */
+.scene-view .vc-dataset {
+  flex: 0 1 130px;
+  min-width: 0;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+.vc-stepper {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.vc-step {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 50%;
+  color: var(--accent);
+  cursor: pointer;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+.vc-step:hover,
+.vc-step:focus-visible {
+  border-color: var(--accent);
+  background: var(--row-hover);
+  outline: none;
+}
+.vc-step[aria-disabled='true'] {
+  color: var(--muted);
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.vc-step[aria-disabled='true']:hover {
+  border-color: var(--panel-border);
+  background: var(--input-bg);
+}
+.vc-step-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+@media (max-width: 599px) {
+  .scene-view .vc-head .vc-eye {
+    order: 1;
+  }
+  .scene-view .vc-head .vc-dataset,
+  .scene-view .vc-head .vc-stepper {
+    order: 2;
+  }
+}
+.scene-view .vc-render {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
   gap: 8px;
   align-items: end;
+}
+.scene-view .vc-actions {
+  --buttons: 4;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(var(--buttons), minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+.scene-view .vc-actions.has-all {
+  --buttons: 5;
 }
 .scene-view .vc-render > :nth-child(1) {
   grid-column: span 3;
@@ -417,7 +500,6 @@ body.dragging * {
   grid-column: span 5;
 }
 .scene-view .vc-actions > * {
-  grid-column: span 3;
   min-width: 0;
   min-height: 44px;
   padding: 6px 8px;
@@ -445,8 +527,12 @@ body.dragging * {
   .scene-view .vc-render > :nth-child(4) {
     grid-column: span 4;
   }
-  .scene-view .vc-actions > * {
-    grid-column: span 2;
+  .scene-view .vc-actions,
+  .scene-view .vc-actions.has-all {
+    --buttons: 2;
+  }
+  .scene-view .vc-actions.has-all > :nth-child(5) {
+    grid-column: 1 / -1;
   }
 }
 .ghost-btn.danger {

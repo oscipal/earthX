@@ -35,7 +35,7 @@ import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle,
 import { previewOverlays } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
-import { useAppStore } from '../store';
+import { shownViewOf, useAppStore } from '../store';
 import type { StacItem, ToolMode } from '../types';
 
 // Only one of density/footprints/area is ever drawn (mapLayers.ts): a one-off
@@ -244,12 +244,14 @@ export default function MapView() {
       const viewLayer = viewLayerOf(st.layers, st);
       const shown = resultsOnMapOf(st);
       syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded), st.resultsAt);
+      // A view draws the image that is shown, of the dataset of that image (NM4-53).
+      const drawn = st.focusMode ? shownViewOf(st) : null;
       syncMosaic(map, {
         // What browsing draws; a view draws its own scenes and needs the whole list for the quicklook under them.
-        items: st.focusMode ? st.items : shown.quicklooks,
+        items: drawn ? drawn.items : shown.quicklooks,
         highlight: shown.highlight,
-        dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
-        downloaded: st.downloaded,
+        dataset: drawn ? drawn.dataset : (st.datasets.find((d) => d.id === st.datasetId) ?? null),
+        downloaded: drawn ? drawn.downloaded : st.downloaded,
         selectedIds: st.selectedIds,
         render: st.appliedRender,
         focusMode: st.focusMode,
@@ -257,7 +259,7 @@ export default function MapView() {
         tilesInLayer: viewLayer !== null,
         aoi: st.viewAoi,
         cropToAoi: st.cropToAoi,
-        groups: st.groups,
+        groups: drawn ? drawn.groups : st.groups,
         datasets: st.datasets,
         openIds: openIdsOf(st.groups, st.expandedGroupIndex),
       });
@@ -348,9 +350,14 @@ export default function MapView() {
   // --- pinned layers (layer manager) ---
   // The mosaics this view asks for, the same object until one of them changes: another view's
   // TileJSON arriving must not tear this view's tiles down.
+  const shownImage = useAppStore((s) => s.shownImage);
+  const view = useMemo(
+    () => (focusMode ? shownViewOf({ downloaded, sections, openSectionId, datasetId, items, groups, datasets, shownImage }) : null),
+    [focusMode, downloaded, sections, openSectionId, datasetId, items, groups, datasets, shownImage],
+  );
   const picked = useMemo(
-    () => mosaicsOfView(allMosaics, datasetId, Object.entries(downloaded), groups),
-    [allMosaics, datasetId, downloaded, groups],
+    () => (view ? mosaicsOfView(allMosaics, view.dataset?.id ?? null, Object.entries(view.downloaded), view.groups) : {}),
+    [allMosaics, view],
   );
   const mosaicsRef = useRef(picked);
   if (!sameMosaics(mosaicsRef.current, picked)) mosaicsRef.current = picked;
@@ -390,22 +397,21 @@ export default function MapView() {
   // the control menu: drawing, changing or clearing that leaves the view alone. ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current && focusMode) {
-      const dataset = datasets.find((d) => d.id === datasetId) ?? null;
+    if (map && readyRef.current && focusMode && view) {
       syncFocusRaster(map, {
-        downloaded,
+        downloaded: view.downloaded,
         render: appliedRender,
         showDownloaded: viewShown(viewLayer, showDownloaded),
         tilesInLayer: viewLayer !== null,
         aoi: viewAoi,
         cropToAoi,
-        items,
-        dataset,
-        groups,
+        items: view.items,
+        dataset: view.dataset,
+        groups: view.groups,
         mosaics,
       });
     }
-  }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
+  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
 
   // --- the preview of the processing panel (M4-13c-2), a tier of "Results" over the results and the view
   // (`mapLayers.ts`); a new AOI cuts it again. ---
@@ -463,11 +469,11 @@ export default function MapView() {
         focusMode,
         cropToAoi,
         aoi: viewAoi,
-        downloaded,
-        groups,
+        downloaded: view ? view.downloaded : downloaded,
+        groups: view ? view.groups : groups,
       });
     }
-  }, [groups, focusMode, cropToAoi, viewAoi, downloaded, highlight, selectedIds]);
+  }, [groups, focusMode, cropToAoi, viewAoi, downloaded, view, highlight, selectedIds]);
 
   // --- fly to a geocoded place ---
   useEffect(() => {

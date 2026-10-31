@@ -12,7 +12,7 @@ import { datasetsFrom } from '../datasets';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
 import { viewDates, viewKind } from '../viewKind';
-import { NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
+import { NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -30,14 +30,14 @@ const collection = (title: string) =>
     'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
   }) as unknown as Collection;
 
-const info = (): DownloadedInfo => ({ tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 });
+const info = (): DownloadedInfo => ({ datasetId: 'optical', tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 });
 const scenes = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`s${i}`, info()]));
 
 // Scenes s0, s1, … of the search, one per entry of `days` (a datetime, or undefined for a product without an instant).
 const withDays = (days: (string | undefined)[]): TimeStepGroup[] => [
   {
     label: 'all',
-    key: 'all',
+    key: ['all'],
     items: days.map((day, i) => ({ id: `s${i}`, collection: 'optical', bbox: [0, 0, 1, 1], properties: day ? { datetime: day } : {}, assets: {} }) as StacItem),
   } as unknown as TimeStepGroup,
 ];
@@ -85,32 +85,23 @@ describe('the head', () => {
     expect(title().textContent).toBe(text);
   });
 
-  it('has the acquisition date (UTC) after the dataset: one date for scenes of one day', () => {
-    mount({ groups: withDays(['2025-07-29T23:30:00Z']) });
-    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 · AOI crop');
-    mount({ cropToAoi: false, downloaded: scenes(2), groups: withDays(['2025-07-29T08:00:00Z', '2025-07-29T20:15:00Z']) });
-    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 · 2 scenes merged');
+  // Otto, 31.10.2026 (zu #257): the date is chosen with the arrows (`ViewerControls.steps.test.tsx`), so the head does not say it.
+  it.each([
+    [['2025-07-29T23:30:00Z'], 1],
+    [['2025-07-29T08:00:00Z', '2025-07-29T20:15:00Z'], 2],
+    [['2025-08-03T10:00:00Z', '2025-07-29T10:00:00Z'], 2],
+    [[undefined], 1],
+  ])('has no date, neither in the line nor in the tooltip: scenes of %j', (days, count) => {
+    mount({ downloaded: scenes(count), groups: withDays(days) });
+    expect(title().textContent).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
+    expect(title().title).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
   });
 
-  it('has the span of the first and the last day for scenes of different days', () => {
-    mount({ downloaded: scenes(2), groups: withDays(['2025-08-03T10:00:00Z', '2025-07-29T10:00:00Z']) });
-    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 – 2025-08-03 · AOI crop · 2 scenes merged');
-  });
-
-  it('takes the date of the scenes of the view only, not of the other results', () => {
-    mount({ groups: withDays(['2025-07-29T10:00:00Z', '2025-09-01T10:00:00Z']), downloaded: { s0: info() } });
-    expect(title().textContent).toContain('2025-07-29');
-    expect(title().textContent).not.toContain('2025-09-01');
-  });
-
-  it('has no date for a product without an instant, and no empty separator', () => {
+  it('has no empty separator for a product without an instant, and the scenes merged in the tooltip', () => {
     mount({ groups: withDays([undefined]) });
     expect(title().textContent).toBe('Sentinel-2 L2A · AOI crop');
-  });
-
-  it('has the date in the tooltip as well, so a cut-off head can be read whole', () => {
     mount({ downloaded: scenes(2), groups: withDays(['2025-07-29T10:00:00Z', '2025-08-03T10:00:00Z']) });
-    expect(title().title).toBe('Sentinel-2 L2A · 2025-07-29 – 2025-08-03 · cropped to the AOI · 2 scenes merged');
+    expect(title().title).toBe('Sentinel-2 L2A · cropped to the AOI · 2 scenes merged');
   });
 
   it('has no "Full-resolution view" and no count of one image', () => {
@@ -176,7 +167,7 @@ describe('the rows of buttons', () => {
     expect(first).toHaveLength(4);
     expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'DIV']);
     expect([first[0], first[1], first[2]].map((el) => el.querySelector('span')?.textContent)).toEqual(['Colormap', 'vmin', 'vmax']);
-    expect([...first[3].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply']);
+    expect([...first[3].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
     expect([...row('vc-actions').children].map((el) => el.textContent)).toEqual(['＋ Add to layers', '⚙ Process', '‹ Change image', '✕ Clear']);
   });
 
@@ -209,11 +200,11 @@ describe('the rows of buttons', () => {
     expect(s.resultsOnMap).toBe(false);
   });
 
-  it('puts "Apply" under "auto-scale", in one cluster, and has no "Save" yet (it comes with NM4-53)', () => {
+  it('puts "Apply" under "auto-scale", in one cluster with "Apply to all" beside them (NM4-53)', () => {
     mount();
     const cluster = row('vc-render').children[3];
     expect(cluster.classList.contains('vc-buttons')).toBe(true);
-    expect([...cluster.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply']);
+    expect([...cluster.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
     expect(container.textContent).not.toContain('Save');
   });
 });
@@ -273,16 +264,20 @@ describe('"Save" of the view of a pinned layer', () => {
     restore: { focusMode: true, downloaded: scenes(1), appliedRender: { rescale: '0,3000' }, activeGroupIndex: 0, selectedIds: [], itemIds: ['s0'], groupItemIds: [['s0']], aoi: null, cropToAoi: false, datasetId: 'optical' },
   };
 
-  it('is not there for a view that is no layer\'s', () => {
+  // Otto, 31.10.2026 (zu #257): "Save" is "Apply to all" and always there; where there is nothing to apply it is locked.
+  it('is there for a view that is no layer\'s too, locked for a dataset of one image, with the reason', () => {
     mount({ appliedRender: { rescale: '0,3000' } });
-    expect(save()).toBeNull();
+    expect(save()).not.toBeNull();
+    expect(save()!.textContent).toBe('Apply to all');
+    expect(save()!.getAttribute('aria-disabled')).toBe('true');
+    expect(save()!.title).toBe(NOTHING_TO_SAVE_ONE_IMAGE);
   });
 
   it('stands beside "Apply", under "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
     mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
-    expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Save']);
+    expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
     expect(save()!.getAttribute('aria-disabled')).toBe('true');
-    expect(save()!.title).toBe(NOTHING_TO_SAVE);
+    expect(save()!.title).toBe(NOTHING_TO_APPLY_TO_ALL_LAYER);
   });
 
   it('is the one blue button: "Apply" has the format of "auto-scale"', () => {
@@ -323,7 +318,7 @@ describe('the layout contract in index.css', () => {
   it('puts the head and both rows in one grid of twelve columns, which decides the width of the view', () => {
     expect(rule('.scene-view')).toContain('grid-template-columns: repeat(12, minmax(0, 1fr))');
     expect(rule('.scene-view')).toMatch(/width: min\(/u);
-    expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('grid-template-columns: subgrid');
+    expect(rule('.scene-view .vc-render')).toContain('grid-template-columns: subgrid');
     expect(rule('.scene-view .vc-head')).toContain('grid-column: 1 / -1');
   });
 
@@ -335,7 +330,16 @@ describe('the layout contract in index.css', () => {
     expect(title).toContain('min-width: 0');
   });
 
-  it('makes "auto-scale" and "Apply" together as high as the fields, and "Save" as high as the two together', () => {
+  it('lets the dataset and the date in the head shrink and the head wrap below the title, never wider than the rows (NM4-53)', () => {
+    expect(rule('.scene-view .vc-head')).toContain('min-width: 0');
+    expect(CSS).toMatch(/\.scene-view \.vc-head \{\s*flex-wrap: wrap;/u);
+    expect(rule('.scene-view .vc-dataset')).toContain('min-width: 0');
+    expect(rule('.vc-stepper')).toContain('min-width: 0');
+    expect(rule('.vc-step-text')).toContain('text-overflow: ellipsis');
+    expect(rule('.scene-view .vc-title')).toContain('flex: 1 1 120px');
+  });
+
+  it('makes "auto-scale" and "Apply" together as high as the fields, and "Apply to all" as high as the two together', () => {
     const cluster = rule('.vc-buttons');
     const height = Number(/--row-height: (\d+)px/u.exec(cluster)?.[1]);
     // The fields of the view and of the settings of a result are as high as the cluster.
@@ -356,12 +360,23 @@ describe('the layout contract in index.css', () => {
     expect(rule('.vc-buttons')).toContain('grid-template-columns: 1fr 1fr');
     expect(rule('.scene-view .vc-render > :nth-child(4)')).toContain('grid-column: span 5');
     expect(rule('.scene-view .vc-field select,\n.scene-view .vc-field input')).toContain('height: var(--row-height)');
-    expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('align-items: end');
+    expect(rule('.scene-view .vc-render')).toContain('align-items: end');
+    expect(rule('.scene-view .vc-actions')).toContain('align-items: end');
   });
 
-  it('gives the four buttons of the second row three columns each and wraps them below 600 px', () => {
-    expect(rule('.scene-view .vc-actions > *')).toContain('grid-column: span 3');
+  // Otto, 1.11.2026: the view is two rows high under its head and wider rather than taller; its buttons are in one row.
+  it('puts the buttons of the second row in one row, four or five of one width, and wraps them below 600 px', () => {
+    expect(rule('.scene-view .vc-actions')).toContain('grid-template-columns: repeat(var(--buttons), minmax(0, 1fr))');
+    expect(rule('.scene-view .vc-actions')).toContain('--buttons: 4');
+    expect(rule('.scene-view .vc-actions.has-all')).toContain('--buttons: 5');
     expect(CSS).toMatch(/@media \(max-width: 599px\) \{\s*\.scene-view \{\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u);
+    expect(CSS).toMatch(/\.scene-view \.vc-actions\.has-all \{\s*--buttons: 2;/u);
+  });
+
+  it('is wide enough for five buttons in one row, and wider than it is high', () => {
+    const cell = Number(/--cell: (\d+)px/u.exec(rule('.scene-view'))?.[1]);
+    const inner = 12 * cell + 11 * 8;
+    expect((inner - 4 * 8) / 5).toBeGreaterThanOrEqual(110);
   });
 
   it('breaks a word that is too long for its button instead of running over the edge', () => {

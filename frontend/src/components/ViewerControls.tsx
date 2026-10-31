@@ -7,13 +7,18 @@
 // "Change image" leaves the view and keeps the choice of scenes; "Clear" takes the view off the map and drops the
 // choice. Neither touches "Hide results".
 
+import { useMemo } from 'react';
+
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
-import { useAppStore } from '../store';
-import { viewDates, viewKind } from '../viewKind';
+import { showsColormap } from '../datasets';
+import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
+import { datasetSavable, shownImageOf, useAppStore } from '../store';
+import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
+import { viewKind } from '../viewKind';
 import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
+import Chevron from './Chevron';
 import Eye from './Eye';
 
 export default function ViewerControls() {
@@ -30,17 +35,18 @@ export default function ViewerControls() {
   // The pinned layer this view was opened from: its settings are these, and "Save" keeps the look for it (NM4-50).
   const layer = useAppStore((s) => layerOfView(s.layers, { ...s, aoi: s.viewAoi }));
   const saveViewLook = useAppStore((s) => s.saveViewLook);
+  // "Save" keeps the look for the layer the view is the picture of and for every image of the dataset (NM4-53).
   const savable = useAppStore((s) => {
     const own = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
-    return own !== null && lookChanged(own.restore.appliedRender, s);
+    return (own !== null && lookChanged(own.restore.appliedRender, s)) || datasetSavable(s);
   });
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
   const exitFocus = useAppStore((s) => s.exitFocus);
   const changeImage = useAppStore((s) => s.changeImage);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
+  const addAllToLayers = useAppStore((s) => s.addAllToLayers);
   const pinLoading = useAppStore((s) => s.pinLoading);
-  const count = useAppStore((s) => Object.keys(s.downloaded).length);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const toggleDownloaded = useAppStore((s) => s.toggleDownloaded);
   const processBlock = useAppStore((s) =>
@@ -50,20 +56,92 @@ export default function ViewerControls() {
     ),
   );
   const processFocusView = useProcessingStore((s) => s.processFocusView);
-  const datasetTitle = useAppStore(
-    (s) => s.datasets.find((d) => d.id === s.datasetId)?.title ?? s.datasetId ?? '',
+  // The images of the view (NM4-53): the head, the row of steps and the buttons speak of the one that is shown.
+  const downloaded = useAppStore((s) => s.downloaded);
+  const sections = useAppStore((s) => s.sections);
+  const openSectionId = useAppStore((s) => s.openSectionId);
+  const datasetId = useAppStore((s) => s.datasetId);
+  const items = useAppStore((s) => s.items);
+  const groups = useAppStore((s) => s.groups);
+  const datasets = useAppStore((s) => s.datasets);
+  const shownKey = useAppStore((s) => s.shownImage);
+  const stepImage = useAppStore((s) => s.stepImage);
+  const chooseViewDataset = useAppStore((s) => s.chooseViewDataset);
+  const images = useMemo(
+    () => imagesOf(downloaded, sectionsForView({ sections, openSectionId, datasetId, items, groups }), datasets),
+    [downloaded, sections, openSectionId, datasetId, items, groups, datasets],
   );
-  // The scenes of the view, for the date in its head.
-  const date = useAppStore((s) => viewDates(s.groups.flatMap((g) => g.items).filter((it) => it.id in s.downloaded)));
+  const shown = shownImageOf(images, shownKey);
+  const datasetTitleOf = (id: string) => datasets.find((d) => d.id === id)?.title ?? id;
+  const datasetTitle = shown ? datasetTitleOf(shown.datasetId) : '';
+  const count = shown?.ids.length ?? Object.keys(downloaded).length;
   // What the head cuts short, in full.
-  const title = [datasetTitle, date, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
+  const title = [datasetTitle, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
+  const here = shown ? imagesOfDataset(images, shown.datasetId) : [];
+  // An image of three bands has no colormap field.
+  const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
+  const colormap = shownDataset ? showsColormap(shownDataset.collection) : true;
+  const at = shown ? here.indexOf(shown) : -1;
+  const datasetIds = datasetIdsOf(images);
+  // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
+  const stepText = shown ? (shown.date ?? shown.groupLabel) : '';
+  const stepTitle = shown
+    ? [stepText, satellitesOf(shown), `step ${at + 1} of ${here.length}`, shown.groupLabel !== stepText ? shown.groupLabel : ''].filter(Boolean).join(' · ')
+    : '';
+  const onKeys = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    stepImage(e.key === 'ArrowLeft' ? -1 : 1);
+  };
 
   return (
     <div className="panel viewer-controls scene-view">
       <div className="vc-head">
         <span className="vc-title" title={title}>
-          {[datasetTitle, date, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
+          {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
         </span>
+        {datasetIds.length > 1 && shown && (
+          <select
+            className="vc-dataset"
+            aria-label="Dataset"
+            title={`Dataset of the image shown: ${datasetTitle}`}
+            value={shown.datasetId}
+            onChange={(e) => chooseViewDataset(e.target.value)}
+          >
+            {datasetIds.map((id) => (
+              <option key={id} value={id}>
+                {datasetTitleOf(id)}
+              </option>
+            ))}
+          </select>
+        )}
+        {shown && (
+          <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeys}>
+            <button
+              type="button"
+              className="vc-step"
+              aria-label="Previous image"
+              aria-disabled={at <= 0 || undefined}
+              title={here.length <= 1 ? 'There is only one image' : at <= 0 ? 'This is the first image' : 'Previous image'}
+              onClick={() => stepImage(-1)}
+            >
+              <Chevron direction="left" />
+            </button>
+            <span className="vc-step-text" title={stepTitle}>
+              {stepText}
+            </span>
+            <button
+              type="button"
+              className="vc-step"
+              aria-label="Next image"
+              aria-disabled={at >= here.length - 1 || undefined}
+              title={here.length <= 1 ? 'There is only one image' : at >= here.length - 1 ? 'This is the last image' : 'Next image'}
+              onClick={() => stepImage(1)}
+            >
+              <Chevron direction="right" />
+            </button>
+          </div>
+        )}
         <button
           type="button"
           className={`vc-eye${showDownloaded ? '' : ' off'}`}
@@ -78,14 +156,21 @@ export default function ViewerControls() {
       <div className="vc-render">
         <label className="vc-field">
           <span>Colormap</span>
-          <select value={pendingColormapName} onChange={(e) => setPendingColormapName(e.target.value)}>
-            <option value="">— none —</option>
-            {COLORMAPS.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          {colormap ? (
+            <select value={pendingColormapName} onChange={(e) => setPendingColormapName(e.target.value)}>
+              <option value="">— none —</option>
+              {COLORMAPS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          ) : (
+            // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
+            <select value="" title="True colour: three bands, no colormap" onChange={() => undefined}>
+              <option value="">RGB</option>
+            </select>
+          )}
         </label>
         <label className="vc-field vc-num">
           <span>vmin</span>
@@ -122,32 +207,51 @@ export default function ViewerControls() {
           >
             Apply
           </button>
-          {layer && (
-            <button
-              type="button"
-              className="primary-btn vc-save"
-              aria-disabled={!savable || undefined}
-              title={savable ? 'Keep these values for this layer' : NOTHING_TO_SAVE}
-              onClick={() => {
-                if (savable) saveViewLook();
-              }}
-            >
-              Save
-            </button>
-          )}
+          <button
+            type="button"
+            className="primary-btn vc-save"
+            aria-disabled={!savable || undefined}
+            title={
+              savable
+                ? layer
+                  ? 'Draw every image of this dataset with these values and keep them for this layer'
+                  : 'Draw every image of this dataset with these values'
+                : layer
+                  ? NOTHING_TO_APPLY_TO_ALL_LAYER
+                  : here.length > 1
+                    ? NOTHING_TO_SAVE_IMAGES
+                    : NOTHING_TO_SAVE_ONE_IMAGE
+            }
+            onClick={() => {
+              if (savable) saveViewLook();
+            }}
+          >
+            Apply to all
+          </button>
         </div>
       </div>
 
-      <div className="vc-actions">
+      <div className={`vc-actions${images.length > 1 ? ' has-all' : ''}`}>
         <button
           type="button"
           className="ghost-btn"
-          title="Pin this image into the layer manager"
+          title={images.length > 1 ? 'Pin the image that is shown into the layer manager' : 'Pin this image into the layer manager'}
           disabled={pinLoading}
           onClick={() => addCurrentToLayers()}
         >
           {pinLoading ? 'Loading…' : '＋ Add to layers'}
         </button>
+        {images.length > 1 && (
+          <button
+            type="button"
+            className="ghost-btn"
+            title={`Pin all ${images.length} images of the view into the layer manager, one layer each`}
+            disabled={pinLoading}
+            onClick={() => addAllToLayers()}
+          >
+            {pinLoading ? 'Loading…' : '＋ Add all to layers'}
+          </button>
+        )}
         <button
           type="button"
           className="ghost-btn"

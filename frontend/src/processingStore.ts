@@ -163,7 +163,7 @@ import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
-import { selectionItemsFrom, ticksOfOpen, useAppStore, type AppState } from './store';
+import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
 import type { EarthxMask, StacItem, TimeStepGroup } from './types';
@@ -1376,7 +1376,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     processFocusView: async () => {
       useAppStore.getState().activateViewContext();
       const app = useAppStore.getState();
-      const extraScenes = await selectScenes(Object.keys(app.downloaded), 'this view');
+      // A job has one dataset: the scenes of every image of the dataset that is shown (NM4-53).
+      const images = viewImagesOf(app);
+      const shown = shownImageOf(images, app.shownImage);
+      const ids = shown ? images.filter((image) => image.datasetId === shown.datasetId).flatMap((image) => image.ids) : Object.keys(app.downloaded);
+      const extraScenes = await selectScenes(ids, 'this view');
       if (!extraScenes) return;
       const { cropToAoi, viewAoi } = app;
       openCrop(cropToAoi && isArea(viewAoi) ? { itemIds: Object.keys(app.downloaded), aoi: viewAoi, result: null } : null, extraScenes);

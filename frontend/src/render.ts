@@ -63,6 +63,10 @@ export function pendingFieldsOf(render: AppliedRender): { pendingColormapName: s
 // What the disabled "Apply" and "Save" say in their tooltips (the view of scenes and of a result).
 export const NOTHING_TO_APPLY = 'Nothing to apply: the map shows these values';
 export const NOTHING_TO_SAVE = 'Nothing to save: the layer is saved as it is drawn';
+// "Apply to all" in the view of scenes (NM4-53, Otto 31.10.2026): always there, locked with the reason where it has nothing to do.
+export const NOTHING_TO_APPLY_TO_ALL_LAYER = 'Nothing to apply to all: the layer is saved as it is drawn';
+export const NOTHING_TO_SAVE_IMAGES = 'Nothing to apply to all: every image of this dataset is drawn like this';
+export const NOTHING_TO_SAVE_ONE_IMAGE = 'Nothing to apply to all: this dataset has only one image in the view';
 
 type PendingFields = { pendingColormapName: string; pendingVmin: string; pendingVmax: string };
 

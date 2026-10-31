@@ -594,7 +594,7 @@ describe('setOpenSection: the dropdown of the results', () => {
       selectedIds: ['o1'],
       focusMode: true,
       cropToAoi: true,
-      downloaded: { o1: { tileUrl: 't', bounds: [0, 0, 1, 1], asset: 'a', minZoom: 0, maxZoom: 1 } },
+      downloaded: { o1: { datasetId: 'sentinel-2-c1-l2a', tileUrl: 't', bounds: [0, 0, 1, 1], asset: 'a', minZoom: 0, maxZoom: 1 } },
       appliedRender: { rescale: '0,1' },
       playing: true,
     });

@@ -1493,7 +1493,7 @@ describe('the ways into the panel (§3.5)', () => {
   });
 
   describe('the view stays as it is (Otto, 19.10.2026)', () => {
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     const OTHER_AOI = bboxToPolygon([10.1, 50.1, 10.2, 50.2]);
 
     it('does not enter the full-resolution view of a layer, and keeps the results list', async () => {
@@ -1683,7 +1683,7 @@ describe('the ways into the panel (§3.5)', () => {
     it('does the same for the full-resolution view, and says "view"', async () => {
       select([scene('S2B_A')]);
       catalog.GONE = scene('GONE');
-      const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+      const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
       useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile, GONE: tile } });
       mount(<ViewerControls />);
       click(button('⚙ Process'));
@@ -1739,7 +1739,7 @@ describe('the ways into the panel (§3.5)', () => {
 
   it('"⚙ Process" of the full-resolution view takes the scenes of the view, cropped or whole', async () => {
     select([scene('S2B_A'), scene('S2B_B')]);
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     useAppStore.setState({ focusMode: true, cropToAoi: true, viewAoi: useAppStore.getState().aoi, downloaded: { S2B_B: tile }, selectedIds: ['S2B_A', 'S2B_B'] });
     mount(<ViewerControls />);
     click(button('⚙ Process'));
@@ -1756,7 +1756,7 @@ describe('the ways into the panel (§3.5)', () => {
 
   it('locks "⚙ Process" of the full-resolution view for a dataset below processing', () => {
     select([scene('S2B_A')], 'catalog');
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile } });
     mount(<ViewerControls />);
     expect(button('⚙ Process').disabled).toBe(true);
