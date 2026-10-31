@@ -12,8 +12,9 @@
 
 ## 2. Soll
 
-- In der Ansicht (Zuschnitt, ganze Szene, gemergte Szenen; aus #211) ein Dropdown „Band“. Vorgabe ist die heutige Darstellung (bei Sentinel-2 `visual`, Echtfarben). Daneben jedes einzelne Band des Datensatzes.
-- Bei einem einzelnen Band greifen Colormap, vmin/vmax, „auto-scale“ und „Apply“ wie heute bei Einband-Datensätzen. Bei `visual` bleiben sie, wie sie sind.
+- In der Ansicht (Zuschnitt, ganze Szene, gemergte Szenen; aus #211) ein Dropdown „Band“ (gemeinsame Komponente `BandSelect.tsx` aus NM4-43e PR 2). Bei Sentinel-2 steht oben der Eintrag **„RGB“** (Echtfarben) und ist die Vorgabe (Otto, 31.10.2026); er ersetzt den Eintrag `visual`. Daneben jedes einzelne Band des Datensatzes.
+- Bei „RGB“ erscheint keine Colormap; vmin/vmax und „auto-scale“ bleiben und gelten für alle drei Bänder gemeinsam.
+- Bei einem einzelnen Band greifen Colormap, vmin/vmax, „auto-scale“ und „Apply“ wie heute bei Einband-Datensätzen.
 - Welche Assets im Dropdown stehen, kommt aus der Registry (Bänder, nicht `auxiliary_assets` wie `preview`; `visual` nur als Vorgabe-Eintrag). Keine Namenslisten im Frontend.
 - „Add to layers“ heftet das gewählte Band an; der Layer behält Band und Darstellung.
 - Wechsel des Bandes ändert nichts an Show/Hide, Auswahl oder Position der Leisten (Regeln aus #211).
