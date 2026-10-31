@@ -1085,8 +1085,8 @@ describe('previewRead', () => {
   });
 
   it('reads an asset that carries several bands once', () => {
-    const rgb = source('visual', ['visual_1', 'visual_2', 'visual_3']);
-    expect(read({ output: ['visual_2'], dataNames: ['visual_1', 'visual_2', 'visual_3'], sources: [rgb], steps: [] })).toMatchObject({
+    const visual = source('visual', ['visual_1', 'visual_2', 'visual_3']);
+    expect(read({ output: ['visual_2'], dataNames: ['visual_1', 'visual_2', 'visual_3'], sources: [visual], steps: [] })).toMatchObject({
       band: 'visual_2',
       assets: ['visual'],
     });

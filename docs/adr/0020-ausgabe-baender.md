@@ -1256,13 +1256,10 @@ noch nicht gemergt und kann ihn übernehmen.
 
 ### 19.1 Antworten Ottos zu #255 (2026-10-31)
 
-- **Angenommen:** die Auslegungen 1, 2, 3, 5 und 6 (Wortlaut Ottos); seine Abweichung nennt als „Auslegung 4“ den Beginn des Ergebnis-Layers, den die Liste oben als Nummer 5 führt (nächster Punkt gilt). Ob
-  die Nummer 4 (Name der Vorschau-Ebene) angenommen ist, geht aus der Antwort nicht eindeutig hervor; sie bleibt umgesetzt, bis Otto widerspricht.
+- **Angenommen:** die Auslegungen 1, 2, 3, 5 und 6; Ottos Abweichung („Auslegung 4“) meint den Beginn des Ergebnis-Layers, den die Liste oben als Nummer 5 führt (nächster Punkt); der Name der
+  Vorschau-Ebene mit dem Bandnamen (Nummer 4) ist angenommen.
 - **Der Ergebnis-Layer beginnt mit demselben Band wie die Vorschau.** Die Regel für beide (`processingBands.ts: startBand`): das zuletzt angelegte Ergebnis, sonst das erste Band. Beim Start eines
   Auftrags aus dem Panel merkt sich das Panel das Band, das die Vorschau zeigte (`ShelfJob.shownBand`, nur bei mehr als einem Band in der Ausgabe); der Layer beginnt damit
   (`resultLayer.ts: startPlaceOf`). Kennt der Auftrag es nicht (Download-Dialog, Kopie aus der Zeit davor), gilt das letzte Ergebnis eines `band_math`-Schritts der Kopie des Auftrags in der Reihenfolge der
   Kette — die Reihenfolge des Anlegens steht nicht in der Datei —, sonst das erste Band.
-- **RGB (Otto):** Eintrag „RGB“ ganz oben in „Show“ und „Band“, nur wenn `red`, `green` und `blue` in der Ausgabe bzw. in `result.tif` stehen; Vorgabe: zuletzt angelegtes Ergebnis, ohne Band math „RGB“,
-  sonst das erste Band; keine Colormap, ein Bereich für alle drei Bänder; „Save“ speichert den RGB-Bereich. **Noch nicht umgesetzt, wartet auf zwei Entscheidungen** (siehe PR #255 und das Entscheidungslog):
-  die Registry nennt nicht, welche Bänder Rot, Grün und Blau sind, und die Operator-Kachel nimmt nur ein `band=`.
-
+- **RGB ist aus diesem PR herausgenommen** (Otto, 2026-10-31) und eine eigene Aufgabe, NM4-64: Registry-Feld `earthx:true_color`, bis zu drei `band=` an den Kachel-Routen, Frontend. Dieser PR enthält davon nichts.
