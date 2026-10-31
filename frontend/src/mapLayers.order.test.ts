@@ -114,7 +114,7 @@ const scene = (id: string): StacItem => ({
   assets: { SR_10m: { href: 'https://data.test/x.zarr/r10m', roles: ['data'] } },
 });
 const downloadedOf = (id: string): DownloadedInfo => ({
-  tileUrl: `/collections/synthetic-zarr/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+  datasetId: 'sentinel-2-c1-l2a', tileUrl: `/collections/synthetic-zarr/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
   bounds: [10, 47, 11, 48],
   asset: 'visual',
   minZoom: 8,

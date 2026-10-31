@@ -30,7 +30,7 @@ const layerOf = (datasetId: string, render: { colormapName?: string; rescale?: s
   overlays: [],
   restore: {
     focusMode: true,
-    downloaded: { a: { tileUrl: `/collections/${datasetId}/items/a/tiles/{z}/{x}/{y}`, bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 8, maxZoom: 14 } },
+    downloaded: { a: { datasetId, tileUrl: `/collections/${datasetId}/items/a/tiles/{z}/{x}/{y}`, bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 8, maxZoom: 14 } },
     appliedRender: render,
     activeGroupIndex: 0,
     selectedIds: ['a'],

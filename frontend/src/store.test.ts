@@ -145,8 +145,8 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     { key: ['b'], label: 'Overpass B', items: [scene({ id: 'S3' })] },
   ];
 
-  function focusedDownload(id: string): { tileUrl: string; bounds: [number, number, number, number]; asset: string; minZoom: number; maxZoom: number } {
-    return { tileUrl: `/tiles/${id}/{z}/{x}/{y}`, bounds: [1, 47, 2, 48], asset: 'visual', minZoom: 0, maxZoom: 19 };
+  function focusedDownload(id: string): { datasetId: string; tileUrl: string; bounds: [number, number, number, number]; asset: string; minZoom: number; maxZoom: number } {
+    return { datasetId: COG_LIKE.id, tileUrl: `/tiles/${id}/{z}/{x}/{y}`, bounds: [1, 47, 2, 48], asset: 'visual', minZoom: 0, maxZoom: 19 };
   }
 
   beforeEach(() => {

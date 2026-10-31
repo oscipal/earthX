@@ -242,6 +242,8 @@ export interface AppliedRender {
 // `downloaded` map (M2-07b). The tiler renders straight from the source asset —
 // there is no crop or download step here, that is M2-06/M2-07d.
 export interface DownloadedInfo {
+  // The dataset the scene belongs to: a view can hold scenes of several (NM4-53), so it is not the open section's.
+  datasetId: string;
   tileUrl: string; // MapLibre tile template ({z}/{x}/{y}), asset already baked in
   bounds: Bbox;
   asset: string;

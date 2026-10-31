@@ -71,7 +71,7 @@ export const quicklookScene = (id = 'S2A_1'): StacItem => ({
 });
 
 export const sceneInfo = (item: StacItem, minZoom: number, maxZoom: number): DownloadedInfo => ({
-  tileUrl: `/collections/c/items/${item.id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+  datasetId: 'sentinel-2-c1-l2a', tileUrl: `/collections/c/items/${item.id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
   bounds: item.bbox ?? [10, 47, 11, 48],
   asset: 'visual',
   minZoom,

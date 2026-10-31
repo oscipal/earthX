@@ -372,7 +372,7 @@ describe('adding a part of the view to the layers', () => {
     useAppStore.setState({ focusMode: true, cropToAoi: true, groups: [], selectedIds: [] });
     useAppStore.setState({
       downloaded: Object.fromEntries(
-        ['X', 'Y'].map((id) => [id, { tileUrl: `/t/${id}`, bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 19 }]),
+        ['X', 'Y'].map((id) => [id, { datasetId: 'sentinel-2-c1-l2a', tileUrl: `/t/${id}`, bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 19 }]),
       ),
     });
     useAppStore.getState().addCurrentToLayers();

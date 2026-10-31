@@ -55,7 +55,7 @@ const group = (ids: string[]): TimeStepGroup => ({
   items: ids.map((id) => ({ id, bbox: [10, 47, 11, 48], properties: {}, assets: {} })),
 });
 const sceneInfo = (id: string): DownloadedInfo => ({
-  tileUrl: `/collections/${ID}/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+  datasetId: 'sentinel-2-c1-l2a', tileUrl: `/collections/${ID}/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
   bounds: [10, 47, 11, 48],
   asset: 'visual',
   minZoom: 0,

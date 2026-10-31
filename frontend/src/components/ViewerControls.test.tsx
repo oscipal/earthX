@@ -30,7 +30,7 @@ const collection = (title: string) =>
     'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
   }) as unknown as Collection;
 
-const info = (): DownloadedInfo => ({ tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 });
+const info = (): DownloadedInfo => ({ datasetId: 'sentinel-2-c1-l2a', tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 });
 const scenes = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`s${i}`, info()]));
 
 // Scenes s0, s1, … of the search, one per entry of `days` (a datetime, or undefined for a product without an instant).

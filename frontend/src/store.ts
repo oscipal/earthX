@@ -1874,6 +1874,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const it of items) {
       if (!it.bbox) continue;
       downloaded[it.id] = {
+        datasetId: dataset.id,
         tileUrl: api.buildTileTemplate(dataset.id, it.id, asset),
         bounds: it.bbox,
         asset,
