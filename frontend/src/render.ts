@@ -18,6 +18,7 @@ export const COLORMAPS = [
   'greens',
   'ylgn',
   'rdylgn',
+  'rdbu',
   'spectral',
   'terrain',
   'gist_earth',

@@ -43,6 +43,7 @@ import { COLORMAPS } from '../render';
 import { ticksOfOpen, useAppStore } from '../store';
 import type { StacItem } from '../types';
 import BandSelect from './BandSelect';
+import IndexButtons from './IndexButtons';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
@@ -763,6 +764,13 @@ export default function ProcessingPanel() {
                       );
                     })}
                   </div>
+                  <IndexButtons
+                    collection={dataset?.collection}
+                    info={info}
+                    count={p.steps.length}
+                    nameBlock={view.nameBlock}
+                    onAdd={(preset, opVersion) => p.addStep('band_math', opVersion, { expression: preset.expression, name: preset.name })}
+                  />
                   {!view.maskLayer && !info.operators.some((o) => o.op === 'mask') && (
                     <p className="hint-text">Mask: this dataset has no classification layer to read.</p>
                   )}
