@@ -1,4 +1,4 @@
-# NM4-66 — Auswahlleiste und Zeitleiste als ein Block
+# NM4-66 — Auswahlleiste und Zeitleiste als ein Block; kein Ausweichen der Kästen
 
 **Stand:** 31.10.2026, Wunsch von Otto (Backlog-Punkt 66 in `docs/plans/nach-m4-backlog.md`).
 **Stufe A:** direkt umsetzen, ein Draft-PR.
@@ -18,6 +18,7 @@ Gemeint sind die Auswahlleiste („1 scene selected · Crop to AOI · View whole
 2. **Datumszeile der Zeitleiste:** erstes Datum · `<` vorheriges · **aktuelles** · nächstes `>` · letztes Datum. `<` und `>` sind klickbar und springen einen Schritt. Abspielen, Regler und Zähler („1/298“) bleiben.
 3. **„x“ zum Schließen:** kleines „x“ oben rechts am Block, Tooltip „Close“. Schließen ändert nichts an Haken, Show/Hide oder Ebenen. Der Block erscheint wieder, wenn Otto eine Szene anhakt/anklickt oder eine Gruppe öffnet.
 4. Ist keine Szene angehakt, zeigt der Block nur die Zeitleiste (heutiges Verhalten der Auswahlleiste prüfen und im PR beschreiben).
+6. **Kein Ausweichen mehr (Otto, 31.10.2026):** „kannst du dich an die sache erinnern das boxen aus dem weg gehen wenn das control center ausgeklappt ist? Ich will das wieder rückgängig machen. Mit der menüleiste auf der linken seite überlagert sich eigentlich nichts mehr.“ Das automatische Ausweichen schwebender Kästen vor dem linken Panel (eingeführt in M2, V-10/V-11: `Draggable` mit `avoidSelector`/Kollisionstest gegen `.panel-dock`; seit UI-01 rückt die Spalte der Leisten unten beim Öffnen eines Panels nach rechts) entfällt. Kästen bleiben, wo sie verankert bzw. von Otto hingezogen sind, egal ob ein Panel offen ist. Die Klemme an den Bildschirmrand (8 px) und die festen Plätze aus #211 bleiben. Nicht mehr genutzte Ausweich-Logik und ihre Tests entfernen; Liste der betroffenen Stellen im PR. Ersetzt die Regel aus M2 (Log-Nachtrag, Originaltext stehen lassen).
 5. Regeln aus NM4-55 (Abspielen ohne Lücken, offene Gruppe/aktueller Zeitschritt oben) und NM4-59 bleiben.
 
 ## 3. Grenzen
@@ -30,7 +31,7 @@ Gemeint sind die Auswahlleiste („1 scene selected · Crop to AOI · View whole
 
 ## 4. Abnahme
 
-- Tests: ein Block, gleiche Breite, Datumszeile mit `<`/`>`, Schließen und Wiedererscheinen (Szene anklicken, Gruppe öffnen), feste Plätze; Gegenprobe.
+- Tests: ein Block, gleiche Breite, Datumszeile mit `<`/`>`, Schließen und Wiedererscheinen (Szene anklicken, Gruppe öffnen), feste Plätze, kein Verschieben beim Öffnen/Schließen eines Panels; Gegenprobe.
 - Prüfung im echten Browser (Playwright), Hell/Dunkel, schmales Fenster (Datumszeile bricht sauber um oder kürzt).
 - Prüfanleitung für Otto im PR.
 - Alle vier Pflicht-Checks grün.
