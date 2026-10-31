@@ -21,6 +21,7 @@ import { create } from 'zustand';
 import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, type AreaStatistics } from './api';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import { resultsGroupByOfOption, type DatasetOption } from './datasets';
+import { indexPresetsOf } from './indexPresets';
 import {
   loadShelf,
   MAX_NAME_LENGTH,
@@ -82,6 +83,7 @@ import {
   resultBands,
   resultGsd,
   resultLayerName,
+  presetOfResultBand,
   resultRender,
   resultStats,
   resultTileTemplate,
@@ -166,6 +168,8 @@ import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
+import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
+import type { IndexPreset } from './indexPresets';
 import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
@@ -377,6 +381,9 @@ interface ProcessingState {
   // ⚙ of a result layer (NM4-05b, adr/0019 option 2): the order of its job with the steps locked at the start, the output of
   // the job as the output; what is added is run with them as one order.
   extendResult: (layerId: string) => Promise<void>;
+  // "Process" at a layer that shows an index (NM4-14b): the panel opens on the index as the one band of an entity of its own. The view of
+  // scenes does not: its "Process" opens on the bands of the scenes, the index there is only a picture (Otto, 1.11.2026).
+  extendIndexLayer: (layerId: string) => Promise<void>;
   processFocusView: () => Promise<void>;
   setRangeDraft: (patch: Partial<PreviewRange>) => void;
   applyRange: () => void;
@@ -590,9 +597,12 @@ function nameBlockOf(
   return null;
 }
 
-// The AOI a preview is cut to: the one an entry fixed, or the map's.
+// The AOI a preview is cut to: the map's, or where an entry fixed one its own. A crop's own AOI is the one "AOI only" takes, and
+// "Whole scene" cuts nothing (NM4-06, Otto 1.11.2026); on a result "AOI only" is the map's AOI inside the result's area.
 export function clipAoiOf(p: Pick<ProcessingState, 'fixed' | 'area'>, mapAoi: GeoJSON.Geometry | null): GeoJSON.Geometry | null {
-  return p.fixed && !(p.fixed.result && p.area === 'aoi') ? p.fixed.aoi : mapAoi;
+  if (!p.fixed) return mapAoi;
+  if (p.fixed.result) return p.area === 'aoi' ? mapAoi : p.fixed.aoi;
+  return p.area === 'aoi' ? p.fixed.aoi : null;
 }
 
 export const OUTSIDE_TEXT = 'The AOI does not meet the result.';
@@ -619,8 +629,11 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const drawn = isArea(scenes.aoi) ? scenes.aoi : null;
   // Another AOI on a result covers part of it at most: only that part is the order's, and none of it where the AOI misses it.
   const clipped = inner && drawn !== null ? clipToResult(drawn, p.fixed!, scenes.items) : drawn;
-  const aoi = p.fixed && !inner ? p.fixed.aoi : (clipped ?? drawn);
-  const area: Area = p.fixed && !inner ? (p.fixed.aoi ? 'aoi' : 'scene') : p.area;
+  // A crop (an entry that fixed its scenes and an AOI, and no result) is one object whose area is chosen: "AOI only" is its own AOI, the
+  // one the crop was made with, "Whole scene" the whole of its scenes (NM4-06, Otto 1.11.2026).
+  const crop = p.fixed != null && p.fixed.result === null;
+  const aoi = crop ? (p.area === 'aoi' ? p.fixed!.aoi : null) : p.fixed && !inner ? p.fixed.aoi : (clipped ?? drawn);
+  const area: Area = crop ? p.area : p.fixed && !inner ? (p.fixed.aoi ? 'aoi' : 'scene') : p.area;
   const app = aoi === scenes.aoi ? scenes : { ...scenes, aoi };
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
@@ -1107,6 +1120,39 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     return { ok: true, notes, draft };
   };
 
+  // The panel on an index as an entity of its own (`extendIndexLayer`): the order the index would be a job with, taken up like the
+  // order of a result, its one step locked, its one band the whole stock.
+  const openIndexPanel = async (args: {
+    dataset: DatasetOption;
+    preset: IndexPreset;
+    groups: readonly (readonly string[])[];
+    aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+    title: string;
+    whose: string;
+  }) => {
+    const { dataset, preset, groups, aoi, title, whose } = args;
+    const block = processBlockReason(dataset, groups.flat().length);
+    if (block) return void useAppStore.setState({ error: block });
+    const description = await describe(dataset.id);
+    if (description?.state !== 'ready') return void useAppStore.setState({ error: 'The process description of the dataset could not be loaded.' });
+    const made = indexOrdersOfScenes({ datasetId: dataset.id, groups, aoi, preset, dataset, info: description.info });
+    if ('problem' in made) return void useAppStore.setState({ error: made.problem });
+    const taken = await takeOrder(made.orders[0], whose, (draft, notes) => ({
+      // As the panel of a result: "Whole scene" of it; "AOI only" is another AOI inside it. The band is in the list of the output, not
+      // checked, as the bands of a scene are.
+      area: 'scene',
+      output: [],
+      fixed: {
+        itemIds: draft.groups.flat(),
+        aoi: draft.aoi,
+        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes },
+      },
+    }));
+    if (!taken.ok) useAppStore.setState({ error: taken.reason });
+    // The preview lies with the entry "Results", above the layer it is made from.
+    else useAppStore.getState().resultsToTop();
+  };
+
   const updateJob = (jobID: string, patch: Partial<JobEntry>) => {
     set((s) => ({ jobs: s.jobs.map((j) => (j.jobID === jobID ? { ...j, ...patch } : j)) }));
   };
@@ -1452,6 +1498,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     processLayer: async (layerId) => {
       const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
       if (layer?.derived === 'result') return get().extendResult(layerId);
+      if (layer && !layer.derived && indexOfLayer(layer, useAppStore.getState().datasets)) return get().extendIndexLayer(layerId);
       if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
       // The preview lies with the entry "Results": above the layer it is made from, so that it can be seen.
       useAppStore.getState().resultsToTop();
@@ -1546,7 +1593,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const colour = several ? colourPlacesOf(job.bands, trueColorOf(dataset?.collection)) : null;
       const place = startPlaceOf(job.bands, job.order, job.shownBand, colour);
       const stats = place === RGB ? colourStats(job.bands, colour!) : several ? job.bands[place].stats : job.statistics;
-      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB);
+      const preset = place === RGB ? null : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
+      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset);
       const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
         name: resultLayerName(job.title),
@@ -1559,6 +1607,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           expired: false,
           dataType: tileJson.dataType,
           stats,
+          preset,
           ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
         },
         overlays: [
@@ -1643,7 +1692,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set({ ...EMPTY_DRAFT });
     },
     choosePass: (passKey) => set({ passKey, reviewError: null, startError: null, ...dropReview() }),
-    setArea: (area) => set((s) => (s.fixed && !s.fixed.result ? {} : { area, reviewError: null, startError: null, ...dropReview() })),
+    setArea: (area) => set({ area, reviewError: null, startError: null, ...dropReview() }),
     setRunAs: (runAs) => set((s) => (s.fixed?.result ? {} : { runAs, reviewError: null, startError: null, ...dropReview() })),
     addStep: (op, opVersion) => {
       const { datasetId, datasets } = useAppStore.getState();
@@ -1837,6 +1886,27 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       else useAppStore.getState().resultsToTop();
     },
 
+    // A layer that shows an index is processed as the index alone: the panel opens on the order that makes it (one Band math step,
+    // locked) with that band as the whole stock of bands, as it opens on the result of a job (`extendResult`), so that the raw bands of
+    // the scenes are not offered besides it (Otto, 1.11.2026). The first pass of the layer is the pass of the order.
+    extendIndexLayer: async (layerId) => {
+      const app = useAppStore.getState();
+      const layer = app.layers.find((l) => l.id === layerId);
+      const preset = layer && indexOfLayer(layer, app.datasets);
+      const dataset = app.datasets.find((d) => d.id === layer?.restore.datasetId);
+      if (!layer || !preset || !dataset) return;
+      const { restore } = layer;
+      useAppStore.getState().activateLayerContext(layerId);
+      await openIndexPanel({
+        dataset,
+        preset,
+        groups: restore.groupItemIds.length > 0 ? restore.groupItemIds : [restore.itemIds],
+        aoi: restore.cropToAoi && isArea(restore.aoi) ? restore.aoi : null,
+        title: layer.name,
+        whose: 'this layer',
+      });
+    },
+
     reviewOrder: async () => {
       const view = orderView(useAppStore.getState(), get());
       const order = view.built?.order;
@@ -1981,7 +2051,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!layer || !info || !info.bands || !job || info.band === place) return;
       if (place === RGB ? !colour : !band) return;
       const stats = colour ? colourStats(info.bands, colour) : band!.stats;
-      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined);
+      const dataset = app.datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
+      const preset = colour ? null : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
+      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset);
       useAppStore.setState({
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
@@ -1993,7 +2065,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, stats } };
+          return { ...l, overlays, result: { ...kept, band: place, stats, preset } };
         }),
       });
     },
@@ -2247,7 +2319,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   };
   const spec = previewSpec({ ...args, range: p.range, ...(view.inner && view.aoi ? { clipAoi: view.aoi } : {}) });
   if (spec === null) return null;
-  const range = drawnRange(p, spec.measure);
+  const range = drawnRange(p, spec);
   return range === p.range ? spec : previewSpec({ ...args, range });
 }
 
@@ -2259,10 +2331,11 @@ export function handRangeOf(p: Pick<ProcessingState, 'range' | 'rangeByHand'>): 
 }
 
 // The range the preview is drawn with (M4-19c): the one the user applied; else the one the measure of this very
-// preview calls for (the rule of a result's, `scaleOf`); else the start range.
-function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, measureKey: string): PreviewRange {
+// preview calls for (the rule of a result's, `scaleOf`); else the start range. Between the two: the preset of an index (NM4-14, D2).
+function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, spec: Pick<PreviewSpec, 'measure' | 'preset'>): PreviewRange {
   if (handRangeOf(p)) return p.range;
-  return (p.measure?.key === measureKey ? measuredRange(p.measure) : null) ?? p.range;
+  if (spec.preset) return spec.preset;
+  return (p.measure?.key === spec.measure ? measuredRange(p.measure) : null) ?? p.range;
 }
 
 // One measure per state of the preview, which is the steps over the first scene (over the AOI, for "AOI only" with
@@ -2365,18 +2438,18 @@ function stillWanted(run: number, spec: PreviewSpec | null, limit: number | unde
 // (review of #250).
 function fieldsShow(spec: PreviewSpec | null): Partial<Pick<ProcessingState, 'rangeDraft'>> {
   const p = useProcessingStore.getState();
-  return spec && !p.rangeByHand && !p.rangeEdited ? { rangeDraft: drawnRange(p, spec.measure) } : {};
+  return spec && !p.rangeByHand && !p.rangeEdited ? { rangeDraft: drawnRange(p, spec) } : {};
 }
 
 // Takes a measure into the state: with it the unit, and — where no range of the user's holds — the range it calls
 // for in the fields, unless the user is typing in them. Without one the panel says so.
-function adoptMeasure(measure: PreviewMeasure | null): void {
+function adoptMeasure(measure: PreviewMeasure | null, preset: PreviewRange | null): void {
   const p = useProcessingStore.getState();
   const hand = p.rangeByHand;
   useProcessingStore.setState({
     measure,
-    rangeNote: hand || measure !== null ? null : NO_MEASURE,
-    ...(!hand && !p.rangeEdited ? { rangeDraft: measuredRange(measure) ?? p.range } : {}),
+    rangeNote: hand || measure !== null || preset !== null ? null : NO_MEASURE,
+    ...(!hand && !p.rangeEdited ? { rangeDraft: preset ?? measuredRange(measure) ?? p.range } : {}),
   });
 }
 
@@ -2486,7 +2559,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
     if (measure === TOO_LATE) {
       late = request;
     } else {
-      adoptMeasure(measure);
+      adoptMeasure(measure, spec.preset);
       spec = wantedPreview(limit);
     }
   }
@@ -2496,7 +2569,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
   if (late) {
     const measure = await late;
     if (!stillWanted(run, spec, limit)) return;
-    adoptMeasure(measure);
+    adoptMeasure(measure, spec?.preset ?? null);
     const again = wantedPreview(limit);
     if (again && again.key !== spec?.key) {
       const now = wantedPreview();
@@ -2507,7 +2580,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
   // With one, the measure is for the unit alone, and the picture does not wait for it.
   if (spec && hand) {
     const measure = await measureFor(spec);
-    if (stillWanted(run, spec, limit)) adoptMeasure(measure);
+    if (stillWanted(run, spec, limit)) adoptMeasure(measure, spec.preset);
   }
 }
 
