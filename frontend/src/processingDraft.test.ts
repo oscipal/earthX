@@ -154,6 +154,33 @@ describe('draftFromOrder', () => {
     ]);
   });
 
+  describe('the numbers of a mask by value (DS-06b)', () => {
+    const check = (params: Record<string, unknown>) => {
+      const order = structuredClone(FIXTURES['./fixtures/orders/mask-dem-equal-to-values-with-drawn-aoi.json'].inputs.recipe);
+      order.steps[0] = { ...order.steps[0], params };
+      return draftFromOrder(order, infoOf('cop-dem-glo-30'), keys());
+    };
+
+    it('are read as the text they would have been typed as', () => {
+      const { draft, problems } = check({ band: 'data', condition: 'between', values: [0.2, 0.8] });
+      expect(problems).toEqual([]);
+      expect(draft.steps[0].values).toEqual({ band: 'data', condition: 'between', values: '0.2, 0.8' });
+    });
+
+    it('are refused as text, as a number, or in the wrong count for the condition', () => {
+      expect(check({ band: 'data', condition: 'lt', values: '0.2' }).problems.join(' ')).toMatch(/values has the wrong type/u);
+      expect(check({ band: 'data', condition: 'lt', values: [1, 2] }).problems).toEqual(['Step 1 (mask_values): values: Enter one number.']);
+      expect(check({ band: 'data', condition: 'between', values: [3, 1] }).problems).toEqual([
+        'Step 1 (mask_values): values: “from” must be below “to”.',
+      ]);
+      expect(check({ band: 'data', condition: 'eq', values: ['a'] }).problems.join(' ')).toMatch(/values has the wrong type/u);
+    });
+
+    it('name a parameter of the mask by class as unknown', () => {
+      expect(check({ band: 'data', condition: 'lt', values: [1], source: 'scl' }).problems).toEqual(['Step 1 (mask_values): unknown parameter source.']);
+    });
+  });
+
   describe('the bands of a normalize step (adr/0020 §4)', () => {
     const normalize = () => structuredClone(FIXTURES['./fixtures/orders/normalize-dem-with-drawn-aoi.json'].inputs.recipe);
     const check = (bands: unknown) => {

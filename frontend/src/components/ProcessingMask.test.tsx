@@ -198,7 +198,7 @@ const store = () => useProcessingStore.getState();
 async function withMask(items = [scene('S2B_A')], option = dataset()) {
   select(items, option);
   await openPanel();
-  click(button('＋ Mask'));
+  click(button('＋ Mask by class'));
 }
 
 function sentOrder() {
@@ -215,7 +215,7 @@ describe('the mask step is a form, no longer "not supported by this panel"', () 
   it('is offered with a button that works', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    expect(button('＋ Mask').disabled).toBe(false);
+    expect(button('＋ Mask by class').disabled).toBe(false);
     expect(container.textContent).not.toContain('not supported by this panel');
   });
 });
@@ -302,7 +302,7 @@ describe('the layer in the order', () => {
     await openPanel();
     expect(chips()).toEqual(['red', 'nir', 'scl']);
     expect(chip('scl').getAttribute('aria-pressed')).toBe('false');
-    click(button('＋ Mask'));
+    click(button('＋ Mask by class'));
     expect(chip('scl').getAttribute('aria-pressed')).toBe('false');
     expect(chip('red').getAttribute('aria-pressed')).toBe('false');
     click(chip('red'));
@@ -344,7 +344,7 @@ describe('the layer in the order', () => {
     select([scene('S2B_A')]);
     await openPanel();
     click(chip('scl'));
-    click(button('＋ Mask'));
+    click(button('＋ Mask by class'));
     click(button('✕ Remove'));
     expect(chip('scl').getAttribute('aria-pressed')).toBe('true');
     expect(store().output).toEqual(['scl']);
@@ -381,13 +381,13 @@ describe('the preview of a mask', () => {
 
   it('is drawn when the mask is the first step: it runs as a tile, not "only as a job"', async () => {
     await previewOf(() => {
-      click(button('＋ Mask'));
+      click(button('＋ Mask by class'));
       click(chip('red'));
     });
     expect(section().textContent).not.toContain(NO_PREVIEW);
     expect(section().textContent).not.toContain('only as a job');
     const preview = store().preview!;
-    expect(preview.title).toBe('Mask');
+    expect(preview.title).toBe('Mask by class');
     const params = new URL(preview.scenes[0].url, 'http://localhost').searchParams;
     expect(params.getAll('asset')).toEqual(['red', 'scl']);
     expect(params.get('op')).toBe('mask');
@@ -396,12 +396,12 @@ describe('the preview of a mask', () => {
 
   it('shows a mask followed by a step in one picture, in the order of the steps', async () => {
     await previewOf(() => {
-      click(button('＋ Mask'));
+      click(button('＋ Mask by class'));
       click(button('＋ Band math'));
       typeInto(container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]')[0], '(nir - red) / (nir + red)');
     });
     const preview = store().preview!;
-    expect(preview.title).toBe('Mask → Band math');
+    expect(preview.title).toBe('Mask by class → Band math');
     expect(preview.stepCount).toBe(2);
     const params = new URL(preview.scenes[0].url, 'http://localhost').searchParams;
     expect(params.getAll('op')).toEqual(['mask', 'band_math']);
@@ -410,7 +410,7 @@ describe('the preview of a mask', () => {
 
   it('follows the boxes: another class is another picture', async () => {
     await previewOf(() => {
-      click(button('＋ Mask'));
+      click(button('＋ Mask by class'));
       click(chip('red'));
     });
     const before = store().preview!.key;
@@ -427,7 +427,7 @@ describe('the preview of a mask', () => {
   it('still says "only as a job" for a step that is one', async () => {
     await previewOf(() => {
       click(button('＋ Reproject and resample'));
-      click(button('＋ Mask'));
+      click(button('＋ Mask by class'));
     });
     expect(section().textContent).toContain(NO_PREVIEW);
     expect(store().preview).toBeNull();
@@ -435,7 +435,7 @@ describe('the preview of a mask', () => {
 
   it('waits for a class instead of calling an empty mask job-only', async () => {
     await previewOf(() => {
-      click(button('＋ Mask'));
+      click(button('＋ Mask by class'));
       for (const value of [3, 8, 9, 10]) click(box(value));
     });
     expect(section().textContent).toContain('Complete the step to see the preview.');
@@ -463,18 +463,19 @@ describe('the data type after normalize (Otto, 22.10.2026)', () => {
 });
 
 describe('a dataset without a classification layer', () => {
-  it('does not offer a mask and says why', async () => {
+  it('does not offer a mask by class and says nothing about it', async () => {
     const withoutMask = structuredClone(s2) as typeof s2;
     withoutMask.inputs.recipe.schema.properties.steps.items.oneOf = withoutMask.inputs.recipe.schema.properties.steps.items.oneOf.filter(
-      (variant) => !variant.$ref.includes('step_mask'),
+      (variant) => !/step_mask_v\d/u.test(variant.$ref),
     );
     fetchMock.mockImplementation(async (url: string) =>
       url === DESCRIPTION ? json(withoutMask) : new Response('{}', { status: 404 }),
     );
     select([scene('S2B_A', false)], dataset(null));
     await openPanel();
-    expect([...container.querySelectorAll('button')].some((b) => b.textContent === '＋ Mask')).toBe(false);
-    expect(container.textContent).toContain('Mask: this dataset has no classification layer to read.');
+    expect([...container.querySelectorAll('button')].some((b) => b.textContent === '＋ Mask by class')).toBe(false);
+    expect(button('＋ Mask by value')).toBeDefined();
+    expect(container.textContent).not.toContain('no classification layer');
   });
 
   it('says nothing of the kind where the mask is offered', async () => {

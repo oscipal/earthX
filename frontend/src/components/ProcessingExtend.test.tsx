@@ -662,7 +662,7 @@ describe('the panel from a result', () => {
 
   it('offers no mask where the job did not keep the layer the mask reads', async () => {
     await process();
-    expect(button('＋ Mask')).toBeUndefined();
+    expect(button('＋ Mask by class')).toBeUndefined();
     expect(button('＋ Normalize')).toBeDefined();
     expect(button('＋ Band math')).toBeDefined();
   });
@@ -670,7 +670,7 @@ describe('the panel from a result', () => {
   it('offers a mask where the layer is part of the output of the job', async () => {
     useProcessingStore.setState({ jobs: [entry({ order: parent({ steps: [], output: { kind: 'raster', format: 'cog', dtype: 'uint16', bands: ['red', 'scl'] } }) })] });
     await process();
-    expect(button('＋ Mask')).toBeDefined();
+    expect(button('＋ Mask by class')).toBeDefined();
   });
 
   it('lets the person take a band of the locked steps out of the output', async () => {

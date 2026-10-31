@@ -103,7 +103,7 @@ export function renameInExpression(expression: string, from: string, to: string)
 }
 
 // `steps` after the band `from`, which the step `key` adds, has been renamed `to`: the later expressions and the
-// `bands` of later `normalize` steps name it anew. Earlier steps cannot see the band and stay as they are.
+// `bands` of later `normalize` steps and the `band` of later `mask_values` steps name it anew. Earlier steps cannot see the band and stay as they are.
 export function renameResult(steps: readonly DraftStep[], key: number, from: string, to: string): DraftStep[] {
   const at = steps.findIndex((step) => step.key === key);
   return steps.map((step, index) => {
@@ -111,6 +111,9 @@ export function renameResult(steps: readonly DraftStep[], key: number, from: str
     if (isBandMath(step) && typeof step.values.expression === 'string') {
       const expression = renameInExpression(step.values.expression, from, to);
       return expression === step.values.expression ? step : { ...step, values: { ...step.values, expression } };
+    }
+    if (step.op === 'mask_values') {
+      return step.values.band === from ? { ...step, values: { ...step.values, band: to } } : step;
     }
     if (step.op === 'normalize' && typeof step.values.bands === 'string') {
       const names = namesIn(step.values.bands);

@@ -568,6 +568,11 @@ export function bandMathExpressions(steps: readonly DraftStep[]): string[] {
     .map((step) => step.values.expression as string);
 }
 
+// The bands the "Mask by value" steps look at: the order reads them whether or not they are in the output.
+function maskedBands(steps: readonly DraftStep[]): string[] {
+  return steps.flatMap((step) => (step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== '' ? [step.values.band] : []));
+}
+
 // What the panel reads from the selection; a selector on these keeps the
 // panel from rendering on every map move.
 export type SelectionState = Pick<
@@ -591,7 +596,9 @@ function nameBlockOf(
 ): string | null {
   for (const [index, step] of steps.entries()) {
     const reason =
-      problems[step.key] ?? (isBandMath(step) ? readProblem(step, index, steps, data, index < locked ? [] : hidden)?.message : undefined);
+      problems[step.key] ?? (isBandMath(step) || step.op === 'mask_values'
+        ? readProblem(step, index, steps, data, index < locked ? [] : hidden)?.message
+        : undefined);
     if (reason !== undefined) return `Step ${index + 1}: ${reason}`;
   }
   return null;
@@ -679,6 +686,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     ...output,
     ...bandMathExpressions(p.steps).flatMap((expression) => [...namesInExpression(expression)]),
     ...p.steps.flatMap((step) => (step.op === 'normalize' && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [])),
+    ...maskedBands(p.steps),
   ];
   const carried = new Set([...assetsCarrying(sources, named), ...(maskAsset ? [maskAsset] : [])]);
   const assets = sources.map((s) => s.asset).filter((asset) => carried.has(asset));
@@ -1006,6 +1014,7 @@ function missingBands(draft: { steps: readonly DraftStep[]; bands: readonly stri
     ...draft.bands,
     ...bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)]),
     ...draft.steps.flatMap((step) => (step.op === 'normalize' && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [])),
+    ...maskedBands(draft.steps),
   ];
   return [...new Set(used.filter((name) => !known.has(name)))].map((name) => `Band ${name} is not in this selection.`);
 }
@@ -1715,6 +1724,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         values.name = added;
       } else if (op === 'normalize' && 'bands' in values) {
         values.bands = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
+      } else if (op === 'mask_values') {
+        // The band to look at is proposed like that of a normalize step; "below" is where a threshold usually starts.
+        values.band = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
+        values.condition = 'lt';
       }
       set((s) => ({
         steps: [...s.steps, { key, op, opVersion, values }],

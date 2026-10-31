@@ -326,3 +326,19 @@ Dieselbe Draft-PR [#254](https://github.com/oscipal/earthX/pull/254) trägt Plan
 6. **Tests** (vitest): Knöpfe aus der Auflistung (DEM ohne „Mask by class“), Formular je Bedingung und der gebaute Schritt, Zahlenlisten (Sortierung, Doppelte, Grenze 64), Fehler und Sperren, Umbenennen, `recipe.json` hin und zurück, Hinweis „no classification layer“ weg.
 7. **Prüfung im echten Browser** (Chromium/Playwright der Sitzung), nicht nur jsdom, in Hell- und Dunkelmodus und bei schmalem Fenster, mit nachgestellten Antworten; im PR beschrieben. **Bilder nicht ins Repo.**
 8. Nachtrag `adr/0014` „§15 Nachtrag DS-06b“ (Panel), Log-Zeile mit PR-Nummer; `docs/plans/nach-m4-backlog.md` nicht ändern. Vor „fertig“ ist `main` geholt; alle vier Pflicht-Checks der CI grün (Lint, Typprüfung, Frontend-Tests, Backend-Tests).
+
+## 16. Umsetzung DS-06b (Frontend, 31.10.2026)
+
+Auslegungen und Abweichungen von Claude (gelten, bis Otto widerspricht); Begründung in `adr/0014` „§15 Nachtrag DS-06b“:
+
+1. **Feldtyp `numbers` in `schemaForm.ts`** statt Sonderfall im `StepForm` (§15 Punkt 2): Ohne ihn wäre die Form des Operators „not supported by this panel“. Das Formular selbst ist ein eigenes Bauteil (`MaskValuesFields.tsx`), die Regeln je Bedingung stehen in `maskValues.ts`.
+2. **„Band“ bietet keine Klassenschicht (`scl`) und keine Hilfs-Assets an** (Otto, 31.10.2026: dafür gibt es „Mask by class“). Ein Rezept, das `scl` nennt, bleibt gültig; das Panel zeigt den Namen weiter an.
+3. **Vorgaben eines neuen Schritts:** zuletzt angelegtes Ergebnis als Band (wie bei `normalize`), Bedingung „below“, keine Zahl.
+4. **Ein Komma im Zahlenfeld** (`0,2`) wird gemeldet („Use . for decimals.“), nicht stillschweigend als Punkt gelesen; bei `equal to` trennt das Komma die Werte.
+5. **`between`** schreibt der Text des Feldes intern „von; bis“, damit ein Komma im Feld nicht die Zahlen verschiebt; ein Rezept mit „von, bis“ wird gelesen.
+6. **Review und Start** sperren wie bei einem falschen Ausdruck, solange das Band fehlt oder erst später hinzukommt (§15 Punkt 2, `adr/0020` §18.1).
+7. **Nicht umgesetzt:** kein PowerShell-Skript (siehe §14 Punkt 6); `docs/plans/nach-m4-backlog.md` unverändert.
+
+**Abnahme DS-06b.** `npm run lint`, `npx tsc -b`, `npx vitest run` (4598 Tests), `ruff check backend`, `lint-imports`, Backend-Tests zur Auflistung und zu den Auftrags-Fixtures grün; Prozess-Fixtures neu erzeugt (`write-process-fixtures.py`, `test_process_fixtures.py` grün). Im Browser (`frontend/e2e/mask-values.cjs`, Chromium): Sentinel-2 und DEM, hell und dunkel, 1280 und 360 px, acht Fälle ohne Befund. Gegenprobe: Mit abgeschalteten Teilen (Umbenennen, `namesNeeded`, gelesene Assets, Bandprüfung) scheitern acht der neuen Tests.
+
+**Antworten Otto zu [#268](https://github.com/oscipal/earthX/pull/268) (31.10.2026), umgesetzt:** (1) Zahlenliste in `schemaForm.ts` ok. (2) `scl` und Hilfs-Assets aus „Band“ genommen; Test mit Gegenprobe (gegen den alten Code scheitern drei Tests). (3) Vorgabe ok. (4) Meldung zum Komma: „Use . for decimals.“

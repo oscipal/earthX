@@ -297,7 +297,7 @@ describe('what the picture reads for the band (adr/0020 §4)', () => {
   it('adds the layer of a mask, and nothing else, to NDVI with a mask (three assets)', async () => {
     const wide = scene('S2B_A', 17);
     await openWith([wide]);
-    click(button('＋ Mask'));
+    click(button('＋ Mask by class'));
     click(button('＋ Band math'));
     typeInto(expression(0), NDVI);
     act(() => store().setOutput(['result', 'red', 'green', ...Array.from({ length: 17 }, (_, i) => `b${i + 1}`)]));

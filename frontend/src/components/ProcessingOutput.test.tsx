@@ -220,7 +220,7 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
   it('is nothing after reproject, mask or normalize either, and nothing without a step', async () => {
     select(scene());
     await openPanel();
-    for (const op of ['＋ Reproject and resample', '＋ Mask', '＋ Normalize']) {
+    for (const op of ['＋ Reproject and resample', '＋ Mask by class', '＋ Normalize']) {
       click(button(op));
       expect(checked(), op).toEqual([]);
     }
@@ -242,7 +242,7 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
   it('locks the start while the output is empty, and says why in the tooltip', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Mask'));
+    click(button('＋ Mask by class'));
     expect(startButton().disabled).toBe(true);
     expect(startButton().title).toBe(EMPTY_OUTPUT);
     expect(EMPTY_OUTPUT).toBe('Pick at least one band for the output.');
@@ -410,7 +410,7 @@ describe('what an expression names', () => {
     expect(button('Review').disabled).toBe(true);
     expect(button('Review').title).toBe(why);
     expect(startButton().title).toBe(why);
-    expect(button('＋ Mask').disabled).toBe(true);
+    expect(button('＋ Mask by class').disabled).toBe(true);
     await review();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     typeInto(expression(0), 'red / nir');
@@ -422,8 +422,8 @@ describe('what an expression names', () => {
     await openPanel();
     await addBandMath('red - re');
     const why = "Step 1: 're' is not a band name";
-    expect(button('＋ Mask').disabled).toBe(true);
-    expect(button('＋ Mask').title).toBe(why);
+    expect(button('＋ Mask by class').disabled).toBe(true);
+    expect(button('＋ Mask by class').title).toBe(why);
     expect(button('Review').disabled).toBe(true);
     expect(button('Review').title).toBe(why);
     expect(startButton().disabled).toBe(true);
@@ -432,7 +432,7 @@ describe('what an expression names', () => {
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     typeInto(expression(0), 'red - nir');
     expect(button('Review').disabled).toBe(false);
-    expect(button('＋ Mask').disabled).toBe(false);
+    expect(button('＋ Mask by class').disabled).toBe(false);
   });
 
   it('takes the result of an earlier step and the name of a function, not a number or a longer name for a band', async () => {
@@ -568,7 +568,7 @@ describe('the name of a result', () => {
     typeInto(nameField(0), 'red');
     const why = "Step 1: 'red' is already a band name";
     expect(store().nameProblems).toEqual({ [store().steps[0].key]: "'red' is already a band name" });
-    for (const label of ['＋ Band math', '＋ Mask', '＋ Normalize', '＋ Reproject and resample']) {
+    for (const label of ['＋ Band math', '＋ Mask by class', '＋ Normalize', '＋ Reproject and resample']) {
       expect(button(label).disabled, label).toBe(true);
       expect(button(label).title, label).toBe(why);
     }
