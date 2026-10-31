@@ -28,7 +28,7 @@ import {
   mosaicRequestBytes,
 } from './mosaic';
 import { canonicalJson, type Order } from './processing';
-import { assetsCarrying, isBandMath, resultNameOf, resultsOf } from './processingBands';
+import { assetsCarrying, isBandMath, resultNameOf, resultsOf, startBand } from './processingBands';
 import {
   bandsOf,
   namesInExpression,
@@ -190,8 +190,7 @@ export function previewRead(args: {
   const kept = new Set(output);
   const results = resultsOf(steps).filter((result) => kept.has(result.name));
   const choices = [...results.map((result) => result.name), ...output.filter((name) => dataNames.includes(name))];
-  const newest = results.reduce<(typeof results)[number] | null>((last, result) => (last === null || result.key > last.key ? result : last), null);
-  const band = pick !== null && choices.includes(pick) ? pick : (newest?.name ?? choices[0] ?? null);
+  const band = pick !== null && choices.includes(pick) ? pick : startBand(choices, results.map((r) => ({ name: r.name, created: r.key })));
   if (band === null) return { choices, band, assets: [...all] };
   const carried = new Set(assetsCarrying(sources, namesNeeded(steps, band)));
   if (maskAsset !== null && steps.some((step) => step.op === 'mask')) carried.add(maskAsset);

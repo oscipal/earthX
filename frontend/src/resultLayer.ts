@@ -5,6 +5,7 @@
 
 import type { ResultLayerInfo } from './layers';
 import { buildTileUrl } from './mapLayers';
+import { startBand } from './processingBands';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, statsFrom, type ResultStats } from './render';
 import type { AppliedRender, Bbox } from './types';
@@ -78,6 +79,21 @@ export function resultBands(properties: Record<string, unknown> | undefined, ord
     const name = typeof (band as { name?: unknown } | null)?.name === 'string' ? (band as { name: string }).name : '';
     return { name, stats: statsFrom([band], order === null ? any : made.has(name)) };
   });
+}
+
+// The place (0 is the first of the file) of the band a result layer starts with, the one the preview started with
+// (Otto, 31.10.2026): the band the preview showed when the job was started, if the result has it; else the result of a
+// Band math step of the order, the last of the chain (which was created last is not kept); else the first band.
+export function startPlaceOf(
+  bands: readonly ResultBand[],
+  order: { steps: { op: string; params: Record<string, unknown> }[] } | null,
+  shown: string | null,
+): number {
+  const names = bands.map((band) => band.name);
+  if (shown !== null && names.includes(shown)) return names.indexOf(shown);
+  const made = (order?.steps ?? []).flatMap((step) => (step.op === 'band_math' && typeof step.params.name === 'string' ? [step.params.name] : []));
+  const results = made.filter((name) => names.includes(name)).map((name, created) => ({ name, created }));
+  return Math.max(0, names.indexOf(startBand(names, results) ?? ''));
 }
 
 // The range a band is drawn with by choice of the person: saved for the band, or — a result of one band — saved for the job;

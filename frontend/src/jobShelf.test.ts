@@ -45,6 +45,7 @@ function job(jobID: string, over: Partial<ShelfJob> = {}): ShelfJob {
     part: null,
     range: null,
     bandRanges: {},
+    shownBand: null,
     order: null,
     deletedUntil: null,
     serverDeleted: false,
@@ -369,6 +370,14 @@ describe('what the shelf reads', () => {
       ],
     });
     expect(readShelf().shelf.jobs.map((j) => j.bandRanges)).toEqual([{ ndvi: hand }, {}, {}]);
+  });
+
+  it('keeps the band the preview showed as text, and nothing else', () => {
+    write({ v: 1, jobs: [entry({ shownBand: 'ndvi' }), entry({ jobID: OTHER, shownBand: 7 }), entry({ jobID: 'C'.repeat(22), shownBand: 'x'.repeat(200) })] });
+    expect(readShelf().shelf.jobs.map((j) => j.shownBand)).toEqual(['ndvi', null, null]);
+    saveShelf(shelfOf([job('A'.repeat(22), { shownBand: 'ndvi' }), job('B'.repeat(22))]));
+    const written = Object.fromEntries(stored().jobs.map((j: { jobID: string; shownBand?: string }) => [j.jobID, j.shownBand]));
+    expect([written['A'.repeat(22)], written['B'.repeat(22)]]).toEqual(['ndvi', undefined]);
   });
 
   it('writes the ranges of the bands, and writes none for a job that has none', () => {

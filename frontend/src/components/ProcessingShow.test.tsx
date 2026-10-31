@@ -221,6 +221,7 @@ describe('the dropdown "Show"', () => {
     await ndvi(undefined, ['result', 'red']);
     const row = section().querySelector('.pp-range')!;
     expect(row.firstElementChild!.classList.contains('pp-show')).toBe(true);
+    expect(row.querySelector('.pp-show span')!.textContent).toBe('Show');
     expect([...row.querySelectorAll('.vc-field > span')].slice(0, 3).map((s) => s.textContent)).toEqual(['Show', 'min', 'max']);
   });
 

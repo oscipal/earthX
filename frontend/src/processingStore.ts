@@ -81,6 +81,7 @@ import {
   resultRender,
   resultStats,
   resultTileTemplate,
+  startPlaceOf,
   tilesHref,
   type ResultBand,
 } from './resultLayer';
@@ -1012,6 +1013,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       part: null,
       range: null,
       bandRanges: {},
+      shownBand: null,
       order: null,
       deletedUntil: null,
       serverDeleted: false,
@@ -1047,7 +1049,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     const batch = get().batch;
     if (!view.key || batch?.key !== view.key) return;
     const title = titleOf(view);
-    const own = startRange(view, get());
+    const own = startLook(view, get());
     const mine = ++startGeneration;
     set({ starting: true, startError: null, batchStartRefusals: null });
     // One entry for the batch, made with its first job; the jobs themselves stay jobs of their own.
@@ -1292,9 +1294,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }
       // A second click while the TileJSON was coming: one layer.
       if (shown(useAppStore.getState().layers)) return;
-      // A result of several bands starts with the first of the file; the layer says which bands it has.
+      // A result of several bands starts with the band the preview showed; the layer says which bands it has.
       const several = job.bands.length > 1;
-      const render = resultRender(tileJson.dataType, get().range, several ? job.bands[0].stats : job.statistics, ownRangeOf(job, job.bands, 0));
+      const place = startPlaceOf(job.bands, job.order, job.shownBand);
+      const render = resultRender(tileJson.dataType, get().range, several ? job.bands[place].stats : job.statistics, ownRangeOf(job, job.bands, place));
       const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
         name: resultLayerName(job.title),
@@ -1306,13 +1309,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           resampled: job.resampled,
           expired: false,
           dataType: tileJson.dataType,
-          stats: several ? job.bands[0].stats : job.statistics,
-          ...(several ? { bands: job.bands, band: 0 } : {}),
+          stats: several ? job.bands[place].stats : job.statistics,
+          ...(several ? { bands: job.bands, band: place } : {}),
         },
         overlays: [
           {
             kind: 'raster',
-            tileUrl: several ? bandTileUrl(template, 0, render) : buildTileUrl(template, render),
+            tileUrl: several ? bandTileUrl(template, place, render) : buildTileUrl(template, render),
             bounds: tileJson.bounds,
             // The tiler names every level, from a tile of the coarsest overview to the finest source's
             // (`result_tiles.py::RESULT_MIN_ZOOM`/`RESULT_MAX_ZOOM`): the result stays on the map at every
@@ -1617,7 +1620,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }
       if (s.estimate?.key !== view.key) return;
       const title = titleOf(view);
-      const own = startRange(view, s);
+      const own = startLook(view, s);
       const mine = ++startGeneration;
       set({ starting: true, startError: null });
       try {
@@ -1808,6 +1811,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             part: job.part,
             range: job.range,
             bandRanges: job.bandRanges,
+            shownBand: job.shownBand,
             order: job.order,
           },
           jobID,
@@ -1925,14 +1929,18 @@ function previewReadOf(view: OrderView, plan: Extract<PreviewPlan, { state: 'rea
   });
 }
 
-// The range a job keeps from the panel: the one set by hand, which was set for the band the map showed. A result of one
-// band keeps it as the job's; of several, as the range of that band by its name (NM4-43e PR 2).
-function startRange(view: OrderView, p: ProcessingState): { range: PreviewRange | null; bandRanges: Record<string, PreviewRange> } {
+// What a job keeps of the preview it was started from (NM4-43e PR 2): the band the map showed, which the layer of a result of
+// several bands starts with, and the range set by hand, which was set for that band. A result of one band keeps the
+// range as the job's; of several, as the range of that band by its name.
+function startLook(
+  view: OrderView,
+  p: ProcessingState,
+): { range: PreviewRange | null; bandRanges: Record<string, PreviewRange>; shownBand: string | null } {
   const own = handRangeOf(p);
-  if (!own || view.output.length <= 1) return { range: own, bandRanges: {} };
+  if (view.output.length <= 1) return { range: own, bandRanges: {}, shownBand: null };
   const plan = planPreview(p.steps, view.info);
   const band = plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
-  return { range: null, bandRanges: band === null ? {} : { [band]: own } };
+  return { range: null, bandRanges: own && band !== null ? { [band]: own } : {}, shownBand: band };
 }
 
 function wantedPreview(limit?: number): PreviewSpec | null {

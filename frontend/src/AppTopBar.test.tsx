@@ -212,6 +212,7 @@ describe('the processing side bar and the manager of the jobs', () => {
     bands: [],
     range: null,
     bandRanges: {},
+    shownBand: null,
     archived: false,
     groupId: null,
     batchId: null,

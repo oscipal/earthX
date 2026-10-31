@@ -138,6 +138,25 @@ describe('the layer of a result of several bands', () => {
     expect([query().get('rescale'), query().get('colormap_name')]).toEqual(['-1,1', 'rdylgn']);
   });
 
+  it('starts with the band the preview showed when the job was started', async () => {
+    await show({ shownBand: 'red' });
+    expect(layers()[0].result).toMatchObject({ band: 1 });
+    expect(query().get('bidx')).toBe('2');
+    expect(select()!.value).toBe('1');
+    expect([query().get('rescale'), query().get('colormap_name')]).toEqual(['0.05,0.7', 'viridis']);
+  });
+
+  it('starts with the last result of the order where the job does not know it, and with the first band without one', async () => {
+    await show({ shownBand: null });
+    expect(layers()[0].result).toMatchObject({ band: 0 }); // `ndvi` is the one result of the order, and the first band
+    act(() => useAppStore.setState({ layers: [] }));
+    await show({ shownBand: null, order: { ...ORDER, steps: [] } as Order });
+    expect(layers()[0].result).toMatchObject({ band: 0 });
+    act(() => useAppStore.setState({ layers: [] }));
+    await show({ shownBand: null, bands: [...entry().bands].reverse() });
+    expect(layers()[0].result).toMatchObject({ band: 2 }); // `ndvi`, made by the Band math step, now the third of the file
+  });
+
   it('has no `bidx`, no bands and no dropdown for a result of one band', async () => {
     await show({ bands: resultBands({ bands: [PROPERTIES.bands[0]] }, ORDER), statistics: null });
     expect(layers()[0].result?.bands).toBeUndefined();

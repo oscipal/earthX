@@ -19,6 +19,7 @@ import {
   resultRender,
   resultStats,
   resultTileTemplate,
+  startPlaceOf,
   tilesHref,
 } from './resultLayer';
 
@@ -411,5 +412,27 @@ describe('the bands of a result (NM4-43e PR 2)', () => {
     expect(ownRangeOf(job, two, 5)).toBeNull();
     expect(ownRangeOf(job, two.slice(0, 1), 0)).toEqual(own);
     expect(ownRangeOf(job, [], 0)).toEqual(own);
+  });
+});
+
+describe('the band a result layer starts with (Otto, 31.10.2026)', () => {
+  const bands = ['red', 'ndvi', 'ndwi', 'green'].map((name) => ({ name, stats: null }));
+  const order = (...names: string[]) => ({ steps: names.map((name) => ({ op: 'band_math', params: { expression: 'a', name } })) });
+
+  it('is the band the preview showed when the job was started, if the result has it', () => {
+    expect(startPlaceOf(bands, order('ndvi', 'ndwi'), 'green')).toBe(3);
+    expect(startPlaceOf(bands, null, 'ndvi')).toBe(1);
+  });
+
+  it('is the last result of the order where that band is unknown or not in the result', () => {
+    expect(startPlaceOf(bands, order('ndvi', 'ndwi'), null)).toBe(2);
+    expect(startPlaceOf(bands, order('ndvi', 'ndwi'), 'blue')).toBe(2);
+    expect(startPlaceOf(bands, order('ndvi', 'gone'), null)).toBe(1);
+  });
+
+  it('is the first band without a result of Band math, or without the order', () => {
+    expect(startPlaceOf(bands, { steps: [{ op: 'mask', params: { source: 'scl' } }] }, null)).toBe(0);
+    expect(startPlaceOf(bands, null, null)).toBe(0);
+    expect(startPlaceOf([], null, 'x')).toBe(0);
   });
 });

@@ -56,6 +56,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     bands: [],
     range: null,
     bandRanges: {},
+    shownBand: null,
     archived: false,
     groupId: null,
     batchId: null,
@@ -289,7 +290,7 @@ describe('the layer a result becomes', () => {
           jobs: [
             {
               jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM', titleDefault: null, createdAt: '2026-10-10T12:00:00Z',
-              archived: false, groupId: null, batchId: null, part: null, range, bandRanges: {}, order: null,
+              archived: false, groupId: null, batchId: null, part: null, range, bandRanges: {}, shownBand: null, order: null,
               deletedUntil: null, serverDeleted: false, lost: false, superseded: false,
             },
           ],

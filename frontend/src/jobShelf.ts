@@ -46,6 +46,9 @@ export interface ShelfJob {
   // The range and colormap saved for a band of a result of several bands, by the name of the band (NM4-43e PR 2): each
   // band is drawn with its own and no other.
   bandRanges: Record<string, PreviewRange>;
+  // The band the preview showed when the job was started from the panel (NM4-43e PR 2): the layer of a result of several bands
+  // starts with it. `null` for a job of the download dialog and for one kept before this was written.
+  shownBand: string | null;
   // The order as it was sent, up to `MAX_ORDER_BYTES`; the way to start the job again.
   order: Order | null;
   // The end of the day in which the job, deleted, can be restored (NM4-27); `null` for a job that is not deleted. A
@@ -195,6 +198,7 @@ function parseShelf(raw: string): Shelf | 'foreign' | 'broken' {
       part: batchId ? text(j.part, MAX_TITLE_LENGTH) : null,
       range: rangeOf(j.range),
       bandRanges: bandRangesOf(j.bandRanges),
+      shownBand: text(j.shownBand, MAX_NAME_LENGTH),
       order: orderCopy(j.order),
       deletedUntil,
       serverDeleted: deletedUntil !== null && j.serverDeleted === true,
@@ -220,6 +224,7 @@ function serialize(shelf: Shelf, without: ReadonlySet<string>): string {
     ...(Object.keys(j.bandRanges).length > 0
       ? { bandRanges: Object.fromEntries(Object.entries(j.bandRanges).map(([name, r]) => [name, { vmin: r.vmin, vmax: r.vmax, colormap: r.colormap }])) }
       : {}),
+    ...(j.shownBand ? { shownBand: j.shownBand } : {}),
     ...(j.order && !without.has(j.jobID) ? { order: j.order } : {}),
     ...(j.deletedUntil ? { deletedUntil: j.deletedUntil, ...(j.serverDeleted ? { serverDeleted: true } : {}) } : {}),
     ...(j.lost ? { lost: true } : {}),
@@ -257,7 +262,7 @@ function legacyJobs(now: number): ShelfJob[] {
       if (!isJobId(entry.jobID) || !expires || Date.parse(expires) <= now || jobs.some((j) => j.jobID === entry.jobID)) continue;
       jobs.push({
         jobID: entry.jobID, expires, title, titleDefault: title, createdAt: expires,
-        archived: false, groupId: null, batchId: null, part: null, range: null, bandRanges: {}, order: null,
+        archived: false, groupId: null, batchId: null, part: null, range: null, bandRanges: {}, shownBand: null, order: null,
         deletedUntil: null, serverDeleted: false, lost: false, superseded: false,
       });
     }

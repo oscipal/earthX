@@ -1250,6 +1250,19 @@ noch nicht gemergt und kann ihn übernehmen.
      hat. Das ist grundsätzlich, nicht nur im Moment (UI-01 §4: ausblenden). Die Ausgabe selbst ändert das nicht.
   3. **Ist die Ausgabe leer**, zeigt die Vorschau wie bisher, was die Kachel allein wählt (letztes Ergebnis, sonst erstes Band) und liest die Assets des Auftrags; kein Dropdown.
   4. **Name der Vorschau als Ebene:** Bei mehr als einem Band trägt „Add preview to layers“ den Namen des Bandes („Preview · Band math · ndvi“), damit zwei Ebenen nicht gleich heißen.
-  5. **Das Band eines Ergebnis-Layers beginnt mit dem ersten Band der Datei** (das heutige Verhalten). Ein „zuletzt angelegtes Ergebnis“ lässt sich aus der Datei nicht lesen.
+  5. ~~Das Band eines Ergebnis-Layers beginnt mit dem ersten Band der Datei.~~ Ersetzt durch die Antwort Ottos unten.
   6. **Ein Ergebnis gilt je Band als Index**, wenn ein `band_math`-Schritt der Kopie des Auftrags es angelegt hat; ohne die Kopie gilt wie bisher die Eigenschaft `processing:expression` des
      Ergebnisses für alle Bänder.
+
+### 19.1 Antworten Ottos zu #255 (2026-10-31)
+
+- **Angenommen:** die Auslegungen 1, 2, 3, 5 und 6 (Wortlaut Ottos); seine Abweichung nennt als „Auslegung 4“ den Beginn des Ergebnis-Layers, den die Liste oben als Nummer 5 führt (nächster Punkt gilt). Ob
+  die Nummer 4 (Name der Vorschau-Ebene) angenommen ist, geht aus der Antwort nicht eindeutig hervor; sie bleibt umgesetzt, bis Otto widerspricht.
+- **Der Ergebnis-Layer beginnt mit demselben Band wie die Vorschau.** Die Regel für beide (`processingBands.ts: startBand`): das zuletzt angelegte Ergebnis, sonst das erste Band. Beim Start eines
+  Auftrags aus dem Panel merkt sich das Panel das Band, das die Vorschau zeigte (`ShelfJob.shownBand`, nur bei mehr als einem Band in der Ausgabe); der Layer beginnt damit
+  (`resultLayer.ts: startPlaceOf`). Kennt der Auftrag es nicht (Download-Dialog, Kopie aus der Zeit davor), gilt das letzte Ergebnis eines `band_math`-Schritts der Kopie des Auftrags in der Reihenfolge der
+  Kette — die Reihenfolge des Anlegens steht nicht in der Datei —, sonst das erste Band.
+- **RGB (Otto):** Eintrag „RGB“ ganz oben in „Show“ und „Band“, nur wenn `red`, `green` und `blue` in der Ausgabe bzw. in `result.tif` stehen; Vorgabe: zuletzt angelegtes Ergebnis, ohne Band math „RGB“,
+  sonst das erste Band; keine Colormap, ein Bereich für alle drei Bänder; „Save“ speichert den RGB-Bereich. **Noch nicht umgesetzt, wartet auf zwei Entscheidungen** (siehe PR #255 und das Entscheidungslog):
+  die Registry nennt nicht, welche Bänder Rot, Grün und Blau sind, und die Operator-Kachel nimmt nur ein `band=`.
+

@@ -15,6 +15,7 @@ import {
   renameInExpression,
   renameResult,
   resultsOf,
+  startBand,
 } from './processingBands';
 import type { BandSource, DraftStep } from './processingOrder';
 
@@ -219,3 +220,15 @@ describe('the shape of an expression', () => {
   });
 });
 
+
+describe('startBand (Otto, 31.10.2026)', () => {
+  it('is the result created last, not the last in the list', () => {
+    expect(startBand(['b', 'a', 'red'], [{ name: 'b', created: 2 }, { name: 'a', created: 1 }])).toBe('b');
+    expect(startBand(['a', 'b', 'red'], [{ name: 'a', created: 2 }, { name: 'b', created: 1 }])).toBe('a');
+  });
+
+  it('is the first band where there is no result, and none where there is no band', () => {
+    expect(startBand(['red', 'green'], [])).toBe('red');
+    expect(startBand([], [])).toBeNull();
+  });
+});
