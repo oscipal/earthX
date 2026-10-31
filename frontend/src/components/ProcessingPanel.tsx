@@ -60,7 +60,6 @@ import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
 // What the server says when the output needs more memory than a job may use (`plan.py`, 413).
 const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
 
-const CROP_TIP = 'Fixed by the crop.';
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
 
@@ -319,21 +318,6 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
       ) : (
         view.outside && <p className="hint-text error">{OUTSIDE_TEXT}</p>
       )}
-    </div>
-  );
-}
-
-// The scenes and the area a crop fixed (NM4-06): the crop's own, shown as they are with a lock. There is nothing to choose.
-function FixedEntry({ view }: { view: OrderView }) {
-  return (
-    <div className="pp-area">
-      <div className="pp-toggle" role="group" aria-label="Area">
-        <span className="pp-help">Area:</span>
-        <span className="pp-fixed" title={CROP_TIP}>
-          <span aria-hidden="true">🔒 </span>
-          {view.fixed?.aoi ? 'AOI only' : 'Whole scene'}
-        </span>
-      </div>
     </div>
   );
 }
@@ -661,7 +645,8 @@ export default function ProcessingPanel() {
                 .filter(Boolean)
                 .join(' · ')}
             </p>
-            {view.fixed && !view.fixed.result ? <FixedEntry view={view} /> : <AreaChoice view={view} hasAoi={hasAoi} />}
+            {/* A crop has its own AOI to take, the map's AOI or none is no matter (NM4-06). */}
+            <AreaChoice view={view} hasAoi={hasAoi || (view.fixed != null && view.fixed.result === null)} />
             <RunAsChoice view={view} />
             <RecipeLoader />
           </section>

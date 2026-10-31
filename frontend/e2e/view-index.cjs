@@ -211,6 +211,17 @@ async function checkDraw(browser, theme, viewport) {
   await fly(page, 9, [10.7, 50.7]);
   if ((await note.count()) !== 0) problems.push('the note stays after zooming in');
 
+  // "Process" in the view: the bands of the scenes, the index being only a picture there (Otto, 1.11.2026).
+  await page.locator('.scene-view').getByRole('button', { name: /Process/ }).click();
+  await page.locator('.processing-panel').waitFor({ timeout: 8000 }).catch(() => problems.push('the panel did not open from the view'));
+  await page.waitForTimeout(800);
+  const viewChips = await page.locator('.processing-panel section[aria-label="Bands"] .pp-chip').allTextContents();
+  if (viewChips.some((c) => c.startsWith('NDWI')) || !viewChips.some((c) => c.startsWith('red'))) problems.push(`the panel of the view has the bands ${viewChips}`);
+  if ((await page.locator('.processing-panel [aria-label="Area"] button').allTextContents()).join() !== 'Whole scene,AOI only') problems.push('the area of the cropped view is not to choose');
+  await page.locator('.processing-panel').getByTitle('Close the panel').click();
+  await page.waitForTimeout(300);
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: null }));
+
   // "Add to layers": the layer computes the index, with no job.
   await page.getByRole('button', { name: /Add to layers/ }).click();
   await page.waitForTimeout(500);

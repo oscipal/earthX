@@ -2963,11 +2963,6 @@ a.pm-icon:hover {
   display: flex;
   gap: 8px;
 }
-/* What an entry fixes (the area, the scenes): the value as it stands, with a lock. */
-.pp-fixed {
-  font-size: 11px;
-  color: var(--text);
-}
 .pp-add {
   display: flex;
   flex-wrap: wrap;

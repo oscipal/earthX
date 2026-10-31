@@ -262,7 +262,7 @@ describe('"Process" at a layer that shows an index', () => {
   });
 });
 
-describe('"Process" in the view that shows an index', () => {
+describe('"Process" in the view that shows an index (Otto, 1.11.2026: the index is only a picture there)', () => {
   const showView = (look: object) => {
     const items = [scene('S2B_A'), scene('S2B_B')];
     setApp({
@@ -286,12 +286,16 @@ describe('"Process" in the view that shows an index', () => {
   };
   const processButton = () => [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('Process'))!;
 
-  it('opens on the index as the one band, when it is applied', async () => {
+  it('opens on the raw bands of the scenes even where an index is applied: no step, no band of the index', async () => {
     showView(NDVI);
     click(processButton());
     await flush();
-    expect(infoChips()).toEqual(['NDVI']);
-    expect(store().fixed?.result).toMatchObject({ bands: ['NDVI'], locked: 1 });
+    expect(store().open).toBe(true);
+    expect(store().fixed?.result ?? null).toBeNull();
+    expect(store().steps).toEqual([]);
+    expect(infoChips().length).toBeGreaterThan(1);
+    expect(infoChips().some((chip) => chip?.startsWith('red'))).toBe(true);
+    expect(infoChips()).not.toContain('NDVI');
   });
 
   it('opens on the raw bands where the view shows none, or only has an index chosen and not applied', async () => {

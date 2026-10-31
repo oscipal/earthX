@@ -14,7 +14,7 @@ import { bboxToPolygon } from '../geoUtils';
 import type { MapLayer } from '../layers';
 import type { Order } from '../processing';
 import { orderAoi } from '../processingOrder';
-import { orderView, resetJobs, selectionState, setTrackerOptions, useProcessingStore } from '../processingStore';
+import { clipAoiOf, orderView, resetJobs, selectionState, setTrackerOptions, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import LayerManager from './LayerManager';
@@ -179,7 +179,10 @@ async function ndviAndStart() {
 }
 
 describe('the gear of a layer merged and cut to its AOI', () => {
-  it('opens a panel of one object: no "Run as", the area fixed to the AOI of the crop with a lock', async () => {
+  // The area is chosen (Otto, 1.11.2026): "AOI only", the AOI of the crop, to begin with, or "Whole scene".
+  const areaButtons = () => [...selection().querySelectorAll('[aria-label="Area"] button')].map((b) => [b.textContent, b.getAttribute('aria-pressed'), (b as HTMLButtonElement).disabled]);
+
+  it('opens a panel of one object: no "Run as", the area to choose, "AOI only" of the crop to begin with', async () => {
     search([layer(['S2B_A', 'S2B_B'])]);
     // The setting "Run as" of an earlier draft does not carry over.
     useProcessingStore.setState({ runAs: 'scene' });
@@ -190,10 +193,9 @@ describe('the gear of a layer merged and cut to its AOI', () => {
     expect(store().fixed).toEqual({ itemIds: ['S2B_A', 'S2B_B'], aoi: AOI, result: null });
     expect(store().area).toBe('aoi');
     expect(runAs()).toBeNull();
-    expect(button('Whole scene', selection())).toBeUndefined();
-    expect(button('AOI only', selection())).toBeUndefined();
-    expect(selection().querySelector('.pp-fixed')?.textContent).toContain('AOI only');
-    expect(selection().querySelector('.pp-fixed')?.getAttribute('title')).toBe('Fixed by the crop.');
+    expect(areaButtons()).toEqual([['Whole scene', 'false', false], ['AOI only', 'true', false]]);
+    expect(selection().querySelector('.pp-fixed')).toBeNull();
+    expect(selection().textContent).not.toContain('Fixed by the crop');
     expect(selection().textContent).not.toContain('From result');
     expect(app().error).toBeNull();
   });
@@ -214,7 +216,7 @@ describe('the gear of a layer merged and cut to its AOI', () => {
     expect(store().jobs).toHaveLength(1);
   });
 
-  it('keeps the area of the crop when the map gets another one, and the scenes when the list ticks others', async () => {
+  it('keeps the AOI of the crop when the map gets another one, and the scenes when the list ticks others', async () => {
     search([layer(['S2B_A', 'S2B_B'])]);
     await render();
     click(gear());
@@ -223,9 +225,80 @@ describe('the gear of a layer merged and cut to its AOI', () => {
     await ndviAndStart();
     expect(sent().inputs[0].groups).toEqual([['S2B_A', 'S2B_B']]);
     expect(sent().aoi).toEqual(orderAoi(AOI));
-    store().setArea('scene');
+  });
+
+  it('has no "Run as" whatever is asked for, but the area can be chosen', async () => {
+    search([layer(['S2B_A', 'S2B_B'])]);
+    await render();
+    click(gear());
+    await flush();
     store().setRunAs('scene');
-    expect(store().area).toBe('aoi');
+    expect(orderView(selectionState(app()), store()).runAs).toBe('one');
+    expect(runAs()).toBeNull();
+    store().setArea('scene');
+    expect(store().area).toBe('scene');
+  });
+
+  describe('with "Whole scene"', () => {
+    it('sends the whole scenes of the crop merged, with no AOI', async () => {
+      search([layer(['S2B_A', 'S2B_B'])]);
+      await render();
+      click(gear());
+      await flush();
+      click(button('Whole scene', selection()));
+      expect(areaButtons()).toEqual([['Whole scene', 'true', false], ['AOI only', 'false', false]]);
+      const view = orderView(selectionState(app()), store());
+      expect(view.area).toBe('scene');
+      expect(view.aoi).toBeNull();
+      expect(view.runAs).toBe('one');
+      await ndviAndStart();
+      expect(execution()).toHaveLength(1);
+      expect(sent().inputs[0].groups).toEqual([['S2B_A', 'S2B_B']]);
+      expect(sent().aoi).toBeUndefined();
+      expect(store().jobs).toHaveLength(1);
+    });
+
+    it('goes back to the AOI of the crop with "AOI only", the map and its AOI being no matter', async () => {
+      search([layer(['S2B_A', 'S2B_B'])]);
+      act(() => useAppStore.setState({ aoi: null }));
+      await render();
+      click(gear());
+      await flush();
+      // No AOI on the map: "AOI only" is there all the same, since the crop has its own.
+      expect(areaButtons()).toEqual([['Whole scene', 'false', false], ['AOI only', 'true', false]]);
+      expect(selection().textContent).not.toContain('Draw an AOI first');
+      click(button('Whole scene', selection()));
+      click(button('AOI only', selection()));
+      await ndviAndStart();
+      expect(sent().aoi).toEqual(orderAoi(AOI));
+    });
+
+    it('cuts the preview to the AOI of the crop for "AOI only" and to nothing for "Whole scene"', () => {
+      const fixed = { itemIds: ['S2B_A'], aoi: AOI, result: null };
+      expect(clipAoiOf({ fixed, area: 'aoi' }, OTHER_AOI)).toEqual(AOI);
+      expect(clipAoiOf({ fixed, area: 'scene' }, OTHER_AOI)).toBeNull();
+      expect(clipAoiOf({ fixed: null, area: 'aoi' }, OTHER_AOI)).toEqual(OTHER_AOI);
+    });
+
+    it('has the scenes of the crop whole, which the AOI of the crop may not all meet', async () => {
+      const far = scene('S2B_C', '2026-07-02');
+      far.bbox = [20, 60, 21, 61];
+      far.geometry = bboxToPolygon([20, 60, 21, 61]);
+      search([layer(['S2B_A', 'S2B_C'])]);
+      useAppStore.setState({
+        items: [scene('S2B_A'), far],
+        groups: [
+          { key: ['2026-07-01'], label: '2026-07-01', items: [scene('S2B_A')] },
+          { key: ['2026-07-02'], label: '2026-07-02', items: [far] },
+        ],
+      });
+      await render();
+      click(gear());
+      await flush();
+      expect(orderView(selectionState(app()), store()).candidates.map((i) => i.id)).toEqual(['S2B_A']);
+      click(button('Whole scene', selection()));
+      expect(orderView(selectionState(app()), store()).candidates.map((i) => i.id).sort()).toEqual(['S2B_A', 'S2B_C']);
+    });
   });
 
   it('takes the scenes of the layer when the results on screen do not hold them', async () => {
@@ -265,7 +338,7 @@ describe('the gear of a layer merged and cut to its AOI', () => {
       expect(labels()).toEqual(['This pass only', 'All passes (2 jobs)']);
       expect(passesGroup()?.querySelector('[aria-pressed="true"]')?.textContent).toBe('This pass only');
       expect(selection().textContent).not.toContain('Run as');
-      expect(selection().querySelector('.pp-fixed')?.textContent).toContain('AOI only');
+      expect(areaButtons()[1]).toEqual(['AOI only', 'true', false]);
     });
 
     it('has the pass in view as the one a job is for', async () => {
@@ -306,6 +379,33 @@ describe('the gear of a layer merged and cut to its AOI', () => {
       }
       expect(store().jobs).toHaveLength(2);
       expect(store().batches).toHaveLength(1);
+    });
+
+    it('sends a job for every pass on the whole scenes, with "Whole scene" and "All passes"', async () => {
+      await open(['S2B_C']);
+      click(button('Whole scene', selection()));
+      // The passes are all the scenes of the crop now, not those the AOI meets: still two.
+      expect(labels()).toEqual(['This pass only', 'All passes (2 jobs)']);
+      click(button('All passes (2 jobs)'));
+      await ndviAndStart();
+      for (let i = 0; i < 100 && execution().length < 2; i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+      const orders = execution().map(([, init]) => JSON.parse(init.body).inputs.recipe as Order);
+      expect(orders).toHaveLength(2);
+      expect(orders.map((o) => o.inputs[0].groups).sort()).toEqual([[['S2B_A', 'S2B_B']], [['S2B_C']]]);
+      expect(orders.every((o) => o.aoi === undefined)).toBe(true);
+    });
+
+    it('sends the pass in view on the whole scenes with "This pass only"', async () => {
+      await open(['S2B_C']);
+      click(button('Whole scene', selection()));
+      await ndviAndStart();
+      expect(execution()).toHaveLength(1);
+      expect(sent().inputs[0].groups).toEqual([['S2B_C']]);
+      expect(sent().aoi).toBeUndefined();
     });
 
     it('offers no job per scene, and the choice does not come back as "Run as"', async () => {
@@ -403,7 +503,7 @@ describe('the cropped view', () => {
       shownImage: shown,
     });
 
-  it('is one object as the layer is, and takes the area it was opened with', async () => {
+  it('is one object as the layer is, with the area to choose and "AOI only" of the view to begin with', async () => {
     search();
     viewOf(['S2B_A', 'S2B_B']);
     await render();
@@ -411,7 +511,7 @@ describe('the cropped view', () => {
     await flush();
     expect(store().fixed).toEqual({ itemIds: ['S2B_A', 'S2B_B'], aoi: AOI, result: null });
     expect(runAs()).toBeNull();
-    expect(selection().querySelector('.pp-fixed')?.textContent).toContain('AOI only');
+    expect([...selection().querySelectorAll('[aria-label="Area"] button')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Whole scene', 'false'], ['AOI only', 'true']]);
   });
 
   it('offers the passes of its dataset, with the pass the head shows as the one a job is for', async () => {

@@ -170,7 +170,6 @@ import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
 import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
 import type { IndexPreset } from './indexPresets';
-import { viewIndexOf } from './viewIndex';
 import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
@@ -382,10 +381,9 @@ interface ProcessingState {
   // ⚙ of a result layer (NM4-05b, adr/0019 option 2): the order of its job with the steps locked at the start, the output of
   // the job as the output; what is added is run with them as one order.
   extendResult: (layerId: string) => Promise<void>;
-  // "Process" at a layer that shows an index (NM4-14b): the panel opens on the index as the one band of an entity of its own.
+  // "Process" at a layer that shows an index (NM4-14b): the panel opens on the index as the one band of an entity of its own. The view of
+  // scenes does not: its "Process" opens on the bands of the scenes, the index there is only a picture (Otto, 1.11.2026).
   extendIndexLayer: (layerId: string) => Promise<void>;
-  // The same for the view of scenes that has an index applied.
-  extendIndexView: () => Promise<void>;
   processFocusView: () => Promise<void>;
   setRangeDraft: (patch: Partial<PreviewRange>) => void;
   applyRange: () => void;
@@ -599,9 +597,12 @@ function nameBlockOf(
   return null;
 }
 
-// The AOI a preview is cut to: the one an entry fixed, or the map's.
+// The AOI a preview is cut to: the map's, or where an entry fixed one its own. A crop's own AOI is the one "AOI only" takes, and
+// "Whole scene" cuts nothing (NM4-06, Otto 1.11.2026); on a result "AOI only" is the map's AOI inside the result's area.
 export function clipAoiOf(p: Pick<ProcessingState, 'fixed' | 'area'>, mapAoi: GeoJSON.Geometry | null): GeoJSON.Geometry | null {
-  return p.fixed && !(p.fixed.result && p.area === 'aoi') ? p.fixed.aoi : mapAoi;
+  if (!p.fixed) return mapAoi;
+  if (p.fixed.result) return p.area === 'aoi' ? mapAoi : p.fixed.aoi;
+  return p.area === 'aoi' ? p.fixed.aoi : null;
 }
 
 export const OUTSIDE_TEXT = 'The AOI does not meet the result.';
@@ -628,8 +629,11 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const drawn = isArea(scenes.aoi) ? scenes.aoi : null;
   // Another AOI on a result covers part of it at most: only that part is the order's, and none of it where the AOI misses it.
   const clipped = inner && drawn !== null ? clipToResult(drawn, p.fixed!, scenes.items) : drawn;
-  const aoi = p.fixed && !inner ? p.fixed.aoi : (clipped ?? drawn);
-  const area: Area = p.fixed && !inner ? (p.fixed.aoi ? 'aoi' : 'scene') : p.area;
+  // A crop (an entry that fixed its scenes and an AOI, and no result) is one object whose area is chosen: "AOI only" is its own AOI, the
+  // one the crop was made with, "Whole scene" the whole of its scenes (NM4-06, Otto 1.11.2026).
+  const crop = p.fixed != null && p.fixed.result === null;
+  const aoi = crop ? (p.area === 'aoi' ? p.fixed!.aoi : null) : p.fixed && !inner ? p.fixed.aoi : (clipped ?? drawn);
+  const area: Area = crop ? p.area : p.fixed && !inner ? (p.fixed.aoi ? 'aoi' : 'scene') : p.area;
   const app = aoi === scenes.aoi ? scenes : { ...scenes, aoi };
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
@@ -1506,11 +1510,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       openCrop(cropToAoi && isArea(aoi) ? { itemIds: layer.restore.itemIds, aoi, result: null } : null, extraScenes, layer.restore.selectedIds);
     },
     processFocusView: async () => {
-      // A view that shows an index (applied) is processed as that index.
-      const now = useAppStore.getState();
-      const nowShown = shownImageOf(viewImagesOf(now), now.shownImage);
-      const nowDataset = nowShown && now.datasets.find((d) => d.id === nowShown.datasetId);
-      if (nowDataset && viewIndexOf(now.appliedRender, nowDataset.collection)) return get().extendIndexView();
       useAppStore.getState().activateViewContext();
       const app = useAppStore.getState();
       // A job has one dataset: the scenes of every image of the dataset that is shown (NM4-53).
@@ -1693,7 +1692,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set({ ...EMPTY_DRAFT });
     },
     choosePass: (passKey) => set({ passKey, reviewError: null, startError: null, ...dropReview() }),
-    setArea: (area) => set((s) => (s.fixed && !s.fixed.result ? {} : { area, reviewError: null, startError: null, ...dropReview() })),
+    setArea: (area) => set({ area, reviewError: null, startError: null, ...dropReview() }),
     setRunAs: (runAs) => set((s) => (s.fixed?.result ? {} : { runAs, reviewError: null, startError: null, ...dropReview() })),
     addStep: (op, opVersion) => {
       const { datasetId, datasets } = useAppStore.getState();
@@ -1887,9 +1886,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       else useAppStore.getState().resultsToTop();
     },
 
-    // A layer or a view that shows an index is processed as the index alone: the panel opens on the order that makes it (one Band math
-    // step, locked) with that band as the whole stock of bands, as it opens on the result of a job (`extendResult`), so that the raw bands
-    // of the scenes are not offered besides it (Otto, 1.11.2026). The first pass of the layer is the pass of the order.
+    // A layer that shows an index is processed as the index alone: the panel opens on the order that makes it (one Band math step,
+    // locked) with that band as the whole stock of bands, as it opens on the result of a job (`extendResult`), so that the raw bands of
+    // the scenes are not offered besides it (Otto, 1.11.2026). The first pass of the layer is the pass of the order.
     extendIndexLayer: async (layerId) => {
       const app = useAppStore.getState();
       const layer = app.layers.find((l) => l.id === layerId);
@@ -1905,22 +1904,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         aoi: restore.cropToAoi && isArea(restore.aoi) ? restore.aoi : null,
         title: layer.name,
         whose: 'this layer',
-      });
-    },
-    extendIndexView: async () => {
-      const app = useAppStore.getState();
-      const shown = shownImageOf(viewImagesOf(app), app.shownImage);
-      const dataset = shown && app.datasets.find((d) => d.id === shown.datasetId);
-      const preset = dataset && viewIndexOf(app.appliedRender, dataset.collection);
-      if (!shown || !dataset || !preset) return;
-      useAppStore.getState().activateViewContext();
-      await openIndexPanel({
-        dataset,
-        preset,
-        groups: [shown.ids],
-        aoi: app.cropToAoi && isArea(app.viewAoi) ? app.viewAoi : null,
-        title: dataset.title,
-        whose: 'this view',
       });
     },
 
