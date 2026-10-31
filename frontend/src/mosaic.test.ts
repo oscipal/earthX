@@ -22,7 +22,7 @@ function entry(id: string, overrides: Partial<DownloadedInfo> = {}): SceneEntry 
   return [
     id,
     {
-      tileUrl: `/collections/${DATASET}/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+      datasetId: 'sentinel-2-c1-l2a', tileUrl: `/collections/${DATASET}/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
       bounds: [10, 47, 11, 48],
       asset: 'visual',
       minZoom: 0,

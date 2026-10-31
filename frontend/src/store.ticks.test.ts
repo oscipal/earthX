@@ -151,11 +151,13 @@ describe('ticks over a change of the dataset', () => {
     expect(state().selectedIds).toEqual([]);
   });
 
-  it('keeps the ticks of another dataset when a crop takes its own scenes off', async () => {
+  // Nachtrag NM4-53: a view takes the ticks of every dataset, so a crop takes all of them off.
+  it('takes the ticks of every dataset off when a crop is made of their scenes', async () => {
     state().toggleSelected('d1');
     state().setOpenSection('s2');
     state().toggleSelected('a1');
     await state().enterFocus(true);
-    expect(state().selectedIds).toEqual(['d1']);
+    expect(state().selectedIds).toEqual([]);
+    expect(Object.keys(state().downloaded).sort()).toEqual(['a1', 'd1']);
   });
 });

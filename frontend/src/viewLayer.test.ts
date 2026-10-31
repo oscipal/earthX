@@ -11,7 +11,7 @@ const AOI: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[10, 47], [11, 47
 
 function info(itemId: string): DownloadedInfo {
   return {
-    tileUrl: `/collections/c/items/${itemId}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+    datasetId: 'sentinel-2-c1-l2a', tileUrl: `/collections/c/items/${itemId}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
     bounds: [10, 47, 11, 48],
     asset: 'visual',
     minZoom: 0,

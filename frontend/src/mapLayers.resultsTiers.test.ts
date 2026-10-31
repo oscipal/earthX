@@ -23,7 +23,7 @@ const dataset = () =>
 
 const scene = (id: string): StacItem => ({ id, bbox: [10, 47, 11, 48], properties: { datetime: '2026-07-24T10:00:00Z' }, assets: {} });
 const tile = (id: string): DownloadedInfo => ({
-  tileUrl: `/collections/optical/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+  datasetId: 'sentinel-2-c1-l2a', tileUrl: `/collections/optical/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
   bounds: [10, 47, 11, 48],
   asset: 'visual',
   minZoom: 8,

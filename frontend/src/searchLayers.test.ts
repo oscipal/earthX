@@ -11,7 +11,7 @@ const RENDER: AppliedRender = { colormapName: 'terrain', rescale: '0,4000' };
 
 const entry = (id: string): SceneEntry => [
   id,
-  { tileUrl: buildTileTemplate('dem', id, 'data'), bounds: [10, 47, 11, 48], asset: 'data', minZoom: 0, maxZoom: 15 },
+  { datasetId: 'sentinel-2-c1-l2a', tileUrl: buildTileTemplate('dem', id, 'data'), bounds: [10, 47, 11, 48], asset: 'data', minZoom: 0, maxZoom: 15 },
 ];
 
 // The overlays a pinned layer draws for a pass of scenes: its mosaic under the scenes that step aside, else the scenes.
