@@ -31,6 +31,11 @@ export default function ViewerControls() {
   const setPendingColormapName = useAppStore((s) => s.setPendingColormapName);
   const setPendingVmin = useAppStore((s) => s.setPendingVmin);
   const setPendingVmax = useAppStore((s) => s.setPendingVmax);
+  const pendingUnit = useAppStore((s) => s.pendingUnit);
+  const pendingPercentLow = useAppStore((s) => s.pendingPercentLow);
+  const pendingPercentHigh = useAppStore((s) => s.pendingPercentHigh);
+  const setPendingUnit = useAppStore((s) => s.setPendingUnit);
+  const setPendingPercent = useAppStore((s) => s.setPendingPercent);
   const applyRender = useAppStore((s) => s.applyRender);
   // Whether "Apply" would draw anything else than the map shows.
   const changed = useAppStore((s) => lookChanged(s.appliedRender, s));
@@ -193,15 +198,16 @@ export default function ViewerControls() {
                 }
               : undefined
           }
-          vmin={{ value: pendingVmin, onChange: setPendingVmin }}
-          vmax={{ value: pendingVmax, onChange: setPendingVmax }}
+          vmin={pendingUnit === 'percent' ? { value: pendingPercentLow, onChange: (text) => setPendingPercent('low', text) } : { value: pendingVmin, onChange: setPendingVmin }}
+          vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
+          unit={{ value: pendingUnit, onChange: setPendingUnit }}
           // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
           colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: 'RGB', title: 'True colour: three bands, no colormap' }}
           placeholder="auto"
         />
         <div className="vc-buttons">
           <AutoScaleButton
-            title={focusLoading ? 'Measuring the range…' : 'Measure the 2nd/98th percentile stretch from the source again'}
+            title={focusLoading ? 'Measuring the range…' : pendingUnit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Measure the 2nd/98th percentile stretch from the source again'}
             busy={focusLoading}
             onClick={() => void autoStretch()}
           />

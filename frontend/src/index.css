@@ -340,6 +340,36 @@ body.dragging * {
 .vc-num input {
   width: 84px;
 }
+/* The switch "value / %" of the range (`RenderFields.tsx`, NM4-65 part 4): a small chip at the top right of the field "vmin". */
+.vc-field.vc-num {
+  position: relative;
+}
+.vc-unit {
+  position: absolute;
+  top: -3px;
+  right: 0;
+  padding: 0 5px;
+  background: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 14px;
+  cursor: pointer;
+}
+.vc-unit:hover,
+.vc-unit:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.vc-unit[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--panel-bg, #fff);
+}
 /* A slider is no text box: the padding and the frame of `.vc-field input` above shrank the track inside its own box, so
    that the thumb of an opacity of 1 stopped short of the right end (NM4-65). It keeps the height of the fields. */
 .vc-field input[type='range'] {

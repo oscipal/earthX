@@ -41,7 +41,8 @@ import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
-import { appliedRenderFrom, autoRescale, lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
+import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
+import { appliedRenderFrom, autoRescale, lookChanged, lookOfPendingFields, pendingFieldsOf, pendingPercentOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
   buildSections,
@@ -426,6 +427,9 @@ const LEAVE_FOCUS = {
   pendingVmin: '',
   pendingVmax: '',
   pendingIndex: '',
+  pendingUnit: 'value' as RangeUnit,
+  pendingPercentLow: DEFAULT_PERCENT.low,
+  pendingPercentHigh: DEFAULT_PERCENT.high,
 } as const;
 
 // The list-facing state an open section stands for: its scenes and groups, first
@@ -613,6 +617,47 @@ export function datasetSavable(s: AppState): boolean {
   const shown = shownImageOf(images, s.shownImage);
   if (!shown) return false;
   return images.some((image) => image.datasetId === shown.datasetId && image.key !== shown.key && lookChanged(lookOfImage(s, image, shown), s));
+}
+
+// The first scene of the image the view shows (of the view where nothing is shown yet): the one its range is measured on.
+function firstSceneOfView(s: AppState): { itemId: string | undefined; info: DownloadedInfo | undefined } {
+  const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+  const itemId = shown?.ids[0] ?? Object.keys(s.downloaded)[0];
+  return { itemId, info: itemId === undefined ? undefined : s.downloaded[itemId] };
+}
+
+// "Apply" with percentiles in the fields (NM4-65 part 4): the tiler measures the two percentiles on the first scene of the image
+// shown (the index of the fields as it will be drawn), the values go into the fields and the look. What is drawn is the values;
+// the look keeps the percentiles for the fields to show "%" again.
+async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
+  const s = get();
+  const checked = checkPercent({ low: s.pendingPercentLow, high: s.pendingPercentHigh });
+  if ('problem' in checked) {
+    set({ notice: checked.problem });
+    return;
+  }
+  const { itemId, info } = firstSceneOfView(s);
+  if (!info || itemId === undefined) return;
+  const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
+  const asked = [checked.low, checked.high].filter((n) => n !== 0 && n !== 100);
+  set({ focusLoading: true });
+  try {
+    const stats = index
+      ? await api.fetchStatisticsAt(api.withPercentiles(indexStatisticsUrl(info.datasetId, itemId, index), asked))
+      : await api.fetchStatistics(info.datasetId, itemId, info.asset, asked);
+    const range = rescaleAtPercent(Object.values(stats), checked);
+    if (!range) {
+      set({ notice: NO_RANGE_AT_PERCENT });
+      return;
+    }
+    set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
+    const now = get();
+    set({ appliedRender: { ...now.appliedRender, ...lookOfPendingFields(now) } });
+  } catch (e) {
+    set({ notice: `Could not measure the percentiles: ${(e as Error).message}` });
+  } finally {
+    set({ focusLoading: false });
+  }
 }
 
 // "Add to layers" and "Add all to layers" in the view: the image that is shown, or every image, one layer each, all in one
@@ -1117,6 +1162,11 @@ export interface AppState {
   pendingVmax: string;
   // The index the fields stand for, drawn once "Apply" is pressed (NM4-14b); '' = none.
   pendingIndex: string;
+  // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4); with "percent" the fields show the two percentiles, and
+  // `pendingVmin`/`pendingVmax` hold the values they gave at the last "Apply".
+  pendingUnit: RangeUnit;
+  pendingPercentLow: string;
+  pendingPercentHigh: string;
 
   // --- data ---
   config: { point_buffer_deg: number } | null; // no server config endpoint any more; the client default (0.05) applies
@@ -1273,8 +1323,10 @@ export interface AppState {
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
   applyRender: () => void;
+  setPendingUnit: (unit: RangeUnit) => void;
+  setPendingPercent: (end: 'low' | 'high', text: string) => void;
   // "Save" in the view of a pinned layer: the look typed and applied becomes the layer's own (NM4-50).
-  saveViewLook: () => void;
+  saveViewLook: () => void | Promise<void>;
   autoStretch: () => Promise<void>;
   zoomToView: () => void;
   setActiveGroupIndex: (i: number) => void;
@@ -1363,6 +1415,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingVmin: '',
   pendingVmax: '',
   pendingIndex: '',
+  pendingUnit: 'value',
+  pendingPercentLow: DEFAULT_PERCENT.low,
+  pendingPercentHigh: DEFAULT_PERCENT.high,
 
   config: null,
   datasets: [],
@@ -2232,11 +2287,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   // "Apply" draws the shown image with the fields and nothing else (NM4-53); other images keep their look.
   applyRender: () => {
     const s = get();
+    // Typed in percentiles, the values come from the statistics first (NM4-65 part 4).
+    if (s.pendingUnit === 'percent') {
+      void applyPercentRender(set, get);
+      return;
+    }
     set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
   },
+  setPendingUnit: (pendingUnit) => set({ pendingUnit }),
+  setPendingPercent: (end, text) => set(end === 'low' ? { pendingPercentLow: text } : { pendingPercentHigh: text }),
   // "Save" (NM4-53, Otto 29.10.2026): the fields become the look of every image of the dataset that is shown, for the
   // length of the view. If the view is the picture of a pinned layer, the layer keeps the look too (NM4-50).
   saveViewLook: () => {
+    // Percentiles that are not applied yet give their values first, so that what is kept is what is drawn; only then is it
+    // asynchronous, any other "Save" is done when the call returns.
+    if (get().pendingUnit === 'percent' && !samePercent(get().appliedRender.percent, pendingPercentOf(get()))) {
+      return applyPercentRender(set, get).then(() => {
+        if (samePercent(get().appliedRender.percent, pendingPercentOf(get()))) void get().saveViewLook();
+      });
+    }
     const s = get();
     const render = { ...s.appliedRender, ...lookOfPendingFields(s) };
     const layer = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
@@ -2265,10 +2334,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // the pending fields only — still needs "Apply" to take effect on the map.
   autoStretch: async () => {
     const s = get();
+    // In percentiles the usual stretch is the 2nd to the 98th (NM4-65 part 4): nothing to measure, "Apply" takes the values.
+    if (s.pendingUnit === 'percent') {
+      set({ pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
+      return;
+    }
     // The first scene of the image that is shown (the first of the view where nothing is shown yet).
-    const shown = shownImageOf(viewImagesOf(s), s.shownImage);
-    const itemId = shown?.ids[0] ?? Object.keys(s.downloaded)[0];
-    const info = itemId === undefined ? undefined : s.downloaded[itemId];
+    const { itemId, info } = firstSceneOfView(s);
     if (!info) return;
     // The index in the fields is measured as it will be drawn: the tile route with the same step, not the asset of the scene.
     const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);

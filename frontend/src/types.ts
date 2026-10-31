@@ -1,3 +1,4 @@
+import type { Percent } from './percentRange';
 // Shared types for the EarthX viewer.
 
 // Mutually-exclusive AOI selection tools.
@@ -245,6 +246,9 @@ export interface AppliedRender {
   expression?: string;
   colormapName?: string;
   rescale?: string; // "min,max" (adr/0006 §3.4 Z4)
+  // What the range was typed as where it was typed in percentiles (NM4-65 part 4): `rescale` holds the values they gave when
+  // they were applied, so the picture is always drawn from values; this is only for the fields to show "%" again.
+  percent?: Percent;
 }
 
 // Full-resolution tile info for one item, keyed by item id in the store's

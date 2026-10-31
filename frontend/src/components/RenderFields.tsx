@@ -5,6 +5,7 @@
 
 import type { ReactNode } from 'react';
 
+import type { RangeUnit } from '../percentRange';
 import { COLORMAPS } from '../render';
 import BandSelect, { type BandOption } from './BandSelect';
 
@@ -24,9 +25,16 @@ interface Props {
   colormap: { value: string; onChange: (value: string) => void } | { fixed: string; title: string } | null;
   // What the empty ends of the range say.
   placeholder?: string;
+  // The switch "value / %" of the range (NM4-65 part 4): with "%" the two fields hold percentiles. Left out where a place has
+  // no statistics to read them from.
+  unit?: { value: RangeUnit; onChange: (unit: RangeUnit) => void };
 }
 
-export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder }: Props) {
+export const UNIT_TIP = 'Enter the range as values, or as percentiles of the band (2 and 98, say)';
+
+export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder, unit }: Props) {
+  const percent = unit?.value === 'percent';
+  const hint = percent ? undefined : placeholder;
   return (
     <>
       {band && <BandSelect label="Band" {...band} />}
@@ -45,15 +53,21 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
       )}
       <label className="vc-field vc-num">
         <span>vmin</span>
-        <input type="number" value={vmin.value} placeholder={placeholder} onChange={(e) => vmin.onChange(e.target.value)} />
+        <input type="number" value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
+        {unit && (
+          // After the field, so that the label still names the field and not the switch.
+          <button type="button" className="vc-unit" aria-pressed={percent} title={UNIT_TIP} onClick={() => unit.onChange(percent ? 'value' : 'percent')}>
+            {percent ? '%' : 'value'}
+          </button>
+        )}
       </label>
       {vmax.after ? (
         <div className="pp-bound">
-          <VmaxField vmax={vmax} placeholder={placeholder} />
+          <VmaxField vmax={vmax} placeholder={hint} percent={percent} />
           {vmax.after}
         </div>
       ) : (
-        <VmaxField vmax={vmax} placeholder={placeholder} />
+        <VmaxField vmax={vmax} placeholder={hint} percent={percent} />
       )}
       {colormap && (
         <label className="vc-field">
@@ -78,11 +92,14 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
   );
 }
 
-function VmaxField({ vmax, placeholder }: { vmax: Props['vmax']; placeholder?: string }) {
+// Whole percents: the arrows of the field step by one, and the browser keeps it to 0…100.
+const PERCENT_INPUT = { min: 0, max: 100, step: 1 };
+
+function VmaxField({ vmax, placeholder, percent }: { vmax: Props['vmax']; placeholder?: string; percent: boolean }) {
   return (
     <label className="vc-field vc-num">
       <span>vmax</span>
-      <input type="number" value={vmax.value} placeholder={placeholder} onChange={(e) => vmax.onChange(e.target.value)} />
+      <input type="number" value={vmax.value} placeholder={placeholder} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmax.onChange(e.target.value)} />
     </label>
   );
 }

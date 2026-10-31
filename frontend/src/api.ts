@@ -504,9 +504,14 @@ function operatorQuery(assets: readonly string[], steps: readonly TileStep[], ba
   return params.toString();
 }
 
-export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string): string {
+// `percentiles`: whole percents the tiler adds to its answer as `percentile_N` (at most 20, `p` of the route); the two of
+// "vmin"/"vmax" typed in percentiles (NM4-65 part 4).
+export const withPercentiles = (url: string, percentiles: readonly number[]): string =>
+  percentiles.length === 0 ? url : `${url}${url.includes('?') ? '&' : '?'}${percentiles.map((n) => `p=${n}`).join('&')}`;
+
+export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string, percentiles: readonly number[] = []): string {
   const params = new URLSearchParams({ asset });
-  return `${itemBase(datasetId, itemId)}/statistics?${params.toString()}`;
+  return withPercentiles(`${itemBase(datasetId, itemId)}/statistics?${params.toString()}`, percentiles);
 }
 
 // rio-tiler's `BandStatistics`, plain JSON (backend/earthx/access/tiles.py) —
@@ -526,8 +531,9 @@ export async function fetchStatistics(
   datasetId: string,
   itemId: string,
   asset: string,
+  percentiles: readonly number[] = [],
 ): Promise<Record<string, BandStatistics>> {
-  return jsonOrThrow(await fetch(buildStatisticsUrl(datasetId, itemId, asset)));
+  return jsonOrThrow(await fetch(buildStatisticsUrl(datasetId, itemId, asset, percentiles)));
 }
 
 // The statistics at an address the panel built (`buildOperatorStatisticsUrl`).
