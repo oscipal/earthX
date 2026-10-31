@@ -414,14 +414,16 @@ export interface TileStep {
 // The tile template of an operator or a chain of them (T1, adr/0014 §6.1, §6.2): the
 // assets the steps read — one `asset` each, in the order of the order — and `op`,
 // `op_version` and `params` once per step, in the order of the steps, as the tiler
-// takes them (`api/tiler.py`, at most four).
+// takes them (`api/tiler.py`, at most four). `band` is the one band of what the steps leave that the tile shows
+// (NM4-43d); left out, the tiler shows the last one a Band math step added, else the first.
 export function buildOperatorTileTemplate(
   datasetId: string,
   itemId: string,
   assets: readonly string[],
   steps: readonly TileStep[],
+  band: string | null = null,
 ): string {
-  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${operatorQuery(assets, steps)}`;
+  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${operatorQuery(assets, steps, band)}`;
 }
 
 // The TileJSON of the same chain. The tiler opens the inputs and judges every step on
@@ -432,8 +434,9 @@ export function buildOperatorTileJsonUrl(
   itemId: string,
   assets: readonly string[],
   steps: readonly TileStep[],
+  band: string | null = null,
 ): string {
-  return `${itemBase(datasetId, itemId)}/${TILE_MATRIX_SET}/tilejson.json?${operatorQuery(assets, steps)}`;
+  return `${itemBase(datasetId, itemId)}/${TILE_MATRIX_SET}/tilejson.json?${operatorQuery(assets, steps, band)}`;
 }
 
 // The statistics of the same chain (M4-19c): one measure of what the steps make of the scene, for the colour
@@ -443,8 +446,9 @@ export function buildOperatorStatisticsUrl(
   itemId: string,
   assets: readonly string[],
   steps: readonly TileStep[],
+  band: string | null = null,
 ): string {
-  return `${itemBase(datasetId, itemId)}/statistics?${operatorQuery(assets, steps)}`;
+  return `${itemBase(datasetId, itemId)}/statistics?${operatorQuery(assets, steps, band)}`;
 }
 
 // The mosaic of a pass with the steps over it (NM4-04, `api/mosaic_tiles.py`): the scenes as one `item` each,
@@ -456,8 +460,9 @@ export function buildMosaicOperatorTileTemplate(
   itemIds: readonly string[],
   assets: readonly string[],
   steps: readonly TileStep[],
+  band: string | null = null,
 ): string {
-  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicOperatorQuery(itemIds, assets, steps)}`;
+  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicOperatorQuery(itemIds, assets, steps, band)}`;
 }
 
 // Its TileJSON: the cheap question, with the refusals of the tiles and `earthx:order`, the scenes in the order a
@@ -467,17 +472,23 @@ export function buildMosaicOperatorTileJsonUrl(
   itemIds: readonly string[],
   assets: readonly string[],
   steps: readonly TileStep[],
+  band: string | null = null,
 ): string {
-  return `${mosaicBase(datasetId)}/${TILE_MATRIX_SET}/tilejson.json?${mosaicOperatorQuery(itemIds, assets, steps)}`;
+  return `${mosaicBase(datasetId)}/${TILE_MATRIX_SET}/tilejson.json?${mosaicOperatorQuery(itemIds, assets, steps, band)}`;
 }
 
-function mosaicOperatorQuery(itemIds: readonly string[], assets: readonly string[], steps: readonly TileStep[]): string {
+function mosaicOperatorQuery(
+  itemIds: readonly string[],
+  assets: readonly string[],
+  steps: readonly TileStep[],
+  band: string | null,
+): string {
   const items = new URLSearchParams();
   for (const id of [...itemIds].sort()) items.append('item', id);
-  return `${items.toString()}&${operatorQuery(assets, steps)}`;
+  return `${items.toString()}&${operatorQuery(assets, steps, band)}`;
 }
 
-function operatorQuery(assets: readonly string[], steps: readonly TileStep[]): string {
+function operatorQuery(assets: readonly string[], steps: readonly TileStep[], band: string | null): string {
   const params = new URLSearchParams();
   for (const asset of assets) params.append('asset', asset);
   for (const step of steps) {
@@ -485,6 +496,7 @@ function operatorQuery(assets: readonly string[], steps: readonly TileStep[]): s
     params.append('op_version', String(step.opVersion));
     params.append('params', step.paramsJson);
   }
+  if (band !== null) params.append('band', band);
   return params.toString();
 }
 

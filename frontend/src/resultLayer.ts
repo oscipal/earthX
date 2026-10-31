@@ -5,6 +5,7 @@
 
 import type { ResultLayerInfo } from './layers';
 import { buildTileUrl } from './mapLayers';
+import { startBand } from './processingBands';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, statsFrom, type ResultStats } from './render';
 import type { AppliedRender, Bbox } from './types';
@@ -60,6 +61,51 @@ export function resultStats(properties: Record<string, unknown> | undefined): Re
   return statsFrom(properties?.bands, properties?.['processing:expression'] != null);
 }
 
+// One band of a result and what the job measured of it: the colour scale of the layer comes from these (M4-32).
+export interface ResultBand {
+  name: string;
+  stats: ResultStats | null;
+}
+
+// The bands of `properties.bands` in the order of the file, so that the place of a band + 1 is its `bidx`. A band is judged
+// as an index (`render.ts::scaleOf`) if a Band math step of the order made it; without the order, as the job is judged: if
+// any step did.
+export function resultBands(properties: Record<string, unknown> | undefined, order: { steps: { op: string; params: Record<string, unknown> }[] } | null): ResultBand[] {
+  const listed = properties?.bands;
+  if (!Array.isArray(listed)) return [];
+  const made = new Set(order?.steps.flatMap((step) => (step.op === 'band_math' && typeof step.params.name === 'string' ? [step.params.name] : [])));
+  const any = properties?.['processing:expression'] != null;
+  return listed.map((band): ResultBand => {
+    const name = typeof (band as { name?: unknown } | null)?.name === 'string' ? (band as { name: string }).name : '';
+    return { name, stats: statsFrom([band], order === null ? any : made.has(name)) };
+  });
+}
+
+// The place (0 is the first of the file) of the band a result layer starts with, the one the preview started with
+// (Otto, 31.10.2026): the band the preview showed when the job was started, if the result has it; else the result of a
+// Band math step of the order, the last of the chain (which was created last is not kept); else the first band.
+export function startPlaceOf(
+  bands: readonly ResultBand[],
+  order: { steps: { op: string; params: Record<string, unknown> }[] } | null,
+  shown: string | null,
+): number {
+  const names = bands.map((band) => band.name);
+  if (shown !== null && names.includes(shown)) return names.indexOf(shown);
+  const made = (order?.steps ?? []).flatMap((step) => (step.op === 'band_math' && typeof step.params.name === 'string' ? [step.params.name] : []));
+  const results = made.filter((name) => names.includes(name)).map((name, created) => ({ name, created }));
+  return Math.max(0, names.indexOf(startBand(names, results) ?? ''));
+}
+
+// The range a band is drawn with by choice of the person: saved for the band, or — a result of one band — saved for the job;
+// the range set in the panel when the job started belongs to the job and so to a result of one band.
+export function ownRangeOf(
+  job: { range: PreviewRange | null; bandRanges: Readonly<Record<string, PreviewRange>> },
+  bands: readonly ResultBand[],
+  place: number,
+): PreviewRange | null {
+  return bands.length > 1 ? (job.bandRanges[bands[place]?.name ?? ''] ?? null) : job.range;
+}
+
 function drawnWith(range: PreviewRange): AppliedRender {
   const rescale = rescaleOf(range);
   return {
@@ -107,10 +153,16 @@ export function renderOfRange(range: PreviewRange): AppliedRender | null {
 }
 
 // The tile URL of a result drawn another way: its style is the part after the first `&`
-// (`resultTileTemplate` ends in `?tilesize=256`), and only that part changes.
+// (`resultTileTemplate` ends in `?tilesize=256`), and only that part changes. The band (`bidx`) stays unless `render` names one.
 export function restyledTileUrl(tileUrl: string, render: AppliedRender): string {
   const amp = tileUrl.indexOf('&');
-  return buildTileUrl(amp < 0 ? tileUrl : tileUrl.slice(0, amp), render);
+  const bidx = amp < 0 ? null : new URLSearchParams(tileUrl.slice(amp + 1)).get('bidx');
+  return buildTileUrl(amp < 0 ? tileUrl : tileUrl.slice(0, amp), bidx && !render.bidx ? { ...render, bidx } : render);
+}
+
+// The same result drawn from the band at `place` (0 is the first of the file): `bidx` counts from 1.
+export function bandTileUrl(tileUrl: string, place: number, render: AppliedRender): string {
+  return restyledTileUrl(tileUrl, { ...render, bidx: String(place + 1) });
 }
 
 // How a layer of a result is drawn when no range was set by hand for its job (M4-32): the default of

@@ -17,6 +17,11 @@ import Tip from './Tip';
 
 const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap;
 
+const SAVE_TIP = {
+  job: 'Keep these values for this layer and for every layer of this job',
+  band: 'Keep these values for this band, in this layer and in every layer of this job',
+};
+
 const WHOLE_NUMBERS_TIP = 'A result of whole numbers is drawn as it is: it has no range or colormap to set.';
 
 function Controls({ layer }: { layer: MapLayer }) {
@@ -66,7 +71,9 @@ function Controls({ layer }: { layer: MapLayer }) {
     if (canApply) restyle(layer.id, made);
     save(layer.id);
     const fallback = defaultRange(info, useProcessingStore.getState().range);
-    setJobRange(info.jobID, fallback && sameRange(draft, fallback) ? null : draft);
+    // A result of several bands keeps the range of the band it draws, by the band's name.
+    const named = info.bands && info.bands.length > 1 ? (info.bands[info.band ?? 0]?.name ?? '') : undefined;
+    setJobRange(info.jobID, fallback && sameRange(draft, fallback) ? null : draft, named);
   };
   const auto = () => {
     setDraft(defaultRange(info, useProcessingStore.getState().range) ?? { vmin: '', vmax: '', colormap: '' });
@@ -122,7 +129,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                 type="button"
                 className="primary-btn vc-save"
                 aria-disabled={!canSave || undefined}
-                title={canSave ? 'Keep these values for this layer and for every layer of this job' : NOTHING_TO_SAVE}
+                title={canSave ? SAVE_TIP[info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE}
                 onClick={keep}
               >
                 Save

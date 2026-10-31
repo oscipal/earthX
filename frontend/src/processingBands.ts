@@ -122,6 +122,15 @@ export function dropFromNormalize(steps: readonly DraftStep[], name: string): Dr
   });
 }
 
+// --- the band a picture starts with --------------------------------------------------------
+
+// The band the preview and a result layer start with (Otto, 31.10.2026): the result created last, else the first band.
+// `results` are the results among `choices`, `created` says which was created later (the larger number).
+export function startBand(choices: readonly string[], results: ReadonlyArray<{ name: string; created: number }>): string | null {
+  const last = results.reduce<{ name: string; created: number } | null>((a, r) => (a === null || r.created > a.created ? r : a), null);
+  return last?.name ?? choices[0] ?? null;
+}
+
 // --- the output ---------------------------------------------------------------------------
 
 // The bands of the result in the order of the file: the results of the steps in step order, then the bands of the
