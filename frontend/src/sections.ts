@@ -29,6 +29,9 @@ export interface ResultSection {
   // The source did not answer in full (`incomplete_collections`): an empty
   // section then says nothing about the date range.
   incomplete: boolean;
+  // DS-03b: a search with the limit on the clouds inside the AOI was stopped before it found a scene. The list is shown
+  // all the same, with how far it got and "Load more", because nothing else leads on from there.
+  keepList?: boolean;
 }
 
 export const NO_SCENES_NOTE = 'No scenes for this area.';
@@ -187,5 +190,5 @@ export function totalItems(sections: readonly ResultSection[]): number {
 // is the search notice's business alone. The panel never disappears because of
 // what is chosen in it (M3-10).
 export function hasResultsPanel(sections: readonly ResultSection[]): boolean {
-  return totalItems(sections) > 0 || sections.length > 1;
+  return totalItems(sections) > 0 || sections.length > 1 || sections.some((section) => section.keepList === true);
 }

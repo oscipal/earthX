@@ -737,10 +737,10 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
     // The limit on the clouds inside the AOI is what leaves nothing (DS-03b); the notice of a search over one dataset
     // says it (`aoiHints` adds how far it got).
     if (datasets.length === 1 && measuresAoi(ctx.query, datasets[0].id)) {
+      // A search that was stopped (a token is left) has no verdict; its list says how far it got.
+      if (ctx.nextToken !== null) return '';
       const counts = ctx.answer?.aoiFilter?.[datasets[0].id];
-      const checked = counts ? ` (${counts.checked} checked)` : '';
-      // A search that was stopped (a token is left) has no verdict.
-      return ctx.nextToken !== null ? `Search stopped: 0 found${checked}.` : `${NONE_WITHIN_NOTE}${checked}.`;
+      return `${NONE_WITHIN_NOTE}${counts ? ` (${counts.checked} checked)` : ''}.`;
     }
     const base =
       datasets.length === 1 || (!ctx.dateFrom && !ctx.dateTo)
@@ -795,7 +795,12 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     return;
   }
   const sections = built.map((fresh) => {
-    const section = withSourceState(fresh, sourceOpen(ctx, fresh.datasetId));
+    const waiting = withSourceState(fresh, sourceOpen(ctx, fresh.datasetId));
+    // Stopped before a scene was found (DS-03b, Otto 31.10.2026): the list is there, with how far it got and "Load more".
+    const section =
+      !s.aoiWalking && waiting.items.length === 0 && waiting.origin === 'search' && sourceOpen(ctx, waiting.datasetId) && measuresAoi(ctx.query, waiting.datasetId)
+        ? { ...waiting, keepList: true }
+        : waiting;
     const shown = keepOpen ? s.sections.find((x) => x.datasetId === section.datasetId) : undefined;
     if (!shown) return section;
     if (section.groupingError && !shown.groupingError) {
@@ -839,10 +844,11 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     ...(open ? { datasetId: open.datasetId } : {}),
     selectedIds: keepOpen ? s.selectedIds.filter((id) => sections.some((section) => section.items.some((it) => it.id === id))) : [],
     searchContext: ctx,
-    // A new search shows its results; "Load more" leaves the panels as they are.
-    ...(!keepOpen && hasResultsPanel(sections) ? { dock: 'results' as const } : {}),
+    // A new search shows its results; "Load more" leaves the panels as they are. A search stopped without a scene shows
+    // its list, since "Stop" was pressed where there was none.
+    ...((!keepOpen && hasResultsPanel(sections)) || sections.some((x) => x.keepList) ? { dock: 'results' as const } : {}),
     error: null,
-    notice,
+    notice: notice || null,
   });
 }
 

@@ -56,9 +56,11 @@ interface Setup {
   // Whether the search asked for the clouds inside the AOI.
   measured?: boolean;
   nextToken?: string | null;
+  // The search was stopped before it found a scene.
+  keepList?: boolean;
 }
 
-function load({ features, counts: aoiCounts, walking = false, measured = true, nextToken = null }: Setup) {
+function load({ features, counts: aoiCounts, walking = false, measured = true, nextToken = null, keepList = false }: Setup) {
   const datasets = datasetsFrom([OPTICAL, ELEVATION]);
   const chosen = datasets.filter((d): d is Extract<typeof d, { viewable: true }> => d.viewable && d.id === 'optical');
   const answer = {
@@ -67,7 +69,8 @@ function load({ features, counts: aoiCounts, walking = false, measured = true, n
     incompleteCollections: [],
     ...(aoiCounts ? { aoiFilter: { optical: aoiCounts } } : {}),
   };
-  const { sections } = buildSections(features, chosen, answer);
+  const built = buildSections(features, chosen, answer).sections;
+  const sections = keepList ? built.map((section) => ({ ...section, keepList: true })) : built;
   useAppStore.setState({
     datasets,
     sections,
@@ -166,6 +169,21 @@ describe('how far the search got', () => {
     expect(container.querySelector('.load-more')).toBeNull();
     load({ features: THREE, counts: counts(), walking: false, nextToken: 't2' });
     expect(text(container.querySelector('.load-more'))).toContain('Load more');
+  });
+});
+
+describe('a search stopped before it found a scene (Otto, 31.10.2026)', () => {
+  it('shows the list with "0 found / m checked" and "Load more", and no "Stop"', () => {
+    load({ features: [], counts: counts({ found: 0, checked: 100 }), nextToken: 't2', keepList: true });
+    expect(container.querySelector('.results-panel')).not.toBeNull();
+    expect(text(progress()!.querySelector('span'))).toBe('0 found / 100 checked');
+    expect(stopButton()).toBeUndefined();
+    expect(text(container.querySelector('.load-more'))).toContain('Load more');
+  });
+
+  it('is no list without that, for a search that found nothing and is done', () => {
+    load({ features: [], counts: counts({ found: 0, checked: 100 }) });
+    expect(container.querySelector('.results-panel')).toBeNull();
   });
 });
 

@@ -12,6 +12,7 @@ import { datasetsFrom } from './datasets';
 import { ELEVATION, OPTICAL, RADAR } from './fixtures/searchFilters';
 import type { FilterInput } from './searchFilters';
 import { useAppStore } from './store';
+import { hasResultsPanel } from './sections';
 import type { StacItem } from './types';
 
 const RECT: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[10, 47], [11, 47], [11, 48], [10, 48], [10, 47]]] };
@@ -160,6 +161,16 @@ describe('what the search asks', () => {
       expect(asked[0].query_by_collection).toEqual({ optical: { 'test:cloud': { lte: 20 } } });
       expect(state().aoiWalking).toBe(false);
     }
+  });
+
+  it('asks the scene, not the AOI, for an AOI with too many points to measure in', async () => {
+    const ring = Array.from({ length: 20_001 }, (_, i) => [10.5 + 0.4 * Math.cos((i / 20_001) * 2 * Math.PI), 47.5 + 0.4 * Math.sin((i / 20_001) * 2 * Math.PI)]);
+    useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } });
+    steps = [{ scenes: [], checked: 0 }];
+    await state().runSearch();
+    expect(asked[0].query_by_collection).toEqual({ optical: { 'test:cloud': { lte: 20 } } });
+    expect(asked[0]).not.toHaveProperty('earthx:aoi');
+    expect(state().aoiWalking).toBe(false);
   });
 
   it('searches a polygon by its shape, and adds nothing', async () => {
@@ -440,9 +451,47 @@ describe('ending the walk', () => {
     await vi.waitFor(() => expect(hold).toBe(true));
     state().stopSearch();
     await run;
-    expect(state().notice).toBe('Search stopped: 0 found (100 checked).');
+    // No verdict in the notice: the list is there, with how far it got and "Load more" (Otto, 31.10.2026).
+    expect(state().notice).toBeNull();
+    expect(state().sections[0].keepList).toBe(true);
+    expect(hasResultsPanel(state().sections)).toBe(true);
+    expect(state().dock).toBe('results');
+    expect(state().searchContext?.answer.aoiFilter?.optical).toMatchObject({ found: 0, checked: 100 });
     expect(state().searchContext?.nextToken).toBe('t2');
     expect(state().aoiWalking).toBe(false);
+  });
+
+  it('"Load more" after a "Stop" without a scene goes on from the token, and the list stays when scenes come', async () => {
+    steps = [{ checked: 100, found: 0, next: 't2' }, { scenes: [scene('a')], checked: 150 }];
+    let hold = true;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      const request = JSON.parse(init!.body as string) as Record<string, unknown>;
+      if (hold && asked.length >= 1) {
+        asked.push(request);
+        return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+      }
+      return Promise.resolve(json(respond(request)));
+    });
+    const run = state().runSearch();
+    await vi.waitFor(() => expect(asked).toHaveLength(2));
+    state().stopSearch();
+    await run;
+    hold = false;
+    stepIndex = 1;
+    await state().loadMore();
+    expect(asked[asked.length - 1].token).toBe('t2');
+    expect(sceneIds()).toEqual(['a']);
+    expect(state().sections[0].keepList).toBeUndefined();
+    expect(state().dock).toBe('results');
+    expect(state().aoiWalking).toBe(false);
+  });
+
+  it('a finished search without a scene is no list: nothing is left to go on with', async () => {
+    steps = [{ checked: 100, found: 0 }];
+    await state().runSearch();
+    expect(state().sections[0].keepList).toBeUndefined();
+    expect(hasResultsPanel(state().sections)).toBe(false);
+    expect(state().notice).toBe('No scenes within the AOI limit in this date range (100 checked).');
   });
 
   it('a failing answer while nothing is found is a failed search, not "no scenes within the limit"', async () => {
