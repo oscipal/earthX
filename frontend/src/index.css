@@ -1508,6 +1508,16 @@ input[type='date']:focus {
   min-height: 0;
   min-width: 0;
 }
+.advanced-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.advanced-top > :first-child {
+  flex: 1;
+  min-width: 0;
+}
 .advanced-fields {
   display: flex;
   flex-direction: column;
@@ -1747,6 +1757,31 @@ input[type='date']:focus {
   font-size: 10px;
   cursor: pointer;
   padding: 0;
+}
+/* The close "x" of every panel, pop-up and window (`CloseButton.tsx`, NM4-65): small and red. */
+.close-x {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #ff5a6e;
+  cursor: pointer;
+}
+.close-x:hover {
+  border-color: currentColor;
+}
+.close-x:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+.app[data-theme='normal'] .close-x {
+  color: #c62840;
 }
 .link-btn.off {
   color: var(--muted);

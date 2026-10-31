@@ -12,6 +12,7 @@ import {
 import { useAppStore } from '../store';
 import DatasetSelect from './DatasetSelect';
 import Popover from './Popover';
+import CloseButton from './CloseButton';
 
 type Offer = { dataset: DatasetOption; filters: SearchFilterDescription[] };
 
@@ -200,18 +201,26 @@ export default function AdvancedSearch() {
         form
       >
         <div id={dialogId} className="advanced-popup-body">
-          <DatasetSelect
-            className="plain"
-            label="Dataset"
-            labelId={`${dialogId}-dataset`}
-            listLabel="Datasets with filters"
-            choices={offers.map((offer) => ({
-              id: offer.dataset.id,
-              content: <OfferLine offer={offer} set={setOf(offer).length > 0} />,
-            }))}
-            shownId={shown.dataset.id}
-            onChoose={setShownId}
-          />
+          <div className="advanced-top">
+            <DatasetSelect
+              className="plain"
+              label="Dataset"
+              labelId={`${dialogId}-dataset`}
+              listLabel="Datasets with filters"
+              choices={offers.map((offer) => ({
+                id: offer.dataset.id,
+                content: <OfferLine offer={offer} set={setOf(offer).length > 0} />,
+              }))}
+              shownId={shown.dataset.id}
+              onChoose={setShownId}
+            />
+            <CloseButton
+              onClick={() => {
+                close();
+                buttonRef.current?.focus();
+              }}
+            />
+          </div>
           <div className="advanced-fields" ref={fieldsRef}>
             {groups.map((group) => (
               <section key={group.name} className="filter-group" aria-label={group.name}>

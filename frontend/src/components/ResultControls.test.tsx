@@ -77,6 +77,8 @@ const click = (el: Element | null | undefined) => {
   act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
 const button = (label: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
+// The small red x of the settings (NM4-65 part 8), what "‹ Close" was.
+const closeX = () => container.querySelector('.result-controls .close-x');
 const field = (label: string) =>
   [...container.querySelectorAll<HTMLElement>('.result-controls label')].find((l) => l.textContent?.startsWith(label))!.querySelector<HTMLInputElement | HTMLSelectElement>('input, select')!;
 
@@ -185,7 +187,7 @@ describe('a click on a result layer', () => {
 
   it('puts the search results back when the view is closed, the layer removed or a search made', async () => {
     await openView();
-    click(button('‹ Close'));
+    click(closeX());
     expect(useAppStore.getState().resultViewLayerId).toBeNull();
     expect(container.querySelector('.result-controls')).toBeNull();
 
@@ -439,7 +441,7 @@ describe('"Apply" and "Save" of a result layer', () => {
   const unsavedUrl = () => layers()[0].result?.savedTileUrl;
 
   it.each([
-    ['"‹ Close" is pressed', () => click(button('‹ Close'))],
+    ['the close x is pressed', () => click(closeX())],
     ['the view of scenes is left', () => useAppStore.getState().exitFocus()],
     ['the layer is chosen away from', () => useAppStore.getState().selectLayer('other')],
   ])('lose what was applied and not saved, without asking, when %s', async (_when, close) => {
@@ -471,7 +473,7 @@ describe('"Apply" and "Save" of a result layer', () => {
     type(field('vmax'), '2000');
     click(button('Apply'));
     click(button('Save'));
-    click(button('‹ Close'));
+    click(closeX());
     expect(urlOf()).toContain('rescale=180%2C2000');
   });
 
@@ -482,7 +484,7 @@ describe('"Apply" and "Save" of a result layer', () => {
     click(button('Save'));
     type(field('vmax'), '2500');
     click(button('Apply'));
-    click(button('‹ Close'));
+    click(closeX());
     expect(urlOf()).toContain('rescale=180%2C2000');
   });
 });
@@ -499,7 +501,7 @@ describe('a result drawn as it is, or gone', () => {
     expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toMatch(/whole numbers/u);
     // The opacity stays, and the way out.
     expect(field('Opacity').disabled).toBe(false);
-    expect(button('‹ Close')).toBeDefined();
+    expect(closeX()).not.toBeNull();
   });
 
   it('shows no range, colormap or "Apply" once it expired', async () => {
@@ -525,7 +527,7 @@ describe('on the page', () => {
     act(() => useAppStore.getState().selectLayer(layers()[0].id));
     expect(container.querySelector('.results-list')).not.toBeNull();
     expect(container.querySelector('.result-controls')).not.toBeNull();
-    click(button('‹ Close'));
+    click(closeX());
     expect(container.querySelector('.results-list')).not.toBeNull();
     expect(container.querySelector('.result-controls')).toBeNull();
   });

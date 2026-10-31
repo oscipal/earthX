@@ -55,6 +55,7 @@ import ShareLink from './ShareLink';
 import StepForm from './StepForm';
 import Tip from './Tip';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
+import CloseButton from './CloseButton';
 
 // What the server says when the output needs more memory than a job may use (`plan.py`, 413).
 const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
@@ -615,9 +616,7 @@ export default function ProcessingPanel() {
         </button>
         <div className="vc-head">
           <span className="vc-title">PROCESSING</span>
-          <button type="button" className="link-btn" title="Close the panel" onClick={close}>
-            ✕
-          </button>
+          <CloseButton onClick={close} />
         </div>
         {!reason && (
           <section className="pp-section" aria-label="Selection">

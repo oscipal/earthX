@@ -14,6 +14,7 @@ import InlineRename from './InlineRename';
 import { DownloadZip, RESAMPLED_TIP } from './JobRow';
 import { canRestore, canRetry, failsAgain, formatUntil, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
 import Tip from './Tip';
+import CloseButton from './CloseButton';
 
 export const NO_COPY_TIP = 'No copy of this order is kept: it was too large, or the browser ran out of room.';
 
@@ -176,9 +177,7 @@ export default function JobDetails() {
           <button type="button" className="link-btn" title="Back to the order" onClick={back}>
             ‹ Order
           </button>
-          <button type="button" className="link-btn" title="Close the panel" onClick={close}>
-            ✕
-          </button>
+          <CloseButton onClick={close} />
         </div>
       </div>
       <div className="pp-body">

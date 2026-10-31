@@ -16,6 +16,7 @@ import { useAppStore } from '../store';
 import AutoScaleButton from './AutoScaleButton';
 import RenderFields from './RenderFields';
 import Tip from './Tip';
+import CloseButton from './CloseButton';
 
 const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap;
 
@@ -88,9 +89,7 @@ function Controls({ layer }: { layer: MapLayer }) {
       <div className="vc-head">
         <span className="vc-title">{layer.name.toUpperCase()}</span>
         <div className="results-head-right">
-          <button type="button" className="link-btn" title="Close this view and show the search results again" onClick={() => close()}>
-            ‹ Close
-          </button>
+          <CloseButton title="Close" onClick={() => close()} />
           {!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
         </div>
       </div>
