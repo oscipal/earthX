@@ -1,0 +1,221 @@
+// Browser check of ⚙ at the layer of a result (NM4-05b), in a real browser with made-up answers of the platform:
+//   1. The layer manager: ⚙ in the row of a result with the order of its job, active; locked with the reason without one.
+//   2. The panel it opens: the step of the result locked and folded, no "Run as", no choice of the area (a lock instead), no
+//      "Load recipe…"; the bands of the job as the output, "RGB" in "Show"; a new step behind the locked one; "Review" and
+//      "Start job" send one order with all the steps, and the job it makes lies beside the old one.
+// In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
+//
+//   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
+//   node e2e/process-result.cjs             # BASE=http://localhost:5173 OUT=<directory for the screenshots>
+//
+// Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
+
+const { chromium } = require('playwright');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const BASE = process.env.BASE ?? 'http://localhost:5173';
+const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-process-result');
+const DESCRIPTION = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'fixtures', 'processes', 'sentinel-2-c1-l2a.json'), 'utf8'));
+const THEMES = { light: 'normal', dark: 'tech' };
+const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, height: 740 } };
+const RESULT = 'ZyXwVuTsRqPoNmLkJiHg_-';
+const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
+const NEW_JOB = 'QrStUvWxYzAbCdEfGhIj_-';
+
+const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
+const STAT = { count: 900, min: 0.01, max: 0.9, percentile_2: 0.05, percentile_98: 0.7, unit: null };
+
+const COLLECTION = {
+  id: 'sentinel-2-c1-l2a',
+  'earthx:format': 'cog',
+  'earthx:license_flags': { tier: 'processing' },
+  'earthx:capabilities': { interpolation: true },
+  'earthx:true_color': ['red', 'green', 'blue'],
+};
+
+async function open(browser, theme, viewport) {
+  const context = await browser.newContext({ viewport: VIEWPORTS[viewport] });
+  await context.addInitScript((t) => localStorage.setItem('earthx.theme', t), THEMES[theme]);
+  const page = await context.newPage();
+  const posted = [];
+  await page.route('**/*', async (route) => {
+    const url = new URL(route.request().url());
+    const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
+    if (url.pathname === '/processing/processes/recipe') return json(DESCRIPTION);
+    if (url.pathname.endsWith('/estimate')) {
+      return json({ estimate: { size: 4e6, duration: 'PT3.4S', outputPixels: 1e6, inputPixels: 2e6, inputBytes: 4e6, assets: 4, units: 1 }, skippedItems: [] });
+    }
+    if (url.pathname.endsWith('/execution')) {
+      posted.push(JSON.parse(route.request().postData()).inputs.recipe);
+      return json({ processID: 'recipe', type: 'process', jobID: NEW_JOB, status: 'accepted', message: '', progress: 0, created: '2026-10-31T10:00:00Z', expires: new Date(Date.now() + 7 * 86_400_000).toISOString(), recipeID: 'r', links: [] }, 201);
+    }
+    if (url.pathname.endsWith('/statistics')) return json({ b1: STAT, b2: STAT });
+    if (url.pathname === `/results/${RESULT}/WebMercatorQuad/tilejson.json`) return json({ bounds: [10, 50, 11, 51], minzoom: 0, maxzoom: 19, data_type: 'float32', tiles: [] });
+    if (url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0' });
+    return json({ detail: 'not made up' }, 404);
+  });
+  await page.goto(BASE);
+  return { context, page, posted };
+}
+
+// A scene, a finished job with the order it was started with, and its result as a layer.
+async function setUp(page, withOrder) {
+  await page.evaluate(
+    async ({ collection, job, result, withOrder }) => {
+      const { useAppStore } = await import('/src/store.ts');
+      const { useProcessingStore } = await import('/src/processingStore.ts');
+      const { jobEntry } = await import('/src/fixtures/jobEntries.ts');
+      const bbox = [10, 50, 11, 51];
+      const polygon = { type: 'Polygon', coordinates: [[[10, 50], [11, 50], [11, 51], [10, 51], [10, 50]]] };
+      const aoi = { type: 'Polygon', coordinates: [[[10.4, 50.4], [10.6, 50.4], [10.6, 50.6], [10.4, 50.6], [10.4, 50.4]]] };
+      const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
+      const asset = () => ({ href: 'https://example.org/b.tif', type: COG, 'raster:bands': [{ data_type: 'uint16' }] });
+      const item = {
+        id: 'S2B_A', collection: 'sentinel-2-c1-l2a', bbox, geometry: polygon,
+        properties: { datetime: '2026-07-01T10:00:00Z', gsd: 10 },
+        assets: { red: asset(), green: asset(), blue: asset(), nir: asset() },
+      };
+      useAppStore.setState({
+        datasets: [{
+          id: 'sentinel-2-c1-l2a', title: 'Sentinel-2 L2A', viewable: true, groupBy: ['datetime'], zoom: { min: 8, max: 14 },
+          browse: 'quicklook', quicklookNodataMax: null, resultsGroupBy: ['datetime'], hasTimeAxis: true, collection,
+        }],
+        datasetId: 'sentinel-2-c1-l2a', items: [item], groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [item] }],
+        activeGroupIndex: 0, selectedIds: [], aoi: null, aoiPoint: null, layers: [], focusMode: false, error: null,
+      });
+      const order = {
+        recipe_version: 2,
+        inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_A']] }],
+        aoi,
+        steps: [{ op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'NDVI' } }],
+        output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI', 'red', 'green', 'blue'] },
+      };
+      useProcessingStore.setState({
+        jobs: [jobEntry(1, {
+          jobID: job, expires: new Date(Date.now() + 86_400_000).toISOString(), phase: 'successful', title: 'NDVI of a field',
+          tiles: { href: `/results/${result}/WebMercatorQuad/tilejson.json`, width: 1000, gsd: 10 }, order: withOrder ? order : null,
+        })],
+      });
+      useAppStore.setState({ dock: 'layers' });
+      await useProcessingStore.getState().showResultOnMap(job);
+    },
+    { collection: COLLECTION, job: JOB, result: RESULT, withOrder },
+  );
+  await page.waitForSelector('.layer-row [data-col="process"]', { timeout: 10000 });
+}
+
+const gear = (page) => page.locator('.layer-row [data-col="process"]');
+
+async function check(browser, theme, viewport) {
+  const name = `${theme} ${viewport}`;
+  const problems = [];
+  fs.mkdirSync(OUT, { recursive: true });
+
+  // 1. Without the order of the job: locked, with the reason.
+  {
+    const { context, page } = await open(browser, theme, viewport);
+    await setUp(page, false);
+    if (!(await gear(page).isDisabled())) problems.push('the ⚙ is active without the order of the job');
+    if (!(await gear(page).getAttribute('title'))?.startsWith('No copy of the original order')) problems.push('the ⚙ does not say why it is locked');
+    await context.close();
+  }
+
+  // 2. With it.
+  const { context, page, posted } = await open(browser, theme, viewport);
+  await setUp(page, true);
+  if (await gear(page).isDisabled()) problems.push('the ⚙ is locked with the order of the job');
+  if ((await gear(page).getAttribute('title')) !== 'Process further') problems.push(`the ⚙ says ${await gear(page).getAttribute('title')}`);
+  await gear(page).click();
+  await page.waitForSelector('.processing-panel .pp-locked', { timeout: 10000 });
+
+  const panel = page.locator('.processing-panel');
+  const text = (selector) => panel.locator(selector).allTextContents();
+  if ((await panel.locator('.pp-locked').count()) !== 1) problems.push('the step of the result is not shown locked');
+  if ((await panel.locator('.pp-locked button').count()) !== 0) problems.push('a locked step has buttons');
+  if ((await panel.locator('.pp-locked textarea, .pp-locked input').count()) !== 0) problems.push('a locked step has fields');
+  if ((await panel.getByRole('button', { name: 'Whole scene' }).count()) + (await panel.getByRole('button', { name: 'AOI only' }).count()) !== 0) problems.push('the area can be chosen');
+  if ((await panel.locator('[aria-label="Run as"]').count()) !== 0) problems.push('"Run as" is offered');
+  if ((await panel.getByText('Load recipe').count()) !== 0) problems.push('"Load recipe…" is offered');
+  if (!(await panel.locator('.pp-fixed').textContent())?.includes('AOI only')) problems.push('the area is not shown as AOI only');
+  if ((await panel.locator('.pp-fixed').getAttribute('title')) !== 'Fixed by the result.') problems.push('the lock has no tooltip');
+  if (!(await text('section[aria-label="Selection"]')).join().includes('From result: NDVI of a field')) problems.push('the panel does not say what it comes from');
+  const tip = await panel.locator('.pp-area .tip').getAttribute('data-tip');
+  if (!/run again from the scenes/.test(tip ?? '') || !/last bit/.test(tip ?? '')) problems.push(`the tooltip of the chain says ${tip}`);
+
+  // The bands of the job are the output; RGB is on offer for the three of them.
+  const options = await page.$$eval('.pp-show select option', (o) => o.map((x) => x.value));
+  if (options.join() !== '@rgb,NDVI,red,green,blue') problems.push(`"Show" offers ${options}`);
+  const output = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().output);
+  if (output.join() !== 'NDVI,red,green,blue') problems.push(`the output is ${output}`);
+
+  // A new step behind the locked one, reading the band of the locked one.
+  await panel.getByRole('button', { name: /Band math/ }).first().click();
+  await page.locator('li:not(.pp-locked) textarea[id$="-expression"]').fill('NDVI * 2');
+  const chips = await page.$$eval('li:not(.pp-locked) [aria-label="Results of earlier steps"] .pp-chip', (c) => c.map((x) => x.textContent));
+  if (chips.join() !== 'NDVI') problems.push(`the new step offers the chips ${chips}`);
+  if ((await panel.locator('.pp-step-sep').count()) !== 1) problems.push('no line between the locked and the new steps');
+  if (!(await panel.locator('li:not(.pp-locked) button', { hasText: 'Up' }).first().isDisabled())) problems.push('the first new step can move up before the locked one');
+
+  const layout = await page.evaluate(() => {
+    const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+    const root = document.querySelector('.processing-panel');
+    const body = root.querySelector('.pp-body');
+    const section = root.querySelector('section[aria-label="Selection"]');
+    return {
+      theme: document.querySelector('.app')?.dataset.theme,
+      panel: box(root),
+      scrolls: body.scrollWidth > body.clientWidth + 1,
+      leaves: [...section.querySelectorAll('p, span.pp-fixed, .pp-toggle')].map((e) => ({ what: e.tagName.toLowerCase(), ...box(e) })).filter((c) => c.width > 0),
+    };
+  });
+  for (let i = 0; i < layout.leaves.length; i++) {
+    const leaf = layout.leaves[i];
+    if (leaf.x < layout.panel.x - 0.5 || leaf.x + leaf.width > layout.panel.x + layout.panel.width + 0.5) problems.push(`${leaf.what} leaves the panel`);
+  }
+  if (layout.theme !== THEMES[theme]) problems.push(`the app shows the theme ${layout.theme}`);
+  if (layout.scrolls) problems.push('the panel scrolls sideways');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_panel.png`) });
+
+  // Unfolding the locked step shows what it was given.
+  await panel.locator('.pp-locked summary').click();
+  if (!(await panel.locator('.pp-locked').textContent())?.includes('(nir - red) / (nir + red)')) problems.push('the locked step does not show its expression');
+  await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_unfolded.png`) });
+
+  // Review and start: one order, the steps in order, a new job beside the old one.
+  await panel.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
+  await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+  await page.waitForTimeout(800);
+  if (posted.length !== 1) problems.push(`${posted.length} orders were sent`);
+  else {
+    const order = posted[0];
+    if (order.steps.map((s) => s.params.name).join() !== 'NDVI,result') problems.push(`the steps are ${order.steps.map((s) => s.params.name)}`);
+    if (order.output.bands.join() !== 'NDVI,result,red,green,blue') problems.push(`the output is ${order.output.bands}`);
+    if (order.inputs[0].groups[0].join() !== 'S2B_A') problems.push('the scenes are not those of the job');
+    if (!order.aoi) problems.push('the order has no area');
+  }
+  const jobs = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().jobs.map((j) => [j.jobID, j.title]));
+  if (jobs.length !== 2 || jobs[0][0] !== NEW_JOB || jobs[1][0] !== JOB) problems.push(`the jobs are ${JSON.stringify(jobs)}`);
+  if (jobs[0]?.[1] !== 'NDVI of a field → Band math') problems.push(`the new job is called ${jobs[0]?.[1]}`);
+  await context.close();
+  return { name, problems };
+}
+
+(async () => {
+  const browser = await chromium.launch();
+  let failed = false;
+  for (const theme of Object.keys(THEMES)) {
+    for (const viewport of Object.keys(VIEWPORTS)) {
+      const { name, problems } = await check(browser, theme, viewport);
+      console.log(`${problems.length === 0 ? 'ok  ' : 'FAIL'} ${name}`);
+      for (const problem of problems) console.log(`       - ${problem}`);
+      if (problems.length > 0) failed = true;
+    }
+  }
+  await browser.close();
+  console.log(`screenshots: ${OUT}`);
+  process.exit(failed ? 1 : 0);
+})();
