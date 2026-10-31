@@ -25,7 +25,8 @@ What each route turns away, and how (all errors are ``application/problem+json``
 * **An estimate** (M4-13a, outside OGC) is the order's first six stages and the cost the plan
   computes from it: no ``HEAD``, no row in the queue, no ``recipe_id``. It sees what an order
   placed a moment later sees, except what only the version of an input shows (an asset the
-  source no longer has): that is refused when the job is placed. ``no-store``.
+  source no longer has): that is refused when the job is placed. It also says what the job converts onto a common
+  grid unasked (``resampling``, NM4-65, read off the items; ``null`` if nothing). ``no-store``.
 * **A result link** answers ``303`` with a URL signed just now for 15 minutes and never past
   the result's expiry, ``Cache-Control: no-store``. ``recipe.json`` is built here from the
   job's own recipe; it does not lie in the object store.
@@ -116,7 +117,7 @@ from earthx.processing import check_scope
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.methods import methods_of
 from earthx.processing.operators import OperatorRegistry
-from earthx.processing.plan import estimate
+from earthx.processing.plan import ResamplingFacts, describe_resampling, estimate
 from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json
 
 LOGGER = logging.getLogger("earthx.api.processing")
@@ -374,12 +375,70 @@ class Estimate(BaseModel):
     units: float = Field(ge=0)
 
 
+class ResamplingGrid(BaseModel):
+    #: The finest pixel size of the data in metres, as the items give it (``gsd``).
+    resolution: float = Field(gt=0)
+    #: ``null`` where the items name no CRS.
+    crs: str | None
+
+
+class ResamplingBand(BaseModel):
+    #: The band as the order names it.
+    band: str
+    resolution: float = Field(gt=0)
+    crs: str | None
+
+
+class ResamplingScenes(BaseModel):
+    """``count`` of the ``of`` scenes of a mosaic lie in another CRS than ``crs`` and are warped onto it."""
+
+    count: int = Field(ge=1)
+    of: int = Field(ge=2)
+    crs: str
+
+
+class Resampling(BaseModel):
+    """What the job converts onto a common grid without being asked to; the estimate shows it, the job does the same.
+
+    Not given (``null`` in the answer) where nothing is converted, for an export, and for an order with a ``reproject``
+    step: there the person chose the target and the method, and the step says so.
+    """
+
+    grid: ResamplingGrid
+    method: Literal["nearest"]
+    #: Bands of the result whose source has another pixel size or CRS than ``grid``; a layer that only masks is no band here.
+    bands: list[ResamplingBand]
+    #: Set where scenes of another CRS (UTM zone) are warped onto the CRS most scenes share.
+    scenes: ResamplingScenes | None
+
+    @model_validator(mode="after")
+    def _says_something(self) -> Resampling:
+        if not self.bands and self.scenes is None:
+            raise ValueError("a resampling names bands, scenes or both")
+        return self
+
+
+def _resampling_of(facts: ResamplingFacts | None) -> Resampling | None:
+    if facts is None:
+        return None
+    return Resampling(
+        grid=ResamplingGrid(resolution=facts.grid.resolution, crs=facts.grid.crs),
+        method=facts.method,  # type: ignore[arg-type]  # validated: the model knows the one method the core uses
+        bands=[ResamplingBand(band=b.band, resolution=b.resolution, crs=b.crs) for b in facts.bands],
+        scenes=None
+        if facts.scenes is None
+        else ResamplingScenes(count=facts.scenes.count, of=facts.scenes.of, crs=facts.scenes.crs),
+    )
+
+
 class EstimateDocument(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     estimate: Estimate
     #: As for a placed job: items of the order the area of interest does not touch.
     skipped_items: list[str] = Field(default_factory=list, alias="skippedItems")
+    #: What is converted onto a common grid before the job's own steps; ``null`` if nothing is (read off the items, no request).
+    resampling: Resampling | None
 
 
 class ProblemDocument(BaseModel):
@@ -791,8 +850,10 @@ async def estimate_order_cost(request: Request, process_id: str, api: Api) -> Re
             units=cost.units,
         ),
         skipped_items=list(estimated.skipped_items),
+        resampling=_resampling_of(describe_resampling(estimated.recipe, api.operators)),
     )
-    return JSONResponse(_dump(body))
+    # Not `_dump`: `resampling` and `scenes` are `null` on purpose, a client tells "nothing converted" from "not answered".
+    return JSONResponse(body.model_dump(mode="json", by_alias=True))
 
 
 # --- one job -------------------------------------------------------------------
