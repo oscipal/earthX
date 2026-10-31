@@ -261,6 +261,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Pläne:** `ds/ds-00-paket.md` (Übersicht) und `ds/ds-01` bis `ds/ds-06`: Sentinel-1-Quelle (C), „Advanced search“ (B), Wolken in der AOI (B), S1 anbinden (A), SAR-Operatoren (B), Maske nach Werten (B).
 
 33. **Originale mit einem Klick herunterladen** (Otto, 26.10.2026: „einfach einen Download-Button drücken ohne extra Steps“).
+   - **Erledigt:** NM4-33, PR #233 (31.10.2026): „⇩ Download full scene(s)“ lädt je Szene ein ZIP, im Browser per Service Worker gestreamt (client-zip 2.5.1, STORE), Assets aus der Registry, `ATTRIBUTION.txt`, `item.json`; ohne CORS (DEM) Einzeldateien; Chrome fragt einmal je Website nach „mehrere Dateien“.
    - **Freigegeben (Otto, 29.10.2026, PR #233):** A2 – ein Klick lädt `ATTRIBUTION.txt` und die Originale nacheinander direkt von der Quelle (mit CORS per `fetch` unter `<Szene>_<Asset>.tif`, ohne CORS als normaler Browser-Download), kein Byte über das Backend; Grenze 500 MB je Datei (Wiedervorlage DS-04 wegen S1 um 1 GB). Offen: ob der Browser einmalig nach „mehrere Dateien“ fragt (Prüfung bei Otto).
    - **Plan:** `querschnitt/nm4-33-originale-ein-klick.md`
    - **Benennung (UI-01g, Otto 26.10.2026):** Der Knopf heißt „Download full scene“ bzw. bei mehreren Szenen „Download full scenes“ (Originale, nicht gemergt).
@@ -334,6 +335,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe A, Backend und Frontend, Vorrang vor neuen Funktionen.
 58. **Toolbar des Control-Menüs bei 320 px etwa 8 px zu breit** (Fund aus DS-02c, #239). Wird mit Paket NM4-56 erledigt.
 59. **Suchergebnisse als Eintrag „Results“ im Layer-Manager** (Otto, 30.10.2026). Mit Reihenfolge und Auge statt „Show/Hide results“; die Ebenenlogik der Suchergebnisse stützt sich auf den Layer-Manager. Dazu Fehler: nach Hide/Show erscheinen angehakte Ergebnisse nicht immer wieder.
+   - **Erledigt:** NM4-59, PR #249 (31.10.2026): eine Ebenenfolge aus Layer-Liste und Platz von „Results“ (sechs von sieben Markern entfernt), Zeile „Results“ mit Auge und ▲/▼, neue Suche legt „Results“ nach oben, neuer Layer direkt darunter, Ansicht unten in „Results“, Umrisse unter AOI über Overlays, Knopf in der Ergebnisliste ist dasselbe Auge.
    - **Plan:** `querschnitt/nm4-59-results-als-layer.md`
    - **Aufgabe:** Stufe B, Frontend; Code nach NM4-55 (#242), vor NM4-53 und NM4-54.
 60. **Normalize je Batch mit gleichen Werten** (Wiedervorlage aus NM4-11, #244): Option „gleiche Werte für alle Aufträge“, damit normalisierte Zeitreihen vergleichbar sind.
@@ -343,6 +345,9 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe A, Backend, Opus.
    - **Erledigt (PR #253, 30.10.2026):** keine Regression; gegen die nachgebaute Quelle main/#215 = 0,98–1,03 (Kachel kalt/warm, Zuschnitt, Job). P4-Unterschied kommt aus NM4-27 (gelöschter Job ist kein Cache-Treffer mehr); Ottos 2,8 s waren ein Cache-Treffer. `try-job.ps1` zeigt künftig die Job-Laufzeit und Cache-Treffer. Vergleichsskript `scripts/tile-bench/compare.sh`.
 63. **Annahme von `reproject` 0,2 s langsamer** (aus NM4-62, #253): Zielraster wird seit NM4-43 je Auftrag fünfmal statt zweimal berechnet (je ~16 ms). Später einmal berechnen und als Argument durchreichen (kein Zustand im Worker-Kern). Niedrige Priorität.
+64. **„RGB“ in Vorschau und Ergebnis-Layer** (Otto, 31.10.2026; aus #255 herausgelöst). Registry-Feld `earthx:true_color`, bis zu drei `band=` an den Kachel-Routen, Eintrag „RGB“ oben im Dropdown, ohne Colormap.
+   - **Plan:** `querschnitt/nm4-64-rgb.md`
+   - **Aufgabe:** Stufe A, Backend und Frontend in einer Session, nach #255, vor NM4-54.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
