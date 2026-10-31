@@ -519,6 +519,17 @@ Daten unter der offenen Copernicus-Lizenz; nichts davon liegt im Repo.
   - Kein datensatzspezifischer Code: Alles kommt aus `within_aoi`, `cloud_classes`, `cloud_note`.
   - `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
 
+**Umgesetzt am 31.10.2026** (Draft-PR, Log-Zeile, `adr/0021` §6 Nachtrag DS-03). Gegenüber dem Umfang oben:
+- **Schalter:** Der Wert steht im Feld des Bereichs (`FilterInput.within`) und bleibt, wenn der Bereich geleert wird; als Filter zählt er allein nicht („Advanced search · N“ zählt ihn nicht). Sperre, Tooltip und Texte kommen aus `aoiFilter.ts`; die Klassen im Tooltip aus `earthx:mask.cloud_classes`, der Satz zu den Grenzen aus `cloud_note`. „Schatten zählen nicht“ steht nur, wenn die Registry eine Klasse mit „shadow“ im Namen hat, die nicht in `cloud_classes` liegt.
+- **Gesperrt = aus:** Ohne AOI, Zeitraum mit beiden Enden oder bei einer Punkt-AOI zeigt der Schalter „aus“, die Suche fragt den Bereich der Szene (`eo:cloud_cover`), und die Coverage bekommt ihn ebenfalls. Fällt die Bedingung weg, solange der Schalter an ist, geht er aus und kommt mit der nächsten AOI nicht von selbst zurück.
+- **Suche:** `walkAoiSearch` fragt mit der Marke weiter, zeigt nach jeder Antwort die Liste (ohne Treffer erscheint sie mit den ersten) und endet bei 300 Treffern, ohne Marke, bei „Stop“ oder wenn AOI, Zeitraum oder Filter sich ändern (`dropPageToken` und `forgetSearch` brechen die Anfrage ab). Eine Anfrage, die „Stop“ abbricht, wird bei „Load more“ mit derselben Marke noch einmal gestellt. Ein Fehler nach den ersten Treffern lässt sie stehen, nimmt die Marke weg und sagt „Could not load more results — search again.“; ein Fehler vor der ersten Antwort ist wie bisher „Search failed“.
+- **Fortschritt:** „n found / m checked“ im Kopf der Liste mit „Stop“; solange keine Liste da ist (nichts im Bereich gefunden), steht beides in der Meldung der Suche. „Load more“ fehlt, solange die Suche selbst weiterfragt. Die Hinweise zur Grenze und zu unlesbaren Szenen stehen im Kopf des Datensatzes; bei einem Datensatz ohne Liste in der Meldung.
+- **Zeile und Gruppe:** „☁ 3 %“ (0 bleibt „0 %“, über 0 und unter 1 „<1 %“). Der Tooltip der Gruppe nennt „Measured on …“ nicht, der der Szene nur, wenn der Anteil unter 100 % liegt.
+- **Sortierung:** nur die Anzeige der Liste; Zeitleiste, Abspielen und die Indizes der Gruppen bleiben nach Datum.
+- **Offen (Frage an Otto):** Der Hinweis zur Grenze nennt kein Datum („Checked 500 scenes. Narrow the date range to search further.“), weil keine Antwort das Datum der ältesten geprüften Szene trägt; die Szenen, die zurückkommen, sind nur die passenden. Gelöst wäre es mit einem Feld im Backend (etwa `earthx:aoi_filter.oldest`).
+- **Nicht gelöst, nicht geraten:** Eine AOI mit mehr als 20 000 Positionen beantwortet der Server mit `400`; der Schalter bleibt dafür bedienbar, die Suche zeigt den Text des Servers als Fehler.
+- **Browser:** `frontend/e2e/within-aoi.cjs` (Chromium, Antworten gemockt), hell/dunkel × breit/schmal/sehr schmal grün. Bei schmalem Fenster ragt die Meldung der Suche (`.status`) über den Rand, sobald ein Panel offen ist; das tut sie nach jeder Suche, auch ohne den Schalter (beobachtet, nicht geändert).
+
 ### 6.18 DS-03a2 — Filter „Within AOI“ in der Suche (Folgeaufgabe, neue Session)
 
 **Stufe A**, nur Backend. Die Entscheidungen stehen in diesem Plan (Freigaben Ottos vom 29.10.2026, §6.4–§6.10, §6.14–§6.15) und in `adr/0021` „§6 Nachtrag DS-03“; dieser Abschnitt ist ohne das Gespräch zu DS-03 verständlich.
