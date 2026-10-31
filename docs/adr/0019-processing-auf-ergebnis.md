@@ -567,15 +567,15 @@ Neurechnens messbar werden.
 
 ---
 
-## 10a. Nachtrag NM4-05b: Umsetzung (2026-10-31; zu §7.1, §8, §9)
+## 10a. Nachtrag NM4-05b: Umsetzung und Änderung von F2 und F3 (2026-10-31; zu §7.1, §8, §9)
 
-Umgesetzt ist Option 2 (Draft-PR [#263](https://github.com/oscipal/earthX/pull/263), nur Frontend), auf dem Stand nach `adr/0020` (Bandvorrat, `output.bands`).
+Umgesetzt ist Option 2 (Draft-PR [#263](https://github.com/oscipal/earthX/pull/263), nur Frontend), auf dem Stand nach `adr/0020` (Bandvorrat, `output.bands`). Otto hat am 2026-10-31 zu #263 **F2 und F3 geändert**:
 
-- **Zustand.** `fixed` im Panel-Zustand hält Szenen, Fläche und, bei einem Ergebnis, die Zahl der gesperrten Schritte, den Titel und die Gruppe des Jobs. `orderView` nimmt Szenen und Fläche aus `fixed`, nicht aus Auswahl und Karte; „Run as“ gibt es dann nicht.
-- **Eltern-Schritte** stehen als die ersten Schritte des Entwurfs; Ändern, Verschieben, Entfernen, Umbenennen und „Load recipe…“ sind im Store gesperrt, nicht nur in der Oberfläche. Ihre `band_math`-Bänder stehen im Vorrat (Chips neuer Schritte, „New“ in der Ausgabe). Die Ausgabe der Eltern ist die Vorgabe der Ausgabe (`adr/0020` §12).
-- **⚙ ohne Kopie** ist gesperrt mit Grund (F2, wie im ADR beschlossen); der Plan NM4-05b sprach von „erscheint nicht“, maßgeblich ist die Antwort zu F2.
-- Eltern in Version 1 liest die Ablage schon als Version 2 (`jobShelf.orderCopy`, `adr/0020` §11).
-- Das Backend sieht einen gewöhnlichen Auftrag; Hash, Cache, Runner, Permalink unverändert (K1–K8 wie in §5.8).
+- **F3 neu: ein Ergebnis-Layer ist eine eigene Entität.** Das Panel zeigt die Schritte des Jobs nicht als Schritte. Oben steht die Herkunft (Titel des Jobs), die Kette steht im Tooltip. Der Bandvorrat des Panels sind die **Ausgabebänder des Jobs** (auch die Ergebnisse seiner Band-Math-Schritte, als Bänder wie die der Daten); alle Operatoren wie beim Rohbild, aber nur auf diesen Bändern. Ein Band, das nicht in der Ausgabe war, kann ein neuer Schritt nicht lesen; sein Name bleibt belegt (die Kette führt es noch). „Mask“ ist ausgeblendet, wo die Ausgabe die Maskenschicht nicht enthält, RGB nur, wo seine drei Bänder in der Ausgabe sind. Dasselbe soll für Index-Knöpfe gelten (NM4-14b, noch nicht im Frontend).
+- **Technisch unverändert Option 2:** ein gewöhnlicher Auftrag, von der Quelle neu gerechnet; die Schritte des Jobs stehen unsichtbar vorn im Rezept (im Store gesperrt: nicht änderbar, verschiebbar, entfernbar). Die Ausgabe des Jobs ist die Vorgabe der Ausgabe, neue Ergebnisse kommen angehakt dazu.
+- **F2 neu: ⚙ ohne Auftragskopie wird ausgeblendet** (dauerhaft unmöglich; der Platz in der Zeile bleibt leer). Gesperrt mit Grund bleibt ⚙ nur, wo es im Moment nicht geht (Lizenz, Datensatz).
+- **Zustand.** `fixed` im Panel-Zustand hält Szenen, Fläche und, bei einem Ergebnis, Zahl der Schritte, Ausgabebänder, Titel und Gruppe des Jobs. `orderView` nimmt Szenen und Fläche aus `fixed`, nicht aus Auswahl und Karte; „Run as“ gibt es dann nicht.
+- Eltern in Version 1 liest die Ablage schon als Version 2 (`jobShelf.orderCopy`, `adr/0020` §11). Das Backend sieht einen gewöhnlichen Auftrag; Hash, Cache, Runner, Permalink unverändert (K1–K8 wie in §5.8).
 
 ## 11. Prüfanleitung für Otto
 

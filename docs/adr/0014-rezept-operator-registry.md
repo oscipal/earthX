@@ -2898,4 +2898,4 @@ bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist das Backend (DS-06
 
 ## 15 Nachtrag NM4-05b: Ein Ergebnis ist keine Eingabe; der Weg über das Panel (2026-10-31; zu §4.1, §4.6, §15d; `adr/0019` §10a)
 
-Das Panel baut aus dem Auftrag eines Jobs und den neuen Schritten einen gewöhnlichen Auftrag (⚙ am Ergebnis-Layer). Eine Eingabe „Ergebnis“ gibt es nicht; `InputRequest`, Fassung, Hash und `recipe.json` bleiben unverändert. Das Ergebnis wird aus den Quellen neu gerechnet und kann im letzten Bit von einem Schritt auf der gespeicherten Datei abweichen (`adr/0019` §3.5).
+Das Panel baut aus dem Auftrag eines Jobs (seine Schritte unsichtbar vorn, die Ausgabebänder als Bandvorrat) und den neuen Schritten einen gewöhnlichen Auftrag (⚙ am Ergebnis-Layer). Eine Eingabe „Ergebnis“ gibt es nicht; `InputRequest`, Fassung, Hash und `recipe.json` bleiben unverändert. Das Ergebnis wird aus den Quellen neu gerechnet und kann im letzten Bit von einem Schritt auf der gespeicherten Datei abweichen (`adr/0019` §3.5).
