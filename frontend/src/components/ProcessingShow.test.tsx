@@ -471,3 +471,120 @@ describe('what follows from a change of the output', () => {
     expect(tiles().get('band')).toBe('result');
   });
 });
+
+// NM4-65 part 4 (Otto, 31.10.2026): "vmin"/"vmax" as percentiles in the preview of the panel. The values come from the measure of
+// the preview where it names the percentiles, else from the tiler on the first scene; the picture is drawn from values and the
+// range in force keeps what was typed (a job started with it keeps it too).
+describe('"vmin" and "vmax" as percentiles in the preview', () => {
+  const chip = () => section().querySelector<HTMLButtonElement>('.vc-unit')!;
+  const problem = () => section().querySelector('.hint-text.error')?.textContent ?? null;
+  const percentValues = () => asked().filter((u) => u.includes('p=3'));
+  const withPercentiles = (over: object = {}) => {
+    statistics = () => ({ band: { ...INDEX, percentile_3: -0.15, percentile_97: 0.85, ...over } });
+  };
+
+  it('has the switch at "vmin", and turns the fields into 2 and 98', async () => {
+    await ndvi();
+    expect(chip().textContent).toBe('value');
+    click(chip());
+    expect(chip().textContent).toBe('%');
+    expect(fields().map((f) => f.value)).toEqual(['2', '98']);
+  });
+
+  it('asks the tiler for the two percentiles on the first scene and draws the values it gives', async () => {
+    await ndvi();
+    // The measure the preview was drawn with names 2 and 98 only; the tiler names the others where they are asked for.
+    withPercentiles();
+    click(chip());
+    typeInto(fields()[0], '3');
+    typeInto(fields()[1], '97');
+    await act(async () => click(button('Apply')));
+    await flush();
+    expect(percentValues()).toHaveLength(1);
+    expect(percentValues()[0]).toContain('p=3&p=97');
+    expect(store().range).toMatchObject({ vmin: '-0.15', vmax: '0.85', percent: { low: '3', high: '97' } });
+    expect(store().rangeByHand).toBe(true);
+    await afterDebounce();
+    expect(tiles().get('rescale')).toBe('-0.15,0.85');
+    expect(problem()).toBeNull();
+    // Applied: nothing more to apply until something changes.
+    expect(button('Apply').hasAttribute('disabled')).toBe(true);
+    typeInto(fields()[1], '96');
+    expect(button('Apply').hasAttribute('disabled')).toBe(false);
+  });
+
+  it('reads 2 and 98 from the measure it has, with no further question', async () => {
+    await ndvi();
+    const before = asked().length;
+    click(chip());
+    await act(async () => click(button('Apply')));
+    await flush();
+    expect(asked()).toHaveLength(before);
+    expect(store().range).toMatchObject({ vmin: '-0.1', vmax: '0.8', percent: { low: '2', high: '98' } });
+  });
+
+  it('takes the minimum and the maximum for 0 and 100', async () => {
+    await ndvi();
+    click(chip());
+    typeInto(fields()[0], '0');
+    typeInto(fields()[1], '100');
+    await act(async () => click(button('Apply')));
+    await flush();
+    expect(store().range).toMatchObject({ vmin: '-0.2', vmax: '0.9' });
+  });
+
+  it('refuses what is no whole percent, in the wrong order or out of range, says why and asks nothing', async () => {
+    await ndvi();
+    const before = asked().length;
+    click(chip());
+    for (const [low, high, text] of [['x', '98', 'Enter whole percents'], ['2.5', '98', 'Enter whole percents'], ['2', '120', 'Enter whole percents'], ['90', '10', 'must be below']]) {
+      typeInto(fields()[0], low);
+      typeInto(fields()[1], high);
+      await act(async () => click(button('Apply')));
+      await flush();
+      expect(problem(), `${low}/${high}`).toContain(text);
+    }
+    expect(asked()).toHaveLength(before);
+    expect(store().rangeByHand).toBe(false);
+  });
+
+  it('says so where the tiler does not give the percentiles, and changes nothing', async () => {
+    await ndvi();
+    click(chip());
+    typeInto(fields()[0], '3');
+    typeInto(fields()[1], '97');
+    await act(async () => click(button('Apply')));
+    await flush();
+    // The statistics of the scene name no 3rd and 97th percentile.
+    expect(problem()).toBe('The statistics give no range for these percentiles.');
+    expect(store().rangeByHand).toBe(false);
+    fetchMock.mockImplementation(async () => new Response('{}', { status: 502, headers: { 'Content-Type': 'application/problem+json' } }));
+    await act(async () => click(button('Apply')));
+    await flush();
+    expect(problem()).toMatch(/^Could not measure the percentiles/u);
+  });
+
+  it('puts the usual stretch back with "Auto stretch" in percentiles, and the values back in values', async () => {
+    await ndvi();
+    click(chip());
+    typeInto(fields()[0], '10');
+    click(button('Auto stretch'));
+    expect(fields().map((f) => f.value)).toEqual(['2', '98']);
+  });
+
+  it('is no percentiles any more once the values are typed again', async () => {
+    withPercentiles();
+    await ndvi();
+    click(chip());
+    typeInto(fields()[0], '3');
+    typeInto(fields()[1], '97');
+    await act(async () => click(button('Apply')));
+    await flush();
+    click(chip());
+    expect(fields().map((f) => f.value)).toEqual(['-0.15', '0.85']);
+    typeInto(fields()[1], '0.8');
+    click(button('Apply'));
+    expect(store().range.percent).toBeUndefined();
+    expect(store().range).toMatchObject({ vmin: '-0.15', vmax: '0.8' });
+  });
+});

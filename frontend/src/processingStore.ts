@@ -18,7 +18,8 @@
 
 import { create } from 'zustand';
 
-import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, type AreaStatistics } from './api';
+import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, withPercentiles, type AreaStatistics } from './api';
+import { checkPercent, NO_RANGE_AT_PERCENT, rescaleAtPercent, type Percent } from './percentRange';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import { resultsGroupByOfOption, type DatasetOption } from './datasets';
 import { indexPresetsOf } from './indexPresets';
@@ -388,6 +389,10 @@ interface ProcessingState {
   processFocusView: () => Promise<void>;
   setRangeDraft: (patch: Partial<PreviewRange>) => void;
   applyRange: () => void;
+  // "Apply" with percentiles in the fields (NM4-65 part 4): the values come from the measure of the preview, or, where it does not
+  // name those percentiles (the measure of a scene), from the tiler on the first scene of the preview. Resolves to the reason
+  // there is none, or `null` once the range is applied.
+  applyRangePercent: (percent: Percent) => Promise<string | null>;
   // Back to the range the measure calls for (M4-19c), measured again where the measure failed.
   autoStretch: () => void;
   pinPreview: () => void;
@@ -1526,9 +1531,34 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // The pass in view is the one of the image the head of the view shows.
       openCrop(cropToAoi && isArea(viewAoi) ? { itemIds: ids, aoi: viewAoi, result: null } : null, extraScenes, shown?.ids ?? []);
     },
-    setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch }, rangeEdited: true })),
+    // Values typed by hand are no percentiles any more (NM4-65 part 4).
+    setRangeDraft: (patch) =>
+      set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch, ...('vmin' in patch || 'vmax' in patch ? { percent: undefined } : {}) }, rangeEdited: true })),
     applyRange: () => {
       if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeByHand: true, rangeEdited: false }));
+    },
+    applyRangePercent: async (percent) => {
+      const checked = checkPercent(percent);
+      if ('problem' in checked) return checked.problem;
+      const spec = wantedPreview();
+      const measure = get().measure;
+      // The measure of this very preview, if it names every percentile asked for.
+      const asked = [checked.low, checked.high].filter((n) => n !== 0 && n !== 100);
+      const named = measure && spec && measure.key === spec.measure && measure.raw && measure.raw.length > 0 && measure.raw.every((band) => asked.every((n) => typeof band[`percentile_${n}`] === 'number'));
+      let bands = named ? measure.raw! : null;
+      if (!bands) {
+        if (!spec) return 'There is no preview to take the percentiles from.';
+        try {
+          bands = Object.values(await fetchStatisticsAt(withPercentiles(spec.sceneMeasure, asked)));
+        } catch (error) {
+          return `Could not measure the percentiles: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+      const range = rescaleAtPercent(bands, checked);
+      if (!range) return NO_RANGE_AT_PERCENT;
+      const look: PreviewRange = { ...get().rangeDraft, vmin: String(range[0]), vmax: String(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
+      set({ rangeDraft: look, range: look, rangeByHand: true, rangeEdited: false });
+      return null;
     },
     autoStretch: () => {
       failedMeasures.clear();
