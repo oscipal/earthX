@@ -478,6 +478,26 @@ body.dragging * {
   gap: 8px;
   align-items: end;
 }
+/* With the dropdown "Index" (a dataset that offers indices, NM4-14b) it takes the first two columns, and colormap, vmin
+   and vmax two each; the buttons keep four. */
+.scene-view .vc-render.has-index > :nth-child(1),
+.scene-view .vc-render.has-index > :nth-child(2),
+.scene-view .vc-render.has-index > :nth-child(3),
+.scene-view .vc-render.has-index > :nth-child(4) {
+  grid-column: span 2;
+}
+.scene-view .vc-render.has-index > :nth-child(5) {
+  grid-column: span 4;
+}
+/* The short note under the settings where the index cannot be drawn (`viewIndex.ts`); its tooltip says why. The pale yellow
+   of `.hint-text.warn` does not read on the light panel. */
+.scene-view .vc-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.app[data-theme='normal'] .scene-view .vc-note {
+  color: #8a5a00;
+}
 .scene-view .vc-actions {
   --buttons: 4;
   grid-column: 1 / -1;
@@ -517,6 +537,12 @@ body.dragging * {
 @media (max-width: 599px) {
   .scene-view {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .scene-view .vc-render.has-index > :nth-child(n + 1):nth-child(-n + 4) {
+    grid-column: span 2;
+  }
+  .scene-view .vc-render.has-index > :nth-child(5) {
+    grid-column: span 4;
   }
   .scene-view .vc-render > :nth-child(1) {
     grid-column: span 4;
