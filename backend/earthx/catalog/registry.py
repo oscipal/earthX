@@ -806,6 +806,17 @@ class FilterKind(Enum):
     VALUES = "values"  # one of a fixed list of texts
 
 
+class AoiMeasure(Enum):
+    """What a filter measures inside the AOI instead of on the whole scene (DS-03 plan §6.10, Otto 31.10.2026).
+
+    Every measure has a property of its own, reserved under ``earthx:``: the name a search sends the range under and a
+    collection publishes as ``within_aoi``. All measures of a scene come from the one reading of its classification.
+    """
+
+    CLOUD_SHARE = "earthx:aoi_cloud_cover"  # clouds in percent of the valid pixels of the AOI
+    NODATA_SHARE = "earthx:aoi_nodata"  # pixels of the AOI without a valid pixel, in percent of the AOI
+
+
 # A STAC property as the source names it: ``platform``, ``eo:cloud_cover``. ``earthx:`` is kept free for filters the
 # platform computes itself (DS-03), ``datetime`` has its own field.
 FILTER_PROPERTY = re.compile(r"\A[a-z0-9_]+(:[a-z0-9_]+)?\Z")
@@ -825,8 +836,9 @@ class SearchFilter:
     """A filter the search offers for one dataset (DS-02 plan §6.3). ``title`` and ``description`` are shown as they
     stand. ``minimum``, ``maximum`` and ``integer`` belong to a ``RANGE``, ``values`` to a ``VALUES`` filter.
 
-    ``within_aoi`` is True on the one filter whose range may also be applied to the cloud share inside the AOI
-    (DS-03 plan §6.10); it needs ``MaskSource.cloud_classes``. ``group`` is the heading the filter stands under in the
+    ``within_aoi`` names what the filter measures inside the AOI when the search asks for it (:class:`AoiMeasure`),
+    ``None`` on a filter that has no area to measure (DS-03 plan §6.10); a measure needs ``MaskSource.cloud_classes``
+    and stands on at most one filter of the dataset. ``group`` is the heading the filter stands under in the
     pop-up (DS-02c), e.g. "Clouds": the filters of one group follow each other, and the order of the registry is the
     order shown. No defaults (B10)."""
 
@@ -839,7 +851,7 @@ class SearchFilter:
     maximum: float | None
     integer: bool
     values: tuple[FilterValue, ...]
-    within_aoi: bool
+    within_aoi: AoiMeasure | None
     group: str
 
 
@@ -852,8 +864,8 @@ def _filter_problem(search_filter: SearchFilter) -> str | None:
         return f"{name!r} uses the prefix {RESERVED_FILTER_PREFIX!r}, which is kept for filters the platform computes"
     if not search_filter.title.strip() or not search_filter.description.strip():
         return f"the filter on {name!r} has a title and a description"
-    if not isinstance(search_filter.within_aoi, bool):
-        return f"within_aoi of the filter on {name!r} is True or False"
+    if search_filter.within_aoi is not None and not isinstance(search_filter.within_aoi, AoiMeasure):
+        return f"within_aoi of the filter on {name!r} is an AoiMeasure or None"
     group = search_filter.group
     if not isinstance(group, str) or not group.strip() or group != group.strip() or len(group) > MAX_GROUP_CHARS:
         return f"the group of the filter on {name!r} is a short non-blank text"
@@ -1050,19 +1062,25 @@ class DatasetConfig:
         self._check_within_aoi()
 
     def _check_within_aoi(self) -> None:
-        """``within_aoi`` sits on at most one filter: a cloud-cover percentage the AOI measure can stand in for."""
-        marked = [entry for entry in self.search_filters if entry.within_aoi]
-        if not marked:
-            return
-        if len(marked) > 1:
-            raise ConfigError(f"{self.dataset_id}: within_aoi is set on more than one filter")
-        entry = marked[0]
-        if entry.kind is not FilterKind.RANGE or entry.minimum != 0 or entry.maximum != 100 or entry.unit != "%":
-            raise ConfigError(
-                f"{self.dataset_id}: within_aoi on {entry.property!r} needs a range filter from 0 to 100 in '%'"
-            )
-        if self.mask is None or not self.mask.cloud_classes:
-            raise ConfigError(f"{self.dataset_id}: within_aoi on {entry.property!r} needs a mask with cloud_classes")
+        """Each :class:`AoiMeasure` sits on at most one filter: a percentage from 0 to 100 the AOI measure can stand in for.
+
+        Every measure is read from the classification layer, so each needs a mask with ``cloud_classes``: that is what
+        makes the layer a COG (``_check_mask``) and gives the cache one key for all measures of a scene. A mask without
+        cloud classes would allow the no-data share alone; nothing in the plan decides that yet.
+        """
+        marked = [entry for entry in self.search_filters if entry.within_aoi is not None]
+        measures = [entry.within_aoi for entry in marked]
+        if len(set(measures)) != len(measures):
+            raise ConfigError(f"{self.dataset_id}: a within_aoi measure is set on more than one filter")
+        for entry in marked:
+            if entry.kind is not FilterKind.RANGE or entry.minimum != 0 or entry.maximum != 100 or entry.unit != "%":
+                raise ConfigError(
+                    f"{self.dataset_id}: within_aoi on {entry.property!r} needs a range filter from 0 to 100 in '%'"
+                )
+            if self.mask is None or not self.mask.cloud_classes:
+                raise ConfigError(
+                    f"{self.dataset_id}: within_aoi on {entry.property!r} needs a mask with cloud_classes"
+                )
 
     def band_unit(self, asset: str) -> str | None:
         """The unit the entry names for ``asset`` (one key, not a list of variables), or ``None`` where it names none.

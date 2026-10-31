@@ -1,3 +1,4 @@
+import { aoiNotes, measuresAoi } from '../aoiFilter';
 import { maturityLabel, quicklookAsset } from '../datasets';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
@@ -155,6 +156,11 @@ function SectionSummary({ section }: { section: ResultSection }) {
     const dataset = s.datasets.find((d) => d.id === section.datasetId);
     return dataset?.viewable ? maturityLabel(dataset.collection) : null;
   });
+  // A dataset searched with the limit on the clouds inside the AOI says how far the search got (DS-03b).
+  const measured = useAppStore((s) => measuresAoi(s.searchContext?.query, section.datasetId));
+  const counts = useAppStore((s) => s.searchContext?.answer?.aoiFilter?.[section.datasetId]);
+  const walking = useAppStore((s) => s.aoiWalking);
+  const notes = measured ? aoiNotes(section, counts, walking) : section.notes;
   return (
     <>
       <span className="dataset-select-line">
@@ -167,7 +173,7 @@ function SectionSummary({ section }: { section: ResultSection }) {
       {lookingForDate ? (
         <span className="dataset-select-note">Looking for the nearest date with scenes…</span>
       ) : (
-        section.notes.map((note, i) => (
+        notes.map((note, i) => (
           <span key={`${i}-${note}`} className="dataset-select-note">
             {note}
           </span>
@@ -210,6 +216,9 @@ function LoadMore({ openId }: { openId: string | null }) {
   const loading = useAppStore((s) => s.loadingMore);
   const failed = useAppStore((s) => s.loadMoreError);
   const loadMore = useAppStore((s) => s.loadMore);
+  // A search that checks the clouds inside the AOI asks on by itself and shows how far it is (DS-03b).
+  const walking = useAppStore((s) => s.aoiWalking);
+  if (walking) return null;
   if (failed) return <p className="hint-text load-more">{failed}</p>;
   if (!canLoad) return used ? <p className="hint-text load-more">No more results available.</p> : null;
   return (
@@ -218,6 +227,27 @@ function LoadMore({ openId }: { openId: string | null }) {
       <button type="button" className="ghost-btn" disabled={loading} onClick={() => void loadMore()}>
         {loading ? 'Loading…' : 'Load more'}
       </button>
+    </div>
+  );
+}
+
+// The state of a search with the limit on the clouds inside the AOI, in the head of the list (DS-03b): how many scenes
+// are within the limit of those checked so far, and "Stop" while the search goes on. What is found stays, "Load more"
+// goes on from there.
+export function AoiProgress({ datasetId }: { datasetId: string | null }) {
+  const counts = useAppStore((s) => (datasetId ? s.searchContext?.answer?.aoiFilter?.[datasetId] : undefined));
+  const walking = useAppStore((s) => s.aoiWalking);
+  const stop = useAppStore((s) => s.stopSearch);
+  return (
+    <div className="aoi-progress" role="status">
+      <span title="Scenes within the limit, of the scenes checked so far">
+        {counts?.found ?? 0} found / {counts?.checked ?? 0} checked
+      </span>
+      {walking && (
+        <button type="button" className="ghost-btn aoi-stop" title="Stop checking. What is found stays; Load more goes on." onClick={stop}>
+          Stop
+        </button>
+      )}
     </div>
   );
 }
@@ -306,9 +336,11 @@ function ResultsList({ sections }: { sections: ResultSection[] }) {
   const groups = useAppStore((s) => s.groups);
   const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
+  const measured = useAppStore((s) => openSectionId !== null && measuresAoi(s.searchContext?.query, openSectionId));
   return (
     <>
       <DatasetDropdown sections={sections} openId={openSectionId} />
+      {measured && <AoiProgress datasetId={openSectionId} />}
       <div className="results-list-head">
         <div className="eyebrow results-list-eyebrow">Scenes by time step</div>
         <SelectionRow />

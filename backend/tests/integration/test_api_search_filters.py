@@ -37,7 +37,7 @@ POLICY = Policy(allowed_hosts=frozenset({HOST, ZARR_HOST}))
 S2 = SENTINEL_2_L2A.dataset_id
 
 CLOUD_ONLY = replace(
-    SYNTHETIC_ZARR, search_filters=(replace(SENTINEL_2_L2A.search_filter("eo:cloud_cover"), within_aoi=False),)
+    SYNTHETIC_ZARR, search_filters=(replace(SENTINEL_2_L2A.search_filter("eo:cloud_cover"), within_aoi=None),)
 )
 NATIVE = replace(
     SENTINEL_2_L2A,

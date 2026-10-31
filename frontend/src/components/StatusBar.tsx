@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
 import { zoomFloorHint } from '../datasets';
+import { hasResultsPanel } from '../sections';
 import { useAppStore } from '../store';
 
 export default function StatusBar() {
@@ -38,8 +39,16 @@ export default function StatusBar() {
     return () => window.clearTimeout(id);
   }, [notice, setNotice]);
 
+  // A search that checks the clouds inside the AOI walks on page by page (DS-03b). Its progress stands in the head of the
+  // results; while there are none (nothing within the limit yet), it stands here, with "Stop".
+  const checking = useAppStore((s) => s.aoiWalking && !hasResultsPanel(s.sections));
+  const counts = useAppStore((s) => Object.values(s.searchContext?.answer?.aoiFilter ?? {})[0]);
+  const stopSearch = useAppStore((s) => s.stopSearch);
+
   const busy = searching
-    ? 'Searching STAC catalog…'
+    ? checking && counts
+      ? `Checking scenes · ${counts.found} found / ${counts.checked} checked`
+      : 'Searching STAC catalog…'
     : downloading
       ? 'Processing on the server (crop / decomposition)…'
       : null;
@@ -50,6 +59,11 @@ export default function StatusBar() {
         <div className="toast busy">
           <span className="spinner" aria-hidden="true" />
           {busy}
+          {checking && (
+            <button type="button" className="ghost-btn aoi-stop" title="Stop checking. What is found stays." onClick={stopSearch}>
+              Stop
+            </button>
+          )}
         </div>
       )}
       {error && (
