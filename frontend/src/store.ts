@@ -1143,7 +1143,7 @@ function setResultsOnMap(on: boolean) {
 // 30.10.2026).
 function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap'>, selectedIds: string[]) {
   const ticked = selectedIds.some((id) => !s.selectedIds.includes(id));
-  return { selectedIds, playing: false, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
+  return { selectedIds, playing: false, selectionBlockClosed: false, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
 }
 
 // What every replacement of the results resets besides the results themselves.
@@ -1152,6 +1152,8 @@ function forgetSearch() {
   stopWalk();
   return {
     aoiWalking: false,
+    // New results, or none, show the block at the bottom again (NM4-66).
+    selectionBlockClosed: false,
     // Every search, and every step that drops the results, puts "Results" on top of the layer manager (NM4-59, Otto,
     // 30.10.2026).
     resultsAt: 0,
@@ -1345,6 +1347,9 @@ export interface AppState {
   // this (not `activeGroupIndex`) for the browse-mode quicklooks/preview
   // tiles it shows, so collapsing every group hides them too.
   expandedGroupIndex: number | null;
+  // The block at the bottom of the map (the bar of the selection and the timeline) was closed with its "x" (NM4-66).
+  // Nothing else changes with it; a click on a scene, a tick, or an opened group, or new results, bring it back.
+  selectionBlockClosed: boolean;
   selectedIds: string[];
   downloaded: Record<string, DownloadedInfo>;
   // What the mosaics of the time steps in view look like, by tile template (`mosaic.ts`). Kept for
@@ -1473,6 +1478,7 @@ export interface AppState {
   zoomToView: () => void;
   setActiveGroupIndex: (i: number) => void;
   toggleResultsGroup: (i: number) => void;
+  closeSelectionBlock: () => void;
   focusItem: (id: string) => void;
   toggleSelected: (id: string) => void;
   selectAllInActiveGroup: () => void;
@@ -1583,6 +1589,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   groups: [],
   activeGroupIndex: 0,
   expandedGroupIndex: 0,
+  selectionBlockClosed: false,
   selectedIds: [],
   downloaded: {},
   mosaics: {},
@@ -2542,11 +2549,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     if (index === s.expandedGroupIndex) set({ expandedGroupIndex: null, playing: false });
     // In one change with the step, or the playing would take the step it is at for one that has arrived.
-    else set({ activeGroupIndex: index, expandedGroupIndex: index, playing: false });
+    // An opened group, like a clicked scene, shows the block at the bottom again (NM4-66); a closed one does not.
+    else set({ activeGroupIndex: index, expandedGroupIndex: index, playing: false, selectionBlockClosed: false });
   },
+  // The "x" of the block at the bottom (NM4-66). It has the play button, so closing it ends the playing; the ticks, the
+  // results on the map and the layers stay as they are.
+  closeSelectionBlock: () => set({ selectionBlockClosed: true, playing: false }),
   focusItem: (id) => {
     const idx = groupIndexOfItem(get().groups, id);
-    if (idx >= 0) set({ activeGroupIndex: idx, expandedGroupIndex: idx });
+    if (idx >= 0) set({ activeGroupIndex: idx, expandedGroupIndex: idx, selectionBlockClosed: false });
   },
   toggleSelected: (id) =>
     set((s) => ticking(s, s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id])),

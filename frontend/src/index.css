@@ -56,11 +56,10 @@ body {
 }
 
 .app {
-  /* The rail and the panel beside it (UI-01 §6.9). `--dock-offset` is how far the map is covered from the
-     left: what is centred in the free map is centred in `100% - offset`. */
+  /* The rail and the panel beside it (UI-01 §6.9). The boxes over the map stand where they are anchored, whether a
+     panel is open or not (NM4-66): they are centred in the map beside the rail. */
   --rail-width: 48px;
   --dock-width: 340px;
-  --dock-offset: var(--rail-width);
   position: relative;
   width: 100vw;
   height: 100vh;
@@ -102,7 +101,7 @@ body {
   align-items: flex-start;
 }
 .bottom {
-  left: calc((100% + var(--dock-offset)) / 2);
+  left: calc((100% + var(--rail-width)) / 2);
   bottom: 20px;
   transform: translateX(-50%);
   display: flex;
@@ -110,14 +109,11 @@ body {
   gap: 10px;
   align-items: center;
   /* Between the rail or the panel and the right edge, a margin of 16 px each side: never over an edge. */
-  width: min(760px, calc(100vw - var(--dock-offset) - 32px));
-}
-.app.dock-open {
-  --dock-offset: calc(var(--rail-width) + var(--dock-width));
+  width: min(760px, calc(100vw - var(--rail-width) - 32px));
 }
 .status {
   top: 16px;
-  left: calc((100% + var(--dock-offset)) / 2);
+  left: calc((100% + var(--rail-width)) / 2);
   transform: translateX(-50%);
   width: min(560px, 90vw);
 }
@@ -135,14 +131,36 @@ body.dragging * {
 .draggable.fill {
   width: 100%;
 }
-/* The bar of the selection lies over the other bands where they meet: a band that was moved stays where it was put, and
-   the bar that comes with a ticked scene takes the place at the bottom of the stack, over it, not behind it. */
+/* The block of the selection lies over the other bands where they meet: a band that was moved stays where it was put, and
+   the block that comes with a ticked scene takes the place at the bottom of the stack, over it, not behind it. */
 .draggable[data-band='selection'] {
   z-index: 1;
 }
-/* The labels of the timeline do not wrap: its band stays within the stack, and they give way inside it. */
-.draggable[data-band='timeline'] {
-  max-width: 100%;
+/* The block of the selection bar and the timeline (NM4-66). With a bar it is as wide as the bar (`.fill`); the timeline
+   alone is narrower, and never wider than the stack. */
+.draggable.time-only {
+  width: min(560px, 100%);
+}
+.selection-block {
+  box-sizing: border-box;
+  width: 100%;
+  /* The row of dates answers to the width of the block. */
+  container-type: inline-size;
+}
+/* A thin head of its own for the "x": it never lies over a button of the bar. */
+.block-head {
+  display: flex;
+  justify-content: flex-end;
+  height: 24px;
+  padding: 3px 6px 0;
+  box-sizing: border-box;
+}
+.selection-block > .download-bar {
+  padding-top: 2px;
+}
+.selection-block > .download-bar + .time-slider {
+  border-top: 1px solid var(--panel-border);
+  padding-top: 8px;
 }
 /* controls inside a draggable keep their own affordance */
 .draggable button,
@@ -397,7 +415,7 @@ body.dragging * {
   --cell: 46px;
   --row-height: 34px;
   box-sizing: border-box;
-  width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--dock-offset) - 24px));
+  width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--rail-width) - 24px));
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -1841,13 +1859,62 @@ input[type='date']:focus {
 /* --- time slider --- */
 .time-slider {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 16px 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+/* The row of dates (NM4-66): first, the one before, an arrow, the one shown, an arrow, the one after, last. The two ends
+   take what is left, so the middle stays in the middle; a date that is not there keeps its place. */
+.time-dates {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto auto auto minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.time-dates strong {
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.time-end,
+.time-near {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.time-end.last,
+.time-near.before {
+  text-align: right;
+}
+.gone {
+  visibility: hidden;
+}
+/* Narrow: the ends go first, then the neighbours (their arrows say them in the tooltip); the date shown stays. */
+@container (max-width: 459px) {
+  .time-dates {
+    grid-template-columns: 0 minmax(0, auto) auto auto auto minmax(0, auto) 0;
+  }
+  .time-end {
+    visibility: hidden;
+  }
+}
+@container (max-width: 319px) {
+  .time-dates {
+    grid-template-columns: 0 0 auto auto auto 0 0;
+  }
+  .time-near {
+    visibility: hidden;
+  }
+}
+.time-controls {
+  display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
-  width: 100%;
-  /* Room for three dates, as the labels are the date only; never wider than the space between the rail and the edge. */
-  min-width: min(380px, calc(100vw - var(--dock-offset) - 32px));
-  box-sizing: border-box;
 }
 .play-btn {
   width: 36px;
@@ -1864,40 +1931,9 @@ input[type='date']:focus {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.time-track {
+.time-controls input[type='range'] {
   flex: 1;
   min-width: 0;
-}
-.time-labels {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 10px;
-  color: var(--muted);
-  margin-bottom: 2px;
-}
-/* The ends give way first, with an ellipsis; so does a label longer than the band (a key with no date keeps its label). */
-.time-labels strong {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.time-labels span {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.time-labels span:last-child {
-  text-align: right;
-}
-.time-track input[type='range'] {
-  width: 100%;
   accent-color: var(--accent);
 }
 .time-count {
@@ -2865,16 +2901,13 @@ a.pm-icon:hover {
 }
 /* The bottom bar (selection, time slider) centred in the map left of the side bar. */
 .bottom.beside-sheet {
-  left: calc((100% + var(--dock-offset) - var(--pp-sheet-width) - 16px) / 2);
-  width: min(760px, calc(100vw - var(--dock-offset) - var(--pp-sheet-width) - 64px));
+  left: calc((100% + var(--rail-width) - var(--pp-sheet-width) - 16px) / 2);
+  width: min(760px, calc(100vw - var(--rail-width) - var(--pp-sheet-width) - 64px));
 }
 /* Narrow screens: a sheet from below over the full width, at most 60 % of the
    height, with a grip that folds it down to its head; the map stays above. */
 @media (max-width: 899px) {
-  /* The panel lies over the map up to the right edge; the rail is all that is left of it. */
-  .app.dock-open {
-    --dock-offset: var(--rail-width);
-  }
+  /* The panel lies over the map up to the right edge. */
   .dock {
     right: 0;
     width: auto;
@@ -2898,8 +2931,8 @@ a.pm-icon:hover {
     display: block;
   }
   .bottom.beside-sheet {
-    left: calc((100% + var(--dock-offset)) / 2);
-    width: min(760px, calc(100vw - var(--dock-offset) - 32px));
+    left: calc((100% + var(--rail-width)) / 2);
+    width: min(760px, calc(100vw - var(--rail-width) - 32px));
     bottom: calc(60vh + 12px);
   }
   /* The sheet lies over the lower edge: the badge sits above it, left. */
@@ -3239,7 +3272,7 @@ a.pm-icon:hover {
 /* "Preview" (M4-13c-2): over the map at the bottom left, and beside the heading
    of the preview section in the processing panel. */
 .preview-badge-dock {
-  left: calc(var(--dock-offset) + 16px);
+  left: calc(var(--rail-width) + 16px);
   bottom: 20px;
   z-index: 11;
 }

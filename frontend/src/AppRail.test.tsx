@@ -110,7 +110,6 @@ describe('the panels', () => {
     expect(useAppStore.getState().dock).toBe('controls');
     expect(slot('controls')!.hidden).toBe(false);
     expect(symbol('controls').getAttribute('aria-expanded')).toBe('true');
-    expect(container.querySelector('.app')!.classList.contains('dock-open')).toBe(true);
   });
 
   it('open one at a time: a second symbol takes the place of the first', () => {
@@ -128,7 +127,6 @@ describe('the panels', () => {
     click(symbol('controls'));
     expect(useAppStore.getState().dock).toBeNull();
     expect(container.querySelector<HTMLElement>('.dock')!.hidden).toBe(true);
-    expect(container.querySelector('.app')!.classList.contains('dock-open')).toBe(false);
     expect(symbol('controls').getAttribute('aria-expanded')).toBe('false');
   });
 

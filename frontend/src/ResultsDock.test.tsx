@@ -173,7 +173,6 @@ describe('after a search', () => {
     expect(symbol('results').getAttribute('aria-expanded')).toBe('true');
     expect(symbol('results').getAttribute('aria-controls')).toBe('dock-results');
     expect(symbol('controls').getAttribute('aria-expanded')).toBe('false');
-    expect(container.querySelector('.app')!.classList.contains('dock-open')).toBe(true);
   });
 
   it('lies beside the rail with the other panels, and no list is left at the right edge', async () => {
