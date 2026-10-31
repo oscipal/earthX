@@ -63,7 +63,7 @@ export default function App() {
   };
 
   return (
-    <div className={`app${dock ? ' dock-open' : ''}`} data-theme={theme}>
+    <div className="app" data-theme={theme}>
       <MapView />
 
       <AppRail />

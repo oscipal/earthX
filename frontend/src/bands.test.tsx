@@ -6,7 +6,7 @@
 //
 // jsdom has no layout. The tests give the bottom stack (`.overlay.bottom`) the one the style sheet describes: a column
 // that grows upwards from 20 px above the bottom edge of the window, a gap of 10 px, items centred, a left edge that
-// moves when the dock opens, and the heights of the three kinds of band. The place of a band on the screen is then
+// stays where it is when the dock opens (NM4-66), and the heights of the three kinds of band. The place of a band on the screen is then
 // where this layout puts it, shifted by the `transform` and the `margin-top` the band sets on itself, so the tests ask
 // for the position, not for how a band gets there. They run against the earlier ways of keeping a band's shift
 // (per component, per band) and fail on the position.
@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { useBandPositions } from './bandPositions';
 import { datasetsFrom } from './datasets';
+import CSS from './index.css?raw';
 import { bboxToPolygon } from './geoUtils';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
@@ -60,7 +61,7 @@ const WINDOW = { width: 1280, height: 800 };
 const BOTTOM_EDGE = 20;
 const GAP = 10;
 const STACK_WIDTH = 760;
-const STACK_LEFT = { closed: 260, open: 430 }; // `left: calc((100% + var(--dock-offset)) / 2)` less half the width
+const STACK_LEFT = 284; // `left: calc((100% + var(--rail-width)) / 2)` less half the width, the dock open or not
 
 let container: HTMLDivElement;
 let root: Root;
@@ -74,7 +75,7 @@ function flowPlaces(): Map<Element, { left: number; top: number }> {
   const stack = container.querySelector('.overlay.bottom');
   const bands = [...(stack?.children ?? [])] as HTMLElement[];
   const total = bands.reduce((sum, band) => sum + number(band.style.marginTop) + heightOf(band), 0) + GAP * Math.max(0, bands.length - 1);
-  const left = container.querySelector('.app.dock-open') ? STACK_LEFT.open : STACK_LEFT.closed;
+  const left = STACK_LEFT;
   const places = new Map<Element, { left: number; top: number }>();
   let top = WINDOW.height - BOTTOM_EDGE - total;
   for (const band of bands) {
@@ -213,7 +214,7 @@ describe('a band that was moved stays where it was put (Otto, 27.10.2026)', () =
     // Not moved, the time line stands where the stack puts it: on the bottom edge of the window, nothing above.
     const bottom = placeOf(timeline as () => HTMLElement);
     expect(bottom.top).toBe(WINDOW.height - BOTTOM_EDGE - 61);
-    expect(bottom.left).toBe(STACK_LEFT.open + (STACK_WIDTH - 300) / 2);
+    expect(bottom.left).toBe(STACK_LEFT + (STACK_WIDTH - 300) / 2);
   });
 
   it('the band, back after it went, stands where it was left', async () => {
@@ -255,6 +256,42 @@ describe('the other bands stack from the bottom as before', () => {
     act(() => state().toggleSelected('a0'));
     await flush();
     expect(placeOf(selectionBar as () => HTMLElement).top).toBe(WINDOW.height - BOTTOM_EDGE - 61 - GAP - 66);
+  });
+});
+
+// Otto, 31.10.2026 (NM4-66): the boxes do not give way to a panel any more. They stand where they are anchored or put,
+// whether a panel is open or not; the rail is all that is left of the map.
+describe('the bands and the panels beside the rail (NM4-66)', () => {
+  const PANELS = ['controls', 'layers', 'results', 'jobs'] as const;
+
+  it('stay where they are when a panel opens, changes or closes: put by hand and not moved', async () => {
+    await cropWithBarBeside();
+    dragBy(selectionBar()!, -120, -40);
+    const put = placeOf(selectionBar as () => HTMLElement);
+    const stacked = placeOf(view as () => HTMLElement);
+    for (const dock of [...PANELS, null]) {
+      act(() => useAppStore.setState({ dock }));
+      expect(placeOf(selectionBar as () => HTMLElement), `moved band, dock ${dock}`).toEqual(put);
+      expect(placeOf(view as () => HTMLElement), `stacked band, dock ${dock}`).toEqual(stacked);
+    }
+  });
+
+  it('are not shifted by a class or a variable of the open panel: the style sheet knows neither', () => {
+    expect(CSS).not.toMatch(/dock-offset|dock-open/u);
+    expect(container.querySelector('.app')!.className).toBe('app');
+    act(() => useAppStore.setState({ dock: 'results' }));
+    expect(container.querySelector('.app')!.className).toBe('app');
+    // The stack is centred in the map beside the rail, and as wide as the window allows beside it.
+    const bottom = CSS.slice(CSS.indexOf('\n.bottom {'), CSS.indexOf('}', CSS.indexOf('\n.bottom {')));
+    expect(bottom).toContain('left: calc((100% + var(--rail-width)) / 2)');
+    expect(bottom).toContain('width: min(760px, calc(100vw - var(--rail-width) - 32px))');
+  });
+
+  it('are still kept inside the window, 8 px from every edge (the clamp stays)', async () => {
+    await cropWithBarBeside();
+    act(() => useAppStore.setState({ dock: 'controls' }));
+    dragBy(selectionBar()!, -9000, -9000);
+    expect(placeOf(selectionBar as () => HTMLElement)).toEqual({ left: 8, top: 8 });
   });
 });
 

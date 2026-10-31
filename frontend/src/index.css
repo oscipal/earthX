@@ -56,11 +56,10 @@ body {
 }
 
 .app {
-  /* The rail and the panel beside it (UI-01 §6.9). `--dock-offset` is how far the map is covered from the
-     left: what is centred in the free map is centred in `100% - offset`. */
+  /* The rail and the panel beside it (UI-01 §6.9). The boxes over the map stand where they are anchored, whether a
+     panel is open or not (NM4-66): they are centred in the map beside the rail. */
   --rail-width: 48px;
   --dock-width: 340px;
-  --dock-offset: var(--rail-width);
   position: relative;
   width: 100vw;
   height: 100vh;
@@ -102,7 +101,7 @@ body {
   align-items: flex-start;
 }
 .bottom {
-  left: calc((100% + var(--dock-offset)) / 2);
+  left: calc((100% + var(--rail-width)) / 2);
   bottom: 20px;
   transform: translateX(-50%);
   display: flex;
@@ -110,14 +109,11 @@ body {
   gap: 10px;
   align-items: center;
   /* Between the rail or the panel and the right edge, a margin of 16 px each side: never over an edge. */
-  width: min(760px, calc(100vw - var(--dock-offset) - 32px));
-}
-.app.dock-open {
-  --dock-offset: calc(var(--rail-width) + var(--dock-width));
+  width: min(760px, calc(100vw - var(--rail-width) - 32px));
 }
 .status {
   top: 16px;
-  left: calc((100% + var(--dock-offset)) / 2);
+  left: calc((100% + var(--rail-width)) / 2);
   transform: translateX(-50%);
   width: min(560px, 90vw);
 }
@@ -354,7 +350,7 @@ body.dragging * {
   --cell: 46px;
   --row-height: 34px;
   box-sizing: border-box;
-  width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--dock-offset) - 24px));
+  width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--rail-width) - 24px));
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -1768,7 +1764,7 @@ input[type='date']:focus {
   padding: 10px 16px;
   width: 100%;
   /* Room for three dates, as the labels are the date only; never wider than the space between the rail and the edge. */
-  min-width: min(380px, calc(100vw - var(--dock-offset) - 32px));
+  min-width: min(380px, calc(100vw - var(--rail-width) - 32px));
   box-sizing: border-box;
 }
 .play-btn {
@@ -2710,16 +2706,13 @@ a.pm-icon:hover {
 }
 /* The bottom bar (selection, time slider) centred in the map left of the side bar. */
 .bottom.beside-sheet {
-  left: calc((100% + var(--dock-offset) - var(--pp-sheet-width) - 16px) / 2);
-  width: min(760px, calc(100vw - var(--dock-offset) - var(--pp-sheet-width) - 64px));
+  left: calc((100% + var(--rail-width) - var(--pp-sheet-width) - 16px) / 2);
+  width: min(760px, calc(100vw - var(--rail-width) - var(--pp-sheet-width) - 64px));
 }
 /* Narrow screens: a sheet from below over the full width, at most 60 % of the
    height, with a grip that folds it down to its head; the map stays above. */
 @media (max-width: 899px) {
-  /* The panel lies over the map up to the right edge; the rail is all that is left of it. */
-  .app.dock-open {
-    --dock-offset: var(--rail-width);
-  }
+  /* The panel lies over the map up to the right edge. */
   .dock {
     right: 0;
     width: auto;
@@ -2743,8 +2736,8 @@ a.pm-icon:hover {
     display: block;
   }
   .bottom.beside-sheet {
-    left: calc((100% + var(--dock-offset)) / 2);
-    width: min(760px, calc(100vw - var(--dock-offset) - 32px));
+    left: calc((100% + var(--rail-width)) / 2);
+    width: min(760px, calc(100vw - var(--rail-width) - 32px));
     bottom: calc(60vh + 12px);
   }
   /* The sheet lies over the lower edge: the badge sits above it, left. */
@@ -3084,7 +3077,7 @@ a.pm-icon:hover {
 /* "Preview" (M4-13c-2): over the map at the bottom left, and beside the heading
    of the preview section in the processing panel. */
 .preview-badge-dock {
-  left: calc(var(--dock-offset) + 16px);
+  left: calc(var(--rail-width) + 16px);
   bottom: 20px;
   z-index: 11;
 }
