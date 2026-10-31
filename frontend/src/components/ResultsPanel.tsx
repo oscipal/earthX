@@ -5,6 +5,8 @@ import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
 import CopyButton from './CopyButton';
 import DatasetSelect from './DatasetSelect';
+import ResultsEye from './ResultsEye';
+import ResultsToTop from './ResultsToTop';
 
 function timeOf(properties: Record<string, unknown>): string {
   const dt = properties['datetime'];
@@ -252,13 +254,11 @@ function SelectionRow() {
 
 export default function ResultsPanel() {
   const sections = useAppStore((s) => s.sections);
-  const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   // Of the scenes found, the ones ticked (a tick on a scene that is not in the results counts for nothing).
   const selected = useAppStore((s) => {
     const ids = new Set(s.selectedIds);
     return s.sections.reduce((n, section) => n + section.items.filter((it) => ids.has(it.id)).length, 0);
   });
-  const toggleResultsOnMap = useAppStore((s) => s.toggleResultsOnMap);
 
   if (!hasResultsPanel(sections)) return null;
 
@@ -266,18 +266,10 @@ export default function ResultsPanel() {
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
         <h2 title="Selected scenes / scenes found">Results ({selected}/{totalItems(sections)})</h2>
-        <button
-          type="button"
-          className="results-map-toggle"
-          title={
-            resultsOnMap
-              ? 'Take the search results off the map; the list stays, and ticked scenes still show'
-              : 'Show the search results on the map again, over the layers'
-          }
-          onClick={() => toggleResultsOnMap()}
-        >
-          {resultsOnMap ? 'Hide results' : 'Show results'}
-        </button>
+        <div className="results-head-switches">
+          <ResultsToTop />
+          <ResultsEye />
+        </div>
       </div>
       <ResultsList sections={sections} />
     </div>

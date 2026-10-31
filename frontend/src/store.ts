@@ -52,6 +52,7 @@ import {
   withSourceState,
 } from './sections';
 import { overlaysOfPass, underlaysOf } from './searchLayers';
+import { moveEntry, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
 import {
   filterQuery,
   hasFilterError,
@@ -761,6 +762,9 @@ function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap'>, selectedIds:
 function forgetSearch() {
   searchGen += 1;
   return {
+    // Every search, and every step that drops the results, puts "Results" on top of the layer manager (NM4-59, Otto,
+    // 30.10.2026).
+    resultsAt: 0,
     searchContext: null,
     loadingMore: false,
     loadMoreError: null,
@@ -842,6 +846,8 @@ export interface AppState {
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
+  // How many of `layers` lie above the entry "Results" (`resultsEntry.ts`, NM4-59): 0 is on top.
+  resultsAt: number;
   // The layer whose scenes `selectLayer` put into the full-resolution view. While
   // the view still shows exactly what it pinned (`viewLayer.ts::viewLayerOf`), that
   // layer draws the picture, at its place in the list and with its eye.
@@ -1002,6 +1008,10 @@ export interface AppState {
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
+  // The entry "Results" one step up or down among the layers (NM4-59).
+  moveResults: (dir: 'up' | 'down') => void;
+  // The entry "Results" on top of the layer manager, over every layer (Otto, 30.10.2026, zu #249).
+  resultsToTop: () => void;
   selectLayer: (id: string) => void;
   activateLayerContext: (id: string) => void;
   activateViewContext: () => void;
@@ -1088,6 +1098,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewAoi: null,
 
   layers: [],
+  resultsAt: 0,
   viewLayerId: null,
   resultViewLayerId: null,
   downloadDialogLayerId: null,
@@ -1369,6 +1380,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         set({
           layers: [...newLayers, ...s.layers],
+          resultsAt: resultsAtAfterAdding(s.resultsAt, newLayers.length),
           ...(newLayers.length === 1 && newLayers[0].restore.itemIds.length === Object.keys(s.downloaded).length
             ? { viewLayerId: newLayers[0].id }
             : {}),
@@ -1403,6 +1415,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
       set({
         layers: [layer, ...s.layers],
+        resultsAt: resultsAtAfterAdding(s.resultsAt, 1),
         // The layer is the view's picture, so it takes the view's place in the list (`viewLayer.ts`),
         // unless it holds only some of the scenes the view draws.
         ...(entries.length === Object.keys(s.downloaded).length ? { viewLayerId: layer.id } : {}),
@@ -1468,7 +1481,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
       0,
     );
-    set({ layers: [layer, ...s.layers], notice: `Added "${name}" to layers.` });
+    set({ layers: [layer, ...s.layers], resultsAt: resultsAtAfterAdding(s.resultsAt, 1), notice: `Added "${name}" to layers.` });
   },
   // Pins a derived picture at the top of the list.
   pinDerivedLayer: (input) => {
@@ -1495,7 +1508,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datasetId: s.datasetId,
       },
     };
-    set({ layers: [layer, ...s.layers], notice: `Added "${input.name}" to layers.` });
+    set({ layers: [layer, ...s.layers], resultsAt: resultsAtAfterAdding(s.resultsAt, 1), notice: `Added "${input.name}" to layers.` });
   },
   expireResultLayers: (now) =>
     set((s) => {
@@ -1514,6 +1527,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const removed = new Set(s.layers.filter(gone).map((l) => l.id));
       return {
         layers: kept.map((l) => (l.result && locked(l) !== (l.result.deleted === true) ? { ...l, result: { ...l.result, deleted: locked(l) } } : l)),
+        resultsAt: resultsAtAfterRemoving(s.layers, s.resultsAt, (l) => !gone(l)),
         ...(s.resultViewLayerId !== null && removed.has(s.resultViewLayerId) ? { resultViewLayerId: null } : {}),
       };
     }),
@@ -1558,21 +1572,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeLayer: (id) =>
     set((s) => ({
       layers: s.layers.filter((l) => l.id !== id),
+      resultsAt: resultsAtAfterRemoving(s.layers, s.resultsAt, (l) => l.id !== id),
       ...(s.resultViewLayerId === id ? { resultViewLayerId: null } : {}),
     })),
   toggleLayerVisible: (id) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
   setLayerOpacity: (id, opacity) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
-  moveLayer: (id, dir) =>
-    set((s) => {
-      const arr = [...s.layers];
-      const i = arr.findIndex((l) => l.id === id);
-      const j = dir === 'up' ? i - 1 : i + 1;
-      if (i < 0 || j < 0 || j >= arr.length) return {};
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-      return { layers: arr };
-    }),
+  moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
+  moveResults: (dir) => set((s) => moveEntry(s.layers, s.resultsAt, null, dir, hasResultsPanel(s.sections)) ?? {}),
+  resultsToTop: () => set({ resultsAt: 0 }),
   // Only what the processing panel needs of a layer (M4-13c-2, Otto 19.10.2026):
   // its dataset, if it is not the active one, and — for a layer cut to its AOI,
   // which "AOI only" sends — that AOI. The view stays as it is: the full-

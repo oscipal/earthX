@@ -97,14 +97,13 @@ describe('a change of group', () => {
     expect(bottomToTop(fresh, draw(fresh, 1, ['a1']))).toEqual(bottomToTop(live, ids));
   });
 
-  it('lets the preview and the markers stay where they were: the open group is under `preview-base`, the other scenes under `open-base`', () => {
+  it('keeps the tiers right under the marker of the overlays: the open group over the ticked scene of another group', () => {
     const live = freshMap();
     draw(live, 1, ['a1']);
     const layer = (index: number) => live.stack.find((id) => new RegExp(`^[mn]-(tiles|img)-lyr-${index}$`, 'u').test(id))!;
     // items: b1 (0), b2 (1), a1 (2)
-    expect(live.stack.indexOf(layer(2))).toBeLessThan(live.stack.indexOf('open-base'));
-    expect(live.stack.indexOf(layer(0))).toBeGreaterThan(live.stack.indexOf('open-base'));
-    expect(live.stack.indexOf(layer(1))).toBeLessThan(live.stack.indexOf('preview-base'));
+    const end = live.stack.indexOf('overlays-base');
+    expect(live.stack.slice(end - 4, end)).toEqual([layer(2), layer(0), layer(1), 'mosaicsel-line']);
   });
 });
 
