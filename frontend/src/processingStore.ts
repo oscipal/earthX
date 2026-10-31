@@ -169,6 +169,7 @@ import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import { datesOfIds, knownItems } from './layerDate';
+import { resamplingParts } from './resamplingWarning';
 import type { MapLayer } from './layers';
 import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
 import type { IndexPreset } from './indexPresets';
@@ -364,9 +365,11 @@ interface ProcessingState {
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
-  // The order whose resampling the person confirmed (NM4-65 part 7): asked once for an order, not at every click on "Start".
-  resamplingConfirmed: string | null;
-  confirmResampling: (key: string) => void;
+  // The order whose review says that bands are resampled to a common grid (NM4-65 part 7): the warning to confirm is open for it.
+  // "Continue" keeps the review, "Cancel" drops it, so that "Start job" stays shut.
+  resamplingAsking: string | null;
+  confirmResampling: () => void;
+  declineResampling: () => void;
   // The review of a batch: one outcome per job, for the batch it was asked for.
   batch: { key: string; parts: PartOutcome[] } | null;
   reviewing: boolean;
@@ -1044,7 +1047,7 @@ const EMPTY_DRAFT = {
   rangeEdited: false,
   reviewAsked: false,
   estimate: null,
-  resamplingConfirmed: null as string | null,
+  resamplingAsking: null as string | null,
   batch: null as { key: string; parts: PartOutcome[] } | null,
   reviewing: false,
   reviewError: null,
@@ -1541,7 +1544,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     applyRange: () => {
       if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeByHand: true, rangeEdited: false }));
     },
-    confirmResampling: (key) => set({ resamplingConfirmed: key }),
+    confirmResampling: () => set({ resamplingAsking: null }),
+    declineResampling: () => set({ resamplingAsking: null, estimate: null, batch: null }),
     applyRangePercent: async (percent) => {
       const checked = checkPercent(percent);
       if ('problem' in checked) return checked.problem;
@@ -1957,11 +1961,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const controller = new AbortController();
       estimating = controller;
       const key = view.key;
-      set({ reviewing: true, reviewError: null, startError: null, batchStartRefusals: null, estimate: null, batch: null });
+      set({ reviewing: true, reviewError: null, startError: null, batchStartRefusals: null, estimate: null, batch: null, resamplingAsking: null });
       try {
         if (view.runAs === 'one') {
           const doc = await estimateOrder(order, controller.signal);
-          set({ estimate: { key, doc }, reviewing: false });
+          set({ estimate: { key, doc }, reviewing: false, resamplingAsking: resamplingParts(doc, null).length > 0 ? key : null });
           return;
         }
         // A batch: every job asks for its own estimate, a few at a time; one the
@@ -1977,7 +1981,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           }
         });
         if (controller.signal.aborted) return;
-        set({ batch: { key, parts: outcomes.filter((o): o is PartOutcome => o !== undefined) }, reviewing: false });
+        const parts = outcomes.filter((o): o is PartOutcome => o !== undefined);
+        set({ batch: { key, parts }, reviewing: false, resamplingAsking: resamplingParts(null, parts).length > 0 ? key : null });
       } catch (error) {
         if (controller.signal.aborted || isAbort(error)) return;
         set({ reviewing: false, reviewError: refusalOf(error, key, get().steps) });

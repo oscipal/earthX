@@ -66,3 +66,7 @@ export function rescaleAtPercent(bands: readonly Record<string, unknown>[], perc
 
 // Said where the statistics have no range for the percentiles: a constant band, or one without a valid pixel.
 export const NO_RANGE_AT_PERCENT = 'The statistics give no range for these percentiles.';
+
+// What the switch of the range says (Otto, 1.11.2026: not "value" and "%", but words).
+export const UNIT_LABELS: Record<RangeUnit, string> = { value: 'absolute value', percent: 'percentile' };
+export const UNIT_TIP = 'Enter the range as absolute values, or as percentiles of the band (2 and 98, say)';

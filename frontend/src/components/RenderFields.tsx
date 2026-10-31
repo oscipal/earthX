@@ -3,9 +3,9 @@
 // Band · Index · vmin · vmax · colormap. A field a place does not offer is left out, the others keep their order. The
 // block is a fragment, so that each place keeps its own layout around it.
 
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 
-import type { RangeUnit } from '../percentRange';
+import { UNIT_LABELS, UNIT_TIP, type RangeUnit } from '../percentRange';
 import { COLORMAPS } from '../render';
 import BandSelect, { type BandOption } from './BandSelect';
 
@@ -30,10 +30,9 @@ interface Props {
   unit?: { value: RangeUnit; onChange: (unit: RangeUnit) => void };
 }
 
-export const UNIT_TIP = 'Enter the range as values, or as percentiles of the band (2 and 98, say)';
-
 export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder, unit }: Props) {
   const percent = unit?.value === 'percent';
+  const nameId = useId();
   const hint = percent ? undefined : placeholder;
   return (
     <>
@@ -52,13 +51,14 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
         </label>
       )}
       <label className="vc-field vc-num">
-        <span>vmin</span>
-        <input type="number" value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
+        <span id={nameId}>vmin</span>
+        <input type="number" aria-labelledby={nameId} value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
         {unit && (
-          // After the field, so that the label still names the field and not the switch.
-          <button type="button" className="vc-unit" aria-pressed={percent} title={UNIT_TIP} onClick={() => unit.onChange(percent ? 'value' : 'percent')}>
-            {percent ? '%' : 'value'}
-          </button>
+          // After the field, so that the label names the field and not the switch; the style puts it over "vmin".
+          <select className="vc-unit" aria-label="Range unit" title={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
+            <option value="value">{UNIT_LABELS.value}</option>
+            <option value="percent">{UNIT_LABELS.percent}</option>
+          </select>
         )}
       </label>
       {vmax.after ? (

@@ -581,8 +581,6 @@ export default function ProcessingPanel() {
   const p = useProcessingStore();
   // Narrow screens only: the sheet from below folds down to its head.
   const [folded, setFolded] = useState(false);
-  // The warning about resampled bands is open (NM4-65 part 7).
-  const [asking, setAsking] = useState(false);
   const insert = useNameInsert();
   if (!open) return null;
   if (p.detailJobID) return <JobDetails />;
@@ -605,9 +603,10 @@ export default function ProcessingPanel() {
       ? 'Start job'
       : `Start ${batch && taken < view.parts.length ? `${taken} of ${view.parts.length}` : view.parts.length} jobs`;
   const startReady = view.runAs === 'one' ? !!estimate : taken > 0;
-  // Bands that are brought to a common grid ask for a confirmation once for the order (NM4-65 part 7), where the estimate says so.
+  // Bands that are brought to a common grid ask for a confirmation when the review is there (NM4-65 part 7, Otto, 1.11.2026:
+  // "wenn ich auf review drücke"): "Continue" keeps the review, "Cancel" drops it.
   const resampling = resamplingParts(estimate, batch);
-  const askResampling = resampling.length > 0 && view.key !== null && p.resamplingConfirmed !== view.key;
+  const askResampling = resampling.length > 0 && view.key !== null && p.resamplingAsking === view.key;
   const showErrors = p.reviewAsked;
   const sceneCount = view.pass?.items.length ?? 0;
   // A refusal belongs to the order it refused; a changed draft hides it.
@@ -848,7 +847,7 @@ export default function ProcessingPanel() {
               className="primary-btn"
               disabled={!startReady || p.starting || !!crsBlock || !!view.nameBlock}
               title={crsBlock ?? view.nameBlock ?? startTitle}
-              onClick={() => (askResampling ? setAsking(true) : void p.startJob())}
+              onClick={() => void p.startJob()}
             >
               {startLabel}
             </button>
@@ -878,17 +877,7 @@ export default function ProcessingPanel() {
           ))}
           {tooLarge && <TooLarge hasAoi={hasAoi} />}
           <ShareLink view={view} />
-          {asking && askResampling && (
-            <ResamplingDialog
-              parts={resampling}
-              onCancel={() => setAsking(false)}
-              onContinue={() => {
-                setAsking(false);
-                if (view.key !== null) p.confirmResampling(view.key);
-                void p.startJob();
-              }}
-            />
-          )}
+          {askResampling && <ResamplingDialog parts={resampling} onCancel={p.declineResampling} onContinue={p.confirmResampling} />}
         </section>
       )}
     </div>

@@ -1,9 +1,9 @@
 // Browser check of NM4-65 (package "display and layers"): in a real browser, with made-up answers of the search and the
 // tiler, light and dark theme, a wide and a narrow window, a screenshot per case.
 //   part 1  the grip: a row is taken by its grip with the real mouse and put somewhere else; Escape drops nothing; ▲/▼ still work
-//   part 3  the acquisition date is in the row of a layer: a day, a span, none
+//   part 3  the acquisition date is in the name of a layer (a day, a span, none); the buttons of a row stand under its title
 //   part 5  the opacity slider of the settings of a layer reaches its right end (the thumb at the end of the track at 1)
-//   part 4  "value / %" at vmin in the settings of a result: the chip stays inside its field, "Apply" in percentiles asks the statistics
+//   part 4  "absolute value / percentile" over vmin in the settings of a result: the dropdown stays over its field, "Apply" in percentiles asks the statistics
 //   part 8  every closing is the same small red "x" with the tooltip "Close"
 //   part 2  "Add band as layer": the button at the end of the line of the band, the new layer named after the band, with the date
 //
@@ -69,15 +69,19 @@ async function check(browser, { theme, viewport }) {
   if (viewport === 'narrow') await state(page, "(s.toggleDock('layers'), 1)");
   await page.waitForSelector('.layer-row');
 
-  // --- part 3: the dates
-  const dates = await page.$$eval('.layer-row', (rows) => rows.map((row) => row.querySelector('.lm-date')?.textContent ?? null));
-  if (JSON.stringify(dates) !== JSON.stringify(['2026-07-01', '2026-07-01 – 2026-07-06', null, '2026-07-06'])) problems.push(`dates in the rows: ${JSON.stringify(dates)}`);
-  const dateBox = await page.locator('.layer-row .lm-date').first().boundingBox();
+  // --- part 3: the dates are in the names, the buttons of a row are under its title
+  const names0 = await page.$$eval('.layer-row .lm-name', (n) => n.map((x) => x.textContent));
+  if (JSON.stringify(names0) !== JSON.stringify(['Optical · one day · 2026-07-01', 'Optical · a span of days · 2026-07-01 – 2026-07-06', 'Elevation · no time axis', 'Result · Band math · 2026-07-06'])) problems.push(`names of the rows: ${JSON.stringify(names0)}`);
+  if ((await page.locator('.lm-date').count()) !== 0) problems.push('a date is still a line of its own');
   const nameBox = await page.locator('.layer-row .lm-name').first().boundingBox();
+  const eyeBox = await page.locator('.layer-row [data-col="eye"]').first().boundingBox();
+  const removeBox0 = await page.locator('.layer-row [data-col="remove"]').first().boundingBox();
+  const sliderBox0 = await page.locator('.layer-row [data-col="opacity"]').first().boundingBox();
   const panelBox = await page.locator('.layer-manager').boundingBox();
-  if (dateBox.y < nameBox.y + nameBox.height - 1) problems.push('the date is not under the name');
-  if (Math.abs(dateBox.x - nameBox.x) > 1.5) problems.push(`the date starts at x=${dateBox.x}, the name at x=${nameBox.x}`);
-  if (dateBox.x + dateBox.width > panelBox.x + panelBox.width + 0.5) problems.push('the date leaves the panel');
+  if (eyeBox.y < nameBox.y + nameBox.height - 1) problems.push('the buttons are not under the title');
+  if (Math.abs(removeBox0.y - eyeBox.y) > 3) problems.push('the buttons are not in one line');
+  if (sliderBox0.width < 60) problems.push(`the slider is only ${sliderBox0.width} px wide`);
+  if (nameBox.width < panelBox.width - 60) problems.push(`the title is only ${nameBox.width} px of ${panelBox.width} px`);
   await shot('1-rows');
 
   // --- part 1: the grip, with the real mouse
@@ -145,16 +149,20 @@ async function check(browser, { theme, viewport }) {
   if (value !== '1') problems.push(`the slider reads ${value} at the right end`);
   await shot('4-settings');
 
-  // --- part 4: "value / %" in the settings of a result, with the statistics route made up here
-  const chip = page.locator('.result-controls .vc-unit');
-  if ((await chip.count()) !== 1) problems.push('no switch "value / %" in the settings of the result');
+  // --- part 4: "absolute value / percentile" in the settings of a result, with the statistics route made up here
+  const unit = page.locator('.result-controls .vc-unit');
+  if ((await unit.count()) !== 1) problems.push('no dropdown "absolute value / percentile" in the settings of the result');
   else {
-    const labelBox = await page.locator('.result-controls .vc-num').first().boundingBox();
-    const chipBox = await chip.boundingBox();
-    if (chipBox.x < labelBox.x - 0.5 || chipBox.x + chipBox.width > labelBox.x + labelBox.width + 0.5) problems.push(`the switch leaves the field vmin: ${JSON.stringify([chipBox, labelBox])}`);
-    const vmaxBox = await page.locator('.result-controls .vc-num').nth(1).boundingBox();
-    if (chipBox.x + chipBox.width > vmaxBox.x + 0.5 && Math.abs(chipBox.y - vmaxBox.y) < chipBox.height) problems.push('the switch runs into the field vmax');
-    await chip.click();
+    const options = await unit.locator('option').allTextContents();
+    if (options.join() !== 'absolute value,percentile') problems.push(`the options of the unit: ${options}`);
+    const unitBox = await unit.boundingBox();
+    const vminBox = await page.locator('.result-controls .vc-num').first().boundingBox();
+    const vminInput = await page.locator('.result-controls .vc-num input').first().boundingBox();
+    if (unitBox.y + unitBox.height > vminInput.y + 0.5) problems.push('the unit dropdown is not over the field vmin');
+    if (unitBox.x < vminBox.x - 0.5) problems.push('the unit dropdown leaves the field to the left');
+    const text = await unit.evaluate((el) => el.selectedOptions[0].textContent);
+    if (text !== 'absolute value') problems.push(`the unit starts as "${text}"`);
+    await unit.selectOption('percent');
     const fields = await page.locator('.result-controls .vc-num input').evaluateAll((els) => els.map((e) => e.value));
     if (fields.join() !== '2,98') problems.push(`the fields in percentiles: ${fields}`);
     await page.locator('.result-controls .vc-num input').nth(0).fill('3');
@@ -208,10 +216,45 @@ async function check(browser, { theme, viewport }) {
   await shot('5-band-line');
   await add.click();
   const names = await page.$$eval('.layer-row .lm-name', (n) => n.map((x) => x.textContent));
-  if (JSON.stringify(names) !== JSON.stringify(['green', 'Result · three bands'])) problems.push(`layers after "Add band as layer": ${JSON.stringify(names)}`);
-  const dated = await page.$$eval('.layer-row', (rows) => rows.map((row) => row.querySelector('.lm-date')?.textContent ?? null));
-  if (JSON.stringify(dated) !== JSON.stringify(['2026-07-06', '2026-07-06'])) problems.push(`dates of the two layers: ${JSON.stringify(dated)}`);
+  if (JSON.stringify(names) !== JSON.stringify(['green · 2026-07-06', 'Result · three bands · 2026-07-06'])) problems.push(`layers after "Add band as layer": ${JSON.stringify(names)}`);
+  const named = await page.$$eval('.layer-row .lm-name', (n) => n.map((x) => x.textContent));
+  if (JSON.stringify(named) !== JSON.stringify(['green · 2026-07-06', 'Result · three bands · 2026-07-06'])) problems.push(`the names with their dates: ${JSON.stringify(named)}`);
   await shot('6-band-layer');
+
+  // --- the box of a layer opened from the layer manager has no row of buttons; a view still open from the search keeps all of it
+  await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    const downloaded = { s0: { datasetId: 'optical', tileUrl: '/collections/optical/items/s0/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 } };
+    const collection = {
+      id: 'optical', title: 'Optical', 'earthx:format': 'cog', 'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
+      'earthx:default_render': { title: 'Colour', assets: ['visual'], rescale: [[0, 3000]], colormap_name: null, expression: null, resampling: 'nearest' },
+      'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+    };
+    const { datasetsFrom } = await import('/src/datasets.ts');
+    window.__boxSeed = { downloaded, collection };
+    useAppStore.setState({
+      datasets: datasetsFrom([collection]), datasetId: 'optical', focusMode: true, cropToAoi: false, showDownloaded: true, dock: null,
+      downloaded, appliedRender: { rescale: '0,3000' }, pendingColormapName: '', pendingVmin: '0', pendingVmax: '3000', resultViewLayerId: null, viewOfLayer: true, viewLayerId: 'S1',
+      layers: [{
+        id: 'S1', name: 'Optical · a crop', date: '2026-07-01', visible: true, opacity: 1, overlays: [],
+        restore: { focusMode: true, downloaded, appliedRender: { rescale: '0,3000' }, activeGroupIndex: 0, selectedIds: ['s0'], itemIds: ['s0'], groupItemIds: [['s0']], aoi: null, cropToAoi: false, datasetId: 'optical' },
+      }],
+    });
+  });
+  await page.waitForSelector('.scene-view .vc-apply');
+  if ((await page.locator('.scene-view .vc-actions').count()) !== 0) problems.push('a layer opened from the manager has a row of buttons');
+  if ((await page.locator('.scene-view .vc-head .close-x').count()) !== 1) problems.push('no red x in the box of the layer');
+  if ((await page.locator('.scene-view .vc-opacity input').count()) !== 1) problems.push('no opacity in the box of the layer');
+  const title = await page.locator('.scene-view .vc-title').textContent();
+  if (title !== 'OPTICAL · A CROP · 2026-07-01') problems.push(`the title of the box: ${title}`);
+  const boxBox = await page.locator('.scene-view').boundingBox();
+  const closeBox = await page.locator('.scene-view .vc-head .close-x').boundingBox();
+  if (closeBox.x + closeBox.width > boxBox.x + boxBox.width + 0.5) problems.push('the red x leaves the box');
+  await shot('7-layer-box');
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ viewOfLayer: false }));
+  await page.waitForSelector('.scene-view .vc-actions');
+  if ((await page.locator('.scene-view .vc-actions > *').count()) < 4) problems.push('the view still open from the search lost its buttons');
+  await shot('8-view-open');
 
   await context.close();
   return { name: label, problems };

@@ -18,9 +18,11 @@ import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, INDEX_TIP, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { viewKind } from '../viewKind';
+import { layerShownName } from '../layerName';
 import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Chevron from './Chevron';
+import CloseButton from './CloseButton';
 import Eye from './Eye';
 import RenderFields from './RenderFields';
 
@@ -78,6 +80,7 @@ export default function ViewerControls() {
   const chooseViewIndex = useAppStore((s) => s.chooseViewIndex);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const viewOfLayer = useAppStore((s) => s.viewOfLayer);
+  const setLayerOpacity = useAppStore((s) => s.setLayerOpacity);
   const pendingIndex = useAppStore((s) => s.pendingIndex);
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
@@ -101,6 +104,9 @@ export default function ViewerControls() {
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
   // The view of a layer of the layer manager has no dropdown: the index of a layer is the one it was added with (Otto, 1.11.2026).
   const showIndex = presets.length > 0 && !viewOfLayer;
+  // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
+  // is still open from the search keeps all of it, also once its image is pinned.
+  const compact = viewOfLayer && layer !== null;
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -129,6 +135,18 @@ export default function ViewerControls() {
 
   return (
     <div className="panel viewer-controls scene-view">
+      {compact ? (
+        // The view of a layer opened from the layer manager has the box of every layer: its name, the way to close it, the fields
+        // and the opacity; no row of buttons for pinning, processing or changing the image (NM4-65, Otto, 1.11.2026).
+        <div className="vc-head">
+          <span className="vc-title" title={layerShownName(layer)}>
+            {layerShownName(layer).toUpperCase()}
+          </span>
+          <div className="results-head-right">
+            <CloseButton onClick={() => exitFocus()} />
+          </div>
+        </div>
+      ) : (
       <div className="vc-head">
         <span className="vc-title" title={title}>
           {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
@@ -185,6 +203,7 @@ export default function ViewerControls() {
           <Eye off={!showDownloaded} />
         </button>
       </div>
+      )}
 
       <div className={`vc-render${showIndex ? ' has-index' : ''}`}>
         <RenderFields
@@ -252,43 +271,60 @@ export default function ViewerControls() {
         </p>
       )}
 
-      <div className={`vc-actions${images.length > 1 ? ' has-all' : ''}`}>
-        <button
-          type="button"
-          className="ghost-btn"
-          title={images.length > 1 ? 'Pin the image that is shown into the layer manager' : 'Pin this image into the layer manager'}
-          disabled={pinLoading}
-          onClick={() => addCurrentToLayers()}
-        >
-          {pinLoading ? 'Loading…' : '＋ Add to layers'}
-        </button>
-        {images.length > 1 && (
+      {!compact && (
+        <div className={`vc-actions${images.length > 1 ? ' has-all' : ''}`}>
           <button
             type="button"
             className="ghost-btn"
-            title={`Pin all ${images.length} images of the view into the layer manager, one layer each`}
+            title={images.length > 1 ? 'Pin the image that is shown into the layer manager' : 'Pin this image into the layer manager'}
             disabled={pinLoading}
-            onClick={() => addAllToLayers()}
+            onClick={() => addCurrentToLayers()}
           >
-            {pinLoading ? 'Loading…' : '＋ Add all to layers'}
+            {pinLoading ? 'Loading…' : '＋ Add to layers'}
           </button>
-        )}
-        <button
-          type="button"
-          className="ghost-btn"
-          disabled={processBlock !== null}
-          title={processBlock ?? 'Build a processing job for the scenes of this view'}
-          onClick={() => void processFocusView()}
-        >
-          ⚙ Process
-        </button>
-        <button type="button" className="ghost-btn" title="Remove this view and choose another scene from the results" onClick={() => changeImage()}>
-          ‹ Change image
-        </button>
-        <button type="button" className="ghost-btn" title="Remove this view from the map" onClick={() => exitFocus()}>
-          ✕ Clear
-        </button>
-      </div>
+          {images.length > 1 && (
+            <button
+              type="button"
+              className="ghost-btn"
+              title={`Pin all ${images.length} images of the view into the layer manager, one layer each`}
+              disabled={pinLoading}
+              onClick={() => addAllToLayers()}
+            >
+              {pinLoading ? 'Loading…' : '＋ Add all to layers'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="ghost-btn"
+            disabled={processBlock !== null}
+            title={processBlock ?? 'Build a processing job for the scenes of this view'}
+            onClick={() => void processFocusView()}
+          >
+            ⚙ Process
+          </button>
+          <button type="button" className="ghost-btn" title="Remove this view and choose another scene from the results" onClick={() => changeImage()}>
+            ‹ Change image
+          </button>
+          <button type="button" className="ghost-btn" title="Remove this view from the map" onClick={() => exitFocus()}>
+            ✕ Clear
+          </button>
+        </div>
+      )}
+      {compact && layer && (
+        <label className="vc-field vc-opacity">
+          <span>Opacity</span>
+          <input
+            type="range"
+            className="lm-opacity"
+            min={0}
+            max={1}
+            step={0.05}
+            value={layer.opacity}
+            title={`Opacity ${Math.round(layer.opacity * 100)}%`}
+            onChange={(e) => setLayerOpacity(layer.id, Number(e.target.value))}
+          />
+        </label>
+      )}
     </div>
   );
 }

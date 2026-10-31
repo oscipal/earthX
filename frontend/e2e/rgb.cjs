@@ -108,7 +108,7 @@ async function checkShow(browser, theme, viewport) {
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
   await page.waitForSelector('.pp-range input[type=number]', { timeout: 15000 });
   const fields = () => page.$$eval('.pp-range input[type=number]', (i) => i.map((x) => x.value));
-  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select', (s) => s.length);
+  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select:not(.vc-unit)', (s) => s.length);
   const options = () => page.$$eval('.pp-show select option', (o) => o.map((x) => `${x.value}=${x.textContent}`));
   const tileBands = () =>
     page.evaluate(async () => {

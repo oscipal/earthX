@@ -123,7 +123,7 @@ async function checkLayout(browser, theme, viewport) {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
     const view = document.querySelector('.scene-view');
     const leaves = [...document.querySelectorAll('.scene-view .vc-render > *')].map((e) => ({ what: e.textContent.trim().slice(0, 12), ...box(e) }));
-    const inputs = [...document.querySelectorAll('.scene-view .vc-render .vc-field select, .scene-view .vc-render .vc-field input')].map((e) => box(e).height);
+    const inputs = [...document.querySelectorAll('.scene-view .vc-render .vc-field select:not(.vc-unit), .scene-view .vc-render .vc-field input')].map((e) => box(e).height);
     return { theme: document.querySelector('.app')?.dataset.theme, view: box(view), leaves, inputs, buttons: box(document.querySelector('.scene-view .vc-buttons')), scrolls: view.scrollWidth > view.clientWidth + 1 };
   });
   for (let i = 0; i < report.leaves.length; i++) {
@@ -177,7 +177,7 @@ async function checkDraw(browser, theme, viewport) {
   if (query.getAll('item').join() !== SCENES.join()) problems.push(`the tile names the scenes ${query.getAll('item')}`);
   if ((await field(page).getAttribute('title')) !== TIP_NDWI) problems.push(`the tooltip is ${await field(page).getAttribute('title')}`);
   if ((await page.locator('.scene-view .vc-note').count()) !== 0) problems.push('a note at zoom 9');
-  if ((await page.locator('.scene-view .vc-render .vc-field select').nth(1).inputValue()) !== 'rdbu') problems.push('the colormap field does not show rdbu');
+  if ((await page.locator('.scene-view .vc-render .vc-field select:not(.vc-unit)').nth(1).inputValue()) !== 'rdbu') problems.push('the colormap field does not show rdbu');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_drawn.png`) });
 
   // Settled, a map that moves asks for tiles of the index alone: the raw view (which stays on the map until the index has loaded) is gone.

@@ -1,6 +1,6 @@
 // Browser check of the warning before a job that resamples bands (NM4-65 part 7), in a real browser with made-up answers of the
-// platform: the estimate carries `resampling`; "Start job" then asks first (grid, bands, method, what it means for the values),
-// "Cancel" and Escape send nothing, "Continue" sends the order once, and the same order is not asked again. The dialog is as wide
+// platform: the estimate carries `resampling`; "Review" then asks (grid, bands, method, what it means for the values), "Cancel" and
+// Escape drop the review so that "Start job" stays shut, "Continue" keeps it and "Start job" sends the order without asking again. The dialog is as wide
 // as the window allows, nothing leaves it, and the focus is on "Cancel". Light and dark theme, a wide and a narrow window.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed
@@ -99,15 +99,14 @@ async function check(browser, theme, viewport) {
   const panel = page.locator('.processing-panel');
   await panel.getByRole('button', { name: /Band math/ }).first().click();
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
-  await panel.getByRole('button', { name: 'Review', exact: true }).click();
-  await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
-  const start = () => panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
-  await start();
+  const review = () => panel.getByRole('button', { name: 'Review', exact: true }).click();
+  const start = () => panel.locator('button.primary-btn', { hasText: 'Start job' });
   const dialog = page.locator('[role="alertdialog"]');
-  await dialog.waitFor({ timeout: 5000 });
+  await review();
+  await dialog.waitFor({ timeout: 10000 });
   if (posted.length !== 0) problems.push('an order was sent before the warning was answered');
   const text = await dialog.textContent();
-  for (const part of ['Values are resampled', 'one grid of 10 m in EPSG:32632, by nearest neighbour', 'rededge1 (20 m)', 'swir16 (60 m, EPSG:33633)'.replace('33633', '32633'), '1 of 2 scenes lie in another UTM zone', 'no new values appear', 'Cancel', 'Continue']) {
+  for (const part of ['Values are resampled', 'one grid of 10 m in EPSG:32632, by nearest neighbour', 'rededge1 (20 m)', 'swir16 (60 m, EPSG:32633)', '1 of 2 scenes lie in another UTM zone', 'no new values appear', 'Cancel', 'Continue']) {
     if (!text.includes(part)) problems.push(`the warning does not say "${part}"`);
   }
   if (text.includes('Resampled to a common grid')) problems.push('the old exclamation mark text is still there');
@@ -115,29 +114,30 @@ async function check(browser, theme, viewport) {
   const box = await dialog.boundingBox();
   const window = VIEWPORTS[viewport];
   if (box.x < -0.5 || box.y < -0.5 || box.x + box.width > window.width + 0.5 || box.y + box.height > window.height + 0.5) problems.push(`the warning leaves the window: ${JSON.stringify(box)}`);
-  const inner = await dialog.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
-  if (inner) problems.push('the warning scrolls sideways');
+  if (await dialog.evaluate((el) => el.scrollWidth > el.clientWidth + 1)) problems.push('the warning scrolls sideways');
   const buttons = await dialog.locator('button').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }));
   if (buttons[0].x + buttons[0].w > buttons[1].x + 0.5 && Math.abs(buttons[0].y - buttons[1].y) < 2) problems.push('the two buttons overlap');
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_warning.png`) });
 
-  // Escape: nothing is sent. Cancel: the same.
+  // Escape drops the review: nothing is sent, "Start job" is shut. Cancel does the same.
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
   if ((await dialog.count()) !== 0) problems.push('Escape did not close the warning');
-  if (posted.length !== 0) problems.push('Escape sent an order');
-  await start();
+  if (!(await start().isDisabled())) problems.push('"Start job" is open after Escape');
+  await review();
   await dialog.waitFor();
   await dialog.getByRole('button', { name: 'Cancel' }).click();
-  if (posted.length !== 0 || (await dialog.count()) !== 0) problems.push('"Cancel" did not leave things as they were');
+  if (posted.length !== 0 || (await dialog.count()) !== 0 || !(await start().isDisabled())) problems.push('"Cancel" did not leave things as they were');
 
-  // Continue: one order, and the order is not asked again.
-  await start();
+  // Continue keeps the review: "Start job" is open and sends one order without asking again.
+  await review();
   await dialog.waitFor();
   await dialog.getByRole('button', { name: 'Continue' }).click();
+  await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
+  await start().click();
   await page.waitForTimeout(800);
+  if ((await dialog.count()) !== 0) problems.push('the warning came again at "Start job"');
   if (posted.length !== 1) problems.push(`${posted.length} orders were sent after "Continue"`);
-  if ((await dialog.count()) !== 0) problems.push('the warning stays after "Continue"');
   await context.close();
   return { name, problems };
 }

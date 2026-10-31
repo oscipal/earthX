@@ -65,7 +65,15 @@ const open = (l: MapLayer = layer()) => {
   act(() => useAppStore.setState({ layers: [l], resultViewLayerId: 'R1' }));
   act(() => root.render(<ResultControls />));
 };
-const chip = () => container.querySelector<HTMLButtonElement>('.vc-unit')!;
+const chip = () => container.querySelector<HTMLSelectElement>('.vc-unit')!;
+const toggleUnit = () => {
+  const select = chip();
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, select.value === 'value' ? 'percent' : 'value');
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+};
+const unitText = () => chip().selectedOptions[0].textContent;
 const inputs = () => [...container.querySelectorAll<HTMLInputElement>('.vc-num input')];
 const button = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('.vc-buttons button')].find((b) => b.textContent?.trim() === label)!;
 const click = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
@@ -79,7 +87,7 @@ const settle = async () => act(async () => {
 });
 const urlOf = () => (state().layers[0].overlays[0] as { tileUrl: string }).tileUrl;
 const typedPercent = (low: string, high: string) => {
-  click(chip());
+  toggleUnit();
   type(inputs()[0], low);
   type(inputs()[1], high);
 };
@@ -87,8 +95,8 @@ const typedPercent = (low: string, high: string) => {
 describe('the switch in the settings of a result', () => {
   it('is at vmin, "value" to begin with, and turns the fields into 2 and 98', () => {
     open();
-    expect(chip().textContent).toBe('value');
-    click(chip());
+    expect(unitText()).toBe('absolute value');
+    toggleUnit();
     expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
     expect([...container.querySelectorAll('.vc-field > span')].map((s) => s.textContent)).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
   });
@@ -102,7 +110,7 @@ describe('the switch in the settings of a result', () => {
 
   it('opens in "%" for a layer whose look was typed that way', () => {
     open(layer(undefined, { percent: { low: '3', high: '97' } }));
-    expect(chip().textContent).toBe('%');
+    expect(unitText()).toBe('percentile');
     expect(inputs().map((i) => i.value)).toEqual(['3', '97']);
   });
 });
@@ -188,7 +196,7 @@ describe('"Apply" with percentiles', () => {
     typedPercent('3', '97');
     click(button('Apply'));
     await settle();
-    const select = container.querySelector<HTMLSelectElement>('.result-controls .vc-field select')!;
+    const select = container.querySelector<HTMLSelectElement>('.result-controls .vc-field select:not(.vc-unit)')!;
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'turbo');
       select.dispatchEvent(new Event('change', { bubbles: true }));

@@ -885,9 +885,10 @@ describe('a result of several bands, and RGB', () => {
 });
 
 
-// NM4-65 part 7 (Otto, 31.10.2026): where the estimate says bands are brought to a common grid, "Start job" asks first, once for
-// the order: what is resampled to which grid, by which method, what it means for the values; "Continue" starts, "Cancel" does not.
-describe('the warning before a job that resamples bands', () => {
+// NM4-65 part 7 (Otto, 31.10.2026; 1.11.2026: "die soll kommen, wenn ich auf Review drücke"): where the estimate says bands are
+// brought to a common grid, the review asks first: what is resampled to which grid, by which method, what it means for the
+// values; "Continue" keeps the review (and "Start job" is open), "Cancel" drops it (and "Start job" stays shut).
+describe('the warning at the review of a job that resamples bands', () => {
   const FACTS = {
     resampling: {
       grid: { resolution: 10, crs: 'EPSG:32632' },
@@ -897,20 +898,21 @@ describe('the warning before a job that resamples bands', () => {
     },
   };
   const dialog = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
-  async function review() {
+  const startButton = () => button('Start job') as HTMLButtonElement;
+  async function prepare() {
     await process();
     click(button('＋ Band math'));
     typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 2');
+  }
+  async function review() {
+    await prepare();
     click(button('Review'));
     await flush();
   }
 
-  it('asks at "Start job" with the grid, the bands, the method and what it means, and starts nothing yet', async () => {
+  it('asks when the review is there, with the grid, the bands, the method and what it means', async () => {
     estimateExtra = FACTS;
     await review();
-    click(button('Start job'));
-    await flush();
-    expect(execution()).toHaveLength(0);
     expect(dialog()).not.toBeNull();
     expect(dialog()!.getAttribute('aria-modal')).toBe('true');
     expect(dialog()!.querySelector('h2')!.textContent).toBe('Values are resampled');
@@ -919,56 +921,66 @@ describe('the warning before a job that resamples bands', () => {
     expect(text).toContain('Resampled: rededge1 (20 m).');
     expect(text).toContain('no new values appear');
     expect([...dialog()!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Continue']);
-    // The safe answer has the focus.
+    // The safe answer has the focus, and nothing is started.
     expect(document.activeElement?.textContent).toBe('Cancel');
+    expect(execution()).toHaveLength(0);
   });
 
-  it('"Cancel" and Escape start nothing and ask again at the next "Start job"', async () => {
+  it('"Continue" keeps the review: the estimate stays and "Start job" starts the job without asking again', async () => {
     estimateExtra = FACTS;
     await review();
-    click(button('Start job'));
+    click(dialog()!.querySelectorAll('button')[1]);
+    expect(dialog()).toBeNull();
+    expect(container.querySelector('.pp-estimate')).not.toBeNull();
+    expect(startButton().disabled).toBe(false);
+    click(startButton());
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(execution()).toHaveLength(1);
+  });
+
+  it('"Cancel" and Escape drop the review: no estimate, "Start job" shut, nothing sent', async () => {
+    estimateExtra = FACTS;
+    await review();
     click(dialog()!.querySelectorAll('button')[0]);
     expect(dialog()).toBeNull();
-    expect(execution()).toHaveLength(0);
-    click(button('Start job'));
+    expect(container.querySelector('.pp-estimate')).toBeNull();
+    expect(startButton().disabled).toBe(true);
+    click(button('Review'));
+    await flush();
     expect(dialog()).not.toBeNull();
     act(() => dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(dialog()).toBeNull();
+    expect(container.querySelector('.pp-estimate')).toBeNull();
     expect(execution()).toHaveLength(0);
   });
 
-  it('"Continue" starts the job, and the order is not asked again', async () => {
+  it('asks at every review, also of the same order', async () => {
     estimateExtra = FACTS;
     await review();
-    click(button('Start job'));
     click(dialog()!.querySelectorAll('button')[1]);
-    await flush();
-    expect(dialog()).toBeNull();
-    expect(execution()).toHaveLength(1);
-    expect(useProcessingStore.getState().resamplingConfirmed).not.toBeNull();
-  });
-
-  it('is not asked where nothing is resampled, and the job starts with the click as before', async () => {
-    await review();
-    click(button('Start job'));
-    await flush();
-    expect(dialog()).toBeNull();
-    expect(execution()).toHaveLength(1);
-  });
-
-  it('is asked again for another order: a step more is another order', async () => {
-    estimateExtra = FACTS;
-    await review();
-    click(button('Start job'));
-    click(dialog()!.querySelectorAll('button')[1]);
-    await flush();
-    const confirmed = useProcessingStore.getState().resamplingConfirmed;
-    typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 3');
     click(button('Review'));
     await flush();
-    click(button('Start job'));
     expect(dialog()).not.toBeNull();
-    expect(useProcessingStore.getState().resamplingConfirmed).toBe(confirmed);
+  });
+
+  it('does not ask where nothing is resampled: the review shows the estimate and "Start job" is open', async () => {
+    await review();
+    expect(dialog()).toBeNull();
+    expect(container.querySelector('.pp-estimate')).not.toBeNull();
+    click(startButton());
+    await flush();
+    expect(execution()).toHaveLength(1);
+  });
+
+  it('is not asked while the review is still running, and not for a review that was refused', async () => {
+    estimateExtra = FACTS;
+    await prepare();
+    fetchMock.mockImplementationOnce(async () => json({ detail: 'refused' }, 422));
+    click(button('Review'));
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(useProcessingStore.getState().resamplingAsking).toBeNull();
   });
 
   it('leaves the old exclamation mark out of the panel, the job rows and the layer manager', async () => {

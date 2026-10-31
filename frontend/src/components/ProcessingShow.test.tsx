@@ -476,18 +476,26 @@ describe('what follows from a change of the output', () => {
 // the preview where it names the percentiles, else from the tiler on the first scene; the picture is drawn from values and the
 // range in force keeps what was typed (a job started with it keeps it too).
 describe('"vmin" and "vmax" as percentiles in the preview', () => {
-  const chip = () => section().querySelector<HTMLButtonElement>('.vc-unit')!;
+  const chip = () => section().querySelector<HTMLSelectElement>('.vc-unit')!;
+  const toggleUnit = () => {
+    const select = chip();
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, select.value === 'value' ? 'percent' : 'value');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const unitText = () => chip().selectedOptions[0].textContent;
   const problem = () => section().querySelector('.hint-text.error')?.textContent ?? null;
   const percentValues = () => asked().filter((u) => u.includes('p=3'));
   const withPercentiles = (over: object = {}) => {
     statistics = () => ({ band: { ...INDEX, percentile_3: -0.15, percentile_97: 0.85, ...over } });
   };
 
-  it('has the switch at "vmin", and turns the fields into 2 and 98', async () => {
+  it('has the dropdown at "vmin", and turns the fields into 2 and 98', async () => {
     await ndvi();
-    expect(chip().textContent).toBe('value');
-    click(chip());
-    expect(chip().textContent).toBe('%');
+    expect(unitText()).toBe('absolute value');
+    toggleUnit();
+    expect(unitText()).toBe('percentile');
     expect(fields().map((f) => f.value)).toEqual(['2', '98']);
   });
 
@@ -495,7 +503,7 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
     await ndvi();
     // The measure the preview was drawn with names 2 and 98 only; the tiler names the others where they are asked for.
     withPercentiles();
-    click(chip());
+    toggleUnit();
     typeInto(fields()[0], '3');
     typeInto(fields()[1], '97');
     await act(async () => click(button('Apply')));
@@ -516,7 +524,7 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
   it('reads 2 and 98 from the measure it has, with no further question', async () => {
     await ndvi();
     const before = asked().length;
-    click(chip());
+    toggleUnit();
     await act(async () => click(button('Apply')));
     await flush();
     expect(asked()).toHaveLength(before);
@@ -525,7 +533,7 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
 
   it('takes the minimum and the maximum for 0 and 100', async () => {
     await ndvi();
-    click(chip());
+    toggleUnit();
     typeInto(fields()[0], '0');
     typeInto(fields()[1], '100');
     await act(async () => click(button('Apply')));
@@ -536,7 +544,7 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
   it('refuses what is no whole percent, in the wrong order or out of range, says why and asks nothing', async () => {
     await ndvi();
     const before = asked().length;
-    click(chip());
+    toggleUnit();
     for (const [low, high, text] of [['x', '98', 'Enter whole percents'], ['2.5', '98', 'Enter whole percents'], ['2', '120', 'Enter whole percents'], ['90', '10', 'must be below']]) {
       typeInto(fields()[0], low);
       typeInto(fields()[1], high);
@@ -550,7 +558,7 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
 
   it('says so where the tiler does not give the percentiles, and changes nothing', async () => {
     await ndvi();
-    click(chip());
+    toggleUnit();
     typeInto(fields()[0], '3');
     typeInto(fields()[1], '97');
     await act(async () => click(button('Apply')));
@@ -566,7 +574,7 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
 
   it('puts the usual stretch back with "Auto stretch" in percentiles, and the values back in values', async () => {
     await ndvi();
-    click(chip());
+    toggleUnit();
     typeInto(fields()[0], '10');
     click(button('Auto stretch'));
     expect(fields().map((f) => f.value)).toEqual(['2', '98']);
@@ -575,12 +583,12 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
   it('is no percentiles any more once the values are typed again', async () => {
     withPercentiles();
     await ndvi();
-    click(chip());
+    toggleUnit();
     typeInto(fields()[0], '3');
     typeInto(fields()[1], '97');
     await act(async () => click(button('Apply')));
     await flush();
-    click(chip());
+    toggleUnit();
     expect(fields().map((f) => f.value)).toEqual(['-0.15', '0.85']);
     typeInto(fields()[1], '0.8');
     click(button('Apply'));

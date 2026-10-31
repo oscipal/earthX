@@ -10,12 +10,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from '../datasets';
-import { NO_RANGE_AT_PERCENT, PERCENT_PROBLEMS } from '../percentRange';
+import { NO_RANGE_AT_PERCENT, PERCENT_PROBLEMS, UNIT_TIP } from '../percentRange';
 import { pendingFieldsOf } from '../render';
 import { useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import ViewerControls from './ViewerControls';
-import { UNIT_TIP } from './RenderFields';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -94,7 +93,15 @@ afterEach(() => {
 });
 
 const state = () => useAppStore.getState();
-const chip = () => container.querySelector<HTMLButtonElement>('.vc-unit')!;
+const chip = () => container.querySelector<HTMLSelectElement>('.vc-unit')!;
+const toggleUnit = () => {
+  const select = chip();
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, select.value === 'value' ? 'percent' : 'value');
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+};
+const unitText = () => chip().selectedOptions[0].textContent;
 const inputs = () => [...container.querySelectorAll<HTMLInputElement>('.vc-num input')];
 const button = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('.vc-buttons button')].find((b) => b.textContent?.trim() === label)!;
 const click = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
@@ -109,36 +116,37 @@ const settle = async () => act(async () => {
 const asked = () => fetchMock.mock.calls.map(([url]) => String(url));
 
 describe('the switch "value / %"', () => {
-  it('is a small chip at the field vmin, named for what it does, "value" to begin with', () => {
-    expect(chip().textContent).toBe('value');
+  it('is a small dropdown at the field vmin with words, "absolute value" to begin with, and names the field vmin', () => {
+    expect(unitText()).toBe('absolute value');
+    expect([...chip().options].map((o) => o.textContent)).toEqual(['absolute value', 'percentile']);
     expect(chip().title).toBe(UNIT_TIP);
-    expect(chip().getAttribute('aria-pressed')).toBe('false');
+    expect(chip().getAttribute('aria-label')).toBe('Range unit');
     expect(chip().closest('label')!.querySelector('span')!.textContent).toBe('vmin');
-    // After the field, so that the label names the field.
+    // After the field in the markup, so that the label names the field; the style puts it over "vmin".
     expect(chip().previousElementSibling).toBe(container.querySelector('.vc-num input'));
+    expect(container.querySelector('.vc-num input')!.getAttribute('aria-labelledby')).toBe(chip().closest('label')!.querySelector('span')!.id);
     expect(container.querySelectorAll('.vc-unit')).toHaveLength(1);
   });
 
   it('turns the fields into percentiles, 2 and 98 to begin with, whole numbers from 0 to 100', () => {
-    click(chip());
-    expect(chip().textContent).toBe('%');
-    expect(chip().getAttribute('aria-pressed')).toBe('true');
+    toggleUnit();
+    expect(unitText()).toBe('percentile');
     expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
     for (const input of inputs()) expect([input.min, input.max, input.step]).toEqual(['0', '100', '1']);
   });
 
   it('gives the values back when it is switched back', () => {
-    click(chip());
+    toggleUnit();
     type(inputs()[0], '5');
-    click(chip());
+    toggleUnit();
     expect(inputs().map((i) => i.value)).toEqual(['0', '3000']);
     expect(inputs()[0].min).toBe('');
-    click(chip());
+    toggleUnit();
     expect(inputs().map((i) => i.value)).toEqual(['5', '98']);
   });
 
   it('puts "auto-scale" back to 2 and 98 in percentiles, with nothing measured', () => {
-    click(chip());
+    toggleUnit();
     type(inputs()[0], '10');
     type(inputs()[1], '90');
     click(button('auto-scale'));
@@ -149,7 +157,7 @@ describe('the switch "value / %"', () => {
 
 describe('"Apply" with percentiles', () => {
   const typed = (low: string, high: string) => {
-    click(chip());
+    toggleUnit();
     type(inputs()[0], low);
     type(inputs()[1], high);
   };
@@ -192,7 +200,7 @@ describe('"Apply" with percentiles', () => {
     type(inputs()[1], '97');
     expect(button('Apply').getAttribute('aria-disabled')).toBe('true');
     // Back to values: the same numbers, but no percentiles any more: that is something to apply.
-    click(chip());
+    toggleUnit();
     expect(button('Apply').getAttribute('aria-disabled')).toBeNull();
     click(button('Apply'));
     expect(state().appliedRender.percent).toBeUndefined();
@@ -246,7 +254,7 @@ describe('"Apply" with percentiles', () => {
 
 describe('"Apply to all" with percentiles that are not applied yet', () => {
   it('takes their values first, and then keeps what is drawn for every image', async () => {
-    click(chip());
+    toggleUnit();
     type(inputs()[0], '3');
     type(inputs()[1], '97');
     const save = button('Apply to all');
@@ -261,7 +269,7 @@ describe('"Apply to all" with percentiles that are not applied yet', () => {
   });
 
   it('keeps nothing where the percentiles cannot be turned into values', async () => {
-    click(chip());
+    toggleUnit();
     type(inputs()[0], '3');
     type(inputs()[1], '97');
     answer = () => json({ detail: 'nope' }, 502);

@@ -113,7 +113,7 @@ async function checkShow(browser, theme, viewport) {
   if (second.get('band') !== 'red') problems.push(`after the choice the statistics ask for band ${second.get('band')}`);
   if (second.getAll('asset').join() !== 'red') problems.push(`after the choice the picture reads ${second.getAll('asset')}, not red alone`);
   if ((await fields()).join() !== '0.05,0.7') problems.push(`the fields of red say ${await fields()}, not 0.05,0.7`);
-  const colormap = await page.$eval('.pp-range .vc-field:not(.pp-show) select', (s) => s.value);
+  const colormap = await page.$eval('.pp-range .vc-field:not(.pp-show) select:not(.vc-unit)', (s) => s.value);
   if (colormap !== 'viridis') problems.push(`red is drawn in ${colormap}, not viridis`);
 
   const report = await page.evaluate(() => {

@@ -287,6 +287,39 @@ describe('what "Run as" offers', () => {
   });
 });
 
+describe('the warning at the review of a batch that resamples bands (NM4-65 part 7)', () => {
+  const FACTS = { resampling: { grid: { resolution: 10, crs: 'EPSG:32632' }, method: 'nearest', bands: [{ band: 'rededge1', resolution: 20, crs: 'EPSG:32632' }], scenes: null } };
+  const dialog = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
+
+  it('is one warning for the batch, with a line of facts for each part that has some', async () => {
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (3)'));
+    // The first and the third scene resample, the second does not.
+    estimateFor = (ids) => json({ ...estimateOf(), ...(ids[0] === 'S2' ? {} : FACTS) });
+    await review();
+    expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
+    const parts = [...dialog()!.querySelectorAll('.resampling-part')];
+    expect(parts).toHaveLength(2);
+    expect(parts.every((part) => part.textContent!.includes('Resampled: rededge1 (20 m).'))).toBe(true);
+    // "Cancel" drops the review of the whole batch: the start stays shut.
+    click(dialog()!.querySelectorAll('button')[0]);
+    expect(dialog()).toBeNull();
+    expect(useProcessingStore.getState().batch).toBeNull();
+  });
+
+  it('is not there where no part resamples', async () => {
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (3)'));
+    await review();
+    expect(dialog()).toBeNull();
+    expect(useProcessingStore.getState().batch).not.toBeNull();
+  });
+});
+
 describe('reviewing a batch', () => {
   it('asks for an estimate of every scene with the same steps, bands and data type, and no AOI', async () => {
     selectPasses([sceneIds(3)]);

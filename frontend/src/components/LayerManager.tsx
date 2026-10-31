@@ -3,6 +3,7 @@ import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefOb
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
 import { indexDownloadBlock, indexOfLayer } from '../indexDownload';
 import { flipIdOf } from '../layerFlip';
+import { layerShownName } from '../layerName';
 import type { MapLayer } from '../layers';
 import { isJobId, resultUrl } from '../processing';
 import { RGB, RGB_LABEL } from '../processingBands';
@@ -150,12 +151,12 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         className="lm-name"
         data-col="name"
         title={
-          (locked ? `${l.name} — ${DELETED_LAYER_TIP}` : `${l.name} — ${flipping ? FLIP_ROW_TIP : 'view this layer / continue working on it'}`) +
+          (locked ? `${layerShownName(l)} — ${DELETED_LAYER_TIP}` : `${layerShownName(l)} — ${flipping ? FLIP_ROW_TIP : 'view this layer / continue working on it'}`) +
           (l.note ? `\n${l.note}` : '')
         }
         onClick={() => (flipping ? flipTo(l.id) : select(l.id))}
       >
-        {l.name}
+        {layerShownName(l)}
       </button>
       <input
         type="range"
@@ -226,11 +227,6 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       <button type="button" className="lm-btn danger" data-col="remove" title="Remove layer" onClick={() => remove(l.id)}>
         ✕
       </button>
-      {l.date && (
-        <span className="lm-date" title="Acquisition date (UTC)">
-          {l.date}
-        </span>
-      )}
       {bands && bands.length > 1 && (
         <BandSelect
           label="Band"

@@ -117,7 +117,8 @@ async function check(browser, { kind, theme, viewport }) {
   for (const [name, b] of [['auto', auto], ['Apply', apply], ['Save', save]]) if (b && !within(b, panel)) problems.push(`"${name}" leaves the panel`);
   if (viewport === 'wide') {
     const fields = await page.locator(`${root} .vc-render > .vc-field`).evaluateAll((els) => els.slice(0, 3).map((el) => el.getBoundingClientRect().toJSON()));
-    if (fields.some((f) => Math.abs(f.y - fields[0].y) > 4)) problems.push('the three fields are not on one line');
+    // By their bottoms: the field vmin has the unit dropdown over its label (NM4-65), so its top is higher.
+    if (fields.some((f) => Math.abs(f.y + f.height - (fields[0].y + fields[0].height)) > 4)) problems.push('the three fields are not on one line');
     if (fields.some((f) => f.y + f.height < apply.y + apply.height - 1.5)) problems.push('the buttons stand lower than the fields');
   }
   const sideways = await page.evaluate((sel) => { const el = document.querySelector(sel); return el ? el.scrollWidth > el.clientWidth + 1 : false; }, root);

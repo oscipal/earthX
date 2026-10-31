@@ -8,6 +8,7 @@ import { useState } from 'react';
 
 import { fetchResultStatistics } from '../api';
 
+import { layerShownName } from '../layerName';
 import type { MapLayer } from '../layers';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, percentOf, rescaleAtPercent, samePercent, type Percent, type RangeUnit } from '../percentRange';
 import { rescaleOf, type PreviewRange } from '../processingPreview';
@@ -150,7 +151,7 @@ function Controls({ layer }: { layer: MapLayer }) {
   return (
     <div className="panel viewer-controls result-controls">
       <div className="vc-head">
-        <span className="vc-title">{layer.name.toUpperCase()}</span>
+        <span className="vc-title" title={layerShownName(layer)}>{layerShownName(layer).toUpperCase()}</span>
         <div className="results-head-right">
           <CloseButton title="Close" onClick={() => close()} />
           {!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
@@ -202,7 +203,7 @@ function Controls({ layer }: { layer: MapLayer }) {
             </div>
           </>
         )}
-        <label className="vc-field">
+        <label className="vc-field vc-opacity">
           <span>Opacity</span>
           <input
             type="range"

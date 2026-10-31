@@ -358,35 +358,30 @@ body.dragging * {
 .vc-num input {
   width: 84px;
 }
-/* The switch "value / %" of the range (`RenderFields.tsx`, NM4-65 part 4): a small chip at the top right of the field "vmin". */
+/* The switch of the range (`RenderFields.tsx`, NM4-65 part 4): a small dropdown "absolute value / percentile" in a line of its
+   own over the field "vmin", as wide as its words; it reaches over the empty place above "vmax". The labels of the fields
+   stay in the line under it. */
 .vc-field.vc-num {
   position: relative;
 }
-.vc-unit {
-  position: absolute;
-  top: -3px;
-  right: 0;
-  padding: 0 5px;
-  background: none;
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
+.vc-field.vc-num .vc-unit {
+  order: -1;
+  align-self: flex-start;
+  width: max-content;
+  max-width: none;
+  height: 20px;
+  margin-bottom: 2px;
+  padding: 0 4px;
+  border-radius: 4px;
   color: var(--muted);
-  font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0;
   text-transform: none;
-  line-height: 14px;
-  cursor: pointer;
 }
-.vc-unit:hover,
-.vc-unit:focus-visible {
+.vc-field.vc-num .vc-unit:hover,
+.vc-field.vc-num .vc-unit:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
-}
-.vc-unit[aria-pressed='true'] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--panel-bg, #fff);
 }
 /* A slider is no text box: the padding and the frame of `.vc-field input` above shrank the track inside its own box, so
    that the thumb of an opacity of 1 stopped short of the right end (NM4-65). It keeps the height of the fields. */
@@ -552,6 +547,18 @@ body.dragging * {
 }
 /* The short note under the settings where the index cannot be drawn (`viewIndex.ts`); its tooltip says why. The pale yellow
    of `.hint-text.warn` does not read on the light panel. */
+/* The opacity in the box of a layer opened from the layer manager (NM4-65): a line of its own under the buttons, like the box of a
+   result. */
+.scene-view .vc-opacity {
+  grid-column: 1 / -1;
+}
+.scene-view .vc-opacity .lm-opacity {
+  width: 100%;
+  max-width: 240px;
+}
+.scene-view .vc-head .results-head-right {
+  margin-left: auto;
+}
 .scene-view .vc-note {
   grid-column: 1 / -1;
   margin: 0;
@@ -2010,14 +2017,56 @@ input[type='date']:focus {
 .layer-row {
   --lm-button: 22px;
   display: grid;
-  /* Grip, eye, name, opacity, up, down, process, download, note, remove: a button that is missing leaves its
-     place empty (`LayerManager.tsx::Slot`) instead of moving the others (UI-01 §1 point 8). */
-  grid-template-columns: 14px var(--lm-button) minmax(0, 1fr) 44px repeat(4, var(--lm-button)) 18px var(--lm-button);
-  position: relative;
+  /* The title of a layer has the first line to itself, with its date in it; the buttons are under it (Otto, 1.11.2026). Grip, eye,
+     opacity (the wide place), up, down, process, download, note, remove: a button that is missing leaves its place empty
+     (`LayerManager.tsx::Slot`) instead of moving the others (UI-01 §1 point 8). */
+  grid-template-columns: 14px var(--lm-button) minmax(0, 1fr) repeat(4, var(--lm-button)) 18px var(--lm-button);
   align-items: center;
   column-gap: 3px;
+  row-gap: 3px;
   padding: 5px 4px;
   border-bottom: 1px solid var(--panel-border);
+  position: relative;
+}
+.layer-row > [data-col='grip'] {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+.layer-row > [data-col='name'] {
+  grid-column: 2 / -1;
+  grid-row: 1;
+}
+.layer-row > [data-col='eye'] {
+  grid-column: 2;
+  grid-row: 2;
+}
+.layer-row > [data-col='opacity'] {
+  grid-column: 3;
+  grid-row: 2;
+}
+.layer-row > [data-col='up'] {
+  grid-column: 4;
+  grid-row: 2;
+}
+.layer-row > [data-col='down'] {
+  grid-column: 5;
+  grid-row: 2;
+}
+.layer-row > [data-col='process'] {
+  grid-column: 6;
+  grid-row: 2;
+}
+.layer-row > [data-col='download'] {
+  grid-column: 7;
+  grid-row: 2;
+}
+.layer-row > [data-col='note'] {
+  grid-column: 8;
+  grid-row: 2;
+}
+.layer-row > [data-col='remove'] {
+  grid-column: 9;
+  grid-row: 2;
 }
 .lm-slot {
   display: block;
@@ -2173,19 +2222,9 @@ input[type='date']:focus {
   margin: 0;
   accent-color: var(--accent);
 }
-/* The acquisition date of a layer (UTC, one day or a span; NM4-65): a small line of its own under the name. */
-.lm-date {
-  grid-column: 3 / -1;
-  padding-top: 1px;
-  color: var(--muted);
-  font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 /* "Band" of a result with several: a line of its own under the row, from the name to the end. */
 .lm-band {
-  grid-column: 3 / -2;
+  grid-column: 2 / -2;
   flex-direction: row;
   align-items: center;
   gap: 6px;
@@ -2204,7 +2243,13 @@ input[type='date']:focus {
 }
 /* The opacity of a result in its view: a slider of its own width. */
 .result-controls .lm-opacity {
-  width: 120px;
+  width: 100%;
+  max-width: 240px;
+}
+/* The opacity has a line of its own under the fields, in the box of a result as in the box of a layer opened from the manager
+   (NM4-65, Otto, 1.11.2026: every layer has the same box). */
+.result-controls .vc-opacity {
+  flex: 1 0 100%;
 }
 
 /* --- the rail and the panels beside it (UI-01 §6.9) --- */
