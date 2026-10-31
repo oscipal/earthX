@@ -33,7 +33,7 @@ import {
 import { DEFAULT_BASEMAP } from '../basemaps';
 import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
 import { previewOverlays } from '../processingPreview';
-import { useProcessingStore } from '../processingStore';
+import { clipAoiOf, useProcessingStore } from '../processingStore';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
 import { shownViewOf, useAppStore } from '../store';
 import type { StacItem, ToolMode } from '../types';
@@ -141,8 +141,10 @@ export default function MapView() {
   const overlays = useAppStore((s) => s.overlays);
   const theme = useAppStore((s) => s.theme);
   const preview = useProcessingStore((s) => s.preview);
+  // What an entry fixed (a crop, a result) is cut to its own AOI, not the map's.
+  const previewAoi = useProcessingStore((s) => clipAoiOf(s, aoi));
   // Cut to the AOI only for "AOI only": a new AOI leaves the others alone.
-  const clipAoi = preview?.clipToAoi ? aoi : null;
+  const clipAoi = preview?.clipToAoi ? previewAoi : null;
   const previewTiles = useMemo(() => (preview ? previewOverlays(preview, clipAoi) : []), [preview, clipAoi]);
   const previewTilesRef = useRef(previewTiles);
   previewTilesRef.current = previewTiles;

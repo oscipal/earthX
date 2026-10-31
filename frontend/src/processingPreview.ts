@@ -355,6 +355,8 @@ export interface PreviewSpec {
   maxZoom: number;
   // "AOI only": the tiles are cut to the AOI in the browser (`aoiClip.ts`).
   clipToAoi: boolean;
+  // The AOI they are cut to where it is not the map's: the part of it that lies in a result.
+  clipAoi?: GeoJSON.Geometry;
 }
 
 const positive = (value: unknown): number | null =>
@@ -415,8 +417,11 @@ export function previewSpec(args: {
   band?: string | null;
   bands?: readonly string[];
   named?: boolean;
+  // The AOI the tiles are cut to where it is not the map's (the part of it in a result), for "AOI only".
+  clipAoi?: GeoJSON.Geometry;
 }): PreviewSpec | null {
   const { dataset, items, assets, info, plan, range, area, jobs = [], answers, order = null, band = null, named = false } = args;
+  const clipAoi = area === 'aoi' ? args.clipAoi : undefined;
   if (!dataset?.viewable || assets.length === 0 || assets.length > MAX_PREVIEW_ASSETS) return null;
   if (band === RGB && args.bands?.length !== 3) return null;
   const rescale = rescaleOf(range);
@@ -494,6 +499,7 @@ export function previewSpec(args: {
       minZoom: dataset.zoom.min,
       maxZoom,
       clipToAoi,
+      ...(clipAoi ? { clipAoi } : {}),
     }),
     title: [plan.steps.map(({ operator }) => operator.title).join(' → '), ...(named && band !== null ? [bandLabel(band)] : [])].join(' · '),
     stepCount: plan.steps.length,
@@ -511,6 +517,7 @@ export function previewSpec(args: {
     minZoom: dataset.zoom.min,
     maxZoom,
     clipToAoi,
+    ...(clipAoi ? { clipAoi } : {}),
   };
 }
 
@@ -612,7 +619,7 @@ export const NO_MEASURE = 'The range could not be measured, so the preview uses 
 // The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes. A scene
 // below a mosaic is drawn up to the level before it and steps aside for it (`hideFrom`, as in `mosaic.ts::viewOfPass`).
 export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null): LayerOverlay[] {
-  const clip = spec.clipToAoi ? aoi : null;
+  const clip = spec.clipToAoi ? (spec.clipAoi ?? aoi) : null;
   const mosaics = spec.mosaics.map((mosaic) => ({
     kind: 'raster' as const,
     tileUrl: clipTileUrl(mosaic.url, clip),

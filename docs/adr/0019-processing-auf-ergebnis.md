@@ -567,6 +567,17 @@ Neurechnens messbar werden.
 
 ---
 
+## Nachtrag NM4-05b: Umsetzung und Änderung von F2 und F3 (2026-10-31; zu §7.1, §8, §9)
+
+Umgesetzt ist Option 2 (Draft-PR [#263](https://github.com/oscipal/earthX/pull/263), nur Frontend), auf dem Stand nach `adr/0020` (Bandvorrat, `output.bands`). Otto hat am 2026-10-31 zu #263 **F2 und F3 geändert**:
+
+- **F3 neu: ein Ergebnis-Layer ist eine eigene Entität.** Das Panel zeigt die Schritte des Jobs nicht als Schritte und hat keine Zeile „From result“. Der Bandvorrat des Panels sind die **Ausgabebänder des Jobs** (auch die Ergebnisse seiner Band-Math-Schritte, als Bänder wie die der Daten); die Ausgabeliste heißt wie beim Rohbild „New“ und „Data“. Alle Operatoren wie beim Rohbild, aber nur auf diesen Bändern. Ein Band, das nicht in der Ausgabe war, kann ein neuer Schritt nicht lesen; sein Name bleibt belegt (die Kette führt es noch). „Mask“ ist ausgeblendet, wo die Ausgabe die Maskenschicht nicht enthält, RGB nur, wo seine drei Bänder in der Ausgabe sind. Dasselbe soll für Index-Knöpfe gelten (NM4-14b, noch nicht im Frontend).
+- **Fläche und „Load recipe“ wie beim Rohbild (Otto, 2026-10-31).** „Whole scene“ ist die Fläche des Ergebnisses (die AOI des Jobs, bei einem Job ohne AOI die Szenen), „AOI only“ eine andere AOI der Karte, **zugeschnitten auf das Ergebnis**: gerechnet wird nur der Teil der AOI, der im Ergebnis liegt; liegt nichts davon darin („The AOI does not meet the result.“), gibt es weder Auftrag noch Vorschau, auch wenn die Ursprungsszene die AOI abdeckt. „Load recipe…“ hängt die Schritte der Datei hinter die des Jobs. Es gibt kein „Run as“; die Szenen sind die des Jobs. Die Vorschau liegt beim Eintrag „Results“, der beim Öffnen nach oben rückt (über dem Ergebnis-Layer). Der Hinweis zur Neuberechnung (letztes Bit, float64/float32) steht damit nicht mehr im Panel.
+- **Technisch unverändert Option 2:** ein gewöhnlicher Auftrag, von der Quelle neu gerechnet; die Schritte des Jobs stehen unsichtbar vorn im Rezept (im Store gesperrt: nicht änderbar, verschiebbar, entfernbar). **Die Bänder des Ergebnisses sind in „Data“ nicht vorausgewählt** (Otto, 2026-10-31, ersetzt „die Ausgabe des Jobs ist die Vorgabe“): wie beim Rohbild ist nur ein neues Band-Math-Ergebnis angehakt, und das eine Band eines Ergebnisses mit nur einem Band einmal beim Öffnen; „Start job“ wartet, bis ein Band gewählt ist.
+- **F2 neu: ⚙ ohne Auftragskopie wird ausgeblendet** (dauerhaft unmöglich; der Platz in der Zeile bleibt leer). Gesperrt mit Grund bleibt ⚙ nur, wo es im Moment nicht geht (Lizenz, Datensatz).
+- **Zustand.** `fixed` im Panel-Zustand hält Szenen, Fläche und, bei einem Ergebnis, Zahl der Schritte, Ausgabebänder, Titel und Gruppe des Jobs. `orderView` nimmt Szenen und Fläche aus `fixed`, nicht aus Auswahl und Karte; „Run as“ gibt es dann nicht.
+- Eltern in Version 1 liest die Ablage schon als Version 2 (`jobShelf.orderCopy`, `adr/0020` §11). Das Backend sieht einen gewöhnlichen Auftrag; Hash, Cache, Runner, Permalink unverändert (K1–K8 wie in §5.8).
+
 ## 11. Prüfanleitung für Otto
 
 Nur Repo und Browser, keine AOI, keine Anfrage an eine Quelle. Windows

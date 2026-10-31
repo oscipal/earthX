@@ -36,11 +36,19 @@ import {
   rescaleOf,
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
-import { orderView, type PartOutcome, selectionState, useProcessingStore, type OrderView } from '../processingStore';
+import {
+  OUTSIDE_TEXT,
+  orderView,
+  type PartOutcome,
+  sceneCountOf,
+  selectionState,
+  useProcessingStore,
+  type OrderView,
+} from '../processingStore';
 import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
-import { ticksOfOpen, useAppStore } from '../store';
+import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import BandSelect from './BandSelect';
 import JobDetails from './JobDetails';
@@ -51,6 +59,8 @@ import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
 
 // What the server says when the output needs more memory than a job may use (`plan.py`, 413).
 const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
+
+const CROP_TIP = 'Fixed by the crop.';
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
 
@@ -135,7 +145,7 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
     <section className="pp-section" aria-label="Bands">
       <div className="pp-bands-head">
         <h3 className="pp-heading">Bands</h3>
-        <Tip text="Bands of the data. Click one to put its name into an expression." />
+        <Tip text={view.fixed?.result ? 'Bands of the result. Click one to put its name into an expression.' : 'Bands of the data. Click one to put its name into an expression.'} />
       </div>
       <div className="pp-chips">
         {view.dataBands
@@ -174,7 +184,7 @@ function OutputBands({ view }: { view: OrderView }) {
   const checkedOnOpening = useRef<string | null>(null);
   const checked = lonely !== null && view.output.includes(lonely);
   // Not where the steps already add a band: the results are what is in the output then.
-  const results = view.results.length;
+  const results = view.fresh.length;
   useEffect(() => {
     if (lonely === null || checkedOnOpening.current === lonely) return;
     checkedOnOpening.current = lonely;
@@ -184,7 +194,7 @@ function OutputBands({ view }: { view: OrderView }) {
   const on = new Set(view.output);
   const data = view.dataBands.filter((band) => !band.auxiliary || on.has(band.name));
   // What "All" takes: every result and every band of the data that is no layer and no auxiliary asset.
-  const everything = [...view.results.map((result) => result.name), ...view.selectable];
+  const everything = [...view.fresh.map((result) => result.name), ...view.selectable];
   const chip = (name: string, band?: DataBand) => (
     <button key={name} type="button" className={`pp-chip${on.has(name) ? ' on' : ''}`} aria-pressed={on.has(name)} onClick={() => toggle(name)}>
       {name}
@@ -201,10 +211,10 @@ function OutputBands({ view }: { view: OrderView }) {
           {count} band{count === 1 ? '' : 's'} · {view.dtype}
         </span>
       </div>
-      {view.results.length > 0 && (
+      {view.fresh.length > 0 && (
         <div className="pp-chip-row" role="group" aria-label="New bands">
           <span className="pp-help">New</span>
-          <div className="pp-chips">{view.results.map((result) => chip(result.name))}</div>
+          <div className="pp-chips">{view.fresh.map((result) => chip(result.name))}</div>
         </div>
       )}
       {data.length > 0 && (
@@ -274,6 +284,8 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
   const area = useProcessingStore((s) => s.area);
   const setArea = useProcessingStore((s) => s.setArea);
   const scenes = (view.pass?.items.length ?? 0) > 1 ? 'scenes' : 'scene';
+  // On a result "Whole scene" is the result's own area, and "AOI only" another AOI inside it (NM4-05b).
+  const result = view.fixed?.result != null;
   return (
     <div className="pp-area">
       <div className="pp-toggle" role="group" aria-label="Area">
@@ -282,7 +294,7 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           type="button"
           className={`pp-seg${area === 'scene' ? ' on' : ''}`}
           aria-pressed={area === 'scene'}
-          title="Process the whole scenes; no AOI is sent"
+          title={result ? 'Process the area of the result' : 'Process the whole scenes; no AOI is sent'}
           onClick={() => setArea('scene')}
         >
           Whole scene
@@ -292,17 +304,36 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           className={`pp-seg${area === 'aoi' ? ' on' : ''}`}
           aria-pressed={area === 'aoi'}
           disabled={!hasAoi}
-          title={hasAoi ? 'Process only the AOI' : 'Draw an AOI first'}
+          title={hasAoi ? (result ? 'Process only the AOI, cut to the area of the result' : 'Process only the AOI') : 'Draw an AOI first'}
           onClick={() => setArea('aoi')}
         >
           AOI only
         </button>
       </div>
       {area === 'scene' ? (
-        <p className="pp-help">The result covers the whole {scenes}; the mask marks where they have data.</p>
+        <p className="pp-help">
+          {result ? 'The result covers the area it has.' : `The result covers the whole ${scenes}; the mask marks where they have data.`}
+        </p>
+      ) : !hasAoi ? (
+        <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
       ) : (
-        !hasAoi && <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
+        view.outside && <p className="hint-text error">{OUTSIDE_TEXT}</p>
       )}
+    </div>
+  );
+}
+
+// The scenes and the area a crop fixed (NM4-06): the crop's own, shown as they are with a lock. There is nothing to choose.
+function FixedEntry({ view }: { view: OrderView }) {
+  return (
+    <div className="pp-area">
+      <div className="pp-toggle" role="group" aria-label="Area">
+        <span className="pp-help">Area:</span>
+        <span className="pp-fixed" title={CROP_TIP}>
+          <span aria-hidden="true">🔒 </span>
+          {view.fixed?.aoi ? 'AOI only' : 'Whole scene'}
+        </span>
+      </div>
     </div>
   );
 }
@@ -310,13 +341,15 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
 // "Run as": one job, or one per pass or scene (M4-13c-4). Only offered where it
 // makes a choice; a choice over the limit is greyed out with the reason.
 function RunAsChoice({ view }: { view: OrderView }) {
+  // A crop that is one object has no "Run as", only its passes (NM4-06).
+  const label = view.fixed ? 'Passes' : 'Run as';
   const setRunAs = useProcessingStore((s) => s.setRunAs);
   if (view.runChoices.length < 2) return null;
   const limits = [...new Set(view.runChoices.flatMap((choice) => (choice.disabled ? [choice.disabled] : [])))];
   return (
     <>
-      <div className="pp-toggle" role="group" aria-label="Run as">
-        <span className="pp-help">Run as:</span>
+      <div className="pp-toggle" role="group" aria-label={label}>
+        <span className="pp-help">{label}:</span>
         {view.runChoices.map((choice) => (
           <button
             key={choice.value}
@@ -553,7 +586,7 @@ export default function ProcessingPanel() {
 
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   // The same rule as the button in the ViewBar: scenes picked by hand.
-  const reason = processBlockReason(dataset, ticksOfOpen(app).length);
+  const reason = processBlockReason(dataset, sceneCountOf(app, p));
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const view = orderView(app, p);
   const info = view.info;
@@ -579,7 +612,7 @@ export default function ProcessingPanel() {
   const memory = refusals.find((r) => r!.step === null && r!.status === 413 && isMemoryRefusal(r!.message))?.message ?? null;
   const orderRefusals = refusals.filter((r) => r!.step === null && r!.message !== memory);
   const tooLarge =
-    p.area === 'scene' &&
+    view.area === 'scene' &&
     (refusals.some((r) => r!.status === 413 && r!.message !== memory) ||
       (batch?.some((part) => part.refusal?.status === 413 && !isMemoryRefusal(part.refusal.message)) ?? false));
   const startTitle =
@@ -596,7 +629,7 @@ export default function ProcessingPanel() {
             : 'Review the order first';
   // A target CRS the server turned away holds the review back (M4-13c-3).
   const crsBlock = crsBlockReason(p.steps, p.crs);
-  const latitude = areaLatitude(p.area, hasAoi ? app.aoi : null, view.pass?.items ?? []);
+  const latitude = areaLatitude(view.area, view.aoi, view.pass?.items ?? []);
 
   return (
     <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Processing">
@@ -628,7 +661,7 @@ export default function ProcessingPanel() {
                 .filter(Boolean)
                 .join(' · ')}
             </p>
-            <AreaChoice view={view} hasAoi={hasAoi} />
+            {view.fixed && !view.fixed.result ? <FixedEntry view={view} /> : <AreaChoice view={view} hasAoi={hasAoi} />}
             <RunAsChoice view={view} />
             <RecipeLoader />
           </section>
@@ -641,7 +674,7 @@ export default function ProcessingPanel() {
         ) : (
           <>
             <section className="pp-section" aria-label="Scenes">
-              {p.area === 'aoi' && hasAoi && view.candidates.length === 0 && (
+              {view.area === 'aoi' && view.aoi !== null && view.candidates.length === 0 && (
                 <p className="hint-text error">No selected scene meets the AOI.</p>
               )}
               {view.runAs !== 'one' && (
@@ -694,18 +727,23 @@ export default function ProcessingPanel() {
 
                 <section className="pp-section" aria-label="Processing steps">
                   <h3 className="pp-heading">Processing steps</h3>
-                  {p.steps.length > 0 && (
+                  {p.steps.length > view.locked && (
                     <ol className="pp-steps">
                       {p.steps.map((step, index) => {
+                        // The steps of a result stand first in the order and are not shown (adr/0019, Nachtrag NM4-05b).
+                        if (index < view.locked) return null;
                         const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
                         const problem = built?.stepProblems[index];
                         // The results of the steps before this one: the bands this step may name besides those of the data.
-                        const earlier = view.results.slice(0, p.steps.slice(0, index).filter(isBandMath).length).map((r) => r.name);
+                        const earlier = view.results
+                          .slice(0, p.steps.slice(0, index).filter(isBandMath).length)
+                          .map((r) => r.name)
+                          .filter((name) => !view.hidden.includes(name));
                         return (
                           <StepForm
                             key={step.key}
-                            index={index}
-                            count={p.steps.length}
+                            index={index - view.locked}
+                            count={p.steps.length - view.locked}
                             stepKey={step.key}
                             operator={operator}
                             values={step.values}
@@ -742,7 +780,7 @@ export default function ProcessingPanel() {
                   <div className="pp-add" role="group" aria-label="Add step">
                     <span className="pp-help">Add step:</span>
                     {info.operators.length === 0 && <span className="hint-text">No operator runs on this dataset.</span>}
-                    {info.operators.map((operator) => {
+                    {info.operators.filter((operator) => !(operator.op === 'mask' && view.maskHidden)).map((operator) => {
                       const full = p.steps.length >= info.maxSteps;
                       const why = !operator.form.supported
                         ? operator.form.reason
