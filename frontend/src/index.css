@@ -398,6 +398,49 @@ body.dragging * {
 .vc-eye.off {
   color: var(--muted);
 }
+.scene-view .vc-steps {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+}
+.scene-view .vc-dataset {
+  flex: 1 1 140px;
+  min-width: 0;
+  height: var(--row-height);
+  box-sizing: border-box;
+}
+.vc-stepper {
+  flex: 1 1 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+.vc-step {
+  flex: none;
+  width: 30px;
+  height: var(--row-height, 34px);
+  padding: 0;
+  line-height: 1;
+  font-size: 18px;
+}
+.vc-step[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.vc-step-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--text);
+}
 .scene-view .vc-render,
 .scene-view .vc-actions {
   grid-column: 1 / -1;

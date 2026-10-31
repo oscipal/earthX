@@ -7,11 +7,14 @@
 // "Change image" leaves the view and keeps the choice of scenes; "Clear" takes the view off the map and drops the
 // choice. Neither touches "Hide results".
 
+import { useMemo } from 'react';
+
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
-import { useAppStore } from '../store';
-import { viewDates, viewKind } from '../viewKind';
+import { shownImageOf, useAppStore } from '../store';
+import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
+import { viewKind } from '../viewKind';
 import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Eye from './Eye';
@@ -40,7 +43,6 @@ export default function ViewerControls() {
   const changeImage = useAppStore((s) => s.changeImage);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
   const pinLoading = useAppStore((s) => s.pinLoading);
-  const count = useAppStore((s) => Object.keys(s.downloaded).length);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const toggleDownloaded = useAppStore((s) => s.toggleDownloaded);
   const processBlock = useAppStore((s) =>
@@ -50,13 +52,37 @@ export default function ViewerControls() {
     ),
   );
   const processFocusView = useProcessingStore((s) => s.processFocusView);
-  const datasetTitle = useAppStore(
-    (s) => s.datasets.find((d) => d.id === s.datasetId)?.title ?? s.datasetId ?? '',
+  // The images of the view (NM4-53): the head, the row of steps and the buttons speak of the one that is shown.
+  const downloaded = useAppStore((s) => s.downloaded);
+  const sections = useAppStore((s) => s.sections);
+  const openSectionId = useAppStore((s) => s.openSectionId);
+  const datasetId = useAppStore((s) => s.datasetId);
+  const items = useAppStore((s) => s.items);
+  const groups = useAppStore((s) => s.groups);
+  const datasets = useAppStore((s) => s.datasets);
+  const shownKey = useAppStore((s) => s.shownImage);
+  const stepImage = useAppStore((s) => s.stepImage);
+  const chooseViewDataset = useAppStore((s) => s.chooseViewDataset);
+  const images = useMemo(
+    () => imagesOf(downloaded, sectionsForView({ sections, openSectionId, datasetId, items, groups }), datasets),
+    [downloaded, sections, openSectionId, datasetId, items, groups, datasets],
   );
-  // The scenes of the view, for the date in its head.
-  const date = useAppStore((s) => viewDates(s.groups.flatMap((g) => g.items).filter((it) => it.id in s.downloaded)));
+  const shown = shownImageOf(images, shownKey);
+  const datasetTitleOf = (id: string) => datasets.find((d) => d.id === id)?.title ?? id;
+  const datasetTitle = shown ? datasetTitleOf(shown.datasetId) : '';
+  const date = shown?.date ?? null;
+  const count = shown?.ids.length ?? Object.keys(downloaded).length;
   // What the head cuts short, in full.
   const title = [datasetTitle, date, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
+  const here = shown ? imagesOfDataset(images, shown.datasetId) : [];
+  const at = shown ? here.indexOf(shown) : -1;
+  const datasetIds = datasetIdsOf(images);
+  const stepText = shown ? [shown.date ?? shown.groupLabel, satellitesOf(shown)].filter(Boolean).join(' · ') : '';
+  const onKeys = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    stepImage(e.key === 'ArrowLeft' ? -1 : 1);
+  };
 
   return (
     <div className="panel viewer-controls scene-view">
@@ -74,6 +100,55 @@ export default function ViewerControls() {
           <Eye off={!showDownloaded} />
         </button>
       </div>
+
+      {images.length > 1 && shown && (
+        <div className="vc-steps">
+          {datasetIds.length > 1 && (
+            <select
+              className="vc-dataset"
+              aria-label="Dataset"
+              title={`Dataset whose images the arrows step through: ${datasetTitle}`}
+              value={shown.datasetId}
+              onChange={(e) => chooseViewDataset(e.target.value)}
+            >
+              {datasetIds.map((id) => (
+                <option key={id} value={id}>
+                  {datasetTitleOf(id)}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeys}>
+            {here.length > 1 && (
+              <button
+                type="button"
+                className="ghost-btn vc-step"
+                aria-label="Previous image"
+                aria-disabled={at <= 0 || undefined}
+                title={at <= 0 ? 'This is the first image' : 'Previous image'}
+                onClick={() => stepImage(-1)}
+              >
+                ‹
+              </button>
+            )}
+            <span className="vc-step-text" title={`Step ${at + 1} of ${here.length}${shown.groupLabel ? ` · ${shown.groupLabel}` : ''}`}>
+              {stepText}
+            </span>
+            {here.length > 1 && (
+              <button
+                type="button"
+                className="ghost-btn vc-step"
+                aria-label="Next image"
+                aria-disabled={at >= here.length - 1 || undefined}
+                title={at >= here.length - 1 ? 'This is the last image' : 'Next image'}
+                onClick={() => stepImage(1)}
+              >
+                ›
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="vc-render">
         <label className="vc-field">

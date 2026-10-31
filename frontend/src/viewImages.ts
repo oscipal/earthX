@@ -94,7 +94,9 @@ export function imagesOf(downloaded: Record<string, DownloadedInfo>, sections: r
   const dataset = (id: string) => datasets.find((d) => d.id === id);
   for (const image of built.values()) {
     const section = sections.find((x) => x.datasetId === image.datasetId);
-    const items = image.ids.map((id) => section?.items.find((it) => it.id === id)).filter((it): it is StacItem => it !== undefined);
+    // A scene is looked up in the time steps first, then in the list of the section.
+    const known = [...(section?.groups.flatMap((g) => g.items) ?? []), ...(section?.items ?? [])];
+    const items = image.ids.map((id) => known.find((it) => it.id === id)).filter((it): it is StacItem => it !== undefined);
     image.date = viewDates(items);
     image.first = items.map(firstDay).filter((d): d is string => d !== null).sort()[0] ?? null;
     const values = new Set(items.map((it) => it.properties?.platform).filter((v): v is string => typeof v === 'string' && v !== ''));

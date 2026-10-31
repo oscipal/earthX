@@ -1,0 +1,236 @@
+// @vitest-environment jsdom
+//
+// NM4-53: the row of steps in the view of scenes — the dataset to choose, the arrows to step through its images, the
+// date and the satellite of the image that is shown; what is not possible is not there.
+
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { datasetsFrom } from '../datasets';
+import { useAppStore } from '../store';
+import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
+import ViewerControls from './ViewerControls';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+
+const base = (id: string, title: string): Collection =>
+  ({
+    id,
+    title,
+    'earthx:format': 'cog',
+    'earthx:capabilities': { roi: true, time_range: id === 's2', band_math: true, interpolation: true },
+    'earthx:default_render': { title: 'Standard', assets: ['visual'], rescale: [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+    'earthx:search_filters':
+      id === 's2'
+        ? [{ property: 'platform', kind: 'values', title: 'Satellite', group: 'Acquisition', description: 'The satellite.', oneOf: [{ const: 'sentinel-2a', title: 'Sentinel-2A' }, { const: 'sentinel-2b', title: 'Sentinel-2B' }] }]
+        : [],
+  }) as unknown as Collection;
+
+const scene = (id: string, collection: string, datetime: string | null, platform?: string): StacItem => ({
+  id,
+  collection,
+  bbox: [0, 0, 1, 1],
+  properties: { ...(datetime ? { datetime } : {}), ...(platform ? { platform } : {}) },
+  assets: {},
+});
+const info = (datasetId: string): DownloadedInfo => ({ datasetId, tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 });
+const group = (label: string, items: StacItem[]): TimeStepGroup => ({ key: [label], label, items });
+
+const A = scene('A', 's2', '2025-07-29T10:00:00Z', 'sentinel-2a');
+const B = scene('B', 's2', '2025-08-03T10:00:00Z', 'sentinel-2b');
+const C = scene('C', 's2', '2025-08-08T10:00:00Z', 'sentinel-2a');
+const D = scene('D', 'dem', null);
+const section = (datasetId: string, items: StacItem[], groups: TimeStepGroup[]) => ({
+  datasetId, items, groups, notes: [], groupingError: null, origin: 'search' as const, incomplete: false,
+});
+const S2_SECTION = section('s2', [A, B, C], [group('2025-08-08', [C]), group('2025-08-03', [B]), group('2025-07-29', [A])]);
+const DEM_SECTION = section('dem', [D], [group('dem', [D])]);
+
+let container: HTMLDivElement;
+let root: Root;
+
+function mount(downloaded: Record<string, DownloadedInfo>, sections = [S2_SECTION, DEM_SECTION], shownImage: string | null = null) {
+  act(() => {
+    useAppStore.setState({
+      datasets: datasetsFrom([base('s2', 'Sentinel-2 L2A'), base('dem', 'Copernicus DEM')]),
+      sections,
+      openSectionId: 's2',
+      datasetId: 's2',
+      items: sections[0].items,
+      groups: sections[0].groups,
+      focusMode: true,
+      cropToAoi: true,
+      downloaded,
+      shownImage,
+      showDownloaded: true,
+      pendingColormapName: '',
+      pendingVmin: '0',
+      pendingVmax: '255',
+      focusLoading: false,
+      pinLoading: false,
+      selectedIds: [],
+      dock: null,
+      resultsOnMap: true,
+    });
+    root.render(<ViewerControls />);
+  });
+}
+
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+  container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+const steps = () => container.querySelector('.vc-steps');
+const stepText = () => container.querySelector('.vc-step-text')?.textContent;
+const prev = () => container.querySelector('button[aria-label="Previous image"]') as HTMLButtonElement | null;
+const next = () => container.querySelector('button[aria-label="Next image"]') as HTMLButtonElement | null;
+const dataset = () => container.querySelector('select[aria-label="Dataset"]') as HTMLSelectElement | null;
+const title = () => container.querySelector('.vc-title')?.textContent;
+
+const THREE = { A: info('s2'), B: info('s2'), C: info('s2') };
+
+describe('what is not possible is not there', () => {
+  it('has no row for a view of one image', () => {
+    mount({ A: info('s2') });
+    expect(steps()).toBeNull();
+  });
+
+  it('has no row for several scenes of one time step', () => {
+    mount({ A: info('s2'), B: info('s2') }, [section('s2', [A, B], [group('same', [A, B])]), DEM_SECTION]);
+    expect(steps()).toBeNull();
+  });
+
+  it('has the arrows but no dataset to choose where the view holds one dataset', () => {
+    mount(THREE);
+    expect(steps()).not.toBeNull();
+    expect(dataset()).toBeNull();
+    expect(prev()).not.toBeNull();
+    expect(next()).not.toBeNull();
+  });
+
+  it('has the dataset to choose but no arrows where each dataset has one image', () => {
+    mount({ A: info('s2'), D: info('dem') });
+    expect(dataset()).not.toBeNull();
+    expect(prev()).toBeNull();
+    expect(next()).toBeNull();
+    expect(stepText()).toBe('2025-07-29 · S2A');
+  });
+
+  it('has the arrows of a dataset with several images and none for one with a single image', () => {
+    mount({ ...THREE, D: info('dem') });
+    expect(next()).not.toBeNull();
+    act(() => useAppStore.getState().chooseViewDataset('dem'));
+    expect(prev()).toBeNull();
+    expect(next()).toBeNull();
+    expect(stepText()).toBe('dem');
+  });
+});
+
+describe('the arrows', () => {
+  it('say the date and the satellite of the image shown, earliest first', () => {
+    mount(THREE);
+    expect(stepText()).toBe('2025-07-29 · S2A');
+  });
+
+  it('step to the next and the previous image', () => {
+    mount(THREE);
+    act(() => next()!.click());
+    expect(stepText()).toBe('2025-08-03 · S2B');
+    expect(title()).toContain('2025-08-03');
+    act(() => next()!.click());
+    expect(stepText()).toBe('2025-08-08 · S2A');
+    act(() => prev()!.click());
+    expect(stepText()).toBe('2025-08-03 · S2B');
+  });
+
+  it('are greyed out with the reason at the ends, and do nothing there', () => {
+    mount(THREE);
+    expect(prev()!.getAttribute('aria-disabled')).toBe('true');
+    expect(prev()!.title).toBe('This is the first image');
+    act(() => prev()!.click());
+    expect(stepText()).toBe('2025-07-29 · S2A');
+    act(() => useAppStore.getState().showImage(useAppStore.getState().shownImage ?? ''));
+    act(() => next()!.click());
+    act(() => next()!.click());
+    expect(next()!.getAttribute('aria-disabled')).toBe('true');
+    expect(next()!.title).toBe('This is the last image');
+    act(() => next()!.click());
+    expect(stepText()).toBe('2025-08-08 · S2A');
+  });
+
+  it('tell the step and the group in the tooltip of the date', () => {
+    mount(THREE);
+    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('Step 1 of 3 · 2025-07-29');
+  });
+
+  it('are reached with the keys when one of them has the focus, and not otherwise', () => {
+    mount(THREE);
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    expect(stepText()).toBe('2025-07-29 · S2A');
+    act(() => {
+      next()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    expect(stepText()).toBe('2025-08-03 · S2B');
+    act(() => {
+      next()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    });
+    expect(stepText()).toBe('2025-07-29 · S2A');
+    act(() => {
+      next()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    });
+    expect(stepText()).toBe('2025-07-29 · S2A');
+  });
+
+  it('leave "Hide image" as it is', () => {
+    mount(THREE);
+    act(() => useAppStore.setState({ showDownloaded: false }));
+    act(() => next()!.click());
+    expect(useAppStore.getState().showDownloaded).toBe(false);
+    expect(container.querySelector('.vc-eye.off')).not.toBeNull();
+  });
+});
+
+describe('the dataset', () => {
+  it('lists the datasets of the view in the order of the results, with the one shown selected', () => {
+    mount({ ...THREE, D: info('dem') });
+    expect([...dataset()!.options].map((o) => o.textContent)).toEqual(['Sentinel-2 L2A', 'Copernicus DEM']);
+    expect(dataset()!.value).toBe('s2');
+  });
+
+  it('shows the first image of the dataset that is chosen, and the head follows', () => {
+    mount({ ...THREE, D: info('dem') });
+    act(() => {
+      dataset()!.value = 'dem';
+      dataset()!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(useAppStore.getState().shownImage).toContain('dem');
+    expect(title()).toBe('Copernicus DEM · AOI crop');
+  });
+});
+
+describe('a satellite the registry does not name', () => {
+  it('is shown as the source gives it, and no satellite leaves no separator', () => {
+    const X = scene('X', 's2', '2025-09-01T10:00:00Z', 'landsat-9');
+    const Y = scene('Y', 's2', '2025-09-05T10:00:00Z');
+    mount({ X: info('s2'), Y: info('s2') }, [section('s2', [X, Y], [group('2025-09-05', [Y]), group('2025-09-01', [X])]), DEM_SECTION]);
+    expect(stepText()).toBe('2025-09-01 · landsat-9');
+    act(() => next()!.click());
+    expect(stepText()).toBe('2025-09-05');
+  });
+});
