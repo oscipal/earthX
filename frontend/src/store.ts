@@ -30,6 +30,7 @@ import {
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
+import { datesOfIds, dateOf, knownItems } from './layerDate';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
 import { isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
@@ -65,6 +66,7 @@ import {
   type FilterQueryByCollection,
 } from './searchFilters';
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
+import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, estimateIndexDownload, indexOfLayer, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
@@ -361,6 +363,8 @@ export interface DerivedLayer {
   // The scenes the picture was made from.
   itemIds: string[];
   cropToAoi: boolean;
+  // The acquisition date it shows; where it is left out, the scenes are looked up (NM4-65 part 3).
+  date?: string | null;
 }
 
 // A layer belongs to the dataset it was pinned from (F4): choosing it makes that
@@ -649,6 +653,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
     return;
   }
   const groups = sectionsForView(s).flatMap((section) => section.groups);
+  const known = knownItems(s);
   const batchId = nextBatchId();
   const layers = built.map(({ image, entries, overlays }, i): MapLayer => {
     const itemIds = entries.map(([id]) => id);
@@ -661,6 +666,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
       visible: true,
       opacity: 1,
       overlays: overlays ?? [],
+      ...dateOf(datesOfIds(itemIds, known)),
       restore: {
         focusMode: true,
         downloaded: Object.fromEntries(entries),
@@ -1550,12 +1556,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const activeGroup = s.groups[s.activeGroupIndex];
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
     const batchId = nextBatchId();
-    const makeLayer = (name: string, overlays: LayerOverlay[], restore: LayerRestore, salt: number): MapLayer => ({
+    const makeLayer = (name: string, overlays: LayerOverlay[], restore: LayerRestore, salt: number, date: string | null): MapLayer => ({
       id: `L${batchId}${salt}`,
       name,
       visible: true,
       opacity: 1,
       overlays,
+      ...dateOf(date),
       restore,
     });
 
@@ -1619,6 +1626,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datasetId: s.datasetId,
       },
       0,
+      viewDates(items),
     );
     set({ layers: [layer, ...s.layers], resultsAt: resultsAtAfterAdding(s.resultsAt, 1), notice: `Added "${name}" to layers.` });
   },
@@ -1632,6 +1640,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       opacity: 1,
       overlays: input.overlays,
       derived: input.derived,
+      ...dateOf(input.date === undefined ? datesOfIds(input.itemIds, knownItems(s)) : input.date),
       ...(input.note ? { note: input.note } : {}),
       ...(input.result ? { result: input.result } : {}),
       restore: {

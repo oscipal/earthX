@@ -128,6 +128,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     range: null,
     bandRanges: {},
     shownBand: null,
+    dates: null,
     archived: false,
     groupId: GROUP,
     batchId: null,
@@ -677,6 +678,18 @@ describe('the panel from a result', () => {
     await process();
     click(button('NDVI', dataGroup()));
     expect(output()).toEqual(['red']);
+  });
+
+  // NM4-65 part 3: the layer of the result shows the day of the scenes, read while the search still knows them.
+  it('keeps the day of the scenes it read for the new job, for the layer of its result', async () => {
+    await process();
+    click(button('＋ Band math'));
+    typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 2');
+    click(button('Review'));
+    await flush();
+    click(button('Start job'));
+    await flush();
+    expect(useProcessingStore.getState().jobs.find((j) => j.jobID === NEW_JOB)?.dates).toBe('2026-07-01');
   });
 
   it('sends one ordinary order with all the steps in order, and starts a new job', async () => {

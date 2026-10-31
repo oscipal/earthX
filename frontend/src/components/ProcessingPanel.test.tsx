@@ -1289,6 +1289,8 @@ describe('starting and following a job', () => {
           jobID: JOB,
           expires: expect.any(String),
           createdAt: expect.any(String),
+          // The day of the scenes of the order, for the layer of its result (NM4-65 part 3).
+          dates: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
           title: expect.stringMatching(/^Band math · Sentinel-2 L2A · \d{1,2} [A-Z][a-z]{2}( \d{4})?$/),
           order: expect.objectContaining({ recipe_version: 2 }),
         },
@@ -1499,6 +1501,7 @@ describe('a finished job row (K6)', () => {
       range: null,
       bandRanges: {},
       shownBand: null,
+    dates: null,
       archived: false,
       groupId: null,
       batchId: null,

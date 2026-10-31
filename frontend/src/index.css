@@ -2024,6 +2024,16 @@ input[type='date']:focus {
   margin: 0;
   accent-color: var(--accent);
 }
+/* The acquisition date of a layer (UTC, one day or a span; NM4-65): a small line of its own under the name. */
+.lm-date {
+  grid-column: 2 / -1;
+  padding-top: 1px;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* "Band" of a result with several: a line of its own under the row, from the name to the end. */
 .lm-band {
   grid-column: 2 / -1;

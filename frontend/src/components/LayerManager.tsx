@@ -198,6 +198,11 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
       <button type="button" className="lm-btn danger" data-col="remove" title="Remove layer" onClick={() => remove(l.id)}>
         ✕
       </button>
+      {l.date && (
+        <span className="lm-date" title="Acquisition date (UTC)">
+          {l.date}
+        </span>
+      )}
       {bands && bands.length > 1 && (
         <BandSelect
           label="Band"

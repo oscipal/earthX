@@ -584,7 +584,8 @@ describe('the title and the entry of a batch (K5, UI-01 §6.4, §6.5)', () => {
     expect(stored.batches).toEqual([{ id: batches[0].id, title: batches[0].title, createdAt: expect.any(String), refused: [] }]);
     expect(stored.jobs).toHaveLength(2);
     for (const job of stored.jobs) {
-      expect(Object.keys(job).sort()).toEqual(['batchId', 'createdAt', 'expires', 'jobID', 'order', 'part', 'title']);
+      // The day of the scenes is kept too, for the layer of the result (NM4-65 part 3).
+      expect(Object.keys(job).sort()).toEqual(['batchId', 'createdAt', 'dates', 'expires', 'jobID', 'order', 'part', 'title']);
       expect(job.batchId).toBe(batches[0].id);
       expect(job.order.steps).toHaveLength(1);
     }

@@ -167,6 +167,7 @@ import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
+import { datesOfIds, knownItems } from './layerDate';
 import type { MapLayer } from './layers';
 import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
 import type { IndexPreset } from './indexPresets';
@@ -1280,6 +1281,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       range: null,
       bandRanges: {},
       shownBand: null,
+      dates: null,
       order: null,
       deletedUntil: null,
       serverDeleted: false,
@@ -1287,6 +1289,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       superseded: false,
       ...job,
     };
+    // The day of the scenes is read while they are known: the layer of the result shows it long after the search has moved on.
+    if (job.dates === undefined && job.order) blank.dates = datesOfOrder(job.order);
     blank.titleDefault = job.titleDefault ?? job.title ?? null;
     const entry = jobEntry(blank, status, Date.now());
     set((s) => {
@@ -1629,6 +1633,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         ],
         itemIds: [],
         cropToAoi: false,
+        date: job.dates,
       });
     },
     // The order behind the details is read from the operators of the dataset, as `openProcessing` does.
@@ -2154,6 +2159,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             range: job.range,
             bandRanges: job.bandRanges,
             shownBand: job.shownBand,
+            dates: job.dates,
             order: job.order,
           },
           jobID,
@@ -2270,6 +2276,12 @@ function previewReadOf(view: OrderView, plan: Extract<PreviewPlan, { state: 'rea
     pick,
     trueColor: view.trueColor,
   });
+}
+
+// The day of the scenes an order reads, among the scenes the page knows now (`layerDate.ts`); `null` where they are not known
+// or have no instant.
+function datesOfOrder(order: Order): string | null {
+  return datesOfIds(order.inputs.flatMap((input) => input.groups.flat()), knownItems(useAppStore.getState()));
 }
 
 // What a job keeps of the preview it was started from (NM4-43e PR 2): the band the map showed, which the layer of a result of
