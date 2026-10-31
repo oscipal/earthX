@@ -102,6 +102,12 @@ Plan, Messungen und Optionen: `docs/plans/ds/ds-03-wolken-in-aoi.md` §6. Messsk
 - **Anfrage:** Bei aktivem Schalter steht der Bereich unter `earthx:aoi_cloud_cover` statt unter dem Filter der Szene; bei einer AOI mit mehr als 1 000 Positionen geht `bbox` und die AOI als `earthx:aoi` im Body. Der Datums-Fallback läuft dann nicht, die Coverage bekommt den Bereich nicht.
 - **Ablauf:** Das Frontend fragt mit der Marke weiter, zeigt „n found / m checked“ nach jeder Antwort, kann mit „Stop“ abbrechen und lässt Gefundenes und Marke stehen. Zeile und Gruppe zeigen „☁ n %“, die Sortierung „Clouds in AOI“ ordnet nur die Anzeige.
 - **Entschieden (Otto, 31.10.2026, zu #265):** Der Hinweis zur Grenze nennt kein Datum. Eine AOI mit mehr als 20 000 Positionen sperrt den Schalter mit Grund im Tooltip (das `400` des Servers bleibt als Sicherung). Ein Lauf, den „Stop“ vor dem ersten Treffer beendet, zeigt die Liste mit „0 found / m checked“ und „Load more“.
+- **Review Otto (31.10.2026, zu #265), ersetzt für diese Punkte die Zeilen davor:**
+  - Entfernt: Sortierung „Clouds in AOI“ und „☁ n %“ in Zeile und Gruppe.
+  - Der Schalter heißt „Filter within AOI only“, steht ganz oben im Popup und gilt je Datensatz für alle flächenabhängigen Filter. Die Registry nennt je Filter die Messung (`SearchFilter.within_aoi`: `AoiMeasure | None`, veröffentlicht als Eigenschaftsname oder `null`); das Frontend sendet den Bereich unter diesem Namen und kennt keinen Datensatz.
+  - Neue Messung `earthx:aoi_nodata`: Anteil der AOI ohne gültiges Pixel aus SCL-Klasse 0 (`nodata` der Datei) derselben Lesung, `100 − data_percent`; Teile der AOI außerhalb der Kachel zählen als ohne Daten, eine Szene ohne gültiges Pixel hat 100. Kein zusätzliches Lesen, Cache-Schlüssel unverändert. Mehrere Bedingungen zugleich gelten als UND; die Seitenmarke nimmt alle Bereiche in ihren Hash (Marken von vorher werden mit `400` abgelehnt). `/coverage` weist beide Eigenschaften weiter ab, die Coverage-Karte zeigt mit dem Schalter nur die Filter ohne Flächenbezug.
+  - Gemessen: 0,41 µs je Szene für die Ableitung, rund 0,6 µs mehr je Szene für die zweite Bedingung, gleiche Zahl Lesungen (300 bei 300 Szenen, mit einem, beiden oder nur dem No-data-Filter) gegen rund 20 ms je Lesung mit Zählung.
+  - Gleich streng wie der Wolkenanteil: Beide Messungen verlangen eine Klassifizierung mit nicht leeren `cloud_classes` (COG). Eine Lockerung wäre eine eigene Entscheidung.
 
 ## 7. Oberfläche (DS-02c, 30.10.2026)
 
