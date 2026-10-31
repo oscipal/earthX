@@ -220,6 +220,9 @@ export interface Collection {
   // The filters the search offers for this dataset (DS-02), in the words of STAC queryables; read, and checked
   // entry by entry, by `searchFilters.ts`. Absent on a backend before DS-02a.
   'earthx:search_filters'?: unknown[] | null;
+  // The indices the panel offers as one click each (NM4-14), in the words of the registry; read, and checked entry by
+  // entry, by `indexPresets.ts`. Absent on a backend before NM4-14a.
+  'earthx:index_presets'?: unknown[] | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).
@@ -234,6 +237,9 @@ export interface TimeStepGroup {
 // names follow TiTiler's own query parameters (`bidx`, `colormap_name`, …) so
 // `buildTileUrl` (mapLayers.ts) can pass them straight through.
 export interface AppliedRender {
+  // The name of the index preset of the dataset the view draws instead of a band (NM4-14b, `viewIndex.ts`); the range and
+  // colormap below are the ones the index is drawn with.
+  index?: string;
   // The band of a result by its place from 1; several, comma-separated, for a colour picture (`3,2,1`).
   bidx?: string;
   expression?: string;

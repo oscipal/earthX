@@ -185,6 +185,11 @@ function tokens(text: string): Token[] | null {
   return found;
 }
 
+// The tokens of an expression as text, whitespace left out; `null` where the text has something that is no token.
+export function expressionTokens(text: string): string[] | null {
+  return tokens(text)?.map((token) => token.text) ?? null;
+}
+
 const BINARY = new Set(['+', '-', '*', '/', '**', '<', '<=', '>', '>=', '==', '!=', '&', '|']);
 const UNARY = new Set(['+', '-', '~']);
 

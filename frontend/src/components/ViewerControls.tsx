@@ -12,9 +12,11 @@ import { useMemo } from 'react';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { showsColormap } from '../datasets';
+import { indexPresetsOf, presetTip } from '../indexPresets';
 import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
+import { indexBlockOf, INDEX_TIP, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { viewKind } from '../viewKind';
 import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
@@ -67,6 +69,12 @@ export default function ViewerControls() {
   const shownKey = useAppStore((s) => s.shownImage);
   const stepImage = useAppStore((s) => s.stepImage);
   const chooseViewDataset = useAppStore((s) => s.chooseViewDataset);
+  const chooseViewIndex = useAppStore((s) => s.chooseViewIndex);
+  const appliedRender = useAppStore((s) => s.appliedRender);
+  const viewOfLayer = useAppStore((s) => s.viewOfLayer);
+  const pendingIndex = useAppStore((s) => s.pendingIndex);
+  const mosaics = useAppStore((s) => s.mosaics);
+  const mapZoom = useAppStore((s) => s.mapZoom);
   const images = useMemo(
     () => imagesOf(downloaded, sectionsForView({ sections, openSectionId, datasetId, items, groups }), datasets),
     [downloaded, sections, openSectionId, datasetId, items, groups, datasets],
@@ -80,7 +88,26 @@ export default function ViewerControls() {
   const here = shown ? imagesOfDataset(images, shown.datasetId) : [];
   // An image of three bands has no colormap field.
   const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
-  const colormap = shownDataset ? showsColormap(shownDataset.collection) : true;
+  // The index of the dataset the image shows in place of a band (NM4-14b): a dataset without presets has no dropdown.
+  const presets = indexPresetsOf(shownDataset?.collection);
+  // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
+  const chosen = viewIndexOf({ index: pendingIndex }, shownDataset?.collection);
+  const index = viewIndexOf(appliedRender, shownDataset?.collection);
+  // The view of a layer of the layer manager has no dropdown: the index of a layer is the one it was added with (Otto, 1.11.2026).
+  const showIndex = presets.length > 0 && !viewOfLayer;
+  const indexBlock =
+    index && shown
+      ? indexBlockOf({
+          datasetId: shown.datasetId,
+          entries: shown.ids.flatMap((id) => (downloaded[id] ? [[id, downloaded[id]] as [string, (typeof downloaded)[string]]] : [])),
+          groups: sectionsForView({ sections, openSectionId, datasetId, items, groups }).flatMap((section) => section.groups),
+          mosaics,
+          preset: index,
+          mapZoom,
+        })
+      : null;
+  // An index is drawn with a colormap whatever the dataset's own picture is.
+  const colormap = chosen || !shownDataset ? true : showsColormap(shownDataset.collection);
   const at = shown ? here.indexOf(shown) : -1;
   const datasetIds = datasetIdsOf(images);
   // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
@@ -153,7 +180,20 @@ export default function ViewerControls() {
         </button>
       </div>
 
-      <div className="vc-render">
+      <div className={`vc-render${showIndex ? ' has-index' : ''}`}>
+        {showIndex && (
+          <label className="vc-field" title={chosen ? presetTip(chosen) : INDEX_TIP}>
+            <span>Index</span>
+            <select value={chosen?.name ?? ''} onChange={(e) => chooseViewIndex(e.target.value || null)}>
+              <option value="">— none —</option>
+              {presets.map((preset) => (
+                <option key={preset.name} value={preset.name} title={presetTip(preset)}>
+                  {preset.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="vc-field">
           <span>Colormap</span>
           {colormap ? (
@@ -230,6 +270,12 @@ export default function ViewerControls() {
           </button>
         </div>
       </div>
+
+      {index && indexBlock && (
+        <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>
+          {indexNote(indexBlock, index.name)}
+        </p>
+      )}
 
       <div className={`vc-actions${images.length > 1 ? ' has-all' : ''}`}>
         <button

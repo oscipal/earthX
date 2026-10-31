@@ -29,6 +29,7 @@ import {
   mosaicRequestBytes,
 } from './mosaic';
 import { canonicalJson, type Order } from './processing';
+import { indexPresetsOf, presetFor, presetRange } from './indexPresets';
 import { assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
 import {
   bandsOf,
@@ -340,6 +341,9 @@ export interface PreviewSpec {
   // Whether the band shown is a Band math result (with no band chosen: whether a Band math step is among the steps):
   // what the values of an index are judged by.
   expression: boolean;
+  // The range and colormap of the preset (NM4-14) whose expression the band shown has, in the presets of the dataset; `null`
+  // for any other band. It goes before the measure: an index is drawn alike wherever it is made.
+  preset: PreviewRange | null;
   // The passes drawn as a mosaic from their first level up, and the scenes: those below a mosaic, those of a pass
   // that is drawn scene by scene.
   mosaics: PreviewMosaic[];
@@ -506,6 +510,7 @@ export function previewSpec(args: {
     sceneMeasure,
     areaOrder,
     expression: plan.steps.some(({ step }) => isBandMath(step) && (band === null || resultNameOf(step) === band)),
+    preset: presetOfBand(dataset, plan, band),
     mosaics,
     scenes,
     perScene: jobs.some((unit) => unit.length >= MIN_MOSAIC_SCENES && !mosaicked.has(unit[0].id)),
@@ -514,6 +519,14 @@ export function previewSpec(args: {
     clipToAoi,
     ...(clipAoi ? { clipAoi } : {}),
   };
+}
+
+// The look of the preset whose expression the band `band` has, if it is a result of a Band math step of the chain.
+function presetOfBand(dataset: DatasetOption, plan: Extract<PreviewPlan, { state: 'ready' }>, band: string | null): PreviewRange | null {
+  if (band === null || band === RGB) return null;
+  const made = plan.steps.find(({ step }) => isBandMath(step) && resultNameOf(step) === band);
+  const preset = presetFor(indexPresetsOf(dataset.collection), made?.params.expression as string | undefined);
+  return preset ? presetRange(preset) : null;
 }
 
 // --- the measure of a preview (M4-19c) ---------------------------------------

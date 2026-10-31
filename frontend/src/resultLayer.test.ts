@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
+import { indexPresetsOf } from './indexPresets';
 import { RGB } from './processingBands';
 import { DEFAULT_RANGE } from './processingPreview';
 import { parseTileJson } from './processing';
@@ -13,6 +15,7 @@ import {
   isResultExpired,
   MIN_REMAINING_MS,
   ownRangeOf,
+  presetOfResultBand,
   rangeOfRender,
   rangeOfTileUrl,
   renderOfRange,
@@ -563,6 +566,82 @@ describe('the colour picture of a result (NM4-64)', () => {
       const one = bandTileUrl(url, 1, { rescale: '0,5', colormapName: 'terrain' });
       expect(params(one).getAll('bidx')).toEqual(['2']);
       expect(params(one).get('colormap_name')).toBe('terrain');
+    });
+  });
+});
+
+describe('the preset of an index (NM4-14b, D2)', () => {
+  const presets = indexPresetsOf({ id: 'sentinel-2-c1-l2a', 'earthx:index_presets': SENTINEL_2_PRESETS } as never);
+  const NDWI = { vmin: '-1', vmax: '1', colormap: 'rdbu' };
+  const wide = { ...ndvi, percentile_2: -2.5, percentile_98: 3.5 };
+
+  it('draws a band with the expression of a preset with the range and colormap of the preset, before the rule of an index', () => {
+    // The values lie in −1…1: the rule of an index would say rdylgn.
+    expect(resultRender('float32', DEFAULT_RANGE, stats(ndvi, true), null, false, NDWI)).toEqual({ rescale: '-1,1', colormapName: 'rdbu' });
+  });
+
+  it('draws it so whatever the values are: the index of a scene with snow beyond −1…1 keeps its range', () => {
+    expect(resultRender('float32', DEFAULT_RANGE, stats(wide, true), null, false, NDWI)).toEqual({ rescale: '-1,1', colormapName: 'rdbu' });
+  });
+
+  it('lets the range of the user go first', () => {
+    const own = { vmin: '0', vmax: '0.5', colormap: 'magma' };
+    expect(resultRender('float32', DEFAULT_RANGE, stats(ndvi, true), own, false, NDWI)).toEqual({ rescale: '0,0.5', colormapName: 'magma' });
+  });
+
+  it('draws an integer result as it is, a preset notwithstanding', () => {
+    expect(resultRender('uint8', DEFAULT_RANGE, stats(ndvi, true), null, false, NDWI)).toEqual({});
+  });
+
+  it('draws any other band by the rule it had: the index rule, then the 2–98 %', () => {
+    expect(resultRender('float32', DEFAULT_RANGE, stats(ndvi, true), null, false, null)).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+    expect(resultRender('float32', DEFAULT_RANGE, stats(wide, true), null, false, null)).toEqual({ rescale: '-2.5,3.5', colormapName: 'viridis' });
+  });
+
+  it('takes the colormap away from a colour picture, whatever the preset says', () => {
+    expect(resultRender('float32', DEFAULT_RANGE, stats(ndvi), null, true, NDWI)).toEqual({ rescale: '-1,1' });
+  });
+
+  it('gives "Auto" of a layer the look of the preset, and the rule when the band has none', () => {
+    expect(defaultRange({ dataType: 'float32', stats: stats(wide, true), preset: NDWI }, DEFAULT_RANGE)).toEqual(NDWI);
+    expect(defaultRange({ dataType: 'float32', stats: stats(wide, true), preset: null }, DEFAULT_RANGE)).toEqual({ vmin: '-2.5', vmax: '3.5', colormap: 'viridis' });
+    expect(defaultRange({ dataType: 'float32', stats: stats(wide, true) }, DEFAULT_RANGE)).toEqual({ vmin: '-2.5', vmax: '3.5', colormap: 'viridis' });
+  });
+
+  describe('the expression of a band of a result', () => {
+    const doc = (...names: string[]) => ({ bands: names.map((name) => ({ name, statistics: ndvi })) });
+    const step = (name: string, expression: string) => ({ op: 'band_math', params: { name, expression } });
+
+    it('is read for every band from the order of the job', () => {
+      const read = resultBands(doc('NDVI', 'water', 'red'), {
+        steps: [step('NDVI', '(nir-red)/(nir+red)'), step('water', '(green - nir) / (green + nir)')],
+      });
+      expect(read.map((b) => b.expression ?? null)).toEqual(['(nir-red)/(nir+red)', '(green - nir) / (green + nir)', null]);
+      expect(read.map((b) => presetOfResultBand(b, presets))).toEqual([
+        { vmin: '-1', vmax: '1', colormap: 'rdylgn' },
+        NDWI,
+        null,
+      ]);
+    });
+
+    it('is the last step the results name, for a band when the order is not there (a result from a file or an older shelf)', () => {
+      const properties = {
+        ...doc('NDVI', 'red'),
+        'processing:expression': { format: 'numexpr', expression: '(nir - red) / (nir + red)', name: 'NDVI' },
+      };
+      expect(resultBands(properties, null).map((b) => b.expression ?? null)).toEqual(['(nir - red) / (nir + red)', null]);
+    });
+
+    it('is nothing where the order has no Band math step, or the results name none', () => {
+      expect(resultBands(doc('red'), { steps: [{ op: 'normalize', params: { bands: 'red' } }] })[0].expression ?? null).toBeNull();
+      expect(resultBands(doc('red'), null)[0].expression ?? null).toBeNull();
+    });
+
+    it('never makes a preset of an expression of another dataset or of a typed one that differs', () => {
+      const typed = resultBands(doc('X'), { steps: [step('X', '(red - nir) / (red + nir)')] })[0];
+      expect(presetOfResultBand(typed, presets)).toBeNull();
+      expect(presetOfResultBand(typed, [])).toBeNull();
+      expect(presetOfResultBand(undefined, presets)).toBeNull();
     });
   });
 });

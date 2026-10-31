@@ -66,6 +66,8 @@ import {
 } from './searchFilters';
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
 import { layerOfView, sameRender } from './viewLayer';
+import { downloadIndexCrop, estimateIndexDownload, indexOfLayer, type IndexNote } from './indexDownload';
+import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -406,6 +408,7 @@ const NO_ANSWER_FILTERS: SectionSearchAnswer & { ignoredFilters: string[]; incom
 const LEAVE_FOCUS = {
   focusMode: false,
   viewLayerId: null,
+  viewOfLayer: false,
   resultViewLayerId: null,
   cropToAoi: false,
   viewAoi: null,
@@ -417,6 +420,7 @@ const LEAVE_FOCUS = {
   pendingColormapName: '',
   pendingVmin: '',
   pendingVmax: '',
+  pendingIndex: '',
 } as const;
 
 // The list-facing state an open section stands for: its scenes and groups, first
@@ -533,10 +537,13 @@ function overlaysOfEntries(
   const overlays = passesOf(entries, groups).map((pass) => {
     const datasetId = pass[0][1].datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
-    return overlaysOfPass(datasetId, pass, s.mosaics, look, clip, underlaysOf(pass, items, dataset, clip));
+    return overlaysOfPass(datasetId, pass, s.mosaics, look, clip, underlaysOf(pass, items, dataset, clip), viewIndexOf(look, dataset?.collection));
   });
   return overlays.some((o) => o === null) ? null : stackLikeView(overlays).flatMap((o) => o ?? []);
 }
+
+// The computing of the index of a download, which closing the dialog stops (`indexDownload.ts`).
+let indexDownloadAbort: AbortController | null = null;
 
 // What a pin is made from, to tell on arrival whether the view is still the one it was asked in.
 const pinKey = (s: AppState) =>
@@ -622,6 +629,18 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
   if (picked.length === 0) {
     set({ error: 'Nothing to add — search and pick a time step first.' });
     return;
+  }
+  // An index the tile route cannot take would be a layer with nothing in it: it is not pinned (zooming mends nothing here; the
+  // layer draws from the zoom the scenes start at, whatever the map shows now).
+  const groupsOfView = sectionsForView(s).flatMap((section) => section.groups);
+  for (const { image, entries } of picked) {
+    const look = lookOfImage(s, image, shown);
+    const preset = viewIndexOf(look, s.datasets.find((d) => d.id === image.datasetId)?.collection);
+    const block = preset && indexBlockOf({ datasetId: image.datasetId, entries, groups: groupsOfView, mosaics: s.mosaics, preset, mapZoom: Infinity });
+    if (preset && block) {
+      set({ error: `${indexNote(block, preset.name)}. Start a job in Processing for the whole scenes.` });
+      return;
+    }
   }
   const built = picked.map((pick) => ({ ...pick, overlays: overlaysOfEntries(s, pick.entries, clip, lookOfImage(s, pick.image, shown)) }));
   const waiting = built.filter((b) => b.overlays === null);
@@ -1040,6 +1059,9 @@ export interface AppState {
   // the view still shows exactly what it pinned (`viewLayer.ts::viewLayerOf`), that
   // layer draws the picture, at its place in the list and with its eye.
   viewLayerId: string | null;
+  // The view was opened from a layer of the layer manager, not made by the search: the index of such a layer is the one it was added
+  // with and is not chosen again there (NM4-14b, Otto 1.11.2026).
+  viewOfLayer: boolean;
   // The layer of a job's result whose range and colormap the bottom of the map shows (UI-01 §6.11):
   // `selectLayer` sets it for a result layer. The results list is folded away meanwhile, as in the
   // full-resolution view, which this is not (`focusMode` stays off).
@@ -1086,6 +1108,8 @@ export interface AppState {
   pendingColormapName: string; // '' = none
   pendingVmin: string;
   pendingVmax: string;
+  // The index the fields stand for, drawn once "Apply" is pressed (NM4-14b); '' = none.
+  pendingIndex: string;
 
   // --- data ---
   config: { point_buffer_deg: number } | null; // no server config endpoint any more; the client default (0.05) applies
@@ -1208,6 +1232,10 @@ export interface AppState {
   closeDownloadDialog: () => void;
   setDownloadResolution: (factor: ResolutionFactor) => void;
   confirmDownload: () => Promise<void>;
+  // How far the download of an index is (NM4-14b): `null` for any other download.
+  downloadStatus: string | null;
+  // What the dialog says of the download of an index: the estimate, or the limit that stops it (NM4-14b); `null` for any other.
+  downloadIndexNote: IndexNote | null;
   enterFocus: (cropToAoi: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
   addAllToLayers: () => void;
@@ -1218,6 +1246,9 @@ export interface AppState {
   showImage: (key: string) => void;
   stepImage: (delta: -1 | 1) => void;
   chooseViewDataset: (datasetId: string) => void;
+  // Puts an index of the dataset the image shows into the fields, with its range and colormap (NM4-14b); `null` puts the standard look of
+  // the dataset there. Nothing is drawn until "Apply".
+  chooseViewIndex: (name: string | null) => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
@@ -1297,6 +1328,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   layers: [],
   resultsAt: 0,
   viewLayerId: null,
+  viewOfLayer: false,
   resultViewLayerId: null,
   downloadDialogLayerId: null,
   downloadSelection: false,
@@ -1311,6 +1343,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingColormapName: '',
   pendingVmin: '',
   pendingVmax: '',
+  pendingIndex: '',
 
   config: null,
   datasets: [],
@@ -1343,6 +1376,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   searching: false,
   downloading: false,
+  downloadStatus: null,
+  downloadIndexNote: null,
   playing: false,
   shownGroupIndex: null,
   revealNotBefore: 0,
@@ -1744,6 +1779,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       viewLooks: {},
       savedLooks: {},
       viewLayerId: id,
+      viewOfLayer: true,
       focusLoading: true,
     });
     void get().loadMosaics().finally(() => set({ focusLoading: false }));
@@ -1772,6 +1808,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!layer) return;
     const outcome = decideDownloadOutcomeForLayer(layer, s.datasets);
     set({ downloadOutcome: outcome });
+    if (outcome === 'crop' && indexOfLayer(layer, s.datasets)) {
+      // What the job of an index will cost, asked as "Review" asks it; a limit that applies stops the download here, with its reason.
+      const controller = new AbortController();
+      indexDownloadAbort = controller;
+      set({ downloadIndexNote: { state: 'estimating' } });
+      const note = await estimateIndexDownload({ layer, datasets: s.datasets, signal: controller.signal });
+      if (!controller.signal.aborted && get().downloadDialogLayerId === id) set({ downloadIndexNote: note });
+      return;
+    }
     if (outcome !== 'originals') return;
     const datasetId = layer.restore.datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
@@ -1863,7 +1908,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
     });
   },
-  closeDownloadDialog: () =>
+  closeDownloadDialog: () => {
+    // Closing the dialog stops the computing of an index (what it placed is dismissed).
+    indexDownloadAbort?.abort();
     set({
       downloadDialogLayerId: null,
       downloadSelection: false,
@@ -1872,7 +1919,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadPasses: null,
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
-    }),
+      downloadIndexNote: null,
+      downloadStatus: null,
+    });
+  },
   setDownloadResolution: (factor) => set({ downloadResolution: factor, downloadExportOffer: null }),
 
   // Download the AOI crop for whatever the dialog is open for (M2-06's
@@ -1895,6 +1945,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       : (layer?.name ?? '');
     if (!req) {
       set({ downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null });
+      return;
+    }
+    // A layer that shows an index is downloaded as that index, computed as a job would, with no job in the list (NM4-14b).
+    if (layer && indexOfLayer(layer, s.datasets)) {
+      // Only what the estimate let through (or a try that failed, which may be tried again).
+      const note = s.downloadIndexNote;
+      if (note?.state !== 'ready' && note?.state !== 'failed') return;
+      const controller = new AbortController();
+      indexDownloadAbort = controller;
+      set({ downloading: true, error: null, downloadExportOffer: null, downloadStatus: 'Computing…' });
+      const problem = await downloadIndexCrop({
+        layer,
+        datasets: s.datasets,
+        signal: controller.signal,
+        onStatus: (text) => set({ downloadStatus: text }),
+      });
+      if (indexDownloadAbort === controller) indexDownloadAbort = null;
+      if (controller.signal.aborted) {
+        set({ downloading: false, downloadStatus: null });
+      } else if (problem) {
+        // The reason stays in the dialog, which may try again.
+        set({ downloading: false, downloadStatus: null, downloadIndexNote: { state: 'failed', ...problem } });
+      } else {
+        set({ downloading: false, downloadStatus: null, downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null, notice: `Downloaded "${name}".` });
+      }
       return;
     }
     set({ downloading: true, error: null, downloadExportOffer: null });
@@ -2020,6 +2095,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       ...(note ? { notice: note } : {}),
       focusMode: true,
+      viewOfLayer: false,
       resultViewLayerId: null,
       cropToAoi,
       // The view keeps the area it is opened with.
@@ -2083,6 +2159,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       const first = images.find((image) => image.datasetId === datasetId);
       return first && s.focusMode && first.key !== shown?.key ? moveToImage(s, first, shown) : {};
     }),
+  chooseViewIndex: (name) =>
+    set((s) => {
+      const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+      // A layer keeps the index it was added with: it is not chosen again from the layer manager.
+      if (!shown || !s.focusMode || s.viewOfLayer) return {};
+      const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
+      // Without an index the image goes back to what the dataset shows: the look saved for it ("Apply to all") unless that
+      // names an index too, else the standard one.
+      const saved = s.savedLooks[shown.datasetId];
+      const plain = saved && !saved.index ? saved : defaultLookOf(s, shown.datasetId);
+      const preset = name === null ? null : viewIndexOf({ index: name }, collection);
+      if (name !== null && !preset) return {};
+      // Only the fields change: the map draws it once "Apply" is pressed, like the colormap and the range.
+      return pendingFieldsOf(preset ? indexLookOf(preset) : plain);
+    }),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
@@ -2130,9 +2221,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const itemId = shown?.ids[0] ?? Object.keys(s.downloaded)[0];
     const info = itemId === undefined ? undefined : s.downloaded[itemId];
     if (!info) return;
+    // The index in the fields is measured as it will be drawn: the tile route with the same step, not the asset of the scene.
+    const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
     set({ focusLoading: true });
     try {
-      const stats = await api.fetchStatistics(info.datasetId, itemId, info.asset);
+      const stats = index ? await api.fetchStatisticsAt(indexStatisticsUrl(info.datasetId, itemId!, index)) : await api.fetchStatistics(info.datasetId, itemId!, info.asset);
       const range = autoRescale(stats);
       if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
     } catch (e) {
