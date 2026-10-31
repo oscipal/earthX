@@ -168,6 +168,15 @@ describe('when the ZIP cannot be finished', () => {
     expect(events).toEqual(['error size']);
   });
 
+  it('a body shorter or longer than the size says fails, also where the source announces no length at all', async () => {
+    for (const actual of [4999, 5001]) {
+      const noHeader = vi.fn(async () => new Response(body(bytesOf(actual, 1)))) as unknown as typeof fetch;
+      const { real, events } = deps(noHeader);
+      await expect(bodyOf(zipResponse({ ...JOB, files: [JOB.files[0]] }, real))).rejects.toThrow();
+      expect(events).toEqual(['error size']);
+    }
+  });
+
   it('a connection that breaks is told as network', async () => {
     const broken = vi.fn(async () => {
       throw new TypeError('Failed to fetch');

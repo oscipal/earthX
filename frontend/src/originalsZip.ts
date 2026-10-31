@@ -64,15 +64,23 @@ async function* entriesOf(job: ZipJob, deps: ZipDeps, now: Date) {
     // The length of the ZIP was announced from these sizes; a file of another length would end as a broken download.
     const announced = response.headers.get('content-length');
     if (announced !== null && Number(announced) !== file.size) throw new ZipError('size');
+    // The bytes that really come are counted too: a source without `Content-Length`, or a size that has gone stale,
+    // would otherwise end as a ZIP of another length than announced, and still be told as done.
+    let fileBytes = 0;
     const counted = response.body.pipeThrough(
       new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
+          fileBytes += chunk.byteLength;
+          if (fileBytes > file.size) throw new ZipError('size');
           loaded += chunk.byteLength;
           if (Date.now() - reported >= PROGRESS_STEP_MS) {
             reported = Date.now();
             deps.onProgress(loaded);
           }
           controller.enqueue(chunk);
+        },
+        flush() {
+          if (fileBytes !== file.size) throw new ZipError('size');
         },
       }),
     );

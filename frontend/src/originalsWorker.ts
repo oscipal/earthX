@@ -18,6 +18,7 @@ interface WorkerFetch {
   respondWith(response: Response | Promise<Response>): void;
 }
 interface WorkerScope {
+  location: { origin: string };
   addEventListener(type: 'install', listener: () => void): void;
   addEventListener(type: 'activate', listener: (event: WorkerEvent) => void): void;
   addEventListener(type: 'message', listener: (event: WorkerMessage) => void): void;
@@ -47,13 +48,17 @@ scope.addEventListener('message', (event) => {
   const abort = new AbortController();
   pending.set(command.id, { job: command.job, port, abort });
   port.onmessage = (message: MessageEvent<ZipCommand>) => {
-    if (message.data.type === 'cancel') abort.abort();
+    if (message.data.type !== 'cancel') return;
+    // A job that is cancelled before the browser asks for it is dropped; a late request for it finds nothing.
+    pending.delete(command.id);
+    abort.abort();
   };
   port.postMessage({ type: 'ready' } satisfies ZipReply);
 });
 
 scope.addEventListener('fetch', (event) => {
-  const match = DOWNLOAD_PATH.exec(new URL(event.request.url).pathname);
+  const url = new URL(event.request.url);
+  const match = url.origin === scope.location.origin ? DOWNLOAD_PATH.exec(url.pathname) : null;
   if (!match) return;
   const entry = pending.get(match[1]);
   if (!entry) {
