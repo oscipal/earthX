@@ -1,7 +1,8 @@
 // Browser check of the crop as one object (NM4-06), in a real browser with made-up answers of the platform:
 //   1. ⚙ at a layer merged and cut to its AOI: the panel has no "Run as" and no choice of the area (a lock says "AOI only");
 //      "Review" and "Start job" send one order, the scenes of the layer on its AOI.
-//   2. The same for a layer of scenes of several passes: the panel says that a job takes one pass, and nothing can be started.
+//   2. A layer of scenes of several passes: a small choice "This pass only" (the pass in view) or "All passes (n jobs)", no
+//      "Run as"; one order for the pass in view, or one for every pass on the same AOI.
 //   3. A layer that is not cut to its AOI keeps "Run as" and the choice of the area.
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
 //
@@ -47,9 +48,9 @@ async function open(browser, theme, viewport) {
 }
 
 // Scenes A and B of one day, C of another; one layer over `ids`, cut to its AOI or not.
-async function setUp(page, ids, crop) {
+async function setUp(page, ids, crop, selected = ids) {
   await page.evaluate(
-    async ({ ids, crop }) => {
+    async ({ ids, crop, selected }) => {
       const { useAppStore } = await import('/src/store.ts');
       const box = (x, y) => ({ type: 'Polygon', coordinates: [[[x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1], [x, y]]] });
       const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
@@ -73,13 +74,13 @@ async function setUp(page, ids, crop) {
         layers: [{
           id: 'L1', name: 'Crop', visible: true, opacity: 1, overlays: [],
           restore: {
-            focusMode: true, downloaded: {}, appliedRender: {}, activeGroupIndex: 0, selectedIds: ids, itemIds: ids, groupItemIds: [ids],
+            focusMode: true, downloaded: {}, appliedRender: {}, activeGroupIndex: 0, selectedIds: selected, itemIds: ids, groupItemIds: [ids],
             aoi: crop ? aoi : null, cropToAoi: crop, datasetId: 'sentinel-2-c1-l2a',
           },
         }],
       });
     },
-    { ids, crop },
+    { ids, crop, selected },
   );
   await page.waitForSelector('.layer-row [data-col="process"]', { timeout: 10000 });
 }
@@ -125,23 +126,38 @@ async function check(browser, theme, viewport) {
     await context.close();
   }
 
-  // 2. A crop of two passes: the panel says why there is nothing to start.
+  // 2. A crop of two passes: the pass in view, or every pass.
   {
-    const { context, page } = await open(browser, theme, viewport);
-    await setUp(page, ['S2B_A', 'S2B_C'], true);
+    const { context, page, posted } = await open(browser, theme, viewport);
+    await setUp(page, ['S2B_A', 'S2B_B', 'S2B_C'], true, ['S2B_C']);
     await page.locator('.layer-row [data-col="process"]').click();
-    await page.waitForSelector('.processing-panel', { timeout: 10000 });
+    await page.waitForSelector('.processing-panel [aria-label="Passes"]', { timeout: 10000 });
     const panel = page.locator('.processing-panel');
-    await page.waitForSelector('.processing-panel .hint-text.error', { timeout: 10000 });
-    if (!(await panel.textContent()).includes('This crop covers more than one pass')) problems.push('the panel does not say why for two passes');
-    const text = panel.locator('.hint-text.error', { hasText: 'This crop covers more than one pass' });
-    const box = await text.boundingBox();
+    const choices = await panel.locator('[aria-label="Passes"] button').allTextContents();
+    if (choices.join() !== 'This pass only,All passes (2 jobs)') problems.push(`the choices are ${choices}`);
+    if ((await panel.locator('[aria-label="Run as"]').count()) !== 0) problems.push('"Run as" is offered for the crop');
+    const picked = await panel.locator('select').first().evaluate((e) => e.selectedOptions[0].textContent);
+    if (!picked.includes('2026-07-02')) problems.push(`the pass in view is not the default: ${picked}`);
     const frame = await panel.boundingBox();
-    if (!box || box.x < frame.x - 0.5 || box.x + box.width > frame.x + frame.width + 0.5) problems.push('the reason leaves the panel');
-    if (!(await panel.locator('button.primary-btn', { hasText: 'Start job' }).isDisabled())) problems.push('"Start job" is active for a crop of two passes');
-    if (!(await panel.getByRole('button', { name: 'Review', exact: true }).isDisabled())) problems.push('"Review" is active for a crop of two passes');
+    const box = await panel.locator('[aria-label="Passes"]').boundingBox();
+    if (box.x < frame.x - 0.5 || box.x + box.width > frame.x + frame.width + 0.5) problems.push('the choice leaves the panel');
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_passes.png`) });
+    await panel.getByRole('button', { name: /Band math/ }).first().click();
+    await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
+    await panel.getByRole('button', { name: 'Review', exact: true }).click();
+    await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
+    await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+    await page.waitForTimeout(800);
+    if (posted.length !== 1 || JSON.stringify(posted[0].inputs[0].groups) !== '[["S2B_C"]]') problems.push(`"This pass only" sent ${JSON.stringify(posted.map((o) => o.inputs[0].groups))}`);
+    await panel.getByRole('button', { name: 'All passes (2 jobs)' }).click();
+    await panel.getByRole('button', { name: 'Review', exact: true }).click();
+    await page.waitForSelector('.processing-panel button.primary-btn:has-text("Start 2 jobs"):not([disabled])', { timeout: 10000 });
+    await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_all.png`) });
+    await panel.locator('button.primary-btn', { hasText: 'Start 2 jobs' }).click();
+    await page.waitForTimeout(1500);
+    const groups = posted.slice(1).map((o) => JSON.stringify(o.inputs[0].groups)).sort();
+    if (groups.join() !== '[["S2B_A","S2B_B"]],[["S2B_C"]]' || posted.slice(1).some((o) => !o.aoi)) problems.push(`"All passes" sent ${groups}`);
     await context.close();
   }
 

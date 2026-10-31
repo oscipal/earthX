@@ -1,7 +1,8 @@
 // Browser check of ⚙ at the layer of a result (NM4-05b), in a real browser with made-up answers of the platform:
-//   1. The layer manager: ⚙ in the row of a result with the order of its job, active; locked with the reason without one.
-//   2. The panel it opens: the step of the result locked and folded, no "Run as", no choice of the area (a lock instead), no
-//      "Load recipe…"; the bands of the job as the output, "RGB" in "Show"; a new step behind the locked one; "Review" and
+//   1. The layer manager: ⚙ in the row of a result with the order of its job, active; no ⚙ (the place stays empty) without one.
+//   2. The panel it opens: the result as an entity of its own, with the bands of its output as its bands and no steps shown (its
+//      origin on top, the chain in a tooltip); no "Run as", no choice of the area (a lock instead), no "Load recipe…"; no mask
+//      where the output lacks the layer; a band the output did not keep cannot be read; "RGB" in "Show"; "Review" and
 //      "Start job" send one order with all the steps, and the job it makes lies beside the old one.
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
 //
@@ -31,6 +32,7 @@ const COLLECTION = {
   'earthx:license_flags': { tier: 'processing' },
   'earthx:capabilities': { interpolation: true },
   'earthx:true_color': ['red', 'green', 'blue'],
+  'earthx:mask': { asset: 'scl', band: 'scl', classes: [{ value: 3, label: 'CLOUD_SHADOWS' }], suggested: [3], reference: 'https://example.org/scl', note: '' },
 };
 
 async function open(browser, theme, viewport) {
@@ -74,7 +76,7 @@ async function setUp(page, withOrder) {
       const item = {
         id: 'S2B_A', collection: 'sentinel-2-c1-l2a', bbox, geometry: polygon,
         properties: { datetime: '2026-07-01T10:00:00Z', gsd: 10 },
-        assets: { red: asset(), green: asset(), blue: asset(), nir: asset() },
+        assets: { red: asset(), green: asset(), blue: asset(), nir: asset(), scl: asset() },
       };
       useAppStore.setState({
         datasets: [{
@@ -112,12 +114,12 @@ async function check(browser, theme, viewport) {
   const problems = [];
   fs.mkdirSync(OUT, { recursive: true });
 
-  // 1. Without the order of the job: locked, with the reason.
+  // 1. Without the order of the job: no ⚙, the place stays empty.
   {
     const { context, page } = await open(browser, theme, viewport);
     await setUp(page, false);
-    if (!(await gear(page).isDisabled())) problems.push('the ⚙ is active without the order of the job');
-    if (!(await gear(page).getAttribute('title'))?.startsWith('No copy of the original order')) problems.push('the ⚙ does not say why it is locked');
+    if ((await gear(page).evaluate((e) => e.tagName)) !== 'SPAN') problems.push('there is a ⚙ without the order of the job');
+    if ((await page.locator('.layer-row').first().locator(':scope > *').count()) !== 9) problems.push('the row lost a place without ⚙');
     await context.close();
   }
 
@@ -127,13 +129,14 @@ async function check(browser, theme, viewport) {
   if (await gear(page).isDisabled()) problems.push('the ⚙ is locked with the order of the job');
   if ((await gear(page).getAttribute('title')) !== 'Process further') problems.push(`the ⚙ says ${await gear(page).getAttribute('title')}`);
   await gear(page).click();
-  await page.waitForSelector('.processing-panel .pp-locked', { timeout: 10000 });
+  await page.waitForSelector('.processing-panel section[aria-label="Selection"] .pp-fixed', { timeout: 10000 });
 
   const panel = page.locator('.processing-panel');
   const text = (selector) => panel.locator(selector).allTextContents();
-  if ((await panel.locator('.pp-locked').count()) !== 1) problems.push('the step of the result is not shown locked');
-  if ((await panel.locator('.pp-locked button').count()) !== 0) problems.push('a locked step has buttons');
-  if ((await panel.locator('.pp-locked textarea, .pp-locked input').count()) !== 0) problems.push('a locked step has fields');
+  if ((await panel.locator('.pp-step').count()) !== 0) problems.push('the steps of the job are shown as steps');
+  const chips = async (selector) => page.$$eval(selector, (c) => c.map((x) => x.textContent));
+  if ((await chips('section[aria-label="Bands"] .pp-chip')).join() !== 'NDVI,red,green,blue') problems.push(`the bands on top are ${await chips('section[aria-label="Bands"] .pp-chip')}`);
+  if ((await panel.getByRole('button', { name: '＋ Mask' }).count()) !== 0) problems.push('a mask is offered without its layer in the output');
   if ((await panel.getByRole('button', { name: 'Whole scene' }).count()) + (await panel.getByRole('button', { name: 'AOI only' }).count()) !== 0) problems.push('the area can be chosen');
   if ((await panel.locator('[aria-label="Run as"]').count()) !== 0) problems.push('"Run as" is offered');
   if ((await panel.getByText('Load recipe').count()) !== 0) problems.push('"Load recipe…" is offered');
@@ -141,7 +144,7 @@ async function check(browser, theme, viewport) {
   if ((await panel.locator('.pp-fixed').getAttribute('title')) !== 'Fixed by the result.') problems.push('the lock has no tooltip');
   if (!(await text('section[aria-label="Selection"]')).join().includes('From result: NDVI of a field')) problems.push('the panel does not say what it comes from');
   const tip = await panel.locator('.pp-area .tip').getAttribute('data-tip');
-  if (!/run again from the scenes/.test(tip ?? '') || !/last bit/.test(tip ?? '')) problems.push(`the tooltip of the chain says ${tip}`);
+  if (!/run again from the scenes/.test(tip ?? '') || !/last bit/.test(tip ?? '') || !(tip ?? '').includes('1. NDVI (band math)')) problems.push(`the tooltip of the chain says ${tip}`);
 
   // The bands of the job are the output; RGB is on offer for the three of them.
   const options = await page.$$eval('.pp-show select option', (o) => o.map((x) => x.value));
@@ -149,13 +152,13 @@ async function check(browser, theme, viewport) {
   const output = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().output);
   if (output.join() !== 'NDVI,red,green,blue') problems.push(`the output is ${output}`);
 
-  // A new step behind the locked one, reading the band of the locked one.
+  // A new step reads the bands of the job, not the stock it did not keep.
   await panel.getByRole('button', { name: /Band math/ }).first().click();
-  await page.locator('li:not(.pp-locked) textarea[id$="-expression"]').fill('NDVI * 2');
-  const chips = await page.$$eval('li:not(.pp-locked) [aria-label="Results of earlier steps"] .pp-chip', (c) => c.map((x) => x.textContent));
-  if (chips.join() !== 'NDVI') problems.push(`the new step offers the chips ${chips}`);
-  if ((await panel.locator('.pp-step-sep').count()) !== 1) problems.push('no line between the locked and the new steps');
-  if (!(await panel.locator('li:not(.pp-locked) button', { hasText: 'Up' }).first().isDisabled())) problems.push('the first new step can move up before the locked one');
+  await page.locator('textarea[id$="-expression"]').fill('nir * 2');
+  if ((await page.locator('.pp-step .hint-text.error').first().textContent()) !== "'nir' is not a band name") problems.push('a band outside the output can be read');
+  await page.locator('textarea[id$="-expression"]').fill('NDVI * 2');
+  const earlier = await chips('[aria-label="Results of earlier steps"] .pp-chip');
+  if (earlier.join() !== 'NDVI') problems.push(`the new step offers the chips ${earlier}`);
 
   const layout = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
@@ -177,11 +180,6 @@ async function check(browser, theme, viewport) {
   if (layout.scrolls) problems.push('the panel scrolls sideways');
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_panel.png`) });
-
-  // Unfolding the locked step shows what it was given.
-  await panel.locator('.pp-locked summary').click();
-  if (!(await panel.locator('.pp-locked').textContent())?.includes('(nir - red) / (nir + red)')) problems.push('the locked step does not show its expression');
-  await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_unfolded.png`) });
 
   // Review and start: one order, the steps in order, a new job beside the old one.
   await panel.getByRole('button', { name: 'Review', exact: true }).click();
