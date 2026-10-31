@@ -96,10 +96,12 @@ import {
   renameResult,
   resultNameOf,
   resultsOf,
+  RGB,
 } from './processingBands';
 import {
   aoiProvenanceFor,
   auxiliaryAssetsOf,
+  trueColorOf,
   bandSources,
   buildOrder,
   candidateItems,
@@ -418,6 +420,8 @@ export type LoadResult = { ok: true; notes: string[]; converted?: boolean } | { 
 
 export interface OrderView {
   dataset: DatasetOption | undefined;
+  // `earthx:true_color` of the dataset: red, green, blue; `null` where it has no colour picture (NM4-64).
+  trueColor: [string, string, string] | null;
   info: ProcessInfo | null;
   // The scenes the order can be for — all selected ones, or those the AOI meets
   // for "AOI only" — split into passes, and the pass the order is for.
@@ -587,6 +591,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     info,
     candidates,
     passes,
+    trueColor: trueColorOf(dataset?.collection),
     pass,
     runChoices: runOptions,
     runAs,
@@ -1926,6 +1931,7 @@ function previewReadOf(view: OrderView, plan: Extract<PreviewPlan, { state: 'rea
     all: view.assets,
     steps: plan.steps.map(({ step }) => step),
     pick,
+    trueColor: view.trueColor,
   });
 }
 
@@ -1940,7 +1946,9 @@ function startLook(
   if (view.output.length <= 1) return { range: own, bandRanges: {}, shownBand: null };
   const plan = planPreview(p.steps, view.info);
   const band = plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
-  return { range: null, bandRanges: own && band !== null ? { [band]: own } : {}, shownBand: band };
+  // The colour picture has no colormap, whatever the fields of the range hold.
+  const kept = own && band === RGB ? { ...own, colormap: '' } : own;
+  return { range: null, bandRanges: kept && band !== null ? { [band]: kept } : {}, shownBand: band };
 }
 
 function wantedPreview(limit?: number): PreviewSpec | null {
@@ -1969,6 +1977,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
     answers: mosaicAnswers,
     order,
     band: read.band,
+    bands: read.bands,
     named: read.choices.length > 1,
   };
   const spec = previewSpec({ ...args, range: p.range });
@@ -2027,7 +2036,7 @@ async function measureOver(spec: PreviewSpec): Promise<PreviewMeasure> {
     try {
       const answer = await areaStatisticsOf(spec.areaOrder);
       // The answer holds every band of the order; the colour scale is the one of the band the map shows.
-      const bands = spec.band === null ? answer.bands : answer.bands.filter((band) => band.name === spec.band);
+      const bands = spec.bands === null ? answer.bands : answer.bands.filter((band) => spec.bands!.includes(band.name));
       if (bands.length === 0) throw new Error('the statistics do not name the band');
       return areaMeasureOf(spec.measure, { ...answer, bands }, spec.expression);
     } catch (error) {

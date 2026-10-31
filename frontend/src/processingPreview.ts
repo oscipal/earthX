@@ -13,6 +13,7 @@ import {
   MOSAIC_TILEJSON_TIMEOUT_MS,
   type AreaStatistics,
   type BandStatistics,
+  type ShownBands,
 } from './api';
 import type { DatasetOption } from './datasets';
 import { unionBbox } from './geoUtils';
@@ -28,7 +29,7 @@ import {
   mosaicRequestBytes,
 } from './mosaic';
 import { canonicalJson, type Order } from './processing';
-import { assetsCarrying, isBandMath, resultNameOf, resultsOf, startBand } from './processingBands';
+import { assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
 import {
   bandsOf,
   namesInExpression,
@@ -164,13 +165,16 @@ export function namesNeeded(steps: readonly DraftStep[], band: string): Set<stri
 
 // Which band the map shows and what it has to read for it.
 export interface PreviewRead {
-  // Every band of the output the map can draw, the results of the steps it draws above the bands of the data.
+  // Every band of the output the map can draw, the results of the steps it draws above the bands of the data. "RGB" is
+  // on top where the dataset has a colour picture and its three bands are in the output (NM4-64).
   choices: string[];
   // The band the tile shows: the one the person picked while it is among the choices, else the result added last (the
-  // step created last, not the last of the chain), else the first band; `null` for an empty output, where the tiler
-  // shows what it shows by itself.
+  // step created last, not the last of the chain), else the first choice (RGB, where it is offered); `null` for an empty
+  // output, where the tiler shows what it shows by itself.
   band: string | null;
-  // The assets that band needs, in the order of the item: the planner's strike (`processing/tile.py::plan_band`).
+  // The bands the tile is asked for (`band=`): that one, the three of the colour picture for "RGB", none without a band.
+  bands: string[];
+  // The assets those bands need, in the order of the item: the planner's strike (`processing/tile.py::plan_band`).
   assets: string[];
 }
 
@@ -185,16 +189,20 @@ export function previewRead(args: {
   // The steps the map draws, in order.
   steps: readonly DraftStep[];
   pick: string | null;
+  // `earthx:true_color` of the dataset (red, green, blue), `null` where it has none.
+  trueColor: readonly string[] | null;
 }): PreviewRead {
-  const { output, dataNames, sources, maskAsset, all, steps, pick } = args;
+  const { output, dataNames, sources, maskAsset, all, steps, pick, trueColor } = args;
   const kept = new Set(output);
   const results = resultsOf(steps).filter((result) => kept.has(result.name));
-  const choices = [...results.map((result) => result.name), ...output.filter((name) => dataNames.includes(name))];
+  const colour = trueColor !== null && trueColor.length === 3 && trueColor.every((name) => kept.has(name) && dataNames.includes(name));
+  const choices = [...(colour ? [RGB] : []), ...results.map((result) => result.name), ...output.filter((name) => dataNames.includes(name))];
   const band = pick !== null && choices.includes(pick) ? pick : startBand(choices, results.map((r) => ({ name: r.name, created: r.key })));
-  if (band === null) return { choices, band, assets: [...all] };
-  const carried = new Set(assetsCarrying(sources, namesNeeded(steps, band)));
+  if (band === null) return { choices, band, bands: [], assets: [...all] };
+  const bands = band === RGB ? [...trueColor!] : [band];
+  const carried = new Set(assetsCarrying(sources, bands.flatMap((name) => [...namesNeeded(steps, name)])));
   if (maskAsset !== null && steps.some((step) => step.op === 'mask')) carried.add(maskAsset);
-  return { choices, band, assets: sources.map((source) => source.asset).filter((asset) => carried.has(asset)) };
+  return { choices, band, bands, assets: sources.map((source) => source.asset).filter((asset) => carried.has(asset)) };
 }
 
 // --- a chain the tiler refuses (Otto, 22.10.2026) ------------------------------------
@@ -313,8 +321,10 @@ export interface PreviewSpec {
   title: string;
   // How many steps the picture is made of.
   stepCount: number;
-  // The band the tiles show (`band=`); `null` where the tiler chooses by itself.
+  // The band the tiles show; `null` where the tiler chooses by itself. "RGB" (`RGB`) for the colour picture.
   band: string | null;
+  // The bands the tiles are asked for (`band=`): that one, or the three of the colour picture; `null` with no band.
+  bands: string[] | null;
   // The TileJSON of the first scene with the same steps: what `probeChain` asks.
   probe: string;
   // What the measure is called: the statistics of the first scene with the same steps (of a mosaic: the first it
@@ -396,15 +406,21 @@ export function previewSpec(args: {
   answers?: ReadonlyMap<string, MosaicAnswer>;
   // The order of the first job, `null` while it is not complete: with "AOI only" it is what the range is measured on.
   order?: Order | null;
-  // The band the tiles show and, where the output has more than one, the preview is named after it.
+  // The band the tiles show and, where the output has more than one, the preview is named after it. For "RGB" the three
+  // bands of the colour picture are `bands`; else that one band is.
   band?: string | null;
+  bands?: readonly string[];
   named?: boolean;
 }): PreviewSpec | null {
   const { dataset, items, assets, info, plan, range, area, jobs = [], answers, order = null, band = null, named = false } = args;
   if (!dataset?.viewable || assets.length === 0 || assets.length > MAX_PREVIEW_ASSETS) return null;
+  if (band === RGB && args.bands?.length !== 3) return null;
   const rescale = rescaleOf(range);
   if ('problem' in rescale) return null;
-  const render = { rescale: rescale.rescale, colormapName: range.colormap || undefined };
+  // The tiles ask for the band, or the three of the colour picture, which takes one range for all of them and no colormap.
+  const shown: string[] | null = band === null ? null : band === RGB ? [...args.bands!] : [band];
+  const asked: ShownBands = shown === null ? null : shown.length === 1 ? shown[0] : shown;
+  const render = { rescale: rescale.rescale, colormapName: band === RGB ? undefined : range.colormap || undefined };
   const chain = plan.steps.map(({ step, params }) => ({ op: step.op, opVersion: step.opVersion, paramsJson: canonicalJson(params) }));
   // Without a pixel size there is no level to hold the preview under: it is drawn
   // as before, up to the last released level, and "Preview" says what it is (Otto,
@@ -429,9 +445,9 @@ export function previewSpec(args: {
       return null;
     }
     const ids = unit.map((item) => item.id);
-    const url = buildTileUrl(buildMosaicOperatorTileTemplate(dataset.id, ids, assets, chain, band), render);
+    const url = buildTileUrl(buildMosaicOperatorTileTemplate(dataset.id, ids, assets, chain, asked), render);
     if (mosaicRequestBytes(url, maxZoom) > MAX_MOSAIC_REQUEST_BYTES) return null;
-    const probe = buildMosaicOperatorTileJsonUrl(dataset.id, ids, assets, chain, band);
+    const probe = buildMosaicOperatorTileJsonUrl(dataset.id, ids, assets, chain, asked);
     const answer = answers?.get(probe);
     if (answer?.state === 'scenes') return null;
     return { order: readOrder(answer?.state === 'taken' ? answer.order : [], ids), bounds, url, probe, minZoom: firstLevel };
@@ -455,10 +471,10 @@ export function previewSpec(args: {
     scenes.push({
       id: item.id,
       bbox: item.bbox,
-      url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain, band), render),
+      url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain, asked), render),
       ...(underLevel === undefined ? {} : { below: underLevel }),
     });
-    if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain, band);
+    if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain, asked);
   }
   // The scene that wins where the scenes of the first mosaic overlap is the one measured.
   const measured = mosaics[0]?.order[0] ?? scenes[0]?.id;
@@ -466,7 +482,7 @@ export function previewSpec(args: {
   const clipToAoi = area === 'aoi';
   // The chain must be whole: the order runs all its steps, and a preview of a start of them would be measured on more.
   const areaOrder = clipToAoi && order !== null && !plan.further ? { datasetId: dataset.id, order } : null;
-  const sceneMeasure = buildOperatorStatisticsUrl(dataset.id, measured, assets, chain, band);
+  const sceneMeasure = buildOperatorStatisticsUrl(dataset.id, measured, assets, chain, asked);
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
@@ -475,9 +491,10 @@ export function previewSpec(args: {
       maxZoom,
       clipToAoi,
     }),
-    title: [plan.steps.map(({ operator }) => operator.title).join(' → '), ...(named && band !== null ? [band] : [])].join(' · '),
+    title: [plan.steps.map(({ operator }) => operator.title).join(' → '), ...(named && band !== null ? [bandLabel(band)] : [])].join(' · '),
     stepCount: plan.steps.length,
     band,
+    bands: shown,
     probe,
     measure: areaOrder ? (band === null ? canonicalJson(areaOrder.order) : `${canonicalJson(areaOrder.order)}\n${band}`) : sceneMeasure,
     sceneMeasure,

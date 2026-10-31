@@ -122,6 +122,16 @@ export function dropFromNormalize(steps: readonly DraftStep[], name: string): Dr
   });
 }
 
+// --- the colour picture (NM4-64) ---------------------------------------------------------
+
+// The entry "RGB" of the dropdowns "Show" and "Band": the three bands of `earthx:true_color` as one colour picture. Its
+// value is no band name (a name starts with a letter), so that it cannot be taken for a band.
+export const RGB = '@rgb';
+export const RGB_LABEL = 'RGB';
+
+// The text of a band of the dropdowns and of a preview's name: a band is called by its name, the colour picture "RGB".
+export const bandLabel = (band: string): string => (band === RGB ? RGB_LABEL : band);
+
 // --- the band a picture starts with --------------------------------------------------------
 
 // The band the preview and a result layer start with (Otto, 31.10.2026): the result created last, else the first band.
