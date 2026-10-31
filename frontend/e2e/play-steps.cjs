@@ -165,7 +165,7 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
     const c = await colourAt(page, x, y);
     const step = COLOURS.findIndex((k) => near(c, k));
     samples.push({ t: Date.now() - t0, step, c, openNow: [...open] });
-    labels.add(await page.locator('.time-labels strong').innerText());
+    labels.add(await page.locator('.time-dates strong').innerText());
     const count = await page.locator('.time-count').innerText();
     counts.add(count);
     if (count === 'Loading…') sawLoading = true;
