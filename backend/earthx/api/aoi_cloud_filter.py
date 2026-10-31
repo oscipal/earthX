@@ -43,6 +43,7 @@ from earthx.access.aoi_upload import MAX_AOI_POINTS
 from earthx.access.resolve import AssetResolutionError, ResolvedAsset, open_asset_ref, resolve_asset
 from earthx.access.tiles import StatsCache
 from earthx.adapters import MAX_LIMIT, InvalidQuery, ItemPage
+from earthx.api.search_filters import AOI_FILTERS_TEXT, aoi_filters_text
 from earthx.catalog.registry import AoiMeasure, DatasetConfig
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition
 from earthx.gateway import GatewayError, Policy, ReadSlots, Resolver, host_of
@@ -107,34 +108,37 @@ def read_aoi_request(
     """
     if not conditions:
         raise ValueError("a filter within the AOI has at least one condition")
-    _require_period(datetime_value)
-    aoi = _area(bbox, intersects, earthx_aoi)
+    label = aoi_filters_text(conditions)
+    _require_period(datetime_value, label)
+    aoi = _area(bbox, intersects, earthx_aoi, label)
     return AoiFilterRequest(
         dataset_id=dataset_id, conditions=dict(conditions), aoi=aoi, key=_filter_key(dataset_id, conditions, aoi)
     )
 
 
-def _require_period(datetime_value: str | None) -> None:
+def _require_period(datetime_value: str | None, label: str) -> None:
     interval = str_to_interval(datetime_value) if datetime_value else None
     if not isinstance(interval, tuple) or None in interval:
-        raise InvalidFilter("the cloud share in the AOI needs a date range with a start and an end")
+        raise InvalidFilter(f"{label} needs a date range with a start and an end")
 
 
-def _area(bbox: Sequence[float] | None, intersects: Mapping[str, Any] | None, earthx_aoi: Any) -> dict[str, Any]:
+def _area(
+    bbox: Sequence[float] | None, intersects: Mapping[str, Any] | None, earthx_aoi: Any, label: str
+) -> dict[str, Any]:
     if earthx_aoi is not None:
         if intersects is not None:
             raise InvalidFilter("earthx:aoi goes with the bbox that holds it, not with intersects")
         if bbox is None:
             raise InvalidFilter("earthx:aoi goes with the bbox that holds it")
-        polygon = _polygonal(earthx_aoi, "earthx:aoi")
+        polygon = _polygonal(earthx_aoi, "earthx:aoi", label)
         if not _bbox_polygon(bbox).buffer(_BBOX_TOLERANCE).covers(polygon):
             raise InvalidFilter("earthx:aoi lies outside the bbox")
         return json.loads(shapely.to_geojson(polygon))
     if intersects is not None:
-        return json.loads(shapely.to_geojson(_polygonal(intersects, "intersects")))
+        return json.loads(shapely.to_geojson(_polygonal(intersects, "intersects", label)))
     if bbox is not None:
         return json.loads(shapely.to_geojson(_bbox_polygon(bbox)))
-    raise InvalidFilter("the cloud share in the AOI needs an area")
+    raise InvalidFilter(f"{label} needs an area")
 
 
 def _bbox_polygon(bbox: Sequence[float]) -> Any:
@@ -150,16 +154,16 @@ def _bbox_polygon(bbox: Sequence[float]) -> Any:
     return box(west, south, east, north)
 
 
-def _polygonal(geometry: Any, label: str) -> Any:
+def _polygonal(geometry: Any, name: str, label: str) -> Any:
     """``geometry`` as a valid shapely Polygon or MultiPolygon, within the limits of an uploaded AOI."""
     if (
         not isinstance(geometry, Mapping)
         or geometry.get("type") not in ("Polygon", "MultiPolygon")
         or not isinstance(geometry.get("coordinates"), list)
     ):
-        raise InvalidFilter("the cloud share in the AOI needs an area")
+        raise InvalidFilter(f"{label} needs an area")
     if _positions(geometry["coordinates"]) > MAX_AOI_POINTS:
-        raise InvalidFilter(f"{label} has more than {MAX_AOI_POINTS} positions")
+        raise InvalidFilter(f"{name} has more than {MAX_AOI_POINTS} positions")
     try:
         polygon = shape(dict(geometry))
         bounds = polygon.bounds
@@ -173,7 +177,7 @@ def _polygonal(geometry: Any, label: str) -> Any:
     except (ShapelyError, ValueError, TypeError, KeyError, AttributeError, IndexError):
         usable = False
     if not usable:
-        raise InvalidFilter(f"{label} is not a valid polygon on the globe")
+        raise InvalidFilter(f"{name} is not a valid polygon on the globe")
     return polygon
 
 
@@ -242,7 +246,7 @@ def decode_cursor(token: str, key: str) -> Cursor:
     except (ValueError, binascii.Error) as error:
         raise InvalidQuery("page token is not readable") from error
     if not isinstance(payload, dict) or payload.get("k") != "aoi" or payload.get("v") != TOKEN_VERSION:
-        raise InvalidQuery("page token is not one of a search with the cloud share in the AOI")
+        raise InvalidQuery(f"page token is not one of a search with {AOI_FILTERS_TEXT}")
     if payload.get("h") != key:
         raise InvalidQuery("page token belongs to a different search")
     page = payload.get("p")

@@ -80,7 +80,7 @@ from earthx.api.mixed_search import (
     is_mixed_token,
     mixed_fingerprint,
 )
-from earthx.api.search_filters import AOI_KEY, BODY_KEYS, read_search_conditions
+from earthx.api.search_filters import AOI_FILTERS_TEXT, AOI_KEY, BODY_KEYS, aoi_filters_text, read_search_conditions
 from earthx.catalog.registry import AoiMeasure, DatasetRegistry, ItemHolding, SearchFilter, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.search_filters import FilterConditions, InvalidFilter, RangeCondition
@@ -311,16 +311,13 @@ async def _aoi_requests(
     earthx_aoi = body.get(AOI_KEY)
     if not ranges:
         if earthx_aoi is not None:
-            raise HTTPException(status_code=400, detail=f"{AOI_KEY} goes with the cloud share in the AOI only")
+            raise HTTPException(status_code=400, detail=f"{AOI_KEY} goes with {AOI_FILTERS_TEXT} only")
         return {}
+    asked = aoi_filters_text(measure for conditions in ranges.values() for measure in conditions)
     if any(infos[cid][0] is not ItemHolding.FEDERATED for cid in ranges):
-        raise HTTPException(
-            status_code=400, detail="the cloud share in the AOI is measured on a federated collection only"
-        )
+        raise HTTPException(status_code=400, detail=f"{asked} is measured on a federated collection only")
     if len(await request.body()) > MAX_BODY_BYTES:
-        raise HTTPException(
-            status_code=400, detail=f"a search with the cloud share in the AOI is at most {MAX_BODY_BYTES} bytes"
-        )
+        raise HTTPException(status_code=400, detail=f"a search with {asked} is at most {MAX_BODY_BYTES} bytes")
     try:
         return {
             cid: read_aoi_request(

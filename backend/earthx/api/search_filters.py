@@ -20,7 +20,7 @@ here and kept apart from the conditions of the source (``SearchConditions.aoi``)
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -40,6 +40,15 @@ FILTER_KEYS = frozenset({"query", "query_by_collection"})
 AOI_CLOUD_COVER = AoiMeasure.CLOUD_SHARE.value
 AOI_NODATA = AoiMeasure.NODATA_SHARE.value
 AOI_MEASURES = {measure.value: measure for measure in AoiMeasure}
+#: What a refusal says when it has no filter to name (a marker of another search, ``earthx:aoi`` without a filter).
+AOI_FILTERS_TEXT = "a filter measured in the AOI"
+
+
+def aoi_filters_text(measures: Iterable[AoiMeasure]) -> str:
+    """The filters a request asked to be measured in the AOI, named by their property for a refusal: ``earthx:aoi_nodata``
+    or ``earthx:aoi_cloud_cover and earthx:aoi_nodata``. A name, never a value of the request."""
+    names = sorted({measure.value for measure in measures})
+    return " and ".join(names) if names else AOI_FILTERS_TEXT
 AOI_KEY = "earthx:aoi"
 BODY_KEYS = FILTER_KEYS | {AOI_KEY}
 _RANGE_OPERATORS = frozenset({"gte", "lte"})

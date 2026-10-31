@@ -52,7 +52,7 @@ from stac_fastapi.types.rfc3339 import str_to_interval
 from earthx.adapters import AdapterSpecs
 from earthx.adapters import coverage as adapter_coverage
 from earthx.adapters.errors import UpstreamShapeError
-from earthx.api.search_filters import read_search_conditions
+from earthx.api.search_filters import aoi_filters_text, read_search_conditions
 from earthx.catalog.coverage import (
     HISTOGRAM_INTERVAL,
     MAX_GEOTILE_LEVEL,
@@ -239,9 +239,8 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
             raise HTTPException(status_code=400, detail=_NUMBER_TOO_LARGE) from None
         if read.aoi:
             # DS-03 plan §6.5 (KE6): the coverage counts at the source, without a raster, so it cannot apply these.
-            raise HTTPException(
-                status_code=400, detail="the coverage map cannot apply the cloud share in the AOI; search for scenes"
-            )
+            asked = aoi_filters_text(measure for conditions in read.aoi.values() for measure in conditions)
+            raise HTTPException(status_code=400, detail=f"the coverage map cannot apply {asked}; search for scenes")
         conditions = read.by_collection.get(dataset_id)
         try:
             query = CoverageQuery(

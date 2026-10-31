@@ -1042,3 +1042,21 @@ class TestTheRequestOfAnotherSource:
                 intersects=SQUARE,
             )
         assert caught.value.status_code == 400 and "federated collection only" in caught.value.detail
+        assert caught.value.detail.startswith("earthx:aoi_cloud_cover "), "names the filter that was asked"
+
+    async def test_the_share_of_no_data_is_named_as_such(self) -> None:
+        from fastapi import HTTPException
+
+        from earthx.api.federating_client import _aoi_requests
+        from earthx.catalog.registry import ItemHolding
+
+        class Stub:
+            async def body(self) -> bytes:
+                return b"{}"
+
+        with pytest.raises(HTTPException) as caught:
+            await _aoi_requests(
+                Stub(), {"native": {AoiMeasure.NODATA_SHARE: RangeCondition(None, 5.0)}},
+                {"native": (ItemHolding.MATERIALIZED, True)}, {}, datetime_value=PERIOD, bbox=None, intersects=SQUARE,
+            )
+        assert caught.value.detail == "earthx:aoi_nodata is measured on a federated collection only"

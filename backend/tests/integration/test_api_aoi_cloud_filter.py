@@ -686,7 +686,7 @@ class TestARequestACallerHasToChange:
             ({"intersects": None, "bbox": [20.0, 47.5, 20.5, 48.0], "earthx:aoi": SQUARE}, "outside the bbox"),
             ({"earthx:aoi": SQUARE}, "not with intersects"),
             ({"intersects": None, "earthx:aoi": SQUARE}, "goes with the bbox"),
-            ({"query_by_collection": {S2: {"eo:cloud_cover": {"lte": 20}}}, "earthx:aoi": SQUARE}, "goes with the cloud share"),
+            ({"query_by_collection": {S2: {"eo:cloud_cover": {"lte": 20}}}, "earthx:aoi": SQUARE}, "goes with a filter measured in the AOI"),
             ({"query_by_collection": {S2: {"earthx:other": {"lte": 20}}}}, "computed by the platform"),
             ({"query_by_collection": {S2: {"earthx:aoi_nodata": {"lte": 120.5}}}}, "outside the range"),
             ({"query_by_collection": {S2: {"earthx:aoi_nodata": {"gte": 30, "lte": 10}}}}, "ends below"),
@@ -710,6 +710,42 @@ class TestARequestACallerHasToChange:
         assert message in response.json()["detail"]
         assert world.bodies == [] and world.reads == []
         assert "120.5" not in response.text and not any(leak in response.text for leak in LEAKS)
+
+    @pytest.mark.parametrize(
+        ("query_by_collection", "named"),
+        [
+            (NODATA_ONLY, "earthx:aoi_nodata"),
+            ({S2: {"earthx:aoi_cloud_cover": {"lte": 20}}}, "earthx:aoi_cloud_cover"),
+            (
+                {S2: {"earthx:aoi_cloud_cover": {"lte": 20}, "earthx:aoi_nodata": {"lte": 5.4321}}},
+                "earthx:aoi_cloud_cover and earthx:aoi_nodata",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "change", [{"datetime": None}, {"intersects": None}], ids=["no period", "no area"]
+    )
+    async def test_the_refusal_names_the_filter_that_was_asked_and_no_value(
+        self,
+        collections_loaded: None,
+        world: World,
+        query_by_collection: dict[str, Any],
+        named: str,
+        change: dict[str, Any],
+    ) -> None:
+        """Otto, 31.10.2026: the text names the filter asked for, not always the cloud share, and never a value."""
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection=query_by_collection, **change))
+        detail = response.json()["detail"]
+        assert response.status_code == 400 and detail.startswith(f"{named} needs a"), detail
+        assert "cloud share" not in detail and "5.4321" not in response.text
+        assert world.bodies == []
+
+    async def test_a_body_over_a_megabyte_names_the_filter_asked(self, collections_loaded: None, world: World) -> None:
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection=NODATA_ONLY, **{"padding": "x" * 1_048_576}))
+        assert response.status_code == 400
+        assert response.json()["detail"] == "a search with earthx:aoi_nodata is at most 1048576 bytes"
 
     async def test_a_body_over_a_megabyte(self, collections_loaded: None, world: World) -> None:
         async with _client(world) as client:

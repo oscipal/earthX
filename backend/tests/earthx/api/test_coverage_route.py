@@ -300,6 +300,25 @@ class TestSearchFilters:
         assert response.status_code == 400
         assert not seen
 
+    @pytest.mark.parametrize(
+        ("query", "named"),
+        [
+            ({"earthx:aoi_cloud_cover": {"lte": 10.4321}}, "earthx:aoi_cloud_cover"),
+            ({"earthx:aoi_nodata": {"lte": 10.4321}}, "earthx:aoi_nodata"),
+            (
+                {"earthx:aoi_cloud_cover": {"lte": 10.4321}, "earthx:aoi_nodata": {"lte": 10.4321}},
+                "earthx:aoi_cloud_cover and earthx:aoi_nodata",
+            ),
+        ],
+    )
+    def test_the_refusal_names_the_filter_asked_and_no_value(self, query: dict[str, Any], named: str) -> None:
+        """Otto, 31.10.2026: the text names the filter within the AOI that was asked for, not always the cloud share."""
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = post(client_for(gateway), bbox=[5, 45, 15, 55], query=query)
+        assert response.status_code == 400
+        assert response.json()["detail"] == f"the coverage map cannot apply {named}; search for scenes"
+        assert "10.4321" not in response.text and not seen
+
     def test_a_dataset_without_filters_refuses_any(self) -> None:
         config = replace(SENTINEL_2_L2A, search_filters=())
         gateway, seen = answering(ok("aggregate_complete"))

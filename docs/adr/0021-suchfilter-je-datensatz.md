@@ -108,6 +108,7 @@ Plan, Messungen und Optionen: `docs/plans/ds/ds-03-wolken-in-aoi.md` §6. Messsk
   - Neue Messung `earthx:aoi_nodata`: Anteil der AOI ohne gültiges Pixel aus SCL-Klasse 0 (`nodata` der Datei) derselben Lesung, `100 − data_percent`; Teile der AOI außerhalb der Kachel zählen als ohne Daten, eine Szene ohne gültiges Pixel hat 100. Kein zusätzliches Lesen, Cache-Schlüssel unverändert. Mehrere Bedingungen zugleich gelten als UND; die Seitenmarke nimmt alle Bereiche in ihren Hash (Marken von vorher werden mit `400` abgelehnt). `/coverage` weist beide Eigenschaften weiter ab, die Coverage-Karte zeigt mit dem Schalter nur die Filter ohne Flächenbezug.
   - Gemessen: 0,41 µs je Szene für die Ableitung, rund 0,6 µs mehr je Szene für die zweite Bedingung, gleiche Zahl Lesungen (300 bei 300 Szenen, mit einem, beiden oder nur dem No-data-Filter) gegen rund 20 ms je Lesung mit Zählung.
   - Gleich streng wie der Wolkenanteil: Beide Messungen verlangen eine Klassifizierung mit nicht leeren `cloud_classes` (COG). Eine Lockerung wäre eine eigene Entscheidung.
+  - Ablehnungen (`400`, Otto 31.10.2026, zweite Runde): Die Texte nennen den Filter, der gefragt wurde (`earthx:aoi_nodata`, `earthx:aoi_cloud_cover` oder beide), nie einen Wert; wo keiner zu nennen ist, „a filter measured in the AOI“. Das gilt für Zeitraum, Fläche, Größe des Bodys, Sammlung mit eigenen Items, Seitenmarke und die Coverage (`ds-03a2-aoi-clouds.ps1` erwartet die Texte).
 
 ## 7. Oberfläche (DS-02c, 30.10.2026)
 
