@@ -526,8 +526,14 @@ Daten unter der offenen Copernicus-Lizenz; nichts davon liegt im Repo.
 - **Fortschritt:** „n found / m checked“ im Kopf der Liste mit „Stop“; solange keine Liste da ist (nichts im Bereich gefunden), steht beides in der Meldung der Suche. „Load more“ fehlt, solange die Suche selbst weiterfragt. Die Hinweise zur Grenze und zu unlesbaren Szenen stehen im Kopf des Datensatzes; bei einem Datensatz ohne Liste in der Meldung.
 - **Zeile und Gruppe:** „☁ 3 %“ (0 bleibt „0 %“, über 0 und unter 1 „<1 %“). Der Tooltip der Gruppe nennt „Measured on …“ nicht, der der Szene nur, wenn der Anteil unter 100 % liegt.
 - **Sortierung:** nur die Anzeige der Liste; Zeitleiste, Abspielen und die Indizes der Gruppen bleiben nach Datum.
-- **Offen (Frage an Otto):** Der Hinweis zur Grenze nennt kein Datum („Checked 500 scenes. Narrow the date range to search further.“), weil keine Antwort das Datum der ältesten geprüften Szene trägt; die Szenen, die zurückkommen, sind nur die passenden. Gelöst wäre es mit einem Feld im Backend (etwa `earthx:aoi_filter.oldest`).
-- **Nicht gelöst, nicht geraten:** Eine AOI mit mehr als 20 000 Positionen beantwortet der Server mit `400`; der Schalter bleibt dafür bedienbar, die Suche zeigt den Text des Servers als Fehler.
+- **Antworten Ottos (31.10.2026, zu #265):**
+  - Der Hinweis zur Grenze nennt kein Datum („Checked 500 scenes. Narrow the date range to search further.“), weil keine Antwort das Datum der ältesten geprüften Szene trägt: so lassen.
+  - Eine AOI mit mehr als 20 000 Positionen sperrt den Schalter mit Grund im Tooltip („The area has too many points for this filter“, `MAX_AOI_POSITIONS`); das `400` des Servers bleibt als Sicherung. Bis 20 000 Positionen bleibt er frei (KE1).
+  - Fallen AOI oder Zeitraum weg, geht der Schalter aus und ist danach gesperrt mit Grund.
+  - Datums-Fallback: nur für den gemessenen Datensatz aus, die anderen behalten ihn.
+  - „Stop“ ohne Treffer: Die Liste erscheint mit „0 found / m checked“ und „Load more“ (`ResultSection.keepList`).
+  - „cloud shadows do not count“ steht nur im Tooltip; „0 %“ nur bei genau 0, sonst „<1 %“.
+  - Die Statusmeldung bei schmalem Fenster bleibt unberührt (geht an NM4-56).
 - **Browser:** `frontend/e2e/within-aoi.cjs` (Chromium, Antworten gemockt), hell/dunkel × breit/schmal/sehr schmal grün. Bei schmalem Fenster ragt die Meldung der Suche (`.status`) über den Rand, sobald ein Panel offen ist; das tut sie nach jeder Suche, auch ohne den Schalter (beobachtet, nicht geändert).
 
 ### 6.18 DS-03a2 — Filter „Within AOI“ in der Suche (Folgeaufgabe, neue Session)

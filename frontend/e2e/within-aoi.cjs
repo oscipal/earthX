@@ -6,7 +6,9 @@
 //   - the search does not ask `earthx:aoi_cloud_cover` in place of `eo:cloud_cover`, or asks it while the switch is locked;
 //   - the search does not go on by itself after answers without a scene, the list head does not say "n found / m checked"
 //     after each answer, "Stop" is missing while it goes on or stays after, or "Stop" loses what was found;
-//   - "Load more" is offered while the search goes on, is missing after "Stop", or does not go on from where it stopped;
+//   - "Load more" is offered while the search goes on, is missing after "Stop" (also when nothing was found yet), or does
+//     not go on from where it stopped;
+//   - the switch is not locked, with the reason, for an AOI with more than 20 000 points;
 //   - the share of clouds is not in a scene and in the head of a time step, or "Sort: Date | Clouds in AOI" does not order them;
 //   - the hints of the limit and of scenes that could not be read are missing, or the date fallback runs;
 //   - the coverage map asks the cloud range while the switch is in use;
@@ -116,13 +118,17 @@ async function check(browser, { theme, viewport }) {
       requests.search.push(body);
       const measured = body.query_by_collection?.[S2]?.['earthx:aoi_cloud_cover'];
       if (!measured) return json({ type: 'FeatureCollection', features: [], numberMatched: 0, numberReturned: 0, links: [] });
-      const step = STEPS[body.token ? Number(body.token.slice(1)) - 1 : 0];
+      const at = body.token ? Number(body.token.slice(1)) - 1 : 0;
+      const step = STEPS[at];
       if (step.slow) await new Promise((resolve) => setTimeout(resolve, step.slow));
-      const features = step.scenes.map((i) => feature(MADE[i], i)).filter((f) => f.properties['earthx:aoi_cloud_cover'] <= (measured.lte ?? 100));
+      const passes = (i) => MADE[i].cloud <= (measured.lte ?? 100);
+      const features = step.scenes.filter(passes).map((i) => feature(MADE[i], i));
+      // What the server counts is what passes, over the whole search up to this answer.
+      const found = STEPS.slice(0, at + 1).flatMap((x) => x.scenes).filter(passes).length;
       return json({
         type: 'FeatureCollection', features, numberReturned: features.length,
         links: step.next ? [{ rel: 'next', href: '/stac/search', method: 'POST', body: { token: step.next } }] : [],
-        'earthx:aoi_filter': { checked: step.checked, found: step.found, unreadable: step.unreadable ?? 0, limit_reached: step.limit ?? false },
+        'earthx:aoi_filter': { checked: step.checked, found, unreadable: step.unreadable ?? 0, limit_reached: step.limit ?? false },
       });
     }
     if (url.pathname.startsWith('/coverage/')) {
@@ -326,6 +332,40 @@ async function check(browser, { theme, viewport }) {
   const baseline = await sideways();
   expect('the page scrolls sideways at the end, in a way the search without the switch does not', wide.every((w) => baseline.includes(w)), `${wide.join('; ')} against ${baseline.join('; ')}`);
   if (wide.length > 0) observed.push(`${label}: the page scrolls sideways at the end (${wide.join(', ')}), as it does after a search without the switch`);
+
+  // 12. "Stop" before a scene was found (Otto, 31.10.2026): the list is there with "0 found / m checked" and "Load more".
+  await store((s) => { s.getState().clearSearchResults(); s.setState({ dock: 'controls' }); });
+  await page.waitForSelector('.control-panel');
+  await button.click();
+  await within.locator('input').click();
+  await fields('Cloud cover, to').fill('0.1');
+  await page.keyboard.press('Escape');
+  const none = asked();
+  await searchButton.click();
+  await until('the third answer was not asked', async () => asked() >= none + 3);
+  await page.locator('.toast.busy .aoi-stop').click();
+  await until('the list did not open after "Stop"', async () => (await page.locator('.results-panel').count()) > 0);
+  expect('the head after "Stop" without a scene', (await text(progress.locator('span').first())) === '0 found / 200 checked', await text(progress));
+  expect('"Stop" stays after it was pressed', (await stop.count()) === 0);
+  expect('no "Load more" after "Stop" without a scene', (await page.locator('.load-more button').count()) === 1);
+  await shot('9-stopped-empty');
+  const more = asked();
+  await page.locator('.load-more button').click();
+  await until('"Load more" did not ask on from the token', async () => asked() > more);
+  expect('"Load more" did not go on from the token of the answer before', requests.search[more].token === 't3', String(requests.search[more].token));
+  await stop.click().catch(() => {});
+
+  // 13. More than 20 000 points: the switch is locked, with the reason.
+  await store((s) => { s.getState().clearSearchResults(); s.setState({ dock: 'controls' }); });
+  await page.waitForSelector('.control-panel');
+  await store((s) => {
+    const ring = Array.from({ length: 20001 }, (_, i) => [10.5 + 0.4 * Math.cos((i / 20001) * 2 * Math.PI), 47.5 + 0.4 * Math.sin((i / 20001) * 2 * Math.PI)]);
+    s.setState({ aoi: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } });
+  });
+  await button.click();
+  expect('the switch is not locked for too many points', await locked());
+  expect('the tooltip for too many points', (await within.getAttribute('title')) === 'The area has too many points for this filter', await within.getAttribute('title'));
+  await shot('10-too-many');
   await context.close();
   return { label, problems, requests, observed };
 }

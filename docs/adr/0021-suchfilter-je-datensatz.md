@@ -101,7 +101,7 @@ Plan, Messungen und Optionen: `docs/plans/ds/ds-03-wolken-in-aoi.md` §6. Messsk
 - **Frontend:** Der Schalter „Within AOI“ steht in „Advanced search“ unter dem Filter, an dem `within_aoi` gesetzt ist; ohne AOI, Zeitraum mit beiden Enden oder bei einer Punkt-AOI ist er gesperrt, mit dem Grund im Tooltip. Sonst kennt kein Frontend-Code einen Datensatz: Klassen und Satz zu den Grenzen kommen aus `earthx:mask.cloud_classes` und `cloud_note`.
 - **Anfrage:** Bei aktivem Schalter steht der Bereich unter `earthx:aoi_cloud_cover` statt unter dem Filter der Szene; bei einer AOI mit mehr als 1 000 Positionen geht `bbox` und die AOI als `earthx:aoi` im Body. Der Datums-Fallback läuft dann nicht, die Coverage bekommt den Bereich nicht.
 - **Ablauf:** Das Frontend fragt mit der Marke weiter, zeigt „n found / m checked“ nach jeder Antwort, kann mit „Stop“ abbrechen und lässt Gefundenes und Marke stehen. Zeile und Gruppe zeigen „☁ n %“, die Sortierung „Clouds in AOI“ ordnet nur die Anzeige.
-- **Offen:** Der Hinweis zur Grenze nennt kein Datum, weil keine Antwort es trägt.
+- **Entschieden (Otto, 31.10.2026, zu #265):** Der Hinweis zur Grenze nennt kein Datum. Eine AOI mit mehr als 20 000 Positionen sperrt den Schalter mit Grund im Tooltip (das `400` des Servers bleibt als Sicherung). Ein Lauf, den „Stop“ vor dem ersten Treffer beendet, zeigt die Liste mit „0 found / m checked“ und „Load more“.
 
 ## 7. Oberfläche (DS-02c, 30.10.2026)
 
