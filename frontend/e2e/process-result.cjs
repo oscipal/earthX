@@ -146,11 +146,16 @@ async function check(browser, theme, viewport) {
   const labels = await page.$$eval('section[aria-label="Output"] .pp-chip-row .pp-help', (e) => e.map((x) => x.textContent));
   if (labels.join() !== 'Data') problems.push(`the groups of the output are ${labels}`);
 
-  // The bands of the job are the output; RGB is on offer for the three of them.
+  // The bands of the job are listed in "Data", none of them checked; "Start job" waits for one.
+  const stored = () => page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().output);
+  if ((await stored()).length !== 0) problems.push(`the output starts with ${await stored()}`);
+  if ((await page.$$('section[aria-label="Output"] [aria-label="Bands of the data"] .pp-chip[aria-pressed="true"]')).length !== 0) problems.push('a band of the result is checked');
+  if (!(await panel.locator('button.primary-btn', { hasText: 'Start job' }).isDisabled())) problems.push('"Start job" is active with nothing checked');
+  for (const name of ['NDVI', 'red', 'green', 'blue']) await panel.locator('section[aria-label="Output"] [aria-label="Bands of the data"]').getByRole('button', { name, exact: true }).click();
+  // RGB is on offer once the three bands are in the output.
   const options = await page.$$eval('.pp-show select option', (o) => o.map((x) => x.value));
   if (options.join() !== '@rgb,NDVI,red,green,blue') problems.push(`"Show" offers ${options}`);
-  const output = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().output);
-  if (output.join() !== 'NDVI,red,green,blue') problems.push(`the output is ${output}`);
+  if ((await stored()).join() !== 'NDVI,red,green,blue') problems.push(`the output is ${await stored()}`);
 
   // A new step reads the bands of the job, not the stock it did not keep.
   await panel.getByRole('button', { name: /Band math/ }).first().click();

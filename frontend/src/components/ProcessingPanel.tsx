@@ -184,7 +184,7 @@ function OutputBands({ view }: { view: OrderView }) {
   const checkedOnOpening = useRef<string | null>(null);
   const checked = lonely !== null && view.output.includes(lonely);
   // Not where the steps already add a band: the results are what is in the output then.
-  const results = view.results.length;
+  const results = view.fresh.length;
   useEffect(() => {
     if (lonely === null || checkedOnOpening.current === lonely) return;
     checkedOnOpening.current = lonely;

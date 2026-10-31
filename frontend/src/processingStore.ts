@@ -658,6 +658,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
         ...stock.filter((band) => kept.has(band.name)),
       ]
     : stock;
+  const onlyBand = dataBands.filter((b) => !b.auxiliary && !b.layer).map((b) => b.name);
   const output = outputBands(p.output, results.map((r) => r.name), dataBands.map((b) => b.name));
   const inOutput = new Set(output);
   // What the order reads: the bands of the output, those an expression or a `normalize` names, the layer of a mask.
@@ -727,7 +728,8 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     dataNames,
     dataBands,
     selectable: dataBands.filter((b) => !b.auxiliary && !b.layer).map((b) => b.name),
-    lonely: from ? null : lonelyBand(selectable, sources),
+    // A result with one band to choose from has it checked once, as a scene with one band does.
+    lonely: from ? (onlyBand.length === 1 ? onlyBand[0] : null) : lonelyBand(selectable, sources),
     results,
     fresh: results.slice(lockedResults.length),
     inherited,
@@ -1814,8 +1816,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const { order } = job;
       const groupId = job.groupId ?? get().batches.find((b) => b.id === job.batchId)?.groupId ?? null;
       const taken = await takeOrder(order, 'this result', (draft, notes) => ({
-        // The area of the result is "Whole scene" here; "AOI only" is another AOI inside it.
+        // The area of the result is "Whole scene" here; "AOI only" is another AOI inside it. Its bands are in the list of the output,
+        // none of them checked, as the bands of a scene are (Otto, 2026-10-31).
         area: 'scene',
+        output: [],
         fixed: {
           itemIds: draft.groups.flat(),
           aoi: draft.aoi,

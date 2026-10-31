@@ -237,8 +237,9 @@ const dataGroup = () => container.querySelector('section[aria-label="Output"] [a
 const dataChips = () => [...dataGroup().querySelectorAll('.pp-chip')].map((c) => c.textContent);
 const pressed = () => [...dataGroup().querySelectorAll('.pp-chip')].filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
 
-// ⚙ at the layer, then the panel.
-async function process() {
+// ⚙ at the layer, then the panel. The bands of the result are in the list of the output and none is checked (Otto, 2026-10-31);
+// most tests need something to start, so they check `ticked` themselves, and `null` leaves the list as the panel made it.
+async function process(ticked: string[] | null = ['NDVI', 'red']) {
   act(() =>
     root.render(
       <>
@@ -249,6 +250,7 @@ async function process() {
   );
   click(gear());
   await flush();
+  if (ticked !== null) act(() => store().setOutput(ticked));
 }
 
 describe('whether a result layer can be processed further', () => {
@@ -340,13 +342,13 @@ describe('the ⚙ of a result layer', () => {
 });
 
 describe('the panel from a result', () => {
-  it('opens on the order of the job: its steps locked, its output as the output, its scenes and area fixed', async () => {
-    await process();
+  it('opens on the order of the job: its steps locked, nothing checked in the output, its scenes and area fixed', async () => {
+    await process(null);
     expect(store().open).toBe(true);
     expect(store().steps.map((s) => s.op)).toEqual(['band_math']);
     expect(store().fixed?.result?.locked).toBe(1);
     expect(store().fixed?.result?.bands).toEqual(['NDVI', 'red']);
-    expect(output()).toEqual(['NDVI', 'red']);
+    expect(output()).toEqual([]);
     // "Whole scene" is the area of the result; the job's AOI is the area of the order.
     expect(store().area).toBe('scene');
     expect(store().fixed?.aoi).toEqual(AOI);
@@ -364,11 +366,39 @@ describe('the panel from a result', () => {
   });
 
   it('offers the output of the job as its bands, and no other: the stock it did not keep is out of sight', async () => {
-    await process();
+    await process(null);
     expect(infoChips()).toEqual(['NDVI', 'red']);
     expect(dataChips()).toEqual(['NDVI', 'red']);
     expect(container.querySelector('section[aria-label="Output"] [aria-label="New bands"]')).toBeNull();
-    expect(pressed()).toEqual(['NDVI', 'red']);
+  });
+
+  it('checks none of the bands of the result in "Data", and starts nothing until one is', async () => {
+    await process(null);
+    expect(pressed()).toEqual([]);
+    expect(output()).toEqual([]);
+    expect((button('Start job') as HTMLButtonElement).disabled).toBe(true);
+    expect((button('Start job') as HTMLButtonElement).title).toBe('Pick at least one band for the output.');
+    click(button('NDVI', dataGroup()));
+    expect(pressed()).toEqual(['NDVI']);
+    expect(orderView(selectionState(useAppStore.getState()), store()).built?.order).not.toBeNull();
+  });
+
+  it('checks a new result, as it does for a scene, and leaves the bands of the result unchecked', async () => {
+    await process(null);
+    click(button('＋ Band math'));
+    expect(output()).toEqual(['result']);
+    expect(pressed()).toEqual([]);
+  });
+
+  it('checks the one band of a result that has one, once, as it does for a scene', async () => {
+    useProcessingStore.setState({
+      jobs: [entry({ order: parent({ output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI'] } }) })],
+    });
+    await process(null);
+    expect(pressed()).toEqual(['NDVI']);
+    // A later "None" stays.
+    click(button('None'));
+    expect(pressed()).toEqual([]);
   });
 
   it('has the same area choice as the panel of a scene: "Whole scene" is the result, "AOI only" an AOI inside it', async () => {
@@ -806,14 +836,14 @@ describe('a result of several bands, and RGB', () => {
 
   it('opens with the bands of the job as the output and offers RGB in "Show"', async () => {
     useProcessingStore.setState({ jobs: [entry({ order: colour() })] });
-    await process();
+    await process(['red', 'green', 'blue']);
     expect(output()).toEqual(['red', 'green', 'blue']);
     expect([...(show()?.options ?? [])].map((o) => o.value)).toEqual(['@rgb', 'red', 'green', 'blue']);
   });
 
   it('shows the result added last, with RGB still on offer, and puts the new band beside the three', async () => {
     useProcessingStore.setState({ jobs: [entry({ order: colour() })] });
-    await process();
+    await process(['red', 'green', 'blue']);
     click(button('＋ Band math'));
     typeInto(container.querySelector<HTMLTextAreaElement>('li:not(.pp-locked) textarea[id$="-expression"]')!, '(nir - red) / (nir + red)');
     expect(output()).toEqual(['red', 'green', 'blue', 'result']);
@@ -825,7 +855,7 @@ describe('a result of several bands, and RGB', () => {
 
   it('shows RGB first where the job has the three bands and adds no result', async () => {
     useProcessingStore.setState({ jobs: [entry({ order: colour() })] });
-    await process();
+    await process(['red', 'green', 'blue']);
     expect(show()?.value).toBe('@rgb');
   });
 
@@ -833,7 +863,7 @@ describe('a result of several bands, and RGB', () => {
     useProcessingStore.setState({
       jobs: [entry({ order: parent({ steps: colour().steps, output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red', 'green'] } }) })],
     });
-    await process();
+    await process(['red', 'green']);
     expect([...(show()?.options ?? [])].map((o) => o.value)).toEqual(['red', 'green']);
   });
 });
