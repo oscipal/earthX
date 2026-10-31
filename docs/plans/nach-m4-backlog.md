@@ -123,6 +123,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Zu klären im PR:** wohin Querschnittsdateien ohne Meilenstein gehören (etwa Zusätze über mehrere Aufgaben); Vorschlag: zum Meilenstein, in dem sie entstanden sind.
    - **Aufgabe:** Stufe A, nur Doku, Sonnet mittel.
 14. **Schnellrechnungen (Index-Knöpfe)** (Otto, 22.10.2026; Grundlage `projektuebersicht.md` §8: „datensatzspezifische Presets … bauen auf Band-Math auf“).
+   - **Backend erledigt:** NM4-14, PR #251 (30.10.2026): Registry-Feld `index_presets` (S2: NDVI, NDWI, NDSI, NBR, EVI nach Awesome Spectral Indices; DEM leer), Prüfung beim Start; ein Knopf legt denselben `band_math`-Schritt an wie von Hand. Frontend: NM4-14b nach NM4-43e PR 2.
    - **Stand 27.10.2026:** wartet auf die Entscheidung zu Punkt 43 (Index-Knopf fügt ein neues Band hinzu?).
    - **Plan:** `querschnitt/nm4-14-index-knoepfe.md`
    - **Soll:** An einem Layer eines passenden Datensatzes (etwa „Crop & merge to AOI“ von Sentinel-2) gibt es Knöpfe für häufige Indizes, etwa NDVI, NDWI, NDSI, NBR, EVI. Ein Klick erzeugt einen ganz normalen Band-math-Schritt mit Vorschau; Start als Job wie gewohnt.
@@ -281,11 +282,12 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-43-ausgabe-baender.md`
    - **Soll (Otto):** keine Obergrenze für die Zahl der Bänder; ein `band_math`-Ergebnis wird ein eigenes Band; oben keine Auswahl mehr, nur Info und Namenshilfe; am Ende des Panels alle Bänder des Datensatzes und alle neu gerechneten, per Klick in die Ausgabe. Standardmäßig ist nur das Band-Math-Ergebnis in der Ausgabe; mehrere `band_math`-Schritte hintereinander mit unterschiedlichen Bändern sind möglich.
    - **Aufgabe:** Stufe C, ADR-Entwurf `adr/0020` mit Messung und Recherche (Schutz ohne Bandgrenze, Ausgabedatei mit gemischten Typen, Vorschau, Hash, alte Rezepte). Nimmt NM4-10 in sich auf; NM4-11, NM4-14, NM4-20, DS-06 warten auf die Entscheidung.
-   - **Entschieden (Otto, 28.10.2026, PR #219):** `adr/0020` angenommen, F1–F13 Option 1 außer F7 Option 2 (ohne `band_math` alle wählbaren Bänder angehakt). Aufgaben in §6 des Plans: NM4-43a (Schätzung nach feinstem Asset; erledigt #224, `adr/0014` §15v) und NM4-43b (`reproject` Version 4 je Band; erledigt #229, band-Interleave für Zwischendateien, Version 0.4.4, „§15 Nachtrag NM4-43b“) sofort und unabhängig; dann NM4-43c (Kern, zwei PRs; PR 1 erledigt #236, PR 2 erledigt #241: keine Bandgrenze, Speicherschätzung 1,5 GB je Kindprozess, `units` je Schritt nach eigenen Bändern), NM4-43d (Kachel), NM4-43e (Frontend). Runner liest Rezept-Version 1 dauerhaft; `api` bis 30 Tage nach dem Deploy von NM4-43e. NM4-11, NM4-14, NM4-20, DS-06 nach NM4-43c.
+   - **Entschieden (Otto, 28.10.2026, PR #219):** `adr/0020` angenommen, F1–F13 Option 1 außer F7 Option 2 (ohne `band_math` alle wählbaren Bänder angehakt). Aufgaben in §6 des Plans: NM4-43a (Schätzung nach feinstem Asset; erledigt #224, `adr/0014` §15v) und NM4-43b (`reproject` Version 4 je Band; erledigt #229, band-Interleave für Zwischendateien, Version 0.4.4, „§15 Nachtrag NM4-43b“) sofort und unabhängig; dann NM4-43c (Kern, zwei PRs; PR 1 erledigt #236, PR 2 erledigt #241; NM4-43d erledigt #245; NM4-43e PR 1 erledigt #250 – Panel mit Bandvorrat, Namen, Ausgabe am Ende; offen NM4-43e PR 2: Vorschau-Dropdown je Band, Ergebnis-Layer je Band: keine Bandgrenze, Speicherschätzung 1,5 GB je Kindprozess, `units` je Schritt nach eigenen Bändern), NM4-43d (Kachel), NM4-43e (Frontend). Runner liest Rezept-Version 1 dauerhaft; `api` bis 30 Tage nach dem Deploy von NM4-43e. NM4-11, NM4-14, NM4-20, DS-06 nach NM4-43c.
 44. **Schwachstellen der Frontend-Pakete prüfen (`npm audit`)** (Otto, 27.10.2026; 8 Meldungen bei `npm install`, dazu Node-Version für `jsdom`).
    - **Plan:** `querschnitt/nm4-44-npm-audit.md`
    - **Aufgabe:** Stufe A, nach UI-02a (#211). Gezielt aktualisieren, kein `npm audit fix --force`; Hauptversionssprung nur nach Ottos Freigabe.
 45. **Einzelne Bänder in der Vollauflösungs-Ansicht per Dropdown** (Otto, 27.10.2026).
+   - **Otto, 31.10.2026:** Bei Sentinel-2 ist „RGB“ (Echtfarben aus red/green/blue) oberster Eintrag und Vorgabe in der Ansicht; ersetzt `visual`. Bei RGB keine Colormap. In Vorschau und Ergebnis-Layer (NM4-43e PR 2, #255) ist RGB die Vorgabe nur ohne Band-Math und nur, wenn red, green, blue in der Ausgabe sind; mit Band-Math bleibt das neueste Ergebnis die Vorgabe.
    - **Zusammengelegt (29.10.2026):** wird mit Paket NM4-54 umgesetzt; nicht einzeln starten.
    - **Plan:** `querschnitt/nm4-45-band-in-ansicht.md`
    - **Soll:** Dropdown „Band“ in der Ansicht, Vorgabe `visual`, dazu jedes Band aus der Registry; bei einem Band Colormap, vmin/vmax, „auto-scale“; Anheften behält das Band. Nur Einzelbänder.
@@ -339,6 +341,8 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 62. **Leistungsvergleich alter Stand gegen main** (Otto, 30.10.2026; aus der Messung zu Punkt 48). Job-Skript auf main 12–16 s gegen 2,8 s auf dem Stand von #215, Zuschnitt 15,6 gegen 10,5 s; Kachel bei beiden gleich (Netz). Gegen die nachgebaute Quelle messen, Ursache suchen.
    - **Plan:** `querschnitt/nm4-62-leistungsvergleich.md`
    - **Aufgabe:** Stufe A, Backend, Opus.
+   - **Erledigt (PR #253, 30.10.2026):** keine Regression; gegen die nachgebaute Quelle main/#215 = 0,98–1,03 (Kachel kalt/warm, Zuschnitt, Job). P4-Unterschied kommt aus NM4-27 (gelöschter Job ist kein Cache-Treffer mehr); Ottos 2,8 s waren ein Cache-Treffer. `try-job.ps1` zeigt künftig die Job-Laufzeit und Cache-Treffer. Vergleichsskript `scripts/tile-bench/compare.sh`.
+63. **Annahme von `reproject` 0,2 s langsamer** (aus NM4-62, #253): Zielraster wird seit NM4-43 je Auftrag fünfmal statt zweimal berechnet (je ~16 ms). Später einmal berechnen und als Argument durchreichen (kein Zustand im Worker-Kern). Niedrige Priorität.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
