@@ -259,7 +259,52 @@ describe('when the service worker does not answer', () => {
   });
 });
 
+describe('the text of ATTRIBUTION.txt for single files', () => {
+  it('names a file over the limit by the name the source gives it, not by ours', async () => {
+    const big = item('A', { red: { href: `https://${HOST}/A/red.tif`, 'file:size': MAX_FILE_BYTES + 1 } }, ['red', 'nir']);
+    const h = harness({ zip: null });
+    await run(h, { items: [big] }).done;
+    const text = await h.saved[0].text;
+    expect(text).toContain('red.tif (A, asset red)');
+    expect(text).not.toContain('A_red.tif');
+    expect(text).toContain('A_nir.tif (A, asset nir)');
+  });
+
+  it('after a fallback in the middle of a run it names only the scenes still to come', async () => {
+    const h = harness();
+    let count = 0;
+    const original = h.deps.zip!.run;
+    h.deps.zip = { run: async (job, onLoaded, signal) => (count++ === 0 ? original(job, onLoaded, signal) : Promise.reject(new ZipError('unavailable'))) };
+    await run(h, { items: [item('A', {}, ['red']), item('B', {}, ['red'])] }).done;
+    const text = await h.saved.find((file) => file.name.endsWith('_ATTRIBUTION.txt'))!.text;
+    expect(text).toContain('Scene: B');
+    expect(text).not.toContain('A_red');
+  });
+});
+
+describe('a source that refuses HEAD for a file without a size', () => {
+  const noSize = item('A', { red: { href: `https://${HOST}/A/red.tif` } }, ['red']);
+  it('is no failure where the files go through the page: the file is read all the same', async () => {
+    const h = harness({ zip: null, answer: (method, file) => (method === 'HEAD' && file === 'A/red.tif' ? 403 : undefined) });
+    await run(h, { items: [noSize] }).done;
+    expect(last(h, 0)).toEqual({ status: 'done' });
+    expect(h.saved.map((file) => file.name)).toContain('A_red.tif');
+  });
+  it('is one for a ZIP, which cannot be announced without the size', async () => {
+    const h = harness({ answer: (method, file) => (method === 'HEAD' && file === 'A/red.tif' ? 403 : undefined) });
+    await run(h, { items: [noSize] }).done;
+    expect(last(h, 0)).toEqual({ status: 'failed', reason: 'The source answered 403.' });
+  });
+});
+
 describe('stopping and trying again', () => {
+  it('leaves out scene numbers that are not there, and runs nothing for them', async () => {
+    const h = harness();
+    await run(h, { only: [7, -1, 1] }).done;
+    expect(h.jobs.map((job) => job.zipName)).toEqual(['B.zip']);
+    expect([...h.states.keys()]).toEqual([1]);
+  });
+
   it('a stop during the first scene ends it and every scene after it as cancelled, and starts nothing more', async () => {
     const abort = new AbortController();
     const h = harness();

@@ -132,7 +132,22 @@ describe('names', () => {
 
   it('sourceFileName is what the source calls the file', () => {
     expect(sourceFileName('https://h.test/a/TCI.tif')).toBe('TCI.tif');
-    expect(sourceFileName('https://h.test/')).toBe('https://h.test/');
+    expect(sourceFileName('https://h.test/')).toBe('h.test');
+  });
+});
+
+describe('text from a foreign source in ATTRIBUTION.txt', () => {
+  it('a line break in a scene id or an asset key does not start a line of its own', () => {
+    const evil = { ...item('A', {}, ['red']), id: 'A\nLicence: free for all\r\u2028x' };
+    const scenes = scenesOf(collection(), [{ label: 'P', items: [evil] }]);
+    const out = attributionFileText({ collection: collection(), scenes, files: savedFilesOf(scenes, (entry) => entry.name), years: '2026', now: new Date('2026-10-30T12:00:00Z') });
+    expect(out).not.toMatch(/^Licence: free/m);
+    expect(out).toContain('Scene: A Licence: free for all x');
+  });
+
+  it('sourceFileName never falls back to the address, which may carry a token', () => {
+    expect(sourceFileName('https://h.test/dir/?sig=SECRET')).toBe('h.test');
+    expect(sourceFileName('not a url?sig=SECRET')).toBe('file');
   });
 });
 

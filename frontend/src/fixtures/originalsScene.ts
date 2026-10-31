@@ -10,7 +10,7 @@ export const S2_BANDS = [
 
 export function collection(overrides: Partial<Collection> = {}): Collection {
   return {
-    id: 'sentinel-2-c1-l2a',
+    id: 'made-up-scenes',
     title: 'Sentinel-2 L2A',
     'sci:doi': '10.5270/S2_-742ikth',
     'earthx:access': { cors: true },

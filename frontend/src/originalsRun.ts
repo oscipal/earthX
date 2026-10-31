@@ -58,6 +58,8 @@ export interface RunArgs {
   onWay(way: Way, reason: string | null): void;
 }
 
+const PROGRESS_STEP_MS = 250;
+
 // A failure with its own sentence.
 class Failure extends Error {}
 
@@ -82,7 +84,16 @@ async function lengthOf(deps: RunDeps, href: string, signal: AbortSignal): Promi
 async function sizesOf(scene: OriginalScene, deps: RunDeps, signal: AbortSignal, strict: boolean) {
   const sizes = new Map<string, number>();
   for (const entry of scene.entries) {
-    const size = entry.size ?? (await lengthOf(deps, entry.href, signal));
+    let size = entry.size;
+    if (size === null) {
+      try {
+        size = await lengthOf(deps, entry.href, signal);
+      } catch (error) {
+        // Where the files go through the page, a size is only a decision about large files; a source that refuses
+        // `HEAD` but would give the file is not a failure.
+        if (strict || !(error instanceof ZipError)) throw error;
+      }
+    }
     if (size !== null) sizes.set(entry.href, size);
     else if (strict) throw new Failure('The source does not tell how large a file is.');
   }
@@ -109,7 +120,7 @@ function textBlob(text: string, type: string): Blob {
 
 export async function runOriginals(args: RunArgs): Promise<void> {
   const { collection, datasetId, scenes, years, deps, signal } = args;
-  const order = args.only ?? scenes.map((_, index) => index);
+  const order = (args.only ?? scenes.map((_, index) => index)).filter((index) => index >= 0 && index < scenes.length);
   const set = args.onScene;
   for (const index of order) set(index, { status: 'waiting' });
 
@@ -147,16 +158,18 @@ export async function runOriginals(args: RunArgs): Promise<void> {
     }
   }
 
-  const allScenes = chosen;
+  // One `ATTRIBUTION.txt` for the scenes that do not come as a ZIP (a ZIP has its own): all of them, or, after a
+  // fallback in the middle of a run, the ones still to come.
   let attributionSaved = false;
-  const saveAttribution = (named: (entry: OriginalEntry) => string, only?: (entry: OriginalEntry) => boolean) => {
+  const saveAttribution = (from: number, named: (entry: OriginalEntry) => string, only?: (entry: OriginalEntry) => boolean) => {
     if (attributionSaved) return;
     attributionSaved = true;
+    const covered = order.slice(from).map((index) => scenes[index]);
     const text = attributionFileText({
       collection,
-      scenes: allScenes,
+      scenes: covered,
       files: savedFilesOf(
-        allScenes.map((scene) => (only ? { ...scene, entries: scene.entries.filter(only) } : scene)),
+        covered.map((scene) => (only ? { ...scene, entries: scene.entries.filter(only) } : scene)),
         named,
       ),
       years,
@@ -195,7 +208,8 @@ export async function runOriginals(args: RunArgs): Promise<void> {
         );
         set(index, { status: 'done' });
       } else if (way === 'files') {
-        saveAttribution((entry) => entry.name);
+        // A file over the limit is not saved by the page but by the browser, under the name the source gives it.
+        saveAttribution(k, (entry) => (entry.size !== null && entry.size > MAX_FILE_BYTES ? sourceFileName(entry.href) : entry.name));
         const sizes = await sizesOf(scene, deps, signal, false);
         const total = sizes.size === scene.entries.length ? [...sizes.values()].reduce((sum, s) => sum + s, 0) : null;
         let loaded = 0;
@@ -206,10 +220,16 @@ export async function runOriginals(args: RunArgs): Promise<void> {
             deps.navigate(entry.href);
             continue;
           }
+          let reported = 0;
           const blob = await readBlob(deps, entry.href, signal, (n) => {
             loaded += n;
-            set(index, { status: 'running', loaded, total });
+            // Not for every chunk: a file of hundreds of megabytes is thousands of them.
+            if (Date.now() - reported >= PROGRESS_STEP_MS) {
+              reported = Date.now();
+              set(index, { status: 'running', loaded, total });
+            }
           });
+          set(index, { status: 'running', loaded, total });
           deps.saveBlob(entry.name, blob);
         }
         deps.saveBlob(`${safeName(scene.item.id)}_item.json`, textBlob(sceneItemJson(scene.item), 'application/json'));
@@ -217,7 +237,7 @@ export async function runOriginals(args: RunArgs): Promise<void> {
       } else {
         // Files a browser would show instead of saving (XML, JSON) are not sent to it as downloads.
         const data = (entry: OriginalEntry) => entry.kind === 'data';
-        saveAttribution((entry) => sourceFileName(entry.href), data);
+        saveAttribution(k, (entry) => sourceFileName(entry.href), data);
         for (const entry of scene.entries.filter(data)) deps.navigate(entry.href);
         set(index, { status: 'started' });
       }

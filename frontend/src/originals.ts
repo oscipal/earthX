@@ -52,10 +52,17 @@ export function fileExtension(href: string): string {
 // The name the source gives the file, for the download the browser makes itself.
 export function sourceFileName(href: string): string {
   try {
-    return new URL(href).pathname.split('/').pop() || href;
+    const url = new URL(href);
+    return url.pathname.split('/').pop() || url.hostname;
   } catch {
-    return href;
+    return 'file';
   }
+}
+
+// Text from an item of a foreign source, as one line of `ATTRIBUTION.txt`: a line break in a scene id must not start
+// a line of its own there.
+function oneLine(text: string): string {
+  return text.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ');
 }
 
 // Which assets of an item are its original files, read from the collection (Otto, 29.10.2026, Z1 and Z3): the
@@ -175,16 +182,16 @@ export function attributionFileText(args: {
   if (flags?.terms_url && !terms?.includes(flags.terms_url)) lines.push(flags.terms_url);
   if (collection['sci:citation']) lines.push(collection['sci:citation']);
   if (collection['sci:doi']) lines.push(`DOI: https://doi.org/${collection['sci:doi']}`);
-  lines.push(`${scenes.length === 1 ? 'Scene' : 'Scenes'}: ${scenes.map((scene) => scene.item.id).join(', ')}`);
+  lines.push(`${scenes.length === 1 ? 'Scene' : 'Scenes'}: ${scenes.map((scene) => oneLine(scene.item.id)).join(', ')}`);
   lines.push(
-    ['Files:', ...files.map((file) => `  ${file.name} (${file.itemId}, asset ${file.asset})`)].join('\n'),
+    ['Files:', ...files.map((file) => oneLine(`  ${file.name} (${file.itemId}, asset ${file.asset})`))].join('\n'),
   );
   const gaps = scenes.filter((scene) => scene.missing.length > 0);
   if (gaps.length > 0) {
     lines.push(
       [
         'Not included, because the source gives no direct link for them:',
-        ...gaps.map((scene) => `  ${scene.item.id}: ${scene.missing.join(', ')}`),
+        ...gaps.map((scene) => oneLine(`  ${scene.item.id}: ${scene.missing.join(', ')}`)),
       ].join('\n'),
     );
   }
