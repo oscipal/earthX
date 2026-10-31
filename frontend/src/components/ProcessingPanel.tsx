@@ -744,7 +744,7 @@ export default function ProcessingPanel() {
                   {p.steps.length > view.locked && (
                     <ol className="pp-steps">
                       {p.steps.map((step, index) => {
-                        // The steps of a result stand first in the order and are not shown (adr/0019 §10a).
+                        // The steps of a result stand first in the order and are not shown (adr/0019, Nachtrag NM4-05b).
                         if (index < view.locked) return null;
                         const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
                         const problem = built?.stepProblems[index];

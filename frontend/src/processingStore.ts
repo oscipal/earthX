@@ -200,7 +200,7 @@ export interface FixedResult {
   // The first `locked` steps of the draft are those of the result: the order runs them again first, the panel does not show them
   // as steps, and they cannot be changed, moved or removed.
   locked: number;
-  // The bands of the result's output: all the panel offers of the result, as bands of its own (adr/0019 §10a). What the job did not
+  // The bands of the result's output: all the panel offers of the result, as bands of its own (adr/0019, Nachtrag NM4-05b). What the job did not
   // keep cannot be read by a step of the person, though the chain still holds it.
   bands: string[];
   // The result is gone; the chain runs from the scenes all the same.
@@ -607,7 +607,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const dataNames = sources.flatMap(bandNamesOf);
   const selectable = selectableAssets(sources, auxiliary, maskLayer?.asset ?? null);
   const results = resultsOf(p.steps);
-  // A result offers its output and nothing else (adr/0019 §10a): the bands of the data and the results of its steps that the job
+  // A result offers its output and nothing else (adr/0019, Nachtrag NM4-05b): the bands of the data and the results of its steps that the job
   // kept stand as the bands of the data; the rest of the stock is hidden.
   const from = p.fixed?.result ?? null;
   const kept = new Set(from?.bands ?? []);

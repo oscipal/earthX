@@ -567,7 +567,7 @@ Neurechnens messbar werden.
 
 ---
 
-## 10a. Nachtrag NM4-05b: Umsetzung und Änderung von F2 und F3 (2026-10-31; zu §7.1, §8, §9)
+## Nachtrag NM4-05b: Umsetzung und Änderung von F2 und F3 (2026-10-31; zu §7.1, §8, §9)
 
 Umgesetzt ist Option 2 (Draft-PR [#263](https://github.com/oscipal/earthX/pull/263), nur Frontend), auf dem Stand nach `adr/0020` (Bandvorrat, `output.bands`). Otto hat am 2026-10-31 zu #263 **F2 und F3 geändert**:
 

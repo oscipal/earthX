@@ -2896,6 +2896,6 @@ bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist das Backend (DS-06
 - **Tests.** Der Kern je Bedingung gegen einen Vergleich in Brüchen (`fractions.Fraction`), Grenzwerte auf der Schwelle und ein ULP daneben, `float32`, `float64`, `uint8`, `int16`; die Typregel; NaN und maskierte Pixel; die Kette mit `band_math` gegen ein unabhängiges NDVI; vor und nach dem Ergebnis dieselben Pixel; mit und ohne
   Streichen bitgleich; Planer und `api` (gelesene Assets, Fehlernamen, Ergebnis eines späteren Schritts); Auflistung je Datensatz; Kachel gegen Job; Runner gegen Kern samt Gegenprobe mit anderer Schwelle; Fehleingaben (`422`/`400`).
 
-## 15 Nachtrag NM4-05b: Ein Ergebnis ist keine Eingabe; der Weg über das Panel (2026-10-31; zu §4.1, §4.6, §15d; `adr/0019` §10a)
+## 15 Nachtrag NM4-05b: Ein Ergebnis ist keine Eingabe; der Weg über das Panel (2026-10-31; zu §4.1, §4.6, §15d; `adr/0019` Nachtrag NM4-05b)
 
 Das Panel baut aus dem Auftrag eines Jobs (seine Schritte unsichtbar vorn, die Ausgabebänder als Bandvorrat) und den neuen Schritten einen gewöhnlichen Auftrag (⚙ am Ergebnis-Layer). Eine Eingabe „Ergebnis“ gibt es nicht; `InputRequest`, Fassung, Hash und `recipe.json` bleiben unverändert. Das Ergebnis wird aus den Quellen neu gerechnet und kann im letzten Bit von einem Schritt auf der gespeicherten Datei abweichen (`adr/0019` §3.5).
