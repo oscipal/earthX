@@ -285,7 +285,6 @@ export default function StepForm({
   maskLayer,
   earlier,
   dataBands,
-  maskBands,
   units,
   onInsert,
   checkName,
@@ -313,8 +312,6 @@ export default function StepForm({
   // The names of the bands the steps before this one add, and the bands of the data a step may name (adr/0020 §14).
   earlier: readonly string[];
   dataBands: readonly string[];
-  // The bands a mask by value may look at: those of the data besides the helper assets, the layer of a mask included.
-  maskBands: readonly string[];
   // The unit of each band of the data that has one (the "in m" beside "Hide where").
   units: Readonly<Record<string, string>>;
   // A name put into this step's expression.
@@ -373,7 +370,7 @@ export default function StepForm({
           errors={errors}
           showErrors={showErrors}
           earlier={earlier}
-          dataBands={maskBands}
+          dataBands={dataBands}
           units={units}
           onChange={onChange}
         />

@@ -103,7 +103,7 @@ async function checkS2(browser, theme, viewport) {
   await page.getByRole('button', { name: '＋ Mask by value' }).click();
   const step = page.locator('li.pp-step').nth(1);
   const groups = await step.locator('optgroup').evaluateAll((g) => g.map((x) => [x.label, [...x.querySelectorAll('option')].map((o) => o.value).join()]));
-  if (JSON.stringify(groups) !== JSON.stringify([['Results', 'result'], ['Data', 'red,nir,scl']])) problems.push(`the options of Band are ${JSON.stringify(groups)}`);
+  if (JSON.stringify(groups) !== JSON.stringify([['Results', 'result'], ['Data', 'red,nir']])) problems.push(`the options of Band are ${JSON.stringify(groups)}`);
   if ((await step.locator('select[id$="-band"]').inputValue()) !== 'result') problems.push('the band is not the last result');
   const row = step.locator('.pp-where');
   const shown = async () => row.evaluate((r) => [...r.querySelectorAll('input, select')].map((e) => e.getAttribute('aria-label')).join());

@@ -50,7 +50,7 @@ export default function MaskValuesFields({
   const valuesTouched = condition === 'between' ? from !== '' && to !== '' : text !== '';
   const bandError = showErrors || band !== '' ? errors.band : undefined;
   const comma = condition === 'between' ? hasComma(from) || hasComma(to) : (condition === 'lt' || condition === 'gt') && hasComma(text);
-  const valuesError = comma ? 'Use a point as the decimal mark.' : showErrors || valuesTouched ? errors.values : undefined;
+  const valuesError = comma ? 'Use . for decimals.' : showErrors || valuesTouched ? errors.values : undefined;
   const id = `pp-step-${stepKey}`;
   const number = (label: string, value: string, set: (value: string) => void) => (
     <input

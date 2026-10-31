@@ -280,7 +280,7 @@ describe('a mask by value step', () => {
     expect(step().textContent).not.toContain('Compared in');
   });
 
-  it('offers the results of earlier steps first, then the bands of the data without the helper assets', async () => {
+  it('offers the results of earlier steps first, then the bands of the data, no layer of classes and no helper asset', async () => {
     select([scene('S2B_A')]);
     await openPanel();
     click(button('＋ Band math'));
@@ -290,10 +290,19 @@ describe('a mask by value step', () => {
     const groups = [...mask.querySelectorAll('optgroup')].map((g) => [g.label, [...g.querySelectorAll('option')].map((o) => o.value)]);
     expect(groups).toEqual([
       ['Results', ['result']],
-      ['Data', ['red', 'nir', 'scl']],
+      ['Data', ['red', 'nir']],
     ]);
     // The last result is proposed, as for a normalize step.
     expect(mask.querySelector<HTMLSelectElement>('select[id$="-band"]')!.value).toBe('result');
+  });
+
+  it('leaves the classification layer to the mask by class', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(button('＋ Mask by value'));
+    const values = [...bandSelect().querySelectorAll('option')].map((o) => o.value);
+    expect(values).toEqual(['', 'red', 'nir']);
+    expect(values).not.toContain('scl');
   });
 
   it('shows the unit of the band beside "Hide where"', async () => {
@@ -335,12 +344,12 @@ describe('the order of a mask by value', () => {
   });
 
   it('sends the numbers of equal to ascending and each once', async () => {
-    await withMaskByValue('scl');
+    await withMaskByValue('nir');
     choose(conditionSelect(), 'eq');
     typeInto(step().querySelector<HTMLInputElement>('input[aria-label="Values"]')!, '9, 3, 3; 8');
     click(chip('red'));
     await review();
-    expect(sentSteps()[0].params).toEqual({ band: 'scl', condition: 'eq', values: [3, 8, 9] });
+    expect(sentSteps()[0].params).toEqual({ band: 'nir', condition: 'eq', values: [3, 8, 9] });
   });
 
   it('keeps the number when the condition changes to one that takes it', async () => {
@@ -365,13 +374,13 @@ describe('the order of a mask by value', () => {
   });
 
   it('reads the band it looks at, which is not in the output', async () => {
-    await withMaskByValue('scl');
+    await withMaskByValue('nir');
     typeInto(numberBox('Value')!, '3');
     click(chip('red'));
     await review();
     const call = fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/estimate')).at(-1)!;
     expect(JSON.parse(call[1].body).inputs.recipe.output.bands).toEqual(['red']);
-    expect(orderView(selectionState(useAppStore.getState()), store()).assets).toEqual(['red', 'scl']);
+    expect(orderView(selectionState(useAppStore.getState()), store()).assets).toEqual(['red', 'nir']);
   });
 });
 
@@ -381,7 +390,7 @@ describe('what the form tells', () => {
     typeInto(numberBox('Value')!, 'high');
     expect(problems()).toEqual(['Enter numbers separated by commas.']);
     typeInto(numberBox('Value')!, '0,2');
-    expect(problems()).toEqual(['Use a point as the decimal mark.']);
+    expect(problems()).toEqual(['Use . for decimals.']);
     typeInto(numberBox('Value')!, '1e999');
     expect(problems()).toEqual(['Enter numbers separated by commas.']);
     typeInto(numberBox('Value')!, '1e39');
@@ -397,7 +406,7 @@ describe('what the form tells', () => {
   });
 
   it('says more than 64 numbers are too many', async () => {
-    await withMaskByValue('scl');
+    await withMaskByValue('nir');
     choose(conditionSelect(), 'eq');
     typeInto(step().querySelector<HTMLInputElement>('input[aria-label="Values"]')!, Array.from({ length: 65 }, (_, i) => i).join(', '));
     expect(problems()).toEqual(['At most 64 values.']);
