@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import CSS from '../index.css?raw';
-import { AOI_CLOUD_PROPERTY, type AoiCounts } from '../aoiFilter';
+import type { AoiCounts } from '../aoiFilter';
 import { datasetsFrom } from '../datasets';
 import { ELEVATION, OPTICAL } from '../fixtures/searchFilters';
 import { buildSections } from '../sections';
@@ -26,24 +26,11 @@ declare global {
 let container: HTMLDivElement;
 let root: Root;
 
-const scene = (id: string, day: string, cloud?: { percent: number; cloudPixels: number; dataPixels: number; dataPercent?: number }): StacItem => ({
+const scene = (id: string, day: string): StacItem => ({
   id,
   collection: 'optical',
   bbox: [0, 0, 1, 1],
-  properties: {
-    datetime: `${day}T10:00:00Z`,
-    ...(cloud
-      ? {
-          [AOI_CLOUD_PROPERTY]: cloud.percent,
-          'earthx:aoi_measure': {
-            data_percent: cloud.dataPercent ?? 100,
-            cloud_pixels: cloud.cloudPixels,
-            data_pixels: cloud.dataPixels,
-            resolution: 80,
-          },
-        }
-      : {}),
-  },
+  properties: { datetime: `${day}T10:00:00Z` },
   assets: {},
 });
 
@@ -82,11 +69,10 @@ function load({ features, counts: aoiCounts, walking = false, measured = true, n
     expandedGroupIndex: 0,
     selectedIds: [],
     aoiWalking: walking,
-    resultSort: 'date',
     searching: false,
     searchContext: {
       datasetIds: ['optical'],
-      query: { collections: ['optical'], ...(measured ? { queryByCollection: { optical: { [AOI_CLOUD_PROPERTY]: { lte: 20 } } } } : {}) },
+      query: { collections: ['optical'], ...(measured ? { queryByCollection: { optical: { 'earthx:aoi_cloud_cover': { lte: 20 } } } } : {}) },
       dateFrom: '2026-07-01',
       dateTo: '2026-07-31',
       aoi: { type: 'Polygon', coordinates: [] },
@@ -104,16 +90,8 @@ function load({ features, counts: aoiCounts, walking = false, measured = true, n
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 const progress = () => container.querySelector('.aoi-progress');
 const stopButton = () => [...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => text(b) === 'Stop');
-const groupLabels = () => [...container.querySelectorAll('.rg-label')].map(text);
-const groupClouds = () => [...container.querySelectorAll('.result-group-head .cloud-value')].map(text);
-const sortButtons = () => [...container.querySelectorAll<HTMLButtonElement>('.aoi-sort button')];
 
-// Three overpasses, newest first by date: July 3 with 40 %, July 2 with 2 % and July 1 with none measured.
-const THREE = [
-  scene('a', '2026-07-03', { percent: 40, cloudPixels: 40, dataPixels: 100 }),
-  scene('b', '2026-07-02', { percent: 2, cloudPixels: 2, dataPixels: 100, dataPercent: 64 }),
-  scene('c', '2026-07-01'),
-];
+const THREE = [scene('a', '2026-07-03'), scene('b', '2026-07-02'), scene('c', '2026-07-01')];
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -158,10 +136,10 @@ describe('how far the search got', () => {
   });
 
   it('is not there for a search without the limit', () => {
-    load({ features: THREE.map((s) => scene(s.id, String(s.properties.datetime).slice(0, 10))), measured: false });
+    load({ features: THREE, measured: false });
     expect(progress()).toBeNull();
-    expect(container.querySelector('.aoi-sort')).toBeNull();
-    expect(container.querySelector('.cloud-value')).toBeNull();
+    // Nothing of the list changes for a scene: no value beside its time, no sort.
+    expect(container.querySelector('.aoi-sort, .cloud-value, .result-when')).toBeNull();
   });
 
   it('keeps "Load more" away while the search goes on by itself, and offers it once stopped', () => {
@@ -205,82 +183,6 @@ describe('the hints in the head of the dataset', () => {
     const notes = [...container.querySelectorAll('.dataset-select-note')].map(text);
     expect(notes).toEqual([]);
     expect(text(container)).not.toContain('No scenes for this area.');
-  });
-});
-
-describe('the share of clouds in a scene and in a time step', () => {
-  it('stands beside the time of a scene, in whole percent', () => {
-    load({ features: THREE, counts: counts() });
-    act(() => (container.querySelector('.result-group-head') as HTMLButtonElement).click());
-    act(() => (container.querySelector('.result-group-head') as HTMLButtonElement).click());
-    const values = [...container.querySelectorAll('.result-row .cloud-value')].map(text);
-    expect(values.length).toBeGreaterThan(0);
-    expect(values[0]).toMatch(/^☁︎? ?(40|2|<1) %$/u);
-  });
-
-  it('stands in the head of a time step, from the pixels of its scenes', () => {
-    load({
-      features: [
-        scene('a', '2026-07-03', { percent: 100, cloudPixels: 10, dataPixels: 10 }),
-        scene('a2', '2026-07-03', { percent: 0, cloudPixels: 0, dataPixels: 990 }),
-      ],
-      counts: counts(),
-    });
-    // 10 of 1 000 valid pixels over both scenes of the step: 1 %, not the 50 % of the two shares.
-    expect(groupClouds()).toEqual(['☁︎ 1 %']);
-  });
-
-  it('is "<1 %" under one percent and has no value for a step without a measure', () => {
-    load({
-      features: [scene('a', '2026-07-03', { percent: 0.4, cloudPixels: 4, dataPixels: 1000 }), scene('c', '2026-07-01')],
-      counts: counts(),
-    });
-    expect(groupClouds()).toEqual(['☁︎ <1 %']);
-  });
-
-  it('explains itself in the words of the registry, and how much of the AOI was measured', () => {
-    load({ features: THREE, counts: counts() });
-    const head = container.querySelectorAll<HTMLElement>('.result-group-head .cloud-value')[1];
-    expect(head.title).toContain("Clouds in AOI: 2 % of the AOI's valid pixels (classes 5, 6; cloud shadows do not count).");
-    // The scene says how much of the AOI it was measured on, the step does not.
-    act(() => (container.querySelectorAll('.result-group-head')[1] as HTMLButtonElement).click());
-    const row = container.querySelector<HTMLElement>('.result-row .cloud-value')!;
-    expect(row.title).toContain('Measured on 64 % of the AOI.');
-    expect(head.title).not.toContain('Measured on');
-  });
-});
-
-describe('"Sort: Date | Clouds in AOI"', () => {
-  it('is there with the limit, by date at first', () => {
-    load({ features: THREE, counts: counts() });
-    expect(sortButtons().map(text)).toEqual(['Date', 'Clouds in AOI']);
-    expect(sortButtons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
-    expect(groupLabels()).toEqual(['2026-07-03', '2026-07-02', '2026-07-01']);
-  });
-
-  it('puts the time steps in the order of their share, least first and one without a value last, and back by date', () => {
-    load({ features: THREE, counts: counts() });
-    act(() => sortButtons()[1].click());
-    expect(groupLabels()).toEqual(['2026-07-02', '2026-07-03', '2026-07-01']);
-    expect(sortButtons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
-    act(() => sortButtons()[0].click());
-    expect(groupLabels()).toEqual(['2026-07-03', '2026-07-02', '2026-07-01']);
-  });
-
-  it('opens the same time step whatever the order: the open one is the one of the state, not the first on screen', () => {
-    load({ features: THREE, counts: counts() });
-    act(() => sortButtons()[1].click());
-    const open = container.querySelector('.result-group.active .rg-label');
-    expect(text(open)).toBe('2026-07-03');
-    expect(useAppStore.getState().expandedGroupIndex).toBe(0);
-  });
-
-  it('is not there without the limit, and the order stays by date even if "clouds" was chosen before', () => {
-    load({ features: THREE, measured: false });
-    useAppStore.setState({ resultSort: 'clouds' });
-    act(() => root.render(<ResultsPanel />));
-    expect(container.querySelector('.aoi-sort')).toBeNull();
-    expect(groupLabels()[0]).toBe('2026-07-03');
   });
 });
 
@@ -330,11 +232,24 @@ describe('the progress without a list', () => {
   });
 });
 
+describe('the list shows no value of the share in a scene or a time step, and no sort (Otto, 31.10.2026)', () => {
+  it('has no cloud value beside a scene or in the head of a time step, and no "Sort:" row, with the limit on', () => {
+    load({ features: THREE, counts: counts() });
+    act(() => (container.querySelector('.result-group-head') as HTMLButtonElement).click());
+    act(() => (container.querySelector('.result-group-head') as HTMLButtonElement).click());
+    expect(container.querySelector('.cloud-value, .result-when, .aoi-sort')).toBeNull();
+    expect(text(container)).not.toContain('Sort:');
+    expect(text(container)).not.toContain('\u2601');
+    expect([...container.querySelectorAll('.rg-label')].map(text)).toEqual(['2026-07-03', '2026-07-02', '2026-07-01']);
+  });
+});
+
 describe('the style', () => {
   it('has a place for each part, in the colours of the theme and not in fixed ones', () => {
-    for (const selector of ['.aoi-progress', '.aoi-sort', '.cloud-value', '.within-aoi']) {
+    for (const selector of ['.aoi-progress', '.within-aoi']) {
       expect(CSS).toContain(selector);
     }
+    for (const gone of ['.aoi-sort', '.cloud-value', '.result-when']) expect(CSS).not.toContain(gone);
     const block = CSS.slice(CSS.indexOf('/* --- "Within AOI" in the results (DS-03b) --- */'));
     expect(block).not.toMatch(/#[0-9a-f]{3,8}\b/iu);
   });

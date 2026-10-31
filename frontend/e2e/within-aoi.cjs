@@ -1,15 +1,16 @@
-// Browser check of DS-03b: the switch "Within AOI" in "Advanced search" and what the results list says of a search that
-// measures the clouds inside the AOI. With made-up answers (a server that checks 100 scenes per answer, finds a few and
+// Browser check of DS-03b: the switch "Filter within AOI only" at the top of "Advanced search" and what the results list
+// says of a search that measures the filters inside the AOI. With made-up answers (a server that checks 100 scenes per answer, finds a few and
 // says how far it got), it does the clicks of a user in a real browser and fails when
-//   - the switch is missing under "Cloud cover" of Sentinel-2, is there for another filter or for the DEM, or does not
-//     lock, with the reason in its tooltip, without an AOI, without both dates or with a point (and free with all three);
-//   - the search does not ask `earthx:aoi_cloud_cover` in place of `eo:cloud_cover`, or asks it while the switch is locked;
+//   - the switch is missing at the top of the pop-up of Sentinel-2, is there for the DEM, does not name the filters it
+//     changes in its tooltip (and none that does not depend on the area), or does not lock, with the reason in its tooltip, without an AOI, without both dates or with a point (and free with all three);
+//   - the search does not ask `earthx:aoi_cloud_cover` and `earthx:aoi_nodata` in place of the scene properties, or asks them
+//     while the switch is locked;
 //   - the search does not go on by itself after answers without a scene, the list head does not say "n found / m checked"
 //     after each answer, "Stop" is missing while it goes on or stays after, or "Stop" loses what was found;
 //   - "Load more" is offered while the search goes on, is missing after "Stop" (also when nothing was found yet), or does
 //     not go on from where it stopped;
 //   - the switch is not locked, with the reason, for an AOI with more than 20 000 points;
-//   - the share of clouds is not in a scene and in the head of a time step, or "Sort: Date | Clouds in AOI" does not order them;
+//   - the list shows a value of the share in a scene or a time step, or a "Sort:" row (Otto, 31.10.2026: both are gone);
 //   - the hints of the limit and of scenes that could not be read are missing, or the date fallback runs;
 //   - the coverage map asks the cloud range while the switch is in use;
 //   - the pop-up or the list head overlaps or leaves the window, the page scrolls sideways, in light and dark, wide and
@@ -35,8 +36,9 @@ const AOI = { type: 'Polygon', coordinates: [[[10.3, 47.3], [10.7, 47.3], [10.7,
 const SECRETS = ['10.3', '47.7'];
 
 const S2 = 'sentinel-2-c1-l2a';
-const CLOUD_FILTER = { property: 'eo:cloud_cover', kind: 'range', title: 'Cloud cover', description: 'Share of the whole scene covered by clouds, as reported by the source.', unit: '%', within_aoi: true, group: 'Clouds', type: 'number', minimum: 0, maximum: 100 };
-const NODATA_FILTER = { property: 's2:nodata_pixel_percentage', kind: 'range', title: 'No data', description: 'Share of the scene without image data.', unit: '%', within_aoi: false, group: 'Scene', type: 'number', minimum: 0, maximum: 100 };
+const CLOUD_FILTER = { property: 'eo:cloud_cover', kind: 'range', title: 'Cloud cover', description: 'Share of the whole scene covered by clouds, as reported by the source.', unit: '%', within_aoi: 'earthx:aoi_cloud_cover', group: 'Clouds', type: 'number', minimum: 0, maximum: 100 };
+const NODATA_FILTER = { property: 's2:nodata_pixel_percentage', kind: 'range', title: 'No data', description: 'Share of the scene without image data.', unit: '%', within_aoi: 'earthx:aoi_nodata', group: 'Scene', type: 'number', minimum: 0, maximum: 100 };
+const PLATFORM_FILTER = { property: 'platform', kind: 'values', title: 'Satellite', description: 'The satellite that took the scene.', unit: null, within_aoi: null, group: 'Acquisition', type: 'string', oneOf: [{ const: 'sentinel-2a', title: 'Sentinel-2A' }, { const: 'sentinel-2b', title: 'Sentinel-2B' }] };
 const MASK = {
   asset: 'scl', band: 'scl', suggested: [3, 8, 9, 10], reference: 'https://example.invalid/classes', note: '',
   classes: [{ value: 0, label: 'No data' }, { value: 3, label: 'Cloud shadows' }, { value: 8, label: 'Cloud medium probability' }, { value: 9, label: 'Cloud high probability' }, { value: 10, label: 'Thin cirrus' }],
@@ -55,7 +57,7 @@ const collection = (id, title, filters, extra = {}) => ({
   ...extra,
 });
 const COLLECTIONS = [
-  collection(S2, 'Sentinel-2 L2A', [CLOUD_FILTER, NODATA_FILTER], { 'earthx:mask': MASK }),
+  collection(S2, 'Sentinel-2 L2A', [CLOUD_FILTER, NODATA_FILTER, PLATFORM_FILTER], { 'earthx:mask': MASK }),
   collection('cop-dem-glo-30', 'Copernicus DEM', [], {
     'earthx:capabilities': { ...CAPABILITIES, time_range: false, single_coverage_product: true },
     'earthx:viewer': viewer('full_resolution', ['start_datetime']),
@@ -116,7 +118,9 @@ async function check(browser, { theme, viewport }) {
     if (url.pathname === '/stac/search') {
       const body = JSON.parse(route.request().postData() ?? '{}');
       requests.search.push(body);
-      const measured = body.query_by_collection?.[S2]?.['earthx:aoi_cloud_cover'];
+      const asked = body.query_by_collection?.[S2] ?? {};
+      // The made-up server measures whatever stands under a platform property; it applies the cloud range only.
+      const measured = Object.keys(asked).some((key) => key.startsWith('earthx:')) ? (asked['earthx:aoi_cloud_cover'] ?? {}) : null;
       if (!measured) return json({ type: 'FeatureCollection', features: [], numberMatched: 0, numberReturned: 0, links: [] });
       const at = body.token ? Number(body.token.slice(1)) - 1 : 0;
       const step = STEPS[at];
@@ -178,8 +182,9 @@ async function check(browser, { theme, viewport }) {
   await button.click();
   await popup.waitFor();
   expect('no switch under "Cloud cover"', (await within.count()) === 1);
-  expect('the switch is not the next to the cloud range', await within.evaluate((el) => el.previousElementSibling?.querySelector('input[aria-label="Cloud cover, to"]') !== null));
-  expect('a switch under another filter', (await popup.locator('.within-aoi').count()) === 1);
+  expect('the switch is not at the top of the pop-up, over the fields', await within.evaluate((el) => el.nextElementSibling?.classList.contains('advanced-fields') && el.previousElementSibling?.classList.contains('dataset-select')));
+  expect('the switch is not named "Filter within AOI only"', (await text(within)) === 'Filter within AOI only', await text(within));
+  expect('a second switch', (await popup.locator('.within-aoi').count()) === 1);
   expect('the switch is not locked without AOI and dates', await locked());
   expect('the tooltip of the locked switch', (await within.getAttribute('title')) === 'Draw an AOI and set a date range first', await within.getAttribute('title'));
   await within.locator('input').click({ force: true });
@@ -200,7 +205,8 @@ async function check(browser, { theme, viewport }) {
   await button.click();
   expect('the switch is locked with an AOI and both dates', !(await locked()));
   const tip = await within.getAttribute('title');
-  expect('the tooltip names the classes of the registry', tip.includes('classes 8, 9, 10; cloud shadows do not count'), tip);
+  expect('the tooltip names the filters it changes', tip.includes('Cloud cover (classes 8, 9, 10; cloud shadows do not count), No data. Others are unchanged.'), tip);
+  expect('the tooltip names a filter that does not depend on the area', !tip.includes('Satellite'), tip);
   expect('the tooltip names the limit', tip.includes('checks up to 500 scenes'), tip);
   expect('the tooltip carries the note of the registry', tip.includes("Sen2Cor's classification can miss thin cirrus"), tip);
   expect('the tooltip names the coverage map', tip.includes('The coverage map shows the scene filter only.'), tip);
@@ -224,13 +230,14 @@ async function check(browser, { theme, viewport }) {
   await popup.waitFor();
   await within.locator('input').click();
   await fields('Cloud cover, to').fill('20');
+  await fields('No data, to').fill('50');
   expect('the switch does not stay on', await within.locator('input').isChecked());
   const p = await rect(popup);
   expect('the pop-up leaves the window', inside(p, { x: 0, y: 0, width: view.width, height: view.height }), JSON.stringify(p));
   const w = await rect(within);
   expect('the switch leaves the pop-up', inside(w, p, 2), JSON.stringify(w));
-  const cloudRow = await rect(popup.locator('.filter-field', { has: page.locator('.filter-title:text-is("Cloud cover")') }));
-  expect('the switch overlaps the range', !overlap(w, cloudRow), `${JSON.stringify(w)} ${JSON.stringify(cloudRow)}`);
+  const firstField = await rect(popup.locator('.advanced-fields'));
+  expect('the switch overlaps the fields', !overlap(w, firstField), `${JSON.stringify(w)} ${JSON.stringify(firstField)}`);
   expect('the page scrolls sideways', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   await shot('3-on');
   await page.keyboard.press('Escape');
@@ -245,7 +252,7 @@ async function check(browser, { theme, viewport }) {
   await searchButton.click();
   await until('the first answer did not come', async () => asked() > before);
   const first = requests.search.at(-1);
-  expect('the range is not under the clouds in the AOI', JSON.stringify(first.query_by_collection) === JSON.stringify({ [S2]: { 'earthx:aoi_cloud_cover': { lte: 20 } } }), JSON.stringify(first.query_by_collection));
+  expect('the ranges are not under the properties of the AOI', JSON.stringify(first.query_by_collection) === JSON.stringify({ [S2]: { 'earthx:aoi_cloud_cover': { lte: 20 }, 'earthx:aoi_nodata': { lte: 50 } } }), JSON.stringify(first.query_by_collection));
   expect('the search has no date range with both ends', /^2026-07-01T00:00:00Z\/2026-07-31T23:59:59Z$/.test(first.datetime ?? ''), first.datetime);
   expect('the search sends the AOI beside the bbox', !('earthx:aoi' in first));
   await until('the list did not open with the scenes of the second answer', async () => (await page.locator('.results-panel .rg-count').count()) > 0);
@@ -268,28 +275,7 @@ async function check(browser, { theme, viewport }) {
   expect('no "Load more" after "Stop"', (await page.locator('.load-more button').count()) === 1);
   await shot('5-stopped');
 
-  // 7. The share of clouds: in a scene (beside its time) and in the head of a time step, with tooltips.
-  const heads = await page.locator('.result-group-head .cloud-value').allTextContents();
-  expect('the shares in the heads of the time steps', heads.join('|') === '☁︎ 12 %|☁︎ 1 %', heads.join('|'));
-  const group = page.locator('.result-group').nth(1);
-  await group.locator('.result-group-head').click();
-  const rows = await group.locator('.result-row .cloud-value').allTextContents();
-  expect('the shares in the rows', rows.join('|') === '☁︎ 2 %|☁︎ <1 %', rows.join('|'));
-  const rowTip = await group.locator('.result-row .cloud-value').first().getAttribute('title');
-  expect('the tooltip of a row', rowTip.startsWith("Clouds in AOI: 2 % of the AOI's valid pixels (classes 8, 9, 10; cloud shadows do not count).") && rowTip.includes('Measured on 64 % of the AOI.'), rowTip);
-  const cell = await rect(group.locator('.result-row').first().locator('.result-when'));
-  expect('the share leaves its row', inside(cell, await rect(group.locator('.result-row').first()), 2));
-  await shot('6-values');
-
-  // 8. "Sort: Date | Clouds in AOI".
-  const order = async () => page.locator('.result-group .rg-label').allTextContents();
-  expect('the order by date', (await order()).join('|') === '2026-07-20|2026-07-18', (await order()).join('|'));
-  await page.locator('.aoi-sort button', { hasText: 'Clouds in AOI' }).click();
-  expect('the order by clouds', (await order()).join('|') === '2026-07-18|2026-07-20', (await order()).join('|'));
-  await shot('7-sorted');
-  await page.locator('.aoi-sort button', { hasText: 'Date' }).click();
-
-  // 9. "Load more" goes on from where "Stop" ended, to the limit: the hints, no "Load more" any more, no date fallback.
+  // 7. "Load more" goes on from where "Stop" ended, to the limit: the hints, no "Load more" any more, no date fallback.
   await page.locator('.load-more button').click();
   await until('"Load more" did not reach the end', async () => (await page.locator('.load-more button').count()) === 0 && (await stop.count()) === 0, 15000);
   const last = requests.search.at(-1);

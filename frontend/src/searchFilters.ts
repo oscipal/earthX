@@ -7,7 +7,7 @@
 // anything else (plan §6.4), so a filter this sends is always one the dataset offers; the checks below are there
 // to tell the user what is wrong before "Search" is pressed, not to stand in for the server's.
 
-import { AOI_CLOUD_PROPERTY } from './aoiFilter';
+import { isPlatformProperty } from './aoiFilter';
 import type { Collection } from './types';
 
 export interface FilterValue {
@@ -25,9 +25,9 @@ export interface SearchFilterDescription {
   // The tooltip.
   description: string;
   unit: string | null;
-  // The filter whose range may also be asked of the clouds inside the AOI (DS-03, `within_aoi` of the registry):
-  // "Advanced search" puts the switch "Within AOI" under it.
-  withinAoi: boolean;
+  // The property the server measures this filter under, inside the AOI (DS-03, `within_aoi` of the registry), or `null`
+  // for a filter that does not depend on the area. The switch of "Advanced search" moves the range to it.
+  withinAoi: string | null;
   // `range` only.
   minimum: number;
   maximum: number;
@@ -38,9 +38,8 @@ export interface SearchFilterDescription {
 
 // What stands in the fields. A range keeps the text of its two fields, so that half a number the user is typing is
 // not turned into something else under the cursor; empty means "no bound". A choice keeps the ticked values; none
-// ticked means "no filter". `within` is the switch "Within AOI" of a range whose filter has one (DS-03b): it is the
-// user's choice and stays with the dataset when the range is emptied; it counts for nothing as a filter on its own.
-export type FilterInput = { kind: 'range'; from: string; to: string; within?: boolean } | { kind: 'values'; values: string[] };
+// ticked means "no filter".
+export type FilterInput = { kind: 'range'; from: string; to: string } | { kind: 'values'; values: string[] };
 
 // By property.
 export type FilterInputs = Record<string, FilterInput>;
@@ -86,7 +85,7 @@ function describe(entry: unknown): SearchFilterDescription | null {
     const { minimum, maximum } = entry;
     if (typeof minimum !== 'number' || typeof maximum !== 'number') return null;
     if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum >= maximum) return null;
-    return { ...common, kind, minimum, maximum, integer: entry.type === 'integer', values: [], withinAoi: entry.within_aoi === true };
+    return { ...common, kind, minimum, maximum, integer: entry.type === 'integer', values: [], withinAoi: isPlatformProperty(entry.within_aoi) ? entry.within_aoi : null };
   }
   if (kind === 'values') {
     const options = entry.oneOf;
@@ -97,7 +96,7 @@ function describe(entry: unknown): SearchFilterDescription | null {
       values.push({ value: option.const, label: option.title });
     }
     if (values.length < 2 || new Set(values.map((v) => v.value)).size !== values.length) return null;
-    return { ...common, kind, minimum: 0, maximum: 0, integer: false, values, withinAoi: false };
+    return { ...common, kind, minimum: 0, maximum: 0, integer: false, values, withinAoi: null };
   }
   return null;
 }
@@ -111,12 +110,6 @@ export function groupsOf(filters: SearchFilterDescription[]): { name: string; fi
     else groups.push({ name: filter.group, filters: [filter] });
   }
   return groups;
-}
-
-// Whether the switch "Within AOI" of this filter is on in the fields (whether it can be used right now is
-// `withinAoiLock`'s).
-export function withinOn(filter: SearchFilterDescription, input: FilterInput | undefined): boolean {
-  return filter.withinAoi && input?.kind === 'range' && input.within === true;
 }
 
 // Whether the user has put anything into the fields of this filter.
@@ -177,9 +170,10 @@ export function hasFilterError(filters: SearchFilterDescription[], inputs: Filte
 // itself is held back until it is right, `hasFilterError`; the coverage map has nothing to wait for, so it simply
 // goes without). `{}` when nothing is set.
 //
-// `within` says what a range whose switch "Within AOI" is on becomes (DS-03): `'aoi'` asks the clouds inside the AOI
-// instead (`earthx:aoi_cloud_cover`, search), `'skip'` leaves it out (the coverage map counts at the source and cannot
-// measure, plan §6.5), and without it the switch is not looked at and the range is the scene's.
+// `within` says what the filters that depend on the area become while the switch "Filter within AOI only" is on (DS-03b):
+// `'aoi'` asks them inside the AOI instead, under the property the registry names for each (search), `'skip'` leaves them
+// out (the coverage map counts at the source and cannot measure, plan §6.5), and without it the switch is not looked at
+// and the ranges are the scene's. A filter that does not depend on the area is never changed.
 export function filterQuery(
   filters: SearchFilterDescription[],
   inputs: FilterInputs | undefined,
@@ -190,14 +184,14 @@ export function filterQuery(
     const input = inputs?.[filter.property];
     if (!input || !isSet(input) || filterError(filter, input)) continue;
     if (input.kind === 'range' && filter.kind === 'range') {
-      const measured = within !== undefined && withinOn(filter, input);
+      const measured = within !== undefined ? filter.withinAoi : null;
       if (measured && within === 'skip') continue;
       const from = bound(input.from);
       const to = bound(input.to);
       const operators: Record<string, number> = {};
       if (from !== null) operators.gte = from;
       if (to !== null) operators.lte = to;
-      query[measured ? AOI_CLOUD_PROPERTY : filter.property] = operators;
+      query[measured ?? filter.property] = operators;
     } else if (input.kind === 'values' && filter.kind === 'values') {
       // In the order of the registry, and only values it offers.
       const values = filter.values.map((v) => v.value).filter((value) => input.values.includes(value));

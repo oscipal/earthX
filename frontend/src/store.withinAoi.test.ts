@@ -7,7 +7,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AOI_CLOUD_PROPERTY } from './aoiFilter';
 import { datasetsFrom } from './datasets';
 import { ELEVATION, OPTICAL, RADAR } from './fixtures/searchFilters';
 import type { FilterInput } from './searchFilters';
@@ -18,8 +17,11 @@ import type { StacItem } from './types';
 const RECT: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[10, 47], [11, 47], [11, 48], [10, 48], [10, 47]]] };
 const TRIANGLE: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[10, 47], [11, 47], [10.5, 48], [10, 47]]] };
 
-const range = (from: string, to: string, within = false): FilterInput =>
-  within ? { kind: 'range', from, to, within } : { kind: 'range', from, to };
+const AOI_CLOUD_PROPERTY = 'earthx:aoi_cloud_cover';
+const AOI_NODATA_PROPERTY = 'earthx:aoi_nodata';
+
+const range = (from: string, to: string): FilterInput => ({ kind: 'range', from, to });
+const values = (...ticked: string[]): FilterInput => ({ kind: 'values', values: ticked });
 
 const json = (body: unknown, status = 200) =>
   ({ ok: status < 300, status, statusText: '', json: async () => body }) as Response;
@@ -89,7 +91,8 @@ function reset(selected: string[] = ['optical']) {
     aoiPoint: null,
     dateFrom: '2026-07-01',
     dateTo: '2026-07-31',
-    searchFilters: { optical: { 'test:cloud': range('', '20', true) } },
+    searchFilters: { optical: { 'test:cloud': range('', '20') } },
+    searchWithin: { optical: true },
     sections: [],
     openSectionId: null,
     items: [],
@@ -100,7 +103,6 @@ function reset(selected: string[] = ['optical']) {
     loadingMore: false,
     loadMoreError: null,
     aoiWalking: false,
-    resultSort: 'date',
     error: null,
     notice: null,
     showCoverage: false,
@@ -133,7 +135,7 @@ describe('what the search asks', () => {
   });
 
   it('keeps the scene property when the switch is off', async () => {
-    useAppStore.setState({ searchFilters: { optical: { 'test:cloud': range('', '20') } } });
+    useAppStore.setState({ searchWithin: {} });
     steps = [{ scenes: [], checked: 0 }];
     await state().runSearch();
     expect(asked[0].query_by_collection).toEqual({ optical: { 'test:cloud': { lte: 20 } } });
@@ -141,7 +143,7 @@ describe('what the search asks', () => {
   });
 
   it('sends nothing for a switch that is on without a range', async () => {
-    useAppStore.setState({ searchFilters: { optical: { 'test:cloud': range('', '', true) } } });
+    useAppStore.setState({ searchFilters: {} });
     steps = [{ scenes: [], checked: 0 }];
     await state().runSearch();
     expect(asked[0]).not.toHaveProperty('query_by_collection');
@@ -549,7 +551,7 @@ describe('ending the walk', () => {
     const hold = holdSecond();
     const run = state().runSearch();
     await vi.waitFor(() => expect(asked).toHaveLength(2));
-    state().setSearchFilter('optical', 'test:cloud', range('', '10', true));
+    state().setSearchFilter('optical', 'test:cloud', range('', '10'));
     await run;
     expect(hold.signalOf()?.aborted).toBe(true);
     expect(state().searchContext?.nextToken).toBeNull();
@@ -650,40 +652,68 @@ describe('a search over several datasets', () => {
   });
 });
 
-describe('the order of the time steps', () => {
-  it('goes back to the date with every new search', async () => {
-    steps = [{ scenes: [scene('a')], checked: 10 }];
-    await state().runSearch();
-    state().setResultSort('clouds');
-    expect(state().resultSort).toBe('clouds');
-    await state().runSearch();
-    expect(state().resultSort).toBe('date');
-  });
-
-  it('goes back to the date when the results are cleared', async () => {
-    steps = [{ scenes: [scene('a')], checked: 10 }];
-    await state().runSearch();
-    state().setResultSort('clouds');
-    state().clearSearchResults();
-    expect(state().resultSort).toBe('date');
-  });
-});
-
 describe('the switch in the store', () => {
-  it('is kept when the range is emptied, and counts for no filter on its own', () => {
-    const { setSearchFilter } = useAppStore.getState();
-    setSearchFilter('optical', 'test:cloud', range('', '', true));
-    expect(state().searchFilters.optical['test:cloud']).toEqual({ kind: 'range', from: '', to: '', within: true });
+  it('is the choice of a dataset, kept apart from the filters and from the other datasets', () => {
+    useAppStore.setState({ searchFilters: {}, searchWithin: {} });
+    state().setSearchWithin('optical', true);
+    expect(state().searchWithin).toEqual({ optical: true });
+    expect(state().searchFilters).toEqual({});
+    state().setSearchWithin('radar', true);
+    state().setSearchWithin('optical', false);
+    expect(state().searchWithin).toEqual({ radar: true });
   });
 
-  it('is gone with "Reset filters"', () => {
+  it('is gone with "Reset filters" of its dataset, and stays with the others', () => {
+    useAppStore.setState({ searchWithin: { optical: true, radar: true } });
     state().resetSearchFilters('optical');
+    expect(state().searchWithin).toEqual({ radar: true });
     expect(state().searchFilters.optical).toBeUndefined();
   });
 
-  it('is dropped with the range once it is off and the range is empty', () => {
-    state().setSearchFilter('optical', 'test:cloud', range('', ''));
-    expect(state().searchFilters.optical).toBeUndefined();
+  it('is kept when "Clear search results" is pressed, like the filters', () => {
+    state().clearSearchResults();
+    expect(state().searchWithin).toEqual({ optical: true });
+  });
+
+  it('moves every filter that depends on the area and no other, each under the property the registry names', async () => {
+    useAppStore.setState({
+      searchFilters: { optical: { 'test:cloud': range('', '20'), 'test:nodata': range('', '5'), platform: values('sat-a') } },
+    });
+    steps = [{ scenes: [], checked: 0 }];
+    await state().runSearch();
+    expect(asked[0].query_by_collection).toEqual({
+      optical: { [AOI_CLOUD_PROPERTY]: { lte: 20 }, [AOI_NODATA_PROPERTY]: { lte: 5 }, platform: { in: ['sat-a'] } },
+    });
+  });
+
+  it('moves nothing while it is off: the scene filters stay what they were', async () => {
+    useAppStore.setState({
+      searchWithin: {},
+      searchFilters: { optical: { 'test:cloud': range('', '20'), 'test:nodata': range('', '5') } },
+    });
+    steps = [{ scenes: [], checked: 0 }];
+    await state().runSearch();
+    expect(asked[0].query_by_collection).toEqual({ optical: { 'test:cloud': { lte: 20 }, 'test:nodata': { lte: 5 } } });
+    expect(state().aoiWalking).toBe(false);
+  });
+
+  it('measures a search with the share of no data alone, and walks it like any other', async () => {
+    useAppStore.setState({ searchFilters: { optical: { 'test:nodata': range('', '5') } } });
+    steps = [{ checked: 100, next: 't2' }, { scenes: [scene('a')], checked: 150 }];
+    await state().runSearch();
+    expect(asked.map((a) => a.query_by_collection)).toEqual([
+      { optical: { [AOI_NODATA_PROPERTY]: { lte: 5 } } },
+      { optical: { [AOI_NODATA_PROPERTY]: { lte: 5 } } },
+    ]);
+    expect(sceneIds()).toEqual(['a']);
+  });
+
+  it('is changed on the page token of a search on screen, like a filter: it cannot be continued', async () => {
+    steps = [{ scenes: [scene('a')], checked: 100, next: 't2' }];
+    await state().runSearch();
+    expect(state().searchContext?.nextToken).toBe('t2');
+    state().setSearchWithin('optical', false);
+    expect(state().searchContext?.nextToken).toBeNull();
   });
 });
 
@@ -720,21 +750,21 @@ describe('the coverage map', () => {
     fetchMock.mockImplementation(async (url: string) => (String(url).startsWith('/coverage/') ? json(coverageBody) : json({ detail: 'x' }, 404)));
   });
 
-  it('gets the other filters and not the cloud range while the switch is in use (KE6)', async () => {
+  it('gets the filters that do not depend on the area and none of those the switch moves (KE6)', async () => {
     useAppStore.setState({
-      searchFilters: { optical: { 'test:cloud': range('', '20', true), 'test:nodata': range('', '30') } },
+      searchFilters: { optical: { 'test:cloud': range('', '20'), 'test:nodata': range('', '30'), platform: values('sat-a') } },
       showCoverage: true,
       coverageDatasetId: 'optical',
       mapZoom: 5,
     });
     state().showCoverageFor('optical');
     await vi.waitFor(() => expect(coverageQueries().length).toBeGreaterThan(0));
-    expect(coverageQueries()[0]).toEqual({ 'test:nodata': { lte: 30 } });
+    expect(coverageQueries()[0]).toEqual({ platform: { in: ['sat-a'] } });
   });
 
   it('gets the cloud range of the scene when the switch cannot be used and so counts for nothing', async () => {
     useAppStore.setState({
-      searchFilters: { optical: { 'test:cloud': range('', '20', true) } },
+      searchFilters: { optical: { 'test:cloud': range('', '20') } },
       dateFrom: '',
       showCoverage: true,
       coverageDatasetId: 'optical',

@@ -1605,13 +1605,12 @@ input[type='date']:focus {
 .filter-check input {
   margin: 0;
 }
-/* "Within AOI" under the range of the cloud cover (DS-03b). Locked, it stays and says why in its tooltip. */
+/* "Filter within AOI only" at the top of the pop-up (DS-03b). Locked, it stays and says why in its tooltip. */
 .within-aoi {
   display: flex;
   align-items: center;
   gap: 6px;
   width: fit-content;
-  margin-top: -4px;
   font-size: 12px;
   color: var(--text);
   cursor: pointer;
@@ -3198,43 +3197,4 @@ a.pm-icon:hover {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-}
-.aoi-sort {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  padding: 0 14px 6px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.aoi-sort button {
-  padding: 2px 8px;
-  background: none;
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 11px;
-  cursor: pointer;
-}
-.aoi-sort button[aria-pressed='true'] {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-/* "☁ 3 %" beside the time of a scene and in the head of a time step. */
-.cloud-value {
-  flex: none;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--muted);
-  white-space: nowrap;
-  cursor: help;
-}
-.result-when {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
 }

@@ -6,35 +6,25 @@ import { describe, expect, it } from 'vitest';
 import {
   anyMeasuresAoi,
   aoiCountsOf,
-  aoiMeasureOf,
   aoiNotes,
-  AOI_CLOUD_PROPERTY,
-  cloudText,
-  cloudValueTip,
   countsFrom,
-  groupCloudPercent,
   LOCK_NEEDS_AREA,
   LOCK_NEEDS_INPUT,
   LOCK_TOO_MANY,
   MAX_AOI_POSITIONS,
   measuresAoi,
-  sortedGroupIndices,
   withinAoiLock,
   withinAoiTip,
+  withinFilters,
 } from './aoiFilter';
-import { CLASSIFICATION } from './fixtures/searchFilters';
+import { CLASSIFICATION, OPTICAL } from './fixtures/searchFilters';
+import { searchFiltersOf } from './searchFilters';
 import { LOAD_MORE_NOTE, NO_SCENES_NOTE, type ResultSection } from './sections';
-import type { StacItem, TimeStepGroup } from './types';
+import type { StacItem } from './types';
 
 const item = (id: string, properties: Record<string, unknown> = {}): StacItem => ({ id, properties, assets: {} });
-
-const measured = (id: string, cloud: number, data: number, percent?: number): StacItem =>
-  item(id, {
-    [AOI_CLOUD_PROPERTY]: percent ?? (data > 0 ? Math.round((cloud / data) * 1000) / 10 : 0),
-    'earthx:aoi_measure': { data_percent: 80, cloud_pixels: cloud, data_pixels: data, resolution: 80 },
-  });
-
-const group = (label: string, items: StacItem[]): TimeStepGroup => ({ key: [label], label, items });
+const AOI_CLOUD = 'earthx:aoi_cloud_cover';
+const AOI_NODATA = 'earthx:aoi_nodata';
 
 describe('the counts of an answer', () => {
   const counts = { checked: 180, found: 12, unreadable: 1, limit_reached: false };
@@ -57,7 +47,7 @@ describe('the counts of an answer', () => {
   });
 
   it('puts the counts of a search over one dataset on the dataset that was asked with the filter', () => {
-    const asked = { optical: { [AOI_CLOUD_PROPERTY]: { lte: 20 } }, radar: { 'test:track': { lte: 30 } } };
+    const asked = { optical: { [AOI_CLOUD]: { lte: 20 } }, radar: { 'test:track': { lte: 30 } } };
     expect(aoiCountsOf({ 'earthx:aoi_filter': counts }, asked)).toEqual({
       optical: { checked: 180, found: 12, unreadable: 1, limitReached: false },
     });
@@ -66,7 +56,7 @@ describe('the counts of an answer', () => {
   it('does not guess the dataset of counts when none, or several, were asked with the filter', () => {
     expect(aoiCountsOf({ 'earthx:aoi_filter': counts }, {})).toEqual({});
     expect(aoiCountsOf({ 'earthx:aoi_filter': counts }, undefined)).toEqual({});
-    const two = { a: { [AOI_CLOUD_PROPERTY]: { lte: 1 } }, b: { [AOI_CLOUD_PROPERTY]: { lte: 1 } } };
+    const two = { a: { [AOI_CLOUD]: { lte: 1 } }, b: { [AOI_CLOUD]: { lte: 1 } } };
     expect(aoiCountsOf({ 'earthx:aoi_filter': counts }, two)).toEqual({});
   });
 
@@ -79,91 +69,6 @@ describe('the counts of an answer', () => {
   it('answers with nothing for a search without the filter', () => {
     expect(aoiCountsOf({}, undefined)).toEqual({});
     expect(aoiCountsOf({ 'earthx:aoi_filter_by_collection': 'x' }, {})).toEqual({});
-  });
-});
-
-describe('what a scene says about itself', () => {
-  it('reads the share and the pixel counts', () => {
-    expect(aoiMeasureOf(measured('a', 30, 100))).toEqual({ percent: 30, cloudPixels: 30, dataPixels: 100, dataPercent: 80 });
-  });
-
-  it('has no measure for a scene of a search without the filter', () => {
-    expect(aoiMeasureOf(item('a', { 'eo:cloud': 12 }))).toBeNull();
-  });
-
-  it('keeps the share when the answer carries no pixel counts, and drops numbers that are not numbers', () => {
-    expect(aoiMeasureOf(item('a', { [AOI_CLOUD_PROPERTY]: 7 }))).toEqual({ percent: 7, cloudPixels: null, dataPixels: null, dataPercent: null });
-    expect(aoiMeasureOf(item('a', { [AOI_CLOUD_PROPERTY]: '7' }))).toBeNull();
-    const odd = item('a', { [AOI_CLOUD_PROPERTY]: 7, 'earthx:aoi_measure': { cloud_pixels: -1, data_pixels: 'x', data_percent: NaN } });
-    expect(aoiMeasureOf(odd)).toEqual({ percent: 7, cloudPixels: null, dataPixels: null, dataPercent: null });
-  });
-});
-
-describe('the share of clouds of a time step', () => {
-  it('is the cloud pixels over the valid pixels of its scenes, not the mean of their shares', () => {
-    // 100 % of 10 valid pixels and 0 % of 990: the step is 1 % clouds, the mean of the shares would say 50 %.
-    expect(groupCloudPercent([measured('a', 10, 10), measured('b', 0, 990)])).toBeCloseTo(1, 10);
-  });
-
-  it('leaves out a scene without pixel counts, and has no value when none has them', () => {
-    expect(groupCloudPercent([measured('a', 50, 100), item('b', { [AOI_CLOUD_PROPERTY]: 99 })])).toBe(50);
-    expect(groupCloudPercent([item('b', { [AOI_CLOUD_PROPERTY]: 99 }), item('c')])).toBeNull();
-    expect(groupCloudPercent([])).toBeNull();
-  });
-
-  it('has no value when the valid pixels add up to nothing', () => {
-    expect(groupCloudPercent([measured('a', 0, 0)])).toBeNull();
-  });
-});
-
-describe('how a share is written', () => {
-  it.each([
-    [0, '0 %'],
-    [0.04, '<1 %'],
-    [0.99, '<1 %'],
-    [1, '1 %'],
-    [2.5, '3 %'],
-    [3.4, '3 %'],
-    [99.6, '100 %'],
-    [100, '100 %'],
-  ])('%s as %s', (percent, text) => {
-    expect(cloudText(percent)).toBe(text);
-  });
-});
-
-describe('the tooltips come from the registry', () => {
-  it('names the classes of the registry and that shadows do not count, from the labels of its classes', () => {
-    const tip = cloudValueTip(CLASSIFICATION, aoiMeasureOf(measured('a', 3, 100, 3)), 3);
-    expect(tip).toContain("Clouds in AOI: 3 % of the AOI's valid pixels (classes 5, 6; cloud shadows do not count).");
-  });
-
-  it('says how much of the AOI was measured, only when that is not all of it', () => {
-    const part = aoiMeasureOf(measured('a', 3, 100, 3));
-    expect(cloudValueTip(CLASSIFICATION, part, 3)).toContain('Measured on 80 % of the AOI.');
-    const whole = { ...part!, dataPercent: 100 };
-    expect(cloudValueTip(CLASSIFICATION, whole, 3)).not.toContain('Measured on');
-    expect(cloudValueTip(CLASSIFICATION, null, 3)).not.toContain('Measured on');
-  });
-
-  it('says nothing about shadows when the registry counts them, and names no classes when it names none', () => {
-    const counted = { ...CLASSIFICATION, cloud_classes: [5, 6, 7] };
-    expect(cloudValueTip(counted, null, 3)).not.toContain('shadow');
-    expect(cloudValueTip(null, null, 3)).toBe("Clouds in AOI: 3 % of the AOI's valid pixels.");
-    expect(cloudValueTip({ ...CLASSIFICATION, cloud_classes: [] }, null, 3)).not.toContain('classes');
-  });
-
-  it('puts the note of the registry into the tooltip of the switch, with the limit and the coverage map', () => {
-    const tip = withinAoiTip(CLASSIFICATION);
-    expect(tip).toContain('Limit applies to clouds inside the AOI (classes 5, 6; cloud shadows do not count)');
-    expect(tip).toContain('checks up to 500 scenes');
-    expect(tip).toContain(CLASSIFICATION.cloud_note);
-    expect(tip).toContain('The coverage map shows the scene filter only.');
-  });
-
-  it('is still a tooltip for a dataset whose collection has no classification', () => {
-    expect(withinAoiTip(undefined)).toBe(
-      'Limit applies to clouds inside the AOI, measured on each scene. Slower: checks up to 500 scenes. The coverage map shows the scene filter only.',
-    );
   });
 });
 
@@ -215,7 +120,7 @@ describe('when "Within AOI" is locked', () => {
 });
 
 describe('what the search asked', () => {
-  const query = { queryByCollection: { optical: { [AOI_CLOUD_PROPERTY]: { lte: 20 } }, radar: { 'test:track': { lte: 3 } } } };
+  const query = { queryByCollection: { optical: { [AOI_CLOUD]: { lte: 20 } }, radar: { 'test:track': { lte: 3 } } } };
 
   it('is the filter under the dataset, and nowhere else', () => {
     expect(measuresAoi(query, 'optical')).toBe(true);
@@ -289,31 +194,37 @@ describe('the notes of a section searched with the limit', () => {
   });
 });
 
-describe('the order of the time steps', () => {
-  const groups = [
-    group('c', [measured('1', 50, 100)]),
-    group('b', [measured('2', 5, 100)]),
-    group('none', [item('3')]),
-    group('a', [measured('4', 5, 100)]),
-    group('clear', [measured('5', 0, 100)]),
-  ];
+describe('the tooltip of the switch comes from the registry', () => {
+  const filters = searchFiltersOf(OPTICAL);
 
-  it('stays as the search gives it by date', () => {
-    expect(sortedGroupIndices(groups, 'date')).toEqual([0, 1, 2, 3, 4]);
+  it('names the filters it changes and not the others, with the classes of the registry for the share of clouds', () => {
+    const tip = withinAoiTip(filters, CLASSIFICATION);
+    expect(tip).toContain(
+      'Measure these filters inside the AOI instead of the whole scene: Cloud cover (classes 5, 6; cloud shadows do not count), No data. Others are unchanged.',
+    );
+    expect(tip).not.toContain('Satellite');
+    expect(tip).toContain('Slower: checks up to 500 scenes.');
+    expect(tip).toContain(CLASSIFICATION.cloud_note);
+    expect(tip).toContain('The coverage map shows the scene filter only.');
   });
 
-  it('puts the least clouds first, a step without a value last, and keeps the order by date between equal values', () => {
-    expect(sortedGroupIndices(groups, 'clouds')).toEqual([4, 1, 3, 0, 2]);
+  it('says nothing about shadows when the registry counts them, and names no classes when it names none', () => {
+    expect(withinAoiTip(filters, { ...CLASSIFICATION, cloud_classes: [5, 6, 7] })).not.toContain('shadow');
+    expect(withinAoiTip(filters, null)).toContain('Cloud cover, No data.');
+    expect(withinAoiTip(filters, { ...CLASSIFICATION, cloud_classes: [] })).not.toContain('classes');
   });
 
-  it('does not move the groups themselves', () => {
-    const before = groups.map((g) => g.label);
-    sortedGroupIndices(groups, 'clouds');
-    expect(groups.map((g) => g.label)).toEqual(before);
+  it('names only what the registry marks', () => {
+    expect(withinFilters(filters).map((f) => f.withinAoi)).toEqual([AOI_CLOUD, AOI_NODATA]);
+    expect(withinFilters(filters.filter((f) => f.withinAoi === null))).toEqual([]);
   });
+});
 
-  it('orders several steps without a value as they came, and no steps as none', () => {
-    expect(sortedGroupIndices([group('x', [item('1')]), group('y', [item('2')])], 'clouds')).toEqual([0, 1]);
-    expect(sortedGroupIndices([], 'clouds')).toEqual([]);
+describe('what a search asked, by any platform property', () => {
+  it('counts the share of no data in the AOI as well as the share of clouds', () => {
+    const query = { queryByCollection: { optical: { [AOI_NODATA]: { lte: 5 } }, radar: { 'test:track': { lte: 3 } } } };
+    expect(measuresAoi(query, 'optical')).toBe(true);
+    expect(measuresAoi(query, 'radar')).toBe(false);
+    expect(anyMeasuresAoi(query)).toBe(true);
   });
 });

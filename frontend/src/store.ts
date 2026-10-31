@@ -4,13 +4,11 @@ import * as api from './api';
 import type { CoverageResponse, PagesSoFar, ResolutionFactor } from './api';
 import {
   anyMeasuresAoi,
-  AOI_CLOUD_PROPERTY,
   limitNote,
   measuresAoi,
   NONE_WITHIN_NOTE,
   unreadableNote,
   withinAoiLock,
-  type ResultSort,
 } from './aoiFilter';
 import {
   bandViewportBbox,
@@ -271,7 +269,7 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   const hasAoi = aoi !== null;
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
   // The filters of the coverage's dataset (DS-02c, adr/0004 K1): the map counts what the search would find.
-  const query = filterQueryOf(s, datasetId, withinFor(s, 'coverage'));
+  const query = filterQueryOf(s, datasetId, withinFor(s, datasetId, 'coverage'));
   const filters = JSON.stringify(query);
 
   let bbox: Bbox | undefined;
@@ -477,18 +475,17 @@ function filterQueryOf(s: FilterState, datasetId: string, within?: 'aoi' | 'skip
   return dataset ? filterQuery(searchFiltersOf(dataset.collection), s.searchFilters[datasetId], within) : {};
 }
 
-// What "Within AOI" does to a request (DS-03b): where the switch can be used (an area and a date range with both ends)
-// the search asks the clouds inside the AOI and the coverage map leaves the cloud range out, which it cannot measure;
-// where it cannot, the switch counts for nothing and the range is the scene's.
-type WithinState = Pick<AppState, 'aoi' | 'aoiPoint' | 'dateFrom' | 'dateTo'>;
+// What the switch "Filter within AOI only" does to a request (DS-03b): where it is on and can be used (an area and a date
+// range with both ends) the search asks the filters that depend on the area inside the AOI, and the coverage map leaves
+// them out, which it cannot measure; where it cannot be used, it counts for nothing and the ranges are the scene's.
+type WithinState = Pick<AppState, 'aoi' | 'aoiPoint' | 'dateFrom' | 'dateTo' | 'searchWithin'>;
 
-const withinFor = (s: WithinState, request: 'search' | 'coverage'): 'aoi' | 'skip' | undefined =>
-  withinAoiLock(s) === null ? (request === 'search' ? 'aoi' : 'skip') : undefined;
+const withinFor = (s: WithinState, datasetId: string, request: 'search' | 'coverage'): 'aoi' | 'skip' | undefined =>
+  s.searchWithin[datasetId] === true && withinAoiLock(s) === null ? (request === 'search' ? 'aoi' : 'skip') : undefined;
 
 // What each of these datasets is asked with, `{}` where nothing is set.
 function filterQueriesOf(s: FilterState & WithinState, ids: readonly string[]): FilterQueryByCollection {
-  const within = withinFor(s, 'search');
-  return Object.fromEntries(ids.map((id) => [id, filterQueryOf(s, id, within)]));
+  return Object.fromEntries(ids.map((id) => [id, filterQueryOf(s, id, withinFor(s, id, 'search'))]));
 }
 
 // `{queryByCollection}` for a request, or nothing when no dataset has a filter set: a search without filters
@@ -1068,6 +1065,18 @@ function changeSearchFilters(set: SetState, get: GetState, datasetId: string, in
   if (showCoverage && datasetId === (coverageDatasetId ?? get().datasetId)) scheduleCoverageRefresh(set, get);
 }
 
+// The switch "Filter within AOI only" of one dataset changed (DS-03b): like the filters it is read at the next "Search", and
+// the coverage map follows (it leaves the filters of the switch out).
+function changeSearchWithin(set: SetState, get: GetState, datasetId: string, on: boolean): void {
+  const { searchWithin, searchContext } = get();
+  if ((searchWithin[datasetId] ?? false) === on) return;
+  const { [datasetId]: _before, ...others } = searchWithin;
+  set({ searchWithin: on ? { ...others, [datasetId]: true } : others });
+  if (searchContext?.datasetIds.includes(datasetId)) dropPageToken(set, get);
+  const { showCoverage, coverageDatasetId } = get();
+  if (showCoverage && datasetId === (coverageDatasetId ?? get().datasetId)) scheduleCoverageRefresh(set, get);
+}
+
 // Show or hide of the results is the switch's, with three exceptions (Otto, 27.10.2026 and 28.10.2026): a new search shows them, a ticked scene shows them (`ticking`), and a
 // crop of the chosen scenes ("Crop to AOI", "Crop & merge to AOI") hides them. Kept in the browser like the switch.
 function setResultsOnMap(on: boolean) {
@@ -1089,7 +1098,6 @@ function forgetSearch() {
   searchGen += 1;
   stopWalk();
   return {
-    resultSort: 'date' as ResultSort,
     aoiWalking: false,
     // Every search, and every step that drops the results, puts "Results" on top of the layer manager (NM4-59, Otto,
     // 30.10.2026).
@@ -1265,10 +1273,8 @@ export interface AppState {
   loadMoreUsed: boolean;
   // The datasets whose ±90-day fallback is running.
   fallbackDatasetIds: string[];
-  // DS-03b: a search that asks for the cloud share in the AOI is going on page by page (`walkAoiSearch`), and the
-  // order of the time steps in its list.
+  // DS-03b: a search that asks for the filters in the AOI is going on page by page (`walkAoiSearch`).
   aoiWalking: boolean;
-  resultSort: ResultSort;
   items: StacItem[];
   groups: TimeStepGroup[];
   activeGroupIndex: number;
@@ -1297,6 +1303,8 @@ export interface AppState {
   // until it is ticked again), when the results are cleared and when the page is not reloaded; it is not kept in
   // the browser and not in the permalink.
   searchFilters: Record<string, FilterInputs>;
+  // The switch "Filter within AOI only" of each dataset (DS-03b): the user's choice, whether or not it can be used right now.
+  searchWithin: Record<string, boolean>;
 
   // --- scene lookup by name (M2-17) ---
   sceneNameQuery: string;
@@ -1403,7 +1411,9 @@ export interface AppState {
   setDateTo: (v: string) => void;
   // Puts what is in the fields of one filter of a dataset; an input with nothing in it takes the filter away.
   setSearchFilter: (datasetId: string, property: string, input: FilterInput) => void;
-  // "Reset filters" of a dataset.
+  // The switch "Filter within AOI only" of a dataset.
+  setSearchWithin: (datasetId: string, on: boolean) => void;
+  // "Reset filters" of a dataset: the filters and the switch.
   resetSearchFilters: (datasetId: string) => void;
   setPlaying: (v: boolean) => void;
   setError: (v: string | null) => void;
@@ -1412,7 +1422,6 @@ export interface AppState {
   loadMore: () => Promise<void>;
   // "Stop" beside the progress of a search that checks the clouds inside the AOI (DS-03b).
   stopSearch: () => void;
-  setResultSort: (sort: ResultSort) => void;
   setSceneNameQuery: (v: string) => void;
   findSceneByName: () => Promise<void>;
   showCoverageFor: (datasetId: string) => void;
@@ -1495,7 +1504,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadMoreUsed: false,
   fallbackDatasetIds: [],
   aoiWalking: false,
-  resultSort: 'date',
   items: [],
   groups: [],
   activeGroupIndex: 0,
@@ -1508,6 +1516,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dateFrom: '',
   dateTo: '',
   searchFilters: {},
+  searchWithin: {},
 
   sceneNameQuery: '',
   sceneLookupLoading: false,
@@ -2458,11 +2467,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setSearchFilter: (datasetId, property, input) => {
     const { [property]: _before, ...others } = get().searchFilters[datasetId] ?? {};
-    // The switch "Within AOI" is kept when the range is emptied (DS-03b), but it is no filter on its own.
-    const kept = isSet(input) || (input.kind === 'range' && input.within === true);
-    changeSearchFilters(set, get, datasetId, kept ? { ...others, [property]: input } : others);
+    changeSearchFilters(set, get, datasetId, isSet(input) ? { ...others, [property]: input } : others);
   },
-  resetSearchFilters: (datasetId) => changeSearchFilters(set, get, datasetId, {}),
+  setSearchWithin: (datasetId, on) => changeSearchWithin(set, get, datasetId, on),
+  resetSearchFilters: (datasetId) => {
+    changeSearchFilters(set, get, datasetId, {});
+    changeSearchWithin(set, get, datasetId, false);
+  },
   // The "Coverage" button (M3-10): draws the coverage of one of the picked datasets.
   showCoverageFor: (datasetId) => {
     if (!get().selectedDatasetIds.includes(datasetId)) return;
@@ -2561,7 +2572,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datetime: buildDatetime(dateFrom, dateTo),
         ...queryByCollectionOf(asked),
         // A long AOI is searched by its box; the clouds are measured in the AOI itself (plan §6.5, KE1).
-        ...(area.truncatedNotice && Object.values(asked).some((q) => AOI_CLOUD_PROPERTY in q) ? { aoi } : {}),
+        ...(area.truncatedNotice && anyMeasuresAoi({ queryByCollection: asked }) ? { aoi } : {}),
       };
       if (anyMeasuresAoi(query)) {
         await walkAoiSearch(set, get, {
@@ -2637,7 +2648,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   stopSearch: () => stopWalk(),
-  setResultSort: (resultSort) => set({ resultSort }),
 
   // Continues the whole search with its page token (M3-10 F1): one more walk of
   // up to `MAX_SEARCH_ITEMS`, whichever dataset the dropdown shows. New scenes go

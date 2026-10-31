@@ -1,18 +1,9 @@
-import {
-  aoiMeasureOf,
-  aoiNotes,
-  CLOUD_SIGN,
-  cloudText,
-  cloudValueTip,
-  groupCloudPercent,
-  measuresAoi,
-  sortedGroupIndices,
-} from '../aoiFilter';
+import { aoiNotes, measuresAoi } from '../aoiFilter';
 import { maturityLabel, quicklookAsset } from '../datasets';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore } from '../store';
-import type { EarthxMask, StacItem, TimeStepGroup } from '../types';
+import type { StacItem, TimeStepGroup } from '../types';
 import CopyButton from './CopyButton';
 import DatasetSelect from './DatasetSelect';
 import ResultsEye from './ResultsEye';
@@ -25,27 +16,8 @@ function timeOf(properties: Record<string, unknown>): string {
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(11, 19) + 'Z';
 }
 
-// The classes and the note of the dataset the list shows, for the tooltip of a cloud value.
-function useOpenMask(): EarthxMask | null | undefined {
-  return useAppStore((s) => {
-    const dataset = s.datasets.find((d) => d.id === s.openSectionId);
-    return dataset?.viewable ? dataset.collection['earthx:mask'] : undefined;
-  });
-}
-
-// The cloud share in the AOI of a scene or a time step (DS-03b): "☁ 3 %", its tooltip in the registry's words.
-function CloudValue({ percent, measure }: { percent: number; measure: ReturnType<typeof aoiMeasureOf> }) {
-  const mask = useOpenMask();
-  return (
-    <span className="cloud-value" title={cloudValueTip(mask, measure, percent)}>
-      {CLOUD_SIGN} {cloudText(percent)}
-    </span>
-  );
-}
-
 function Row({ item }: { item: StacItem }) {
   const selectedIds = useAppStore((s) => s.selectedIds);
-  const measure = aoiMeasureOf(item);
   const toggleSelected = useAppStore((s) => s.toggleSelected);
   const selected = selectedIds.includes(item.id);
   const asset = quicklookAsset(item);
@@ -81,10 +53,7 @@ function Row({ item }: { item: StacItem }) {
         />
       )}
       <div className="result-meta">
-        <span className="result-when">
-          <span className="result-date">{timeOf(item.properties)}</span>
-          {measure && <CloudValue percent={measure.percent} measure={measure} />}
-        </span>
+        <span className="result-date">{timeOf(item.properties)}</span>
         <span className="result-id-row">
           <span className="result-id" title={item.id}>
             {item.id}
@@ -154,7 +123,6 @@ function GroupBlock({
   expanded: boolean;
   onToggle: (index: number) => void;
 }) {
-  const cloud = groupCloudPercent(group.items);
   return (
     <div className={`result-group${expanded ? ' active' : ''}`}>
       <div className="result-group-row">
@@ -164,7 +132,6 @@ function GroupBlock({
           <span className="rg-label" title={group.label}>
             {group.label}
           </span>
-          {cloud !== null && <CloudValue percent={cloud} measure={null} />}
           <span className="rg-count">{group.items.length}</span>
         </button>
       </div>
@@ -285,29 +252,6 @@ export function AoiProgress({ datasetId }: { datasetId: string | null }) {
   );
 }
 
-// "Sort: Date | Clouds in AOI" (DS-03b): the time steps by date, as the search gives them, or by the share of clouds in the
-// AOI, least first. The scenes of a time step keep their order.
-function SortRow() {
-  const sort = useAppStore((s) => s.resultSort);
-  const setSort = useAppStore((s) => s.setResultSort);
-  return (
-    <div className="aoi-sort" role="group" aria-label="Sort time steps">
-      <span>Sort:</span>
-      <button type="button" aria-pressed={sort === 'date'} onClick={() => setSort('date')}>
-        Date
-      </button>
-      <button
-        type="button"
-        aria-pressed={sort === 'clouds'}
-        title="Least clouds in the AOI first. Steps without a value come last."
-        onClick={() => setSort('clouds')}
-      >
-        Clouds in AOI
-      </button>
-    </div>
-  );
-}
-
 // "Select all" (M4-29), on the line of the list's heading so
 // the list loses no height. The box takes the scenes loaded so far and says so when
 // the source reports more; it never loads pages.
@@ -393,22 +337,19 @@ function ResultsList({ sections }: { sections: ResultSection[] }) {
   const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
   const measured = useAppStore((s) => openSectionId !== null && measuresAoi(s.searchContext?.query, openSectionId));
-  const sort = useAppStore((s) => s.resultSort);
-  const order = sortedGroupIndices(groups, measured ? sort : 'date');
   return (
     <>
       <DatasetDropdown sections={sections} openId={openSectionId} />
       {measured && <AoiProgress datasetId={openSectionId} />}
-      {measured && <SortRow />}
       <div className="results-list-head">
         <div className="eyebrow results-list-eyebrow">Scenes by time step</div>
         <SelectionRow />
       </div>
       <div className="results-list">
-        {order.map((i) => (
+        {groups.map((g, i) => (
           <GroupBlock
-            key={groups[i].key.join('\u0000')}
-            group={groups[i]}
+            key={g.key.join('\u0000')}
+            group={g}
             index={i}
             expanded={i === expandedGroupIndex}
             onToggle={toggleGroup}

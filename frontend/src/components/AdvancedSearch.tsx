@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
-import { withinAoiLock, withinAoiTip } from '../aoiFilter';
+import { withinAoiLock, withinAoiTip, withinFilters } from '../aoiFilter';
 import type { DatasetOption } from '../datasets';
 import {
   filterError,
   groupsOf,
   searchFiltersOf,
   setFilters,
-  withinOn,
   type FilterInput,
   type SearchFilterDescription,
 } from '../searchFilters';
 import { useAppStore } from '../store';
-import type { EarthxMask } from '../types';
 import DatasetSelect from './DatasetSelect';
 import Popover from './Popover';
 
@@ -34,10 +32,7 @@ function RangeField({
   // Text, not `type="number"`: a number field hands over "" for "20-" and keeps showing it, so a half-typed value would
   // silently drop the filter. The keyboard of a phone has no minus on `decimal` and `numeric`.
   const inputMode = filter.minimum < 0 ? 'text' : filter.integer ? 'numeric' : 'decimal';
-  // The switch "Within AOI" is the row's own; a range typed into keeps it.
-  const within = input?.kind === 'range' && input.within === true;
-  const edit = (next: { from?: string; to?: string }) =>
-    onChange({ kind: 'range', from, to, ...(within ? { within } : {}), ...next });
+  const edit = (next: { from?: string; to?: string }) => onChange({ kind: 'range', from, to, ...next });
   return (
     <div className="filter-field">
       <span className="filter-title" title={filter.description}>
@@ -118,24 +113,25 @@ function OfferLine({ offer, set }: { offer: Offer; set: boolean }) {
   );
 }
 
-// The switch under the filter the registry marks with `within_aoi` (DS-03b): the range then counts the clouds inside the
-// AOI instead of those of the whole scene. It needs an area and a date range with both ends; without them it is locked
-// (not hidden, Otto 26.10.2026) and shows why, off, as the search does not use it either. What it measures and where
-// that stops being right is the registry's (`cloud_classes`, `cloud_note`), read into the tooltip.
+// The switch at the top of the pop-up (Otto, 31.10.2026): the filters that depend on the area, which the registry marks
+// with `within_aoi`, are measured inside the AOI instead of over the whole scene; the others stay as they are. It needs an
+// area and a date range with both ends; without them it is locked (not hidden, Otto 26.10.2026) and shows why, off, as the
+// search does not use it either. What it changes and where the classification stops being right is the registry's, read
+// into the tooltip.
 function WithinAoiSwitch({
   on,
   lock,
-  mask,
+  tip,
   onChange,
 }: {
   on: boolean;
   lock: string | null;
-  mask: EarthxMask | null | undefined;
+  tip: string;
   onChange: (on: boolean) => void;
 }) {
   const locked = lock !== null;
   return (
-    <label className={`within-aoi${locked ? ' locked' : ''}`} title={lock ?? withinAoiTip(mask)}>
+    <label className={`within-aoi${locked ? ' locked' : ''}`} title={lock ?? tip}>
       <input
         type="checkbox"
         role="switch"
@@ -145,40 +141,25 @@ function WithinAoiSwitch({
           if (!locked) onChange(!on);
         }}
       />
-      Within AOI
+      Filter within AOI only
     </label>
   );
 }
 
-// One filter of the registry as its fields. The one place a filter is turned into fields: whatever else belongs to a
-// filter (the switch "Within AOI", DS-03b) is added here.
+// One filter of the registry as its fields. The one place a filter is turned into fields.
 function FilterRow({
   filter,
   input,
-  mask,
-  lock,
   onChange,
 }: {
   filter: SearchFilterDescription;
   input: FilterInput | undefined;
-  mask: EarthxMask | null | undefined;
-  lock: string | null;
   onChange: (input: FilterInput) => void;
 }) {
-  if (filter.kind !== 'range') return <ValuesField filter={filter} input={input} onChange={onChange} />;
-  const range = input?.kind === 'range' ? input : { kind: 'range' as const, from: '', to: '' };
-  return (
-    <>
-      <RangeField filter={filter} input={input} onChange={onChange} />
-      {filter.withinAoi && (
-        <WithinAoiSwitch
-          on={withinOn(filter, input)}
-          lock={lock}
-          mask={mask}
-          onChange={(within) => onChange(within ? { ...range, within } : { kind: 'range', from: range.from, to: range.to })}
-        />
-      )}
-    </>
+  return filter.kind === 'range' ? (
+    <RangeField filter={filter} input={input} onChange={onChange} />
+  ) : (
+    <ValuesField filter={filter} input={input} onChange={onChange} />
   );
 }
 
@@ -192,6 +173,8 @@ export default function AdvancedSearch() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const searchFilters = useAppStore((s) => s.searchFilters);
+  const searchWithin = useAppStore((s) => s.searchWithin);
+  const setSearchWithin = useAppStore((s) => s.setSearchWithin);
   const setSearchFilter = useAppStore((s) => s.setSearchFilter);
   const resetSearchFilters = useAppStore((s) => s.resetSearchFilters);
   const lock = useAppStore((s) => withinAoiLock(s));
@@ -218,16 +201,8 @@ export default function AdvancedSearch() {
   // back on its own with the next area (the search does not use it meanwhile either).
   useEffect(() => {
     if (lock === null) return;
-    for (const dataset of datasets) {
-      if (!dataset.viewable) continue;
-      for (const filter of searchFiltersOf(dataset.collection)) {
-        const input = searchFilters[dataset.id]?.[filter.property];
-        if (input?.kind === 'range' && withinOn(filter, input)) {
-          setSearchFilter(dataset.id, filter.property, { kind: 'range', from: input.from, to: input.to });
-        }
-      }
-    }
-  }, [lock, datasets, searchFilters, setSearchFilter]);
+    for (const [datasetId, on] of Object.entries(searchWithin)) if (on) setSearchWithin(datasetId, false);
+  }, [lock, searchWithin, setSearchWithin]);
   if (offers.length === 0) return null;
 
   const shown = offers.find((o) => o.dataset.id === shownId) ?? offers[0];
@@ -279,6 +254,14 @@ export default function AdvancedSearch() {
             shownId={shown.dataset.id}
             onChoose={setShownId}
           />
+          {withinFilters(shown.filters).length > 0 && (
+            <WithinAoiSwitch
+              on={searchWithin[shown.dataset.id] === true}
+              lock={lock}
+              tip={withinAoiTip(shown.filters, shown.dataset.collection['earthx:mask'])}
+              onChange={(on) => setSearchWithin(shown.dataset.id, on)}
+            />
+          )}
           <div className="advanced-fields" ref={fieldsRef}>
             {groups.map((group) => (
               <section key={group.name} className="filter-group" aria-label={group.name}>
@@ -288,8 +271,6 @@ export default function AdvancedSearch() {
                     key={filter.property}
                     filter={filter}
                     input={own?.[filter.property]}
-                    mask={shown.dataset.collection['earthx:mask']}
-                    lock={lock}
                     onChange={(next) => setSearchFilter(shown.dataset.id, filter.property, next)}
                   />
                 ))}
@@ -297,7 +278,7 @@ export default function AdvancedSearch() {
             ))}
           </div>
           <div className="advanced-actions">
-            {setOf(shown).length > 0 && (
+            {(setOf(shown).length > 0 || searchWithin[shown.dataset.id] === true) && (
               <button
                 type="button"
                 className="ghost-btn"
