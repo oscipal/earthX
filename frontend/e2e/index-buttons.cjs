@@ -19,7 +19,6 @@ const path = require('node:path');
 const BASE = process.env.BASE ?? 'http://localhost:5173';
 const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-index-buttons');
 const DESCRIPTION = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'fixtures', 'processes', 'sentinel-2-c1-l2a.json'), 'utf8'));
-const DEM_DESCRIPTION = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'fixtures', 'processes', 'cop-dem-glo-30.json'), 'utf8'));
 const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, height: 740 } };
 const TIP_NDVI = 'Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.';
@@ -36,24 +35,21 @@ const PRESETS = [
 
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 
-async function open(browser, theme, viewport, dem = false) {
+async function open(browser, theme, viewport) {
   const context = await browser.newContext({ viewport: VIEWPORTS[viewport] });
   await context.addInitScript((t) => localStorage.setItem('earthx.theme', t), THEMES[theme]);
   const page = await context.newPage();
-  const asked = [];
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
-    asked.push(url.pathname + url.search);
     if (url.pathname === '/processing/processes/recipe') return json(DESCRIPTION);
-    if (url.pathname === '/processing/processes/cop-dem') return json(DEM_DESCRIPTION);
     if (url.pathname.endsWith('/statistics')) return json(WIDE);
     if (url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0' });
     return json({ detail: 'not made up' }, 404);
   });
   await page.goto(BASE);
-  return { context, page, asked };
+  return { context, page };
 }
 
 async function selectScene(page, presets) {
@@ -140,7 +136,7 @@ async function checkRow(browser, theme, viewport) {
   return { name, problems };
 }
 
-// 2. No row without presets.
+// 2. No row without presets (the DEM has none).
 async function checkNoRow(browser, theme, viewport) {
   const name = `dem ${theme} ${viewport}`;
   const problems = [];
@@ -157,7 +153,7 @@ async function checkNoRow(browser, theme, viewport) {
 async function checkPreview(browser, theme, viewport) {
   const name = `preview ${theme} ${viewport}`;
   const problems = [];
-  const { context, page, asked } = await open(browser, theme, viewport);
+  const { context, page } = await open(browser, theme, viewport);
   await selectScene(page, PRESETS);
   await row(page).waitFor({ timeout: 15000 });
   await page.getByRole('button', { name: /^NDWI\./ }).click();
@@ -182,7 +178,6 @@ async function checkPreview(browser, theme, viewport) {
   await page.waitForTimeout(1400);
   if ((await fields()).join() !== '-2.5,6') problems.push(`the fields of the changed expression say ${await fields()}, not -2.5,6`);
   if ((await colormap()) !== 'viridis') problems.push(`the changed expression is drawn in ${await colormap()}, not viridis`);
-  void asked;
   await context.close();
   return { name, problems };
 }
