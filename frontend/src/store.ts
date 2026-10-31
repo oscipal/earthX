@@ -32,7 +32,7 @@ import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from 
 import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
 import { datesOfIds, dateOf, knownItems } from './layerDate';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
-import { isResultExpired, restyledTileUrl } from './resultLayer';
+import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
 import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
@@ -53,7 +53,7 @@ import {
   withSourceState,
 } from './sections';
 import { overlaysOfPass, underlaysOf } from './searchLayers';
-import { moveEntry, moveEntryTo, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
+import { clampResultsAt, moveEntry, moveEntryTo, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
 import {
   filterQuery,
   hasFilterError,
@@ -1226,6 +1226,8 @@ export interface AppState {
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
+  // The band a result layer draws as a layer of its own, named after the band and drawn as the band is now (NM4-65 part 2).
+  addBandAsLayer: (id: string) => void;
   // A layer (or "Results", `null`) to a place of the list as it is drawn, by the grip of its row (NM4-65).
   moveRowTo: (id: string | null, to: number) => void;
   // The entry "Results" one step up or down among the layers (NM4-59).
@@ -1730,6 +1732,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLayerOpacity: (id, opacity) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
   moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
+  addBandAsLayer: (id) => {
+    const s = get();
+    const at = s.layers.findIndex((l) => l.id === id);
+    const made = at < 0 ? null : bandLayerOf(s.layers[at], `P${nextBatchId()}0`);
+    if (!made) return;
+    // Just above the layer it comes from; "Results" keeps its layers, so it moves down by one where the new layer is over it.
+    const layers = [...s.layers.slice(0, at), made, ...s.layers.slice(at)];
+    set({ layers, resultsAt: at < clampResultsAt(s.resultsAt, s.layers) ? s.resultsAt + 1 : s.resultsAt, notice: `Added "${made.name}" to layers.` });
+  },
   moveResults: (dir) => set((s) => moveEntry(s.layers, s.resultsAt, null, dir, hasResultsPanel(s.sections)) ?? {}),
   moveRowTo: (id, to) => set((s) => moveEntryTo(s.layers, s.resultsAt, id, to, hasResultsPanel(s.sections)) ?? {}),
   resultsToTop: () => set({ resultsAt: 0 }),

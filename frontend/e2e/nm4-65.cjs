@@ -4,6 +4,7 @@
 //   part 3  the acquisition date is in the row of a layer: a day, a span, none
 //   part 5  the opacity slider of the settings of a layer reaches its right end (the thumb at the end of the track at 1)
 //   part 8  every closing is the same small red "x" with the tooltip "Close"
+//   part 2  "Add band as layer": the button at the end of the line of the band, the new layer named after the band, with the date
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed
 //   node e2e/nm4-65.cjs                     # BASE=http://localhost:5173 OUT=<directory for the screenshots>
@@ -156,6 +157,37 @@ async function check(browser, { theme, viewport }) {
     if ((await page.locator('.result-controls').count()) !== 0) problems.push('the x did not close the settings');
   }
   if ((await page.getByRole('button', { name: '‹ Close' }).count()) !== 0) problems.push('"‹ Close" is still there');
+
+  // --- part 2: "Add band as layer"
+  await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const restore = { focusMode: false, downloaded: {}, appliedRender: {}, activeGroupIndex: 0, selectedIds: [], itemIds: [], groupItemIds: [], aoi: null, cropToAoi: false, datasetId: null };
+    const bands = ['red', 'green', 'blue'].map((name) => ({ name, stats: null }));
+    useAppStore.setState({
+      resultViewLayerId: null,
+      layers: [{ id: 'multi', name: 'Result · three bands', visible: true, opacity: 1, derived: 'result', date: '2026-07-06', restore,
+        overlays: [{ kind: 'raster', tileUrl: '/results/AbCdEfGhIjKlMnOpQrSt_-/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=256&bidx=2&colormap_name=viridis&rescale=0%2C1', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }],
+        result: { jobID: 'AbCdEfGhIjKlMnOpQrSt_-', expires: future, gsd: 10, resampled: null, expired: false, dataType: 'float32', stats: null, bands, band: 1 } }],
+    });
+  });
+  if (viewport === 'narrow') await state(page, "(s.toggleDock('layers'), 1)");
+  await page.waitForSelector('.layer-row .lm-band');
+  const select = await page.locator('.layer-row .lm-band').boundingBox();
+  const add = page.locator('.layer-row .lm-add-band');
+  const addBox = await add.boundingBox();
+  const removeBox = await page.locator('.layer-row [data-col="remove"]').boundingBox();
+  if (Math.abs(addBox.y + addBox.height / 2 - (select.y + select.height / 2)) > 3) problems.push('"Add band as layer" is not in the line of the band');
+  if (Math.abs(addBox.x - removeBox.x) > 1.5) problems.push(`"Add band as layer" is not under the remove button: x=${addBox.x}, remove x=${removeBox.x}`);
+  if (select.x + select.width > addBox.x + 0.5) problems.push('the band dropdown runs into the button');
+  if ((await add.getAttribute('title')) !== 'Add this band as a layer of its own') problems.push(`tooltip: ${await add.getAttribute('title')}`);
+  await shot('5-band-line');
+  await add.click();
+  const names = await page.$$eval('.layer-row .lm-name', (n) => n.map((x) => x.textContent));
+  if (JSON.stringify(names) !== JSON.stringify(['green', 'Result · three bands'])) problems.push(`layers after "Add band as layer": ${JSON.stringify(names)}`);
+  const dated = await page.$$eval('.layer-row', (rows) => rows.map((row) => row.querySelector('.lm-date')?.textContent ?? null));
+  if (JSON.stringify(dated) !== JSON.stringify(['2026-07-06', '2026-07-06'])) problems.push(`dates of the two layers: ${JSON.stringify(dated)}`);
+  await shot('6-band-layer');
 
   await context.close();
   return { name: label, problems };

@@ -3,9 +3,9 @@
 // when the map says "Overview", and when the layer is "Expired". Pure functions; the
 // state lives in `processingStore.ts` and `store.ts`.
 
-import type { ResultLayerInfo } from './layers';
+import type { MapLayer, ResultLayerInfo } from './layers';
 import { buildTileUrl } from './mapLayers';
-import { RGB, startBand } from './processingBands';
+import { RGB, RGB_LABEL, startBand } from './processingBands';
 import { presetFor, presetRange, type IndexPreset } from './indexPresets';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, statsFrom, type ResultStats } from './render';
@@ -287,4 +287,26 @@ export function isResultExpired(expires: string, now: number): boolean {
 export function resultLayerName(title: string | null): string {
   const operators = title?.split(' · ')[0]?.trim();
   return operators ? `Result · ${operators}` : 'Result';
+}
+
+// "Add band as layer" (NM4-65 part 2, Otto, 31.10.2026): the band a result layer draws as a layer of its own. It is named after
+// the band, drawn as the band is drawn now (the look that is applied and not yet saved comes along as its saved look), has
+// the date, the opacity and the visibility of the layer it comes from, and carries no list of bands: it draws that one. Its
+// settings and "Save" are its own from then on (`ResultLayerInfo.own`). `null` for a layer that is no result of several bands,
+// one whose results are gone, or one whose band is not one of its bands.
+export function bandLayerOf(layer: MapLayer, id: string): MapLayer | null {
+  const info = layer.result;
+  if (!info || layer.derived !== 'result' || !info.bands || info.bands.length < 2 || info.expired || info.deleted) return null;
+  const band = info.band ?? 0;
+  const colour = band === RGB;
+  const named = colour ? (info.colour ? RGB_LABEL : null) : (info.bands[band]?.name || `Band ${band + 1}`);
+  if (named === null || (!colour && !info.bands[band])) return null;
+  const { bands: _bands, band: _band, colour: _colour, savedTileUrl: _unsaved, ...rest } = info;
+  return {
+    ...layer,
+    id,
+    name: named,
+    overlays: layer.overlays.map((overlay) => ({ ...overlay })),
+    result: { ...rest, ...(colour && info.colour ? { band: RGB, colour: info.colour } : {}), own: true },
+  };
 }

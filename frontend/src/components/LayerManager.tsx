@@ -21,6 +21,7 @@ export const RESAMPLED_LAYER_TEXT = 'Resampled to a common grid';
 export const DELETED_LAYER_TIP = 'Job deleted – restore to show';
 export const HIDE_LAYER_TIP = 'Hide layer';
 export const SHOW_LAYER_TIP = 'Show layer';
+export const ADD_BAND_TIP = 'Add this band as a layer of its own';
 export const RESULTS_ENTRY_TIP = 'Search results, the view and the processing preview. Move to change what lies above.';
 
 // Marks a result layer "Expired" when the time comes (M4-13c-5): one timer for the
@@ -112,6 +113,7 @@ function LayerRow({ layer: l, index, last, dnd }: { layer: MapLayer; index: numb
   const datasets = useAppStore((s) => s.datasets);
   const processLayer = useProcessingStore((s) => s.processLayer);
   const chooseBand = useProcessingStore((s) => s.chooseResultBand);
+  const addBand = useAppStore((s) => s.addBandAsLayer);
   const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
   const jobs = useProcessingStore((s) => s.jobs);
   const processBlock = layerProcessBlock(l, datasets, jobs);
@@ -238,6 +240,11 @@ function LayerRow({ layer: l, index, last, dnd }: { layer: MapLayer; index: numb
           disabled={locked || l.result?.expired === true}
           onChange={(place) => chooseBand(l.id, place === RGB ? RGB : Number(place))}
         />
+      )}
+      {bands && bands.length > 1 && !locked && l.result?.expired !== true && (
+        <button type="button" className="lm-btn lm-add-band" title={ADD_BAND_TIP} aria-label={ADD_BAND_TIP} onClick={() => addBand(l.id)}>
+          ＋
+        </button>
       )}
     </li>
   );
