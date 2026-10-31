@@ -13,8 +13,8 @@ whole file come from the same summaries, without reading anything twice
   block the mean, then the sum of squared deviations (numpy's pairwise sums); across blocks
   Chan's parallel formula; divided by ``count``. Deterministic for a fixed order of blocks,
   not exact. GDAL reads stored statistics only with it (plan §6.1).
-* ``percentile_2`` and ``percentile_98`` (and, where a measure asks for them, other whole percents) come from a fixed
-  histogram: one bin per value
+* ``percentile_2`` and ``percentile_98`` (and, where a measure asks for them, every other whole percent) come from a
+  fixed histogram: one bin per value
   for integers of up to 16 bits (exact), otherwise the upper 16 bits of the
   order-preserving pattern of the ``float32`` value — 65 536 bins of relative width
   2⁻⁷. The rank is the nearest rank; the 2 % value is the lower edge of its bin, the
@@ -38,9 +38,10 @@ __all__ = ["BandStatistics", "BlockSummary", "MEASURE_PERCENTILES", "PERCENTILES
 
 PERCENTILES = (2, 98)
 
-#: What a measure of the area adds to :data:`PERCENTILES` for the methods of ``normalize`` (NM4-11): the ends of the
-#: stretches (1 and 5, 95 and 99) and the quartiles. A result carries the two of :data:`PERCENTILES` only.
-MEASURE_PERCENTILES = (1, 5, 25, 50, 75, 95, 99)
+#: What a measure adds to :data:`PERCENTILES`: every other whole percent from 1 to 99 (NM4-65), for the methods of
+#: ``normalize`` (NM4-11) and for the range a person enters as percentiles. A result's document carries the two of
+#: :data:`PERCENTILES` only.
+MEASURE_PERCENTILES = tuple(percent for percent in range(1, 100) if percent not in PERCENTILES)
 
 #: Bins of the float histogram: the upper 16 bits of the order-preserving float32 pattern.
 _KEY_BITS = 16

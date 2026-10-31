@@ -420,8 +420,9 @@ def test_a_result_that_is_not_in_the_store_is_a_404(rig: Rig) -> None:
     assert rig.opened == []
 
 
-def test_only_the_tiles_and_the_tilejson_exist(rig: Rig, uploaded: str) -> None:
-    for tail in ("info", "statistics", "point/9.5,47.0", "WebMercatorQuad/WMTSCapabilities.xml", "bbox/9,47,10,48.png", "preview"):
+def test_only_the_tiles_the_tilejson_and_the_statistics_exist(rig: Rig, uploaded: str) -> None:
+    """The statistics are the one route plan M4-13c §5 left out that NM4-65 added (`test_result_statistics`)."""
+    for tail in ("info", "point/9.5,47.0", "WebMercatorQuad/WMTSCapabilities.xml", "bbox/9,47,10,48.png", "preview"):
         assert rig.client.get(f"/results/{uploaded}/{tail}").status_code in (404, 405), tail
     assert rig.client.post(f"/results/{uploaded}/tiles/WebMercatorQuad/14/1/1").status_code == 405
 
