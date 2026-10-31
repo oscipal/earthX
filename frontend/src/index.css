@@ -131,14 +131,36 @@ body.dragging * {
 .draggable.fill {
   width: 100%;
 }
-/* The bar of the selection lies over the other bands where they meet: a band that was moved stays where it was put, and
-   the bar that comes with a ticked scene takes the place at the bottom of the stack, over it, not behind it. */
+/* The block of the selection lies over the other bands where they meet: a band that was moved stays where it was put, and
+   the block that comes with a ticked scene takes the place at the bottom of the stack, over it, not behind it. */
 .draggable[data-band='selection'] {
   z-index: 1;
 }
-/* The labels of the timeline do not wrap: its band stays within the stack, and they give way inside it. */
-.draggable[data-band='timeline'] {
-  max-width: 100%;
+/* The block of the selection bar and the timeline (NM4-66). With a bar it is as wide as the bar (`.fill`); the timeline
+   alone is narrower, and never wider than the stack. */
+.draggable.time-only {
+  width: min(560px, 100%);
+}
+.selection-block {
+  box-sizing: border-box;
+  width: 100%;
+  /* The row of dates answers to the width of the block. */
+  container-type: inline-size;
+}
+/* A thin head of its own for the "x": it never lies over a button of the bar. */
+.block-head {
+  display: flex;
+  justify-content: flex-end;
+  height: 22px;
+  padding: 3px 6px 0;
+  box-sizing: border-box;
+}
+.selection-block > .download-bar {
+  padding-top: 0;
+}
+.selection-block > .download-bar + .time-slider {
+  border-top: 1px solid var(--panel-border);
+  padding-top: 8px;
 }
 /* controls inside a draggable keep their own affordance */
 .draggable button,
@@ -1752,6 +1774,31 @@ input[type='date']:focus {
   cursor: pointer;
   padding: 0;
 }
+/* The close "x" of every panel, pop-up and window (`CloseButton.tsx`, NM4-65): small and red. */
+.close-x {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #ff5a6e;
+  cursor: pointer;
+}
+.close-x:hover {
+  border-color: currentColor;
+}
+.close-x:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+.app[data-theme='normal'] .close-x {
+  color: #c62840;
+}
 .link-btn.off {
   color: var(--muted);
 }
@@ -1763,8 +1810,6 @@ input[type='date']:focus {
   gap: 12px;
   padding: 10px 16px;
   width: 100%;
-  /* Room for three dates, as the labels are the date only; never wider than the space between the rail and the edge. */
-  min-width: min(380px, calc(100vw - var(--rail-width) - 32px));
   box-sizing: border-box;
 }
 .play-btn {

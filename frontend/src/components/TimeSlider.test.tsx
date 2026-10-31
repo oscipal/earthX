@@ -131,11 +131,11 @@ describe('the labels of the time slider', () => {
 
 // The bands are placed by the browser: what the CSS promises is read off the file, and `Draggable` marks each band.
 describe('the bands at the bottom of the map', () => {
-  it('lay the bar of the selection over the timeline, also where a moved timeline stays over the place of the bar', () => {
+  it('lay the block of the selection over the view, also where a moved view stays over the place of the block', () => {
     const start = CSS.indexOf(".draggable[data-band='selection'] {");
     expect(start).toBeGreaterThanOrEqual(0);
     expect(CSS.slice(start, CSS.indexOf('}', start))).toContain('z-index: 1');
-    expect(CSS).not.toMatch(/\.draggable\[data-band='timeline'\] \{[^}]*z-index/);
+    expect(CSS).not.toContain("data-band='timeline'");
   });
 });
 

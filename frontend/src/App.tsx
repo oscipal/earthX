@@ -12,10 +12,9 @@ import ProcessingManager from './components/ProcessingManager';
 import ProcessingPanel from './components/ProcessingPanel';
 import ResultControls from './components/ResultControls';
 import ResultsPanel from './components/ResultsPanel';
+import SelectionBlock from './components/SelectionBlock';
 import StatusBar from './components/StatusBar';
-import TimeSlider from './components/TimeSlider';
 import TipLayer from './components/TipLayer';
-import ViewBar from './components/ViewBar';
 import ViewerControls from './components/ViewerControls';
 import { dockPanelId, railButtonId } from './dock';
 import { openPermalinkInAddress } from './permalink';
@@ -114,39 +113,20 @@ export default function App() {
       <div className={`overlay bottom${processingOpen ? ' beside-sheet' : ''}`}>
         {focusMode ? (
           <>
-            {tickedBesideView && (
-              <Draggable id="selection" key="selection" className="fill">
-                <ViewBar />
-              </Draggable>
-            )}
+            <SelectionBlock bar={tickedBesideView} timeline={false} />
             <Draggable id="view" key="view">
               <ViewerControls />
             </Draggable>
           </>
         ) : resultView ? (
           <>
-            {hasSelection && (
-              <Draggable id="selection" key="selection" className="fill">
-                <ViewBar />
-              </Draggable>
-            )}
+            <SelectionBlock bar={hasSelection} timeline={false} />
             <Draggable id="result" key="result">
               <ResultControls />
             </Draggable>
           </>
         ) : (
-          <>
-            {hasSelection && (
-              <Draggable id="selection" key="selection" className="fill">
-                <ViewBar />
-              </Draggable>
-            )}
-            {hasGroups && (
-              <Draggable id="timeline" key="timeline">
-                <TimeSlider />
-              </Draggable>
-            )}
-          </>
+          <SelectionBlock bar={hasSelection} timeline={hasGroups} />
         )}
       </div>
 

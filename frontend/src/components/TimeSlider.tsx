@@ -47,7 +47,7 @@ export default function TimeSlider() {
   const loading = behind && late;
 
   return (
-    <div className="panel time-slider">
+    <div className="time-slider">
       <button
         type="button"
         className="play-btn"
