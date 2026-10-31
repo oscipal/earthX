@@ -70,6 +70,8 @@ function mount(downloaded: Record<string, DownloadedInfo>, sections = [S2_SECTIO
       cropToAoi: true,
       downloaded,
       shownImage,
+      layers: [],
+      resultsAt: 0,
       viewLooks: {},
       savedLooks: {},
       appliedRender: { rescale: '0,255' },
@@ -301,5 +303,44 @@ describe('an image of three bands', () => {
     expect(colormapField()).toBeUndefined();
     act(() => useAppStore.getState().chooseViewDataset('dem'));
     expect(colormapField()).toBeDefined();
+  });
+});
+
+describe('"Add to layers" and "Add all to layers"', () => {
+  it('has "Add all to layers" only where the view holds more than one image', () => {
+    mount({ A: info('s2') });
+    expect(button('＋ Add all to layers')).toBeUndefined();
+    expect(container.querySelector('.vc-actions')!.className).not.toContain('has-all');
+    mount(THREE);
+    expect(button('＋ Add all to layers')).toBeDefined();
+    expect(container.querySelector('.vc-actions')!.className).toContain('has-all');
+  });
+
+  it('pins the image shown with "Add to layers" and every image of every dataset with "Add all to layers"', () => {
+    mount({ ...THREE, D: info('dem') });
+    act(() => button('＋ Add to layers')!.click());
+    expect(useAppStore.getState().layers.map((l) => l.restore.itemIds)).toEqual([['A']]);
+    act(() => useAppStore.setState({ layers: [] }));
+    act(() => button('＋ Add all to layers')!.click());
+    const { layers } = useAppStore.getState();
+    expect(layers.map((l) => l.restore.itemIds)).toEqual([['D'], ['C'], ['B'], ['A']]);
+    expect(layers.map((l) => l.restore.datasetId)).toEqual(['dem', 's2', 's2', 's2']);
+  });
+
+  it('names the layers after dataset, time step and satellite', () => {
+    mount(THREE);
+    act(() => button('＋ Add all to layers')!.click());
+    expect(useAppStore.getState().layers.map((l) => l.name)).toEqual([
+      'Sentinel-2 L2A · 2025-08-08 · S2A',
+      'Sentinel-2 L2A · 2025-08-03 · S2B',
+      'Sentinel-2 L2A · 2025-07-29 · S2A',
+    ]);
+  });
+
+  it('puts every new layer on top of the list', () => {
+    mount(THREE);
+    act(() => useAppStore.setState({ layers: [], resultsAt: 0 }));
+    act(() => button('＋ Add all to layers')!.click());
+    expect(useAppStore.getState().resultsAt).toBe(3);
   });
 });

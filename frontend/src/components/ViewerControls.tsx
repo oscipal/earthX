@@ -44,6 +44,7 @@ export default function ViewerControls() {
   const exitFocus = useAppStore((s) => s.exitFocus);
   const changeImage = useAppStore((s) => s.changeImage);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
+  const addAllToLayers = useAppStore((s) => s.addAllToLayers);
   const pinLoading = useAppStore((s) => s.pinLoading);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const toggleDownloaded = useAppStore((s) => s.toggleDownloaded);
@@ -228,16 +229,27 @@ export default function ViewerControls() {
         </div>
       </div>
 
-      <div className="vc-actions">
+      <div className={`vc-actions${images.length > 1 ? ' has-all' : ''}`}>
         <button
           type="button"
           className="ghost-btn"
-          title="Pin this image into the layer manager"
+          title={images.length > 1 ? 'Pin the image that is shown into the layer manager' : 'Pin this image into the layer manager'}
           disabled={pinLoading}
           onClick={() => addCurrentToLayers()}
         >
           {pinLoading ? 'Loading…' : '＋ Add to layers'}
         </button>
+        {images.length > 1 && (
+          <button
+            type="button"
+            className="ghost-btn"
+            title={`Pin all ${images.length} images of the view into the layer manager, one layer each`}
+            disabled={pinLoading}
+            onClick={() => addAllToLayers()}
+          >
+            {pinLoading ? 'Loading…' : '＋ Add all to layers'}
+          </button>
+        )}
         <button
           type="button"
           className="ghost-btn"
