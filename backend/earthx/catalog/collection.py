@@ -111,6 +111,11 @@ def _earthx_index_presets(config: DatasetConfig) -> list[dict[str, object]]:
     ]
 
 
+def _earthx_true_color(config: DatasetConfig) -> list[str]:
+    """The three bands of a true-colour picture (red, green, blue), or an empty list where the data has none (NM4-64)."""
+    return list(config.true_color)
+
+
 def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
     """The filters the search offers, in the words of STAC queryables (JSON Schema) where they have one (DS-02).
 
@@ -219,6 +224,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:auxiliary_assets": _earthx_auxiliary_assets(config),
         "earthx:search_filters": _earthx_search_filters(config),
         "earthx:index_presets": _earthx_index_presets(config),
+        "earthx:true_color": _earthx_true_color(config),
         "earthx:license_flags": _earthx_license_flags(config),
         "earthx:access": {
             "token_free_checked_at": config.access.token_free_checked_at.isoformat(),

@@ -998,6 +998,10 @@ class DatasetConfig:
     # The indices the panel offers as one click each (NM4-14), in the order of the buttons. No default (KLAERUNGEN
     # B10): an entry says so, with an empty tuple where it offers none.
     index_presets: tuple[IndexPreset, ...]
+    # The three bands of a true-colour picture, red, green, blue in this order (NM4-64), or an empty tuple where the
+    # data has no such picture (the DEM). Names of bands of the data, not of a picture made from them (``visual``). No
+    # default (KLAERUNGEN B10): an entry says so.
+    true_color: tuple[str, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
@@ -1016,6 +1020,7 @@ class DatasetConfig:
         self._check_auxiliary_assets()
         self._check_search_filters()
         self._check_index_presets()
+        self._check_true_color()
 
     def search_filter(self, name: str) -> SearchFilter | None:
         """The filter on the property ``name``, or None where the entry offers none."""
@@ -1138,6 +1143,23 @@ class DatasetConfig:
                 raise ConfigError(f"{self.dataset_id}: the index preset {name} has the name of a band of the data")
             if problem := _preset_problem(preset, bands, not_bands):
                 raise ConfigError(f"{self.dataset_id}: the index preset {name} {problem}")
+
+    def _check_true_color(self) -> None:
+        """Empty, or three different bands of the data: red, green, blue (NM4-64)."""
+        names = self.true_color
+        if isinstance(names, str) or not isinstance(names, tuple):
+            raise ConfigError(f"{self.dataset_id}: true_color is a tuple of three band names, or empty")
+        if not names:
+            return
+        if len(names) != 3 or any(not isinstance(name, str) for name in names):
+            raise ConfigError(f"{self.dataset_id}: true_color names red, green and blue, three bands, or none")
+        if len(set(names)) != 3:
+            raise ConfigError(f"{self.dataset_id}: true_color names three different bands")
+        bands = {key for key in self.band_units if "*" not in key}
+        not_bands = set(self.auxiliary_assets) | ({self.mask.asset} if self.mask is not None else set())
+        for name in names:
+            if name in not_bands or name not in bands:
+                raise ConfigError(f"{self.dataset_id}: true_color names {name!r}, which is no band of the data")
 
     def _check_mask(self) -> None:
         """``masking`` and ``mask`` agree, and the description of the layer is consistent (M4-18)."""
