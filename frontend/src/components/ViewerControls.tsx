@@ -13,7 +13,7 @@ import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
-import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
+import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, INDEX_TIP, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
@@ -22,6 +22,7 @@ import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Chevron from './Chevron';
 import Eye from './Eye';
+import RenderFields from './RenderFields';
 
 export default function ViewerControls() {
   const pendingColormapName = useAppStore((s) => s.pendingColormapName);
@@ -181,55 +182,23 @@ export default function ViewerControls() {
       </div>
 
       <div className={`vc-render${showIndex ? ' has-index' : ''}`}>
-        {showIndex && (
-          <label className="vc-field" title={chosen ? presetTip(chosen) : INDEX_TIP}>
-            <span>Index</span>
-            <select value={chosen?.name ?? ''} onChange={(e) => chooseViewIndex(e.target.value || null)}>
-              <option value="">— none —</option>
-              {presets.map((preset) => (
-                <option key={preset.name} value={preset.name} title={presetTip(preset)}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <label className="vc-field">
-          <span>Colormap</span>
-          {colormap ? (
-            <select value={pendingColormapName} onChange={(e) => setPendingColormapName(e.target.value)}>
-              <option value="">— none —</option>
-              {COLORMAPS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          ) : (
-            // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
-            <select value="" title="True colour: three bands, no colormap" onChange={() => undefined}>
-              <option value="">RGB</option>
-            </select>
-          )}
-        </label>
-        <label className="vc-field vc-num">
-          <span>vmin</span>
-          <input
-            type="number"
-            value={pendingVmin}
-            placeholder="auto"
-            onChange={(e) => setPendingVmin(e.target.value)}
-          />
-        </label>
-        <label className="vc-field vc-num">
-          <span>vmax</span>
-          <input
-            type="number"
-            value={pendingVmax}
-            placeholder="auto"
-            onChange={(e) => setPendingVmax(e.target.value)}
-          />
-        </label>
+        <RenderFields
+          index={
+            showIndex
+              ? {
+                  value: chosen?.name ?? '',
+                  options: presets.map((preset) => ({ name: preset.name, tip: presetTip(preset) })),
+                  tip: chosen ? presetTip(chosen) : INDEX_TIP,
+                  onChange: chooseViewIndex,
+                }
+              : undefined
+          }
+          vmin={{ value: pendingVmin, onChange: setPendingVmin }}
+          vmax={{ value: pendingVmax, onChange: setPendingVmax }}
+          // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
+          colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: 'RGB', title: 'True colour: three bands, no colormap' }}
+          placeholder="auto"
+        />
         <div className="vc-buttons">
           <AutoScaleButton
             title={focusLoading ? 'Measuring the range…' : 'Measure the 2nd/98th percentile stretch from the source again'}

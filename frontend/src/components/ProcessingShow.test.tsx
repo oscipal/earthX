@@ -207,7 +207,7 @@ describe('the dropdown "Show"', () => {
     await ndvi();
     expect(store().preview).not.toBeNull();
     expect(show()).toBeNull();
-    expect(section().textContent).not.toContain('Show');
+    expect(section().textContent).not.toContain('Band');
   });
 
   it('is not there without a picture to choose for', async () => {
@@ -217,12 +217,12 @@ describe('the dropdown "Show"', () => {
     expect(show()).toBeNull();
   });
 
-  it('stands left of min and max, which keep to one row with it', async () => {
+  it('stands left of vmin and vmax, which keep to one row with it (NM4-65: the same names everywhere)', async () => {
     await ndvi(undefined, ['result', 'red']);
     const row = section().querySelector('.pp-range')!;
     expect(row.firstElementChild!.classList.contains('pp-show')).toBe(true);
-    expect(row.querySelector('.pp-show span')!.textContent).toBe('Show');
-    expect([...row.querySelectorAll('.vc-field > span')].slice(0, 3).map((s) => s.textContent)).toEqual(['Show', 'min', 'max']);
+    expect(row.querySelector('.pp-show span')!.textContent).toBe('Band');
+    expect([...row.querySelectorAll('.vc-field > span')].slice(0, 4).map((s) => s.textContent)).toEqual(['Band', 'vmin', 'vmax', 'Colormap']);
   });
 
   it('lists every band of the output, the results above the bands of the data', async () => {
