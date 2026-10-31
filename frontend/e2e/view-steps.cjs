@@ -1,13 +1,15 @@
 // The view of scenes steps through its images (NM4-53, Otto, 31.10.2026, zu #257): two overpasses of a Sentinel-2 like
 // dataset (three bands, RGB) and one elevation tile, ticked, then "Crop & merge to AOI". Each scene is one solid colour,
 // and the pixel in the middle of the map is read:
-//   1. the view opens with the image of the group that is open (green, the later overpass); the head says the date and the satellite
+//   1. the view opens with the image of the group that is open (green, the later overpass); the head says the date only (no satellite)
 //      between the title and the eye, with the dataset to choose, and the title has no date;
 //   2. "‹" shows the earlier overpass (red), "›" the later again; the arrows are greyed out at the ends;
 //   3. the arrow keys step while an arrow has the focus;
-//   4. the dropdown shows the elevation tile (blue); the colormap field is there for it and not for the RGB images;
+//   4. the dropdown shows the elevation tile (blue); the box of the colormap is where it was for both, offering RGB and nothing else
+//      for the Sentinel-2 images, and the arrows are greyed out for a dataset of one image;
 //   5. "Add to layers" pins the image shown, "Add all to layers" every image, one layer each;
-//   6. the head, the dropdown and the buttons stay inside the panel, and the panel inside the window; "Apply to all" is always there.
+//   6. the head, the dropdown and the buttons stay inside the panel, and the panel inside the window; "Apply to all" is always there;
+//   7. in a wide window the panel is the head and two rows (all its buttons in one row), and wider than high.
 // Light and dark theme, a wide and a narrow window.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -158,18 +160,25 @@ async function run(browser, { theme, viewport }) {
   await page.waitForSelector('.vc-head .vc-stepper');
   await expectColour('the open group (the later overpass) first', 'S2_B');
   const row = () => text('.vc-step-text');
-  if ((await row()) !== '2025-08-03 · S2B') problems.push(`the row says ${JSON.stringify(await row())}, expected "2025-08-03 · S2B"`);
+  if ((await row()) !== '2025-08-03') problems.push(`the switcher says ${JSON.stringify(await row())}, expected "2025-08-03"`);
   if (/\d{4}-\d{2}-\d{2}/.test(await page.locator('.vc-title').first().textContent())) problems.push('the title of the head has a date');
   const order = await page.evaluate(() => [...document.querySelector('.vc-head').children].map((el) => el.className.split(' ')[0]));
   if (order.join() !== 'vc-title,vc-dataset,vc-stepper,vc-eye') problems.push(`the head holds ${order.join(', ')}`);
   if ((await page.getByRole('button', { name: 'Apply to all' }).count()) !== 1) problems.push('"Apply to all" is not there');
-  if ((await page.locator('.vc-field span', { hasText: 'Colormap' }).count()) !== 0) problems.push('the RGB image has a colormap field');
+  const colormapBox = () => page.evaluate(() => {
+    const label = [...document.querySelectorAll('.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap');
+    if (!label) return null;
+    const r = label.getBoundingClientRect();
+    return { x: Math.round(r.x), y: Math.round(r.y), options: [...label.querySelectorAll('option')].map((o) => o.textContent) };
+  });
+  const rgbBox = await colormapBox();
+  if (!rgbBox || rgbBox.options.join() !== 'RGB') problems.push(`the box of the colormap for RGB says ${JSON.stringify(rgbBox)}`);
   await page.screenshot({ path: path.join(OUT, `first ${name}.png`) });
 
   // 2. Arrows.
   await page.getByRole('button', { name: 'Previous image' }).click();
   await expectColour('"‹" shows the earlier overpass', 'S2_A');
-  if ((await row()) !== '2025-07-29 · S2A') problems.push(`the row says ${JSON.stringify(await row())} after "‹"`);
+  if ((await row()) !== '2025-07-29') problems.push(`the switcher says ${JSON.stringify(await row())} after "‹"`);
   if ((await page.getByRole('button', { name: 'Previous image' }).getAttribute('aria-disabled')) !== 'true') problems.push('"‹" is not greyed out at the first image');
   await page.getByRole('button', { name: 'Next image' }).click();
   await expectColour('"›" shows the later overpass again', 'S2_B');
@@ -186,8 +195,13 @@ async function run(browser, { theme, viewport }) {
   await page.selectOption('select[aria-label="Dataset"]', 'dem');
   await expectColour('the dropdown shows the elevation tile', 'DEM_1');
   if (!(await page.locator('.vc-title').first().textContent()).includes('Copernicus DEM')) problems.push('the head does not name the elevation model');
-  if ((await page.locator('.vc-field span', { hasText: 'Colormap' }).count()) !== 1) problems.push('the elevation image has no colormap field');
-  if ((await page.getByRole('button', { name: 'Previous image' }).count()) !== 0) problems.push('a dataset of one image has arrows');
+  const demBox = await colormapBox();
+  if (!demBox || demBox.options[0] !== '— none —') problems.push(`the elevation image has no colormap box: ${JSON.stringify(demBox)}`);
+  if (demBox && rgbBox && (Math.abs(demBox.x - rgbBox.x) > 1 || Math.abs(demBox.y - rgbBox.y) > 1)) problems.push(`the colormap box moved: ${JSON.stringify(rgbBox)} -> ${JSON.stringify(demBox)}`);
+  if (!(await row())) problems.push('a dataset of one image has no date');
+  for (const name of ['Previous image', 'Next image']) {
+    if ((await page.getByRole('button', { name }).getAttribute('aria-disabled')) !== 'true') problems.push(`"${name}" is not greyed out for a dataset of one image`);
+  }
   if ((await page.getByRole('button', { name: 'Apply to all' }).getAttribute('aria-disabled')) !== 'true') problems.push('"Apply to all" is not locked for a dataset of one image');
   if (!(await page.getByRole('button', { name: 'Apply to all' }).getAttribute('title')).includes('only one image')) problems.push('"Apply to all" does not say why it is locked');
   await page.screenshot({ path: path.join(OUT, `dem ${name}.png`) });
@@ -213,7 +227,21 @@ async function run(browser, { theme, viewport }) {
   if (!names.some((n) => n.includes('S2B'))) problems.push(`no layer is named after the satellite: ${JSON.stringify(names)}`);
   await page.screenshot({ path: path.join(OUT, `layers ${name}.png`) });
 
-  // 7. Everything inside the panel and the panel inside the window.
+  // 7. Head and two rows: all the buttons of the second row lie in one row, and in a wide window the panel is wider than high.
+  const shape = await page.evaluate(() => {
+    const panel = document.querySelector('.scene-view').getBoundingClientRect();
+    const tops = [...document.querySelectorAll('.scene-view .vc-actions > *')].map((b) => Math.round(b.getBoundingClientRect().top));
+    const heads = [...document.querySelectorAll('.scene-view .vc-head, .scene-view .vc-render, .scene-view .vc-actions')].map((r) => Math.round(r.getBoundingClientRect().top));
+    return { width: panel.width, height: panel.height, oneRow: new Set(tops).size === 1, rows: new Set(heads).size };
+  });
+  if (win.width >= 600) {
+    if (!shape.oneRow) problems.push('the buttons of the second row are not in one row');
+    if (shape.height >= shape.width) problems.push(`the panel is not wider than high (${shape.width} x ${shape.height})`);
+    if (shape.rows !== 3) problems.push(`the panel is not the head and two rows (${shape.rows} rows)`);
+  }
+  await page.screenshot({ path: path.join(OUT, `shape ${name}.png`) });
+
+  // 8. Everything inside the panel and the panel inside the window.
   const fit = await page.evaluate(() => {
     const panel = document.querySelector('.scene-view');
     const box = panel.getBoundingClientRect();

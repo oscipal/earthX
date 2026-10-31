@@ -129,7 +129,8 @@ export function defaultRenderOf(collection: Collection): EarthxDefaultRender | n
 }
 
 // Whether a colormap can colour the standard picture of the dataset. It cannot where that picture is made of three
-// bands (RGB, true colour): the field is not shown then (Otto, 31.10.2026, zu #257). Read from the three ranges of the
+// bands (RGB, true colour): the box of the colormap then offers "RGB" and nothing else (Otto, 1.11.2026, replacing the
+// field that was not shown on 31.10.2026). Read from the three ranges of the
 // registry's standard visualisation until `earthx:true_color` (NM4-64) names it; then this is the one place to change.
 export function showsColormap(collection: Collection): boolean {
   return (defaultRenderOf(collection)?.rescale?.length ?? 0) !== 3;

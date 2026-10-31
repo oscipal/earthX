@@ -346,11 +346,12 @@ body.dragging * {
 }
 /* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
    head, so the rows of buttons are the same width and that width is the width of the view. Row 1: colormap three
-   columns, vmin and vmax two each, and five for "auto-scale" with "Apply" under it and "Save" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
-   four buttons, three columns each. Every field of row 1 is 34px high. Below 600 px the grid has four
+   columns, vmin and vmax two each, and five for "auto-scale" with "Apply" under it and "Apply to all" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
+   the buttons in one row, four or with several images five of one width (Otto, 1.11.2026: the view is two rows high under its head,
+   wider rather than taller). Every field of row 1 is 34px high. Below 600 px the grid has four
    columns and the rows wrap; no text ends up outside its cell. */
 .scene-view {
-  --cell: 36px;
+  --cell: 46px;
   --row-height: 34px;
   box-sizing: border-box;
   width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--dock-offset) - 24px));
@@ -418,20 +419,38 @@ body.dragging * {
   flex: 0 1 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 .vc-step {
   flex: none;
-  width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
   height: 28px;
   padding: 0;
-  line-height: 1;
-  font-size: 16px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 50%;
+  color: var(--accent);
+  cursor: pointer;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+.vc-step:hover,
+.vc-step:focus-visible {
+  border-color: var(--accent);
+  background: var(--row-hover);
+  outline: none;
 }
 .vc-step[aria-disabled='true'] {
-  opacity: 0.45;
+  color: var(--muted);
+  opacity: 0.4;
   cursor: not-allowed;
+}
+.vc-step[aria-disabled='true']:hover {
+  border-color: var(--panel-border);
+  background: var(--input-bg);
 }
 .vc-step-text {
   flex: 0 1 auto;
@@ -440,6 +459,7 @@ body.dragging * {
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 @media (max-width: 599px) {
@@ -451,13 +471,23 @@ body.dragging * {
     order: 2;
   }
 }
-.scene-view .vc-render,
-.scene-view .vc-actions {
+.scene-view .vc-render {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
   gap: 8px;
   align-items: end;
+}
+.scene-view .vc-actions {
+  --buttons: 4;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(var(--buttons), minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+.scene-view .vc-actions.has-all {
+  --buttons: 5;
 }
 .scene-view .vc-render > :nth-child(1) {
   grid-column: span 3;
@@ -469,30 +499,13 @@ body.dragging * {
 .scene-view .vc-render > :nth-child(4) {
   grid-column: span 5;
 }
-/* An image of three bands (RGB) has no colormap field (Otto, 31.10.2026): vmin and vmax take its place and the buttons
-   keep the right half, so that the row is as wide as with it. */
-.scene-view .vc-render.no-colormap > :nth-child(1),
-.scene-view .vc-render.no-colormap > :nth-child(2) {
-  grid-column: span 3;
-}
-.scene-view .vc-render.no-colormap > :nth-child(3) {
-  grid-column: span 6;
-}
 .scene-view .vc-actions > * {
-  grid-column: span 3;
   min-width: 0;
   min-height: 44px;
   padding: 6px 8px;
   line-height: 1.25;
   text-align: center;
   overflow-wrap: anywhere;
-}
-/* With several images the row has a fifth button, "Add all to layers": three across, then two (NM4-53). */
-.scene-view .vc-actions.has-all > :nth-child(-n + 3) {
-  grid-column: span 4;
-}
-.scene-view .vc-actions.has-all > :nth-child(n + 4) {
-  grid-column: span 6;
 }
 .scene-view .vc-field select,
 .scene-view .vc-field input {
@@ -514,19 +527,12 @@ body.dragging * {
   .scene-view .vc-render > :nth-child(4) {
     grid-column: span 4;
   }
-  .scene-view .vc-render.no-colormap > :nth-child(1),
-  .scene-view .vc-render.no-colormap > :nth-child(2) {
-    grid-column: span 2;
-  }
-  .scene-view .vc-render.no-colormap > :nth-child(3) {
-    grid-column: span 4;
-  }
-  .scene-view .vc-actions > *,
-  .scene-view .vc-actions.has-all > * {
-    grid-column: span 2;
+  .scene-view .vc-actions,
+  .scene-view .vc-actions.has-all {
+    --buttons: 2;
   }
   .scene-view .vc-actions.has-all > :nth-child(5) {
-    grid-column: span 4;
+    grid-column: 1 / -1;
   }
 }
 .ghost-btn.danger {

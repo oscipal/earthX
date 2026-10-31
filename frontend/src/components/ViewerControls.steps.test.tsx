@@ -114,17 +114,26 @@ const title = () => container.querySelector('.vc-title')?.textContent;
 const THREE = { A: info('s2'), B: info('s2'), C: info('s2') };
 
 describe('what is not possible is not there', () => {
-  it('has neither the dataset nor the arrows for a view of one image, and no row of its own', () => {
+  // Otto, 1.11.2026: the date is there for a single image too, with the arrows greyed out.
+  it('has the date for a view of one image, with both arrows greyed out and the reason, and no dataset to choose', () => {
     mount({ A: info('s2') });
-    expect(steps()).toBeNull();
     expect(dataset()).toBeNull();
+    expect(stepText()).toBe('2025-07-29');
+    for (const arrow of [prev()!, next()!]) {
+      expect(arrow.getAttribute('aria-disabled')).toBe('true');
+      expect(arrow.title).toBe('There is only one image');
+    }
+    act(() => next()!.click());
+    expect(stepText()).toBe('2025-07-29');
     expect(container.querySelector('.vc-steps')).toBeNull();
   });
 
-  it('has neither for several scenes of one time step', () => {
+  it('has the date and greyed out arrows for several scenes of one time step', () => {
     mount({ A: info('s2'), B: info('s2') }, [section('s2', [A, B], [group('same', [A, B])]), DEM_SECTION]);
-    expect(steps()).toBeNull();
+    expect(steps()).not.toBeNull();
     expect(dataset()).toBeNull();
+    expect(prev()!.getAttribute('aria-disabled')).toBe('true');
+    expect(next()!.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('puts them in the head, the dataset and then the date with the arrows, between the title and the eye', () => {
@@ -142,39 +151,39 @@ describe('what is not possible is not there', () => {
     expect(next()).not.toBeNull();
   });
 
-  it('has the dataset to choose but no date and no arrows where each dataset has one image', () => {
+  it('has the dataset to choose and the date with greyed out arrows where each dataset has one image', () => {
     mount({ A: info('s2'), D: info('dem') });
     expect(dataset()).not.toBeNull();
-    expect(prev()).toBeNull();
-    expect(next()).toBeNull();
-    expect(stepText()).toBeUndefined();
+    expect(stepText()).toBe('2025-07-29');
+    expect(prev()!.getAttribute('aria-disabled')).toBe('true');
+    expect(next()!.getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('has the arrows of a dataset with several images and none for one with a single image', () => {
+  it('has live arrows for a dataset with several images and greyed out ones for one with a single image', () => {
     mount({ ...THREE, D: info('dem') });
     expect(next()).not.toBeNull();
     act(() => useAppStore.getState().chooseViewDataset('dem'));
-    expect(prev()).toBeNull();
-    expect(next()).toBeNull();
-    expect(stepText()).toBeUndefined();
+    expect(prev()!.getAttribute('aria-disabled')).toBe('true');
+    expect(next()!.getAttribute('aria-disabled')).toBe('true');
+    expect(stepText()).toBe('dem');
   });
 });
 
 describe('the arrows', () => {
-  it('say the date and the satellite of the image shown, earliest first', () => {
+  it('say the date of the image shown and nothing else, earliest first', () => {
     mount(THREE);
-    expect(stepText()).toBe('2025-07-29 · S2A');
+    expect(stepText()).toBe('2025-07-29');
   });
 
   it('step to the next and the previous image', () => {
     mount(THREE);
     act(() => next()!.click());
-    expect(stepText()).toBe('2025-08-03 · S2B');
+    expect(stepText()).toBe('2025-08-03');
     expect(title()).not.toContain('2025-08-03');
     act(() => next()!.click());
-    expect(stepText()).toBe('2025-08-08 · S2A');
+    expect(stepText()).toBe('2025-08-08');
     act(() => prev()!.click());
-    expect(stepText()).toBe('2025-08-03 · S2B');
+    expect(stepText()).toBe('2025-08-03');
   });
 
   it('are greyed out with the reason at the ends, and do nothing there', () => {
@@ -182,19 +191,20 @@ describe('the arrows', () => {
     expect(prev()!.getAttribute('aria-disabled')).toBe('true');
     expect(prev()!.title).toBe('This is the first image');
     act(() => prev()!.click());
-    expect(stepText()).toBe('2025-07-29 · S2A');
+    expect(stepText()).toBe('2025-07-29');
     act(() => useAppStore.getState().showImage(useAppStore.getState().shownImage ?? ''));
     act(() => next()!.click());
     act(() => next()!.click());
     expect(next()!.getAttribute('aria-disabled')).toBe('true');
     expect(next()!.title).toBe('This is the last image');
     act(() => next()!.click());
-    expect(stepText()).toBe('2025-08-08 · S2A');
+    expect(stepText()).toBe('2025-08-08');
   });
 
-  it('tell the step and the group in the tooltip of the date', () => {
+  it('tell the satellite, the step and the group in the tooltip of the date', () => {
     mount(THREE);
-    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('2025-07-29 · S2A · step 1 of 3 · 2025-07-29');
+    expect(container.querySelector('.vc-step-text')?.textContent).not.toContain('S2');
+    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('2025-07-29 · S2A · step 1 of 3');
   });
 
   it('are reached with the keys when one of them has the focus, and not otherwise', () => {
@@ -202,19 +212,19 @@ describe('the arrows', () => {
     act(() => {
       document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     });
-    expect(stepText()).toBe('2025-07-29 · S2A');
+    expect(stepText()).toBe('2025-07-29');
     act(() => {
       next()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     });
-    expect(stepText()).toBe('2025-08-03 · S2B');
+    expect(stepText()).toBe('2025-08-03');
     act(() => {
       next()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     });
-    expect(stepText()).toBe('2025-07-29 · S2A');
+    expect(stepText()).toBe('2025-07-29');
     act(() => {
       next()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
     });
-    expect(stepText()).toBe('2025-07-29 · S2A');
+    expect(stepText()).toBe('2025-07-29');
   });
 
   it('leave "Hide image" as it is', () => {
@@ -245,13 +255,15 @@ describe('the dataset', () => {
 });
 
 describe('a satellite the registry does not name', () => {
-  it('is shown as the source gives it, and no satellite leaves no separator', () => {
+  it('is in the tooltip as the source gives it, and no satellite leaves no separator', () => {
     const X = scene('X', 's2', '2025-09-01T10:00:00Z', 'landsat-9');
     const Y = scene('Y', 's2', '2025-09-05T10:00:00Z');
     mount({ X: info('s2'), Y: info('s2') }, [section('s2', [X, Y], [group('2025-09-05', [Y]), group('2025-09-01', [X])]), DEM_SECTION]);
-    expect(stepText()).toBe('2025-09-01 · landsat-9');
+    expect(stepText()).toBe('2025-09-01');
+    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('2025-09-01 · landsat-9 · step 1 of 2');
     act(() => next()!.click());
     expect(stepText()).toBe('2025-09-05');
+    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('2025-09-05 · step 2 of 2');
   });
 });
 
@@ -301,24 +313,41 @@ describe('"Apply to all" for the images of a dataset', () => {
   });
 });
 
+// Otto, 1.11.2026: the box of the colormap is there for every dataset, so the fields and buttons do not move; an image of
+// three bands offers RGB in it and nothing else.
 describe('an image of three bands', () => {
-  it('has no colormap field, and the range fields and buttons are still there and not locked', () => {
+  const colormapOptions = () => [...(colormapField()!.parentElement!.querySelector('select') as HTMLSelectElement).options].map((o) => o.textContent);
+
+  it('has the box of the colormap with RGB in it and nothing else to choose, and the fields and buttons stay', () => {
     s2Rescale = [[0, 255], [0, 255], [0, 255]];
     mount(THREE);
-    expect(colormapField()).toBeUndefined();
-    expect(container.querySelector('.vc-render')!.className).toContain('no-colormap');
+    expect(colormapField()).toBeDefined();
+    expect(colormapOptions()).toEqual(['RGB']);
     expect(container.querySelectorAll('.vc-num input')).toHaveLength(2);
     expect(button('Apply')).toBeDefined();
+    expect([...container.querySelector('.vc-render')!.children].map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'DIV']);
   });
 
-  it('has the colormap field for a single band, and for the dataset after the one of three bands', () => {
+  it('has the colormaps to choose for a single band, and the same box in the same place for both', () => {
     mount(THREE);
-    expect(colormapField()).toBeDefined();
+    expect(colormapOptions()[0]).toBe('— none —');
+    expect(colormapOptions().length).toBeGreaterThan(5);
+    const place = (label: Element | undefined) => [...container.querySelector('.vc-render')!.children].indexOf(label!.parentElement!);
+    const single = place(colormapField());
     s2Rescale = [[0, 255], [0, 255], [0, 255]];
     mount({ ...THREE, D: info('dem') });
-    expect(colormapField()).toBeUndefined();
+    expect(colormapOptions()).toEqual(['RGB']);
+    expect(place(colormapField())).toBe(single);
     act(() => useAppStore.getState().chooseViewDataset('dem'));
-    expect(colormapField()).toBeDefined();
+    expect(colormapOptions()[0]).toBe('— none —');
+    expect(place(colormapField())).toBe(single);
+  });
+
+  it('leaves the colormap of the look empty when it is RGB', () => {
+    s2Rescale = [[0, 255], [0, 255], [0, 255]];
+    mount(THREE);
+    expect(useAppStore.getState().pendingColormapName).toBe('');
+    expect((colormapField()!.parentElement!.querySelector('select') as HTMLSelectElement).title).toBe('True colour: three bands, no colormap');
   });
 });
 

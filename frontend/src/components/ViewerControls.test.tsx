@@ -318,7 +318,7 @@ describe('the layout contract in index.css', () => {
   it('puts the head and both rows in one grid of twelve columns, which decides the width of the view', () => {
     expect(rule('.scene-view')).toContain('grid-template-columns: repeat(12, minmax(0, 1fr))');
     expect(rule('.scene-view')).toMatch(/width: min\(/u);
-    expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('grid-template-columns: subgrid');
+    expect(rule('.scene-view .vc-render')).toContain('grid-template-columns: subgrid');
     expect(rule('.scene-view .vc-head')).toContain('grid-column: 1 / -1');
   });
 
@@ -360,12 +360,23 @@ describe('the layout contract in index.css', () => {
     expect(rule('.vc-buttons')).toContain('grid-template-columns: 1fr 1fr');
     expect(rule('.scene-view .vc-render > :nth-child(4)')).toContain('grid-column: span 5');
     expect(rule('.scene-view .vc-field select,\n.scene-view .vc-field input')).toContain('height: var(--row-height)');
-    expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('align-items: end');
+    expect(rule('.scene-view .vc-render')).toContain('align-items: end');
+    expect(rule('.scene-view .vc-actions')).toContain('align-items: end');
   });
 
-  it('gives the four buttons of the second row three columns each and wraps them below 600 px', () => {
-    expect(rule('.scene-view .vc-actions > *')).toContain('grid-column: span 3');
+  // Otto, 1.11.2026: the view is two rows high under its head and wider rather than taller; its buttons are in one row.
+  it('puts the buttons of the second row in one row, four or five of one width, and wraps them below 600 px', () => {
+    expect(rule('.scene-view .vc-actions')).toContain('grid-template-columns: repeat(var(--buttons), minmax(0, 1fr))');
+    expect(rule('.scene-view .vc-actions')).toContain('--buttons: 4');
+    expect(rule('.scene-view .vc-actions.has-all')).toContain('--buttons: 5');
     expect(CSS).toMatch(/@media \(max-width: 599px\) \{\s*\.scene-view \{\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u);
+    expect(CSS).toMatch(/\.scene-view \.vc-actions\.has-all \{\s*--buttons: 2;/u);
+  });
+
+  it('is wide enough for five buttons in one row, and wider than it is high', () => {
+    const cell = Number(/--cell: (\d+)px/u.exec(rule('.scene-view'))?.[1]);
+    const inner = 12 * cell + 11 * 8;
+    expect((inner - 4 * 8) / 5).toBeGreaterThanOrEqual(110);
   });
 
   it('breaks a word that is too long for its button instead of running over the edge', () => {

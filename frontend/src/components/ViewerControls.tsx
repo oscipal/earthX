@@ -18,6 +18,7 @@ import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView 
 import { viewKind } from '../viewKind';
 import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
+import Chevron from './Chevron';
 import Eye from './Eye';
 
 export default function ViewerControls() {
@@ -82,7 +83,11 @@ export default function ViewerControls() {
   const colormap = shownDataset ? showsColormap(shownDataset.collection) : true;
   const at = shown ? here.indexOf(shown) : -1;
   const datasetIds = datasetIdsOf(images);
-  const stepText = shown ? [shown.date ?? shown.groupLabel, satellitesOf(shown)].filter(Boolean).join(' · ') : '';
+  // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
+  const stepText = shown ? (shown.date ?? shown.groupLabel) : '';
+  const stepTitle = shown
+    ? [stepText, satellitesOf(shown), `step ${at + 1} of ${here.length}`, shown.groupLabel !== stepText ? shown.groupLabel : ''].filter(Boolean).join(' · ')
+    : '';
   const onKeys = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();
@@ -110,30 +115,30 @@ export default function ViewerControls() {
             ))}
           </select>
         )}
-        {here.length > 1 && shown && (
+        {shown && (
           <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeys}>
             <button
               type="button"
-              className="ghost-btn vc-step"
+              className="vc-step"
               aria-label="Previous image"
               aria-disabled={at <= 0 || undefined}
-              title={at <= 0 ? 'This is the first image' : 'Previous image'}
+              title={here.length <= 1 ? 'There is only one image' : at <= 0 ? 'This is the first image' : 'Previous image'}
               onClick={() => stepImage(-1)}
             >
-              ‹
+              <Chevron direction="left" />
             </button>
-            <span className="vc-step-text" title={`${stepText} · step ${at + 1} of ${here.length}${shown.groupLabel ? ` · ${shown.groupLabel}` : ''}`}>
+            <span className="vc-step-text" title={stepTitle}>
               {stepText}
             </span>
             <button
               type="button"
-              className="ghost-btn vc-step"
+              className="vc-step"
               aria-label="Next image"
               aria-disabled={at >= here.length - 1 || undefined}
-              title={at >= here.length - 1 ? 'This is the last image' : 'Next image'}
+              title={here.length <= 1 ? 'There is only one image' : at >= here.length - 1 ? 'This is the last image' : 'Next image'}
               onClick={() => stepImage(1)}
             >
-              ›
+              <Chevron direction="right" />
             </button>
           </div>
         )}
@@ -148,10 +153,10 @@ export default function ViewerControls() {
         </button>
       </div>
 
-      <div className={`vc-render${colormap ? '' : ' no-colormap'}`}>
-        {colormap && (
-          <label className="vc-field">
-            <span>Colormap</span>
+      <div className="vc-render">
+        <label className="vc-field">
+          <span>Colormap</span>
+          {colormap ? (
             <select value={pendingColormapName} onChange={(e) => setPendingColormapName(e.target.value)}>
               <option value="">— none —</option>
               {COLORMAPS.map((c) => (
@@ -160,8 +165,13 @@ export default function ViewerControls() {
                 </option>
               ))}
             </select>
-          </label>
-        )}
+          ) : (
+            // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
+            <select value="" title="True colour: three bands, no colormap" onChange={() => undefined}>
+              <option value="">RGB</option>
+            </select>
+          )}
+        </label>
         <label className="vc-field vc-num">
           <span>vmin</span>
           <input
