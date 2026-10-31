@@ -37,7 +37,7 @@ CLOUD = SearchFilter(
     maximum=100.0,
     integer=False,
     values=(),
-    within_aoi=False,
+    within_aoi=None,
     group="Clouds",
 )
 ORBIT = replace(
@@ -60,7 +60,7 @@ PLATFORM = SearchFilter(
     maximum=None,
     integer=False,
     values=(FilterValue("sentinel-2a", "Sentinel-2A"), FilterValue("sentinel-2b", "Sentinel-2B")),
-    within_aoi=False,
+    within_aoi=None,
     group="Acquisition",
 )
 
@@ -118,8 +118,11 @@ class TestTheEntries:
         tooltips = [entry.description for entry in SENTINEL_2_L2A.search_filters]
         assert len(set(tooltips)) == len(tooltips)
 
-    def test_only_the_cloud_cover_may_be_applied_inside_the_aoi(self) -> None:
-        assert [entry.property for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi] == ["eo:cloud_cover"]
+    def test_only_the_cloud_cover_and_the_no_data_filter_may_be_applied_inside_the_aoi(self) -> None:
+        assert [entry.property for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi] == [
+            "eo:cloud_cover",
+            "s2:nodata_pixel_percentage",
+        ]
 
     @pytest.mark.parametrize(
         "property_name",
@@ -155,6 +158,7 @@ class TestTheEntryIsRefused:
             (replace(CLOUD, property="eo:cloud:cover"), "not a property"),
             (replace(CLOUD, property="datetime"), "not a property"),
             (replace(CLOUD, property="earthx:aoi_cloud_cover"), "kept for filters the platform computes"),
+            (replace(CLOUD, property="earthx:aoi_nodata"), "kept for filters the platform computes"),
             (replace(CLOUD, title=" "), "title and a description"),
             (replace(CLOUD, description=""), "title and a description"),
             (replace(CLOUD, group=""), "group"),
@@ -221,7 +225,7 @@ class TestTheCollection:
                 "title": "Cloud cover",
                 "description": "Share of the scene covered by clouds.",
                 "unit": "%",
-                "within_aoi": False,
+                "within_aoi": None,
                 "group": "Clouds",
                 "type": "number",
                 "minimum": 0.0,
@@ -233,7 +237,7 @@ class TestTheCollection:
                 "title": "Relative orbit",
                 "description": "Share of the scene covered by clouds.",
                 "unit": None,
-                "within_aoi": False,
+                "within_aoi": None,
                 "group": "Acquisition",
                 "type": "integer",
                 "minimum": 1,
@@ -245,7 +249,7 @@ class TestTheCollection:
                 "title": "Satellite",
                 "description": "The satellite that took the scene.",
                 "unit": None,
-                "within_aoi": False,
+                "within_aoi": None,
                 "group": "Acquisition",
                 "type": "string",
                 "oneOf": [

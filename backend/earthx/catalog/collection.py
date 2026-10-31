@@ -120,7 +120,8 @@ def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
     """The filters the search offers, in the words of STAC queryables (JSON Schema) where they have one (DS-02).
 
     ``kind``, ``unit``, ``group`` and ``within_aoi`` are ours: a queryable describes a property, the panel also needs how it
-    narrows it and whether its range may be applied to the cloud share inside the AOI (DS-03 plan §6.10).
+    narrows it and under which property its range is sent to be applied inside the AOI instead (DS-03 plan §6.10), or
+    ``None`` where the filter has no area.
     """
     published: list[dict[str, object]] = []
     for entry in config.search_filters:
@@ -130,7 +131,7 @@ def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
             "title": entry.title,
             "description": entry.description,
             "unit": entry.unit,
-            "within_aoi": entry.within_aoi,
+            "within_aoi": None if entry.within_aoi is None else entry.within_aoi.value,
             "group": entry.group,
         }
         if entry.kind is FilterKind.RANGE:

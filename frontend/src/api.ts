@@ -3,6 +3,7 @@
 // with VITE_API_BASE. Never talks to the prototype's `/api/…` routes.
 
 import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
+import { AOI_BODY_KEY, aoiCountsOf, type AoiCounts } from './aoiFilter';
 import type { Bbox, Collection, StacItem } from './types';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
@@ -199,8 +200,13 @@ export interface SearchQuery {
   // gets only what its registry entry offers, so nothing is dropped on the way. Only datasets with a filter set
   // are named; every key must be one of `collections`.
   queryByCollection?: FilterQueryByCollection;
+  // DS-03b: the AOI itself, sent beside the `bbox` that stands for it when it is too long to search by its shape, so that
+  // the cloud share in the AOI is measured in the AOI and not in its box (plan §6.5). Only ever in the body.
+  aoi?: GeoJSON.Geometry;
   limit?: number;
   token?: string;
+  // Ends the request ("Stop", or a change of the search the request belongs to).
+  signal?: AbortSignal;
 }
 
 // One collection a mixed search could not reach on a given page (M3-13,
@@ -234,6 +240,9 @@ export interface ItemPage {
   // (collections sharing a source are open together). `null` where the answer
   // does not say — the caller then cannot rule out more for any of them.
   openCollections: string[] | null;
+  // DS-03b: how far the server has got with the cloud share in the AOI, by dataset, over the whole search up to this
+  // page. Empty without that filter, and for a source that is done and is not named any more.
+  aoiFilter: Record<string, AoiCounts>;
 }
 
 function openCollectionsFrom(value: unknown): string[] | null {
@@ -278,6 +287,7 @@ export function buildSearchBody(q: SearchQuery): Record<string, unknown> {
   if (q.intersects) body.intersects = q.intersects;
   if (q.datetime) body.datetime = q.datetime;
   if (q.queryByCollection && Object.keys(q.queryByCollection).length > 0) body.query_by_collection = q.queryByCollection;
+  if (q.aoi) body[AOI_BODY_KEY] = q.aoi;
   if (q.limit) body.limit = q.limit;
   if (q.token) body.token = q.token;
   return body;
@@ -298,6 +308,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildSearchBody(q)),
+      signal: q.signal,
     }),
   );
   return {
@@ -309,6 +320,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     ignoredFiltersByCollection: ignoredByCollectionFrom(body.ignored_filters_by_collection),
     incompleteCollections: body.incomplete_collections ?? [],
     openCollections: openCollectionsFrom(body.open_collections),
+    aoiFilter: aoiCountsOf(body as Record<string, unknown>, q.queryByCollection),
   };
 }
 
@@ -588,17 +600,8 @@ export async function postAreaStatistics(datasetId: string, order: unknown): Pro
   return parseAreaStatistics(await jsonOrThrow<unknown>(res));
 }
 
-// Pages through `nextToken` until the result is complete or `maxItems` is
-// reached — the API never sorts (D8, `earthx.api.main`), so both "the nearest
-// date" (runSearch) and "the footprints for a coverage cell" (M2-07c) have to
-// walk every page rather than trust the first one. `startToken` continues an
-// earlier walk ("Load more", M3-10b); `nextToken` is what is left once
-// `maxItems` stopped it, `null` when the result is complete.
-export async function searchAllPages(
-  q: Omit<SearchQuery, 'limit' | 'token'>,
-  maxItems: number,
-  startToken?: string,
-): Promise<{
+// What a walk through the pages has up to a page, or all of it once it is done.
+export interface PagesSoFar {
   features: StacItem[];
   numberMatched: number | null;
   ignoredFilters: string[];
@@ -606,7 +609,32 @@ export async function searchAllPages(
   incompleteCollections: IncompleteCollection[];
   nextToken: string | null;
   openCollections: string[] | null;
-}> {
+  // By dataset, the last the walk was told (a source that is done is not named on later pages).
+  aoiFilter: Record<string, AoiCounts>;
+}
+
+export interface WalkOptions {
+  // Called after every page with what the walk has so far (DS-03b: the cloud share in the AOI answers in short steps,
+  // and the list shows each step). Not called for a page that arrives after `signal` ended the walk.
+  onPage?: (soFar: PagesSoFar) => void;
+  // Ends the walk: the request in flight is dropped, and `nextToken` of the last `onPage` is where it can go on.
+  signal?: AbortSignal;
+}
+
+// Pages through `nextToken` until the result is complete or `maxItems` is
+// reached — the API never sorts (D8, `earthx.api.main`), so both "the nearest
+// date" (runSearch) and "the footprints for a coverage cell" (M2-07c) have to
+// walk every page rather than trust the first one. `startToken` continues an
+// earlier walk ("Load more", M3-10b); `nextToken` is what is left once
+// `maxItems` stopped it, `null` when the result is complete. A page may hold
+// no scene at all (the cloud share in the AOI is measured scene by scene and an
+// answer ends after a few seconds), and the walk goes on while the token does.
+export async function searchAllPages(
+  q: Omit<SearchQuery, 'limit' | 'token'>,
+  maxItems: number,
+  startToken?: string,
+  options: WalkOptions = {},
+): Promise<PagesSoFar> {
   let token = startToken;
   // The last page's: it says where the walk stopped.
   let openCollections: string[] | null = null;
@@ -621,8 +649,20 @@ export async function searchAllPages(
   // *different* source could still fail later) — collected across every page,
   // deduplicated by collection so a repeated notice does not pile up.
   const incompleteByCollection = new Map<string, IncompleteCollection>();
+  const aoiFilter: Record<string, AoiCounts> = {};
+  const soFar = (): PagesSoFar => ({
+    features: [...features],
+    numberMatched,
+    ignoredFilters,
+    ignoredFiltersByCollection: { ...ignoredFiltersByCollection },
+    incompleteCollections: [...incompleteByCollection.values()],
+    nextToken: token ?? null,
+    openCollections,
+    aoiFilter: { ...aoiFilter },
+  });
   do {
-    const page: ItemPage = await searchItems({ ...q, limit: 100, token });
+    const page: ItemPage = await searchItems({ ...q, limit: 100, token, signal: options.signal });
+    if (options.signal?.aborted) throw new DOMException('The search was stopped.', 'AbortError');
     features.push(...page.features);
     if (numberMatched === null) numberMatched = page.numberMatched;
     if (ignoredFilters.length === 0) ignoredFilters = page.ignoredFilters;
@@ -634,18 +674,12 @@ export async function searchAllPages(
     for (const entry of page.incompleteCollections) {
       if (!incompleteByCollection.has(entry.collection)) incompleteByCollection.set(entry.collection, entry);
     }
+    Object.assign(aoiFilter, page.aoiFilter);
     token = page.nextToken ?? undefined;
     openCollections = page.openCollections;
+    options.onPage?.(soFar());
   } while (token && features.length < maxItems);
-  return {
-    features,
-    numberMatched,
-    ignoredFilters,
-    ignoredFiltersByCollection,
-    incompleteCollections: [...incompleteByCollection.values()],
-    nextToken: token ?? null,
-    openCollections,
-  };
+  return soFar();
 }
 
 // The coverage route (`/coverage/{dataset_id}`, M2-05b: GET for the map extent, POST for an AOI since NM4-57)

@@ -74,3 +74,18 @@ def test_a_refusal_is_read_from_error_details_first_because_5_1_has_consumed_the
 def test_a_failed_refusal_prints_what_came_with_numbers_of_the_request_hidden() -> None:
     text = SCRIPT.read_text(encoding="ascii")
     assert "Body leer" in text and "<zahl>" in text and "Substring(0, 300)" in text
+
+
+def test_the_refusals_name_the_filter_that_was_asked_not_always_the_cloud_share() -> None:
+    """Otto, 31.10.2026: the texts of the route name the filter within the AOI; the script expects exactly those."""
+    text = SCRIPT.read_text(encoding="ascii")
+    for expected in (
+        "earthx:aoi_cloud_cover needs a date range",
+        "earthx:aoi_nodata needs a date range",
+        "earthx:aoi_nodata needs an area",
+        "goes with a filter measured in the AOI",
+        "the coverage map cannot apply earthx:aoi_cloud_cover",
+        "the coverage map cannot apply earthx:aoi_nodata",
+    ):
+        assert expected in text, expected
+    assert "'cloud share'" not in text

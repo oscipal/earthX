@@ -5,6 +5,7 @@
 // only; the store decides what to do with the result.
 
 import type { IncompleteCollection } from './api';
+import type { AoiCounts } from './aoiFilter';
 import type { DatasetOption } from './datasets';
 import { acquisitionNote } from './datasets';
 import { buildGroups, MissingProperty } from './grouping';
@@ -28,6 +29,9 @@ export interface ResultSection {
   // The source did not answer in full (`incomplete_collections`): an empty
   // section then says nothing about the date range.
   incomplete: boolean;
+  // DS-03b: a search with the limit on the clouds inside the AOI was stopped before it found a scene. The list is shown
+  // all the same, with how far it got and "Load more", because nothing else leads on from there.
+  keepList?: boolean;
 }
 
 export const NO_SCENES_NOTE = 'No scenes for this area.';
@@ -65,6 +69,8 @@ export interface SectionSearchAnswer {
   ignoredFilters: readonly string[];
   ignoredFiltersByCollection: Readonly<Record<string, readonly string[]>>;
   incompleteCollections: readonly IncompleteCollection[];
+  // DS-03b: how far the server has got with the cloud share in the AOI, by dataset; absent without that filter.
+  aoiFilter?: Readonly<Record<string, AoiCounts>>;
 }
 
 // One section per searched dataset, in the order given, from the flat list a
@@ -129,6 +135,9 @@ export function combineAnswers(first: SectionSearchAnswer, next: SectionSearchAn
     ignoredFilters: first.ignoredFilters.length > 0 ? first.ignoredFilters : next.ignoredFilters,
     ignoredFiltersByCollection: { ...next.ignoredFiltersByCollection, ...first.ignoredFiltersByCollection },
     incompleteCollections: incomplete,
+    // The later count of a dataset replaces the earlier one (they are running totals); a source that is done is no
+    // longer named and keeps its last.
+    ...(first.aoiFilter || next.aoiFilter ? { aoiFilter: { ...first.aoiFilter, ...next.aoiFilter } } : {}),
   };
 }
 
@@ -181,5 +190,5 @@ export function totalItems(sections: readonly ResultSection[]): number {
 // is the search notice's business alone. The panel never disappears because of
 // what is chosen in it (M3-10).
 export function hasResultsPanel(sections: readonly ResultSection[]): boolean {
-  return totalItems(sections) > 0 || sections.length > 1;
+  return totalItems(sections) > 0 || sections.length > 1 || sections.some((section) => section.keepList === true);
 }

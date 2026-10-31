@@ -186,6 +186,10 @@ export interface EarthxMask {
   // Where the class table comes from (https URL).
   reference: string;
   note: string;
+  // DS-03: the classes that count as clouds when the cloud share is measured in the AOI (ascending; empty or absent
+  // where the dataset has no such measure), and the registry's sentence to the limits of the classification.
+  cloud_classes?: number[] | null;
+  cloud_note?: string | null;
 }
 
 export interface Collection {

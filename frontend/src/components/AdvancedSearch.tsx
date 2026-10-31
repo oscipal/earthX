@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import { withinAoiLock, withinAoiTip, withinFilters } from '../aoiFilter';
 import type { DatasetOption } from '../datasets';
 import {
   filterError,
@@ -113,8 +114,40 @@ function OfferLine({ offer, set }: { offer: Offer; set: boolean }) {
   );
 }
 
-// One filter of the registry as its fields. The one place a filter is turned into fields: whatever else belongs to a
-// filter (DS-03b puts the switch "Within AOI" under the one the registry marks with `within_aoi`) is added here.
+// The switch at the top of the pop-up (Otto, 31.10.2026): the filters that depend on the area, which the registry marks
+// with `within_aoi`, are measured inside the AOI instead of over the whole scene; the others stay as they are. It needs an
+// area and a date range with both ends; without them it is locked (not hidden, Otto 26.10.2026) and shows why, off, as the
+// search does not use it either. What it changes and where the classification stops being right is the registry's, read
+// into the tooltip.
+function WithinAoiSwitch({
+  on,
+  lock,
+  tip,
+  onChange,
+}: {
+  on: boolean;
+  lock: string | null;
+  tip: string;
+  onChange: (on: boolean) => void;
+}) {
+  const locked = lock !== null;
+  return (
+    <label className={`within-aoi${locked ? ' locked' : ''}`} title={lock ?? tip}>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={on && !locked}
+        aria-disabled={locked || undefined}
+        onChange={() => {
+          if (!locked) onChange(!on);
+        }}
+      />
+      Filter within AOI only
+    </label>
+  );
+}
+
+// One filter of the registry as its fields. The one place a filter is turned into fields.
 function FilterRow({
   filter,
   input,
@@ -141,8 +174,11 @@ export default function AdvancedSearch() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const searchFilters = useAppStore((s) => s.searchFilters);
+  const searchWithin = useAppStore((s) => s.searchWithin);
+  const setSearchWithin = useAppStore((s) => s.setSearchWithin);
   const setSearchFilter = useAppStore((s) => s.setSearchFilter);
   const resetSearchFilters = useAppStore((s) => s.resetSearchFilters);
+  const lock = useAppStore((s) => withinAoiLock(s));
   const [open, setOpen] = useState(false);
   const [shownId, setShownId] = useState<string | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -162,6 +198,12 @@ export default function AdvancedSearch() {
   useEffect(() => {
     if (offers.length === 0) setOpen(false);
   }, [offers.length]);
+  // The area or the dates go while the switch is on: it goes off with them, in every dataset, so that it does not come
+  // back on its own with the next area (the search does not use it meanwhile either).
+  useEffect(() => {
+    if (lock === null) return;
+    for (const [datasetId, on] of Object.entries(searchWithin)) if (on) setSearchWithin(datasetId, false);
+  }, [lock, searchWithin, setSearchWithin]);
   if (offers.length === 0) return null;
 
   const shown = offers.find((o) => o.dataset.id === shownId) ?? offers[0];
@@ -221,6 +263,14 @@ export default function AdvancedSearch() {
               }}
             />
           </div>
+          {withinFilters(shown.filters).length > 0 && (
+            <WithinAoiSwitch
+              on={searchWithin[shown.dataset.id] === true}
+              lock={lock}
+              tip={withinAoiTip(shown.filters, shown.dataset.collection['earthx:mask'])}
+              onChange={(on) => setSearchWithin(shown.dataset.id, on)}
+            />
+          )}
           <div className="advanced-fields" ref={fieldsRef}>
             {groups.map((group) => (
               <section key={group.name} className="filter-group" aria-label={group.name}>
@@ -237,7 +287,7 @@ export default function AdvancedSearch() {
             ))}
           </div>
           <div className="advanced-actions">
-            {setOf(shown).length > 0 && (
+            {(setOf(shown).length > 0 || searchWithin[shown.dataset.id] === true) && (
               <button
                 type="button"
                 className="ghost-btn"
