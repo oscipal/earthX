@@ -309,7 +309,74 @@
               "op_version",
               "params"
             ],
-            "title": "Mask",
+            "title": "Mask by class",
+            "type": "object",
+            "x-earthx-kind": "pixel",
+            "x-earthx-tiers": [
+              "T1",
+              "T2"
+            ]
+          },
+          "step_mask_values_v1": {
+            "additionalProperties": false,
+            "description": "Hide the pixels where a band is below, above, between or equal to the values given.",
+            "properties": {
+              "op": {
+                "const": "mask_values"
+              },
+              "op_version": {
+                "const": 1
+              },
+              "params": {
+                "additionalProperties": false,
+                "description": "The panel's form (K8): the band to look at, the condition and its numbers, all always given (B10).",
+                "properties": {
+                  "band": {
+                    "description": "Name of the band whose values decide: a band of the data or the result of an earlier step.",
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "title": "Band",
+                    "type": "string"
+                  },
+                  "condition": {
+                    "description": "lt: hide where the band is below the value. gt: above the value. between: from the first value to the second, both included. eq: equal to one of the values.",
+                    "enum": [
+                      "lt",
+                      "gt",
+                      "between",
+                      "eq"
+                    ],
+                    "title": "Condition",
+                    "type": "string"
+                  },
+                  "values": {
+                    "description": "The numbers of the condition, in physical values: one for lt and gt, two for between (low, high), one to 64 for eq (ascending, each once). Compared in the data type of the band.",
+                    "items": {
+                      "maximum": 3.4028234663852886e+38,
+                      "minimum": -3.4028234663852886e+38,
+                      "type": "number"
+                    },
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "title": "Values",
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "band",
+                  "condition",
+                  "values"
+                ],
+                "title": "MaskValuesParams",
+                "type": "object"
+              }
+            },
+            "required": [
+              "op",
+              "op_version",
+              "params"
+            ],
+            "title": "Mask by value",
             "type": "object",
             "x-earthx-kind": "pixel",
             "x-earthx-tiers": [
@@ -547,6 +614,9 @@
                 },
                 {
                   "$ref": "#/$defs/step_mask_v2"
+                },
+                {
+                  "$ref": "#/$defs/step_mask_values_v1"
                 },
                 {
                   "$ref": "#/$defs/step_normalize_v2"
