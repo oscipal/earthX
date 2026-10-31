@@ -364,6 +364,9 @@ interface ProcessingState {
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
+  // The order whose resampling the person confirmed (NM4-65 part 7): asked once for an order, not at every click on "Start".
+  resamplingConfirmed: string | null;
+  confirmResampling: (key: string) => void;
   // The review of a batch: one outcome per job, for the batch it was asked for.
   batch: { key: string; parts: PartOutcome[] } | null;
   reviewing: boolean;
@@ -1041,6 +1044,7 @@ const EMPTY_DRAFT = {
   rangeEdited: false,
   reviewAsked: false,
   estimate: null,
+  resamplingConfirmed: null as string | null,
   batch: null as { key: string; parts: PartOutcome[] } | null,
   reviewing: false,
   reviewError: null,
@@ -1537,6 +1541,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     applyRange: () => {
       if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeByHand: true, rangeEdited: false }));
     },
+    confirmResampling: (key) => set({ resamplingConfirmed: key }),
     applyRangePercent: async (percent) => {
       const checked = checkPercent(percent);
       if ('problem' in checked) return checked.problem;

@@ -18,7 +18,6 @@ import Tip from './Tip';
 import { useRowDrag, type RowDrag } from './useRowDrag';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
-export const RESAMPLED_LAYER_TEXT = 'Resampled to a common grid';
 export const DELETED_LAYER_TIP = 'Job deleted – restore to show';
 export const HIDE_LAYER_TIP = 'Hide layer';
 export const SHOW_LAYER_TIP = 'Show layer';
@@ -125,7 +124,8 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   // A result of several bands draws one of them (NM4-43e PR 2).
   const bands = l.result?.bands;
   const shown = l.visible && !locked;
-  const notes = [l.result?.expired && !locked ? EXPIRED_LAYER_TEXT : null, l.result?.resampled === true ? RESAMPLED_LAYER_TEXT : null].filter(
+  // A result that was resampled says nothing here any more: the warning came before the job (NM4-65 part 7).
+  const notes = [l.result?.expired && !locked ? EXPIRED_LAYER_TEXT : null].filter(
     (note): note is string => note !== null,
   );
   return (

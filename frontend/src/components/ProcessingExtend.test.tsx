@@ -164,14 +164,17 @@ const ESTIMATE = {
 let container: HTMLDivElement;
 let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
+// What the estimate adds to its answer: the resampling of the order (NM4-65 part 7).
+let estimateExtra: object = {};
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  estimateExtra = {};
   sessionStorage.clear();
   localStorage.clear();
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === `/processing/processes/recipe?dataset=${DATASET}`) return json(s2);
-    if (init?.method === 'POST' && url.endsWith('/estimate')) return json(ESTIMATE);
+    if (init?.method === 'POST' && url.endsWith('/estimate')) return json({ ...ESTIMATE, ...estimateExtra });
     if (init?.method === 'POST' && url.endsWith('/execution')) {
       return json({ processID: 'recipe', type: 'process', jobID: NEW_JOB, status: 'accepted', message: '', progress: 0, created: '2026-10-31T10:00:00Z', expires: new Date(Date.now() + 7 * 86_400_000).toISOString(), recipeID: 'r', links: [] }, 201);
     }
@@ -878,5 +881,100 @@ describe('a result of several bands, and RGB', () => {
     });
     await process(['red', 'green']);
     expect([...(show()?.options ?? [])].map((o) => o.value)).toEqual(['red', 'green']);
+  });
+});
+
+
+// NM4-65 part 7 (Otto, 31.10.2026): where the estimate says bands are brought to a common grid, "Start job" asks first, once for
+// the order: what is resampled to which grid, by which method, what it means for the values; "Continue" starts, "Cancel" does not.
+describe('the warning before a job that resamples bands', () => {
+  const FACTS = {
+    resampling: {
+      grid: { resolution: 10, crs: 'EPSG:32632' },
+      method: 'nearest',
+      bands: [{ band: 'rededge1', resolution: 20, crs: 'EPSG:32632' }],
+      scenes: null,
+    },
+  };
+  const dialog = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
+  async function review() {
+    await process();
+    click(button('＋ Band math'));
+    typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 2');
+    click(button('Review'));
+    await flush();
+  }
+
+  it('asks at "Start job" with the grid, the bands, the method and what it means, and starts nothing yet', async () => {
+    estimateExtra = FACTS;
+    await review();
+    click(button('Start job'));
+    await flush();
+    expect(execution()).toHaveLength(0);
+    expect(dialog()).not.toBeNull();
+    expect(dialog()!.getAttribute('aria-modal')).toBe('true');
+    expect(dialog()!.querySelector('h2')!.textContent).toBe('Values are resampled');
+    const text = dialog()!.textContent!;
+    expect(text).toContain('The values are brought to one grid of 10 m in EPSG:32632, by nearest neighbour.');
+    expect(text).toContain('Resampled: rededge1 (20 m).');
+    expect(text).toContain('no new values appear');
+    expect([...dialog()!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Continue']);
+    // The safe answer has the focus.
+    expect(document.activeElement?.textContent).toBe('Cancel');
+  });
+
+  it('"Cancel" and Escape start nothing and ask again at the next "Start job"', async () => {
+    estimateExtra = FACTS;
+    await review();
+    click(button('Start job'));
+    click(dialog()!.querySelectorAll('button')[0]);
+    expect(dialog()).toBeNull();
+    expect(execution()).toHaveLength(0);
+    click(button('Start job'));
+    expect(dialog()).not.toBeNull();
+    act(() => dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(dialog()).toBeNull();
+    expect(execution()).toHaveLength(0);
+  });
+
+  it('"Continue" starts the job, and the order is not asked again', async () => {
+    estimateExtra = FACTS;
+    await review();
+    click(button('Start job'));
+    click(dialog()!.querySelectorAll('button')[1]);
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(execution()).toHaveLength(1);
+    expect(useProcessingStore.getState().resamplingConfirmed).not.toBeNull();
+  });
+
+  it('is not asked where nothing is resampled, and the job starts with the click as before', async () => {
+    await review();
+    click(button('Start job'));
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(execution()).toHaveLength(1);
+  });
+
+  it('is asked again for another order: a step more is another order', async () => {
+    estimateExtra = FACTS;
+    await review();
+    click(button('Start job'));
+    click(dialog()!.querySelectorAll('button')[1]);
+    await flush();
+    const confirmed = useProcessingStore.getState().resamplingConfirmed;
+    typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 3');
+    click(button('Review'));
+    await flush();
+    click(button('Start job'));
+    expect(dialog()).not.toBeNull();
+    expect(useProcessingStore.getState().resamplingConfirmed).toBe(confirmed);
+  });
+
+  it('leaves the old exclamation mark out of the panel, the job rows and the layer manager', async () => {
+    estimateExtra = FACTS;
+    await review();
+    expect(container.textContent).not.toContain('Resampled to a common grid');
+    expect(container.querySelector('.tip.warn')).toBeNull();
   });
 });

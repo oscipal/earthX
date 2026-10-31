@@ -14,6 +14,7 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
+import { resamplingParts } from '../resamplingWarning';
 import { DEFAULT_PERCENT, percentOf, samePercent, type Percent, type RangeUnit } from '../percentRange';
 import { totalOf } from '../processingBatch';
 import {
@@ -51,6 +52,7 @@ import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import RenderFields from './RenderFields';
+import ResamplingDialog from './ResamplingDialog';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
@@ -579,6 +581,8 @@ export default function ProcessingPanel() {
   const p = useProcessingStore();
   // Narrow screens only: the sheet from below folds down to its head.
   const [folded, setFolded] = useState(false);
+  // The warning about resampled bands is open (NM4-65 part 7).
+  const [asking, setAsking] = useState(false);
   const insert = useNameInsert();
   if (!open) return null;
   if (p.detailJobID) return <JobDetails />;
@@ -601,6 +605,9 @@ export default function ProcessingPanel() {
       ? 'Start job'
       : `Start ${batch && taken < view.parts.length ? `${taken} of ${view.parts.length}` : view.parts.length} jobs`;
   const startReady = view.runAs === 'one' ? !!estimate : taken > 0;
+  // Bands that are brought to a common grid ask for a confirmation once for the order (NM4-65 part 7), where the estimate says so.
+  const resampling = resamplingParts(estimate, batch);
+  const askResampling = resampling.length > 0 && view.key !== null && p.resamplingConfirmed !== view.key;
   const showErrors = p.reviewAsked;
   const sceneCount = view.pass?.items.length ?? 0;
   // A refusal belongs to the order it refused; a changed draft hides it.
@@ -841,7 +848,7 @@ export default function ProcessingPanel() {
               className="primary-btn"
               disabled={!startReady || p.starting || !!crsBlock || !!view.nameBlock}
               title={crsBlock ?? view.nameBlock ?? startTitle}
-              onClick={() => void p.startJob()}
+              onClick={() => (askResampling ? setAsking(true) : void p.startJob())}
             >
               {startLabel}
             </button>
@@ -871,6 +878,17 @@ export default function ProcessingPanel() {
           ))}
           {tooLarge && <TooLarge hasAoi={hasAoi} />}
           <ShareLink view={view} />
+          {asking && askResampling && (
+            <ResamplingDialog
+              parts={resampling}
+              onCancel={() => setAsking(false)}
+              onContinue={() => {
+                setAsking(false);
+                if (view.key !== null) p.confirmResampling(view.key);
+                void p.startJob();
+              }}
+            />
+          )}
         </section>
       )}
     </div>

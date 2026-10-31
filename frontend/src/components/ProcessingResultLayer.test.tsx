@@ -14,7 +14,7 @@ import { layerProcessBlock, NO_COPY_TEXT, setTrackerOptions, useProcessingStore,
 import { MIN_REMAINING_MS, resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
 import JobDetails from './JobDetails';
-import LayerManager, { EXPIRED_LAYER_TEXT, RESAMPLED_LAYER_TEXT } from './LayerManager';
+import LayerManager, { EXPIRED_LAYER_TEXT } from './LayerManager';
 import PreviewBadge, { OVERVIEW_TITLE } from './PreviewBadge';
 
 declare global {
@@ -455,13 +455,14 @@ describe('the layer a result becomes', () => {
     expect(container.textContent).not.toMatch(/\bunit\b/iu);
   });
 
-  it('says in its row that the result was resampled to a common grid', async () => {
+  // NM4-65 part 7: the exclamation mark "Resampled to a common grid" is gone; the warning comes before the job.
+  it('says nothing in its row of a result that was resampled to a common grid, and shows no symbol', async () => {
     useProcessingStore.setState({ jobs: [entry({ resampled: true })] });
     await showOnMap();
     act(() => root.render(<LayerManager />));
-    expect(notesOfRows()).toEqual([RESAMPLED_LAYER_TEXT]);
-    // A note is a symbol with a tooltip, not a line of its own: the row keeps its height (UI-01 §6.11).
-    expect(container.textContent).not.toContain(RESAMPLED_LAYER_TEXT);
+    expect(notesOfRows()).toEqual([]);
+    expect(container.querySelector('.lm-note')).toBeNull();
+    expect(container.textContent).not.toContain('Resampled');
   });
 });
 

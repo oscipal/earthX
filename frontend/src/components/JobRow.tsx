@@ -8,9 +8,7 @@ import { resultUrl } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { useProcessingStore, ZIP_LABEL, type JobEntry } from '../processingStore';
 import { EXPIRED_TIP, formatUntil, jobState, useNowUntil } from './jobView';
-import Tip from './Tip';
 
-export const RESAMPLED_TIP = 'Resampled to a common grid';
 
 // The archive of a finished job as a link; once it expired, the link is gone and the reason is the tooltip.
 export function DownloadZip({ job, now, label, className = 'pm-icon' }: { job: JobEntry; now: number; label?: string; className?: string }) {
@@ -69,7 +67,6 @@ export function JobRow({ job }: { job: JobEntry }) {
           <a href={resultUrl(job.jobID, job.archive)} download rel="noopener noreferrer">
             {ZIP_LABEL}
           </a>
-          {job.resampled === true && <Tip text={RESAMPLED_TIP} symbol="⚠" tone="warn" />}
         </span>
       )}
       {job.error && <span className="hint-text error">{job.error}</span>}
