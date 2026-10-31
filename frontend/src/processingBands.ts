@@ -74,6 +74,16 @@ export function defaultName(taken: readonly string[]): string {
   return `result_${n}`;
 }
 
+// The name for a band that is wanted under `wanted`: that name, or `wanted_2`, `wanted_3` … where it is taken (adr/0020 §12),
+// the first one that is free among `taken`, ignoring case.
+export function numberedName(wanted: string, taken: readonly string[]): string {
+  const folded = new Set(taken.map((name) => name.toLowerCase()));
+  if (!folded.has(wanted.toLowerCase())) return wanted;
+  let n = 2;
+  while (folded.has(`${wanted}_${n}`.toLowerCase())) n += 1;
+  return `${wanted}_${n}`;
+}
+
 export const isBandMath = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math';
 
 // The name a `band_math` step adds, as typed.
@@ -175,6 +185,11 @@ function tokens(text: string): Token[] | null {
     found.push(match[1] !== undefined ? { kind: 'number', text: match[1] } : match[2] !== undefined ? { kind: 'name', text: match[2] } : { kind: 'op', text: match[3] });
   }
   return found;
+}
+
+// The tokens of an expression as text, whitespace left out; `null` where the text has something that is no token.
+export function expressionTokens(text: string): string[] | null {
+  return tokens(text)?.map((token) => token.text) ?? null;
 }
 
 const BINARY = new Set(['+', '-', '*', '/', '**', '<', '<=', '>', '>=', '==', '!=', '&', '|']);

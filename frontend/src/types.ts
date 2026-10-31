@@ -220,6 +220,9 @@ export interface Collection {
   // The filters the search offers for this dataset (DS-02), in the words of STAC queryables; read, and checked
   // entry by entry, by `searchFilters.ts`. Absent on a backend before DS-02a.
   'earthx:search_filters'?: unknown[] | null;
+  // The indices the panel offers as one click each (NM4-14), in the words of the registry; read, and checked entry by
+  // entry, by `indexPresets.ts`. Absent on a backend before NM4-14a.
+  'earthx:index_presets'?: unknown[] | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).
