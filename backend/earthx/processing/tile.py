@@ -81,26 +81,26 @@ class TileOptionRefused(TileRefused):
 class TileInputs(Protocol):
     """What `api` hands the reader: the assets of the tile and the steps (operator, validated parameters).
 
-    ``band`` is the band the steps leave for the picture (:func:`plan_band`); ``None`` for steps of version 1, which
-    leave the bands they leave.
+    ``bands`` are the bands the steps leave for the picture (:func:`plan_band`): one, or three for red, green and blue;
+    ``None`` for steps of version 1, which leave the bands they leave.
     """
 
     inputs: tuple[tuple[ResolvedInput, AssetPath | ZarrAsset], ...]
     steps: tuple[tuple[Operator, BaseModel], ...]
-    band: str | None
+    bands: tuple[str, ...] | None
 
 
 class MosaicTileInputs(Protocol):
     """What `api` hands the mosaic reader: per scene, in the order of the mosaic, its assets; the steps; the extent.
 
     ``bounds`` is west, south, east, north in EPSG:4326 over every scene of the URL, not only those of the tile.
-    ``band`` as for :class:`TileInputs`.
+    ``bands`` as for :class:`TileInputs`.
     """
 
     scenes: tuple[tuple[tuple[ResolvedInput, AssetPath | ZarrAsset], ...], ...]
     steps: tuple[tuple[Operator, BaseModel], ...]
     bounds: tuple[float, float, float, float]
-    band: str | None
+    bands: tuple[str, ...] | None
 
 
 def _as_refusal(error: BaseException) -> BaseException:
@@ -146,33 +146,36 @@ def judge_described_bands(entries: Sequence[ResolvedInput], steps: Sequence[tupl
 
 @dataclass(frozen=True, slots=True)
 class BandPlan:
-    """What a tile of steps of version 2 reads and runs to show one band (adr/0020 §10)."""
+    """What a tile of steps of version 2 reads and runs to show one band, or three as a colour picture (adr/0020 §10)."""
 
-    #: The band the picture shows: the one the URL names, else the last that a ``band_math`` step added, else the first.
-    band: str
-    #: The assets the band needs, in the order of the URL; the tile opens no other.
+    #: The bands the picture shows, in the order of its channels: those the URL names, else the one band that the last
+    #: ``band_math`` step added, else the first.
+    bands: tuple[str, ...]
+    #: The assets the bands need, in the order of the URL; the tile opens no other.
     assets: tuple[str, ...]
     #: The steps to run on what is read: the planner's (dead steps left out, ``normalize`` narrowed, the bands nobody needs
-    #: dropped), ending in the selection of ``band``, so that the picture has this one band.
+    #: dropped), ending in the selection of ``bands``, so that the picture has just these, in this order.
     steps: tuple[tuple[Operator, BaseModel], ...]
 
 
 def plan_band(
-    entries: Sequence[ResolvedInput], steps: Sequence[tuple[Operator, BaseModel]], band: str | None
+    entries: Sequence[ResolvedInput], steps: Sequence[tuple[Operator, BaseModel]], bands: Sequence[str] | None
 ) -> BandPlan | None:
-    """The plan of a tile that shows ``band`` of what ``steps`` leave of ``entries``, judged before any file is opened.
+    """The plan of a tile that shows ``bands`` of what ``steps`` leave of ``entries``, judged before any file is opened.
 
-    The same planner as a job's (:func:`~earthx.processing.plan.stock_steps`) with ``[band]`` as the output, so the
-    values of the band are those of a job that asks for it alone (adr/0020 §4). Where the item does not say how many
+    ``bands`` are one name, or three for the channels of a colour picture (NM4-64), each a band of the stock.
+
+    The same planner as a job's (:func:`~earthx.processing.plan.stock_steps`) with ``bands`` as the output, so the
+    values of each band are those of a job that asks for it alone (adr/0020 §4). Where the item does not say how many
     bands an asset has, the asset counts as one band named like it, as the estimate of a job counts it; the reader
     judges again on the file.
 
     ``None`` for steps one of which is of version 1 (it replaces or removes bands): nothing is dropped and no band
-    is chosen, the picture is what the steps leave. ``TileOptionRefused`` (`400`) if a ``band`` is named then, and
+    is chosen, the picture is what the steps leave. ``TileOptionRefused`` (`400`) if a band is named then, and
     :class:`~earthx.processing.errors.RecipeInvalid` (`422`, with the name) for a band the steps do not leave.
     """
     if any(not operator.stock for operator, _ in steps):
-        if band is not None:
+        if bands is not None:
             raise TileOptionRefused("band is for steps of version 2; a step of version 1 replaces or removes bands")
         return None
     names_of = [expected_band_names(entry) or [entry.asset.asset] for entry in entries]
@@ -196,13 +199,14 @@ def plan_band(
     held = [band_meta.name for band_meta in meta.bands]
     added = [use.adds for step in planned if (use := step.operator.bands_used(step.params)).adds is not None]
     held += added
-    shown = band if band is not None else (added[-1] if added else held[0])
-    if shown not in held:
-        raise RecipeInvalid(f"band {shown!r} is not among the bands the steps leave: {', '.join(held)}")
-    run = stock_steps(meta, planned, [shown])
-    needed = needed_source_bands(planned, [shown])
+    shown = list(bands) if bands else [added[-1] if added else held[0]]
+    for name in shown:
+        if name not in held:
+            raise RecipeInvalid(f"band {name!r} is not among the bands the steps leave: {', '.join(held)}")
+    run = stock_steps(meta, planned, shown)
+    needed = needed_source_bands(planned, shown)
     return BandPlan(
-        band=shown,
+        bands=tuple(shown),
         assets=tuple(entry.asset.asset for entry, names in zip(entries, names_of, strict=True) if needed & set(names)),
         steps=tuple((step.operator, step.params) for step in run),
     )
@@ -273,9 +277,9 @@ class OperatorTileReader:
         return self._sources[0]
 
     @property
-    def band(self) -> str | None:
-        """The band the picture shows (:func:`plan_band`); ``None`` for steps of version 1."""
-        return self._input.band
+    def bands(self) -> tuple[str, ...] | None:
+        """The bands the picture shows (:func:`plan_band`); ``None`` for steps of version 1."""
+        return self._input.bands
 
     @property
     def minzoom(self) -> int:
@@ -406,9 +410,9 @@ class MosaicOperatorTileReader:
         return tuple(assets[0][0].asset.item_id for assets in self._input.scenes)
 
     @property
-    def band(self) -> str | None:
-        """The band the picture shows (:func:`plan_band`); ``None`` for steps of version 1."""
-        return self._input.band
+    def bands(self) -> tuple[str, ...] | None:
+        """The bands the picture shows (:func:`plan_band`); ``None`` for steps of version 1."""
+        return self._input.bands
 
     @property
     def units(self) -> tuple[str | None, ...]:
