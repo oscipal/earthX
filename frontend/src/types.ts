@@ -237,6 +237,9 @@ export interface TimeStepGroup {
 // names follow TiTiler's own query parameters (`bidx`, `colormap_name`, …) so
 // `buildTileUrl` (mapLayers.ts) can pass them straight through.
 export interface AppliedRender {
+  // The name of the index preset of the dataset the view draws instead of a band (NM4-14b, `viewIndex.ts`); the range and
+  // colormap below are the ones the index is drawn with.
+  index?: string;
   // The band of a result by its place from 1; several, comma-separated, for a colour picture (`3,2,1`).
   bidx?: string;
   expression?: string;
