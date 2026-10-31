@@ -706,6 +706,11 @@ describe('"Within AOI"', () => {
     ['no end', { dateTo: '' }, 'Draw an AOI and set a date range first'],
     ['no start', { dateFrom: '' }, 'Draw an AOI and set a date range first'],
     ['a point', { aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } as GeoJSON.Point }, 'Draw an area to use this filter'],
+    [
+      'more than 20 000 points',
+      { aoi: { type: 'Polygon', coordinates: [Array.from({ length: 20_001 }, (_, i) => [10 + (i % 100) / 1000, 47 + Math.floor(i / 100) / 1000])] } as GeoJSON.Polygon },
+      'The area has too many points for this filter',
+    ],
   ])('with %s', (_what, change, reason) => {
     beforeEach(() => {
       useAppStore.setState(change);
@@ -749,6 +754,9 @@ describe('"Within AOI"', () => {
     act(() => useAppStore.setState({ dateTo: '' }));
     expect(withinBox().checked).toBe(false);
     expect(stored()).toEqual({ kind: 'range', from: '', to: '20' });
+    // Off, and locked with the reason (Otto, 31.10.2026).
+    expect(within()!.classList.contains('locked')).toBe(true);
+    expect(within()!.title).toBe('Draw an AOI and set a date range first');
 
     act(() => useAppStore.setState({ dateTo: '2026-07-31' }));
     expect(withinBox().checked).toBe(false);

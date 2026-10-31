@@ -15,6 +15,8 @@ import {
   groupCloudPercent,
   LOCK_NEEDS_AREA,
   LOCK_NEEDS_INPUT,
+  LOCK_TOO_MANY,
+  MAX_AOI_POSITIONS,
   measuresAoi,
   sortedGroupIndices,
   withinAoiLock,
@@ -188,6 +190,23 @@ describe('when "Within AOI" is locked', () => {
 
   it('is locked for a point, which is no area', () => {
     expect(withinAoiLock({ ...ready, aoiPoint: { type: 'Point', coordinates: [1, 2] } })).toBe(LOCK_NEEDS_AREA);
+  });
+
+  const ring = (positions: number): GeoJSON.Polygon => ({
+    type: 'Polygon',
+    coordinates: [Array.from({ length: positions }, (_, i) => [Math.cos(i), Math.sin(i)])],
+  });
+
+  it('is free up to the most positions the server measures in, and locked above, with the reason', () => {
+    expect(MAX_AOI_POSITIONS).toBe(20_000);
+    expect(withinAoiLock({ ...ready, aoi: ring(20_000) })).toBeNull();
+    expect(withinAoiLock({ ...ready, aoi: ring(20_001) })).toBe(LOCK_TOO_MANY);
+    expect(LOCK_TOO_MANY).toBe('The area has too many points for this filter');
+  });
+
+  it('counts the positions of all parts of a MultiPolygon', () => {
+    const multi: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [ring(12_000).coordinates, ring(12_000).coordinates] };
+    expect(withinAoiLock({ ...ready, aoi: multi })).toBe(LOCK_TOO_MANY);
   });
 
   it('asks for the area and the dates first when a point has no dates either', () => {

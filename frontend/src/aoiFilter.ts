@@ -5,6 +5,7 @@
 // Nothing here knows a dataset: whether a dataset has the switch is the registry's (`within_aoi` on a filter), the
 // classes and the note to their limits are its `earthx:mask` (`cloud_classes`, `cloud_note`).
 
+import { countPositions } from './geoUtils';
 import { LOAD_MORE_NOTE, NO_SCENES_NOTE, type ResultSection } from './sections';
 import type { EarthxMask, StacItem, TimeStepGroup } from './types';
 
@@ -152,9 +153,15 @@ export function withinAoiTip(mask: EarthxMask | null | undefined): string {
 
 export const LOCK_NEEDS_INPUT = 'Draw an AOI and set a date range first';
 export const LOCK_NEEDS_AREA = 'Draw an area to use this filter';
+export const LOCK_TOO_MANY = 'The area has too many points for this filter';
+
+// The most positions the server measures in (`earthx:aoi`, plan §6.5; Otto, 31.10.2026: checked here first, the server's
+// `400` stays as the safeguard).
+export const MAX_AOI_POSITIONS = 20_000;
 
 // Why "Within AOI" cannot be used right now, or `null` (§6.5, §6.17). The server needs an area and a date range with both
-// ends; a point is no area. A long AOI is no reason: the search then sends its bounding box and the AOI beside it.
+// ends; a point is no area, and more than `MAX_AOI_POSITIONS` positions are too many to measure in. A long AOI below that is no
+// reason: the search then sends its bounding box and the AOI beside it.
 export function withinAoiLock(s: {
   aoi: GeoJSON.Geometry | null;
   aoiPoint: GeoJSON.Point | null;
@@ -163,6 +170,7 @@ export function withinAoiLock(s: {
 }): string | null {
   if (!s.aoi || !s.dateFrom || !s.dateTo) return LOCK_NEEDS_INPUT;
   if (s.aoiPoint) return LOCK_NEEDS_AREA;
+  if (countPositions((s.aoi as { coordinates?: unknown }).coordinates) > MAX_AOI_POSITIONS) return LOCK_TOO_MANY;
   return null;
 }
 
