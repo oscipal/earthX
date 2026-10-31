@@ -2860,6 +2860,15 @@ Otto hat den Plan von NM4-14 am 2026-10-30 freigegeben (zu [#251](https://github
   - Annahme: Preset und getippter Ausdruck ergeben dasselbe Rezept und denselben Hash, gelesen werden nur die genannten Assets.
   - Fehleingaben der Form und Start von `api` mit einem kaputten Preset.
 
+## 15 Nachtrag NM4-14b: Index-Knöpfe im Panel und Darstellung D2 (2026-11-01; zu §15 Nachtrag NM4-14; `adr/0020` §12)
+
+Umgesetzt ist das Frontend von NM4-14 (Draft-PR [#264](https://github.com/oscipal/earthX/pull/264)), nach `plans/querschnitt/nm4-14-index-knoepfe.md` §15. Backend, Rezept und Hash bleiben, wie der Nachtrag NM4-14 sie festlegt.
+
+- **Knöpfe.** Die Zeile „Index“ unter „Add step“ zeigt je Preset des Datensatzes (`earthx:index_presets`) einen Knopf. Sie fehlt ohne Presets und ohne `band_math` Version 2 in der Prozessbeschreibung; gesperrt ist sie mit dem Grund von „＋ Band math“. Ein Klick ruft `addStep('band_math', 2, { expression, name })` und legt einen gewöhnlichen Schritt an, dessen Ergebnis angehakt ist; ein vergebener Name bekommt `_2`, `_3`. Nichts im Zustand oder im Rezept zeigt, dass der Schritt aus einem Preset kommt. Tooltip und `aria-label`: `<title>: <formula>. Formula: Awesome Spectral Indices.`
+- **Lesen.** Das Frontend prüft jeden Eintrag; ein unvollständiger fällt mit einer Konsolenzeile ohne Daten weg, ein fehlendes Feld gilt als leere Liste.
+- **Darstellung D2.** Ein Band, dessen Ausdruck token-gleich dem eines Presets des Datensatzes ist, wird mit Bereich und Colormap des Presets gezeichnet. Reihenfolge: Ganzzahl, Bereich des Benutzers, Preset, Index-Regel (`render.ts::scaleOf`), 2–98 %. Das gilt für die Vorschau, den Ergebnis-Layer, „Auto“ und den Bandwechsel. Gespeichert wird nichts: Der Ausdruck je Band kommt aus dem Rezept des Jobs. Fehlt es (Auftragskopie nicht abgelegt), ist der Datensatz unbekannt und es gilt die Index-Regel.
+- **`rdbu`** ist in der Auswahl der Colormaps.
+
 ## 15 Nachtrag DS-06: der Operator `mask_values`, Maske nach Werten eines Bandes (2026-10-30; zu §5.2, §5.3, §5.5, §6.3, §15c, §15m; `adr/0020` §4, §12)
 
 Otto hat den Plan von DS-06 am 2026-10-30 freigegeben (zu [#254](https://github.com/oscipal/earthX/pull/254), `plans/ds/ds-06-maske-nach-werten.md` §13, Fragen 1–4 nach Option 1, Frage 5 nach Option 3, Frage 6 nach Option 3). Der Originaltext von §15m
