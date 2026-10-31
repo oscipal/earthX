@@ -6,6 +6,7 @@
 import type { ResultLayerInfo } from './layers';
 import { buildTileUrl } from './mapLayers';
 import { RGB, startBand } from './processingBands';
+import { presetFor, presetRange, type IndexPreset } from './indexPresets';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, statsFrom, type ResultStats } from './render';
 import type { AppliedRender, Bbox } from './types';
@@ -65,6 +66,9 @@ export function resultStats(properties: Record<string, unknown> | undefined): Re
 export interface ResultBand {
   name: string;
   stats: ResultStats | null;
+  // The expression of the Band math step that made the band, where the order or the results say it (NM4-14): what the
+  // presets of the dataset are matched by. `null` for a band of the data.
+  expression?: string | null;
 }
 
 // The bands of `properties.bands` in the order of the file, so that the place of a band + 1 is its `bidx`. A band is judged
@@ -73,12 +77,28 @@ export interface ResultBand {
 export function resultBands(properties: Record<string, unknown> | undefined, order: { steps: { op: string; params: Record<string, unknown> }[] } | null): ResultBand[] {
   const listed = properties?.bands;
   if (!Array.isArray(listed)) return [];
-  const made = new Set(order?.steps.flatMap((step) => (step.op === 'band_math' && typeof step.params.name === 'string' ? [step.params.name] : [])));
+  const steps = order?.steps.flatMap((step) =>
+    step.op === 'band_math' && typeof step.params.name === 'string' ? [[step.params.name, step.params.expression] as const] : [],
+  );
+  const made = new Set(steps?.map(([name]) => name));
   const any = properties?.['processing:expression'] != null;
+  // The results name the expression of the last Band math step and the band it made; the order says it for every one.
+  const last = properties?.['processing:expression'] as { name?: unknown; expression?: unknown } | undefined;
+  const expressions = new Map<string, string>(
+    steps?.flatMap(([name, expression]) => (typeof expression === 'string' ? [[name, expression] as [string, string]] : [])) ??
+      (typeof last?.name === 'string' && typeof last.expression === 'string' ? [[last.name, last.expression] as [string, string]] : []),
+  );
   return listed.map((band): ResultBand => {
     const name = typeof (band as { name?: unknown } | null)?.name === 'string' ? (band as { name: string }).name : '';
-    return { name, stats: statsFrom([band], order === null ? any : made.has(name)) };
+    return { name, stats: statsFrom([band], order === null ? any : made.has(name)), expression: expressions.get(name) ?? null };
   });
+}
+
+// The range and colormap of the preset that `band` is (its expression is the preset's), or `null`. The colour picture and a
+// band of the data are none.
+export function presetOfResultBand(band: ResultBand | undefined, presets: readonly IndexPreset[]): PreviewRange | null {
+  const preset = presetFor(presets, band?.expression);
+  return preset ? presetRange(preset) : null;
 }
 
 // The places in the file of the three bands of the colour picture (`earthx:true_color`: red, green, blue), or `null` where the
@@ -138,10 +158,12 @@ function drawnWith(range: PreviewRange): AppliedRender {
 // colormap to become a picture; an integer result is drawn as it is. For a float, in order:
 //  1. an integer result is drawn as it is;
 //  2. the range the user had set by hand when the job started holds for this result only (`own`);
-//  3. an index (a Band math result whose 2–98 % lie in −1…1, `render.ts::scaleOf`) is drawn at −1…1 in `rdylgn`,
+//  3. an index the dataset offers as a preset (a band whose expression is the preset's, NM4-14) is drawn with the
+//     range and colormap of the preset, so that the same index looks the same wherever it is made;
+//  4. an index (a Band math result whose 2–98 % lie in −1…1, `render.ts::scaleOf`) is drawn at −1…1 in `rdylgn`,
 //     so that jobs can be compared with one another;
-//  4. otherwise the 2–98 % of the AOI from the statistics, in `viridis`;
-//  5. a result without statistics is drawn with the range of the panel, as before M4-32.
+//  5. otherwise the 2–98 % of the AOI from the statistics, in `viridis`;
+//  6. a result without statistics is drawn with the range of the panel, as before M4-32.
 // The colour picture (`colour`, NM4-64) takes one range for its three bands and no colormap, whatever the rule says.
 export function resultRender(
   dataType: string | null,
@@ -149,10 +171,11 @@ export function resultRender(
   stats: ResultStats | null = null,
   own: PreviewRange | null = null,
   colour = false,
+  preset: PreviewRange | null = null,
 ): AppliedRender {
   if (dataType === null || !FLOAT.test(dataType)) return {};
   const scale = scaleOf(stats);
-  const render = own ? drawnWith(own) : scale ? { rescale: `${scale.low},${scale.high}`, colormapName: scale.colormap } : drawnWith(panel);
+  const render = own ? drawnWith(own) : preset ? drawnWith(preset) : scale ? { rescale: `${scale.low},${scale.high}`, colormapName: scale.colormap } : drawnWith(panel);
   if (!colour) return render;
   const { colormapName: _none, ...plain } = render;
   return plain;
@@ -200,8 +223,8 @@ export function colourTileUrl(tileUrl: string, colour: readonly number[], render
 
 // How a layer of a result is drawn when no range was set by hand for its job (M4-32): the default of
 // "Auto". `null` for a result that is drawn as it is.
-export function defaultRange(info: Pick<ResultLayerInfo, 'dataType' | 'stats' | 'band'>, panel: PreviewRange): PreviewRange | null {
-  const render = resultRender(info.dataType, panel, info.stats, null, info.band === RGB);
+export function defaultRange(info: Pick<ResultLayerInfo, 'dataType' | 'stats' | 'band' | 'preset'>, panel: PreviewRange): PreviewRange | null {
+  const render = resultRender(info.dataType, panel, info.stats, null, info.band === RGB, info.preset ?? null);
   return 'rescale' in render || render.colormapName ? rangeOfRender(render) : null;
 }
 

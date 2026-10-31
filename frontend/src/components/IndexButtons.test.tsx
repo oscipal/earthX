@@ -280,3 +280,58 @@ describe('a click', () => {
     expect(index('NDVI').title).toBe(orderView(useAppStore.getState(), store()).nameBlock);
   });
 });
+
+describe('the look of an index (D2)', () => {
+  const colormap = () => tiles().get('colormap_name');
+  const rescale = () => tiles().get('rescale');
+
+  beforeEach(() => {
+    // The values of the scene lie outside −1…1: the rule of an index would not apply, the 2–98 % would be drawn in viridis.
+    values = { min: -3, max: 8, percentile_2: -2.5, percentile_98: 6 };
+  });
+
+  it('draws the preview of a preset in the range and colormap of the preset, whatever was measured', async () => {
+    await openWith(SENTINEL_2_PRESETS);
+    click(index('NDWI'));
+    await afterDebounce();
+    expect([rescale(), colormap()]).toEqual(['-1,1', 'rdbu']);
+    expect(fields().map((f) => f.value)).toEqual(['-1', '1']);
+  });
+
+  it('is the same for the expression typed by hand, in other spaces', async () => {
+    await openWith(SENTINEL_2_PRESETS);
+    click(bandMath());
+    typeInto(expression(0), '(green-nir)/(green+nir)');
+    await afterDebounce();
+    expect([rescale(), colormap()]).toEqual(['-1,1', 'rdbu']);
+  });
+
+  it('draws a changed expression by the rule it had', async () => {
+    await openWith(SENTINEL_2_PRESETS);
+    click(index('NDWI'));
+    await afterDebounce();
+    typeInto(expression(0), '(nir - green) / (nir + green)');
+    await afterDebounce();
+    expect([rescale(), colormap()]).toEqual(['-2.5,6', 'viridis']);
+    expect(fields().map((f) => f.value)).toEqual(['-2.5', '6']);
+  });
+
+  it('lets the range of the user go first', async () => {
+    await openWith(SENTINEL_2_PRESETS);
+    click(index('NDWI'));
+    await afterDebounce();
+    typeInto(fields()[0], '0');
+    typeInto(fields()[1], '0.5');
+    click([...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Apply')!);
+    await afterDebounce();
+    expect(rescale()).toBe('0,0.5');
+  });
+
+  it('is nothing for the expression of a preset in a dataset that has none', async () => {
+    await openWith([]);
+    click(bandMath());
+    typeInto(expression(0), '(green - nir) / (green + nir)');
+    await afterDebounce();
+    expect([rescale(), colormap()]).toEqual(['-2.5,6', 'viridis']);
+  });
+});

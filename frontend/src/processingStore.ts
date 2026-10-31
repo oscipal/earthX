@@ -21,6 +21,7 @@ import { create } from 'zustand';
 import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, type AreaStatistics } from './api';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import { resultsGroupByOfOption, type DatasetOption } from './datasets';
+import { indexPresetsOf } from './indexPresets';
 import {
   loadShelf,
   MAX_NAME_LENGTH,
@@ -81,6 +82,7 @@ import {
   resultBands,
   resultGsd,
   resultLayerName,
+  presetOfResultBand,
   resultRender,
   resultStats,
   resultTileTemplate,
@@ -92,9 +94,9 @@ import {
   assetsCarrying,
   bandNamesOf,
   defaultName,
+  numberedName,
   dropFromNormalize,
   isBandMath,
-  numberedName,
   nameProblem,
   outputBands,
   renameResult,
@@ -1316,7 +1318,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const colour = several ? colourPlacesOf(job.bands, trueColorOf(dataset?.collection)) : null;
       const place = startPlaceOf(job.bands, job.order, job.shownBand, colour);
       const stats = place === RGB ? colourStats(job.bands, colour!) : several ? job.bands[place].stats : job.statistics;
-      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB);
+      const preset = place === RGB ? null : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
+      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset);
       const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
         name: resultLayerName(job.title),
@@ -1329,6 +1332,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           expired: false,
           dataType: tileJson.dataType,
           stats,
+          preset,
           ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
         },
         overlays: [
@@ -1435,11 +1439,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         const taken = [...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)];
         added = given ? numberedName(given.name, taken) : defaultName(taken);
         values.name = added;
+        if (given) values.expression = given.expression;
       } else if (op === 'normalize' && 'bands' in values) {
         values.bands = view.results.at(-1)?.name ?? '';
       }
       set((s) => ({
-        if (given) values.expression = given.expression;
         steps: [...s.steps, { key, op, opVersion, values }],
         // The band the panel checked on opening gives way to the first result; one the person chose stays.
         output: added ? [...output.filter((band) => band !== s.lonelyAuto), added] : output,
@@ -1740,7 +1744,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!layer || !info || !info.bands || !job || info.band === place) return;
       if (place === RGB ? !colour : !band) return;
       const stats = colour ? colourStats(info.bands, colour) : band!.stats;
-      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined);
+      const dataset = app.datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
+      const preset = colour ? null : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
+      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset);
       useAppStore.setState({
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
@@ -1752,7 +1758,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, stats } };
+          return { ...l, overlays, result: { ...kept, band: place, stats, preset } };
         }),
       });
     },
@@ -2006,7 +2012,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   };
   const spec = previewSpec({ ...args, range: p.range });
   if (spec === null) return null;
-  const range = drawnRange(p, spec.measure);
+  const range = drawnRange(p, spec);
   return range === p.range ? spec : previewSpec({ ...args, range });
 }
 
@@ -2018,10 +2024,11 @@ export function handRangeOf(p: Pick<ProcessingState, 'range' | 'rangeByHand'>): 
 }
 
 // The range the preview is drawn with (M4-19c): the one the user applied; else the one the measure of this very
-// preview calls for (the rule of a result's, `scaleOf`); else the start range.
-function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, measureKey: string): PreviewRange {
+// preview calls for (the rule of a result's, `scaleOf`); else the start range. Between the two: the preset of an index (NM4-14, D2).
+function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, spec: Pick<PreviewSpec, 'measure' | 'preset'>): PreviewRange {
   if (handRangeOf(p)) return p.range;
-  return (p.measure?.key === measureKey ? measuredRange(p.measure) : null) ?? p.range;
+  if (spec.preset) return spec.preset;
+  return (p.measure?.key === spec.measure ? measuredRange(p.measure) : null) ?? p.range;
 }
 
 // One measure per state of the preview, which is the steps over the first scene (over the AOI, for "AOI only" with
@@ -2124,18 +2131,18 @@ function stillWanted(run: number, spec: PreviewSpec | null, limit: number | unde
 // (review of #250).
 function fieldsShow(spec: PreviewSpec | null): Partial<Pick<ProcessingState, 'rangeDraft'>> {
   const p = useProcessingStore.getState();
-  return spec && !p.rangeByHand && !p.rangeEdited ? { rangeDraft: drawnRange(p, spec.measure) } : {};
+  return spec && !p.rangeByHand && !p.rangeEdited ? { rangeDraft: drawnRange(p, spec) } : {};
 }
 
 // Takes a measure into the state: with it the unit, and — where no range of the user's holds — the range it calls
 // for in the fields, unless the user is typing in them. Without one the panel says so.
-function adoptMeasure(measure: PreviewMeasure | null): void {
+function adoptMeasure(measure: PreviewMeasure | null, preset: PreviewRange | null): void {
   const p = useProcessingStore.getState();
   const hand = p.rangeByHand;
   useProcessingStore.setState({
     measure,
-    rangeNote: hand || measure !== null ? null : NO_MEASURE,
-    ...(!hand && !p.rangeEdited ? { rangeDraft: measuredRange(measure) ?? p.range } : {}),
+    rangeNote: hand || measure !== null || preset !== null ? null : NO_MEASURE,
+    ...(!hand && !p.rangeEdited ? { rangeDraft: preset ?? measuredRange(measure) ?? p.range } : {}),
   });
 }
 
@@ -2245,7 +2252,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
     if (measure === TOO_LATE) {
       late = request;
     } else {
-      adoptMeasure(measure);
+      adoptMeasure(measure, spec.preset);
       spec = wantedPreview(limit);
     }
   }
@@ -2255,7 +2262,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
   if (late) {
     const measure = await late;
     if (!stillWanted(run, spec, limit)) return;
-    adoptMeasure(measure);
+    adoptMeasure(measure, spec?.preset ?? null);
     const again = wantedPreview(limit);
     if (again && again.key !== spec?.key) {
       const now = wantedPreview();
@@ -2266,7 +2273,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
   // With one, the measure is for the unit alone, and the picture does not wait for it.
   if (spec && hand) {
     const measure = await measureFor(spec);
-    if (stillWanted(run, spec, limit)) adoptMeasure(measure);
+    if (stillWanted(run, spec, limit)) adoptMeasure(measure, spec.preset);
   }
 }
 

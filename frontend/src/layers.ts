@@ -4,6 +4,7 @@
 
 import type { Coords4 } from './geoUtils';
 import type { RGB } from './processingBands';
+import type { PreviewRange } from './processingPreview';
 import type { ResultStats } from './render';
 import type { ResultBand } from './resultLayer';
 import type { AppliedRender, Bbox, DownloadedInfo } from './types';
@@ -120,6 +121,9 @@ export interface ResultLayerInfo {
   // The statistics of the AOI the default range comes from (M4-32); `null` for a result without them. Of a result of
   // several bands: those of the band the layer draws.
   stats: ResultStats | null;
+  // The range and colormap of the index preset the band the layer draws is (its expression is the preset's, NM4-14);
+  // `null` for any other band. Left out in a layer made before this was written.
+  preset?: PreviewRange | null;
   // The bands of a result of more than one, in the order of the file, and the place of the one the layer draws
   // (`bidx` is the place + 1); left out for a result of one band (NM4-43e PR 2).
   bands?: ResultBand[];
