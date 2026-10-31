@@ -740,6 +740,8 @@ export default function ProcessingPanel() {
                             maskLayer={view.maskLayer}
                             earlier={earlier}
                             dataBands={view.selectable}
+                            maskBands={view.dataBands.filter((b) => !b.auxiliary).map((b) => b.name)}
+                            units={Object.fromEntries(view.dataBands.flatMap((b) => (b.unit ? [[b.name, b.unit]] : [])))}
                             checkName={(name) =>
                               nameProblem(
                                 name,
@@ -786,9 +788,6 @@ export default function ProcessingPanel() {
                       );
                     })}
                   </div>
-                  {!view.maskLayer && !info.operators.some((o) => o.op === 'mask') && (
-                    <p className="hint-text">Mask: this dataset has no classification layer to read.</p>
-                  )}
                   {info.operators.map((o) =>
                     o.form.supported ? null : (
                       <p key={`${o.op}/${o.opVersion}`} className="hint-text">
