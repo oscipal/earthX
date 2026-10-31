@@ -1,7 +1,7 @@
 // Browser check of ⚙ at the layer of a result (NM4-05b), in a real browser with made-up answers of the platform:
 //   1. The layer manager: ⚙ in the row of a result with the order of its job, active; no ⚙ (the place stays empty) without one.
 //   2. The panel it opens: the result as an entity of its own, with the bands of its output as its bands and no steps shown; the
-//      area choice of the panel of a scene ("Whole scene" is the result, "AOI only" an AOI inside it), "Load recipe…", no "Run as"; no mask
+//      area choice of the panel of a scene ("Whole scene" is the result, "AOI only" an AOI cut to it), "Load recipe…", no "Run as"; no mask
 //      where the output lacks the layer; a band the output did not keep cannot be read; "RGB" in "Show"; "Review" and
 //      "Start job" send one order with all the steps, and the job it makes lies beside the old one.
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
@@ -22,7 +22,7 @@ const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, height: 740 } };
 const RESULT = 'ZyXwVuTsRqPoNmLkJiHg_-';
 const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
-const NEW_JOBS = ['QrStUvWxYzAbCdEfGhIj_-', 'AaBbCcDdEeFfGgHhIiJj_-'];
+const NEW_JOBS = ['QrStUvWxYzAbCdEfGhIj_-', 'AaBbCcDdEeFfGgHhIiJj_-', 'KkLlMmNnOoPpQqRrSsTt_-'];
 
 const STAT = { count: 900, min: 0.01, max: 0.9, percentile_2: 0.05, percentile_98: 0.7, unit: null };
 
@@ -194,28 +194,46 @@ async function check(browser, theme, viewport) {
     if (order.inputs[0].groups[0].join() !== 'S2B_A') problems.push('the scenes are not those of the job');
     if (!order.aoi) problems.push('the order has no area');
   }
-  // "AOI only": another AOI inside the result is the area of the next order; one outside it is turned away.
+  // "AOI only": another AOI inside the result is the area of the next order; one that misses it is turned away.
   await page.evaluate(async () => {
     const { useAppStore } = await import('/src/store.ts');
     useAppStore.getState().setAoi({ type: 'Polygon', coordinates: [[[10.7, 50.7], [10.9, 50.7], [10.9, 50.9], [10.7, 50.9], [10.7, 50.7]]] });
   });
   await panel.getByRole('button', { name: 'AOI only' }).click();
-  if (!(await panel.getByText('The AOI has to lie inside the result.').count())) problems.push('an AOI outside the result is not turned away');
+  if (!(await panel.getByText('The AOI does not meet the result.').count())) problems.push('an AOI that misses the result is not turned away');
   await page.evaluate(async () => {
     const { useAppStore } = await import('/src/store.ts');
     useAppStore.getState().setAoi({ type: 'Polygon', coordinates: [[[10.45, 50.45], [10.5, 50.45], [10.5, 50.5], [10.45, 50.5], [10.45, 50.45]]] });
   });
   await page.waitForTimeout(300);
-  if (await panel.getByText('The AOI has to lie inside the result.').count()) problems.push('an AOI inside the result is turned away');
+  if (await panel.getByText('The AOI does not meet the result.').count()) problems.push('an AOI inside the result is turned away');
   await panel.getByRole('button', { name: 'Review', exact: true }).click();
   await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
   await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
   await page.waitForTimeout(800);
   if (posted.length !== 2 || posted[1].aoi.coordinates[0][0].join() !== '10.45,50.45') problems.push(`the second order has the area ${JSON.stringify(posted[1]?.aoi)}`);
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_inner.png`) });
+  // The preview lies above the result, with the entry "Results".
+  if ((await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().resultsAt)) !== 0) problems.push('the preview lies below the result');
+  // An AOI that covers part of the result: only that part is the area of the order.
+  await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    useAppStore.getState().setAoi({ type: 'Polygon', coordinates: [[[10.5, 50.5], [10.8, 50.5], [10.8, 50.8], [10.5, 50.8], [10.5, 50.5]]] });
+  });
+  await page.waitForTimeout(300);
+  if (await panel.getByText('The AOI does not meet the result.').count()) problems.push('an AOI that covers part of the result is turned away');
+  await panel.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
+  await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+  await page.waitForTimeout(800);
+  const part = (posted[2]?.aoi?.coordinates?.[0] ?? []).flat();
+  const xs = part.filter((_, i) => i % 2 === 0);
+  const ys = part.filter((_, i) => i % 2 === 1);
+  if (posted.length !== 3 || Math.max(...xs) > 10.6 + 1e-9 || Math.max(...ys) > 50.6 + 1e-9 || Math.min(...xs) < 10.5 - 1e-9) problems.push(`the part of the AOI is ${JSON.stringify(posted[2]?.aoi)}`);
+
   const jobs = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().jobs.map((j) => [j.jobID, j.title]));
-  if (jobs.length !== 3 || jobs[2][0] !== JOB) problems.push(`the jobs are ${JSON.stringify(jobs)}`);
-  if (jobs[1]?.[1] !== 'NDVI of a field → Band math') problems.push(`the new job is called ${jobs[0]?.[1]}`);
+  if (jobs.length !== 4 || jobs[3][0] !== JOB) problems.push(`the jobs are ${JSON.stringify(jobs)}`);
+  if (jobs[2]?.[1] !== 'NDVI of a field → Band math') problems.push(`the new job is called ${jobs[0]?.[1]}`);
   await context.close();
   return { name, problems };
 }

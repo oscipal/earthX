@@ -112,7 +112,7 @@ import {
   dataBandsOf,
   draftFromOrder,
   isArea,
-  isInside,
+  clipArea,
   lonelyBand,
   maskAssetOf,
   maskLayerOf,
@@ -467,8 +467,8 @@ export interface OrderView {
   fixed: Fixed | null;
   locked: number;
   // The area the order has, and its AOI: the panel's choice and the map's AOI, or what the entry fixed. A result's own area is
-  // an AOI where the job had one; `inner` is "AOI only" in the panel of a result, another AOI that has to lie inside it, and
-  // `outside` says it does not.
+  // an AOI where the job had one; `inner` is "AOI only" in the panel of a result, another AOI of which the part inside the result
+  // is the area, and `outside` says that none of it is.
   area: Area;
   aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   inner: boolean;
@@ -595,19 +595,19 @@ export function clipAoiOf(p: Pick<ProcessingState, 'fixed' | 'area'>, mapAoi: Ge
   return p.fixed && !(p.fixed.result && p.area === 'aoi') ? p.fixed.aoi : mapAoi;
 }
 
-export const OUTSIDE_TEXT = 'The AOI has to lie inside the result.';
+export const OUTSIDE_TEXT = 'The AOI does not meet the result.';
 
-// Whether an AOI lies inside the area of a result: its AOI, or the scenes' footprints; the last answer is kept, since the check is
-// the costly part of the view.
-let lastInside: { inputs: unknown[]; result: boolean } | null = null;
+// The part of an AOI that lies in the area of a result: its AOI, or the scenes' footprints. The last answer is kept, since the
+// clipping is the costly part of the view.
+let lastClip: { inputs: unknown[]; result: GeoJSON.Polygon | GeoJSON.MultiPolygon | null } | null = null;
 
-function insideResult(aoi: GeoJSON.Geometry, fixed: Fixed, items: readonly StacItem[]): boolean {
+function clipToResult(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon, fixed: Fixed, items: readonly StacItem[]) {
   const inputs = [aoi, fixed, items];
-  if (lastInside && lastInside.inputs.every((value, i) => value === inputs[i])) return lastInside.result;
+  if (lastClip && lastClip.inputs.every((value, i) => value === inputs[i])) return lastClip.result;
   const named = new Set(fixed.itemIds);
   const outer = resultArea(fixed.aoi, items.filter((item) => named.has(item.id)));
-  const result = outer === null || isInside(aoi, outer);
-  lastInside = { inputs, result };
+  const result = outer === null ? aoi : clipArea(aoi, outer);
+  lastClip = { inputs, result };
   return result;
 }
 
@@ -616,7 +616,10 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   // What an entry fixed is the order's area, whatever the map holds; but in the panel of a result "AOI only" is the map's AOI, inside
   // the result's own area (NM4-05b).
   const inner = p.fixed?.result != null && p.area === 'aoi';
-  const aoi = p.fixed && !inner ? p.fixed.aoi : isArea(scenes.aoi) ? scenes.aoi : null;
+  const drawn = isArea(scenes.aoi) ? scenes.aoi : null;
+  // Another AOI on a result covers part of it at most: only that part is the order's, and none of it where the AOI misses it.
+  const clipped = inner && drawn !== null ? clipToResult(drawn, p.fixed!, scenes.items) : drawn;
+  const aoi = p.fixed && !inner ? p.fixed.aoi : (clipped ?? drawn);
   const area: Area = p.fixed && !inner ? (p.fixed.aoi ? 'aoi' : 'scene') : p.area;
   const app = aoi === scenes.aoi ? scenes : { ...scenes, aoi };
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
@@ -689,7 +692,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const foundUnder = (item: StacItem) =>
     extraIds.has(item.id) ? (p.extraScenes?.datasetId ?? null) : (selection.openSectionId ?? selection.datasetId);
   const foreign = dataset ? foreignScenes(dataset.id, pass?.items ?? [], foundUnder) : [];
-  const outside = inner && aoi !== null && !insideResult(aoi, p.fixed!, app.items);
+  const outside = inner && drawn !== null && clipped === null;
   const buildFor = (itemIds: string[]): BuiltOrder | null => {
     if (!info || !dataset) return null;
     const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info });
@@ -1448,6 +1451,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
       if (layer?.derived === 'result') return get().extendResult(layerId);
       if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
+      // The preview lies with the entry "Results": above the layer it is made from, so that it can be seen.
+      useAppStore.getState().resultsToTop();
       useAppStore.getState().activateLayerContext(layerId);
       const extraScenes = await selectScenes(layer.restore.itemIds, 'this layer');
       if (!extraScenes) return;
@@ -1824,6 +1829,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         },
       }));
       if (!taken.ok) useAppStore.setState({ error: taken.reason });
+      // The preview lies with the entry "Results": above the result, which it would else be hidden by.
+      else useAppStore.getState().resultsToTop();
     },
 
     reviewOrder: async () => {
@@ -1880,8 +1887,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set({ starting: true, startError: null });
       try {
         const status = await placeJob(order, {
-          // A fixed area is the entry's, not the map's, and the map's provenance is not its own; another AOI inside a result is the map's.
-          aoiProvenance: s.fixed && !view.inner ? undefined : aoiProvenanceFor(order, useAppStore.getState().aoi),
+          // A fixed area is the entry's, not the map's, and the map's provenance is not its own; another AOI on a result is the map's where nothing was cut off.
+          aoiProvenance: s.fixed && !(view.inner && view.aoi === useAppStore.getState().aoi) ? undefined : aoiProvenanceFor(order, useAppStore.getState().aoi),
         });
         // One estimate, one job: a second identical job needs its own review.
         if (mine === startGeneration) set({ starting: false, estimate: null });
@@ -2211,7 +2218,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   if (!p.open || p.detailJobID) return null;
   const app = useAppStore.getState();
   const view = orderView(app, p);
-  if (!view.info || !view.pass || processBlockReason(view.dataset, sceneCountOf(app, p)) !== null) return null;
+  if (!view.info || !view.pass || view.outside || processBlockReason(view.dataset, sceneCountOf(app, p)) !== null) return null;
   const full = planPreview(p.steps, view.info);
   if (full.state !== 'ready') return null;
   const plan = limit === undefined ? full : shortenPlan(full, limit);
@@ -2234,7 +2241,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
     bands: read.bands,
     named: read.choices.length > 1,
   };
-  const spec = previewSpec({ ...args, range: p.range });
+  const spec = previewSpec({ ...args, range: p.range, ...(view.inner && view.aoi ? { clipAoi: view.aoi } : {}) });
   if (spec === null) return null;
   const range = drawnRange(p, spec.measure);
   return range === p.range ? spec : previewSpec({ ...args, range });

@@ -416,19 +416,69 @@ describe('the panel from a result', () => {
     expect(sent().inputs[0].groups).toEqual([['S2B_A']]);
   });
 
-  it('turns an AOI away that is not inside the result, and starts nothing', async () => {
+  it('turns an AOI away that misses the result, and starts nothing, though the scene under it is there', async () => {
     await process();
-    for (const aoi of [OTHER_AOI, EDGE_AOI]) {
-      act(() => useAppStore.setState({ aoi }));
-      click(button('AOI only'));
-      const view = orderView(selectionState(useAppStore.getState()), store());
-      expect(view.outside).toBe(true);
-      expect(view.built?.order).toBeNull();
-      expect(container.querySelector('.hint-text.error')?.textContent).toBe('The AOI has to lie inside the result.');
-    }
+    act(() => useAppStore.setState({ aoi: OTHER_AOI }));
+    click(button('AOI only'));
+    const view = orderView(selectionState(useAppStore.getState()), store());
+    expect(view.outside).toBe(true);
+    expect(view.built?.order).toBeNull();
+    expect(container.querySelector('.hint-text.error')?.textContent).toBe('The AOI does not meet the result.');
+    expect((button('Start job') as HTMLButtonElement).disabled).toBe(true);
     click(button('Review'));
     await flush();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+  });
+
+  it('computes only the part of an AOI that lies in the result', async () => {
+    await process();
+    act(() => useAppStore.setState({ aoi: EDGE_AOI }));
+    click(button('AOI only'));
+    const view = orderView(selectionState(useAppStore.getState()), store());
+    expect(view.outside).toBe(false);
+    // [10.5, 50.5]–[10.7, 50.7] of the map, [10.4, 50.4]–[10.6, 50.6] of the result: what they share is a square of a tenth.
+    const box = (view.aoi as GeoJSON.Polygon).coordinates[0].reduce(
+      (b, [x, y]) => ({ x0: Math.min(b.x0, x), x1: Math.max(b.x1, x), y0: Math.min(b.y0, y), y1: Math.max(b.y1, y) }),
+      { x0: 99, x1: -99, y0: 99, y1: -99 },
+    );
+    expect(box).toEqual({ x0: 10.5, x1: 10.6, y0: 50.5, y1: 50.6 });
+    click(button('Review'));
+    await flush();
+    click(button('Start job'));
+    await flush();
+    expect(sent().aoi).toEqual(view.aoi && orderAoi(view.aoi as GeoJSON.Polygon));
+    expect(sent().aoi).not.toEqual(orderAoi(EDGE_AOI));
+    expect(container.querySelector('.hint-text.error')).toBeNull();
+  });
+
+  it('draws no preview for an AOI that misses the result, and one cut to the part that is inside otherwise', async () => {
+    vi.useFakeTimers();
+    await process();
+    const settle = async () => {
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+      });
+    };
+    act(() => useAppStore.setState({ aoi: INNER_AOI }));
+    click(button('AOI only'));
+    await settle();
+    expect(store().preview?.clipToAoi).toBe(true);
+    expect(store().preview?.clipAoi).toEqual(INNER_AOI);
+    act(() => useAppStore.setState({ aoi: EDGE_AOI }));
+    await settle();
+    const cut = store().preview?.clipAoi as GeoJSON.Polygon | undefined;
+    expect(cut).toBeDefined();
+    expect(cut?.coordinates[0]).not.toEqual(EDGE_AOI.coordinates[0]);
+    act(() => useAppStore.setState({ aoi: OTHER_AOI }));
+    await settle();
+    expect(store().preview).toBeNull();
+  });
+
+  it('puts the preview above the result: the entry "Results" goes to the top of the layers', async () => {
+    useAppStore.setState({ layers: [resultLayer(), { ...resultLayer(), id: 'R2' }], resultsAt: 2 });
+    await process();
+    expect(useAppStore.getState().resultsAt).toBe(0);
   });
 
   it('goes back to the area of the result with "Whole scene"', async () => {

@@ -304,7 +304,7 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           className={`pp-seg${area === 'aoi' ? ' on' : ''}`}
           aria-pressed={area === 'aoi'}
           disabled={!hasAoi}
-          title={hasAoi ? (result ? 'Process only the AOI, which has to lie inside the result' : 'Process only the AOI') : 'Draw an AOI first'}
+          title={hasAoi ? (result ? 'Process only the AOI, cut to the area of the result' : 'Process only the AOI') : 'Draw an AOI first'}
           onClick={() => setArea('aoi')}
         >
           AOI only

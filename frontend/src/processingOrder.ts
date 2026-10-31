@@ -387,6 +387,25 @@ export function isInside(inner: GeoJSON.Geometry, outer: GeoJSON.Geometry): bool
   }
 }
 
+// The part of `inner` that lies within `outer`: `inner` itself where all of it does, `null` where none of it does (a sliver at the
+// edge counts as none). Where either cannot be computed `inner` is kept, and the server has the last word.
+export function clipArea(
+  inner: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  outer: GeoJSON.Geometry,
+): GeoJSON.Polygon | GeoJSON.MultiPolygon | null {
+  const a = toGeom(inner);
+  const b = toGeom(outer);
+  if (!a || !b || isInside(inner, outer)) return inner;
+  try {
+    const part = intersection(a, b);
+    if (part.length === 0 || areaOf(part) < 1e-9) return null;
+    const polygons = part as unknown as GeoJSON.Position[][][];
+    return polygons.length === 1 ? { type: 'Polygon', coordinates: polygons[0] } : { type: 'MultiPolygon', coordinates: polygons };
+  } catch {
+    return inner;
+  }
+}
+
 // The area a result covers: its own AOI, or, for a result of whole scenes, the union of their footprints; `null` where that
 // cannot be said (a scene without a footprint).
 export function resultArea(aoi: GeoJSON.Geometry | null, items: readonly StacItem[]): GeoJSON.Geometry | null {
