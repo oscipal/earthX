@@ -254,3 +254,57 @@ Kurz beantwortbar: je Frage eine Nummer.
 ### 6.11 Grenzen dieses Plans
 
 Keine Messung im Browser, kein Backend, keine neue Abhängigkeit. Der Code beginnt erst, wenn Otto den Plan freigibt und einen freien Frontend-Platz meldet.
+
+## 7. Freigabe (Otto, 31.10.2026, zu #257)
+
+| Frage | Antwort | Folge für §6 |
+|---|---|---|
+| 1, 2, 3, 4, 5, 6, 7, 10 | Option 1, wie empfohlen | wie §6 |
+| 8 | Option 1 mit Zusatz: Bei Bildern mit drei Bändern (RGB) wird das Feld Colormap **nicht angezeigt** (nicht Mögliches ausblenden), nicht gesperrt. Das Wort „RGB“ kommt mit dem Dropdown „Band“ (NM4-64 für Vorschau und Ergebnis, NM4-45 für die Ansicht). | §6.4: Feld Colormap fehlt bei drei Bändern; vmin und vmax rücken nach |
+| 9 | Option 1: ein PR, je Teil eigener Commit | Commits (a)–(f) wie in §6.9 |
+
+**Hinweis Otto:** NM4-64 (RGB, Registry-Feld `earthx:true_color`) läuft parallel; wer als Zweiter fertig wird, holt main und übernimmt das Feld statt eigener Annahmen. Stand beim Bau: NM4-64 ist nicht in main. „Drei Bänder“ liest `datasets.ts::showsColormap` deshalb aus den drei Spannen (`rescale`) der Standarddarstellung der Registry; das ist die eine Stelle, die NM4-64 durch das Feld ersetzt.
+
+## 8. Umsetzung (31.10.2026, PR #257)
+
+Ein PR mit je einem Commit pro Teil (Antwort 9).
+
+| Teil | Was | Dateien |
+|---|---|---|
+| a | **Modell der Bilder.** `viewImages.ts` bildet aus den Szenen der Ansicht und den Abschnitten der Ergebnisse die Bilder (Datensatz, Gruppe, Szenen, Datum, Satelliten), nach Abschnitt und Tag geordnet. Jeder Eintrag von `downloaded` trägt seinen Datensatz (`DownloadedInfo.datasetId`). Satellit: Beschriftung aus dem Registry-Filter `platform`, Kurzform „S2A“ nach `Sentinel-<n><Buchstabe>`, sonst unverändert. | `viewImages.ts`, `types.ts`, Testfixtures |
+| b | **Auswahl über Datensätze, die Karte zeichnet ein Bild.** `enterFocus` nimmt die Haken aller Abschnitte (`viewSelectionFrom`), liest je Datensatz die Standarddarstellung und beginnt mit dem Bild der offenen Gruppe, sonst dem frühesten des offenen Datensatzes (`firstImageOf`). `showImage`, `stepImage`, `chooseViewDataset`. `loadMosaics`, `overlaysOfEntries`, `pinWhenLoaded`, `autoStretch` und `MapView` folgen dem Datensatz des Eintrags; die Karte zeichnet nur das angezeigte Bild (`shownViewOf`), ohne neue Marker. „Process“ der Ansicht nimmt die Szenen des angezeigten Datensatzes und macht ihn zum offenen. Leiste der Auswahl: Zahl und Aufteilung über alle Datensätze, Download und Process beim offenen. | `store.ts`, `MapView.tsx`, `ViewBar.tsx`, `App.tsx`, `processingStore.ts` |
+| c | **Zeile der Schritte.** Dropdown „Dataset“ (nur bei mehr als einem Datensatz), Pfeile mit Datum und Satellit (nur bei mehr als einem Bild im Datensatz), ausgegraut an den Enden, ←/→ bei Fokus in der Zeile; der Kopf nennt das angezeigte Bild. | `ViewerControls.tsx`, `index.css` |
+| d | **Darstellung je Bild und je Datensatz.** `viewLooks` und `savedLooks` leben nur so lange wie die Ansicht; „Apply“ gilt dem angezeigten Bild, „Save“ allen Bildern des Datensatzes und erscheint nur bei mehr als einem Bild (oder bei der Ansicht eines Layers, dort auch wie bisher ins Layer). Bei drei Bändern fehlt das Feld Colormap. | `store.ts`, `ViewerControls.tsx`, `datasets.ts`, `render.ts`, `index.css` |
+| e | **Anheften.** „Add to layers“ das angezeigte Bild, neu „Add all to layers“ alle Bilder in einem Schritt (Datensatz für Datensatz, früheste zuerst, das letzte oben); Name `Datensatz · Gruppe · Satellit`; jedes Layer mit der Darstellung seines Bildes. | `store.ts`, `ViewerControls.tsx`, `index.css` |
+| f | **Browserprüfung, Doku, Log.** | `e2e/view-steps.cjs`, Doku |
+
+### 8.1 Auslegungen (Vorschlag, gelten bis Otto widerspricht)
+
+1. **Ein Layer je Bild**, auch bei „View merged scenes“ (ganze Szene): heute war es dort ein Layer für alles. Das folgt aus „Add to layers = nur das angezeigte Bild“.
+2. **Haken sind Szenen-IDs.** Ein Haken gilt für die Szene jedes Datensatzes mit dieser ID; die Ansicht nimmt die Szene des ersten Datensatzes und sagt es (Frage 10, Option 1). Mit heutigen Datensätzen kommt das nicht vor.
+3. **Die Spanne, die beim Öffnen gemessen wird, steht wie bisher in den Feldern** und nicht in der Darstellung. Weil sie von der Vorgabe der anderen Bilder abweicht, ist „Save“ gleich nach dem Öffnen frei und würde diese Spanne für alle Bilder des Datensatzes übernehmen. Die anderen Bilder zeigen beim Durchschalten ihre Darstellung (Vorgabe oder gespeichert), ohne zu messen.
+4. **Zeile ohne Datum:** Ein Bild ohne Zeitpunkt (DEM) zeigt den Namen seiner Gruppe statt des Datums.
+5. **Ansicht eines Layers** (`selectLayer`): ein Bild, keine Zeile; „Save“ wie bisher ins Layer und zugleich für den Datensatz.
+6. **Download und Process der Leiste der Auswahl** sind gesperrt, solange im offenen Datensatz nichts angehakt ist (Grund im Tooltip); vorher hätten sie auf die offene Gruppe zurückgegriffen.
+7. **Die Leiste der Auswahl** nennt die Zahl über alle Datensätze und die Aufteilung im Tooltip („Sentinel-2 L2A 2 · Copernicus DEM 1“).
+
+### 8.2 Tests
+
+- `viewImages.test.ts` (neu): Bilder aus Gruppen und Datensätzen, Ordnung, Satelliten, DEM ohne Datum, Szenen ohne Gruppe, leere Eingabe, Schlüssel.
+- `store.view.test.ts` (neu, 25): Auswahl über Datensätze, erstes Bild, Durchschalten ohne Umlauf, Datensatz wählen, unbekannter Schlüssel, außerhalb einer Ansicht, Auge und Haken bleiben, Messung im Datensatz des Bildes, gleiche ID, Datensatz ohne Registry-Eintrag, Darstellung (Apply nur das Bild, Save alle Bilder des Datensatzes und keinen anderen, nur für die Dauer der Ansicht, Anheften mit der Darstellung des Bildes).
+- `components/ViewerControls.steps.test.tsx` (neu, 24): Zeile, Dropdown und Pfeile samt Ausblenden, Tastatur, Auge unverändert, Save (Sichtbarkeit, Sperre mit Grund, Wirkung), kein Colormap-Feld bei drei Bändern, „Add all to layers“, Namen, Platz oben.
+- `components/ViewBar.test.tsx` erweitert: Zahl und Aufteilung, Download und Process beim offenen Datensatz.
+- Angepasst, weil sich das Verhalten ändert (Nachtrag NM4-53): `store.test.ts`, `store.stack.test.ts`, `store.mosaic.test.ts` („Add to layers“ heftet das angezeigte Bild, „Add all“ jedes Bild), `store.ticks.test.ts` (ein Zuschnitt nimmt die Haken aller Datensätze der Szenen ab, aus denen er besteht).
+- **Gegenprobe:** Die neuen und geänderten Tests gegen den Stand von main: 58 von 185 schlagen fehl, alle im Verhalten dieser Aufgabe.
+- Browser (Chromium 153, echtes MapLibre, erfundene Antworten, `e2e/view-steps.cjs`): hell/dunkel × breit/schmal grün: erstes Bild die offene Gruppe, „‹“/„›“ zeigen den früheren und den späteren Überflug (Farbe in der Mitte der Karte), Pfeile an den Enden ausgegraut, ←/→ bei Fokus, Dropdown zeigt das DEM, Colormap-Feld nur dort, Apply gilt dem Bild, „Add to layers“ 1 Layer, „Add all to layers“ 4 Layer mit Satellit im Namen, alles innerhalb des Feldes. Dabei fiel auf, dass das Dropdown ungestaltet war; es hat jetzt die Gestalt der anderen Felder. Eine Meldung der Statusleiste ragt im schmalen Fenster 6 px über den Rand; das ist nicht Teil dieser Aufgabe und im Skript ausgenommen.
+
+### 8.3 Prüfanleitung für Otto
+
+1. Sentinel-2 über zwei Überflüge suchen (zwei Tage), dazu das Copernicus DEM; in beiden Datensätzen Szenen anhaken, eine AOI zeichnen.
+2. „Crop & merge to AOI“: Die Karte zeigt den Überflug der offenen Gruppe. Unter dem Kopf steht `‹ 2025-07-29 · S2A ›` und das Dropdown mit „Sentinel-2 L2A“ und „Copernicus DEM“.
+3. „‹“ und „›“: Der frühere bzw. spätere Überflug erscheint; am Ende ist der Pfeil ausgegraut. Mit dem Fokus auf einem Pfeil schalten ←/→ ebenso.
+4. Dropdown auf „Copernicus DEM“: Das DEM erscheint, keine Pfeile, das Feld Colormap ist da. Bei Sentinel-2 (RGB) fehlt es.
+5. Bei Sentinel-2 vmin/vmax ändern, „Apply“: nur dieser Überflug ändert sich; „›“ zeigt den anderen noch mit der Vorgabe. „Save“: Jetzt zeigen alle Überflüge von Sentinel-2 die Werte, das DEM nicht.
+6. „Add to layers“: ein Layer, der angezeigte Überflug. „Add all to layers“: je Bild ein Layer, das letzte Bild des letzten Datensatzes steht oben, der Name nennt den Satelliten.
+7. „Clear“, dann wieder „Crop & merge to AOI“: Die Vorgabe gilt wieder (RGB ohne Colormap, nichts gespeichert).
+8. Auge der Ansicht aus und durchschalten: bleibt aus. Dunkel und hell, schmales Fenster.
