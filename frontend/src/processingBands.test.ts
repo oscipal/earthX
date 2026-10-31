@@ -28,6 +28,9 @@ const source = (asset: string, names: string[] = []): BandSource => ({
 const mathStep = (key: number, name: string, expression: string): DraftStep => ({
   key, op: 'band_math', opVersion: 2, values: { expression, name },
 });
+const maskValuesStep = (key: number, band: string): DraftStep => ({
+  key, op: 'mask_values', opVersion: 1, values: { band, condition: 'lt', values: '0.2' },
+});
 const normalizeStep = (key: number, bands: string): DraftStep => ({
   key, op: 'normalize', opVersion: 2, values: { in_min: '0', in_max: '1', out_min: '0', out_max: '1', clip: false, bands },
 });
@@ -103,6 +106,16 @@ describe('renaming a result', () => {
     expect(renamed[2].values.bands).toBe('NDVI, red');
     expect(renamed[3].values.expression).toBe('NDVI + result_1');
     expect(steps[1].values.expression).toBe('result * 2');
+  });
+
+  it('follows into the band of the mask-by-value steps after the step, and leaves the others alone', () => {
+    const steps = [mathStep(1, 'result', 'nir'), maskValuesStep(2, 'result'), maskValuesStep(3, 'red')];
+    const renamed = renameResult(steps, 1, 'result', 'NDVI');
+    expect(renamed[1].values).toEqual({ band: 'NDVI', condition: 'lt', values: '0.2' });
+    expect(renamed[2]).toBe(steps[2]);
+    // A mask before the step cannot see the band.
+    const before = [maskValuesStep(1, 'result'), mathStep(2, 'result', 'nir')];
+    expect(renameResult(before, 2, 'result', 'NDVI')[0]).toBe(before[0]);
   });
 
   it('leaves a step before the step that adds the band alone', () => {

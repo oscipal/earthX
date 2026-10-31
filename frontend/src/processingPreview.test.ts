@@ -993,6 +993,16 @@ describe('namesNeeded', () => {
     expect([...namesNeeded(steps, 'a')]).toEqual(['red']);
   });
 
+  it('reads the band a mask by value looks at, whichever band is shown', () => {
+    const mask = (key: number, band: string): DraftStep => ({ key, op: 'mask_values', opVersion: 1, values: { band, condition: 'lt', values: '0.2' } });
+    expect([...namesNeeded([mask(1, 'red')], 'blue')].sort()).toEqual(['blue', 'red']);
+    // A result it looks at is read through its expression; one that comes after the mask is no concern of it.
+    const steps = [named(1, 'ndvi', '(nir - red) / (nir + red)'), mask(2, 'ndvi')];
+    expect([...namesNeeded(steps, 'blue')].sort()).toEqual(['blue', 'nir', 'red']);
+    expect([...namesNeeded([mask(1, 'scl'), named(2, 'a', 'red + 1')], 'a')].sort()).toEqual(['red', 'scl']);
+    expect([...namesNeeded([mask(1, '')], 'blue')]).toEqual(['blue']);
+  });
+
   it('keeps the bands a normalize or a reproject is given', () => {
     const steps = [named(1, 'ndvi', 'nir - red'), normalize(2, { bands: 'ndvi' }), reproject()];
     expect([...namesNeeded(steps, 'ndvi')].sort()).toEqual(['nir', 'red']);
