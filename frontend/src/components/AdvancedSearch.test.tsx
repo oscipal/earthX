@@ -755,6 +755,13 @@ describe('"Within AOI"', () => {
     expect(stored()).toEqual({ kind: 'range', from: '', to: '20' });
   });
 
+  it('goes off with the dates for a dataset that is not ticked as well', () => {
+    useAppStore.setState({ searchFilters: { optical: { 'test:cloud': { kind: 'range', from: '', to: '20', within: true } } } });
+    pick('elevation');
+    act(() => useAppStore.setState({ dateFrom: '' }));
+    expect(stored()).toEqual({ kind: 'range', from: '', to: '20' });
+  });
+
   it('is not locked by a long AOI: the search sends its box and the AOI beside it', () => {
     const ring = Array.from({ length: 1200 }, (_, i) => [10.5 + 0.4 * Math.cos((i / 1200) * 2 * Math.PI), 47.5 + 0.4 * Math.sin((i / 1200) * 2 * Math.PI)]);
     useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } });

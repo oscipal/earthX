@@ -311,7 +311,7 @@ describe('the walk through the answers', () => {
     steps = [{ checked: 500, found: 0, unreadable: 2, limit: true }];
     await state().runSearch();
     expect(state().notice).toBe(
-      'No scenes within the AOI limit in this date range. Checked 500 scenes. Narrow the date range to search further. 2 scenes could not be checked.',
+      'No scenes within the AOI limit in this date range (500 checked). Checked 500 scenes. Narrow the date range to search further. 2 scenes could not be checked.',
     );
     expect(state().sections[0].items).toEqual([]);
   });
@@ -363,6 +363,7 @@ describe('ending the walk', () => {
       if (asked.length === 1) {
         signal = init?.signal;
         asked.push(request);
+        stepIndex += 1;
         await new Promise<void>((resolve, reject) => {
           signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
           void held.then(resolve);
@@ -378,6 +379,7 @@ describe('ending the walk', () => {
     steps = [
       { scenes: [scene('a')], checked: 100, next: 't2' },
       { scenes: [scene('b')], checked: 200, next: 't3' },
+      { scenes: [scene('c')], checked: 300 },
     ];
     const hold = holdSecond();
     const run = state().runSearch();
@@ -398,8 +400,10 @@ describe('ending the walk', () => {
     expect(state().notice).toContain('1 scene(s)');
 
     await state().loadMore();
-    // The request that was dropped is asked again from the token before it.
-    expect(asked[2].token).toBe('t2');
+    // The request that was dropped is asked again from the token before it, and the walk then ends.
+    expect(asked.map((a) => a.token)).toEqual([undefined, 't2', 't2']);
+    expect(sceneIds()).toEqual(['a', 'c']);
+    expect(state().searchContext?.nextToken).toBeNull();
   });
 
   it('"Stop" before the first answer leaves a search without results and no error', async () => {
@@ -419,6 +423,55 @@ describe('ending the walk', () => {
     expect(state().searching).toBe(false);
     expect(state().aoiWalking).toBe(false);
     expect(sceneIds()).toEqual([]);
+  });
+
+  it('"Stop" with nothing found says so, and does not claim that nothing is within the limit', async () => {
+    steps = [{ checked: 100, found: 0, next: 't2' }];
+    let hold = false;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      if (asked.length >= 1) {
+        hold = true;
+        asked.push(JSON.parse(init!.body as string));
+        return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+      }
+      return Promise.resolve(json(respond(JSON.parse(init!.body as string))));
+    });
+    const run = state().runSearch();
+    await vi.waitFor(() => expect(hold).toBe(true));
+    state().stopSearch();
+    await run;
+    expect(state().notice).toBe('Search stopped: 0 found (100 checked).');
+    expect(state().searchContext?.nextToken).toBe('t2');
+    expect(state().aoiWalking).toBe(false);
+  });
+
+  it('a failing answer while nothing is found is a failed search, not "no scenes within the limit"', async () => {
+    steps = [{ checked: 100, found: 0, next: 't2' }];
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      asked.length >= 1 ? json({ detail: 'upstream broke' }, 502) : json(respond(JSON.parse(init!.body as string))),
+    );
+    await state().runSearch();
+    expect(state().error).toContain('Search failed');
+    expect(state().notice).toBeNull();
+    expect(state().searchContext).toBeNull();
+  });
+
+  it('a change of the dates before the first answer ends the search with a word, not in silence', async () => {
+    steps = [{ scenes: [scene('a')], checked: 100 }];
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      asked.push(JSON.parse(init!.body as string));
+      await held;
+      return json(body(steps[0]));
+    });
+    const run = state().runSearch();
+    await vi.waitFor(() => expect(asked).toHaveLength(1));
+    state().setDateTo('2026-08-15');
+    release();
+    await run;
+    expect(state().notice).toBe('Search stopped.');
+    expect(state().aoiWalking).toBe(false);
   });
 
   it('a change of the dates ends the walk and the search cannot be continued, but what was found stays', async () => {
@@ -506,6 +559,45 @@ describe('ending the walk', () => {
     expect(state().sections).toEqual([]);
     expect(state().aoiWalking).toBe(false);
     expect(state().searching).toBe(false);
+  });
+});
+
+describe('a search over several datasets', () => {
+  const NONE = { optical: { checked: 100, found: 0, unreadable: 0, limit_reached: false } };
+
+  it('keeps the list where the user left it while answers without a scene come in', async () => {
+    reset(['optical', 'radar']);
+    steps = [
+      { checked: 0, next: 't2', byCollection: NONE },
+      { checked: 0, next: 't3', byCollection: NONE },
+      { checked: 0, byCollection: NONE },
+    ];
+    const docks: (string | null)[] = [];
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      docks.push(state().dock);
+      if (docks.length === 2) useAppStore.setState({ dock: 'controls' });
+      return json(respond(JSON.parse(init!.body as string)));
+    });
+    await state().runSearch();
+    // The list opened with the first answer, the user went back to the controls, and the next answers left it so.
+    expect(docks).toEqual([null, 'results', 'controls']);
+    expect(state().dock).toBe('controls');
+  });
+
+  it('asks the nearest date for a dataset searched without the limit, with no AOI of the limit in it', async () => {
+    reset(['optical', 'radar']);
+    const ring = Array.from({ length: 1200 }, (_, i) => [10.5 + 0.4 * Math.cos((i / 1200) * 2 * Math.PI), 47.5 + 0.4 * Math.sin((i / 1200) * 2 * Math.PI)]);
+    useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } });
+    steps = [{ scenes: [scene('a')], checked: 10, byCollection: { optical: { checked: 10, found: 1, unreadable: 0, limit_reached: false } } }];
+    await state().runSearch();
+    asked.length = 0;
+    state().setOpenSection('radar');
+    await vi.waitFor(() => expect(asked.length).toBeGreaterThan(0));
+    for (const request of asked) {
+      expect(request.collections).toEqual(['radar']);
+      expect(request).not.toHaveProperty('earthx:aoi');
+      expect(request).not.toHaveProperty('query_by_collection');
+    }
   });
 });
 

@@ -736,7 +736,12 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
   if (ctx.features.length === 0) {
     // The limit on the clouds inside the AOI is what leaves nothing (DS-03b); the notice of a search over one dataset
     // says it (`aoiHints` adds how far it got).
-    if (datasets.length === 1 && measuresAoi(ctx.query, datasets[0].id)) return `${NONE_WITHIN_NOTE}.`;
+    if (datasets.length === 1 && measuresAoi(ctx.query, datasets[0].id)) {
+      const counts = ctx.answer?.aoiFilter?.[datasets[0].id];
+      const checked = counts ? ` (${counts.checked} checked)` : '';
+      // A search that was stopped (a token is left) has no verdict.
+      return ctx.nextToken !== null ? `Search stopped: 0 found${checked}.` : `${NONE_WITHIN_NOTE}${checked}.`;
+    }
     const base =
       datasets.length === 1 || (!ctx.dateFrom && !ctx.dateTo)
         ? 'No scenes found for this area.'
@@ -906,7 +911,7 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
     current.notes.filter((note) => note !== NO_SCENES_NOTE && note !== LOAD_MORE_NOTE);
   try {
     // Only the dataset's own filters: the server refuses a filter for a collection the search does not name.
-    const { queryByCollection, ...rest } = ctx.query;
+    const { queryByCollection, aoi: _aoi, ...rest } = ctx.query;
     const query = { ...rest, collections: [datasetId], ...queryByCollectionOf({ [datasetId]: queryByCollection?.[datasetId] ?? {} }) };
     const found = await findFallback(
       (w) =>
@@ -965,30 +970,42 @@ async function walkAoiSearch(
   set({ aoiWalking: true });
   // The list is laid out as a new search until scenes are in it; from then on the scenes, ticks and open time step stay.
   let laidOut = !fresh;
-  const known = new Set(base.features.map(sceneKey));
+  let stopped = false;
+  let failed = false;
   const show = (soFar: PagesSoFar) => {
     if (gen !== searchGen) return;
     const kept = unchanged();
+    // One of a scene, whichever answer brings it again.
+    const features = new Map(base.features.map((it) => [sceneKey(it), it] as const));
+    for (const it of soFar.features) if (!features.has(sceneKey(it))) features.set(sceneKey(it), it);
     const ctx: SearchContext = {
       ...base,
-      features: [...base.features, ...soFar.features.filter((it) => !known.has(sceneKey(it)))],
+      features: [...features.values()],
       answer: combineAnswers(base.answer, soFar),
       numberMatched: base.numberMatched ?? soFar.numberMatched,
       nextToken: kept ? soFar.nextToken : null,
       openCollections: soFar.openCollections,
     };
     showSearchResults(set, get, ctx, laidOut);
-    laidOut = ctx.features.length > 0 || !fresh;
+    // A list of several datasets is there from the first answer on; it is not laid out again for each of them.
+    laidOut = ctx.features.length > 0 || !fresh || hasResultsPanel(get().sections);
     // The filters or the area changed before the first answer: the search on screen cannot be continued.
     if (!kept) controller.abort();
   };
   try {
     await api.searchAllPages(base.query, MAX_SEARCH_ITEMS, token, { signal: controller.signal, onPage: show });
   } catch (e) {
-    if (gen !== searchGen || isAbort(e)) return;
-    // Nothing of the search is on screen yet: the search failed. Otherwise what is found stays.
-    if (fresh && get().searchContext === null) throw e;
+    if (gen !== searchGen) return;
+    if (isAbort(e)) {
+      stopped = true;
+      return;
+    }
+    // Nothing is found yet: the search failed. Otherwise what is found stays.
     const now = get().searchContext;
+    if (fresh && (now === null || now.features.length === 0)) {
+      failed = true;
+      throw e;
+    }
     if (now) set({ searchContext: { ...now, nextToken: null }, loadMoreError: 'Could not load more results — search again.' });
   } finally {
     if (walk === controller) walk = null;
@@ -996,7 +1013,9 @@ async function walkAoiSearch(
       set({ aoiWalking: false });
       // The verdict the list could not give while it walked.
       const now = get().searchContext;
-      if (now) showSearchResults(set, get, now, true);
+      if (now && !failed) showSearchResults(set, get, now, true);
+      // Stopped, or the search changed, before there was anything to show: it would end without a word.
+      else if (stopped && !failed) set({ notice: 'Search stopped.' });
     }
   }
 }
@@ -2464,6 +2483,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           // Filters or area changed while the first answer was on its way.
           unchanged: () => JSON.stringify(filterQueriesOf(get(), ids)) === JSON.stringify(asked),
         });
+        // A dataset searched without the limit gets its nearest date as always; one searched with it does not (KE4).
+        const { openSectionId } = get();
+        if (openSectionId && get().searchContext) await runFallback(set, get, openSectionId, false);
         return;
       }
       const page = await api.searchAllPages(query, MAX_SEARCH_ITEMS);
@@ -2504,6 +2526,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (gen !== searchGen) return;
       set({
         error: `Search failed: ${(e as Error).message}`,
+        notice: null,
         sections: [],
         searchContext: null,
         ...openSectionState(null),
@@ -2531,7 +2554,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (anyMeasuresAoi(ctx.query)) {
       try {
         await walkAoiSearch(set, get, { base: ctx, token: ctx.nextToken, fresh: false, unchanged: () => true });
-        if (gen === searchGen) set({ loadMoreUsed: true });
+        if (gen === searchGen) {
+          set({ loadMoreUsed: true });
+          const { openSectionId } = get();
+          if (openSectionId) void runFallback(set, get, openSectionId, false);
+        }
       } finally {
         if (gen === searchGen) set({ loadingMore: false });
       }

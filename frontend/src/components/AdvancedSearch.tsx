@@ -214,19 +214,20 @@ export default function AdvancedSearch() {
   useEffect(() => {
     if (offers.length === 0) setOpen(false);
   }, [offers.length]);
-  // The area or the dates go while the switch is on: it goes off with them, so that it does not come back on its own
-  // with the next area (the search does not use it meanwhile either).
+  // The area or the dates go while the switch is on: it goes off with them, in every dataset, so that it does not come
+  // back on its own with the next area (the search does not use it meanwhile either).
   useEffect(() => {
     if (lock === null) return;
-    for (const offer of offers) {
-      for (const filter of offer.filters) {
-        const input = searchFilters[offer.dataset.id]?.[filter.property];
+    for (const dataset of datasets) {
+      if (!dataset.viewable) continue;
+      for (const filter of searchFiltersOf(dataset.collection)) {
+        const input = searchFilters[dataset.id]?.[filter.property];
         if (input?.kind === 'range' && withinOn(filter, input)) {
-          setSearchFilter(offer.dataset.id, filter.property, { kind: 'range', from: input.from, to: input.to });
+          setSearchFilter(dataset.id, filter.property, { kind: 'range', from: input.from, to: input.to });
         }
       }
     }
-  }, [lock, offers, searchFilters, setSearchFilter]);
+  }, [lock, datasets, searchFilters, setSearchFilter]);
   if (offers.length === 0) return null;
 
   const shown = offers.find((o) => o.dataset.id === shownId) ?? offers[0];
