@@ -57,7 +57,8 @@
 - **Teil 8, Liste der geschlossenen Stellen:** Layer-Einstellungen, Processing-Panel, Job-Details, Download-Fenster (drei Fassungen), „Advanced search“. Nicht umgestellt, weil sie nichts schließen: „Clear search results“, „✕ Clear“ der Ansicht, Entfernen von Layern, Schritten, Gruppen und Links, Toasts, das ✕ im Eingabefeld.
 - **Aufräumen älterer Browser-Skripte:** `layer-settings`, `view-index`, `band-dropdowns`, `layer-rows` an die neuen Knöpfe und die Reihenfolge angepasst; `layer-settings` hat zwei Fälle, die schon an „Apply to all“ (#257) scheitern.
 
-**Offen (Rückfrage an Otto, Backend):**
+**Teile 4 und 7 (Antwort Otto, 1.11.2026: Backend erweitern, jeweils Option 1):** umgesetzt, im selben PR.
 
-- **Teil 4:** Woher kommen beliebige Perzentile? Item-Statistik kann `p=` ganzzahlig; die AOI-Messung der Vorschau liefert fest 1/2/5/25/50/75/95/98/99; das Ergebnisdokument nur 2 und 98.
-- **Teil 7:** Wer liefert Auflösung, CRS und Methode je Band vor dem Start? Heute kennt das nur das Backend (`processing/source.py::common_grid`: `nearest` auf das feinste Raster bei ganzzahligem Vielfachen und gleichem CRS; Szenen anderer UTM-Zonen werden per `nearest` in die Zone der meisten Szenen gewarpt).
+- **Teil 4:** Backend `percentile_1`…`percentile_99` in der AOI-Messung und neue Route `GET /results/{id}/statistics` (adr/0006 Nachtrag NM4-65); Frontend: Umschalter „value / %“ am Feld vmin in `RenderFields`, die Werte kommen in der Ansicht aus der Item-Statistik (`p=`), in der Vorschau aus der Messung (sonst `p=` auf der ersten Szene), im Ergebnis-Layer aus der neuen Route; der Look behält die Eingabe als `percent`.
+- **Teil 7:** Backend `resampling` in der Kostenschätzung (adr/0014 Nachtrag NM4-65); Frontend: Warnung zum Bestätigen vor „Start job“, einmal je Auftrag; das Rufzeichen ist entfernt.
+- **Offen:** Eine Szene im selben CRS mit anderer Pixelgröße oder anderem Ursprung warpt der Job; die Schätzung erkennt das aus den Item-Metadaten nicht sicher und meldet es nicht. Soll `scenes` das später über `proj:transform`/`proj:bbox` mit nennen?
