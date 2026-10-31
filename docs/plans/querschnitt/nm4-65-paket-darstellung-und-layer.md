@@ -24,6 +24,12 @@
 
 8. **Schließen überall gleich** (Otto, 31.10.2026: „das < close button beim layer soll auch ein kleines rotes "x" werden (consistency!!)“): Der Knopf „‹ Close“ in den Einstellungen eines Layers wird ein kleines rotes „x“ (Tooltip „Close“). Die Session sucht alle Stellen, an denen etwas geschlossen wird (Panels, Popups wie „Advanced search“, Fenster wie Download, Einstellungen), und stellt sie auf dieselbe Komponente um; Liste im PR. „Clear search results“ (rotes ✕ mit Text) bleibt, wie es ist.
 
+9. **Durchblättern der Layer (Otto, 31.10.2026):** „im layer manager hätt ich im Kopf gerne einen button der das scrollen durch die layer leicht erlaubt. Also es wird dann immer der angeclickte layer ganz oben angezeigt (ohne tatsächlich nach oben zu wandern sondern nur gehighlited, dann kann ich entweder mit den pfeiltasten durchgehen oder mit dem mausrad)“.
+   - Ein Umschalter im Kopf des Layer-Managers (Symbol, Tooltip z. B. „Flip through layers“).
+   - Ist er an, wird der angeklickte bzw. gewählte Layer **auf der Karte** über allen anderen Layern gezeichnet (unter AOI, Zeichnung und Umrissen), ohne dass sich die Reihenfolge in der Liste ändert; seine Zeile ist hervorgehoben.
+   - Mit ↑/↓ oder dem Mausrad **über der Liste** wechselt die Wahl zum nächsten Layer (das Mausrad über der Karte zoomt weiter).
+   - Aus (Umschalter oder Esc): die Karte zeigt wieder die echte Reihenfolge. Sichtbarkeit (Auge) wird respektiert; ausgeblendete Layer werden übersprungen oder kurz gezeigt – im PR vorschlagen.
+
 ## 3. Grenzen
 
 - Oberflächentexte nur Englisch; wenig Text, Erklärungen im Tooltip; nicht Mögliches ausblenden statt ausgrauen.
