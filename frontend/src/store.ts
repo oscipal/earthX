@@ -754,11 +754,12 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
   return `${found} scene(s) in ${steps} time step(s) across ${datasets.length} datasets.`;
 }
 
-// What the search notice adds when the one dataset searched was asked for the cloud share in the AOI: that the limit of
-// scenes it checks is reached, and how many it could not read (DS-03b). With several datasets the heads of their sections say it.
+// What the search notice adds when the one dataset searched was asked for the cloud share in the AOI and found nothing
+// within the limit, so that there is no list to say it: that the limit of scenes it checks is reached, and how many it
+// could not read (DS-03b). Otherwise the head of the dataset in the list says it.
 function aoiHints(ctx: SearchContext, datasets: ViewableDataset[]): string[] {
   const [only] = datasets;
-  const counts = datasets.length === 1 ? ctx.answer?.aoiFilter?.[only.id] : undefined;
+  const counts = datasets.length === 1 && ctx.features.length === 0 ? ctx.answer?.aoiFilter?.[only.id] : undefined;
   if (!counts) return [];
   return [counts.limitReached ? limitNote(counts) : null, counts.unreadable > 0 ? `${unreadableNote(counts)}.` : null].filter(
     (hint): hint is string => hint !== null,

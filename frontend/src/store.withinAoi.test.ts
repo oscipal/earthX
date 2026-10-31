@@ -316,6 +316,12 @@ describe('the walk through the answers', () => {
     expect(state().sections[0].items).toEqual([]);
   });
 
+  it('leaves the hints to the head of the dataset when there is a list to show them in', async () => {
+    steps = [{ scenes: [scene('a')], checked: 500, limit: true, unreadable: 1 }];
+    await state().runSearch();
+    expect(state().notice).toBe('1 scene(s) in 1 time step(s).');
+  });
+
   it('does not look for the nearest date around a range that was searched with the limit (KE4)', async () => {
     steps = [{ checked: 120, found: 0 }];
     await state().runSearch();
