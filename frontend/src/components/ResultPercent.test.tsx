@@ -95,7 +95,7 @@ const typedPercent = (low: string, high: string) => {
 describe('the switch in the settings of a result', () => {
   it('is at vmin, "value" to begin with, and turns the fields into 2 and 98', () => {
     open();
-    expect(unitText()).toBe('absolute value');
+    expect(unitText()).toBe('absolute');
     toggleUnit();
     expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
     expect([...container.querySelectorAll('.vc-field > span')].map((s) => s.textContent)).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);

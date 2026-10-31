@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
 // NM4-65 (Otto, 1.11.2026): "Verschiedene Layer haben verschiedene Boxen. Das darf nicht sein." A layer opened from the layer
-// manager has the box of every layer — its name (with the date), the red x, the fields, "Apply", "Apply to all" and the
-// opacity — and no second row of buttons (pin, process, change image, clear). A view that is still open from the search keeps
+// manager has the box of every layer — its name (with the date), the red x, the fields, "Apply" and "Apply to all" in one row,
+// as before — and no second row of buttons (pin, process, change image, clear) and no further line. A view that is still open from the search keeps
 // all of it, also once its image is pinned.
 
 import { act } from 'react';
@@ -125,9 +125,12 @@ describe('a layer opened from the layer manager', () => {
     expect(container.querySelector('.vc-stepper, .vc-dataset, .vc-eye')).toBeNull();
   });
 
-  it('has the fields and the buttons of the settings of any layer, and the opacity', () => {
-    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
+  it('has the fields and the buttons of the settings of any layer in one row, as before, and no line under it', () => {
+    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap']);
     expect(buttons()).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+    const box = container.querySelector('.scene-view')!;
+    expect([...box.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-head', 'vc-render']);
+    expect(container.querySelector('.vc-opacity, input[type="range"]')).toBeNull();
   });
 
   it('closes with the x: the view goes, the layer stays', () => {
@@ -136,23 +139,12 @@ describe('a layer opened from the layer manager', () => {
     expect(state().layers.map((l) => l.id)).toEqual(['L1']);
   });
 
-  it('sets the opacity of the layer, as the slider of the manager does', () => {
-    const slider = container.querySelector<HTMLInputElement>('.vc-opacity input[type="range"]')!;
-    expect(slider.value).toBe('0.6');
-    expect(slider.title).toBe('Opacity 60%');
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '1');
-      slider.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    expect(state().layers[0].opacity).toBe(1);
-  });
-
   it('is the same box for a layer that is a crop and for one that is not', () => {
     const crop = layer();
     crop.restore = { ...crop.restore, cropToAoi: true, aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } };
     act(() => useAppStore.setState({ cropToAoi: true, viewAoi: crop.restore.aoi, layers: [crop] }));
     expect(container.querySelector('.vc-actions')).toBeNull();
-    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap']);
     expect(buttons()).toEqual(['auto-scale', 'Apply', 'Apply to all']);
   });
 });
@@ -163,12 +155,52 @@ describe('a view that is still open from the search', () => {
     expect(container.querySelector('.vc-actions')).not.toBeNull();
     expect(container.querySelectorAll('.vc-actions > *').length).toBeGreaterThanOrEqual(4);
     expect(container.querySelector('.vc-stepper')).not.toBeNull();
-    expect(container.querySelector('.vc-opacity')).toBeNull();
     mount(false);
     expect(container.querySelector('.vc-actions')).not.toBeNull();
     expect(container.textContent).toContain('Add to layers');
     expect(container.querySelector('.vc-head .close-x')).toBeNull();
     expect(container.textContent).toContain('Clear');
     expect(container.querySelector('.vc-title')!.textContent).not.toContain('2026-07-01 ·');
+  });
+});
+
+// Otto, 1.11.2026: "es sollte auch die Box der Layer verschwinden, wenn ich wieder ein Result anklicke und die Box der Results
+// erscheint".
+describe('a click on a search result while a layer is open from the layer manager', () => {
+  const item2: StacItem = { ...scene, id: 's9' };
+
+  it('closes the box of the layer, so that the box of the results takes its place; the layer stays', () => {
+    mount(true);
+    act(() => useAppStore.setState({ items: [scene, item2], groups: [{ key: ['a'], label: 'a', items: [scene, item2] }] }));
+    expect(state().focusMode).toBe(true);
+    act(() => state().toggleSelected('s9'));
+    expect(state().selectedIds).toEqual(['s9']);
+    expect(state().focusMode).toBe(false);
+    expect(state().viewOfLayer).toBe(false);
+    expect(state().viewLayerId).toBeNull();
+    // `App` shows the box of a view only while `focusMode` holds.
+    expect(state().layers.map((l) => l.id)).toEqual(['L1']);
+  });
+
+  it('does so for "Select all" and a whole group too', () => {
+    mount(true);
+    act(() => useAppStore.setState({ items: [scene, item2], groups: [{ key: ['a'], label: 'a', items: [scene, item2] }], activeGroupIndex: 0 }));
+    act(() => state().selectAllInActiveGroup());
+    expect(state().focusMode).toBe(false);
+  });
+
+  it('does not for taking a tick off: nothing was clicked that the results show', () => {
+    mount(true);
+    act(() => useAppStore.setState({ items: [scene, item2], selectedIds: ['s9'] }));
+    act(() => state().toggleSelected('s9'));
+    expect(state().focusMode).toBe(true);
+  });
+
+  it('leaves a view that is still open from the search as it is, with the tick beside it', () => {
+    mount(false);
+    act(() => useAppStore.setState({ items: [scene, item2], groups: [{ key: ['a'], label: 'a', items: [scene, item2] }] }));
+    act(() => state().toggleSelected('s9'));
+    expect(state().focusMode).toBe(true);
+    expect(container.querySelector('.scene-view .vc-actions')).not.toBeNull();
   });
 });

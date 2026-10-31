@@ -32,7 +32,6 @@ interface Props {
 
 export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder, unit }: Props) {
   const percent = unit?.value === 'percent';
-  const nameId = useId();
   const hint = percent ? undefined : placeholder;
   return (
     <>
@@ -51,23 +50,16 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
         </label>
       )}
       <label className="vc-field vc-num">
-        <span id={nameId}>vmin</span>
-        <input type="number" aria-labelledby={nameId} value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
-        {unit && (
-          // After the field, so that the label names the field and not the switch; the style puts it over "vmin".
-          <select className="vc-unit" aria-label="Range unit" title={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
-            <option value="value">{UNIT_LABELS.value}</option>
-            <option value="percent">{UNIT_LABELS.percent}</option>
-          </select>
-        )}
+        <span>vmin</span>
+        <input type="number" value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
       </label>
       {vmax.after ? (
         <div className="pp-bound">
-          <VmaxField vmax={vmax} placeholder={hint} percent={percent} />
+          <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
           {vmax.after}
         </div>
       ) : (
-        <VmaxField vmax={vmax} placeholder={hint} percent={percent} />
+        <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
       )}
       {colormap && (
         <label className="vc-field">
@@ -95,11 +87,21 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
 // Whole percents: the arrows of the field step by one, and the browser keeps it to 0…100.
 const PERCENT_INPUT = { min: 0, max: 100, step: 1 };
 
-function VmaxField({ vmax, placeholder, percent }: { vmax: Props['vmax']; placeholder?: string; percent: boolean }) {
+// The field "vmax" carries the switch of the range in its label line, to the right of the word and no further right than the
+// field itself (Otto, 1.11.2026).
+function VmaxField({ vmax, placeholder, percent, unit }: { vmax: Props['vmax']; placeholder?: string; percent: boolean; unit: Props['unit'] }) {
+  const nameId = useId();
   return (
     <label className="vc-field vc-num">
-      <span>vmax</span>
-      <input type="number" value={vmax.value} placeholder={placeholder} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmax.onChange(e.target.value)} />
+      <span id={nameId}>vmax</span>
+      <input type="number" aria-labelledby={nameId} value={vmax.value} placeholder={placeholder} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmax.onChange(e.target.value)} />
+      {unit && (
+        // After the field, so that the label names the field and not the switch; the style puts it in the line of the label.
+        <select className="vc-unit" aria-label="Range unit" title={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
+          <option value="value">{UNIT_LABELS.value}</option>
+          <option value="percent">{UNIT_LABELS.percent}</option>
+        </select>
+      )}
     </label>
   );
 }

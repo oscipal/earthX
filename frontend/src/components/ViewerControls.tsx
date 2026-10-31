@@ -80,7 +80,6 @@ export default function ViewerControls() {
   const chooseViewIndex = useAppStore((s) => s.chooseViewIndex);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const viewOfLayer = useAppStore((s) => s.viewOfLayer);
-  const setLayerOpacity = useAppStore((s) => s.setLayerOpacity);
   const pendingIndex = useAppStore((s) => s.pendingIndex);
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
@@ -137,7 +136,8 @@ export default function ViewerControls() {
     <div className="panel viewer-controls scene-view">
       {compact ? (
         // The view of a layer opened from the layer manager has the box of every layer: its name, the way to close it, the fields
-        // and the opacity; no row of buttons for pinning, processing or changing the image (NM4-65, Otto, 1.11.2026).
+        // and nothing under them: one row, as before, with no row of buttons for pinning, processing or changing the image (NM4-65, Otto,
+        // 1.11.2026).
         <div className="vc-head">
           <span className="vc-title" title={layerShownName(layer)}>
             {layerShownName(layer).toUpperCase()}
@@ -309,21 +309,6 @@ export default function ViewerControls() {
             ✕ Clear
           </button>
         </div>
-      )}
-      {compact && layer && (
-        <label className="vc-field vc-opacity">
-          <span>Opacity</span>
-          <input
-            type="range"
-            className="lm-opacity"
-            min={0}
-            max={1}
-            step={0.05}
-            value={layer.opacity}
-            title={`Opacity ${Math.round(layer.opacity * 100)}%`}
-            onChange={(e) => setLayerOpacity(layer.id, Number(e.target.value))}
-          />
-        </label>
       )}
     </div>
   );

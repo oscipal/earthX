@@ -1141,9 +1141,17 @@ function setResultsOnMap(on: boolean) {
 // search and a crop. Unticking changes nothing.
 // Any change of the ticks by a click, of a scene, a group or "Select all", ends the playing of the timeline (NM4-18, Otto,
 // 30.10.2026).
-function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap'>, selectedIds: string[]) {
+// A scene ticked while a layer is open from the layer manager closes the box of that layer: the box of the search results takes
+// its place (NM4-65, Otto, 1.11.2026). A view that is still open from the search stays, with the ticks beside it.
+function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap' | 'viewOfLayer'>, selectedIds: string[]) {
   const ticked = selectedIds.some((id) => !s.selectedIds.includes(id));
-  return { selectedIds, playing: false, selectionBlockClosed: false, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
+  return {
+    selectedIds,
+    playing: false,
+    selectionBlockClosed: false,
+    ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}),
+    ...(ticked && s.viewOfLayer ? LEAVE_FOCUS : {}),
+  };
 }
 
 // What every replacement of the results resets besides the results themselves.

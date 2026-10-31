@@ -203,7 +203,7 @@ function Controls({ layer }: { layer: MapLayer }) {
             </div>
           </>
         )}
-        <label className="vc-field vc-opacity">
+        <label className="vc-field">
           <span>Opacity</span>
           <input
             type="range"

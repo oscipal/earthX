@@ -493,7 +493,7 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
 
   it('has the dropdown at "vmin", and turns the fields into 2 and 98', async () => {
     await ndvi();
-    expect(unitText()).toBe('absolute value');
+    expect(unitText()).toBe('absolute');
     toggleUnit();
     expect(unitText()).toBe('percentile');
     expect(fields().map((f) => f.value)).toEqual(['2', '98']);

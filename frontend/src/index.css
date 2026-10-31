@@ -358,25 +358,40 @@ body.dragging * {
 .vc-num input {
   width: 84px;
 }
-/* The switch of the range (`RenderFields.tsx`, NM4-65 part 4): a small dropdown "absolute value / percentile" in a line of its
-   own over the field "vmin", as wide as its words; it reaches over the empty place above "vmax". The labels of the fields
-   stay in the line under it. */
+/* The switch of the range (`RenderFields.tsx`, NM4-65 part 4): a small dropdown "absolute value / percentile" in the line of the label
+   of "vmax", to the right of the word and no further right than the field (Otto, 1.11.2026). It takes what the word leaves of
+   the width of the field and shows the rest of a long text with "…"; the whole text is its tooltip and its list. */
 .vc-field.vc-num {
   position: relative;
 }
 .vc-field.vc-num .vc-unit {
-  order: -1;
-  align-self: flex-start;
-  width: max-content;
-  max-width: none;
-  height: 20px;
-  margin-bottom: 2px;
-  padding: 0 4px;
+  position: absolute;
+  top: -2px;
+  right: 0;
+  width: auto;
+  min-width: 0;
+  max-width: calc(100% - 31px);
+  height: 16px;
   border-radius: 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0;
   text-transform: none;
+  text-overflow: ellipsis;
+  text-align: right;
+  /* No native arrow, which would take as much room as a letter or two: a small one of its own. */
+  appearance: none;
+  padding: 0 10px 0 3px;
+  line-height: 14px;
+  background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%23889'/%3E%3C/svg%3E") no-repeat right 2px center;
+}
+/* The field vmax is as wide as its word and the dropdown need where the box is its own (the result and the preview; in the view the
+   grid gives the width). */
+.vc-field.vc-num:has(.vc-unit) input {
+  width: 116px;
+}
+.scene-view .vc-field.vc-num:has(.vc-unit) input {
+  width: 100%;
 }
 .vc-field.vc-num .vc-unit:hover,
 .vc-field.vc-num .vc-unit:focus-visible {
@@ -547,15 +562,6 @@ body.dragging * {
 }
 /* The short note under the settings where the index cannot be drawn (`viewIndex.ts`); its tooltip says why. The pale yellow
    of `.hint-text.warn` does not read on the light panel. */
-/* The opacity in the box of a layer opened from the layer manager (NM4-65): a line of its own under the buttons, like the box of a
-   result. */
-.scene-view .vc-opacity {
-  grid-column: 1 / -1;
-}
-.scene-view .vc-opacity .lm-opacity {
-  width: 100%;
-  max-width: 240px;
-}
 .scene-view .vc-head .results-head-right {
   margin-left: auto;
 }
@@ -2243,13 +2249,7 @@ input[type='date']:focus {
 }
 /* The opacity of a result in its view: a slider of its own width. */
 .result-controls .lm-opacity {
-  width: 100%;
-  max-width: 240px;
-}
-/* The opacity has a line of its own under the fields, in the box of a result as in the box of a layer opened from the manager
-   (NM4-65, Otto, 1.11.2026: every layer has the same box). */
-.result-controls .vc-opacity {
-  flex: 1 0 100%;
+  width: 120px;
 }
 
 /* --- the rail and the panels beside it (UI-01 §6.9) --- */

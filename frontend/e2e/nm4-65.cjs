@@ -154,14 +154,19 @@ async function check(browser, { theme, viewport }) {
   if ((await unit.count()) !== 1) problems.push('no dropdown "absolute value / percentile" in the settings of the result');
   else {
     const options = await unit.locator('option').allTextContents();
-    if (options.join() !== 'absolute value,percentile') problems.push(`the options of the unit: ${options}`);
+    if (options.join() !== 'absolute,percentile') problems.push(`the options of the unit: ${options}`);
+    // In the label line of the field vmax, to the right of its word and no further right than its box (Otto, 1.11.2026).
     const unitBox = await unit.boundingBox();
-    const vminBox = await page.locator('.result-controls .vc-num').first().boundingBox();
-    const vminInput = await page.locator('.result-controls .vc-num input').first().boundingBox();
-    if (unitBox.y + unitBox.height > vminInput.y + 0.5) problems.push('the unit dropdown is not over the field vmin');
-    if (unitBox.x < vminBox.x - 0.5) problems.push('the unit dropdown leaves the field to the left');
+    const vmaxLabel = page.locator('.result-controls .vc-num').nth(1);
+    // The box of the word itself (the span is as wide as the field): the range of its text.
+    const vmaxWord = await vmaxLabel.locator('span').evaluate((el) => { const range = document.createRange(); range.selectNodeContents(el); const r = range.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });
+    const vmaxInput = await vmaxLabel.locator('input').boundingBox();
+    if (unitBox.y + unitBox.height > vmaxInput.y + 0.5) problems.push('the unit dropdown is not in the label line of vmax');
+    if (Math.abs(unitBox.y + unitBox.height / 2 - (vmaxWord.y + vmaxWord.height / 2)) > 8) problems.push('the unit dropdown is not in the row of the word vmax');
+    if (unitBox.x + unitBox.width > vmaxInput.x + vmaxInput.width + 0.5) problems.push(`the unit dropdown reaches beyond the box of vmax: ${unitBox.x + unitBox.width} against ${vmaxInput.x + vmaxInput.width}`);
+    if (unitBox.x < vmaxWord.x + vmaxWord.width - 0.5) problems.push('the unit dropdown covers the word vmax');
     const text = await unit.evaluate((el) => el.selectedOptions[0].textContent);
-    if (text !== 'absolute value') problems.push(`the unit starts as "${text}"`);
+    if (text !== 'absolute') problems.push(`the unit starts as "${text}"`);
     await unit.selectOption('percent');
     const fields = await page.locator('.result-controls .vc-num input').evaluateAll((els) => els.map((e) => e.value));
     if (fields.join() !== '2,98') problems.push(`the fields in percentiles: ${fields}`);
@@ -244,7 +249,9 @@ async function check(browser, { theme, viewport }) {
   await page.waitForSelector('.scene-view .vc-apply');
   if ((await page.locator('.scene-view .vc-actions').count()) !== 0) problems.push('a layer opened from the manager has a row of buttons');
   if ((await page.locator('.scene-view .vc-head .close-x').count()) !== 1) problems.push('no red x in the box of the layer');
-  if ((await page.locator('.scene-view .vc-opacity input').count()) !== 1) problems.push('no opacity in the box of the layer');
+  if ((await page.locator('.scene-view .vc-opacity, .scene-view input[type="range"]').count()) !== 0) problems.push('the box of the layer has a line more than its one row');
+  const children = await page.locator('.scene-view > *').evaluateAll((els) => els.map((e) => e.className.split(' ')[0]));
+  if (children.join() !== 'vc-head,vc-render') problems.push(`the box of the layer holds ${children}, not the head and one row`);
   const title = await page.locator('.scene-view .vc-title').textContent();
   if (title !== 'OPTICAL · A CROP · 2026-07-01') problems.push(`the title of the box: ${title}`);
   const boxBox = await page.locator('.scene-view').boundingBox();
