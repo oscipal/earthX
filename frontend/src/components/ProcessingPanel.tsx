@@ -36,7 +36,16 @@ import {
   rescaleOf,
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
-import { EXPIRED_PROCESS_TEXT, orderView, type PartOutcome, sceneCountOf, selectionState, useProcessingStore, type OrderView } from '../processingStore';
+import {
+  EXPIRED_PROCESS_TEXT,
+  orderView,
+  type PartOutcome,
+  sceneCountOf,
+  selectionState,
+  SEVERAL_PASSES_TEXT,
+  useProcessingStore,
+  type OrderView,
+} from '../processingStore';
 import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
@@ -57,6 +66,7 @@ const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(mess
 const RERUN_TIP =
   'The steps of the result are run again from the scenes, then yours. Values can differ in the last bit from a calculation on the saved file (float64 in the chain, float32 in the file).';
 const FIXED_TIP = 'Fixed by the result.';
+const CROP_TIP = 'Fixed by the crop.';
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
 
@@ -327,7 +337,7 @@ function FixedEntry({ view }: { view: OrderView }) {
       )}
       <div className="pp-toggle" role="group" aria-label="Area">
         <span className="pp-help">Area:</span>
-        <span className="pp-fixed" title={FIXED_TIP}>
+        <span className="pp-fixed" title={from ? FIXED_TIP : CROP_TIP}>
           <span aria-hidden="true">🔒 </span>
           {view.fixed?.aoi ? 'AOI only' : 'Whole scene'}
         </span>
@@ -616,8 +626,11 @@ export default function ProcessingPanel() {
     p.area === 'scene' &&
     (refusals.some((r) => r!.status === 413 && r!.message !== memory) ||
       (batch?.some((part) => part.refusal?.status === 413 && !isMemoryRefusal(part.refusal.message)) ?? false));
-  const startTitle =
-    view.output.length === 0
+  // A crop that is one object cannot be split into passes: there is nothing to start.
+  const severalPasses = view.fixed !== null && view.passes.length > 1;
+  const startTitle = severalPasses
+    ? SEVERAL_PASSES_TEXT
+    : view.output.length === 0
       ? EMPTY_OUTPUT
       : memory
         ? memory
@@ -694,7 +707,8 @@ export default function ProcessingPanel() {
                   The scenes are merged into one mosaic first; the steps run on the mosaic.
                 </p>
               )}
-              {view.runAs === 'one' && view.passes.length > 1 && (
+              {view.runAs === 'one' && view.passes.length > 1 && view.fixed && <p className="hint-text error">{SEVERAL_PASSES_TEXT}</p>}
+              {view.runAs === 'one' && view.passes.length > 1 && !view.fixed && (
                 <>
                   <label className="vc-field pp-field">
                     Pass
@@ -846,8 +860,8 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="ghost-btn"
-              disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock}
-              title={crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost'}
+              disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock || severalPasses}
+              title={severalPasses ? SEVERAL_PASSES_TEXT : (crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost')}
               onClick={() => void p.reviewOrder()}
             >
               {p.reviewing ? 'Reviewing…' : 'Review'}

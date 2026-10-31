@@ -23,7 +23,6 @@ const RESULT = 'ZyXwVuTsRqPoNmLkJiHg_-';
 const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
 const NEW_JOB = 'QrStUvWxYzAbCdEfGhIj_-';
 
-const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 const STAT = { count: 900, min: 0.01, max: 0.9, percentile_2: 0.05, percentile_98: 0.7, unit: null };
 
 const COLLECTION = {

@@ -673,6 +673,8 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
 // Why a layer cannot be the start of an order, or `null`. A picture made from
 // scenes is no scene; the licence is the dataset's, as for the selection. A result can be, where the browser keeps
 // the order of its job (adr/0019: F2); it needs no more than that, an expired result is run from the scenes all the same (F4).
+// A job takes the scenes of one pass (M4-12a F6), and a crop that is one object has nothing to pick from.
+export const SEVERAL_PASSES_TEXT = 'This crop covers more than one pass, and a job takes the scenes of one.';
 export const NO_COPY_TEXT = 'No copy of the original order is kept in this browser. Open its recipe.json instead.';
 export const PROCESS_RESULT_TEXT = 'Process further';
 export const EXPIRED_PROCESS_TEXT = 'Expired: runs everything again from the scenes.';
@@ -965,6 +967,15 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       });
     });
   };
+
+  // The panel for a layer or a view: a crop merged and cut to its AOI is one object, so its scenes and area are fixed and
+  // there is one job (NM4-06); anything else starts from the scenes and "Whole scene".
+  const openCrop = (fixed: Fixed | null, extraScenes: ExtraScenes) =>
+    get().openProcessing({
+      area: fixed ? 'aoi' : 'scene',
+      extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
+      ...(fixed ? { fixed } : {}),
+    });
 
   // The order as the draft, on its scenes and area: what "Open in panel", a link and "process further" share (adr/0019). The
   // dataset first (a new dataset drops the draft), then the scenes (fetched one by one where the results lack them), the area
@@ -1358,20 +1369,17 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       useAppStore.getState().activateLayerContext(layerId);
       const extraScenes = await selectScenes(layer.restore.itemIds, 'this layer');
       if (!extraScenes) return;
-      get().openProcessing({
-        area: layer.restore.cropToAoi && isArea(layer.restore.aoi) ? 'aoi' : 'scene',
-        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
-      });
+      // A layer merged and cut to its AOI is one object (NM4-06).
+      const { cropToAoi, aoi } = layer.restore;
+      openCrop(cropToAoi && isArea(aoi) ? { itemIds: layer.restore.itemIds, aoi, result: null } : null, extraScenes);
     },
     processFocusView: async () => {
       useAppStore.getState().activateViewContext();
       const app = useAppStore.getState();
       const extraScenes = await selectScenes(Object.keys(app.downloaded), 'this view');
       if (!extraScenes) return;
-      get().openProcessing({
-        area: app.cropToAoi && isArea(app.viewAoi) ? 'aoi' : 'scene',
-        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
-      });
+      const { cropToAoi, viewAoi } = app;
+      openCrop(cropToAoi && isArea(viewAoi) ? { itemIds: Object.keys(app.downloaded), aoi: viewAoi, result: null } : null, extraScenes);
     },
     setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch }, rangeEdited: true })),
     applyRange: () => {
