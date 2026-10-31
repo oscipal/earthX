@@ -1,7 +1,17 @@
 import { create } from 'zustand';
 
 import * as api from './api';
-import type { CoverageResponse, ResolutionFactor } from './api';
+import type { CoverageResponse, PagesSoFar, ResolutionFactor } from './api';
+import {
+  anyMeasuresAoi,
+  AOI_CLOUD_PROPERTY,
+  limitNote,
+  measuresAoi,
+  NONE_WITHIN_NOTE,
+  unreadableNote,
+  withinAoiLock,
+  type ResultSort,
+} from './aoiFilter';
 import {
   bandViewportBbox,
   bboxContains,
@@ -259,7 +269,7 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   const hasAoi = aoi !== null;
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
   // The filters of the coverage's dataset (DS-02c, adr/0004 K1): the map counts what the search would find.
-  const query = filterQueryOf(s, datasetId);
+  const query = filterQueryOf(s, datasetId, withinFor(s, 'coverage'));
   const filters = JSON.stringify(query);
 
   let bbox: Bbox | undefined;
@@ -458,14 +468,23 @@ function viewableDatasets(datasets: DatasetOption[], ids: readonly string[]): Vi
 // goes without it meanwhile.
 type FilterState = Pick<AppState, 'datasets' | 'searchFilters'>;
 
-function filterQueryOf(s: FilterState, datasetId: string): FilterQuery {
+function filterQueryOf(s: FilterState, datasetId: string, within?: 'aoi' | 'skip'): FilterQuery {
   const dataset = s.datasets.find((d) => d.id === datasetId);
-  return dataset ? filterQuery(searchFiltersOf(dataset.collection), s.searchFilters[datasetId]) : {};
+  return dataset ? filterQuery(searchFiltersOf(dataset.collection), s.searchFilters[datasetId], within) : {};
 }
 
+// What "Within AOI" does to a request (DS-03b): where the switch can be used (an area and a date range with both ends)
+// the search asks the clouds inside the AOI and the coverage map leaves the cloud range out, which it cannot measure;
+// where it cannot, the switch counts for nothing and the range is the scene's.
+type WithinState = Pick<AppState, 'aoi' | 'aoiPoint' | 'dateFrom' | 'dateTo'>;
+
+const withinFor = (s: WithinState, request: 'search' | 'coverage'): 'aoi' | 'skip' | undefined =>
+  withinAoiLock(s) === null ? (request === 'search' ? 'aoi' : 'skip') : undefined;
+
 // What each of these datasets is asked with, `{}` where nothing is set.
-function filterQueriesOf(s: FilterState, ids: readonly string[]): FilterQueryByCollection {
-  return Object.fromEntries(ids.map((id) => [id, filterQueryOf(s, id)]));
+function filterQueriesOf(s: FilterState & WithinState, ids: readonly string[]): FilterQueryByCollection {
+  const within = withinFor(s, 'search');
+  return Object.fromEntries(ids.map((id) => [id, filterQueryOf(s, id, within)]));
 }
 
 // `{queryByCollection}` for a request, or nothing when no dataset has a filter set: a search without filters
@@ -515,6 +534,13 @@ function sourceOpen(ctx: SearchContext, datasetId: string): boolean {
 // Bumped by everything that replaces or drops the results, so a "Load more" or a
 // fallback answering afterwards can tell that its results are gone.
 let searchGen = 0;
+
+// The walk of a search that asks for the cloud share in the AOI (DS-03b), while it runs: "Stop" ends it, and so does
+// everything that makes the search on screen something the control panel no longer asks (`dropPageToken`, `forgetSearch`).
+let walk: AbortController | null = null;
+const stopWalk = () => walk?.abort();
+
+const isAbort = (e: unknown): boolean => e instanceof DOMException && e.name === 'AbortError';
 
 // Item ids are unique only within a collection.
 const sceneKey = (item: StacItem) => `${item.collection ?? ''}\u0000${item.id}`;
@@ -708,6 +734,9 @@ async function fetchMosaics(
 
 function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections: ResultSection[]): string {
   if (ctx.features.length === 0) {
+    // The limit on the clouds inside the AOI is what leaves nothing (DS-03b); the notice of a search over one dataset
+    // says it (`aoiHints` adds how far it got).
+    if (datasets.length === 1 && measuresAoi(ctx.query, datasets[0].id)) return `${NONE_WITHIN_NOTE}.`;
     const base =
       datasets.length === 1 || (!ctx.dateFrom && !ctx.dateTo)
         ? 'No scenes found for this area.'
@@ -723,6 +752,17 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
   const steps = own.reduce((sum, section) => sum + section.groups.length, 0);
   const found = own.reduce((sum, section) => sum + section.items.length, 0);
   return `${found} scene(s) in ${steps} time step(s) across ${datasets.length} datasets.`;
+}
+
+// What the search notice adds when the one dataset searched was asked for the cloud share in the AOI: that the limit of
+// scenes it checks is reached, and how many it could not read (DS-03b). With several datasets the heads of their sections say it.
+function aoiHints(ctx: SearchContext, datasets: ViewableDataset[]): string[] {
+  const [only] = datasets;
+  const counts = datasets.length === 1 ? ctx.answer?.aoiFilter?.[only.id] : undefined;
+  if (!counts) return [];
+  return [counts.limitReached ? limitNote(counts) : null, counts.unreadable > 0 ? `${unreadableNote(counts)}.` : null].filter(
+    (hint): hint is string => hint !== null,
+  );
 }
 
 // Lays out the scenes a search has loaded: one section per dataset asked and
@@ -775,14 +815,18 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     single && !single.hasTimeAxis && ctx.answer.ignoredFilters.includes('datetime')
       ? acquisitionNote(single.collection)
       : null;
-  const notice = [
-    resultsNotice(ctx, datasets, sections),
-    ctx.truncatedNotice,
-    timeNote && `${timeNote}.`,
-    stray > 0 ? `${stray} scene(s) of other datasets were left out.` : null,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  // A search that is still walking has no verdict yet; the list says how far it is (DS-03b).
+  const notice = s.aoiWalking
+    ? null
+    : [
+        resultsNotice(ctx, datasets, sections),
+        ...aoiHints(ctx, datasets),
+        ctx.truncatedNotice,
+        timeNote && `${timeNote}.`,
+        stray > 0 ? `${stray} scene(s) of other datasets were left out.` : null,
+      ]
+        .filter(Boolean)
+        .join(' ');
   set({
     sections,
     ...(keepOpen ? reopenedSectionState(s, open) : openSectionState(open)),
@@ -841,6 +885,8 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
   const section = s.sections.find((x) => x.datasetId === datasetId);
   const [dataset] = viewableDatasets(s.datasets, [datasetId]);
   if (!ctx || !section || !dataset) return;
+  // The limit on the clouds inside the AOI searches the date range asked and nothing around it (DS-03b, KE4).
+  if (measuresAoi(ctx.query, datasetId)) return;
   if (!needsFallback(section, dataset, ctx.dateFrom, ctx.dateTo, sourceOpen(ctx, datasetId))) return;
   if (s.fallbackDatasetIds.includes(datasetId)) return;
   const gen = searchGen;
@@ -901,10 +947,64 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
   }
 }
 
+// The walk of a search that asks for the cloud share in the AOI (DS-03b, plan §6.17). The server checks a few scenes per
+// answer and says how far it got, so this goes on with the page token by itself, shows what each answer brings and ends
+// when the page is full (`MAX_SEARCH_ITEMS` found), the server has nothing more or says the limit is reached, "Stop" is
+// pressed, or the search is no longer the one on screen. What is found stays, and the token with it unless the search
+// itself changed: "Load more" goes on from there. An answer without a scene is no end and no page of its own.
+async function walkAoiSearch(
+  set: SetState,
+  get: GetState,
+  options: { base: SearchContext; token?: string; fresh: boolean; unchanged: () => boolean },
+): Promise<void> {
+  const { base, token, fresh, unchanged } = options;
+  const gen = searchGen;
+  const controller = new AbortController();
+  walk = controller;
+  set({ aoiWalking: true });
+  // The list is laid out as a new search until scenes are in it; from then on the scenes, ticks and open time step stay.
+  let laidOut = !fresh;
+  const known = new Set(base.features.map(sceneKey));
+  const show = (soFar: PagesSoFar) => {
+    if (gen !== searchGen) return;
+    const kept = unchanged();
+    const ctx: SearchContext = {
+      ...base,
+      features: [...base.features, ...soFar.features.filter((it) => !known.has(sceneKey(it)))],
+      answer: combineAnswers(base.answer, soFar),
+      numberMatched: base.numberMatched ?? soFar.numberMatched,
+      nextToken: kept ? soFar.nextToken : null,
+      openCollections: soFar.openCollections,
+    };
+    showSearchResults(set, get, ctx, laidOut);
+    laidOut = ctx.features.length > 0 || !fresh;
+    // The filters or the area changed before the first answer: the search on screen cannot be continued.
+    if (!kept) controller.abort();
+  };
+  try {
+    await api.searchAllPages(base.query, MAX_SEARCH_ITEMS, token, { signal: controller.signal, onPage: show });
+  } catch (e) {
+    if (gen !== searchGen || isAbort(e)) return;
+    // Nothing of the search is on screen yet: the search failed. Otherwise what is found stays.
+    if (fresh && get().searchContext === null) throw e;
+    const now = get().searchContext;
+    if (now) set({ searchContext: { ...now, nextToken: null }, loadMoreError: 'Could not load more results — search again.' });
+  } finally {
+    if (walk === controller) walk = null;
+    if (gen === searchGen) {
+      set({ aoiWalking: false });
+      // The verdict the list could not give while it walked.
+      const now = get().searchContext;
+      if (now) showSearchResults(set, get, now, true);
+    }
+  }
+}
+
 // A search on screen that the control panel would no longer run the same way
 // (another AOI, other dates) cannot be continued: "Load more" would add scenes of
 // the old one (M3-10 §4.4). The results themselves stay.
 function dropPageToken(set: SetState, get: GetState): void {
+  stopWalk();
   const ctx = get().searchContext;
   if (ctx?.nextToken) set({ searchContext: { ...ctx, nextToken: null } });
 }
@@ -942,7 +1042,10 @@ function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap'>, selectedIds:
 // What every replacement of the results resets besides the results themselves.
 function forgetSearch() {
   searchGen += 1;
+  stopWalk();
   return {
+    resultSort: 'date' as ResultSort,
+    aoiWalking: false,
     // Every search, and every step that drops the results, puts "Results" on top of the layer manager (NM4-59, Otto,
     // 30.10.2026).
     resultsAt: 0,
@@ -1112,6 +1215,10 @@ export interface AppState {
   loadMoreUsed: boolean;
   // The datasets whose ±90-day fallback is running.
   fallbackDatasetIds: string[];
+  // DS-03b: a search that asks for the cloud share in the AOI is going on page by page (`walkAoiSearch`), and the
+  // order of the time steps in its list.
+  aoiWalking: boolean;
+  resultSort: ResultSort;
   items: StacItem[];
   groups: TimeStepGroup[];
   activeGroupIndex: number;
@@ -1246,6 +1353,9 @@ export interface AppState {
   setNotice: (v: string | null) => void;
   runSearch: () => Promise<void>;
   loadMore: () => Promise<void>;
+  // "Stop" beside the progress of a search that checks the clouds inside the AOI (DS-03b).
+  stopSearch: () => void;
+  setResultSort: (sort: ResultSort) => void;
   setSceneNameQuery: (v: string) => void;
   findSceneByName: () => Promise<void>;
   showCoverageFor: (datasetId: string) => void;
@@ -1325,6 +1435,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadMoreError: null,
   loadMoreUsed: false,
   fallbackDatasetIds: [],
+  aoiWalking: false,
+  resultSort: 'date',
   items: [],
   groups: [],
   activeGroupIndex: 0,
@@ -2227,7 +2339,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setSearchFilter: (datasetId, property, input) => {
     const { [property]: _before, ...others } = get().searchFilters[datasetId] ?? {};
-    changeSearchFilters(set, get, datasetId, isSet(input) ? { ...others, [property]: input } : others);
+    // The switch "Within AOI" is kept when the range is emptied (DS-03b), but it is no filter on its own.
+    const kept = isSet(input) || (input.kind === 'range' && input.within === true);
+    changeSearchFilters(set, get, datasetId, kept ? { ...others, [property]: input } : others);
   },
   resetSearchFilters: (datasetId) => changeSearchFilters(set, get, datasetId, {}),
   // The "Coverage" button (M3-10): draws the coverage of one of the picked datasets.
@@ -2327,7 +2441,30 @@ export const useAppStore = create<AppState>((set, get) => ({
         intersects: area.intersects,
         datetime: buildDatetime(dateFrom, dateTo),
         ...queryByCollectionOf(asked),
+        // A long AOI is searched by its box; the clouds are measured in the AOI itself (plan §6.5, KE1).
+        ...(area.truncatedNotice && Object.values(asked).some((q) => AOI_CLOUD_PROPERTY in q) ? { aoi } : {}),
       };
+      if (anyMeasuresAoi(query)) {
+        await walkAoiSearch(set, get, {
+          base: {
+            datasetIds: ids,
+            query,
+            dateFrom,
+            dateTo,
+            aoi,
+            truncatedNotice: area.truncatedNotice ?? null,
+            features: [],
+            answer: NO_ANSWER_FILTERS,
+            numberMatched: null,
+            nextToken: null,
+            openCollections: null,
+          },
+          fresh: true,
+          // Filters or area changed while the first answer was on its way.
+          unchanged: () => JSON.stringify(filterQueriesOf(get(), ids)) === JSON.stringify(asked),
+        });
+        return;
+      }
       const page = await api.searchAllPages(query, MAX_SEARCH_ITEMS);
       if (gen !== searchGen) return;
       // Filters changed while the search ran (the page token cannot be dropped yet, there is no search on screen):
@@ -2376,6 +2513,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  stopSearch: () => stopWalk(),
+  setResultSort: (resultSort) => set({ resultSort }),
+
   // Continues the whole search with its page token (M3-10 F1): one more walk of
   // up to `MAX_SEARCH_ITEMS`, whichever dataset the dropdown shows. New scenes go
   // to their own dataset; the dataset and time step open stay open. A failure
@@ -2387,6 +2527,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!ctx?.nextToken || s.loadingMore || s.searching) return;
     const gen = searchGen;
     set({ loadingMore: true, loadMoreError: null });
+    if (anyMeasuresAoi(ctx.query)) {
+      try {
+        await walkAoiSearch(set, get, { base: ctx, token: ctx.nextToken, fresh: false, unchanged: () => true });
+        if (gen === searchGen) set({ loadMoreUsed: true });
+      } finally {
+        if (gen === searchGen) set({ loadingMore: false });
+      }
+      return;
+    }
     try {
       const page = await api.searchAllPages(ctx.query, MAX_SEARCH_ITEMS, ctx.nextToken);
       if (gen !== searchGen) return;
