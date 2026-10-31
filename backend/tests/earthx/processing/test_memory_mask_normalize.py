@@ -76,7 +76,7 @@ def measure(scene: Path, layer: Path | None, workdir: Path, size: int, step: str
 
 
 @pytest.mark.parametrize(
-    "step", ["mask", "normalize", "normalize-zscore", "normalize-percentile", "normalize-robust"]
+    "step", ["mask", "mask-values", "normalize", "normalize-zscore", "normalize-percentile", "normalize-robust"]
 )
 def test_a_pixel_operator_stays_below_the_limit_and_does_not_follow_the_scene_size(
     scenes: dict[int, tuple[Path, Path]], tmp_path: Path, capsys: pytest.CaptureFixture[str], step: str

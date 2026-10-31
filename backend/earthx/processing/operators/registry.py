@@ -1,7 +1,7 @@
 """The operator registry and the applicability check (adr/0014 §5.1–§5.3).
 
 An immutable mapping ``(op, op_version) → Operator``. :data:`REGISTRY` is the one
-the platform runs; it holds ``band_math`` (M4-09), ``mask`` and ``normalize`` (M4-18, version 2 since NM4-43c: a
+the platform runs; it holds ``band_math`` (M4-09), ``mask``, ``mask_values`` (DS-06) and ``normalize`` (M4-18, version 2 since NM4-43c: a
 stock of named bands, version 3 since NM4-11: the methods) and ``reproject`` (M4-10, versions 2 and 3 since M4-24, 4 since NM4-43b). A caller that needs
 more — a test, and later the composition root that hands in the quad-pol operator from `datasets/` (§12) —
 builds its own with :meth:`OperatorRegistry.with_operators`, and passes it to
@@ -26,6 +26,7 @@ from earthx.processing.errors import UnknownOperator
 from earthx.processing.operators.band_math import BAND_MATH, BAND_MATH_V2
 from earthx.processing.operators.base import Operator
 from earthx.processing.operators.mask import MASK, MASK_V2
+from earthx.processing.operators.mask_values import MASK_VALUES
 from earthx.processing.operators.normalize import NORMALIZE, NORMALIZE_V2, NORMALIZE_V3
 from earthx.processing.operators.reproject import REPROJECT, REPROJECT_V2, REPROJECT_V3
 
@@ -89,6 +90,7 @@ REGISTRY = OperatorRegistry(
         BAND_MATH_V2,
         MASK,
         MASK_V2,
+        MASK_VALUES,
         NORMALIZE,
         NORMALIZE_V2,
         NORMALIZE_V3,

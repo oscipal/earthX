@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 //
-// The original files in the download dialog (M3-17, Zusatz 1a): the choice
-// between "Each scene separately" and "Merged per pass (job)" (M4-12b), mounted
-// through the real dialog. No backend: `fetch` answers by route; jsdom has no
-// `EventSource`, so a placed job is followed by polling.
+// The original files in the download dialog (M3-17, Zusatz 1a, NM4-33): "Merged per pass (job)" (M4-12b) beside
+// the download of the scenes, mounted through the real dialog. No backend: `fetch` answers by route; jsdom has no
+// `EventSource`, so a placed job is followed by polling. The download of the scenes itself is replaced by a stand-in
+// (`originalsClient`): its logic is tested in `originalsRun.test.ts`, the browser part by the checks in `e2e/`.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -19,6 +19,15 @@ import type { Collection, StacItem } from '../types';
 import DownloadDialog from './DownloadDialog';
 import { TOO_MANY_SCENES } from './MosaicJobs';
 
+// What the page would do to download the files; here nothing, and the source is not asked.
+vi.mock('../originalsClient', () => ({
+  canStream: () => false,
+  browserDeps: () => ({
+    deps: { fetch: async () => new Response(null), zip: null, saveBlob: () => undefined, navigate: () => undefined, now: () => new Date() },
+    dispose: () => undefined,
+  }),
+}));
+
 declare global {
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -26,7 +35,6 @@ declare global {
 
 const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
 const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
-const EACH = 'Each scene separately';
 const MERGED = 'Merged per pass (job)';
 const START = 'Start job';
 
@@ -55,6 +63,8 @@ function dataset(tier: string): DatasetOption {
       id: 'sentinel-2-c1-l2a',
       'earthx:format': 'cog',
       'earthx:default_render': { assets: ['visual'] },
+      'earthx:band_units': { visual: null },
+      'earthx:auxiliary_assets': ['visual'],
       'earthx:source': { asset_hosts: ['data.test'] },
       'earthx:license_flags': {
         tier,
@@ -178,31 +188,31 @@ async function showMerged() {
 const placed = () => fetchMock.mock.calls.filter(([u, init]) => String(u).endsWith('/execution') && init?.method === 'POST');
 const linksShown = () => [...container.querySelectorAll('.dialog-original-links a')].map((a) => a.textContent).sort();
 
-describe('the choice (Zusatz 1a)', () => {
-  it('asks how several scenes are loaded, preselects nothing and loads nothing before the answer', async () => {
+describe('beside the download (Zusatz 1a, NM4-33)', () => {
+  it('starts the download without a question, and offers the merge next to it without starting a job', async () => {
     open();
     await show();
-    expect(container.querySelector('[role="group"]')?.textContent).toContain('How do you want the original files?');
-    expect(buttons(EACH)).toHaveLength(1);
+    expect(container.querySelector('[role="group"]')).toBeNull();
+    expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
     expect(buttons(MERGED)).toHaveLength(1);
-    expect(container.querySelector('.dialog-original-links')).toBeNull();
     expect(container.querySelector('.dialog-mosaics')).toBeNull();
+    expect(placed()).toHaveLength(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('does not ask for one scene: its link, no choice', async () => {
+  it('does not offer the merge for one scene', async () => {
     open();
     useAppStore.setState({
       downloadPasses: [{ label: 'x', items: [scene('S2_A')] }],
       downloadOriginalLinks: [{ itemId: 'S2_A', groupLabel: 'x', asset: 'visual', href: 'https://data.test/S2_A.tif' }],
     });
     await show();
-    expect(buttons(EACH)).toHaveLength(0);
+    expect(buttons(MERGED)).toHaveLength(0);
     expect(linksShown()).toEqual(['S2_A · visual']);
     expect(container.textContent).not.toContain('Save link list');
   });
 
-  it('does not ask when every pass is one scene: there is nothing to merge, the links are shown', async () => {
+  it('offers no merge when every pass is one scene: there is nothing to merge, the links are listed', async () => {
     open();
     const lone = [scene('S2_A'), scene('S2_B'), scene('S2_C')];
     useAppStore.setState({
@@ -215,14 +225,13 @@ describe('the choice (Zusatz 1a)', () => {
       })),
     });
     await show();
-    expect(buttons(EACH)).toHaveLength(0);
     expect(buttons(MERGED)).toHaveLength(0);
     expect(linksShown()).toEqual(['S2_A · visual', 'S2_B · visual', 'S2_C · visual']);
     expect(buttons('Save link list')).toHaveLength(1);
     expect(placed()).toHaveLength(0);
   });
 
-  it('asks as soon as one pass holds two scenes, however many lone passes surround it', async () => {
+  it('offers the merge as soon as one pass holds two scenes, however many lone passes surround it', async () => {
     open();
     const pair = [scene('S2_A'), scene('S2_B')];
     useAppStore.setState({
@@ -233,12 +242,10 @@ describe('the choice (Zusatz 1a)', () => {
       ],
     });
     await show();
-    expect(buttons(EACH)).toHaveLength(1);
     expect(buttons(MERGED)).toHaveLength(1);
-    expect(container.querySelector('.dialog-original-links')).toBeNull();
   });
 
-  it('asks with an AOI drawn too: the originals do not depend on it', async () => {
+  it('is offered with an AOI drawn too: the originals do not depend on it', async () => {
     open('processing', undefined, bboxToPolygon([10.2, 50.2, 10.4, 50.4]));
     await show();
     expect(buttons(MERGED)).toHaveLength(1);
@@ -255,22 +262,20 @@ describe('the choice (Zusatz 1a)', () => {
     expect(buttons(MERGED)).toHaveLength(0);
   });
 
-  it('"Each scene separately" lists the links by pass, with no job', async () => {
+  it('lists the links by pass, with no job', async () => {
     open();
     await show();
-    await press(EACH);
     expect(linksShown()).toEqual(['S2_A · visual', 'S2_B · visual', 'S2_C · visual', 'S2_D · visual']);
     expect(container.querySelector('.dialog-mosaics')).toBeNull();
     expect(placed()).toHaveLength(0);
   });
 
-  it('"Change" goes back to the question, and a job started stays in sight', async () => {
+  it('the same button closes the merge again, and a job started stays in sight', async () => {
     open();
     await showMerged();
     await press(START);
     expect(container.querySelector('.dialog-mosaics .pp-job')).not.toBeNull();
-    await press('Change');
-    expect(buttons(EACH)).toHaveLength(1);
+    await press(MERGED);
     expect(container.querySelector('.dialog-mosaics')).toBeNull();
     await press(MERGED);
     expect(container.querySelector('.dialog-mosaics .pp-job')).not.toBeNull();
@@ -278,7 +283,14 @@ describe('the choice (Zusatz 1a)', () => {
     expect(placed()).toHaveLength(1);
   });
 
-  it('starts afresh when the dialog is opened again: the question is back and no job row is left', async () => {
+  it('opening the merge does not stop the download', async () => {
+    open();
+    await showMerged();
+    expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
+    expect(container.textContent).not.toContain('Cancelled');
+  });
+
+  it('starts afresh when the dialog is opened again: the merge is closed and no job row is left', async () => {
     open();
     await showMerged();
     await press(START);
@@ -288,20 +300,19 @@ describe('the choice (Zusatz 1a)', () => {
     expect(container.querySelector('.dialog-originals')).toBeNull();
     useAppStore.getState().openDownloadForSelection('originals');
     await flush();
-    expect(buttons(EACH)).toHaveLength(1);
     expect(container.querySelector('.dialog-mosaics')).toBeNull();
     await press(MERGED);
     expect(container.querySelector('.dialog-mosaics .pp-job')).toBeNull();
     expect(buttons(START)[0].disabled).toBe(false);
   });
 
-  it('keeps "Each scene separately" below the licence tier processing, and says why the merge is not offered', async () => {
+  it('keeps the download below the licence tier processing, and says why the merge is not offered', async () => {
     open('catalog');
     await show();
     expect(buttons(MERGED)[0].disabled).toBe(true);
-    expect(container.querySelector('[role="group"]')?.textContent).toContain('licence does not permit processing');
+    expect(buttons(MERGED)[0].title).toContain('licence does not permit processing');
     expect(container.textContent).not.toContain('Contains modified');
-    await press(EACH);
+    expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
     expect(linksShown()).toHaveLength(4);
     expect(placed()).toHaveLength(0);
   });
@@ -336,7 +347,6 @@ describe('Save link list', () => {
   it('saves one address per line, only the links the dialog shows, under a name without AOI or scene', async () => {
     open('processing', undefined, bboxToPolygon([10.2, 50.2, 10.4, 50.4]));
     await show();
-    await press(EACH);
     await press('Save link list');
     expect(clicked).toHaveLength(1);
     expect(clicked[0].download).toBe('sentinel-2-c1-l2a-original-links.txt');
@@ -354,7 +364,6 @@ describe('Save link list', () => {
     stray!.assets.visual.href = 'https://elsewhere.invalid/S2_B.tif';
     useAppStore.getState().openDownloadForSelection('originals');
     await show();
-    await press(EACH);
     expect(linksShown()).toEqual(['S2_A · visual', 'S2_C · visual', 'S2_D · visual']);
     await press('Save link list');
     const text = await blobs[0].text();
@@ -364,9 +373,8 @@ describe('Save link list', () => {
 
   it('is not offered with nothing to save', async () => {
     open();
-    useAppStore.setState({ downloadOriginalLinks: [] });
+    useAppStore.setState({ downloadPasses: [{ label: 'x', items: [{ ...scene('S2_A'), assets: {} }] }], downloadOriginalLinks: [] });
     await show();
-    await press(EACH);
     expect(buttons('Save link list')).toHaveLength(0);
     expect(container.textContent).toContain('No original file of this selection could be linked');
   });
@@ -374,10 +382,10 @@ describe('Save link list', () => {
   it('is not offered for one file to save, however many scenes were chosen', async () => {
     open();
     useAppStore.setState({
+      downloadPasses: [{ label: 'a', items: [scene('S2_A')] }],
       downloadOriginalLinks: [{ itemId: 'S2_A', groupLabel: 'a', asset: 'visual', href: 'https://data.test/S2_A.tif' }],
     });
     await show();
-    await press(EACH);
     expect(linksShown()).toEqual(['S2_A · visual']);
     expect(buttons('Save link list')).toHaveLength(0);
   });

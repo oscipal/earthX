@@ -227,6 +227,9 @@ class Capabilities:
     #: ``mask`` hides the classes a recipe names of the layer in ``DatasetConfig.mask``
     #: (adr/0014 §15m); set exactly where that layer is described.
     masking: bool
+    #: ``mask_values`` hides the pixels where any band meets a condition (DS-06). Generic like band math: it needs
+    #: no layer in the entry, but every entry switches it on by itself (B10).
+    value_masking: bool
     #: ``normalize``: a fixed range onto another (M4-18). Generic like band math, but
     #: every entry switches it on by itself (B10).
     normalization: bool

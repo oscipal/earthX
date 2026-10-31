@@ -134,6 +134,12 @@ class TestTheJobAndTheRunnerComputeTheSameBits:
         assert job["valid_pixels"] > 0
         _assert_same(job, folder)
 
+    def test_mask_values_after_a_result(self, tmp_path: Path) -> None:
+        recipe = support.mask_values_recipe()
+        job, folder = _both(tmp_path, recipe, recipe)
+        assert 0 < job["valid_pixels"] < support.WIDTH * support.HEIGHT
+        _assert_same(job, folder)
+
     def test_reprojection_bilinear_on_a_cf_zarr(self, tmp_path: Path) -> None:
         recipe = support.reproject_recipe("bilinear")
         job, folder = _both(tmp_path, recipe, recipe)
@@ -164,6 +170,12 @@ class TestTheCounterTest:
         key = "p_high" if method == "percentile" else "mean"
         entry[key] = entry[key] + 0.01
         job, folder = _both(tmp_path, support.normalize_recipe(method), support.normalize_recipe(params=other))
+        with pytest.raises(AssertionError):
+            _assert_same(job, folder)
+
+    def test_another_threshold_in_mask_values(self, tmp_path: Path) -> None:
+        other = {**support.MASK_VALUES, "values": [0.21]}
+        job, folder = _both(tmp_path, support.mask_values_recipe(), support.mask_values_recipe(other))
         with pytest.raises(AssertionError):
             _assert_same(job, folder)
 

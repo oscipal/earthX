@@ -59,6 +59,7 @@ def valid_config() -> DatasetConfig:
             interpolation=True,
             reprojection=True,
             masking=False,
+            value_masking=True,
             normalization=True,
             ml_processing=False,
             quad_pol=False,

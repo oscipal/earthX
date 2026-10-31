@@ -128,6 +128,74 @@ describe('the download buttons', () => {
     }
   });
 
+  it('originals: the tooltip says a ZIP per scene where the source lets the page read its files, with the browser prompt', () => {
+    select('cog', null);
+    const [only] = useAppStore.getState().datasets;
+    useAppStore.setState({ datasets: [{ ...only, collection: { ...only.collection, 'earthx:access': { cors: true } } }] });
+    show();
+    expect(button('⇩ Download full scenes').title).toContain('one ZIP of its original files');
+    expect(button('⇩ Download full scenes').title).toContain('may ask once to allow several downloads');
+    useAppStore.setState({ selectedIds: ['A'] });
+    show();
+    expect(button('⇩ Download full scene').title).toContain('as one ZIP');
+    expect(button('⇩ Download full scene').title).not.toContain('several downloads');
+  });
+
+  describe('the tooltip names the scenes and the size before the click (Otto, 31.10.2026)', () => {
+    function withSizes(cors: boolean, sizes: (number | null)[]) {
+      select('cog', null);
+      const [only] = useAppStore.getState().datasets;
+      const items = sizes.map((size, i) => ({
+        id: `S${i}`,
+        properties: { datetime: '2026-07-01T10:00:00Z' },
+        assets: { visual: { href: `https://data.test/S${i}.tif`, ...(size === null ? {} : { 'file:size': size }) } },
+      }));
+      useAppStore.setState({
+        datasets: [
+          {
+            ...only,
+            collection: { ...only.collection, 'earthx:access': { cors }, 'earthx:band_units': { visual: null }, 'earthx:auxiliary_assets': ['visual'] },
+          },
+        ],
+        items,
+        groups: [{ key: ['x'], label: 'x', items }],
+        selectedIds: items.map((it) => it.id),
+      });
+      show();
+      return button(items.length === 1 ? '⇩ Download full scene' : '⇩ Download full scenes').title;
+    }
+
+    it('the number of scenes and the sum of the sizes, first', () => {
+      expect(withSizes(true, [4_500_000_000, 5_900_000_000])).toMatch(/^2 scenes · 10\.4 GB\. Download each selected scene as one ZIP/);
+      expect(withSizes(true, [887_000_000])).toMatch(/^1 scene · 887\.0 MB\. Download the selected scene as one ZIP/);
+    });
+
+    it('where the browser downloads the files itself: the same, with no ZIP', () => {
+      const title = withSizes(false, [40_000_000, 40_000_000]);
+      expect(title).toMatch(/^2 scenes · 80\.0 MB\. Download the original files/);
+      expect(title).not.toContain('ZIP');
+    });
+
+    it('a size not known is said so, whole or in part', () => {
+      expect(withSizes(true, [null, null])).toMatch(/^2 scenes · size unknown\./);
+      expect(withSizes(true, [2_000_000, null])).toMatch(/^2 scenes · 2\.0 MB and more, some sizes unknown\./);
+    });
+
+    it('counts the scenes the download takes: the ticked ones, else those of the open group', () => {
+      withSizes(true, [1_000_000, 1_000_000, 1_000_000]);
+      useAppStore.setState({ selectedIds: ['S0', 'S2'] });
+      show();
+      expect(button('⇩ Download full scenes').title).toMatch(/^2 scenes · 2\.0 MB\./);
+    });
+  });
+
+  it('originals: the tooltip says "file" where the source gives no CORS, and promises no ZIP', () => {
+    select('cog', null);
+    show();
+    expect(button('⇩ Download full scenes').title).toContain('original files of the selected scenes');
+    expect(button('⇩ Download full scenes').title).not.toContain('ZIP');
+  });
+
   it('originals: disabled for Zarr, with the reason', () => {
     select('zarr', AOI);
     show();

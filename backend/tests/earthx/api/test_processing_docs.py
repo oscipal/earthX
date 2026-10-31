@@ -293,6 +293,31 @@ class TestWhatThePanelReads:
             assert REAL_OPERATORS.operator(op, 2).stock and REAL_OPERATORS.operator(op, 2).listed
             assert not REAL_OPERATORS.operator(op, 1).stock and not REAL_OPERATORS.operator(op, 1).listed
 
+    def test_mask_by_value_is_accepted_but_not_offered_until_the_panel_sends_it(self) -> None:
+        """DS-06a: the operator runs (recipe, tile, runner) and is listed once DS-06b gives the panel its form."""
+        assert REAL_OPERATORS.operator("mask_values", 1).stock
+        assert "step_mask_values_v1" not in order_schema(REAL_OPERATORS)["$defs"]
+        listed = OperatorRegistry(
+            replace(operator, listed=True) if operator.op == "mask_values" else operator
+            for operator in REAL_OPERATORS.values()
+        )
+        definitions = order_schema(listed)["$defs"]
+        assert definitions["step_mask_values_v1"]["title"] == "Mask by value"
+        assert definitions["step_mask_values_v1"]["x-earthx-tiers"] == ["T1", "T2"]
+        assert definitions["step_mask_values_v1"]["x-earthx-kind"] == "pixel"
+        params = definitions["step_mask_values_v1"]["properties"]["params"]
+        assert set(params["required"]) == {"band", "condition", "values"}
+
+    def test_once_listed_the_dem_is_offered_the_mask_by_value_and_not_the_one_by_class(self) -> None:
+        from earthx.catalog.datasets import COP_DEM_GLO_30
+
+        listed = OperatorRegistry(
+            replace(operator, listed=True) if operator.op == "mask_values" else operator
+            for operator in REAL_OPERATORS.values()
+        )
+        offered = {key for key in order_schema(listed, COP_DEM_GLO_30)["$defs"] if key.startswith("step_")}
+        assert "step_mask_values_v1" in offered and "step_mask_v2" not in offered
+
     def test_align_says_what_it_does_in_a_tooltip_of_its_own_words(self) -> None:
         """Review of #250: the panel shows this text as the tooltip of "Align"; it says what a grid on whole multiples gives."""
         align = order_schema(REAL_OPERATORS)["$defs"]["step_reproject_v4"]["properties"]["params"]["properties"]["align"]
