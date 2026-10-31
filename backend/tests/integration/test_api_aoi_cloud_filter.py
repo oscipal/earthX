@@ -609,14 +609,14 @@ class TestNoDataInTheAoi:
     async def test_nothing_of_the_area_reaches_the_log(
         self, collections_loaded: None, world: World, caplog: pytest.LogCaptureFixture
     ) -> None:
-        both = {S2: {"earthx:aoi_cloud_cover": {"lte": 20.123}, "earthx:aoi_nodata": {"lte": 33.456}}}
+        both = {S2: {"earthx:aoi_cloud_cover": {"lte": 20.7654321}, "earthx:aoi_nodata": {"lte": 33.1234567}}}
         with caplog.at_level(logging.DEBUG):
             async with _client(world) as client:
                 await post(client, body(limit=5, query_by_collection=both))
         lines = [record for record in caplog.records if record.getMessage() == "aoi cloud filter"]
         assert len(lines) == 1
         everything = " ".join(str(record.__dict__) for record in caplog.records)
-        for secret in (*LEAKS, "S2_00", "SCL.tif", ASSET_HOST, "coordinates", "20.123", "33.456", "aoi_nodata"):
+        for secret in (*LEAKS, "S2_00", "SCL.tif", ASSET_HOST, "coordinates", "20.7654321", "33.1234567", "aoi_nodata"):
             assert secret not in everything
         assert not any(leak in url for url in world.urls for leak in LEAKS)
 
