@@ -17,13 +17,16 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
 
+// The ranges of the standard visualisation of Sentinel-2 here: one (a band) or three (RGB).
+let s2Rescale: number[][] = [[0, 255]];
+
 const base = (id: string, title: string): Collection =>
   ({
     id,
     title,
     'earthx:format': 'cog',
     'earthx:capabilities': { roi: true, time_range: id === 's2', band_math: true, interpolation: true },
-    'earthx:default_render': { title: 'Standard', assets: ['visual'], rescale: [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
+    'earthx:default_render': { title: 'Standard', assets: ['visual'], rescale: id === 's2' ? s2Rescale : [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
     'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
     'earthx:search_filters':
       id === 's2'
@@ -67,6 +70,9 @@ function mount(downloaded: Record<string, DownloadedInfo>, sections = [S2_SECTIO
       cropToAoi: true,
       downloaded,
       shownImage,
+      viewLooks: {},
+      savedLooks: {},
+      appliedRender: { rescale: '0,255' },
       showDownloaded: true,
       pendingColormapName: '',
       pendingVmin: '0',
@@ -89,6 +95,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  s2Rescale = [[0, 255]];
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
@@ -232,5 +239,67 @@ describe('a satellite the registry does not name', () => {
     expect(stepText()).toBe('2025-09-01 · landsat-9');
     act(() => next()!.click());
     expect(stepText()).toBe('2025-09-05');
+  });
+});
+
+const button = (label: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
+const colormapField = () => [...container.querySelectorAll('.vc-field span')].find((el) => el.textContent === 'Colormap');
+const type = (vmin: string, vmax: string) => act(() => useAppStore.setState({ pendingVmin: vmin, pendingVmax: vmax }));
+
+describe('"Save" for the images of a dataset', () => {
+  it('is not there where the dataset has one image in the view', () => {
+    mount({ A: info('s2'), D: info('dem') });
+    expect(button('Save')).toBeUndefined();
+  });
+
+  it('is there where it has several, locked with the reason while all look alike', () => {
+    mount(THREE);
+    type('0', '255');
+    expect(button('Save')!.getAttribute('aria-disabled')).toBe('true');
+    expect(button('Save')!.title).toBe('Nothing to save: every image of this dataset is drawn like this');
+    act(() => button('Save')!.click());
+    expect(useAppStore.getState().savedLooks).toEqual({});
+  });
+
+  it('opens when the fields differ from what another image shows, and saves for the dataset', () => {
+    mount(THREE);
+    type('10', '90');
+    expect(button('Save')!.getAttribute('aria-disabled')).toBeNull();
+    expect(button('Save')!.title).toBe('Draw every image of this dataset with these values');
+    act(() => button('Save')!.click());
+    expect(useAppStore.getState().savedLooks.s2).toMatchObject({ rescale: '10,90' });
+    expect(button('Save')!.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('applies to the image shown only: "Apply" opens with a change, and the next image does not take it', () => {
+    mount(THREE);
+    type('10', '90');
+    expect(button('Apply')!.getAttribute('aria-disabled')).toBeNull();
+    act(() => button('Apply')!.click());
+    expect(button('Apply')!.getAttribute('aria-disabled')).toBe('true');
+    act(() => next()!.click());
+    expect(useAppStore.getState().appliedRender.rescale).toBe('0,255');
+    expect(container.querySelectorAll('.vc-num input')[0]).toHaveProperty('value', '0');
+  });
+});
+
+describe('an image of three bands', () => {
+  it('has no colormap field, and the range fields and buttons are still there and not locked', () => {
+    s2Rescale = [[0, 255], [0, 255], [0, 255]];
+    mount(THREE);
+    expect(colormapField()).toBeUndefined();
+    expect(container.querySelector('.vc-render')!.className).toContain('no-colormap');
+    expect(container.querySelectorAll('.vc-num input')).toHaveLength(2);
+    expect(button('Apply')).toBeDefined();
+  });
+
+  it('has the colormap field for a single band, and for the dataset after the one of three bands', () => {
+    mount(THREE);
+    expect(colormapField()).toBeDefined();
+    s2Rescale = [[0, 255], [0, 255], [0, 255]];
+    mount({ ...THREE, D: info('dem') });
+    expect(colormapField()).toBeUndefined();
+    act(() => useAppStore.getState().chooseViewDataset('dem'));
+    expect(colormapField()).toBeDefined();
   });
 });

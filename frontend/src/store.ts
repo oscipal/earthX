@@ -39,7 +39,7 @@ import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
-import { appliedRenderFrom, autoRescale, lookOfPendingFields, pendingFieldsOf } from './render';
+import { appliedRenderFrom, autoRescale, lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
   buildSections,
@@ -65,7 +65,7 @@ import {
   type FilterQueryByCollection,
 } from './searchFilters';
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
-import { layerOfView } from './viewLayer';
+import { layerOfView, sameRender } from './viewLayer';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -411,6 +411,8 @@ const LEAVE_FOCUS = {
   viewAoi: null,
   downloaded: {},
   shownImage: null,
+  viewLooks: {},
+  savedLooks: {},
   appliedRender: {},
   pendingColormapName: '',
   pendingVmin: '',
@@ -562,9 +564,43 @@ function pinWhenLoaded(set: SetState, get: GetState, lists: SceneEntry[][], agai
   });
 }
 
-// The look an image is drawn with.
-function lookOfImage(s: AppState, _image: ViewImage): AppliedRender {
-  return s.appliedRender;
+// The standard visualisation of a dataset as the look of its images ("RGB without colormap" for Sentinel-2, Otto 31.10.2026).
+function defaultLookOf(s: Pick<AppState, 'datasets'>, datasetId: string): AppliedRender {
+  const dataset = s.datasets.find((d) => d.id === datasetId);
+  const render = dataset ? defaultRenderOf(dataset.collection) : null;
+  return render ? appliedRenderFrom(render) : {};
+}
+
+// The look an image is drawn with: for the one that is shown, what the map shows; for another, the first it has of
+// its own unsaved look, the look saved for its dataset and the standard one.
+export function lookOfImage(
+  s: Pick<AppState, 'datasets' | 'appliedRender' | 'shownImage' | 'viewLooks' | 'savedLooks'>,
+  image: ViewImage,
+  shown: ViewImage | null,
+): AppliedRender {
+  if (shown && image.key === shown.key) return s.appliedRender;
+  return s.viewLooks[image.key] ?? s.savedLooks[image.datasetId] ?? defaultLookOf(s, image.datasetId);
+}
+
+// Moves the view to another image: what the one left shows is kept when it differs from what its dataset would show
+// without it, and the fields and the map take the look of the one reached.
+function moveToImage(s: AppState, target: ViewImage, from: ViewImage | null): Partial<AppState> {
+  const viewLooks = { ...s.viewLooks };
+  if (from) {
+    const baseline = s.savedLooks[from.datasetId] ?? defaultLookOf(s, from.datasetId);
+    if (sameRender(s.appliedRender, baseline)) delete viewLooks[from.key];
+    else viewLooks[from.key] = s.appliedRender;
+  }
+  const look = viewLooks[target.key] ?? s.savedLooks[target.datasetId] ?? defaultLookOf(s, target.datasetId);
+  return { shownImage: target.key, viewLooks, appliedRender: look, ...pendingFieldsOf(look) };
+}
+
+// Whether "Save" would change anything: another image of the dataset shown does not look like the fields ask for.
+export function datasetSavable(s: AppState): boolean {
+  const images = viewImagesOf(s);
+  const shown = shownImageOf(images, s.shownImage);
+  if (!shown) return false;
+  return images.some((image) => image.datasetId === shown.datasetId && image.key !== shown.key && lookChanged(lookOfImage(s, image, shown), s));
 }
 
 // "Add to layers" and "Add all to layers" in the view: the image that is shown, or every image, one layer each, all in one
@@ -587,7 +623,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
     set({ error: 'Nothing to add — search and pick a time step first.' });
     return;
   }
-  const built = picked.map((pick) => ({ ...pick, overlays: overlaysOfEntries(s, pick.entries, clip, lookOfImage(s, pick.image)) }));
+  const built = picked.map((pick) => ({ ...pick, overlays: overlaysOfEntries(s, pick.entries, clip, lookOfImage(s, pick.image, shown)) }));
   const waiting = built.filter((b) => b.overlays === null);
   if (waiting.length > 0) {
     pinWhenLoaded(set, get, waiting.map((b) => b.entries), () => pinViewImages(set, get, which));
@@ -599,7 +635,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
     const itemIds = entries.map(([id]) => id);
     const title = s.datasets.find((d) => d.id === image.datasetId)?.title ?? image.datasetId;
     const name = [title, image.groupLabel || (s.groups[s.activeGroupIndex]?.label ?? ''), satellitesOf(image)].filter(Boolean).join(' · ');
-    const look = lookOfImage(s, image);
+    const look = lookOfImage(s, image, shown);
     return {
       id: `L${batchId}${i}`,
       name,
@@ -980,6 +1016,11 @@ export interface AppState {
   showDownloaded: boolean;
   // The image of the view that is drawn (`viewImages.ts`); null draws the first. The others are not on the map.
   shownImage: string | null;
+  // The look of the images of the view (NM4-53, Otto 29.10.2026), for the length of the view only: what "Apply" drew on
+  // one image and nobody saved (`viewLooks`, by the key of the image), and what "Save" fixed for all images of a dataset
+  // (`savedLooks`, by dataset). An image has the first of these it finds, else the standard visualisation of its dataset.
+  viewLooks: Record<string, AppliedRender>;
+  savedLooks: Record<string, AppliedRender>;
   focusLoading: boolean; // fetching statistics while entering focus / "auto"
   // Whether the current focus view is cropped to `aoi` ("Crop to AOI") or
   // shows the whole selection uncropped ("View full selection", M3-09) —
@@ -1247,6 +1288,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   focusMode: false,
   showDownloaded: true,
   shownImage: null,
+  viewLooks: {},
+  savedLooks: {},
   focusLoading: false,
   cropToAoi: false,
   viewAoi: null,
@@ -1697,6 +1740,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       cropToAoi: r.cropToAoi,
       viewAoi: r.cropToAoi && r.aoi ? r.aoi : null,
       showDownloaded: true,
+      shownImage: null,
+      viewLooks: {},
+      savedLooks: {},
       viewLayerId: id,
       focusLoading: true,
     });
@@ -1985,6 +2031,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       showDownloaded: true,
       downloaded,
       shownImage: first?.key ?? null,
+      viewLooks: {},
+      savedLooks: {},
       appliedRender: applied,
       ...pendingFieldsOf(applied),
     });
@@ -2014,8 +2062,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   changeImage: () => set((s) => ({ ...LEAVE_FOCUS, ...(hasResultsPanel(s.sections) ? { dock: 'results' as const } : {}) })),
   showImage: (key) =>
     set((s) => {
-      const image = viewImagesOf(s).find((x) => x.key === key);
-      return image && s.focusMode && image.key !== s.shownImage ? { shownImage: image.key } : {};
+      const images = viewImagesOf(s);
+      const shown = shownImageOf(images, s.shownImage);
+      const image = images.find((x) => x.key === key);
+      return image && s.focusMode && image.key !== shown?.key ? moveToImage(s, image, shown) : {};
     }),
   stepImage: (delta) =>
     set((s) => {
@@ -2024,12 +2074,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!shown || !s.focusMode) return {};
       const here = images.filter((image) => image.datasetId === shown.datasetId);
       const next = here[here.indexOf(shown) + delta];
-      return next ? { shownImage: next.key } : {};
+      return next ? moveToImage(s, next, shown) : {};
     }),
   chooseViewDataset: (datasetId) =>
     set((s) => {
-      const first = viewImagesOf(s).find((image) => image.datasetId === datasetId);
-      return first && s.focusMode ? { shownImage: first.key } : {};
+      const images = viewImagesOf(s);
+      const shown = shownImageOf(images, s.shownImage);
+      const first = images.find((image) => image.datasetId === datasetId);
+      return first && s.focusMode && first.key !== shown?.key ? moveToImage(s, first, shown) : {};
     }),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
@@ -2037,26 +2089,37 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPendingVmax: (pendingVmax) => set({ pendingVmax }),
   // Commits the pending fields (F18) — nothing renders differently until this
   // runs, which is the point of an explicit "Apply".
+  // "Apply" draws the shown image with the fields and nothing else (NM4-53); other images keep their look.
   applyRender: () => {
     const s = get();
     set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
   },
+  // "Save" (NM4-53, Otto 29.10.2026): the fields become the look of every image of the dataset that is shown, for the
+  // length of the view. If the view is the picture of a pinned layer, the layer keeps the look too (NM4-50).
   saveViewLook: () => {
     const s = get();
-    const layer = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
-    if (!layer) return;
     const render = { ...s.appliedRender, ...lookOfPendingFields(s) };
-    // The same scenes as the layer has, drawn with the look: its rasters are made again, its quicklook underlays stay.
-    const fresh = overlaysOfEntries({ ...s, appliedRender: render }, Object.entries(layer.restore.downloaded), layer.restore.cropToAoi ? layer.restore.aoi : null);
-    if (fresh === null) {
-      set({ error: 'The layer cannot be saved yet: its scenes are still loading.' });
+    const layer = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
+    let layers = s.layers;
+    if (layer) {
+      // The same scenes as the layer has, drawn with the look: its rasters are made again, its quicklook underlays stay.
+      const fresh = overlaysOfEntries({ ...s, appliedRender: render }, Object.entries(layer.restore.downloaded), layer.restore.cropToAoi ? layer.restore.aoi : null);
+      if (fresh === null) {
+        set({ error: 'The layer cannot be saved yet: its scenes are still loading.' });
+        return;
+      }
+      const overlays = [...layer.overlays.filter((o) => o.kind === 'image'), ...fresh.filter((o) => o.kind === 'raster')];
+      layers = s.layers.map((l) => (l.id === layer.id ? { ...l, overlays, restore: { ...l.restore, appliedRender: { ...render } } } : l));
+    }
+    const images = viewImagesOf(s);
+    const shown = shownImageOf(images, s.shownImage);
+    if (!shown) {
+      set({ appliedRender: render, layers });
       return;
     }
-    const overlays = [...layer.overlays.filter((o) => o.kind === 'image'), ...fresh.filter((o) => o.kind === 'raster')];
-    set({
-      appliedRender: render,
-      layers: s.layers.map((l) => (l.id === layer.id ? { ...l, overlays, restore: { ...l.restore, appliedRender: { ...render } } } : l)),
-    });
+    const viewLooks = { ...s.viewLooks };
+    for (const image of images) if (image.datasetId === shown.datasetId) delete viewLooks[image.key];
+    set({ appliedRender: render, layers, viewLooks, savedLooks: { ...s.savedLooks, [shown.datasetId]: render } });
   },
   // Re-measures the stretch from `/statistics` (adr/0006 §3.4) and writes it into
   // the pending fields only — still needs "Apply" to take effect on the map.

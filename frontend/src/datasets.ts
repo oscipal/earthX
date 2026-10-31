@@ -128,6 +128,13 @@ export function defaultRenderOf(collection: Collection): EarthxDefaultRender | n
   return collection['earthx:default_render'] ?? null;
 }
 
+// Whether a colormap can colour the standard picture of the dataset. It cannot where that picture is made of three
+// bands (RGB, true colour): the field is not shown then (Otto, 31.10.2026, zu #257). Read from the three ranges of the
+// registry's standard visualisation until `earthx:true_color` (NM4-64) names it; then this is the one place to change.
+export function showsColormap(collection: Collection): boolean {
+  return (defaultRenderOf(collection)?.rescale?.length ?? 0) !== 3;
+}
+
 // The asset georeferencing (`quicklookCoords`/`quicklookAoiPixelRings`,
 // M3-12 review F-04) should read off of, rather than the `visual` literal those
 // functions used to assume: the registry's own standard-visualisation asset,

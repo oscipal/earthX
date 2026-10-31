@@ -459,6 +459,15 @@ body.dragging * {
 .scene-view .vc-render > :nth-child(4) {
   grid-column: span 5;
 }
+/* An image of three bands (RGB) has no colormap field (Otto, 31.10.2026): vmin and vmax take its place and the buttons
+   keep the right half, so that the row is as wide as with it. */
+.scene-view .vc-render.no-colormap > :nth-child(1),
+.scene-view .vc-render.no-colormap > :nth-child(2) {
+  grid-column: span 3;
+}
+.scene-view .vc-render.no-colormap > :nth-child(3) {
+  grid-column: span 6;
+}
 .scene-view .vc-actions > * {
   grid-column: span 3;
   min-width: 0;
@@ -486,6 +495,13 @@ body.dragging * {
     grid-column: span 2;
   }
   .scene-view .vc-render > :nth-child(4) {
+    grid-column: span 4;
+  }
+  .scene-view .vc-render.no-colormap > :nth-child(1),
+  .scene-view .vc-render.no-colormap > :nth-child(2) {
+    grid-column: span 2;
+  }
+  .scene-view .vc-render.no-colormap > :nth-child(3) {
     grid-column: span 4;
   }
   .scene-view .vc-actions > * {

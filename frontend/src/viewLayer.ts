@@ -18,7 +18,7 @@ export interface ViewState {
   showDownloaded: boolean;
 }
 
-function sameRender(a: AppliedRender, b: AppliedRender): boolean {
+export function sameRender(a: AppliedRender, b: AppliedRender): boolean {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof AppliedRender>;
   return [...keys].every((k) => (a[k] || '') === (b[k] || ''));
 }

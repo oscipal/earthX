@@ -11,8 +11,9 @@ import { useMemo } from 'react';
 
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
-import { shownImageOf, useAppStore } from '../store';
+import { showsColormap } from '../datasets';
+import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES } from '../render';
+import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { viewKind } from '../viewKind';
 import { layerOfView } from '../viewLayer';
@@ -33,9 +34,10 @@ export default function ViewerControls() {
   // The pinned layer this view was opened from: its settings are these, and "Save" keeps the look for it (NM4-50).
   const layer = useAppStore((s) => layerOfView(s.layers, { ...s, aoi: s.viewAoi }));
   const saveViewLook = useAppStore((s) => s.saveViewLook);
+  // "Save" keeps the look for the layer the view is the picture of and for every image of the dataset (NM4-53).
   const savable = useAppStore((s) => {
     const own = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
-    return own !== null && lookChanged(own.restore.appliedRender, s);
+    return (own !== null && lookChanged(own.restore.appliedRender, s)) || datasetSavable(s);
   });
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
@@ -75,6 +77,9 @@ export default function ViewerControls() {
   // What the head cuts short, in full.
   const title = [datasetTitle, date, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
   const here = shown ? imagesOfDataset(images, shown.datasetId) : [];
+  // An image of three bands has no colormap field.
+  const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
+  const colormap = shownDataset ? showsColormap(shownDataset.collection) : true;
   const at = shown ? here.indexOf(shown) : -1;
   const datasetIds = datasetIdsOf(images);
   const stepText = shown ? [shown.date ?? shown.groupLabel, satellitesOf(shown)].filter(Boolean).join(' · ') : '';
@@ -150,18 +155,20 @@ export default function ViewerControls() {
         </div>
       )}
 
-      <div className="vc-render">
-        <label className="vc-field">
-          <span>Colormap</span>
-          <select value={pendingColormapName} onChange={(e) => setPendingColormapName(e.target.value)}>
-            <option value="">— none —</option>
-            {COLORMAPS.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className={`vc-render${colormap ? '' : ' no-colormap'}`}>
+        {colormap && (
+          <label className="vc-field">
+            <span>Colormap</span>
+            <select value={pendingColormapName} onChange={(e) => setPendingColormapName(e.target.value)}>
+              <option value="">— none —</option>
+              {COLORMAPS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="vc-field vc-num">
           <span>vmin</span>
           <input
@@ -197,12 +204,20 @@ export default function ViewerControls() {
           >
             Apply
           </button>
-          {layer && (
+          {(layer || here.length > 1) && (
             <button
               type="button"
               className="primary-btn vc-save"
               aria-disabled={!savable || undefined}
-              title={savable ? 'Keep these values for this layer' : NOTHING_TO_SAVE}
+              title={
+                savable
+                  ? layer
+                    ? 'Keep these values for this layer and every image of this dataset'
+                    : 'Draw every image of this dataset with these values'
+                  : layer
+                    ? NOTHING_TO_SAVE
+                    : NOTHING_TO_SAVE_IMAGES
+              }
               onClick={() => {
                 if (savable) saveViewLook();
               }}

@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { shownImageOf, shownViewOf, useAppStore, viewImagesOf, viewSelectionFrom } from './store';
+import { datasetSavable, shownImageOf, shownViewOf, useAppStore, viewImagesOf, viewSelectionFrom } from './store';
 import type { Collection, StacItem } from './types';
 
 const CAPABILITIES = { roi: true, time_range: true, band_math: true, interpolation: true, ml_processing: true, quad_pol: false, single_coverage_product: false };
@@ -246,5 +246,128 @@ describe('scenes the view cannot hold', () => {
     state().exitFocus();
     expect(state().shownImage).toBeNull();
     expect(viewImagesOf(state())).toEqual([]);
+  });
+});
+
+// "Apply" draws the image that is shown, "Save" every image of its dataset, and neither outlives the view (§2.1 of the task).
+describe('the look of the images', () => {
+  const imageOf = (id: string) => viewImagesOf(state()).find((i) => i.ids.includes(id))!;
+  const type = (colormapName: string, vmin: string, vmax: string) =>
+    useAppStore.setState({ pendingColormapName: colormapName, pendingVmin: vmin, pendingVmax: vmax });
+  const fields = () => [state().pendingColormapName, state().pendingVmin, state().pendingVmax];
+
+  beforeEach(async () => {
+    await searched();
+    state().toggleSelected('a1');
+    state().toggleSelected('b1');
+    state().setOpenSection('dem');
+    state().toggleSelected('d1');
+    state().setOpenSection('s2');
+    state().setActiveGroupIndex(state().groups.findIndex((g) => g.items.some((it) => it.id === 'a1')));
+    await state().enterFocus(true);
+  });
+
+  it('starts every image with the standard visualisation of its dataset', () => {
+    expect(state().appliedRender.rescale).toBe('0,255');
+    state().stepImage(1);
+    expect(state().appliedRender.rescale).toBe('0,255');
+    expect(fields()).toEqual(['', '0', '255']);
+  });
+
+  it('draws only the shown image with what was applied, and the next one as before', () => {
+    type('viridis', '10', '200');
+    state().applyRender();
+    expect(state().appliedRender).toMatchObject({ colormapName: 'viridis', rescale: '10,200' });
+    state().stepImage(1);
+    expect(state().appliedRender.colormapName).toBeUndefined();
+    expect(state().appliedRender.rescale).toBe('0,255');
+    expect(fields()).toEqual(['', '0', '255']);
+  });
+
+  it('gives an image what was applied to it back when it is shown again, saved or not', () => {
+    type('viridis', '10', '200');
+    state().applyRender();
+    state().stepImage(1);
+    state().stepImage(-1);
+    expect(state().appliedRender).toMatchObject({ colormapName: 'viridis', rescale: '10,200' });
+    expect(fields()).toEqual(['viridis', '10', '200']);
+  });
+
+  it('lets "Save" take the fields for every image of the dataset shown, and for no other dataset', () => {
+    type('plasma', '1', '99');
+    state().saveViewLook();
+    expect(state().savedLooks.s2).toMatchObject({ colormapName: 'plasma', rescale: '1,99' });
+    state().stepImage(1);
+    expect(state().appliedRender).toMatchObject({ colormapName: 'plasma', rescale: '1,99' });
+    state().chooseViewDataset('dem');
+    expect(state().appliedRender.colormapName).toBeUndefined();
+    expect(state().appliedRender.rescale).toBe('0,255');
+  });
+
+  it('replaces what was applied to one image when "Save" is pressed on another', () => {
+    type('viridis', '10', '200');
+    state().applyRender();
+    state().stepImage(1);
+    type('magma', '5', '50');
+    state().saveViewLook();
+    state().stepImage(-1);
+    expect(state().appliedRender).toMatchObject({ colormapName: 'magma', rescale: '5,50' });
+    expect(state().viewLooks).toEqual({});
+  });
+
+  it('keeps what was saved on the other images when one image is applied a look of its own', () => {
+    type('magma', '5', '50');
+    state().saveViewLook();
+    state().stepImage(1);
+    type('turbo', '0', '10');
+    state().applyRender();
+    state().stepImage(-1);
+    expect(state().appliedRender).toMatchObject({ colormapName: 'magma', rescale: '5,50' });
+    state().stepImage(1);
+    expect(state().appliedRender).toMatchObject({ colormapName: 'turbo', rescale: '0,10' });
+  });
+
+  it('can be saved only while another image of the dataset looks different, and not for a dataset of one image', () => {
+    // The stretch measured on entering stands in the fields: it differs from the standard look the others have.
+    expect(fields()).toEqual(['', '5', '250']);
+    expect(datasetSavable(state())).toBe(true);
+    type('', '0', '255');
+    expect(datasetSavable(state())).toBe(false);
+    type('viridis', '10', '200');
+    expect(datasetSavable(state())).toBe(true);
+    state().saveViewLook();
+    expect(datasetSavable(state())).toBe(false);
+    state().chooseViewDataset('dem');
+    type('viridis', '1', '2');
+    expect(datasetSavable(state())).toBe(false);
+  });
+
+  it('is gone with the view: the next one starts with the standard look', async () => {
+    type('viridis', '10', '200');
+    state().saveViewLook();
+    state().exitFocus();
+    expect(state().savedLooks).toEqual({});
+    expect(state().viewLooks).toEqual({});
+    await state().enterFocus(true);
+    expect(state().appliedRender.colormapName).toBeUndefined();
+    state().stepImage(1);
+    expect(state().appliedRender.rescale).toBe('0,255');
+  });
+
+  it('is taken by "Add to layers" for the image shown and by "Add all to layers" for every image', async () => {
+    type('viridis', '10', '200');
+    state().applyRender();
+    state().addCurrentToLayers();
+    expect(state().layers[0].restore.appliedRender).toMatchObject({ colormapName: 'viridis', rescale: '10,200' });
+    useAppStore.setState({ layers: [] });
+    state().stepImage(1);
+    type('magma', '5', '50');
+    state().applyRender();
+    state().addAllToLayers();
+    const byItem = Object.fromEntries(state().layers.map((l) => [l.restore.itemIds[0], l.restore.appliedRender]));
+    expect(byItem.a1).toMatchObject({ colormapName: 'viridis', rescale: '10,200' });
+    expect(byItem.b1).toMatchObject({ colormapName: 'magma', rescale: '5,50' });
+    expect(byItem.d1.rescale).toBe('0,255');
+    expect(imageOf('d1').datasetId).toBe('dem');
   });
 });

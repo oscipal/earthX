@@ -63,6 +63,8 @@ export function pendingFieldsOf(render: AppliedRender): { pendingColormapName: s
 // What the disabled "Apply" and "Save" say in their tooltips (the view of scenes and of a result).
 export const NOTHING_TO_APPLY = 'Nothing to apply: the map shows these values';
 export const NOTHING_TO_SAVE = 'Nothing to save: the layer is saved as it is drawn';
+// The same for the images of a dataset in the view of scenes (NM4-53).
+export const NOTHING_TO_SAVE_IMAGES = 'Nothing to save: every image of this dataset is drawn like this';
 
 type PendingFields = { pendingColormapName: string; pendingVmin: string; pendingVmax: string };
 
