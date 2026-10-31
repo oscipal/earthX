@@ -15,7 +15,6 @@ import type { MapLayer } from '../layers';
 import { useProcessingStore } from '../processingStore';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
-import { LAYER_INDEX_NOTE } from '../viewIndex';
 import DownloadDialog from './DownloadDialog';
 import LayerManager from './LayerManager';
 import ViewerControls from './ViewerControls';
@@ -69,6 +68,7 @@ let clicked: string[];
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const status = (state: string) => ({ jobID: JOB, status: state, progress: 100, message: '', expires: '2026-12-01T00:00:00Z' });
 let fetchMock: ReturnType<typeof vi.fn>;
+const ESTIMATE = { estimate: { size: 12_400_000, duration: 'PT9.2S', outputPixels: 1_000_000, inputPixels: 4_000_000, inputBytes: 8_000_000, assets: 2, units: 1 }, skippedItems: [] };
 
 function setState(over: Partial<AppState> = {}) {
   act(() => {
@@ -89,6 +89,7 @@ function setState(over: Partial<AppState> = {}) {
       pendingColormapName: 'rdylgn',
       pendingVmin: '-1',
       pendingVmax: '1',
+      pendingIndex: (over.appliedRender ?? NDVI).index ?? '',
       mosaics: {},
       mapZoom: 12,
       selectedIds: [],
@@ -112,6 +113,7 @@ beforeEach(() => {
   clicked = [];
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.startsWith('/processing/processes/recipe?')) return json(s2);
+    if (init?.method === 'POST' && url.endsWith('/estimate')) return json(ESTIMATE);
     if (init?.method === 'POST' && url.endsWith('/execution')) return json({ ...status('accepted'), progress: 0 });
     if (url === `/processing/jobs/${JOB}`) return json(status('successful'));
     return json({ detail: 'not found' }, 404);
@@ -136,17 +138,15 @@ afterEach(() => {
 const indexField = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Index') ?? null;
 
 describe('the view of a layer of the layer manager', () => {
-  it('shows the index the layer was added with, locked, and says so in its tooltip', () => {
+  it('has no dropdown at all, not even a locked one: the index of a layer is the one it was added with', () => {
     setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1' });
     act(() => root.render(<ViewerControls />));
-    const select = indexField()!.querySelector('select')!;
-    expect(select.value).toBe('NDVI');
-    expect(select.disabled).toBe(true);
-    expect(indexField()!.title).toContain('Normalized Difference Vegetation Index: (N - R)/(N + R)');
-    expect(indexField()!.title).toContain(LAYER_INDEX_NOTE);
+    expect(indexField()).toBeNull();
+    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(false);
+    expect(container.textContent).not.toContain('Index');
   });
 
-  it('has no dropdown for a layer without an index', () => {
+  it('has none for a layer without an index either', () => {
     setState({ viewOfLayer: true, appliedRender: { rescale: '0,3000' }, layers: [layer({ rescale: '0,3000' })], viewLayerId: 'L1' });
     act(() => root.render(<ViewerControls />));
     expect(indexField()).toBeNull();
@@ -205,27 +205,76 @@ describe('the ⇩ of a layer that shows an index', () => {
 });
 
 describe('the dialog of the download', () => {
-  const open = () => {
-    setState({ layers: [layer(NDVI)], downloadDialogLayerId: 'L1', downloadOutcome: 'crop' });
+  const settle = () => act(async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); await new Promise((resolve) => setTimeout(resolve, 5)); });
+  const open = async () => {
+    setState({ layers: [layer(NDVI)] });
     act(() => root.render(<DownloadDialog />));
+    await act(async () => { await useAppStore.getState().openDownloadDialog('L1'); });
+    await settle();
   };
   const primary = () => container.querySelector<HTMLButtonElement>('.dialog-actions .primary')!;
+  const line = () => container.querySelector<HTMLElement>('.dialog-body .hint-text')!;
+  const press = async () => {
+    await act(async () => {
+      primary().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await settle();
+  };
+  const answers = (over: (url: string, init?: RequestInit) => Response | undefined) =>
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const own = over(url, init);
+      if (own) return own;
+      if (url.startsWith('/processing/processes/recipe?')) return json(s2);
+      if (init?.method === 'POST' && url.endsWith('/estimate')) return json(ESTIMATE);
+      if (init?.method === 'POST' && url.endsWith('/execution')) return json({ ...status('accepted'), progress: 0 });
+      if (url === `/processing/jobs/${JOB}`) return json(status('successful'));
+      return json({ detail: 'not found' }, 404);
+    });
 
-  it('names the index and its formula, offers no resolution and says it is computed', () => {
-    open();
+  it('names the index and its formula, offers no resolution and says what it will cost, with the limits in the tooltip', async () => {
+    await open();
     expect(container.textContent).toContain('NDVI ((N - R)/(N + R))');
     expect(container.querySelector('.dialog-resolution')).toBeNull();
-    expect(container.querySelector('.dialog-body .hint-text')!.textContent).toBe('NDVI is computed from the scenes of this layer; this can take a moment.');
+    expect(line().textContent).toBe('About 12.4 MB · about 9 s');
+    expect(line().title).toContain('same limits as a job of Processing');
     expect(container.textContent).not.toContain('asset');
+    expect(primary().disabled).toBe(false);
+  });
+
+  it('waits for the estimate: "Download" is locked and the line says so', async () => {
+    let release: (value: Response) => void = () => undefined;
+    fetchMock.mockImplementation(
+      (url: string, init?: RequestInit) =>
+        init?.method === 'POST' && url.endsWith('/estimate')
+          ? new Promise<Response>((resolve) => (release = resolve))
+          : Promise.resolve(url.startsWith('/processing/processes/recipe?') ? json(s2) : json({ detail: 'x' }, 404)),
+    );
+    setState({ layers: [layer(NDVI)] });
+    act(() => root.render(<DownloadDialog />));
+    await act(async () => { void useAppStore.getState().openDownloadDialog('L1'); });
+    await settle();
+    expect(line().textContent).toBe('Estimating…');
+    expect(primary().disabled).toBe(true);
+    await act(async () => { release(json(ESTIMATE)); });
+    await settle();
+    expect(line().textContent).toBe('About 12.4 MB · about 9 s');
+    expect(primary().disabled).toBe(false);
+  });
+
+  it('stops at a limit before any job is placed: the reason in one line, the limit as its tooltip, "Download" locked', async () => {
+    answers((url, init) => (init?.method === 'POST' && url.endsWith('/estimate') ? json({ detail: 'the order would write more than 5 GB' }, 413) : undefined));
+    await open();
+    expect(line().textContent).toBe('Too large for one job');
+    expect(line().title).toBe('An export job may write at most 5 GB. Choose a smaller area or fewer scenes.');
+    expect(line().classList.contains('warn')).toBe(true);
+    expect(primary().disabled).toBe(true);
+    await press();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/execution'))).toBe(false);
   });
 
   it('computes the index as a job nobody sees, then downloads its result and closes; the raw crop route is not called', async () => {
-    open();
-    await act(async () => {
-      primary().dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      for (let i = 0; i < 40; i++) await Promise.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    });
+    await open();
+    await press();
     const urls = fetchMock.mock.calls.map(([u, i]) => `${(i as RequestInit | undefined)?.method ?? 'GET'} ${u}`);
     expect(urls.some((u) => u.startsWith('POST /collections/') && u.endsWith('/download'))).toBe(false);
     expect(urls).toContain('POST /processing/processes/recipe/execution');
@@ -235,43 +284,65 @@ describe('the dialog of the download', () => {
     expect(useAppStore.getState()).toMatchObject({ downloading: false, downloadDialogLayerId: null, error: null, notice: 'Downloaded "Sentinel-2 L2A · day".' });
   });
 
-  it('leaves the dialog open with the reason when the job fails', async () => {
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-      if (url.startsWith('/processing/processes/recipe?')) return json(s2);
-      if (init?.method === 'POST' && url.endsWith('/execution')) return json({ ...status('accepted'), progress: 0 });
-      if (url === `/processing/jobs/${JOB}`) return json({ ...status('failed'), message: 'The source failed' });
-      return json({ detail: 'not found' }, 404);
-    });
-    open();
-    await act(async () => {
-      primary().dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      for (let i = 0; i < 40; i++) await Promise.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    });
+  it('tells a limit of the job API in the dialog, not in a toast, and may try again', async () => {
+    let refused = true;
+    answers((url, init) => (init?.method === 'POST' && url.endsWith('/execution') && refused ? json({ detail: 'at most 4 jobs may run at a time' }, 429) : undefined));
+    await open();
+    await press();
     expect(clicked).toEqual([]);
-    expect(useAppStore.getState()).toMatchObject({ downloading: false, downloadDialogLayerId: 'L1', error: 'The source failed' });
+    expect(line().textContent).toBe('at most 4 jobs may run at a time');
+    expect(line().title).toBe('at most 4 jobs may run at a time');
+    expect(useAppStore.getState()).toMatchObject({ downloading: false, downloadDialogLayerId: 'L1', error: null });
+    expect(primary().disabled).toBe(false);
+    refused = false;
+    await press();
+    expect(clicked).toEqual([`/processing/jobs/${JOB}/results/result.zip`]);
   });
 
-  it('stops the computing when the dialog is closed, and the job placed is dismissed', async () => {
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-      if (url.startsWith('/processing/processes/recipe?')) return json(s2);
-      if (init?.method === 'POST' && url.endsWith('/execution')) return json({ ...status('accepted'), progress: 0 });
-      if (init?.method === 'DELETE') return json({ ...status('dismissed') });
-      return json({ ...status('running'), progress: 30 });
-    });
-    open();
-    await act(async () => {
-      primary().dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    expect(useAppStore.getState().downloading).toBe(true);
-    act(() => useAppStore.getState().closeDownloadDialog());
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 2300));
-    });
-    const methods = fetchMock.mock.calls.map(([u, i]) => `${(i as RequestInit | undefined)?.method ?? 'GET'} ${u}`);
-    expect(methods).toContain(`DELETE /processing/jobs/${JOB}`);
+  it('says why the job failed, in the dialog', async () => {
+    answers((url) => (url === `/processing/jobs/${JOB}` ? json({ ...status('failed'), message: 'The source failed' }) : undefined));
+    await open();
+    await press();
     expect(clicked).toEqual([]);
-    expect(useAppStore.getState()).toMatchObject({ downloading: false, error: null });
+    expect(line().textContent).toBe('The source failed');
+    expect(useAppStore.getState()).toMatchObject({ downloading: false, downloadDialogLayerId: 'L1', error: null });
+  });
+
+  it('cancels the job when the dialog is closed while it runs (as a job of Processing is cancelled), and downloads nothing', async () => {
+    answers((url, init) => {
+      if (init?.method === 'DELETE') return json({ ...status('dismissed') });
+      if (url === `/processing/jobs/${JOB}`) return json({ ...status('running'), progress: 30 });
+      return undefined;
+    });
+    await open();
+    await act(async () => { primary().dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+    expect(useAppStore.getState().downloading).toBe(true);
+    expect(line().textContent).toMatch(/^Computing NDVI… \d+ %$/u);
+    act(() => useAppStore.getState().closeDownloadDialog());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2300)); });
+    const methods = fetchMock.mock.calls.map(([u, i]) => `${(i as RequestInit | undefined)?.method ?? 'GET'} ${u}`);
+    expect(methods.filter((m) => m === `DELETE /processing/jobs/${JOB}`)).toHaveLength(1);
+    expect(methods.filter((m) => m === `GET /processing/jobs/${JOB}`).length).toBeGreaterThan(0);
+    expect(clicked).toEqual([]);
+    expect(useAppStore.getState()).toMatchObject({ downloading: false, error: null, downloadIndexNote: null });
+    // Nothing keeps asking after the cancel.
+    const asked = methods.length;
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2300)); });
+    expect(fetchMock.mock.calls).toHaveLength(asked);
+  });
+
+  it('cancels the job when the dialog is closed while the estimate is still on its way: no job is placed', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      init?.method === 'POST' && url.endsWith('/estimate') ? new Promise<Response>(() => undefined) : Promise.resolve(url.startsWith('/processing/processes/recipe?') ? json(s2) : json({ detail: 'x' }, 404)),
+    );
+    setState({ layers: [layer(NDVI)] });
+    act(() => root.render(<DownloadDialog />));
+    await act(async () => { void useAppStore.getState().openDownloadDialog('L1'); });
+    await settle();
+    act(() => useAppStore.getState().closeDownloadDialog());
+    await settle();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/execution'))).toBe(false);
+    expect(useAppStore.getState().downloadIndexNote).toBeNull();
   });
 });

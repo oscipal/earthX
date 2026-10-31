@@ -44,12 +44,12 @@ const layerOf = (datasetId: string, render: { colormapName?: string; rescale?: s
 
 describe('pendingFieldsOf', () => {
   it('splits a look into the fields of the controls', () => {
-    expect(pendingFieldsOf({ colormapName: 'viridis', rescale: '10,2900' })).toEqual({ pendingColormapName: 'viridis', pendingVmin: '10', pendingVmax: '2900' });
+    expect(pendingFieldsOf({ colormapName: 'viridis', rescale: '10,2900' })).toEqual({ pendingColormapName: 'viridis', pendingVmin: '10', pendingVmax: '2900', pendingIndex: '' });
   });
 
   it('leaves the fields empty for a look without colormap or range, or a range that is not a pair', () => {
-    expect(pendingFieldsOf({})).toEqual({ pendingColormapName: '', pendingVmin: '', pendingVmax: '' });
-    expect(pendingFieldsOf({ rescale: '5' })).toEqual({ pendingColormapName: '', pendingVmin: '5', pendingVmax: '' });
+    expect(pendingFieldsOf({})).toEqual({ pendingColormapName: '', pendingVmin: '', pendingVmax: '', pendingIndex: '' });
+    expect(pendingFieldsOf({ rescale: '5' })).toEqual({ pendingColormapName: '', pendingVmin: '5', pendingVmax: '', pendingIndex: '' });
   });
 });
 

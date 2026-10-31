@@ -16,7 +16,7 @@ import { indexPresetsOf, presetTip } from '../indexPresets';
 import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
-import { indexBlockOf, INDEX_TIP, LAYER_INDEX_NOTE, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
+import { indexBlockOf, INDEX_TIP, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { viewKind } from '../viewKind';
 import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
@@ -40,7 +40,7 @@ export default function ViewerControls() {
   // "Save" keeps the look for the layer the view is the picture of and for every image of the dataset (NM4-53).
   const savable = useAppStore((s) => {
     const own = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
-    return (own !== null && lookChanged(own.restore.appliedRender, s, s.appliedRender.index)) || datasetSavable(s);
+    return (own !== null && lookChanged(own.restore.appliedRender, s)) || datasetSavable(s);
   });
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
@@ -72,6 +72,7 @@ export default function ViewerControls() {
   const chooseViewIndex = useAppStore((s) => s.chooseViewIndex);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const viewOfLayer = useAppStore((s) => s.viewOfLayer);
+  const pendingIndex = useAppStore((s) => s.pendingIndex);
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const images = useMemo(
@@ -89,10 +90,11 @@ export default function ViewerControls() {
   const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
   // The index of the dataset the image shows in place of a band (NM4-14b): a dataset without presets has no dropdown.
   const presets = indexPresetsOf(shownDataset?.collection);
+  // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
+  const chosen = viewIndexOf({ index: pendingIndex }, shownDataset?.collection);
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
-  // The view of a layer of the layer manager shows the index the layer was added with and does not offer the others; a layer
-  // without one has no dropdown (Otto, 1.11.2026).
-  const showIndex = presets.length > 0 && (!viewOfLayer || index !== null);
+  // The view of a layer of the layer manager has no dropdown: the index of a layer is the one it was added with (Otto, 1.11.2026).
+  const showIndex = presets.length > 0 && !viewOfLayer;
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -105,7 +107,7 @@ export default function ViewerControls() {
         })
       : null;
   // An index is drawn with a colormap whatever the dataset's own picture is.
-  const colormap = index || !shownDataset ? true : showsColormap(shownDataset.collection);
+  const colormap = chosen || !shownDataset ? true : showsColormap(shownDataset.collection);
   const at = shown ? here.indexOf(shown) : -1;
   const datasetIds = datasetIdsOf(images);
   // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
@@ -180,9 +182,9 @@ export default function ViewerControls() {
 
       <div className={`vc-render${showIndex ? ' has-index' : ''}`}>
         {showIndex && (
-          <label className="vc-field" title={index ? (viewOfLayer ? `${presetTip(index)} ${LAYER_INDEX_NOTE}` : presetTip(index)) : INDEX_TIP}>
+          <label className="vc-field" title={chosen ? presetTip(chosen) : INDEX_TIP}>
             <span>Index</span>
-            <select value={index?.name ?? ''} disabled={viewOfLayer} onChange={(e) => chooseViewIndex(e.target.value || null)}>
+            <select value={chosen?.name ?? ''} onChange={(e) => chooseViewIndex(e.target.value || null)}>
               <option value="">— none —</option>
               {presets.map((preset) => (
                 <option key={preset.name} value={preset.name} title={presetTip(preset)}>

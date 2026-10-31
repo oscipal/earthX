@@ -2,13 +2,13 @@
 // made-up answers of the tiler:
 //   1. The dropdown "Index" stands first in the settings of the view, the settings keep their grid (no overlap, nothing over the
 //      edge, the buttons as high as the fields); a dataset without presets has none and the row is as before.
-//   2. Choosing an index draws it at once through the tile route with an operator (the mosaic of the pass here): the tiles ask for
+//   2. Choosing an index puts it into the fields; "Apply" draws it, through the tile route with an operator (the mosaic of the pass here): the tiles ask for
 //      `op=band_math`, the band named like the index, the range and colormap of the preset, and no raw asset.
 //   3. Zoomed out the choice stays and a short note says "Zoom in to compute NDWI", with the explanation in its tooltip; no tile is
 //      asked for; zoomed in the note is gone and the tiles come.
-//   4. "Add to layers" pins the index as a layer whose tiles compute it. The layer manager does not choose an index again: the view of
-//      the layer shows the one it was added with, locked. Its ⇩ downloads the index as a Processing job would give it (the job API is
-//      made up here): the dialog says so, a file comes, and no Processing panel opens and no job stands in the list of jobs.
+//   4. "Add to layers" pins the index as a layer whose tiles compute it. The layer manager has no "Index" field at all. Its ⇩ downloads
+//      the index as a Processing job would give it (the job API is made up here): the dialog shows the estimate, a file comes, and no
+//      Processing panel opens and no job stands in the list of jobs. Its ⚙ opens the panel with the index as the one band.
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -59,6 +59,7 @@ async function open(browser, theme, viewport, presets) {
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0', bounds: FOOTPRINT, minzoom: 8, maxzoom: 14, 'earthx:order': SCENES });
     if (url.pathname === '/processing/processes/recipe') return json(DESCRIPTION);
+    if (url.pathname === '/processing/processes/recipe/estimate') return json({ estimate: { size: 12_400_000, duration: 'PT9.2S', outputPixels: 1e6, inputPixels: 4e6, inputBytes: 8e6, assets: 2, units: 1 }, skippedItems: [] });
     if (url.pathname === '/processing/processes/recipe/execution') {
       jobs.placed.push(route.request().postDataJSON());
       return json(JOB_STATUS('accepted', 0));
@@ -79,8 +80,9 @@ async function open(browser, theme, viewport, presets) {
     const { useAppStore } = await import('/src/store.ts');
     const { datasetsFrom } = await import('/src/datasets.ts');
     const info = (id) => ({ datasetId: 'optical', tileUrl: `/collections/optical/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`, bounds: footprint, asset: 'visual', minZoom: 8, maxZoom: 14 });
+    const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
     const aoi = { type: 'Polygon', coordinates: [[[10.2, 50.2], [10.8, 50.2], [10.8, 50.8], [10.2, 50.8], [10.2, 50.2]]] };
-    const items = scenes.map((id) => ({ id, collection: 'optical', bbox: footprint, properties: { datetime: '2026-07-01T10:00:00Z' }, assets: {} }));
+    const items = scenes.map((id) => ({ id, collection: 'optical', bbox: footprint, properties: { datetime: '2026-07-01T10:00:00Z', gsd: 10 }, assets: Object.fromEntries(['red', 'green', 'blue', 'nir', 'swir16', 'swir22', 'visual'].map((k) => [k, { href: `https://example.org/${k}.tif`, type: COG, 'raster:bands': [{ data_type: 'uint16', nodata: 0 }] }])) }));
     const collection = {
       id: 'optical', title: 'Sentinel-2 L2A', 'earthx:format': 'cog', 'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
       'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: [[0, 3000]], colormap_name: null, expression: null, resampling: 'nearest' },
@@ -157,6 +159,11 @@ async function checkDraw(browser, theme, viewport) {
   await page.waitForTimeout(1500);
   tiles.length = 0;
   await field(page).locator('select').selectOption('NDWI');
+  // Chosen, not drawn: nothing of the index is asked for before "Apply".
+  await page.waitForTimeout(1500);
+  if (tiles.some((t) => t.includes('op=band_math'))) problems.push('the index was drawn before "Apply"');
+  if ((await page.locator('.scene-view .vc-apply').getAttribute('aria-disabled')) === 'true') problems.push('"Apply" stays locked after an index was chosen');
+  await page.locator('.scene-view .vc-apply').click();
   await page.waitForTimeout(2500);
   // Tiles of the raw view that were in flight when the index was chosen may still arrive; none follows the first of the index.
   const first = tiles.findIndex((t) => t.includes('op=band_math'));
@@ -229,10 +236,8 @@ async function checkDraw(browser, theme, viewport) {
   });
   await page.locator('.layer-row [data-col="name"]').first().click({ force: true });
   await page.waitForSelector('.scene-view .vc-apply');
-  const locked = field(page).locator('select');
-  if ((await locked.inputValue()) !== 'NDWI') problems.push('the view of the layer does not show its index');
-  if (!(await locked.isDisabled())) problems.push('the index of a layer can be chosen again');
-  if (!(await field(page).getAttribute('title'))?.includes('This layer was added with it')) problems.push('the locked dropdown says nothing of why');
+  if ((await field(page).count()) !== 0) problems.push('the view of a layer has an "Index" field');
+  if ((await page.locator('.scene-view .vc-render > label > span').allTextContents()).join('|') !== 'Colormap|vmin|vmax') problems.push('the settings of the layer are not as for a dataset without presets');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_layer.png`) });
 
   // Its ⇩: the index as a Processing job would give it, with no panel and no job to see.
@@ -249,6 +254,7 @@ async function checkDraw(browser, theme, viewport) {
   const dialogText = await dialog.innerText();
   if (!/NDWI \(\(G - N\) \/ \(G \+ N\)\)/.test(dialogText)) problems.push(`the dialog does not name the index: ${dialogText.slice(0, 160)}`);
   if (await dialog.locator('.dialog-resolution').count()) problems.push('the dialog offers a resolution for an index');
+  await dialog.locator('.hint-text', { hasText: 'About 12.4 MB' }).waitFor({ timeout: 8000 }).catch(() => problems.push(`the dialog shows no estimate: ${dialogText.slice(0, 120)}`));
   await dialog.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_dialog.png`) });
   const [file] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }).catch(() => null), dialog.locator('.primary').click()]);
   if (!file) problems.push('no file came');
@@ -263,6 +269,14 @@ async function checkDraw(browser, theme, viewport) {
   const listed = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().jobs.length + document.querySelectorAll('.job-row, .pm-row').length);
   if (listed !== 0) problems.push('a job stands in the list of jobs');
   if ((await page.locator('.dialog-panel').count()) !== 0) problems.push('the dialog stays after the download');
+
+  // Its ⚙: the panel with the index as the one band, not the raw bands.
+  await page.locator('.layer-row [data-col="process"]').first().click({ force: true });
+  await page.locator('.processing-panel').waitFor({ timeout: 8000 }).catch(() => problems.push('the panel did not open'));
+  await page.waitForTimeout(800);
+  const chips = await page.locator('.processing-panel section[aria-label="Bands"] .pp-chip').allTextContents();
+  if (chips.join('|') !== 'NDWI') problems.push(`the bands of the panel are ${chips}`);
+  await page.locator('.processing-panel').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_panel.png`) });
   await context.close();
   return { name, problems };
 }

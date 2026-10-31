@@ -61,6 +61,7 @@ function mount(presets: unknown[] | null = SENTINEL_2_PRESETS, over: Partial<App
       pendingColormapName: '',
       pendingVmin: '0',
       pendingVmax: '3000',
+      pendingIndex: over.appliedRender?.index ?? '',
       mosaics: {},
       mapZoom: 12,
       layers: [],
@@ -91,6 +92,7 @@ const field = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render
 const select = () => field()?.querySelector('select') as HTMLSelectElement;
 const colormapSelect = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!.querySelector('select')!;
 const note = () => container.querySelector<HTMLElement>('.vc-note');
+const apply = () => act(() => (container.querySelector('.vc-apply') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const choose = (value: string) =>
   act(() => {
     Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(select(), value);
@@ -131,14 +133,30 @@ describe('the dropdown "Index"', () => {
     expect([...select().options].find((o) => o.value === 'NDWI')!.title).toContain('(McFeeters 1996)');
   });
 
-  it('draws the choice at once: the look of the view is the index, no "Apply" needed', () => {
+  it('draws the choice once "Apply" is pressed, not before (Otto, 1.11.2026): the choice is in the fields, "Apply" opens', () => {
     mount();
+    const button = container.querySelector('.vc-apply') as HTMLButtonElement;
+    expect(button.getAttribute('aria-disabled')).toBe('true');
     choose('NDWI');
-    expect(useAppStore.getState().appliedRender).toEqual({ index: 'NDWI', colormapName: 'rdbu', rescale: '-1,1' });
     expect(select().value).toBe('NDWI');
+    expect(useAppStore.getState().appliedRender).toEqual({ rescale: '0,3000' });
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    apply();
+    expect(useAppStore.getState().appliedRender).toEqual({ index: 'NDWI', colormapName: 'rdbu', rescale: '-1,1' });
+    expect(button.getAttribute('aria-disabled')).toBe('true');
     choose('');
+    expect(useAppStore.getState().appliedRender.index).toBe('NDWI');
+    apply();
     expect(useAppStore.getState().appliedRender).toEqual({ rescale: '0,3000' });
     expect(select().value).toBe('');
+  });
+
+  it('opens "Apply" for an index of the range and colormap the map shows already: NDVI after EVI', () => {
+    mount(SENTINEL_2_PRESETS, { appliedRender: { index: 'EVI', colormapName: 'rdylgn', rescale: '-1,1' }, pendingColormapName: 'rdylgn', pendingVmin: '-1', pendingVmax: '1' });
+    const button = container.querySelector('.vc-apply') as HTMLButtonElement;
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    choose('NDVI');
+    expect(button.getAttribute('aria-disabled')).toBeNull();
   });
 
   it('shows the colormap and the range of the preset in the fields, and a colormap to choose where the dataset draws RGB', () => {
@@ -165,8 +183,10 @@ describe('"Apply to all" with indices of one range (Otto, 1.11.2026)', () => {
   it('is open when the image shown has another index than the other image, though NDVI and EVI are drawn alike', () => {
     twoImages();
     act(() => useAppStore.getState().chooseViewIndex('NDVI'));
+    act(() => useAppStore.getState().applyRender());
     act(() => useAppStore.getState().stepImage(1));
     act(() => useAppStore.getState().chooseViewIndex('EVI'));
+    act(() => useAppStore.getState().applyRender());
     expect(useAppStore.getState().appliedRender).toMatchObject({ index: 'EVI', colormapName: 'rdylgn', rescale: '-1,1' });
     expect(locked()).toBe(false);
   });
@@ -176,6 +196,7 @@ describe('"Apply to all" with indices of one range (Otto, 1.11.2026)', () => {
     act(() => useAppStore.getState().chooseViewIndex('NDVI'));
     act(() => useAppStore.getState().saveViewLook());
     expect(locked()).toBe(true);
+    // Chosen but not applied: "Apply to all" takes what the fields hold, so it has something to do.
     act(() => useAppStore.getState().chooseViewIndex('NBR'));
     expect(locked()).toBe(false);
     expect(applyAll().title).toContain('Draw every image of this dataset with these values');
@@ -212,6 +233,8 @@ describe('the note under the settings', () => {
     mount(SENTINEL_2_PRESETS, { mapZoom: 5 });
     none();
     choose('NDWI');
+    none(); // not drawn yet, so nothing to say
+    apply();
     expect(note()!.textContent).toBe('Zoom in to compute NDWI');
   });
 

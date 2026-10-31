@@ -75,6 +75,7 @@ export default function DownloadDialog() {
   const skippedGroupsNotice = useAppStore((s) => s.downloadSkippedGroupsNotice);
   const exportOffer = useAppStore((s) => s.downloadExportOffer);
   const downloadStatus = useAppStore((s) => s.downloadStatus);
+  const indexNote = useAppStore((s) => s.downloadIndexNote);
 
   if (!layerId && !selectionMode) return null;
 
@@ -227,8 +228,16 @@ export default function DownloadDialog() {
           )}
 
           {index && (
-            <p className="hint-text" title="The same result a Processing job would give for these scenes and this area">
-              {downloadStatus ?? `${index.name} is computed from the scenes of this layer; this can take a moment.`}
+            <p
+              className={`hint-text${!downloading && (indexNote?.state === 'blocked' || indexNote?.state === 'failed') ? ' warn' : ''}`}
+              title={indexNote && indexNote.state !== 'estimating' ? indexNote.tip : 'The same result a Processing job would give for these scenes and this area'}
+              role={indexNote?.state === 'blocked' || indexNote?.state === 'failed' ? 'alert' : undefined}
+            >
+              {downloading
+                ? (downloadStatus ?? 'Computing…')
+                : indexNote === null || indexNote.state === 'estimating'
+                  ? 'Estimating…'
+                  : indexNote.text}
             </p>
           )}
 
@@ -257,7 +266,7 @@ export default function DownloadDialog() {
             type="button"
             className="lm-btn primary"
             onClick={() => void confirm()}
-            disabled={!req || !exportAllowed || downloading}
+            disabled={!req || !exportAllowed || downloading || (index !== null && indexNote?.state !== 'ready' && indexNote?.state !== 'failed')}
           >
             {downloading ? (index ? 'Computing…' : 'Downloading…') : 'Download'}
           </button>

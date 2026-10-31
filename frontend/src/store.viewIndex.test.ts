@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { datasetsFrom } from './datasets';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
 import { mosaicTemplateOf } from './mosaic';
+import { lookChanged } from './render';
 import { datasetSavable, useAppStore } from './store';
 import type { Collection, DownloadedInfo, StacItem } from './types';
 
@@ -61,6 +62,7 @@ function openView(presets: unknown[] = SENTINEL_2_PRESETS) {
     pendingColormapName: '',
     pendingVmin: '0',
     pendingVmax: '3000',
+    pendingIndex: '',
     layers: [],
     mosaics: {},
     mapZoom: 12,
@@ -75,62 +77,88 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+// The index is chosen into the fields of the view and drawn once "Apply" is pressed, like the colormap and the range (Otto, 1.11.2026).
+const apply = (name: string | null) => {
+  state().chooseViewIndex(name);
+  state().applyRender();
+};
+
 describe('choosing the index', () => {
-  it('sets the look to the index at once, with its range and colormap, and the fields of the view follow', () => {
+  it('puts the index into the fields with its range and colormap, and draws nothing yet', () => {
     state().chooseViewIndex('NDWI');
-    expect(state().appliedRender).toEqual(NDWI);
-    expect([state().pendingColormapName, state().pendingVmin, state().pendingVmax]).toEqual(['rdbu', '-1', '1']);
+    expect([state().pendingIndex, state().pendingColormapName, state().pendingVmin, state().pendingVmax]).toEqual(['NDWI', 'rdbu', '-1', '1']);
+    expect(state().appliedRender).toEqual(DEFAULT);
   });
 
-  it('changes from one index to the other', () => {
+  it('draws it once "Apply" is pressed', () => {
     state().chooseViewIndex('NDWI');
+    state().applyRender();
+    expect(state().appliedRender).toEqual(NDWI);
+  });
+
+  it('changes from one index to the other, in the fields first', () => {
+    apply('NDWI');
     state().chooseViewIndex('NDVI');
+    expect(state().appliedRender).toEqual(NDWI);
+    expect(state().pendingIndex).toBe('NDVI');
+    state().applyRender();
     expect(state().appliedRender).toEqual(NDVI);
   });
 
-  it('brings the standard look back with "none"', () => {
-    state().chooseViewIndex('NDWI');
+  it('puts the standard look into the fields with "none", and draws it with "Apply"', () => {
+    apply('NDWI');
     state().chooseViewIndex(null);
+    expect(state().appliedRender).toEqual(NDWI);
+    expect([state().pendingIndex, state().pendingVmax]).toEqual(['', '3000']);
+    state().applyRender();
     expect(state().appliedRender).toEqual({ rescale: '0,3000' });
-    expect(state().pendingVmax).toBe('3000');
+    expect(state().appliedRender.index).toBeUndefined();
   });
 
-  it('brings back the look saved for the dataset, unless that is an index', () => {
+  it('puts the look saved for the dataset there, unless that is an index', () => {
     useAppStore.setState({ savedLooks: { s2: { rescale: '0,1000', colormapName: 'viridis' } } });
-    state().chooseViewIndex('NDWI');
-    state().chooseViewIndex(null);
+    apply('NDWI');
+    apply(null);
     expect(state().appliedRender).toEqual({ rescale: '0,1000', colormapName: 'viridis' });
     useAppStore.setState({ savedLooks: { s2: NDVI } });
-    state().chooseViewIndex(null);
+    apply(null);
     expect(state().appliedRender).toEqual(DEFAULT);
   });
 
   it('does nothing for an index the dataset does not offer, or without a view', () => {
     state().chooseViewIndex('SAVI');
-    expect(state().appliedRender).toEqual(DEFAULT);
+    expect(state().pendingIndex).toBe('');
     useAppStore.setState({ focusMode: false });
     state().chooseViewIndex('NDWI');
-    expect(state().appliedRender).toEqual(DEFAULT);
+    expect(state().pendingIndex).toBe('');
   });
 
   it('does nothing for a dataset without presets (the DEM): the index is of the dataset of the image shown', () => {
     useAppStore.setState({ datasetId: 'dem', items: [item('d1', '2026-07-01', 'dem')], groups: [], downloaded: { d1: info('d1', 'dem') }, selectedIds: ['d1'] });
     state().chooseViewIndex('NDWI');
-    expect(state().appliedRender).toEqual(DEFAULT);
+    expect(state().pendingIndex).toBe('');
   });
 
   it('keeps the index while the range is changed by hand ("Apply")', () => {
-    state().chooseViewIndex('NDWI');
+    apply('NDWI');
     state().setPendingVmin('-0.5');
     state().setPendingVmax('0.5');
     state().applyRender();
     expect(state().appliedRender).toEqual({ index: 'NDWI', colormapName: 'rdbu', rescale: '-0.5,0.5' });
   });
+
+  it('is an unapplied change, which "Apply" would draw: lookChanged sees the index alone', () => {
+    apply('NDVI');
+    state().chooseViewIndex('EVI'); // the same range and colormap
+    expect(lookChanged(state().appliedRender, state())).toBe(true);
+    state().applyRender();
+    expect(lookChanged(state().appliedRender, state())).toBe(false);
+  });
 });
 
 describe('the index and the images of the view', () => {
   it('is the look of the image it was chosen for; the next image keeps what it had, and the index is back on return', () => {
-    state().chooseViewIndex('NDWI');
+    apply('NDWI');
     state().stepImage(1);
     expect(state().appliedRender).toEqual(DEFAULT);
     state().stepImage(-1);
@@ -138,7 +166,7 @@ describe('the index and the images of the view', () => {
   });
 
   it('is taken by every image of the dataset with "Apply to all"', () => {
-    state().chooseViewIndex('NDWI');
+    apply('NDWI');
     state().saveViewLook();
     expect(state().savedLooks.s2).toEqual(NDWI);
     state().stepImage(1);
@@ -146,9 +174,9 @@ describe('the index and the images of the view', () => {
   });
 
   it('is taken off all images again by "none" and "Apply to all"', () => {
-    state().chooseViewIndex('NDWI');
+    apply('NDWI');
     state().saveViewLook();
-    state().chooseViewIndex(null);
+    apply(null);
     expect(state().appliedRender).toEqual(DEFAULT);
     state().saveViewLook();
     state().stepImage(1);
@@ -163,9 +191,9 @@ describe('indices that look alike', () => {
   const NBR = { index: 'NBR', colormapName: 'rdylgn', rescale: '-1,1' };
 
   it('are three looks: what is chosen is told from what the other images show', () => {
-    state().chooseViewIndex('NDVI');
+    apply('NDVI');
     state().stepImage(1);
-    state().chooseViewIndex('EVI');
+    apply('EVI');
     expect(state().appliedRender).toEqual(EVI);
     // The first image shows NDVI, the one in view EVI: "Apply to all" has something to do.
     expect(datasetSavable(state())).toBe(true);
@@ -178,9 +206,9 @@ describe('indices that look alike', () => {
 
   it('can each be applied to all in turn, whichever of them the other images show', () => {
     for (const [from, to] of [['NDVI', 'EVI'], ['EVI', 'NBR'], ['NBR', 'NDVI']]) {
-      state().chooseViewIndex(from);
+      apply(from);
       state().saveViewLook();
-      state().chooseViewIndex(to);
+      apply(to);
       expect(datasetSavable(state()), `${from} → ${to}`).toBe(true);
     }
   });
@@ -189,9 +217,9 @@ describe('indices that look alike', () => {
     // One image of one scene, so that the layer is the picture of the whole view.
     const [scene] = state().items;
     useAppStore.setState({ items: [scene], groups: [{ key: ['a'], label: 'a', items: [scene] }], downloaded: { a1: info('a1') }, selectedIds: ['a1'] });
-    state().chooseViewIndex('NDVI');
+    apply('NDVI');
     state().addCurrentToLayers();
-    state().chooseViewIndex('NBR');
+    apply('NBR');
     expect(state().layers[0].restore.appliedRender).toEqual(NDVI);
     state().saveViewLook();
     expect(state().layers[0].restore.appliedRender).toEqual(NBR);
@@ -200,7 +228,7 @@ describe('indices that look alike', () => {
 
 describe('"Add to layers" with an index', () => {
   it('pins the image as a layer that computes the index and keeps it in its look, with no quicklook under it', () => {
-    state().chooseViewIndex('NDVI');
+    apply('NDVI');
     state().addCurrentToLayers();
     const [layer] = state().layers;
     expect(layer.restore.appliedRender).toEqual(NDVI);
@@ -213,7 +241,7 @@ describe('"Add to layers" with an index', () => {
   });
 
   it('pins every image with the look each has: the index for one, the standard look for the other', () => {
-    state().chooseViewIndex('NDVI');
+    apply('NDVI');
     state().addAllToLayers();
     const looks = Object.fromEntries(state().layers.map((l) => [l.restore.itemIds[0], l.restore.appliedRender]));
     expect(looks).toEqual({ a1: NDVI, b1: DEFAULT });
@@ -232,7 +260,7 @@ describe('"Add to layers" with an index', () => {
       selectedIds: ids,
       mosaics: { [mosaicTemplateOf('s2', entries)!]: { tileUrl: '/m/{z}/{x}/{y}', bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: ids } },
     });
-    state().chooseViewIndex('EVI');
+    apply('EVI');
     state().addCurrentToLayers();
     expect(state().layers).toEqual([]);
     expect(state().error).toBe('EVI cannot be computed here. Start a job in Processing for the whole scenes.');
@@ -240,7 +268,7 @@ describe('"Add to layers" with an index', () => {
 
   it('is pinned at any map zoom: the layer draws from the level the scenes start at', () => {
     useAppStore.setState({ mapZoom: 3 });
-    state().chooseViewIndex('NDVI');
+    apply('NDVI');
     state().addCurrentToLayers();
     expect(state().layers).toHaveLength(1);
   });
@@ -258,7 +286,7 @@ describe('"auto-scale" with an index', () => {
     expect(url.searchParams.get('band')).toBe('NDWI');
     expect([state().pendingVmin, state().pendingVmax]).toEqual(['-0.6', '0.3']);
     // Nothing is drawn differently until "Apply".
-    expect(state().appliedRender).toEqual(NDWI);
+    expect(state().appliedRender).toEqual(DEFAULT);
   });
 
   it('measures the asset of the scene without an index, as before', async () => {

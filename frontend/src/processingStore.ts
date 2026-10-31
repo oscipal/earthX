@@ -168,6 +168,9 @@ import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
+import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
+import type { IndexPreset } from './indexPresets';
+import { viewIndexOf } from './viewIndex';
 import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
@@ -379,6 +382,10 @@ interface ProcessingState {
   // ⚙ of a result layer (NM4-05b, adr/0019 option 2): the order of its job with the steps locked at the start, the output of
   // the job as the output; what is added is run with them as one order.
   extendResult: (layerId: string) => Promise<void>;
+  // "Process" at a layer that shows an index (NM4-14b): the panel opens on the index as the one band of an entity of its own.
+  extendIndexLayer: (layerId: string) => Promise<void>;
+  // The same for the view of scenes that has an index applied.
+  extendIndexView: () => Promise<void>;
   processFocusView: () => Promise<void>;
   setRangeDraft: (patch: Partial<PreviewRange>) => void;
   applyRange: () => void;
@@ -1109,6 +1116,39 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     return { ok: true, notes, draft };
   };
 
+  // The panel on an index as an entity of its own (`extendIndexLayer`): the order the index would be a job with, taken up like the
+  // order of a result, its one step locked, its one band the whole stock.
+  const openIndexPanel = async (args: {
+    dataset: DatasetOption;
+    preset: IndexPreset;
+    groups: readonly (readonly string[])[];
+    aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+    title: string;
+    whose: string;
+  }) => {
+    const { dataset, preset, groups, aoi, title, whose } = args;
+    const block = processBlockReason(dataset, groups.flat().length);
+    if (block) return void useAppStore.setState({ error: block });
+    const description = await describe(dataset.id);
+    if (description?.state !== 'ready') return void useAppStore.setState({ error: 'The process description of the dataset could not be loaded.' });
+    const made = indexOrdersOfScenes({ datasetId: dataset.id, groups, aoi, preset, dataset, info: description.info });
+    if ('problem' in made) return void useAppStore.setState({ error: made.problem });
+    const taken = await takeOrder(made.orders[0], whose, (draft, notes) => ({
+      // As the panel of a result: "Whole scene" of it; "AOI only" is another AOI inside it. The band is in the list of the output, not
+      // checked, as the bands of a scene are.
+      area: 'scene',
+      output: [],
+      fixed: {
+        itemIds: draft.groups.flat(),
+        aoi: draft.aoi,
+        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes },
+      },
+    }));
+    if (!taken.ok) useAppStore.setState({ error: taken.reason });
+    // The preview lies with the entry "Results", above the layer it is made from.
+    else useAppStore.getState().resultsToTop();
+  };
+
   const updateJob = (jobID: string, patch: Partial<JobEntry>) => {
     set((s) => ({ jobs: s.jobs.map((j) => (j.jobID === jobID ? { ...j, ...patch } : j)) }));
   };
@@ -1454,6 +1494,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     processLayer: async (layerId) => {
       const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
       if (layer?.derived === 'result') return get().extendResult(layerId);
+      if (layer && !layer.derived && indexOfLayer(layer, useAppStore.getState().datasets)) return get().extendIndexLayer(layerId);
       if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
       // The preview lies with the entry "Results": above the layer it is made from, so that it can be seen.
       useAppStore.getState().resultsToTop();
@@ -1465,6 +1506,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       openCrop(cropToAoi && isArea(aoi) ? { itemIds: layer.restore.itemIds, aoi, result: null } : null, extraScenes, layer.restore.selectedIds);
     },
     processFocusView: async () => {
+      // A view that shows an index (applied) is processed as that index.
+      const now = useAppStore.getState();
+      const nowShown = shownImageOf(viewImagesOf(now), now.shownImage);
+      const nowDataset = nowShown && now.datasets.find((d) => d.id === nowShown.datasetId);
+      if (nowDataset && viewIndexOf(now.appliedRender, nowDataset.collection)) return get().extendIndexView();
       useAppStore.getState().activateViewContext();
       const app = useAppStore.getState();
       // A job has one dataset: the scenes of every image of the dataset that is shown (NM4-53).
@@ -1839,6 +1885,43 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!taken.ok) useAppStore.setState({ error: taken.reason });
       // The preview lies with the entry "Results": above the result, which it would else be hidden by.
       else useAppStore.getState().resultsToTop();
+    },
+
+    // A layer or a view that shows an index is processed as the index alone: the panel opens on the order that makes it (one Band math
+    // step, locked) with that band as the whole stock of bands, as it opens on the result of a job (`extendResult`), so that the raw bands
+    // of the scenes are not offered besides it (Otto, 1.11.2026). The first pass of the layer is the pass of the order.
+    extendIndexLayer: async (layerId) => {
+      const app = useAppStore.getState();
+      const layer = app.layers.find((l) => l.id === layerId);
+      const preset = layer && indexOfLayer(layer, app.datasets);
+      const dataset = app.datasets.find((d) => d.id === layer?.restore.datasetId);
+      if (!layer || !preset || !dataset) return;
+      const { restore } = layer;
+      useAppStore.getState().activateLayerContext(layerId);
+      await openIndexPanel({
+        dataset,
+        preset,
+        groups: restore.groupItemIds.length > 0 ? restore.groupItemIds : [restore.itemIds],
+        aoi: restore.cropToAoi && isArea(restore.aoi) ? restore.aoi : null,
+        title: layer.name,
+        whose: 'this layer',
+      });
+    },
+    extendIndexView: async () => {
+      const app = useAppStore.getState();
+      const shown = shownImageOf(viewImagesOf(app), app.shownImage);
+      const dataset = shown && app.datasets.find((d) => d.id === shown.datasetId);
+      const preset = dataset && viewIndexOf(app.appliedRender, dataset.collection);
+      if (!shown || !dataset || !preset) return;
+      useAppStore.getState().activateViewContext();
+      await openIndexPanel({
+        dataset,
+        preset,
+        groups: [shown.ids],
+        aoi: app.cropToAoi && isArea(app.viewAoi) ? app.viewAoi : null,
+        title: dataset.title,
+        whose: 'this view',
+      });
     },
 
     reviewOrder: async () => {
