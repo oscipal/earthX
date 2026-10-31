@@ -94,7 +94,6 @@ import {
   assetsCarrying,
   bandNamesOf,
   defaultName,
-  numberedName,
   dropFromNormalize,
   isBandMath,
   nameProblem,
@@ -382,9 +381,7 @@ interface ProcessingState {
   choosePass: (passKey: string) => void;
   setArea: (area: Area) => void;
   setRunAs: (runAs: RunAs) => void;
-  // `given` is what an index button puts into a Band math step (NM4-14): the expression and the name it wants. The step is an
-  // ordinary one from then on.
-  addStep: (op: string, opVersion: number, given?: { expression: string; name: string }) => void;
+  addStep: (op: string, opVersion: number) => void;
   updateStep: (key: number, name: string, value: FieldValue) => void;
   moveStep: (key: number, direction: -1 | 1) => void;
   removeStep: (key: number) => void;
@@ -1419,7 +1416,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     choosePass: (passKey) => set({ passKey, reviewError: null, startError: null, ...dropReview() }),
     setArea: (area) => set({ area, reviewError: null, startError: null, ...dropReview() }),
     setRunAs: (runAs) => set({ runAs, reviewError: null, startError: null, ...dropReview() }),
-    addStep: (op, opVersion, given) => {
+    addStep: (op, opVersion) => {
       const { datasetId, datasets } = useAppStore.getState();
       const description = datasetId ? get().descriptions[datasetId] : undefined;
       if (description?.state !== 'ready') return;
@@ -1436,10 +1433,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // (adr/0020 §6, §9). A normalize step proposes the last result.
       let added: string | null = null;
       if (op === 'band_math') {
-        const taken = [...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)];
-        added = given ? numberedName(given.name, taken) : defaultName(taken);
+        added = defaultName([...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
         values.name = added;
-        if (given) values.expression = given.expression;
       } else if (op === 'normalize' && 'bands' in values) {
         values.bands = view.results.at(-1)?.name ?? '';
       }

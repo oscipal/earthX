@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 //
-// The row "Index" of the processing panel (NM4-14b, plan §15): one button for each index the dataset offers, which adds an
-// ordinary Band math step; and the look of the preview for a band with the expression of a preset (D2). No backend: `fetch`
-// answers the process description, the TileJSON and the statistics.
+// The look of the preview of the processing panel for a band with the expression of an index preset of the dataset (NM4-14b,
+// D2): the range and colormap of the preset, whatever was measured. The panel has no index buttons (Otto, 31.10.2026: the
+// quick calculation is in the view, `ViewIndex.test.tsx`); an expression typed by hand that is the preset's is drawn alike.
+// No backend: `fetch` answers the process description, the TileJSON and the statistics.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -12,8 +13,7 @@ import type { DatasetOption } from '../datasets';
 import { SENTINEL_2_PRESETS } from '../fixtures/indexPresets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import { bboxToPolygon } from '../geoUtils';
-import { canonicalJson } from '../processing';
-import { orderView, useProcessingStore } from '../processingStore';
+import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
@@ -25,7 +25,6 @@ declare global {
 
 const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
 const AOI = bboxToPolygon([10.4, 50.4, 10.6, 50.6]);
-const NDVI = '(nir - red) / (nir + red)';
 const band = { data_type: 'uint16', nodata: 0 };
 const asset = () => ({ href: 'https://example.org/b.tif', type: COG, 'raster:bands': [band] });
 
@@ -139,16 +138,12 @@ async function openWith(presets: unknown) {
 }
 
 const store = () => useProcessingStore.getState();
-const row = () => container.querySelector<HTMLElement>('[role="group"][aria-label="Add index"]');
-const buttons = () => [...(row()?.querySelectorAll('button') ?? [])];
-const index = (name: string) => buttons().find((b) => b.textContent === `＋ ${name}`)!;
 const bandMath = () => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === '＋ Band math')!;
 const click = (element: HTMLElement) => act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const expression = (at: number) => container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]')[at]!;
 const section = () => container.querySelector('section[aria-label="Preview on the map"]')!;
 const fields = () => [...section().querySelectorAll<HTMLInputElement>('input[type="number"]')];
 const tiles = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams;
-const order = () => orderView(useAppStore.getState(), store()).parts[0].order;
 
 function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const prototype = input instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
@@ -158,130 +153,7 @@ function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) 
   });
 }
 
-describe('the row "Index"', () => {
-  it('has a button for each preset of the dataset, in the order of the registry, under "Add step"', async () => {
-    await openWith(SENTINEL_2_PRESETS);
-    expect(buttons().map((b) => b.textContent)).toEqual(['＋ NDVI', '＋ NDWI', '＋ NDSI', '＋ NBR', '＋ EVI']);
-    const add = container.querySelector('[role="group"][aria-label="Add step"]')!;
-    expect(add.nextElementSibling).toBe(row());
-  });
-
-  it.each([
-    ['an empty list (the DEM)', []],
-    ['no field (a backend before NM4-14a)', undefined],
-    ['a field that is no list', 'NDVI'],
-    ['entries that are all broken', [{ name: 'NDVI' }, null]],
-  ])('is not there for %s', async (_, presets) => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await openWith(presets);
-    expect(row()).toBeNull();
-    expect(container.textContent).not.toContain('Index:');
-    expect(container.querySelector('[role="group"][aria-label="Add step"]')).not.toBeNull();
-  });
-
-  it('is not there where the description has no Band math of version 2', async () => {
-    const without = JSON.parse(JSON.stringify(s2));
-    const steps = without.inputs.recipe.schema.properties.steps;
-    steps.items.oneOf = steps.items.oneOf.filter((o: { $ref: string }) => !o.$ref.endsWith('step_band_math_v2'));
-    fetchMock.mockImplementation(async (url: string) => (url.startsWith('/processing/processes/') ? json(without) : new Response('{}', { status: 404 })));
-    await openWith(SENTINEL_2_PRESETS);
-    expect(container.querySelector('[role="group"][aria-label="Add step"]')).not.toBeNull();
-    expect(row()).toBeNull();
-  });
-
-  it('says what an index is in the tooltip and to a screen reader, and writes no text beside the buttons', async () => {
-    await openWith(SENTINEL_2_PRESETS);
-    const tip = 'Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.';
-    expect(index('NDVI').title).toBe(tip);
-    expect(index('NDVI').getAttribute('aria-label')).toBe(`NDVI. ${tip}`);
-    expect(index('NDWI').title).toContain('(McFeeters 1996)');
-    // The label and the buttons: nothing else, and the source is no link.
-    expect(row()!.textContent).toBe('Index:＋ NDVI＋ NDWI＋ NDSI＋ NBR＋ EVI');
-    expect(row()!.querySelector('a')).toBeNull();
-  });
-});
-
-describe('a click', () => {
-  it('adds the same Band math step as the expression typed by hand, and the same order', async () => {
-    await openWith(SENTINEL_2_PRESETS);
-    click(index('NDVI'));
-    await flush();
-    const clicked = order();
-    expect(store().steps).toHaveLength(1);
-    expect(store().steps[0]).toMatchObject({ op: 'band_math', opVersion: 2, values: { expression: NDVI, name: 'NDVI' } });
-
-    store().resetDraft();
-    click(bandMath());
-    typeInto(expression(0), NDVI);
-    act(() => store().renameResult(store().steps[0].key, 'NDVI'));
-    await flush();
-    expect(store().steps[0].values).toEqual(expect.objectContaining({ expression: NDVI, name: 'NDVI' }));
-    expect(clicked).not.toBeNull();
-    expect(canonicalJson(clicked)).toBe(canonicalJson(order()));
-  });
-
-  it('puts the new band into the output and shows it', async () => {
-    await openWith(SENTINEL_2_PRESETS);
-    click(index('NDWI'));
-    await afterDebounce();
-    expect(store().output).toContain('NDWI');
-    expect(store().preview!.band).toBe('NDWI');
-    expect(tiles().get('band')).toBe('NDWI');
-  });
-
-  it('is an ordinary step afterwards: the expression and the name can be changed', async () => {
-    await openWith(SENTINEL_2_PRESETS);
-    click(index('NDVI'));
-    typeInto(expression(0), '(nir - red) / (nir + red + 0.5)');
-    act(() => store().renameResult(store().steps[0].key, 'SAVI'));
-    expect(store().steps[0].values).toMatchObject({ expression: '(nir - red) / (nir + red + 0.5)', name: 'SAVI' });
-    expect(store().output).toContain('SAVI');
-    expect(store().output).not.toContain('NDVI');
-  });
-
-  it('numbers the name on a second click: two clicks are two steps and two bands', async () => {
-    await openWith(SENTINEL_2_PRESETS);
-    click(index('NDVI'));
-    click(index('NDVI'));
-    click(index('NDWI'));
-    click(index('NDVI'));
-    await afterDebounce();
-    expect(store().steps.map((s) => s.values.name)).toEqual(['NDVI', 'NDVI_2', 'NDWI', 'NDVI_3']);
-    expect(store().output).toEqual(expect.arrayContaining(['NDVI', 'NDVI_2', 'NDWI', 'NDVI_3']));
-    expect(store().preview!.band).toBe('NDVI_3');
-  });
-
-  it('numbers the name where a step was renamed to it in another case', async () => {
-    await openWith(SENTINEL_2_PRESETS);
-    click(bandMath());
-    act(() => store().renameResult(store().steps[0].key, 'ndvi'));
-    click(index('NDVI'));
-    expect(store().steps.map((s) => s.values.name)).toEqual(['ndvi', 'NDVI_2']);
-  });
-
-  it('is locked where the steps are full, with the reason, and adds nothing', async () => {
-    await openWith(SENTINEL_2_PRESETS);
-    const { maxSteps } = orderView(useAppStore.getState(), store()).info!;
-    for (let n = 0; n < maxSteps; n++) click(index('NDVI'));
-    expect(store().steps).toHaveLength(maxSteps);
-    expect(buttons().every((b) => b.disabled)).toBe(true);
-    expect(index('EVI').title).toBe(`At most ${maxSteps} steps`);
-    expect(index('EVI').getAttribute('aria-label')).toBe(`EVI. At most ${maxSteps} steps`);
-    click(index('EVI'));
-    expect(store().steps).toHaveLength(maxSteps);
-  });
-
-  it('is locked while a name breaks a rule, as "＋ Band math" is', async () => {
-    await openWith(SENTINEL_2_PRESETS);
-    click(index('NDVI'));
-    act(() => store().setNameProblem(store().steps[0].key, 'Use letters, digits and _'));
-    expect(bandMath().hasAttribute('disabled')).toBe(true);
-    expect(buttons().every((b) => b.disabled)).toBe(true);
-    expect(index('NDVI').title).toBe(orderView(useAppStore.getState(), store()).nameBlock);
-  });
-});
-
-describe('the look of an index (D2)', () => {
+describe('the preview of an index (D2)', () => {
   const colormap = () => tiles().get('colormap_name');
   const rescale = () => tiles().get('rescale');
 
@@ -292,7 +164,8 @@ describe('the look of an index (D2)', () => {
 
   it('draws the preview of a preset in the range and colormap of the preset, whatever was measured', async () => {
     await openWith(SENTINEL_2_PRESETS);
-    click(index('NDWI'));
+    click(bandMath());
+    typeInto(expression(0), '(green - nir) / (green + nir)');
     await afterDebounce();
     expect([rescale(), colormap()]).toEqual(['-1,1', 'rdbu']);
     expect(fields().map((f) => f.value)).toEqual(['-1', '1']);
@@ -308,7 +181,8 @@ describe('the look of an index (D2)', () => {
 
   it('draws a changed expression by the rule it had', async () => {
     await openWith(SENTINEL_2_PRESETS);
-    click(index('NDWI'));
+    click(bandMath());
+    typeInto(expression(0), '(green - nir) / (green + nir)');
     await afterDebounce();
     typeInto(expression(0), '(nir - green) / (nir + green)');
     await afterDebounce();
@@ -318,7 +192,8 @@ describe('the look of an index (D2)', () => {
 
   it('lets the range of the user go first', async () => {
     await openWith(SENTINEL_2_PRESETS);
-    click(index('NDWI'));
+    click(bandMath());
+    typeInto(expression(0), '(green - nir) / (green + nir)');
     await afterDebounce();
     typeInto(fields()[0], '0');
     typeInto(fields()[1], '0.5');

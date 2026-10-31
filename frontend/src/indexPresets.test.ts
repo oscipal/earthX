@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
 import { indexPresetsOf, presetFor, presetRange, presetTip } from './indexPresets';
-import { numberedName } from './processingBands';
 import type { Collection } from './types';
 
 const collectionWith = (presets: unknown): Collection => ({ id: 'x', 'earthx:index_presets': presets as unknown[] }) as unknown as Collection;
@@ -101,17 +100,5 @@ describe('the texts of a preset', () => {
 
   it('gives the range and colormap as the fields of the panel hold them', () => {
     expect(presetRange(ndwi)).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdbu' });
-  });
-});
-
-describe('numberedName', () => {
-  it('is the name where it is free', () => {
-    expect(numberedName('NDVI', ['red', 'nir'])).toBe('NDVI');
-  });
-
-  it('counts on from 2, ignoring case, over the names that are taken', () => {
-    expect(numberedName('NDVI', ['ndvi'])).toBe('NDVI_2');
-    expect(numberedName('NDVI', ['NDVI', 'NDVI_2'])).toBe('NDVI_3');
-    expect(numberedName('NDVI', ['NDVI', 'ndvi_3'])).toBe('NDVI_2');
   });
 });
