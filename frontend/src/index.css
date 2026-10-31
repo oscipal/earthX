@@ -340,6 +340,19 @@ body.dragging * {
 .vc-num input {
   width: 84px;
 }
+/* A slider is no text box: the padding and the frame of `.vc-field input` above shrank the track inside its own box, so
+   that the thumb of an opacity of 1 stopped short of the right end (NM4-65). It keeps the height of the fields. */
+.vc-field input[type='range'] {
+  padding: 0;
+  border: 0;
+  background: none;
+  height: 30px;
+  box-sizing: border-box;
+}
+.vc-field input[type='range']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .vc-actions {
   display: flex;
   gap: 8px;
