@@ -66,6 +66,7 @@ import {
 } from './searchFilters';
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
 import { layerOfView, sameRender } from './viewLayer';
+import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -533,7 +534,7 @@ function overlaysOfEntries(
   const overlays = passesOf(entries, groups).map((pass) => {
     const datasetId = pass[0][1].datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
-    return overlaysOfPass(datasetId, pass, s.mosaics, look, clip, underlaysOf(pass, items, dataset, clip));
+    return overlaysOfPass(datasetId, pass, s.mosaics, look, clip, underlaysOf(pass, items, dataset, clip), viewIndexOf(look, dataset?.collection));
   });
   return overlays.some((o) => o === null) ? null : stackLikeView(overlays).flatMap((o) => o ?? []);
 }
@@ -622,6 +623,18 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
   if (picked.length === 0) {
     set({ error: 'Nothing to add — search and pick a time step first.' });
     return;
+  }
+  // An index the tile route cannot take would be a layer with nothing in it: it is not pinned (zooming mends nothing here; the
+  // layer draws from the zoom the scenes start at, whatever the map shows now).
+  const groupsOfView = sectionsForView(s).flatMap((section) => section.groups);
+  for (const { image, entries } of picked) {
+    const look = lookOfImage(s, image, shown);
+    const preset = viewIndexOf(look, s.datasets.find((d) => d.id === image.datasetId)?.collection);
+    const block = preset && indexBlockOf({ datasetId: image.datasetId, entries, groups: groupsOfView, mosaics: s.mosaics, preset, mapZoom: Infinity });
+    if (preset && block) {
+      set({ error: `${indexNote(block, preset.name)}. Start a job in Processing for the whole scenes.` });
+      return;
+    }
   }
   const built = picked.map((pick) => ({ ...pick, overlays: overlaysOfEntries(s, pick.entries, clip, lookOfImage(s, pick.image, shown)) }));
   const waiting = built.filter((b) => b.overlays === null);
@@ -1218,6 +1231,8 @@ export interface AppState {
   showImage: (key: string) => void;
   stepImage: (delta: -1 | 1) => void;
   chooseViewDataset: (datasetId: string) => void;
+  // The index of the dataset the image shows is drawn in its place (NM4-14b); `null` brings the standard look of the dataset back.
+  chooseViewIndex: (name: string | null) => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
@@ -2083,6 +2098,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       const first = images.find((image) => image.datasetId === datasetId);
       return first && s.focusMode && first.key !== shown?.key ? moveToImage(s, first, shown) : {};
     }),
+  chooseViewIndex: (name) =>
+    set((s) => {
+      const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+      if (!shown || !s.focusMode) return {};
+      const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
+      // Without an index the image goes back to what the dataset shows: the look saved for it ("Apply to all") unless that
+      // names an index too, else the standard one.
+      const saved = s.savedLooks[shown.datasetId];
+      const plain = saved && !saved.index ? saved : defaultLookOf(s, shown.datasetId);
+      const preset = name === null ? null : viewIndexOf({ index: name }, collection);
+      if (name !== null && !preset) return {};
+      const look = preset ? indexLookOf(preset) : plain;
+      return { appliedRender: look, ...pendingFieldsOf(look) };
+    }),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
@@ -2130,9 +2159,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const itemId = shown?.ids[0] ?? Object.keys(s.downloaded)[0];
     const info = itemId === undefined ? undefined : s.downloaded[itemId];
     if (!info) return;
+    // An index is measured as it is drawn: the tile route with the same step, not the asset of the scene.
+    const index = viewIndexOf(s.appliedRender, s.datasets.find((d) => d.id === info.datasetId)?.collection);
     set({ focusLoading: true });
     try {
-      const stats = await api.fetchStatistics(info.datasetId, itemId, info.asset);
+      const stats = index ? await api.fetchStatisticsAt(indexStatisticsUrl(info.datasetId, itemId!, index)) : await api.fetchStatistics(info.datasetId, itemId!, info.asset);
       const range = autoRescale(stats);
       if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
     } catch (e) {

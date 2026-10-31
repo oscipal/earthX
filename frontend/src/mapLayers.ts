@@ -14,10 +14,11 @@ import { asFeatureCollection, footprintOf, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
 import type { LayerOverlay, MapLayer } from './layers';
+import { indexRasterOf, viewIndexOf } from './viewIndex';
 import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
 import { passesOf, stackLikeView, viewOfPass } from './mosaic';
-import type { Mosaics, PlannedRaster } from './mosaic';
+import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 const AOI_SRC = 'aoi-src';
@@ -1055,8 +1056,13 @@ export function syncFocusRaster(
   );
   let tiles = 0;
   let underlays = 0;
-  const place = (raster: PlannedRaster) => {
-    if (tiles < MAX_DYNAMIC_LAYERS) addTiles(map, raster, tiles++, s.render, clip);
+  // An index in the look (NM4-14b) is computed by the tile route with an operator, with no quicklook under it: that would
+  // be the true-colour picture, which an index is not. A raster the route cannot take is not drawn; the view says why.
+  const index = dataset ? viewIndexOf(s.render, dataset.collection) : null;
+  const place = (raster: PlannedRaster, pass: SceneEntry[]) => {
+    if (tiles >= MAX_DYNAMIC_LAYERS) return;
+    const drawing = index && dataset ? indexRasterOf(raster, pass, dataset.id, index) : raster;
+    if (typeof drawing !== 'string') addTiles(map, drawing, tiles++, s.render, clip);
   };
   for (const { entries, view } of stackLikeView(drawn)) {
     if (view.kind === 'pending' && !s.tilesInLayer) continue;
@@ -1066,11 +1072,11 @@ export function syncFocusRaster(
       // the underlay's image arrives.
       const item = underlays < MAX_DYNAMIC_LAYERS ? s.items.find((it) => it.id === itemId) : undefined;
       const underlay = item && underlayOf(item, dataset, clip);
-      if (underlay) addQuicklookUnderlay(map, underlay, underlays++, gen);
-      if (view.kind === 'scenes' && !s.tilesInLayer) place(info);
+      if (underlay && !index) addQuicklookUnderlay(map, underlay, underlays++, gen);
+      if (view.kind === 'scenes' && !s.tilesInLayer) place(info, entries);
     });
     if (view.kind === 'mosaic' && !s.tilesInLayer) {
-      (wanted > MAX_DYNAMIC_LAYERS ? view.rasters.slice(-1) : view.rasters).forEach(place);
+      (wanted > MAX_DYNAMIC_LAYERS ? view.rasters.slice(-1) : view.rasters).forEach((raster) => place(raster, entries));
     }
   }
   restackAll(map);
