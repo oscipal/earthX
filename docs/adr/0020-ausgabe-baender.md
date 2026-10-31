@@ -1263,3 +1263,38 @@ noch nicht gemergt und kann ihn übernehmen.
   (`resultLayer.ts: startPlaceOf`). Kennt der Auftrag es nicht (Download-Dialog, Kopie aus der Zeit davor), gilt das letzte Ergebnis eines `band_math`-Schritts der Kopie des Auftrags in der Reihenfolge der
   Kette — die Reihenfolge des Anlegens steht nicht in der Datei —, sonst das erste Band.
 - **RGB ist aus diesem PR herausgenommen** (Otto, 2026-10-31) und eine eigene Aufgabe, NM4-64: Registry-Feld `earthx:true_color`, bis zu drei `band=` an den Kachel-Routen, Frontend. Dieser PR enthält davon nichts.
+
+---
+
+## 20. Nachtrag NM4-64: „RGB“ in Vorschau und Ergebnis-Layer (2026-10-31; zu §10, §19, §19.1)
+
+Umgesetzt ist die Aufgabe `plans/querschnitt/nm4-64-rgb.md` (Wunsch Otto, 2026-10-31): Echtfarben als Eintrag „RGB“ ganz oben in „Show“ (Vorschau) und „Band“ (Ergebnis-Layer). §10 nannte das als
+Variante P2 und empfahl P1; §19.1 hat es aus #255 herausgelöst. Die Ansicht (NM4-45, Paket NM4-54) nutzt dasselbe Registry-Feld und folgt später.
+
+- **Registry.** `DatasetConfig.true_color` und `earthx:true_color` an der Collection: die drei Bandnamen in der Reihenfolge Rot, Grün, Blau (Sentinel-2: `red`, `green`, `blue`; DEM: leere Liste).
+  Pflichtfeld ohne Vorgabe (B10). Der Start (`catalog`) verlangt leer oder drei verschiedene Bänder des Datensatzes: kein Bild daraus wie `visual`, nicht die Maskenschicht, kein Name, den die
+  Registry sonst nicht kennt (`band_units`). Die Zeile steht in `architekturplan.md` 5.1.
+- **Kachel-Routen.** Item- und Mosaik-Kachel, TileJSON und Statistik nehmen `band=` einmal oder dreimal (Reihenfolge = Kanäle R, G, B); die Ergebnis-Kachel nimmt dreimal `bidx`, wie schon vorher.
+  `plan_band` plant mit denselben Regeln wie ein Auftrag mit den drei Bändern als Ausgabe: die Kachel liest nur die Assets der drei Bänder, die Kanäle liegen in der Reihenfolge der URL, die Werte sind
+  die eines Auftrags mit diesen Bändern (Test gegen den Auftrag, Bit für Bit, auf der nativen Stufe, für Item- und Mosaik-Kachel).
+- **Auslegungen (Vorschlag, gelten bis Otto widerspricht).**
+  1. **Eins oder drei, nicht zwei.** „Bis zu drei `band=`“ heißt hier: eins oder drei. Zwei Bänder haben kein Bild (rio-tiler läse sie als Grau und Alpha), die Kachel antwortet `400`, ebenso für ein
+     Band zweimal und für einen leeren oder zu langen Namen; alles vor dem Abruf des Items.
+  2. **Eine Skala, keine Colormap.** Bei drei Bändern gilt genau ein `rescale` für alle drei (mehrere: `400`), und `colormap_name` oder `colormap` ist ein `400`. Die Ergebnis-Kachel verweigert die
+     Colormap bei drei `bidx` schon durch rio-tiler (`400`); ein Test hält das fest.
+  3. **TileJSON.** Ein Band steht wie bisher unter `band` (Text), drei unter `bands` (Liste); `band` fehlt dann.
+  4. **Die Skala von RGB** ist die Regel eines Ergebnisses mit mehreren Bändern (`render.ts: scaleOf`): das kleinste 2-%-Perzentil und das größte 98-%-Perzentil der drei Bänder, nie „Index“ (−1…1).
+     Das Panel misst die Statistik der drei Bänder in einer Anfrage (Szene, Mosaik) oder liest sie aus der Antwort über die AOI (`measureOver`); beim Ergebnis-Layer aus `properties.bands[].statistics`
+     der drei Bänder (`resultLayer.ts: colourStats`).
+  5. **Wann „RGB“ im Dropdown steht.** Nur wenn der Datensatz `earthx:true_color` nennt **und** alle drei Bänder in der Ausgabe (Vorschau) bzw. in `result.tif` (Ergebnis-Layer) sind; sonst nicht
+     angezeigt (UI-01 §4). Der Eintrag steht über den Ergebnissen der Schritte. Sein Wert ist `@rgb` (`processingBands.ts: RGB`), kein gültiger Bandname.
+  6. **Vorgabe** (Otto, Option 2): „RGB“ ist der Beginn nur **ohne** Ergebnis eines `band_math`-Schritts in der Ausgabe; sonst bleibt es das zuletzt angelegte Ergebnis (`startBand`, dessen Rückfall
+     „erstes Band“ jetzt „erster Eintrag“ ist und damit RGB, wo es angeboten wird). Der Ergebnis-Layer beginnt wie die Vorschau (`ShelfJob.shownBand` darf `@rgb` sein); ohne diese Angabe gilt
+     dieselbe Regel auf den Bändern der Datei.
+  7. **Bedienung bei „RGB“.** Das Feld „Colormap“ erscheint nicht (Vorschau, Ansicht des Ergebnis-Layers); vmin/vmax und „auto-scale“ gelten für alle drei; „Save“ hält den Bereich unter
+     `bandRanges['@rgb']` ohne Colormap, ohne neue Version der Ablage. Ein angewandter Bereich von Hand geht beim Wechsel des Bandes verloren (§19 Auslegung 1).
+  8. **Liste von `bidx`.** `AppliedRender.bidx` darf eine kommagetrennte Liste sein (`4,3,2`); `buildTileUrl` sendet je Platz ein `bidx`. Der Test, der `bidx: '1,2,3'` als **einen** Parameter erwartete,
+     prüfte nur das Durchreichen; kein Code setzte je eine Liste.
+- **Prüfung.** Tests: Registry (`tests/catalog/test_true_color.py`), Kachel (`test_tiler_rgb.py`, `test_tiler_mosaic_rgb.py`), Ergebnis-Kachel (`test_result_tiles_bands.py`), Frontend
+  (`processingPreview.test.ts`, `ProcessingShowRgb.test.tsx`, `ProcessingResultRgb.test.tsx`, `resultLayer.test.ts`); mit dem Stand vor der Aufgabe schlagen sie fehl (Gegenprobe). Im Browser
+  `frontend/e2e/rgb.cjs` (Hell/Dunkel, breit und 360 px).
