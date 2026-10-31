@@ -16,7 +16,7 @@ import { indexPresetsOf, presetTip } from '../indexPresets';
 import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
-import { indexBlockOf, INDEX_TIP, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
+import { indexBlockOf, INDEX_TIP, LAYER_INDEX_NOTE, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { viewKind } from '../viewKind';
 import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
@@ -71,6 +71,7 @@ export default function ViewerControls() {
   const chooseViewDataset = useAppStore((s) => s.chooseViewDataset);
   const chooseViewIndex = useAppStore((s) => s.chooseViewIndex);
   const appliedRender = useAppStore((s) => s.appliedRender);
+  const viewOfLayer = useAppStore((s) => s.viewOfLayer);
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const images = useMemo(
@@ -89,6 +90,9 @@ export default function ViewerControls() {
   // The index of the dataset the image shows in place of a band (NM4-14b): a dataset without presets has no dropdown.
   const presets = indexPresetsOf(shownDataset?.collection);
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
+  // The view of a layer of the layer manager shows the index the layer was added with and does not offer the others; a layer
+  // without one has no dropdown (Otto, 1.11.2026).
+  const showIndex = presets.length > 0 && (!viewOfLayer || index !== null);
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -174,11 +178,11 @@ export default function ViewerControls() {
         </button>
       </div>
 
-      <div className={`vc-render${presets.length > 0 ? ' has-index' : ''}`}>
-        {presets.length > 0 && (
-          <label className="vc-field" title={index ? presetTip(index) : INDEX_TIP}>
+      <div className={`vc-render${showIndex ? ' has-index' : ''}`}>
+        {showIndex && (
+          <label className="vc-field" title={index ? (viewOfLayer ? `${presetTip(index)} ${LAYER_INDEX_NOTE}` : presetTip(index)) : INDEX_TIP}>
             <span>Index</span>
-            <select value={index?.name ?? ''} onChange={(e) => chooseViewIndex(e.target.value || null)}>
+            <select value={index?.name ?? ''} disabled={viewOfLayer} onChange={(e) => chooseViewIndex(e.target.value || null)}>
               <option value="">— none —</option>
               {presets.map((preset) => (
                 <option key={preset.name} value={preset.name} title={presetTip(preset)}>

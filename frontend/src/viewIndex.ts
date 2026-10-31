@@ -51,6 +51,9 @@ export function indexLookOf(preset: IndexPreset): AppliedRender {
 // The text of the tooltip of the dropdown for an index: its title and formula (the same as the tooltip of the preset).
 export const INDEX_TIP = 'Quick calculation of an index of the scenes shown, from zoom 8. For whole scenes start a job in Processing.';
 
+// Added to the tooltip of the dropdown in the view of a layer, which shows what the layer was added with and does not change it.
+export const LAYER_INDEX_NOTE = 'This layer was added with it; to show another index, add it from the view.';
+
 export type IndexBlock = 'zoom' | 'assets' | 'length';
 
 // The short note in the view, and the explanation in its tooltip.

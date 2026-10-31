@@ -66,6 +66,7 @@ import {
 } from './searchFilters';
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
 import { layerOfView, sameRender } from './viewLayer';
+import { downloadIndexCrop, indexOfLayer } from './indexDownload';
 import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
@@ -407,6 +408,7 @@ const NO_ANSWER_FILTERS: SectionSearchAnswer & { ignoredFilters: string[]; incom
 const LEAVE_FOCUS = {
   focusMode: false,
   viewLayerId: null,
+  viewOfLayer: false,
   resultViewLayerId: null,
   cropToAoi: false,
   viewAoi: null,
@@ -538,6 +540,9 @@ function overlaysOfEntries(
   });
   return overlays.some((o) => o === null) ? null : stackLikeView(overlays).flatMap((o) => o ?? []);
 }
+
+// The computing of the index of a download, which closing the dialog stops (`indexDownload.ts`).
+let indexDownloadAbort: AbortController | null = null;
 
 // What a pin is made from, to tell on arrival whether the view is still the one it was asked in.
 const pinKey = (s: AppState) =>
@@ -1053,6 +1058,9 @@ export interface AppState {
   // the view still shows exactly what it pinned (`viewLayer.ts::viewLayerOf`), that
   // layer draws the picture, at its place in the list and with its eye.
   viewLayerId: string | null;
+  // The view was opened from a layer of the layer manager, not made by the search: the index of such a layer is the one it was added
+  // with and is not chosen again there (NM4-14b, Otto 1.11.2026).
+  viewOfLayer: boolean;
   // The layer of a job's result whose range and colormap the bottom of the map shows (UI-01 §6.11):
   // `selectLayer` sets it for a result layer. The results list is folded away meanwhile, as in the
   // full-resolution view, which this is not (`focusMode` stays off).
@@ -1221,6 +1229,8 @@ export interface AppState {
   closeDownloadDialog: () => void;
   setDownloadResolution: (factor: ResolutionFactor) => void;
   confirmDownload: () => Promise<void>;
+  // How far the download of an index is (NM4-14b): `null` for any other download.
+  downloadStatus: string | null;
   enterFocus: (cropToAoi: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
   addAllToLayers: () => void;
@@ -1312,6 +1322,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   layers: [],
   resultsAt: 0,
   viewLayerId: null,
+  viewOfLayer: false,
   resultViewLayerId: null,
   downloadDialogLayerId: null,
   downloadSelection: false,
@@ -1358,6 +1369,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   searching: false,
   downloading: false,
+  downloadStatus: null,
   playing: false,
   shownGroupIndex: null,
   revealNotBefore: 0,
@@ -1759,6 +1771,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       viewLooks: {},
       savedLooks: {},
       viewLayerId: id,
+      viewOfLayer: true,
       focusLoading: true,
     });
     void get().loadMosaics().finally(() => set({ focusLoading: false }));
@@ -1878,7 +1891,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
     });
   },
-  closeDownloadDialog: () =>
+  closeDownloadDialog: () => {
+    // Closing the dialog stops the computing of an index (what it placed is dismissed).
+    indexDownloadAbort?.abort();
     set({
       downloadDialogLayerId: null,
       downloadSelection: false,
@@ -1887,7 +1902,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadPasses: null,
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
-    }),
+    });
+  },
   setDownloadResolution: (factor) => set({ downloadResolution: factor, downloadExportOffer: null }),
 
   // Download the AOI crop for whatever the dialog is open for (M2-06's
@@ -1910,6 +1926,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       : (layer?.name ?? '');
     if (!req) {
       set({ downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null });
+      return;
+    }
+    // A layer that shows an index is downloaded as that index, computed as a job would, with no job in the list (NM4-14b).
+    if (layer && indexOfLayer(layer, s.datasets)) {
+      const controller = new AbortController();
+      indexDownloadAbort = controller;
+      set({ downloading: true, error: null, downloadExportOffer: null, downloadStatus: 'Computing…' });
+      const problem = await downloadIndexCrop({
+        layer,
+        datasets: s.datasets,
+        signal: controller.signal,
+        onStatus: (text) => set({ downloadStatus: text }),
+      });
+      if (indexDownloadAbort === controller) indexDownloadAbort = null;
+      if (controller.signal.aborted) {
+        set({ downloading: false, downloadStatus: null });
+      } else if (problem) {
+        set({ downloading: false, downloadStatus: null, error: problem });
+      } else {
+        set({ downloading: false, downloadStatus: null, downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null, notice: `Downloaded "${name}".` });
+      }
       return;
     }
     set({ downloading: true, error: null, downloadExportOffer: null });
@@ -2035,6 +2072,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       ...(note ? { notice: note } : {}),
       focusMode: true,
+      viewOfLayer: false,
       resultViewLayerId: null,
       cropToAoi,
       // The view keeps the area it is opened with.
@@ -2101,7 +2139,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   chooseViewIndex: (name) =>
     set((s) => {
       const shown = shownImageOf(viewImagesOf(s), s.shownImage);
-      if (!shown || !s.focusMode) return {};
+      // A layer keeps the index it was added with: it is not chosen again from the layer manager.
+      if (!shown || !s.focusMode || s.viewOfLayer) return {};
       const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
       // Without an index the image goes back to what the dataset shows: the look saved for it ("Apply to all") unless that
       // names an index too, else the standard one.
