@@ -611,6 +611,8 @@ Vitest-Fälle für `itemsForMap(_, null, _)` und `toggleResultsGroup` (Einklappe
 
 Mit Playwright gegen den lokalen Dev-Server geprüft: Panel auf die Steuerungstafel gezogen, weicht gleitend nach rechts aus (acht unterschiedliche Zwischenwerte über acht Stichproben, kein Sprung); Steuerungstafel eingeklappt → Panel kehrt exakt an die abgelegte Stelle zurück; wieder ausgeklappt → weicht erneut von dort aus; Übergang von 16 auf 372 in acht monoton wachsenden Stichproben belegt (16, 31, 152, 267, 330, 361, 370, 372).
 
+**Nachtrag NM4-66 (31.10.2026, Otto):** Das Ausweichen schwebender Kästen vor dem linken Panel (V-10 bis V-12, später die nach rechts rückende Spalte der Leisten unten seit UI-01) entfällt. Die Kästen bleiben, wo sie verankert oder hingezogen sind, egal ob ein Panel offen ist; die Klemme an den Bildschirmrand (8 px) bleibt. Der Text oben bleibt als Geschichte stehen. Siehe `docs/plans/querschnitt/nm4-66-auswahl-und-zeitleiste.md` und den Log-Eintrag vom 31.10.2026.
+
 ### M2-17 — Szene per Namen finden
 
 **Ziel:** Der Nutzer gibt einen Szenennamen ein, etwa
