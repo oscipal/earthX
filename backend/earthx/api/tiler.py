@@ -358,8 +358,8 @@ class OperatorInput:
 
     inputs: tuple[tuple[Any, AssetPath | ZarrAsset], ...]
     steps: tuple[tuple[Any, Any], ...]
-    #: The band the picture shows, with the steps made to leave it (NM4-43d); ``None`` for steps of version 1.
-    band: str | None = None
+    #: The bands the picture shows, with the steps made to leave them (NM4-43d, NM4-64); ``None`` for steps of version 1.
+    bands: tuple[str, ...] | None = None
 
     @property
     def dataset_id(self) -> str:
@@ -388,8 +388,8 @@ class MosaicOperatorInput:
     scenes: tuple[tuple[tuple[Any, AssetPath | ZarrAsset], ...], ...]
     steps: tuple[tuple[Any, Any], ...]
     bounds: tuple[float, float, float, float]
-    #: The band the picture shows, as for :class:`OperatorInput`.
-    band: str | None = None
+    #: The bands the picture shows, as for :class:`OperatorInput`.
+    bands: tuple[str, ...] | None = None
 
 
 def _operator_support() -> Any:
@@ -429,6 +429,8 @@ MAX_OPERATOR_PARAMS_CHARS = 2048
 MAX_OPERATOR_STEPS = 4
 #: The longest name of a band a tile URL may ask for; the bands of a dataset are named by its assets, variables and steps.
 MAX_BAND_CHARS = 128
+#: A picture shows one band, or this many as its red, green and blue (NM4-64).
+COLOUR_BANDS = 3
 _OPERATOR_ROUTES = frozenset({"tile", "tilejson", "statistics"})
 
 # TiTiler's free band-math and algorithm parameters. They computed on raw values with
@@ -514,29 +516,43 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
     ]
 
 
-def _band_request(request: Request) -> str | None:
+def _bands_request(request: Request) -> tuple[str, ...] | None:
     """The ``band`` of the query: the one band of the stock a tile shows (NM4-43d), or ``None`` where the URL names none.
 
-    ``400`` for a name given twice or empty or longer than :data:`MAX_BAND_CHARS`; whether the steps leave such a
-    band is for :func:`_band_plan`.
+    Or three, in the order red, green, blue, for a colour picture (NM4-64): they share one ``rescale`` and take no
+    colormap, which paints one band. Two bands have no picture.
+
+    ``400`` for a name that is empty, longer than :data:`MAX_BAND_CHARS` or given twice, for a number of names other
+    than one or three, and for a colormap or several ``rescale`` next to three; whether the steps leave such bands is
+    for :func:`_band_plan`.
     """
     given = request.query_params.getlist("band")
     if not given:
         return None
-    if len(given) > 1 or not 1 <= len(given[0]) <= MAX_BAND_CHARS:
-        raise HTTPException(status_code=400, detail=f"name one band of at most {MAX_BAND_CHARS} characters")
-    return given[0]
+    if len(given) not in (1, COLOUR_BANDS) or not all(1 <= len(name) <= MAX_BAND_CHARS for name in given):
+        raise HTTPException(
+            status_code=400,
+            detail=f"name one band, or three for red, green and blue, of at most {MAX_BAND_CHARS} characters each",
+        )
+    if len(set(given)) != len(given):
+        raise HTTPException(status_code=400, detail="name each band once")
+    if len(given) > 1:
+        if any(name in request.query_params for name in ("colormap_name", "colormap")):
+            raise HTTPException(status_code=400, detail="a picture of three bands takes no colormap")
+        if len(request.query_params.getlist("rescale")) > 1:
+            raise HTTPException(status_code=400, detail="a picture of three bands takes one rescale for all of them")
+    return tuple(given)
 
 
-def _band_plan(support: Any, entries: list[Any], steps: list[tuple[Any, Any]], band: str | None) -> Any:
-    """The plan of the band a tile shows (:func:`~earthx.processing.tile.plan_band`), or the ``HTTPException`` of its refusal.
+def _band_plan(support: Any, entries: list[Any], steps: list[tuple[Any, Any]], bands: tuple[str, ...] | None) -> Any:
+    """The plan of the bands a tile shows (:func:`~earthx.processing.tile.plan_band`), or the ``HTTPException`` of its refusal.
 
     Judged on what the items describe, before any file is opened: ``422`` with the name for a band the steps do not leave
     or a step that does not fit the bands, ``400`` for a ``band`` next to a step of version 1. ``None`` for steps of
     version 1 without a ``band``: they leave the bands they leave and nothing is dropped.
     """
     try:
-        return support.plan_band(entries, steps, band)
+        return support.plan_band(entries, steps, bands)
     except support.option_refused as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
     except support.recipe_invalid as error:
@@ -551,7 +567,7 @@ def _operator_input(
     item: str,
     assets: list[str],
     steps: list[tuple[Any, Any]],
-    band: str | None,
+    bands: tuple[str, ...] | None,
     target_gsd: float | None,
 ) -> OperatorInput:
     """The assets of an operator tile, each with the bands and scaling source the item describes.
@@ -564,12 +580,12 @@ def _operator_input(
     for key in assets:
         ref = _resolve_ref(stac_item, config=config, item=item, asset=key)
         try:
-            bands, scaling, unit = support.describe_bands(stac_item, config, ref)
+            described, scaling, unit = support.describe_bands(stac_item, config, ref)
             entries.append(
                 support.resolved_input(
                     asset=support.resolved_asset(**ref.to_json()),
                     version=None,
-                    bands=bands,
+                    bands=described,
                     scaling=scaling,
                     unit=unit,
                     gsd=None,
@@ -580,7 +596,7 @@ def _operator_input(
         except ValidationError:
             raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
         refs.append(ref)
-    plan = _band_plan(support, entries, steps, band)
+    plan = _band_plan(support, entries, steps, bands)
     wanted = set(assets if plan is None else plan.assets)
     if len(wanted) > MAX_OPERATOR_ASSETS:
         raise HTTPException(status_code=400, detail=f"the tile reads {len(wanted)} assets, at most {MAX_OPERATOR_ASSETS}")
@@ -597,7 +613,7 @@ def _operator_input(
         inputs.append((entry, target))
     if plan is None:
         return OperatorInput(tuple(inputs), tuple(steps))
-    return OperatorInput(tuple(inputs), plan.steps, plan.band)
+    return OperatorInput(tuple(inputs), plan.steps, plan.bands)
 
 
 async def dataset_asset_path(
@@ -644,7 +660,7 @@ async def dataset_asset_path(
         raise HTTPException(status_code=400, detail="op is for tiles, their TileJSON and statistics only")
     if len(set(asset)) != len(asset):
         raise HTTPException(status_code=400, detail="name each asset once")
-    band = _band_request(request)
+    bands = _bands_request(request)
     stac_item = await _fetch_item(state, dataset, item)
     target_gsd = target_gsd_for(request, stac_item)
     return _operator_input(
@@ -654,7 +670,7 @@ async def dataset_asset_path(
         item=item,
         assets=asset,
         steps=requested,
-        band=band,
+        bands=bands,
         target_gsd=target_gsd,
     )
 
@@ -672,13 +688,13 @@ _ParamsQuery = Annotated[
 
 
 _BandQuery = Annotated[
-    str | None,
+    list[Annotated[str, Field(max_length=MAX_BAND_CHARS)]] | None,
     Query(
         description=(
             "the band of the stock a tile with steps of version 2 shows; the last band a `band_math` step added if none is "
-            f"named, else the first. At most {MAX_BAND_CHARS} characters"
+            f"named, else the first. Three, in the order red, green, blue, for a colour picture (no colormap, one `rescale`). "
+            f"At most {MAX_BAND_CHARS} characters each"
         ),
-        max_length=MAX_BAND_CHARS,
     ),
 ]
 
@@ -830,7 +846,7 @@ async def mosaic_scenes(
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
     steps = _operator_request(request, config)
-    band = _band_request(request) if steps is not None else None
+    bands = _bands_request(request) if steps is not None else None
     if steps is None and "band" in request.query_params:
         raise HTTPException(status_code=400, detail="band is for tiles with op")
     try:
@@ -859,7 +875,7 @@ async def mosaic_scenes(
         # The scenes carry the same bands (`_describe_mosaic` compares them), so the first by id says which assets the
         # shown band needs; only those are described, ordered and opened (NM4-43d).
         entries = [_describe_one(items, refs, config, ids[0], key) for key in asset]
-        plan = _band_plan(_operator_support(), entries, steps, band)
+        plan = _band_plan(_operator_support(), entries, steps, bands)
         asset = list(asset if plan is None else plan.assets)
         if len(asset) > mosaic_tiles.MAX_MOSAIC_OPERATOR_ASSETS:
             raise HTTPException(
@@ -895,7 +911,7 @@ async def mosaic_scenes(
         )
         for item_id in read
     )
-    return MosaicOperatorInput(dataset, scenes_with_steps, tuple(run_steps), bounds, None if plan is None else plan.band)
+    return MosaicOperatorInput(dataset, scenes_with_steps, tuple(run_steps), bounds, None if plan is None else plan.bands)
 
 
 def _describe_one(

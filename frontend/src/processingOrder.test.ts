@@ -11,6 +11,7 @@ import {
   aoiProvenanceFor,
   aoiProvenanceOf,
   auxiliaryAssetsOf,
+  trueColorOf,
   bandSources,
   buildExportOrder,
   buildMosaicOrder,
@@ -367,6 +368,15 @@ describe('the bands of the data (adr/0020 §14)', () => {
     expect(auxiliaryAssetsOf(collection(['visual', 3, null]))).toEqual(['visual']);
     for (const field of [undefined, null, 'visual', { visual: true }]) expect(auxiliaryAssetsOf(collection(field))).toEqual([]);
     expect(auxiliaryAssetsOf(undefined)).toEqual([]);
+  });
+
+  it('knows the three bands of the colour picture from the registry, and only three texts (NM4-64)', () => {
+    const collection = (field: unknown) => ({ id: 'c', 'earthx:true_color': field }) as unknown as Collection;
+    expect(trueColorOf(collection(['red', 'green', 'blue']))).toEqual(['red', 'green', 'blue']);
+    for (const field of [undefined, null, [], ['red', 'green'], ['red', 'green', 'blue', 'nir'], ['red', 'green', 3], ['red', '', 'blue'], 'rgb']) {
+      expect(trueColorOf(collection(field))).toBeNull();
+    }
+    expect(trueColorOf(undefined)).toBeNull();
   });
 
   it('finds the one band of a dataset that has one, by its name', () => {

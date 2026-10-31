@@ -100,6 +100,7 @@ async function run(browser, { theme, viewport }) {
         'earthx:capabilities': caps,
         'earthx:viewer': viewer('datetime'),
         'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: [[0, 255], [0, 255], [0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
+        'earthx:true_color': ['red', 'green', 'blue'],
         'earthx:search_filters': [
           { property: 'platform', kind: 'values', title: 'Satellite', group: 'Acquisition', description: 'The satellite.', oneOf: [{ const: 'sentinel-2a', title: 'Sentinel-2A' }, { const: 'sentinel-2b', title: 'Sentinel-2B' }] },
         ],

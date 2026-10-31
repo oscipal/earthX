@@ -190,10 +190,16 @@ class EarthxTilerFactory(TilerFactory):
     supported_tms: TileMatrixSets = TileMatrixSets({"WebMercatorQuad": morecantile.tms.get("WebMercatorQuad")})
 
     def tilejson_extras(self, src_dst: BaseReader) -> dict[str, Any]:
-        """Fields a factory adds to its TileJSON beyond TiTiler's: of an operator's tile the ``band`` it shows and its ``unit``."""
+        """Fields a factory adds to its TileJSON beyond TiTiler's: of an operator's tile the band it shows and its ``unit``.
+
+        ``band`` is the one band of a grey or coloured-by-scale picture, ``bands`` the three of a colour picture.
+        """
         extras = {}
-        if (band := getattr(src_dst, "band", None)) is not None:
-            extras["band"] = band
+        bands = getattr(src_dst, "bands", None)
+        if bands is not None and len(bands) == 1:
+            extras["band"] = bands[0]
+        elif bands is not None:
+            extras["bands"] = list(bands)
         if (unit := getattr(src_dst, "unit", None)) is not None:
             extras["unit"] = unit
         return extras

@@ -490,6 +490,8 @@ SENTINEL_2_L2A = DatasetConfig(
             reference="https://doi.org/10.1016/S0034-4257(96)00112-5",
         ),
     ),
+    # NM4-64 (Otto 31.10.2026): the picture the eye sees, B04, B03, B02 at 10 m.
+    true_color=("red", "green", "blue"),
 )
 
 # M3-11b, F1: no single acquisition instant exists for the DEM (`adr/0009`
@@ -680,6 +682,8 @@ COP_DEM_GLO_30 = DatasetConfig(
     search_filters=(),
     # One band of heights: none of the indices of Awesome Spectral Indices reads it.
     index_presets=(),
+    # One band of heights: no picture in colours of light.
+    true_color=(),
 )
 
 # The datasets that left the registry (docs/adr/0017-ein-sentinel-2-datensatz.md, rule III). An id on this

@@ -5,7 +5,7 @@
 
 import type { ResultLayerInfo } from './layers';
 import { buildTileUrl } from './mapLayers';
-import { startBand } from './processingBands';
+import { RGB, startBand } from './processingBands';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, statsFrom, type ResultStats } from './render';
 import type { AppliedRender, Bbox } from './types';
@@ -81,19 +81,38 @@ export function resultBands(properties: Record<string, unknown> | undefined, ord
   });
 }
 
+// The places in the file of the three bands of the colour picture (`earthx:true_color`: red, green, blue), or `null` where the
+// dataset has none or the file lacks one of them (NM4-64).
+export function colourPlacesOf(bands: readonly ResultBand[], trueColor: readonly string[] | null): [number, number, number] | null {
+  if (trueColor === null || trueColor.length !== 3) return null;
+  const places = trueColor.map((name) => bands.findIndex((band) => band.name === name));
+  return places.every((place) => place >= 0) ? [places[0], places[1], places[2]] : null;
+}
+
+// What the job measured of the three bands of the colour picture, as one measure: the scale is chosen from all three
+// (`render.ts::scaleOf`), so that no channel is stretched by a range of its own. `null` where none has statistics.
+export function colourStats(bands: readonly ResultBand[], colour: readonly number[]): ResultStats | null {
+  const measured = colour.flatMap((place) => bands[place]?.stats?.bands ?? []);
+  return measured.length > 0 ? { bands: measured, expression: false } : null;
+}
+
 // The place (0 is the first of the file) of the band a result layer starts with, the one the preview started with
-// (Otto, 31.10.2026): the band the preview showed when the job was started, if the result has it; else the result of a
-// Band math step of the order, the last of the chain (which was created last is not kept); else the first band.
+// (Otto, 31.10.2026), or `RGB` for the colour picture (NM4-64): the band the preview showed when the job was started, if the
+// result has it; else the result of a Band math step of the order, the last of the chain (which was created last is not
+// kept); else RGB where the result has the three bands of a colour picture; else the first band.
 export function startPlaceOf(
   bands: readonly ResultBand[],
   order: { steps: { op: string; params: Record<string, unknown> }[] } | null,
   shown: string | null,
-): number {
+  colour: readonly number[] | null = null,
+): number | typeof RGB {
   const names = bands.map((band) => band.name);
+  if (shown === RGB && colour !== null) return RGB;
   if (shown !== null && names.includes(shown)) return names.indexOf(shown);
   const made = (order?.steps ?? []).flatMap((step) => (step.op === 'band_math' && typeof step.params.name === 'string' ? [step.params.name] : []));
   const results = made.filter((name) => names.includes(name)).map((name, created) => ({ name, created }));
-  return Math.max(0, names.indexOf(startBand(names, results) ?? ''));
+  const start = startBand([...(colour === null ? [] : [RGB]), ...names], results);
+  return start === RGB ? RGB : Math.max(0, names.indexOf(start ?? ''));
 }
 
 // The range a band is drawn with by choice of the person: saved for the band, or — a result of one band — saved for the job;
@@ -101,9 +120,10 @@ export function startPlaceOf(
 export function ownRangeOf(
   job: { range: PreviewRange | null; bandRanges: Readonly<Record<string, PreviewRange>> },
   bands: readonly ResultBand[],
-  place: number,
+  place: number | typeof RGB,
 ): PreviewRange | null {
-  return bands.length > 1 ? (job.bandRanges[bands[place]?.name ?? ''] ?? null) : job.range;
+  if (bands.length <= 1) return job.range;
+  return job.bandRanges[place === RGB ? RGB : (bands[place]?.name ?? '')] ?? null;
 }
 
 function drawnWith(range: PreviewRange): AppliedRender {
@@ -122,16 +142,20 @@ function drawnWith(range: PreviewRange): AppliedRender {
 //     so that jobs can be compared with one another;
 //  4. otherwise the 2–98 % of the AOI from the statistics, in `viridis`;
 //  5. a result without statistics is drawn with the range of the panel, as before M4-32.
+// The colour picture (`colour`, NM4-64) takes one range for its three bands and no colormap, whatever the rule says.
 export function resultRender(
   dataType: string | null,
   panel: PreviewRange,
   stats: ResultStats | null = null,
   own: PreviewRange | null = null,
+  colour = false,
 ): AppliedRender {
   if (dataType === null || !FLOAT.test(dataType)) return {};
-  if (own) return drawnWith(own);
   const scale = scaleOf(stats);
-  return scale ? { rescale: `${scale.low},${scale.high}`, colormapName: scale.colormap } : drawnWith(panel);
+  const render = own ? drawnWith(own) : scale ? { rescale: `${scale.low},${scale.high}`, colormapName: scale.colormap } : drawnWith(panel);
+  if (!colour) return render;
+  const { colormapName: _none, ...plain } = render;
+  return plain;
 }
 
 // The range and colormap a render stands for, as the fields of the result view show them.
@@ -154,10 +178,14 @@ export function renderOfRange(range: PreviewRange): AppliedRender | null {
 
 // The tile URL of a result drawn another way: its style is the part after the first `&`
 // (`resultTileTemplate` ends in `?tilesize=256`), and only that part changes. The band (`bidx`) stays unless `render` names one.
+// The three bands of a colour picture take no colormap: the tiler refuses it.
 export function restyledTileUrl(tileUrl: string, render: AppliedRender): string {
   const amp = tileUrl.indexOf('&');
-  const bidx = amp < 0 ? null : new URLSearchParams(tileUrl.slice(amp + 1)).get('bidx');
-  return buildTileUrl(amp < 0 ? tileUrl : tileUrl.slice(0, amp), bidx && !render.bidx ? { ...render, bidx } : render);
+  const kept = amp < 0 ? [] : new URLSearchParams(tileUrl.slice(amp + 1)).getAll('bidx');
+  const bidx = render.bidx ?? (kept.length > 0 ? kept.join(',') : undefined);
+  const { colormapName: _colormap, ...withoutColormap } = render;
+  const style = bidx && bidx.includes(',') ? withoutColormap : render;
+  return buildTileUrl(amp < 0 ? tileUrl : tileUrl.slice(0, amp), bidx ? { ...style, bidx } : style);
 }
 
 // The same result drawn from the band at `place` (0 is the first of the file): `bidx` counts from 1.
@@ -165,10 +193,15 @@ export function bandTileUrl(tileUrl: string, place: number, render: AppliedRende
   return restyledTileUrl(tileUrl, { ...render, bidx: String(place + 1) });
 }
 
+// The same result drawn as a colour picture: the places of red, green and blue as `bidx`, in this order (NM4-64).
+export function colourTileUrl(tileUrl: string, colour: readonly number[], render: AppliedRender): string {
+  return restyledTileUrl(tileUrl, { ...render, bidx: colour.map((place) => place + 1).join(',') });
+}
+
 // How a layer of a result is drawn when no range was set by hand for its job (M4-32): the default of
 // "Auto". `null` for a result that is drawn as it is.
-export function defaultRange(info: Pick<ResultLayerInfo, 'dataType' | 'stats'>, panel: PreviewRange): PreviewRange | null {
-  const render = resultRender(info.dataType, panel, info.stats, null);
+export function defaultRange(info: Pick<ResultLayerInfo, 'dataType' | 'stats' | 'band'>, panel: PreviewRange): PreviewRange | null {
+  const render = resultRender(info.dataType, panel, info.stats, null, info.band === RGB);
   return 'rescale' in render || render.colormapName ? rangeOfRender(render) : null;
 }
 

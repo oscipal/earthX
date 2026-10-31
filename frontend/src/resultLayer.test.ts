@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { RGB } from './processingBands';
 import { DEFAULT_RANGE } from './processingPreview';
 import { parseTileJson } from './processing';
 import {
   bandTileUrl,
+  colourPlacesOf,
+  colourStats,
+  colourTileUrl,
   defaultRange,
   isOverview,
   isResultExpired,
@@ -434,5 +438,131 @@ describe('the band a result layer starts with (Otto, 31.10.2026)', () => {
     expect(startPlaceOf(bands, { steps: [{ op: 'mask', params: { source: 'scl' } }] }, null)).toBe(0);
     expect(startPlaceOf(bands, null, null)).toBe(0);
     expect(startPlaceOf([], null, 'x')).toBe(0);
+  });
+});
+
+describe('the colour picture of a result (NM4-64)', () => {
+  const stats = (p2: number, p98: number) => ({ count: 9, minimum: p2 - 0.01, maximum: p98 + 0.01, percentile_2: p2, percentile_98: p98 });
+  const file = (...names: string[]) => names.map((name) => ({ name, stats: resultBands({ bands: [{ name, statistics: stats(0.1, 0.5) }] }, null)[0].stats }));
+  const order = (...names: string[]) => ({ steps: names.map((name) => ({ op: 'band_math', params: { expression: 'a', name } })) });
+  const TRUE_COLOR = ['red', 'green', 'blue'];
+
+  describe('the places of red, green and blue', () => {
+    it('are found by name, in the order red, green, blue, wherever they lie in the file', () => {
+      expect(colourPlacesOf(file('ndvi', 'blue', 'green', 'red'), TRUE_COLOR)).toEqual([3, 2, 1]);
+    });
+
+    it('are none where the dataset has no colour picture or the file lacks a band of it', () => {
+      expect(colourPlacesOf(file('red', 'green', 'blue'), null)).toBeNull();
+      expect(colourPlacesOf(file('red', 'green'), TRUE_COLOR)).toBeNull();
+      expect(colourPlacesOf(file('red', 'green', 'blue'), ['red', 'green'])).toBeNull();
+      expect(colourPlacesOf([], TRUE_COLOR)).toBeNull();
+    });
+  });
+
+  describe('the statistics of the three bands', () => {
+    const bands = ['red', 'green', 'blue'].map((name, i) => ({
+      name,
+      stats: resultBands({ bands: [{ name, statistics: stats(0.1 * (i + 1), 0.4 + 0.1 * (i + 1)) }] }, null)[0].stats,
+    }));
+
+    it('are one measure of all three, which is no index', () => {
+      const measure = colourStats(bands, [0, 1, 2])!;
+      expect(measure.bands).toHaveLength(3);
+      expect(measure.expression).toBe(false);
+    });
+
+    it('leave out a band without statistics, and are none where none has any', () => {
+      expect(colourStats([bands[0], { name: 'x', stats: null }, bands[2]], [0, 1, 2])!.bands).toHaveLength(2);
+      expect(colourStats([{ name: 'x', stats: null }], [0])).toBeNull();
+    });
+  });
+
+  describe('where the layer starts', () => {
+    const bands = file('ndvi', 'red', 'green', 'blue');
+    const colour = [1, 2, 3];
+
+    it('is RGB where the preview showed RGB and the result has it', () => {
+      expect(startPlaceOf(bands, order('ndvi'), RGB, colour)).toBe(RGB);
+    });
+
+    it('is the band the preview showed, a result of the order or RGB otherwise', () => {
+      expect(startPlaceOf(bands, order('ndvi'), 'green', colour)).toBe(2);
+      expect(startPlaceOf(bands, order('ndvi'), null, colour)).toBe(0); // the result of the step, not RGB
+      expect(startPlaceOf(file('red', 'green', 'blue'), null, null, [0, 1, 2])).toBe(RGB);
+      expect(startPlaceOf(file('red', 'green', 'blue'), { steps: [{ op: 'mask', params: { source: 'scl' } }] }, null, [0, 1, 2])).toBe(RGB);
+    });
+
+    it('is as before where the result has no colour picture', () => {
+      expect(startPlaceOf(file('red', 'green', 'blue'), null, RGB, null)).toBe(0);
+      expect(startPlaceOf(file('red', 'green', 'blue'), null, null)).toBe(0);
+    });
+  });
+
+  describe('the range saved for it', () => {
+    const hand = { vmin: '0', vmax: '1', colormap: '' };
+    const job = { range: null, bandRanges: { [RGB]: hand, red: { vmin: '2', vmax: '3', colormap: '' } } };
+
+    it('is the one under RGB, and no band is drawn with it', () => {
+      const bands = file('red', 'green', 'blue');
+      expect(ownRangeOf(job, bands, RGB)).toEqual(hand);
+      expect(ownRangeOf(job, bands, 0)).toEqual({ vmin: '2', vmax: '3', colormap: '' });
+      expect(ownRangeOf(job, bands, 1)).toBeNull();
+    });
+  });
+
+  describe('how it is drawn', () => {
+    const measure = { bands: [{ minimum: 0, maximum: 1, percentile2: 0.1, percentile98: 0.6 }, { minimum: 0, maximum: 1, percentile2: 0.05, percentile98: 0.5 }], expression: false };
+
+    it('has one range of all bands and no colormap, where a single band has its colormap', () => {
+      expect(resultRender('float32', DEFAULT_RANGE, measure, null, true)).toEqual({ rescale: '0.05,0.6' });
+      expect(resultRender('float32', DEFAULT_RANGE, measure, null, false)).toEqual({ rescale: '0.05,0.6', colormapName: 'viridis' });
+    });
+
+    it('takes the range saved for it, and drops its colormap', () => {
+      const own = { vmin: '0', vmax: '2', colormap: 'terrain' };
+      expect(resultRender('float32', DEFAULT_RANGE, measure, own, true)).toEqual({ rescale: '0,2' });
+    });
+
+    it('is drawn as it is where the values are whole numbers', () => {
+      expect(resultRender('uint8', DEFAULT_RANGE, measure, null, true)).toEqual({});
+    });
+
+    it('puts no colormap in the fields of "auto"', () => {
+      expect(defaultRange({ dataType: 'float32', stats: measure, band: RGB }, DEFAULT_RANGE)).toEqual({ vmin: '0.05', vmax: '0.6', colormap: '' });
+      expect(defaultRange({ dataType: 'float32', stats: measure, band: 1 }, DEFAULT_RANGE)).toMatchObject({ colormap: 'viridis' });
+    });
+  });
+
+  describe('the tile URL', () => {
+    const template = `/results/${ID}/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=256`;
+    const params = (url: string) => new URL(url, 'http://localhost').searchParams;
+
+    it('asks for the three bands as one bidx each, in the order red, green, blue', () => {
+      const url = colourTileUrl(template, [3, 2, 1], { rescale: '0,1' });
+      expect(params(url).getAll('bidx')).toEqual(['4', '3', '2']);
+      expect(params(url).getAll('rescale')).toEqual(['0,1']);
+      expect(url.startsWith(template)).toBe(true);
+    });
+
+    it('never asks for a colormap with three bands', () => {
+      const url = colourTileUrl(template, [0, 1, 2], { rescale: '0,1', colormapName: 'viridis' });
+      expect(params(url).has('colormap_name')).toBe(false);
+    });
+
+    it('keeps the three bands when the result is drawn another way, and refuses a colormap on them', () => {
+      const url = colourTileUrl(template, [2, 1, 0], { rescale: '0,1' });
+      const again = restyledTileUrl(url, { rescale: '0,5', colormapName: 'terrain' });
+      expect(params(again).getAll('bidx')).toEqual(['3', '2', '1']);
+      expect(params(again).getAll('rescale')).toEqual(['0,5']);
+      expect(params(again).has('colormap_name')).toBe(false);
+    });
+
+    it('goes back to one band with its colormap', () => {
+      const url = colourTileUrl(template, [2, 1, 0], { rescale: '0,1' });
+      const one = bandTileUrl(url, 1, { rescale: '0,5', colormapName: 'terrain' });
+      expect(params(one).getAll('bidx')).toEqual(['2']);
+      expect(params(one).get('colormap_name')).toBe('terrain');
+    });
   });
 });

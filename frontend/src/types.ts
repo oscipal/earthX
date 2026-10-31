@@ -215,6 +215,8 @@ export interface Collection {
   'earthx:band_units'?: Record<string, string | null> | null;
   // The assets that are no band of the data (a picture, a preview), by the asset key an order names (NM4-07).
   'earthx:auxiliary_assets'?: string[] | null;
+  // The three bands of the colour picture, red, green, blue (NM4-64); empty for a dataset that has none.
+  'earthx:true_color'?: string[] | null;
   // The filters the search offers for this dataset (DS-02), in the words of STAC queryables; read, and checked
   // entry by entry, by `searchFilters.ts`. Absent on a backend before DS-02a.
   'earthx:search_filters'?: unknown[] | null;
@@ -232,6 +234,7 @@ export interface TimeStepGroup {
 // names follow TiTiler's own query parameters (`bidx`, `colormap_name`, …) so
 // `buildTileUrl` (mapLayers.ts) can pass them straight through.
 export interface AppliedRender {
+  // The band of a result by its place from 1; several, comma-separated, for a colour picture (`3,2,1`).
   bidx?: string;
   expression?: string;
   colormapName?: string;

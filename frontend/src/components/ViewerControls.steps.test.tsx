@@ -18,8 +18,8 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
 
-// The ranges of the standard visualisation of Sentinel-2 here: one (a band) or three (RGB).
-let s2Rescale: number[][] = [[0, 255]];
+// Whether Sentinel-2 here has a true-colour picture (`earthx:true_color`, NM4-64), whose box of the colormap offers RGB only.
+let s2TrueColor: string[] | null = null;
 
 const base = (id: string, title: string): Collection =>
   ({
@@ -27,8 +27,9 @@ const base = (id: string, title: string): Collection =>
     title,
     'earthx:format': 'cog',
     'earthx:capabilities': { roi: true, time_range: id === 's2', band_math: true, interpolation: true },
-    'earthx:default_render': { title: 'Standard', assets: ['visual'], rescale: id === 's2' ? s2Rescale : [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
+    'earthx:default_render': { title: 'Standard', assets: ['visual'], rescale: [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
     'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+    ...(id === 's2' && s2TrueColor ? { 'earthx:true_color': s2TrueColor } : {}),
     'earthx:search_filters':
       id === 's2'
         ? [{ property: 'platform', kind: 'values', title: 'Satellite', group: 'Acquisition', description: 'The satellite.', oneOf: [{ const: 'sentinel-2a', title: 'Sentinel-2A' }, { const: 'sentinel-2b', title: 'Sentinel-2B' }] }]
@@ -98,7 +99,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
-  s2Rescale = [[0, 255]];
+  s2TrueColor = null;
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
@@ -319,7 +320,7 @@ describe('an image of three bands', () => {
   const colormapOptions = () => [...(colormapField()!.parentElement!.querySelector('select') as HTMLSelectElement).options].map((o) => o.textContent);
 
   it('has the box of the colormap with RGB in it and nothing else to choose, and the fields and buttons stay', () => {
-    s2Rescale = [[0, 255], [0, 255], [0, 255]];
+    s2TrueColor = ['red', 'green', 'blue'];
     mount(THREE);
     expect(colormapField()).toBeDefined();
     expect(colormapOptions()).toEqual(['RGB']);
@@ -334,7 +335,7 @@ describe('an image of three bands', () => {
     expect(colormapOptions().length).toBeGreaterThan(5);
     const place = (label: Element | undefined) => [...container.querySelector('.vc-render')!.children].indexOf(label!.parentElement!);
     const single = place(colormapField());
-    s2Rescale = [[0, 255], [0, 255], [0, 255]];
+    s2TrueColor = ['red', 'green', 'blue'];
     mount({ ...THREE, D: info('dem') });
     expect(colormapOptions()).toEqual(['RGB']);
     expect(place(colormapField())).toBe(single);
@@ -344,7 +345,7 @@ describe('an image of three bands', () => {
   });
 
   it('leaves the colormap of the look empty when it is RGB', () => {
-    s2Rescale = [[0, 255], [0, 255], [0, 255]];
+    s2TrueColor = ['red', 'green', 'blue'];
     mount(THREE);
     expect(useAppStore.getState().pendingColormapName).toBe('');
     expect((colormapField()!.parentElement!.querySelector('select') as HTMLSelectElement).title).toBe('True colour: three bands, no colormap');
