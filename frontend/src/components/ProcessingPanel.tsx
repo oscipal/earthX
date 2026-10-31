@@ -9,7 +9,7 @@
 // on one shows its details here (`JobDetails.tsx`, UI-01). The first step shows
 // on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
 
-import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
@@ -36,14 +36,15 @@ import {
   rescaleOf,
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
-import { orderView, type PartOutcome, selectionState, useProcessingStore, type OrderView } from '../processingStore';
+import { EXPIRED_PROCESS_TEXT, orderView, type PartOutcome, sceneCountOf, selectionState, useProcessingStore, type OrderView } from '../processingStore';
 import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
-import { ticksOfOpen, useAppStore } from '../store';
+import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import BandSelect from './BandSelect';
 import JobDetails from './JobDetails';
+import LockedStep from './LockedStep';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
 import Tip from './Tip';
@@ -51,6 +52,11 @@ import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
 
 // What the server says when the output needs more memory than a job may use (`plan.py`, 413).
 const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
+
+// What the chain from a result means (adr/0019 §3.5, §6): it is run again from the scenes, and the saved file is not read.
+const RERUN_TIP =
+  'The steps of the result are run again from the scenes, then yours. Values can differ in the last bit from a calculation on the saved file (float64 in the chain, float32 in the file).';
+const FIXED_TIP = 'Fixed by the result.';
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
 
@@ -307,6 +313,34 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
   );
 }
 
+// The scenes and the area an entry fixed (NM4-05b): the result's own, shown as they are with a lock. There is nothing to choose;
+// the order is one job.
+function FixedEntry({ view }: { view: OrderView }) {
+  const from = view.fixed?.result;
+  return (
+    <div className="pp-area">
+      {from && (
+        <p className="pp-help">
+          From result{from.title ? `: ${from.title}` : ''}
+          <Tip text={from.expired ? `${EXPIRED_PROCESS_TEXT} ${RERUN_TIP}` : RERUN_TIP} />
+        </p>
+      )}
+      <div className="pp-toggle" role="group" aria-label="Area">
+        <span className="pp-help">Area:</span>
+        <span className="pp-fixed" title={FIXED_TIP}>
+          <span aria-hidden="true">🔒 </span>
+          {view.fixed?.aoi ? 'AOI only' : 'Whole scene'}
+        </span>
+      </div>
+      {from?.notes.map((note) => (
+        <p key={note} className="pp-help">
+          {note}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 // "Run as": one job, or one per pass or scene (M4-13c-4). Only offered where it
 // makes a choice; a choice over the limit is greyed out with the reason.
 function RunAsChoice({ view }: { view: OrderView }) {
@@ -553,7 +587,7 @@ export default function ProcessingPanel() {
 
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   // The same rule as the button in the ViewBar: scenes picked by hand.
-  const reason = processBlockReason(dataset, ticksOfOpen(app).length);
+  const reason = processBlockReason(dataset, sceneCountOf(app, p));
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const view = orderView(app, p);
   const info = view.info;
@@ -628,9 +662,15 @@ export default function ProcessingPanel() {
                 .filter(Boolean)
                 .join(' · ')}
             </p>
-            <AreaChoice view={view} hasAoi={hasAoi} />
-            <RunAsChoice view={view} />
-            <RecipeLoader />
+            {view.fixed ? (
+              <FixedEntry view={view} />
+            ) : (
+              <>
+                <AreaChoice view={view} hasAoi={hasAoi} />
+                <RunAsChoice view={view} />
+              </>
+            )}
+            {view.locked === 0 && <RecipeLoader />}
           </section>
         )}
       </div>
@@ -698,14 +738,16 @@ export default function ProcessingPanel() {
                     <ol className="pp-steps">
                       {p.steps.map((step, index) => {
                         const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
+                        if (index < view.locked) return <LockedStep key={step.key} index={index} operator={operator} values={step.values} />;
                         const problem = built?.stepProblems[index];
                         // The results of the steps before this one: the bands this step may name besides those of the data.
                         const earlier = view.results.slice(0, p.steps.slice(0, index).filter(isBandMath).length).map((r) => r.name);
-                        return (
+                        const form = (
                           <StepForm
                             key={step.key}
                             index={index}
                             count={p.steps.length}
+                            locked={view.locked}
                             stepKey={step.key}
                             operator={operator}
                             values={step.values}
@@ -735,6 +777,16 @@ export default function ProcessingPanel() {
                             onMove={(direction) => p.moveStep(step.key, direction)}
                             onRemove={() => p.removeStep(step.key)}
                           />
+                        );
+                        return index === view.locked && index > 0 ? (
+                          <Fragment key={step.key}>
+                            <li role="separator" className="pp-step-sep">
+                              your steps
+                            </li>
+                            {form}
+                          </Fragment>
+                        ) : (
+                          form
                         );
                       })}
                     </ol>
