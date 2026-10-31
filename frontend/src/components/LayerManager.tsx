@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
 import type { MapLayer } from '../layers';
 import { isJobId, resultUrl } from '../processing';
+import { RGB, RGB_LABEL } from '../processingBands';
 import { layerProcessBlock, useProcessingStore, ZIP_LABEL } from '../processingStore';
 import { MIN_REMAINING_MS, RESULT_ZIP } from '../resultLayer';
 import { hasResultsPanel } from '../sections';
@@ -198,9 +199,12 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
           className="lm-band"
           title="The band of the result this layer draws"
           value={String(l.result?.band ?? 0)}
-          options={bands.map((b, place) => ({ value: String(place), label: b.name || `Band ${place + 1}` }))}
+          options={[
+            ...(l.result?.colour ? [{ value: RGB, label: RGB_LABEL }] : []),
+            ...bands.map((b, place) => ({ value: String(place), label: b.name || `Band ${place + 1}` })),
+          ]}
           disabled={locked || l.result?.expired === true}
-          onChange={(place) => chooseBand(l.id, Number(place))}
+          onChange={(place) => chooseBand(l.id, place === RGB ? RGB : Number(place))}
         />
       )}
     </li>

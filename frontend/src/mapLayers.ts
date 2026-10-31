@@ -279,7 +279,8 @@ function placeRaster(
 // the store to snapshot a layer.
 export function buildTileUrl(template: string, render: AppliedRender): string {
   const params = new URLSearchParams();
-  if (render.bidx) params.set('bidx', render.bidx);
+  // Several bands (`2,1,3`, a colour picture) are one `bidx` each, in this order.
+  for (const place of render.bidx ? render.bidx.split(',') : []) params.append('bidx', place);
   if (render.expression) params.set('expression', render.expression);
   if (render.colormapName) params.set('colormap_name', render.colormapName);
   if (render.rescale) params.set('rescale', render.rescale);
