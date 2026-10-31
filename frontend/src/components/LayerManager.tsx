@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
+import { indexDownloadBlock, indexOfLayer } from '../indexDownload';
 import type { MapLayer } from '../layers';
 import { isJobId, resultUrl } from '../processing';
 import { RGB, RGB_LABEL } from '../processingBands';
@@ -171,8 +172,10 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
           disabled={downloadOutcome === 'disabled' || !canDownloadLayer(l, datasets)}
           title={
             downloadOutcome === 'disabled'
-              ? 'Draw an AOI to download this layer'
-              : downloadOutcome === 'originals'
+              ? (indexDownloadBlock(l, datasets) ?? 'Draw an AOI to download this layer')
+              : indexOfLayer(l, datasets)
+                ? `Download the ${indexOfLayer(l, datasets)!.name} of the AOI crop, computed as a Processing job would`
+                : downloadOutcome === 'originals'
                 ? 'Download the original files, straight from the source'
                 : 'Download the AOI crop, one file per group'
           }

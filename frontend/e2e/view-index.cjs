@@ -6,7 +6,9 @@
 //      `op=band_math`, the band named like the index, the range and colormap of the preset, and no raw asset.
 //   3. Zoomed out the choice stays and a short note says "Zoom in to compute NDWI", with the explanation in its tooltip; no tile is
 //      asked for; zoomed in the note is gone and the tiles come.
-//   4. "Add to layers" pins the index as a layer whose tiles compute it; "Download crop" is the raw bands' (it takes no look).
+//   4. "Add to layers" pins the index as a layer whose tiles compute it. The layer manager does not choose an index again: the view of
+//      the layer shows the one it was added with, locked. Its ⇩ downloads the index as a Processing job would give it (the job API is
+//      made up here): the dialog says so, a file comes, and no Processing panel opens and no job stands in the list of jobs.
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -34,6 +36,12 @@ const PRESETS = [
   ['EVI', 'Enhanced Vegetation Index', '2.5 * (nir - red) / (nir + 6 * red - 7.5 * blue + 1)', 'rdylgn', 'g * (N - R) / (N + C1 * R - C2 * B + L)'],
 ].map(([name, title, expression, colormap_name, formula]) => ({ name, title, expression, rescale: [[-1, 1]], colormap_name, formula, reference: 'https://example.org/formula' }));
 
+const DESCRIPTION = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'fixtures', 'processes', 'sentinel-2-c1-l2a.json'), 'utf8'));
+const JOB = 'AAAAAAAAAAAAAAAAAAAAAA';
+const JOB_STATUS = (status, progress) => ({ jobID: JOB, status, progress, message: '', expires: '2099-12-01T00:00:00Z' });
+
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 const within = (inner, outer) => inner.x >= outer.x - 0.5 && inner.x + inner.width <= outer.x + outer.width + 0.5;
 
@@ -44,14 +52,23 @@ async function open(browser, theme, viewport, presets) {
   page.setDefaultTimeout(8000);
   const problems = [];
   const tiles = [];
+  const jobs = { placed: [] };
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0', bounds: FOOTPRINT, minzoom: 8, maxzoom: 14, 'earthx:order': SCENES });
+    if (url.pathname === '/processing/processes/recipe') return json(DESCRIPTION);
+    if (url.pathname === '/processing/processes/recipe/execution') {
+      jobs.placed.push(route.request().postDataJSON());
+      return json(JOB_STATUS('accepted', 0));
+    }
+    if (url.pathname === `/processing/jobs/${JOB}`) return json(JOB_STATUS('successful', 100));
+    if (url.pathname === `/processing/jobs/${JOB}/results/result.zip`) return route.fulfill({ status: 200, contentType: 'application/zip', body: 'PK\x05\x06' + '\0'.repeat(18) });
     if (url.pathname.includes('/tiles/')) {
       tiles.push(decodeURIComponent(url.pathname) + url.search);
-      return route.fulfill({ status: 404, body: '' });
+      // A tile that loads, so that the raw view the map keeps until the new picture is there goes (as it does with a real tiler).
+      return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     }
     return json({ detail: 'not made up' }, 404);
   });
@@ -62,17 +79,20 @@ async function open(browser, theme, viewport, presets) {
     const { useAppStore } = await import('/src/store.ts');
     const { datasetsFrom } = await import('/src/datasets.ts');
     const info = (id) => ({ datasetId: 'optical', tileUrl: `/collections/optical/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`, bounds: footprint, asset: 'visual', minZoom: 8, maxZoom: 14 });
+    const aoi = { type: 'Polygon', coordinates: [[[10.2, 50.2], [10.8, 50.2], [10.8, 50.8], [10.2, 50.8], [10.2, 50.2]]] };
     const items = scenes.map((id) => ({ id, collection: 'optical', bbox: footprint, properties: { datetime: '2026-07-01T10:00:00Z' }, assets: {} }));
     const collection = {
       id: 'optical', title: 'Sentinel-2 L2A', 'earthx:format': 'cog', 'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
       'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: [[0, 3000]], colormap_name: null, expression: null, resampling: 'nearest' },
       'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
       'earthx:true_color': ['red', 'green', 'blue'],
+      'earthx:license_flags': { tier: 'processing', license: 'CC-BY-4.0' },
+      'earthx:band_units': { red: 'reflectance', green: 'reflectance', blue: 'reflectance', nir: 'reflectance', visual: null },
       'earthx:index_presets': presets,
     };
     useAppStore.setState({
       datasets: datasetsFrom([collection]), datasetId: 'optical', items, groups: [{ key: ['a'], label: '2026-07-01', items }], activeGroupIndex: 0,
-      selectedIds: scenes, downloaded: Object.fromEntries(scenes.map((id) => [id, info(id)])), focusMode: true, cropToAoi: false, showDownloaded: true, dock: null,
+      selectedIds: scenes, downloaded: Object.fromEntries(scenes.map((id) => [id, info(id)])), focusMode: true, cropToAoi: true, viewAoi: aoi, aoi, showDownloaded: true, dock: null,
       appliedRender: { rescale: '0,3000' }, pendingColormapName: '', pendingVmin: '0', pendingVmax: '3000', layers: [], mosaics: {}, error: null,
       flyToView: { center: [10.5, 50.5], zoom: 9 },
     });
@@ -80,12 +100,12 @@ async function open(browser, theme, viewport, presets) {
   }, { presets, scenes: SCENES, footprint: FOOTPRINT });
   await page.waitForSelector('.scene-view .vc-apply');
   fs.mkdirSync(OUT, { recursive: true });
-  return { context, page, problems, tiles };
+  return { context, page, problems, tiles, jobs };
 }
 
 const field = (page) => page.locator('.scene-view .vc-render label', { hasText: /^Index/ });
-const fly = async (page, zoom) => {
-  await page.evaluate(async (zoom) => (await import('/src/store.ts')).useAppStore.setState({ flyToView: { center: [10.5, 50.5], zoom } }), zoom);
+const fly = async (page, zoom, center = [10.5, 50.5]) => {
+  await page.evaluate(async ({ zoom, center }) => (await import('/src/store.ts')).useAppStore.setState({ flyToView: { center, zoom } }), { zoom, center });
   await page.waitForTimeout(1800);
 };
 
@@ -133,24 +153,34 @@ async function checkNone(browser, theme, viewport) {
 // 2 to 4. Drawing, the note, "Add to layers".
 async function checkDraw(browser, theme, viewport) {
   const name = `draw ${theme} ${viewport}`;
-  const { context, page, problems, tiles } = await open(browser, theme, viewport, PRESETS);
+  const { context, page, problems, tiles, jobs } = await open(browser, theme, viewport, PRESETS);
   await page.waitForTimeout(1500);
   tiles.length = 0;
   await field(page).locator('select').selectOption('NDWI');
-  await page.waitForTimeout(1500);
-  const mine = tiles.filter((t) => t.includes('/mosaic/'));
-  if (mine.length === 0) problems.push('the index asked for no tile of the mosaic');
+  await page.waitForTimeout(2500);
+  // Tiles of the raw view that were in flight when the index was chosen may still arrive; none follows the first of the index.
+  const first = tiles.findIndex((t) => t.includes('op=band_math'));
+  const mine = tiles.slice(Math.max(0, first)).filter((t) => t.includes('/mosaic/'));
+  if (first < 0 || mine.length === 0) problems.push('the index asked for no tile of the mosaic');
   const query = new URLSearchParams(mine[0]?.split('?')[1] ?? '');
   if (query.getAll('op').join() !== 'band_math') problems.push(`the tile asks for op=${query.getAll('op')}`);
   if (query.get('band') !== 'NDWI') problems.push(`the tile asks for band=${query.get('band')}`);
   if (query.getAll('asset').join() !== 'green,nir') problems.push(`the tile reads the assets ${query.getAll('asset')}`);
   if (query.get('rescale') !== '-1,1' || query.get('colormap_name') !== 'rdbu') problems.push(`the tile asks for ${query.get('rescale')} in ${query.get('colormap_name')}`);
   if (query.getAll('item').join() !== SCENES.join()) problems.push(`the tile names the scenes ${query.getAll('item')}`);
-  if (tiles.some((t) => t.includes('asset=visual') && !t.includes('op='))) problems.push('a raw band is drawn under the index');
   if ((await field(page).getAttribute('title')) !== TIP_NDWI) problems.push(`the tooltip is ${await field(page).getAttribute('title')}`);
   if ((await page.locator('.scene-view .vc-note').count()) !== 0) problems.push('a note at zoom 9');
   if ((await page.locator('.scene-view .vc-render .vc-field select').nth(1).inputValue()) !== 'rdbu') problems.push('the colormap field does not show rdbu');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_drawn.png`) });
+
+  // Settled, a map that moves asks for tiles of the index alone: the raw view (which stays on the map until the index has loaded) is gone.
+  // The map keeps the raw view under a new picture until it is idle, at most 10 s (`mapLayers.ts::RETIRE_AFTER_MS`); the basemap of
+  // this run never is, so the wait is the longest.
+  await page.waitForTimeout(10500);
+  tiles.length = 0;
+  await fly(page, 10, [10.3, 50.3]);
+  if (!tiles.some((t) => t.includes('band=NDWI'))) problems.push('no tile of the index after moving the map');
+  if (tiles.some((t) => t.includes('asset=visual') && !t.includes('op='))) problems.push(`a raw band is asked for under the index after it has settled: ${JSON.stringify(tiles.map((t) => (t.includes('op=') ? 'I' : 'R') + t.split('?')[0].split('/').slice(-3).join('/') + (t.includes('/mosaic/') ? 'm' : 's')))}`);
 
   // Zoomed out: the choice stays, a note says what to do, nothing is asked for.
   await fly(page, 3);
@@ -171,9 +201,8 @@ async function checkDraw(browser, theme, viewport) {
 
   // Zoomed in again: the note goes, the tiles come.
   tiles.length = 0;
-  await fly(page, 9);
+  await fly(page, 9, [10.7, 50.7]);
   if ((await note.count()) !== 0) problems.push('the note stays after zooming in');
-  if (!tiles.some((t) => t.includes('band=NDWI'))) problems.push('no tile of the index after zooming in');
 
   // "Add to layers": the layer computes the index, with no job.
   await page.getByRole('button', { name: /Add to layers/ }).click();
@@ -189,8 +218,51 @@ async function checkDraw(browser, theme, viewport) {
     if (!layer.urls.every((u) => u.includes('op=band_math') && u.includes('band=NDWI'))) problems.push('the layer does not compute the index');
     if (layer.images !== 0) problems.push('a quicklook lies under the index layer');
   }
-  const jobs = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().jobs.length);
-  if (jobs !== 0) problems.push(`${jobs} job(s) were started`);
+  const started = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().jobs.length);
+  if (started !== 0) problems.push(`${started} job(s) were started`);
+
+  // The layer manager: the view of the layer shows its index, locked.
+  await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    useAppStore.getState().exitFocus();
+    useAppStore.setState({ dock: 'layers' });
+  });
+  await page.locator('.layer-row [data-col="name"]').first().click({ force: true });
+  await page.waitForSelector('.scene-view .vc-apply');
+  const locked = field(page).locator('select');
+  if ((await locked.inputValue()) !== 'NDWI') problems.push('the view of the layer does not show its index');
+  if (!(await locked.isDisabled())) problems.push('the index of a layer can be chosen again');
+  if (!(await field(page).getAttribute('title'))?.includes('This layer was added with it')) problems.push('the locked dropdown says nothing of why');
+  await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_layer.png`) });
+
+  // Its ⇩: the index as a Processing job would give it, with no panel and no job to see.
+  await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    useAppStore.getState().exitFocus();
+    useAppStore.setState({ dock: 'layers' });
+  });
+  const download = page.locator('.layer-row [data-col="download"]').first();
+  if ((await download.getAttribute('title')) !== 'Download the NDWI of the AOI crop, computed as a Processing job would') problems.push(`the ⇩ says ${await download.getAttribute('title')}`);
+  await download.click({ force: true });
+  const dialog = page.locator('.dialog-panel');
+  await dialog.waitFor();
+  const dialogText = await dialog.innerText();
+  if (!/NDWI \(\(G - N\) \/ \(G \+ N\)\)/.test(dialogText)) problems.push(`the dialog does not name the index: ${dialogText.slice(0, 160)}`);
+  if (await dialog.locator('.dialog-resolution').count()) problems.push('the dialog offers a resolution for an index');
+  await dialog.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_dialog.png`) });
+  const [file] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }).catch(() => null), dialog.locator('.primary').click()]);
+  if (!file) problems.push('no file came');
+  else if (file.suggestedFilename() !== 'result.zip') problems.push(`the file is called ${file.suggestedFilename()}`);
+  await page.waitForTimeout(500);
+  if (jobs.placed.length !== 1) problems.push(`${jobs.placed.length} orders were placed`);
+  else {
+    const body = JSON.stringify(jobs.placed[0]);
+    if (!body.includes('"band_math"') || !body.includes('(green - nir) / (green + nir)') || !body.includes('"NDWI"')) problems.push('the order does not compute the index');
+  }
+  if ((await page.locator('.processing-panel').count()) !== 0) problems.push('the Processing panel opened');
+  const listed = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().jobs.length + document.querySelectorAll('.job-row, .pm-row').length);
+  if (listed !== 0) problems.push('a job stands in the list of jobs');
+  if ((await page.locator('.dialog-panel').count()) !== 0) problems.push('the dialog stays after the download');
   await context.close();
   return { name, problems };
 }
@@ -200,9 +272,12 @@ async function checkDraw(browser, theme, viewport) {
   const results = [];
   for (const theme of Object.keys(THEMES)) {
     for (const viewport of Object.keys(VIEWPORTS)) {
-      results.push(await checkLayout(browser, theme, viewport));
-      results.push(await checkNone(browser, theme, viewport));
-      results.push(await checkDraw(browser, theme, viewport));
+      if (process.env.ONLY === 'draw') results.push(await checkDraw(browser, theme, viewport));
+      else {
+        results.push(await checkLayout(browser, theme, viewport));
+        results.push(await checkNone(browser, theme, viewport));
+        results.push(await checkDraw(browser, theme, viewport));
+      }
     }
   }
   await browser.close();

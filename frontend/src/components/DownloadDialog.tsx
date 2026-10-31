@@ -11,6 +11,7 @@ import {
   termsNoticeText,
 } from '../download';
 import { groupItemIdsFor } from '../grouping';
+import { indexOfLayer } from '../indexDownload';
 import { useAppStore } from '../store';
 import ExportJobOffer from './ExportJobOffer';
 import OriginalFiles from './OriginalFiles';
@@ -73,6 +74,7 @@ export default function DownloadDialog() {
   const passes = useAppStore((s) => s.downloadPasses);
   const skippedGroupsNotice = useAppStore((s) => s.downloadSkippedGroupsNotice);
   const exportOffer = useAppStore((s) => s.downloadExportOffer);
+  const downloadStatus = useAppStore((s) => s.downloadStatus);
 
   if (!layerId && !selectionMode) return null;
 
@@ -169,6 +171,8 @@ export default function DownloadDialog() {
   // and ATTRIBUTION.txt in the ZIP carries the text (Otto, 25.10.2026, NM4-01).
   const terms = termsNoticeText(flags, 'en');
   const exportAllowed = canExportLicense(flags);
+  // A layer that shows an index is downloaded as that index (NM4-14b): the file a Processing job would give, with no job to see.
+  const index = !selectionMode && layer ? indexOfLayer(layer, datasets) : null;
 
   return (
     <div className="dialog-backdrop" onClick={close}>
@@ -186,13 +190,13 @@ export default function DownloadDialog() {
               <>
                 {' — '}
                 {sceneCount} scene{sceneCount === 1 ? '' : 's'}
-                {req.groups.length > 1 ? ` in ${req.groups.length} groups` : ''}, asset
-                {req.assets.length === 1 ? '' : 's'} {req.assets.join(', ')}
+                {req.groups.length > 1 ? ` in ${req.groups.length} groups` : ''},{' '}
+                {index ? `${index.name} (${index.formula})` : `asset${req.assets.length === 1 ? '' : 's'} ${req.assets.join(', ')}`}
               </>
             )}
           </p>
 
-          {req && (
+          {req && !index && (
             <div className="dialog-resolution">
               <span>Resolution: </span>
               {RESOLUTION_FACTORS.map((factor) => (
@@ -219,6 +223,12 @@ export default function DownloadDialog() {
           {!exportAllowed && (
             <p className="hint-text">
               {dataset?.title ?? 'This dataset'}&rsquo;s licence does not permit a data export.
+            </p>
+          )}
+
+          {index && (
+            <p className="hint-text" title="The same result a Processing job would give for these scenes and this area">
+              {downloadStatus ?? `${index.name} is computed from the scenes of this layer; this can take a moment.`}
             </p>
           )}
 
@@ -249,7 +259,7 @@ export default function DownloadDialog() {
             onClick={() => void confirm()}
             disabled={!req || !exportAllowed || downloading}
           >
-            {downloading ? 'Downloading…' : 'Download'}
+            {downloading ? (index ? 'Computing…' : 'Downloading…') : 'Download'}
           </button>
         </div>
       </div>
