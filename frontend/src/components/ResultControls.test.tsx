@@ -134,7 +134,7 @@ describe('"Download (ZIP)" in the row of a result layer', () => {
     expect(empty.getAttribute('aria-hidden')).toBe('true');
     expect(row.querySelector('a')).toBeNull();
     expect(row.querySelector('.lm-note .tip')?.getAttribute('data-tip')).toContain('Expired: results are kept for 7 days.');
-    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(9);
+    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(10);
   });
 
   it('is not made of a job id that is none', () => {

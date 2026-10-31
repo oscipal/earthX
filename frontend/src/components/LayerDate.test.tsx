@@ -77,7 +77,7 @@ describe('the date in the rows of the layer manager', () => {
     const start = CSS.indexOf('\n.lm-date {');
     const rule = CSS.slice(start, CSS.indexOf('}', start));
     expect(start).toBeGreaterThanOrEqual(0);
-    expect(rule).toContain('grid-column: 2 / -1');
+    expect(rule).toContain('grid-column: 3 / -1');
     expect(rule).toContain('color: var(--muted)');
     expect(rule).toContain('text-overflow: ellipsis');
   });

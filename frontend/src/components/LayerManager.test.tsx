@@ -189,10 +189,10 @@ describe('LayerManager', () => {
       act(() => root.render(<LayerManager />));
     });
 
-    it('have the nine places in the same order, whatever the kind of layer', () => {
+    it('have the ten places in the same order, whatever the kind of layer', () => {
       expect(rows()).toHaveLength(kinds.length);
       for (const row of rows()) {
-        expect(places(row)).toEqual(['eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+        expect(places(row)).toEqual(['grip', 'eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
       }
     });
 
@@ -331,9 +331,9 @@ describe('the result layer of a deleted job', () => {
     expect(useAppStore.getState().layers[1].result?.deleted).toBeFalsy();
   });
 
-  it('keeps its nine places', () => {
+  it('keeps its ten places', () => {
     deleteJobAt(1, NOW + DAY);
-    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
   });
 
   it('cannot be switched on with the eye while it is locked, and can still be removed', () => {

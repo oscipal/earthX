@@ -1923,9 +1923,10 @@ input[type='date']:focus {
 .layer-row {
   --lm-button: 22px;
   display: grid;
-  /* Eye, name, opacity, up, down, process, download, note, remove: a button that is missing leaves its
+  /* Grip, eye, name, opacity, up, down, process, download, note, remove: a button that is missing leaves its
      place empty (`LayerManager.tsx::Slot`) instead of moving the others (UI-01 §1 point 8). */
-  grid-template-columns: var(--lm-button) minmax(0, 1fr) 44px repeat(4, var(--lm-button)) 18px var(--lm-button);
+  grid-template-columns: 14px var(--lm-button) minmax(0, 1fr) 44px repeat(4, var(--lm-button)) 18px var(--lm-button);
+  position: relative;
   align-items: center;
   column-gap: 3px;
   padding: 5px 4px;
@@ -1934,6 +1935,48 @@ input[type='date']:focus {
 .lm-slot {
   display: block;
   height: 1px;
+}
+/* The grip of a row (`LayerManager.tsx::Grip`, NM4-65): 2 × 3 small dots at its left edge. Held with the mouse or a finger,
+   the row is lifted (`.dragging`) and a line in the colour of the accent shows where it will stand (`.drop-above`,
+   `.drop-below`). `touch-action: none` keeps a finger on the grip from scrolling the list instead. */
+.lm-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.lm-grip:hover {
+  color: var(--accent);
+}
+.layer-list.is-dragging,
+.layer-list.is-dragging .lm-grip {
+  cursor: grabbing;
+}
+.layer-list.is-dragging {
+  user-select: none;
+}
+.layer-row.dragging {
+  opacity: 0.45;
+}
+.layer-row.drop-above::before,
+.layer-row.drop-below::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.layer-row.drop-above::before {
+  top: -1px;
+}
+.layer-row.drop-below::after {
+  bottom: -1px;
 }
 .lm-note {
   display: flex;
@@ -2026,7 +2069,7 @@ input[type='date']:focus {
 }
 /* The acquisition date of a layer (UTC, one day or a span; NM4-65): a small line of its own under the name. */
 .lm-date {
-  grid-column: 2 / -1;
+  grid-column: 3 / -1;
   padding-top: 1px;
   color: var(--muted);
   font-size: 10px;
@@ -2036,7 +2079,7 @@ input[type='date']:focus {
 }
 /* "Band" of a result with several: a line of its own under the row, from the name to the end. */
 .lm-band {
-  grid-column: 2 / -1;
+  grid-column: 3 / -1;
   flex-direction: row;
   align-items: center;
   gap: 6px;

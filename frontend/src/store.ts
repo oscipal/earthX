@@ -53,7 +53,7 @@ import {
   withSourceState,
 } from './sections';
 import { overlaysOfPass, underlaysOf } from './searchLayers';
-import { moveEntry, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
+import { moveEntry, moveEntryTo, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
 import {
   filterQuery,
   hasFilterError,
@@ -1226,6 +1226,8 @@ export interface AppState {
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
+  // A layer (or "Results", `null`) to a place of the list as it is drawn, by the grip of its row (NM4-65).
+  moveRowTo: (id: string | null, to: number) => void;
   // The entry "Results" one step up or down among the layers (NM4-59).
   moveResults: (dir: 'up' | 'down') => void;
   // The entry "Results" on top of the layer manager, over every layer (Otto, 30.10.2026, zu #249).
@@ -1729,6 +1731,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
   moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
   moveResults: (dir) => set((s) => moveEntry(s.layers, s.resultsAt, null, dir, hasResultsPanel(s.sections)) ?? {}),
+  moveRowTo: (id, to) => set((s) => moveEntryTo(s.layers, s.resultsAt, id, to, hasResultsPanel(s.sections)) ?? {}),
   resultsToTop: () => set({ resultsAt: 0 }),
   // Only what the processing panel needs of a layer (M4-13c-2, Otto 19.10.2026):
   // its dataset, if it is not the active one, and — for a layer cut to its AOI,

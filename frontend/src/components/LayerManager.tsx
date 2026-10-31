@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
 import { indexDownloadBlock, indexOfLayer } from '../indexDownload';
@@ -14,6 +14,7 @@ import BandSelect from './BandSelect';
 import Eye from './Eye';
 import ResultsEye from './ResultsEye';
 import Tip from './Tip';
+import { useRowDrag, type RowDrag } from './useRowDrag';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
 export const RESAMPLED_LAYER_TEXT = 'Resampled to a common grid';
@@ -69,6 +70,26 @@ function Slot({ col }: { col: string }) {
   return <span className="lm-slot" data-col={col} aria-hidden="true" />;
 }
 
+// What a row takes from the drag (NM4-65 part 1): the class that shows where it stands in it, and the handlers of its grip.
+// `grip` is null while there is only one row: there is nothing to move it past.
+export interface RowDnd {
+  className: string;
+  grip: ReturnType<ReturnType<typeof useRowDrag>['grip']> | null;
+}
+
+// The grip at the left of a row: 2 × 3 small dots to take the row with the mouse or a finger. ▲/▼ stay for the keyboard, so the
+// grip is no tab stop and no screen reader's business.
+function Grip({ dnd }: { dnd: RowDnd }) {
+  if (!dnd.grip) return <Slot col="grip" />;
+  return (
+    <span className="lm-grip" data-col="grip" title="Drag to move" aria-hidden="true" {...dnd.grip}>
+      <svg viewBox="0 0 8 12" width="8" height="12" focusable="false">
+        {[1, 4].flatMap((x) => [1.5, 6, 10.5].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.1" fill="currentColor" />))}
+      </svg>
+    </span>
+  );
+}
+
 // "Download (ZIP)" of a result layer: the archive of the job, the same link as in its details. Once the
 // results are gone there is nothing to download: the place stays empty and the ⚠ of the row says why.
 function ResultDownload({ jobID, expired }: { jobID: string; expired: boolean }) {
@@ -80,8 +101,8 @@ function ResultDownload({ jobID, expired }: { jobID: string; expired: boolean })
   );
 }
 
-// One row, nine places in a fixed order: eye, name, opacity, up, down, process, download, note, remove.
-function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; last: boolean }) {
+// One row, ten places in a fixed order: grip, eye, name, opacity, up, down, process, download, note, remove.
+function LayerRow({ layer: l, index, last, dnd }: { layer: MapLayer; index: number; last: boolean; dnd: RowDnd }) {
   const remove = useAppStore((s) => s.removeLayer);
   const toggleVis = useAppStore((s) => s.toggleLayerVisible);
   const setOpacity = useAppStore((s) => s.setLayerOpacity);
@@ -102,7 +123,8 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
     (note): note is string => note !== null,
   );
   return (
-    <li className={`layer-row${locked ? ' locked' : ''}`}>
+    <li className={`layer-row${locked ? ' locked' : ''}${dnd.className}`}>
+      <Grip dnd={dnd} />
       <button
         type="button"
         className={`lm-eye${shown ? '' : ' off'}`}
@@ -222,11 +244,12 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
 }
 
 // The entry "Results" (NM4-59): the search results, the view and the live preview, moved among the layers as one. It has
-// an eye and ▲/▼ only; the other places stay empty.
-function ResultsRow({ first, last }: { first: boolean; last: boolean }) {
+// a grip, an eye and ▲/▼ only; the other places stay empty.
+function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: RowDnd }) {
   const move = useAppStore((s) => s.moveResults);
   return (
-    <li className="layer-row results-row">
+    <li className={`layer-row results-row${dnd.className}`}>
+      <Grip dnd={dnd} />
       <ResultsEye />
       <span className="lm-name results-name" data-col="name" title={RESULTS_ENTRY_TIP}>
         Results
@@ -246,8 +269,18 @@ function ResultsRow({ first, last }: { first: boolean; last: boolean }) {
   );
 }
 
+// How the row at `index` stands in the drag: held, or the place it would take (a line above the row where the row held comes
+// from below, under it where it comes from above).
+function dndClass(drag: RowDrag | null, index: number): string {
+  if (!drag) return '';
+  if (index === drag.from) return ' dragging';
+  if (index !== drag.over) return '';
+  return drag.over > drag.from ? ' drop-below' : ' drop-above';
+}
+
 export default function LayerManager() {
   const layers = useAppStore((s) => s.layers);
+  const moveRowTo = useAppStore((s) => s.moveRowTo);
   // The entry "Results" is there while the search has results (NM4-59); without them the view and the preview lie at its
   // place all the same.
   const hasResults = useAppStore((s) => hasResultsPanel(s.sections));
@@ -255,9 +288,14 @@ export default function LayerManager() {
   useResultExpiry();
   useDeletedResults();
   const rows = layers.length + (hasResults ? 1 : 0);
+  // The rows as they are drawn: a layer by its id, "Results" as `null`.
+  const order: (string | null)[] = [...layers.slice(0, resultsAt).map((l) => l.id), ...(hasResults ? [null] : []), ...layers.slice(resultsAt).map((l) => l.id)];
+  const listRef = useRef<HTMLUListElement>(null);
+  const { drag, grip } = useRowDrag(listRef, (from, to) => moveRowTo(order[from] ?? null, to));
+  const dndOf = (row: number): RowDnd => ({ className: dndClass(drag, row), grip: rows > 1 ? grip(row) : null });
   const rowOf = (l: MapLayer, i: number) => {
     const row = hasResults && i >= resultsAt ? i + 1 : i;
-    return <LayerRow key={l.id} layer={l} index={row} last={row === rows - 1} />;
+    return <LayerRow key={l.id} layer={l} index={row} last={row === rows - 1} dnd={dndOf(row)} />;
   };
 
   // Docked beside the rail (UI-01 §6.9). It stays mounted when another panel is open: the timer of the
@@ -277,9 +315,9 @@ export default function LayerManager() {
             No layers yet — select an image and “Add to layers”.
           </p>
         ) : (
-          <ul className="layer-list">
+          <ul className={`layer-list${drag ? ' is-dragging' : ''}`} ref={listRef}>
             {layers.slice(0, resultsAt).map(rowOf)}
-            {hasResults && <ResultsRow first={resultsAt === 0} last={resultsAt === layers.length} />}
+            {hasResults && <ResultsRow first={resultsAt === 0} last={resultsAt === layers.length} dnd={dndOf(resultsAt)} />}
             {layers.slice(resultsAt).map((l, i) => rowOf(l, i + resultsAt))}
           </ul>
         )}

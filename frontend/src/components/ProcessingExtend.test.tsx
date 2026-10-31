@@ -289,12 +289,12 @@ describe('whether a result layer can be processed further', () => {
 });
 
 describe('the ⚙ of a result layer', () => {
-  it('is there and active with the order of the job, and the row keeps its nine places', () => {
+  it('is there and active with the order of the job, and the row keeps its ten places', () => {
     act(() => root.render(<LayerManager />));
     expect(gear().tagName).toBe('BUTTON');
     expect(gear().disabled).toBe(false);
     expect(gear().title).toBe(PROCESS_RESULT_TEXT);
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(10);
   });
 
   it('is active for an expired result, and says that everything runs again from the scenes', () => {
@@ -309,7 +309,7 @@ describe('the ⚙ of a result layer', () => {
     act(() => root.render(<LayerManager />));
     expect(gear().tagName).toBe('SPAN');
     expect(gear().getAttribute('aria-hidden')).toBe('true');
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(10);
     // A call that bypasses the row does nothing, and says why.
     await store().extendResult('R1');
     expect(store().open).toBe(false);
