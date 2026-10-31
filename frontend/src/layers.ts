@@ -3,6 +3,7 @@
 // state needed to re-select it and keep working.
 
 import type { Coords4 } from './geoUtils';
+import type { RGB } from './processingBands';
 import type { ResultStats } from './render';
 import type { ResultBand } from './resultLayer';
 import type { AppliedRender, Bbox, DownloadedInfo } from './types';
@@ -122,5 +123,9 @@ export interface ResultLayerInfo {
   // The bands of a result of more than one, in the order of the file, and the place of the one the layer draws
   // (`bidx` is the place + 1); left out for a result of one band (NM4-43e PR 2).
   bands?: ResultBand[];
-  band?: number;
+  // The place of the band the layer draws, or `RGB` for the colour picture of the three bands in `colour` (NM4-64).
+  band?: number | typeof RGB;
+  // The places in the file of red, green and blue where the result has all three and the dataset a colour picture:
+  // then "RGB" is one of the choices of the layer.
+  colour?: [number, number, number];
 }

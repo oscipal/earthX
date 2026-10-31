@@ -7,6 +7,7 @@ import zarr from './fixtures/processes/synthetic-zarr.json';
 import { bboxToPolygon } from './geoUtils';
 import { canonicalJson, type Order, type ProcessDescription } from './processing';
 import { MAX_MOSAIC_OPERATOR_ASSETS, MAX_MOSAIC_REQUEST_BYTES, MAX_MOSAIC_SCENES, mosaicRequestBytes } from './mosaic';
+import { RGB } from './processingBands';
 import { processInfo, type BandSource, type DraftStep, type ProcessInfo } from './processingOrder';
 import {
   areaMeasureOf,
@@ -1020,11 +1021,12 @@ describe('previewRead', () => {
       all: ['everything'],
       steps: [first(1, 'ndvi', '(nir - red) / (nir + red)')],
       pick: null,
+      trueColor: null,
       ...over,
     });
 
   it('shows the result of the only step and reads its two assets, in the order of the item', () => {
-    expect(read({})).toEqual({ choices: ['ndvi'], band: 'ndvi', assets: ['red', 'nir'] });
+    expect(read({})).toEqual({ choices: ['ndvi'], band: 'ndvi', bands: ['ndvi'], assets: ['red', 'nir'] });
   });
 
   it('lists the results above the bands of the data, as the output holds them', () => {
@@ -1072,7 +1074,7 @@ describe('previewRead', () => {
   });
 
   it('reads the assets of the order where the output is empty, and shows no band', () => {
-    expect(read({ output: [] })).toEqual({ choices: [], band: null, assets: ['everything'] });
+    expect(read({ output: [] })).toEqual({ choices: [], band: null, bands: [], assets: ['everything'] });
   });
 
   it('reads only the assets of the band from a wide output', () => {
@@ -1154,5 +1156,147 @@ describe('previewSpec: the band shown (NM4-43e PR 2)', () => {
     const wide = Array.from({ length: 17 }, (_, i) => `b${i}`);
     expect(previewSpec({ ...base, plan, assets: wide })).toBeNull();
     expect(previewSpec({ ...base, plan, assets: ['red', 'nir'], band: 'Band_Math_1' })).not.toBeNull();
+  });
+});
+
+describe('previewRead: the colour picture (NM4-64)', () => {
+  const source = (asset: string): BandSource => ({
+    asset,
+    names: [asset],
+    units: [null],
+    unit: null,
+    dataType: 'uint16',
+    scaled: false,
+    nodata: null,
+  });
+  const sources = ['blue', 'green', 'red', 'nir', 'scl'].map(source);
+  const dataNames = sources.map((s) => s.asset);
+  const ndvi: DraftStep = { key: 1, op: 'band_math', opVersion: 2, values: { expression: '(nir - red) / (nir + red)', name: 'ndvi' } };
+  const read = (over: Partial<Parameters<typeof previewRead>[0]>) =>
+    previewRead({
+      output: ['blue', 'green', 'red', 'nir'],
+      dataNames,
+      sources,
+      maskAsset: null,
+      all: ['everything'],
+      steps: [ndvi],
+      pick: null,
+      trueColor: ['red', 'green', 'blue'],
+      ...over,
+    });
+
+  it('puts RGB on top and shows it where the output has no result of a step', () => {
+    expect(read({})).toEqual({
+      choices: [RGB, 'blue', 'green', 'red', 'nir'],
+      band: RGB,
+      bands: ['red', 'green', 'blue'],
+      assets: ['blue', 'green', 'red'],
+    });
+  });
+
+  it('shows the result created last, not RGB, where the output has one', () => {
+    const found = read({ output: ['ndvi', 'blue', 'green', 'red'] });
+    expect(found.choices).toEqual([RGB, 'ndvi', 'blue', 'green', 'red']);
+    expect(found).toMatchObject({ band: 'ndvi', bands: ['ndvi'], assets: ['red', 'nir'] });
+  });
+
+  it('shows RGB where a result of a step is not in the output', () => {
+    expect(read({ output: ['blue', 'green', 'red'] }).band).toBe(RGB);
+  });
+
+  it('offers RGB only where all three bands are in the output', () => {
+    for (const output of [['red', 'green'], ['red', 'green', 'nir'], ['blue']]) {
+      const found = read({ output });
+      expect(found.choices).not.toContain(RGB);
+      expect(found.band).not.toBe(RGB);
+    }
+  });
+
+  it('offers RGB only where the dataset has a colour picture', () => {
+    const found = read({ trueColor: null });
+    expect(found.choices).toEqual(['blue', 'green', 'red', 'nir']);
+    expect(found.band).toBe('blue');
+  });
+
+  it('does not offer RGB for a registry that names bands the data does not have', () => {
+    expect(read({ trueColor: ['red', 'green', 'ghost'] }).choices).not.toContain(RGB);
+    expect(read({ trueColor: ['red', 'green'] }).choices).not.toContain(RGB);
+  });
+
+  it('keeps the pick while it is RGB, and the default when RGB is no choice any more', () => {
+    expect(read({ output: ['ndvi', 'blue', 'green', 'red'], pick: RGB })).toMatchObject({ band: RGB, assets: ['blue', 'green', 'red'] });
+    expect(read({ output: ['ndvi', 'blue', 'green'], pick: RGB })).toMatchObject({ band: 'ndvi' });
+  });
+
+  it('reads the assets the three bands need, and the layer of a mask step, in the order of the item', () => {
+    const mask = { key: 2, op: 'mask', opVersion: 2, values: { source: 'scl', classes: '3' } };
+    expect(read({ steps: [mask, ndvi], maskAsset: 'scl' }).assets).toEqual(['blue', 'green', 'red', 'scl']);
+  });
+
+  it('shows the first band of an empty output as before: none', () => {
+    expect(read({ output: [] })).toMatchObject({ choices: [], band: null, bands: [] });
+  });
+});
+
+describe('previewSpec: the colour picture (NM4-64)', () => {
+  const items = [item('S2_A', { gsd: 10 }), item('S2_B', { gsd: 10 })];
+  const base = {
+    dataset: DATASET,
+    items,
+    assets: ['blue', 'green', 'red'],
+    info: S2,
+    range: { vmin: '0', vmax: '0.3', colormap: 'viridis' },
+    area: 'scene' as const,
+    plan: ready([bandMath('(nir - red) / (nir + red)')]),
+    band: RGB,
+    bands: ['red', 'green', 'blue'],
+    named: true,
+  };
+  const query = (url: string) => new URL(url, 'http://localhost').searchParams;
+
+  it('asks the tile for the three bands in order, with one range and no colormap', () => {
+    const spec = previewSpec(base)!;
+    const params = query(spec.scenes[0].url);
+    expect(params.getAll('band')).toEqual(['red', 'green', 'blue']);
+    expect(params.getAll('rescale')).toEqual(['0,0.3']);
+    expect(params.has('colormap_name')).toBe(false);
+    expect(spec).toMatchObject({ band: RGB, bands: ['red', 'green', 'blue'], expression: false });
+  });
+
+  it('names the preview RGB where the output has more bands', () => {
+    expect(previewSpec(base)!.title).toBe('Band math · RGB');
+  });
+
+  it('asks the TileJSON and the statistics for the same three bands', () => {
+    const spec = previewSpec(base)!;
+    expect(query(spec.probe).getAll('band')).toEqual(['red', 'green', 'blue']);
+    expect(query(spec.sceneMeasure).getAll('band')).toEqual(['red', 'green', 'blue']);
+    expect(query(spec.sceneMeasure).has('colormap_name')).toBe(false);
+  });
+
+  it('has a key and a measure of its own, apart from the band that is called red', () => {
+    const rgb = previewSpec(base)!;
+    const red = previewSpec({ ...base, band: 'red', bands: ['red'], assets: ['red'] })!;
+    expect(rgb.key).not.toBe(red.key);
+    expect(rgb.measure).not.toBe(red.measure);
+  });
+
+  it('asks the mosaic for the three bands as well', () => {
+    const spec = previewSpec({ ...base, jobs: [items] })!;
+    expect(spec.mosaics).toHaveLength(1);
+    expect(query(spec.mosaics[0].url).getAll('band')).toEqual(['red', 'green', 'blue']);
+    expect(query(spec.mosaics[0].url).has('colormap_name')).toBe(false);
+    expect(query(spec.mosaics[0].probe).getAll('band')).toEqual(['red', 'green', 'blue']);
+  });
+
+  it('draws no picture for RGB without its three bands', () => {
+    expect(previewSpec({ ...base, bands: ['red', 'green'] })).toBeNull();
+    expect(previewSpec({ ...base, bands: undefined })).toBeNull();
+  });
+
+  it('still draws one band with its colormap', () => {
+    const params = query(previewSpec({ ...base, band: 'red', bands: ['red'], assets: ['red'] })!.scenes[0].url);
+    expect(params.getAll('band')).toEqual(['red']);
+    expect(params.get('colormap_name')).toBe('viridis');
   });
 });

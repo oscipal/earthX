@@ -98,3 +98,42 @@ class TestTheBandNamedByBidx:
     def test_the_bands_of_the_file_are_named_by_their_descriptions(self, result_file: Path) -> None:
         with rasterio.open(result_file) as dataset:
             assert dataset.descriptions == NAMES
+
+
+def _png(rig: Rig, result_id: str, query: str) -> bytes:
+    z, x, y = TILE
+    response = rig.client.get(f"/results/{result_id}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?{query}")
+    assert response.status_code == 200, response.text
+    return response.content
+
+
+class TestThreeBandsAsOneColourPicture:
+    """NM4-64: ``bidx`` three times, with one ``rescale`` for all of them and no colormap."""
+
+    def test_the_tile_holds_the_three_bands_in_the_order_of_bidx(self, rig: Rig, uploaded: str) -> None:
+        values = _values(_tile(rig, uploaded, "bidx=3&bidx=1&bidx=2"))
+        assert values.shape[0] == 3
+        for channel, index in enumerate((3, 1, 2)):
+            assert values[channel].count() > 10_000
+            assert values[channel].min() >= index * STEP and values[channel].max() < (index + 1) * STEP
+
+    def test_one_range_stretches_all_three_channels(self, rig: Rig, uploaded: str) -> None:
+        low, high = 150.0, 350.0
+        raw = _values(_tile(rig, uploaded, "bidx=1&bidx=2&bidx=3"))
+        picture = _values(_png(rig, uploaded, f"bidx=1&bidx=2&bidx=3&rescale={low},{high}"))
+        assert picture.shape[0] == 3
+        for channel in range(3):
+            valid = ~raw[channel].mask & ~picture[channel].mask
+            expected = numpy.clip((raw[channel].data[valid] - low) / (high - low) * 255, 0, 255)
+            assert numpy.abs(picture[channel].data[valid].astype(float) - expected).max() <= 1.0
+        # Band 1 lies below the range, band 3 above it: a range of its own for each would not show that.
+        assert picture[0].max() < 128 < picture[2].min()
+
+    def test_a_colormap_on_three_bands_is_refused_and_not_a_server_error(self, rig: Rig, uploaded: str) -> None:
+        z, x, y = TILE
+        query = "bidx=1&bidx=2&bidx=3&rescale=0,500&colormap_name=viridis"
+        response = rig.client.get(f"/results/{uploaded}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?{query}")
+        assert response.status_code == 400, response.text
+
+    def test_a_colormap_on_one_band_still_draws(self, rig: Rig, uploaded: str) -> None:
+        _png(rig, uploaded, "bidx=2&rescale=150,250&colormap_name=viridis")

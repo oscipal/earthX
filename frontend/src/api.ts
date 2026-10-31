@@ -402,6 +402,10 @@ export async function fetchMosaicTileJson(
   return { bounds: bounds as Bbox, minzoom, maxzoom, order };
 }
 
+// The band an operator tile shows: one, or three in the order red, green, blue for a colour picture (NM4-64); `null`: the
+// tiler chooses (the last Band math result, else the first band).
+export type ShownBands = string | readonly string[] | null;
+
 // One step of an operator tile: the operator, its version and its parameters as
 // canonical JSON (`processing.ts::canonicalJson`), so equal parameters are one URL,
 // one cache entry.
@@ -414,14 +418,14 @@ export interface TileStep {
 // The tile template of an operator or a chain of them (T1, adr/0014 §6.1, §6.2): the
 // assets the steps read — one `asset` each, in the order of the order — and `op`,
 // `op_version` and `params` once per step, in the order of the steps, as the tiler
-// takes them (`api/tiler.py`, at most four). `band` is the one band of what the steps leave that the tile shows
-// (NM4-43d); left out, the tiler shows the last one a Band math step added, else the first.
+// takes them (`api/tiler.py`, at most four). `band` is the one band of what the steps leave that the tile shows, or
+// three for a colour picture (NM4-43d, NM4-64); left out, the tiler shows the last one a Band math step added, else the first.
 export function buildOperatorTileTemplate(
   datasetId: string,
   itemId: string,
   assets: readonly string[],
   steps: readonly TileStep[],
-  band: string | null = null,
+  band: ShownBands = null,
 ): string {
   return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${operatorQuery(assets, steps, band)}`;
 }
@@ -434,7 +438,7 @@ export function buildOperatorTileJsonUrl(
   itemId: string,
   assets: readonly string[],
   steps: readonly TileStep[],
-  band: string | null = null,
+  band: ShownBands = null,
 ): string {
   return `${itemBase(datasetId, itemId)}/${TILE_MATRIX_SET}/tilejson.json?${operatorQuery(assets, steps, band)}`;
 }
@@ -446,7 +450,7 @@ export function buildOperatorStatisticsUrl(
   itemId: string,
   assets: readonly string[],
   steps: readonly TileStep[],
-  band: string | null = null,
+  band: ShownBands = null,
 ): string {
   return `${itemBase(datasetId, itemId)}/statistics?${operatorQuery(assets, steps, band)}`;
 }
@@ -460,7 +464,7 @@ export function buildMosaicOperatorTileTemplate(
   itemIds: readonly string[],
   assets: readonly string[],
   steps: readonly TileStep[],
-  band: string | null = null,
+  band: ShownBands = null,
 ): string {
   return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicOperatorQuery(itemIds, assets, steps, band)}`;
 }
@@ -472,7 +476,7 @@ export function buildMosaicOperatorTileJsonUrl(
   itemIds: readonly string[],
   assets: readonly string[],
   steps: readonly TileStep[],
-  band: string | null = null,
+  band: ShownBands = null,
 ): string {
   return `${mosaicBase(datasetId)}/${TILE_MATRIX_SET}/tilejson.json?${mosaicOperatorQuery(itemIds, assets, steps, band)}`;
 }
@@ -481,14 +485,14 @@ function mosaicOperatorQuery(
   itemIds: readonly string[],
   assets: readonly string[],
   steps: readonly TileStep[],
-  band: string | null,
+  band: ShownBands,
 ): string {
   const items = new URLSearchParams();
   for (const id of [...itemIds].sort()) items.append('item', id);
   return `${items.toString()}&${operatorQuery(assets, steps, band)}`;
 }
 
-function operatorQuery(assets: readonly string[], steps: readonly TileStep[], band: string | null): string {
+function operatorQuery(assets: readonly string[], steps: readonly TileStep[], band: ShownBands): string {
   const params = new URLSearchParams();
   for (const asset of assets) params.append('asset', asset);
   for (const step of steps) {
@@ -496,7 +500,7 @@ function operatorQuery(assets: readonly string[], steps: readonly TileStep[], ba
     params.append('op_version', String(step.opVersion));
     params.append('params', step.paramsJson);
   }
-  if (band !== null) params.append('band', band);
+  for (const name of band === null ? [] : typeof band === 'string' ? [band] : band) params.append('band', name);
   return params.toString();
 }
 
