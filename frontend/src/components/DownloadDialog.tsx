@@ -15,6 +15,7 @@ import { indexOfLayer } from '../indexDownload';
 import { useAppStore } from '../store';
 import ExportJobOffer from './ExportJobOffer';
 import OriginalFiles from './OriginalFiles';
+import CloseButton from './CloseButton';
 
 // Confirmation before a download leaves the platform (M2-07d, M3-17):
 // attribution and the source's terms notice have to be visible before it
@@ -97,9 +98,7 @@ export default function DownloadDialog() {
         <div className="panel dialog-panel" onClick={(e) => e.stopPropagation()}>
           <div className="results-head">
             <h2>{sceneTotal === 1 ? 'Download full scene' : 'Download full scenes'}</h2>
-            <button type="button" className="link-btn" title="Close. This stops a download that is still running." onClick={close}>
-              ✕
-            </button>
+            <CloseButton title="Close. This stops a download that is still running." onClick={close} />
           </div>
           <div className="dialog-body">
             <p>
@@ -135,9 +134,7 @@ export default function DownloadDialog() {
         <div className="panel dialog-panel" onClick={(e) => e.stopPropagation()}>
           <div className="results-head">
             <h2>Download crop</h2>
-            <button type="button" className="link-btn" title="Close" onClick={close}>
-              ✕
-            </button>
+            <CloseButton onClick={close} />
           </div>
           <div className="dialog-body">
             <p>
@@ -180,9 +177,7 @@ export default function DownloadDialog() {
       <div className="panel dialog-panel" onClick={(e) => e.stopPropagation()}>
         <div className="results-head">
           <h2>Download crop</h2>
-          <button type="button" className="link-btn" title="Cancel" onClick={close}>
-            ✕
-          </button>
+          <CloseButton onClick={close} />
         </div>
         <div className="dialog-body">
           <p>

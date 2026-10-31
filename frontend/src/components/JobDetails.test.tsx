@@ -119,7 +119,7 @@ describe('the window', () => {
 
   it('closes the whole window with the cross', () => {
     show(jobEntry(1));
-    click(button('✕'));
+    click(container.querySelector('.close-x'));
     expect(useProcessingStore.getState()).toMatchObject({ open: false, detailJobID: null });
   });
 

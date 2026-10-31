@@ -57,6 +57,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     range: null,
     bandRanges: {},
     shownBand: null,
+    dates: null,
     archived: false,
     groupId: null,
     batchId: null,
@@ -196,6 +197,17 @@ describe('the layer a result becomes', () => {
     ]);
   });
 
+  // NM4-65 part 3: the acquisition date of the scenes of the job, kept with the job, shows on the layer of its result.
+  it('carries the day of the scenes of its job, and none where the job has none', async () => {
+    useProcessingStore.setState({ jobs: [entry({ dates: '2026-07-01 – 2026-07-06' })] });
+    await showOnMap();
+    expect(layers()[0].date).toBe('2026-07-01 – 2026-07-06');
+    act(() => useAppStore.setState({ layers: [] }));
+    useProcessingStore.setState({ jobs: [entry({ dates: null })] });
+    await showOnMap();
+    expect(layers()[0]).not.toHaveProperty('date');
+  });
+
   it('is drawn with the range of the preview, as it stands', async () => {
     useProcessingStore.setState({ range: { vmin: '0', vmax: '0.5', colormap: 'viridis' } });
     await showOnMap();
@@ -290,7 +302,7 @@ describe('the layer a result becomes', () => {
           jobs: [
             {
               jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM', titleDefault: null, createdAt: '2026-10-10T12:00:00Z',
-              archived: false, groupId: null, batchId: null, part: null, range, bandRanges: {}, shownBand: null, order: null,
+              archived: false, groupId: null, batchId: null, part: null, range, bandRanges: {}, shownBand: null, dates: null, order: null,
               deletedUntil: null, serverDeleted: false, lost: false, superseded: false,
             },
           ],
@@ -416,7 +428,7 @@ describe('the layer a result becomes', () => {
     const empty = container.querySelector('.layer-row [data-col="process"]');
     expect(empty?.tagName).toBe('SPAN');
     expect(empty?.getAttribute('aria-hidden')).toBe('true');
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(10);
     expect(button('⇩')).toBeUndefined();
   });
 

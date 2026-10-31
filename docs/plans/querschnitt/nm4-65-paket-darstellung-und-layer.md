@@ -47,3 +47,17 @@
 - Alle vier Pflicht-Checks grün.
 - Log-Zeilen mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern.
 - Vor „fertig“ ist main geholt.
+
+## 5. Nachtrag NM4-65 (1.11.2026, Draft-PR [#266](https://github.com/oscipal/earthX/pull/266))
+
+**Umgesetzt:** Teile 1, 2, 3, 5, 6, 8, 9, je ein Commit; Einzelheiten und Auslegungen im Log (Zeile „NM4-65 umgesetzt“) und in der PR-Beschreibung, dort auch die Prüfanleitung.
+
+- **Teil 5, Ursache:** `.vc-field input` traf auch `input[type=range]`; Padding und Rahmen eines Textfelds verkleinerten die Spur im eigenen Kasten, der Wert war immer 1.
+- **Teil 6:** Die Ansicht hat noch kein Band-Feld (NM4-45); `RenderFields` lässt es weg, die Reihenfolge bleibt Band · Index · vmin · vmax · Colormap. NM4-54 setzt das Band-Feld dort ein.
+- **Teil 8, Liste der geschlossenen Stellen:** Layer-Einstellungen, Processing-Panel, Job-Details, Download-Fenster (drei Fassungen), „Advanced search“. Nicht umgestellt, weil sie nichts schließen: „Clear search results“, „✕ Clear“ der Ansicht, Entfernen von Layern, Schritten, Gruppen und Links, Toasts, das ✕ im Eingabefeld.
+- **Aufräumen älterer Browser-Skripte:** `layer-settings`, `view-index`, `band-dropdowns`, `layer-rows` an die neuen Knöpfe und die Reihenfolge angepasst; `layer-settings` hat zwei Fälle, die schon an „Apply to all“ (#257) scheitern.
+
+**Offen (Rückfrage an Otto, Backend):**
+
+- **Teil 4:** Woher kommen beliebige Perzentile? Item-Statistik kann `p=` ganzzahlig; die AOI-Messung der Vorschau liefert fest 1/2/5/25/50/75/95/98/99; das Ergebnisdokument nur 2 und 98.
+- **Teil 7:** Wer liefert Auflösung, CRS und Methode je Band vor dem Start? Heute kennt das nur das Backend (`processing/source.py::common_grid`: `nearest` auf das feinste Raster bei ganzzahligem Vielfachen und gleichem CRS; Szenen anderer UTM-Zonen werden per `nearest` in die Zone der meisten Szenen gewarpt).

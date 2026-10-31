@@ -49,6 +49,9 @@ export interface ShelfJob {
   // The band the preview showed when the job was started from the panel (NM4-43e PR 2): the layer of a result of several bands
   // starts with it. `null` for a job of the download dialog and for one kept before this was written.
   shownBand: string | null;
+  // The acquisition day of the scenes of the order (UTC, YYYY-MM-DD) or their span, for the layer of its result (NM4-65 part 3);
+  // `null` for data without a time axis and for a job kept before this was written.
+  dates: string | null;
   // The order as it was sent, up to `MAX_ORDER_BYTES`; the way to start the job again.
   order: Order | null;
   // The end of the day in which the job, deleted, can be restored (NM4-27); `null` for a job that is not deleted. A
@@ -132,6 +135,12 @@ export function orderCopy(order: unknown): Order | null {
   return current && JSON.stringify(current).length <= MAX_ORDER_BYTES ? (current as unknown as Order) : null;
 }
 
+// A day, or the span of two, as `viewKind.ts::viewDates` writes it; anything else is no date.
+const DATES = /^\d{4}-\d{2}-\d{2}(?: – \d{4}-\d{2}-\d{2})?$/u;
+function datesText(value: unknown): string | null {
+  return typeof value === 'string' && DATES.test(value) ? value : null;
+}
+
 function rangeOf(value: unknown): PreviewRange | null {
   if (!record(value) || typeof value.vmin !== 'string' || typeof value.vmax !== 'string' || typeof value.colormap !== 'string') return null;
   return { vmin: value.vmin, vmax: value.vmax, colormap: value.colormap };
@@ -199,6 +208,7 @@ function parseShelf(raw: string): Shelf | 'foreign' | 'broken' {
       range: rangeOf(j.range),
       bandRanges: bandRangesOf(j.bandRanges),
       shownBand: text(j.shownBand, MAX_NAME_LENGTH),
+      dates: datesText(j.dates),
       order: orderCopy(j.order),
       deletedUntil,
       serverDeleted: deletedUntil !== null && j.serverDeleted === true,
@@ -225,6 +235,7 @@ function serialize(shelf: Shelf, without: ReadonlySet<string>): string {
       ? { bandRanges: Object.fromEntries(Object.entries(j.bandRanges).map(([name, r]) => [name, { vmin: r.vmin, vmax: r.vmax, colormap: r.colormap }])) }
       : {}),
     ...(j.shownBand ? { shownBand: j.shownBand } : {}),
+    ...(j.dates ? { dates: j.dates } : {}),
     ...(j.order && !without.has(j.jobID) ? { order: j.order } : {}),
     ...(j.deletedUntil ? { deletedUntil: j.deletedUntil, ...(j.serverDeleted ? { serverDeleted: true } : {}) } : {}),
     ...(j.lost ? { lost: true } : {}),
@@ -262,7 +273,7 @@ function legacyJobs(now: number): ShelfJob[] {
       if (!isJobId(entry.jobID) || !expires || Date.parse(expires) <= now || jobs.some((j) => j.jobID === entry.jobID)) continue;
       jobs.push({
         jobID: entry.jobID, expires, title, titleDefault: title, createdAt: expires,
-        archived: false, groupId: null, batchId: null, part: null, range: null, bandRanges: {}, shownBand: null, order: null,
+        archived: false, groupId: null, batchId: null, part: null, range: null, bandRanges: {}, shownBand: null, dates: null, order: null,
         deletedUntil: null, serverDeleted: false, lost: false, superseded: false,
       });
     }

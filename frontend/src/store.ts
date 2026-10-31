@@ -30,8 +30,10 @@ import {
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
+import { datesOfIds, dateOf, knownItems } from './layerDate';
+import { flipNext, flipStart } from './layerFlip';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
-import { isResultExpired, restyledTileUrl } from './resultLayer';
+import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
 import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
@@ -52,7 +54,7 @@ import {
   withSourceState,
 } from './sections';
 import { overlaysOfPass, underlaysOf } from './searchLayers';
-import { moveEntry, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
+import { clampResultsAt, moveEntry, moveEntryTo, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
 import {
   filterQuery,
   hasFilterError,
@@ -65,6 +67,7 @@ import {
   type FilterQueryByCollection,
 } from './searchFilters';
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
+import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, estimateIndexDownload, indexOfLayer, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
@@ -361,6 +364,8 @@ export interface DerivedLayer {
   // The scenes the picture was made from.
   itemIds: string[];
   cropToAoi: boolean;
+  // The acquisition date it shows; where it is left out, the scenes are looked up (NM4-65 part 3).
+  date?: string | null;
 }
 
 // A layer belongs to the dataset it was pinned from (F4): choosing it makes that
@@ -649,6 +654,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
     return;
   }
   const groups = sectionsForView(s).flatMap((section) => section.groups);
+  const known = knownItems(s);
   const batchId = nextBatchId();
   const layers = built.map(({ image, entries, overlays }, i): MapLayer => {
     const itemIds = entries.map(([id]) => id);
@@ -661,6 +667,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
       visible: true,
       opacity: 1,
       overlays: overlays ?? [],
+      ...dateOf(datesOfIds(itemIds, known)),
       restore: {
         focusMode: true,
         downloaded: Object.fromEntries(entries),
@@ -1220,6 +1227,18 @@ export interface AppState {
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
+  // "Flip through layers" (NM4-65 part 9): on, the layer `flipLayerId` is drawn over all the others and the list stays as it is.
+  flipThrough: boolean;
+  flipLayerId: string | null;
+  setFlipThrough: (on: boolean) => void;
+  // The layer to draw on top, by a click on its row; only while flipping is on.
+  flipTo: (id: string) => void;
+  // One step down (1) or up (-1) the list; stops at the ends.
+  flipStep: (dir: 1 | -1) => void;
+  // The band a result layer draws as a layer of its own, named after the band and drawn as the band is now (NM4-65 part 2).
+  addBandAsLayer: (id: string) => void;
+  // A layer (or "Results", `null`) to a place of the list as it is drawn, by the grip of its row (NM4-65).
+  moveRowTo: (id: string | null, to: number) => void;
   // The entry "Results" one step up or down among the layers (NM4-59).
   moveResults: (dir: 'up' | 'down') => void;
   // The entry "Results" on top of the layer manager, over every layer (Otto, 30.10.2026, zu #249).
@@ -1550,12 +1569,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const activeGroup = s.groups[s.activeGroupIndex];
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
     const batchId = nextBatchId();
-    const makeLayer = (name: string, overlays: LayerOverlay[], restore: LayerRestore, salt: number): MapLayer => ({
+    const makeLayer = (name: string, overlays: LayerOverlay[], restore: LayerRestore, salt: number, date: string | null): MapLayer => ({
       id: `L${batchId}${salt}`,
       name,
       visible: true,
       opacity: 1,
       overlays,
+      ...dateOf(date),
       restore,
     });
 
@@ -1619,6 +1639,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datasetId: s.datasetId,
       },
       0,
+      viewDates(items),
     );
     set({ layers: [layer, ...s.layers], resultsAt: resultsAtAfterAdding(s.resultsAt, 1), notice: `Added "${name}" to layers.` });
   },
@@ -1632,6 +1653,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       opacity: 1,
       overlays: input.overlays,
       derived: input.derived,
+      ...dateOf(input.date === undefined ? datesOfIds(input.itemIds, knownItems(s)) : input.date),
       ...(input.note ? { note: input.note } : {}),
       ...(input.result ? { result: input.result } : {}),
       restore: {
@@ -1719,7 +1741,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLayerOpacity: (id, opacity) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
   moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
+  flipThrough: false,
+  flipLayerId: null,
+  setFlipThrough: (on) =>
+    set((s) => {
+      if (!on) return { flipThrough: false, flipLayerId: null };
+      // One layer has nothing to flip through.
+      // It starts with the layer that was worked on last: the one whose settings are open, else the one of the view.
+      return s.layers.length < 2 ? {} : { flipThrough: true, flipLayerId: flipStart(s.layers, s.flipLayerId ?? s.resultViewLayerId ?? s.viewLayerId) };
+    }),
+  flipTo: (id) =>
+    set((s) => (s.flipThrough && s.layers.some((l) => l.id === id) ? { flipLayerId: id } : {})),
+  flipStep: (dir) =>
+    set((s) => {
+      if (!s.flipThrough) return {};
+      const next = flipNext(s.layers, s.flipLayerId, dir);
+      return next === null || next === s.flipLayerId ? {} : { flipLayerId: next };
+    }),
+  addBandAsLayer: (id) => {
+    const s = get();
+    const at = s.layers.findIndex((l) => l.id === id);
+    const made = at < 0 ? null : bandLayerOf(s.layers[at], `P${nextBatchId()}0`);
+    if (!made) return;
+    // Just above the layer it comes from; "Results" keeps its layers, so it moves down by one where the new layer is over it.
+    const layers = [...s.layers.slice(0, at), made, ...s.layers.slice(at)];
+    set({ layers, resultsAt: at < clampResultsAt(s.resultsAt, s.layers) ? s.resultsAt + 1 : s.resultsAt, notice: `Added "${made.name}" to layers.` });
+  },
   moveResults: (dir) => set((s) => moveEntry(s.layers, s.resultsAt, null, dir, hasResultsPanel(s.sections)) ?? {}),
+  moveRowTo: (id, to) => set((s) => moveEntryTo(s.layers, s.resultsAt, id, to, hasResultsPanel(s.sections)) ?? {}),
   resultsToTop: () => set({ resultsAt: 0 }),
   // Only what the processing panel needs of a layer (M4-13c-2, Otto 19.10.2026):
   // its dataset, if it is not the active one, and — for a layer cut to its AOI,

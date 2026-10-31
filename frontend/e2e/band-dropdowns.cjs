@@ -146,7 +146,7 @@ async function checkLayer(browser, theme, viewport) {
       const { useProcessingStore } = await import('/src/processingStore.ts');
       const { jobEntry } = await import('/src/fixtures/jobEntries.ts');
       const { resultBands } = await import('/src/resultLayer.ts');
-      const order = { recipe_version: 2, inputs: [], steps: [{ op: 'band_math', op_version: 2, params: { expression: 'a', name: 'ndvi' } }], output: { kind: 'raster' } };
+      const order = { recipe_version: 2, inputs: [{ name: 'in', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_A']] }], steps: [{ op: 'band_math', op_version: 2, params: { expression: 'a', name: 'ndvi' } }], output: { kind: 'raster' } };
       useProcessingStore.setState({
         jobs: [jobEntry(1, {
           jobID: job, expires: new Date(Date.now() + 86_400_000).toISOString(), phase: 'successful', title: 'Band math · Sentinel-2 L2A',

@@ -285,6 +285,13 @@ describe('the originals dialog starts by itself (NM4-33)', () => {
     expect(show().querySelector('.results-head button')?.getAttribute('title')).toContain('stops a download');
   });
 
+  it('closes with the red "x" of every closing (NM4-65 part 8)', () => {
+    const cross = show().querySelector<HTMLButtonElement>('.results-head .close-x')!;
+    expect(cross.getAttribute('aria-label')).toBe('Close');
+    act(() => cross.click());
+    expect(useAppStore.getState().downloadPasses).toBeNull();
+  });
+
   it('closing the dialog frees what the page put into itself for the downloads', () => {
     show();
     act(() => useAppStore.getState().closeDownloadDialog());

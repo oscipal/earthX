@@ -128,6 +128,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     range: null,
     bandRanges: {},
     shownBand: null,
+    dates: null,
     archived: false,
     groupId: GROUP,
     batchId: null,
@@ -288,12 +289,12 @@ describe('whether a result layer can be processed further', () => {
 });
 
 describe('the ⚙ of a result layer', () => {
-  it('is there and active with the order of the job, and the row keeps its nine places', () => {
+  it('is there and active with the order of the job, and the row keeps its ten places', () => {
     act(() => root.render(<LayerManager />));
     expect(gear().tagName).toBe('BUTTON');
     expect(gear().disabled).toBe(false);
     expect(gear().title).toBe(PROCESS_RESULT_TEXT);
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(10);
   });
 
   it('is active for an expired result, and says that everything runs again from the scenes', () => {
@@ -308,7 +309,7 @@ describe('the ⚙ of a result layer', () => {
     act(() => root.render(<LayerManager />));
     expect(gear().tagName).toBe('SPAN');
     expect(gear().getAttribute('aria-hidden')).toBe('true');
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(10);
     // A call that bypasses the row does nothing, and says why.
     await store().extendResult('R1');
     expect(store().open).toBe(false);
@@ -677,6 +678,18 @@ describe('the panel from a result', () => {
     await process();
     click(button('NDVI', dataGroup()));
     expect(output()).toEqual(['red']);
+  });
+
+  // NM4-65 part 3: the layer of the result shows the day of the scenes, read while the search still knows them.
+  it('keeps the day of the scenes it read for the new job, for the layer of its result', async () => {
+    await process();
+    click(button('＋ Band math'));
+    typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 2');
+    click(button('Review'));
+    await flush();
+    click(button('Start job'));
+    await flush();
+    expect(useProcessingStore.getState().jobs.find((j) => j.jobID === NEW_JOB)?.dates).toBe('2026-07-01');
   });
 
   it('sends one ordinary order with all the steps in order, and starts a new job', async () => {

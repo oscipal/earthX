@@ -90,6 +90,10 @@ export interface MapLayer {
   // preview of the processing panel, or the result of a job. It cannot be
   // processed or downloaded as scenes (the buttons of the layer manager skip it).
   derived?: 'preview' | 'result';
+  // The acquisition day of the scenes the layer shows (UTC, YYYY-MM-DD), or the span "first – last" of several; absent for
+  // data without a time axis such as the elevation model (NM4-65 part 3). Set where the layer is made: it does not follow
+  // the search, which moves on.
+  date?: string;
   // A hint for the tooltip of the layer's name, never a line of text in its row: a preview drawn scene by scene where
   // the job is a mosaic says it may differ from the job (`processingPreview.ts::SCENE_PREVIEW_HINT`).
   note?: string;
@@ -132,4 +136,7 @@ export interface ResultLayerInfo {
   // The places in the file of red, green and blue where the result has all three and the dataset a colour picture:
   // then "RGB" is one of the choices of the layer.
   colour?: [number, number, number];
+  // Set on a layer made from one band of another ("Add band as layer", NM4-65 part 2): it draws that band and no other, is
+  // named after it, and its look is its own — "Save" keeps it for this layer and leaves the layer it came from and the job alone.
+  own?: true;
 }

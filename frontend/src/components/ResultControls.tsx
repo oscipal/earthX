@@ -9,18 +9,22 @@ import { useState } from 'react';
 import type { MapLayer } from '../layers';
 import { rescaleOf, type PreviewRange } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
-import { COLORMAPS, NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
-import { RGB } from '../processingBands';
+import { NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
+import { RGB, RGB_LABEL } from '../processingBands';
 import { defaultRange, rangeOfTileUrl, renderOfRange } from '../resultLayer';
 import { useAppStore } from '../store';
 import AutoScaleButton from './AutoScaleButton';
+import RenderFields from './RenderFields';
 import Tip from './Tip';
+import CloseButton from './CloseButton';
 
 const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap;
 
 const SAVE_TIP = {
   job: 'Keep these values for this layer and for every layer of this job',
   band: 'Keep these values for this band, in this layer and in every layer of this job',
+  // A layer made from one band of another keeps its look for itself (NM4-65 part 2).
+  own: 'Keep these values for this layer only',
 };
 
 const WHOLE_NUMBERS_TIP = 'A result of whole numbers is drawn as it is: it has no range or colormap to set.';
@@ -33,6 +37,7 @@ function Controls({ layer }: { layer: MapLayer }) {
   const save = useAppStore((s) => s.saveResultLayer);
   const close = useAppStore((s) => s.closeResultView);
   const setJobRange = useProcessingStore((s) => s.setJobRange);
+  const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   // What the typed fields hold, from what the layer draws now; a layer drawn another way starts over.
   const [draft, setDraft] = useState<PreviewRange>(() => rangeOfTileUrl(tileUrl));
   const [problem, setProblem] = useState<string | null>(null);
@@ -71,6 +76,8 @@ function Controls({ layer }: { layer: MapLayer }) {
     if (!made) return;
     if (canApply) restyle(layer.id, made);
     save(layer.id);
+    // A layer of its own band keeps its look for itself: the job and the layer it came from stay as they are.
+    if (info.own) return;
     const fallback = defaultRange(info, useProcessingStore.getState().range);
     // A result of several bands keeps the range of the band it draws, by the band's name ("RGB" for the colour picture).
     const named = info.bands && info.bands.length > 1 ? (info.band === RGB ? RGB : (info.bands[info.band ?? 0]?.name ?? '')) : undefined;
@@ -86,9 +93,7 @@ function Controls({ layer }: { layer: MapLayer }) {
       <div className="vc-head">
         <span className="vc-title">{layer.name.toUpperCase()}</span>
         <div className="results-head-right">
-          <button type="button" className="link-btn" title="Close this view and show the search results again" onClick={() => close()}>
-            ‹ Close
-          </button>
+          <CloseButton title="Close" onClick={() => close()} />
           {!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
         </div>
       </div>
@@ -96,27 +101,24 @@ function Controls({ layer }: { layer: MapLayer }) {
       <div className="vc-render">
         {settable && (
           <>
-            {info.band !== RGB && (
-              <label className="vc-field">
-                <span>Colormap</span>
-                <select value={draft.colormap} onChange={(e) => edit({ colormap: e.target.value })}>
-                  <option value="">— none —</option>
-                  {COLORMAPS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <label className="vc-field vc-num">
-              <span>vmin</span>
-              <input type="number" value={draft.vmin} onChange={(e) => edit({ vmin: e.target.value })} />
-            </label>
-            <label className="vc-field vc-num">
-              <span>vmax</span>
-              <input type="number" value={draft.vmax} onChange={(e) => edit({ vmax: e.target.value })} />
-            </label>
+            <RenderFields
+              band={
+                info.bands && info.bands.length > 1
+                  ? {
+                      value: String(info.band ?? 0),
+                      options: [
+                        ...(info.colour ? [{ value: RGB, label: RGB_LABEL }] : []),
+                        ...info.bands.map((b, place) => ({ value: String(place), label: b.name || `Band ${place + 1}` })),
+                      ],
+                      title: 'The band of the result this layer draws',
+                      onChange: (place) => chooseBand(layer.id, place === RGB ? RGB : Number(place)),
+                    }
+                  : undefined
+              }
+              vmin={{ value: draft.vmin, onChange: (vmin) => edit({ vmin }) }}
+              vmax={{ value: draft.vmax, onChange: (vmax) => edit({ vmax }) }}
+              colormap={info.band === RGB ? null : { value: draft.colormap, onChange: (colormap) => edit({ colormap }) }}
+            />
             <div className="vc-buttons">
               <AutoScaleButton title="Put the range of the statistics of this result in the fields" onClick={auto} />
               <button
@@ -132,7 +134,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                 type="button"
                 className="primary-btn vc-save"
                 aria-disabled={!canSave || undefined}
-                title={canSave ? SAVE_TIP[info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE}
+                title={canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE}
                 onClick={keep}
               >
                 Save

@@ -116,7 +116,7 @@ async function checkLayout(browser, theme, viewport) {
   const name = `layout ${theme} ${viewport}`;
   const { context, page, problems } = await open(browser, theme, viewport, PRESETS);
   const labels = await page.locator('.scene-view .vc-render > label > span').allTextContents();
-  if (labels.join('|') !== 'Index|Colormap|vmin|vmax') problems.push(`the fields are ${labels}`);
+  if (labels.join('|') !== 'Index|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
   const options = await field(page).locator('option').allTextContents();
   if (options.join('|') !== '— none —|NDVI|NDWI|NDSI|NBR|EVI') problems.push(`the options are ${options}`);
   const report = await page.evaluate(() => {
@@ -147,7 +147,7 @@ async function checkNone(browser, theme, viewport) {
   const { context, page, problems } = await open(browser, theme, viewport, []);
   if ((await field(page).count()) !== 0) problems.push('a dataset without presets has the dropdown');
   const labels = await page.locator('.scene-view .vc-render > label > span').allTextContents();
-  if (labels.join('|') !== 'Colormap|vmin|vmax') problems.push(`the fields are ${labels}`);
+  if (labels.join('|') !== 'vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
   await context.close();
   return { name, problems };
 }
@@ -218,7 +218,7 @@ async function checkDraw(browser, theme, viewport) {
   const viewChips = await page.locator('.processing-panel section[aria-label="Bands"] .pp-chip').allTextContents();
   if (viewChips.some((c) => c.startsWith('NDWI')) || !viewChips.some((c) => c.startsWith('red'))) problems.push(`the panel of the view has the bands ${viewChips}`);
   if ((await page.locator('.processing-panel [aria-label="Area"] button').allTextContents()).join() !== 'Whole scene,AOI only') problems.push('the area of the cropped view is not to choose');
-  await page.locator('.processing-panel').getByTitle('Close the panel').click();
+  await page.locator('.processing-panel .close-x').click();
   await page.waitForTimeout(300);
   await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: null }));
 
@@ -248,7 +248,7 @@ async function checkDraw(browser, theme, viewport) {
   await page.locator('.layer-row [data-col="name"]').first().click({ force: true });
   await page.waitForSelector('.scene-view .vc-apply');
   if ((await field(page).count()) !== 0) problems.push('the view of a layer has an "Index" field');
-  if ((await page.locator('.scene-view .vc-render > label > span').allTextContents()).join('|') !== 'Colormap|vmin|vmax') problems.push('the settings of the layer are not as for a dataset without presets');
+  if ((await page.locator('.scene-view .vc-render > label > span').allTextContents()).join('|') !== 'vmin|vmax|Colormap') problems.push('the settings of the layer are not as for a dataset without presets');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_layer.png`) });
 
   // Its ⇩: the index as a Processing job would give it, with no panel and no job to see.

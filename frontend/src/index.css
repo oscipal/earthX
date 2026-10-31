@@ -340,13 +340,26 @@ body.dragging * {
 .vc-num input {
   width: 84px;
 }
+/* A slider is no text box: the padding and the frame of `.vc-field input` above shrank the track inside its own box, so
+   that the thumb of an opacity of 1 stopped short of the right end (NM4-65). It keeps the height of the fields. */
+.vc-field input[type='range'] {
+  padding: 0;
+  border: 0;
+  background: none;
+  height: 30px;
+  box-sizing: border-box;
+}
+.vc-field input[type='range']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .vc-actions {
   display: flex;
   gap: 8px;
 }
 /* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
-   head, so the rows of buttons are the same width and that width is the width of the view. Row 1: colormap three
-   columns, vmin and vmax two each, and five for "auto-scale" with "Apply" under it and "Apply to all" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
+   head, so the rows of buttons are the same width and that width is the width of the view. Row 1: vmin and vmax two
+   columns each, colormap three, and five for "auto-scale" with "Apply" under it and "Apply to all" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
    the buttons in one row, four or with several images five of one width (Otto, 1.11.2026: the view is two rows high under its head,
    wider rather than taller). Every field of row 1 is 34px high. Below 600 px the grid has four
    columns and the rows wrap; no text ends up outside its cell. */
@@ -478,8 +491,8 @@ body.dragging * {
   gap: 8px;
   align-items: end;
 }
-/* With the dropdown "Index" (a dataset that offers indices, NM4-14b) it takes the first two columns, and colormap, vmin
-   and vmax two each; the buttons keep four. */
+/* With the dropdown "Index" (a dataset that offers indices, NM4-14b) it takes the first two columns, and vmin, vmax and
+   colormap two each; the buttons keep four. The order is Band · Index · vmin · vmax · colormap everywhere (NM4-65). */
 .scene-view .vc-render.has-index > :nth-child(1),
 .scene-view .vc-render.has-index > :nth-child(2),
 .scene-view .vc-render.has-index > :nth-child(3),
@@ -509,12 +522,12 @@ body.dragging * {
 .scene-view .vc-actions.has-all {
   --buttons: 5;
 }
-.scene-view .vc-render > :nth-child(1) {
-  grid-column: span 3;
-}
-.scene-view .vc-render > :nth-child(2),
-.scene-view .vc-render > :nth-child(3) {
+.scene-view .vc-render > :nth-child(1),
+.scene-view .vc-render > :nth-child(2) {
   grid-column: span 2;
+}
+.scene-view .vc-render > :nth-child(3) {
+  grid-column: span 3;
 }
 .scene-view .vc-render > :nth-child(4) {
   grid-column: span 5;
@@ -544,11 +557,11 @@ body.dragging * {
   .scene-view .vc-render.has-index > :nth-child(5) {
     grid-column: span 4;
   }
-  .scene-view .vc-render > :nth-child(1) {
-    grid-column: span 4;
-  }
-  .scene-view .vc-render > :nth-child(n + 2):nth-child(-n + 3) {
+  .scene-view .vc-render > :nth-child(n + 1):nth-child(-n + 2) {
     grid-column: span 2;
+  }
+  .scene-view .vc-render > :nth-child(3) {
+    grid-column: span 4;
   }
   .scene-view .vc-render > :nth-child(4) {
     grid-column: span 4;
@@ -1495,6 +1508,16 @@ input[type='date']:focus {
   min-height: 0;
   min-width: 0;
 }
+.advanced-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.advanced-top > :first-child {
+  flex: 1;
+  min-width: 0;
+}
 .advanced-fields {
   display: flex;
   flex-direction: column;
@@ -1735,6 +1758,31 @@ input[type='date']:focus {
   cursor: pointer;
   padding: 0;
 }
+/* The close "x" of every panel, pop-up and window (`CloseButton.tsx`, NM4-65): small and red. */
+.close-x {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #ff5a6e;
+  cursor: pointer;
+}
+.close-x:hover {
+  border-color: currentColor;
+}
+.close-x:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+.app[data-theme='normal'] .close-x {
+  color: #c62840;
+}
 .link-btn.off {
   color: var(--muted);
 }
@@ -1875,9 +1923,10 @@ input[type='date']:focus {
 .layer-row {
   --lm-button: 22px;
   display: grid;
-  /* Eye, name, opacity, up, down, process, download, note, remove: a button that is missing leaves its
+  /* Grip, eye, name, opacity, up, down, process, download, note, remove: a button that is missing leaves its
      place empty (`LayerManager.tsx::Slot`) instead of moving the others (UI-01 §1 point 8). */
-  grid-template-columns: var(--lm-button) minmax(0, 1fr) 44px repeat(4, var(--lm-button)) 18px var(--lm-button);
+  grid-template-columns: 14px var(--lm-button) minmax(0, 1fr) 44px repeat(4, var(--lm-button)) 18px var(--lm-button);
+  position: relative;
   align-items: center;
   column-gap: 3px;
   padding: 5px 4px;
@@ -1886,6 +1935,48 @@ input[type='date']:focus {
 .lm-slot {
   display: block;
   height: 1px;
+}
+/* The grip of a row (`LayerManager.tsx::Grip`, NM4-65): 2 × 3 small dots at its left edge. Held with the mouse or a finger,
+   the row is lifted (`.dragging`) and a line in the colour of the accent shows where it will stand (`.drop-above`,
+   `.drop-below`). `touch-action: none` keeps a finger on the grip from scrolling the list instead. */
+.lm-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.lm-grip:hover {
+  color: var(--accent);
+}
+.layer-list.is-dragging,
+.layer-list.is-dragging .lm-grip {
+  cursor: grabbing;
+}
+.layer-list.is-dragging {
+  user-select: none;
+}
+.layer-row.dragging {
+  opacity: 0.45;
+}
+.layer-row.drop-above::before,
+.layer-row.drop-below::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.layer-row.drop-above::before {
+  top: -1px;
+}
+.layer-row.drop-below::after {
+  bottom: -1px;
 }
 .lm-note {
   display: flex;
@@ -1963,6 +2054,25 @@ input[type='date']:focus {
   background: var(--row-hover);
   color: var(--accent);
 }
+/* "Flip through layers" (NM4-65 part 9): the toggle in the head, and the row that is drawn on top. */
+.lm-flip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  margin-right: 6px;
+  padding: 0;
+}
+.lm-flip[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--panel-bg, #fff);
+}
+.layer-row.flip {
+  background: var(--row-hover);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 /* The entry "Results" (NM4-59): its name opens nothing. */
 .results-name,
 .results-name:hover {
@@ -1976,9 +2086,19 @@ input[type='date']:focus {
   margin: 0;
   accent-color: var(--accent);
 }
+/* The acquisition date of a layer (UTC, one day or a span; NM4-65): a small line of its own under the name. */
+.lm-date {
+  grid-column: 3 / -1;
+  padding-top: 1px;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* "Band" of a result with several: a line of its own under the row, from the name to the end. */
 .lm-band {
-  grid-column: 2 / -1;
+  grid-column: 3 / -2;
   flex-direction: row;
   align-items: center;
   gap: 6px;
@@ -1989,6 +2109,11 @@ input[type='date']:focus {
   min-width: 0;
   padding: 2px 6px;
   font-size: 11px;
+}
+/* "Add this band as a layer of its own" (NM4-65 part 2): at the end of the line of the band, under the remove button. */
+.lm-add-band {
+  grid-column: -2;
+  align-self: center;
 }
 /* The opacity of a result in its view: a slider of its own width. */
 .result-controls .lm-opacity {

@@ -47,15 +47,15 @@ import {
 } from '../processingStore';
 import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
-import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
-import BandSelect from './BandSelect';
+import RenderFields from './RenderFields';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
 import Tip from './Tip';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
+import CloseButton from './CloseButton';
 
 // What the server says when the output needs more memory than a job may use (`plan.py`, 413).
 const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
@@ -442,44 +442,30 @@ function PreviewSection({ view }: { view: OrderView }) {
       ) : (
         <>
           <div className="pp-range" role="group" aria-label="Range and colormap">
-            {read && read.choices.length > 1 && read.band !== null && (
-              <BandSelect
-                label="Show"
-                className="pp-show"
-                title="The band the map shows"
-                value={read.band}
-                options={read.choices.map((name) => ({ value: name, label: bandLabel(name) }))}
-                onChange={setShown}
-              />
-            )}
-            <label className="vc-field vc-num">
-              <span>min</span>
-              <input type="number" value={rangeDraft.vmin} onChange={(e) => setRangeDraft({ vmin: e.target.value })} />
-            </label>
-            <div className="pp-bound">
-              <label className="vc-field vc-num">
-                <span>max</span>
-                <input type="number" value={rangeDraft.vmax} onChange={(e) => setRangeDraft({ vmax: e.target.value })} />
-              </label>
-              {unit && (
-                <span className="pp-unit" aria-label="Unit of the range">
-                  {unit}
-                </span>
-              )}
-            </div>
-            {read?.band !== RGB && (
-              <label className="vc-field">
-                <span>Colormap</span>
-                <select value={rangeDraft.colormap} onChange={(e) => setRangeDraft({ colormap: e.target.value })}>
-                  <option value="">— none —</option>
-                  {COLORMAPS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+            <RenderFields
+              band={
+                read && read.choices.length > 1 && read.band !== null
+                  ? {
+                      className: 'pp-show',
+                      title: 'The band the map shows',
+                      value: read.band,
+                      options: read.choices.map((name) => ({ value: name, label: bandLabel(name) })),
+                      onChange: setShown,
+                    }
+                  : undefined
+              }
+              vmin={{ value: rangeDraft.vmin, onChange: (vmin) => setRangeDraft({ vmin }) }}
+              vmax={{
+                value: rangeDraft.vmax,
+                onChange: (vmax) => setRangeDraft({ vmax }),
+                after: unit ? (
+                  <span className="pp-unit" aria-label="Unit of the range">
+                    {unit}
+                  </span>
+                ) : undefined,
+              }}
+              colormap={read?.band === RGB ? null : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
+            />
             <button type="button" className="primary-btn vc-apply" disabled={'problem' in range} onClick={() => applyRange()}>
               Apply
             </button>
@@ -630,9 +616,7 @@ export default function ProcessingPanel() {
         </button>
         <div className="vc-head">
           <span className="vc-title">PROCESSING</span>
-          <button type="button" className="link-btn" title="Close the panel" onClick={close}>
-            ✕
-          </button>
+          <CloseButton onClick={close} />
         </div>
         {!reason && (
           <section className="pp-section" aria-label="Selection">
