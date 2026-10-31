@@ -2,7 +2,7 @@
 // and how it builds an order from them (M4-13 §3.3–§3.5). Pure functions; the
 // panel's state lives in `processingStore.ts`.
 
-import { intersection } from 'polyclip-ts';
+import { difference, intersection, union } from 'polyclip-ts';
 import type { Geom } from 'polyclip-ts';
 
 import { footprintOf, polygonBbox } from './geoUtils';
@@ -361,6 +361,43 @@ export function touchesAoi(item: StacItem, aoi: GeoJSON.Geometry): boolean {
     return intersection(fg, ag).length > 0;
   } catch {
     return true;
+  }
+}
+
+// The area in square degrees that a polygon or multi-polygon (as `Geom`) covers, holes taken off.
+function areaOf(geom: Geom): number {
+  const ring = (r: ReadonlyArray<readonly [number, number]>) =>
+    Math.abs(r.reduce((sum, [x, y], i) => sum + x * r[(i + 1) % r.length][1] - r[(i + 1) % r.length][0] * y, 0)) / 2;
+  return (geom as unknown as Array<Array<Array<readonly [number, number]>>>).reduce(
+    (total, polygon) => total + polygon.reduce((acc, r, i) => acc + (i === 0 ? ring(r) : -ring(r)), 0),
+    0,
+  );
+}
+
+// Whether `inner` lies within `outer` (to a few metres): what is left of it once `outer` is taken away is a sliver at most.
+// Where either cannot be computed the answer is yes, and the server has the last word.
+export function isInside(inner: GeoJSON.Geometry, outer: GeoJSON.Geometry): boolean {
+  const a = toGeom(inner);
+  const b = toGeom(outer);
+  if (!a || !b) return true;
+  try {
+    return areaOf(difference(a, b)) < 1e-9;
+  } catch {
+    return true;
+  }
+}
+
+// The area a result covers: its own AOI, or, for a result of whole scenes, the union of their footprints; `null` where that
+// cannot be said (a scene without a footprint).
+export function resultArea(aoi: GeoJSON.Geometry | null, items: readonly StacItem[]): GeoJSON.Geometry | null {
+  if (aoi) return aoi;
+  const geoms = items.map((item) => footprintOf(item)).map((footprint) => (footprint ? toGeom(footprint) : null));
+  if (geoms.length === 0 || geoms.some((g) => g === null)) return null;
+  try {
+    const [first, ...rest] = geoms as Geom[];
+    return { type: 'MultiPolygon', coordinates: union(first, ...rest) as unknown as GeoJSON.Position[][][] };
+  } catch {
+    return null;
   }
 }
 

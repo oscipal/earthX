@@ -112,6 +112,7 @@ import {
   dataBandsOf,
   draftFromOrder,
   isArea,
+  isInside,
   lonelyBand,
   maskAssetOf,
   maskLayerOf,
@@ -121,6 +122,7 @@ import {
   processBlockReason,
   processInfo,
   readProblem,
+  resultArea,
   selectableAssets,
   stepOfRefusal,
   type Area,
@@ -187,7 +189,8 @@ export interface ProcessingEntry {
 export interface Fixed {
   // The scenes of the order.
   itemIds: string[];
-  // The area, whatever the map holds; `null`: the whole scenes.
+  // The area, whatever the map holds; `null`: the whole scenes. A result's own area is "Whole scene" in its panel; "AOI only" is
+  // another AOI inside it (the map's).
   aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   // Set when the entry is "process further" of a result: its steps stand first, locked.
   result: FixedResult | null;
@@ -203,8 +206,6 @@ export interface FixedResult {
   // The bands of the result's output: all the panel offers of the result, as bands of its own (adr/0019, Nachtrag NM4-05b). What the job did not
   // keep cannot be read by a step of the person, though the chain still holds it.
   bands: string[];
-  // The result is gone; the chain runs from the scenes all the same.
-  expired: boolean;
   // What the process description made of the steps (an older version taken as the listed one).
   notes: string[];
 }
@@ -465,6 +466,13 @@ export interface OrderView {
   // What the entry fixed, and how many steps stand locked at the start (`ProcessingState.fixed`); 0 without.
   fixed: Fixed | null;
   locked: number;
+  // The area the order has, and its AOI: the panel's choice and the map's AOI, or what the entry fixed. A result's own area is
+  // an AOI where the job had one; `inner` is "AOI only" in the panel of a result, another AOI that has to lie inside it, and
+  // `outside` says it does not.
+  area: Area;
+  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  inner: boolean;
+  outside: boolean;
   // `earthx:true_color` of the dataset: red, green, blue; `null` where it has no colour picture (NM4-64).
   trueColor: [string, string, string] | null;
   info: ProcessInfo | null;
@@ -582,14 +590,39 @@ function nameBlockOf(
   return null;
 }
 
+// The AOI a preview is cut to: the one an entry fixed, or the map's.
+export function clipAoiOf(p: Pick<ProcessingState, 'fixed' | 'area'>, mapAoi: GeoJSON.Geometry | null): GeoJSON.Geometry | null {
+  return p.fixed && !(p.fixed.result && p.area === 'aoi') ? p.fixed.aoi : mapAoi;
+}
+
+export const OUTSIDE_TEXT = 'The AOI has to lie inside the result.';
+
+// Whether an AOI lies inside the area of a result: its AOI, or the scenes' footprints; the last answer is kept, since the check is
+// the costly part of the view.
+let lastInside: { inputs: unknown[]; result: boolean } | null = null;
+
+function insideResult(aoi: GeoJSON.Geometry, fixed: Fixed, items: readonly StacItem[]): boolean {
+  const inputs = [aoi, fixed, items];
+  if (lastInside && lastInside.inputs.every((value, i) => value === inputs[i])) return lastInside.result;
+  const named = new Set(fixed.itemIds);
+  const outer = resultArea(fixed.aoi, items.filter((item) => named.has(item.id)));
+  const result = outer === null || isInside(aoi, outer);
+  lastInside = { inputs, result };
+  return result;
+}
+
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
   const scenes = withExtraScenes(selection, p.extraScenes);
-  // A fixed area is the order's, whatever the map holds.
-  const app = p.fixed ? (scenes.aoi === p.fixed.aoi ? scenes : { ...scenes, aoi: p.fixed.aoi }) : scenes;
+  // What an entry fixed is the order's area, whatever the map holds; but in the panel of a result "AOI only" is the map's AOI, inside
+  // the result's own area (NM4-05b).
+  const inner = p.fixed?.result != null && p.area === 'aoi';
+  const aoi = p.fixed && !inner ? p.fixed.aoi : isArea(scenes.aoi) ? scenes.aoi : null;
+  const area: Area = p.fixed && !inner ? (p.fixed.aoi ? 'aoi' : 'scene') : p.area;
+  const app = aoi === scenes.aoi ? scenes : { ...scenes, aoi };
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const info = description?.state === 'ready' ? description.info : null;
-  const { items: candidates, passes } = candidatesOf(app, p.area, p.fixed);
+  const { items: candidates, passes } = candidatesOf(app, area, p.fixed);
   // A result is one job. A crop is one object too, with "Run as" gone: its passes, if it has several, are the one in view or
   // every one as a job of its own (NM4-05b, NM4-06).
   const runOptions = p.fixed ? (p.fixed.result ? [] : passChoices(passes)) : runChoices(passes, candidates);
@@ -656,9 +689,11 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const foundUnder = (item: StacItem) =>
     extraIds.has(item.id) ? (p.extraScenes?.datasetId ?? null) : (selection.openSectionId ?? selection.datasetId);
   const foreign = dataset ? foreignScenes(dataset.id, pass?.items ?? [], foundUnder) : [];
+  const outside = inner && aoi !== null && !insideResult(aoi, p.fixed!, app.items);
   const buildFor = (itemIds: string[]): BuiltOrder | null => {
     if (!info || !dataset) return null;
-    const result = buildOrder({ datasetId: dataset.id, itemIds, area: p.area, aoi: app.aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info });
+    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info });
+    if (outside) return { ...result, order: null, problems: [...result.problems, OUTSIDE_TEXT] };
     return foreign.length === 0 ? result : { ...result, order: null, problems: [...result.problems, foreignReason(foreign)] };
   };
   const builtParts = units.map((unit) => ({ unit, built: buildFor(unit.items.map((i) => i.id)) }));
@@ -673,6 +708,10 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     dataset,
     fixed: p.fixed,
     locked: p.fixed?.result?.locked ?? 0,
+    area,
+    aoi,
+    inner,
+    outside,
     info,
     candidates,
     passes,
@@ -1051,7 +1090,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     if (draft.aoi) useAppStore.getState().setAoi(draft.aoi);
     set({
       ...EMPTY_DRAFT,
-      ...patch(draft, notes),
       open: true,
       detailJobID: null,
       area: draft.aoi ? 'aoi' : 'scene',
@@ -1059,6 +1097,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       steps: draft.steps,
       output: draft.bands,
       dtype,
+      ...patch(draft, notes),
     });
     return { ok: true, notes, draft };
   };
@@ -1452,7 +1491,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         name: `Preview · ${preview.title}`,
         derived: 'preview',
         ...(preview.perScene ? { note: SCENE_PREVIEW_HINT } : {}),
-        overlays: stackLikeView(previewOverlays(preview, get().fixed ? get().fixed!.aoi : app.aoi)),
+        overlays: stackLikeView(previewOverlays(preview, clipAoiOf(get(), app.aoi))),
         itemIds: [...new Set([...preview.mosaics.flatMap((mosaic) => mosaic.order), ...preview.scenes.map((scene) => scene.id)])],
         cropToAoi: preview.clipToAoi,
       });
@@ -1597,7 +1636,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set({ ...EMPTY_DRAFT });
     },
     choosePass: (passKey) => set({ passKey, reviewError: null, startError: null, ...dropReview() }),
-    setArea: (area) => set((s) => (s.fixed ? {} : { area, reviewError: null, startError: null, ...dropReview() })),
+    setArea: (area) => set((s) => (s.fixed && !s.fixed.result ? {} : { area, reviewError: null, startError: null, ...dropReview() })),
     setRunAs: (runAs) => set((s) => (s.fixed?.result ? {} : { runAs, reviewError: null, startError: null, ...dropReview() })),
     addStep: (op, opVersion) => {
       const { datasetId, datasets } = useAppStore.getState();
@@ -1717,7 +1756,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     // as a whole; what cannot be checked here (band names of another dataset) comes back as
     // notes, the server decides on the order.
     loadRecipe: async (text) => {
-      if (get().fixed?.result) return { ok: false, reason: 'The steps of a result stay as they are.' };
       // A file of version 1 names assets, version 2 names bands: what an asset's bands are called, the selection knows.
       const current = orderView(selectionState(useAppStore.getState()), get());
       const named = new Map(current.sources.filter((source) => source.names.length > 0).map((source) => [source.asset, source.names]));
@@ -1737,7 +1775,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
       abortEstimate();
       startGeneration += 1;
-      set({ steps: draft.steps, output: draft.bands, nameProblems: {}, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
+      // The steps of a result stay in front of the recipe's.
+      const kept = get().steps.slice(0, get().fixed?.result?.locked ?? 0);
+      set({ steps: [...kept, ...draft.steps], output: draft.bands, nameProblems: {}, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
       const view = orderView(selectionState(useAppStore.getState()), get());
       return { ok: true, notes: [...notes, ...missingBands(draft, view)], ...(read.converted ? { converted: true } : {}) };
     },
@@ -1769,6 +1809,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const { order } = job;
       const groupId = job.groupId ?? get().batches.find((b) => b.id === job.batchId)?.groupId ?? null;
       const taken = await takeOrder(order, 'this result', (draft, notes) => ({
+        // The area of the result is "Whole scene" here; "AOI only" is another AOI inside it.
+        area: 'scene',
         fixed: {
           itemIds: draft.groups.flat(),
           aoi: draft.aoi,
@@ -1777,7 +1819,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             groupId,
             locked: draft.steps.length,
             bands: [...draft.bands],
-            expired: layer.result!.expired || job.expired,
             notes,
           },
         },
@@ -1839,8 +1880,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set({ starting: true, startError: null });
       try {
         const status = await placeJob(order, {
-          // A fixed area is the entry's, not the map's, and the map's provenance is not its own.
-          aoiProvenance: s.fixed ? undefined : aoiProvenanceFor(order, useAppStore.getState().aoi),
+          // A fixed area is the entry's, not the map's, and the map's provenance is not its own; another AOI inside a result is the map's.
+          aoiProvenance: s.fixed && !view.inner ? undefined : aoiProvenanceFor(order, useAppStore.getState().aoi),
         });
         // One estimate, one job: a second identical job needs its own review.
         if (mine === startGeneration) set({ starting: false, estimate: null });
@@ -2185,7 +2226,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
     assets: read.assets,
     info: view.info,
     plan,
-    area: p.area,
+    area: view.area,
     jobs,
     answers: mosaicAnswers,
     order,

@@ -16,6 +16,7 @@ import type { Order } from '../processing';
 import { orderAoi } from '../processingOrder';
 import {
   EXPIRED_PROCESS_TEXT,
+  clipAoiOf,
   layerProcessBlock,
   NO_COPY_TEXT,
   orderView,
@@ -43,6 +44,9 @@ const DATASET = 'sentinel-2-c1-l2a';
 const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
 const AOI = bboxToPolygon([10.4, 50.4, 10.6, 50.6]);
 const OTHER_AOI = bboxToPolygon([10.1, 50.1, 10.2, 50.2]);
+// Inside the area of the job, and one that straddles its edge.
+const INNER_AOI = bboxToPolygon([10.45, 50.45, 10.5, 50.5]);
+const EDGE_AOI = bboxToPolygon([10.5, 50.5, 10.7, 50.7]);
 const SCL: EarthxMask = { asset: 'scl', band: 'scl', classes: [{ value: 3, label: 'CLOUD_SHADOWS' }], suggested: [3], reference: 'https://example.org/scl', note: '' };
 
 const band = { data_type: 'uint16', nodata: 0 };
@@ -343,18 +347,20 @@ describe('the panel from a result', () => {
     expect(store().fixed?.result?.locked).toBe(1);
     expect(store().fixed?.result?.bands).toEqual(['NDVI', 'red']);
     expect(output()).toEqual(['NDVI', 'red']);
-    expect(store().area).toBe('aoi');
+    // "Whole scene" is the area of the result; the job's AOI is the area of the order.
+    expect(store().area).toBe('scene');
+    expect(store().fixed?.aoi).toEqual(AOI);
     // The scenes and the AOI of the job, not those the map and the list hold now.
     expect(useAppStore.getState().selectedIds).toEqual(['S2B_A']);
     expect(container.querySelector('section[aria-label="Selection"]')?.textContent).toContain('S2B_A');
   });
 
-  it('does not show the steps of the job as steps: the origin is on top, the chain is its tooltip', async () => {
+  it('does not show the steps of the job as steps, and has no line for the origin', async () => {
     await process();
     expect(container.querySelector('.pp-step')).toBeNull();
     expect(container.querySelector('section[aria-label="Processing steps"] ol')).toBeNull();
-    const tip = container.querySelector('.pp-area .tip')?.getAttribute('data-tip') ?? '';
-    expect(tip).toContain('1. NDVI (band math) – Expression: (nir - red) / (nir + red)');
+    expect(container.textContent).not.toContain('From result');
+    expect(container.querySelector('.pp-area .tip')).toBeNull();
   });
 
   it('offers the output of the job as its bands, and no other: the stock it did not keep is out of sight', async () => {
@@ -365,32 +371,93 @@ describe('the panel from a result', () => {
     expect(pressed()).toEqual(['NDVI', 'red']);
   });
 
-  it('has nothing to choose about the scenes and the area, and does not load a recipe', async () => {
+  it('has the same area choice as the panel of a scene: "Whole scene" is the result, "AOI only" an AOI inside it', async () => {
     await process();
     const selection = container.querySelector('section[aria-label="Selection"]')!;
-    expect(button('AOI only', selection)).toBeUndefined();
-    expect(button('Whole scene', selection)).toBeUndefined();
+    expect(button('Whole scene', selection)?.getAttribute('aria-pressed')).toBe('true');
+    expect(button('AOI only', selection)?.getAttribute('aria-pressed')).toBe('false');
+    expect(button('AOI only', selection)?.disabled).toBe(false);
+    expect(button('Whole scene', selection)?.title).toBe('Process the area of the result');
     expect(selection.querySelector('[aria-label="Run as"]')).toBeNull();
-    expect(selection.textContent).toContain('AOI only');
-    expect(selection.querySelector('.pp-fixed')?.getAttribute('title')).toBe('Fixed by the result.');
-    expect(selection.textContent).not.toContain('Load recipe');
-    expect(selection.textContent).toContain('From result: NDVI of a field');
+    expect(selection.querySelector('.pp-fixed')).toBeNull();
+    expect(selection.textContent).toContain('Load recipe');
   });
 
-  it('says in a tooltip that the chain is run again, and that the last bit can differ', async () => {
+  it('"AOI only" is locked until the map has an AOI', async () => {
     await process();
-    const tip = container.querySelector('.pp-area .tip')?.getAttribute('data-tip') ?? '';
-    expect(tip).toMatch(/run again from the scenes/u);
-    expect(tip).toMatch(/last bit/u);
-    expect(tip).toMatch(/float64/u);
-    expect(tip).not.toMatch(/Expired/u);
-    expect(tip).toContain('1. NDVI (band math)');
+    act(() => useAppStore.getState().clearAoi());
+    expect(button('AOI only')?.disabled).toBe(true);
+    expect(button('AOI only')?.title).toBe('Draw an AOI first');
   });
 
-  it('says in the tooltip that the result has expired', async () => {
-    useAppStore.setState({ layers: [resultLayer({ expired: true })] });
+  it('sends the area of the result for "Whole scene", whatever AOI the map holds', async () => {
     await process();
-    expect(container.querySelector('.pp-area .tip')?.getAttribute('data-tip')).toContain(EXPIRED_PROCESS_TEXT);
+    act(() => useAppStore.setState({ aoi: INNER_AOI }));
+    click(button('Review'));
+    await flush();
+    click(button('Start job'));
+    await flush();
+    expect(sent().aoi).toEqual(orderAoi(AOI));
+  });
+
+  it('sends the AOI of the map for "AOI only", where it lies inside the result', async () => {
+    await process();
+    act(() => useAppStore.setState({ aoi: INNER_AOI }));
+    click(button('AOI only'));
+    expect(store().area).toBe('aoi');
+    const view = orderView(selectionState(useAppStore.getState()), store());
+    expect(view.inner).toBe(true);
+    expect(view.outside).toBe(false);
+    click(button('Review'));
+    await flush();
+    click(button('Start job'));
+    await flush();
+    expect(sent().aoi).toEqual(orderAoi(INNER_AOI));
+    expect(sent().inputs[0].groups).toEqual([['S2B_A']]);
+  });
+
+  it('turns an AOI away that is not inside the result, and starts nothing', async () => {
+    await process();
+    for (const aoi of [OTHER_AOI, EDGE_AOI]) {
+      act(() => useAppStore.setState({ aoi }));
+      click(button('AOI only'));
+      const view = orderView(selectionState(useAppStore.getState()), store());
+      expect(view.outside).toBe(true);
+      expect(view.built?.order).toBeNull();
+      expect(container.querySelector('.hint-text.error')?.textContent).toBe('The AOI has to lie inside the result.');
+    }
+    click(button('Review'));
+    await flush();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+  });
+
+  it('goes back to the area of the result with "Whole scene"', async () => {
+    await process();
+    act(() => useAppStore.setState({ aoi: EDGE_AOI }));
+    click(button('AOI only'));
+    click(button('Whole scene'));
+    const view = orderView(selectionState(useAppStore.getState()), store());
+    expect(view.outside).toBe(false);
+    expect(view.aoi).toEqual(AOI);
+  });
+
+  it('for a result of whole scenes, "AOI only" has to lie inside the scenes', async () => {
+    const whole = parent();
+    delete whole.aoi;
+    useProcessingStore.setState({ jobs: [entry({ order: whole })] });
+    await process();
+    act(() => useAppStore.setState({ aoi: INNER_AOI }));
+    click(button('AOI only'));
+    expect(orderView(selectionState(useAppStore.getState()), store()).outside).toBe(false);
+    act(() => useAppStore.setState({ aoi: bboxToPolygon([20, 60, 21, 61]) }));
+    expect(orderView(selectionState(useAppStore.getState()), store()).outside).toBe(true);
+  });
+
+  it('cuts the preview to the area of the result, and to the AOI of the map only for "AOI only"', async () => {
+    await process();
+    expect(clipAoiOf(store(), INNER_AOI)).toEqual(AOI);
+    click(button('AOI only'));
+    expect(clipAoiOf(store(), INNER_AOI)).toEqual(INNER_AOI);
   });
 
   it('does not let the store change the locked steps: not their values, name, place, or the step itself', async () => {
@@ -407,11 +474,21 @@ describe('the panel from a result', () => {
     expect(output()).toEqual(['NDVI', 'red']);
   });
 
-  it('does not take a recipe over the locked steps', async () => {
+  it('loads a recipe behind the steps of the job: they stay in front, and the recipe\'s come after', async () => {
     await process();
-    const loaded = await store().loadRecipe(JSON.stringify(parent()));
-    expect(loaded).toEqual({ ok: false, reason: 'The steps of a result stay as they are.' });
-    expect(store().steps).toHaveLength(1);
+    const recipe = parent({
+      steps: [{ op: 'band_math', op_version: 2, params: { expression: 'NDVI * 2', name: 'double' } }],
+      output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['double', 'NDVI'] },
+    });
+    const loaded = await store().loadRecipe(JSON.stringify(recipe));
+    expect(loaded.ok).toBe(true);
+    expect(store().steps.map((s) => s.values.name)).toEqual(['NDVI', 'double']);
+    expect(store().fixed?.result?.locked).toBe(1);
+    expect(output()).toEqual(['double', 'NDVI']);
+    const view = orderView(selectionState(useAppStore.getState()), store());
+    expect(view.fresh.map((r) => r.name)).toEqual(['double']);
+    expect(view.nameBlock).toBeNull();
+    expect(view.built?.order?.steps.map((s) => s.params.name)).toEqual(['NDVI', 'double']);
   });
 
   it('puts a new step behind the locked ones, and nothing in front of them', async () => {
@@ -605,7 +682,7 @@ describe('the panel from a result', () => {
     expect(store().jobs[0].groupId).toBeNull();
   });
 
-  it('keeps the scenes and the area of the result whatever the map and the list do', async () => {
+  it('keeps the scenes of the result whatever the list does, and its area whatever the map does', async () => {
     await process();
     act(() => useAppStore.setState({ selectedIds: ['S2B_B'], aoi: OTHER_AOI }));
     click(button('Review'));
@@ -614,10 +691,8 @@ describe('the panel from a result', () => {
     await flush();
     expect(sent().inputs[0].groups).toEqual([['S2B_A']]);
     expect(sent().aoi).toEqual(orderAoi(AOI));
-    // The area stays too when the person asks for the other one.
-    store().setArea('scene');
+    // There is no "Run as".
     store().setRunAs('scene');
-    expect(store().area).toBe('aoi');
     expect(store().runAs).toBe('one');
   });
 
@@ -628,7 +703,7 @@ describe('the panel from a result', () => {
     await process();
     expect(store().area).toBe('scene');
     expect(store().fixed?.aoi).toBeNull();
-    expect(container.querySelector('.pp-fixed')?.textContent).toContain('Whole scene');
+    expect(button('Whole scene')?.getAttribute('aria-pressed')).toBe('true');
     click(button('Review'));
     await flush();
     click(button('Start job'));
@@ -641,7 +716,6 @@ describe('the panel from a result', () => {
     useProcessingStore.setState({ jobs: [entry({ expired: true, phase: 'gone' })] });
     await process();
     expect(store().open).toBe(true);
-    expect(store().fixed?.result?.expired).toBe(true);
     click(button('Review'));
     await flush();
     click(button('Start job'));

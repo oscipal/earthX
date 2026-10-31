@@ -82,23 +82,6 @@ export function stepName(operator: Operator | undefined, values: Record<string, 
   return `${own}_${index + 1}`;
 }
 
-// The steps of a chain as lines of a tooltip: "1. NDVI (band math): Expression: (nir - red) / (nir + red)". What a step was given is
-// shown by the title of each field; a field left empty says nothing.
-export function chainText(steps: readonly DraftStep[], operators: readonly Operator[]): string {
-  return steps
-    .map((step, index) => {
-      const operator = operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
-      const fields = operator?.form.supported ? operator.form.fields : [];
-      const given = fields.flatMap((field) => {
-        const value = step.values[field.name];
-        const text = typeof value === 'boolean' ? (value ? 'yes' : 'no') : typeof value === 'string' ? value : '';
-        return field.kind === 'const' || text === '' || (operator?.op === 'band_math' && field.name === 'name') ? [] : [`${field.title}: ${text}`];
-      });
-      return `${index + 1}. ${stepName(operator, step.values, index)} (${(operator?.title ?? step.op).toLowerCase()})${given.length > 0 ? ` – ${given.join(', ')}` : ''}`;
-    })
-    .join('\n');
-}
-
 export const isBandMath = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math';
 
 // The name a `band_math` step adds, as typed.

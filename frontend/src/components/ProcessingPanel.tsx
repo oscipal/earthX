@@ -35,9 +35,9 @@ import {
   previewUnit,
   rescaleOf,
 } from '../processingPreview';
-import { bandLabel, chainText, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
+import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
 import {
-  EXPIRED_PROCESS_TEXT,
+  OUTSIDE_TEXT,
   orderView,
   type PartOutcome,
   sceneCountOf,
@@ -60,10 +60,6 @@ import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
 // What the server says when the output needs more memory than a job may use (`plan.py`, 413).
 const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
 
-// What the chain from a result means (adr/0019 §3.5, §6): it is run again from the scenes, and the saved file is not read.
-const RERUN_TIP =
-  'The steps above are run again from the scenes, then yours. Values can differ in the last bit from a calculation on the saved file (float64 in the chain, float32 in the file).';
-const FIXED_TIP = 'Fixed by the result.';
 const CROP_TIP = 'Fixed by the crop.';
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
@@ -223,7 +219,7 @@ function OutputBands({ view }: { view: OrderView }) {
       )}
       {data.length > 0 && (
         <div className="pp-chip-row" role="group" aria-label="Bands of the data">
-          <span className="pp-help">{view.fixed?.result ? 'Result' : 'Data'}</span>
+          <span className="pp-help">Data</span>
           <div className="pp-chips">{data.map((band) => chip(band.name, band))}</div>
         </div>
       )}
@@ -288,6 +284,8 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
   const area = useProcessingStore((s) => s.area);
   const setArea = useProcessingStore((s) => s.setArea);
   const scenes = (view.pass?.items.length ?? 0) > 1 ? 'scenes' : 'scene';
+  // On a result "Whole scene" is the result's own area, and "AOI only" another AOI inside it (NM4-05b).
+  const result = view.fixed?.result != null;
   return (
     <div className="pp-area">
       <div className="pp-toggle" role="group" aria-label="Area">
@@ -296,7 +294,7 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           type="button"
           className={`pp-seg${area === 'scene' ? ' on' : ''}`}
           aria-pressed={area === 'scene'}
-          title="Process the whole scenes; no AOI is sent"
+          title={result ? 'Process the area of the result' : 'Process the whole scenes; no AOI is sent'}
           onClick={() => setArea('scene')}
         >
           Whole scene
@@ -306,46 +304,36 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           className={`pp-seg${area === 'aoi' ? ' on' : ''}`}
           aria-pressed={area === 'aoi'}
           disabled={!hasAoi}
-          title={hasAoi ? 'Process only the AOI' : 'Draw an AOI first'}
+          title={hasAoi ? (result ? 'Process only the AOI, which has to lie inside the result' : 'Process only the AOI') : 'Draw an AOI first'}
           onClick={() => setArea('aoi')}
         >
           AOI only
         </button>
       </div>
       {area === 'scene' ? (
-        <p className="pp-help">The result covers the whole {scenes}; the mask marks where they have data.</p>
+        <p className="pp-help">
+          {result ? 'The result covers the area it has.' : `The result covers the whole ${scenes}; the mask marks where they have data.`}
+        </p>
+      ) : !hasAoi ? (
+        <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
       ) : (
-        !hasAoi && <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
+        view.outside && <p className="hint-text error">{OUTSIDE_TEXT}</p>
       )}
     </div>
   );
 }
 
-// The scenes and the area an entry fixed (NM4-05b): the result's own, shown as they are with a lock. There is nothing to choose;
-// the order is one job.
-function FixedEntry({ view, chain }: { view: OrderView; chain: string }) {
-  const from = view.fixed?.result;
-  const tip = [from?.expired ? EXPIRED_PROCESS_TEXT : '', chain, RERUN_TIP].filter(Boolean).join('\n\n');
+// The scenes and the area a crop fixed (NM4-06): the crop's own, shown as they are with a lock. There is nothing to choose.
+function FixedEntry({ view }: { view: OrderView }) {
   return (
     <div className="pp-area">
-      {from && (
-        <p className="pp-help">
-          From result{from.title ? `: ${from.title}` : ''}
-          <Tip text={tip} />
-        </p>
-      )}
       <div className="pp-toggle" role="group" aria-label="Area">
         <span className="pp-help">Area:</span>
-        <span className="pp-fixed" title={from ? FIXED_TIP : CROP_TIP}>
+        <span className="pp-fixed" title={CROP_TIP}>
           <span aria-hidden="true">🔒 </span>
           {view.fixed?.aoi ? 'AOI only' : 'Whole scene'}
         </span>
       </div>
-      {from?.notes.map((note) => (
-        <p key={note} className="pp-help">
-          {note}
-        </p>
-      ))}
     </div>
   );
 }
@@ -602,8 +590,6 @@ export default function ProcessingPanel() {
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const view = orderView(app, p);
   const info = view.info;
-  // What the job's steps did, for the tooltip of its origin: the steps stand at the start of the order but are not shown as steps.
-  const chain = info ? chainText(p.steps.slice(0, view.locked), info.operators) : '';
   const built = view.built;
   const hasAoi = isArea(app.aoi);
   const batch = view.runAs !== 'one' && p.batch && p.batch.key === view.key ? p.batch.parts : null;
@@ -626,7 +612,7 @@ export default function ProcessingPanel() {
   const memory = refusals.find((r) => r!.step === null && r!.status === 413 && isMemoryRefusal(r!.message))?.message ?? null;
   const orderRefusals = refusals.filter((r) => r!.step === null && r!.message !== memory);
   const tooLarge =
-    p.area === 'scene' &&
+    view.area === 'scene' &&
     (refusals.some((r) => r!.status === 413 && r!.message !== memory) ||
       (batch?.some((part) => part.refusal?.status === 413 && !isMemoryRefusal(part.refusal.message)) ?? false));
   const startTitle =
@@ -643,7 +629,7 @@ export default function ProcessingPanel() {
             : 'Review the order first';
   // A target CRS the server turned away holds the review back (M4-13c-3).
   const crsBlock = crsBlockReason(p.steps, p.crs);
-  const latitude = areaLatitude(p.area, hasAoi ? app.aoi : null, view.pass?.items ?? []);
+  const latitude = areaLatitude(view.area, view.aoi, view.pass?.items ?? []);
 
   return (
     <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Processing">
@@ -675,9 +661,9 @@ export default function ProcessingPanel() {
                 .filter(Boolean)
                 .join(' · ')}
             </p>
-            {view.fixed ? <FixedEntry view={view} chain={chain} /> : <AreaChoice view={view} hasAoi={hasAoi} />}
+            {view.fixed && !view.fixed.result ? <FixedEntry view={view} /> : <AreaChoice view={view} hasAoi={hasAoi} />}
             <RunAsChoice view={view} />
-            {view.locked === 0 && <RecipeLoader />}
+            <RecipeLoader />
           </section>
         )}
       </div>
@@ -688,7 +674,7 @@ export default function ProcessingPanel() {
         ) : (
           <>
             <section className="pp-section" aria-label="Scenes">
-              {p.area === 'aoi' && hasAoi && view.candidates.length === 0 && (
+              {view.area === 'aoi' && view.aoi !== null && view.candidates.length === 0 && (
                 <p className="hint-text error">No selected scene meets the AOI.</p>
               )}
               {view.runAs !== 'one' && (

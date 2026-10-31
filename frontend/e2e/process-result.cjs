@@ -1,7 +1,7 @@
 // Browser check of ⚙ at the layer of a result (NM4-05b), in a real browser with made-up answers of the platform:
 //   1. The layer manager: ⚙ in the row of a result with the order of its job, active; no ⚙ (the place stays empty) without one.
-//   2. The panel it opens: the result as an entity of its own, with the bands of its output as its bands and no steps shown (its
-//      origin on top, the chain in a tooltip); no "Run as", no choice of the area (a lock instead), no "Load recipe…"; no mask
+//   2. The panel it opens: the result as an entity of its own, with the bands of its output as its bands and no steps shown; the
+//      area choice of the panel of a scene ("Whole scene" is the result, "AOI only" an AOI inside it), "Load recipe…", no "Run as"; no mask
 //      where the output lacks the layer; a band the output did not keep cannot be read; "RGB" in "Show"; "Review" and
 //      "Start job" send one order with all the steps, and the job it makes lies beside the old one.
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
@@ -22,7 +22,7 @@ const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, height: 740 } };
 const RESULT = 'ZyXwVuTsRqPoNmLkJiHg_-';
 const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
-const NEW_JOB = 'QrStUvWxYzAbCdEfGhIj_-';
+const NEW_JOBS = ['QrStUvWxYzAbCdEfGhIj_-', 'AaBbCcDdEeFfGgHhIiJj_-'];
 
 const STAT = { count: 900, min: 0.01, max: 0.9, percentile_2: 0.05, percentile_98: 0.7, unit: null };
 
@@ -50,7 +50,7 @@ async function open(browser, theme, viewport) {
     }
     if (url.pathname.endsWith('/execution')) {
       posted.push(JSON.parse(route.request().postData()).inputs.recipe);
-      return json({ processID: 'recipe', type: 'process', jobID: NEW_JOB, status: 'accepted', message: '', progress: 0, created: '2026-10-31T10:00:00Z', expires: new Date(Date.now() + 7 * 86_400_000).toISOString(), recipeID: 'r', links: [] }, 201);
+      return json({ processID: 'recipe', type: 'process', jobID: NEW_JOBS[posted.length - 1] ?? NEW_JOBS[0], status: 'accepted', message: '', progress: 0, created: '2026-10-31T10:00:00Z', expires: new Date(Date.now() + 7 * 86_400_000).toISOString(), recipeID: 'r', links: [] }, 201);
     }
     if (url.pathname.endsWith('/statistics')) return json({ b1: STAT, b2: STAT });
     if (url.pathname === `/results/${RESULT}/WebMercatorQuad/tilejson.json`) return json({ bounds: [10, 50, 11, 51], minzoom: 0, maxzoom: 19, data_type: 'float32', tiles: [] });
@@ -129,22 +129,22 @@ async function check(browser, theme, viewport) {
   if (await gear(page).isDisabled()) problems.push('the ⚙ is locked with the order of the job');
   if ((await gear(page).getAttribute('title')) !== 'Process further') problems.push(`the ⚙ says ${await gear(page).getAttribute('title')}`);
   await gear(page).click();
-  await page.waitForSelector('.processing-panel section[aria-label="Selection"] .pp-fixed', { timeout: 10000 });
+  await page.waitForSelector('.processing-panel section[aria-label="Selection"] [aria-label="Area"]', { timeout: 10000 });
 
   const panel = page.locator('.processing-panel');
-  const text = (selector) => panel.locator(selector).allTextContents();
   if ((await panel.locator('.pp-step').count()) !== 0) problems.push('the steps of the job are shown as steps');
   const chips = async (selector) => page.$$eval(selector, (c) => c.map((x) => x.textContent));
   if ((await chips('section[aria-label="Bands"] .pp-chip')).join() !== 'NDVI,red,green,blue') problems.push(`the bands on top are ${await chips('section[aria-label="Bands"] .pp-chip')}`);
   if ((await panel.getByRole('button', { name: '＋ Mask' }).count()) !== 0) problems.push('a mask is offered without its layer in the output');
-  if ((await panel.getByRole('button', { name: 'Whole scene' }).count()) + (await panel.getByRole('button', { name: 'AOI only' }).count()) !== 0) problems.push('the area can be chosen');
+  // The same area choice as the panel of a scene: "Whole scene" is the area of the result, "AOI only" an AOI inside it.
+  if ((await panel.getByRole('button', { name: 'Whole scene' }).getAttribute('aria-pressed')) !== 'true') problems.push('"Whole scene" is not the start');
+  if (await panel.getByRole('button', { name: 'AOI only' }).isDisabled()) problems.push('"AOI only" is locked although the map has an AOI');
   if ((await panel.locator('[aria-label="Run as"]').count()) !== 0) problems.push('"Run as" is offered');
-  if ((await panel.getByText('Load recipe').count()) !== 0) problems.push('"Load recipe…" is offered');
-  if (!(await panel.locator('.pp-fixed').textContent())?.includes('AOI only')) problems.push('the area is not shown as AOI only');
-  if ((await panel.locator('.pp-fixed').getAttribute('title')) !== 'Fixed by the result.') problems.push('the lock has no tooltip');
-  if (!(await text('section[aria-label="Selection"]')).join().includes('From result: NDVI of a field')) problems.push('the panel does not say what it comes from');
-  const tip = await panel.locator('.pp-area .tip').getAttribute('data-tip');
-  if (!/run again from the scenes/.test(tip ?? '') || !/last bit/.test(tip ?? '') || !(tip ?? '').includes('1. NDVI (band math)')) problems.push(`the tooltip of the chain says ${tip}`);
+  if ((await panel.getByText('Load recipe').count()) !== 1) problems.push('"Load recipe…" is not offered');
+  if ((await panel.getByText('From result').count()) !== 0) problems.push('the panel has a line "From result"');
+  if ((await panel.locator('.pp-area .tip').count()) !== 0) problems.push('the area has a tooltip of the chain');
+  const labels = await page.$$eval('section[aria-label="Output"] .pp-chip-row .pp-help', (e) => e.map((x) => x.textContent));
+  if (labels.join() !== 'Data') problems.push(`the groups of the output are ${labels}`);
 
   // The bands of the job are the output; RGB is on offer for the three of them.
   const options = await page.$$eval('.pp-show select option', (o) => o.map((x) => x.value));
@@ -194,9 +194,28 @@ async function check(browser, theme, viewport) {
     if (order.inputs[0].groups[0].join() !== 'S2B_A') problems.push('the scenes are not those of the job');
     if (!order.aoi) problems.push('the order has no area');
   }
+  // "AOI only": another AOI inside the result is the area of the next order; one outside it is turned away.
+  await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    useAppStore.getState().setAoi({ type: 'Polygon', coordinates: [[[10.7, 50.7], [10.9, 50.7], [10.9, 50.9], [10.7, 50.9], [10.7, 50.7]]] });
+  });
+  await panel.getByRole('button', { name: 'AOI only' }).click();
+  if (!(await panel.getByText('The AOI has to lie inside the result.').count())) problems.push('an AOI outside the result is not turned away');
+  await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    useAppStore.getState().setAoi({ type: 'Polygon', coordinates: [[[10.45, 50.45], [10.5, 50.45], [10.5, 50.5], [10.45, 50.5], [10.45, 50.45]]] });
+  });
+  await page.waitForTimeout(300);
+  if (await panel.getByText('The AOI has to lie inside the result.').count()) problems.push('an AOI inside the result is turned away');
+  await panel.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
+  await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+  await page.waitForTimeout(800);
+  if (posted.length !== 2 || posted[1].aoi.coordinates[0][0].join() !== '10.45,50.45') problems.push(`the second order has the area ${JSON.stringify(posted[1]?.aoi)}`);
+  await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_inner.png`) });
   const jobs = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().jobs.map((j) => [j.jobID, j.title]));
-  if (jobs.length !== 2 || jobs[0][0] !== NEW_JOB || jobs[1][0] !== JOB) problems.push(`the jobs are ${JSON.stringify(jobs)}`);
-  if (jobs[0]?.[1] !== 'NDVI of a field → Band math') problems.push(`the new job is called ${jobs[0]?.[1]}`);
+  if (jobs.length !== 3 || jobs[2][0] !== JOB) problems.push(`the jobs are ${JSON.stringify(jobs)}`);
+  if (jobs[1]?.[1] !== 'NDVI of a field → Band math') problems.push(`the new job is called ${jobs[0]?.[1]}`);
   await context.close();
   return { name, problems };
 }
