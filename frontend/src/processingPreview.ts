@@ -41,6 +41,7 @@ import {
   type Operator,
   type ProcessInfo,
 } from './processingOrder';
+import type { Percent } from './percentRange';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
 import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
@@ -75,6 +76,8 @@ export interface PreviewRange {
   vmax: string;
   // `''`: no colormap.
   colormap: string;
+  // What the range was typed as where it was typed in percentiles (NM4-65 part 4): `vmin`/`vmax` hold the values they gave.
+  percent?: Percent;
 }
 
 export const DEFAULT_RANGE: PreviewRange = {

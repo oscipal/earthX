@@ -208,6 +208,17 @@ describe('the layer a result becomes', () => {
     expect(layers()[0]).not.toHaveProperty('date');
   });
 
+  // NM4-65 part 4: a range the job was saved with, typed in percentiles, shows "%" again on the layer.
+  it('carries the percentiles the range of its job was typed as', async () => {
+    useProcessingStore.setState({ jobs: [entry({ range: { vmin: '3', vmax: '97', colormap: 'viridis', percent: { low: '3', high: '97' } } })] });
+    await showOnMap();
+    expect(layers()[0].result).toMatchObject({ percent: { low: '3', high: '97' } });
+    act(() => useAppStore.setState({ layers: [] }));
+    useProcessingStore.setState({ jobs: [entry({ range: { vmin: '3', vmax: '97', colormap: 'viridis' } })] });
+    await showOnMap();
+    expect(layers()[0].result).not.toHaveProperty('percent');
+  });
+
   it('is drawn with the range of the preview, as it stands', async () => {
     useProcessingStore.setState({ range: { vmin: '0', vmax: '0.5', colormap: 'viridis' } });
     await showOnMap();

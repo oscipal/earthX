@@ -1613,6 +1613,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           stats,
           preset,
           ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
+          ...(ownRangeOf(job, job.bands, place)?.percent ? { percent: ownRangeOf(job, job.bands, place)!.percent } : {}),
         },
         overlays: [
           {
@@ -2063,14 +2064,15 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
           // What was applied and not saved belongs to the band it was applied to: it goes with it.
-          const { savedTileUrl: _unsaved, ...kept } = l.result;
+          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, percent: _percent, ...kept } = l.result;
           let first = true;
           const overlays = l.overlays.map((o) => {
             if (o.kind !== 'raster' || !first) return o;
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, stats, preset } };
+          const typed = ownRangeOf(job, info.bands!, place)?.percent;
+          return { ...l, overlays, result: { ...kept, band: place, stats, preset, ...(typed ? { percent: typed } : {}) } };
         }),
       });
     },

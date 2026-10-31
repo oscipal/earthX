@@ -41,6 +41,7 @@ import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
+import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
 import { appliedRenderFrom, autoRescale, lookChanged, lookOfPendingFields, pendingFieldsOf, pendingPercentOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
@@ -1267,7 +1268,7 @@ export interface AppState {
   // when it is over, as before once the job is restored (NM4-27).
   syncDeletedResults: (until: ReadonlyMap<string, number>, now: number) => void;
   // Draws a result layer another way: the tile URL is rebuilt, so the map makes a new source of it.
-  restyleResultLayer: (id: string, render: AppliedRender) => void;
+  restyleResultLayer: (id: string, render: AppliedRender, percent?: Percent | null) => void;
   // "Save" of a result's settings: what "Apply" draws is the layer's own look from now on.
   saveResultLayer: (id: string) => void;
   // The settings are closed: a look that was applied and not saved goes, the layer is drawn as saved again.
@@ -1748,7 +1749,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     }),
   // "Apply": draws the result with this look. The look it was saved with is kept until "Save" or until the settings close.
-  restyleResultLayer: (id, render) =>
+  restyleResultLayer: (id, render, percent) =>
     set((s) => ({
       layers: s.layers.map((l) => {
         if (l.id !== id || l.derived !== 'result' || !l.result) return l;
@@ -1756,16 +1757,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         const overlays = l.overlays.map((o) => (o.kind === 'raster' ? { ...o, tileUrl: restyledTileUrl(o.tileUrl, render) } : o));
         const now = overlays.find((o) => o.kind === 'raster')?.tileUrl;
         const saved = l.result.savedTileUrl ?? was;
+        // What the saved look was typed as, kept while another is applied (NM4-65 part 4).
+        const savedPercent = l.result.savedTileUrl !== undefined ? l.result.savedPercent : (l.result.percent ?? null);
         // Back at the saved look: nothing is unsaved.
-        const { savedTileUrl: _kept, ...info } = l.result;
-        return { ...l, overlays, result: saved === undefined || saved === now ? info : { ...info, savedTileUrl: saved } };
+        const { savedTileUrl: _kept, savedPercent: _keptPercent, percent: _percent, ...info } = l.result;
+        const typed = percent ? { percent } : {};
+        return { ...l, overlays, result: saved === undefined || saved === now ? { ...info, ...typed } : { ...info, ...typed, savedTileUrl: saved, savedPercent: savedPercent ?? null } };
       }),
     })),
   saveResultLayer: (id) =>
     set((s) => ({
       layers: s.layers.map((l) => {
         if (l.id !== id || !l.result?.savedTileUrl) return l;
-        const { savedTileUrl: _saved, ...info } = l.result;
+        const { savedTileUrl: _saved, savedPercent: _savedPercent, ...info } = l.result;
         return { ...l, result: info };
       }),
     })),
@@ -1774,14 +1778,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       layers: s.layers.map((l) => {
         const saved = l.id === id ? l.result?.savedTileUrl : undefined;
         if (!l.result || saved === undefined) return l;
-        const { savedTileUrl: _saved, ...info } = l.result;
+        const { savedTileUrl: _saved, savedPercent, percent: _percent, ...info } = l.result;
         let first = true;
         const overlays = l.overlays.map((o) => {
           if (o.kind !== 'raster' || !first) return o;
           first = false;
           return { ...o, tileUrl: saved };
         });
-        return { ...l, overlays, result: info };
+        return { ...l, overlays, result: { ...info, ...(savedPercent ? { percent: savedPercent } : {}) } };
       }),
     })),
   closeResultView: () => set({ resultViewLayerId: null }),

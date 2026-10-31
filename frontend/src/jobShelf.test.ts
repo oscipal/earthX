@@ -373,6 +373,29 @@ describe('what the shelf reads', () => {
     expect(readShelf().shelf.jobs.map((j) => j.bandRanges)).toEqual([{ ndvi: hand }, {}, {}]);
   });
 
+  // NM4-65 part 4: a range typed in percentiles keeps them, so that the settings show "%" again.
+  it('keeps the percentiles a range was typed as, and drops a pair that is none', () => {
+    const hand = { vmin: '3', vmax: '97', colormap: 'viridis' };
+    write({
+      v: 1,
+      jobs: [
+        entry({ range: { ...hand, percent: { low: '3', high: '97' } } }),
+        entry({ jobID: OTHER, range: { ...hand, percent: { low: '97', high: '3' } } }),
+        entry({ jobID: 'C'.repeat(22), range: { ...hand, percent: { low: 3, high: '97' } } }),
+        entry({ jobID: 'D'.repeat(22), bandRanges: { ndvi: { ...hand, percent: { low: '1', high: '99' } } } }),
+      ],
+    });
+    const jobs = readShelf().shelf.jobs;
+    expect(jobs[0].range).toEqual({ ...hand, percent: { low: '3', high: '97' } });
+    expect(jobs[1].range).toEqual(hand);
+    expect(jobs[2].range).toEqual(hand);
+    expect(jobs[3].bandRanges).toEqual({ ndvi: { ...hand, percent: { low: '1', high: '99' } } });
+    saveShelf(shelfOf([job('A'.repeat(22), { range: { ...hand, percent: { low: '3', high: '97' } } }), job('B'.repeat(22), { range: hand })]));
+    const written = Object.fromEntries(stored().jobs.map((j: { jobID: string; range?: object }) => [j.jobID, j.range]));
+    expect(written['A'.repeat(22)]).toEqual({ ...hand, percent: { low: '3', high: '97' } });
+    expect(written['B'.repeat(22)]).toEqual(hand);
+  });
+
   // NM4-65 part 3: the layer of a result shows the day of the scenes of its job.
   it('keeps the day of the scenes as text of that shape, and nothing else', () => {
     write({

@@ -4,6 +4,7 @@
 
 import type { Coords4 } from './geoUtils';
 import type { RGB } from './processingBands';
+import type { Percent } from './percentRange';
 import type { PreviewRange } from './processingPreview';
 import type { ResultStats } from './render';
 import type { ResultBand } from './resultLayer';
@@ -139,4 +140,8 @@ export interface ResultLayerInfo {
   // Set on a layer made from one band of another ("Add band as layer", NM4-65 part 2): it draws that band and no other, is
   // named after it, and its look is its own — "Save" keeps it for this layer and leaves the layer it came from and the job alone.
   own?: true;
+  // What the range the layer draws was typed as, where it was typed in percentiles (NM4-65 part 4); the tile URL holds the
+  // values they gave. While a look is applied and not saved, `savedPercent` is what the saved look was typed as.
+  percent?: Percent;
+  savedPercent?: Percent | null;
 }

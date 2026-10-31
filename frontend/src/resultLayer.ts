@@ -301,7 +301,7 @@ export function bandLayerOf(layer: MapLayer, id: string): MapLayer | null {
   const colour = band === RGB;
   const named = colour ? (info.colour ? RGB_LABEL : null) : (info.bands[band]?.name || `Band ${band + 1}`);
   if (named === null || (!colour && !info.bands[band])) return null;
-  const { bands: _bands, band: _band, colour: _colour, savedTileUrl: _unsaved, ...rest } = info;
+  const { bands: _bands, band: _band, colour: _colour, savedTileUrl: _unsaved, savedPercent: _unsavedPercent, ...rest } = info;
   return {
     ...layer,
     id,
@@ -309,4 +309,17 @@ export function bandLayerOf(layer: MapLayer, id: string): MapLayer | null {
     overlays: layer.overlays.map((overlay) => ({ ...overlay })),
     result: { ...rest, ...(colour && info.colour ? { band: RGB, colour: info.colour } : {}), own: true },
   };
+}
+
+// The path of a result on the tile side (`/results/{result_id}`), out of the tile URL of its layer; `null` for anything else.
+const RESULT_PATH = /(\/results\/[A-Za-z0-9_-]{22})\/tiles\//u;
+export function resultPathOfTileUrl(tileUrl: string): string | null {
+  return RESULT_PATH.exec(tileUrl)?.[1] ?? null;
+}
+
+// The bands a tile URL draws, as places in the file from 0 (`bidx` counts from 1); empty where it names none: the first band.
+export function bandPlacesOfTileUrl(tileUrl: string): number[] {
+  const query = new URLSearchParams(tileUrl.slice(tileUrl.indexOf('?') + 1));
+  const places = query.getAll('bidx').map((bidx) => Number(bidx) - 1);
+  return places.length > 0 && places.every((place) => Number.isInteger(place) && place >= 0) ? places : [0];
 }

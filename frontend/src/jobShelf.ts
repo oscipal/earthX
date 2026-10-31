@@ -14,6 +14,7 @@
 // - The jobs of the `sessionStorage` list of M4-13 are taken over once.
 
 import { isJobId, type Order } from './processing';
+import { percentOf } from './percentRange';
 import type { PreviewRange } from './processingPreview';
 import { upgradeOrder } from './recipeUpgrade';
 
@@ -143,8 +144,12 @@ function datesText(value: unknown): string | null {
 
 function rangeOf(value: unknown): PreviewRange | null {
   if (!record(value) || typeof value.vmin !== 'string' || typeof value.vmax !== 'string' || typeof value.colormap !== 'string') return null;
-  return { vmin: value.vmin, vmax: value.vmax, colormap: value.colormap };
+  const percent = percentOf(record(value.percent) && typeof value.percent.low === 'string' && typeof value.percent.high === 'string' ? { low: value.percent.low, high: value.percent.high } : null);
+  return { vmin: value.vmin, vmax: value.vmax, colormap: value.colormap, ...(percent ? { percent } : {}) };
 }
+
+// A range as it is written: the percentiles it was typed as go with it (NM4-65 part 4).
+const rangeJson = (r: PreviewRange) => ({ vmin: r.vmin, vmax: r.vmax, colormap: r.colormap, ...(r.percent ? { percent: { low: r.percent.low, high: r.percent.high } } : {}) });
 
 const MAX_BAND_RANGES = 64;
 
@@ -230,9 +235,9 @@ function serialize(shelf: Shelf, without: ReadonlySet<string>): string {
     ...(j.archived ? { archived: true } : {}),
     ...(j.groupId ? { groupId: j.groupId } : {}),
     ...(j.batchId ? { batchId: j.batchId, ...(j.part ? { part: j.part } : {}) } : {}),
-    ...(j.range ? { range: { vmin: j.range.vmin, vmax: j.range.vmax, colormap: j.range.colormap } } : {}),
+    ...(j.range ? { range: rangeJson(j.range) } : {}),
     ...(Object.keys(j.bandRanges).length > 0
-      ? { bandRanges: Object.fromEntries(Object.entries(j.bandRanges).map(([name, r]) => [name, { vmin: r.vmin, vmax: r.vmax, colormap: r.colormap }])) }
+      ? { bandRanges: Object.fromEntries(Object.entries(j.bandRanges).map(([name, r]) => [name, rangeJson(r)])) }
       : {}),
     ...(j.shownBand ? { shownBand: j.shownBand } : {}),
     ...(j.dates ? { dates: j.dates } : {}),

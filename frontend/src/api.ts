@@ -514,6 +514,14 @@ export function buildStatisticsUrl(datasetId: string, itemId: string, asset: str
   return withPercentiles(`${itemBase(datasetId, itemId)}/statistics?${params.toString()}`, percentiles);
 }
 
+// The statistics of a result over the pixels its mask marks (`GET /results/{id}/statistics`, NM4-65 part 4): the bands as the
+// results document has them, each with its `statistics` and every whole percent as `percentile_N`. `410` once the result is gone.
+export async function fetchResultStatistics(resultPath: string, signal?: AbortSignal): Promise<{ statistics?: Record<string, unknown> }[]> {
+  const body = await jsonOrThrow<{ bands?: { statistics?: Record<string, unknown> }[] }>(await fetch(`${BASE}${resultPath}/statistics`, { signal }));
+  if (!Array.isArray(body.bands)) throw new Error('the tiler answered with statistics the page cannot read');
+  return body.bands;
+}
+
 // rio-tiler's `BandStatistics`, plain JSON (backend/earthx/access/tiles.py) —
 // only the fields the stretch calculation reads are named, the rest passes
 // through untyped.
