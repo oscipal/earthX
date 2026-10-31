@@ -72,6 +72,9 @@ import {
 } from './processing';
 import {
   bandTileUrl,
+  colourPlacesOf,
+  colourStats,
+  colourTileUrl,
   isResultExpired,
   ownRangeOf,
   positive,
@@ -96,10 +99,12 @@ import {
   renameResult,
   resultNameOf,
   resultsOf,
+  RGB,
 } from './processingBands';
 import {
   aoiProvenanceFor,
   auxiliaryAssetsOf,
+  trueColorOf,
   bandSources,
   buildOrder,
   candidateItems,
@@ -350,7 +355,8 @@ interface ProcessingState {
   setJobRange: (jobID: string, range: PreviewRange | null, band?: string) => void;
   // The band a result layer draws, by its place in the file (NM4-43e PR 2): the layer is drawn from that band, with the scale
   // the person saved for it or else the one its statistics call for.
-  chooseResultBand: (layerId: string, place: number) => void;
+  // `RGB` draws the three bands of the colour picture as one (NM4-64).
+  chooseResultBand: (layerId: string, place: number | typeof RGB) => void;
   // The manager of the jobs (UI-01 §6.10). A job is never deleted, only archived and put in a group.
   renameJob: (jobID: string, title: string) => void;
   renameBatch: (batchId: string, title: string) => void;
@@ -418,6 +424,8 @@ export type LoadResult = { ok: true; notes: string[]; converted?: boolean } | { 
 
 export interface OrderView {
   dataset: DatasetOption | undefined;
+  // `earthx:true_color` of the dataset: red, green, blue; `null` where it has no colour picture (NM4-64).
+  trueColor: [string, string, string] | null;
   info: ProcessInfo | null;
   // The scenes the order can be for — all selected ones, or those the AOI meets
   // for "AOI only" — split into passes, and the pass the order is for.
@@ -587,6 +595,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     info,
     candidates,
     passes,
+    trueColor: trueColorOf(dataset?.collection),
     pass,
     runChoices: runOptions,
     runAs,
@@ -1296,8 +1305,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (shown(useAppStore.getState().layers)) return;
       // A result of several bands starts with the band the preview showed; the layer says which bands it has.
       const several = job.bands.length > 1;
-      const place = startPlaceOf(job.bands, job.order, job.shownBand);
-      const render = resultRender(tileJson.dataType, get().range, several ? job.bands[place].stats : job.statistics, ownRangeOf(job, job.bands, place));
+      const dataset = useAppStore.getState().datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
+      const colour = several ? colourPlacesOf(job.bands, trueColorOf(dataset?.collection)) : null;
+      const place = startPlaceOf(job.bands, job.order, job.shownBand, colour);
+      const stats = place === RGB ? colourStats(job.bands, colour!) : several ? job.bands[place].stats : job.statistics;
+      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB);
       const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
         name: resultLayerName(job.title),
@@ -1309,13 +1321,18 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           resampled: job.resampled,
           expired: false,
           dataType: tileJson.dataType,
-          stats: several ? job.bands[place].stats : job.statistics,
-          ...(several ? { bands: job.bands, band: place } : {}),
+          stats,
+          ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
         },
         overlays: [
           {
             kind: 'raster',
-            tileUrl: several ? bandTileUrl(template, place, render) : buildTileUrl(template, render),
+            tileUrl:
+              place === RGB
+                ? colourTileUrl(template, colour!, render)
+                : several
+                  ? bandTileUrl(template, place, render)
+                  : buildTileUrl(template, render),
             bounds: tileJson.bounds,
             // The tiler names every level, from a tile of the coarsest overview to the finest source's
             // (`result_tiles.py::RESULT_MIN_ZOOM`/`RESULT_MAX_ZOOM`): the result stays on the map at every
@@ -1708,10 +1725,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const app = useAppStore.getState();
       const layer = app.layers.find((l) => l.id === layerId && l.derived === 'result');
       const info = layer?.result;
-      const band = info?.bands?.[place];
+      const colour = place === RGB ? info?.colour : undefined;
+      const band = place === RGB ? null : info?.bands?.[place];
       const job = info && get().jobs.find((j) => j.jobID === info.jobID);
-      if (!layer || !info || !info.bands || !band || !job || info.band === place) return;
-      const render = resultRender(info.dataType, get().range, band.stats, ownRangeOf(job, info.bands, place));
+      if (!layer || !info || !info.bands || !job || info.band === place) return;
+      if (place === RGB ? !colour : !band) return;
+      const stats = colour ? colourStats(info.bands, colour) : band!.stats;
+      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined);
       useAppStore.setState({
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
@@ -1721,9 +1741,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           const overlays = l.overlays.map((o) => {
             if (o.kind !== 'raster' || !first) return o;
             first = false;
-            return { ...o, tileUrl: bandTileUrl(o.tileUrl, place, render) };
+            return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, stats: band.stats } };
+          return { ...l, overlays, result: { ...kept, band: place, stats } };
         }),
       });
     },
@@ -1926,6 +1946,7 @@ function previewReadOf(view: OrderView, plan: Extract<PreviewPlan, { state: 'rea
     all: view.assets,
     steps: plan.steps.map(({ step }) => step),
     pick,
+    trueColor: view.trueColor,
   });
 }
 
@@ -1940,7 +1961,9 @@ function startLook(
   if (view.output.length <= 1) return { range: own, bandRanges: {}, shownBand: null };
   const plan = planPreview(p.steps, view.info);
   const band = plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
-  return { range: null, bandRanges: own && band !== null ? { [band]: own } : {}, shownBand: band };
+  // The colour picture has no colormap, whatever the fields of the range hold.
+  const kept = own && band === RGB ? { ...own, colormap: '' } : own;
+  return { range: null, bandRanges: kept && band !== null ? { [band]: kept } : {}, shownBand: band };
 }
 
 function wantedPreview(limit?: number): PreviewSpec | null {
@@ -1969,6 +1992,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
     answers: mosaicAnswers,
     order,
     band: read.band,
+    bands: read.bands,
     named: read.choices.length > 1,
   };
   const spec = previewSpec({ ...args, range: p.range });
@@ -2027,7 +2051,7 @@ async function measureOver(spec: PreviewSpec): Promise<PreviewMeasure> {
     try {
       const answer = await areaStatisticsOf(spec.areaOrder);
       // The answer holds every band of the order; the colour scale is the one of the band the map shows.
-      const bands = spec.band === null ? answer.bands : answer.bands.filter((band) => band.name === spec.band);
+      const bands = spec.bands === null ? answer.bands : answer.bands.filter((band) => spec.bands!.includes(band.name));
       if (bands.length === 0) throw new Error('the statistics do not name the band');
       return areaMeasureOf(spec.measure, { ...answer, bands }, spec.expression);
     } catch (error) {

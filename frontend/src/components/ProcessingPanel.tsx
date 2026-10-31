@@ -35,7 +35,7 @@ import {
   previewUnit,
   rescaleOf,
 } from '../processingPreview';
-import { isBandMath, nameProblem, resultNameOf } from '../processingBands';
+import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
 import { orderView, type PartOutcome, selectionState, useProcessingStore, type OrderView } from '../processingStore';
 import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
@@ -401,6 +401,7 @@ function PreviewSection({ view }: { view: OrderView }) {
           all: view.assets,
           steps: plan.steps.map(({ step }) => step),
           pick: shown,
+          trueColor: view.trueColor,
         })
       : null;
   const sceneCount = view.pass?.items.length ?? 0;
@@ -430,7 +431,7 @@ function PreviewSection({ view }: { view: OrderView }) {
                 className="pp-show"
                 title="The band the map shows"
                 value={read.band}
-                options={read.choices.map((name) => ({ value: name, label: name }))}
+                options={read.choices.map((name) => ({ value: name, label: bandLabel(name) }))}
                 onChange={setShown}
               />
             )}
@@ -449,17 +450,19 @@ function PreviewSection({ view }: { view: OrderView }) {
                 </span>
               )}
             </div>
-            <label className="vc-field">
-              <span>Colormap</span>
-              <select value={rangeDraft.colormap} onChange={(e) => setRangeDraft({ colormap: e.target.value })}>
-                <option value="">— none —</option>
-                {COLORMAPS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {read?.band !== RGB && (
+              <label className="vc-field">
+                <span>Colormap</span>
+                <select value={rangeDraft.colormap} onChange={(e) => setRangeDraft({ colormap: e.target.value })}>
+                  <option value="">— none —</option>
+                  {COLORMAPS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button type="button" className="primary-btn vc-apply" disabled={'problem' in range} onClick={() => applyRange()}>
               Apply
             </button>

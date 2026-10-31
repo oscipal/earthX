@@ -239,6 +239,15 @@ export function auxiliaryAssetsOf(collection: Collection | undefined): string[] 
   return Array.isArray(raw) ? raw.filter((key): key is string => typeof key === 'string') : [];
 }
 
+// `earthx:true_color` of the collection: the three bands of the colour picture in the order red, green, blue, or `null` where
+// the dataset has none (or the registry says anything but three names).
+export function trueColorOf(collection: Collection | undefined): [string, string, string] | null {
+  const raw: unknown = collection?.['earthx:true_color'];
+  if (!Array.isArray(raw) || raw.length !== 3) return null;
+  const [red, green, blue] = raw;
+  return [red, green, blue].every((name) => typeof name === 'string' && name !== '') ? [red, green, blue] : null;
+}
+
 // The assets that are bands of the data, in the item's order — not the auxiliary assets of the registry and not the layer
 // of the mask: those are in the output list, but not part of "All" and not checked for the person.
 export function selectableAssets(

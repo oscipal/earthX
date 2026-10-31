@@ -10,6 +10,7 @@ import type { MapLayer } from '../layers';
 import { rescaleOf, type PreviewRange } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
 import { COLORMAPS, NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
+import { RGB } from '../processingBands';
 import { defaultRange, rangeOfTileUrl, renderOfRange } from '../resultLayer';
 import { useAppStore } from '../store';
 import AutoScaleButton from './AutoScaleButton';
@@ -71,8 +72,8 @@ function Controls({ layer }: { layer: MapLayer }) {
     if (canApply) restyle(layer.id, made);
     save(layer.id);
     const fallback = defaultRange(info, useProcessingStore.getState().range);
-    // A result of several bands keeps the range of the band it draws, by the band's name.
-    const named = info.bands && info.bands.length > 1 ? (info.bands[info.band ?? 0]?.name ?? '') : undefined;
+    // A result of several bands keeps the range of the band it draws, by the band's name ("RGB" for the colour picture).
+    const named = info.bands && info.bands.length > 1 ? (info.band === RGB ? RGB : (info.bands[info.band ?? 0]?.name ?? '')) : undefined;
     setJobRange(info.jobID, fallback && sameRange(draft, fallback) ? null : draft, named);
   };
   const auto = () => {
@@ -95,17 +96,19 @@ function Controls({ layer }: { layer: MapLayer }) {
       <div className="vc-render">
         {settable && (
           <>
-            <label className="vc-field">
-              <span>Colormap</span>
-              <select value={draft.colormap} onChange={(e) => edit({ colormap: e.target.value })}>
-                <option value="">— none —</option>
-                {COLORMAPS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {info.band !== RGB && (
+              <label className="vc-field">
+                <span>Colormap</span>
+                <select value={draft.colormap} onChange={(e) => edit({ colormap: e.target.value })}>
+                  <option value="">— none —</option>
+                  {COLORMAPS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="vc-field vc-num">
               <span>vmin</span>
               <input type="number" value={draft.vmin} onChange={(e) => edit({ vmin: e.target.value })} />

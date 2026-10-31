@@ -127,6 +127,7 @@ def valid_config() -> DatasetConfig:
         auxiliary_assets=(),
         search_filters=(),
         index_presets=(),
+        true_color=(),
     )
 
 

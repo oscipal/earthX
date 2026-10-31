@@ -45,10 +45,15 @@ describe('buildTileUrl', () => {
   });
 
   it('adds bidx and expression when set', () => {
-    const render: AppliedRender = { bidx: '1,2,3', expression: 'b1*2' };
+    const render: AppliedRender = { bidx: '2', expression: 'b1*2' };
     const params = new URL(buildTileUrl(info().tileUrl, render), 'http://localhost').searchParams;
-    expect(params.get('bidx')).toBe('1,2,3');
+    expect(params.getAll('bidx')).toEqual(['2']);
     expect(params.get('expression')).toBe('b1*2');
+  });
+
+  it('sends several bands as one bidx each, in the order given (NM4-64)', () => {
+    const params = new URL(buildTileUrl(info().tileUrl, { bidx: '3,1,2' }), 'http://localhost').searchParams;
+    expect(params.getAll('bidx')).toEqual(['3', '1', '2']);
   });
 
   it('keeps the asset that is already baked into the template rather than adding a second one', () => {
