@@ -35,6 +35,7 @@ from earthx.api.aoi_cloud_filter import (
     run_filter,
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.registry import AoiMeasure
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition
 from earthx.gateway import Policy, ReadSlots
 
@@ -52,10 +53,18 @@ TWO_SQUARES = {
 BBOX = (9.0, 46.0, 11.0, 48.0)
 
 
-def request_for(condition: RangeCondition | None = None, aoi: Mapping[str, Any] = SQUARE) -> AoiFilterRequest:
+CLOUD_5 = {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 5.0)}
+
+
+def request_for(
+    condition: RangeCondition | None = None,
+    aoi: Mapping[str, Any] = SQUARE,
+    *,
+    conditions: Mapping[AoiMeasure, RangeCondition] | None = None,
+) -> AoiFilterRequest:
     return read_aoi_request(
         "s2",
-        condition or RangeCondition(None, 20.0),
+        conditions or {AoiMeasure.CLOUD_SHARE: condition or RangeCondition(None, 20.0)},
         datetime_value=PERIOD,
         bbox=None,
         intersects=aoi,
@@ -72,7 +81,7 @@ class TestReadingTheRequest:
 
     def test_a_bbox_is_the_area_as_a_polygon(self) -> None:
         read = read_aoi_request(
-            "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=None
+            "s2", CLOUD_5, datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=None
         )
         assert read.aoi["type"] == "Polygon"
         assert {tuple(position) for position in read.aoi["coordinates"][0]} == {
@@ -81,14 +90,14 @@ class TestReadingTheRequest:
 
     def test_a_bbox_across_the_antimeridian_is_two_parts(self) -> None:
         read = read_aoi_request(
-            "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=(179.0, 10.0, -179.0, 11.0),
+            "s2", CLOUD_5, datetime_value=PERIOD, bbox=(179.0, 10.0, -179.0, 11.0),
             intersects=None, earthx_aoi=None,
         )
         assert read.aoi["type"] == "MultiPolygon"
 
     def test_earthx_aoi_inside_the_bbox_is_what_is_measured(self) -> None:
         read = read_aoi_request(
-            "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=SQUARE
+            "s2", CLOUD_5, datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=SQUARE
         )
         assert read.aoi == SQUARE
 
@@ -98,7 +107,7 @@ class TestReadingTheRequest:
         polygon = {"type": "Polygon", "coordinates": [[[10.0, 47.0], *arc, [10.2, 47.2], [10.0, 47.0]]]}
         assert sum(len(ring) for ring in polygon["coordinates"]) == 20_000
         read = read_aoi_request(
-            "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=polygon
+            "s2", CLOUD_5, datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=polygon
         )
         assert read.aoi["type"] == "Polygon"
 
@@ -124,7 +133,7 @@ class TestReadingTheRequest:
     def test_a_request_that_cannot_be_measured(self, changes: dict[str, Any], message: str) -> None:
         arguments: dict[str, Any] = {"datetime_value": PERIOD, "bbox": None, "intersects": SQUARE, "earthx_aoi": None}
         with pytest.raises(InvalidFilter, match=message) as caught:
-            read_aoi_request("s2", RangeCondition(None, 5.0), **{**arguments, **changes})
+            read_aoi_request("s2", CLOUD_5, **{**arguments, **changes})
         for value in ("10.0", "47.0", "190"):
             assert value not in str(caught.value)
 
@@ -143,14 +152,14 @@ class TestReadingTheRequest:
     def test_earthx_aoi_and_the_bbox(self, bbox: Any, earthx_aoi: Any, message: str) -> None:
         with pytest.raises(InvalidFilter, match=message):
             read_aoi_request(
-                "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=bbox, intersects=None, earthx_aoi=earthx_aoi
+                "s2", CLOUD_5, datetime_value=PERIOD, bbox=bbox, intersects=None, earthx_aoi=earthx_aoi
             )
 
     def test_more_than_twenty_thousand_positions(self) -> None:
         ring = [[10.0 + i * 1e-6, 47.0] for i in range(20_001)]
         with pytest.raises(InvalidFilter, match="more than 20000 positions"):
             read_aoi_request(
-                "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=BBOX, intersects=None,
+                "s2", CLOUD_5, datetime_value=PERIOD, bbox=BBOX, intersects=None,
                 earthx_aoi={"type": "Polygon", "coordinates": [[*ring, [10.0, 47.0]]]},
             )
 
@@ -160,7 +169,7 @@ class TestReadingTheRequest:
         assert request_for(RangeCondition(None, 21.0)).key != base.key
         assert request_for(aoi=TWO_SQUARES).key != base.key
         other = read_aoi_request(
-            "other", RangeCondition(None, 20.0), datetime_value=PERIOD, bbox=None, intersects=SQUARE, earthx_aoi=None
+            "other", {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 20.0)}, datetime_value=PERIOD, bbox=None, intersects=SQUARE, earthx_aoi=None
         )
         assert other.key != base.key
         assert "10.2" not in base.key and "47" not in base.key
@@ -778,7 +787,7 @@ class TestTheRequestOfAnotherSource:
         infos = {"native": (ItemHolding.MATERIALIZED, True)}
         with pytest.raises(HTTPException) as caught:
             await _aoi_requests(
-                Stub(), {"native": RangeCondition(None, 5.0)}, infos, {}, datetime_value=PERIOD, bbox=None,
+                Stub(), {"native": CLOUD_5}, infos, {}, datetime_value=PERIOD, bbox=None,
                 intersects=SQUARE,
             )
         assert caught.value.status_code == 400 and "federated collection only" in caught.value.detail

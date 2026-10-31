@@ -237,8 +237,8 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
         except OverflowError:
             # A whole number of more than 300 digits has no float; the parser reads it, the checks cannot.
             raise HTTPException(status_code=400, detail=_NUMBER_TOO_LARGE) from None
-        if read.aoi_cloud_cover:
-            # DS-03 plan §6.5 (KE6): the coverage counts at the source, without a raster, so it cannot apply this.
+        if read.aoi:
+            # DS-03 plan §6.5 (KE6): the coverage counts at the source, without a raster, so it cannot apply these.
             raise HTTPException(
                 status_code=400, detail="the coverage map cannot apply the cloud share in the AOI; search for scenes"
             )

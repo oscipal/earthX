@@ -239,7 +239,9 @@ class TestSearchFilters:
         [
             query_of(**{"foo:bar": {"gte": 1}}),  # a property the dataset does not offer: the source would answer 0
             query_of(**{"sat:orbit_state": {"in": ["ascending", "descending"]}}),  # DS-04, not Sentinel-2
-            query_of(**{"earthx:aoi_cloud_cover": {"lte": 10}}),  # reserved for DS-03
+            query_of(**{"earthx:aoi_cloud_cover": {"lte": 10}}),  # needs the raster of a scene (DS-03)
+            query_of(**{"earthx:aoi_nodata": {"lte": 10}}),  # likewise
+            query_of(**{"earthx:aoi_cloud_cover": {"lte": 10}, "earthx:aoi_nodata": {"lte": 10}}),
             query_of(datetime={"gte": 1}),  # has its own parameter
             query_of(**{"eo:cloud_cover": {"lt": 20}}),  # an operator outside gte/lte
             query_of(**{"eo:cloud_cover": {"between": [1, 2]}}),  # the source would pass it over
@@ -289,6 +291,7 @@ class TestSearchFilters:
             {"eo:cloud_cover": {}},
             {"platform": {"in": ["sentinel-2z"]}},
             {"earthx:aoi_cloud_cover": {"lte": 10}},
+            {"earthx:aoi_nodata": {"lte": 10}},
         ],
     )
     def test_the_body_takes_the_same_filters_as_the_url_and_refuses_the_same(self, query: dict[str, Any]) -> None:
