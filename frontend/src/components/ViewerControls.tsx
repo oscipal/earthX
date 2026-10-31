@@ -40,7 +40,7 @@ export default function ViewerControls() {
   // "Save" keeps the look for the layer the view is the picture of and for every image of the dataset (NM4-53).
   const savable = useAppStore((s) => {
     const own = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
-    return (own !== null && lookChanged(own.restore.appliedRender, s)) || datasetSavable(s);
+    return (own !== null && lookChanged(own.restore.appliedRender, s, s.appliedRender.index)) || datasetSavable(s);
   });
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);

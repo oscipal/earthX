@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { datasetsFrom } from './datasets';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
 import { mosaicTemplateOf } from './mosaic';
-import { useAppStore } from './store';
+import { datasetSavable, useAppStore } from './store';
 import type { Collection, DownloadedInfo, StacItem } from './types';
 
 const collection = (id: string, presets: unknown[]): Collection =>
@@ -153,6 +153,48 @@ describe('the index and the images of the view', () => {
     state().saveViewLook();
     state().stepImage(1);
     expect(state().appliedRender).toEqual(DEFAULT);
+  });
+});
+
+// NDVI, EVI and NBR have one range and colormap (−1…1, rdylgn): only the index tells them apart. Otto, 1.11.2026: with one of them
+// shown the others could not be applied to all.
+describe('indices that look alike', () => {
+  const EVI = { index: 'EVI', colormapName: 'rdylgn', rescale: '-1,1' };
+  const NBR = { index: 'NBR', colormapName: 'rdylgn', rescale: '-1,1' };
+
+  it('are three looks: what is chosen is told from what the other images show', () => {
+    state().chooseViewIndex('NDVI');
+    state().stepImage(1);
+    state().chooseViewIndex('EVI');
+    expect(state().appliedRender).toEqual(EVI);
+    // The first image shows NDVI, the one in view EVI: "Apply to all" has something to do.
+    expect(datasetSavable(state())).toBe(true);
+    state().saveViewLook();
+    expect(state().savedLooks.s2).toEqual(EVI);
+    state().stepImage(-1);
+    expect(state().appliedRender).toEqual(EVI);
+    expect(datasetSavable(state())).toBe(false);
+  });
+
+  it('can each be applied to all in turn, whichever of them the other images show', () => {
+    for (const [from, to] of [['NDVI', 'EVI'], ['EVI', 'NBR'], ['NBR', 'NDVI']]) {
+      state().chooseViewIndex(from);
+      state().saveViewLook();
+      state().chooseViewIndex(to);
+      expect(datasetSavable(state()), `${from} → ${to}`).toBe(true);
+    }
+  });
+
+  it('keep the layer of the view savable: another index of the same range is something to keep for it', () => {
+    // One image of one scene, so that the layer is the picture of the whole view.
+    const [scene] = state().items;
+    useAppStore.setState({ items: [scene], groups: [{ key: ['a'], label: 'a', items: [scene] }], downloaded: { a1: info('a1') }, selectedIds: ['a1'] });
+    state().chooseViewIndex('NDVI');
+    state().addCurrentToLayers();
+    state().chooseViewIndex('NBR');
+    expect(state().layers[0].restore.appliedRender).toEqual(NDVI);
+    state().saveViewLook();
+    expect(state().layers[0].restore.appliedRender).toEqual(NBR);
   });
 });
 

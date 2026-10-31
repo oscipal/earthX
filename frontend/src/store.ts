@@ -601,7 +601,7 @@ export function datasetSavable(s: AppState): boolean {
   const images = viewImagesOf(s);
   const shown = shownImageOf(images, s.shownImage);
   if (!shown) return false;
-  return images.some((image) => image.datasetId === shown.datasetId && image.key !== shown.key && lookChanged(lookOfImage(s, image, shown), s));
+  return images.some((image) => image.datasetId === shown.datasetId && image.key !== shown.key && lookChanged(lookOfImage(s, image, shown), s, s.appliedRender.index));
 }
 
 // "Add to layers" and "Add all to layers" in the view: the image that is shown, or every image, one layer each, all in one

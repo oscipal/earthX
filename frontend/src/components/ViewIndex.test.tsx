@@ -153,6 +153,35 @@ describe('the dropdown "Index"', () => {
   });
 });
 
+describe('"Apply to all" with indices of one range (Otto, 1.11.2026)', () => {
+  const applyAll = () => [...container.querySelectorAll<HTMLButtonElement>('.vc-buttons button')].find((b) => b.textContent?.trim() === 'Apply to all')!;
+  const locked = () => applyAll().getAttribute('aria-disabled') === 'true';
+  // Two images (two time steps), each of one scene.
+  const twoImages = () => {
+    const items = [item('s0'), item('s1')];
+    mount(SENTINEL_2_PRESETS, { items, groups: [{ key: ['a'], label: 'a', items: [items[0]] }, { key: ['b'], label: 'b', items: [items[1]] }] });
+  };
+
+  it('is open when the image shown has another index than the other image, though NDVI and EVI are drawn alike', () => {
+    twoImages();
+    act(() => useAppStore.getState().chooseViewIndex('NDVI'));
+    act(() => useAppStore.getState().stepImage(1));
+    act(() => useAppStore.getState().chooseViewIndex('EVI'));
+    expect(useAppStore.getState().appliedRender).toMatchObject({ index: 'EVI', colormapName: 'rdylgn', rescale: '-1,1' });
+    expect(locked()).toBe(false);
+  });
+
+  it('is locked again once every image shows it, and for any other of the three the moment it is chosen', () => {
+    twoImages();
+    act(() => useAppStore.getState().chooseViewIndex('NDVI'));
+    act(() => useAppStore.getState().saveViewLook());
+    expect(locked()).toBe(true);
+    act(() => useAppStore.getState().chooseViewIndex('NBR'));
+    expect(locked()).toBe(false);
+    expect(applyAll().title).toContain('Draw every image of this dataset with these values');
+  });
+});
+
 describe('the note under the settings', () => {
   const none = () => expect(note()).toBeNull();
 

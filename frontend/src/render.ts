@@ -81,10 +81,16 @@ export function lookOfPendingFields(p: PendingFields): AppliedRender {
   };
 }
 
-// Whether "Apply" would draw anything else than the map shows now.
-export function lookChanged(applied: AppliedRender, p: PendingFields): boolean {
+// Whether drawing the fields would draw anything else than `applied` shows. `index` is the index the fields stand for (NM4-14b):
+// the one of the look the view shows now, which `applied` is compared with; where `applied` is that look it is its own. NDVI, EVI
+// and NBR share one range and colormap, and are three different pictures all the same.
+export function lookChanged(applied: AppliedRender, p: PendingFields, index: string | undefined = applied.index): boolean {
   const asked = lookOfPendingFields(p);
-  return (applied.colormapName || undefined) !== asked.colormapName || (applied.rescale || undefined) !== asked.rescale;
+  return (
+    (applied.colormapName || undefined) !== asked.colormapName ||
+    (applied.rescale || undefined) !== asked.rescale ||
+    (applied.index || undefined) !== (index || undefined)
+  );
 }
 
 // --- one colour scale for a preview and a result (M4-32b, M4-19c) --------------------
