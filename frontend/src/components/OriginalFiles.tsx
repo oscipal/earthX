@@ -9,10 +9,9 @@ import {
   type DownloadPass,
   type OriginalFileLink,
 } from '../download';
-import { linksOf, scenesOf, type OriginalScene, type Way } from '../originals';
+import { linksOf, scenesOf, summaryOf, summaryText, type OriginalScene, type Way } from '../originals';
 import { browserDeps } from '../originalsClient';
 import { runOriginals, type SceneState } from '../originalsRun';
-import { formatBytes } from '../processingOrder';
 import MosaicJobs, { type Started } from './MosaicJobs';
 
 // The original files of a selection (NM4-33, plan section 6.14): one click starts the download of every scene, one
@@ -195,14 +194,10 @@ export default function OriginalFiles({ dataset, links, passes }: Props) {
   const all = linksOf(scenes);
   const byGroup = new Map<string, OriginalFileLink[]>();
   for (const link of all) byGroup.set(link.groupLabel, [...(byGroup.get(link.groupLabel) ?? []), link]);
-  const bytes = scenes.flatMap((scene) => scene.entries).reduce((sum, entry) => sum + (entry.size ?? 0), 0);
 
   return (
     <div className="dialog-originals">
-      <p className="hint-text">
-        {scenes.length} scene{scenes.length === 1 ? '' : 's'}
-        {bytes > 0 ? ` · ${formatBytes(bytes)}` : ''}
-      </p>
+      <p className="hint-text">{summaryText(summaryOf(dataset.collection, scenes))}</p>
       <SceneRows dataset={dataset} scenes={scenes} />
       <p className="dialog-original-buttons">
         {asks && (

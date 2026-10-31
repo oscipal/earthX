@@ -5,6 +5,7 @@
 import type { DownloadPass, OriginalFileLink } from './download';
 import { attributionText, isDirectDownloadHref, termsNoticeText } from './download';
 import type { ZipJob } from './originalsZip';
+import { formatBytes } from './processingOrder';
 import type { Collection, LicenseFlags, StacItem } from './types';
 
 // A file larger than this does not go through the memory of the page when a ZIP cannot be streamed (Otto, 29.10.2026):
@@ -138,6 +139,31 @@ export type Way = 'zip' | 'files' | 'navigate';
 export function chooseWay(cors: boolean | null | undefined, canStream: boolean): Way {
   if (cors !== true) return 'navigate';
   return canStream ? 'zip' : 'files';
+}
+
+// What a click on "Download full scene(s)" will load, told before the click (Otto, 31.10.2026): the scenes, and the
+// sum of the sizes of the files the way takes (all of them for a ZIP, the data files where the browser downloads
+// them itself). `unknown` says some file has no size in its item, so the sum is the least it comes to.
+export interface Summary {
+  scenes: number;
+  bytes: number;
+  unknown: boolean;
+}
+
+export function summaryOf(collection: Collection, scenes: readonly OriginalScene[]): Summary {
+  const wanted = (entry: OriginalEntry) => collection['earthx:access']?.cors === true || entry.kind === 'data';
+  const entries = scenes.flatMap((scene) => scene.entries).filter(wanted);
+  return {
+    scenes: scenes.length,
+    bytes: entries.reduce((sum, entry) => sum + (entry.size ?? 0), 0),
+    unknown: entries.length === 0 || entries.some((entry) => entry.size === null),
+  };
+}
+
+export function summaryText({ scenes, bytes, unknown }: Summary): string {
+  const count = `${scenes} scene${scenes === 1 ? '' : 's'}`;
+  if (bytes === 0) return `${count} · size unknown`;
+  return unknown ? `${count} · ${formatBytes(bytes)} and more, some sizes unknown` : `${count} · ${formatBytes(bytes)}`;
 }
 
 export function sceneItemJson(item: StacItem): string {

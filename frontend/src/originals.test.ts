@@ -12,6 +12,8 @@ import {
   sceneItemJson,
   sceneOriginals,
   scenesOf,
+  summaryOf,
+  summaryText,
   sourceFileName,
   zipJobOf,
 } from './originals';
@@ -133,6 +135,45 @@ describe('names', () => {
   it('sourceFileName is what the source calls the file', () => {
     expect(sourceFileName('https://h.test/a/TCI.tif')).toBe('TCI.tif');
     expect(sourceFileName('https://h.test/')).toBe('h.test');
+  });
+});
+
+describe('what a click will load, told before the click (Otto, 31.10.2026)', () => {
+  const sized = (id: string, size: number) =>
+    item(id, { red: { href: `https://${HOST}/${id}/red.tif`, 'file:size': size } }, ['red']);
+  const summary = (c: ReturnType<typeof collection>, ...items: ReturnType<typeof item>[]) =>
+    summaryText(summaryOf(c, scenesOf(c, [{ label: '', items }])));
+
+  it('a ZIP takes every file: the scenes and the sum of all sizes', () => {
+    // red 4 500 000 + three metadata files of 500 each
+    expect(summary(collection(), sized('A', 4_500_000))).toBe('1 scene · 4.5 MB');
+    expect(summary(collection(), sized('A', 4_500_000_000), sized('B', 5_900_000_000))).toBe('2 scenes · 10.4 GB');
+  });
+
+  it('twelve scenes of a real size read as in the example of the order', () => {
+    const items = Array.from({ length: 12 }, (_, i) => sized(`S${i}`, 866_666_000));
+    expect(summary(collection(), ...items)).toBe('12 scenes · 10.4 GB');
+  });
+
+  it('where the browser downloads the files itself, only the data files count', () => {
+    const c = collection({ 'earthx:access': { cors: false } });
+    const only = summaryOf(c, scenesOf(c, [{ label: '', items: [sized('A', 4_500_000)] }]));
+    expect(only.bytes).toBe(4_500_000);
+    expect(summaryText(only)).toBe('1 scene · 4.5 MB');
+  });
+
+  it('a file without a size says so: the sum is at least what is known', () => {
+    const partly = item('A', { red: { href: `https://${HOST}/A/red.tif`, 'file:size': 2_000_000 }, nir: { href: `https://${HOST}/A/nir.tif` } }, ['red', 'nir']);
+    expect(summary(collection(), partly)).toBe('1 scene · 2.0 MB and more, some sizes unknown');
+  });
+
+  it('no size known at all says the size is unknown, and no scene or no file is no size either', () => {
+    const none = item('A', { red: { href: `https://${HOST}/A/red.tif` } }, ['red']);
+    for (const asset of Object.values(none.assets)) delete asset['file:size'];
+    expect(summary(collection(), none)).toBe('1 scene · size unknown');
+    expect(summary(collection(), none, { ...none, id: 'B' })).toBe('2 scenes · size unknown');
+    expect(summary(collection({ 'earthx:source': null }), item('A'))).toBe('1 scene · size unknown');
+    expect(summary(collection())).toBe('0 scenes · size unknown');
   });
 });
 

@@ -208,6 +208,11 @@ async function caseZip(browser, { theme, viewport }) {
   const { context, page, problems } = await openApp(browser, { theme, viewport, cors: true, sceneIds: ['S2_A', 'S2_B'], origin: `https://localhost:${PORTS.cors}` });
   const downloads = collectDownloads(page);
   control.slowMs = 25;
+  // Before the click the tooltip says what it will load: the scenes and the sum of the sizes (4 data files and the
+  // metadata file of each scene; the preview is not one of them).
+  const tip = await downloadButton(page).getAttribute('title');
+  const expectedMB = ((ASSETS.red + ASSETS.nir + ASSETS.scl + ASSETS.visual + ASSETS.granule_metadata) * 2) / 1e6;
+  if (!tip?.startsWith(`2 scenes · ${expectedMB.toFixed(1)} MB. `)) problems.push(`${label}: the tooltip does not name scenes and size: ${JSON.stringify(tip?.slice(0, 60))}`);
   await downloadButton(page).click();
   await page.waitForSelector('.dialog-original-row');
   await waitRows(page, (s) => s.some((t) => /^Loading/.test(t)));

@@ -122,6 +122,12 @@ describe('the rows', () => {
     expect(button('Retry failed')).toBeUndefined();
   });
 
+  it('names the scenes and the size above the rows, as the tooltip of the button did', async () => {
+    page.zip = channel(() => false).zip;
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} />);
+    expect(container.querySelector('.dialog-originals > .hint-text')?.textContent).toBe('2 scenes · 5 kB');
+  });
+
   it('React starting and stopping the run at once (StrictMode) does no download twice', async () => {
     await show(
       <StrictMode>

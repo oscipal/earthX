@@ -8,18 +8,23 @@
 // "Clear" (the list unticks scenes) and no "Add to layers". Scenes merge per group (Überflug), different
 // groups stay separate files (P19).
 
+import { useMemo } from 'react';
+
 import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { ticksOfOpen, useAppStore } from '../store';
+import { scenesOf, summaryOf, summaryText } from '../originals';
+import { selectionItemsFrom, ticksOfOpen, useAppStore } from '../store';
 
 // What a click on "Download full scenes" does (NM4-33): a ZIP of the original files of each scene where the source
 // lets the page read them, else the files themselves; either way straight from the source.
-function originalsTitle(plural: boolean, zip: boolean): string {
-  if (!zip) return `Download the original file${plural ? 's' : ''} of the selected scene${plural ? 's' : ''}, straight from the source`;
+// It starts with what the click will load: the scenes and the size of their files, or that the size is not known
+// (Otto, 31.10.2026: no limit and no question, so this is where it is told).
+function originalsTitle(plural: boolean, zip: boolean, summary: string): string {
+  if (!zip) return `${summary}. Download the original file${plural ? 's' : ''} of the selected scene${plural ? 's' : ''}, straight from the source.`;
   return plural
-    ? 'Download each selected scene as one ZIP of its original files, straight from the source. Your browser may ask once to allow several downloads.'
-    : 'Download the selected scene as one ZIP of its original files, straight from the source.';
+    ? `${summary}. Download each selected scene as one ZIP of its original files, straight from the source. Your browser may ask once to allow several downloads.`
+    : `${summary}. Download the selected scene as one ZIP of its original files, straight from the source.`;
 }
 
 export default function ViewBar() {
@@ -30,6 +35,17 @@ export default function ViewBar() {
   const openDownloadForSelection = useAppStore((s) => s.openDownloadForSelection);
   const dataset = useAppStore((s) => s.datasets.find((d) => d.id === s.datasetId));
   const openProcessing = useProcessingStore((s) => s.openProcessing);
+  // The scenes the download will take are the ones `openDownloadForSelection` takes. Raw slices, combined here: a
+  // selector that returns a new array on every call is read as "changed" forever.
+  const groups = useAppStore((s) => s.groups);
+  const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
+  const selectedIds = useAppStore((s) => s.selectedIds);
+  const items = useAppStore((s) => s.items);
+  const summary = useMemo(() => {
+    if (!dataset) return '';
+    const picked = selectionItemsFrom({ groups, activeGroupIndex, selectedIds, items });
+    return summaryText(summaryOf(dataset.collection, scenesOf(dataset.collection, [{ label: '', items: picked }])));
+  }, [dataset, groups, activeGroupIndex, selectedIds, items]);
 
   if (count === 0) return null;
 
@@ -84,7 +100,7 @@ export default function ViewBar() {
         disabled={!originalsAllowed}
         title={
           originalsAllowed
-            ? originalsTitle(plural, dataset?.collection['earthx:access']?.cors === true)
+            ? originalsTitle(plural, dataset?.collection['earthx:access']?.cors === true, summary)
             : noOriginalsReason(dataset)
         }
         onClick={() => openDownloadForSelection('originals')}
