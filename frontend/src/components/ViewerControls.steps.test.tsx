@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 //
-// NM4-53: the row of steps in the view of scenes — the dataset to choose, the arrows to step through its images, the
-// date and the satellite of the image that is shown; what is not possible is not there.
+// NM4-53: the steps in the head of the view of scenes (Otto, 31.10.2026, zu #257), between the title and the eye — the
+// dataset to choose, the arrows to step through its images with the date and the satellite of the image that is shown;
+// what is not possible is not there.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -103,7 +104,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const steps = () => container.querySelector('.vc-steps');
+const steps = () => container.querySelector('.vc-head .vc-stepper');
 const stepText = () => container.querySelector('.vc-step-text')?.textContent;
 const prev = () => container.querySelector('button[aria-label="Previous image"]') as HTMLButtonElement | null;
 const next = () => container.querySelector('button[aria-label="Next image"]') as HTMLButtonElement | null;
@@ -113,14 +114,24 @@ const title = () => container.querySelector('.vc-title')?.textContent;
 const THREE = { A: info('s2'), B: info('s2'), C: info('s2') };
 
 describe('what is not possible is not there', () => {
-  it('has no row for a view of one image', () => {
+  it('has neither the dataset nor the arrows for a view of one image, and no row of its own', () => {
     mount({ A: info('s2') });
     expect(steps()).toBeNull();
+    expect(dataset()).toBeNull();
+    expect(container.querySelector('.vc-steps')).toBeNull();
   });
 
-  it('has no row for several scenes of one time step', () => {
+  it('has neither for several scenes of one time step', () => {
     mount({ A: info('s2'), B: info('s2') }, [section('s2', [A, B], [group('same', [A, B])]), DEM_SECTION]);
     expect(steps()).toBeNull();
+    expect(dataset()).toBeNull();
+  });
+
+  it('puts them in the head, the dataset and then the date with the arrows, between the title and the eye', () => {
+    mount({ ...THREE, D: info('dem') });
+    const head = [...container.querySelector('.vc-head')!.children].map((el) => el.className);
+    expect(head).toEqual(['vc-title', 'vc-dataset', 'vc-stepper', 'vc-eye']);
+    expect(container.querySelectorAll('.vc-head .vc-dataset, .vc-head .vc-stepper')).toHaveLength(2);
   });
 
   it('has the arrows but no dataset to choose where the view holds one dataset', () => {
@@ -131,12 +142,12 @@ describe('what is not possible is not there', () => {
     expect(next()).not.toBeNull();
   });
 
-  it('has the dataset to choose but no arrows where each dataset has one image', () => {
+  it('has the dataset to choose but no date and no arrows where each dataset has one image', () => {
     mount({ A: info('s2'), D: info('dem') });
     expect(dataset()).not.toBeNull();
     expect(prev()).toBeNull();
     expect(next()).toBeNull();
-    expect(stepText()).toBe('2025-07-29 · S2A');
+    expect(stepText()).toBeUndefined();
   });
 
   it('has the arrows of a dataset with several images and none for one with a single image', () => {
@@ -145,7 +156,7 @@ describe('what is not possible is not there', () => {
     act(() => useAppStore.getState().chooseViewDataset('dem'));
     expect(prev()).toBeNull();
     expect(next()).toBeNull();
-    expect(stepText()).toBe('dem');
+    expect(stepText()).toBeUndefined();
   });
 });
 
@@ -159,7 +170,7 @@ describe('the arrows', () => {
     mount(THREE);
     act(() => next()!.click());
     expect(stepText()).toBe('2025-08-03 · S2B');
-    expect(title()).toContain('2025-08-03');
+    expect(title()).not.toContain('2025-08-03');
     act(() => next()!.click());
     expect(stepText()).toBe('2025-08-08 · S2A');
     act(() => prev()!.click());
@@ -183,7 +194,7 @@ describe('the arrows', () => {
 
   it('tell the step and the group in the tooltip of the date', () => {
     mount(THREE);
-    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('Step 1 of 3 · 2025-07-29');
+    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('2025-07-29 · S2A · step 1 of 3 · 2025-07-29');
   });
 
   it('are reached with the keys when one of them has the focus, and not otherwise', () => {
@@ -248,29 +259,34 @@ const button = (label: string) => [...container.querySelectorAll('button')].find
 const colormapField = () => [...container.querySelectorAll('.vc-field span')].find((el) => el.textContent === 'Colormap');
 const type = (vmin: string, vmax: string) => act(() => useAppStore.setState({ pendingVmin: vmin, pendingVmax: vmax }));
 
-describe('"Save" for the images of a dataset', () => {
-  it('is not there where the dataset has one image in the view', () => {
+describe('"Apply to all" for the images of a dataset', () => {
+  it('is always there, also for a dataset of one image and for the elevation model, locked with the reason', () => {
     mount({ A: info('s2'), D: info('dem') });
+    expect(button('Apply to all')!.getAttribute('aria-disabled')).toBe('true');
+    expect(button('Apply to all')!.title).toBe('Nothing to apply to all: this dataset has only one image in the view');
     expect(button('Save')).toBeUndefined();
+    act(() => useAppStore.getState().chooseViewDataset('dem'));
+    expect(button('Apply to all')!.getAttribute('aria-disabled')).toBe('true');
+    expect(button('Apply to all')!.title).toBe('Nothing to apply to all: this dataset has only one image in the view');
   });
 
   it('is there where it has several, locked with the reason while all look alike', () => {
     mount(THREE);
     type('0', '255');
-    expect(button('Save')!.getAttribute('aria-disabled')).toBe('true');
-    expect(button('Save')!.title).toBe('Nothing to save: every image of this dataset is drawn like this');
-    act(() => button('Save')!.click());
+    expect(button('Apply to all')!.getAttribute('aria-disabled')).toBe('true');
+    expect(button('Apply to all')!.title).toBe('Nothing to apply to all: every image of this dataset is drawn like this');
+    act(() => button('Apply to all')!.click());
     expect(useAppStore.getState().savedLooks).toEqual({});
   });
 
   it('opens when the fields differ from what another image shows, and saves for the dataset', () => {
     mount(THREE);
     type('10', '90');
-    expect(button('Save')!.getAttribute('aria-disabled')).toBeNull();
-    expect(button('Save')!.title).toBe('Draw every image of this dataset with these values');
-    act(() => button('Save')!.click());
+    expect(button('Apply to all')!.getAttribute('aria-disabled')).toBeNull();
+    expect(button('Apply to all')!.title).toBe('Draw every image of this dataset with these values');
+    act(() => button('Apply to all')!.click());
     expect(useAppStore.getState().savedLooks.s2).toMatchObject({ rescale: '10,90' });
-    expect(button('Save')!.getAttribute('aria-disabled')).toBe('true');
+    expect(button('Apply to all')!.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('applies to the image shown only: "Apply" opens with a change, and the next image does not take it', () => {

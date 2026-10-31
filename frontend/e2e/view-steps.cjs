@@ -1,12 +1,13 @@
 // The view of scenes steps through its images (NM4-53, Otto, 31.10.2026, zu #257): two overpasses of a Sentinel-2 like
 // dataset (three bands, RGB) and one elevation tile, ticked, then "Crop & merge to AOI". Each scene is one solid colour,
 // and the pixel in the middle of the map is read:
-//   1. the view opens with the image of the group that is open (green, the later overpass), the row says its date and satellite;
+//   1. the view opens with the image of the group that is open (green, the later overpass); the head says the date and the satellite
+//      between the title and the eye, with the dataset to choose, and the title has no date;
 //   2. "‹" shows the earlier overpass (red), "›" the later again; the arrows are greyed out at the ends;
 //   3. the arrow keys step while an arrow has the focus;
 //   4. the dropdown shows the elevation tile (blue); the colormap field is there for it and not for the RGB images;
 //   5. "Add to layers" pins the image shown, "Add all to layers" every image, one layer each;
-//   6. the row, the dropdown and the buttons stay inside the panel, and the panel inside the window.
+//   6. the head, the dropdown and the buttons stay inside the panel, and the panel inside the window; "Apply to all" is always there.
 // Light and dark theme, a wide and a narrow window.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -154,11 +155,14 @@ async function run(browser, { theme, viewport }) {
 
   // 1. Crop & merge over two overpasses and the elevation tile.
   await page.getByRole('button', { name: 'Crop & merge to AOI' }).click();
-  await page.waitForSelector('.vc-steps');
+  await page.waitForSelector('.vc-head .vc-stepper');
   await expectColour('the open group (the later overpass) first', 'S2_B');
   const row = () => text('.vc-step-text');
   if ((await row()) !== '2025-08-03 · S2B') problems.push(`the row says ${JSON.stringify(await row())}, expected "2025-08-03 · S2B"`);
-  if (!(await page.locator('.vc-title').first().textContent()).includes('2025-08-03')) problems.push('the head does not name the image shown');
+  if (/\d{4}-\d{2}-\d{2}/.test(await page.locator('.vc-title').first().textContent())) problems.push('the title of the head has a date');
+  const order = await page.evaluate(() => [...document.querySelector('.vc-head').children].map((el) => el.className.split(' ')[0]));
+  if (order.join() !== 'vc-title,vc-dataset,vc-stepper,vc-eye') problems.push(`the head holds ${order.join(', ')}`);
+  if ((await page.getByRole('button', { name: 'Apply to all' }).count()) !== 1) problems.push('"Apply to all" is not there');
   if ((await page.locator('.vc-field span', { hasText: 'Colormap' }).count()) !== 0) problems.push('the RGB image has a colormap field');
   await page.screenshot({ path: path.join(OUT, `first ${name}.png`) });
 
@@ -184,16 +188,21 @@ async function run(browser, { theme, viewport }) {
   if (!(await page.locator('.vc-title').first().textContent()).includes('Copernicus DEM')) problems.push('the head does not name the elevation model');
   if ((await page.locator('.vc-field span', { hasText: 'Colormap' }).count()) !== 1) problems.push('the elevation image has no colormap field');
   if ((await page.getByRole('button', { name: 'Previous image' }).count()) !== 0) problems.push('a dataset of one image has arrows');
+  if ((await page.getByRole('button', { name: 'Apply to all' }).getAttribute('aria-disabled')) !== 'true') problems.push('"Apply to all" is not locked for a dataset of one image');
+  if (!(await page.getByRole('button', { name: 'Apply to all' }).getAttribute('title')).includes('only one image')) problems.push('"Apply to all" does not say why it is locked');
   await page.screenshot({ path: path.join(OUT, `dem ${name}.png`) });
   await page.selectOption('select[aria-label="Dataset"]', 's2');
   await expectColour('back to the first overpass of the dataset', 'S2_A');
 
-  // 5. Apply keeps to one image.
+  // 5. Apply keeps to one image; "Apply to all" opens with a change and takes it for the dataset.
   await page.locator('.vc-num input').first().fill('10');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await page.getByRole('button', { name: 'Next image' }).click();
   const rescale = await read('s.appliedRender.rescale');
   if (rescale !== '0,255') problems.push(`the next image took the look of the previous one: ${rescale}`);
+  await page.getByRole('button', { name: 'Apply to all' }).click();
+  const saved = await read('JSON.stringify(s.savedLooks.s2)');
+  if (!saved || !saved.includes('255')) problems.push(`"Apply to all" did not save a look for the dataset: ${saved}`);
 
   // 6. Layers.
   await page.getByRole('button', { name: '＋ Add to layers' }).click();
@@ -209,7 +218,7 @@ async function run(browser, { theme, viewport }) {
     const panel = document.querySelector('.scene-view');
     const box = panel.getBoundingClientRect();
     const bad = [];
-    for (const el of panel.querySelectorAll('.vc-steps, .vc-steps *, .vc-actions > *, .vc-render > *')) {
+    for (const el of panel.querySelectorAll('.vc-head, .vc-head *, .vc-actions > *, .vc-render > *')) {
       const r = el.getBoundingClientRect();
       if (r.width > 0 && (r.left < box.left - 1 || r.right > box.right + 1)) bad.push(el.className || el.tagName);
     }

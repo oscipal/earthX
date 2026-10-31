@@ -12,7 +12,7 @@ import { useMemo } from 'react';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { showsColormap } from '../datasets';
-import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES } from '../render';
+import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { viewKind } from '../viewKind';
@@ -73,10 +73,9 @@ export default function ViewerControls() {
   const shown = shownImageOf(images, shownKey);
   const datasetTitleOf = (id: string) => datasets.find((d) => d.id === id)?.title ?? id;
   const datasetTitle = shown ? datasetTitleOf(shown.datasetId) : '';
-  const date = shown?.date ?? null;
   const count = shown?.ids.length ?? Object.keys(downloaded).length;
   // What the head cuts short, in full.
-  const title = [datasetTitle, date, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
+  const title = [datasetTitle, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
   const here = shown ? imagesOfDataset(images, shown.datasetId) : [];
   // An image of three bands has no colormap field.
   const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
@@ -94,8 +93,50 @@ export default function ViewerControls() {
     <div className="panel viewer-controls scene-view">
       <div className="vc-head">
         <span className="vc-title" title={title}>
-          {[datasetTitle, date, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
+          {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
         </span>
+        {datasetIds.length > 1 && shown && (
+          <select
+            className="vc-dataset"
+            aria-label="Dataset"
+            title={`Dataset of the image shown: ${datasetTitle}`}
+            value={shown.datasetId}
+            onChange={(e) => chooseViewDataset(e.target.value)}
+          >
+            {datasetIds.map((id) => (
+              <option key={id} value={id}>
+                {datasetTitleOf(id)}
+              </option>
+            ))}
+          </select>
+        )}
+        {here.length > 1 && shown && (
+          <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeys}>
+            <button
+              type="button"
+              className="ghost-btn vc-step"
+              aria-label="Previous image"
+              aria-disabled={at <= 0 || undefined}
+              title={at <= 0 ? 'This is the first image' : 'Previous image'}
+              onClick={() => stepImage(-1)}
+            >
+              ‹
+            </button>
+            <span className="vc-step-text" title={`${stepText} · step ${at + 1} of ${here.length}${shown.groupLabel ? ` · ${shown.groupLabel}` : ''}`}>
+              {stepText}
+            </span>
+            <button
+              type="button"
+              className="ghost-btn vc-step"
+              aria-label="Next image"
+              aria-disabled={at >= here.length - 1 || undefined}
+              title={at >= here.length - 1 ? 'This is the last image' : 'Next image'}
+              onClick={() => stepImage(1)}
+            >
+              ›
+            </button>
+          </div>
+        )}
         <button
           type="button"
           className={`vc-eye${showDownloaded ? '' : ' off'}`}
@@ -106,55 +147,6 @@ export default function ViewerControls() {
           <Eye off={!showDownloaded} />
         </button>
       </div>
-
-      {images.length > 1 && shown && (
-        <div className="vc-steps">
-          {datasetIds.length > 1 && (
-            <select
-              className="vc-dataset"
-              aria-label="Dataset"
-              title={`Dataset whose images the arrows step through: ${datasetTitle}`}
-              value={shown.datasetId}
-              onChange={(e) => chooseViewDataset(e.target.value)}
-            >
-              {datasetIds.map((id) => (
-                <option key={id} value={id}>
-                  {datasetTitleOf(id)}
-                </option>
-              ))}
-            </select>
-          )}
-          <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeys}>
-            {here.length > 1 && (
-              <button
-                type="button"
-                className="ghost-btn vc-step"
-                aria-label="Previous image"
-                aria-disabled={at <= 0 || undefined}
-                title={at <= 0 ? 'This is the first image' : 'Previous image'}
-                onClick={() => stepImage(-1)}
-              >
-                ‹
-              </button>
-            )}
-            <span className="vc-step-text" title={`Step ${at + 1} of ${here.length}${shown.groupLabel ? ` · ${shown.groupLabel}` : ''}`}>
-              {stepText}
-            </span>
-            {here.length > 1 && (
-              <button
-                type="button"
-                className="ghost-btn vc-step"
-                aria-label="Next image"
-                aria-disabled={at >= here.length - 1 || undefined}
-                title={at >= here.length - 1 ? 'This is the last image' : 'Next image'}
-                onClick={() => stepImage(1)}
-              >
-                ›
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       <div className={`vc-render${colormap ? '' : ' no-colormap'}`}>
         {colormap && (
@@ -205,27 +197,27 @@ export default function ViewerControls() {
           >
             Apply
           </button>
-          {(layer || here.length > 1) && (
-            <button
-              type="button"
-              className="primary-btn vc-save"
-              aria-disabled={!savable || undefined}
-              title={
-                savable
-                  ? layer
-                    ? 'Keep these values for this layer and every image of this dataset'
-                    : 'Draw every image of this dataset with these values'
-                  : layer
-                    ? NOTHING_TO_SAVE
-                    : NOTHING_TO_SAVE_IMAGES
-              }
-              onClick={() => {
-                if (savable) saveViewLook();
-              }}
-            >
-              Save
-            </button>
-          )}
+          <button
+            type="button"
+            className="primary-btn vc-save"
+            aria-disabled={!savable || undefined}
+            title={
+              savable
+                ? layer
+                  ? 'Draw every image of this dataset with these values and keep them for this layer'
+                  : 'Draw every image of this dataset with these values'
+                : layer
+                  ? NOTHING_TO_APPLY_TO_ALL_LAYER
+                  : here.length > 1
+                    ? NOTHING_TO_SAVE_IMAGES
+                    : NOTHING_TO_SAVE_ONE_IMAGE
+            }
+            onClick={() => {
+              if (savable) saveViewLook();
+            }}
+          >
+            Apply to all
+          </button>
         </div>
       </div>
 

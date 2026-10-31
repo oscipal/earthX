@@ -298,13 +298,27 @@ Ein PR mit je einem Commit pro Teil (Antwort 9).
 - **Gegenprobe:** Die neuen und geänderten Tests gegen den Stand von main: 58 von 185 schlagen fehl, alle im Verhalten dieser Aufgabe.
 - Browser (Chromium 153, echtes MapLibre, erfundene Antworten, `e2e/view-steps.cjs`): hell/dunkel × breit/schmal grün: erstes Bild die offene Gruppe, „‹“/„›“ zeigen den früheren und den späteren Überflug (Farbe in der Mitte der Karte), Pfeile an den Enden ausgegraut, ←/→ bei Fokus, Dropdown zeigt das DEM, Colormap-Feld nur dort, Apply gilt dem Bild, „Add to layers“ 1 Layer, „Add all to layers“ 4 Layer mit Satellit im Namen, alles innerhalb des Feldes. Dabei fiel auf, dass das Dropdown ungestaltet war; es hat jetzt die Gestalt der anderen Felder. Eine Meldung der Statusleiste ragt im schmalen Fenster 6 px über den Rand; das ist nicht Teil dieser Aufgabe und im Skript ausgenommen.
 
-### 8.3 Prüfanleitung für Otto
+### 8.3 Prüfanleitung für Otto (nach der Durchsicht, §9)
 
 1. Sentinel-2 über zwei Überflüge suchen (zwei Tage), dazu das Copernicus DEM; in beiden Datensätzen Szenen anhaken, eine AOI zeichnen.
-2. „Crop & merge to AOI“: Die Karte zeigt den Überflug der offenen Gruppe. Unter dem Kopf steht `‹ 2025-07-29 · S2A ›` und das Dropdown mit „Sentinel-2 L2A“ und „Copernicus DEM“.
+2. „Crop & merge to AOI“: Die Karte zeigt den Überflug der offenen Gruppe. Die Kopfzeile hat von links den Titel (ohne Datum), ein kleines Dropdown „Sentinel-2 L2A / Copernicus DEM“, `‹ 2025-07-29 · S2A ›` und das Auge.
 3. „‹“ und „›“: Der frühere bzw. spätere Überflug erscheint; am Ende ist der Pfeil ausgegraut. Mit dem Fokus auf einem Pfeil schalten ←/→ ebenso.
-4. Dropdown auf „Copernicus DEM“: Das DEM erscheint, keine Pfeile, das Feld Colormap ist da. Bei Sentinel-2 (RGB) fehlt es.
-5. Bei Sentinel-2 vmin/vmax ändern, „Apply“: nur dieser Überflug ändert sich; „›“ zeigt den anderen noch mit der Vorgabe. „Save“: Jetzt zeigen alle Überflüge von Sentinel-2 die Werte, das DEM nicht.
-6. „Add to layers“: ein Layer, der angezeigte Überflug. „Add all to layers“: je Bild ein Layer, das letzte Bild des letzten Datensatzes steht oben, der Name nennt den Satelliten.
+4. Dropdown auf „Copernicus DEM“: Das DEM erscheint, keine Pfeile und kein Datum, das Feld Colormap ist da. Bei Sentinel-2 (RGB) fehlt es. Gibt es nur einen Datensatz, fehlt das Dropdown; hat der Datensatz nur ein Bild, fehlen Datum und Pfeile.
+5. Bei Sentinel-2 vmin/vmax ändern, „Apply“: nur dieser Überflug ändert sich; „›“ zeigt den anderen noch mit der Vorgabe. „Apply to all“ (ist immer da, beim DEM und bei einem Bild ausgegraut mit Grund im Tooltip): Jetzt zeigen alle Überflüge von Sentinel-2 die Werte, das DEM nicht.
+6. „Add to layers“: ein Layer, der angezeigte Überflug. „Add all to layers“: je Bild ein Layer, das letzte Bild des letzten Datensatzes steht oben; der Name nennt Datum und Satellit.
 7. „Clear“, dann wieder „Crop & merge to AOI“: Die Vorgabe gilt wieder (RGB ohne Colormap, nichts gespeichert).
-8. Auge der Ansicht aus und durchschalten: bleibt aus. Dunkel und hell, schmales Fenster.
+8. Auge der Ansicht aus und durchschalten: bleibt aus. Dunkel und hell, schmales Fenster (Dropdown und Datum rutschen unter den Titel, das Auge bleibt beim Titel).
+
+## 9. Durchsicht Otto nach dem Browsertest (31.10.2026, zu #257)
+
+Nachtrag NM4-53; ersetzt §6.5 (die Zeile unter dem Kopf) und die Regel zu „Save“ in §6.4 und §8, Originaltexte bleiben stehen.
+
+| Nr. | Wunsch | Umsetzung |
+|---|---|---|
+| 1 | „Save“ in der Ansicht heißt **„Apply to all“**. Der Knopf ist immer da, auch beim DEM und bei einem Datensatz mit nur einem Bild; dann ist er gesperrt (ausgegraut, Grund im Tooltip). Wirkung wie bisher: die Darstellung für alle Bilder des Datensatzes in der Ansicht. | `ViewerControls.tsx`: keine Bedingung mehr für das Erscheinen. Gründe im Tooltip: „Nothing to apply to all: this dataset has only one image in the view“, „…: every image of this dataset is drawn like this“, bei der Ansicht eines Layers „…: the layer is saved as it is drawn“. Wo der Knopf frei ist, sagt der Tooltip „Draw every image of this dataset with these values“ (bei einem Layer zusätzlich „and keep them for this layer“). Das „Save“ der Ergebnisansicht (`ResultControls`) bleibt, wie es ist. |
+| 2 | Der Kopf der Ansicht hat kein Datum (es ist über die Pfeile wählbar). Im Namen angehefteter Layer bleibt das Datum. | Titel und Tooltip des Titels ohne Datum; der Name des Layers bleibt `Datensatz · Gruppe · Satellit`, die Gruppe trägt das Datum. |
+| 3 | Die Ansicht wird niedriger: Die eigene Zeile und das Dropdown entfallen. In der Kopfzeile zwischen Titel und Auge ein kleines Dropdown für den Datensatz, daneben das Datum mit ‹ ›. Gibt es nur einen Datensatz bzw. nur ein Bild, entfällt der jeweilige Teil. Die Regeln zur Breite des Kopfs gelten weiter. | Kopfzeile: Titel, Dropdown „Dataset“ (nur bei mehr als einem Datensatz), `‹ Datum · Satellit ›` (nur wo der angezeigte Datensatz mehr als ein Bild hat), Auge. Der Titel gibt nach: Er wird mit „…“ gekürzt, der volle Text steht im Tooltip. Im schmalen Fenster rutschen Dropdown und Datum unter den Titel, das Auge bleibt beim Titel; die Ansicht bleibt in jedem Fall nicht breiter als die Knopfzeilen. |
+
+**Auslegung (Vorschlag, gilt bis Otto widerspricht):** Hat ein Datensatz nur ein Bild, fehlt mit den Pfeilen auch das Datum; es steht dann nirgends in der Ansicht (der Name eines angehefteten Layers hat es). Soll es als Text ohne Pfeile bleiben, ist das eine Zeile in `ViewerControls.tsx`.
+
+**Tests:** `ViewerControls.test.tsx` (kein Datum im Titel und im Tooltip, Knopfgruppe „auto-scale“, „Apply“, „Apply to all“, „Apply to all“ immer da und beim Layer mit Grund gesperrt, CSS-Vertrag des Kopfs); `ViewerControls.steps.test.tsx` (Dropdown und Datum mit Pfeilen in der Kopfzeile in dieser Reihenfolge, keine eigene Zeile, Ausblenden bei einem Datensatz bzw. einem Bild, „Apply to all“ auch beim DEM und bei einem Bild gesperrt mit Grund, Wirkung auf den Datensatz). Browser: `e2e/view-steps.cjs` prüft die Reihenfolge der Kopfzeile, das fehlende Datum im Titel, „Apply to all“ (gesperrt beim DEM, wirksam beim Datensatz mit mehreren Bildern) und dass alles innerhalb der Ansicht bleibt; hell/dunkel × breit/schmal grün.
