@@ -90,6 +90,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
      - Kachel-Pfad (M4-18b), Runner und Methodentext ziehen mit.
    - **Aufgabe:** Stufe B (ändert Ergebnis-Bytes), Backend und Frontend.
 11. **Normalize klarer und mit mehreren Methoden** (Otto, 22.10.2026).
+   - **Backend erledigt:** NM4-11, PR #244 (31.10.2026): `normalize` Version 3 mit `method` (linear, Perzentile, Z-Score, robust) und gemessenen Werten im Rezept (Messung vorher über die Statistik-Route aus NM4-19), bitgleich Kachel/Job/Runner. Frontend: NM4-11b (Plan im Abschnitt), nach NM4-43e. Wiedervorlage „gleiche Werte für alle Aufträge“ (Punkt 60).
    - **Stand 27.10.2026:** wartet auf die Entscheidung zu Punkt 43.
    - **Plan:** `querschnitt/nm4-11-normalize-methoden.md`
    - **Klarer:** Im Panel steht kurz, was der Schritt tut, mit Beispiel (etwa „NDVI −1…1 → 0…1“) und der Formel der gewählten Methode. Die Felder tragen verständliche Namen und Hilfetexte (Englisch).
@@ -351,10 +352,10 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 64. **„RGB“ in Vorschau und Ergebnis-Layer** (Otto, 31.10.2026; aus #255 herausgelöst). Registry-Feld `earthx:true_color`, bis zu drei `band=` an den Kachel-Routen, Eintrag „RGB“ oben im Dropdown, ohne Colormap.
    - **Plan:** `querschnitt/nm4-64-rgb.md`
    - **Aufgabe:** Stufe A, Backend und Frontend in einer Session, nach #255, vor NM4-54.
-65. **Paket Darstellung und Layer-Manager** (Otto, 31.10.2026): Ziehgriff (2×3 Punkte), Band als eigener Layer, Aufnahmedatum bei jedem Layer, vmin/vmax wahlweise als Perzentile, Fehler Opacity-Regler, überall Reihenfolge Band · vmin · vmax · colormap mit gleichen Namen, Warnung zum Bestätigen statt Rufzeichen „Resampled to a common grid“; alle Schließen-Knöpfe als kleines rotes „x“ (auch „‹ Close“ beim Layer).
+65. **Paket Darstellung und Layer-Manager** (Otto, 31.10.2026): Ziehgriff (2×3 Punkte), Band als eigener Layer, Aufnahmedatum bei jedem Layer, vmin/vmax wahlweise als Perzentile, Fehler Opacity-Regler, überall Reihenfolge Band · vmin · vmax · colormap mit gleichen Namen, Warnung zum Bestätigen statt Rufzeichen „Resampled to a common grid“; alle Schließen-Knöpfe als kleines rotes „x“ (auch „‹ Close“ beim Layer); Umschalter „Flip through layers“ (gewählter Layer oben gezeichnet, ↑/↓ oder Mausrad über der Liste).
    - **Plan:** `querschnitt/nm4-65-paket-darstellung-und-layer.md`
    - **Aufgabe:** Stufe A, Frontend, nach #255, nicht neben NM4-64.
-66. **Auswahlleiste und Zeitleiste als ein Block** (Otto, 31.10.2026): gleiche Breite, Datumszeile erstes · < vorheriges · aktuelles · nächstes > · letztes, „x“ zum Schließen, erscheint beim Anklicken einer Szene oder Öffnen einer Gruppe wieder.
+66. **Auswahlleiste und Zeitleiste als ein Block** (Otto, 31.10.2026): gleiche Breite, Datumszeile erstes · < vorheriges · aktuelles · nächstes > · letztes, „x“ zum Schließen, erscheint beim Anklicken einer Szene oder Öffnen einer Gruppe wieder. Dazu (Otto, 31.10.2026): Kästen weichen dem linken Panel nicht mehr aus (Regel aus M2 V-10 und UI-01 entfällt).
    - **Plan:** `querschnitt/nm4-66-auswahl-und-zeitleiste.md`
    - **Aufgabe:** Stufe A, Frontend, nicht neben NM4-53/NM4-54.
 ## In UI-01 aufgenommen (20.–22.10.2026)
@@ -386,6 +387,8 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 41. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
 
 ## Danach geplant
+
+- **M5 Discovery und Suche:** Plan `m5/m5-discovery-und-suche.md` Fassung 1.1 (Otto, 31.10.2026): DACH-Behörden und Satellitendaten, nur frei ohne Schlüssel (anonyme Tokens ja, kostenlose Konten später über ADR E), Prototyp-Quellen markiert im Repo, nur Raster, feste Quellenliste plus STAC Index und DACH-Portale. Entscheidungsvorlagen M5-01 bis M5-05 (`adr/0023`–`adr/0027`).
 
 42. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5. **UI-01 abgeschlossen** mit UI-01a bis UI-01g (#188, #191, #196, #202, #206, #208, #209; 26.10.2026). **UI-02a erledigt** (#211, gemergt 28.10.2026; mit Ottos Zusätzen zu Ergebnissen auf der Karte, Ansicht, festen Plätzen der Leisten). **UI-02b erledigt** (#220, gemergt 28.10.2026; Labels global, Vorgabe aus). Offen: UI-02c (Permalink), Schnitt in `vp3/ui-02-basemap-projektion.md` §6.9.
 
