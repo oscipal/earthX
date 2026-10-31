@@ -40,7 +40,7 @@
     - **Heute:** Es erscheinen die Suchergebnisse.
     - **Soll:** Es erscheint dieselbe Ansicht wie bei anderen Layern, bezogen auf das Ergebnis: Wertebereich (vmin, vmax), Colormap und Deckkraft, mit der Vorgabe aus der Statistik (M4-32).
     - **Keine Einheiten im Layer-Manager (Otto, 24.10.2026):** Weder Zeilen noch Darstellung im Layer-Manager zeigen eine Einheit, bei keiner Layer-Art. Einheiten stehen im Processing-Panel (Band-Chips, M4-19b) und in den Daten (`bands[].unit`).
-    - **Nicht in UI-01:** Processing auf einem Ergebnis, also ein Ergebnis als Eingabe eines neuen Rezepts. Das braucht vorher eine Entscheidungsvorlage (Stufe C, siehe `docs/plans/nach-m4-backlog.md`). Bis dahin ist der Processing-Knopf bei Ergebnis-Layern gesperrt und nennt den Grund.
+    - **Nicht in UI-01:** Processing auf einem Ergebnis, also ein Ergebnis als Eingabe eines neuen Rezepts. Das braucht vorher eine Entscheidungsvorlage (Stufe C, siehe `docs/plans/nach-m4-backlog.md`). Bis dahin ist der Processing-Knopf bei Ergebnis-Layern gesperrt und nennt den Grund. **Erledigt mit NM4-05b (31.10.2026, `adr/0019` §10a):** ⚙ am Ergebnis-Layer öffnet das Panel auf dem Auftrag des Jobs; ohne Kopie des Auftrags im Browser bleibt er gesperrt und nennt den Grund.
 12. **Nur „Download (ZIP)“ je fertigem Job (22.10.2026).**
     - Ein fertiger Job zeigt in Liste und Details nur noch „Download (ZIP)“.
     - Die Einträge „Methods“ und „Copy“ aus M4-19a entfallen. Es gibt **nirgends** einen Knopf, der den Methodentext kopiert.

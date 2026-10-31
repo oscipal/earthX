@@ -567,6 +567,16 @@ Neurechnens messbar werden.
 
 ---
 
+## 10a. Nachtrag NM4-05b: Umsetzung (2026-10-31; zu §7.1, §8, §9)
+
+Umgesetzt ist Option 2 (Draft-PR [#263](https://github.com/oscipal/earthX/pull/263), nur Frontend), auf dem Stand nach `adr/0020` (Bandvorrat, `output.bands`).
+
+- **Zustand.** `fixed` im Panel-Zustand hält Szenen, Fläche und, bei einem Ergebnis, die Zahl der gesperrten Schritte, den Titel und die Gruppe des Jobs. `orderView` nimmt Szenen und Fläche aus `fixed`, nicht aus Auswahl und Karte; „Run as“ gibt es dann nicht.
+- **Eltern-Schritte** stehen als die ersten Schritte des Entwurfs; Ändern, Verschieben, Entfernen, Umbenennen und „Load recipe…“ sind im Store gesperrt, nicht nur in der Oberfläche. Ihre `band_math`-Bänder stehen im Vorrat (Chips neuer Schritte, „New“ in der Ausgabe). Die Ausgabe der Eltern ist die Vorgabe der Ausgabe (`adr/0020` §12).
+- **⚙ ohne Kopie** ist gesperrt mit Grund (F2, wie im ADR beschlossen); der Plan NM4-05b sprach von „erscheint nicht“, maßgeblich ist die Antwort zu F2.
+- Eltern in Version 1 liest die Ablage schon als Version 2 (`jobShelf.orderCopy`, `adr/0020` §11).
+- Das Backend sieht einen gewöhnlichen Auftrag; Hash, Cache, Runner, Permalink unverändert (K1–K8 wie in §5.8).
+
 ## 11. Prüfanleitung für Otto
 
 Nur Repo und Browser, keine AOI, keine Anfrage an eine Quelle. Windows
