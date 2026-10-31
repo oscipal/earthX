@@ -3150,6 +3150,28 @@ a.pm-icon:hover {
   font-size: 10px;
   color: var(--muted);
 }
+/* "Hide where" of a mask by value: the condition and its numbers in one row, wrapping in a narrow panel. */
+.pp-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.pp-where select {
+  flex: 0 0 auto;
+  width: auto;
+}
+.pp-where input {
+  flex: 1 1 64px;
+  min-width: 0;
+  width: auto;
+}
+.pp-unit {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: normal;
+}
 .pp-class-table {
   margin-left: 8px;
   font-size: 10px;

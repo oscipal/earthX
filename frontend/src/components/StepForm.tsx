@@ -9,6 +9,7 @@ import type { Operator } from '../processingOrder';
 import { integersIn, namesIn, type Field, type FieldValue } from '../schemaForm';
 import type { EarthxMask } from '../types';
 import { CellSize, CellSizeError, CrsRefusal } from './CellSize';
+import MaskValuesFields from './MaskValuesFields';
 import Tip from './Tip';
 import { useCellSizeTip } from './useCellSizeTip';
 import { useCrsLookup } from './useCrsLookup';
@@ -284,6 +285,7 @@ export default function StepForm({
   maskLayer,
   earlier,
   dataBands,
+  units,
   onInsert,
   checkName,
   onRename,
@@ -310,6 +312,8 @@ export default function StepForm({
   // The names of the bands the steps before this one add, and the bands of the data a step may name (adr/0020 §14).
   earlier: readonly string[];
   dataBands: readonly string[];
+  // The unit of each band of the data that has one (the "in m" beside "Hide where").
+  units: Readonly<Record<string, string>>;
   // A name put into this step's expression.
   onInsert: (name: string) => void;
   // The name of a band math step: what is wrong with a name, taking it over, and telling what is wrong with the one typed.
@@ -330,6 +334,7 @@ export default function StepForm({
   useCrsLookup(reprojects ? values.crs : undefined);
   const cellTip = useCellSizeTip(values.crs, values.resolution, latitude);
   const bandMath = operator?.op === 'band_math';
+  const maskValues = operator?.op === 'mask_values' && operator.form.supported;
   // The title is the number and the name of the step.
   const name = stepName(operator, values, index);
   return (
@@ -358,7 +363,19 @@ export default function StepForm({
         </span>
       </div>
       {unsupported && <p className="hint-text error">{unsupported}</p>}
-      {fields.map((field) => {
+      {maskValues && (
+        <MaskValuesFields
+          stepKey={stepKey}
+          values={values}
+          errors={errors}
+          showErrors={showErrors}
+          earlier={earlier}
+          dataBands={dataBands}
+          units={units}
+          onChange={onChange}
+        />
+      )}
+      {(maskValues ? [] : fields).map((field) => {
         const value = values[field.name];
         const touched = typeof value === 'string' && value !== '';
         if (masks && field.name === 'classes') {

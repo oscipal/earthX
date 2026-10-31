@@ -53,6 +53,7 @@ describe('processInfo from the fixtures (K3)', () => {
     expect(S2.operators.map((o) => [o.op, o.opVersion, o.tiers, o.kind])).toEqual([
       ['band_math', 2, ['T1', 'T2'], 'pixel'],
       ['mask', 2, ['T1', 'T2'], 'pixel'],
+      ['mask_values', 1, ['T1', 'T2'], 'pixel'],
       ['normalize', 2, ['T1', 'T2'], 'pixel'],
       ['reproject', 4, ['T2'], 'grid'],
     ]);
@@ -97,7 +98,7 @@ describe('processInfo from the fixtures (K3)', () => {
     const broken = structuredClone(s2) as unknown as ProcessDescription;
     const schema = broken.inputs.recipe.schema as { $defs: Record<string, { properties: Record<string, unknown> }> };
     delete schema.$defs.step_reproject_v4.properties.op;
-    expect(processInfo(broken).operators.map((o) => o.op)).toEqual(['band_math', 'mask', 'normalize']);
+    expect(processInfo(broken).operators.map((o) => o.op)).toEqual(['band_math', 'mask', 'mask_values', 'normalize']);
   });
 });
 
@@ -549,6 +550,70 @@ describe('buildOrder', () => {
       aoi,
       steps: [{ op: 'band_math', op_version: 2, params: { expression: '(nir - red) / (nir + red)', name: 'NDVI' } }],
       output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI'] },
+    });
+  });
+
+  describe('a mask by value (DS-06b)', () => {
+    const mask = (values: DraftStep['values'], key = 2) => step('mask_values', 1, values, key);
+    const built = (steps: DraftStep[], extra: Partial<Parameters<typeof buildOrder>[0]> = {}) => buildOrder({ ...base, steps, ...extra });
+
+    it.each([
+      ['lt', '0.2', [0.2]],
+      ['gt', '2000', [2000]],
+      ['between', '0.2; 0.8', [0.2, 0.8]],
+      ['between', '0.2, 0.8', [0.2, 0.8]],
+      ['eq', '9, 3, 3, 8', [3, 8, 9]],
+      ['eq', '-1.5e1', [-15]],
+    ])('sends %s %j as the list %j', (condition, text, values) => {
+      const order = built([ndvi(), mask({ band: 'NDVI', condition, values: text })]).order;
+      expect(order?.steps[1]).toEqual({ op: 'mask_values', op_version: 1, params: { band: 'NDVI', condition, values } });
+    });
+
+    it('may look at a band of the data that is not in the output', () => {
+      const order = built([mask({ band: 'scl', condition: 'eq', values: '3' }, 1)], { bands: ['red'] }).order;
+      expect(order?.steps).toEqual([{ op: 'mask_values', op_version: 1, params: { band: 'scl', condition: 'eq', values: [3] } }]);
+    });
+
+    it.each([
+      ['no number', { band: 'NDVI', condition: 'lt', values: '' }, { values: 'Required.' }],
+      ['text', { band: 'NDVI', condition: 'lt', values: 'high' }, { values: 'Enter numbers separated by commas.' }],
+      ['a decimal comma', { band: 'NDVI', condition: 'gt', values: '0,2' }, { values: 'Enter one number.' }],
+      ['two numbers for lt', { band: 'NDVI', condition: 'lt', values: '1, 2' }, { values: 'Enter one number.' }],
+      ['one number for between', { band: 'NDVI', condition: 'between', values: '0.2; ' }, { values: 'Enter two numbers: from and to.' }],
+      ['from above to', { band: 'NDVI', condition: 'between', values: '0.8; 0.2' }, { values: '“from” must be below “to”.' }],
+      ['too large', { band: 'NDVI', condition: 'lt', values: '1e39' }, { values: 'Too large or too small.' }],
+      ['not finite', { band: 'NDVI', condition: 'lt', values: '1e999' }, { values: 'Enter numbers separated by commas.' }],
+      ['no condition', { band: 'NDVI', condition: '', values: '1' }, { condition: 'Required.' }],
+      ['an unknown condition', { band: 'NDVI', condition: 'near', values: '1' }, { condition: 'Pick one of the options.' }],
+      ['no band', { band: '', condition: 'lt', values: '1' }, { band: 'Required.' }],
+    ])('refuses %s at its field and sends nothing', (_, values, errors) => {
+      const result = built([ndvi(), mask(values)]);
+      expect(result.order).toBeNull();
+      expect(result.stepProblems[1].errors).toEqual(errors);
+    });
+
+    it('refuses more than 64 numbers for eq', () => {
+      const result = built([ndvi(), mask({ band: 'NDVI', condition: 'eq', values: Array.from({ length: 65 }, (_, i) => i).join(', ') })]);
+      expect(result.stepProblems[1].errors.values).toBe('At most 64 values.');
+    });
+
+    it('names a band that is added by a later step, that is the band of the step itself, or that does not exist', () => {
+      const later = built([mask({ band: 'NDVI', condition: 'lt', values: '0.2' }, 1), ndvi('NDVI', 2)]);
+      expect(errorsOf(later)[0]).toEqual({ band: "'NDVI' is added by a later step" });
+      const unknown = built([ndvi(), mask({ band: 'chlorophyll', condition: 'lt', values: '0.2' })]);
+      expect(errorsOf(unknown)[1]).toEqual({ band: "'chlorophyll' is not a band name" });
+      expect(unknown.order).toBeNull();
+    });
+
+    it('takes a band of the data and the result of an earlier step', () => {
+      for (const band of ['NDVI', 'red', 'scl']) {
+        expect(built([ndvi(), mask({ band, condition: 'lt', values: '1' })]).order).not.toBeNull();
+      }
+    });
+
+    it('does not take a band a result of a job did not keep', () => {
+      const result = built([mask({ band: 'nir', condition: 'lt', values: '1' }, 1)], { hidden: ['nir'] });
+      expect(errorsOf(result)[0]).toEqual({ band: "'nir' is not a band name" });
     });
   });
 

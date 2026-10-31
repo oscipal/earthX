@@ -525,7 +525,8 @@ const orderedIds = (ids: readonly string[]): string[] => [...ids].sort();
 
 // What a step reads that is no band at its place: the field and a short hint, or `null`. An expression may name the bands
 // of the data and the results of the steps before it, nothing else; a `normalize` step likewise names only such bands
-// (review of #250). Where the data list no bands there is nothing to compare with.
+// (review of #250), and so does the band of a `mask_values` step (DS-06b). Where the data list no bands there is nothing
+// to compare with.
 export function readProblem(
   step: DraftStep,
   index: number,
@@ -533,8 +534,8 @@ export function readProblem(
   data: readonly string[],
   // Bands the stock holds but the step may not read: those a result of a job did not keep in its output (NM4-05b).
   hidden: readonly string[] = [],
-): { field: 'expression' | 'bands'; message: string } | null {
-  const field = step.op === 'normalize' ? 'bands' : 'expression';
+): { field: 'expression' | 'bands' | 'band'; message: string } | null {
+  const field = step.op === 'normalize' ? 'bands' : step.op === 'mask_values' ? 'band' : 'expression';
   // Text that is no expression at all is told before anything else (review of #250); an empty one is the form's "Required".
   if (step.op === 'band_math' && typeof step.values.expression === 'string' && step.values.expression.trim() !== '' && !isExpression(step.values.expression)) {
     return { field, message: 'Enter a valid expression' };
@@ -544,7 +545,9 @@ export function readProblem(
       ? namesInExpression(step.values.expression)
       : step.op === 'normalize' && typeof step.values.bands === 'string'
         ? new Set(step.values.bands.split(/[\s,;]+/u).filter((n) => n !== ''))
-        : new Set<string>();
+        : step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== ''
+          ? new Set([step.values.band])
+          : new Set<string>();
   const blocked = [...names].find((name) => hidden.includes(name));
   if (blocked !== undefined) return { field, message: `'${blocked}' is not a band name` };
   const results = steps.flatMap((s, i) => (isBandMath(s) ? [{ index: i, name: resultNameOf(s) }] : []));
@@ -552,7 +555,7 @@ export function readProblem(
     if (result.index < index || !names.has(result.name) || data.includes(result.name)) continue;
     return { field, message: result.index === index ? `'${result.name}' is the band this step adds` : `'${result.name}' is added by a later step` };
   }
-  if (step.op !== 'band_math' || data.length === 0) return null;
+  if ((step.op !== 'band_math' && step.op !== 'mask_values') || data.length === 0) return null;
   const known = new Set([...data, ...results.filter((r) => r.index < index).map((r) => r.name)]);
   const unknown = [...names].find((name) => !known.has(name));
   return unknown === undefined ? null : { field, message: `'${unknown}' is not a band name` };
@@ -603,7 +606,7 @@ export function buildOrder(args: {
     const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
     if (!operator) return { errors: {}, unsupported: 'this operator is not available for this dataset' };
     if (!operator.form.supported) return { errors: {}, unsupported: operator.form.reason };
-    const { params, errors } = paramsFrom(operator.form.fields, step.values);
+    const { params, errors } = paramsFrom(operator.form.fields, step.values, step.op);
     built.push({ op: step.op, op_version: step.opVersion, params });
     return { errors: { ...errors, ...bandProblems(step, index, steps, data, index < locked ? [] : hidden) } };
   });
@@ -674,14 +677,16 @@ export function draftFromOrder(
       const raw = step.params[field.name];
       if (raw === undefined || field.kind === 'const') continue;
       if (field.kind === 'boolean' && typeof raw === 'boolean') values[field.name] = raw;
-      else if (field.kind !== 'boolean' && (typeof raw === 'string' || typeof raw === 'number')) values[field.name] = String(raw);
+      else if (field.kind !== 'boolean' && field.kind !== 'numbers' && (typeof raw === 'string' || typeof raw === 'number')) values[field.name] = String(raw);
       // The classes of a mask: the order holds them as a list, the form as the text it would have been typed as.
       else if (field.kind === 'integers' && Array.isArray(raw) && raw.every((n) => typeof n === 'number')) values[field.name] = raw.join(', ');
+      // The numbers of a mask by value, likewise.
+      else if (field.kind === 'numbers' && Array.isArray(raw) && raw.every((n) => typeof n === 'number')) values[field.name] = raw.join(', ');
       // The bands of a normalize step, likewise.
       else if (field.kind === 'names' && Array.isArray(raw) && raw.every((n) => typeof n === 'string')) values[field.name] = raw.join(', ');
       else problems.push(`${where}: ${field.name} has the wrong type.`);
     }
-    for (const [name, message] of Object.entries(paramsFrom(fields, values).errors)) problems.push(`${where}: ${name}: ${message}`);
+    for (const [name, message] of Object.entries(paramsFrom(fields, values, step.op).errors)) problems.push(`${where}: ${name}: ${message}`);
     steps.push({ key: nextKey(), op: step.op, opVersion: operator.opVersion, values });
   });
   const input = order.inputs[0];

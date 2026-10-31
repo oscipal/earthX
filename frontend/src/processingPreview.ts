@@ -136,7 +136,7 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
   for (const step of steps.slice(0, MAX_PREVIEW_STEPS)) {
     const found = tileStep(step, info);
     if ('reason' in found) break;
-    const { params, errors } = paramsFrom(found.fields, step.values);
+    const { params, errors } = paramsFrom(found.fields, step.values, step.op);
     if (Object.keys(errors).length > 0) break;
     planned.push({ step, operator: found.operator, params });
   }
@@ -157,10 +157,12 @@ export function furtherNote(plan: Extract<PreviewPlan, { state: 'ready' }>): str
 
 // The names the stock must hold before the first step for `band` to come out: the planner's trace from the end
 // (`processing/plan.py::_trace`, adr/0020 §4). A `band_math` step whose result nobody needs is not run, and a result
-// that is needed is replaced by the names its expression reads. `normalize` and `reproject` keep the names they are given.
+// that is needed is replaced by the names its expression reads. `normalize` and `reproject` keep the names they are given; `mask_values` reads the band it looks at.
 export function namesNeeded(steps: readonly DraftStep[], band: string): Set<string> {
   const needed = new Set([band]);
   for (const step of [...steps].reverse()) {
+    // A mask by value always reads the band that decides (`BandUse(reads={band})`), whichever band is shown.
+    if (step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== '') needed.add(step.values.band);
     if (!isBandMath(step) || !needed.delete(resultNameOf(step))) continue;
     for (const name of namesInExpression(typeof step.values.expression === 'string' ? step.values.expression : '')) needed.add(name);
   }

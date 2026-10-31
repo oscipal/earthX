@@ -126,6 +126,31 @@ const CASES: Case[] = [
     dtype: 'float32',
   },
   {
+    // A mask by value on the result of an earlier step; the band that decides is in the output too (DS-06b).
+    name: 'mask-ndvi-below-a-value-with-drawn-aoi',
+    datasetId: 'sentinel-2-c1-l2a',
+    description: s2,
+    bands: ['NDVI', 'red'],
+    data: S2_DATA,
+    aoi: SQUARE,
+    steps: [
+      draft(s2, 'band_math', NDVI),
+      { ...draft(s2, 'mask_values', { band: 'NDVI', condition: 'between', values: '0.2; 0.8' }), key: 2 },
+    ],
+    dtype: 'float32',
+  },
+  {
+    // The DEM has no classification layer; the mask by value works on its one band (DS-06b).
+    name: 'mask-dem-equal-to-values-with-drawn-aoi',
+    datasetId: 'cop-dem-glo-30',
+    description: cop,
+    bands: ['data'],
+    data: DEM_DATA,
+    aoi: SQUARE,
+    steps: [draft(cop, 'mask_values', { band: 'data', condition: 'eq', values: '0, 2000, 1000' })],
+    dtype: 'float32',
+  },
+  {
     // A DEM with a step that keeps the grid, so that the area can be measured (no `reproject`).
     name: 'normalize-dem-with-drawn-aoi',
     datasetId: 'cop-dem-glo-30',
