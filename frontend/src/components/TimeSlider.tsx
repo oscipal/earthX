@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { stepLabel, runPlayback, STEP_LATE_AFTER_MS } from '../playback';
 import { useAppStore } from '../store';
+import Chevron from './Chevron';
 
 export default function TimeSlider() {
   const groups = useAppStore((s) => s.groups);
@@ -64,12 +65,13 @@ export default function TimeSlider() {
       {index === null ? '' : name(index)}
     </span>
   );
-  const arrow = (index: number | null, label: string, sign: string) =>
+  // The buttons of the stepper in the view of an image (`ViewerControls`): the same round button with the same chevron.
+  const arrow = (index: number | null, label: string, direction: 'left' | 'right') =>
     index === null ? (
-      <span className="time-step gone" aria-hidden="true" />
+      <span className="vc-step gone" aria-hidden="true" />
     ) : (
-      <button type="button" className="time-step" title={`${label}: ${name(index)}`} aria-label={label} onClick={() => go(index)}>
-        {sign}
+      <button type="button" className="vc-step" title={`${label}: ${name(index)}`} aria-label={label} onClick={() => go(index)}>
+        <Chevron direction={direction} />
       </button>
     );
 
@@ -80,9 +82,9 @@ export default function TimeSlider() {
           {showFirst ? name(groups.length - 1) : ''}
         </span>
         {near(older, 'before')}
-        {arrow(older, 'Previous step', '<')}
+        {arrow(older, 'Previous step', 'left')}
         <strong>{name(shown)}</strong>
-        {arrow(newer, 'Next step', '>')}
+        {arrow(newer, 'Next step', 'right')}
         {near(newer, 'after')}
         <span className={`time-end last${showLast ? '' : ' gone'}`} title="Last step" aria-hidden={!showLast || undefined}>
           {showLast ? name(0) : ''}

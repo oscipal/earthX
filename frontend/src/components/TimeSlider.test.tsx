@@ -69,7 +69,7 @@ describe('the labels of the time slider', () => {
     { key: ['2026-07-24', 'GS2A_SCENE_NAME_B'], label: '2026-07-24 · GS2A_SCENE_NAME_B', items: [item('b')] },
     { key: ['2026-07-23', 'GS2A_SCENE_NAME_A'], label: '2026-07-23 · GS2A_SCENE_NAME_A', items: [item('c')] },
   ];
-  // The row of dates, cell by cell: first, before, "<", shown, ">", after, last. What is not there is empty.
+  // The row of dates, cell by cell: first, before, previous button, shown, next button, after, last. The buttons draw a chevron and have no text; what is not there is empty.
   const cells = () => [...container.querySelectorAll('.time-dates > *')].map((el) => el.textContent ?? '');
   const shown = () => container.querySelector('.time-dates strong')!.textContent;
 
@@ -85,14 +85,14 @@ describe('the labels of the time slider', () => {
   it('names the steps by their date only, both ends and the step, while it does not play', () => {
     act(() => root.render(<TimeSlider />));
     // At the oldest step: no step before it, the last one is named, the one after it too.
-    expect(cells()).toEqual(['', '', '', '2026-07-23', '>', '2026-07-24', '2026-07-25']);
+    expect(cells()).toEqual(['', '', '', '2026-07-23', '', '2026-07-24', '2026-07-25']);
     expect(container.textContent).not.toMatch(/GS2/);
   });
 
   it('names them by their date only while it plays as well', () => {
     act(() => root.render(<TimeSlider />));
     act(() => useAppStore.setState({ playing: true }));
-    expect(cells().filter(Boolean)).toEqual(['2026-07-23', '>', '2026-07-24', '2026-07-25']);
+    expect(cells().filter(Boolean)).toEqual(['2026-07-23', '2026-07-24', '2026-07-25']);
     expect(container.textContent).not.toMatch(/GS2/);
   });
 
@@ -143,14 +143,25 @@ describe('the row of dates', () => {
 
   it('names five steps in the middle: the first, the one before, the one shown, the one after, the last', () => {
     at(3);
-    expect(cells()).toEqual(['2026-07-01', '2026-07-03', '<', '2026-07-04', '>', '2026-07-05', '2026-07-07']);
+    expect(cells()).toEqual(['2026-07-01', '2026-07-03', '', '2026-07-04', '', '2026-07-05', '2026-07-07']);
   });
 
   it('names no date twice: the end that is the neighbour is named once', () => {
     at(1);
-    expect(cells()).toEqual(['', '2026-07-01', '<', '2026-07-02', '>', '2026-07-03', '2026-07-07']);
+    expect(cells()).toEqual(['', '2026-07-01', '', '2026-07-02', '', '2026-07-03', '2026-07-07']);
     at(5);
-    expect(cells()).toEqual(['2026-07-01', '2026-07-05', '<', '2026-07-06', '>', '2026-07-07', '']);
+    expect(cells()).toEqual(['2026-07-01', '2026-07-05', '', '2026-07-06', '', '2026-07-07', '']);
+  });
+
+  it('has the round button and the chevron of the stepper in the view of an image, not a button of its own', () => {
+    at(3);
+    for (const [label, direction] of [['Previous step', 'left'], ['Next step', 'right']] as const) {
+      const button = arrow(label)!;
+      expect(button.className).toBe('vc-step');
+      expect(button.querySelector('svg path')!.getAttribute('d')).toBe(direction === 'left' ? 'M9 2.5 4.5 7 9 11.5' : 'M5 2.5 9.5 7 5 11.5');
+      expect(button.textContent).toBe('');
+    }
+    expect(CSS).not.toContain('.time-step');
   });
 
   it('names the neighbour in the tooltip of its arrow, where a narrow block has no room to print it', () => {
@@ -175,7 +186,7 @@ describe('the row of dates', () => {
   it('shows the one date of a single step and no arrows', () => {
     act(() => useAppStore.setState({ groups: [SEVEN[0]], activeGroupIndex: 0, expandedGroupIndex: 0 }));
     expect(cells().filter(Boolean)).toEqual(['2026-07-07']);
-    expect(container.querySelectorAll('.time-step:not(.gone)')).toHaveLength(0);
+    expect(container.querySelectorAll('.vc-step:not(.gone)')).toHaveLength(0);
   });
 
   it('goes one step to the older with "<" and one to the newer with ">", and the list follows', () => {
@@ -213,7 +224,7 @@ describe('the row of dates', () => {
     expect(CSS).toContain('container-type: inline-size');
     expect(rule('@container (max-width: 459px)')).toMatch(/\.time-end \{\s*visibility: hidden/u);
     expect(rule('@container (max-width: 319px)')).toMatch(/\.time-near \{\s*visibility: hidden/u);
-    expect(rule('@container (max-width: 319px)')).not.toMatch(/strong|\.time-step/u);
+    expect(rule('@container (max-width: 319px)')).not.toMatch(/strong|\.vc-step/u);
   });
 });
 

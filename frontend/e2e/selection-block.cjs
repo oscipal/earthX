@@ -1,6 +1,6 @@
 // The block at the bottom of the map (NM4-66), in a real browser with made-up scenes (no backend):
 //   1. The bar of the selection and the timeline are one panel, one grip, and as wide as each other.
-//   2. The row of dates: first, before, "<", shown, ">", after, last; "<" and ">" go a step; no date twice.
+//   2. The row of dates: first, before, an arrow, shown, an arrow, after, last; "<" and ">" go a step; no date twice.
 //   3. A small red "x" at the top right, over no button; it hides the block and leaves the ticks alone; a click on a scene
 //      or an opened group in the list brings it back.
 //   4. The block (not moved and moved) stays where it is when a panel opens and closes.
@@ -110,7 +110,7 @@ async function run(browser, theme, viewport) {
   // --- the row of dates ---------------------------------------------------------------------------------------------
   // activeGroupIndex 3 of 7 (newest first): shown 2026-07-04.
   let row = await cells();
-  const expectRow = ['2026-07-01', '2026-07-03', '<', '2026-07-04', '>', '2026-07-05', '2026-07-07'];
+  const expectRow = ['2026-07-01', '2026-07-03', '', '2026-07-04', '', '2026-07-05', '2026-07-07'];
   if (JSON.stringify(row) !== JSON.stringify(expectRow)) problems.push(`row ${JSON.stringify(row)}`);
   // Nothing of the row lies outside the block, wide or narrow; the date shown is always there.
   const outside = await page.locator('.time-dates > *').evaluateAll((els) => {

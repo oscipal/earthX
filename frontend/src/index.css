@@ -1841,25 +1841,6 @@ input[type='date']:focus {
 .gone {
   visibility: hidden;
 }
-.time-step {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--panel-border);
-  border-radius: 5px;
-  background: var(--input-bg);
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-}
-.time-step:hover {
-  border-color: var(--accent);
-}
-.time-step.gone {
-  border-color: transparent;
-}
 /* Narrow: the ends go first, then the neighbours (their arrows say them in the tooltip); the date shown stays. */
 @container (max-width: 459px) {
   .time-dates {
