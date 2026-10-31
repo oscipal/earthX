@@ -1579,6 +1579,28 @@ input[type='date']:focus {
 .filter-check input {
   margin: 0;
 }
+/* "Within AOI" under the range of the cloud cover (DS-03b). Locked, it stays and says why in its tooltip. */
+.within-aoi {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.within-aoi input {
+  margin: 0;
+}
+.within-aoi.locked {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.within-aoi.locked input {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 
 /* --- grouped (mosaic) results --- */
 .result-group {
@@ -3131,4 +3153,67 @@ a.pm-icon:hover {
   background: var(--row-hover);
   outline: 1px dashed var(--accent);
   outline-offset: -2px;
+}
+
+/* --- "Within AOI" in the results (DS-03b) --- */
+/* The state of the search in the head of the list: "12 found / 180 checked" and "Stop" while it goes on. */
+.aoi-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+.aoi-stop {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 11px;
+}
+.toast .aoi-stop {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+}
+.aoi-sort {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 0 14px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.aoi-sort button {
+  padding: 2px 8px;
+  background: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.aoi-sort button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* "☁ 3 %" beside the time of a scene and in the head of a time step. */
+.cloud-value {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: help;
+}
+.result-when {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }

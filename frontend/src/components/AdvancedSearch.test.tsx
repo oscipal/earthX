@@ -610,3 +610,164 @@ describe('"Search" sends what the fields say', () => {
     });
   });
 });
+
+// DS-03b: the switch "Within AOI" under the filter the registry marks with `within_aoi`. Needs an area and a date range
+// with both ends; without them it is locked, with the reason in its tooltip (not hidden, Otto 26.10.2026).
+describe('"Within AOI"', () => {
+  const DATES = { dateFrom: '2026-07-01', dateTo: '2026-07-31' };
+  const within = () => container.querySelector<HTMLLabelElement>('.within-aoi');
+  const withinBox = () => within()!.querySelector<HTMLInputElement>('input')!;
+  const clickWithin = () => act(() => withinBox().click());
+  const stored = () => useAppStore.getState().searchFilters.optical?.['test:cloud'];
+
+  beforeEach(() => {
+    useAppStore.setState({ ...DATES });
+  });
+
+  it('is under the cloud range of a dataset whose registry marks it, and under no other filter', () => {
+    pick('optical');
+    open();
+    expect(container.querySelectorAll('.within-aoi')).toHaveLength(1);
+    expect(text(within())).toBe('Within AOI');
+    const cloud = field('Cloud cover, to').closest('.filter-field')!;
+    expect(cloud.nextElementSibling).toBe(within());
+  });
+
+  it('is not there for a dataset whose registry marks none', () => {
+    pick('radar');
+    open();
+    expect(within()).toBeNull();
+  });
+
+  it('is there for the dataset that has it, not for the one shown beside it', () => {
+    pick('optical', 'radar');
+    open();
+    expect(within()).not.toBeNull();
+    switchTo(1);
+    expect(text(box())).toContain('Radar imagery');
+    expect(within()).toBeNull();
+  });
+
+  it('is a switch, off at first, and free with an area and both dates', () => {
+    pick('optical');
+    open();
+    expect(withinBox().getAttribute('role')).toBe('switch');
+    expect(withinBox().checked).toBe(false);
+    expect(withinBox().hasAttribute('aria-disabled')).toBe(false);
+    expect(within()!.classList.contains('locked')).toBe(false);
+  });
+
+  it('puts what the registry says into its tooltip: the classes, that shadows do not count, the note to the limits', () => {
+    pick('optical');
+    open();
+    const tip = within()!.title;
+    expect(tip).toContain('Limit applies to clouds inside the AOI (classes 5, 6; cloud shadows do not count)');
+    expect(tip).toContain('Slower: checks up to 500 scenes.');
+    expect(tip).toContain('The classification can miss thin haze and can take snow for clouds.');
+    expect(tip).toContain('The coverage map shows the scene filter only.');
+  });
+
+  it('goes on and off in the store with the range, which keeps what was typed', () => {
+    pick('optical');
+    open();
+    type(field('Cloud cover, to'), '20');
+    clickWithin();
+    expect(stored()).toEqual({ kind: 'range', from: '', to: '20', within: true });
+    expect(withinBox().checked).toBe(true);
+    type(field('Cloud cover, from'), '5');
+    expect(stored()).toEqual({ kind: 'range', from: '5', to: '20', within: true });
+    clickWithin();
+    expect(stored()).toEqual({ kind: 'range', from: '5', to: '20' });
+    expect(withinBox().checked).toBe(false);
+  });
+
+  it('stays on when the range is emptied, and is no filter set: the button counts nothing and "Reset filters" is not there', () => {
+    pick('optical');
+    open();
+    clickWithin();
+    type(field('Cloud cover, to'), '20');
+    type(field('Cloud cover, to'), '');
+    expect(stored()).toEqual({ kind: 'range', from: '', to: '', within: true });
+    expect(withinBox().checked).toBe(true);
+    expect(text(button())).toBe('Advanced search');
+    expect([...container.querySelectorAll('.advanced-actions button')].map(text)).toEqual(['Done']);
+  });
+
+  it('keeps the switch of a dataset apart from the switch of another', () => {
+    pick('optical', 'radar');
+    open();
+    clickWithin();
+    expect(useAppStore.getState().searchFilters.radar).toBeUndefined();
+  });
+
+  describe.each([
+    ['no area', { aoi: null }, 'Draw an AOI and set a date range first'],
+    ['no dates', { dateFrom: '', dateTo: '' }, 'Draw an AOI and set a date range first'],
+    ['no end', { dateTo: '' }, 'Draw an AOI and set a date range first'],
+    ['no start', { dateFrom: '' }, 'Draw an AOI and set a date range first'],
+    ['a point', { aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } as GeoJSON.Point }, 'Draw an area to use this filter'],
+  ])('with %s', (_what, change, reason) => {
+    beforeEach(() => {
+      useAppStore.setState(change);
+    });
+
+    it('is locked, not hidden, and says why', () => {
+      pick('optical');
+      open();
+      expect(within()).not.toBeNull();
+      expect(within()!.classList.contains('locked')).toBe(true);
+      expect(withinBox().getAttribute('aria-disabled')).toBe('true');
+      expect(within()!.title).toBe(reason);
+    });
+
+    it('does nothing when it is pressed', () => {
+      pick('optical');
+      open();
+      clickWithin();
+      expect(stored()).toBeUndefined();
+      expect(withinBox().checked).toBe(false);
+    });
+  });
+
+  it('is free again, off, once the area and the dates are there', () => {
+    useAppStore.setState({ aoi: null });
+    pick('optical');
+    open();
+    expect(within()!.classList.contains('locked')).toBe(true);
+    act(() => useAppStore.setState({ aoi: AOI }));
+    expect(within()!.classList.contains('locked')).toBe(false);
+    expect(within()!.title).toContain('Limit applies');
+  });
+
+  it('goes off with the dates, so that it does not come back on its own with the next ones', () => {
+    pick('optical');
+    open();
+    type(field('Cloud cover, to'), '20');
+    clickWithin();
+    expect(stored()).toMatchObject({ within: true });
+
+    act(() => useAppStore.setState({ dateTo: '' }));
+    expect(withinBox().checked).toBe(false);
+    expect(stored()).toEqual({ kind: 'range', from: '', to: '20' });
+
+    act(() => useAppStore.setState({ dateTo: '2026-07-31' }));
+    expect(withinBox().checked).toBe(false);
+    expect(stored()).toEqual({ kind: 'range', from: '', to: '20' });
+  });
+
+  it('is not locked by a long AOI: the search sends its box and the AOI beside it', () => {
+    const ring = Array.from({ length: 1200 }, (_, i) => [10.5 + 0.4 * Math.cos((i / 1200) * 2 * Math.PI), 47.5 + 0.4 * Math.sin((i / 1200) * 2 * Math.PI)]);
+    useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } });
+    pick('optical');
+    open();
+    expect(within()!.classList.contains('locked')).toBe(false);
+  });
+
+  it('is reached by the keyboard and a locked one still can be, to read its reason', () => {
+    useAppStore.setState({ aoi: null });
+    pick('optical');
+    open();
+    expect(withinBox().disabled).toBe(false);
+    expect(withinBox().tabIndex).not.toBe(-1);
+  });
+});
