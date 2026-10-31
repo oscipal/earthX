@@ -1,8 +1,8 @@
-"""T-C, DS-03a2: the filter ``earthx:aoi_cloud_cover`` on ``POST /stac/search``, against real pgstac and a real
-statistics cache, with the source mocked and the reading of a raster replaced (plan §6.5, §6.13).
+"""T-C, DS-03a2: the filters ``earthx:aoi_cloud_cover`` and ``earthx:aoi_nodata`` on ``POST /stac/search``, against real
+pgstac and a real statistics cache, with the source mocked and the reading of a raster replaced (plan §6.5, §6.13).
 
-The source is a stub of Earth Search that serves scenes in pages with a ``scl`` asset each; the cloud share of
-scene ``n`` is a function of ``n`` that the replaced reader returns. One test reads real synthetic COGs.
+The source is a stub of Earth Search that serves scenes in pages with a ``scl`` asset each; the cloud share and the
+no-data share of scene ``n`` are functions of ``n`` that the replaced reader returns. One test reads real synthetic COGs.
 """
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ SQUARE = {
     "coordinates": [[[10.123456, 47.654321], [10.223456, 47.654321], [10.223456, 47.754321], [10.123456, 47.754321], [10.123456, 47.654321]]],
 }
 BBOX = [10.0, 47.5, 10.5, 48.0]
+NODATA_ONLY = {S2: {"earthx:aoi_nodata": {"lte": 20}}}
 LEAKS = ("10.123456", "47.654321", "10.223456", "47.754321")
 
 
@@ -73,6 +74,7 @@ class World:
     def __init__(self, total: int = 40, share: Callable[[int], float | None] = share_by_number) -> None:
         self.total = total
         self.share = share
+        self.nodata: Callable[[int], float] = lambda number: 0.0  # percent of the AOI without a valid pixel
         self.bodies: list[dict[str, Any]] = []
         self.urls: list[str] = []
         self.reads: list[tuple[int, dict[str, Any]]] = []
@@ -123,7 +125,9 @@ class World:
             percent = self.share(number)
             if percent is None:
                 return AoiClouds(0, 0, 100, 80.0)
-            return AoiClouds(cloud_pixels=round(percent * 10), data_pixels=1000, aoi_pixels=1000, resolution=80.0)
+            data_pixels = 1000 - round(self.nodata(number) * 10)
+            cloud_pixels = round(percent / 100 * data_pixels)
+            return AoiClouds(cloud_pixels=cloud_pixels, data_pixels=data_pixels, aoi_pixels=1000, resolution=80.0)
         finally:
             with self._lock:
                 self.running -= 1
@@ -423,6 +427,200 @@ class TestResponsesAndMarkers:
         assert response.status_code == 400
 
 
+def aoi_nodata(number: int) -> float:
+    """Every fifth scene has 40 % of the AOI without a valid pixel, the others 5 %."""
+    return 40.0 if number % 5 == 0 else 5.0
+
+
+class TestNoDataInTheAoi:
+    """Otto, 31.10.2026: "Within AOI" holds for every filter with an area; no data is measured on the same reading."""
+
+    async def test_a_search_with_the_no_data_range_alone(self, collections_loaded: None, world: World) -> None:
+        world.nodata = aoi_nodata
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection=NODATA_ONLY))
+        assert response.status_code == 200
+        assert ids(response) == [n for n in range(40) if n % 5]
+        properties = response.json()["features"][1]["properties"]
+        assert properties["earthx:aoi_measure"]["data_percent"] == 95.0
+        assert properties["earthx:aoi_cloud_cover"] == 60.0, "every item still carries the cloud share"
+        assert response.json()["earthx:aoi_filter"] == {"checked": 40, "found": 32, "unreadable": 0, "limit_reached": False}
+        assert sorted(world.numbers_read()) == list(range(40)), "each scene is read once"
+        for source_body in world.bodies:
+            assert "earthx" not in json.dumps(source_body) and "query" not in source_body
+
+    async def test_a_search_with_the_cloud_range_alone_is_what_it_was(self, collections_loaded: None, world: World) -> None:
+        world.nodata = aoi_nodata
+        async with _client(world) as client:
+            response = await post(client, body())
+        assert ids(response) == list(range(0, 40, 4))
+        assert sorted(world.numbers_read()) == list(range(40))
+
+    async def test_both_ranges_are_both_met_and_each_scene_is_read_once(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        world.nodata = aoi_nodata
+        query = {S2: {"earthx:aoi_cloud_cover": {"lte": 20}, "earthx:aoi_nodata": {"lte": 20}}}
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection=query))
+        assert response.status_code == 200
+        assert ids(response) == [n for n in range(40) if n % 4 == 0 and n % 5]
+        assert response.json()["earthx:aoi_filter"]["found"] == len(ids(response))
+        assert len(world.reads) == 40 and sorted(world.numbers_read()) == list(range(40))
+        assert "earthx" not in json.dumps(world.bodies)
+
+    async def test_the_shared_query_spelling_takes_both_too(self, collections_loaded: None, world: World) -> None:
+        world.nodata = aoi_nodata
+        query = {"earthx:aoi_cloud_cover": {"lte": 20}, "earthx:aoi_nodata": {"gte": 30}}
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection=None, query=query))
+        assert ids(response) == [n for n in range(40) if n % 4 == 0 and n % 5 == 0]
+
+    async def test_the_ranges_may_stand_beside_the_filters_of_the_source_including_its_no_data_filter(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        query = {S2: {"earthx:aoi_nodata": {"lte": 20}, "s2:nodata_pixel_percentage": {"lte": 60}, "platform": {"in": ["sentinel-2a"]}}}
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection=query))
+        assert response.status_code == 200
+        assert world.bodies[0]["query"] == {"s2:nodata_pixel_percentage": {"lte": 60.0}, "platform": {"in": ["sentinel-2a"]}}
+
+    async def test_a_scene_without_a_valid_pixel_has_100_and_only_the_no_data_range_keeps_it(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        world.share = lambda n: None if n == 0 else share_by_number(n)
+        world.nodata = aoi_nodata
+        async with _client(world) as client:
+            nodata = await post(client, body(query_by_collection={S2: {"earthx:aoi_nodata": {"gte": 100}}}))
+            cloud = await post(client, body(query_by_collection={S2: {"earthx:aoi_cloud_cover": {"gte": 0, "lte": 100}}}))
+        assert ids(nodata) == [0]
+        assert nodata.json()["features"][0]["properties"]["earthx:aoi_cloud_cover"] is None
+        assert nodata.json()["features"][0]["properties"]["earthx:aoi_measure"]["data_pixels"] == 0
+        assert 0 not in ids(cloud) and len(ids(cloud)) == 39, "no value for the clouds: it falls out"
+        assert nodata.json()["earthx:aoi_filter"]["unreadable"] == 0
+
+    async def test_a_scene_valid_everywhere_has_0(self, collections_loaded: None, world: World) -> None:
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection={S2: {"earthx:aoi_nodata": {"lte": 0}}}))
+        assert len(ids(response)) == 40
+
+    async def test_the_range_holds_for_the_value_with_one_decimal_as_the_answer_shows_it(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        world.total, world.nodata = 2, lambda n: 12.34 if n == 0 else 12.36  # 123 and 124 pixels of 1000: 12.3 and 12.4
+        async with _client(world) as client:
+            low = await post(client, body(query_by_collection={S2: {"earthx:aoi_nodata": {"lte": 12.3}}}))
+            high = await post(client, body(query_by_collection={S2: {"earthx:aoi_nodata": {"gte": 12.4}}}))
+        assert ids(low) == [0] and ids(high) == [1]
+        assert low.json()["features"][0]["properties"]["earthx:aoi_measure"]["data_percent"] == 87.7
+
+    async def test_a_scene_that_cannot_be_read_is_counted_for_the_no_data_range_too(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        world.unreadable = {3}
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection=NODATA_ONLY))
+        assert 3 not in ids(response)
+        assert response.json()["earthx:aoi_filter"] == {"checked": 40, "found": 39, "unreadable": 1, "limit_reached": False}
+
+    async def test_a_second_search_with_the_other_range_reads_no_raster(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        """One reading gives every measure: what a cloud search stored answers a no-data search of the same AOI."""
+        world.nodata = aoi_nodata
+        async with _client(world) as client:
+            await post(client, body())
+            reads = len(world.reads)
+            response = await post(client, body(query_by_collection=NODATA_ONLY))
+        assert reads == 40 and len(world.reads) == 40
+        assert ids(response) == [n for n in range(40) if n % 5]
+
+    async def test_the_count_of_readings_does_not_depend_on_the_second_range(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        world.total = 30
+        counts = []
+        for query in (
+            {"earthx:aoi_cloud_cover": {"lte": 20}},
+            {"earthx:aoi_cloud_cover": {"lte": 20}, "earthx:aoi_nodata": {"lte": 20}},
+        ):
+            world.reads.clear()
+            async with _client(world) as client:
+                with psycopg.connect(autocommit=True) as conn:
+                    conn.execute("DELETE FROM public.earthx_stats_cache")
+                await post(client, body(query_by_collection={S2: query}))
+            counts.append(len(world.reads))
+        assert counts == [30, 30]
+
+    async def test_the_marker_belongs_to_both_ranges_and_holds_no_coordinate(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        world.total = 1000
+        both = {S2: {"earthx:aoi_cloud_cover": {"lte": 20}, "earthx:aoi_nodata": {"lte": 20}}}
+        async with _client(world) as client:
+            cloud = await post(client, body(limit=3))
+            two = await post(client, body(limit=3, query_by_collection=both))
+            await aoi_cloud_filter.settle()
+            continued = await post(client, body(limit=3, query_by_collection=both, token=next_token(two)))
+            narrower = await post(
+                client,
+                body(
+                    limit=3, token=next_token(two),
+                    query_by_collection={S2: {"earthx:aoi_cloud_cover": {"lte": 20}, "earthx:aoi_nodata": {"lte": 10}}},
+                ),
+            )
+            fewer = await post(client, body(limit=3, token=next_token(two)))
+            more = await post(client, body(limit=3, query_by_collection=both, token=next_token(cloud)))
+        assert continued.status_code == 200
+        assert [narrower.status_code, fewer.status_code, more.status_code] == [400, 400, 400]
+        assert next_token(cloud) != next_token(two)
+        import base64
+
+        text = base64.urlsafe_b64decode(next_token(two) + "=" * (-len(next_token(two)) % 4)).decode()
+        assert not any(leak in text for leak in LEAKS) and "coordinates" not in text
+        assert not any(leak in response.text for response in (narrower, fewer, more) for leak in LEAKS)
+
+    async def test_the_filter_for_a_collection_without_it_is_a_400_and_a_shared_query_names_it(
+        self, collections_loaded: None, world: World
+    ) -> None:
+        async with _client(world) as client:
+            own = await post(
+                client,
+                body(collections=[S2, NATIVE.dataset_id], query_by_collection={NATIVE.dataset_id: {"earthx:aoi_nodata": {"lte": 20}}}),
+            )
+            shared = await post(
+                client,
+                body(collections=[S2, NATIVE.dataset_id], query_by_collection=None, query={"earthx:aoi_nodata": {"lte": 20}}),
+            )
+        assert own.status_code == 400
+        assert shared.status_code == 200
+        assert shared.json()["ignored_filters_by_collection"] == {NATIVE.dataset_id: ["earthx:aoi_nodata"]}
+        assert shared.json()["earthx:aoi_filter_by_collection"][S2]["checked"] == 40
+
+    async def test_a_filter_without_an_area_stays_with_the_source(self, collections_loaded: None, world: World) -> None:
+        """The satellite is no measure: it goes to the source and nothing is read for it."""
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection={S2: {"platform": {"in": ["sentinel-2a"]}}}))
+        assert response.status_code == 200
+        assert world.bodies[0]["query"] == {"platform": {"in": ["sentinel-2a"]}}
+        assert world.reads == [] and "earthx:aoi_filter" not in response.json()
+        assert "earthx:aoi_cloud_cover" not in response.json()["features"][0]["properties"]
+
+    async def test_nothing_of_the_area_reaches_the_log(
+        self, collections_loaded: None, world: World, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        both = {S2: {"earthx:aoi_cloud_cover": {"lte": 20.7654321}, "earthx:aoi_nodata": {"lte": 33.1234567}}}
+        with caplog.at_level(logging.DEBUG):
+            async with _client(world) as client:
+                await post(client, body(limit=5, query_by_collection=both))
+        lines = [record for record in caplog.records if record.getMessage() == "aoi cloud filter"]
+        assert len(lines) == 1
+        everything = " ".join(str(record.__dict__) for record in caplog.records)
+        for secret in (*LEAKS, "S2_00", "SCL.tif", ASSET_HOST, "coordinates", "20.7654321", "33.1234567", "aoi_nodata"):
+            assert secret not in everything
+        assert not any(leak in url for url in world.urls for leak in LEAKS)
+
+
 class TestSeveralCollections:
     async def test_only_the_source_with_the_filter_is_measured_and_its_counts_have_their_own_key(
         self, collections_loaded: None, world: World
@@ -488,8 +686,19 @@ class TestARequestACallerHasToChange:
             ({"intersects": None, "bbox": [20.0, 47.5, 20.5, 48.0], "earthx:aoi": SQUARE}, "outside the bbox"),
             ({"earthx:aoi": SQUARE}, "not with intersects"),
             ({"intersects": None, "earthx:aoi": SQUARE}, "goes with the bbox"),
-            ({"query_by_collection": {S2: {"eo:cloud_cover": {"lte": 20}}}, "earthx:aoi": SQUARE}, "goes with the cloud share"),
+            ({"query_by_collection": {S2: {"eo:cloud_cover": {"lte": 20}}}, "earthx:aoi": SQUARE}, "goes with a filter measured in the AOI"),
             ({"query_by_collection": {S2: {"earthx:other": {"lte": 20}}}}, "computed by the platform"),
+            ({"query_by_collection": {S2: {"earthx:aoi_nodata": {"lte": 120.5}}}}, "outside the range"),
+            ({"query_by_collection": {S2: {"earthx:aoi_nodata": {"gte": 30, "lte": 10}}}}, "ends below"),
+            ({"query_by_collection": {S2: {"earthx:aoi_nodata": {"in": [1]}}}}, "operators gte and lte"),
+            ({"query_by_collection": {S2: {"earthx:aoi_nodata": {}}}}, "object of operators"),
+            ({"query_by_collection": {S2: {"earthx:aoi_cloud_cover": {"lte": 20}, "earthx:aoi_nodata": {"lte": 120.5}}}}, "outside the range"),
+            ({"query_by_collection": NODATA_ONLY, "datetime": None}, "date range with a start and an end"),
+            ({"query_by_collection": NODATA_ONLY, "datetime": "2024-05-01T00:00:00Z/.."}, "date range with a start and an end"),
+            ({"query_by_collection": NODATA_ONLY, "intersects": None}, "needs an area"),
+            ({"query_by_collection": NODATA_ONLY, "intersects": {"type": "Point", "coordinates": [10.123456, 47.654321]}}, "needs an area"),
+            ({"query_by_collection": NODATA_ONLY, "intersects": None, "bbox": BBOX, "earthx:aoi": {"type": "Point", "coordinates": [10.2, 47.6]}}, "needs an area"),
+            ({"query_by_collection": NODATA_ONLY, "earthx:aoi": SQUARE}, "not with intersects"),
         ],
     )
     async def test_is_400_before_any_source_is_asked_and_names_no_value(
@@ -501,6 +710,42 @@ class TestARequestACallerHasToChange:
         assert message in response.json()["detail"]
         assert world.bodies == [] and world.reads == []
         assert "120.5" not in response.text and not any(leak in response.text for leak in LEAKS)
+
+    @pytest.mark.parametrize(
+        ("query_by_collection", "named"),
+        [
+            (NODATA_ONLY, "earthx:aoi_nodata"),
+            ({S2: {"earthx:aoi_cloud_cover": {"lte": 20}}}, "earthx:aoi_cloud_cover"),
+            (
+                {S2: {"earthx:aoi_cloud_cover": {"lte": 20}, "earthx:aoi_nodata": {"lte": 5.4321}}},
+                "earthx:aoi_cloud_cover and earthx:aoi_nodata",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "change", [{"datetime": None}, {"intersects": None}], ids=["no period", "no area"]
+    )
+    async def test_the_refusal_names_the_filter_that_was_asked_and_no_value(
+        self,
+        collections_loaded: None,
+        world: World,
+        query_by_collection: dict[str, Any],
+        named: str,
+        change: dict[str, Any],
+    ) -> None:
+        """Otto, 31.10.2026: the text names the filter asked for, not always the cloud share, and never a value."""
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection=query_by_collection, **change))
+        detail = response.json()["detail"]
+        assert response.status_code == 400 and detail.startswith(f"{named} needs a"), detail
+        assert "cloud share" not in detail and "5.4321" not in response.text
+        assert world.bodies == []
+
+    async def test_a_body_over_a_megabyte_names_the_filter_asked(self, collections_loaded: None, world: World) -> None:
+        async with _client(world) as client:
+            response = await post(client, body(query_by_collection=NODATA_ONLY, **{"padding": "x" * 1_048_576}))
+        assert response.status_code == 400
+        assert response.json()["detail"] == "a search with earthx:aoi_nodata is at most 1048576 bytes"
 
     async def test_a_body_over_a_megabyte(self, collections_loaded: None, world: World) -> None:
         async with _client(world) as client:
@@ -524,11 +769,17 @@ class TestARequestACallerHasToChange:
         assert response.status_code == 400 and "POST" in response.json()["detail"]
         assert world.bodies == []
 
-    async def test_the_coverage_map_refuses_it(self, collections_loaded: None, world: World) -> None:
+    @pytest.mark.parametrize(
+        "query",
+        [
+            {"earthx:aoi_cloud_cover": {"lte": 20}},
+            {"earthx:aoi_nodata": {"lte": 20}},
+            {"earthx:aoi_cloud_cover": {"lte": 20}, "earthx:aoi_nodata": {"lte": 20}},
+        ],
+    )
+    async def test_the_coverage_map_refuses_it(self, collections_loaded: None, world: World, query: dict[str, Any]) -> None:
         async with _client(world) as client:
-            response = await client.get(
-                f"/coverage/{S2}", params={"zoom": 4, "query": json.dumps({"earthx:aoi_cloud_cover": {"lte": 20}})}
-            )
+            response = await client.get(f"/coverage/{S2}", params={"zoom": 4, "query": json.dumps(query)})
         assert response.status_code == 400 and "coverage map" in response.json()["detail"]
         assert world.bodies == []
 

@@ -126,7 +126,7 @@ def _filtering_double(request: httpx.Request) -> httpx.Response:
 
 
 def _scl_scenes() -> list[dict[str, Any]]:
-    """Six synthetic scenes with a classification asset on an allowed asset host and a footprint, 50 % clouds each."""
+    """Six synthetic scenes with a classification asset on an allowed asset host and a footprint, 50 % clouds and 20 % no data each."""
     host = SENTINEL_2_L2A.source.asset_hosts[0]
     footprint = {"type": "Polygon", "coordinates": [[[10.0, 47.0], [11.0, 47.0], [11.0, 48.0], [10.0, 48.0], [10.0, 47.0]]]}
     return [
@@ -134,7 +134,7 @@ def _scl_scenes() -> list[dict[str, Any]]:
             **_fixture("earth_search", "item"),
             "id": f"SYNTH_SCL_{index}",
             "geometry": footprint,
-            "properties": {"datetime": "2024-06-01T10:00:00Z", "eo:cloud_cover": 50.0},
+            "properties": {"datetime": "2024-06-01T10:00:00Z", "eo:cloud_cover": 50.0, "s2:nodata_pixel_percentage": 20.0},
             "assets": {"scl": {"href": f"https://{host}/synth/{index}/SCL.tif"}},
         }
         for index in range(6)
@@ -153,10 +153,15 @@ def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None
     from earthx.api import aoi_cloud_filter
 
     def counts(path: Any, aoi: Any, classes: Any) -> AoiClouds:
-        # The whole footprint of a scene (west edge at 10 E, east edge at 11 E) is 50 % clouds like the scene; any AOI 10 %.
+        # The whole tile (east edge at 11.1 E) has 20 % no data like the scene, as the five pixels below have. The whole
+        # footprint of a scene (west edge at 10 E, east edge at 11 E) is 50 % clouds like the scene; any AOI 10 %.
+        if aoi["coordinates"][0][1] == [11.1, 46.9]:
+            return AoiClouds(cloud_pixels=40, data_pixels=80, aoi_pixels=100, resolution=320.0)
         on_footprint = aoi["coordinates"][0][1] == [11.0, 47.0]
         return AoiClouds(cloud_pixels=50 if on_footprint else 10, data_pixels=100, aoi_pixels=100, resolution=80.0)
 
+    tile = {"type": "Polygon", "coordinates": [[[9.9, 46.9], [11.1, 46.9], [11.1, 48.1], [9.9, 48.1], [9.9, 46.9]]]}
+    monkeypatch.setattr(module, "tile_polygon", lambda scene: tile)
     # Four valid pixels, two of them in a cloud class (8 and 9): the share of the scenes above, 50 %.
     monkeypatch.setattr(module, "RESOLVER", lambda host, port: ("93.184.216.34",))
     monkeypatch.setattr(module, "read_whole_file", lambda scene: (numpy.array([8, 9, 4, 5, 0], dtype="uint8"), 0))
