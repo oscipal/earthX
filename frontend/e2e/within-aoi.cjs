@@ -182,7 +182,7 @@ async function check(browser, { theme, viewport }) {
   await button.click();
   await popup.waitFor();
   expect('no switch under "Cloud cover"', (await within.count()) === 1);
-  expect('the switch is not at the top of the pop-up, over the fields', await within.evaluate((el) => el.nextElementSibling?.classList.contains('advanced-fields') && el.previousElementSibling?.classList.contains('dataset-select')));
+  expect('the switch is not at the top of the pop-up, over the fields', await within.evaluate((el) => el.nextElementSibling?.classList.contains('advanced-fields') && el.previousElementSibling?.classList.contains('advanced-top')));
   expect('the switch is not named "Filter within AOI only"', (await text(within)) === 'Filter within AOI only', await text(within));
   expect('a second switch', (await popup.locator('.within-aoi').count()) === 1);
   expect('the switch is not locked without AOI and dates', await locked());

@@ -1,6 +1,6 @@
 // Browser check of the settings of a layer (NM4-50, Otto 29.10.2026 and 30.10.2026, zu #234): in the settings of a result
 // layer, of a pinned scene layer and in a view that is no layer's "Apply" stands under "auto-scale" (one button, one width),
-// "Save" beside "Apply" (not in a view that is no layer's), and the cluster is no higher than the row of the fields. "Apply" and "Save" are locked while there is nothing to do and
+// "Save" (in the view: "Apply to all", always there since #257) beside "Apply", and the cluster is no higher than the row of the fields. "Apply" and "Save" are locked while there is nothing to do and
 // say why; "Apply" draws the layer with the typed look, what is not saved goes when the settings are closed, "Save" keeps it.
 // Light and dark theme, a wide and a narrow window; a screenshot per case.
 //
@@ -77,7 +77,10 @@ async function check(browser, { kind, theme, viewport }) {
     }
   }, { kind });
   const root = kind === 'result' ? '.result-controls' : '.scene-view';
-  const hasSave = kind !== 'view';
+  // "Apply to all" is in every view since #257; locked with its reason where it has nothing to do: in a layer's view the layer is
+  // saved as it is drawn, in a view of one image there is no other image to draw alike.
+  const hasSave = true;
+  const lockedSaveTip = { result: 'Nothing to save: the layer is saved as it is drawn', layer: 'Nothing to apply to all: the layer is saved as it is drawn', view: 'Nothing to apply to all: this dataset has only one image in the view' }[kind];
   await page.waitForSelector(`${root} .vc-apply`);
   fs.mkdirSync(OUT, { recursive: true });
   const shot = (step) => page.screenshot({ path: path.join(OUT, `${label.replace(/ /g, '_')}_${step}.png`) });
@@ -126,14 +129,15 @@ async function check(browser, { kind, theme, viewport }) {
   if ((await tip('.vc-apply')) !== 'Nothing to apply: the map shows these values') problems.push(`the tooltip of the locked "Apply": ${await tip('.vc-apply')}`);
   if (hasSave) {
     if (await disabled('.vc-save') !== 'true') problems.push('"Save" is open though nothing changed');
-    if ((await tip('.vc-save')) !== 'Nothing to save: the layer is saved as it is drawn') problems.push(`the tooltip of the locked "Save": ${await tip('.vc-save')}`);
-  } else if ((await page.locator(`${root} .vc-save`).count()) !== 0) problems.push('a view that is no layer\'s has a "Save"');
+    if ((await tip('.vc-save')) !== lockedSaveTip) problems.push(`the tooltip of the locked "Save": ${await tip('.vc-save')}`);
+  }
 
   // Typing opens them; "Apply" draws; the map asks for tiles with the new look.
   const vmax = page.locator(`${root} .vc-field input`).nth(1);
   await vmax.fill('2000');
   if (await disabled('.vc-apply') === 'true') problems.push('"Apply" stays locked after a change');
-  if (hasSave && await disabled('.vc-save') === 'true') problems.push('"Save" stays locked after a change');
+  // A view of one image has no other image to draw alike: its "Apply to all" stays locked.
+  if (kind !== 'view' && await disabled('.vc-save') === 'true') problems.push('"Save" stays locked after a change');
   tiles.length = 0;
   await page.locator(`${root} .vc-apply`).click();
   await page.waitForTimeout(1200);
