@@ -28,7 +28,17 @@ import {
   mosaicRequestBytes,
 } from './mosaic';
 import { canonicalJson, type Order } from './processing';
-import { bandsOf, shownUnit, type Area, type DraftStep, type Operator, type ProcessInfo } from './processingOrder';
+import { assetsCarrying, isBandMath, resultNameOf, resultsOf, startBand } from './processingBands';
+import {
+  bandsOf,
+  namesInExpression,
+  shownUnit,
+  type Area,
+  type BandSource,
+  type DraftStep,
+  type Operator,
+  type ProcessInfo,
+} from './processingOrder';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
 import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
@@ -136,6 +146,55 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
 export function furtherNote(plan: Extract<PreviewPlan, { state: 'ready' }>): string {
   const shown = plan.steps.length === 1 ? 'the first step' : `the first ${plan.steps.length} steps`;
   return `The map shows ${shown}; the job runs all steps.`;
+}
+
+// --- the band the map shows (NM4-43e PR 2, adr/0020 §10) ---------------------------------
+
+// The names the stock must hold before the first step for `band` to come out: the planner's trace from the end
+// (`processing/plan.py::_trace`, adr/0020 §4). A `band_math` step whose result nobody needs is not run, and a result
+// that is needed is replaced by the names its expression reads. `normalize` and `reproject` keep the names they are given.
+export function namesNeeded(steps: readonly DraftStep[], band: string): Set<string> {
+  const needed = new Set([band]);
+  for (const step of [...steps].reverse()) {
+    if (!isBandMath(step) || !needed.delete(resultNameOf(step))) continue;
+    for (const name of namesInExpression(typeof step.values.expression === 'string' ? step.values.expression : '')) needed.add(name);
+  }
+  return needed;
+}
+
+// Which band the map shows and what it has to read for it.
+export interface PreviewRead {
+  // Every band of the output the map can draw, the results of the steps it draws above the bands of the data.
+  choices: string[];
+  // The band the tile shows: the one the person picked while it is among the choices, else the result added last (the
+  // step created last, not the last of the chain), else the first band; `null` for an empty output, where the tiler
+  // shows what it shows by itself.
+  band: string | null;
+  // The assets that band needs, in the order of the item: the planner's strike (`processing/tile.py::plan_band`).
+  assets: string[];
+}
+
+export function previewRead(args: {
+  output: readonly string[];
+  dataNames: readonly string[];
+  sources: readonly BandSource[];
+  // The asset of the layer a mask step reads, `null` without a mask step in the order.
+  maskAsset: string | null;
+  // The assets of the whole order: what is read where no band is shown.
+  all: readonly string[];
+  // The steps the map draws, in order.
+  steps: readonly DraftStep[];
+  pick: string | null;
+}): PreviewRead {
+  const { output, dataNames, sources, maskAsset, all, steps, pick } = args;
+  const kept = new Set(output);
+  const results = resultsOf(steps).filter((result) => kept.has(result.name));
+  const choices = [...results.map((result) => result.name), ...output.filter((name) => dataNames.includes(name))];
+  const band = pick !== null && choices.includes(pick) ? pick : startBand(choices, results.map((r) => ({ name: r.name, created: r.key })));
+  if (band === null) return { choices, band, assets: [...all] };
+  const carried = new Set(assetsCarrying(sources, namesNeeded(steps, band)));
+  if (maskAsset !== null && steps.some((step) => step.op === 'mask')) carried.add(maskAsset);
+  return { choices, band, assets: sources.map((source) => source.asset).filter((asset) => carried.has(asset)) };
 }
 
 // --- a chain the tiler refuses (Otto, 22.10.2026) ------------------------------------
@@ -254,6 +313,8 @@ export interface PreviewSpec {
   title: string;
   // How many steps the picture is made of.
   stepCount: number;
+  // The band the tiles show (`band=`); `null` where the tiler chooses by itself.
+  band: string | null;
   // The TileJSON of the first scene with the same steps: what `probeChain` asks.
   probe: string;
   // What the measure is called: the statistics of the first scene with the same steps (of a mosaic: the first it
@@ -266,7 +327,8 @@ export interface PreviewSpec {
   // "AOI only", whole chain, complete order of the first job: the tiler counts the statistics over the AOI as the job
   // does (`postAreaStatistics`). `null`: the measure is the first scene's.
   areaOrder: { datasetId: string; order: Order } | null;
-  // Whether a Band math step is among the steps: what the values of an index are judged by.
+  // Whether the band shown is a Band math result (with no band chosen: whether a Band math step is among the steps):
+  // what the values of an index are judged by.
   expression: boolean;
   // The passes drawn as a mosaic from their first level up, and the scenes: those below a mosaic, those of a pass
   // that is drawn scene by scene.
@@ -334,8 +396,11 @@ export function previewSpec(args: {
   answers?: ReadonlyMap<string, MosaicAnswer>;
   // The order of the first job, `null` while it is not complete: with "AOI only" it is what the range is measured on.
   order?: Order | null;
+  // The band the tiles show and, where the output has more than one, the preview is named after it.
+  band?: string | null;
+  named?: boolean;
 }): PreviewSpec | null {
-  const { dataset, items, assets, info, plan, range, area, jobs = [], answers, order = null } = args;
+  const { dataset, items, assets, info, plan, range, area, jobs = [], answers, order = null, band = null, named = false } = args;
   if (!dataset?.viewable || assets.length === 0 || assets.length > MAX_PREVIEW_ASSETS) return null;
   const rescale = rescaleOf(range);
   if ('problem' in rescale) return null;
@@ -364,9 +429,9 @@ export function previewSpec(args: {
       return null;
     }
     const ids = unit.map((item) => item.id);
-    const url = buildTileUrl(buildMosaicOperatorTileTemplate(dataset.id, ids, assets, chain), render);
+    const url = buildTileUrl(buildMosaicOperatorTileTemplate(dataset.id, ids, assets, chain, band), render);
     if (mosaicRequestBytes(url, maxZoom) > MAX_MOSAIC_REQUEST_BYTES) return null;
-    const probe = buildMosaicOperatorTileJsonUrl(dataset.id, ids, assets, chain);
+    const probe = buildMosaicOperatorTileJsonUrl(dataset.id, ids, assets, chain, band);
     const answer = answers?.get(probe);
     if (answer?.state === 'scenes') return null;
     return { order: readOrder(answer?.state === 'taken' ? answer.order : [], ids), bounds, url, probe, minZoom: firstLevel };
@@ -390,10 +455,10 @@ export function previewSpec(args: {
     scenes.push({
       id: item.id,
       bbox: item.bbox,
-      url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain), render),
+      url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain, band), render),
       ...(underLevel === undefined ? {} : { below: underLevel }),
     });
-    if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain);
+    if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain, band);
   }
   // The scene that wins where the scenes of the first mosaic overlap is the one measured.
   const measured = mosaics[0]?.order[0] ?? scenes[0]?.id;
@@ -401,7 +466,7 @@ export function previewSpec(args: {
   const clipToAoi = area === 'aoi';
   // The chain must be whole: the order runs all its steps, and a preview of a start of them would be measured on more.
   const areaOrder = clipToAoi && order !== null && !plan.further ? { datasetId: dataset.id, order } : null;
-  const sceneMeasure = buildOperatorStatisticsUrl(dataset.id, measured, assets, chain);
+  const sceneMeasure = buildOperatorStatisticsUrl(dataset.id, measured, assets, chain, band);
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
@@ -410,13 +475,14 @@ export function previewSpec(args: {
       maxZoom,
       clipToAoi,
     }),
-    title: plan.steps.map(({ operator }) => operator.title).join(' → '),
+    title: [plan.steps.map(({ operator }) => operator.title).join(' → '), ...(named && band !== null ? [band] : [])].join(' · '),
     stepCount: plan.steps.length,
+    band,
     probe,
-    measure: areaOrder ? canonicalJson(areaOrder.order) : sceneMeasure,
+    measure: areaOrder ? (band === null ? canonicalJson(areaOrder.order) : `${canonicalJson(areaOrder.order)}\n${band}`) : sceneMeasure,
     sceneMeasure,
     areaOrder,
-    expression: plan.steps.some(({ step }) => step.op === 'band_math'),
+    expression: plan.steps.some(({ step }) => isBandMath(step) && (band === null || resultNameOf(step) === band)),
     mosaics,
     scenes,
     perScene: jobs.some((unit) => unit.length >= MIN_MOSAIC_SCENES && !mosaicked.has(unit[0].id)),

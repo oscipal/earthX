@@ -3,19 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_RANGE } from './processingPreview';
 import { parseTileJson } from './processing';
 import {
+  bandTileUrl,
   defaultRange,
   isOverview,
   isResultExpired,
   MIN_REMAINING_MS,
+  ownRangeOf,
   rangeOfRender,
   rangeOfTileUrl,
   renderOfRange,
   restyledTileUrl,
+  resultBands,
   resultGsd,
   resultLayerName,
   resultRender,
   resultStats,
   resultTileTemplate,
+  startPlaceOf,
   tilesHref,
 } from './resultLayer';
 
@@ -357,10 +361,78 @@ describe('the range of a result layer in its view', () => {
     expect(restyledTileUrl(TEMPLATE, { rescale: '1,2' })).toBe(`${TEMPLATE}&rescale=1%2C2`);
   });
 
+  it('keeps the band (`bidx`) of a result when the style is replaced, and sets it from the place in the file', () => {
+    const second = bandTileUrl(TEMPLATE, 1, { rescale: '0,1', colormapName: 'greys' });
+    expect(second).toBe(`${TEMPLATE}&bidx=2&colormap_name=greys&rescale=0%2C1`);
+    expect(restyledTileUrl(second, { rescale: '1,2' })).toBe(`${TEMPLATE}&bidx=2&rescale=1%2C2`);
+    expect(restyledTileUrl(second, {})).toBe(`${TEMPLATE}&bidx=2`);
+    expect(bandTileUrl(second, 0, {})).toBe(`${TEMPLATE}&bidx=1`);
+    expect(rangeOfTileUrl(second)).toEqual({ vmin: '0', vmax: '1', colormap: 'greys' });
+  });
+
   it('has the default of the statistics for "auto", the range of the panel without them, none for whole numbers', () => {
     expect(defaultRange({ dataType: 'float32', stats: DEM }, DEFAULT_RANGE)).toEqual({ vmin: '180', vmax: '1900', colormap: 'viridis' });
     expect(defaultRange({ dataType: 'float32', stats: null }, { vmin: '0', vmax: '2', colormap: 'plasma' })).toEqual({ vmin: '0', vmax: '2', colormap: 'plasma' });
     expect(defaultRange({ dataType: 'uint16', stats: DEM }, DEFAULT_RANGE)).toBeNull();
     expect(defaultRange({ dataType: null, stats: DEM }, DEFAULT_RANGE)).toBeNull();
+  });
+});
+
+describe('the bands of a result (NM4-43e PR 2)', () => {
+  const band = (name: unknown, minimum: number, maximum: number) => ({ name, statistics: { count: 9, minimum, maximum } });
+  const steps = [{ op: 'band_math', params: { expression: 'a', name: 'ndvi' } }, { op: 'mask', params: { source: 'scl' } }];
+
+  it('keeps the order of the file and the name of each band', () => {
+    expect(resultBands({ bands: [band('ndvi', -1, 1), band('red', 0, 1)] }, { steps }).map((b) => b.name)).toEqual(['ndvi', 'red']);
+  });
+
+  it('gives a band with no name an empty one, and a result without bands none', () => {
+    expect(resultBands({ bands: [band(7, 0, 1)] }, null)[0].name).toBe('');
+    expect(resultBands({}, null)).toEqual([]);
+    expect(resultBands(undefined, null)).toEqual([]);
+    expect(resultBands({ bands: 'x' }, null)).toEqual([]);
+  });
+
+  it('leaves the statistics of a band without a valid pixel empty', () => {
+    expect(resultBands({ bands: [{ name: 'a', statistics: { count: 0, minimum: 1, maximum: 2 } }] }, null)[0].stats).toBeNull();
+  });
+
+  it('judges the band by the steps of the order when it is known, else by the property of the job', () => {
+    const bands = { bands: [band('ndvi', -1, 1), band('red', 0, 1)], 'processing:expression': {} };
+    expect(resultBands(bands, { steps }).map((b) => b.stats?.expression)).toEqual([true, false]);
+    expect(resultBands(bands, null).map((b) => b.stats?.expression)).toEqual([true, true]);
+  });
+
+  it('draws a band with the range saved for it, a result of one band with the range of the job', () => {
+    const own = { vmin: '0', vmax: '1', colormap: 'greys' };
+    const job = { range: own, bandRanges: { red: { vmin: '2', vmax: '3', colormap: '' } } };
+    const two = resultBands({ bands: [band('ndvi', 0, 1), band('red', 0, 1)] }, null);
+    expect(ownRangeOf(job, two, 0)).toBeNull(); // the range of the job is for a result of one band
+    expect(ownRangeOf(job, two, 1)).toEqual({ vmin: '2', vmax: '3', colormap: '' });
+    expect(ownRangeOf(job, two, 5)).toBeNull();
+    expect(ownRangeOf(job, two.slice(0, 1), 0)).toEqual(own);
+    expect(ownRangeOf(job, [], 0)).toEqual(own);
+  });
+});
+
+describe('the band a result layer starts with (Otto, 31.10.2026)', () => {
+  const bands = ['red', 'ndvi', 'ndwi', 'green'].map((name) => ({ name, stats: null }));
+  const order = (...names: string[]) => ({ steps: names.map((name) => ({ op: 'band_math', params: { expression: 'a', name } })) });
+
+  it('is the band the preview showed when the job was started, if the result has it', () => {
+    expect(startPlaceOf(bands, order('ndvi', 'ndwi'), 'green')).toBe(3);
+    expect(startPlaceOf(bands, null, 'ndvi')).toBe(1);
+  });
+
+  it('is the last result of the order where that band is unknown or not in the result', () => {
+    expect(startPlaceOf(bands, order('ndvi', 'ndwi'), null)).toBe(2);
+    expect(startPlaceOf(bands, order('ndvi', 'ndwi'), 'blue')).toBe(2);
+    expect(startPlaceOf(bands, order('ndvi', 'gone'), null)).toBe(1);
+  });
+
+  it('is the first band without a result of Band math, or without the order', () => {
+    expect(startPlaceOf(bands, { steps: [{ op: 'mask', params: { source: 'scl' } }] }, null)).toBe(0);
+    expect(startPlaceOf(bands, null, null)).toBe(0);
+    expect(startPlaceOf([], null, 'x')).toBe(0);
   });
 });

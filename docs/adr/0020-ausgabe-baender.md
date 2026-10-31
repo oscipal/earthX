@@ -1220,3 +1220,46 @@ bleibt maßgeblich; dieser Nachtrag nennt, was daraus im Panel geworden ist, und
   ungültiger Name „Add step“, „Review“ und „Start job“. Das Panel prüft nur die Form (Zahlen, Bänder, `+ - * / **`, Vergleiche, `& | ~`, Aufrufe wie `where(c, a, b)`, Klammern; `processingBands.ts:
   isExpression`); welche Namen Bänder sind, prüft `readProblem` danach, die Typen der Server. Ein leerer Ausdruck bleibt beim „Required.“ des Formulars.
 
+
+---
+
+## 19. Nachtrag NM4-43e PR 2: Vorschau „Show“ und Ergebnis-Layer je Band (2026-10-30; zu §10, §14, §18)
+
+Umgesetzt ist PR 2 von NM4-43e (nur Frontend): ein Dropdown, das Band der Ausgabe wählt, das die Vorschau zeigt, und dasselbe für den Ergebnis-Layer. §10 (P1) bleibt maßgeblich;
+dieser Nachtrag nennt, was daraus geworden ist, und die Auslegungen, die der Plan offen ließ. Der Baustein des Dropdowns (`BandSelect.tsx`) steht bereit, NM4-45 (Band in der Ansicht) war
+noch nicht gemergt und kann ihn übernehmen.
+
+- **„Show“ in der Vorschau** (Wunsch Otto, Review zu #250): links neben min und max; die Felder min und max sind schmaler (`9ch + 36px` statt `11ch + 44px`; ein Wert wie `-0.123456`,
+  `8848.86` oder `-11000` passt noch ganz, geprüft mit `e2e/range-layout.cjs`). Das Dropdown erscheint nur bei mehr als einem Band in der Ausgabe. Es listet die Bänder der Ausgabe, die
+  Ergebnisse der `band_math`-Schritte oben, darunter die Bänder des Datensatzes in der Reihenfolge des Items. Vorgabe: das zuletzt **angelegte** Ergebnis (höchster Schrittschlüssel, nicht
+  der letzte der Kette), sonst das erste Band der Ausgabe.
+- **Was die Kachel bekommt.** `band=<Name>` an Item-Kachel, Mosaik-Kachel, TileJSON und Statistik (der Name kodiert über `URLSearchParams`), und nur die Assets, die das Band braucht
+  (`processingPreview.ts: namesNeeded`, `previewRead`; die Spur des Planers von hinten, `processing/plan.py: _trace`, mit der Schicht von `mask` für jedes Band). `MAX_PREVIEW_ASSETS` und
+  der Hinweis „No preview: the map takes at most 16 bands.“ gelten damit für die gelesenen Assets: NDVI mit Maske aus einer Ausgabe von 20 Bändern liest drei Assets und hat eine Vorschau.
+- **Eine Skala je Band.** Die Messung, ihr Schlüssel und der Hinweis „Index oder nicht“ gehören zum gezeigten Band: Nur ein Ergebnis von `band_math` gilt als Index (−1…1, `rdylgn`), ein Band des
+  Datensatzes nie, auch wenn seine Werte in −1…1 liegen. Bei „AOI only“ liest das Panel die Statistik der ganzen Ausgabe einmal (`areaStatistics`, je Auftrag gemerkt) und nimmt das Band über seinen
+  Namen; nennt die Antwort das Band nicht, fällt die Messung wie bisher auf die erste ganze Szene zurück.
+- **Ergebnis-Layer.** In der Zeile des Layer-Managers das Dropdown „Band“, nur bei mehr als einem Band in `result.tif` (Namen aus `properties.bands[].name`, Reihenfolge der Datei). Es wählt über
+  `bidx` (Platz + 1), die Farbskala je Band kommt aus `properties.bands[].statistics`; ein Wechsel fragt den Server nichts. Die Route der Kachel brauchte nichts (`bidx` und die Statistik je Band
+  gab es seit NM4-43d und M4-32), das Backend bleibt unberührt. „Apply“ behält das Band (`restyledTileUrl` hält `bidx`), „Save“ gilt je Band: `ShelfJob.bandRanges` (Name → Bereich, im Browser
+  gehalten, ohne neue Version der Ablage, weil das Feld optional ist); ein Ergebnis mit einem Band behält `range` wie bisher.
+- **Auslegungen (Vorschlag, gelten bis Otto widerspricht).**
+  1. **Ein Bereich von Hand gilt für das Band, für das er gesetzt wurde.** Wechselt „Show“, kehrt die Vorschau zur Messung des neuen Bandes zurück (wie „Auto stretch“); der Bereich von Hand geht
+     nicht mit. Beim Start eines Auftrags mit mehreren Bändern hält das Panel ihn unter dem Namen des gezeigten Bandes (`bandRanges`), nicht als `range` des Auftrags.
+  2. **Was die Karte nicht zeichnen kann, steht nicht im Dropdown:** das Ergebnis eines Schritts hinter einem Schritt, der keine Kachel ist (etwa `reproject`), und ein Name, den der Datensatz nicht
+     hat. Das ist grundsätzlich, nicht nur im Moment (UI-01 §4: ausblenden). Die Ausgabe selbst ändert das nicht.
+  3. **Ist die Ausgabe leer**, zeigt die Vorschau wie bisher, was die Kachel allein wählt (letztes Ergebnis, sonst erstes Band) und liest die Assets des Auftrags; kein Dropdown.
+  4. **Name der Vorschau als Ebene:** Bei mehr als einem Band trägt „Add preview to layers“ den Namen des Bandes („Preview · Band math · ndvi“), damit zwei Ebenen nicht gleich heißen.
+  5. ~~Das Band eines Ergebnis-Layers beginnt mit dem ersten Band der Datei.~~ Ersetzt durch die Antwort Ottos unten.
+  6. **Ein Ergebnis gilt je Band als Index**, wenn ein `band_math`-Schritt der Kopie des Auftrags es angelegt hat; ohne die Kopie gilt wie bisher die Eigenschaft `processing:expression` des
+     Ergebnisses für alle Bänder.
+
+### 19.1 Antworten Ottos zu #255 (2026-10-31)
+
+- **Angenommen:** die Auslegungen 1, 2, 3, 5 und 6; Ottos Abweichung („Auslegung 4“) meint den Beginn des Ergebnis-Layers, den die Liste oben als Nummer 5 führt (nächster Punkt); der Name der
+  Vorschau-Ebene mit dem Bandnamen (Nummer 4) ist angenommen.
+- **Der Ergebnis-Layer beginnt mit demselben Band wie die Vorschau.** Die Regel für beide (`processingBands.ts: startBand`): das zuletzt angelegte Ergebnis, sonst das erste Band. Beim Start eines
+  Auftrags aus dem Panel merkt sich das Panel das Band, das die Vorschau zeigte (`ShelfJob.shownBand`, nur bei mehr als einem Band in der Ausgabe); der Layer beginnt damit
+  (`resultLayer.ts: startPlaceOf`). Kennt der Auftrag es nicht (Download-Dialog, Kopie aus der Zeit davor), gilt das letzte Ergebnis eines `band_math`-Schritts der Kopie des Auftrags in der Reihenfolge der
+  Kette — die Reihenfolge des Anlegens steht nicht in der Datei —, sonst das erste Band.
+- **RGB ist aus diesem PR herausgenommen** (Otto, 2026-10-31) und eine eigene Aufgabe, NM4-64: Registry-Feld `earthx:true_color`, bis zu drei `band=` an den Kachel-Routen, Frontend. Dieser PR enthält davon nichts.
