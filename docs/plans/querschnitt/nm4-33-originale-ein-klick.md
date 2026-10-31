@@ -528,7 +528,7 @@ Otto meldete am 30.10.2026 einen freien Frontend-Platz. Umgesetzt ist §6.14 mit
 
 #### 6.15.2 Tests
 
-- **vitest:** 3 857 Tests grün in 112 Dateien (vorher 3 763 in 108). Neu: `originals.test.ts` (Regel, Namen, Weg-Tabelle, `ATTRIBUTION.txt`, Auftrag), `originalsZip.test.ts` (ein ZIP-Leser im Test prüft STORE, jede CRC, jedes Byte und die Länge; 404, falsche Länge, Netzfehler, Abbruch, Abbruch durch den Browser), `originalsRun.test.ts` (alle Wege und Rückfälle, Abbruch, Wiederholen, fehlendes Datum), `originalsClient.test.ts` (Protokoll mit einem nachgestellten Worker). Angepasst: `DownloadDialog.test.tsx`, `MosaicJobs.test.tsx`, `ViewBar.test.tsx`.
+- **vitest:** 3 886 Tests grün in 114 Dateien (vorher 3 763 in 108). Neu: `originals.test.ts` (Regel, Namen, Weg-Tabelle, `ATTRIBUTION.txt`, Auftrag), `originalsZip.test.ts` (ein ZIP-Leser im Test prüft STORE, jede CRC, jedes Byte und die Länge; 404, falsche Länge, Netzfehler, Abbruch, Abbruch durch den Browser), `originalsRun.test.ts` (alle Wege und Rückfälle, Abbruch, Wiederholen, fehlendes Datum), `originalsClient.test.ts` (Protokoll mit einem nachgestellten Worker), `originalsWorker.test.ts` (der Worker mit nachgestelltem Scope: unbekannte ID `404`, ein Auftrag nur einmal, Abbruch, fremder Pfad und Ursprung), `components/OriginalFiles.test.tsx` (StrictMode, Cancel und Retry, Schließen, kein Neustart bei gleichen Szenen). Angepasst: `DownloadDialog.test.tsx`, `MosaicJobs.test.tsx`, `ViewBar.test.tsx`.
 - **Playwright im echten Chromium (`frontend/e2e/originals-one-click.cjs`, nicht in der CI):** elf Fälle grün, mit der echten App, dem echten Knopf und lokalen HTTPS-Quellen mit und ohne CORS:
   - ZIP hell/dunkel × breit/schmal: zwei Szenen, zwei ZIPs nacheinander, STORE, jede CRC, jedes Byte, `ATTRIBUTION.txt` nur mit der eigenen Szene, `item.json`, Name in der Zeile;
   - Datensatz ohne CORS und Quelle ohne CORS: Downloads des Browsers, `ATTRIBUTION.txt` einmal, keine Metadaten-Dateien;
@@ -549,11 +549,26 @@ Otto meldete am 30.10.2026 einen freien Frontend-Platz. Umgesetzt ist §6.14 mit
 
 #### 6.15.4 Abweichungen, Risiken und was offen ist
 
-- **Umfang:** 2 790 geänderte Zeilen ohne `package-lock.json` (Schätzung §6.14.8: 450–550 Code und Tests, dazu 250 Playwright). Davon Produktivcode etwa 1 050, Tests und Fixture etwa 1 300, Playwright-Skript 437. Die Commits sind getrennt: Abhängigkeit, Regel, Worker mit Ablauf, Oberfläche, Fehlerbehebung, Browser-Prüfung, Doku. Der Richtwert von 400 Zeilen ist weit überschritten; Otto hatte einen PR freigegeben.
+- **Umfang:** 3 290 geänderte Zeilen ohne `package-lock.json` (Schätzung §6.14.8: 450–550 Code und Tests, dazu 250 Playwright). Davon Produktivcode etwa 1 150, Tests und Fixture etwa 1 700, Playwright-Skript 437. Die Commits sind getrennt: Abhängigkeit, Regel, Worker mit Ablauf, Oberfläche, Fehlerbehebung, Browser-Prüfung, Doku. Der Richtwert von 400 Zeilen ist weit überschritten; Otto hatte einen PR freigegeben.
 - **Viele Szenen, ein Klick:** Der Klick startet alle gewählten Szenen nacheinander; das Fenster nennt oben die Zahl der Szenen und die Summe der Größen, „Cancel“ stoppt. Es gibt keine Obergrenze und keine Frage vorab (Ottos Vorgabe „ohne extra Steps“). 40 Szenen wären etwa 35 GB. Ob eine Grenze oder eine Bestätigung ab einer Summe gewünscht ist, entscheidet Otto.
 - **Fortsetzen** geht nur je Szene („Retry failed“ lädt das ZIP der Szene von vorn); ein ZIP aus dem Service Worker setzt Chrome nicht fort.
 - **Safari und Firefox** sind nicht gemessen (Prüfanleitung, §6.15.5).
 - **`item.json`** ist das Item, wie die Seite es hat, mit den Links der eigenen API (`self`, `collection`) und den Adressen der Quelle; es enthält keine AOI.
+
+#### 6.15.4a Review vor dem menschlichen Review
+
+Der Subagent `reviewer` hat den Diff ohne meine Schlussfolgerungen gelesen: keinen Blocker, 14 Funde (davon einer ohne Handlungsbedarf, §6.15.1 nennt die Abweichung beim Gültigkeitsbereich). Umgesetzt, jeweils mit Test:
+- Die Bytes jeder Datei werden gezählt, nicht nur der Header geprüft: eine Quelle ohne `Content-Length` oder mit veralteter Größe endete als ZIP anderer Länge und wurde trotzdem als fertig gemeldet.
+- Ein vor der Anfrage des Browsers abgebrochener Auftrag fliegt aus dem Worker; der Worker antwortet nur auf Anfragen des eigenen Ursprungs; der Worker hat Tests (der Plan forderte „unbekannte ID gibt 404“).
+- Das Keep-alive geht an den Worker selbst statt über den Kanal (nur ein Ereignis des Scopes setzt die Ruhezeit zurück).
+- Nach einer neuen Fassung der App wartet die Seite auf den Worker, der gerade installiert, nicht auf den alten aktiven.
+- Der Build registriert den Worker als klassisches Skript (so ist er geschrieben), der Dev-Server als Modul; im `vite preview` geprüft.
+- Die Frames der Downloads, die der Browser selbst macht, bleiben beim Schließen stehen (sonst fielen bei vielen Dateien auf einem HTTP/1.1-Host alle ab der siebten); sie werden nach 10 Minuten entfernt.
+- Ein Lauf startet je Auswahl und je „Retry failed“, nicht wenn die Datensatzliste neu geladen wird; Nummern von Szenen, die es nicht gibt, fallen weg; ein Fehler, den der Lauf nicht vorhersah, lässt die Zeilen nicht auf „Waiting“ stehen.
+- `ATTRIBUTION.txt`: Zeilenumbrüche in Szenen-IDs und Asset-Schlüsseln fremder Quellen erzeugen keine eigenen Zeilen; `sourceFileName` fällt nie auf die Adresse zurück (sie könnte ein Token tragen); Dateien über 500 MB stehen mit dem Namen, unter dem der Browser sie speichert; nach einem Rückfall in der Mitte eines Laufs nennt die Datei nur die noch folgenden Szenen.
+- Ein abgelehntes `HEAD` lässt eine Szene auf dem Weg der Einzeldateien nicht scheitern; der Fortschritt dort wird nicht für jeden Chunk gemeldet.
+
+Nicht umgesetzt: Die Navigationen der Downloads ohne CORS werden weiter gleichzeitig angelegt (der Browser reiht sie nach seinem Verbindungslimit ein; die Zeile sagt „Started in your browser“, weil die Dateien danach seine sind).
 
 #### 6.15.5 Prüfanleitung für Otto
 
