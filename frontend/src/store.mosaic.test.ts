@@ -269,7 +269,7 @@ describe('adding a mosaic to the layers', () => {
     expect(layers[0].restore.itemIds).toEqual(['A', 'B', 'C']);
   });
 
-  it('pins the whole selection of an uncropped view as one layer, one mosaic per time step', async () => {
+  it('pins the images of an uncropped view as one layer each with "Add all to layers", one mosaic per time step', async () => {
     const items = ['A1', 'A2', 'B1', 'B2'].map(scene);
     useAppStore.setState({
       items,
@@ -280,11 +280,12 @@ describe('adding a mosaic to the layers', () => {
       selectedIds: items.map((it) => it.id),
     });
     await enter(false);
-    useAppStore.getState().addCurrentToLayers();
+    useAppStore.getState().addAllToLayers();
     const { layers } = useAppStore.getState();
-    expect(layers).toHaveLength(1);
-    const urls = layers[0].overlays.map((o) => (o.kind === 'raster' ? o.tileUrl : ''));
+    expect(layers).toHaveLength(2);
+    const urls = layers.flatMap((l) => l.overlays.map((o) => (o.kind === 'raster' ? o.tileUrl : '')));
     expect(urls.filter((u) => u.includes('/mosaic/'))).toHaveLength(2);
+    expect(layers.every((l) => l.overlays.some((o) => o.kind === 'raster' && o.tileUrl.includes('/mosaic/')))).toBe(true);
     expect(urls.some((u) => u.startsWith('earthx-clip://'))).toBe(false);
   });
 

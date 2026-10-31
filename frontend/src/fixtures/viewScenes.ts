@@ -70,8 +70,9 @@ export const quicklookScene = (id = 'S2A_1'): StacItem => ({
   assets: { thumbnail: { href: `https://example.invalid/${id}.jpg`, roles: ['thumbnail'] }, visual: VISUAL },
 });
 
-export const sceneInfo = (item: StacItem, minZoom: number, maxZoom: number): DownloadedInfo => ({
-  datasetId: 'sentinel-2-c1-l2a', tileUrl: `/collections/c/items/${item.id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+export const sceneInfo = (item: StacItem, minZoom: number, maxZoom: number, datasetId = 'quicklook-source'): DownloadedInfo => ({
+  datasetId,
+  tileUrl: `/collections/c/items/${item.id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
   bounds: item.bbox ?? [10, 47, 11, 48],
   asset: 'visual',
   minZoom,

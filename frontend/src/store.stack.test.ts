@@ -125,11 +125,19 @@ beforeEach(() => focusOn(['A1', 'A2', 'B1', 'B2'], [group(['A1', 'A2']), group([
 afterEach(() => useProcessingStore.setState({ preview: null }));
 
 describe('addCurrentToLayers: the layer stacks the way the view does', () => {
-  it('lays the first time step on top, and the first scene of a time step on top of the others', () => {
+  it('lays the first scene of the time step that is shown on top of the others', () => {
+    focusOn(['A1', 'A2'], [group(['A1', 'A2'])]);
     useAppStore.getState().addCurrentToLayers();
     const [layer] = useAppStore.getState().layers;
     expect(layer.overlays.map(tileOf)).toEqual(viewOrder());
     expect(layer.overlays.map(tileOf).pop()).toContain('/items/A1/');
+  });
+
+  it('pins every time step as a layer of its own with "Add all to layers", the last of the list on top (NM4-53)', () => {
+    useAppStore.getState().addAllToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers.map((l) => l.restore.itemIds)).toEqual([['B1', 'B2'], ['A1', 'A2']]);
+    expect(layers.every((l) => l.overlays.map(tileOf).pop()?.includes(`/items/${l.restore.itemIds[0]}/`))).toBe(true);
   });
 
   it('does the same for scenes that belong to no time step', () => {
@@ -155,7 +163,7 @@ describe('addCurrentToLayers from the full-resolution view: the layer is the vie
 
   it('does not when it adds one layer per time step: no layer is the whole view', () => {
     useAppStore.setState({ cropToAoi: true, viewAoi: AOI });
-    useAppStore.getState().addCurrentToLayers();
+    useAppStore.getState().addAllToLayers();
     expect(useAppStore.getState().layers).toHaveLength(2);
     expect(useAppStore.getState().viewLayerId).toBeNull();
   });

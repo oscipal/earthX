@@ -171,8 +171,9 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     });
   });
 
-  it('pins one layer per group, not one for the whole selection', () => {
-    useAppStore.getState().addCurrentToLayers();
+  // NM4-53: "Add to layers" pins the image that is shown, "Add all to layers" every image, one layer each.
+  it('pins one layer per group with "Add all to layers", not one for the whole selection', () => {
+    useAppStore.getState().addAllToLayers();
     const { layers } = useAppStore.getState();
     expect(layers).toHaveLength(2);
     const itemIdSets = layers.map((l) => [...l.restore.itemIds].sort());
@@ -180,20 +181,28 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     expect(itemIdSets).toContainEqual(['S3']);
   });
 
-  it('each per-group layer carries its own itemIds as its one groupItemIds group (M3-17)', () => {
+  it('pins only the image that is shown with "Add to layers"', () => {
     useAppStore.getState().addCurrentToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers).toHaveLength(1);
+    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2']);
+  });
+
+  it('each per-group layer carries its own itemIds as its one groupItemIds group (M3-17)', () => {
+    useAppStore.getState().addAllToLayers();
     for (const layer of useAppStore.getState().layers) {
       expect(layer.restore.groupItemIds).toEqual([layer.restore.itemIds]);
     }
   });
 
-  it('an uncropped "View full selection" layer still splits groupItemIds by group (M3-17)', () => {
+  it('an uncropped "View full selection" layer is one group of its image (M3-17, NM4-53)', () => {
     useAppStore.setState({ cropToAoi: false });
-    useAppStore.getState().addCurrentToLayers();
-    const [layer] = useAppStore.getState().layers;
-    expect(layer.restore.groupItemIds.map((g) => [...g].sort())).toEqual(
+    useAppStore.getState().addAllToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers.flatMap((l) => l.restore.groupItemIds.map((g) => [...g].sort()))).toEqual(
       expect.arrayContaining([['S1', 'S2'], ['S3']]),
     );
+    expect(layers.every((l) => l.restore.groupItemIds.length === 1)).toBe(true);
   });
 
   it('clips each group layer\'s tile URLs to the AOI and marks it cropped', () => {
@@ -215,12 +224,12 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     expect(layers[0].restore.itemIds).toEqual(['S1']);
   });
 
-  it('still pins one layer for the whole selection when the view is uncropped', () => {
+  it('pins the shown image of an uncropped view as one layer, not cut to the AOI', () => {
     useAppStore.setState({ cropToAoi: false });
     useAppStore.getState().addCurrentToLayers();
     const { layers } = useAppStore.getState();
     expect(layers).toHaveLength(1);
-    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2', 'S3']);
+    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2']);
     expect(layers[0].restore.cropToAoi).toBe(false);
     for (const overlay of layers[0].overlays) {
       if (overlay.kind === 'raster') expect(overlay.tileUrl.startsWith('earthx-clip://')).toBe(false);

@@ -64,6 +64,7 @@ import {
   type FilterQuery,
   type FilterQueryByCollection,
 } from './searchFilters';
+import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
 import { layerOfView } from './viewLayer';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
@@ -99,6 +100,63 @@ export function ticksOfOpen(s: Pick<AppState, 'sections' | 'openSectionId' | 'se
   if (others.length === 0) return s.selectedIds;
   const elsewhere = new Set(others.flatMap((section) => section.items.map((it) => it.id)));
   return s.selectedIds.filter((id) => !elsewhere.has(id));
+}
+
+// Every tick on a scene of the last search, whatever dataset it is in (NM4-53): what the buttons that start a view take.
+export function ticksOfSearch(s: Pick<AppState, 'sections' | 'openSectionId' | 'datasetId' | 'items' | 'groups' | 'selectedIds'>): string[] {
+  if (s.selectedIds.length === 0 || s.sections.length === 0) return s.selectedIds;
+  const known = new Set(sectionsForView(s).flatMap((section) => section.items.map((it) => it.id)));
+  return s.selectedIds.filter((id) => known.has(id));
+}
+
+// The scenes a view is made of, by dataset: the ticked ones of every dataset of the search, or with nothing ticked the
+// time step that is open.
+export function viewSelectionFrom(
+  s: Pick<AppState, 'sections' | 'openSectionId' | 'datasetId' | 'items' | 'groups' | 'activeGroupIndex' | 'selectedIds'>,
+): { datasetId: string; items: StacItem[] }[] {
+  const ticked = new Set(ticksOfSearch(s));
+  const picked = sectionsForView(s)
+    .map((section) => ({ datasetId: section.datasetId, items: section.items.filter((it) => ticked.has(it.id)) }))
+    .filter((section) => section.items.length > 0);
+  if (picked.length > 0) return picked;
+  const open = s.openSectionId ?? s.datasetId;
+  const group = s.groups[s.activeGroupIndex];
+  return open && group ? [{ datasetId: open, items: group.items }] : [];
+}
+
+// The images of the view as it is now.
+export function viewImagesOf(s: Pick<AppState, 'downloaded' | 'sections' | 'openSectionId' | 'datasetId' | 'items' | 'groups' | 'datasets'>): ViewImage[] {
+  return imagesOf(s.downloaded, sectionsForView(s), s.datasets);
+}
+
+// The image the view shows: the one chosen, else the first (a view opened from a layer chooses none).
+export function shownImageOf(images: readonly ViewImage[], key: string | null): ViewImage | null {
+  return images.find((image) => image.key === key) ?? images[0] ?? null;
+}
+
+// What the map draws of the view: the scenes of the image that is shown, in the dataset of that image, with the scenes
+// and the time steps of the whole search for the quicklook under them and for the outlines.
+export function shownViewOf(
+  s: Pick<AppState, 'downloaded' | 'sections' | 'openSectionId' | 'datasetId' | 'items' | 'groups' | 'datasets' | 'shownImage'>,
+) {
+  const sections = sectionsForView(s);
+  const image = shownImageOf(imagesOf(s.downloaded, sections, s.datasets), s.shownImage);
+  const datasetId = image?.datasetId ?? s.datasetId;
+  return {
+    downloaded: image ? Object.fromEntries(image.ids.map((id) => [id, s.downloaded[id]])) : s.downloaded,
+    dataset: s.datasets.find((d) => d.id === datasetId) ?? null,
+    items: sections.flatMap((section) => section.items),
+    groups: sections.flatMap((section) => section.groups),
+  };
+}
+
+// The image to start with (NM4-53, Otto): that of the time step open in the results where the view has it, else the
+// earliest of the open dataset, else the first of all.
+export function firstImageOf(images: readonly ViewImage[], s: Pick<AppState, 'openSectionId' | 'datasetId' | 'groups' | 'activeGroupIndex'>): ViewImage | null {
+  const open = s.openSectionId ?? s.datasetId;
+  const here = images.filter((image) => image.datasetId === open);
+  const label = s.groups[s.activeGroupIndex]?.label;
+  return here.find((image) => image.groupLabel === label) ?? here[0] ?? images[0] ?? null;
 }
 
 function buildDatetime(from: string, to: string): string | undefined {
@@ -309,6 +367,12 @@ export interface DerivedLayer {
 // ticked (any more) is ticked by this, without touching the results, so the active
 // dataset stays one of the ticked ones.
 function layerDatasetState(s: AppState, r: LayerRestore) {
+  return datasetState(s, r.datasetId);
+}
+
+// The same for a dataset by its id: what the view's processing job needs of the open section (NM4-53).
+function datasetState(s: AppState, datasetId: string | null) {
+  const r = { datasetId };
   const section = r.datasetId ? s.sections.find((x) => x.datasetId === r.datasetId) : undefined;
   const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
   const tickable = !!dataset?.viewable && !s.selectedDatasetIds.includes(dataset.id);
@@ -346,6 +410,7 @@ const LEAVE_FOCUS = {
   cropToAoi: false,
   viewAoi: null,
   downloaded: {},
+  shownImage: null,
   appliedRender: {},
   pendingColormapName: '',
   pendingVmin: '',
@@ -454,27 +519,36 @@ const sceneKey = (item: StacItem) => `${item.collection ?? ''}\u0000${item.id}`;
 
 // The overlays for these scenes, split by time step and stacked the way the view draws them
 // (`stackLikeView`); `null` while the mosaic of one is not known.
-function overlaysOfEntries(s: AppState, entries: SceneEntry[], clip: GeoJSON.Geometry | null): LayerOverlay[] | null {
-  const dataset = s.datasets.find((d) => d.id === s.datasetId);
-  const overlays = passesOf(entries, s.groups).map((pass) =>
-    overlaysOfPass(s.datasetId ?? '', pass, s.mosaics, s.appliedRender, clip, underlaysOf(pass, s.items, dataset, clip)),
-  );
+function overlaysOfEntries(
+  s: AppState,
+  entries: SceneEntry[],
+  clip: GeoJSON.Geometry | null,
+  look: AppliedRender = s.appliedRender,
+): LayerOverlay[] | null {
+  const sections = sectionsForView(s);
+  const groups = sections.flatMap((section) => section.groups);
+  const items = sections.flatMap((section) => section.items);
+  const overlays = passesOf(entries, groups).map((pass) => {
+    const datasetId = pass[0][1].datasetId;
+    const dataset = s.datasets.find((d) => d.id === datasetId);
+    return overlaysOfPass(datasetId, pass, s.mosaics, look, clip, underlaysOf(pass, items, dataset, clip));
+  });
   return overlays.some((o) => o === null) ? null : stackLikeView(overlays).flatMap((o) => o ?? []);
 }
 
 // What a pin is made from, to tell on arrival whether the view is still the one it was asked in.
 const pinKey = (s: AppState) =>
-  JSON.stringify([s.datasetId, s.cropToAoi, s.selectedIds, Object.keys(s.downloaded), s.layers.length]);
+  JSON.stringify([s.datasetId, s.cropToAoi, s.selectedIds, Object.keys(s.downloaded), s.layers.length, s.shownImage]);
 
 // A selection inside the view is another mosaic than the one the view loaded (a part of its scenes), and
 // one the view has not loaded yet is still on its way. Pinning waits for it ("Loading…") and then pins by
 // itself; if the tiler cannot give it, `fetchMosaics` has said why and nothing is pinned. A pin made
 // meanwhile from another selection, or another pin that changed the list, is not repeated.
-function pinWhenLoaded(set: SetState, get: GetState, lists: SceneEntry[][]): void {
+function pinWhenLoaded(set: SetState, get: GetState, lists: SceneEntry[][], again: () => void): void {
   const s = get();
-  const datasetId = s.datasetId ?? '';
   const key = pinKey(s);
-  const requests = lists.flatMap((entries) => passesOf(entries, s.groups).map((pass) => ({ datasetId, entries: pass })));
+  const groups = sectionsForView(s).flatMap((section) => section.groups);
+  const requests = lists.flatMap((entries) => passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass })));
   set({ pinLoading: true, error: null });
   void fetchMosaics(set, get, requests).then(() => {
     const now = get();
@@ -484,7 +558,78 @@ function pinWhenLoaded(set: SetState, get: GetState, lists: SceneEntry[][]): voi
       const template = mosaicTemplateOf(r.datasetId, r.entries);
       return template !== null && !now.mosaics[template];
     });
-    if (!failed) now.addCurrentToLayers();
+    if (!failed) again();
+  });
+}
+
+// The look an image is drawn with.
+function lookOfImage(s: AppState, _image: ViewImage): AppliedRender {
+  return s.appliedRender;
+}
+
+// "Add to layers" and "Add all to layers" in the view: the image that is shown, or every image, one layer each, all in one
+// step with the first on the bottom of the new ones, so that the last image of the list lies on top (NM4-53). A layer
+// takes the look its image is drawn with. Where a mosaic is not known yet it waits for it, as it always did.
+function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): void {
+  const s = get();
+  if (s.pinLoading) return; // already waiting for a mosaic; it pins when it is here
+  const images = viewImagesOf(s);
+  const shown = shownImageOf(images, s.shownImage);
+  const clip = s.cropToAoi && s.viewAoi ? s.viewAoi : null;
+  const picked = (which === 'all' ? images : shown ? [shown] : []).flatMap((image) => {
+    // A selection inside the image is another mosaic than the one the view loaded (a part of its scenes).
+    const ticked = which === 'shown' ? image.ids.filter((id) => s.selectedIds.includes(id)) : [];
+    const ids = ticked.length > 0 ? ticked : image.ids;
+    const entries: SceneEntry[] = ids.flatMap((id) => (s.downloaded[id] ? [[id, s.downloaded[id]] as SceneEntry] : []));
+    return entries.length > 0 ? [{ image, entries }] : [];
+  });
+  if (picked.length === 0) {
+    set({ error: 'Nothing to add — search and pick a time step first.' });
+    return;
+  }
+  const built = picked.map((pick) => ({ ...pick, overlays: overlaysOfEntries(s, pick.entries, clip, lookOfImage(s, pick.image)) }));
+  const waiting = built.filter((b) => b.overlays === null);
+  if (waiting.length > 0) {
+    pinWhenLoaded(set, get, waiting.map((b) => b.entries), () => pinViewImages(set, get, which));
+    return;
+  }
+  const groups = sectionsForView(s).flatMap((section) => section.groups);
+  const batchId = nextBatchId();
+  const layers = built.map(({ image, entries, overlays }, i): MapLayer => {
+    const itemIds = entries.map(([id]) => id);
+    const title = s.datasets.find((d) => d.id === image.datasetId)?.title ?? image.datasetId;
+    const name = [title, image.groupLabel || (s.groups[s.activeGroupIndex]?.label ?? ''), satellitesOf(image)].filter(Boolean).join(' · ');
+    const look = lookOfImage(s, image);
+    return {
+      id: `L${batchId}${i}`,
+      name,
+      visible: true,
+      opacity: 1,
+      overlays: overlays ?? [],
+      restore: {
+        focusMode: true,
+        downloaded: Object.fromEntries(entries),
+        appliedRender: { ...look },
+        activeGroupIndex: s.activeGroupIndex,
+        selectedIds: clip ? itemIds : ticksOfOpen(s),
+        itemIds,
+        // One image is one group already; a single-element list, not `groupItemIdsFor`, which would rediscover the split.
+        groupItemIds: clip ? [itemIds] : groupItemIdsFor(itemIds, groups),
+        aoi: clip ?? s.aoi,
+        cropToAoi: clip !== null,
+        datasetId: image.datasetId,
+      },
+    };
+  });
+  const everything = layers.length === 1 && layers[0].restore.itemIds.length === Object.keys(s.downloaded).length;
+  set({
+    layers: [...[...layers].reverse(), ...s.layers],
+    resultsAt: resultsAtAfterAdding(s.resultsAt, layers.length),
+    // The layer is the view's picture, so it takes the view's place in the list (`viewLayer.ts`), unless it holds only
+    // some of the scenes the view draws.
+    ...(everything ? { viewLayerId: layers[0].id } : {}),
+    error: null,
+    notice: layers.length === 1 ? `Added "${layers[0].name}" to layers.` : `Added ${layers.length} layers (one per image).`,
   });
 }
 
@@ -833,6 +978,8 @@ export interface AppState {
   // swaps ViewBar for ViewerControls (App.tsx); the results list stays whatever the view.
   focusMode: boolean;
   showDownloaded: boolean;
+  // The image of the view that is drawn (`viewImages.ts`); null draws the first. The others are not on the map.
+  shownImage: string | null;
   focusLoading: boolean; // fetching statistics while entering focus / "auto"
   // Whether the current focus view is cropped to `aoi` ("Crop to AOI") or
   // shows the whole selection uncropped ("View full selection", M3-09) —
@@ -1022,8 +1169,14 @@ export interface AppState {
   confirmDownload: () => Promise<void>;
   enterFocus: (cropToAoi: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
+  addAllToLayers: () => void;
   exitFocus: () => void;
   changeImage: () => void;
+  // The view steps from image to image (NM4-53): to the one with this key, one image on in the dataset shown
+  // (−1 before, 1 after; no wrap), or to the first image of another dataset.
+  showImage: (key: string) => void;
+  stepImage: (delta: -1 | 1) => void;
+  chooseViewDataset: (datasetId: string) => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
@@ -1093,6 +1246,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   resultsOnMap: loadResultsOnMap(),
   focusMode: false,
   showDownloaded: true,
+  shownImage: null,
   focusLoading: false,
   cropToAoi: false,
   viewAoi: null,
@@ -1308,12 +1462,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     scheduleCoverageRefresh(set, get);
   },
 
-  // M3-09 §10 (Otto): a "Crop & merge to AOI" view pins one layer *per
-  // group*, not one for the whole selection — each with its own overlays,
-  // its own download, matching what a group's download has always merged
-  // into one file anyway (P19). "View full selection" and the quicklook
-  // (browse-mode) case are unchanged: one layer for the whole pinned
-  // selection, since there is nothing cropped to merge into groups.
+  // "Add to layers" (NM4-53): in the view the image that is shown becomes a layer, and "Add all to layers" every image of
+  // the view, one layer each (`pinViewImages`); a layer is one image of one dataset, which is also what a group's download
+  // has always merged into one file (P19). In browse mode the selection becomes one layer, as before.
+  addAllToLayers: () => pinViewImages(set, get, 'all'),
   addCurrentToLayers: () => {
     const s = get();
     if (s.pinLoading) return; // already waiting for a mosaic; it pins when it is here
@@ -1330,98 +1482,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     if (s.focusMode) {
-      const ticked = Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id));
-      const entries = ticked.length ? ticked : Object.entries(s.downloaded);
-      if (entries.length === 0) {
-        set({ error: 'Nothing to add — search and pick a time step first.' });
-        return;
-      }
-      if (s.cropToAoi && s.viewAoi) {
-        const aoi = s.viewAoi;
-        const byGroupIndex = new Map<number, [string, DownloadedInfo][]>();
-        for (const entry of entries) {
-          const idx = groupIndexOfItem(s.groups, entry[0]);
-          const bucket = byGroupIndex.get(idx) ?? [];
-          bucket.push(entry);
-          byGroupIndex.set(idx, bucket);
-        }
-        const perGroup = [...byGroupIndex.entries()].map(([idx, groupEntries]) => ({
-          idx,
-          groupEntries,
-          overlays: overlaysOfEntries(s, groupEntries, aoi),
-        }));
-        if (perGroup.some((g) => g.overlays === null)) {
-          pinWhenLoaded(set, get, perGroup.filter((g) => g.overlays === null).map((g) => g.groupEntries));
-          return;
-        }
-        const newLayers = perGroup.map(({ idx, groupEntries, overlays }, i) => {
-          const label = idx >= 0 ? s.groups[idx]?.label : activeGroup?.label;
-          const itemIds = groupEntries.map(([id]) => id);
-          return makeLayer(
-            `${dataset?.title ?? s.datasetId ?? '?'} · ${label ?? ''}`,
-            overlays ?? [],
-            {
-              focusMode: true,
-              downloaded: Object.fromEntries(groupEntries),
-              appliedRender: { ...s.appliedRender },
-              activeGroupIndex: s.activeGroupIndex,
-              selectedIds: itemIds,
-              itemIds,
-              // One group already (this is `addCurrentToLayers`'s own
-              // per-group split, PR #84 F5) — a single-element list, not
-              // `groupItemIdsFor`, which would just rediscover the same split.
-              groupItemIds: [itemIds],
-              aoi,
-              cropToAoi: true,
-              datasetId: s.datasetId,
-            },
-            i,
-          );
-        });
-        set({
-          layers: [...newLayers, ...s.layers],
-          resultsAt: resultsAtAfterAdding(s.resultsAt, newLayers.length),
-          ...(newLayers.length === 1 && newLayers[0].restore.itemIds.length === Object.keys(s.downloaded).length
-            ? { viewLayerId: newLayers[0].id }
-            : {}),
-          error: null,
-          notice: `Added ${newLayers.length} layer${newLayers.length === 1 ? '' : 's'} (one per group).`,
-        });
-        return;
-      }
-      const itemIds = entries.map(([id]) => id);
-      const overlays = overlaysOfEntries(s, entries, null);
-      if (overlays === null) {
-        pinWhenLoaded(set, get, [entries]);
-        return;
-      }
-      const name = `${dataset?.title ?? s.datasetId ?? '?'} · ${activeGroup?.label ?? ''}`;
-      const layer = makeLayer(
-        name,
-        overlays,
-        {
-          focusMode: true,
-          downloaded: { ...s.downloaded },
-          appliedRender: { ...s.appliedRender },
-          activeGroupIndex: s.activeGroupIndex,
-          selectedIds: ticksOfOpen(s),
-          itemIds,
-          groupItemIds: groupItemIdsFor(itemIds, s.groups),
-          aoi: s.aoi,
-          cropToAoi: false,
-          datasetId: s.datasetId,
-        },
-        0,
-      );
-      set({
-        layers: [layer, ...s.layers],
-        resultsAt: resultsAtAfterAdding(s.resultsAt, 1),
-        // The layer is the view's picture, so it takes the view's place in the list (`viewLayer.ts`),
-        // unless it holds only some of the scenes the view draws.
-        ...(entries.length === Object.keys(s.downloaded).length ? { viewLayerId: layer.id } : {}),
-        error: null,
-        notice: `Added "${name}" to layers.`,
-      });
+      pinViewImages(set, get, 'shown');
       return;
     }
 
@@ -1600,9 +1661,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ("AOI only"), whatever the area in the control menu has become since.
   activateViewContext: () => {
     const s = get();
-    if (!s.focusMode || !s.cropToAoi || !s.viewAoi || s.viewAoi === s.aoi) return;
-    dropPageToken(set, get);
-    set({ aoi: s.viewAoi });
+    if (!s.focusMode) return;
+    // The dataset of the image that is shown, and for a crop the area the view was opened with (NM4-53).
+    const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+    const aoi = s.cropToAoi && s.viewAoi ? s.viewAoi : s.aoi;
+    if (aoi !== s.aoi) dropPageToken(set, get);
+    set({ ...(shown && shown.datasetId !== s.datasetId ? datasetState(s, shown.datasetId) : {}), aoi });
   },
   selectLayer: (id) => {
     const s = get();
@@ -1850,8 +1914,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // (`mapLayers.ts::syncFocusRaster`), never here.
   enterFocus: async (cropToAoi) => {
     const s = get();
-    const items = selectionItemsFrom(s);
-    if (items.length === 0) {
+    const picked = viewSelectionFrom(s);
+    if (picked.length === 0) {
       set({ error: 'Nothing to view — pick a time step or select scenes first.' });
       return;
     }
@@ -1859,41 +1923,56 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'Draw or search an area of interest first.' });
       return;
     }
-    const dataset = s.datasets.find((d) => d.id === s.datasetId);
-    if (!dataset || !dataset.viewable) {
-      set({ error: 'Choose a dataset to search.' });
-      return;
-    }
-    const render = defaultRenderOf(dataset.collection);
-    if (!render || render.assets.length === 0) {
-      set({ error: `${dataset.title} has no default visualisation yet (earthx:default_render).` });
-      return;
-    }
-    const asset = render.assets[0];
+    // The scenes of every dataset that is ticked (NM4-53), each with the standard visualisation of its own dataset. A
+    // dataset that cannot be viewed is left out and said so; a scene id two datasets share keeps its first owner.
     const downloaded: Record<string, DownloadedInfo> = {};
-    for (const it of items) {
-      if (!it.bbox) continue;
-      downloaded[it.id] = {
-        datasetId: dataset.id,
-        tileUrl: api.buildTileTemplate(dataset.id, it.id, asset),
-        bounds: it.bbox,
-        asset,
-        minZoom: dataset.zoom.min,
-        maxZoom: dataset.zoom.max,
-      };
+    const looks: Record<string, AppliedRender> = {};
+    let problem: string | null = null;
+    for (const { datasetId, items } of picked) {
+      const dataset = s.datasets.find((d) => d.id === datasetId);
+      if (!dataset || !dataset.viewable) {
+        problem ??= 'Choose a dataset to search.';
+        continue;
+      }
+      const render = defaultRenderOf(dataset.collection);
+      if (!render || render.assets.length === 0) {
+        problem ??= `${dataset.title} has no default visualisation yet (earthx:default_render).`;
+        continue;
+      }
+      const asset = render.assets[0];
+      looks[dataset.id] = appliedRenderFrom(render);
+      for (const it of items) {
+        if (!it.bbox) continue;
+        if (it.id in downloaded) {
+          problem ??= `Scene ${it.id} is in two datasets; the view shows it once.`;
+          continue;
+        }
+        downloaded[it.id] = {
+          datasetId: dataset.id,
+          tileUrl: api.buildTileTemplate(dataset.id, it.id, asset),
+          bounds: it.bbox,
+          asset,
+          minZoom: dataset.zoom.min,
+          maxZoom: dataset.zoom.max,
+        };
+      }
     }
     if (Object.keys(downloaded).length === 0) {
-      set({ error: 'None of the selected scenes carry a bounding box to render.' });
+      set({ error: problem ?? 'None of the selected scenes carry a bounding box to render.' });
       return;
     }
-    const applied = appliedRenderFrom(render);
+    const images = viewImagesOf({ ...s, downloaded });
+    const first = firstImageOf(images, s);
+    const applied = (first && looks[first.datasetId]) || {};
     // Scenes of a time step too big for one mosaic are drawn one by one, and only so many of those.
-    const passes = passesOf(Object.entries(downloaded), s.groups);
+    const groups = sectionsForView(s).flatMap((section) => section.groups);
+    const passes = passesOf(Object.entries(downloaded), groups);
     const oneByOne = passes.filter((pass) => !isMosaicPass(pass)).reduce((sum, pass) => sum + pass.length, 0);
     const oversize = oversizeNote(passes, Math.max(0, oneByOne - MAX_MOSAIC_LAYERS));
+    const note = oversize ?? problem;
     set({
       error: null,
-      ...(oversize ? { notice: oversize } : {}),
+      ...(note ? { notice: note } : {}),
       focusMode: true,
       resultViewLayerId: null,
       cropToAoi,
@@ -1905,6 +1984,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...(cropToAoi ? { selectedIds: s.selectedIds.filter((id) => !(id in downloaded)), ...setResultsOnMap(false) } : {}),
       showDownloaded: true,
       downloaded,
+      shownImage: first?.key ?? null,
       appliedRender: applied,
       ...pendingFieldsOf(applied),
     });
@@ -1916,15 +1996,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     await mosaics;
     set({ focusLoading: false });
   },
-  // The mosaics of the time steps the view shows, which the map draws once they are here.
+  // The mosaics of the time steps the view holds, which the map draws once they are here.
   loadMosaics: async () => {
     const s = get();
-    const datasetId = s.datasetId;
-    if (!s.focusMode || !datasetId) return;
+    if (!s.focusMode) return;
+    const groups = sectionsForView(s).flatMap((section) => section.groups);
     await fetchMosaics(
       set,
       get,
-      passesOf(Object.entries(s.downloaded), s.groups).map((entries) => ({ datasetId, entries })),
+      passesOf(Object.entries(s.downloaded), groups).map((entries) => ({ datasetId: entries[0][1].datasetId, entries })),
     );
   },
   // "Clear" in the view: takes the view off the map, nothing else. The choice of scenes, what was pinned and show or hide
@@ -1932,6 +2012,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   exitFocus: () => set({ ...LEAVE_FOCUS }),
   // "Change image": takes the view off the map and opens the results to choose another scene. Show or hide stays.
   changeImage: () => set((s) => ({ ...LEAVE_FOCUS, ...(hasResultsPanel(s.sections) ? { dock: 'results' as const } : {}) })),
+  showImage: (key) =>
+    set((s) => {
+      const image = viewImagesOf(s).find((x) => x.key === key);
+      return image && s.focusMode && image.key !== s.shownImage ? { shownImage: image.key } : {};
+    }),
+  stepImage: (delta) =>
+    set((s) => {
+      const images = viewImagesOf(s);
+      const shown = shownImageOf(images, s.shownImage);
+      if (!shown || !s.focusMode) return {};
+      const here = images.filter((image) => image.datasetId === shown.datasetId);
+      const next = here[here.indexOf(shown) + delta];
+      return next ? { shownImage: next.key } : {};
+    }),
+  chooseViewDataset: (datasetId) =>
+    set((s) => {
+      const first = viewImagesOf(s).find((image) => image.datasetId === datasetId);
+      return first && s.focusMode ? { shownImage: first.key } : {};
+    }),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
@@ -1963,12 +2062,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   // the pending fields only — still needs "Apply" to take effect on the map.
   autoStretch: async () => {
     const s = get();
-    const first = Object.entries(s.downloaded)[0];
-    if (!s.datasetId || !first) return;
-    const [itemId, info] = first;
+    // The first scene of the image that is shown (the first of the view where nothing is shown yet).
+    const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+    const itemId = shown?.ids[0] ?? Object.keys(s.downloaded)[0];
+    const info = itemId === undefined ? undefined : s.downloaded[itemId];
+    if (!info) return;
     set({ focusLoading: true });
     try {
-      const stats = await api.fetchStatistics(s.datasetId, itemId, info.asset);
+      const stats = await api.fetchStatistics(info.datasetId, itemId, info.asset);
       const range = autoRescale(stats);
       if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
     } catch (e) {
