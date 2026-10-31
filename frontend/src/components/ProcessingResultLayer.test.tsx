@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { saveShelf } from '../jobShelf';
 import type { MapLayer } from '../layers';
-import { layerProcessBlock, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
+import { layerProcessBlock, NO_COPY_TEXT, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { MIN_REMAINING_MS, resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
 import JobDetails from './JobDetails';
@@ -406,16 +406,15 @@ describe('the layer a result becomes', () => {
     expect(layers()).toHaveLength(1);
   });
 
-  it('is not processed further and not downloaded as scenes', async () => {
+  it('is processed further only with the order of its job, and not downloaded as scenes', async () => {
     await showOnMap();
-    expect(layerProcessBlock(layers()[0], [])).toBe('A result cannot be processed further yet.');
+    // This job keeps no copy of its order (NM4-05b, adr/0019 F2): the ⚙ is there, locked, and says what to do.
+    expect(layerProcessBlock(layers()[0], [])).toBe(NO_COPY_TEXT);
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.lm-btn[title="Process this layer"]')).toBeNull();
-    // Hidden, not greyed (Otto, 26.10.2026): the place is there, empty, until a result can be processed (NM4-05).
-    expect(button('⚙')).toBeUndefined();
-    const empty = container.querySelector('.layer-row [data-col="process"]');
-    expect(empty?.tagName).toBe('SPAN');
-    expect(empty?.getAttribute('aria-hidden')).toBe('true');
+    const gear = button('⚙');
+    expect(gear?.disabled).toBe(true);
+    expect(gear?.title).toBe(NO_COPY_TEXT);
     expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
     expect(button('⇩')).toBeUndefined();
   });

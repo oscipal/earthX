@@ -212,11 +212,11 @@ describe('LayerManager', () => {
       for (const col of ['eye', 'up', 'down', 'remove']) {
         for (const row of rows()) expect(row.querySelector(`[data-col="${col}"]`)?.tagName).toBe('BUTTON');
       }
-      // ⚙ is a button on every row but a result's (Otto, 26.10.2026), where its place is empty.
+      // ⚙ is a button on every row, a result's too since it can be processed further (NM4-05b).
       for (const k of kinds) {
         const gear = at(k.id, 'process');
-        expect(gear.tagName).toBe(k.result ? 'SPAN' : 'BUTTON');
-        expect(gear.getAttribute('aria-hidden') === 'true').toBe(Boolean(k.result));
+        expect(gear.tagName).toBe('BUTTON');
+        expect(gear.getAttribute('aria-hidden')).toBeNull();
       }
       expect(at('scene', 'note').className).toBe('lm-slot');
     });

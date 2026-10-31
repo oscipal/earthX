@@ -4,7 +4,7 @@ import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
 import type { MapLayer } from '../layers';
 import { isJobId, resultUrl } from '../processing';
 import { RGB, RGB_LABEL } from '../processingBands';
-import { layerProcessBlock, useProcessingStore, ZIP_LABEL } from '../processingStore';
+import { EXPIRED_PROCESS_TEXT, layerProcessBlock, PROCESS_RESULT_TEXT, useProcessingStore, ZIP_LABEL } from '../processingStore';
 import { MIN_REMAINING_MS, RESULT_ZIP } from '../resultLayer';
 import { hasResultsPanel } from '../sections';
 import { clampResultsAt } from '../resultsEntry';
@@ -91,7 +91,8 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
   const processLayer = useProcessingStore((s) => s.processLayer);
   const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
-  const processBlock = layerProcessBlock(l, datasets);
+  const jobs = useProcessingStore((s) => s.jobs);
+  const processBlock = layerProcessBlock(l, datasets, jobs);
   const locked = l.result?.deleted === true;
   // A result of several bands draws one of them (NM4-43e PR 2).
   const bands = l.result?.bands;
@@ -146,21 +147,16 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
       <button type="button" className="lm-btn" data-col="down" title="Move down" disabled={last} onClick={() => move(l.id, 'down')}>
         ▼
       </button>
-      {l.result ? (
-        // A result is no scene: nothing can be processed on it yet, so the place stays empty (Otto, 26.10.2026).
-        <Slot col="process" />
-      ) : (
-        <button
-          type="button"
-          className="lm-btn"
-          data-col="process"
-          disabled={processBlock !== null}
-          title={processBlock ?? 'Process this layer'}
-          onClick={() => void processLayer(l.id)}
-        >
-          ⚙
-        </button>
-      )}
+      <button
+        type="button"
+        className="lm-btn"
+        data-col="process"
+        disabled={processBlock !== null}
+        title={processBlock ?? (l.result ? (l.result.expired ? EXPIRED_PROCESS_TEXT : PROCESS_RESULT_TEXT) : 'Process this layer')}
+        onClick={() => void processLayer(l.id)}
+      >
+        ⚙
+      </button>
       {l.result ? (
         <ResultDownload jobID={l.result.jobID} expired={l.result.expired || locked} />
       ) : !l.derived && l.restore.itemIds.length > 0 ? (
