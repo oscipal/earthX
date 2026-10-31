@@ -20,7 +20,7 @@ import { useMemo } from 'react';
 
 import { previewOverlays, previewTitle } from '../processingPreview';
 import { isOverview } from '../resultLayer';
-import { useProcessingStore } from '../processingStore';
+import { clipAoiOf, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import { zoomInTo } from '../zoomHint';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
@@ -34,7 +34,9 @@ export default function PreviewBadge() {
   const draft = useProcessingStore((s) => s.preview);
   const draftMeasure = useProcessingStore((s) => s.measure);
   const loading = usePreviewLoading();
-  const aoi = useAppStore((s) => s.aoi);
+  const mapAoi = useAppStore((s) => s.aoi);
+  // What an entry fixed (a crop, a result) is cut to its own AOI, not the map's.
+  const aoi = useProcessingStore((s) => clipAoiOf(s, mapAoi));
   const draftOverlays = useMemo(() => (draft ? previewOverlays(draft, draft.clipToAoi ? aoi : null) : []), [draft, aoi]);
   const layers = useAppStore((s) => s.layers);
   const mapZoom = useAppStore((s) => s.mapZoom);

@@ -4,6 +4,7 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { stepName } from '../processingBands';
 import type { Operator } from '../processingOrder';
 import { integersIn, namesIn, type Field, type FieldValue } from '../schemaForm';
 import type { EarthxMask } from '../types';
@@ -329,10 +330,8 @@ export default function StepForm({
   useCrsLookup(reprojects ? values.crs : undefined);
   const cellTip = useCellSizeTip(values.crs, values.resolution, latitude);
   const bandMath = operator?.op === 'band_math';
-  // The title is the number and the name of the step: the band a band math step adds, or "Mask_1" and the like for a
-  // step that adds none (adr/0020 §14).
-  const own = operator ? operator.op.charAt(0).toUpperCase() + operator.op.slice(1) : 'Unknown operator';
-  const name = bandMath ? (typeof values.name === 'string' && values.name !== '' ? values.name : '…') : `${own}_${index + 1}`;
+  // The title is the number and the name of the step.
+  const name = stepName(operator, values, index);
   return (
     <li className="pp-step" aria-label={`Step ${index + 1}: ${operator?.title ?? 'unknown operator'}`}>
       <div className="pp-step-head">

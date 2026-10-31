@@ -2,7 +2,7 @@
 // and how it builds an order from them (M4-13 §3.3–§3.5). Pure functions; the
 // panel's state lives in `processingStore.ts`.
 
-import { intersection } from 'polyclip-ts';
+import { difference, intersection, union } from 'polyclip-ts';
 import type { Geom } from 'polyclip-ts';
 
 import { footprintOf, polygonBbox } from './geoUtils';
@@ -364,6 +364,62 @@ export function touchesAoi(item: StacItem, aoi: GeoJSON.Geometry): boolean {
   }
 }
 
+// The area in square degrees that a polygon or multi-polygon (as `Geom`) covers, holes taken off.
+function areaOf(geom: Geom): number {
+  const ring = (r: ReadonlyArray<readonly [number, number]>) =>
+    Math.abs(r.reduce((sum, [x, y], i) => sum + x * r[(i + 1) % r.length][1] - r[(i + 1) % r.length][0] * y, 0)) / 2;
+  return (geom as unknown as Array<Array<Array<readonly [number, number]>>>).reduce(
+    (total, polygon) => total + polygon.reduce((acc, r, i) => acc + (i === 0 ? ring(r) : -ring(r)), 0),
+    0,
+  );
+}
+
+// Whether `inner` lies within `outer` (to a few metres): what is left of it once `outer` is taken away is a sliver at most.
+// Where either cannot be computed the answer is yes, and the server has the last word.
+export function isInside(inner: GeoJSON.Geometry, outer: GeoJSON.Geometry): boolean {
+  const a = toGeom(inner);
+  const b = toGeom(outer);
+  if (!a || !b) return true;
+  try {
+    return areaOf(difference(a, b)) < 1e-9;
+  } catch {
+    return true;
+  }
+}
+
+// The part of `inner` that lies within `outer`: `inner` itself where all of it does, `null` where none of it does (a sliver at the
+// edge counts as none). Where either cannot be computed `inner` is kept, and the server has the last word.
+export function clipArea(
+  inner: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  outer: GeoJSON.Geometry,
+): GeoJSON.Polygon | GeoJSON.MultiPolygon | null {
+  const a = toGeom(inner);
+  const b = toGeom(outer);
+  if (!a || !b || isInside(inner, outer)) return inner;
+  try {
+    const part = intersection(a, b);
+    if (part.length === 0 || areaOf(part) < 1e-9) return null;
+    const polygons = part as unknown as GeoJSON.Position[][][];
+    return polygons.length === 1 ? { type: 'Polygon', coordinates: polygons[0] } : { type: 'MultiPolygon', coordinates: polygons };
+  } catch {
+    return inner;
+  }
+}
+
+// The area a result covers: its own AOI, or, for a result of whole scenes, the union of their footprints; `null` where that
+// cannot be said (a scene without a footprint).
+export function resultArea(aoi: GeoJSON.Geometry | null, items: readonly StacItem[]): GeoJSON.Geometry | null {
+  if (aoi) return aoi;
+  const geoms = items.map((item) => footprintOf(item)).map((footprint) => (footprint ? toGeom(footprint) : null));
+  if (geoms.length === 0 || geoms.some((g) => g === null)) return null;
+  try {
+    const [first, ...rest] = geoms as Geom[];
+    return { type: 'MultiPolygon', coordinates: union(first, ...rest) as unknown as GeoJSON.Position[][][] };
+  } catch {
+    return null;
+  }
+}
+
 // The scenes one job can be ordered for: those of the selection the AOI meets.
 export function candidateItems(items: readonly StacItem[], aoi: GeoJSON.Geometry): StacItem[] {
   return items.filter((item) => touchesAoi(item, aoi));
@@ -475,6 +531,8 @@ export function readProblem(
   index: number,
   steps: readonly DraftStep[],
   data: readonly string[],
+  // Bands the stock holds but the step may not read: those a result of a job did not keep in its output (NM4-05b).
+  hidden: readonly string[] = [],
 ): { field: 'expression' | 'bands'; message: string } | null {
   const field = step.op === 'normalize' ? 'bands' : 'expression';
   // Text that is no expression at all is told before anything else (review of #250); an empty one is the form's "Required".
@@ -487,6 +545,8 @@ export function readProblem(
       : step.op === 'normalize' && typeof step.values.bands === 'string'
         ? new Set(step.values.bands.split(/[\s,;]+/u).filter((n) => n !== ''))
         : new Set<string>();
+  const blocked = [...names].find((name) => hidden.includes(name));
+  if (blocked !== undefined) return { field, message: `'${blocked}' is not a band name` };
   const results = steps.flatMap((s, i) => (isBandMath(s) ? [{ index: i, name: resultNameOf(s) }] : []));
   for (const result of results) {
     if (result.index < index || !names.has(result.name) || data.includes(result.name)) continue;
@@ -500,14 +560,20 @@ export function readProblem(
 
 // What is wrong with a step beyond its form fields, by field (adr/0020 §6): the name of the band a `band_math` step adds,
 // and what the step reads that is no band at its place.
-function bandProblems(step: DraftStep, index: number, steps: readonly DraftStep[], data: readonly string[]): Record<string, string> {
+function bandProblems(
+  step: DraftStep,
+  index: number,
+  steps: readonly DraftStep[],
+  data: readonly string[],
+  hidden: readonly string[],
+): Record<string, string> {
   const errors: Record<string, string> = {};
   if (isBandMath(step)) {
     const others = steps.flatMap((s, i) => (i !== index && isBandMath(s) ? [resultNameOf(s)] : []));
     const problem = nameProblem(resultNameOf(step), others, data);
     if (problem) errors.name = problem;
   }
-  const read = readProblem(step, index, steps, data);
+  const read = readProblem(step, index, steps, data, hidden);
   if (read) errors[read.field] = read.message;
   return errors;
 }
@@ -521,10 +587,16 @@ export function buildOrder(args: {
   // The bands of the output in the order of the file, and every band of the data (the names a result may not take).
   bands: readonly string[];
   data: readonly string[];
+  // The bands a step may not read (`readProblem`); none for an order of the selection.
+  hidden?: readonly string[];
+  // How many steps at the start came with a result: they ran when the result was made, and read what its output does not keep.
+  locked?: number;
   dtype: string;
   info: ProcessInfo;
 }): BuiltOrder {
   const { datasetId, itemIds, area, aoi, steps, bands, data, dtype, info } = args;
+  const hidden = args.hidden ?? [];
+  const locked = args.locked ?? 0;
   const problems: string[] = [];
   const built: OrderStep[] = [];
   const stepProblems: StepProblem[] = steps.map((step, index) => {
@@ -533,7 +605,7 @@ export function buildOrder(args: {
     if (!operator.form.supported) return { errors: {}, unsupported: operator.form.reason };
     const { params, errors } = paramsFrom(operator.form.fields, step.values);
     built.push({ op: step.op, op_version: step.opVersion, params });
-    return { errors: { ...errors, ...bandProblems(step, index, steps, data) } };
+    return { errors: { ...errors, ...bandProblems(step, index, steps, data, index < locked ? [] : hidden) } };
   });
   if (itemIds.length === 0) problems.push('Pick a pass.');
   if (area === 'aoi' && !isArea(aoi)) problems.push('Draw an area as AOI.');

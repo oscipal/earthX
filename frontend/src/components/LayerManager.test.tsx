@@ -212,7 +212,8 @@ describe('LayerManager', () => {
       for (const col of ['eye', 'up', 'down', 'remove']) {
         for (const row of rows()) expect(row.querySelector(`[data-col="${col}"]`)?.tagName).toBe('BUTTON');
       }
-      // ⚙ is a button on every row but a result's (Otto, 26.10.2026), where its place is empty.
+      // ⚙ is a button on every row; a result's is one where the browser keeps the order of its job (NM4-05b), and its place is empty
+      // where it does not (these results have no job in the list).
       for (const k of kinds) {
         const gear = at(k.id, 'process');
         expect(gear.tagName).toBe(k.result ? 'SPAN' : 'BUTTON');

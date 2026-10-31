@@ -2,8 +2,8 @@
 // `band_math` steps add, and the choice of those that go into the result. Pure functions; the state lives in
 // `processingStore.ts`, the order is built in `processingOrder.ts`.
 
-import type { BandSource, DraftStep } from './processingOrder';
-import { namesIn } from './schemaForm';
+import type { BandSource, DraftStep, Operator } from './processingOrder';
+import { namesIn, type FieldValue } from './schemaForm';
 
 // The longest name of a band a step adds (`band_math.MAX_NAME_CHARS`): it fits on a chip.
 export const MAX_NAME_LENGTH = 32;
@@ -72,6 +72,14 @@ export function defaultName(taken: readonly string[]): string {
   let n = 1;
   while (folded.has(`result_${n}`)) n += 1;
   return `result_${n}`;
+}
+
+// The name of a step in its title: a band math step is named after the band it adds, a step that adds none "Mask_1" and the
+// like (adr/0020 §14).
+export function stepName(operator: Operator | undefined, values: Record<string, FieldValue>, index: number): string {
+  if (operator?.op === 'band_math') return typeof values.name === 'string' && values.name !== '' ? values.name : '…';
+  const own = operator ? operator.op.charAt(0).toUpperCase() + operator.op.slice(1) : 'Unknown operator';
+  return `${own}_${index + 1}`;
 }
 
 export const isBandMath = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math';
