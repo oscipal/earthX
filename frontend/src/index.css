@@ -320,7 +320,8 @@ body.dragging * {
 }
 .vc-field select,
 .vc-field input,
-.vc-field textarea {
+.vc-field textarea,
+.vc-dataset {
   padding: 6px 8px;
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
@@ -332,7 +333,8 @@ body.dragging * {
 }
 .vc-field select:focus,
 .vc-field input:focus,
-.vc-field textarea:focus {
+.vc-field textarea:focus,
+.vc-dataset:focus {
   border-color: var(--accent);
 }
 .vc-num input {
