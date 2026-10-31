@@ -145,7 +145,7 @@ async function check(browser, { kind, theme, viewport }) {
     // Not saved: closing it takes the look back, the tiles are asked for with the saved look.
     if (await disabled('.vc-save') === 'true') problems.push('"Save" is locked after "Apply" though nothing is saved');
     tiles.length = 0;
-    await page.getByRole('button', { name: '‹ Close' }).click();
+    await page.locator('.result-controls .close-x').click();
     await page.waitForTimeout(1200);
     if (!tiles.some((t) => t.includes('1900'))) problems.push(`the saved look was not drawn again after the settings were closed: ${tiles.slice(0, 2).join(' | ')}`);
     const url = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers[0].overlays[0].tileUrl);
@@ -158,7 +158,7 @@ async function check(browser, { kind, theme, viewport }) {
     await page.locator(`${root} .vc-save`).click();
     await page.waitForTimeout(800);
     if (await disabled('.vc-save') !== 'true') problems.push('"Save" is open right after it was used');
-    await page.getByRole('button', { name: '‹ Close' }).click();
+    await page.locator('.result-controls .close-x').click();
     const kept = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers[0].overlays[0].tileUrl);
     if (!kept.includes('rescale=180%2C2100')) problems.push(`"Save" did not keep the look: ${kept}`);
     await shot('3-saved');
