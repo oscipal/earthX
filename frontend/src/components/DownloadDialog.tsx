@@ -29,10 +29,10 @@ import OriginalFiles from './OriginalFiles';
 // (`downloadDialogLayerId`), or the current selection straight from the
 // results list (`downloadSelection`). Either can follow one of two outcomes
 // (`store.downloadOutcome`, M3-17 plan §4): the AOI **crop**, confirmed here
-// as one request the way M2-06 always did, or the **originals**, a plain
-// list of links to click — no confirm step, no CORS, no big in-browser
-// download (plan §6, F2 option 1); several scenes ask first whether they are
-// loaded one by one or merged per pass as a job (`OriginalFiles`, Zusatz 1a). A crop too
+// as one request the way M2-06 always did, or the **originals**, which start by
+// themselves when the dialog opens, one ZIP per scene built in the browser
+// from the files of the source (NM4-33, `OriginalFiles`); where a pass holds
+// several scenes the dialog also offers them merged per pass as a job (M4-12b). A crop too
 // large for a direct download is offered as an export job (`ExportJobOffer`,
 // M4-11b-2) when the server's `413` says it fits one.
 export default function DownloadDialog() {
@@ -88,12 +88,13 @@ export default function DownloadDialog() {
     // unlike the crop below).
     const attribution = attributionText(flags, acquisitionYears((passes ?? []).flatMap((pass) => pass.items)), false);
     const terms = termsNoticeText(flags, 'en');
+    const sceneTotal = new Set((passes ?? []).flatMap((pass) => pass.items.map((item) => item.id))).size;
     return (
       <div className="dialog-backdrop" onClick={close}>
         <div className="panel dialog-panel" onClick={(e) => e.stopPropagation()}>
           <div className="results-head">
-            <h2>Download original files</h2>
-            <button type="button" className="link-btn" title="Close" onClick={close}>
+            <h2>{sceneTotal === 1 ? 'Download full scene' : 'Download full scenes'}</h2>
+            <button type="button" className="link-btn" title="Close. This stops a download that is still running." onClick={close}>
               ✕
             </button>
           </div>

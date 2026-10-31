@@ -770,6 +770,26 @@ aufhebt.
 **Antwort N2: (1)** Ein Satz als Nachtrag in `ENTSCHEIDUNGEN`, den Otto nach
 positiver Messung einträgt; Wortlaut in §12.
 
+### 9.3 Nachtrag NM4-33 (2026-10-30): Originale ganzer Szenen als ZIP
+
+Mit NM4-33 holt der Browser die Originale ganzer Szenen mit einem Klick und baut je Szene ein
+ZIP (`architekturplan.md` 6.4, Nachtrag NM4-33). Für Quellen mit anonymem Token ergibt sich
+gegenüber der Antwort auf N1:
+
+- **Der Weg über das ZIP ist ein `fetch` und braucht CORS am Blob-Container**, nicht nur an der
+  Token-API. Der Service Worker liest die Dateien, nicht eine Navigation. Hat die Token-API oder
+  der Container kein CORS, gilt der Weg ohne CORS: jede Datei ein Download des Browsers über die
+  Blob-Adresse mit dem Token (so, wie N1 ihn beschrieb), ohne ZIP.
+- **Das Token** holt die Seite beim Klick selbst bei der Quelle (N1). Es geht nur im Speicher der
+  Seite, angehängt an die Adressen im Auftrag (`postMessage`), an den eigenen Worker. Es
+  steht weder in `ATTRIBUTION.txt` noch in `item.json`, in „Save link list“, in einer URL der App,
+  in einem Log noch in einem Fehlertext; Fehlertexte nennen nur Status und Art. Der Worker
+  speichert nichts und schreibt kein Log.
+- **Gebaut wird der Token-Schritt mit dem Datensatz** (Teil B, nach Ottos Messung, §11 C). Die
+  Auftragsform des Workers (`ZipJob.files[].url`) nimmt die Adresse mit Token ohne Änderung auf.
+- **Content-Security-Policy:** Bekommt die Plattform eine, braucht sie für diesen Weg `worker-src 'self'`
+  und `connect-src` für die Hosts der Dateien und der Token-API.
+
 ---
 
 ## 10. Was offen bleibt

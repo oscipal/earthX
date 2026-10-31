@@ -2879,6 +2879,61 @@ a.pm-icon:hover {
   margin: 0 0 10px;
 }
 
+/* "Download full scenes" (NM4-33): a row for each scene with how far it is; many scenes scroll in their own area. */
+.dialog-original-rows {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.dialog-original-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+.dialog-original-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.dialog-original-state {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+.dialog-original-row.failed .dialog-original-state {
+  grid-column: 1 / -1;
+  text-align: left;
+  color: var(--invalid, #ff6b6b);
+}
+.dialog-original-row.done .dialog-original-state,
+.dialog-original-row.started .dialog-original-state {
+  color: var(--accent);
+}
+.dialog-original-row progress {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 4px;
+  accent-color: var(--accent);
+}
+.dialog-original-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dialog-originals details {
+  font-size: 11px;
+  color: var(--muted);
+}
+.dialog-originals summary {
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
 /* "Preview" (M4-13c-2): over the map at the bottom left, and beside the heading
    of the preview section in the processing panel. */
 .preview-badge-dock {
