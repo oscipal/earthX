@@ -151,12 +151,12 @@ body.dragging * {
 .block-head {
   display: flex;
   justify-content: flex-end;
-  height: 22px;
+  height: 24px;
   padding: 3px 6px 0;
   box-sizing: border-box;
 }
 .selection-block > .download-bar {
-  padding-top: 0;
+  padding-top: 2px;
 }
 .selection-block > .download-bar + .time-slider {
   border-top: 1px solid var(--panel-border);
@@ -1806,11 +1806,81 @@ input[type='date']:focus {
 /* --- time slider --- */
 .time-slider {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 16px 10px;
   width: 100%;
   box-sizing: border-box;
+}
+/* The row of dates (NM4-66): first, the one before, an arrow, the one shown, an arrow, the one after, last. The two ends
+   take what is left, so the middle stays in the middle; a date that is not there keeps its place. */
+.time-dates {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto auto auto minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.time-dates strong {
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.time-end,
+.time-near {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.time-end.last,
+.time-near.before {
+  text-align: right;
+}
+.gone {
+  visibility: hidden;
+}
+.time-step {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  background: var(--input-bg);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.time-step:hover {
+  border-color: var(--accent);
+}
+.time-step.gone {
+  border-color: transparent;
+}
+/* Narrow: the ends go first, then the neighbours (their arrows say them in the tooltip); the date shown stays. */
+@container (max-width: 459px) {
+  .time-dates {
+    grid-template-columns: 0 minmax(0, auto) auto auto auto minmax(0, auto) 0;
+  }
+  .time-end {
+    visibility: hidden;
+  }
+}
+@container (max-width: 319px) {
+  .time-dates {
+    grid-template-columns: 0 0 auto auto auto 0 0;
+  }
+  .time-near {
+    visibility: hidden;
+  }
+}
+.time-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .play-btn {
   width: 36px;
@@ -1827,40 +1897,9 @@ input[type='date']:focus {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.time-track {
+.time-controls input[type='range'] {
   flex: 1;
   min-width: 0;
-}
-.time-labels {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 10px;
-  color: var(--muted);
-  margin-bottom: 2px;
-}
-/* The ends give way first, with an ellipsis; so does a label longer than the band (a key with no date keeps its label). */
-.time-labels strong {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.time-labels span {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.time-labels span:last-child {
-  text-align: right;
-}
-.time-track input[type='range'] {
-  width: 100%;
   accent-color: var(--accent);
 }
 .time-count {
