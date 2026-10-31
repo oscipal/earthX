@@ -3,6 +3,7 @@
 //   part 1  the grip: a row is taken by its grip with the real mouse and put somewhere else; Escape drops nothing; ▲/▼ still work
 //   part 3  the acquisition date is in the row of a layer: a day, a span, none
 //   part 5  the opacity slider of the settings of a layer reaches its right end (the thumb at the end of the track at 1)
+//   part 4  "value / %" at vmin in the settings of a result: the chip stays inside its field, "Apply" in percentiles asks the statistics
 //   part 8  every closing is the same small red "x" with the tooltip "Close"
 //   part 2  "Add band as layer": the button at the end of the line of the band, the new layer named after the band, with the date
 //
@@ -56,6 +57,7 @@ async function check(browser, { theme, viewport }) {
     const url = new URL(route.request().url());
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
     if (url.pathname.includes('/tiles/')) return route.fulfill({ status: 404, body: '' });
+    if (url.pathname.endsWith('/statistics')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ bands: [{ name: 'a', data_type: 'float32', statistics: { minimum: 0, maximum: 1000, count: 100, percentile_3: 30, percentile_97: 970 } }] }) });
     return route.fulfill({ status: 404, contentType: 'application/json', body: '{"detail":"not made up"}' });
   });
   await page.goto(BASE);
@@ -142,6 +144,28 @@ async function check(browser, { theme, viewport }) {
   const value = await slider.inputValue();
   if (value !== '1') problems.push(`the slider reads ${value} at the right end`);
   await shot('4-settings');
+
+  // --- part 4: "value / %" in the settings of a result, with the statistics route made up here
+  const chip = page.locator('.result-controls .vc-unit');
+  if ((await chip.count()) !== 1) problems.push('no switch "value / %" in the settings of the result');
+  else {
+    const labelBox = await page.locator('.result-controls .vc-num').first().boundingBox();
+    const chipBox = await chip.boundingBox();
+    if (chipBox.x < labelBox.x - 0.5 || chipBox.x + chipBox.width > labelBox.x + labelBox.width + 0.5) problems.push(`the switch leaves the field vmin: ${JSON.stringify([chipBox, labelBox])}`);
+    const vmaxBox = await page.locator('.result-controls .vc-num').nth(1).boundingBox();
+    if (chipBox.x + chipBox.width > vmaxBox.x + 0.5 && Math.abs(chipBox.y - vmaxBox.y) < chipBox.height) problems.push('the switch runs into the field vmax');
+    await chip.click();
+    const fields = await page.locator('.result-controls .vc-num input').evaluateAll((els) => els.map((e) => e.value));
+    if (fields.join() !== '2,98') problems.push(`the fields in percentiles: ${fields}`);
+    await page.locator('.result-controls .vc-num input').nth(0).fill('3');
+    await page.locator('.result-controls .vc-num input').nth(1).fill('97');
+    await shot('4b-percent');
+    await page.locator('.result-controls .vc-apply').click();
+    await page.waitForTimeout(600);
+    const url = await state(page, "s.layers.find((l) => l.id === 'res').overlays[0].tileUrl");
+    if (!url.includes('rescale=30%2C970')) problems.push(`"Apply" in percentiles drew ${url}`);
+    if ((await state(page, "s.layers.find((l) => l.id === 'res').result.percent.low")) !== '3') problems.push('the layer did not keep what was typed');
+  }
 
   // --- part 8: the close x
   const close = page.locator('.result-controls .close-x');
