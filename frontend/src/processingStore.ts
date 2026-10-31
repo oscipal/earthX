@@ -44,6 +44,7 @@ import {
   foreignReason,
   foreignScenes,
   jobTitle,
+  passChoices,
   titleDay,
   runChoices,
   runPool,
@@ -172,6 +173,8 @@ import type { EarthxMask, StacItem, TimeStepGroup } from './types';
 // results on screen lack.
 export interface ProcessingEntry {
   area?: Area;
+  // The pass a job is for, where the entry holds several (`Pass.key`); left out: none picked.
+  passKey?: string;
   // Scenes of the entry that the results on screen do not hold (see `ExtraScenes`);
   // `null` drops those of an earlier entry. Left out: they stay.
   extraScenes?: ExtraScenes | null;
@@ -194,8 +197,12 @@ export interface FixedResult {
   // What the job was called and the group it lies in: the new job gets the title plus its own steps, and the same group.
   title: string;
   groupId: string | null;
-  // The first `locked` steps of the draft are those of the result; they cannot be changed, moved or removed.
+  // The first `locked` steps of the draft are those of the result: the order runs them again first, the panel does not show them
+  // as steps, and they cannot be changed, moved or removed.
   locked: number;
+  // The bands of the result's output: all the panel offers of the result, as bands of its own (adr/0019 §10a). What the job did not
+  // keep cannot be read by a step of the person, though the chain still holds it.
+  bands: string[];
   // The result is gone; the chain runs from the scenes all the same.
   expired: boolean;
   // What the process description made of the steps (an older version taken as the listed one).
@@ -481,6 +488,14 @@ export interface OrderView {
   selectable: string[];
   lonely: string | null;
   results: Array<{ key: number; name: string }>;
+  // The results the person's own steps add, and the bands of a result that stand in its place as bands of the data: the
+  // results of its locked steps that its output kept (`inherited`), and the stock it did not (`hidden`; a step may not read them,
+  // and they still count for a name). Both empty for an order of the selection (NM4-05b).
+  fresh: Array<{ key: number; name: string }>;
+  inherited: string[];
+  hidden: string[];
+  // The layer of the mask, which a result without it cannot mask by: there is no mask step to offer.
+  maskHidden: boolean;
   // The output in the order of the file; what the order names as `output.bands`.
   output: string[];
   // Why steps, "Review" and "Start job" wait: a name field holds a name that breaks a rule. `null` for none.
@@ -556,9 +571,12 @@ function nameBlockOf(
   steps: readonly DraftStep[],
   problems: Readonly<Record<number, string>>,
   data: readonly string[],
+  hidden: readonly string[],
+  locked: number,
 ): string | null {
   for (const [index, step] of steps.entries()) {
-    const reason = problems[step.key] ?? (isBandMath(step) ? readProblem(step, index, steps, data)?.message : undefined);
+    const reason =
+      problems[step.key] ?? (isBandMath(step) ? readProblem(step, index, steps, data, index < locked ? [] : hidden)?.message : undefined);
     if (reason !== undefined) return `Step ${index + 1}: ${reason}`;
   }
   return null;
@@ -572,8 +590,9 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const info = description?.state === 'ready' ? description.info : null;
   const { items: candidates, passes } = candidatesOf(app, p.area, p.fixed);
-  // One object is one job: nothing to choose (NM4-05b).
-  const runOptions = p.fixed ? [] : runChoices(passes, candidates);
+  // A result is one job. A crop is one object too, with "Run as" gone: its passes, if it has several, are the one in view or
+  // every one as a job of its own (NM4-05b, NM4-06).
+  const runOptions = p.fixed ? (p.fixed.result ? [] : passChoices(passes)) : runChoices(passes, candidates);
   const runAs = effectiveRunAs(p.runAs, runOptions);
   const chosen = passes.find((c) => c.key === p.passKey) ?? (passes.length === 1 ? passes[0] : null);
   const units = unitsOf(runAs, chosen, passes, candidates);
@@ -584,10 +603,25 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const maskLayer = maskLayerOf(dataset?.collection);
   const maskAsset = maskAssetOf(p.steps, maskLayer);
   const auxiliary = auxiliaryAssetsOf(dataset?.collection);
-  const dataBands = dataBandsOf(sources, auxiliary, maskLayer?.asset ?? null);
+  const stock = dataBandsOf(sources, auxiliary, maskLayer?.asset ?? null);
   const dataNames = sources.flatMap(bandNamesOf);
   const selectable = selectableAssets(sources, auxiliary, maskLayer?.asset ?? null);
   const results = resultsOf(p.steps);
+  // A result offers its output and nothing else (adr/0019 §10a): the bands of the data and the results of its steps that the job
+  // kept stand as the bands of the data; the rest of the stock is hidden.
+  const from = p.fixed?.result ?? null;
+  const kept = new Set(from?.bands ?? []);
+  const lockedResults = from ? resultsOf(p.steps.slice(0, from.locked)) : [];
+  const inherited = lockedResults.filter((r) => kept.has(r.name)).map((r) => r.name);
+  const hidden = from
+    ? [...stock.map((b) => b.name).filter((name) => !kept.has(name)), ...lockedResults.map((r) => r.name).filter((name) => !kept.has(name))]
+    : [];
+  const dataBands: DataBand[] = from
+    ? [
+        ...inherited.map((name) => ({ name, asset: '', unit: null, auxiliary: false, layer: false })),
+        ...stock.filter((band) => kept.has(band.name)),
+      ]
+    : stock;
   const output = outputBands(p.output, results.map((r) => r.name), dataBands.map((b) => b.name));
   const inOutput = new Set(output);
   // What the order reads: the bands of the output, those an expression or a `normalize` names, the layer of a mask.
@@ -624,7 +658,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const foreign = dataset ? foreignScenes(dataset.id, pass?.items ?? [], foundUnder) : [];
   const buildFor = (itemIds: string[]): BuiltOrder | null => {
     if (!info || !dataset) return null;
-    const result = buildOrder({ datasetId: dataset.id, itemIds, area: p.area, aoi: app.aoi, steps: p.steps, bands: output, data: dataNames, dtype, info });
+    const result = buildOrder({ datasetId: dataset.id, itemIds, area: p.area, aoi: app.aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info });
     return foreign.length === 0 ? result : { ...result, order: null, problems: [...result.problems, foreignReason(foreign)] };
   };
   const builtParts = units.map((unit) => ({ unit, built: buildFor(unit.items.map((i) => i.id)) }));
@@ -651,10 +685,14 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     dataNames,
     dataBands,
     selectable: dataBands.filter((b) => !b.auxiliary && !b.layer).map((b) => b.name),
-    lonely: lonelyBand(selectable, sources),
+    lonely: from ? null : lonelyBand(selectable, sources),
     results,
+    fresh: results.slice(lockedResults.length),
+    inherited,
+    hidden,
+    maskHidden: from !== null && maskLayer !== null && !kept.has(maskLayer.band),
     output,
-    nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames),
+    nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames, hidden, from?.locked ?? 0),
     assets,
     maskLayer,
     maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
@@ -673,8 +711,6 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
 // Why a layer cannot be the start of an order, or `null`. A picture made from
 // scenes is no scene; the licence is the dataset's, as for the selection. A result can be, where the browser keeps
 // the order of its job (adr/0019: F2); it needs no more than that, an expired result is run from the scenes all the same (F4).
-// A job takes the scenes of one pass (M4-12a F6), and a crop that is one object has nothing to pick from.
-export const SEVERAL_PASSES_TEXT = 'This crop covers more than one pass, and a job takes the scenes of one.';
 export const NO_COPY_TEXT = 'No copy of the original order is kept in this browser. Open its recipe.json instead.';
 export const PROCESS_RESULT_TEXT = 'Process further';
 export const EXPIRED_PROCESS_TEXT = 'Expired: runs everything again from the scenes.';
@@ -969,13 +1005,19 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
   };
 
   // The panel for a layer or a view: a crop merged and cut to its AOI is one object, so its scenes and area are fixed and
-  // there is one job (NM4-06); anything else starts from the scenes and "Whole scene".
-  const openCrop = (fixed: Fixed | null, extraScenes: ExtraScenes) =>
+  // "Run as" is gone (NM4-06); anything else starts from the scenes and "Whole scene". Where the crop holds several passes, the
+  // one in view (`preferred`, the scenes the view had chosen) is the one a job is for, the first one if it names none.
+  const openCrop = (fixed: Fixed | null, extraScenes: ExtraScenes, preferred: readonly string[]) => {
+    const scenes = extraScenes.items.length > 0 ? extraScenes : null;
+    const passes = fixed ? orderView(selectionState(useAppStore.getState()), { ...get(), fixed, area: 'aoi', extraScenes: scenes }).passes : [];
+    const inView = passes.find((pass) => pass.items.some((item) => preferred.includes(item.id))) ?? passes[0];
     get().openProcessing({
       area: fixed ? 'aoi' : 'scene',
-      extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
+      extraScenes: scenes,
       ...(fixed ? { fixed } : {}),
+      ...(inView && passes.length > 1 ? { passKey: inView.key } : {}),
     });
+  };
 
   // The order as the draft, on its scenes and area: what "Open in panel", a link and "process further" share (adr/0019). The
   // dataset first (a new dataset drops the draft), then the scenes (fetched one by one where the results lack them), the area
@@ -1352,6 +1394,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         detailJobID: null,
         area: entry.area ?? 'scene',
         fixed: entry.fixed ?? null,
+        ...(entry.passKey !== undefined ? { passKey: entry.passKey } : {}),
         ...(entry.extraScenes !== undefined ? { extraScenes: entry.extraScenes } : {}),
       }));
       const datasetId = useAppStore.getState().datasetId;
@@ -1371,7 +1414,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!extraScenes) return;
       // A layer merged and cut to its AOI is one object (NM4-06).
       const { cropToAoi, aoi } = layer.restore;
-      openCrop(cropToAoi && isArea(aoi) ? { itemIds: layer.restore.itemIds, aoi, result: null } : null, extraScenes);
+      openCrop(cropToAoi && isArea(aoi) ? { itemIds: layer.restore.itemIds, aoi, result: null } : null, extraScenes, layer.restore.selectedIds);
     },
     processFocusView: async () => {
       useAppStore.getState().activateViewContext();
@@ -1383,7 +1426,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const extraScenes = await selectScenes(ids, 'this view');
       if (!extraScenes) return;
       const { cropToAoi, viewAoi } = app;
-      openCrop(cropToAoi && isArea(viewAoi) ? { itemIds: Object.keys(app.downloaded), aoi: viewAoi, result: null } : null, extraScenes);
+      // The pass in view is the one of the image the head of the view shows.
+      openCrop(cropToAoi && isArea(viewAoi) ? { itemIds: ids, aoi: viewAoi, result: null } : null, extraScenes, shown?.ids ?? []);
     },
     setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch }, rangeEdited: true })),
     applyRange: () => {
@@ -1554,7 +1598,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     },
     choosePass: (passKey) => set({ passKey, reviewError: null, startError: null, ...dropReview() }),
     setArea: (area) => set((s) => (s.fixed ? {} : { area, reviewError: null, startError: null, ...dropReview() })),
-    setRunAs: (runAs) => set((s) => (s.fixed ? {} : { runAs, reviewError: null, startError: null, ...dropReview() })),
+    setRunAs: (runAs) => set((s) => (s.fixed?.result ? {} : { runAs, reviewError: null, startError: null, ...dropReview() })),
     addStep: (op, opVersion) => {
       const { datasetId, datasets } = useAppStore.getState();
       const description = datasetId ? get().descriptions[datasetId] : undefined;
@@ -1575,7 +1619,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         added = defaultName([...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
         values.name = added;
       } else if (op === 'normalize' && 'bands' in values) {
-        values.bands = view.results.at(-1)?.name ?? '';
+        values.bands = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
       }
       set((s) => ({
         steps: [...s.steps, { key, op, opVersion, values }],
@@ -1732,6 +1776,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             title: job.title ?? job.titleDefault ?? '',
             groupId,
             locked: draft.steps.length,
+            bands: [...draft.bands],
             expired: layer.result!.expired || job.expired,
             notes,
           },

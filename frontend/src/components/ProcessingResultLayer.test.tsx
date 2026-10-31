@@ -406,15 +406,16 @@ describe('the layer a result becomes', () => {
     expect(layers()).toHaveLength(1);
   });
 
-  it('is processed further only with the order of its job, and not downloaded as scenes', async () => {
+  it('is processed further only with the order of its job: without it the place of ⚙ is empty, and it is not downloaded as scenes', async () => {
     await showOnMap();
-    // This job keeps no copy of its order (NM4-05b, adr/0019 F2): the ⚙ is there, locked, and says what to do.
+    // This job keeps no copy of its order (NM4-05b, Otto 31.10.2026): there is nothing to process, and nothing brings it back.
     expect(layerProcessBlock(layers()[0], [])).toBe(NO_COPY_TEXT);
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.lm-btn[title="Process this layer"]')).toBeNull();
-    const gear = button('⚙');
-    expect(gear?.disabled).toBe(true);
-    expect(gear?.title).toBe(NO_COPY_TEXT);
+    expect(button('⚙')).toBeUndefined();
+    const empty = container.querySelector('.layer-row [data-col="process"]');
+    expect(empty?.tagName).toBe('SPAN');
+    expect(empty?.getAttribute('aria-hidden')).toBe('true');
     expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
     expect(button('⇩')).toBeUndefined();
   });

@@ -2937,35 +2937,10 @@ a.pm-icon:hover {
   display: flex;
   gap: 8px;
 }
-/* A step that came with a result (NM4-05b): folded to its title, read only. */
-.pp-locked summary {
-  cursor: pointer;
-}
-.pp-given {
-  margin: 6px 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-}
-.pp-given dt {
-  color: var(--muted);
-}
-.pp-given dd {
-  margin: 0;
-  font-family: var(--mono);
-  overflow-wrap: anywhere;
-}
 /* What an entry fixes (the area, the scenes): the value as it stands, with a lock. */
 .pp-fixed {
   font-size: 11px;
   color: var(--text);
-}
-.pp-step-sep {
-  font-size: 10px;
-  color: var(--muted);
-  text-align: center;
-  list-style: none;
 }
 .pp-add {
   display: flex;

@@ -273,7 +273,6 @@ function ClassPicker({
 export default function StepForm({
   index,
   count,
-  locked = 0,
   stepKey,
   operator,
   values,
@@ -295,8 +294,6 @@ export default function StepForm({
 }: {
   index: number;
   count: number;
-  // How many steps stand locked before the steps of the person (NM4-05b): the first of these cannot move up.
-  locked?: number;
   stepKey: number;
   operator: Operator | undefined;
   values: Record<string, FieldValue>;
@@ -343,7 +340,7 @@ export default function StepForm({
           {operator && <span className="pp-step-op"> {operator.title.toLowerCase()}</span>}
         </span>
         <span className="pp-step-actions">
-          <button type="button" className="link-btn" title="Move this step up" disabled={index <= locked} onClick={() => onMove(-1)}>
+          <button type="button" className="link-btn" title="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
             ↑ Up
           </button>
           <button

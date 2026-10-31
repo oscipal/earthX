@@ -227,8 +227,11 @@ function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) 
 const gear = () => container.querySelector<HTMLButtonElement>('.layer-row [data-col="process"]')!;
 const execution = () => fetchMock.mock.calls.filter(([u, init]) => String(u).endsWith('/execution') && init?.method === 'POST');
 const sent = () => JSON.parse(execution()[0][1].body).inputs.recipe as Order;
-const lockedSteps = () => [...container.querySelectorAll('.pp-locked')];
 const output = () => store().output;
+const infoChips = () => [...container.querySelectorAll('section[aria-label="Bands"] .pp-chip')].map((c) => c.textContent);
+const dataGroup = () => container.querySelector('section[aria-label="Output"] [aria-label="Bands of the data"]')!;
+const dataChips = () => [...dataGroup().querySelectorAll('.pp-chip')].map((c) => c.textContent);
+const pressed = () => [...dataGroup().querySelectorAll('.pp-chip')].filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
 
 // ⚙ at the layer, then the panel.
 async function process() {
@@ -294,14 +297,22 @@ describe('the ⚙ of a result layer', () => {
     expect(gear().title).toBe(EXPIRED_PROCESS_TEXT);
   });
 
-  it('is locked without the order, and the reason points to the recipe.json', async () => {
+  it('is not there without the order of its job: the place stays empty, and nothing brings the order back', async () => {
     useProcessingStore.setState({ jobs: [entry({ order: null })] });
     act(() => root.render(<LayerManager />));
-    expect(gear().disabled).toBe(true);
-    expect(gear().title).toBe(NO_COPY_TEXT);
-    click(gear());
-    await flush();
+    expect(gear().tagName).toBe('SPAN');
+    expect(gear().getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    // A call that bypasses the row does nothing, and says why.
+    await store().extendResult('R1');
     expect(store().open).toBe(false);
+    expect(useAppStore.getState().error).toBe(NO_COPY_TEXT);
+  });
+
+  it('is not there for a result whose job is not in the list of this browser', () => {
+    useProcessingStore.setState({ jobs: [] });
+    act(() => root.render(<LayerManager />));
+    expect(gear().tagName).toBe('SPAN');
   });
 
   it('tells why it did not open, when the licence changed since', async () => {
@@ -330,6 +341,7 @@ describe('the panel from a result', () => {
     expect(store().open).toBe(true);
     expect(store().steps.map((s) => s.op)).toEqual(['band_math']);
     expect(store().fixed?.result?.locked).toBe(1);
+    expect(store().fixed?.result?.bands).toEqual(['NDVI', 'red']);
     expect(output()).toEqual(['NDVI', 'red']);
     expect(store().area).toBe('aoi');
     // The scenes and the AOI of the job, not those the map and the list hold now.
@@ -337,17 +349,20 @@ describe('the panel from a result', () => {
     expect(container.querySelector('section[aria-label="Selection"]')?.textContent).toContain('S2B_A');
   });
 
-  it('shows the steps of the result locked, and no way to change, move or remove them', async () => {
+  it('does not show the steps of the job as steps: the origin is on top, the chain is its tooltip', async () => {
     await process();
-    expect(lockedSteps()).toHaveLength(1);
-    const step = lockedSteps()[0];
-    expect(step.getAttribute('aria-label')).toBe('Step 1: Band math (locked)');
-    expect(step.textContent).toContain('NDVI');
-    expect(step.querySelector('textarea, input')).toBeNull();
-    expect(button(/Remove|Up|Down/u, step)).toBeUndefined();
-    // Folded to its title; what the step was given is behind it.
-    expect(step.querySelector('details')?.hasAttribute('open')).toBe(false);
-    expect(step.textContent).toContain('(nir - red) / (nir + red)');
+    expect(container.querySelector('.pp-step')).toBeNull();
+    expect(container.querySelector('section[aria-label="Processing steps"] ol')).toBeNull();
+    const tip = container.querySelector('.pp-area .tip')?.getAttribute('data-tip') ?? '';
+    expect(tip).toContain('1. NDVI (band math) – Expression: (nir - red) / (nir + red)');
+  });
+
+  it('offers the output of the job as its bands, and no other: the stock it did not keep is out of sight', async () => {
+    await process();
+    expect(infoChips()).toEqual(['NDVI', 'red']);
+    expect(dataChips()).toEqual(['NDVI', 'red']);
+    expect(container.querySelector('section[aria-label="Output"] [aria-label="New bands"]')).toBeNull();
+    expect(pressed()).toEqual(['NDVI', 'red']);
   });
 
   it('has nothing to choose about the scenes and the area, and does not load a recipe', async () => {
@@ -369,6 +384,7 @@ describe('the panel from a result', () => {
     expect(tip).toMatch(/last bit/u);
     expect(tip).toMatch(/float64/u);
     expect(tip).not.toMatch(/Expired/u);
+    expect(tip).toContain('1. NDVI (band math)');
   });
 
   it('says in the tooltip that the result has expired', async () => {
@@ -402,40 +418,107 @@ describe('the panel from a result', () => {
     await process();
     click(button('＋ Band math'));
     click(button('＋ Normalize'));
-    const names = store().steps.map((s) => s.op);
-    expect(names).toEqual(['band_math', 'band_math', 'normalize']);
+    expect(store().steps.map((s) => s.op)).toEqual(['band_math', 'band_math', 'normalize']);
     const [, added, normalize] = store().steps;
     store().moveStep(added.key, -1);
     expect(store().steps.map((s) => s.key)).toEqual([store().steps[0].key, added.key, normalize.key]);
     store().moveStep(added.key, 1);
     expect(store().steps.map((s) => s.op)).toEqual(['band_math', 'normalize', 'band_math']);
-    // The first new step has nothing to move up to.
-    const forms = [...container.querySelectorAll('.pp-step:not(.pp-locked)')];
+    // The first step shown has nothing to move up to, and the steps of the job are not among them.
+    const forms = [...container.querySelectorAll('.pp-step')];
+    expect(forms).toHaveLength(2);
     expect((button(/Up/u, forms[0]) as HTMLButtonElement).disabled).toBe(true);
-    expect(container.querySelector('.pp-step-sep')?.textContent).toBe('your steps');
+    expect(forms[0].getAttribute('aria-label')).toBe('Step 1: Band math');
   });
 
-  it('keeps the bands of the locked steps in the stock: a new step reads them, and so does the output', async () => {
+  it('keeps the bands of the job in the stock: a new step reads them, and so does the output', async () => {
     await process();
     click(button('＋ Band math'));
-    const field = container.querySelector<HTMLTextAreaElement>('li:not(.pp-locked) textarea[id$="-expression"]')!;
-    typeInto(field, 'NDVI * 2');
-    // The result of the locked step is a chip of the new one, and the expression naming it is no problem.
-    const chips = container.querySelectorAll('li:not(.pp-locked) [aria-label="Results of earlier steps"] .pp-chip');
+    const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
+    typeInto(field, 'NDVI * 2 + red');
+    // The result of the job is a chip of the new step, and the expression naming it is no problem.
+    const chips = container.querySelectorAll('[aria-label="Results of earlier steps"] .pp-chip');
     expect([...chips].map((c) => c.textContent)).toEqual(['NDVI']);
-    expect(container.querySelector('li:not(.pp-locked) .hint-text.error')).toBeNull();
+    expect(container.querySelector('.pp-step .hint-text.error')).toBeNull();
     const view = orderView(selectionState(useAppStore.getState()), store());
     expect(view.results.map((r) => r.name)).toEqual(['NDVI', 'result']);
+    expect(view.inherited).toEqual(['NDVI']);
+    expect(view.fresh.map((r) => r.name)).toEqual(['result']);
     expect(view.nameBlock).toBeNull();
-    // The new result comes into the output ticked, the output of the job stays; the file holds the results first.
+    // Only the new result is "New"; the new result comes into the output ticked, the output of the job stays; the file holds the
+    // results first.
+    expect([...container.querySelectorAll('[aria-label="New bands"] .pp-chip')].map((c) => c.textContent)).toEqual(['result']);
     expect(output()).toEqual(['NDVI', 'red', 'result']);
     expect(view.output).toEqual(['NDVI', 'result', 'red']);
     expect(view.built?.order?.output.kind === 'raster' && view.built.order.output.bands).toEqual(['NDVI', 'result', 'red']);
   });
 
+  it('does not let a new step read a band the job did not keep, nor take its name', async () => {
+    await process();
+    click(button('＋ Band math'));
+    const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
+    // `nir` is in the data and was read by the job, but it is not in the output.
+    typeInto(field, 'nir * 2');
+    expect(container.querySelector('.pp-step .hint-text.error')?.textContent).toBe("'nir' is not a band name");
+    expect(orderView(selectionState(useAppStore.getState()), store()).nameBlock).toBe("Step 2: 'nir' is not a band name");
+    expect(orderView(selectionState(useAppStore.getState()), store()).built?.order).toBeNull();
+    expect((button('Review') as HTMLButtonElement).disabled).toBe(true);
+    // Its name is taken all the same: a result of that name would hide the band in the chain.
+    store().renameResult(store().steps[1].key, 'nir');
+    expect(store().steps[1].values.name).toBe('result');
+    typeInto(field, 'red * 2');
+    expect(orderView(selectionState(useAppStore.getState()), store()).nameBlock).toBeNull();
+  });
+
+  it('keeps a result of the job that its output did not keep out of sight, too, but its name is taken', async () => {
+    const order = parent({
+      steps: [NDVI_STEP, { op: 'band_math', op_version: 2, params: { expression: '(green - nir) / (green + nir)', name: 'NDWI' } }],
+      output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI'] },
+    });
+    useProcessingStore.setState({ jobs: [entry({ order })] });
+    await process();
+    expect(infoChips()).toEqual(['NDVI']);
+    click(button('＋ Band math'));
+    const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
+    typeInto(field, 'NDWI + 1');
+    expect(container.querySelector('.pp-step .hint-text.error')?.textContent).toBe("'NDWI' is not a band name");
+    expect([...container.querySelectorAll('[aria-label="Results of earlier steps"] .pp-chip')].map((c) => c.textContent)).toEqual(['NDVI']);
+    // The name of the hidden result is used in the chain.
+    store().renameResult(store().steps[2].key, 'ndwi');
+    expect(store().steps[2].values.name).toBe('result');
+    typeInto(field, 'NDVI + 1');
+    expect(orderView(selectionState(useAppStore.getState()), store()).nameBlock).toBeNull();
+  });
+
+  it('"All" takes the bands of the job and the new results, and nothing hidden', async () => {
+    const order = parent({
+      steps: [NDVI_STEP, { op: 'band_math', op_version: 2, params: { expression: '(green - nir) / (green + nir)', name: 'NDWI' } }],
+      output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['NDVI', 'red'] },
+    });
+    useProcessingStore.setState({ jobs: [entry({ order })] });
+    await process();
+    click(button('＋ Band math'));
+    act(() => store().setOutput([]));
+    click(button('All'));
+    expect(orderView(selectionState(useAppStore.getState()), store()).output).toEqual(['NDVI', 'result', 'red']);
+  });
+
+  it('offers no mask where the job did not keep the layer the mask reads', async () => {
+    await process();
+    expect(button('＋ Mask')).toBeUndefined();
+    expect(button('＋ Normalize')).toBeDefined();
+    expect(button('＋ Band math')).toBeDefined();
+  });
+
+  it('offers a mask where the layer is part of the output of the job', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: parent({ steps: [], output: { kind: 'raster', format: 'cog', dtype: 'uint16', bands: ['red', 'scl'] } }) })] });
+    await process();
+    expect(button('＋ Mask')).toBeDefined();
+  });
+
   it('lets the person take a band of the locked steps out of the output', async () => {
     await process();
-    click(button('NDVI', container.querySelector('section[aria-label="Output"] [aria-label="New bands"]')!));
+    click(button('NDVI', dataGroup()));
     expect(output()).toEqual(['red']);
   });
 

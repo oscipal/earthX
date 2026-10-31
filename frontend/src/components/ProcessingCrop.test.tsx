@@ -14,7 +14,7 @@ import { bboxToPolygon } from '../geoUtils';
 import type { MapLayer } from '../layers';
 import type { Order } from '../processing';
 import { orderAoi } from '../processingOrder';
-import { orderView, resetJobs, selectionState, SEVERAL_PASSES_TEXT, setTrackerOptions, useProcessingStore } from '../processingStore';
+import { orderView, resetJobs, selectionState, setTrackerOptions, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import LayerManager from './LayerManager';
@@ -72,6 +72,8 @@ const ESTIMATE = {
 let container: HTMLDivElement;
 let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
+// The jobs the platform has taken in, to give each its own id.
+let placed = 0;
 
 // The scenes of the search: A and B of one day (one pass), C of another.
 function search(layers: MapLayer[] = []) {
@@ -104,11 +106,12 @@ beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
   localStorage.clear();
+  placed = 0;
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === `/processing/processes/recipe?dataset=${DATASET}`) return json(s2);
     if (init?.method === 'POST' && url.endsWith('/estimate')) return json(ESTIMATE);
     if (init?.method === 'POST' && url.endsWith('/execution')) {
-      return json({ processID: 'recipe', type: 'process', jobID: 'ZyXwVuTsRqPoNmLkJiHg_-', status: 'accepted', message: '', progress: 0, created: '2026-10-31T10:00:00Z', expires: new Date(Date.now() + 7 * 86_400_000).toISOString(), recipeID: 'r', links: [] }, 201);
+      return json({ processID: 'recipe', type: 'process', jobID: ['ZyXwVuTsRqPoNmLkJiHg_-', 'AaBbCcDdEeFfGgHhIiJj_-'][placed++ % 2], status: 'accepted', message: '', progress: 0, created: '2026-10-31T10:00:00Z', expires: new Date(Date.now() + 7 * 86_400_000).toISOString(), recipeID: 'r', links: [] }, 201);
     }
     return json({ title: 'Not found' }, 404);
   });
@@ -171,7 +174,7 @@ async function ndviAndStart() {
   typeInto(container.querySelector('textarea[id$="-expression"]')!, '(nir - red) / (nir + red)');
   click(button('Review', container));
   await flush();
-  click(button('Start job'));
+  click(button(/^Start /u));
   await flush();
 }
 
@@ -242,45 +245,96 @@ describe('the gear of a layer merged and cut to its AOI', () => {
     expect(orderView(selectionState(app()), store()).candidates.map((i) => i.id).sort()).toEqual(['S2B_A', 'S2B_B']);
   });
 
-  it('says for a crop of several passes that a job takes one, and starts nothing; the panel is there to say it', async () => {
-    search([layer(['S2B_A', 'S2B_C'])]);
-    await render();
-    click(gear());
-    await flush();
-    // The reason is in the panel, which a narrow window shows; a status bar can lie below the layers.
-    expect(store().open).toBe(true);
-    expect(store().fixed).toEqual({ itemIds: ['S2B_A', 'S2B_C'], aoi: AOI, result: null });
-    expect(container.querySelector('.processing-panel')?.textContent).toContain(SEVERAL_PASSES_TEXT);
-    expect(app().error).toBeNull();
-    // There is no pass to pick, and nothing to review or start.
-    expect([...container.querySelectorAll('.processing-panel label')].some((label) => label.textContent?.startsWith('Pass'))).toBe(false);
-    expect(runAs()).toBeNull();
-    expect((button('Review', container) as HTMLButtonElement).disabled).toBe(true);
-    expect((button('Start job') as HTMLButtonElement).disabled).toBe(true);
-    expect((button('Start job') as HTMLButtonElement).title).toBe(SEVERAL_PASSES_TEXT);
-    expect(orderView(selectionState(app()), store()).parts[0]?.order ?? null).toBeNull();
-    expect(execution()).toHaveLength(0);
-  });
+  describe('a crop of several passes', () => {
+    const passesGroup = () => selection().querySelector('[aria-label="Passes"]');
+    const labels = () => [...(passesGroup()?.querySelectorAll('button') ?? [])].map((b) => b.textContent);
+    const pickedPass = () => (container.querySelector('.processing-panel select') as HTMLSelectElement | null)?.selectedOptions[0]?.textContent;
 
-  it('says nothing of passes when only one pass meets the AOI of the crop', async () => {
-    // The scene of the other day lies elsewhere: the AOI does not meet it, so the crop holds one pass.
-    const far = scene('S2B_C', '2026-07-02');
-    far.bbox = [20, 60, 21, 61];
-    far.geometry = bboxToPolygon([20, 60, 21, 61]);
-    search([layer(['S2B_A', 'S2B_C'])]);
-    useAppStore.setState({
-      items: [scene('S2B_A'), far],
-      groups: [
-        { key: ['2026-07-01'], label: '2026-07-01', items: [scene('S2B_A')] },
-        { key: ['2026-07-02'], label: '2026-07-02', items: [far] },
-      ],
+    async function open(selected: string[]) {
+      search([layer(['S2B_A', 'S2B_B', 'S2B_C'], { selectedIds: selected })]);
+      await render();
+      click(gear());
+      await flush();
+    }
+
+    it('is not turned away: a small choice of the pass takes the place of "Run as"', async () => {
+      await open(['S2B_A']);
+      expect(store().open).toBe(true);
+      expect(app().error).toBeNull();
+      expect(runAs()).toBeNull();
+      expect(labels()).toEqual(['This pass only', 'All passes (2 jobs)']);
+      expect(passesGroup()?.querySelector('[aria-pressed="true"]')?.textContent).toBe('This pass only');
+      expect(selection().textContent).not.toContain('Run as');
+      expect(selection().querySelector('.pp-fixed')?.textContent).toContain('AOI only');
     });
-    await render();
-    click(gear());
-    await flush();
-    expect(store().open).toBe(true);
-    expect(container.querySelector('.processing-panel')?.textContent).not.toContain(SEVERAL_PASSES_TEXT);
-    expect(app().error).toBeNull();
+
+    it('has the pass in view as the one a job is for', async () => {
+      await open(['S2B_C']);
+      expect(pickedPass()).toContain('2026-07-02');
+      expect(orderView(selectionState(app()), store()).pass?.items.map((i) => i.id)).toEqual(['S2B_C']);
+      await open(['S2B_B']);
+      expect(orderView(selectionState(app()), store()).pass?.items.map((i) => i.id).sort()).toEqual(['S2B_A', 'S2B_B']);
+    });
+
+    it('sends one job for the pass in view, on the AOI of the crop, with "This pass only"', async () => {
+      await open(['S2B_C']);
+      await ndviAndStart();
+      expect(execution()).toHaveLength(1);
+      expect(sent().inputs[0].groups).toEqual([['S2B_C']]);
+      expect(sent().aoi).toEqual(orderAoi(AOI));
+      expect(store().jobs).toHaveLength(1);
+    });
+
+    it('sends a job for every pass, the same steps on the AOI of the crop, with "All passes"', async () => {
+      await open(['S2B_C']);
+      click(button('All passes (2 jobs)'));
+      expect(store().runAs).toBe('pass');
+      await ndviAndStart();
+      // The jobs start one after the other.
+      for (let i = 0; i < 100 && execution().length < 2; i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+      expect(execution()).toHaveLength(2);
+      const orders = execution().map(([, init]) => JSON.parse(init.body).inputs.recipe as Order);
+      expect(orders.map((o) => o.inputs[0].groups).sort()).toEqual([[['S2B_A', 'S2B_B']], [['S2B_C']]]);
+      for (const order of orders) {
+        expect(order.aoi).toEqual(orderAoi(AOI));
+        expect(order.steps).toEqual(orders[0].steps);
+        expect(order.output).toEqual(orders[0].output);
+      }
+      expect(store().jobs).toHaveLength(2);
+      expect(store().batches).toHaveLength(1);
+    });
+
+    it('offers no job per scene, and the choice does not come back as "Run as"', async () => {
+      await open(['S2B_A']);
+      store().setRunAs('scene');
+      expect(orderView(selectionState(app()), store()).runAs).toBe('one');
+      expect(labels().join()).not.toMatch(/scene/u);
+    });
+
+    it('says nothing of passes when only one pass meets the AOI of the crop', async () => {
+      // The scene of the other day lies elsewhere: the AOI does not meet it, so the crop holds one pass.
+      const far = scene('S2B_C', '2026-07-02');
+      far.bbox = [20, 60, 21, 61];
+      far.geometry = bboxToPolygon([20, 60, 21, 61]);
+      search([layer(['S2B_A', 'S2B_C'])]);
+      useAppStore.setState({
+        items: [scene('S2B_A'), far],
+        groups: [
+          { key: ['2026-07-01'], label: '2026-07-01', items: [scene('S2B_A')] },
+          { key: ['2026-07-02'], label: '2026-07-02', items: [far] },
+        ],
+      });
+      await render();
+      click(gear());
+      await flush();
+      expect(store().open).toBe(true);
+      expect(passesGroup()).toBeNull();
+      expect(app().error).toBeNull();
+    });
   });
 });
 
@@ -339,14 +393,19 @@ describe('the other entries are as they were', () => {
 });
 
 describe('the cropped view', () => {
-  it('is one object as the layer is, and takes the area it was opened with', async () => {
-    search();
+  // The images of the view: a pass each, by the dataset and the group; the one the head shows is the key of `shownImage`.
+  const viewOf = (ids: string[], shown: string | null = null) =>
     useAppStore.setState({
       focusMode: true,
       cropToAoi: true,
       viewAoi: AOI,
-      downloaded: { S2B_A: {}, S2B_B: {} } as never,
+      downloaded: Object.fromEntries(ids.map((id) => [id, { datasetId: DATASET }])) as never,
+      shownImage: shown,
     });
+
+  it('is one object as the layer is, and takes the area it was opened with', async () => {
+    search();
+    viewOf(['S2B_A', 'S2B_B']);
     await render();
     await store().processFocusView();
     await flush();
@@ -355,20 +414,24 @@ describe('the cropped view', () => {
     expect(selection().querySelector('.pp-fixed')?.textContent).toContain('AOI only');
   });
 
-  it('says the same for several passes', async () => {
+  it('offers the passes of its dataset, with the pass the head shows as the one a job is for', async () => {
     search();
-    useAppStore.setState({ focusMode: true, cropToAoi: true, viewAoi: AOI, downloaded: { S2B_A: {}, S2B_C: {} } as never });
+    viewOf(['S2B_A', 'S2B_B', 'S2B_C'], `${DATASET}\u00002026-07-02`);
     await render();
     await store().processFocusView();
     await flush();
     expect(store().open).toBe(true);
-    expect(container.querySelector('.processing-panel')?.textContent).toContain(SEVERAL_PASSES_TEXT);
-    expect((button('Start job') as HTMLButtonElement).disabled).toBe(true);
+    expect([...(selection().querySelector('[aria-label="Passes"]')?.querySelectorAll('button') ?? [])].map((b) => b.textContent)).toEqual([
+      'This pass only',
+      'All passes (2 jobs)',
+    ]);
+    expect(orderView(selectionState(app()), store()).pass?.items.map((i) => i.id)).toEqual(['S2B_C']);
+    expect(app().error).toBeNull();
   });
 
   it('a view of the whole scene is as it was', async () => {
     search();
-    useAppStore.setState({ focusMode: true, cropToAoi: false, viewAoi: null, downloaded: { S2B_A: {}, S2B_C: {} } as never });
+    useAppStore.setState({ focusMode: true, cropToAoi: false, viewAoi: null, downloaded: { S2B_A: { datasetId: DATASET }, S2B_C: { datasetId: DATASET } } as never });
     await store().processFocusView();
     expect(store().open).toBe(true);
     expect(store().fixed).toBeNull();

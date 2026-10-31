@@ -475,6 +475,8 @@ export function readProblem(
   index: number,
   steps: readonly DraftStep[],
   data: readonly string[],
+  // Bands the stock holds but the step may not read: those a result of a job did not keep in its output (NM4-05b).
+  hidden: readonly string[] = [],
 ): { field: 'expression' | 'bands'; message: string } | null {
   const field = step.op === 'normalize' ? 'bands' : 'expression';
   // Text that is no expression at all is told before anything else (review of #250); an empty one is the form's "Required".
@@ -487,6 +489,8 @@ export function readProblem(
       : step.op === 'normalize' && typeof step.values.bands === 'string'
         ? new Set(step.values.bands.split(/[\s,;]+/u).filter((n) => n !== ''))
         : new Set<string>();
+  const blocked = [...names].find((name) => hidden.includes(name));
+  if (blocked !== undefined) return { field, message: `'${blocked}' is not a band name` };
   const results = steps.flatMap((s, i) => (isBandMath(s) ? [{ index: i, name: resultNameOf(s) }] : []));
   for (const result of results) {
     if (result.index < index || !names.has(result.name) || data.includes(result.name)) continue;
@@ -500,14 +504,20 @@ export function readProblem(
 
 // What is wrong with a step beyond its form fields, by field (adr/0020 §6): the name of the band a `band_math` step adds,
 // and what the step reads that is no band at its place.
-function bandProblems(step: DraftStep, index: number, steps: readonly DraftStep[], data: readonly string[]): Record<string, string> {
+function bandProblems(
+  step: DraftStep,
+  index: number,
+  steps: readonly DraftStep[],
+  data: readonly string[],
+  hidden: readonly string[],
+): Record<string, string> {
   const errors: Record<string, string> = {};
   if (isBandMath(step)) {
     const others = steps.flatMap((s, i) => (i !== index && isBandMath(s) ? [resultNameOf(s)] : []));
     const problem = nameProblem(resultNameOf(step), others, data);
     if (problem) errors.name = problem;
   }
-  const read = readProblem(step, index, steps, data);
+  const read = readProblem(step, index, steps, data, hidden);
   if (read) errors[read.field] = read.message;
   return errors;
 }
@@ -521,10 +531,16 @@ export function buildOrder(args: {
   // The bands of the output in the order of the file, and every band of the data (the names a result may not take).
   bands: readonly string[];
   data: readonly string[];
+  // The bands a step may not read (`readProblem`); none for an order of the selection.
+  hidden?: readonly string[];
+  // How many steps at the start came with a result: they ran when the result was made, and read what its output does not keep.
+  locked?: number;
   dtype: string;
   info: ProcessInfo;
 }): BuiltOrder {
   const { datasetId, itemIds, area, aoi, steps, bands, data, dtype, info } = args;
+  const hidden = args.hidden ?? [];
+  const locked = args.locked ?? 0;
   const problems: string[] = [];
   const built: OrderStep[] = [];
   const stepProblems: StepProblem[] = steps.map((step, index) => {
@@ -533,7 +549,7 @@ export function buildOrder(args: {
     if (!operator.form.supported) return { errors: {}, unsupported: operator.form.reason };
     const { params, errors } = paramsFrom(operator.form.fields, step.values);
     built.push({ op: step.op, op_version: step.opVersion, params });
-    return { errors: { ...errors, ...bandProblems(step, index, steps, data) } };
+    return { errors: { ...errors, ...bandProblems(step, index, steps, data, index < locked ? [] : hidden) } };
   });
   if (itemIds.length === 0) problems.push('Pick a pass.');
   if (area === 'aoi' && !isArea(aoi)) problems.push('Draw an area as AOI.');

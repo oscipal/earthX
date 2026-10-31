@@ -9,7 +9,7 @@
 // on one shows its details here (`JobDetails.tsx`, UI-01). The first step shows
 // on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
@@ -35,14 +35,13 @@ import {
   previewUnit,
   rescaleOf,
 } from '../processingPreview';
-import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
+import { bandLabel, chainText, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
 import {
   EXPIRED_PROCESS_TEXT,
   orderView,
   type PartOutcome,
   sceneCountOf,
   selectionState,
-  SEVERAL_PASSES_TEXT,
   useProcessingStore,
   type OrderView,
 } from '../processingStore';
@@ -53,7 +52,6 @@ import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import BandSelect from './BandSelect';
 import JobDetails from './JobDetails';
-import LockedStep from './LockedStep';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
 import Tip from './Tip';
@@ -64,7 +62,7 @@ const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(mess
 
 // What the chain from a result means (adr/0019 §3.5, §6): it is run again from the scenes, and the saved file is not read.
 const RERUN_TIP =
-  'The steps of the result are run again from the scenes, then yours. Values can differ in the last bit from a calculation on the saved file (float64 in the chain, float32 in the file).';
+  'The steps above are run again from the scenes, then yours. Values can differ in the last bit from a calculation on the saved file (float64 in the chain, float32 in the file).';
 const FIXED_TIP = 'Fixed by the result.';
 const CROP_TIP = 'Fixed by the crop.';
 
@@ -151,7 +149,7 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
     <section className="pp-section" aria-label="Bands">
       <div className="pp-bands-head">
         <h3 className="pp-heading">Bands</h3>
-        <Tip text="Bands of the data. Click one to put its name into an expression." />
+        <Tip text={view.fixed?.result ? 'Bands of the result. Click one to put its name into an expression.' : 'Bands of the data. Click one to put its name into an expression.'} />
       </div>
       <div className="pp-chips">
         {view.dataBands
@@ -200,7 +198,7 @@ function OutputBands({ view }: { view: OrderView }) {
   const on = new Set(view.output);
   const data = view.dataBands.filter((band) => !band.auxiliary || on.has(band.name));
   // What "All" takes: every result and every band of the data that is no layer and no auxiliary asset.
-  const everything = [...view.results.map((result) => result.name), ...view.selectable];
+  const everything = [...view.fresh.map((result) => result.name), ...view.selectable];
   const chip = (name: string, band?: DataBand) => (
     <button key={name} type="button" className={`pp-chip${on.has(name) ? ' on' : ''}`} aria-pressed={on.has(name)} onClick={() => toggle(name)}>
       {name}
@@ -217,15 +215,15 @@ function OutputBands({ view }: { view: OrderView }) {
           {count} band{count === 1 ? '' : 's'} · {view.dtype}
         </span>
       </div>
-      {view.results.length > 0 && (
+      {view.fresh.length > 0 && (
         <div className="pp-chip-row" role="group" aria-label="New bands">
           <span className="pp-help">New</span>
-          <div className="pp-chips">{view.results.map((result) => chip(result.name))}</div>
+          <div className="pp-chips">{view.fresh.map((result) => chip(result.name))}</div>
         </div>
       )}
       {data.length > 0 && (
         <div className="pp-chip-row" role="group" aria-label="Bands of the data">
-          <span className="pp-help">Data</span>
+          <span className="pp-help">{view.fixed?.result ? 'Result' : 'Data'}</span>
           <div className="pp-chips">{data.map((band) => chip(band.name, band))}</div>
         </div>
       )}
@@ -325,14 +323,15 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
 
 // The scenes and the area an entry fixed (NM4-05b): the result's own, shown as they are with a lock. There is nothing to choose;
 // the order is one job.
-function FixedEntry({ view }: { view: OrderView }) {
+function FixedEntry({ view, chain }: { view: OrderView; chain: string }) {
   const from = view.fixed?.result;
+  const tip = [from?.expired ? EXPIRED_PROCESS_TEXT : '', chain, RERUN_TIP].filter(Boolean).join('\n\n');
   return (
     <div className="pp-area">
       {from && (
         <p className="pp-help">
           From result{from.title ? `: ${from.title}` : ''}
-          <Tip text={from.expired ? `${EXPIRED_PROCESS_TEXT} ${RERUN_TIP}` : RERUN_TIP} />
+          <Tip text={tip} />
         </p>
       )}
       <div className="pp-toggle" role="group" aria-label="Area">
@@ -354,13 +353,15 @@ function FixedEntry({ view }: { view: OrderView }) {
 // "Run as": one job, or one per pass or scene (M4-13c-4). Only offered where it
 // makes a choice; a choice over the limit is greyed out with the reason.
 function RunAsChoice({ view }: { view: OrderView }) {
+  // A crop that is one object has no "Run as", only its passes (NM4-06).
+  const label = view.fixed ? 'Passes' : 'Run as';
   const setRunAs = useProcessingStore((s) => s.setRunAs);
   if (view.runChoices.length < 2) return null;
   const limits = [...new Set(view.runChoices.flatMap((choice) => (choice.disabled ? [choice.disabled] : [])))];
   return (
     <>
-      <div className="pp-toggle" role="group" aria-label="Run as">
-        <span className="pp-help">Run as:</span>
+      <div className="pp-toggle" role="group" aria-label={label}>
+        <span className="pp-help">{label}:</span>
         {view.runChoices.map((choice) => (
           <button
             key={choice.value}
@@ -601,6 +602,8 @@ export default function ProcessingPanel() {
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const view = orderView(app, p);
   const info = view.info;
+  // What the job's steps did, for the tooltip of its origin: the steps stand at the start of the order but are not shown as steps.
+  const chain = info ? chainText(p.steps.slice(0, view.locked), info.operators) : '';
   const built = view.built;
   const hasAoi = isArea(app.aoi);
   const batch = view.runAs !== 'one' && p.batch && p.batch.key === view.key ? p.batch.parts : null;
@@ -626,11 +629,8 @@ export default function ProcessingPanel() {
     p.area === 'scene' &&
     (refusals.some((r) => r!.status === 413 && r!.message !== memory) ||
       (batch?.some((part) => part.refusal?.status === 413 && !isMemoryRefusal(part.refusal.message)) ?? false));
-  // A crop that is one object cannot be split into passes: there is nothing to start.
-  const severalPasses = view.fixed !== null && view.passes.length > 1;
-  const startTitle = severalPasses
-    ? SEVERAL_PASSES_TEXT
-    : view.output.length === 0
+  const startTitle =
+    view.output.length === 0
       ? EMPTY_OUTPUT
       : memory
         ? memory
@@ -675,14 +675,8 @@ export default function ProcessingPanel() {
                 .filter(Boolean)
                 .join(' · ')}
             </p>
-            {view.fixed ? (
-              <FixedEntry view={view} />
-            ) : (
-              <>
-                <AreaChoice view={view} hasAoi={hasAoi} />
-                <RunAsChoice view={view} />
-              </>
-            )}
+            {view.fixed ? <FixedEntry view={view} chain={chain} /> : <AreaChoice view={view} hasAoi={hasAoi} />}
+            <RunAsChoice view={view} />
             {view.locked === 0 && <RecipeLoader />}
           </section>
         )}
@@ -707,8 +701,7 @@ export default function ProcessingPanel() {
                   The scenes are merged into one mosaic first; the steps run on the mosaic.
                 </p>
               )}
-              {view.runAs === 'one' && view.passes.length > 1 && view.fixed && <p className="hint-text error">{SEVERAL_PASSES_TEXT}</p>}
-              {view.runAs === 'one' && view.passes.length > 1 && !view.fixed && (
+              {view.runAs === 'one' && view.passes.length > 1 && (
                 <>
                   <label className="vc-field pp-field">
                     Pass
@@ -748,20 +741,23 @@ export default function ProcessingPanel() {
 
                 <section className="pp-section" aria-label="Processing steps">
                   <h3 className="pp-heading">Processing steps</h3>
-                  {p.steps.length > 0 && (
+                  {p.steps.length > view.locked && (
                     <ol className="pp-steps">
                       {p.steps.map((step, index) => {
+                        // The steps of a result stand first in the order and are not shown (adr/0019 §10a).
+                        if (index < view.locked) return null;
                         const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
-                        if (index < view.locked) return <LockedStep key={step.key} index={index} operator={operator} values={step.values} />;
                         const problem = built?.stepProblems[index];
                         // The results of the steps before this one: the bands this step may name besides those of the data.
-                        const earlier = view.results.slice(0, p.steps.slice(0, index).filter(isBandMath).length).map((r) => r.name);
-                        const form = (
+                        const earlier = view.results
+                          .slice(0, p.steps.slice(0, index).filter(isBandMath).length)
+                          .map((r) => r.name)
+                          .filter((name) => !view.hidden.includes(name));
+                        return (
                           <StepForm
                             key={step.key}
-                            index={index}
-                            count={p.steps.length}
-                            locked={view.locked}
+                            index={index - view.locked}
+                            count={p.steps.length - view.locked}
                             stepKey={step.key}
                             operator={operator}
                             values={step.values}
@@ -792,23 +788,13 @@ export default function ProcessingPanel() {
                             onRemove={() => p.removeStep(step.key)}
                           />
                         );
-                        return index === view.locked && index > 0 ? (
-                          <Fragment key={step.key}>
-                            <li role="separator" className="pp-step-sep">
-                              your steps
-                            </li>
-                            {form}
-                          </Fragment>
-                        ) : (
-                          form
-                        );
                       })}
                     </ol>
                   )}
                   <div className="pp-add" role="group" aria-label="Add step">
                     <span className="pp-help">Add step:</span>
                     {info.operators.length === 0 && <span className="hint-text">No operator runs on this dataset.</span>}
-                    {info.operators.map((operator) => {
+                    {info.operators.filter((operator) => !(operator.op === 'mask' && view.maskHidden)).map((operator) => {
                       const full = p.steps.length >= info.maxSteps;
                       const why = !operator.form.supported
                         ? operator.form.reason
@@ -860,8 +846,8 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="ghost-btn"
-              disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock || severalPasses}
-              title={severalPasses ? SEVERAL_PASSES_TEXT : (crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost')}
+              disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock}
+              title={crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost'}
               onClick={() => void p.reviewOrder()}
             >
               {p.reviewing ? 'Reviewing…' : 'Review'}
