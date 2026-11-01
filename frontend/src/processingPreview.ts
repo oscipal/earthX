@@ -42,6 +42,7 @@ import {
   type ProcessInfo,
 } from './processingOrder';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
+import { isStatistical, type Measured } from './normalizeMethods';
 import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
@@ -122,11 +123,21 @@ function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fie
   return { operator, fields: operator.form.fields };
 }
 
+// What the tile route takes of the parameters of one step, in characters (`MAX_OPERATOR_PARAMS_CHARS` of the backend).
+export const MAX_OPERATOR_PARAMS_CHARS = 2048;
+export const NO_NUMBERS_YET = 'Normalize has no measured numbers yet.';
+
+// A statistical `normalize` step: the tile needs the numbers measured for it.
+const waitsForNumbers = (step: DraftStep, params: Record<string, unknown>): boolean => step.op === 'normalize' && isStatistical(params.method);
+
 // The preview is the longest start of the steps in which every one runs as a tile
 // (`T1`, a pixel operator) and has its fields complete, at most `MAX_PREVIEW_STEPS`
 // of them (adr/0014 §6.1); the tile URL takes the steps in that order. Nothing after
 // a step that cannot be drawn is shown. Without steps there is nothing to say.
-export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | null): PreviewPlan {
+//
+// A statistical `normalize` step is drawn with the numbers measured for it (`numbers`, by step key, NM4-11b): the tile
+// takes them in its parameters. Without them, or with parameters longer than the tile route takes, the start ends before it.
+export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | null, numbers: ReadonlyMap<number, Measured> = new Map()): PreviewPlan {
   const first = steps[0];
   if (!info || !first) return { state: 'off', reason: null };
   const planned: PlannedStep[] = [];
@@ -135,11 +146,19 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
     if ('reason' in found) break;
     const { params, errors } = paramsFrom(found.fields, step.values, step.op);
     if (Object.keys(errors).length > 0) break;
+    if (waitsForNumbers(step, params)) {
+      const measured = numbers.get(step.key);
+      if (!measured) break;
+      params.measured = measured;
+    }
+    if (canonicalJson(params).length > MAX_OPERATOR_PARAMS_CHARS) break;
     planned.push({ step, operator: found.operator, params });
   }
   if (planned.length === 0) {
     const found = tileStep(first, info);
-    return { state: 'off', reason: 'reason' in found ? found.reason : 'Complete the step to see the preview.' };
+    if ('reason' in found) return { state: 'off', reason: found.reason };
+    const { params, errors } = paramsFrom(found.fields, first.values, first.op);
+    return { state: 'off', reason: Object.keys(errors).length === 0 && waitsForNumbers(first, params) ? NO_NUMBERS_YET : 'Complete the step to see the preview.' };
   }
   return { state: 'ready', steps: planned, further: planned.length < steps.length };
 }
