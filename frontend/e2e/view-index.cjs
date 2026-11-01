@@ -248,6 +248,8 @@ async function checkDraw(browser, theme, viewport) {
   });
   await page.locator('.layer-row [data-col="name"]').first().click({ force: true });
   await page.waitForSelector('.scene-view .vc-apply');
+  // The dock of the layers lies over the left of the box at 1280 px: it is closed for the clicks on the box.
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: null }));
   // The box of every layer (NM4-54 part 5): the same fields; the dropdown is free, as in the view the layer came from.
   if ((await field(page).locator('select').isDisabled()) !== false) problems.push('the dropdown "Band" of a layer is locked');
   if ((await field(page).locator('select').inputValue()) !== 'index:NDWI') problems.push('the layer does not show its index in the dropdown');
