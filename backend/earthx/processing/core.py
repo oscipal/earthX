@@ -560,9 +560,8 @@ def run(
             stack.enter_context(rasterio.Env(**process_gdal_options()))
             sources = _open_sources(recipe, stack)
             finest, _ = common_grid(sources)  # refuses assets that are neither one grid nor nested
-            window, transform = crop_window(
-                recipe.aoi.model_dump(mode="json"), finest.crs.to_string(), finest.transform, finest.width, finest.height
-            )
+            aoi = recipe.aoi.model_dump(mode="json")
+            window, transform = crop_window(aoi, finest.crs.to_string(), finest.transform, finest.width, finest.height)
             metas = [_source_meta(sources, finest, window, transform)]
             passes = segments(stock_steps(metas[0], planned, output.bands))
             for segment in passes:
@@ -572,8 +571,7 @@ def run(
                 if (step := segment.measuring) is not None and step.operator.measure_percents(step.params):
                     state.total += _block_count(metas[index + 1])  # the local pass that makes the percentiles exact
             # Before the passes: the last one reads the mask for the statistics of the area.
-            _write_mask(state, metas[-1], recipe.aoi.model_dump(mode="json"))
-            aoi = recipe.aoi.model_dump(mode="json")
+            _write_mask(state, metas[-1], aoi)
             previous: str | None = None
             for index, segment in enumerate(passes):
                 last = index == len(passes) - 1
@@ -835,6 +833,9 @@ def _measured(state: _Run, recipe: Recipe, segment: Segment, measure: _Measure, 
         refinements = [statistics.refine_targets(percents) for statistics in measure.statistics]
         if any(refinement.needed for refinement in refinements):
             _refine(state, name, meta, measure, refinements)
+        else:  # every percentile lay in a bin of one value: the second look is not needed, its blocks count as done
+            for _ in _blocks(meta.width, meta.height):
+                state.tick()
         for band, refinement in zip(measure.names, refinements, strict=True):
             numbers[band].update({f"percentile_{percent}": value for percent, value in refinement.values().items()})
     assert step.operator.with_measured is not None and step.operator.measured_report is not None

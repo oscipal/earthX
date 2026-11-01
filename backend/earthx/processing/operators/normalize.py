@@ -714,17 +714,18 @@ def _measure_percents_v4(params: BaseModel) -> tuple[int, ...]:
     return (25, 50, 75) if params.method == "robust" else ()
 
 
-def _band_values(method: str, low: int | None, high: int | None, statistics: Mapping[str, Any]) -> BandValues | None:
-    """The numbers of one band from its statistics, or ``None`` where it has no usable value."""
+def _band_values(method: str, low: int | None, high: int | None, statistics: Mapping[str, Any]) -> BandValues | str:
+    """The numbers of one band from its statistics, or why it has none (KE8)."""
     if not statistics.get("count"):
-        return None
+        return "has no valid value over the AOI"
     if method == "percentile":
+        # The ends of the range are the minimum and the maximum as counted, which may be -0.0: never in a report.
         p_low = statistics["minimum"] if low == 0 else statistics[f"percentile_{low}"]
         p_high = statistics["maximum"] if high == 100 else statistics[f"percentile_{high}"]
-        return BandValues(p_low=float(p_low), p_high=float(p_high))
+        return BandValues(p_low=float(p_low) + 0.0, p_high=float(p_high) + 0.0)
     if method == "zscore":
         if "stddev" not in statistics:  # not finite: the values are too large to have a spread
-            return None
+            return "has no finite standard deviation over the AOI"
         return BandValues(mean=float(statistics["mean"]), stddev=float(statistics["stddev"]))
     return BandValues(
         p25=float(statistics["percentile_25"]),
@@ -734,13 +735,13 @@ def _band_values(method: str, low: int | None, high: int | None, statistics: Map
 
 
 def _with_measured(params: BaseModel, numbers: Mapping[str, Mapping[str, Any]]) -> BaseModel:
-    """The step with the numbers the run measured over the AOI; :class:`RecipeInvalid` for a band without a valid value (KE8)."""
+    """The step with the numbers the run measured over the AOI; :class:`RecipeInvalid` for a band without them (KE8)."""
     assert isinstance(params, NormalizeParamsV4)
     values = {}
     for name in params.bands:
         found = _band_values(params.method, params.low, params.high, numbers[name])
-        if found is None:
-            raise RecipeInvalid(f"normalize: band {name} has no valid value over the AOI")
+        if isinstance(found, str):
+            raise RecipeInvalid(f"normalize: band {name} {found}")
         values[name] = found
     try:
         return MeasuredNormalizeV4(

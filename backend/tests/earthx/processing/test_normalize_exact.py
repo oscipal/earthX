@@ -12,6 +12,7 @@ import copy
 import hashlib
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -394,11 +395,17 @@ class TestGivingTheStepItsNumbers:
         with pytest.raises(RecipeInvalid, match="^normalize: band nir has no valid value over the AOI$"):
             NORMALIZE_V4.with_measured(_params(METHODS[method]), numbers)
 
-    def test_a_spread_that_is_not_finite_is_refused_like_a_missing_band(self) -> None:
+    def test_a_spread_that_is_not_finite_is_refused_with_its_own_reason(self) -> None:
         numbers = _numbers("zscore")
         del numbers["red"]["stddev"]
-        with pytest.raises(RecipeInvalid, match="band red has no valid value"):
+        with pytest.raises(RecipeInvalid, match="^normalize: band red has no finite standard deviation over the AOI$"):
             NORMALIZE_V4.with_measured(_params(ZSCORE), numbers)
+
+    def test_an_end_of_minus_zero_is_reported_as_zero(self) -> None:
+        numbers = _numbers("percentile")
+        numbers["red"]["minimum"] = -0.0
+        resolved = NORMALIZE_V4.with_measured(_params(_with(PERCENTILE, low=0, high=100)), numbers)
+        assert math.copysign(1.0, resolved.measured.bands["red"].p_low) == 1.0
 
     def test_numbers_that_cannot_be_a_stretch_are_refused(self) -> None:
         numbers = _numbers("percentile")
