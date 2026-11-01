@@ -13,18 +13,23 @@ import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
-import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
+import { trueColorOf } from '../processingOrder';
+import { BAND_TIP, bandAssetsOf } from '../viewBand';
+import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
-import { indexBlockOf, INDEX_TIP, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
-import { viewKind } from '../viewKind';
+import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
-import { layerOfView } from '../viewLayer';
+import { isTemporaryImage, layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Chevron from './Chevron';
 import CloseButton from './CloseButton';
 import Eye from './Eye';
-import RenderFields from './RenderFields';
+import OpacityRow from './OpacityRow';
+import { useEscClose } from './useEscClose';
+import type { BandOption } from './BandSelect';
+import { viewKind } from '../viewKind';
+import RenderFields, { NO_COLORMAP } from './RenderFields';
 
 export default function ViewerControls() {
   const pendingColormapName = useAppStore((s) => s.pendingColormapName);
@@ -48,10 +53,14 @@ export default function ViewerControls() {
   // "Save" keeps the look for the layer the view is the picture of and for every image of the dataset (NM4-53).
   const savable = useAppStore((s) => {
     const own = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
+    // The settings of a layer: there is something to keep where the layer was changed (applied, its opacity) or the fields ask for more.
+    if (s.viewOfLayer && own) return own.saved !== undefined || lookChanged(own.restore.appliedRender, s);
     return (own !== null && lookChanged(own.restore.appliedRender, s)) || datasetSavable(s);
   });
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
+  const viewAoi = useAppStore((s) => s.viewAoi);
+  const layers = useAppStore((s) => s.layers);
   const exitFocus = useAppStore((s) => s.exitFocus);
   const changeImage = useAppStore((s) => s.changeImage);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
@@ -78,6 +87,8 @@ export default function ViewerControls() {
   const stepImage = useAppStore((s) => s.stepImage);
   const chooseViewDataset = useAppStore((s) => s.chooseViewDataset);
   const chooseViewIndex = useAppStore((s) => s.chooseViewIndex);
+  const chooseViewBand = useAppStore((s) => s.chooseViewBand);
+  const pendingBand = useAppStore((s) => s.pendingBand);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const viewOfLayer = useAppStore((s) => s.viewOfLayer);
   const pendingIndex = useAppStore((s) => s.pendingIndex);
@@ -101,11 +112,32 @@ export default function ViewerControls() {
   // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
   const chosen = viewIndexOf({ index: pendingIndex }, shownDataset?.collection);
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
-  // The view of a layer of the layer manager has no dropdown: the index of a layer is the one it was added with (Otto, 1.11.2026).
-  const showIndex = presets.length > 0 && !viewOfLayer;
+  // One dropdown "Band" (NM4-45, Otto, 31.10.2026): the standard picture first ("RGB" where the dataset has a true-colour one), the
+  // single bands of the data, and after a line the index presets of the dataset (the quick calculation of NM4-14b).
+  const standardAsset = shownDataset?.collection['earthx:default_render']?.assets[0] ?? null;
+  const bandAssets = shownDataset && shown ? bandAssetsOf(sectionsForView({ sections, openSectionId, datasetId, items, groups }).flatMap((section) => section.items).find((it) => it.id === shown.ids[0]), shownDataset.collection) : [];
+  const trueColour = shownDataset ? trueColorOf(shownDataset.collection) !== null : false;
+  const bandOptions: BandOption[] = [
+    { value: '', label: trueColour ? 'RGB' : (standardAsset ?? 'Standard') },
+    ...bandAssets.filter((asset) => asset !== standardAsset).map((asset) => ({ value: `band:${asset}`, label: asset })),
+    ...(presets.length > 0 ? [{ value: '|', label: '', separator: true }, ...presets.map((preset) => ({ value: `index:${preset.name}`, label: preset.name, title: presetTip(preset) }))] : []),
+  ];
+  // A dropdown with one entry offers no choice and is not shown. The view of a layer of the layer manager has it free, as the view the
+  // layer came from (Otto, 1.11.2026): "Apply to all" keeps the choice for the layer.
+  const showBand = bandOptions.filter((option) => !option.separator).length > 1;
+  const bandValue = chosen ? `index:${chosen.name}` : pendingBand ? `band:${pendingBand}` : '';
+  const chooseView = (value: string) => {
+    if (value.startsWith('index:')) chooseViewIndex(value.slice('index:'.length));
+    else if (value.startsWith('band:')) chooseViewBand(value.slice('band:'.length));
+    else chooseViewIndex(null);
+  };
   // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
   // is still open from the search keeps all of it, also once its image is pinned.
   const compact = viewOfLayer && layer !== null;
+  // The settings of a layer close with Esc as with the x; the view of the search stays open.
+  useEscClose(() => {
+    if (compact) exitFocus();
+  });
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -118,8 +150,11 @@ export default function ViewerControls() {
         })
       : null;
   // An index is drawn with a colormap whatever the dataset's own picture is.
-  const colormap = chosen || !shownDataset ? true : showsColormap(shownDataset.collection);
+  const colormap = chosen || pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   const at = shown ? here.indexOf(shown) : -1;
+  // Temporary where no layer holds the image as it is drawn now (Otto, 1.11.2026). What is only typed in the fields does not count: the
+  // measured range that stands in them when the view opens is no change; "Apply" is.
+  const temporary = shown ? isTemporaryImage(layers, shown, appliedRender, { cropToAoi: cropToAoi && viewAoi !== null, aoi: viewAoi }) : false;
   const datasetIds = datasetIdsOf(images);
   // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
   const stepText = shown ? (shown.date ?? shown.groupLabel) : '';
@@ -151,6 +186,12 @@ export default function ViewerControls() {
         <span className="vc-title" title={title}>
           {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
         </span>
+        {/* The view of the search is a temporary picture, not a layer (Otto, 1.11.2026): the badge of "Preview", between the title and the date. */}
+        {temporary && (
+          <span className="pp-badge vc-temporary" title="This picture is not a layer: add it to the layers to keep it">
+            Temporary
+          </span>
+        )}
         {datasetIds.length > 1 && shown && (
           <select
             className="vc-dataset"
@@ -205,15 +246,15 @@ export default function ViewerControls() {
       </div>
       )}
 
-      <div className={`vc-render${showIndex ? ' has-index' : ''}`}>
+      <div className={`vc-render${showBand ? ' has-index' : ''}`}>
         <RenderFields
-          index={
-            showIndex
+          band={
+            showBand
               ? {
-                  value: chosen?.name ?? '',
-                  options: presets.map((preset) => ({ name: preset.name, tip: presetTip(preset) })),
-                  tip: chosen ? presetTip(chosen) : INDEX_TIP,
-                  onChange: chooseViewIndex,
+                  value: bandValue,
+                  options: bandOptions,
+                  onChange: chooseView,
+                  title: chosen ? presetTip(chosen) : BAND_TIP,
                 }
               : undefined
           }
@@ -221,7 +262,7 @@ export default function ViewerControls() {
           vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
           unit={{ value: pendingUnit, onChange: setPendingUnit }}
           // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
-          colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: 'RGB', title: 'True colour: three bands, no colormap' }}
+          colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' }}
           placeholder="auto"
         />
         <div className="vc-buttons">
@@ -247,11 +288,15 @@ export default function ViewerControls() {
             aria-disabled={!savable || undefined}
             title={
               savable
-                ? layer
-                  ? 'Draw every image of this dataset with these values and keep them for this layer'
-                  : 'Draw every image of this dataset with these values'
-                : layer
-                  ? NOTHING_TO_APPLY_TO_ALL_LAYER
+                ? compact
+                  ? 'Keep this picture, these values and this opacity for the layer; closing the settings without it puts the saved layer back'
+                  : layer
+                    ? 'Draw every image of this dataset with these values and keep them for this layer'
+                    : 'Draw every image of this dataset with these values'
+                : compact
+                  ? NOTHING_TO_SAVE
+                  : layer
+                    ? NOTHING_TO_APPLY_TO_ALL_LAYER
                   : here.length > 1
                     ? NOTHING_TO_SAVE_IMAGES
                     : NOTHING_TO_SAVE_ONE_IMAGE
@@ -260,10 +305,11 @@ export default function ViewerControls() {
               if (savable) saveViewLook();
             }}
           >
-            Apply to all
+            {compact ? 'Save' : 'Apply to all'}
           </button>
         </div>
       </div>
+      {compact && layer && <OpacityRow layer={layer} />}
 
       {index && indexBlock && (
         <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>

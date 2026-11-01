@@ -47,13 +47,16 @@ export type PlannedRaster = Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom
 
 // What the TileJSON of a mosaic said, by the mosaic's tile template. `null`: the tiler refused it
 // or could not be asked, and the scenes are drawn one by one.
-export interface MosaicInfo extends Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom' | 'maxZoom'> {
+export interface SceneOrder {
   order: string[];
 }
-export type Mosaics = Record<string, MosaicInfo | null>;
+export interface MosaicInfo extends SceneOrder, Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom' | 'maxZoom'> {}
+// The mosaics of the passes, by the template of each (`mosaicTemplateOf`), and next to them, by `orderKeyOf`, the order
+// the tiler gives the scenes of a pass it draws one by one (NM4-24).
+export type Mosaics = Record<string, MosaicInfo | SceneOrder | null>;
 
 export type PassView =
-  | { kind: 'scenes' }
+  | { kind: 'scenes'; order?: readonly string[] }
   | { kind: 'pending' }
   | { kind: 'mosaic'; rasters: PlannedRaster[] }; // bottom to top
 
@@ -77,6 +80,12 @@ export function passesOf(entries: SceneEntry[], groups: readonly TimeStepGroup[]
 // preview all lay their pictures with it, or the same selection would stack differently in each.
 export function stackLikeView<T>(firstOnTop: readonly T[]): T[] {
   return [...firstOnTop].reverse();
+}
+
+// The key of the order of a pass's scenes in `Mosaics`: the one the tiler gives where there is no mosaic to follow, because
+// the pass is too big for one (over 64), the tiler refused it, or its dataset is released below z8 only.
+export function orderKeyOf(datasetId: string, entries: SceneEntry[]): string | null {
+  return entries.length >= MIN_MOSAIC_SCENES ? `order|${buildMosaicTileTemplate(datasetId, entries.map(([id]) => id), entries[0][1].asset)}` : null;
 }
 
 export function isMosaicPass(entries: SceneEntry[]): boolean {
@@ -103,8 +112,9 @@ export function mosaicsOfView(
 ): Mosaics {
   const picked: Mosaics = {};
   for (const pass of passesOf(entries, groups)) {
-    const template = datasetId ? mosaicTemplateOf(datasetId, pass) : null;
-    if (template && template in mosaics) picked[template] = mosaics[template];
+    for (const key of datasetId ? [mosaicTemplateOf(datasetId, pass), orderKeyOf(datasetId, pass)] : []) {
+      if (key && key in mosaics) picked[key] = mosaics[key];
+    }
   }
   return picked;
 }
@@ -114,12 +124,17 @@ export function sameMosaics(a: Mosaics, b: Mosaics): boolean {
   return keys.length === Object.keys(b).length && keys.every((k) => k in b && a[k] === b[k]);
 }
 
+// The scenes of a pass drawn one by one, in the order the tiler gave them, when it did (the others keep their place).
+const scenesInOrder = (order: SceneOrder | null | undefined): PassView => (order ? { kind: 'scenes', order: order.order } : { kind: 'scenes' });
+
 export function viewOfPass(datasetId: string | null, entries: SceneEntry[], mosaics: Mosaics | undefined): PassView {
   const template = datasetId && mosaics ? mosaicTemplateOf(datasetId, entries) : null;
-  if (!template || !mosaics) return { kind: 'scenes' };
+  const asked = datasetId && mosaics ? orderKeyOf(datasetId, entries) : null;
+  const order = asked && mosaics ? mosaics[asked] : null;
+  if (!template || !mosaics) return scenesInOrder(order);
   const mosaic = mosaics[template];
   if (mosaic === undefined) return { kind: 'pending' };
-  if (mosaic === null) return { kind: 'scenes' };
+  if (mosaic === null || !('tileUrl' in mosaic)) return scenesInOrder(order);
   const rank = new Map(mosaic.order.map((id, i) => [id, i]));
   const rankOf = (id: string) => rank.get(id) ?? mosaic.order.length;
   const below: PlannedRaster[] = entries
@@ -134,6 +149,21 @@ export function viewOfPass(datasetId: string | null, entries: SceneEntry[], mosa
       hideFrom: mosaic.minZoom - TILE_LEVEL_AHEAD,
     }));
   return { kind: 'mosaic', rasters: [...below, mosaic] };
+}
+
+// The scenes of a pass first on top, as the view stacks them: in the order the tiler gave for the pass when it did, else in the
+// order of the selection. A scene the order does not name goes after the ones it names.
+export function inStackOrder<T extends SceneEntry>(entries: readonly T[], order: readonly string[] | undefined): T[] {
+  if (!order) return [...entries];
+  const rank = new Map(order.map((id, i) => [id, i]));
+  const rankOf = (id: string) => rank.get(id) ?? order.length;
+  return [...entries].sort(([a], [b]) => rankOf(a) - rankOf(b));
+}
+
+// The scenes of a pass first on top: for a pass drawn scene by scene, in the order the tiler gave (`inStackOrder`).
+export function orderedPass(datasetId: string | null, entries: SceneEntry[], mosaics: Mosaics | undefined): SceneEntry[] {
+  const view = viewOfPass(datasetId, entries, mosaics);
+  return view.kind === 'scenes' ? inStackOrder(entries, view.order) : entries;
 }
 
 // A time step too big for one mosaic is drawn scene by scene, and the map draws only so many of those.

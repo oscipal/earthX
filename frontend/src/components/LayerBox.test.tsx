@@ -125,12 +125,23 @@ describe('a layer opened from the layer manager', () => {
     expect(container.querySelector('.vc-stepper, .vc-dataset, .vc-eye')).toBeNull();
   });
 
-  it('has the fields and the buttons of the settings of any layer in one row, as before, and no line under it', () => {
-    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap']);
-    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+  // Otto, 1.11.2026 (NM4-54 part 5): the box of a layer of scenes is the box of a result: the fields and the buttons in one row, and
+  // the opacity of the layer in the row under them.
+  it('has the fields and the buttons of the settings of any layer in one row, and the opacity under them', () => {
+    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
     const box = container.querySelector('.scene-view')!;
-    expect([...box.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-head', 'vc-render']);
-    expect(container.querySelector('.vc-opacity, input[type="range"]')).toBeNull();
+    expect([...box.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-head', 'vc-render', 'vc-opacity']);
+    expect(container.querySelectorAll('.vc-opacity input[type="range"]')).toHaveLength(1);
+  });
+
+  it('changes the opacity of the layer from its box', () => {
+    const slider = container.querySelector<HTMLInputElement>('.vc-opacity input[type="range"]')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(slider, '0.5');
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(state().layers[0].opacity).toBe(0.5);
   });
 
   it('closes with the x: the view goes, the layer stays', () => {
@@ -144,8 +155,8 @@ describe('a layer opened from the layer manager', () => {
     crop.restore = { ...crop.restore, cropToAoi: true, aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } };
     act(() => useAppStore.setState({ cropToAoi: true, viewAoi: crop.restore.aoi, layers: [crop] }));
     expect(container.querySelector('.vc-actions')).toBeNull();
-    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap']);
-    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
   });
 });
 

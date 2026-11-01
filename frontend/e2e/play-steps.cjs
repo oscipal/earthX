@@ -172,10 +172,11 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
     const toast = page.locator('.toast.notice');
     if ((await toast.count()) > 0) notice = await toast.first().innerText();
     await page.waitForTimeout(40);
-    // "Hide results" while it plays (Otto): the playing ends, and the timeline stands where it was.
+    // The eye of "Search results" off while it plays (Otto): the playing ends and the whole block, timeline included, is gone; the step stays.
     if (hideResults && !hidden && Date.now() - t0 > 2500) {
       hidden = true;
       await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().toggleResultsOnMap());
+      break;
     }
   }
   await page.screenshot({ path: path.join(OUT, `${name}.png`) });
@@ -198,24 +199,22 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
   // The name of a step is its date.
   for (const label of labels) if (!/^\d{4}-\d{2}-\d{2}$/.test(label)) problems.push(`the timeline names a step "${label}"`);
   if (hideResults) {
-    // Playing ends with "Hide results": the button says "Play" again and the timeline stood still for the last seconds.
-    const label = await page.locator('.play-btn').getAttribute('aria-label');
-    if (label !== 'Play') problems.push(`the playing went on after "Hide results": the button says "${label}"`);
-    if (counts.size < 2) problems.push(`the timeline did not move before "Hide results": ${[...counts].join(', ')}`);
-    const after = await page.locator('.time-count').innerText();
+    // The block (selection bar and timeline) is gone with the results; the playing has ended, the time step and the ticks stay.
+    const state = () => page.evaluate(async () => { const s = (await import('/src/store.ts')).useAppStore.getState(); return { playing: s.playing, onMap: s.resultsOnMap, group: s.activeGroupIndex, ticked: s.selectedIds.length }; });
+    await page.waitForTimeout(300);
+    const gone = await state();
+    if (gone.playing || gone.onMap) problems.push(`the playing went on after the results were hidden: ${JSON.stringify(gone)}`);
+    if ((await page.locator('[data-testid="selection-block"]').count()) !== 0 || (await page.locator('.time-slider').count()) !== 0) problems.push('the block is still there with the results hidden');
+    if (counts.size < 2) problems.push(`the timeline did not move before the results were hidden: ${[...counts].join(', ')}`);
     await page.waitForTimeout(2500);
-    if ((await page.locator('.time-count').innerText()) !== after) problems.push('the timeline moved on after "Hide results"');
+    const still = await state();
+    if (still.group !== gone.group) problems.push('the time step moved on with the results hidden');
     if (notice) problems.push(`a notice with the results off the map: ${notice}`);
-    // "Play" with the results hidden shows them and plays; a click on a scene on the map ends the playing (Otto).
-    await page.locator('.play-btn').dispatchEvent('click');
-    const state = () => page.evaluate(async () => { const s = (await import('/src/store.ts')).useAppStore.getState(); return { playing: s.playing, onMap: s.resultsOnMap, ticked: s.selectedIds.length }; });
-    const started = await state();
-    if (!started.playing || !started.onMap) problems.push(`"Play" with the results hidden: ${JSON.stringify(started)}`);
-    await page.waitForTimeout(300);
-    await page.mouse.click(x, y);
-    await page.waitForTimeout(300);
-    const clicked = await state();
-    if (clicked.playing || clicked.ticked === 0) problems.push(`a click on a scene while it plays: ${JSON.stringify(clicked)}`);
+    // The eye on again: the block is back, at the step it left.
+    await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().toggleResultsOnMap());
+    await page.waitForSelector('.time-slider', { timeout: 5000 }).catch(() => problems.push('the timeline did not come back with the eye'));
+    const back = await state();
+    if (back.group !== gone.group || back.ticked !== gone.ticked) problems.push(`the step or the ticks changed: ${JSON.stringify([gone, back])}`);
     console.log(`     ${name}: counts ${[...counts].join(' ')}`);
     await context.close();
     return { name, problems };

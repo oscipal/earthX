@@ -125,16 +125,22 @@ describe.each([
     useAppStore.getState().selectLayer(`L-${id}`);
   });
 
-  it('is the picture of the layer until "Apply" gives it another look, and the layer stays as it was', () => {
+  // Otto, 1.11.2026 (Browsertest zu #272): "Apply" in the settings of a layer changes the layer itself (the old rule of M4-28, that it
+  // leaves the layer as it was, is gone), at its place; it is kept with "Save" and put back when the settings close without it.
+  it('is the picture of the layer, and "Apply" changes this layer at once, with the saved look kept apart', () => {
     const before = useAppStore.getState().layers[0];
     expect(useAppStore.getState().viewLayerId).toBe(`L-${id}`);
     useAppStore.getState().setPendingColormapName('magma');
     useAppStore.getState().applyRender();
     const s = useAppStore.getState();
     expect(s.appliedRender.colormapName).toBe('magma');
-    expect(s.layers[0]).toBe(before);
-    expect(s.layers[0].restore.appliedRender).toEqual({ colormapName: 'viridis', rescale: '10,2900' });
-    expect(overlayUrl(s.layers[0])).toContain('colormap_name=viridis');
+    expect(s.layers.map((l) => l.id)).toEqual([before.id]);
+    expect(s.layers[0].restore.appliedRender).toMatchObject({ colormapName: 'magma' });
+    expect(overlayUrl(s.layers[0])).toContain('colormap_name=magma');
+    expect(s.layers[0].saved?.appliedRender).toEqual({ colormapName: 'viridis', rescale: '10,2900' });
+    useAppStore.getState().exitFocus();
+    expect(useAppStore.getState().layers[0].restore.appliedRender).toEqual({ colormapName: 'viridis', rescale: '10,2900' });
+    expect(overlayUrl(useAppStore.getState().layers[0])).toContain('colormap_name=viridis');
   });
 
   it('takes into "Add to layers" the look that was applied, not what was only typed', () => {
@@ -205,12 +211,14 @@ describe.each([
     expect(store().viewAoi).toEqual(cropped ? AOI : null);
   });
 
-  it('"Apply" draws the view and leaves the layer as it was', () => {
-    const before = layer();
+  it('"Apply" changes the layer itself, at once, and keeps the saved look apart (Otto, 1.11.2026)', () => {
     store().setPendingColormapName('magma');
     store().applyRender();
     expect(store().appliedRender.colormapName).toBe('magma');
-    expect(layer()).toBe(before);
+    expect(layer().restore.appliedRender.colormapName).toBe('magma');
+    expect(urlOf(layer())).toContain('colormap_name=magma');
+    expect(layer().saved?.appliedRender?.colormapName).toBe('viridis');
+    expect(store().layers.filter((l) => l.id === `L-${id}`)).toHaveLength(1);
   });
 
   it('"Save" makes the applied look the layer\'s own: its restore and its tiles, cut the way they were', () => {

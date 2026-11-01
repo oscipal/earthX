@@ -88,7 +88,7 @@ describe('the date in the name of a layer (Otto, 1.11.2026: "das datum gehört i
       sections: [{ datasetId: 's2', items: [{ id: 'x', collection: 's2', properties: { datetime: '2026-07-01T00:00:00Z' }, assets: {} }], groups: [] } as never],
     });
     act(() => root.render(<LayerManager />));
-    expect(container.querySelector('.results-row .lm-name')!.textContent).toBe('Results');
+    expect(container.querySelector('.results-row .lm-name')!.textContent).toBe('Search results');
   });
 });
 

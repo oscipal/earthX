@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildMosaicTileTemplate } from './api';
+import { orderKeyOf } from './mosaic';
 import { datasetsFrom } from './datasets';
 import { useAppStore } from './store';
 import type { Collection, DownloadedInfo, StacItem } from './types';
@@ -65,14 +66,18 @@ const TILEJSON = (order: string[]) => ({
 
 // A tiler that answers the statistics of the stretch and the TileJSON of a mosaic.
 function tiler(mosaic: (url: string) => Response | Promise<Response> = (url) => json(TILEJSON(itemsOf(url)))) {
-  const fetchMock = vi.fn(async (url: string) => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.includes('/mosaic/')) return mosaic(url);
+    // The order of a pass drawn scene by scene (NM4-24), as the tiler gives it where the scenes lie in one CRS: by id.
+    if (url.includes('/scene-order')) return json({ order: (JSON.parse(String(init?.body)) as { items: string[] }).items.sort() });
     if (url.includes('/statistics')) return json({ '1': { min: 0, max: 4000, percentile_2: 0, percentile_98: 3000 } });
     throw new Error(`unexpected request: ${url}`);
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
+// The mosaics of the store, without the orders of the scenes that lie beside them (NM4-24).
+const mosaicsOnly = (mosaics: Record<string, unknown>) => Object.entries(mosaics).filter(([key]) => !key.startsWith('order|')).map(([, v]) => v);
 const itemsOf = (url: string) => new URL(url, 'http://localhost').searchParams.getAll('item');
 const mosaicCalls = () =>
   vi.mocked(fetch).mock.calls.map(([url]) => url as string).filter((url) => url.includes('/mosaic/'));
@@ -178,7 +183,7 @@ describe('enterFocus with a time step of several scenes', () => {
     tiler(() => json({ detail: 'the items are of different passes' }, 422));
     await useAppStore.getState().enterFocus(false);
     const s = useAppStore.getState();
-    expect(Object.values(s.mosaics)).toEqual([null]);
+    expect(mosaicsOnly(s.mosaics)).toEqual([null]);
     expect(s.notice).toBe('Could not load the mosaic (the items are of different passes); its scenes are drawn one by one.');
     expect(s.focusMode).toBe(true);
     expect(Object.keys(s.downloaded)).toEqual(['A', 'B', 'C']);
@@ -189,14 +194,14 @@ describe('enterFocus with a time step of several scenes', () => {
       throw new TypeError('Failed to fetch');
     });
     await useAppStore.getState().enterFocus(false);
-    expect(Object.values(useAppStore.getState().mosaics)).toEqual([null]);
+    expect(mosaicsOnly(useAppStore.getState().mosaics)).toEqual([null]);
     expect(useAppStore.getState().notice).toMatch(/Failed to fetch/);
   });
 
   it('does the same for a TileJSON it cannot read', async () => {
     tiler(() => json({ bounds: [1, 2], minzoom: 8 }));
     await useAppStore.getState().enterFocus(false);
-    expect(Object.values(useAppStore.getState().mosaics)).toEqual([null]);
+    expect(mosaicsOnly(useAppStore.getState().mosaics)).toEqual([null]);
     expect(useAppStore.getState().notice).toMatch(/cannot read/);
   });
 
@@ -320,6 +325,129 @@ describe('adding a mosaic to the layers', () => {
     expect(s.error).toBeNull();
     expect(s.notice).toMatch(/^Added /);
     expect(s.layers[0].overlays.filter((o) => o.kind === 'raster' && o.tileUrl.includes('/mosaic/'))).toHaveLength(1);
+  });
+});
+
+describe('the order of the scenes of a pass drawn one by one (NM4-24)', () => {
+  // The tiler of `tiler()`, with the route of the order added: it answers with the ids backwards, which no sort of the page gives.
+  function withOrderRoute(answer: (ids: string[]) => Response | Promise<Response>, mosaic?: (url: string) => Response) {
+    const base = tiler(mosaic);
+    const calls: { url: string; ids: string[]; asset: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes('/scene-order')) {
+          expect(init?.method).toBe('POST');
+          const body = JSON.parse(String(init?.body)) as { items: string[]; asset: string };
+          calls.push({ url, ids: body.items, asset: body.asset });
+          return answer(body.items);
+        }
+        return base(url);
+      }),
+    );
+    return calls;
+  }
+  const backwards = (ids: string[]) => json({ order: [...ids].reverse() });
+  const entriesOfView = () => Object.entries(useAppStore.getState().downloaded);
+  const keyOfView = () => orderKeyOf(ID, entriesOfView()) as string;
+
+  it('is asked for a pass too big for a mosaic, with the ids in the body, and kept', async () => {
+    openGroup(ids(65));
+    const calls = withOrderRoute(backwards);
+    await useAppStore.getState().enterFocus(false);
+    expect(mosaicCalls()).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toContain('/collections/sentinel-2-c1-l2a/scene-order');
+    expect(calls[0].ids).toHaveLength(65);
+    expect(calls[0].asset).toBe('visual');
+    expect(useAppStore.getState().mosaics[keyOfView()]).toEqual({ order: [...ids(65)].reverse() });
+  });
+
+  it('is asked for a pass whose mosaic the tiler refused, and not asked again by the next view', async () => {
+    const calls = withOrderRoute(backwards, () => json({ detail: 'the items are of different passes' }, 422));
+    await useAppStore.getState().enterFocus(false);
+    expect(calls).toHaveLength(1);
+    expect(useAppStore.getState().mosaics[keyOfView()]).toEqual({ order: ['C', 'B', 'A'] });
+    await useAppStore.getState().loadMosaics();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('is not asked for a pass that has its mosaic: the TileJSON names the order', async () => {
+    const calls = withOrderRoute(backwards);
+    await useAppStore.getState().enterFocus(false);
+    expect(calls).toEqual([]);
+    expect(useAppStore.getState().mosaics[keyOfView()]).toBeUndefined();
+  });
+
+  it('is not asked for a single scene', async () => {
+    openGroup(['A']);
+    const calls = withOrderRoute(backwards);
+    await useAppStore.getState().enterFocus(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('is left to the selection, with a notice, when the tiler cannot give it', async () => {
+    const calls = withOrderRoute(() => json({ detail: 'the catalogue database is not reachable' }, 503), () => json({ detail: 'no' }, 422));
+    await useAppStore.getState().enterFocus(false);
+    expect(calls).toHaveLength(1);
+    const s = useAppStore.getState();
+    expect(s.mosaics[keyOfView()]).toBeNull();
+    expect(s.notice).toMatch(/^Could not load the mosaic/);
+    // Not asked again; the answer that said no stays.
+    await useAppStore.getState().loadMosaics();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('says that the order could not be read when the mosaic was not what failed', async () => {
+    openGroup(ids(65));
+    withOrderRoute(() => json({ detail: 'the catalogue database is not reachable' }, 503));
+    await useAppStore.getState().enterFocus(false);
+    expect(useAppStore.getState().notice).toMatch(/^Could not read the stacking order of the scenes \(.*\); they lie in the order of the selection\.$/);
+  });
+
+  it('is refused when the answer is not a list of ids', async () => {
+    openGroup(ids(65));
+    withOrderRoute(() => json({ order: [1, 2] }));
+    await useAppStore.getState().enterFocus(false);
+    expect(useAppStore.getState().mosaics[keyOfView()]).toBeNull();
+  });
+});
+
+describe('adding to the layers while the mosaic is on its way (NM4-12)', () => {
+  it('drops the pin without a word when the view is closed meanwhile', async () => {
+    let answerMosaic: (r: Response) => void = () => {};
+    tiler(() => new Promise<Response>((resolve) => (answerMosaic = resolve)));
+    const entering = useAppStore.getState().enterFocus(true);
+    await vi.waitFor(() => expect(useAppStore.getState().focusMode).toBe(true));
+    useAppStore.getState().addCurrentToLayers();
+    expect(useAppStore.getState().pinLoading).toBe(true);
+
+    useAppStore.getState().exitFocus();
+    answerMosaic(json(TILEJSON(['A', 'B', 'C'])));
+    await entering;
+    await vi.waitFor(() => expect(useAppStore.getState().pinLoading).toBe(false));
+    const s = useAppStore.getState();
+    expect(s.layers).toEqual([]);
+    expect([s.error, s.notice]).toEqual([null, null]);
+  });
+
+  it('clears an earlier message when the pin goes through, and a second click makes no second layer', async () => {
+    let answerMosaic: (r: Response) => void = () => {};
+    tiler(() => new Promise<Response>((resolve) => (answerMosaic = resolve)));
+    const entering = useAppStore.getState().enterFocus(true);
+    await vi.waitFor(() => expect(useAppStore.getState().focusMode).toBe(true));
+    useAppStore.setState({ error: 'Nothing to add — search and pick a time step first.' });
+
+    useAppStore.getState().addCurrentToLayers();
+    expect(useAppStore.getState().error).toBeNull();
+    useAppStore.getState().addCurrentToLayers();
+    useAppStore.getState().addAllToLayers();
+    answerMosaic(json(TILEJSON(['A', 'B', 'C'])));
+    await entering;
+    await vi.waitFor(() => expect(useAppStore.getState().layers).toHaveLength(1));
+    await vi.waitFor(() => expect(useAppStore.getState().pinLoading).toBe(false));
+    expect(useAppStore.getState().layers).toHaveLength(1);
+    expect(useAppStore.getState().error).toBeNull();
   });
 });
 

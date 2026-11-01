@@ -1,7 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
-import { indexDownloadBlock, indexOfLayer } from '../indexDownload';
+import { indexOfferedFor } from '../indexDownload';
 import { flipIdOf } from '../layerFlip';
 import { layerShownName } from '../layerName';
 import type { MapLayer } from '../layers';
@@ -25,7 +25,7 @@ export const SHOW_LAYER_TIP = 'Show layer';
 export const ADD_BAND_TIP = 'Add this band as a layer of its own';
 export const FLIP_TIP = 'Flip through layers (↑/↓ or the mouse wheel over the list, Esc to stop)';
 export const FLIP_ROW_TIP = 'Draw this layer on top of the others';
-export const RESULTS_ENTRY_TIP = 'Search results, the view and the processing preview. Move to change what lies above.';
+export const RESULTS_ENTRY_TIP = 'The search results, the view and the processing preview. Move to change what lies above.';
 
 // Marks a result layer "Expired" when the time comes (M4-13c-5): one timer for the
 // soonest of them, set again after every change to the list. The tiler's `410` is
@@ -203,9 +203,9 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           disabled={downloadOutcome === 'disabled' || !canDownloadLayer(l, datasets)}
           title={
             downloadOutcome === 'disabled'
-              ? (indexDownloadBlock(l, datasets) ?? 'Draw an AOI to download this layer')
-              : indexOfLayer(l, datasets)
-                ? `Download the ${indexOfLayer(l, datasets)!.name} of the AOI crop, computed as a Processing job would`
+              ? 'Draw an AOI to download this layer'
+              : indexOfferedFor(l, datasets)
+                ? `Download the AOI crop, one file per group; the ${indexOfferedFor(l, datasets)!.name} too, computed as a Processing job would`
                 : downloadOutcome === 'originals'
                 ? 'Download the original files, straight from the source'
                 : 'Download the AOI crop, one file per group'
@@ -259,7 +259,7 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
       <Grip dnd={dnd} />
       <ResultsEye />
       <span className="lm-name results-name" data-col="name" title={RESULTS_ENTRY_TIP}>
-        Results
+        Search results
       </span>
       <Slot col="opacity" />
       <button type="button" className="lm-btn" data-col="up" title="Move up" disabled={first} onClick={() => move('up')}>

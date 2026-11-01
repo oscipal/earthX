@@ -11,7 +11,7 @@ import {
   termsNoticeText,
 } from '../download';
 import { groupItemIdsFor } from '../grouping';
-import { indexOfLayer } from '../indexDownload';
+import { indexOfferedFor } from '../indexDownload';
 import { useAppStore } from '../store';
 import ExportJobOffer from './ExportJobOffer';
 import OriginalFiles from './OriginalFiles';
@@ -77,6 +77,8 @@ export default function DownloadDialog() {
   const exportOffer = useAppStore((s) => s.downloadExportOffer);
   const downloadStatus = useAppStore((s) => s.downloadStatus);
   const indexNote = useAppStore((s) => s.downloadIndexNote);
+  const downloadAs = useAppStore((s) => s.downloadAs);
+  const setDownloadAs = useAppStore((s) => s.setDownloadAs);
 
   if (!layerId && !selectionMode) return null;
 
@@ -169,8 +171,10 @@ export default function DownloadDialog() {
   // and ATTRIBUTION.txt in the ZIP carries the text (Otto, 25.10.2026, NM4-01).
   const terms = termsNoticeText(flags, 'en');
   const exportAllowed = canExportLicense(flags);
-  // A layer that shows an index is downloaded as that index (NM4-14b): the file a Processing job would give, with no job to see.
-  const index = !selectionMode && layer ? indexOfLayer(layer, datasets) : null;
+  // A layer that shows an index offers it besides its raw bands (NM4-14b, Otto, 1.11.2026): the file a Processing job would give,
+  // with no job to see. The raw bands are what the dialog starts with, as for any layer.
+  const offered = !selectionMode && layer ? indexOfferedFor(layer, datasets) : null;
+  const index = offered && downloadAs === 'index' ? offered : null;
 
   return (
     <div className="dialog-backdrop" onClick={close}>
@@ -191,6 +195,17 @@ export default function DownloadDialog() {
               </>
             )}
           </p>
+
+          {offered && (
+            <div className="dialog-as" role="radiogroup" aria-label="What to download">
+              {(['raw', 'index'] as const).map((what) => (
+                <label key={what} style={{ marginRight: '1em' }} title={what === 'raw' ? 'The bands of the scenes, cut to the AOI' : `The ${offered.name}, computed as a Processing job would give it`}>
+                  <input type="radio" name="download-as" checked={downloadAs === what} onChange={() => setDownloadAs(what)} disabled={downloading} />{' '}
+                  {what === 'raw' ? 'Raw bands' : offered.name}
+                </label>
+              ))}
+            </div>
+          )}
 
           {req && !index && (
             <div className="dialog-resolution">

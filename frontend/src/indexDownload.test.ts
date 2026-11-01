@@ -9,7 +9,7 @@ import { datasetsFrom } from './datasets';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from './download';
-import { downloadIndexCrop, estimateIndexDownload, indexDownloadBlock, indexOfLayer, indexOrdersOf, TOO_LARGE_TIP } from './indexDownload';
+import { downloadIndexCrop, estimateIndexDownload, indexDownloadBlock, indexOfferedFor, indexOfLayer, indexOrdersOf, TOO_LARGE_TIP } from './indexDownload';
 import type { MapLayer } from './layers';
 import { canonicalJson } from './processing';
 import { processInfo as infoOf } from './processingOrder';
@@ -130,8 +130,9 @@ describe('which layers are downloaded as an index', () => {
     expect(indexOfLayer(layerOf({ appliedRender: undefined as never }), datasets())).toBeNull();
   });
 
-  it('go as an AOI crop; the button of the layer manager is for the crop and is open', () => {
+  it('are offered beside the raw bands of an AOI crop; the button of the layer manager is the one of the crop and is open', () => {
     expect(indexDownloadBlock(layerOf(), datasets())).toBeNull();
+    expect(indexOfferedFor(layerOf(), datasets())?.name).toBe('NDVI');
     expect(decideDownloadOutcomeForLayer(layerOf(), datasets())).toBe('crop');
     expect(canDownloadLayer(layerOf(), datasets())).toBe(true);
   });
@@ -140,17 +141,19 @@ describe('which layers are downloaded as an index', () => {
     ['whole scenes', { cropToAoi: false }, /whole scenes is computed by a job: start one in Processing/u],
     ['a layer with no AOI', { aoi: null }, /whole scenes is computed by a job/u],
     ['a layer that is not of a view', { focusMode: false }, /whole scenes is computed by a job/u],
-  ])('are not downloaded for %s: locked, with what to do', (_, over, reason) => {
+  ])('are not offered for %s, with what to do; the layer is downloaded as any layer without an index is (Otto, 1.11.2026)', (_, over, reason) => {
     const layer = layerOf(over as never);
     expect(indexDownloadBlock(layer, datasets())).toMatch(reason);
-    expect(decideDownloadOutcomeForLayer(layer, datasets())).toBe('disabled');
-    expect(canDownloadLayer(layer, datasets())).toBe(false);
+    expect(indexOfferedFor(layer, datasets())).toBeNull();
+    const plain = layerOf({ ...(over as object), appliedRender: { rescale: '0,3000' } } as never);
+    expect(decideDownloadOutcomeForLayer(layer, datasets())).toBe(decideDownloadOutcomeForLayer(plain, datasets()));
+    expect(canDownloadLayer(layer, datasets())).toBe(canDownloadLayer(plain, datasets()));
   });
 
-  it('are not downloaded where the licence does not allow processing', () => {
+  it('are not offered where the licence does not allow processing', () => {
     const list = datasets(SENTINEL_2_PRESETS, 'display');
     expect(indexDownloadBlock(layerOf(), list)).toContain('does not allow processing');
-    expect(canDownloadLayer(layerOf(), list)).toBe(false);
+    expect(indexOfferedFor(layerOf(), list)).toBeNull();
   });
 
   it('leave a layer without an index to the crop of the raw scenes, as before', () => {

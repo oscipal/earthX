@@ -316,17 +316,8 @@ body.dragging * {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.result-controls {
-  --row-height: 34px;
-}
-.result-controls .vc-field select,
-.result-controls .vc-field input[type='number'] {
-  height: var(--row-height);
-  box-sizing: border-box;
-}
-.result-controls .vc-buttons {
-  width: 176px;
-}
+/* The box of a result is the box of the view of scenes (`.scene-view`): the same width, the same grid, the same places for the
+   fields and the buttons (NM4-54 part 5, Otto, 1.11.2026). */
 .vc-field {
   display: flex;
   flex-direction: column;
@@ -441,6 +432,9 @@ body.dragging * {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  /* As high as the head of the view of the search (the eye and the arrows are 28px), so that the box of a layer, whose head has
+     the name and the x only, has its fields at the same place (NM4-54 part 5). */
+  min-height: 28px;
 }
 .scene-view .vc-title {
   flex: 1 1 120px;
@@ -478,6 +472,12 @@ body.dragging * {
 /* In the head, between the title and the eye (NM4-53, Otto 31.10.2026): the dataset to choose and the date with the arrows.
    Where they do not fit beside the title (a narrow window) they take a line of their own under it, the eye staying with the
    title. The title is what gives way: it is cut with "…" and given in full as its tooltip. */
+/* "Temporary", the mark of the view of the search, between the title and the date: the badge of the "Preview" of the processing panel
+   (`.pp-badge`, Otto, 1.11.2026), which keeps its size in the head. */
+.scene-view .vc-temporary {
+  flex: none;
+  white-space: nowrap;
+}
 .scene-view .vc-dataset {
   flex: 0 1 130px;
   min-width: 0;
@@ -2247,9 +2247,21 @@ input[type='date']:focus {
   grid-column: -2;
   align-self: center;
 }
-/* The opacity of a result in its view: a slider of its own width. */
-.result-controls .lm-opacity {
-  width: 120px;
+/* The opacity of a layer in its box, the row under the fields (a result and a layer of scenes alike). */
+.scene-view .vc-opacity {
+  grid-column: 1 / -1;
+  /* As high as the row of buttons of the view of the search, so that the boxes are as high as each other where they can be. */
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.scene-view .vc-opacity .vc-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.scene-view .vc-opacity .lm-opacity {
+  width: 160px;
 }
 
 /* --- the rail and the panels beside it (UI-01 §6.9) --- */
