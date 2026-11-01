@@ -16,8 +16,9 @@
         powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\checks\nm4-71-normalize.ps1
 
     Windows PowerShell 5.1, keine Module. Each step is printed as PASS or FAIL:
-      1. find a Sentinel-2 scene (summer 2025, few clouds) around 7 E / 46 N, build a square of 0.3 degrees in it
-         (larger than 2048 x 2048 pixels at 10 m)
+      1. find a Sentinel-2 scene (summer 2025, else April to October; at most 10 % clouds) around 7 E / 46 N whose
+         outline holds a square of 0.3 degrees (larger than 2048 x 2048 pixels at 10 m), the square laid into that
+         outline as near to 7 E / 46 N as it fits; when none fits, the reasons are counted (no id, no coordinate)
       2. preview: POST the order to the tiler without an AOI (whole scene) and with the square: both answer,
          coarser than the result (exact false, factor above 1)
       3. job: normalize version 4 (percentile 2-98, z-score) over the square, without numbers in the recipe; the
@@ -44,10 +45,15 @@ $ProgressPreference    = 'SilentlyContinue'      # the progress bar makes Invoke
 $Invariant             = [System.Globalization.CultureInfo]::InvariantCulture
 $Dataset               = 'sentinel-2-c1-l2a'
 $SearchBox             = @(6.9, 45.9, 7.1, 46.1)
-$SearchPeriod          = '2025-06-15T00:00:00Z/2025-08-31T23:59:59Z'
+#: Tried one after the other until a scene fits: the summer first, then a wider season.
+$SearchPeriods         = @('2025-06-15T00:00:00Z/2025-08-31T23:59:59Z', '2025-04-01T00:00:00Z/2025-10-31T23:59:59Z')
 $MaxCloudPercent       = 10.0
-$CentreLon             = 7.0137913
-$CentreLat             = 46.0246802
+#: The point the square should lie near; the square itself is laid into the outline of the chosen scene (step 1).
+$PreferLon             = 7.0137913
+$PreferLat             = 46.0246802
+$CentreLon             = $PreferLon
+$CentreLat             = $PreferLat
+#: Half the side of the square: 0.3 degrees are about 23 x 33 km here, above 2048 x 2048 pixels at 10 m.
 $Half                  = 0.15
 $script:Failed         = 0
 $script:Passed         = 0
@@ -182,22 +188,91 @@ function Get-Rings {
     return @()
 }
 
-function Test-Inside {
-    # Whether the point lies in one of the rings (even-odd rule).
-    param($Rings, [double]$Lon, [double]$Lat)
+function Test-InRing {
+    # Whether the point [lon, lat] lies in the ring (even-odd rule).
+    param($Ring, [double]$Lon, [double]$Lat)
+    $inside = $false
+    $count = @($Ring).Count
+    for ($i = 0; $i -lt $count; $i++) {
+        $a = $Ring[$i]; $b = $Ring[($i + 1) % $count]
+        $ax = [double]$a[0]; $ay = [double]$a[1]; $bx = [double]$b[0]; $by = [double]$b[1]
+        if ((($ay -gt $Lat) -ne ($by -gt $Lat)) -and ($Lon -lt ($bx - $ax) * ($Lat - $ay) / ($by - $ay) + $ax)) {
+            $inside = -not $inside
+        }
+    }
+    return $inside
+}
+
+function Test-SquareInRing {
+    # Whether the square of half side $Half around the point lies in the ring: corners, middles of the sides, centre.
+    param($Ring, [double]$Lon, [double]$Lat, [double]$Half)
+    foreach ($dx in @(-1, 0, 1)) {
+        foreach ($dy in @(-1, 0, 1)) {
+            if (-not (Test-InRing $Ring ($Lon + $dx * $Half) ($Lat + $dy * $Half))) { return $false }
+        }
+    }
+    return $true
+}
+
+function Find-Square {
+    # The centre of a square of half side $Half that lies wholly in one ring of the outline, nearest to the preferred
+    # point: that point itself if the square fits there, else the nearest of a 9 x 9 grid over the ring; $null if none.
+    param($Rings, [double]$Half, [double]$PreferLon, [double]$PreferLat)
+    $best = $null
+    $bestDistance = [double]::MaxValue
     foreach ($ring in $Rings) {
-        $inside = $false
-        $count = @($ring).Count
-        for ($i = 0; $i -lt $count; $i++) {
-            $a = $ring[$i]; $b = $ring[($i + 1) % $count]
-            $ax = [double]$a[0]; $ay = [double]$a[1]; $bx = [double]$b[0]; $by = [double]$b[1]
-            if ((($ay -gt $Lat) -ne ($by -gt $Lat)) -and ($Lon -lt ($bx - $ax) * ($Lat - $ay) / ($by - $ay) + $ax)) {
-                $inside = -not $inside
+        $points = @($ring)
+        if ($points.Count -lt 4) { continue }
+        if (Test-SquareInRing $ring $PreferLon $PreferLat $Half) {
+            return [pscustomobject]@{ Lon = $PreferLon; Lat = $PreferLat }
+        }
+        $lons = @($points | ForEach-Object { [double]$_[0] })
+        $lats = @($points | ForEach-Object { [double]$_[1] })
+        $west = ($lons | Measure-Object -Minimum).Minimum + $Half
+        $east = ($lons | Measure-Object -Maximum).Maximum - $Half
+        $south = ($lats | Measure-Object -Minimum).Minimum + $Half
+        $north = ($lats | Measure-Object -Maximum).Maximum - $Half
+        if ($east -lt $west -or $north -lt $south) { continue }
+        for ($i = 0; $i -le 8; $i++) {
+            for ($j = 0; $j -le 8; $j++) {
+                $lon = $west + ($east - $west) * $i / 8
+                $lat = $south + ($north - $south) * $j / 8
+                $distance = ($lon - $PreferLon) * ($lon - $PreferLon) + ($lat - $PreferLat) * ($lat - $PreferLat)
+                if ($distance -lt $bestDistance -and (Test-SquareInRing $ring $lon $lat $Half)) {
+                    $best = [pscustomobject]@{ Lon = $lon; Lat = $lat }
+                    $bestDistance = $distance
+                }
             }
         }
-        if ($inside) { return $true }
     }
-    return $false
+    return $best
+}
+
+function Select-Scene {
+    # The clearest scene with at most $MaxCloud % clouds whose outline holds the square, with the centre of the square;
+    # and, counted, why the others did not fit. Names no scene and no coordinate.
+    param($Features, [double]$MaxCloud, [double]$Half, [double]$PreferLon, [double]$PreferLat)
+    $reasons = [ordered]@{ 'ohne Wolkenangabe' = 0; 'wolkig' = 0; 'ohne Umriss' = 0; 'Quadrat nicht enthalten' = 0 }
+    $candidates = @()
+    foreach ($feature in @($Features)) {
+        if ($null -eq $feature) { continue }
+        $cloud = $null
+        if ($null -ne $feature.properties) { $cloud = $feature.properties.'eo:cloud_cover' }
+        if ($null -eq $cloud) { $reasons['ohne Wolkenangabe']++; continue }
+        if ([double]$cloud -gt $MaxCloud) { $reasons['wolkig']++; continue }
+        $rings = Get-Rings $feature.geometry
+        if ($null -eq $rings -or @($rings).Count -eq 0) { $reasons['ohne Umriss']++; continue }
+        $centre = Find-Square $rings $Half $PreferLon $PreferLat
+        if ($null -eq $centre) { $reasons['Quadrat nicht enthalten']++; continue }
+        $candidates += [pscustomobject]@{ Id = [string]$feature.id; Cloud = [double]$cloud; Lon = $centre.Lon; Lat = $centre.Lat }
+    }
+    $chosen = $candidates | Sort-Object Cloud | Select-Object -First 1
+    return [pscustomobject]@{ Scene = $chosen; Count = $candidates.Count; Reasons = $reasons }
+}
+
+function Format-Reasons {
+    param($Reasons)
+    return (@($Reasons.Keys | ForEach-Object { "{0}: {1}" -f $_, $Reasons[$_] }) -join ', ')
 }
 
 # ---- the orders -------------------------------------------------------------------------------------
@@ -264,36 +339,30 @@ Write-Host ''
 Write-Host '1. Szene suchen, Quadrat bilden' -ForegroundColor Cyan
 
 $box = ($SearchBox | ForEach-Object { Format-Number $_ }) -join ', '
-$search = '{"collections": ["' + $Dataset + '"], "bbox": [' + $box + '], "datetime": "' + $SearchPeriod + '", "limit": 30' +
-    ', "query": {"eo:cloud_cover": {"lte": ' + (Format-Number $MaxCloudPercent) + '}}}'
-$found = Invoke-Http -Method Post -Uri "$ApiUrl/stac/search" -Body $search -TimeoutSec 120
-if ($found.Status -ne 200) {
-    Stop-Run 'Szene suchen' 'HTTP 200 (laeuft docker compose up -d --build?)' (Get-Detail $found)
-}
-$features = @((ConvertFrom-JsonSafe $found.Content).features)
-$corners = @(
-    @(($CentreLon - $Half), ($CentreLat - $Half)), @(($CentreLon + $Half), ($CentreLat - $Half)),
-    @(($CentreLon + $Half), ($CentreLat + $Half)), @(($CentreLon - $Half), ($CentreLat + $Half))
-)
-$candidates = @()
-foreach ($feature in $features) {
-    if ($null -eq $feature -or $null -eq $feature.properties) { continue }
-    $cloud = $feature.properties.'eo:cloud_cover'
-    if ($null -eq $cloud -or [double]$cloud -gt $MaxCloudPercent) { continue }
-    $rings = Get-Rings $feature.geometry
-    $covered = $true
-    foreach ($corner in $corners) {
-        if (-not (Test-Inside $rings $corner[0] $corner[1])) { $covered = $false; break }
+$selected = $null
+$tried = @()
+foreach ($period in $SearchPeriods) {
+    # No cloud filter at the source: the reasons below count every scene of the area.
+    $search = '{"collections": ["' + $Dataset + '"], "bbox": [' + $box + '], "datetime": "' + $period + '", "limit": 100}'
+    $found = Invoke-Http -Method Post -Uri "$ApiUrl/stac/search" -Body $search -TimeoutSec 120
+    if ($found.Status -ne 200) {
+        Stop-Run 'Szene suchen' 'HTTP 200 (laeuft docker compose up -d --build?)' (Get-Detail $found)
     }
-    if ($covered) { $candidates += [pscustomobject]@{ Id = [string]$feature.id; Cloud = [double]$cloud } }
+    $features = @((ConvertFrom-JsonSafe $found.Content).features)
+    $selected = Select-Scene $features $MaxCloudPercent $Half $PreferLon $PreferLat
+    $tried += ("{0} Szenen ({1})" -f $features.Count, (Format-Reasons $selected.Reasons))
+    if ($null -ne $selected.Scene) { break }
 }
-if ($candidates.Count -eq 0) {
-    Stop-Run 'Szene suchen' "eine Szene mit hoechstens $MaxCloudPercent % Wolken, die das Quadrat ganz enthaelt" "$($features.Count) Szenen, keine passt"
+if ($null -eq $selected -or $null -eq $selected.Scene) {
+    Stop-Run 'Szene suchen' "eine Szene mit hoechstens $MaxCloudPercent % Wolken, deren Umriss ein Quadrat von $(2 * $Half) Grad enthaelt" ($tried -join '; ')
 }
-$scene = $candidates | Sort-Object Cloud | Select-Object -First 1
+$scene = $selected.Scene
 $script:ItemId = $scene.Id
-Write-Pass ("Szene gefunden ({0} Kandidaten, Wolken {1} %), Quadrat von {2} Grad gebildet" -f `
-    $candidates.Count, $scene.Cloud.ToString('0.#', $Invariant), (2 * $Half).ToString('0.##', $Invariant))
+$CentreLon = [double]$scene.Lon
+$CentreLat = [double]$scene.Lat
+Write-Pass ("Szene gefunden ({0} Kandidaten, Wolken {1} %), Quadrat von {2} Grad im Umriss gebildet" -f `
+    $selected.Count, $scene.Cloud.ToString('0.#', $Invariant), (2 * $Half).ToString('0.##', $Invariant))
+Write-Info ('Suche: ' + ($tried -join '; '))
 $aoi = New-Square $Half
 
 # ---- 2. the preview's measure --------------------------------------------------------------------
