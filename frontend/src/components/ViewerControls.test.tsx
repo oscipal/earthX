@@ -86,13 +86,14 @@ describe('the head', () => {
   });
 
   // Otto, 1.11.2026 (zu #272): the view of the search is a temporary picture, and a yellow box between the title and the date says so.
-  it('has a box "Temporary" right after the title, before the date with the arrows, in yellow', () => {
+  it('has a badge "Temporary" right after the title, before the date with the arrows, in the style of the "Preview" badge', () => {
     mount();
     const temporary = container.querySelector('.vc-temporary') as HTMLElement;
     expect(temporary.textContent).toBe('Temporary');
     expect(temporary.previousElementSibling).toBe(title());
     expect(temporary.nextElementSibling?.classList.contains('vc-stepper')).toBe(true);
-    expect(CSS).toMatch(/\.scene-view \.vc-temporary \{[^}]*border: 1px solid[^}]*background: #ffe066;/u);
+    expect(temporary.classList.contains('pp-badge')).toBe(true);
+    expect(CSS).toMatch(/\.preview-badge,\s*\.pp-badge \{[^}]*border: 1px solid var\(--accent-2\)/u);
   });
 
   it('has no box "Temporary" in the settings of a layer: a layer is not temporary', () => {

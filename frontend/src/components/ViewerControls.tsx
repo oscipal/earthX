@@ -181,8 +181,8 @@ export default function ViewerControls() {
         <span className="vc-title" title={title}>
           {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
         </span>
-        {/* The view of the search is a temporary picture, not a layer (Otto, 1.11.2026): a yellow box between the title and the date. */}
-        <span className="vc-temporary" title="The view of the search is temporary: add it to the layers to keep it">
+        {/* The view of the search is a temporary picture, not a layer (Otto, 1.11.2026): the badge of "Preview", between the title and the date. */}
+        <span className="pp-badge vc-temporary" title="The view of the search is temporary: add it to the layers to keep it">
           Temporary
         </span>
         {datasetIds.length > 1 && shown && (

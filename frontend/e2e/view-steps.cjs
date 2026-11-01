@@ -164,7 +164,7 @@ async function run(browser, { theme, viewport }) {
   if ((await row()) !== '2025-08-03') problems.push(`the switcher says ${JSON.stringify(await row())}, expected "2025-08-03"`);
   if (/\d{4}-\d{2}-\d{2}/.test(await page.locator('.vc-title').first().textContent())) problems.push('the title of the head has a date');
   const order = await page.evaluate(() => [...document.querySelector('.vc-head').children].map((el) => el.className.split(' ')[0]));
-  if (order.join() !== 'vc-title,vc-temporary,vc-dataset,vc-stepper,vc-eye') problems.push(`the head holds ${order.join(', ')}`);
+  if (order.join() !== 'vc-title,pp-badge,vc-dataset,vc-stepper,vc-eye') problems.push(`the head holds ${order.join(', ')}`);
   if ((await page.getByRole('button', { name: 'Apply to all' }).count()) !== 1) problems.push('"Apply to all" is not there');
   const colormapBox = () => page.evaluate(() => {
     const label = [...document.querySelectorAll('.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap');

@@ -140,7 +140,7 @@ describe('what is not possible is not there', () => {
   it('puts them in the head, the dataset and then the date with the arrows, between the title and the eye', () => {
     mount({ ...THREE, D: info('dem') });
     const head = [...container.querySelector('.vc-head')!.children].map((el) => el.className);
-    expect(head).toEqual(['vc-title', 'vc-temporary', 'vc-dataset', 'vc-stepper', 'vc-eye']);
+    expect(head).toEqual(['vc-title', 'pp-badge vc-temporary', 'vc-dataset', 'vc-stepper', 'vc-eye']);
     expect(container.querySelectorAll('.vc-head .vc-dataset, .vc-head .vc-stepper')).toHaveLength(2);
   });
 
