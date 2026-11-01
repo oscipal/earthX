@@ -421,7 +421,7 @@ describe('the preview section', () => {
 
   it('draws a chain of tile steps and counts what the map leaves out', async () => {
     await withNdvi();
-    const normalize = { key: 900, op: 'normalize', opVersion: 3, values: { method: 'linear', bands: 'result', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
+    const normalize = { key: 900, op: 'normalize', opVersion: 4, values: { method: 'linear', bands: 'result', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
     act(() => useProcessingStore.setState({ steps: [...store().steps, normalize] }));
     await afterDebounce();
     await flush();
@@ -429,6 +429,8 @@ describe('the preview section', () => {
     expect(store().previewNote).toBeNull();
     const url = new URL(store().preview!.scenes[0].url, 'http://localhost');
     expect(url.searchParams.getAll('op')).toEqual(['band_math', 'normalize']);
+    // `normalize` of version 4 runs only as a job; the tile takes it as version 3 (NM4-71).
+    expect(url.searchParams.getAll('op_version')).toEqual(['2', '3']);
     expect(section().textContent).not.toContain('the job runs all steps');
     click(button('＋ Band math'));
     expect(section().textContent).toContain('The map shows the first 2 steps; the job runs all steps.');

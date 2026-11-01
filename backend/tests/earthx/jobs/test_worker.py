@@ -33,6 +33,8 @@ from earthx.jobs.submit import dismiss, job_status, submit
 from earthx.jobs.worker import Supervisor
 from earthx.objectstore.errors import StoreUnavailable
 from earthx.objectstore.results import Store, file_facts, upload_result
+from earthx.processing.operators import REGISTRY
+from earthx.processing.recipe import recipe_from_data
 from tests.conftest import format_without_timestamp
 from tests.earthx.jobs.support import ATTACHMENTS, make_export, make_recipe, most_at_once, run_row, wait_until
 from tests.earthx.objectstore.conftest import BUCKET
@@ -464,6 +466,70 @@ class TestCancel:
         _wait_for(db, theirs, "successful")
         assert _state(db, mine) == "dismissed"
         assert len(_stored(store)) == 2
+
+
+class TestTheWorkFileOfAMeasuringJob:
+    """NM4-71, condition 1: the work file of a count lies in the work directory; a cancel, a DELETE and a failure take it away."""
+
+    @pytest.fixture
+    def big_job(self, db: psycopg.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+        """A job of ``normalize`` version 4 (a percentile stretch, so a pass of its own, a second look and a last pass)
+        over a synthetic scene of 3072², run by the real core in a spawned child."""
+        from tests.earthx.processing import sources
+        from tests.earthx.processing.test_normalize_exact import PERCENTILE, recipe, step
+
+        size = 3072
+        cog = sources.build_band_cog(tmp_path / "scene.tif", sources.ramp(size, size, 1200))
+        monkeypatch.setenv("CHILD_COG", str(cog))
+        order = recipe([step({**PERCENTILE, "bands": ["red"]})], ["red"], assets=("red",), size=(size, size))
+        return submit(db, recipe_from_data(order, REGISTRY))
+
+    @staticmethod
+    def _pass_files(root: Path) -> list[Path]:
+        return sorted(root.rglob("pass-*.tif"))
+
+    def test_a_dismissed_job_leaves_no_work_file_and_no_work_directory(
+        self,
+        db: psycopg.Connection,
+        store: Store,
+        make_supervisor: Callable[..., Supervisor],
+        big_job: str,
+        tmp_path: Path,
+    ) -> None:
+        make_supervisor("end_to_end", slots=1).start()
+        root = tmp_path / "work0"
+        wait_until(lambda: bool(self._pass_files(root)), timeout=60)
+        dismiss(db, big_job)
+        wait_until(lambda: run_row(db, _run_id(db), "status")[0] == "dismissed", timeout=60)
+        wait_until(lambda: list(root.iterdir()) == [])
+        assert _stored(store) == []
+
+    def test_a_finished_job_leaves_nothing_either(
+        self,
+        db: psycopg.Connection,
+        store: Store,
+        make_supervisor: Callable[..., Supervisor],
+        big_job: str,
+        tmp_path: Path,
+    ) -> None:
+        make_supervisor("end_to_end", slots=1).start()
+        _wait_for(db, big_job, "successful", timeout=120)
+        wait_until(lambda: list((tmp_path / "work0").iterdir()) == [])
+        assert len(_stored(store)) == 2
+
+    def test_a_job_that_fails_in_the_second_pass_leaves_nothing(
+        self,
+        db: psycopg.Connection,
+        store: Store,
+        make_supervisor: Callable[..., Supervisor],
+        big_job: str,
+        tmp_path: Path,
+    ) -> None:
+        """The child dies by a signal in the middle of the run: only the supervisor can take its files away."""
+        make_supervisor("end_to_end_killed", slots=1).start()
+        wait_until(lambda: run_row(db, _run_id(db), "status")[0] == "failed", timeout=60)
+        wait_until(lambda: list((tmp_path / "work0").iterdir()) == [])
+        assert _stored(store) == []
 
 
 class TestLeaseAndAttempts:

@@ -319,8 +319,8 @@ export default function StepForm({
   dataBands: readonly string[];
   // The unit of each band of the data that has one (the "in m" beside "Hide where").
   units: Readonly<Record<string, string>>;
-  // A statistical `normalize` step: where its measure stands, and why the methods that measure cannot be chosen here (no AOI,
-  // after a reprojection), if so (NM4-11b).
+  // A statistical `normalize` step: where the preview's measure stands, and why the methods that measure cannot be chosen here
+  // (after a reprojection), if so (NM4-11b).
   measure?: MeasureStatus;
   statisticsLock?: string | null;
   onRetryMeasure?: () => void;
@@ -345,7 +345,7 @@ export default function StepForm({
   const cellTip = useCellSizeTip(values.crs, values.resolution, latitude);
   const bandMath = operator?.op === 'band_math';
   const maskValues = operator?.op === 'mask_values' && operator.form.supported;
-  // `normalize` of version 3 lays its fields out by method (`NormalizeFields`); the bands are the chips every version has.
+  // `normalize` of version 4 lays its fields out by method (`NormalizeFields`); the bands are the chips every version has.
   const normalizes = operator?.op === 'normalize' && operator.form.supported && fields.some((f) => f.name === 'method');
   const bandsField = fields.find((f) => f.name === 'bands');
   // The title is the number and the name of the step.

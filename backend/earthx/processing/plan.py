@@ -4,7 +4,8 @@
   ``T1`` becomes tile parameters; everything after it is a job (§6.1).
 * :func:`segments` — the steps of a job as the core runs them: a run of ``pixel``
   steps is computed block by block in one pass, a ``grid`` step is a pass of its
-  own over a file in the work directory (approved F3).
+  own over a file in the work directory (approved F3). A step that measures
+  (``Operator.measures``, NM4-71) opens a pass: the pass before it counts its bands.
 * :func:`stock_steps` — the steps of a job on a stock of named bands (recipe version 2, adr/0020 §4): the
   planner works from the end, drops what no later step and not ``output.bands`` needs, and puts the result
   in the order of the output.
@@ -59,6 +60,7 @@ __all__ = [
     "SECONDS_PER_EXPORT_MB",
     "SECONDS_PER_EXPORT_MB_PER_ITEM",
     "SECONDS_PER_INPUT_MB",
+    "SECONDS_PER_MEASURE_BAND_MPIXEL",
     "SECONDS_PER_OUTPUT_BAND_MPIXEL",
     "DISK_RESERVE_BYTES",
     "BandOnOtherGrid",
@@ -93,6 +95,11 @@ SECONDS_PER_INPUT_MB = 0.034
 #: the real runs of adr/0020 §3.2 give 0.55–0.7. The limit of a run is twice the estimate.
 SECONDS_PER_OUTPUT_BAND_MPIXEL = 0.75
 
+#: Seconds per million pixels and band of the stock at a cut where a step measures: the extra pass over the local
+#: ``float64`` file (read, convert, write, count) and the refinement of the percentiles. Measured, plan NM4-71 §8.3:
+#: 0.20–0.21 s (whole scene, one band 25 s, four bands 98 s).
+SECONDS_PER_MEASURE_BAND_MPIXEL = 0.2
+
 #: First open of an asset over the network (adr/0006 §3.4).
 SECONDS_PER_ASSET = 1.0
 
@@ -125,6 +132,13 @@ MEMORY_BYTES_PER_BAND = 33_000_000
 MEMORY_BYTES_PER_SCENE = 4_000_000
 MEMORY_BYTES_PER_SCENE_BAND = 1_200_000
 
+#: Added for every band a step measures, measured NM4-71 (`test_memory_mask_normalize.py`, `normalize` version 4 with a
+#: percentile stretch over every band of a 4096² scene, ``VmHWM`` with ``GDAL_CACHEMAX`` 64 MB): 1 band 347 MB, 2 bands
+#: 433 MB, 4 bands 516 MB, against 333, 366 and 432 MB of base and share per band alone. The least share that covers all
+#: three is 34 MB (2 bands). The CI runner measured 457 MB for 2 bands, which needs 46 MB; 60 MB keeps a margin on both
+#: machines, and the sum stays above every measured peak.
+MEMORY_BYTES_PER_MEASURED_BAND = 60_000_000
+
 #: Bytes per value where an item names no data type, as the download estimate assumes.
 _FALLBACK_BYTES_PER_VALUE = 8
 
@@ -145,6 +159,16 @@ class Segment:
     kind: Literal["pixel", "grid"]
     steps: tuple[PlannedStep, ...]
 
+    @property
+    def measuring(self) -> PlannedStep | None:
+        """The step that opens this pass and needs its bands counted in the pass before it, or ``None`` (NM4-71).
+
+        :func:`segments` puts such a step first in its pass and never inside a run, so this is the only place one can be.
+        """
+        if self.kind == "pixel" and self.steps and _measures(self.steps[0]):
+            return self.steps[0]
+        return None
+
 
 @dataclass(frozen=True, slots=True)
 class CostEstimate:
@@ -161,17 +185,20 @@ class CostEstimate:
     memory_bytes: int = 0
 
 
-def memory_needed(bands: int, scenes: int = 1) -> int:
+def memory_needed(bands: int, scenes: int = 1, measured_bands: int = 0) -> int:
     """The peak memory of a run whose widest pass holds ``bands`` bands, over ``scenes`` scenes of one mosaic.
 
     A band is held several times per block (read, scaled, masked, written), so the share is per band; a scene beyond
-    the first is an open file whose pieces are merged one at a time. Nothing here depends on the area.
+    the first is an open file whose pieces are merged one at a time. Nothing here depends on the area. A step that
+    measures (NM4-71) adds :data:`MEMORY_BYTES_PER_MEASURED_BAND` for each band it measures: the pass after the count
+    reads the ``float64`` work file, which holds twice the bytes per value of the scene.
     """
     extra_scenes = scenes - 1
     return (
         MEMORY_BASE_BYTES
         + MEMORY_BYTES_PER_BAND * bands
         + extra_scenes * (MEMORY_BYTES_PER_SCENE + MEMORY_BYTES_PER_SCENE_BAND * bands)
+        + MEMORY_BYTES_PER_MEASURED_BAND * measured_bands
     )
 
 
@@ -308,17 +335,30 @@ def split_tiers(steps: Sequence[Step], operators: OperatorRegistry) -> tuple[lis
     return list(steps[:cut]), list(steps[cut:])
 
 
+def _measures(step: PlannedStep) -> frozenset[str]:
+    return step.operator.measures(step.params)
+
+
 def segments(planned: Sequence[PlannedStep]) -> list[Segment]:
     """The passes of a job, in order.
 
     The first pass is always ``pixel``: it is the one that reads the inputs, and with
     no ``pixel`` step before a ``grid`` step it is empty, a plain native crop into the
     work directory for the grid step to read (F3). No step at all is that crop alone.
+
+    A ``pixel`` step that measures (``Operator.measures``) ends the run before it and opens the next pass, so that the
+    pass before it can count its bands (NM4-71). As with a ``grid`` step, a measuring first step is preceded by an empty
+    pass that reads the inputs; one that follows a ``grid`` step needs no pass of its own, the pass of the grid step
+    counts. Two measuring steps are two cuts. A measuring step before a ``grid`` step is fine: the pass before it counts on
+    the grid of the stock, with the AOI on that grid.
     """
     result: list[Segment] = []
     run: list[PlannedStep] = []
     for step in planned:
         if step.operator.kind == "pixel":
+            if _measures(step) and (run or not result):
+                result.append(Segment("pixel", tuple(run)))
+                run = []
             run.append(step)
             continue
         if run or not result:
@@ -525,6 +565,11 @@ class _Stock:
     #: the others the bands they act on), and an output band no step touches counts as written (adr/0014 Nachtrag
     #: NM4-43c PR 2, Otto 30.10.2026).
     weighted_bands: float
+    #: The pixels times the bands of the stock at every cut where a step measures, summed: each is written once more and
+    #: read again (NM4-71). The raster at a cut before a ``grid`` step is not the one of the result.
+    measure_band_pixels: int = 0
+    #: The most bands one step measures; the count of the pass holds their statistics and the second look their values.
+    measured_bands: int = 0
 
 
 def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> _Stock:
@@ -538,7 +583,11 @@ def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> _Stock:
     steps = stock_steps(meta, plan_steps(recipe.steps, operators), recipe.output.bands)
     widest = len(meta.bands)
     weighted, touched = 0.0, set[str]()
+    measure_band_pixels = measured_bands = 0
     for step in steps:
+        if measured := _measures(step):
+            measure_band_pixels += meta.width * meta.height * len(meta.bands)
+            measured_bands = max(measured_bands, len(measured))
         if step.operator is not SELECT_BANDS:
             names = {band.name for band in meta.bands}
             use = step.operator.bands_used(step.params)
@@ -548,7 +597,14 @@ def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> _Stock:
         meta = step.operator.transform(meta, step.params)
         widest = max(widest, len(meta.bands))
     weighted += RASTER_WITHOUT_STEP_FACTOR * len({band.name for band in meta.bands} - touched)
-    return _Stock(meta, [step for step in steps if step.operator is not SELECT_BANDS], widest, weighted)
+    return _Stock(
+        meta,
+        [step for step in steps if step.operator is not SELECT_BANDS],
+        widest,
+        weighted,
+        measure_band_pixels,
+        measured_bands,
+    )
 
 
 def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
@@ -559,7 +615,8 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7), and above the memory one child
     process may use (:func:`memory_needed`, adr/0020 §7). A raster job needs the pixel size of every asset (``gsd``);
     without it :class:`UnsupportedRecipe` says so (M4-25). Seconds count the bands of the output; units count each step's factor for the bands it adds or
-    changes (:class:`_Stock`).
+    changes (:class:`_Stock`). Each cut where a step measures (NM4-71) adds :data:`SECONDS_PER_MEASURE_BAND_MPIXEL` for
+    every band of the stock at that cut.
     """
     if isinstance(recipe.output, CropOutput):
         return _export_estimate(recipe)
@@ -583,7 +640,7 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
             f"This job would write about {(output_bytes + output_pixels) / 1_000_000:.0f} MB, more than the "
             f"{MAX_JOB_BYTES / 1_000_000:.0f} MB a job may write. Draw a smaller area or choose fewer assets."
         )
-    memory = memory_needed(widest, len(recipe.inputs[0].groups[0]))
+    memory = memory_needed(widest, len(recipe.inputs[0].groups[0]), stock.measured_bands)
     if memory > MAX_JOB_MEMORY_BYTES:
         raise JobTooLarge(
             f"This job would need about {memory / 1_000_000_000:.1f} GB of memory, more than the "
@@ -598,7 +655,8 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         output_bytes=output_bytes,
         seconds=SECONDS_PER_INPUT_MB * input_bytes / 1_000_000
         + SECONDS_PER_ASSET * assets
-        + SECONDS_PER_OUTPUT_BAND_MPIXEL * band_megapixels,
+        + SECONDS_PER_OUTPUT_BAND_MPIXEL * band_megapixels
+        + SECONDS_PER_MEASURE_BAND_MPIXEL * stock.measure_band_pixels / 1_000_000,
         units=output_pixels / 1_000_000 * stock.weighted_bands,
         memory_bytes=memory,
     )
@@ -805,6 +863,11 @@ def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
       whole 1024 px blocks — for an export the data file of one group and asset, for a raster
       run the float64 pass over all bands; twice, because ``cog_translate`` keeps a temporary
       file of the same order beside it (measured, plan m4-11 §11 Punkt 8);
+    * the work file of a measure (NM4-71) is that same float64 pass: the pass before a step that measures writes it and
+      counts into it, the next pass reads it. At most two pass files lie in the work directory at once (the one read and
+      the one written, each deleted as soon as the pass that reads it is done), and a deflate file is not larger than its
+      raw size by more than a fraction of a percent, so the term covers it; a test holds the highest level measured in
+      a run below this number;
     * :data:`DISK_RESERVE_BYTES`.
 
     An estimate like :func:`estimate`, conservative where it has to guess (``gsd`` missing,
@@ -823,5 +886,5 @@ def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
             shapely_shape(recipe.aoi.model_dump(mode="json")), _finest(_asset_entries(recipe)).gsd
         )
         bands = _planned_stock(recipe, operators).widest
-        largest = _tiles_px(rows) * _tiles_px(columns) * bands * _PASS_BYTES
+        largest = _tiles_px(rows) * _tiles_px(columns) * bands * _PASS_BYTES  # the work file of a pass, measured or not
     return math.ceil(finished * _WITH_OVERVIEWS) + 2 * largest + DISK_RESERVE_BYTES

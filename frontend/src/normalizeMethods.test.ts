@@ -1,5 +1,5 @@
-// The methods of a Normalize step (NM4-11b): the form, the rules between its fields, the numbers taken from the answer
-// of the route, and the order and the questions built from them.
+// The methods of a Normalize step (NM4-11b, NM4-71): the form, the rules between its fields, the numbers taken from the answer
+// of the route and from a result, and the order (version 4, no numbers), the preview's version 3 and the questions built from them.
 
 import { describe, expect, it } from 'vitest';
 
@@ -8,12 +8,17 @@ import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import { bboxToPolygon } from './geoUtils';
 import {
   AFTER_REPROJECT,
-  NO_AOI,
+  ANEW,
+  KEPT,
   bandNumbers,
   fieldsOfMethod,
   measuredFrom,
+  measuredFromRuns,
   measuredText,
+  methodTip,
   normalizeForm,
+  normalizeRuns,
+  previewNote,
   refineNormalize,
   upgradedValues,
 } from './normalizeMethods';
@@ -50,9 +55,11 @@ const answer = (bands: Record<string, Record<string, unknown>>, factor = 1): Are
   factor,
 });
 
-describe('the form of normalize version 3', () => {
+describe('the form of normalize version 4', () => {
   it('is read from the schema of the fixtures: the method with its four choices, the bands and the fields of the methods', () => {
-    expect(OPERATOR.opVersion).toBe(3);
+    expect(OPERATOR.opVersion).toBe(4);
+    expect(OPERATOR.tiers).toEqual(['T2']);
+    expect(INFO.operators.filter((o) => o.op === 'normalize')).toHaveLength(1);
     expect(FIELDS.map((f) => [f.name, f.kind, f.required])).toEqual([
       ['method', 'enum', true],
       ['bands', 'names', true],
@@ -68,17 +75,21 @@ describe('the form of normalize version 3', () => {
   });
 
   it('is not supported where the schema lacks a method or a field the panel lays out', () => {
-    const properties = (s2 as unknown as { inputs: { recipe: { schema: { $defs: Record<string, { properties: { params: { properties: unknown } } }> } } } }).inputs.recipe.schema.$defs.step_normalize_v3.properties.params.properties;
+    const properties = (s2 as unknown as { inputs: { recipe: { schema: { $defs: Record<string, { properties: { params: { properties: unknown } } }> } } } }).inputs.recipe.schema.$defs.step_normalize_v4.properties.params.properties;
     const schema = (change: (p: Record<string, unknown>) => void) => {
       const copy = structuredClone(properties) as Record<string, unknown>;
       change(copy);
       return { properties: copy };
     };
     expect(normalizeForm(schema((p) => void (p.method = { enum: ['linear', 'percentile', 'zscore'] })))).toMatchObject({ supported: false });
-    expect(normalizeForm(schema((p) => void delete p.measured))).toMatchObject({ supported: false, reason: expect.stringContaining('measured') });
+    expect(normalizeForm(schema((p) => void delete p.clip))).toMatchObject({ supported: false, reason: expect.stringContaining('clip') });
     expect(normalizeForm(schema((p) => void (p.method = { enum: ['linear', 'percentile', 'zscore', 'robust', 'median'] })))).toMatchObject({ supported: false });
     expect(normalizeForm(null)).toMatchObject({ supported: false });
     expect(normalizeForm({ properties: {} })).toMatchObject({ supported: false });
+  });
+
+  it('has no field for numbers measured: the recipe of version 4 carries none', () => {
+    expect(FIELDS.map((f) => f.name)).not.toContain('measured');
   });
 
   it('takes the fields of the method and no others', () => {
@@ -133,6 +144,12 @@ describe('the parameters a method writes', () => {
     expect(percentile('', '98')).toEqual({ low: 'Required.' });
   });
 
+  it('warns of outliers at Z-score and points to Robust, in the tooltip of the method', () => {
+    expect(methodTip('zscore')).toContain('Sensitive to outliers, e.g. in indices; prefer Robust (median, IQR) there.');
+    expect(methodTip('')).toContain('Sensitive to outliers');
+    expect(methodTip('linear')).toContain('Sensitive to outliers');
+  });
+
   it('takes a step of version 2 as the fixed range with its numbers (KE4)', () => {
     const old = { bands: 'red', in_min: '0', in_max: '0.5', low: '', high: '', out_min: '0', out_max: '255', clip: true };
     const values = upgradedValues(old);
@@ -181,11 +198,54 @@ describe('the numbers taken from the answer of the route (plan §15, point 2)', 
     expect(measuredFrom('zscore', 2, 98, ['red'], answer({ red: STATISTICS }, 0.4))).toMatchObject({ measured: { factor: 1 } });
   });
 
-  it('writes the numbers of each band as the tooltip, and says a coarser read', () => {
+  it('writes the numbers of each band as the tooltip', () => {
     const measured = { factor: 3, bands: { NDVI: { p_low: -0.123456, p_high: 0.8 } } };
-    expect(measuredText('percentile', measured)).toBe('NDVI: p_low -0.1235, p_high 0.8\nMeasured on a read 3 times coarser.');
+    expect(measuredText('percentile', measured)).toBe('NDVI: p_low -0.1235, p_high 0.8');
     expect(measuredText('zscore', { factor: 1, bands: { a: { mean: 1, stddev: 2 } } })).toBe('a: mean 1, standard deviation 2');
     expect(measuredText('robust', { factor: 1, bands: { a: { p25: 1, median: 2, p75: 3 } } })).toBe('a: p25 1, median 2, p75 3');
+  });
+});
+
+describe('the numbers of a result (earthx:normalize)', () => {
+  const run = (over: Record<string, unknown> = {}) => ({
+    step: 1,
+    method: 'zscore',
+    bands: { red: { mean: 1.5, stddev: 0.25 }, nir: { mean: 2, stddev: 0.5 } },
+    exact: true,
+    ...over,
+  });
+
+  it('reads the list the job wrote, and nothing where the property is not there', () => {
+    expect(normalizeRuns([run()])).toEqual([{ step: 1, method: 'zscore', bands: run().bands }]);
+    expect(normalizeRuns(undefined)).toBeNull();
+    expect(normalizeRuns({ step: 1 })).toBeNull();
+    expect(normalizeRuns([])).toEqual([]);
+  });
+
+  it('leaves out an entry of the wrong form, and a number that is not one', () => {
+    expect(normalizeRuns([run({ step: -1 }), run({ step: 1.5 }), run({ method: 'linear' }), run({ method: 'median' }), run({ bands: null }), null, 'x'])).toEqual([]);
+    expect(normalizeRuns([run({ bands: { red: { mean: '1', stddev: Number.NaN } } })])).toEqual([{ step: 1, method: 'zscore', bands: { red: {} } }]);
+  });
+
+  it('gives the numbers of the step by its index and method, with factor 1, only the keys of the method', () => {
+    const runs = normalizeRuns([run({ bands: { red: { mean: 1.5, stddev: 0.25, extra: 3 } } }), run({ step: 4, method: 'robust', bands: { red: { p25: 1, median: 2, p75: 3 } } })])!;
+    expect(measuredFromRuns(runs, 1, 'zscore', ['red'])).toEqual({ factor: 1, bands: { red: { mean: 1.5, stddev: 0.25 } } });
+    expect(measuredFromRuns(runs, 4, 'robust', ['red'])).toEqual({ factor: 1, bands: { red: { p25: 1, median: 2, p75: 3 } } });
+  });
+
+  it('has none for another step or method, a band the result lacks, or a band without all numbers', () => {
+    const runs = normalizeRuns([run()])!;
+    expect(measuredFromRuns(runs, 2, 'zscore', ['red'])).toBeNull();
+    expect(measuredFromRuns(runs, 1, 'robust', ['red'])).toBeNull();
+    expect(measuredFromRuns(runs, 1, 'zscore', ['red', 'blue'])).toBeNull();
+    expect(measuredFromRuns(runs, 1, 'zscore', [])).toBeNull();
+    expect(measuredFromRuns(normalizeRuns([run({ bands: { red: { mean: 1 } } })])!, 1, 'zscore', ['red'])).toBeNull();
+    expect(measuredFromRuns(runs, 1, 'zscore', ['toString'])).toBeNull();
+  });
+
+  it('says what the route read behind the (i): estimated, or exact', () => {
+    expect(previewNote(false)).toBe('Preview estimated on a coarser read; the job measures exactly.');
+    expect(previewNote(true)).toBe('Preview measured exactly over the AOI.');
   });
 });
 
@@ -194,7 +254,7 @@ describe('buildOrder with a statistical Normalize step', () => {
   const step = (op: string, opVersion: number, values: DraftStep['values'], key: number): DraftStep => ({ key, op, opVersion, values });
   const ndvi = (key = 1) => step('band_math', 2, { expression: '(nir - red) / (nir + red)', name: 'NDVI' }, key);
   const normalize = (method: string, key = 2, bands = 'NDVI') =>
-    step('normalize', 3, { method, bands, low: '2', high: '98', in_min: '', in_max: '', out_min: '0', out_max: '1', clip: true }, key);
+    step('normalize', 4, { method, bands, low: '2', high: '98', in_min: '', in_max: '', out_min: '0', out_max: '1', clip: true }, key);
   const base = {
     datasetId: 'sentinel-2-c1-l2a',
     itemIds: ['S2B_X'],
@@ -210,10 +270,10 @@ describe('buildOrder with a statistical Normalize step', () => {
   const ready = (built: ReturnType<typeof buildOrder>, statistics: Record<string, unknown> = STATISTICS, factor = 1) =>
     new Map<string, MeasureEntry>(built.needs.map((need) => [need.key, { state: 'ready', answer: answer({ NDVI: statistics }, factor) }]));
 
-  it('asks for the steps before the step, its bands and float64, over the AOI, and waits for the answer', () => {
+  it('asks for the steps before the step, its bands and float64, over the AOI, and the order does not wait', () => {
     const built = build();
-    expect(built.order).toBeNull();
-    expect(built.waiting).toBe('Normalize: measuring the bands…');
+    expect(built.order).not.toBeNull();
+    expect(built.previewOrder).toBeNull();
     expect(built.stepProblems[1]).toEqual({ errors: {}, measure: { state: 'measuring', text: 'Measuring…' } });
     expect(built.needs).toHaveLength(1);
     const { body, datasetId } = built.needs[0];
@@ -245,54 +305,93 @@ describe('buildOrder with a statistical Normalize step', () => {
   });
 
   it.each([
-    ['percentile', { method: 'percentile', bands: ['NDVI'], low: 2, high: 98, out_min: 0, out_max: 1, clip: true, measured: { factor: 1, bands: { NDVI: { p_low: -0.1, p_high: 0.85 } } } }],
-    ['zscore', { method: 'zscore', bands: ['NDVI'], measured: { factor: 1, bands: { NDVI: { mean: 0.4, stddev: 0.2 } } } }],
-    ['robust', { method: 'robust', bands: ['NDVI'], measured: { factor: 1, bands: { NDVI: { p25: 0.25, median: 0.4, p75: 0.55 } } } }],
-  ])('%s: the order holds the method, its fields and the numbers measured, version 3', (method, params) => {
-    const waiting = build({ steps: [ndvi(), normalize(method)] });
-    const built = build({ steps: [ndvi(), normalize(method)], measures: ready(waiting) });
-    expect(built.waiting).toBeNull();
-    expect(built.order?.steps[1]).toEqual({ op: 'normalize', op_version: 3, params });
-    expect(built.stepProblems[1].measure?.state).toBe('ready');
-    expect(built.stepProblems[1].measure?.text).toContain('NDVI');
+    ['linear', { method: 'linear', bands: ['NDVI'], in_min: -1, in_max: 1, out_min: 0, out_max: 1, clip: true }],
+    ['percentile', { method: 'percentile', bands: ['NDVI'], low: 2, high: 98, out_min: 0, out_max: 1, clip: true }],
+    ['zscore', { method: 'zscore', bands: ['NDVI'] }],
+    ['robust', { method: 'robust', bands: ['NDVI'] }],
+  ])('%s: the order holds version 4 with the method and its fields and no numbers measured', (method, params) => {
+    const linear = (): DraftStep =>
+      step('normalize', 4, { method, bands: 'NDVI', in_min: '-1', in_max: '1', low: '2', high: '98', out_min: '0', out_max: '1', clip: true }, 2);
+    const steps = [ndvi(), linear()];
+    const built = build({ steps, measures: ready(build({ steps })) });
+    expect(built.order?.steps[1]).toEqual({ op: 'normalize', op_version: 4, params });
+    expect(JSON.stringify(built.order)).not.toContain('measured');
+  });
+
+  it('gives the tile version 3: the fixed range with the same fields, the others with the numbers measured', () => {
+    const fixed = build({ steps: [ndvi(), step('normalize', 4, { method: 'linear', bands: 'NDVI', in_min: '-1', in_max: '1', out_min: '0', out_max: '1', clip: true, low: '2', high: '98' }, 2)] });
+    expect(fixed.previewOrder?.steps[1]).toEqual({ op: 'normalize', op_version: 3, params: fixed.order?.steps[1].params });
+    expect(fixed.order?.steps[1].op_version).toBe(4);
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['percentile', { method: 'percentile', bands: ['NDVI'], low: 2, high: 98, out_min: 0, out_max: 1, clip: true, measured: { factor: 1, bands: { NDVI: { p_low: -0.1, p_high: 0.85 } } } }],
+      ['zscore', { method: 'zscore', bands: ['NDVI'], measured: { factor: 1, bands: { NDVI: { mean: 0.4, stddev: 0.2 } } } }],
+      ['robust', { method: 'robust', bands: ['NDVI'], measured: { factor: 1, bands: { NDVI: { p25: 0.25, median: 0.4, p75: 0.55 } } } }],
+    ];
+    for (const [method, params] of cases) {
+      const steps = [ndvi(), normalize(method)];
+      const built = build({ steps, measures: ready(build({ steps })) });
+      expect(built.previewOrder?.steps[1]).toEqual({ op: 'normalize', op_version: 3, params });
+      expect(built.order?.steps[1].op_version).toBe(4);
+      expect(built.stepProblems[1].measure?.state).toBe('ready');
+      expect(built.stepProblems[1].measure?.text).toContain('NDVI');
+    }
   });
 
   it('writes the fixed range without a measure and asks nothing', () => {
-    const built = build({ steps: [ndvi(), step('normalize', 3, { method: 'linear', bands: 'NDVI', in_min: '-1', in_max: '1', out_min: '0', out_max: '1', clip: true, low: '2', high: '98' }, 2)] });
+    const built = build({ steps: [ndvi(), step('normalize', 4, { method: 'linear', bands: 'NDVI', in_min: '-1', in_max: '1', out_min: '0', out_max: '1', clip: true, low: '2', high: '98' }, 2)] });
     expect(built.needs).toEqual([]);
-    expect(built.waiting).toBeNull();
     expect(built.order?.steps[1].params).toEqual({ method: 'linear', bands: ['NDVI'], in_min: -1, in_max: 1, out_min: 0, out_max: 1, clip: true });
   });
 
-  it('holds the order back while the measurement runs or has failed, and says why', () => {
+  it('keeps the order whole while the measurement has failed, and says so at the step', () => {
     const failed = new Map<string, MeasureEntry>([[build().needs[0].key, { state: 'failed', reason: 'The area is too large' }]]);
     const built = build({ measures: failed });
-    expect(built.order).toBeNull();
-    expect(built.waiting).toBe('Normalize: the measurement failed: The area is too large');
-    expect(built.stepProblems[1].measure).toEqual({ state: 'failed', text: 'The measurement failed: The area is too large' });
+    expect(built.order).not.toBeNull();
+    expect(built.previewOrder).toBeNull();
+    expect(built.stepProblems[1]).toEqual({ errors: {}, measure: { state: 'failed', text: 'The measurement failed: The area is too large' } });
   });
 
-  it('measures a band that has no valid value over the AOI as an error of the bands, and the step does not wait', () => {
+  it('says a band without a valid value at the step, final, and does not hold the order back', () => {
     const built = build({ measures: ready(build(), { count: 0, valid_percent: 0 }) });
-    expect(built.order).toBeNull();
-    expect(built.stepProblems[1].errors).toEqual({ bands: 'No valid values over the AOI in NDVI.' });
-    expect(built.waiting).toBeNull();
+    expect(built.order).not.toBeNull();
+    expect(built.stepProblems[1].errors).toEqual({});
+    expect(built.stepProblems[1].measure).toEqual({ state: 'failed', text: 'No valid values in NDVI to measure.', final: true });
   });
 
-  it('carries a coarser read into the recipe as the factor', () => {
-    const built = build({ steps: [ndvi(), normalize('zscore')], measures: ready(build({ steps: [ndvi(), normalize('zscore')] }), STATISTICS, 3) });
-    expect(built.order?.steps[1].params).toMatchObject({ measured: { factor: 3 } });
-    expect(built.stepProblems[1].measure?.text).toContain('3 times coarser');
+  it('says behind the (i) whether the route read exactly or on a coarser read, and takes the factor into the tile', () => {
+    const steps = [ndvi(), normalize('zscore')];
+    const coarse = build({ steps, measures: ready(build({ steps }), STATISTICS, 3) });
+    expect(coarse.stepProblems[1].measure?.text).toBe(`NDVI: mean 0.4, standard deviation 0.2\n${previewNote(false)}`);
+    expect(coarse.previewOrder?.steps[1].params).toMatchObject({ measured: { factor: 3 } });
+    const exact = build({ steps, measures: ready(build({ steps })) });
+    expect(exact.stepProblems[1].measure?.text).toBe(`NDVI: mean 0.4, standard deviation 0.2\n${previewNote(true)}`);
   });
 
-  it('is locked without an AOI and after a reprojection, with the reason at the method, and asks nothing', () => {
+  it('asks without an AOI for the whole scenes: the question holds no aoi, the methods are free', () => {
     const whole = build({ area: 'scene', aoi: null });
-    expect(whole.needs).toEqual([]);
-    expect(whole.order).toBeNull();
-    expect(whole.stepProblems[1].errors).toEqual({ method: NO_AOI });
+    expect(whole.needs).toHaveLength(1);
+    expect(whole.needs[0].body).not.toHaveProperty('aoi');
+    expect(whole.needs[0].key).not.toContain('"aoi"');
+    expect(whole.stepProblems[1].errors).toEqual({});
+    expect(whole.order).not.toBeNull();
+    // The whole scenes are not the AOI: another question.
+    expect(whole.needs[0].key).not.toBe(build().needs[0].key);
+    // The map's AOI does not enter the question of "Whole scene".
+    expect(build({ area: 'scene' }).needs[0].key).toBe(whole.needs[0].key);
+  });
+
+  it('asks nothing for "AOI only" while no area is drawn', () => {
+    const built = build({ area: 'aoi', aoi: null });
+    expect(built.needs).toEqual([]);
+    expect(built.stepProblems[1].errors).toEqual({});
+    expect(built.problems).toContain('Draw an area as AOI.');
+  });
+
+  it('is locked after a reprojection, with the reason at the method, and asks nothing', () => {
     const reproject = step('reproject', 4, { crs: 'EPSG:3035', resolution: '30', resampling: 'bilinear', align: false }, 3);
     const after = build({ steps: [ndvi(), reproject, normalize('zscore', 4)] });
     expect(after.needs).toEqual([]);
+    expect(after.order).toBeNull();
     expect(after.stepProblems[2].errors).toEqual({ method: AFTER_REPROJECT });
     // Above the reprojection it is measured.
     expect(build({ steps: [ndvi(), normalize('zscore'), reproject] }).needs).toHaveLength(1);
@@ -304,7 +403,17 @@ describe('buildOrder with a statistical Normalize step', () => {
     expect(build({ itemIds: [] }).needs).toEqual([]);
   });
 
-  it('measures the second step on the first one with its numbers, and the second waits for the first', () => {
+  it('asks nothing of an order that is not the shown one: it measures in its own run', () => {
+    const other = build({ shown: false });
+    expect(other.needs).toEqual([]);
+    expect(other.stepProblems[1].measure).toBeUndefined();
+    expect(other.order?.steps[1]).toMatchObject({ op: 'normalize', op_version: 4 });
+    // The reason of a reprojection holds for every order.
+    const reproject = step('reproject', 4, { crs: 'EPSG:3035', resolution: '30', resampling: 'bilinear', align: false }, 3);
+    expect(build({ shown: false, steps: [ndvi(), reproject, normalize('zscore', 4)] }).stepProblems[2].errors).toEqual({ method: AFTER_REPROJECT });
+  });
+
+  it('measures the second step on the first one with its numbers as the tile takes them, and the second waits for the first', () => {
     const steps = [ndvi(), normalize('zscore', 2), normalize('robust', 3)];
     const first = build({ steps });
     expect(first.needs).toHaveLength(1);
@@ -313,9 +422,40 @@ describe('buildOrder with a statistical Normalize step', () => {
     expect(second.needs).toHaveLength(2);
     const [, later] = second.needs;
     expect(later.body.steps.map((s) => s.op)).toEqual(['band_math', 'normalize']);
-    expect(later.body.steps[1].params).toMatchObject({ method: 'zscore', measured: { factor: 1 } });
-    expect(second.order).toBeNull();
+    expect(later.body.steps[1]).toMatchObject({ op_version: 3, params: { method: 'zscore', measured: { factor: 1 } } });
+    expect(second.previewOrder).toBeNull();
     const done = build({ steps, measures: new Map([...ready(first), ...ready(second)]) });
-    expect(done.order?.steps.map((s) => (s.params as { method: string }).method)).toEqual([undefined, 'zscore', 'robust']);
+    expect(done.previewOrder?.steps.map((s) => [s.op_version, (s.params as { method?: string }).method])).toEqual([[2, undefined], [3, 'zscore'], [3, 'robust']]);
+    // The job gets version 4 for both, whatever the preview holds.
+    expect(done.order?.steps.map((s) => s.op_version)).toEqual([2, 4, 4]);
+  });
+
+  describe('the locked steps of a result', () => {
+    const numbers = { factor: 1, bands: { NDVI: { mean: 0.5, stddev: 0.25 } } };
+
+    it('turns a locked statistical step into version 3 with the numbers of the result, and asks nothing for it', () => {
+      const steps = [ndvi(), normalize('zscore')];
+      const built = build({ steps, kept: new Map([[2, numbers]]), locked: 2 });
+      expect(built.needs).toEqual([]);
+      expect(built.order?.steps[1]).toEqual({ op: 'normalize', op_version: 3, params: { method: 'zscore', bands: ['NDVI'], measured: numbers } });
+      expect(built.previewOrder).toBe(built.order);
+      expect(built.stepProblems[1].measure).toEqual({ state: 'ready', text: `NDVI: mean 0.5, standard deviation 0.25\n${KEPT}`, measured: numbers });
+    });
+
+    it('keeps a locked fixed range as version 4', () => {
+      const steps = [ndvi(), step('normalize', 4, { method: 'linear', bands: 'NDVI', in_min: '-1', in_max: '1', out_min: '0', out_max: '1', clip: true, low: '2', high: '98' }, 2)];
+      const built = build({ steps, kept: new Map(), locked: 2 });
+      expect(built.order?.steps[1].op_version).toBe(4);
+    });
+
+    it('measures the step for the preview and says it is measured anew in the run, where the result has no numbers for it', () => {
+      const steps = [ndvi(), normalize('zscore')];
+      const asked = build({ steps, kept: new Map(), anew: new Set([2]), locked: 2 });
+      expect(asked.order?.steps[1]).toMatchObject({ op_version: 4 });
+      expect(asked.needs).toHaveLength(1);
+      const built = build({ steps, kept: new Map(), anew: new Set([2]), locked: 2, measures: ready(asked) });
+      expect(built.order?.steps[1]).toMatchObject({ op_version: 4 });
+      expect(built.stepProblems[1].measure?.text).toContain(ANEW);
+    });
   });
 });

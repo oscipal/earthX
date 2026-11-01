@@ -22,12 +22,16 @@ Deviations from the sketch in §5.2: ``cost_factor`` instead of a full ``estimat
 a resampling other than ``nearest``, §5.3; plan M4-07a §3.2), and ``properties`` for
 what a step adds to the result's STAC properties (plan M4-09, §5.6), and ``dataset_check``
 for what the parameters must agree with in the entry itself, such as the layer ``mask`` reads (plan M4-18, adr/0014 §15m).
+
+A ``pixel`` step may also *measure* (``measures``, plan NM4-71, adr/0014 Nachtrag NM4-71): it names the bands it needs
+counted over the AOI before it runs, the core counts them in the pass before it, and the step then runs with the numbers
+(``with_measured``). Such a step is ``T2`` only: a tile has no AOI to count over.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from enum import Enum
 from typing import Any, Literal
@@ -140,6 +144,14 @@ def _keeps_every_band(params: BaseModel) -> BandUse:
     return BandUse()
 
 
+def _measures_nothing(params: BaseModel) -> frozenset[str]:
+    return frozenset()
+
+
+def _needs_no_percentiles(params: BaseModel) -> tuple[int, ...]:
+    return ()
+
+
 @dataclass(frozen=True, slots=True)
 class Operator:
     """One registered operator in one version."""
@@ -178,6 +190,23 @@ class Operator:
     #: offered; one that is only accepted (or not yet offered) is not (NM4-43c: version 2 of the bands steps comes
     #: with the panel that sends it).
     listed: bool = True
+    #: The bands the step needs measured over the AOI before it runs (NM4-71): the planner ends the pass before such a
+    #: step, the pass counts these bands as it writes them, and the step then runs with the numbers (:attr:`with_measured`).
+    #: Called on the parameters the planner left after ``restrict``, so it names the bands the step really converts.
+    #: Empty (the default) is a step that measures nothing, which does not cut the chain.
+    measures: Callable[[BaseModel], frozenset[str]] = field(default=_measures_nothing)
+    #: The whole percents (1 to 99) whose exact value the step needs of every band it measures; ``0`` and ``100`` are
+    #: the minimum and the maximum, which the count gives anyway.
+    measure_percents: Callable[[BaseModel], tuple[int, ...]] = field(default=_needs_no_percentiles)
+    #: ``with_measured(params, numbers)``: the step with its numbers. ``numbers`` is, per measured band, the statistics of
+    #: the band over the AOI (``minimum``, ``maximum``, ``mean``, ``stddev``, ``count`` and ``percentile_<n>`` for
+    #: each of :attr:`measure_percents`, as in the ``statistics`` of a result's properties). Raises
+    #: :class:`~earthx.processing.errors.RecipeInvalid` for a band without a usable number. Required for a step that
+    #: measures; its result is an internal parameter model that no recipe can name.
+    with_measured: Callable[[BaseModel, Mapping[str, Mapping[str, Any]]], BaseModel] | None = None
+    #: What a step that ran with its numbers reports in the property ``earthx:normalize`` of the result, without the
+    #: place of the step and ``exact``, which the core adds: the method and the numbers by band.
+    measured_report: Callable[[BaseModel], dict[str, Any]] | None = None
 
     def __post_init__(self) -> None:
         if not _OP_NAME.match(self.op):
@@ -188,6 +217,15 @@ class Operator:
             raise ValueError(f"{self.op} runs in no tier")
         if self.kind == "grid" and self.tiers != frozenset({Tier.T2}):
             raise ValueError(f"{self.op}: a grid operator runs in T2 only (§6.1)")
+        if self.measures is not _measures_nothing and (
+            self.kind != "pixel"
+            or self.tiers != frozenset({Tier.T2})
+            or self.with_measured is None
+            or self.measured_report is None
+        ):
+            raise ValueError(
+                f"{self.op}: a step that measures is a pixel step of T2 with with_measured and measured_report (NM4-71)"
+            )
         config = self.params.model_config
         if config.get("strict") is not True or config.get("extra") != "forbid":
             raise ValueError(f"{self.op}: the parameter model is strict and forbids extra fields (§5.1)")

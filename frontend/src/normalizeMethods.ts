@@ -1,11 +1,16 @@
-// The methods of a `normalize` step, version 3 (NM4-11b): the form the schema cannot give (its fields depend on the
-// method), the rules between the fields, and how the numbers the route of NM4-19 measured become the `measured` of the
-// step. The server decides (`422`); this is the help while typing. Pure functions; the state lives in `processingStore.ts`.
+// The methods of a `normalize` step, version 4 (NM4-11b, NM4-71): the form the schema cannot give (its fields depend on the
+// method), the rules between the fields, and how the numbers the route of NM4-19 measured become the `measured` of the tile's
+// step (version 3). The job measures itself; the panel measures only for the preview. The server decides (`422`); this is the
+// help while typing. Pure functions; the state lives in `processingStore.ts`.
 
 import type { AreaStatistics } from './api';
 import type { Field, FieldValue, ParamsForm } from './schemaForm';
 
 export type Method = 'linear' | 'percentile' | 'zscore' | 'robust';
+
+// The version a job gets (no numbers in it: the job measures), and the version of the tile and of "process further" (with `measured`).
+export const NORMALIZE_VERSION = 4;
+export const TILE_VERSION = 3;
 
 export const METHODS: ReadonlyArray<{ value: Method; label: string; help: string; formula: string }> = [
   {
@@ -23,7 +28,7 @@ export const METHODS: ReadonlyArray<{ value: Method; label: string; help: string
   {
     value: 'zscore',
     label: 'Z-score',
-    help: 'Mean 0 and standard deviation 1 over the AOI.',
+    help: 'Mean 0 and standard deviation 1 over the AOI. Sensitive to outliers, e.g. in indices; prefer Robust (median, IQR) there.',
     formula: '(x − mean) / standard deviation, measured over the AOI (population standard deviation)',
   },
   {
@@ -81,7 +86,8 @@ export function startValues(): Record<string, FieldValue> {
   return { method: 'linear', low: String(DEFAULT_RANGE.low), high: String(DEFAULT_RANGE.high), out_min: '0', out_max: '1' };
 }
 
-// A step taken from an older version: version 2 was the fixed range, with the fields of `linear` and nothing measured.
+// A step taken from an older version: version 2 was the fixed range, with the fields of `linear` and nothing measured. From
+// version 3 on the method is in the step.
 export const upgradedValues = (values: Record<string, FieldValue>): Record<string, FieldValue> => ({
   ...values,
   method: 'linear',
@@ -108,7 +114,7 @@ export function refineNormalize(params: Record<string, unknown>, errors: Record<
 
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
-// The fields of `normalize` version 3, if the schema is the one this panel knows (the properties and the methods);
+// The fields of `normalize` version 4, if the schema is the one this panel knows (the properties and the methods);
 // else the operator stays in the menu, disabled, with the reason, like any schema the panel cannot read.
 export function normalizeForm(schema: unknown): ParamsForm {
   const properties = isObject(schema) && isObject(schema.properties) ? schema.properties : {};
@@ -118,7 +124,7 @@ export function normalizeForm(schema: unknown): ParamsForm {
   if (!known.every((m) => methods.includes(m)) || methods.length !== known.length) {
     return { supported: false, reason: 'not supported by this panel: the methods of normalize' };
   }
-  const missing = ['bands', 'measured', 'in_min', 'in_max', 'out_min', 'out_max', 'low', 'high', 'clip'].find((name) => !(name in properties));
+  const missing = ['bands', 'in_min', 'in_max', 'out_min', 'out_max', 'low', 'high', 'clip'].find((name) => !(name in properties));
   if (missing) return { supported: false, reason: `not supported by this panel: ${missing} of normalize` };
   const text = (name: string): { description?: string } => {
     const d = isObject(properties[name]) ? properties[name].description : undefined;
@@ -214,22 +220,73 @@ export function measuredFrom(
   return without.length > 0 ? { without } : { measured: { factor: Math.max(1, Math.round(answer.factor)), bands: result } };
 }
 
+// --- what the result says -------------------------------------------------------------------------------------------
+
+// The numbers a statistical method needs per band (the keys of `measured.bands.<name>`).
+const NUMBER_KEYS: Readonly<Record<string, readonly string[]>> = {
+  percentile: ['p_low', 'p_high'],
+  zscore: ['mean', 'stddev'],
+  robust: ['p25', 'median', 'p75'],
+};
+
+// One entry of `earthx:normalize` of a result: a measuring step that ran, by its index in `recipe.steps`, with the numbers the run
+// measured for each band it converted.
+export interface NormalizeRun {
+  step: number;
+  method: Method;
+  bands: Record<string, BandNumbers>;
+}
+
+// `earthx:normalize` of a result's properties; `null` where it is not there (a result from before NM4-71). An entry that does not
+// have the form the server writes is left out: its step is measured anew.
+export function normalizeRuns(raw: unknown): NormalizeRun[] | null {
+  if (!Array.isArray(raw)) return null;
+  const runs: NormalizeRun[] = [];
+  for (const entry of raw) {
+    if (!isObject(entry) || !Number.isInteger(entry.step) || (entry.step as number) < 0 || !isStatistical(entry.method) || !isObject(entry.bands)) continue;
+    const bands: Record<string, BandNumbers> = {};
+    for (const [name, numbers] of Object.entries(entry.bands)) {
+      if (isObject(numbers)) bands[name] = Object.fromEntries(Object.entries(numbers).filter(([, value]) => typeof value === 'number' && Number.isFinite(value))) as BandNumbers;
+    }
+    runs.push({ step: entry.step as number, method: entry.method as Method, bands });
+  }
+  return runs;
+}
+
+// The numbers of a result for the locked step `step` that converts `bands` with `method`, as `measured` (factor 1: the job measured
+// exactly); `null` where the result has no entry for the step or lacks the numbers of a band (adr/0019, Nachtrag NM4-71).
+export function measuredFromRuns(runs: readonly NormalizeRun[], step: number, method: Method, bands: readonly string[]): Measured | null {
+  const run = runs.find((candidate) => candidate.step === step && candidate.method === method);
+  const keys = NUMBER_KEYS[method];
+  if (!run || !keys || bands.length === 0) return null;
+  const result: Record<string, BandNumbers> = {};
+  for (const name of bands) {
+    const numbers = Object.hasOwn(run.bands, name) ? run.bands[name] : undefined;
+    if (!numbers || !keys.every((key) => key in numbers)) return null;
+    result[name] = Object.fromEntries(keys.map((key) => [key, numbers[key]]));
+  }
+  return { factor: 1, bands: result };
+}
+
 // --- what is said ------------------------------------------------------------------------------------------------
 
-export const NO_AOI = 'Draw an AOI; the values are measured over it';
 export const AFTER_REPROJECT = 'Move Normalize above Reproject; the values are measured before a reprojection';
 export const MEASURING = 'Measuring…';
+export const KEPT = 'Kept from the result.';
+export const ANEW = 'Measured anew in the run.';
 
-export const coarserNote = (factor: number): string => `measured on a read ${factor} times coarser`;
+// What the route said of its read, behind the (i) of the step (plan KE5): the preview is an estimate unless the route read exactly.
+export const previewNote = (exact: boolean): string => (exact ? 'Preview measured exactly over the AOI.' : 'Preview estimated on a coarser read; the job measures exactly.');
 
 const shortNumber = (value: number): string => String(Number(value.toPrecision(4)));
 
-// The tooltip of the measured values: the formula of the method with the numbers of each band.
+// The tooltip of the measured values: the numbers of each band by the formula of the method.
 export function measuredText(method: Method, measured: Measured): string {
-  const lines = Object.entries(measured.bands).map(([name, n]) => {
-    if (method === 'percentile') return `${name}: p_low ${shortNumber(n.p_low)}, p_high ${shortNumber(n.p_high)}`;
-    if (method === 'zscore') return `${name}: mean ${shortNumber(n.mean)}, standard deviation ${shortNumber(n.stddev)}`;
-    return `${name}: p25 ${shortNumber(n.p25)}, median ${shortNumber(n.median)}, p75 ${shortNumber(n.p75)}`;
-  });
-  return [...lines, ...(measured.factor > 1 ? [`${coarserNote(measured.factor)[0].toUpperCase()}${coarserNote(measured.factor).slice(1)}.`] : [])].join('\n');
+  return Object.entries(measured.bands)
+    .map(([name, n]) => {
+      if (method === 'percentile') return `${name}: p_low ${shortNumber(n.p_low)}, p_high ${shortNumber(n.p_high)}`;
+      if (method === 'zscore') return `${name}: mean ${shortNumber(n.mean)}, standard deviation ${shortNumber(n.stddev)}`;
+      return `${name}: p25 ${shortNumber(n.p25)}, median ${shortNumber(n.median)}, p75 ${shortNumber(n.p75)}`;
+    })
+    .join('\n');
 }

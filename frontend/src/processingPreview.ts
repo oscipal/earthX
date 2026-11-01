@@ -43,7 +43,7 @@ import {
 } from './processingOrder';
 import type { Percent } from './percentRange';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
-import { isStatistical, type Measured } from './normalizeMethods';
+import { NORMALIZE_VERSION, TILE_VERSION, isStatistical, type Measured } from './normalizeMethods';
 import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
@@ -103,6 +103,8 @@ export interface PlannedStep {
   step: DraftStep;
   operator: Operator;
   params: Record<string, unknown>;
+  // The version the tile takes: `normalize` of version 4 (job only) goes to the tile as version 3 (NM4-71).
+  version: number;
 }
 
 export type PreviewPlan =
@@ -117,13 +119,14 @@ export type PreviewPlan =
 
 // The operator of a step that can be a tile and the fields of its form, or the text why
 // there is no picture: the operator is not on the dataset's list, it does not run as a tile
-// (`T1`, `pixel`), or the panel has no form for it.
-function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[] } | { reason: string } {
+// (`T1`, `pixel`), or the panel has no form for it. `normalize` of version 4 runs only as a job; its tile is version 3.
+function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[]; version: number } | { reason: string } {
   const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
   if (!operator) return { reason: NO_PREVIEW_UNLISTED };
-  if (!operator.tiers.includes('T1') || operator.kind !== 'pixel') return { reason: NO_PREVIEW };
+  const asVersion3 = operator.op === 'normalize' && operator.opVersion === NORMALIZE_VERSION;
+  if (!asVersion3 && (!operator.tiers.includes('T1') || operator.kind !== 'pixel')) return { reason: NO_PREVIEW };
   if (!operator.form.supported) return { reason: NO_PREVIEW_FORM };
-  return { operator, fields: operator.form.fields };
+  return { operator, fields: operator.form.fields, version: asVersion3 ? TILE_VERSION : operator.opVersion };
 }
 
 // What the tile route takes of the parameters of one step, in characters (`MAX_OPERATOR_PARAMS_CHARS` of the backend).
@@ -139,7 +142,7 @@ const waitsForNumbers = (step: DraftStep, params: Record<string, unknown>): bool
 // a step that cannot be drawn is shown. Without steps there is nothing to say.
 //
 // A statistical `normalize` step is drawn with the numbers measured for it (`numbers`, by step key, NM4-11b): the tile
-// takes them in its parameters. Without them, or with parameters longer than the tile route takes, the start ends before it.
+// takes them in its parameters, as version 3. Without them, or with parameters longer than the tile route takes, the start ends before it.
 export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | null, numbers: ReadonlyMap<number, Measured> = new Map()): PreviewPlan {
   const first = steps[0];
   if (!info || !first) return { state: 'off', reason: null };
@@ -155,7 +158,7 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
       params.measured = measured;
     }
     if (canonicalJson(params).length > MAX_OPERATOR_PARAMS_CHARS) break;
-    planned.push({ step, operator: found.operator, params });
+    planned.push({ step, operator: found.operator, params, version: found.version });
   }
   if (planned.length === 0) {
     const found = tileStep(first, info);
@@ -454,7 +457,7 @@ export function previewSpec(args: {
   const shown: string[] | null = band === null ? null : band === RGB ? [...args.bands!] : [band];
   const asked: ShownBands = shown === null ? null : shown.length === 1 ? shown[0] : shown;
   const render = { rescale: rescale.rescale, colormapName: band === RGB ? undefined : range.colormap || undefined };
-  const chain = plan.steps.map(({ step, params }) => ({ op: step.op, opVersion: step.opVersion, paramsJson: canonicalJson(params) }));
+  const chain = plan.steps.map(({ step, params, version }) => ({ op: step.op, opVersion: version, paramsJson: canonicalJson(params) }));
   // Without a pixel size there is no level to hold the preview under: it is drawn
   // as before, up to the last released level, and "Preview" says what it is (Otto,
   // 19.10.2026).
