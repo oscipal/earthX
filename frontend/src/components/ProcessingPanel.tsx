@@ -36,6 +36,8 @@ import {
   rescaleOf,
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
+import { AFTER_REPROJECT, NO_AOI } from '../normalizeMethods';
+import type { MeasureNeed } from '../processingOrder';
 import {
   OUTSIDE_TEXT,
   orderView,
@@ -557,6 +559,17 @@ function TooLarge({ hasAoi }: { hasAoi: boolean }) {
   );
 }
 
+// Asks the questions the statistical Normalize steps need answered (NM4-11b): when the method is chosen and whenever the steps
+// before, the AOI, the scenes or the bands change. The answers come into the store, which holds each once.
+function AskMeasures({ needs }: { needs: readonly MeasureNeed[] }) {
+  const ensure = useProcessingStore((s) => s.ensureMeasures);
+  const measures = useProcessingStore((s) => s.measures);
+  useEffect(() => {
+    ensure(needs);
+  }, [needs, measures, ensure]);
+  return null;
+}
+
 export default function ProcessingPanel() {
   const open = useProcessingStore((s) => s.open);
   const close = useProcessingStore((s) => s.closeProcessing);
@@ -617,6 +630,7 @@ export default function ProcessingPanel() {
 
   return (
     <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Processing">
+      {!reason && info && <AskMeasures needs={view.needs} />}
       <div className="pp-head">
         <button
           type="button"
@@ -741,6 +755,15 @@ export default function ProcessingPanel() {
                             earlier={earlier}
                             dataBands={view.selectable}
                             units={Object.fromEntries(view.dataBands.flatMap((b) => (b.unit ? [[b.name, b.unit]] : [])))}
+                            measure={problem?.measure}
+                            statisticsLock={
+                              view.area !== 'aoi' || !view.aoi
+                                ? NO_AOI
+                                : p.steps.slice(0, index).some((earlier) => earlier.op === 'reproject')
+                                  ? AFTER_REPROJECT
+                                  : null
+                            }
+                            onRetryMeasure={p.retryMeasures}
                             checkName={(name) =>
                               nameProblem(
                                 name,
@@ -815,8 +838,8 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="ghost-btn"
-              disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock}
-              title={crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost'}
+              disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock || !!view.measureBlock}
+              title={crsBlock ?? view.nameBlock ?? view.measureBlock ?? 'Ask the server what this job is expected to cost'}
               onClick={() => void p.reviewOrder()}
             >
               {p.reviewing ? 'Reviewing…' : 'Review'}
@@ -824,8 +847,8 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="primary-btn"
-              disabled={!startReady || p.starting || !!crsBlock || !!view.nameBlock}
-              title={crsBlock ?? view.nameBlock ?? startTitle}
+              disabled={!startReady || p.starting || !!crsBlock || !!view.nameBlock || !!view.measureBlock}
+              title={crsBlock ?? view.nameBlock ?? view.measureBlock ?? startTitle}
               onClick={() => void p.startJob()}
             >
               {startLabel}
