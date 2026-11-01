@@ -350,3 +350,20 @@ PYTHONPATH=backend python -W ignore scripts/nm4-71-normalize/measure.py summary 
 ```
 
 Gemessen am 01.11.2026 in der Cloud-Sitzung (4 Kerne, 15 GB), je Fall einmal; ganze Szene 1 Band und 82 km 4 Bänder (Job und (a1)) zweimal, ohne Kompression der Arbeitsdatei (`NM4_71_WORK_COMPRESS=none`) ganze Szene 1 Band und 82 km 4 Bänder einmal. Die Variante `truth` hält alle Werte der Fläche (bis 3,9 GB RSS bei der ganzen Szene mit sechs Bändern) und ist nur für den Vergleich da. Der Prototyp (a1) nutzt interne Funktionen von `processing.core` und ist kein Entwurf des Codes.
+
+## 15. Freigabe (Otto, 01.11.2026, zu #273)
+
+| Frage | Antwort |
+|---|---|
+| 1 Wo exakt gemessen wird | **1:** im Job über eine Arbeitsdatei (a1) |
+| 2 Rezept | **1:** `normalize` Version 4 ohne Zahlen; Zahlen im Ergebnis |
+| 3 ⚙ | **1:** der gesperrte Schritt behält die exakten Zahlen des Ergebnisses |
+| 4 Exaktheit | **1:** Perzentile exakt, zweistufig |
+| 5 Vorschau | **1:** bis 2048², auch ohne AOI |
+| 6 Schnitt | **1:** ein PR |
+
+KE1–KE10 wie vorgeschlagen. **Auflagen:**
+
+1. Den Plattenplatz der Arbeitsdatei je Auftrag messen und im PR nennen; die Grenze in die Kostenschätzung bzw. die Annahme aufnehmen; die Arbeitsdatei auch bei Abbruch, Fehler und `DELETE` löschen (Test).
+2. Der Runner liest `normalize` Version 4 und rechnet bitgleich zum Job (Test).
+3. Tooltip „Z-score“: Hinweis auf Ausreißer bei Indizes, Verweis auf „Robust“ (KE10).
