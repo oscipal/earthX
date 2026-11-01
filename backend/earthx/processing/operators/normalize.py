@@ -276,7 +276,7 @@ def _method_v2(params: BaseModel) -> str:
     )
 
 
-#: Version 2 (NM4-43c): converts the bands it names. Listed since NM4-43e, the panel sends it; version 1 is accepted, not listed.
+#: Version 2 (NM4-43c): converts the bands it names. Accepted, not listed since NM4-11b: the panel sends version 3.
 NORMALIZE_V2 = dataclasses.replace(
     NORMALIZE,
     op_version=2,
@@ -289,7 +289,7 @@ NORMALIZE_V2 = dataclasses.replace(
     bands_used=_bands_used_v2,
     restrict=_restrict_v2,
     stock=True,
-    listed=True,
+    listed=False,
 )
 
 
@@ -591,7 +591,7 @@ def _iqr(values: BandValues) -> float:
     return values.p75 - values.p25
 
 
-#: Version 3 (NM4-11): the methods. Not listed until the panel sends it (NM4-11b); runs as a tile and as a job.
+#: Version 3 (NM4-11): the methods. Listed since NM4-11b, the panel sends it; runs as a tile and as a job.
 NORMALIZE_V3 = dataclasses.replace(
     NORMALIZE_V2,
     op_version=3,
@@ -607,5 +607,5 @@ NORMALIZE_V3 = dataclasses.replace(
     method=_method_v3,
     bands_used=_bands_used_v3,
     restrict=_restrict_v3,
-    listed=False,
+    listed=True,
 )
