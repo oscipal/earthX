@@ -24,7 +24,8 @@ Variants, each in a child process of its own (cold, as a worker): ``job`` today'
 steps before ``normalize`` into a ``float64`` work file while counting the bands of the step over the AOI, the exact
 percentiles refined from that file, then the rest of the chain from it; ``truth`` every valid value of the area held
 and sorted, for the error of the histogram. One JSON line per run: seconds (per phase), peak RSS (``ru_maxrss``), the
-bytes GDAL downloaded (``CPL_VSIL_SHOW_NETWORK_STATS``) and the measured numbers.
+bytes GDAL downloaded (``CPL_VSIL_SHOW_NETWORK_STATS``) and the measured numbers. ``NM4_71_WORK_COMPRESS=none``
+writes the work file of ``workfile`` without compression (the job's files are deflate).
 """
 
 from __future__ import annotations
@@ -238,6 +239,15 @@ def _workfile(recipe, workdir: Path) -> dict:
     from earthx.processing.workfile import open_workfile, workfile_path
     from earthx.readers import process_gdal_options
 
+    if os.environ.get("NM4_71_WORK_COMPRESS") == "none":
+        profile = core._profile
+
+        def plain_work_file(meta, dtype, nodata, interleave=None):
+            # Only the work file between the passes (stored band by band); the last pass stays as the job writes it.
+            found = profile(meta, dtype, nodata, interleave)
+            return {k: v for k, v in found.items() if k != "compress"} if interleave == "band" else found
+
+        core._profile = plain_work_file
     phases: dict[str, float] = {}
     output = recipe.output
     planned = plan_steps(recipe.steps, REGISTRY)
