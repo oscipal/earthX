@@ -15,12 +15,12 @@ import { showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf } from '../viewBand';
-import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
+import { lookChanged, lookOfPendingFields, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
-import { layerOfView } from '../viewLayer';
+import { isTemporaryImage, layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Chevron from './Chevron';
 import CloseButton from './CloseButton';
@@ -59,6 +59,8 @@ export default function ViewerControls() {
   });
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
+  const viewAoi = useAppStore((s) => s.viewAoi);
+  const layers = useAppStore((s) => s.layers);
   const exitFocus = useAppStore((s) => s.exitFocus);
   const changeImage = useAppStore((s) => s.changeImage);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
@@ -150,6 +152,10 @@ export default function ViewerControls() {
   // An index is drawn with a colormap whatever the dataset's own picture is.
   const colormap = chosen || pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   const at = shown ? here.indexOf(shown) : -1;
+  // Temporary where no layer holds the image as it looks now, the fields included (Otto, 1.11.2026).
+  const temporary = shown
+    ? isTemporaryImage(layers, shown, { ...appliedRender, ...lookOfPendingFields({ pendingColormapName, pendingVmin, pendingVmax, pendingIndex, pendingBand, pendingUnit, pendingPercentLow, pendingPercentHigh }) }, { cropToAoi: cropToAoi && viewAoi !== null, aoi: viewAoi })
+    : false;
   const datasetIds = datasetIdsOf(images);
   // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
   const stepText = shown ? (shown.date ?? shown.groupLabel) : '';
@@ -182,9 +188,11 @@ export default function ViewerControls() {
           {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
         </span>
         {/* The view of the search is a temporary picture, not a layer (Otto, 1.11.2026): the badge of "Preview", between the title and the date. */}
-        <span className="pp-badge vc-temporary" title="The view of the search is temporary: add it to the layers to keep it">
-          Temporary
-        </span>
+        {temporary && (
+          <span className="pp-badge vc-temporary" title="This picture is not a layer: add it to the layers to keep it">
+            Temporary
+          </span>
+        )}
         {datasetIds.length > 1 && shown && (
           <select
             className="vc-dataset"

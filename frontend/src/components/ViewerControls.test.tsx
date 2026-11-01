@@ -290,6 +290,18 @@ describe('"Save" of the view of a pinned layer', () => {
     expect(save()!.title).toBe(NOTHING_TO_SAVE_ONE_IMAGE);
   });
 
+  // Otto, 1.11.2026 (zu #272): "Temporary" goes when the image is a layer, and comes back with a change.
+  it('takes off "Temporary" while a layer holds the image as it looks, and puts it back with a change of the fields', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [], cropToAoi: false });
+    expect(container.querySelector('.vc-temporary')).not.toBeNull();
+    mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    expect(container.querySelector('.vc-temporary')).toBeNull();
+    type(vmax(), '2000');
+    expect(container.querySelector('.vc-temporary')).not.toBeNull();
+    type(vmax(), '3000');
+    expect(container.querySelector('.vc-temporary')).toBeNull();
+  });
+
   it('stands beside "Apply", under "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
     mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
     expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);

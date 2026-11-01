@@ -451,3 +451,61 @@ describe('a layer pinned with a band', () => {
   });
 });
 
+
+// Otto, 1.11.2026 (zu #272): "Temporary" goes with "Add to layers" for the image pinned, and comes back with a change; "Add all to layers"
+// takes it off every image, so that a step nobody changed shows none.
+describe('the mark "Temporary" and the layers', () => {
+  const temporary = () => container.querySelector('.vc-temporary') !== null;
+  const twoImages = () => {
+    const items = [item('s0'), item('s1')];
+    mount({ items, groups: [{ key: ['a'], label: 'a', items: [items[0]] }, { key: ['b'], label: 'b', items: [items[1]] }], selectedIds: [] });
+  };
+  const pin = async (what: 'addCurrentToLayers' | 'addAllToLayers') => {
+    act(() => store()[what]());
+    await act(async () => {
+      await vi.waitFor(() => expect(store().layers.length).toBeGreaterThan(0));
+    });
+    await settle();
+  };
+
+  it('is on a view that no layer holds, goes with "Add to layers" for that image, and is back with a change', async () => {
+    mount({ selectedIds: [] });
+    expect(temporary()).toBe(true);
+    await pin('addCurrentToLayers');
+    expect(temporary()).toBe(false);
+    choose('band:B04');
+    await settle();
+    expect(temporary()).toBe(true); // chosen: something changed
+    choose('');
+    await settle();
+    expect(temporary()).toBe(false); // back to what the layer holds
+  });
+
+  it('is on the step that was pinned no more, and on another step of the view still', async () => {
+    twoImages();
+    await pin('addCurrentToLayers');
+    expect(temporary()).toBe(false);
+    act(() => store().stepImage(1));
+    await settle();
+    expect(temporary()).toBe(true);
+    act(() => store().stepImage(-1));
+    await settle();
+    expect(temporary()).toBe(false);
+  });
+
+  it('is on no step after "Add all to layers" while nothing changed, and on the one that is changed afterwards', async () => {
+    twoImages();
+    await pin('addAllToLayers');
+    await vi.waitFor(() => expect(store().layers).toHaveLength(2));
+    expect(temporary()).toBe(false);
+    act(() => store().stepImage(1));
+    await settle();
+    expect(temporary()).toBe(false);
+    choose('band:B04');
+    await settle();
+    expect(temporary()).toBe(true);
+    act(() => store().stepImage(-1));
+    await settle();
+    expect(temporary()).toBe(false);
+  });
+});
