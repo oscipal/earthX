@@ -17,10 +17,12 @@
       import maplibregl from 'maplibre-gl';
       import { fetchResultTileJson } from '/src/processing.ts';
       import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, buildTileUrl } from '/src/mapLayers.ts';
+      import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '/src/aoiClip.ts';
       import { resultTileTemplate } from '/src/resultLayer.ts';
       import { overlaysOfPass, underlaysOf } from '/src/searchLayers.ts';
       import { previewDataset, previewScene, quicklookDataset, quicklookScene, sceneInfo } from '/src/fixtures/viewScenes.ts';
 
+      maplibregl.addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
       const EMPTY = [255, 0, 255];
       const map = new maplibregl.Map({
         container: 'map',
@@ -44,7 +46,15 @@
         return [...pixels(Math.floor(gl.drawingBufferWidth / 2), Math.floor(gl.drawingBufferHeight / 2), 1, 1)].slice(0, 3);
       };
 
+      // One pixel of the canvas, `dx` and `dy` away from its centre.
+      const pixelAt = (dx, dy) => {
+        const gl = map.getCanvas().getContext('webgl2') ?? map.getCanvas().getContext('webgl');
+        return [...pixels(Math.floor(gl.drawingBufferWidth / 2) + dx, Math.floor(gl.drawingBufferHeight / 2) + dy, 1, 1)].slice(0, 3);
+      };
+      const AOI = { type: 'Polygon', coordinates: [[[10.4, 47.4], [10.6, 47.4], [10.6, 47.6], [10.4, 47.6], [10.4, 47.4]]] };
+
       window.h = {
+        pixelAt,
         loaded: loaded.then(() => {
           ensureBaseLayers(map);
         }),
@@ -109,6 +119,17 @@
             downloaded: { H1: sceneInfo(previewScene('H1'), 8, 14) },
             render: {},
             showDownloaded: true,
+            items: [previewScene('H1')],
+            dataset: previewDataset(),
+          }),
+        // The same, cropped to an AOI around the centre of the scene (NM4-25).
+        fullCropped: () =>
+          syncFocusRaster(map, {
+            downloaded: { H1: sceneInfo(previewScene('H1'), 8, 14) },
+            render: {},
+            showDownloaded: true,
+            aoi: AOI,
+            cropToAoi: true,
             items: [previewScene('H1')],
             dataset: previewDataset(),
           }),

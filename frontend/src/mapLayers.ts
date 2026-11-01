@@ -10,7 +10,7 @@ import type { CoverageCell } from './api';
 import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
 import { preferredGeoreferencedAsset, quicklookPlan } from './datasets';
 import type { DatasetOption } from './datasets';
-import { asFeatureCollection, footprintOf, quicklookCoords } from './geoUtils';
+import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
 import type { LayerOverlay, MapLayer } from './layers';
@@ -471,10 +471,29 @@ const dynamicId = (kind: (typeof DYNAMIC_KINDS)[number], i: number): string => `
 
 function hasDynamic(map: MapLibreMap, which: DynamicBank): boolean {
   for (let i = 0; i < MAX_DYNAMIC_LAYERS; i++) {
-    if (map.getLayer(`${which}-img-lyr-${i}`) || map.getLayer(`${which}-tiles-lyr-${i}`)) return true;
+    for (const kind of ['img', 'tiles']) {
+      if (map.getLayer(`${which}-${kind}-lyr-${i}`) || map.getLayer(`${which}-${kind}-lyr-c${i}`)) return true;
+    }
   }
   return false;
 }
+
+// How a picture of the view can be drawn again cut to an AOI (NM4-25), by the id of its layer: the picture that stays under
+// the new one while that loads has to follow the AOI the new one is cut to.
+type Redraw = { clippedTo: GeoJSON.Geometry | null } & (
+  | { kind: 'tiles'; tileUrl: string; bounds: [number, number, number, number]; zoom: RasterZoom }
+  | {
+      kind: 'image';
+      url: string;
+      coords: Coords4;
+      nodataMax: number | null;
+      // The rings of the AOI on the pixels of the image, or `null` where they cannot be placed.
+      ringsFor: (clip: GeoJSON.Geometry) => [number, number][][] | null;
+    }
+);
+const redraws = new Map<string, Redraw>();
+// The cut copy of a picture of the old bank, `c` for "cut": ids of their own, inside the range `removeDynamic` clears.
+const cutId = (lyrId: string): string => lyrId.replace(/-(img|tiles)-(lyr|src)-/, '-$1-$2-c');
 
 function removeDynamic(map: MapLibreMap, which: DynamicBank): void {
   // Remove by deterministic id across the whole index range — not just the
@@ -482,13 +501,16 @@ function removeDynamic(map: MapLibreMap, which: DynamicBank): void {
   // finished around a re-sync can't survive as an orphan.
   for (let i = 0; i < MAX_DYNAMIC_LAYERS; i++) {
     for (const lyr of [`${which}-img-lyr-${i}`, `${which}-tiles-lyr-${i}`]) {
-      if (map.getLayer(lyr)) map.removeLayer(lyr);
-      viewPictures.delete(lyr);
-      viewTwinsHidden.delete(lyr);
-      resultsKeys.delete(lyr);
+      for (const id of [lyr, cutId(lyr)]) {
+        if (map.getLayer(id)) map.removeLayer(id);
+        viewPictures.delete(id);
+        viewTwinsHidden.delete(id);
+        resultsKeys.delete(id);
+        redraws.delete(id);
+      }
     }
     for (const src of [`${which}-img-src-${i}`, `${which}-tiles-src-${i}`]) {
-      if (map.getSource(src)) map.removeSource(src);
+      for (const id of [src, cutId(src)]) if (map.getSource(id)) map.removeSource(id);
     }
   }
 }
@@ -566,6 +588,59 @@ function retireDynamicMosaic(map: MapLibreMap, hold = false): void {
   const id = ++retired;
   retiring = { id, map, bank, timer: retireTimer(map, id) };
   bank = bank === 'm' ? 'n' : 'm';
+}
+
+// The picture that stays on the map while the cropped view loads follows the AOI (NM4-25): each picture of the old bank is drawn
+// again cut to it, under the old one, and the old one goes once the cut one is on the map. Outside the AOI the old picture is
+// then gone as soon as that is, inside it nothing changes, and there is no frame with the basemap in between.
+function clipRetired(map: MapLibreMap, clip: GeoJSON.Geometry): void {
+  const old = retiring;
+  if (!old || old.map !== map) return;
+  const stale = () => retiring?.id !== old.id;
+  for (const [lyrId, redraw] of redraws) {
+    if (!lyrId.startsWith(`${old.bank}-`) || /-c\d+$/.test(lyrId) || redraw.clippedTo === clip || !map.getLayer(lyrId)) continue;
+    const srcId = (map.getLayer(lyrId) as { source?: string }).source;
+    if (!srcId) continue;
+    const [cutLyr, cutSrc] = [cutId(lyrId), cutId(srcId)];
+    const key = resultsKeys.get(lyrId);
+    const swap = () => {
+      if (stale() || !map.getLayer(cutLyr)) return;
+      const check = () => {
+        if (stale() || !map.getSource(cutSrc)) return map.off('render', check);
+        if (!map.isSourceLoaded(cutSrc)) return;
+        map.off('render', check);
+        if (map.getLayer(lyrId)) map.removeLayer(lyrId);
+        if (map.getSource(srcId)) map.removeSource(srcId);
+        for (const table of [viewPictures, redraws, resultsKeys]) table.delete(lyrId);
+        viewTwinsHidden.delete(lyrId);
+      };
+      map.on('render', check);
+      check();
+    };
+    const arrived = () => {
+      if (key) resultsKeys.set(cutLyr, { ...key, seq: key.seq - 0.5 });
+      redraws.set(cutLyr, { ...redraw, clippedTo: clip });
+      restackAll(map);
+      swap();
+    };
+    redraw.clippedTo = clip;
+    if (redraw.kind === 'tiles') {
+      placeRaster(map, cutSrc, cutLyr, clipTileUrl(redraw.tileUrl, clip), redraw.bounds, 1, redraw.zoom);
+      arrived();
+    } else {
+      const rings = redraw.ringsFor(clip);
+      if (!rings) continue;
+      loadProcessed(redraw.url, redraw.nodataMax, rings, (dataUrl) => {
+        if (stale() || !map.getLayer(lyrId)) return;
+        try {
+          placeImage(map, cutSrc, cutLyr, dataUrl, redraw.coords, 1);
+        } catch {
+          return; /* map/style went away while loading */
+        }
+        arrived();
+      });
+    }
+  }
 }
 
 // Calls `done` once the layers that arrive have every tile for the part of the map in view. Only those sources count,
@@ -733,6 +808,7 @@ function addPreview(
     const lyrId = dynamicId('tiles-lyr', i);
     keyScene(lyrId, item.id, order);
     placeRaster(map, dynamicId('tiles-src', i), lyrId, tileUrl, item.bbox, 1, zoom);
+    redraws.set(lyrId, { kind: 'tiles', tileUrl, bounds: item.bbox, zoom, clippedTo: null });
     holdBack(map, lyrId);
     drawsPicture(map, lyrId, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
     return;
@@ -750,6 +826,14 @@ function addPreview(
     pendingImages--;
     try {
       placeImage(map, srcId, lyrId, dataUrl, coords, 1);
+      redraws.set(lyrId, {
+        kind: 'image',
+        url: plan.href,
+        coords,
+        nodataMax,
+        ringsFor: (clip) => quicklookAoiPixelRings(item, clip, preferredGeoreferencedAsset(dataset)),
+        clippedTo: null,
+      });
       holdBack(map, lyrId);
       drawsPicture(map, lyrId, overlaySignature({ kind: 'image', url: plan.href, coords, nodataMax }));
       restackAll(map);
@@ -766,7 +850,14 @@ function addPreview(
 // stays under the tiles at every zoom, so that no zoom and no jump leaves the map without a picture. Reuses the `m-img-*` id range the browse preview uses: focus mode
 // and browse mode never sync at once, and `retireDynamicMosaic` already
 // clears both ranges up front regardless of which mode is running.
-function addQuicklookUnderlay(map: MapLibreMap, underlay: ImageOverlay, i: number, gen: number): void {
+function addQuicklookUnderlay(
+  map: MapLibreMap,
+  underlay: ImageOverlay,
+  i: number,
+  gen: number,
+  clip: GeoJSON.Geometry | null,
+  ringsFor: (clip: GeoJSON.Geometry) => [number, number][][] | null,
+): void {
   const srcId = dynamicId('img-src', i);
   const lyrId = dynamicId('img-lyr', i);
   // Keyed before the tiles of its scene are placed, so that it lies under them whenever it arrives.
@@ -777,6 +868,7 @@ function addQuicklookUnderlay(map: MapLibreMap, underlay: ImageOverlay, i: numbe
     pendingImages--;
     try {
       placeImage(map, srcId, lyrId, dataUrl, underlay.coords, 1);
+      redraws.set(lyrId, { kind: 'image', url: underlay.url, coords: underlay.coords, nodataMax: underlay.nodataMax, ringsFor, clippedTo: clip });
       // The quicklook of a pinned layer of the same scene takes its place (`drawsPicture`).
       drawsPicture(map, lyrId, overlaySignature(underlay));
       restackAll(map);
@@ -801,7 +893,9 @@ function addTiles(
   const srcId = dynamicId('tiles-src', i);
   const lyrId = dynamicId('tiles-lyr', i);
   keyResults(lyrId, 'view');
-  placeRaster(map, srcId, lyrId, clipTileUrl(buildTileUrl(info.tileUrl, render), clip), info.bounds, 1, info);
+  const tileUrl = buildTileUrl(info.tileUrl, render);
+  placeRaster(map, srcId, lyrId, clipTileUrl(tileUrl, clip), info.bounds, 1, info);
+  redraws.set(lyrId, { kind: 'tiles', tileUrl, bounds: info.bounds, zoom: info, clippedTo: clip });
   drawsPicture(map, lyrId, tilesPicture(info, render, clip));
 }
 
@@ -1044,6 +1138,7 @@ export function syncFocusRaster(
   retireDynamicMosaic(map);
   if (!s.showDownloaded) return dropRetired(map);
   const clip = s.cropToAoi ? (s.aoi ?? null) : null;
+  if (clip) clipRetired(map, clip);
   const dataset = s.dataset;
   // Each pass is a mosaic, scene by scene, or not yet known (`mosaic.ts`). The scenes drawn one by
   // one are capped, first come first served, as they always were.
@@ -1086,7 +1181,7 @@ export function syncFocusRaster(
       // the underlay's image arrives.
       const item = underlays < MAX_DYNAMIC_LAYERS ? s.items.find((it) => it.id === itemId) : undefined;
       const underlay = item && underlayOf(item, dataset, clip);
-      if (underlay && !index) addQuicklookUnderlay(map, underlay, underlays++, gen);
+      if (underlay && !index) addQuicklookUnderlay(map, underlay, underlays++, gen, clip, (c) => (item ? underlayOf(item, dataset, c)?.clipRings ?? null : null));
       if (view.kind === 'scenes' && !s.tilesInLayer) place(info, entries);
     });
     if (view.kind === 'mosaic' && !s.tilesInLayer) {
