@@ -75,9 +75,10 @@ export function fieldsOfMethod(fields: readonly Field[], method: unknown): Field
     .map((f) => (wanted.includes(f.name) ? { ...f, required: true } : f));
 }
 
-// The values a fresh step starts with, over the empty ones of the form: a fixed range as before, 2–98 % ready for the stretch.
+// The values a fresh step starts with, over the empty ones of the form: a fixed range as before, 2–98 % ready for the stretch, and
+// the target range 0 to 1 (Otto, 01.11.2026).
 export function startValues(): Record<string, FieldValue> {
-  return { method: 'linear', low: String(DEFAULT_RANGE.low), high: String(DEFAULT_RANGE.high) };
+  return { method: 'linear', low: String(DEFAULT_RANGE.low), high: String(DEFAULT_RANGE.high), out_min: '0', out_max: '1' };
 }
 
 // A step taken from an older version: version 2 was the fixed range, with the fields of `linear` and nothing measured.
@@ -146,6 +147,18 @@ export function normalizeForm(schema: unknown): ParamsForm {
       field('clip', 'Clip', 'boolean'),
     ],
   };
+}
+
+// The numbers a step of a job's own copy holds (`params.measured`), if they have the form the server writes: what "process further"
+// keeps for the locked steps of a result (adr/0019, Nachtrag NM4-05b). Anything else is not taken, the step is measured instead.
+export function keptMeasured(raw: unknown): Measured | null {
+  if (!isObject(raw) || typeof raw.factor !== 'number' || !isObject(raw.bands)) return null;
+  const bands: Record<string, BandNumbers> = {};
+  for (const [name, numbers] of Object.entries(raw.bands)) {
+    if (!isObject(numbers) || !Object.values(numbers).every((value) => typeof value === 'number' && Number.isFinite(value))) return null;
+    bands[name] = numbers as BandNumbers;
+  }
+  return Object.keys(bands).length > 0 ? { factor: raw.factor, bands } : null;
 }
 
 // --- the measure ---------------------------------------------------------------------------------------------------

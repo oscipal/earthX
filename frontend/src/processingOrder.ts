@@ -11,7 +11,7 @@ import { groupIndexOfItem } from './grouping';
 import { canonicalJson, type AoiProvenance, type JsonSchema, type Order, type OrderStep, type ProcessDescription } from './processing';
 import type { AreaStatistics } from './api';
 import { bandNamesOf, isBandMath, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
-import { AFTER_REPROJECT, MEASURING, NO_AOI, isStatistical, measuredFrom, measuredText, normalizeForm, upgradedValues, type Measured, type Method } from './normalizeMethods';
+import { AFTER_REPROJECT, MEASURING, NO_AOI, isStatistical, keptMeasured, measuredFrom, measuredText, normalizeForm, upgradedValues, type Measured, type Method } from './normalizeMethods';
 import { initialValues, paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
 import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
@@ -623,6 +623,8 @@ export function buildOrder(args: {
   info: ProcessInfo;
   // The answers to the questions of the statistical `normalize` steps, by `MeasureNeed.key` (NM4-11b).
   measures?: ReadonlyMap<string, MeasureEntry>;
+  // The numbers the locked steps of a result keep from its job, by step key: they are not measured again (NM4-05b).
+  kept?: ReadonlyMap<number, Measured>;
 }): BuiltOrder {
   const { datasetId, itemIds, area, aoi, steps, bands, data, dtype, info } = args;
   const hidden = args.hidden ?? [];
@@ -674,8 +676,9 @@ function measureSteps(args: {
   built: OrderStep[];
   stepProblems: StepProblem[];
   measures?: ReadonlyMap<string, MeasureEntry>;
+  kept?: ReadonlyMap<number, Measured>;
 }): { needs: MeasureNeed[]; waiting: string | null } {
-  const { datasetId, itemIds, area, aoi, steps, built, stepProblems, measures } = args;
+  const { datasetId, itemIds, area, aoi, steps, built, stepProblems, measures, kept } = args;
   const needs: MeasureNeed[] = [];
   let waiting: string | null = null;
   if (built.length !== steps.length) return { needs, waiting };
@@ -686,6 +689,13 @@ function measureSteps(args: {
     if (step.op !== 'normalize' || !isStatistical(params.method)) return;
     const problem = stepProblems[index];
     const method = params.method as Method;
+    // A locked step of a result keeps the numbers of its job: the result is an entity of its own and is not measured again.
+    const own = kept?.get(step.key);
+    if (own) {
+      params.measured = own;
+      problem.measure = { state: 'ready', text: `${measuredText(method, own)}\nKept from the result.`, measured: own };
+      return;
+    }
     if (!(area === 'aoi' && isArea(aoi))) {
       problem.errors.method = NO_AOI;
       return;
@@ -768,6 +778,9 @@ export interface Draft {
   steps: DraftStep[];
   // The bands of the output; empty for a crop, which names assets.
   bands: string[];
+  // The numbers each step holds as `measured`, in step order: `null` for a step that has none. The panel measures again; only the
+  // locked steps of a result keep them (`extendResult`).
+  measured: Array<Measured | null>;
   // `null` for an output without a data type (a crop).
   dtype: string | null;
 }
@@ -783,6 +796,7 @@ export function draftFromOrder(
   const problems: string[] = [];
   const notes: string[] = [];
   const steps: DraftStep[] = [];
+  const measured: Array<Measured | null> = [];
   order.steps.forEach((step, index) => {
     const where = `Step ${index + 1} (${step.op})`;
     // The server still takes an older version of an operator but no longer lists it (M4-24):
@@ -819,6 +833,7 @@ export function draftFromOrder(
     if (methods && step.op_version < operator.opVersion) Object.assign(values, upgradedValues(values));
     for (const [name, message] of Object.entries(paramsFrom(fields, values, step.op).errors)) problems.push(`${where}: ${name}: ${message}`);
     steps.push({ key: nextKey(), op: step.op, opVersion: operator.opVersion, values });
+    measured.push(methods && isStatistical(step.params.method) ? keptMeasured(step.params.measured) : null);
   });
   const input = order.inputs[0];
   return {
@@ -827,6 +842,7 @@ export function draftFromOrder(
       groups: input.groups.map((group) => [...group]),
       aoi: order.aoi ?? null,
       steps,
+      measured,
       bands: order.output.kind === 'raster' ? [...order.output.bands] : [],
       dtype: order.output.kind === 'raster' ? order.output.dtype : null,
     },

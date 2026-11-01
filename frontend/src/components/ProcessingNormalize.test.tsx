@@ -222,6 +222,8 @@ describe('the step', () => {
     const tip = tipsOf(step());
     expect(tip).toContain('NDVI −1…1 → 0…1');
     expect(tip).toContain('(x − from) / (to − from) × (max − min) + min');
+    // The target range starts at 0 to 1 (Otto, 01.11.2026); the range to measure is not filled in.
+    expect([box('Target min').value, box('Target max').value, box('From min').value, box('From max').value]).toEqual(['0', '1', '', '']);
     expect(questions()).toHaveLength(0);
   });
 

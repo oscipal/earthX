@@ -175,6 +175,12 @@ beforeEach(() => {
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === `/processing/processes/recipe?dataset=${DATASET}`) return json(s2);
     if (init?.method === 'POST' && url.endsWith('/estimate')) return json({ ...ESTIMATE, ...estimateExtra });
+    // The measure of a Normalize step (float64); the measure of the preview is not answered, as before.
+    if (init?.method === 'POST' && url.endsWith('/statistics') && JSON.parse(String(init.body)).output?.dtype === 'float64') {
+      const body = JSON.parse(String(init.body));
+      const statistics = { minimum: 1, maximum: 9, mean: 5, stddev: 2, count: 10, valid_percent: 100, percentile_25: 3, percentile_50: 5, percentile_75: 7 };
+      return json({ bands: body.output.bands.map((name: string) => ({ name, unit: null, statistics })), exact: true, factor: 1 });
+    }
     if (init?.method === 'POST' && url.endsWith('/execution')) {
       return json({ processID: 'recipe', type: 'process', jobID: NEW_JOB, status: 'accepted', message: '', progress: 0, created: '2026-10-31T10:00:00Z', expires: new Date(Date.now() + 7 * 86_400_000).toISOString(), recipeID: 'r', links: [] }, 201);
     }
@@ -988,5 +994,75 @@ describe('the warning at the review of a job that resamples bands', () => {
     await review();
     expect(container.textContent).not.toContain('Resampled to a common grid');
     expect(container.querySelector('.tip.warn')).toBeNull();
+  });
+});
+
+describe('the numbers of a normalize step of the result (NM4-11b, adr/0019 Nachtrag NM4-05b)', () => {
+  const KEPT = { factor: 1, bands: { red: { mean: 7, stddev: 3 } } };
+  const zscore = { op: 'normalize', op_version: 3, params: { method: 'zscore', bands: ['red'], measured: KEPT } };
+  const order = () => parent({ steps: [zscore], output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red'] } });
+  const asked = () =>
+    fetchMock.mock.calls
+      .filter(([u, init]) => String(u).endsWith('/statistics') && init?.method === 'POST')
+      .map(([, init]) => JSON.parse(String((init as RequestInit).body)));
+  const sentSteps = () => JSON.parse(String(fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/estimate')).at(-1)![1].body)).inputs.recipe.steps;
+
+  it('keeps the numbers of the locked step: nothing is asked for it, and the order sends them as they were', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: order() })] });
+    await process(['red']);
+    expect(asked()).toHaveLength(0);
+    const view = orderView(selectionState(useAppStore.getState()), store());
+    expect(view.built?.order?.steps[0].params).toEqual({ method: 'zscore', bands: ['red'], measured: KEPT });
+    expect(view.measureBlock).toBeNull();
+    click(button('Review'));
+    await flush();
+    expect(sentSteps()[0].params.measured).toEqual(KEPT);
+    expect(asked()).toHaveLength(0);
+  });
+
+  it('measures a step that is added behind it, over the area now chosen, on a chain that holds the kept numbers', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: order() })] });
+    await process(['red']);
+    act(() => useAppStore.setState({ aoi: INNER_AOI }));
+    act(() => store().setArea('aoi'));
+    click(button('＋ Normalize'));
+    const added = store().steps[1].key;
+    act(() => {
+      store().updateStep(added, 'bands', 'red');
+      store().updateStep(added, 'method', 'robust');
+    });
+    await flush();
+    expect(asked()).toHaveLength(1);
+    expect(asked()[0].aoi).toEqual(orderAoi(INNER_AOI));
+    expect(asked()[0].steps).toHaveLength(1);
+    expect(asked()[0].steps[0].params.measured).toEqual(KEPT);
+    click(button('Review'));
+    await flush();
+    const steps = sentSteps();
+    expect(steps[0].params.measured).toEqual(KEPT);
+    expect(steps[1].params.measured).toEqual({ factor: 1, bands: { red: { p25: 3, median: 5, p75: 7 } } });
+  });
+
+  it('is the one exception: a recipe.json of the same order measures anew for the selection', async () => {
+    useProcessingStore.setState({ jobs: [entry()] });
+    await process(null);
+    act(() => useProcessingStore.getState().resetDraft());
+    await act(async () => void (await store().loadRecipe(JSON.stringify(order()))));
+    act(() => useAppStore.setState({ aoi: INNER_AOI }));
+    act(() => store().setArea('aoi'));
+    await flush();
+    expect(store().fixed).toBeNull();
+    expect(asked()).toHaveLength(1);
+    expect(asked()[0].steps).toEqual([]);
+    click(button('Review'));
+    await flush();
+    expect(sentSteps()[0].params.measured).toEqual({ factor: 1, bands: { red: { mean: 5, stddev: 2 } } });
+  });
+
+  it('keeps nothing it cannot read: a step whose numbers have another form is measured', async () => {
+    const odd = { ...zscore, params: { ...zscore.params, measured: { factor: 1, bands: { red: { mean: 'x' } } } } };
+    useProcessingStore.setState({ jobs: [entry({ order: parent({ steps: [odd], output: order().output }) })] });
+    await process(['red']);
+    expect(store().fixed?.result?.measured).toEqual({});
   });
 });

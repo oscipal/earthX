@@ -172,7 +172,7 @@ import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
-import { startValues } from './normalizeMethods';
+import { startValues, type Measured } from './normalizeMethods';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import { datesOfIds, knownItems } from './layerDate';
 import { resamplingParts } from './resamplingWarning';
@@ -221,6 +221,9 @@ export interface FixedResult {
   bands: string[];
   // What the process description made of the steps (an older version taken as the listed one).
   notes: string[];
+  // The numbers the locked steps measured when the job ran, by step key: they keep them, the result is an entity of its own
+  // (NM4-11b, adr/0019 Nachtrag NM4-05b). Steps added later measure for the area they are given.
+  measured: Record<number, Measured>;
 }
 
 // Scenes fetched one by one because a layer or the full-resolution view names them
@@ -658,6 +661,10 @@ function clipToResult(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon, fixed: Fixed,
   return result;
 }
 
+// The numbers the locked steps of a result keep, by step key.
+const keptOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlyMap<number, Measured> | undefined =>
+  p.fixed?.result ? new Map(Object.entries(p.fixed.result.measured).map(([key, measured]) => [Number(key), measured])) : undefined;
+
 // Why "Review" and "Start job" wait for a measure: a failure first, else the first that runs; of several jobs the one that is not done.
 function measureBlockOf(parts: ReadonlyArray<{ unit: BatchUnit; built: BuiltOrder | null }>, several: boolean): string | null {
   const waiting = parts.filter((part) => part.built?.waiting);
@@ -755,7 +762,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const outside = inner && drawn !== null && clipped === null;
   const buildFor = (itemIds: string[]): BuiltOrder | null => {
     if (!info || !dataset) return null;
-    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info, measures: p.measures });
+    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info, measures: p.measures, kept: keptOf(p) });
     if (outside) return { ...result, order: null, problems: [...result.problems, OUTSIDE_TEXT] };
     return foreign.length === 0 ? result : { ...result, order: null, problems: [...result.problems, foreignReason(foreign)] };
   };
@@ -1199,7 +1206,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       fixed: {
         itemIds: draft.groups.flat(),
         aoi: draft.aoi,
-        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes },
+        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes, measured: {} },
       },
     }));
     if (!taken.ok) useAppStore.setState({ error: taken.reason });
@@ -1969,6 +1976,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             locked: draft.steps.length,
             bands: [...draft.bands],
             notes,
+            measured: Object.fromEntries(draft.steps.flatMap((step, i) => (draft.measured[i] ? [[step.key, draft.measured[i]]] : []))),
           },
         },
       }));

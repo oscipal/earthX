@@ -263,7 +263,9 @@ describe('draftFromOrder', () => {
       expect(problems).toEqual([]);
       expect(notes).toEqual([]);
       expect(draft.steps[0].values).toMatchObject({ method: 'percentile', low: '5', high: '95', clip: false });
-      expect(JSON.stringify(draft)).not.toContain('2000');
+      // The steps of the draft do not hold them; the draft lists them apart, and only "process further" of a result keeps them.
+      expect(JSON.stringify(draft.steps)).not.toContain('2000');
+      expect(draft.measured).toEqual([measured]);
       const built = roundTrip(order).built;
       expect(built.order).toBeNull();
       expect(built.needs).toHaveLength(1);

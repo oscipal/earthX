@@ -393,9 +393,9 @@ Draft-PR [#244](https://github.com/oscipal/earthX/pull/244) trägt Plan und Back
 
 ## 16. Umsetzung NM4-11b (Frontend, 01.11.2026)
 
-Draft-PR [#269](https://github.com/oscipal/earthX/pull/269) trägt das Frontend und die Auflistung (§15 Punkt 8). Statt zweier PRs (§15) steht alles in einem, in Commits an der Naht von PR 1 (Formular, Messung, Sperren, Vorschau) und PR 2 (mehrere Aufträge, Laden); der Richtwert von 400 Zeilen ist überschritten.
+Draft-PR [#269](https://github.com/oscipal/earthX/pull/269) trägt das Frontend und die Auflistung (§15 Punkt 8). Statt zweier PRs (§15) steht alles in einem (Otto, 01.11.2026: ein PR genügt), in Commits an der Naht von PR 1 (Formular, Messung, Sperren, Vorschau) und PR 2 (mehrere Aufträge, Laden); der Richtwert von 400 Zeilen ist überschritten.
 
-**Auslegungen von Claude** (gelten, bis Otto widerspricht): siehe die Log-Zeile vom 01.11.2026 und `adr/0014` „§15 Nachtrag NM4-11b“. Otto hat entschieden: Die Bänder bleiben Chips (Beschriftung „Band“, wie bei „Mask by value“), nicht ein Dropdown.
+**Auslegungen von Claude** (gelten, bis Otto widerspricht): siehe die Log-Zeile vom 01.11.2026 und `adr/0014` „§15 Nachtrag NM4-11b“. Otto hat entschieden: Die Bänder bleiben Chips (Beschriftung „Band“, wie bei „Mask by value“), nicht ein Dropdown; der Zielbereich ist mit 0 bis 1 vorbelegt; die gesperrten Schritte eines Ergebnisses („⚙“) behalten ihre gemessenen Zahlen und messen nicht neu, Rezeptdatei, Permalink und Ablage messen neu (`adr/0019` „Nachtrag NM4-11b“). `test_the_item_is_fetched_once` bleibt unangetastet (Backlog 68).
 
 **Abnahme NM4-11b.**
 
