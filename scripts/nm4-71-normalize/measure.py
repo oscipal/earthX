@@ -33,7 +33,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import math
 import os
 import resource
 import subprocess
@@ -56,6 +55,9 @@ FOUR = ["blue", "green", "red", "nir"]
 INDEX_BANDS = ["blue", "green", "red", "nir", "swir16", "NDVI"]
 NDVI = {"op": "band_math", "op_version": 2, "params": {"expression": "(nir-red)/(nir+red)", "name": "NDVI"}}
 VARIANTS = ("job", "exact", "preview", "workfile", "truth")
+#: What a case of cost (``<area>-1``, ``<area>-4``) and a case of deviation (``<area>-idx``) run.
+_COST_VARIANTS = ("job", "exact", "workfile")
+_INDEX_VARIANTS = ("exact", "preview", "truth")
 PERCENTS = (2, 25, 50, 75, 98)
 UNLIMITED = 10**12
 
@@ -155,9 +157,7 @@ def _area(recipe, max_pixels: int) -> dict:
 
     with rasterio.Env(**process_gdal_options()):
         started = time.perf_counter()
-        measured = core.area_statistics(
-            _prefix(recipe), max_pixels=max_pixels, extra_percentiles=MEASURE_PERCENTILES
-        )
+        measured = core.area_statistics(_prefix(recipe), max_pixels=max_pixels, extra_percentiles=MEASURE_PERCENTILES)
         seconds = time.perf_counter() - started
     return {
         "seconds": round(seconds, 2),
@@ -308,7 +308,16 @@ def _workfile(recipe, workdir: Path) -> dict:
         after[0] = replace(step, params=step.params.model_copy(update={"measured": measured}))
         started = time.perf_counter()
         applied = core._run_pass(
-            state, Segment("pixel", tuple(after)), None, finest.transform, "pass-0.tif", window, meta1, meta2, output, True
+            state,
+            Segment("pixel", tuple(after)),
+            None,
+            finest.transform,
+            "pass-0.tif",
+            window,
+            meta1,
+            meta2,
+            output,
+            True,
         )
         phases["pass_apply"] = time.perf_counter() - started
         started = time.perf_counter()
@@ -416,7 +425,7 @@ def _run(directory: Path, cases: list[str], variants: list[str]) -> None:
     env = {**os.environ, "CPL_VSIL_SHOW_NETWORK_STATS": "YES"}
     for name in cases:
         for variant in variants:
-            if name.endswith("-idx") != (variant in ("exact", "preview", "truth")) and variant != "exact":
+            if variant not in (_INDEX_VARIANTS if name.endswith("-idx") else _COST_VARIANTS):
                 continue
             child = subprocess.run(
                 [sys.executable, "-W", "ignore", __file__, "_child", str(directory / f"{name}.json"), variant],
@@ -431,7 +440,12 @@ def _run(directory: Path, cases: list[str], variants: list[str]) -> None:
                 line = {"case": name, "variant": variant, "error": kind}
             else:
                 own, _, network = child.stdout.partition("Network statistics:")
-                line = {"case": name, "variant": variant, **json.loads(own.strip().splitlines()[-1]), **_network(network)}
+                line = {
+                    "case": name,
+                    "variant": variant,
+                    **json.loads(own.strip().splitlines()[-1]),
+                    **_network(network),
+                }
             print(json.dumps({k: v for k, v in line.items() if k != "numbers"}), flush=True)
             with results.open("a") as file:
                 file.write(json.dumps(line) + "\n")
@@ -484,7 +498,8 @@ def _summary(directory: Path) -> None:
             e = exact["numbers"][band]
             span = t["percentile_98"] - t["percentile_2"]
             cells = " | ".join(
-                f"{100 * abs(e[f'percentile_{p}'] - t[f'percentile_{p}']) / span:.3f}" if span else "–" for p in PERCENTS
+                f"{100 * abs(e[f'percentile_{p}'] - t[f'percentile_{p}']) / span:.3f}" if span else "–"
+                for p in PERCENTS
             )
             print(f"| {area} | {band} | {t['count']} | {cells} |")
 
