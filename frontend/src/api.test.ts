@@ -12,6 +12,7 @@ import {
   fetchCoverage,
   fetchItem,
   fetchMosaicTileJson,
+  fetchSceneOrder,
   HttpError,
   nextTokenFrom,
   parseAreaStatistics,
@@ -871,5 +872,31 @@ describe('postAreaStatistics', () => {
       exact: true,
       factor: 1,
     });
+  });
+});
+
+describe('fetchSceneOrder (NM4-24)', () => {
+  const answer = (status: number, body: unknown) =>
+    vi.fn().mockResolvedValue({ ok: status < 300, status, statusText: '', json: async () => body } as Response);
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('posts the ids and the asset in the body, sorted, to a route of its own, and reads the order', async () => {
+    vi.stubGlobal('fetch', answer(200, { order: ['A', 'B', 'C'] }));
+    expect(await fetchSceneOrder('sentinel-2-c1-l2a', ['C', 'A', 'B'], 'visual')).toEqual(['A', 'B', 'C']);
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/collections/sentinel-2-c1-l2a/scene-order');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ items: ['A', 'B', 'C'], asset: 'visual' });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('throws the reason of the tiler', async () => {
+    vi.stubGlobal('fetch', answer(503, { detail: 'scene orders need the item cache' }));
+    await expect(fetchSceneOrder('d', ['A', 'B'], 'visual')).rejects.toMatchObject({ status: 503, message: 'scene orders need the item cache' });
+  });
+
+  it.each([['no order', {}], ['numbers', { order: [1, 2] }], ['a text', { order: 'AB' }]])('refuses an answer with %s', async (_name, body) => {
+    vi.stubGlobal('fetch', answer(200, body));
+    await expect(fetchSceneOrder('d', ['A', 'B'], 'visual')).rejects.toThrow('cannot read');
   });
 });

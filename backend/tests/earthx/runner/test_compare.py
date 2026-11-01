@@ -134,6 +134,17 @@ class TestTheJobAndTheRunnerComputeTheSameBits:
         assert job["valid_pixels"] > 0
         _assert_same(job, folder)
 
+    @pytest.mark.parametrize("method", list(support.NORMALIZE_V4_METHODS))
+    def test_each_method_of_normalize_version_4_measured_in_the_run(self, tmp_path: Path, method: str) -> None:
+        """The recipe holds no numbers: the child and the runner each measure them, over the AOI, to the same bits (NM4-71)."""
+        recipe = support.normalize_v4_recipe(method)
+        job, folder = _both(tmp_path, recipe, recipe)
+        assert job["valid_pixels"] > 0
+        _assert_same(job, folder)
+        reported = job["properties"].get("earthx:normalize")
+        assert (reported is not None) == (method != "linear")
+        assert reported is None or [(entry["method"], entry["exact"]) for entry in reported] == [(method, True)]
+
     def test_mask_values_after_a_result(self, tmp_path: Path) -> None:
         recipe = support.mask_values_recipe()
         job, folder = _both(tmp_path, recipe, recipe)
@@ -170,6 +181,16 @@ class TestTheCounterTest:
         key = "p_high" if method == "percentile" else "mean"
         entry[key] = entry[key] + 0.01
         job, folder = _both(tmp_path, support.normalize_recipe(method), support.normalize_recipe(params=other))
+        with pytest.raises(AssertionError):
+            _assert_same(job, folder)
+
+    @pytest.mark.parametrize("change", [{"low": 5, "high": 95}, {"high": 99}, {"bands": ["red"]}, {"method": "zscore"}])
+    def test_another_field_of_normalize_version_4(self, tmp_path: Path, change: dict) -> None:
+        """Version 4 has no numbers to differ in: another field of the step is what makes the runner's result another."""
+        other = {**support.NORMALIZE_V4_METHODS["percentile"], **change}
+        if change.get("method") == "zscore":
+            other = {"method": "zscore", "bands": ["red", "nir"]}
+        job, folder = _both(tmp_path, support.normalize_v4_recipe(), support.normalize_v4_recipe(params=other))
         with pytest.raises(AssertionError):
             _assert_same(job, folder)
 

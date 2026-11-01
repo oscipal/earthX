@@ -17,10 +17,13 @@
       import maplibregl from 'maplibre-gl';
       import { fetchResultTileJson } from '/src/processing.ts';
       import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, buildTileUrl } from '/src/mapLayers.ts';
+      import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '/src/aoiClip.ts';
+      import { mosaicTemplateOf, orderKeyOf } from '/src/mosaic.ts';
       import { resultTileTemplate } from '/src/resultLayer.ts';
       import { overlaysOfPass, underlaysOf } from '/src/searchLayers.ts';
       import { previewDataset, previewScene, quicklookDataset, quicklookScene, sceneInfo } from '/src/fixtures/viewScenes.ts';
 
+      maplibregl.addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
       const EMPTY = [255, 0, 255];
       const map = new maplibregl.Map({
         container: 'map',
@@ -44,7 +47,15 @@
         return [...pixels(Math.floor(gl.drawingBufferWidth / 2), Math.floor(gl.drawingBufferHeight / 2), 1, 1)].slice(0, 3);
       };
 
+      // One pixel of the canvas, `dx` and `dy` away from its centre.
+      const pixelAt = (dx, dy) => {
+        const gl = map.getCanvas().getContext('webgl2') ?? map.getCanvas().getContext('webgl');
+        return [...pixels(Math.floor(gl.drawingBufferWidth / 2) + dx, Math.floor(gl.drawingBufferHeight / 2) + dy, 1, 1)].slice(0, 3);
+      };
+      const AOI = { type: 'Polygon', coordinates: [[[10.4, 47.4], [10.6, 47.4], [10.6, 47.6], [10.4, 47.6], [10.4, 47.4]]] };
+
       window.h = {
+        pixelAt,
         loaded: loaded.then(() => {
           ensureBaseLayers(map);
         }),
@@ -109,6 +120,39 @@
             downloaded: { H1: sceneInfo(previewScene('H1'), 8, 14) },
             render: {},
             showDownloaded: true,
+            items: [previewScene('H1')],
+            dataset: previewDataset(),
+          }),
+        // Two scenes that overlap completely, ticked in the order `ids` (NM4-24), drawn below the first level of a mosaic:
+        // 'mosaic' has the mosaic with its order (A, B), 'order' a refused mosaic and the order the tiler gave (A, B), 'none' a
+        // refused mosaic and no order.
+        overlap: (ids, mode) => {
+          const scenes = { A: previewScene('A'), B: previewScene('B') };
+          const downloaded = Object.fromEntries(ids.map((id) => [id, sceneInfo(scenes[id], 0, 14)]));
+          const entries = Object.entries(downloaded);
+          const template = mosaicTemplateOf('quicklook-source', entries);
+          const mosaics = {};
+          if (mode === 'mosaic') mosaics[template] = { tileUrl: template, bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: ['A', 'B'] };
+          else mosaics[template] = null;
+          if (mode === 'order') mosaics[orderKeyOf('quicklook-source', entries)] = { order: ['A', 'B'] };
+          syncFocusRaster(map, {
+            downloaded,
+            render: {},
+            showDownloaded: true,
+            items: Object.values(scenes),
+            dataset: quicklookDataset(8),
+            groups: [{ key: ['d'], label: 'd', items: Object.values(scenes) }],
+            mosaics,
+          });
+        },
+        // The same, cropped to an AOI around the centre of the scene (NM4-25).
+        fullCropped: () =>
+          syncFocusRaster(map, {
+            downloaded: { H1: sceneInfo(previewScene('H1'), 8, 14) },
+            render: {},
+            showDownloaded: true,
+            aoi: AOI,
+            cropToAoi: true,
             items: [previewScene('H1')],
             dataset: previewDataset(),
           }),

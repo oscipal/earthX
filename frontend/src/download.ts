@@ -8,7 +8,6 @@
 import type { ExportJobHint, ResolutionFactor } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
-import { indexDownloadBlock, indexOfLayer } from './indexDownload';
 import type { MapLayer } from './layers';
 import type { LicenseFlags, StacItem } from './types';
 
@@ -205,7 +204,8 @@ export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): 
   if (restore.focusMode) {
     const entries = Object.entries(restore.downloaded).filter(([id]) => restore.itemIds.includes(id));
     if (entries.length === 0) return null;
-    const assets = [...new Set(entries.map(([, info]) => info.asset))];
+    // The raw bands are the assets the scenes were opened with, not the band the view draws now (NM4-45, Otto, 1.11.2026).
+    const assets = [...new Set(entries.map(([, info]) => info.baseAsset ?? info.asset))];
     return { datasetId: restore.datasetId, groups, assets, aoi: restore.aoi };
   }
   const dataset = datasets.find((d) => d.id === restore.datasetId);
@@ -219,8 +219,7 @@ export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): 
 // a quicklook-only layer reads like browsing the results list, `null`.
 export function decideDownloadOutcomeForLayer(layer: MapLayer, datasets: DatasetOption[]): DownloadOutcomeKind {
   const { restore } = layer;
-  // A layer that shows an index is downloaded as the index of its AOI crop, never as the raw scenes (NM4-14b).
-  if (indexOfLayer(layer, datasets)) return indexDownloadBlock(layer, datasets) === null ? 'crop' : 'disabled';
+  // A layer that shows an index is downloaded like any other, as its raw bands; the index is offered besides (Otto, 1.11.2026, `indexOfferedFor`).
   const dataset = datasets.find((d) => d.id === restore.datasetId);
   return decideDownloadOutcome({
     cropToAoi: restore.focusMode ? restore.cropToAoi : null,
@@ -231,7 +230,6 @@ export function decideDownloadOutcomeForLayer(layer: MapLayer, datasets: Dataset
 
 export function canDownloadLayer(layer: MapLayer, datasets: DatasetOption[]): boolean {
   if (layer.restore.itemIds.length === 0) return false;
-  if (indexOfLayer(layer, datasets)) return indexDownloadBlock(layer, datasets) === null;
   const kind = decideDownloadOutcomeForLayer(layer, datasets);
   if (kind === 'disabled') return false;
   if (kind === 'crop') return downloadRequestFor(layer, datasets) !== null;

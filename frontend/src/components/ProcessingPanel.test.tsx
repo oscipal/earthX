@@ -1484,6 +1484,7 @@ describe('a finished job row (K6)', () => {
       resampled,
       failure: null,
       failureKind: null,
+      normalize: null,
       error: null,
       cancelling: false,
       retrying: false,

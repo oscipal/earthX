@@ -135,22 +135,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const indexField = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Index') ?? null;
+const indexField = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Band') ?? null;
 
 describe('the view of a layer of the layer manager', () => {
-  it('has no dropdown at all, not even a locked one: the index of a layer is the one it was added with', () => {
-    setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1' });
+  // Otto, 1.11.2026 (NM4-54, zu #272): a layer that was pinned with a band or an index has the dropdown free, as the view it came from;
+  // this replaces the lock of NM4-14b ("a layer keeps the index it was added with").
+  it('has the dropdown free, showing the picture of the layer', () => {
+    setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1', pendingIndex: 'NDVI' });
     act(() => root.render(<ViewerControls />));
-    expect(indexField()).toBeNull();
-    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(false);
-    expect(container.textContent).not.toContain('Index');
+    expect(indexField()!.querySelector('select')!.disabled).toBe(false);
+    expect(indexField()!.querySelector('select')!.value).toBe('index:NDVI');
+    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(true);
   });
 
-  it('has none for a layer without an index either', () => {
+  it('has it free for a layer without an index too, showing the standard picture', () => {
     setState({ viewOfLayer: true, appliedRender: { rescale: '0,3000' }, layers: [layer({ rescale: '0,3000' })], viewLayerId: 'L1' });
     act(() => root.render(<ViewerControls />));
-    expect(indexField()).toBeNull();
-    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(false);
+    expect(indexField()!.querySelector('select')!.disabled).toBe(false);
+    expect(indexField()!.querySelector('select')!.value).toBe('');
   });
 
   it('keeps the dropdown open in the live view of the search, even after the view was added as a layer', () => {
@@ -159,11 +161,24 @@ describe('the view of a layer of the layer manager', () => {
     expect(indexField()!.querySelector('select')!.disabled).toBe(false);
   });
 
-  it('does not change the index of a layer, whatever asks to: the store holds it too', () => {
+  it('changes the picture of the layer with "Apply", as the same layer: another index, then the standard picture again', async () => {
     setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1' });
     useAppStore.getState().chooseViewIndex('NDWI');
+    await act(async () => { await Promise.resolve(); });
+    expect(useAppStore.getState().layers[0].restore.appliedRender).toEqual(NDVI); // chosen, not drawn
+    await act(async () => { await useAppStore.getState().applyRender(); });
+    expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['L1']);
+    const kept = useAppStore.getState().layers[0];
+    expect(kept.restore.appliedRender).toMatchObject({ index: 'NDWI', colormapName: 'rdbu', rescale: '-1,1' });
+    expect(kept.overlays.filter((o) => o.kind === 'raster').every((o) => o.kind === 'raster' && o.tileUrl.includes('NDWI'))).toBe(true);
     useAppStore.getState().chooseViewIndex(null);
-    expect(useAppStore.getState().appliedRender).toEqual(NDVI);
+    await act(async () => { await useAppStore.getState().applyRender(); });
+    const plain = useAppStore.getState().layers[0];
+    expect(plain.restore.appliedRender.index).toBeUndefined();
+    expect(plain.overlays.filter((o) => o.kind === 'raster').every((o) => o.kind === 'raster' && !o.tileUrl.includes('band_math'))).toBe(true);
+    // Closed without "Save": the layer is the one it was.
+    useAppStore.getState().exitFocus();
+    expect(useAppStore.getState().layers[0].restore.appliedRender).toEqual(NDVI);
   });
 
   it('is entered from the layer manager only by choosing the layer, and left with the view', () => {
@@ -187,18 +202,18 @@ describe('the view of a layer of the layer manager', () => {
 describe('the ⇩ of a layer that shows an index', () => {
   const button = () => container.querySelector<HTMLButtonElement>('[data-col="download"]')!;
 
-  it('says what it downloads: the index of the crop, as a Processing job would give it', () => {
+  it('says what it downloads: the raw crop, and the index besides, as a Processing job would give it', () => {
     setState({ layers: [layer(NDVI)] });
     act(() => root.render(<LayerManager />));
     expect(button().disabled).toBe(false);
-    expect(button().title).toBe('Download the NDVI of the AOI crop, computed as a Processing job would');
+    expect(button().title).toBe('Download the AOI crop, one file per group; the NDVI too, computed as a Processing job would');
   });
 
-  it('is locked for whole scenes, with what to do, and keeps its old words for a layer without an index', () => {
+  it('offers no index for whole scenes (a job of Processing does that), only the crop, and keeps its old words for a layer without an index', () => {
     setState({ layers: [layer(NDVI, { cropToAoi: false })] });
     act(() => root.render(<LayerManager />));
-    expect(button().disabled).toBe(true);
-    expect(button().title).toBe('The index of whole scenes is computed by a job: start one in Processing.');
+    expect(button().disabled).toBe(false);
+    expect(button().title).toBe('Download the AOI crop, one file per group');
     setState({ layers: [layer({ rescale: '0,3000' })] });
     expect(button().title).toBe('Download the AOI crop, one file per group');
   });
@@ -206,11 +221,16 @@ describe('the ⇩ of a layer that shows an index', () => {
 
 describe('the dialog of the download', () => {
   const settle = () => act(async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); await new Promise((resolve) => setTimeout(resolve, 5)); });
-  const open = async () => {
+  // Opens the dialog; `as` is what is chosen in it (the raw bands are what it starts with).
+  const open = async (as: 'raw' | 'index' = 'index') => {
     setState({ layers: [layer(NDVI)] });
     act(() => root.render(<DownloadDialog />));
     await act(async () => { await useAppStore.getState().openDownloadDialog('L1'); });
     await settle();
+    if (as === 'index') {
+      await act(async () => { await useAppStore.getState().setDownloadAs('index'); });
+      await settle();
+    }
   };
   const primary = () => container.querySelector<HTMLButtonElement>('.dialog-actions .primary')!;
   const line = () => container.querySelector<HTMLElement>('.dialog-body .hint-text')!;
@@ -230,6 +250,35 @@ describe('the dialog of the download', () => {
       if (url === `/processing/jobs/${JOB}`) return json(status('successful'));
       return json({ detail: 'not found' }, 404);
     });
+
+  it('starts with the raw bands, as for any layer: the resolution, the assets of the scenes, no estimate asked for', async () => {
+    await open('raw');
+    expect(container.textContent).toContain('asset visual');
+    expect(container.querySelector('.dialog-resolution input[name="download-resolution"]')).not.toBeNull();
+    expect([...container.querySelectorAll<HTMLInputElement>('input[name="download-as"]')].map((i) => [i.closest('label')?.textContent?.trim(), i.checked])).toEqual([['Raw bands', true], ['NDVI', false]]);
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+    expect(primary().disabled).toBe(false);
+  });
+
+  it('downloads the raw crop by the crop route when it is not asked for the index', async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      init?.method === 'POST' && url.endsWith('/download') ? new Response(new Blob(['PK']), { status: 200, headers: { 'x-skipped-groups': '0', 'x-total-groups': '1' } }) : json({ detail: 'x' }, 404),
+    );
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:x', revokeObjectURL: () => undefined }));
+    await open('raw');
+    await press();
+    const urls = fetchMock.mock.calls.map(([u, i]) => `${(i as RequestInit | undefined)?.method ?? 'GET'} ${u}`);
+    expect(urls.some((u) => u.startsWith('POST /collections/') && u.endsWith('/download'))).toBe(true);
+    expect(urls).not.toContain('POST /processing/processes/recipe/execution');
+  });
+
+  it('offers the index only where it can be computed: a crop; not for whole scenes', async () => {
+    setState({ layers: [layer(NDVI, { cropToAoi: false })] });
+    act(() => root.render(<DownloadDialog />));
+    await act(async () => { await useAppStore.getState().openDownloadDialog('L1'); });
+    await settle();
+    expect(container.querySelector('input[name="download-as"]')).toBeNull();
+  });
 
   it('names the index and its formula, offers no resolution and says what it will cost, with the limits in the tooltip', async () => {
     await open();
@@ -251,7 +300,8 @@ describe('the dialog of the download', () => {
     );
     setState({ layers: [layer(NDVI)] });
     act(() => root.render(<DownloadDialog />));
-    await act(async () => { void useAppStore.getState().openDownloadDialog('L1'); });
+    await act(async () => { await useAppStore.getState().openDownloadDialog('L1'); });
+    await act(async () => { void useAppStore.getState().setDownloadAs('index'); });
     await settle();
     expect(line().textContent).toBe('Estimating…');
     expect(primary().disabled).toBe(true);

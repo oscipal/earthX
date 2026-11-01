@@ -216,6 +216,10 @@ describe('a band that was moved stays where it was put (Otto, 27.10.2026)', () =
     changeImage();
     await flush();
     expect(view()).toBeNull();
+    // The crop took the results off the map, and the block with them (Otto, 1.11.2026): the eye brings the timeline back.
+    expect(timeline()).toBeNull();
+    act(() => state().toggleResultsOnMap());
+    await flush();
     // Not moved, the timeline stands where the stack puts it: on the bottom edge of the window, nothing above.
     const bottom = placeOf(timeline as () => HTMLElement);
     expect(bottom.top).toBe(WINDOW.height - BOTTOM_EDGE - TIMELINE_ALONE);

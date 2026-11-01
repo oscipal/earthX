@@ -55,3 +55,22 @@ export function layersForMap(layers: MapLayer[], viewLayer: MapLayer | null, sho
 export function viewShown(viewLayer: MapLayer | null, showDownloaded: boolean): boolean {
   return showDownloaded && (viewLayer === null || viewLayer.visible);
 }
+
+// Whether the image the view shows is only temporary (Otto, 1.11.2026): no layer holds it as it looks now. A layer holds an image
+// when it was made of exactly its scenes, cut the same way, and has the look the image has (what the fields ask for included): "Add to
+// layers" takes the mark off the image it pinned, and a change of the look, of the scenes or of the crop puts it back; "Add all to
+// layers" takes it off every image it pinned, so that a step that was not changed shows none.
+export function isTemporaryImage(
+  layers: readonly MapLayer[],
+  image: { ids: readonly string[]; datasetId: string },
+  look: AppliedRender,
+  view: { cropToAoi: boolean; aoi: GeoJSON.Geometry | null },
+): boolean {
+  return !layers.some((layer) => {
+    const r = layer.restore;
+    if (layer.derived || !r.focusMode || r.datasetId !== image.datasetId || r.cropToAoi !== view.cropToAoi) return false;
+    if (view.cropToAoi && JSON.stringify(r.aoi) !== JSON.stringify(view.aoi)) return false;
+    if (r.itemIds.length !== image.ids.length || !image.ids.every((id) => r.itemIds.includes(id))) return false;
+    return sameRender(r.appliedRender, look);
+  });
+}

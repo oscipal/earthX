@@ -245,6 +245,9 @@ export interface AppliedRender {
   // The name of the index preset of the dataset the view draws instead of a band (NM4-14b, `viewIndex.ts`); the range and
   // colormap below are the ones the index is drawn with.
   index?: string;
+  // The single band of the data the view draws instead of its standard picture (NM4-45, `viewBand.ts`): the key of its asset.
+  // None is the standard picture ("RGB" where the dataset has a true-colour one).
+  band?: string;
   // The band of a result by its place from 1; several, comma-separated, for a colour picture (`3,2,1`).
   bidx?: string;
   expression?: string;
@@ -264,6 +267,9 @@ export interface DownloadedInfo {
   tileUrl: string; // MapLibre tile template ({z}/{x}/{y}), asset already baked in
   bounds: Bbox;
   asset: string;
+  // The asset the scene was opened with, when the view draws another one for the look of its image (NM4-45): the one the
+  // standard picture of the dataset comes from.
+  baseAsset?: string;
   // The levels this dataset is released for (`earthx:viewer`, M2-10). Below the
   // lower one MapLibre requests nothing, above the upper one it overzooms the
   // last level — which is also what the tile route allows, so the map never asks

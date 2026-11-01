@@ -383,19 +383,19 @@
               "T2"
             ]
           },
-          "step_normalize_v2": {
+          "step_normalize_v4": {
             "additionalProperties": false,
-            "description": "Map a fixed range of values linearly onto another range, for the bands named.",
+            "description": "Rescale the values of the bands named: a fixed range, two percentiles, a z-score, or the median and the interquartile range. The job measures the numbers of the last three exactly over the AOI.",
             "properties": {
               "op": {
                 "const": "normalize"
               },
               "op_version": {
-                "const": 2
+                "const": 4
               },
               "params": {
                 "additionalProperties": false,
-                "description": "Version 2: the two ranges and the bands the step converts, always given (B10).",
+                "description": "The step of version 4: ``method``, the ``bands`` it converts, and the fields of that method, all given (B10).\n\nThe fields of version 3 without ``measured``. A statistical method (``percentile``, ``zscore``, ``robust``) is not\ngiven its numbers: the job counts the bands over the AOI at full resolution and takes the exact numbers\nfrom that count (NM4-71). ``linear`` measures nothing. Only a job runs this version.",
                 "properties": {
                   "bands": {
                     "description": "Names of the bands to convert, each once; the others of the stock are left as they are.",
@@ -408,40 +408,125 @@
                     "type": "array"
                   },
                   "clip": {
-                    "description": "Limit the result to the target range instead of continuing the line.",
-                    "title": "Clip",
-                    "type": "boolean"
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "linear, percentile: limit the result to the target range.",
+                    "title": "Clip"
+                  },
+                  "high": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          95,
+                          98,
+                          99,
+                          100
+                        ],
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "percentile: percent that becomes out_max.",
+                    "title": "High"
                   },
                   "in_max": {
-                    "description": "Value that becomes out_max; above in_min.",
-                    "title": "In Max",
-                    "type": "number"
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "linear: value that becomes out_max.",
+                    "title": "In Max"
                   },
                   "in_min": {
-                    "description": "Value that becomes out_min.",
-                    "title": "In Min",
-                    "type": "number"
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "linear: value that becomes out_min.",
+                    "title": "In Min"
+                  },
+                  "low": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          0,
+                          1,
+                          2,
+                          5
+                        ],
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "percentile: percent that becomes out_min.",
+                    "title": "Low"
+                  },
+                  "method": {
+                    "description": "linear: a fixed range; percentile: two percentiles; zscore; robust: median and IQR.",
+                    "enum": [
+                      "linear",
+                      "percentile",
+                      "zscore",
+                      "robust"
+                    ],
+                    "title": "Method",
+                    "type": "string"
                   },
                   "out_max": {
-                    "description": "End of the target range; below out_min reverses the values.",
-                    "title": "Out Max",
-                    "type": "number"
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "linear, percentile: target range end; below out_min reverses.",
+                    "title": "Out Max"
                   },
                   "out_min": {
-                    "description": "Start of the target range.",
-                    "title": "Out Min",
-                    "type": "number"
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "linear, percentile: target range start.",
+                    "title": "Out Min"
                   }
                 },
                 "required": [
-                  "in_min",
-                  "in_max",
-                  "out_min",
-                  "out_max",
-                  "clip",
+                  "method",
                   "bands"
                 ],
-                "title": "NormalizeParamsV2",
+                "title": "NormalizeParamsV4",
                 "type": "object"
               }
             },
@@ -454,7 +539,6 @@
             "type": "object",
             "x-earthx-kind": "pixel",
             "x-earthx-tiers": [
-              "T1",
               "T2"
             ]
           },
@@ -618,7 +702,7 @@
                   "$ref": "#/$defs/step_mask_values_v1"
                 },
                 {
-                  "$ref": "#/$defs/step_normalize_v2"
+                  "$ref": "#/$defs/step_normalize_v4"
                 },
                 {
                   "$ref": "#/$defs/step_reproject_v4"

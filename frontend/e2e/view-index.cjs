@@ -1,12 +1,12 @@
 // Browser check of the quick calculation of an index in the view (NM4-14b, review of Otto 31.10.2026), in a real browser with
 // made-up answers of the tiler:
-//   1. The dropdown "Index" stands first in the settings of the view, the settings keep their grid (no overlap, nothing over the
-//      edge, the buttons as high as the fields); a dataset without presets has none and the row is as before.
+//   1. The dropdown "Band" (with the presets under a line) stands first in the settings of the view, the settings keep their grid (no overlap, nothing over the
+//      edge, the buttons as high as the fields); a dataset without presets offers the bands alone.
 //   2. Choosing an index puts it into the fields; "Apply" draws it, through the tile route with an operator (the mosaic of the pass here): the tiles ask for
 //      `op=band_math`, the band named like the index, the range and colormap of the preset, and no raw asset.
 //   3. Zoomed out the choice stays and a short note says "Zoom in to compute NDWI", with the explanation in its tooltip; no tile is
 //      asked for; zoomed in the note is gone and the tiles come.
-//   4. "Add to layers" pins the index as a layer whose tiles compute it. The layer manager has no "Index" field at all. Its ⇩ downloads
+//   4. "Add to layers" pins the index as a layer whose tiles compute it. The view of a layer has the dropdown locked. Its ⇩ downloads
 //      the index as a Processing job would give it (the job API is made up here): the dialog shows the estimate, a file comes, and no
 //      Processing panel opens and no job stands in the list of jobs. Its ⚙ opens the panel with the index as the one band.
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
@@ -105,7 +105,7 @@ async function open(browser, theme, viewport, presets) {
   return { context, page, problems, tiles, jobs };
 }
 
-const field = (page) => page.locator('.scene-view .vc-render label', { hasText: /^Index/ });
+const field = (page) => page.locator('.scene-view .vc-render label', { hasText: /^Band/ });
 const fly = async (page, zoom, center = [10.5, 50.5]) => {
   await page.evaluate(async ({ zoom, center }) => (await import('/src/store.ts')).useAppStore.setState({ flyToView: { center, zoom } }), { zoom, center });
   await page.waitForTimeout(1800);
@@ -116,9 +116,9 @@ async function checkLayout(browser, theme, viewport) {
   const name = `layout ${theme} ${viewport}`;
   const { context, page, problems } = await open(browser, theme, viewport, PRESETS);
   const labels = await page.locator('.scene-view .vc-render > label > span').allTextContents();
-  if (labels.join('|') !== 'Index|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
+  if (labels.join('|') !== 'Band|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
   const options = await field(page).locator('option').allTextContents();
-  if (options.join('|') !== '— none —|NDVI|NDWI|NDSI|NBR|EVI') problems.push(`the options are ${options}`);
+  if (options.join('|') !== 'RGB|red|green|blue|nir|swir16|swir22|──────────|NDVI|NDWI|NDSI|NBR|EVI') problems.push(`the options are ${options}`);
   const report = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
     const view = document.querySelector('.scene-view');
@@ -141,13 +141,14 @@ async function checkLayout(browser, theme, viewport) {
   return { name, problems };
 }
 
-// 1b. No dropdown without presets.
+// 1b. Without presets the dropdown offers the bands of the item and nothing under a line (the fixture's scenes carry single-band assets).
 async function checkNone(browser, theme, viewport) {
   const name = `none ${theme} ${viewport}`;
   const { context, page, problems } = await open(browser, theme, viewport, []);
-  if ((await field(page).count()) !== 0) problems.push('a dataset without presets has the dropdown');
+  const options = await field(page).locator('option').allTextContents();
+  if (options.join('|') !== 'RGB|red|green|blue|nir|swir16|swir22') problems.push(`the options are ${options}`);
   const labels = await page.locator('.scene-view .vc-render > label > span').allTextContents();
-  if (labels.join('|') !== 'vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
+  if (labels.join('|') !== 'Band|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
   await context.close();
   return { name, problems };
 }
@@ -158,7 +159,7 @@ async function checkDraw(browser, theme, viewport) {
   const { context, page, problems, tiles, jobs } = await open(browser, theme, viewport, PRESETS);
   await page.waitForTimeout(1500);
   tiles.length = 0;
-  await field(page).locator('select').selectOption('NDWI');
+  await field(page).locator('select').selectOption('index:NDWI');
   // Chosen, not drawn: nothing of the index is asked for before "Apply".
   await page.waitForTimeout(1500);
   if (tiles.some((t) => t.includes('op=band_math'))) problems.push('the index was drawn before "Apply"');
@@ -199,7 +200,7 @@ async function checkDraw(browser, theme, viewport) {
     if ((await note.textContent()) !== 'Zoom in to compute NDWI') problems.push(`the note says ${await note.textContent()}`);
     if ((await note.getAttribute('title')) !== NOTE_TIP) problems.push(`the note's tooltip is ${await note.getAttribute('title')}`);
   }
-  if ((await field(page).locator('select').inputValue()) !== 'NDWI') problems.push('the choice did not stay');
+  if ((await field(page).locator('select').inputValue()) !== 'index:NDWI') problems.push('the choice did not stay');
   if (tiles.some((t) => t.includes('/tiles/') && !t.includes('op=band_math'))) problems.push('a raw band is drawn while the index waits for the zoom');
   const noteBox = await note.boundingBox();
   const viewBox = await page.locator('.scene-view').boundingBox();
@@ -239,7 +240,7 @@ async function checkDraw(browser, theme, viewport) {
   const started = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().jobs.length);
   if (started !== 0) problems.push(`${started} job(s) were started`);
 
-  // The layer manager: the view of the layer shows its index, locked.
+  // The layer manager: the view of the layer shows its index, with the dropdown free (Otto, 1.11.2026, zu #272).
   await page.evaluate(async () => {
     const { useAppStore } = await import('/src/store.ts');
     useAppStore.getState().exitFocus();
@@ -247,9 +248,40 @@ async function checkDraw(browser, theme, viewport) {
   });
   await page.locator('.layer-row [data-col="name"]').first().click({ force: true });
   await page.waitForSelector('.scene-view .vc-apply');
-  if ((await field(page).count()) !== 0) problems.push('the view of a layer has an "Index" field');
-  if ((await page.locator('.scene-view .vc-render > label > span').allTextContents()).join('|') !== 'vmin|vmax|Colormap') problems.push('the settings of the layer are not as for a dataset without presets');
+  // The dock of the layers lies over the left of the box at 1280 px: it is closed for the clicks on the box.
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: null }));
+  // The box of every layer (NM4-54 part 5): the same fields; the dropdown is free, as in the view the layer came from.
+  if ((await field(page).locator('select').isDisabled()) !== false) problems.push('the dropdown "Band" of a layer is locked');
+  if ((await field(page).locator('select').inputValue()) !== 'index:NDWI') problems.push('the layer does not show its index in the dropdown');
+  if ((await page.locator('.scene-view .vc-render > label > span').allTextContents()).join('|') !== 'Band|vmin|vmax|Colormap') problems.push('the settings of the layer are not the fields of every layer');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_layer.png`) });
+  // Another band for the layer: "Apply to all" keeps it, the layer is drawn from that band's asset, and no job is started.
+  await field(page).locator('select').selectOption('band:red');
+  await page.waitForTimeout(800);
+  // Chosen, not drawn: the layer is as it was until "Apply" (Otto, 1.11.2026); then it is this layer that changes, at its place.
+  const before = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers.map((l) => [l.id, l.restore.appliedRender.band ?? null]));
+  if (JSON.stringify(before) !== JSON.stringify([[before[0][0], null]])) problems.push(`the layer changed before "Apply": ${JSON.stringify(before)}`);
+  await page.locator('.scene-view .vc-apply').click();
+  await page.waitForTimeout(1500);
+  const count = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers.length);
+  if (count !== 1) problems.push(`${count} layers after a band was applied in the settings of a layer`);
+  if ((await page.locator('.scene-view .vc-save').textContent()) !== 'Save') problems.push('the button of the settings of a layer is not "Save"');
+  await page.locator('.scene-view .vc-save').click();
+  await page.waitForTimeout(1500);
+  const banded = await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    const [l] = useAppStore.getState().layers;
+    return { look: l.restore.appliedRender, urls: l.overlays.filter((o) => o.kind === 'raster').map((o) => o.tileUrl) };
+  });
+  if (banded.look.band !== 'red' || banded.look.index) problems.push(`the layer's look after a band is ${JSON.stringify(banded.look)}`);
+  if (!banded.urls.every((u) => u.includes('asset=red') && !u.includes('band_math'))) problems.push(`the layer is not drawn from the band: ${JSON.stringify(banded.urls)}`);
+  // And the index again, as the rest of the check goes on with it.
+  await field(page).locator('select').selectOption('index:NDWI');
+  await page.waitForTimeout(500);
+  await page.locator('.scene-view .vc-apply').click();
+  await page.waitForTimeout(1500);
+  await page.locator('.scene-view .vc-save').click();
+  await page.waitForTimeout(1500);
 
   // Its ⇩: the index as a Processing job would give it, with no panel and no job to see.
   await page.evaluate(async () => {
@@ -258,10 +290,16 @@ async function checkDraw(browser, theme, viewport) {
     useAppStore.setState({ dock: 'layers' });
   });
   const download = page.locator('.layer-row [data-col="download"]').first();
-  if ((await download.getAttribute('title')) !== 'Download the NDWI of the AOI crop, computed as a Processing job would') problems.push(`the ⇩ says ${await download.getAttribute('title')}`);
+  if ((await download.getAttribute('title')) !== 'Download the AOI crop, one file per group; the NDWI too, computed as a Processing job would') problems.push(`the ⇩ says ${await download.getAttribute('title')}`);
   await download.click({ force: true });
   const dialog = page.locator('.dialog-panel');
   await dialog.waitFor();
+  // The dialog starts with the raw bands, as for any layer; the index is chosen besides them.
+  const rawText = await dialog.innerText();
+  if (!/asset/.test(rawText) || (await dialog.locator('input[name="download-as"]').count()) !== 2) problems.push(`the dialog does not start with the raw bands: ${rawText.slice(0, 160)}`);
+  if ((await dialog.locator('input[name="download-as"]').first().isChecked()) !== true) problems.push('the raw bands are not chosen to begin with');
+  await dialog.locator('input[name="download-as"]').nth(1).check();
+  await page.waitForTimeout(300);
   const dialogText = await dialog.innerText();
   if (!/NDWI \(\(G - N\) \/ \(G \+ N\)\)/.test(dialogText)) problems.push(`the dialog does not name the index: ${dialogText.slice(0, 160)}`);
   if (await dialog.locator('.dialog-resolution').count()) problems.push('the dialog offers a resolution for an index');

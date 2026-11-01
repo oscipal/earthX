@@ -799,3 +799,87 @@ class TestTheLog:
         text = " ".join(lines)
         for value in coordinates:
             assert f"{value:.3f}" not in text and f"{value:.4f}" not in text
+
+
+class TestTheOrderWithoutAMosaic:
+    """``POST /collections/{dataset}/scene-order`` (NM4-24): the order of a pass the map draws scene by scene."""
+
+    ROUTE = f"/collections/{DATASET}/scene-order"
+
+    def _zones(self, scenes: Scenes) -> None:
+        """"A" lies in zone 33, "B" and "C" in zone 32: zone 32 is the target, so A comes last although it sorts first."""
+        x33, y33 = Transformer.from_crs(ZONE_32, ZONE_33, always_xy=True).transform(SEAM_X, SEAM_Y)
+        scenes.add("A", ZONE_33, x33 - 5000.0, 10_000.0, 1, top=y33 + 5000.0)
+        scenes.add("B", ZONE_32, SEAM_X - 5000.0, 5000.0, 2)
+        scenes.add("C", ZONE_32, SEAM_X, 5000.0, 3)
+
+    @pytest.mark.parametrize("ids", [["A", "B", "C"], ["C", "B", "A"], ["B", "A", "C"]])
+    def test_it_is_the_order_of_the_mosaic_job_whatever_the_order_asked(self, scenes: Scenes, client, ids: list[str]) -> None:
+        self._zones(scenes)
+        answer = client().post(self.ROUTE, json={"items": ids, "asset": ASSET})
+        assert answer.status_code == 200, answer.text
+        assert answer.json() == {"order": ["B", "C", "A"]}
+        assert answer.json()["order"] == mosaic_order({"A": ZONE_33, "B": ZONE_32, "C": ZONE_32})
+
+    def test_it_is_the_order_the_mosaic_tile_names_in_its_tilejson(self, scenes: Scenes, client) -> None:
+        self._zones(scenes)
+        api = client()
+        tilejson = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["A", "B", "C"])).json()
+        answer = api.post(self.ROUTE, json={"items": ["C", "A", "B"], "asset": ASSET}).json()
+        assert answer["order"] == tilejson["earthx:order"]
+
+    def test_it_reads_no_pixel(self, scenes: Scenes, client) -> None:
+        self._zones(scenes)
+        client().post(self.ROUTE, json={"items": ["A", "B", "C"], "asset": ASSET})
+        assert scenes.opened == []
+
+    def test_more_than_the_64_a_mosaic_takes_are_ordered(self, scenes: Scenes, client) -> None:
+        names = [f"S{n:03d}" for n in range(70)]
+        scenes.add(names[0], ZONE_32, SEAM_X - 5000.0, 4000.0, 10)
+        for name in names[1:]:
+            scenes.alias(name, names[0])
+        answer = client().post(self.ROUTE, json={"items": names[::-1], "asset": ASSET})
+        assert answer.status_code == 200, answer.text
+        assert answer.json()["order"] == names
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"items": ["A"], "asset": ASSET},
+            {"items": ["A", "A"], "asset": ASSET},
+            {"items": [f"S{n}" for n in range(501)], "asset": ASSET},
+            {"items": ["A", "B/../C"], "asset": ASSET},
+            {"items": ["A", "B"], "asset": ""},
+            {"items": ["A", "B"]},
+            {"items": ["A", "B"], "asset": ASSET, "aoi": {}},
+            {"asset": ASSET},
+        ],
+    )
+    def test_a_malformed_body_is_refused_before_anything_is_fetched(self, scenes: Scenes, client, body: dict) -> None:
+        self._zones(scenes)
+        answer = client().post(self.ROUTE, json=body)
+        assert answer.status_code in (400, 422), answer.text
+        assert scenes.fetched == []
+
+    def test_a_dataset_below_the_display_tier_and_an_unknown_one_are_refused(self, scenes: Scenes, client) -> None:
+        self._zones(scenes)
+        api = client()
+        body = {"items": ["A", "B"], "asset": ASSET}
+        assert api.post(f"/collections/{CATALOG_ONLY}/scene-order", json=body).status_code == 403
+        assert api.post("/collections/no-such-dataset/scene-order", json=body).status_code == 404
+        assert scenes.fetched == []
+
+    def test_a_scene_the_source_does_not_know_and_an_asset_a_scene_lacks_are_refused(self, scenes: Scenes, client) -> None:
+        self._zones(scenes)
+        api = client()
+        assert api.post(self.ROUTE, json={"items": ["A", "GONE"], "asset": ASSET}).status_code == 404
+        assert api.post(self.ROUTE, json={"items": ["A", "B"], "asset": "nothing"}).status_code in (400, 404)
+
+    def test_without_the_item_cache_it_says_so(self, scenes: Scenes, client) -> None:
+        self._zones(scenes)
+        answer = client(pool=None).post(self.ROUTE, json={"items": ["A", "B"], "asset": ASSET})
+        assert answer.status_code == 503
+        assert scenes.fetched == []
+
+    def test_get_is_not_the_way_to_ask(self, scenes: Scenes, client) -> None:
+        assert client().get(self.ROUTE, params=_query(["A", "B"])).status_code in (404, 405, 422)

@@ -182,7 +182,7 @@ class TestOrderSchema:
             "#/$defs/step_coarsen_v1",
             "#/$defs/step_mask_v2",
             "#/$defs/step_mask_values_v1",
-            "#/$defs/step_normalize_v2",
+            "#/$defs/step_normalize_v4",
             "#/$defs/step_reproject_v4",
             "#/$defs/step_scale_v1",
         ]
@@ -211,7 +211,13 @@ class TestOrderSchema:
         assert ("reproject", 2) in REAL_OPERATORS and ("reproject", 3) in REAL_OPERATORS
         schema = order_schema(REAL_OPERATORS)
         steps = sorted(key for key in schema["$defs"] if key.startswith("step_"))
-        assert steps == ["step_band_math_v2", "step_mask_v2", "step_mask_values_v1", "step_normalize_v2", "step_reproject_v4"]
+        assert steps == [
+            "step_band_math_v2",
+            "step_mask_v2",
+            "step_mask_values_v1",
+            "step_normalize_v4",
+            "step_reproject_v4",
+        ]
         assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
 
     def test_an_older_version_alone_is_offered(self) -> None:
@@ -285,13 +291,24 @@ class TestWhatThePanelReads:
         assert schema["$defs"]["step_reproject_v4"]["x-earthx-tiers"] == ["T2"]
         assert schema["$defs"]["step_reproject_v4"]["x-earthx-kind"] == "grid"
 
-    def test_version_2_of_the_bands_steps_is_offered_and_version_1_is_accepted_only(self) -> None:
-        """NM4-43e: the panel builds version 2 (the stock of bands); version 1 stays accepted (adr/0020 §11, §13)."""
+    def test_the_newest_version_of_the_bands_steps_is_offered_and_the_older_ones_are_accepted_only(self) -> None:
+        """NM4-43e: the panel builds the stock of bands (version 2); NM4-71: it builds version 4 of `normalize` (adr/0020 §11, §13)."""
         steps = order_schema(REAL_OPERATORS)["properties"]["steps"]["items"]["oneOf"]
         offered = sorted(entry["$ref"].rsplit("/", 1)[1] for entry in steps)
-        assert offered == ["step_band_math_v2", "step_mask_v2", "step_mask_values_v1", "step_normalize_v2", "step_reproject_v4"]
-        for op in ("band_math", "mask", "normalize"):
+        assert offered == [
+            "step_band_math_v2",
+            "step_mask_v2",
+            "step_mask_values_v1",
+            "step_normalize_v4",
+            "step_reproject_v4",
+        ]
+        for op in ("band_math", "mask"):
             assert REAL_OPERATORS.operator(op, 2).stock and REAL_OPERATORS.operator(op, 2).listed
+        assert REAL_OPERATORS.operator("normalize", 4).stock and REAL_OPERATORS.operator("normalize", 4).listed
+        for version in (2, 3):  # accepted: the tile, old recipes and "⚙" on a result send version 3
+            assert REAL_OPERATORS.operator("normalize", version).stock
+            assert not REAL_OPERATORS.operator("normalize", version).listed
+        for op in ("band_math", "mask", "normalize"):
             assert not REAL_OPERATORS.operator(op, 1).stock and not REAL_OPERATORS.operator(op, 1).listed
 
     def test_mask_by_value_is_offered_next_to_the_mask_by_class(self) -> None:

@@ -38,6 +38,8 @@ import {
   rescaleOf,
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
+import { AFTER_REPROJECT } from '../normalizeMethods';
+import { measuredNumbers, type MeasureNeed } from '../processingOrder';
 import {
   OUTSIDE_TEXT,
   orderView,
@@ -415,10 +417,11 @@ function PreviewSection({ view }: { view: OrderView }) {
   const [percentProblem, setPercentProblem] = useState<string | null>(null);
   const percentMode = rangeUnit === 'percent';
   const typedPair = percentMode ? percentOf(typed) : null;
-  // Applied already: the percentiles typed are the ones of the range in force.
-  const percentApplied = percentMode && typedPair !== null && rangeByHand && samePercent(typedPair, range.percent);
+  // Applied already: the percentiles typed are the ones of the range in force, and the colormap chosen is the one drawn. A change of
+  // the colormap alone is something to apply (Otto, 01.11.2026).
+  const percentApplied = percentMode && typedPair !== null && rangeByHand && samePercent(typedPair, range.percent) && rangeDraft.colormap === range.colormap;
   const loading = usePreviewLoading();
-  const plan = planPreview(steps, view.info);
+  const plan = planPreview(steps, view.info, measuredNumbers(steps, view.built));
   const valueRange = rescaleOf(rangeDraft);
   // The band the map shows, and what it reads for it (adr/0020 §10): the limit of the tile is that of these assets.
   const read =
@@ -574,6 +577,17 @@ function TooLarge({ hasAoi }: { hasAoi: boolean }) {
   );
 }
 
+// Asks the questions the preview of the statistical Normalize steps needs answered (NM4-11b, NM4-71): when the method is chosen and
+// whenever the steps before, the AOI, the scenes or the bands change. The answers come into the store, which holds each once.
+function AskMeasures({ needs }: { needs: readonly MeasureNeed[] }) {
+  const ensure = useProcessingStore((s) => s.ensureMeasures);
+  const measures = useProcessingStore((s) => s.measures);
+  useEffect(() => {
+    ensure(needs);
+  }, [needs, measures, ensure]);
+  return null;
+}
+
 export default function ProcessingPanel() {
   const open = useProcessingStore((s) => s.open);
   const close = useProcessingStore((s) => s.closeProcessing);
@@ -638,6 +652,7 @@ export default function ProcessingPanel() {
 
   return (
     <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Processing">
+      {!reason && info && <AskMeasures needs={view.needs} />}
       <div className="pp-head">
         <button
           type="button"
@@ -760,6 +775,9 @@ export default function ProcessingPanel() {
                             earlier={earlier}
                             dataBands={view.selectable}
                             units={Object.fromEntries(view.dataBands.flatMap((b) => (b.unit ? [[b.name, b.unit]] : [])))}
+                            measure={view.measures[index]}
+                            statisticsLock={p.steps.slice(0, index).some((earlier) => earlier.op === 'reproject') ? AFTER_REPROJECT : null}
+                            onRetryMeasure={p.retryMeasures}
                             checkName={(name) =>
                               nameProblem(
                                 name,

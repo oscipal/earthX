@@ -416,6 +416,24 @@ export async function fetchMosaicTileJson(
   return { bounds: bounds as Bbox, minzoom, maxzoom, order };
 }
 
+// The order the tiler reads the scenes of a pass in (the one of the mosaic, the crop and the export), for a pass that is drawn
+// scene by scene: no mosaic is built, nothing is read of a scene (NM4-24). The ids travel in the body, as there can be more
+// of them than a URL takes.
+export async function fetchSceneOrder(datasetId: string, itemIds: readonly string[], asset: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(datasetId)}/scene-order`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: [...itemIds].sort(), asset }),
+    signal: AbortSignal.timeout(MOSAIC_TILEJSON_TIMEOUT_MS),
+  });
+  const body = await jsonOrThrow<{ order?: unknown }>(res);
+  const { order } = body;
+  if (!Array.isArray(order) || !order.every((id) => typeof id === 'string')) {
+    throw new Error('The tile server sent a scene order this page cannot read.');
+  }
+  return order;
+}
+
 // The band an operator tile shows: one, or three in the order red, green, blue for a colour picture (NM4-64); `null`: the
 // tiler chooses (the last Band math result, else the first band).
 export type ShownBands = string | readonly string[] | null;

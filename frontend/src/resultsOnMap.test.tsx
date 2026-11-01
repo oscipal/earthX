@@ -257,10 +257,10 @@ describe('"Hide results" hides a ticked scene too, and ticking while hidden show
 
     it('opens the eye, in the button too and in the browser', () => {
       act(() => useAppStore.setState({ dock: 'results' }));
-      expect(buttonWith('Show results').title).toBe('Show results on the map');
+      expect(buttonWith('Show search results').title).toBe('Show search results on the map');
       act(() => state().toggleSelected('a0'));
       expect(state().resultsOnMap).toBe(true);
-      expect(buttonWith('Hide results').title).toBe('Hide results on the map');
+      expect(buttonWith('Hide search results').title).toBe('Hide search results on the map');
       expect(window.localStorage.getItem('earthx.results')).toBe('show');
       expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['a1', 'a0']);
     });
@@ -323,7 +323,7 @@ describe('Otto\'s click path (27.10.2026)', () => {
     await flush();
     expect(state().focusMode).toBe(true);
     expect(state().resultsOnMap).toBe(false);
-    expect(buttonWith('Show results').title).toBe('Show results on the map');
+    expect(buttonWith('Show search results').title).toBe('Show search results on the map');
     expect(state().selectedIds).toEqual([]);
     const shown = resultsOnMapOf(state());
     expect(shown.quicklooks).toEqual([]);
@@ -353,7 +353,7 @@ describe('Otto\'s click path (27.10.2026)', () => {
     act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
     click(buttonWith('Crop to AOI'));
     await flush();
-    click(buttonWith('Show results'));
+    click(buttonWith('Show search results'));
     expect(state().resultsOnMap).toBe(true);
     expect(state().focusMode).toBe(true);
     expect(resultsOnMapOf(state()).overlay.length).toBeGreaterThan(0);
@@ -375,10 +375,10 @@ describe('Otto\'s click path (27.10.2026)', () => {
 
   it('the eye says what a click does, and hiding takes everything off the map, a ticked scene included', async () => {
     act(() => useAppStore.setState({ dock: 'results' }));
-    expect(buttonWith('Hide results').title).toBe('Hide results on the map');
+    expect(buttonWith('Hide search results').title).toBe('Hide search results on the map');
     act(() => state().toggleSelected('a0'));
-    click(buttonWith('Hide results'));
-    expect(buttonWith('Show results').title).toBe('Show results on the map');
+    click(buttonWith('Hide search results'));
+    expect(buttonWith('Show search results').title).toBe('Show search results on the map');
     expectNothingOnMap();
     // Leaving a view brings nothing back, and the tick stays.
     await openView();

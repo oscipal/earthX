@@ -421,7 +421,7 @@ describe('the preview section', () => {
 
   it('draws a chain of tile steps and counts what the map leaves out', async () => {
     await withNdvi();
-    const normalize = { key: 900, op: 'normalize', opVersion: 2, values: { bands: 'result', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
+    const normalize = { key: 900, op: 'normalize', opVersion: 4, values: { method: 'linear', bands: 'result', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
     act(() => useProcessingStore.setState({ steps: [...store().steps, normalize] }));
     await afterDebounce();
     await flush();
@@ -429,6 +429,8 @@ describe('the preview section', () => {
     expect(store().previewNote).toBeNull();
     const url = new URL(store().preview!.scenes[0].url, 'http://localhost');
     expect(url.searchParams.getAll('op')).toEqual(['band_math', 'normalize']);
+    // `normalize` of version 4 runs only as a job; the tile takes it as version 3 (NM4-71).
+    expect(url.searchParams.getAll('op_version')).toEqual(['2', '3']);
     expect(section().textContent).not.toContain('the job runs all steps');
     click(button('＋ Band math'));
     expect(section().textContent).toContain('The map shows the first 2 steps; the job runs all steps.');
@@ -614,6 +616,36 @@ describe('the preview section', () => {
       click(button('Apply'));
       await afterDebounce();
       expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.has('colormap_name')).toBe(false);
+    });
+
+    // Otto, 01.11.2026: a change of the colormap alone must open "Apply", in values and in percentiles that are applied already.
+    it('opens "Apply" for a change of the colormap alone, in values and in percentiles that are applied already', async () => {
+      await withNdvi();
+      const colormapSelect = () => section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!;
+      const unitSelect = () => section().querySelector<HTMLSelectElement>('select.vc-unit')!;
+      const apply = () => section().querySelector<HTMLButtonElement>('.vc-apply')!;
+      const choose = (element: HTMLSelectElement, value: string) =>
+        act(() => {
+          Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(element, value);
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      choose(colormapSelect(), 'plasma');
+      expect(apply().disabled).toBe(false);
+      click(apply());
+      expect(store().range.colormap).toBe('plasma');
+      // In percentiles: applied, nothing left to apply ...
+      choose(unitSelect(), 'percent');
+      click(apply());
+      await flush();
+      expect(store().range.percent).toEqual({ low: '2', high: '98' });
+      expect(apply().disabled).toBe(true);
+      // ... until the colormap alone changes.
+      choose(colormapSelect(), 'magma');
+      expect(apply().disabled).toBe(false);
+      click(apply());
+      await flush();
+      expect(store().range).toMatchObject({ colormap: 'magma', percent: { low: '2', high: '98' } });
+      expect(apply().disabled).toBe(true);
     });
 
   });

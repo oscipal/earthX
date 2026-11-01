@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
 import { indexPresetsOf } from './indexPresets';
-import { MAX_MOSAIC_REQUEST_BYTES, mosaicRequestBytes, mosaicTemplateOf, type Mosaics, type SceneEntry } from './mosaic';
+import { MAX_MOSAIC_REQUEST_BYTES, mosaicRequestBytes, mosaicTemplateOf, type MosaicInfo, type SceneEntry } from './mosaic';
 import type { Collection, DownloadedInfo, TimeStepGroup } from './types';
 import {
   assetsOfExpression,
@@ -38,7 +38,7 @@ const entries = (n: number, minZoom = 8, pad = 3): SceneEntry[] =>
 // The scenes of the longest time step the tiler takes (64) with ids long enough that the request is above 7168 bytes.
 const LONG = 110;
 const group = (list: SceneEntry[]): TimeStepGroup[] => [{ label: 'a', key: ['a'], items: list.map(([id]) => ({ id, bbox: [10, 47, 11, 48], properties: {}, assets: {} })) } as unknown as TimeStepGroup];
-const mosaicsOf = (list: SceneEntry[]): Mosaics => ({
+const mosaicsOf = (list: SceneEntry[]): Record<string, MosaicInfo> => ({
   [mosaicTemplateOf('s2', list)!]: { tileUrl: '/collections/s2/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}?plain', bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: list.map(([id]) => id) },
 });
 

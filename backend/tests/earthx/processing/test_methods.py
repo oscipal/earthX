@@ -242,6 +242,7 @@ class TestEveryOperatorSaysItsStep:
             "bands": ["red"],
             "measured": {"factor": 1, "bands": {"red": {"mean": 0.5, "stddev": 0.25}}},
         },
+        ("normalize", 4): {"method": "robust", "bands": ["red"]},
         ("reproject", 1): {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
     }
 

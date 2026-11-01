@@ -43,7 +43,8 @@ import { flipNext, flipStart } from './layerFlip';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
 import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
-import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
+import { assetOfLook, bandAssetsOf, withAsset } from './viewBand';
+import { isMosaicPass, mosaicTemplateOf, orderedPass, orderKeyOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
@@ -79,7 +80,7 @@ import {
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
 import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
-import { downloadIndexCrop, estimateIndexDownload, indexOfLayer, type IndexNote } from './indexDownload';
+import { downloadIndexCrop, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
@@ -436,6 +437,7 @@ const LEAVE_FOCUS = {
   pendingVmin: '',
   pendingVmax: '',
   pendingIndex: '',
+  pendingBand: '',
   pendingUnit: 'value' as RangeUnit,
   pendingPercentLow: DEFAULT_PERCENT.low,
   pendingPercentHigh: DEFAULT_PERCENT.high,
@@ -567,8 +569,9 @@ function overlaysOfEntries(
   const sections = sectionsForView(s);
   const groups = sections.flatMap((section) => section.groups);
   const items = sections.flatMap((section) => section.items);
-  const overlays = passesOf(entries, groups).map((pass) => {
-    const datasetId = pass[0][1].datasetId;
+  const overlays = passesOf(entries, groups).map((first) => {
+    const datasetId = first[0][1].datasetId;
+    const pass = orderedPass(datasetId, first, s.mosaics);
     const dataset = s.datasets.find((d) => d.id === datasetId);
     return overlaysOfPass(datasetId, pass, s.mosaics, look, clip, underlaysOf(pass, items, dataset, clip), viewIndexOf(look, dataset?.collection));
   });
@@ -650,6 +653,43 @@ function firstSceneOfView(s: AppState): { itemId: string | undefined; info: Down
   return { itemId, info: itemId === undefined ? undefined : s.downloaded[itemId] };
 }
 
+// The layer drawn with a look (NM4-45, NM4-54): its scenes from the asset of the band the look names (or the index it computes), its
+// rasters made again, its quicklook underlays kept where the look has none. `{ problem }` where that cannot be done now.
+type LayerDrawn = { overlays: LayerOverlay[]; restore: { downloaded: MapLayer['restore']['downloaded']; appliedRender: AppliedRender } };
+
+// The layer drawn with a look, at once where the mosaics of its bands are known: `{ need }` names the passes whose mosaic has to be
+// asked for first, `{ problem }` says why it cannot be done.
+function layerDraw(
+  get: GetState,
+  layer: MapLayer,
+  render: AppliedRender,
+): LayerDrawn | { problem: string } | { need: { datasetId: string; entries: SceneEntry[] }[] } {
+  const s = get();
+  const clip = layer.restore.cropToAoi ? layer.restore.aoi : null;
+  const entries = Object.entries(layer.restore.downloaded).map(([id, info]): SceneEntry => [id, withAsset(id, info, assetOfLook(info, render))]);
+  const collection = s.datasets.find((d) => d.id === layer.restore.datasetId)?.collection;
+  const index = viewIndexOf(render, collection);
+  const groups = sectionsForView(s).flatMap((section) => section.groups);
+  const block = index && layer.restore.datasetId ? indexBlockOf({ datasetId: layer.restore.datasetId, entries, groups, mosaics: s.mosaics, preset: index, mapZoom: Infinity }) : null;
+  if (index && block) return { problem: `${indexNote(block, index.name)}. Start a job in Processing for the whole scenes.` };
+  const fresh = overlaysOfEntries({ ...s, appliedRender: render }, entries, clip);
+  if (fresh === null) return { need: passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass })) };
+  const current = s.layers.find((l) => l.id === layer.id) ?? layer;
+  const quicklooks = index ? [] : current.overlays.some((o) => o.kind === 'image') ? current.overlays.filter((o) => o.kind === 'image') : fresh.filter((o) => o.kind === 'image');
+  return { overlays: [...quicklooks, ...fresh.filter((o) => o.kind === 'raster')], restore: { downloaded: Object.fromEntries(entries), appliedRender: { ...render } } };
+}
+
+// The same, asking for the mosaic of another band first where it has to (NM4-45).
+async function layerDrawnWith(set: SetState, get: GetState, layer: MapLayer, render: AppliedRender): Promise<LayerDrawn | { problem: string }> {
+  let drawn = layerDraw(get, layer, render);
+  if ('need' in drawn) {
+    await fetchMosaics(set, get, drawn.need);
+    drawn = layerDraw(get, layer, render);
+  }
+  if ('need' in drawn) return { problem: 'The layer cannot be saved yet: its scenes are still loading.' };
+  return drawn;
+}
+
 // "Apply" with percentiles in the fields (NM4-65 part 4): the tiler measures the two percentiles on the first scene of the image
 // shown (the index of the fields as it will be drawn), the values go into the fields and the look. What is drawn is the values;
 // the look keeps the percentiles for the fields to show "%" again.
@@ -668,7 +708,7 @@ async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
   try {
     const stats = index
       ? await api.fetchStatisticsAt(api.withPercentiles(indexStatisticsUrl(info.datasetId, itemId, index), asked))
-      : await api.fetchStatistics(info.datasetId, itemId, info.asset, asked);
+      : await api.fetchStatistics(info.datasetId, itemId, assetOfLook(info, { band: s.pendingBand || undefined }), asked);
     const range = rescaleAtPercent(Object.values(stats), checked);
     if (!range) {
       set({ notice: NO_RANGE_AT_PERCENT });
@@ -764,7 +804,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
   });
 }
 
-// In flight, by the mosaic's template: two views that want one mosaic ask the tiler once.
+// In flight, by the mosaic's template (or the key of an order): two views that want one mosaic ask the tiler once.
 const mosaicLoads = new Map<string, Promise<void>>();
 
 // Loads the TileJSON of each pass that a mosaic would draw, once. The tiler fills its item cache by
@@ -777,28 +817,73 @@ async function fetchMosaics(
   requests: { datasetId: string; entries: SceneEntry[] }[],
 ): Promise<void> {
   const failures: string[] = [];
+  const orderFailures: string[] = [];
   await Promise.all(
     requests.map(async ({ datasetId, entries }) => {
       const template = mosaicTemplateOf(datasetId, entries);
-      if (!template || get().mosaics[template]) return;
-      let load = mosaicLoads.get(template);
-      if (!load) {
-        load = (async () => {
-          let info: Mosaics[string] = null;
-          try {
-            const json = await api.fetchMosaicTileJson(datasetId, entries.map(([id]) => id), entries[0][1].asset);
-            info = { tileUrl: template, bounds: json.bounds, minZoom: json.minzoom, maxZoom: json.maxzoom, order: json.order };
-          } catch (e) {
-            failures.push((e as Error).message);
-          }
-          if (info || get().mosaics[template] === undefined) set({ mosaics: { ...get().mosaics, [template]: info } });
-        })().finally(() => mosaicLoads.delete(template));
-        mosaicLoads.set(template, load);
-      }
-      await load;
+      if (template) await loadMosaic(set, get, datasetId, entries, template, failures);
+      // A pass drawn scene by scene (too big for a mosaic, a mosaic the tiler refused, a dataset released below z8 only)
+      // lies in the order of the mosaic, the crop and the export, which only the tiler knows (NM4-24).
+      if (template === null || get().mosaics[template] === null) await loadOrder(set, get, datasetId, entries, orderFailures);
     }),
   );
   if (failures.length > 0) set({ notice: `Could not load the mosaic (${failures[0]}); its scenes are drawn one by one.` });
+  else if (orderFailures.length > 0) {
+    set({ notice: `Could not read the stacking order of the scenes (${orderFailures[0]}); they lie in the order of the selection.` });
+  }
+}
+
+// The order of the scenes of one pass, once, kept under `orderKeyOf`; `null` where the tiler could not give it (the scenes then
+// lie in the order of the selection, as before) so that it is not asked again until the search is made anew.
+async function loadOrder(
+  set: SetState,
+  get: GetState,
+  datasetId: string,
+  entries: SceneEntry[],
+  failures: string[],
+): Promise<void> {
+  const key = orderKeyOf(datasetId, entries);
+  if (!key || get().mosaics[key] !== undefined) return;
+  let load = mosaicLoads.get(key);
+  if (!load) {
+    load = (async () => {
+      let order: string[] | null = null;
+      try {
+        order = await api.fetchSceneOrder(datasetId, entries.map(([id]) => id), entries[0][1].asset);
+      } catch (e) {
+        failures.push((e as Error).message);
+      }
+      set({ mosaics: { ...get().mosaics, [key]: order ? { order } : null } });
+    })().finally(() => mosaicLoads.delete(key));
+    mosaicLoads.set(key, load);
+  }
+  await load;
+}
+
+async function loadMosaic(
+  set: SetState,
+  get: GetState,
+  datasetId: string,
+  entries: SceneEntry[],
+  template: string,
+  failures: string[],
+): Promise<void> {
+  if (get().mosaics[template]) return;
+  let load = mosaicLoads.get(template);
+  if (!load) {
+    load = (async () => {
+      let info: Mosaics[string] = null;
+      try {
+        const json = await api.fetchMosaicTileJson(datasetId, entries.map(([id]) => id), entries[0][1].asset);
+        info = { tileUrl: template, bounds: json.bounds, minZoom: json.minzoom, maxZoom: json.maxzoom, order: json.order };
+      } catch (e) {
+        failures.push((e as Error).message);
+      }
+      if (info || get().mosaics[template] === undefined) set({ mosaics: { ...get().mosaics, [template]: info } });
+    })().finally(() => mosaicLoads.delete(template));
+    mosaicLoads.set(template, load);
+  }
+  await load;
 }
 
 function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections: ResultSection[]): string {
@@ -1310,6 +1395,8 @@ export interface AppState {
   pendingVmax: string;
   // The index the fields stand for, drawn once "Apply" is pressed (NM4-14b); '' = none.
   pendingIndex: string;
+  // The single band the fields stand for, drawn once "Apply" is pressed (NM4-45); '' = the standard picture.
+  pendingBand: string;
   // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4); with "percent" the fields show the two percentiles, and
   // `pendingVmin`/`pendingVmax` hold the values they gave at the last "Apply".
   pendingUnit: RangeUnit;
@@ -1460,6 +1547,9 @@ export interface AppState {
   downloadStatus: string | null;
   // What the dialog says of the download of an index: the estimate, or the limit that stops it (NM4-14b); `null` for any other.
   downloadIndexNote: IndexNote | null;
+  // What the dialog of a layer that shows an index downloads (Otto, 1.11.2026): its raw bands, or the index as a job would give it.
+  downloadAs: 'raw' | 'index';
+  setDownloadAs: (what: 'raw' | 'index') => void;
   enterFocus: (cropToAoi: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
   addAllToLayers: () => void;
@@ -1473,11 +1563,15 @@ export interface AppState {
   // Puts an index of the dataset the image shows into the fields, with its range and colormap (NM4-14b); `null` puts the standard look of
   // the dataset there. Nothing is drawn until "Apply".
   chooseViewIndex: (name: string | null) => void;
+  // The single band the fields stand for (NM4-45); `null` goes back to the standard picture.
+  chooseViewBand: (band: string | null) => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
-  applyRender: () => void;
+  applyRender: () => void | Promise<void>;
+  // Puts back what a pinned layer was saved with, when its settings are closed without "Save" (NM4-54, Otto, 1.11.2026).
+  revertViewLayer: (id: string) => void;
   setPendingUnit: (unit: RangeUnit) => void;
   setPendingPercent: (end: 'low' | 'high', text: string) => void;
   // "Save" in the view of a pinned layer: the look typed and applied becomes the layer's own (NM4-50).
@@ -1575,6 +1669,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingVmin: '',
   pendingVmax: '',
   pendingIndex: '',
+  pendingBand: '',
   pendingUnit: 'value',
   pendingPercentLow: DEFAULT_PERCENT.low,
   pendingPercentHigh: DEFAULT_PERCENT.high,
@@ -1615,6 +1710,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloading: false,
   downloadStatus: null,
   downloadIndexNote: null,
+  downloadAs: 'raw',
   playing: false,
   shownGroupIndex: null,
   revealNotBefore: 0,
@@ -1930,17 +2026,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveResultLayer: (id) =>
     set((s) => ({
       layers: s.layers.map((l) => {
-        if (l.id !== id || !l.result?.savedTileUrl) return l;
+        if (l.id !== id || !l.result) return l;
         const { savedTileUrl: _saved, savedPercent: _savedPercent, ...info } = l.result;
-        return { ...l, result: info };
+        return { ...l, result: info, saved: undefined };
       }),
     })),
   revertResultLayer: (id) =>
     set((s) => ({
       layers: s.layers.map((l) => {
-        const saved = l.id === id ? l.result?.savedTileUrl : undefined;
-        if (!l.result || saved === undefined) return l;
-        const { savedTileUrl: _saved, savedPercent, percent: _percent, ...info } = l.result;
+        // The opacity set aside goes back first; the look has its own record (`savedTileUrl`).
+        const withOpacity = l.id === id && l.saved ? { ...l, opacity: l.saved.opacity, saved: undefined } : l;
+        const saved = withOpacity.id === id ? withOpacity.result?.savedTileUrl : undefined;
+        if (!withOpacity.result || saved === undefined) return withOpacity;
+        const { savedTileUrl: _saved, savedPercent, percent: _percent, ...info } = withOpacity.result;
+        l = withOpacity;
         let first = true;
         const overlays = l.overlays.map((o) => {
           if (o.kind !== 'raster' || !first) return o;
@@ -1959,8 +2058,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   toggleLayerVisible: (id) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
+  // The opacity is part of what the settings of a layer keep with "Save": while they are open it is set aside once (NM4-54, Otto, 1.11.2026).
   setLayerOpacity: (id, opacity) =>
-    set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
+    set((s) => {
+      const open = (s.viewOfLayer && s.viewLayerId === id) || s.resultViewLayerId === id;
+      return { layers: s.layers.map((l) => (l.id === id ? { ...l, opacity, ...(open && !l.saved ? { saved: { opacity: l.opacity } } : {}) } : l)) };
+    }),
   moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
   flipThrough: false,
   flipLayerId: null,
@@ -2077,16 +2180,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const layer = s.layers.find((l) => l.id === id);
     if (!layer) return;
     const outcome = decideDownloadOutcomeForLayer(layer, s.datasets);
-    set({ downloadOutcome: outcome });
-    if (outcome === 'crop' && indexOfLayer(layer, s.datasets)) {
-      // What the job of an index will cost, asked as "Review" asks it; a limit that applies stops the download here, with its reason.
-      const controller = new AbortController();
-      indexDownloadAbort = controller;
-      set({ downloadIndexNote: { state: 'estimating' } });
-      const note = await estimateIndexDownload({ layer, datasets: s.datasets, signal: controller.signal });
-      if (!controller.signal.aborted && get().downloadDialogLayerId === id) set({ downloadIndexNote: note });
-      return;
-    }
+    set({ downloadOutcome: outcome, downloadAs: 'raw', downloadIndexNote: null });
     if (outcome !== 'originals') return;
     const datasetId = layer.restore.datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
@@ -2190,8 +2284,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
       downloadIndexNote: null,
+      downloadAs: 'raw',
       downloadStatus: null,
     });
+  },
+  // The dialog of a layer that shows an index offers its raw bands and the index; the index asks what its job will cost when it is chosen.
+  setDownloadAs: async (what) => {
+    const s = get();
+    const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
+    indexDownloadAbort?.abort();
+    if (!layer || (what === 'index' && !indexOfferedFor(layer, s.datasets))) {
+      set({ downloadAs: 'raw', downloadIndexNote: null });
+      return;
+    }
+    if (what === 'raw') {
+      set({ downloadAs: 'raw', downloadIndexNote: null });
+      return;
+    }
+    // What the job of an index will cost, asked as "Review" asks it; a limit that applies stops the download here, with its reason.
+    const controller = new AbortController();
+    indexDownloadAbort = controller;
+    set({ downloadAs: 'index', downloadIndexNote: { state: 'estimating' } });
+    const note = await estimateIndexDownload({ layer, datasets: s.datasets, signal: controller.signal });
+    if (!controller.signal.aborted && get().downloadDialogLayerId === layer.id) set({ downloadIndexNote: note });
   },
   setDownloadResolution: (factor) => set({ downloadResolution: factor, downloadExportOffer: null }),
 
@@ -2218,7 +2333,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     // A layer that shows an index is downloaded as that index, computed as a job would, with no job in the list (NM4-14b).
-    if (layer && indexOfLayer(layer, s.datasets)) {
+    if (layer && s.downloadAs === 'index' && indexOfferedFor(layer, s.datasets)) {
       // Only what the estimate let through (or a try that failed, which may be tried again).
       const note = s.downloadIndexNote;
       if (note?.state !== 'ready' && note?.state !== 'failed') return;
@@ -2429,21 +2544,39 @@ export const useAppStore = create<AppState>((set, get) => ({
       const first = images.find((image) => image.datasetId === datasetId);
       return first && s.focusMode && first.key !== shown?.key ? moveToImage(s, first, shown) : {};
     }),
-  chooseViewIndex: (name) =>
+  chooseViewIndex: (name) => {
     set((s) => {
       const shown = shownImageOf(viewImagesOf(s), s.shownImage);
-      // A layer keeps the index it was added with: it is not chosen again from the layer manager.
-      if (!shown || !s.focusMode || s.viewOfLayer) return {};
+      if (!shown || !s.focusMode) return {};
       const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
       // Without an index the image goes back to what the dataset shows: the look saved for it ("Apply to all") unless that
       // names an index too, else the standard one.
       const saved = s.savedLooks[shown.datasetId];
-      const plain = saved && !saved.index ? saved : defaultLookOf(s, shown.datasetId);
+      const plain = saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId);
       const preset = name === null ? null : viewIndexOf({ index: name }, collection);
       if (name !== null && !preset) return {};
       // Only the fields change: the map draws it once "Apply" is pressed, like the colormap and the range.
       return pendingFieldsOf(preset ? indexLookOf(preset) : plain);
-    }),
+    });
+  },
+  // One band of the data in place of the standard picture or an index: only the fields change, and the range is measured for the
+  // band as for any other pick, so that "Apply" has values to draw (NM4-45). The image is drawn from the asset of the band once
+  // "Apply" is pressed (`reconcileBands`).
+  chooseViewBand: (band) => {
+    const s = get();
+    const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+    if (!shown || !s.focusMode) return;
+    const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
+    if (band === null) {
+      const saved = s.savedLooks[shown.datasetId];
+      set(pendingFieldsOf(saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId)));
+      return;
+    }
+    const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);
+    if (!bandAssetsOf(item, collection).includes(band)) return;
+    set({ pendingBand: band, pendingIndex: '', pendingColormapName: '', pendingVmin: '', pendingVmax: '' });
+    void get().autoStretch();
+  },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
@@ -2451,40 +2584,69 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Commits the pending fields (F18) — nothing renders differently until this
   // runs, which is the point of an explicit "Apply".
   // "Apply" draws the shown image with the fields and nothing else (NM4-53); other images keep their look.
-  applyRender: () => {
+  applyRender: async () => {
     const s = get();
     // Typed in percentiles, the values come from the statistics first (NM4-65 part 4).
     if (s.pendingUnit === 'percent') {
-      void applyPercentRender(set, get);
+      await applyPercentRender(set, get);
+    } else {
+      set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
+    }
+    // The settings of a pinned layer change the layer itself, at its place in the list (Otto, 1.11.2026): what is applied is seen, as in
+    // the view, once "Apply" is pressed (also a band); it is kept only with "Save", and closing the settings puts the saved look back
+    // (`revertViewLayer`).
+    const now = get();
+    const layer = now.viewOfLayer ? layerOfView(now.layers, { ...now, aoi: now.viewAoi }) : null;
+    if (!layer) return;
+    const render = { ...now.appliedRender };
+    let drawn = layerDraw(get, layer, render);
+    if ('need' in drawn) drawn = await layerDrawnWith(set, get, layer, render);
+    if ('problem' in drawn) {
+      set({ error: drawn.problem });
       return;
     }
-    set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
+    set((t) => ({
+      layers: t.layers.map((l) =>
+        l.id === layer.id
+          ? { ...l, ...drawn, restore: { ...l.restore, ...drawn.restore }, saved: l.saved ?? { opacity: l.opacity, overlays: l.overlays, downloaded: l.restore.downloaded, appliedRender: l.restore.appliedRender } }
+          : l,
+      ),
+    }));
   },
+  revertViewLayer: (id) =>
+    set((s) => ({
+      layers: s.layers.map((l) => {
+        if (l.id !== id || !l.saved) return l;
+        const { opacity, overlays, downloaded, appliedRender } = l.saved;
+        return { ...l, opacity, overlays: overlays ?? l.overlays, restore: { ...l.restore, downloaded: downloaded ?? l.restore.downloaded, appliedRender: appliedRender ?? l.restore.appliedRender }, saved: undefined };
+      }),
+    })),
   setPendingUnit: (pendingUnit) => set({ pendingUnit }),
   setPendingPercent: (end, text) => set(end === 'low' ? { pendingPercentLow: text } : { pendingPercentHigh: text }),
   // "Save" (NM4-53, Otto 29.10.2026): the fields become the look of every image of the dataset that is shown, for the
   // length of the view. If the view is the picture of a pinned layer, the layer keeps the look too (NM4-50).
-  saveViewLook: () => {
+  saveViewLook: async () => {
     // Percentiles that are not applied yet give their values first, so that what is kept is what is drawn; only then is it
     // asynchronous, any other "Save" is done when the call returns.
     if (get().pendingUnit === 'percent' && !samePercent(get().appliedRender.percent, pendingPercentOf(get()))) {
       return applyPercentRender(set, get).then(() => {
-        if (samePercent(get().appliedRender.percent, pendingPercentOf(get()))) void get().saveViewLook();
+        if (samePercent(get().appliedRender.percent, pendingPercentOf(get()))) return get().saveViewLook();
       });
     }
-    const s = get();
+    let s = get();
     const render = { ...s.appliedRender, ...lookOfPendingFields(s) };
     const layer = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
     let layers = s.layers;
     if (layer) {
-      // The same scenes as the layer has, drawn with the look: its rasters are made again, its quicklook underlays stay.
-      const fresh = overlaysOfEntries({ ...s, appliedRender: render }, Object.entries(layer.restore.downloaded), layer.restore.cropToAoi ? layer.restore.aoi : null);
-      if (fresh === null) {
-        set({ error: 'The layer cannot be saved yet: its scenes are still loading.' });
+      let drawn = layerDraw(get, layer, render);
+      if ('need' in drawn) drawn = await layerDrawnWith(set, get, layer, render);
+      if ('problem' in drawn) {
+        set({ error: drawn.problem });
         return;
       }
-      const overlays = [...layer.overlays.filter((o) => o.kind === 'image'), ...fresh.filter((o) => o.kind === 'raster')];
-      layers = s.layers.map((l) => (l.id === layer.id ? { ...l, overlays, restore: { ...l.restore, appliedRender: { ...render } } } : l));
+      s = get();
+      // "Save" in the view of a layer keeps the layer as it is drawn: what was set aside for the settings to be closed is not wanted any more.
+      layers = s.layers.map((l) => (l.id === layer.id ? { ...l, ...drawn, saved: undefined, restore: { ...l.restore, ...drawn.restore } } : l));
     }
     const images = viewImagesOf(s);
     const shown = shownImageOf(images, s.shownImage);
@@ -2512,7 +2674,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
     set({ focusLoading: true });
     try {
-      const stats = index ? await api.fetchStatisticsAt(indexStatisticsUrl(info.datasetId, itemId!, index)) : await api.fetchStatistics(info.datasetId, itemId!, info.asset);
+      const stats = index ? await api.fetchStatisticsAt(indexStatisticsUrl(info.datasetId, itemId!, index)) : await api.fetchStatistics(info.datasetId, itemId!, assetOfLook(info, { band: s.pendingBand || undefined }));
       const range = autoRescale(stats);
       if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
     } catch (e) {
@@ -2958,4 +3120,39 @@ export const useAppStore = create<AppState>((set, get) => ({
 // goes without asking, and the layer is drawn as saved again (NM4-50).
 useAppStore.subscribe((s, prev) => {
   if (prev.resultViewLayerId !== null && prev.resultViewLayerId !== s.resultViewLayerId) s.revertResultLayer(prev.resultViewLayerId);
+});
+
+// The scenes of each image of the view are drawn from the asset its look names (NM4-45): a band is a look like the colormap, and the
+// store keeps the two together in one place, whatever changed the look (applying, "Apply to all", stepping to another image, a layer
+// opened again). Only a look with a band, or a scene already moved to one, is touched. The mosaic of the new asset is asked for.
+function reconcileBands(): void {
+  const s = useAppStore.getState();
+  if (!s.focusMode || Object.keys(s.downloaded).length === 0) return;
+  const images = viewImagesOf(s);
+  const shown = shownImageOf(images, s.shownImage);
+  let downloaded = s.downloaded;
+  for (const image of images) {
+    const look = lookOfImage(s, image, shown);
+    for (const id of image.ids) {
+      const info = downloaded[id];
+      if (!info) continue;
+      const moved = withAsset(id, info, assetOfLook(info, look));
+      if (moved !== info) downloaded = { ...downloaded, [id]: moved };
+    }
+  }
+  if (downloaded === s.downloaded) return;
+  useAppStore.setState({ downloaded });
+  void s.loadMosaics();
+}
+
+useAppStore.subscribe((s, prev) => {
+  if (s.appliedRender !== prev.appliedRender || s.viewLooks !== prev.viewLooks || s.savedLooks !== prev.savedLooks || s.shownImage !== prev.shownImage) {
+    reconcileBands();
+  }
+});
+
+// The settings of a pinned layer are closed — the red x, Esc, another layer chosen, the view left: what was applied and not saved goes
+// without asking, and the layer is drawn as saved again (NM4-54, Otto, 1.11.2026).
+useAppStore.subscribe((s, prev) => {
+  if (prev.viewOfLayer && prev.viewLayerId !== null && (!s.viewOfLayer || s.viewLayerId !== prev.viewLayerId)) s.revertViewLayer(prev.viewLayerId);
 });

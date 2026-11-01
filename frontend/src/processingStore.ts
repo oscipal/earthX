@@ -116,6 +116,7 @@ import {
   draftFromOrder,
   isArea,
   clipArea,
+  measuredNumbers,
   lonelyBand,
   maskAssetOf,
   maskLayerOf,
@@ -134,6 +135,9 @@ import {
   type DataBand,
   type Draft,
   type DraftStep,
+  type MeasureEntry,
+  type MeasureNeed,
+  type MeasureStatus,
   type Pass,
   type ProcessInfo,
 } from './processingOrder';
@@ -167,6 +171,7 @@ import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
+import { isStatistical, measuredFromRuns, normalizeRuns, startValues, type Measured, type Method, type NormalizeRun } from './normalizeMethods';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import { datesOfIds, knownItems } from './layerDate';
 import { resamplingParts } from './resamplingWarning';
@@ -215,6 +220,12 @@ export interface FixedResult {
   bands: string[];
   // What the process description made of the steps (an older version taken as the listed one).
   notes: string[];
+  // The numbers the locked steps measured when the job ran, by step key: they keep them, the result is an entity of its own
+  // (NM4-11b, adr/0019 Nachtrag NM4-05b). From `earthx:normalize` of the result, else from the copy of the order. Steps added later
+  // measure for the area they are given.
+  measured: Record<number, Measured>;
+  // The locked statistical steps of a result that has `earthx:normalize` but no numbers for them: they measure anew in the run (NM4-71).
+  anew: number[];
 }
 
 // Scenes fetched one by one because a layer or the full-resolution view names them
@@ -288,6 +299,9 @@ export interface JobEntry extends ShelfJob {
   // The bands of the raster in the order of the file, each with its statistics, for the colour scale of the layer
   // (NM4-43e PR 2); empty until the results are read, and for a result from before the bands were named.
   bands: ResultBand[];
+  // `earthx:normalize` of the result: the measuring steps that ran, with their numbers (NM4-71); `null` until the results are read,
+  // and for a result from before the property.
+  normalize: NormalizeRun[] | null;
 }
 
 // The jobs of one batch (M4-13c-4) are one entry of the manager (UI-01 §6.10).
@@ -336,6 +350,9 @@ interface ProcessingState {
   // The reason a name field holds a name that breaks a rule, by step: only what the person has typed and not left yet or
   // a name a loaded recipe brought; never a name the steps and the output use (review of #250).
   nameProblems: Record<number, string>;
+  // What the route of NM4-19 said to the questions of the statistical `normalize` steps, by the text of the question (NM4-11b).
+  // In memory only: the text holds the AOI.
+  measures: ReadonlyMap<string, MeasureEntry>;
   // The one band of a dataset that has only one, while it is in the output because the panel put it there on opening and
   // the person has not touched the choice: the first result of a band math step takes its place (review of #250).
   lonelyAuto: string | null;
@@ -454,6 +471,9 @@ interface ProcessingState {
   setShown: (name: string) => void;
   loadRecipe: (text: string) => Promise<LoadResult>;
   restoreOrder: (order: Order, view: PermalinkView, options?: { converted?: boolean }) => Promise<LoadResult>;
+  // Asks the questions not asked yet, a few at a time; the answers arrive in `measures`. A failed answer is asked again by `retryMeasures`.
+  ensureMeasures: (needs: readonly MeasureNeed[]) => void;
+  retryMeasures: () => void;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
   placeOrder: (
@@ -527,6 +547,10 @@ export interface OrderView {
   output: string[];
   // Why steps, "Review" and "Start job" wait: a name field holds a name that breaks a rule. `null` for none.
   nameBlock: string | null;
+  // Where the preview's measure of each statistical `normalize` step stands, by step index; `undefined` for the other steps. It holds
+  // nothing back: the job measures itself (NM4-71). It is for the shown order (the first job of a batch); `needs` are its questions.
+  measures: Array<MeasureStatus | undefined>;
+  needs: MeasureNeed[];
   // The assets the order reads or the preview needs: those of the output, of the expressions, of `normalize` and the layer
   // of a mask, in the item's order.
   assets: string[];
@@ -640,6 +664,12 @@ function clipToResult(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon, fixed: Fixed,
   return result;
 }
 
+// The numbers the locked steps of a result keep, by step key.
+const keptOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlyMap<number, Measured> | undefined =>
+  p.fixed?.result ? new Map(Object.entries(p.fixed.result.measured).map(([key, measured]) => [Number(key), measured])) : undefined;
+
+const anewOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlySet<number> | undefined => (p.fixed?.result ? new Set(p.fixed.result.anew) : undefined);
+
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
   const scenes = withExtraScenes(selection, p.extraScenes);
   // What an entry fixed is the order's area, whatever the map holds; but in the panel of a result "AOI only" is the map's AOI, inside
@@ -727,14 +757,15 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     extraIds.has(item.id) ? (p.extraScenes?.datasetId ?? null) : (selection.openSectionId ?? selection.datasetId);
   const foreign = dataset ? foreignScenes(dataset.id, pass?.items ?? [], foundUnder) : [];
   const outside = inner && drawn !== null && clipped === null;
-  const buildFor = (itemIds: string[]): BuiltOrder | null => {
+  // Only the first order is the one the preview shows and measures for; the other orders of a batch measure in their own run.
+  const buildFor = (itemIds: string[], shown: boolean): BuiltOrder | null => {
     if (!info || !dataset) return null;
-    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info });
-    if (outside) return { ...result, order: null, problems: [...result.problems, OUTSIDE_TEXT] };
-    return foreign.length === 0 ? result : { ...result, order: null, problems: [...result.problems, foreignReason(foreign)] };
+    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info, measures: p.measures, kept: keptOf(p), anew: anewOf(p), shown });
+    if (outside) return { ...result, order: null, previewOrder: null, problems: [...result.problems, OUTSIDE_TEXT] };
+    return foreign.length === 0 ? result : { ...result, order: null, previewOrder: null, problems: [...result.problems, foreignReason(foreign)] };
   };
-  const builtParts = units.map((unit) => ({ unit, built: buildFor(unit.items.map((i) => i.id)) }));
-  const built = builtParts[0]?.built ?? buildFor([]);
+  const builtParts = units.map((unit, index) => ({ unit, built: buildFor(unit.items.map((i) => i.id), index === 0) }));
+  const built = builtParts[0]?.built ?? buildFor([], true);
   const parts: OrderPart[] = builtParts.map(({ unit, built: b }) => ({ unit, order: b?.order ?? null }));
   // The text of the order, or of all orders of a batch: one serialisation either way.
   const key =
@@ -770,6 +801,8 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     maskHidden: from !== null && maskLayer !== null && !kept.has(maskLayer.band),
     output,
     nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames, hidden, from?.locked ?? 0),
+    measures: p.steps.map((_, index) => built?.stepProblems[index]?.measure),
+    needs: built?.needs ?? [],
     assets,
     maskLayer,
     maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
@@ -1017,6 +1050,23 @@ export function orderRetired(job: JobEntry, descriptions: Record<string, Descrip
   return description?.state === 'error' && description.retired !== undefined;
 }
 
+// The numbers the locked statistical steps of a result keep (NM4-71): those its job wrote to `earthx:normalize`, by the index of the
+// step; else those of the copy of its order, a step of version 3 that carried them and so measured nothing (and a result from
+// before NM4-71, which lacks the property). A step of version 4 without numbers for it or one of its bands measures anew.
+function lockedNumbers(draft: Draft, runs: readonly NormalizeRun[] | null): { measured: Record<number, Measured>; anew: number[] } {
+  const measured: Record<number, Measured> = {};
+  const anew: number[] = [];
+  draft.steps.forEach((step, index) => {
+    const method = step.values.method;
+    if (step.op !== 'normalize' || !isStatistical(method)) return;
+    const fromRuns = runs ? measuredFromRuns(runs, index, method as Method, namesIn(String(step.values.bands ?? ''))) : null;
+    const numbers = fromRuns ?? draft.measured[index];
+    if (numbers) measured[step.key] = numbers;
+    else if (runs) anew.push(step.key);
+  });
+  return { measured, anew };
+}
+
 // The names a draft uses that this selection has no band for: the notes of a loaded recipe. Where the data lists no
 // bands at all there is nothing to compare with.
 function missingBands(draft: { steps: readonly DraftStep[]; bands: readonly string[] }, view: OrderView): string[] {
@@ -1041,6 +1091,7 @@ const EMPTY_DRAFT = {
   steps: [] as DraftStep[],
   output: [] as string[],
   nameProblems: {} as Record<number, string>,
+  measures: new Map<string, MeasureEntry>() as ReadonlyMap<string, MeasureEntry>,
   lonelyAuto: null as string | null,
   dtype: null,
   shown: null as string | null,
@@ -1167,12 +1218,21 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       fixed: {
         itemIds: draft.groups.flat(),
         aoi: draft.aoi,
-        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes },
+        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes, measured: {}, anew: [] },
       },
     }));
     if (!taken.ok) useAppStore.setState({ error: taken.reason });
     // The preview lies with the entry "Results", above the layer it is made from.
     else useAppStore.getState().resultsToTop();
+  };
+
+  // `earthx:normalize` of the result of a job, or `null` where the result does not say (it has none, is gone, or the answer fails).
+  const readNormalize = async (jobID: string): Promise<NormalizeRun[] | null> => {
+    try {
+      return normalizeRuns((await fetchResults(jobID)).result?.properties?.['earthx:normalize']);
+    } catch {
+      return null;
+    }
   };
 
   const updateJob = (jobID: string, patch: Partial<JobEntry>) => {
@@ -1216,6 +1276,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           : null,
         statistics: resultStats(properties),
         bands: resultBands(properties, get().jobs.find((j) => j.jobID === jobID)?.order ?? null),
+        normalize: normalizeRuns(properties?.['earthx:normalize']),
       });
     } catch (error) {
       if (error instanceof HttpError && error.status === 410) {
@@ -1284,6 +1345,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       tiles: null,
       statistics: null,
       bands: [],
+      normalize: null,
     };
   };
 
@@ -1768,6 +1830,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         added = defaultName([...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
         values.name = added;
       } else if (op === 'normalize' && 'bands' in values) {
+        if ('method' in values) Object.assign(values, startValues());
         values.bands = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
       } else if (op === 'mask_values') {
         // The band to look at is proposed like that of a normalize step; "below" is where a threshold usually starts.
@@ -1922,6 +1985,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!layer?.result || block !== null || !job?.order) return void useAppStore.setState({ error: block ?? NO_COPY_TEXT });
       const { order } = job;
       const groupId = job.groupId ?? get().batches.find((b) => b.id === job.batchId)?.groupId ?? null;
+      // The numbers the result's job measured (NM4-71): in the properties of the result, which the panel has read when the job ended;
+      // asked for here where it has not. Only a chain with a statistical step needs them.
+      const measuring = order.steps.some((step) => step.op === 'normalize' && isStatistical(step.params.method));
+      const runs = measuring ? (job.normalize ?? (await readNormalize(job.jobID))) : null;
       const taken = await takeOrder(order, 'this result', (draft, notes) => ({
         // The area of the result is "Whole scene" here; "AOI only" is another AOI inside it. Its bands are in the list of the output,
         // none of them checked, as the bands of a scene are (Otto, 2026-10-31).
@@ -1936,6 +2003,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             locked: draft.steps.length,
             bands: [...draft.bands],
             notes,
+            ...lockedNumbers(draft, runs),
           },
         },
       }));
@@ -1964,6 +2032,25 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         whose: 'this layer',
       });
     },
+
+    ensureMeasures: (needs) => {
+      const fresh = needs.filter((need) => !get().measures.has(need.key) && !asking.has(need.key));
+      for (const need of fresh) asking.add(need.key);
+      void runPool(fresh, ESTIMATE_PARALLEL, new AbortController().signal, async (need) => {
+        let entry: MeasureEntry;
+        try {
+          entry = { state: 'ready', answer: await postAreaStatistics(need.datasetId, need.body) };
+        } catch (error) {
+          entry = { state: 'failed', reason: refusalMessage(error) };
+        }
+        asking.delete(need.key);
+        set((s) => {
+          const kept = [...s.measures].slice(-(NORMALIZE_MEASURES_KEPT - 1));
+          return { measures: new Map([...kept.filter(([key]) => key !== need.key), [need.key, entry]]) };
+        });
+      });
+    },
+    retryMeasures: () => set((s) => ({ measures: new Map([...s.measures].filter(([, entry]) => entry.state !== 'failed')) })),
 
     reviewOrder: async () => {
       const view = orderView(useAppStore.getState(), get());
@@ -2348,7 +2435,7 @@ function startLook(
 ): { range: PreviewRange | null; bandRanges: Record<string, PreviewRange>; shownBand: string | null } {
   const own = handRangeOf(p);
   if (view.output.length <= 1) return { range: own, bandRanges: {}, shownBand: null };
-  const plan = planPreview(p.steps, view.info);
+  const plan = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
   const band = plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
   // The colour picture has no colormap, whatever the fields of the range hold.
   const kept = own && band === RGB ? { ...own, colormap: '' } : own;
@@ -2362,12 +2449,12 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   const app = useAppStore.getState();
   const view = orderView(app, p);
   if (!view.info || !view.pass || view.outside || processBlockReason(view.dataset, sceneCountOf(app, p)) !== null) return null;
-  const full = planPreview(p.steps, view.info);
+  const full = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
   if (full.state !== 'ready') return null;
   const plan = limit === undefined ? full : shortenPlan(full, limit);
   if (plan === null) return null;
   const jobs = view.parts.map((part) => part.unit.items);
-  const order = view.parts[0]?.order ?? null;
+  const order = view.built?.previewOrder ?? null;
   // The map reads what the band it shows needs, not all that the order reads (adr/0020 §4, §10).
   const read = previewReadOf(view, plan, p.shown);
   const args = {
@@ -2410,6 +2497,9 @@ function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'
 // expression asks for no measure per key, nor a refusal twice). The key of an area measure is the text of the order,
 // which carries the AOI: it lives here in memory and goes into no URL, storage, log or message.
 const MEASURES_KEPT = 50;
+// The same for the measures of the `normalize` steps (NM4-11b), and the questions on their way: `ensureMeasures` asks each once.
+const NORMALIZE_MEASURES_KEPT = 50;
+const asking = new Set<string>();
 const measures = new Map<string, PreviewMeasure>();
 const failedMeasures = new Set<string>();
 const measuring = new Map<string, Promise<PreviewMeasure | null>>();
@@ -2687,6 +2777,7 @@ useProcessingStore.subscribe((s, prev) => {
     s.area !== prev.area ||
     s.runAs !== prev.runAs ||
     s.steps !== prev.steps ||
+    s.measures !== prev.measures ||
     s.output !== prev.output ||
     s.dtype !== prev.dtype ||
     s.shown !== prev.shown ||

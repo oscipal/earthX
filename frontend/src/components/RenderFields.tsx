@@ -9,6 +9,9 @@ import { UNIT_LABELS, UNIT_TIP, type RangeUnit } from '../percentRange';
 import { COLORMAPS } from '../render';
 import BandSelect, { type BandOption } from './BandSelect';
 
+// What the box of the colormap says where a picture of three bands has none: it stays in its place, locked, and says "none" (Otto, 1.11.2026).
+export const NO_COLORMAP = '— none —';
+
 export interface IndexOption {
   name: string;
   tip: string;
@@ -62,10 +65,11 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
         <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
       )}
       {colormap && (
-        <label className="vc-field">
+        <label className="vc-field" title={'fixed' in colormap ? colormap.title : undefined}>
           <span>Colormap</span>
           {'fixed' in colormap ? (
-            <select value="" title={colormap.title} onChange={() => undefined}>
+            // Not left out: the field keeps its place whatever band is drawn, locked, and its tooltip says why (NM4-54 part 5).
+            <select value="" disabled aria-label="Colormap" title={colormap.title} onChange={() => undefined}>
               <option value="">{colormap.fixed}</option>
             </select>
           ) : (
