@@ -4,7 +4,7 @@
 **Stufe B:** Erst kommt der Plan im Draft-PR (Konzept, Varianten, Empfehlung, Schnitt in Teile), Otto gibt ihn frei, dann setzt dieselbe Session **Teil 1** um. Die weiteren Teile bekommen je eine neue Session und einen eigenen PR.
 **Modell:** Opus für Konzept und Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** nach dem Merge von NM4-54 (#272). Vor NM4-56 (Paket Oberfläche). Frontend-Aufgabe: höchstens zwei Frontend-Sessions gleichzeitig, höchstens zwei Stufe-B-Sessions gleichzeitig. Teil 2 (Processing-Panel) nicht gleichzeitig mit dem Frontend-Teil von NM4-71.
-**Startsatz:** „Führe Aufgabe UI-03 aus `docs/plans/ui-03-seitenleiste-und-processing.md` aus.“
+**Startsatz:** „Führe Aufgabe UI-03 aus `docs/plans/vp3/ui-03-seitenleiste-und-processing.md` aus.“
 
 ## 1. Wunsch (Otto, 01.11.2026, wörtlich)
 
