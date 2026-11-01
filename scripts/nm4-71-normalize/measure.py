@@ -23,7 +23,8 @@ Variants, each in a child process of its own (cold, as a worker): ``job`` today'
 ``preview`` the same with today's limit of 2048² (the route of NM4-19); ``workfile`` a prototype of option (a): the
 steps before ``normalize`` into a ``float64`` work file while counting the bands of the step over the AOI, the exact
 percentiles refined from that file, then the rest of the chain from it; ``truth`` every valid value of the area held
-and sorted, for the error of the histogram. One JSON line per run: seconds (per phase), peak RSS (``ru_maxrss``), the
+and sorted, for the error of the histogram; ``disk`` the real run of ``normalize`` version 4 (cases ``<area>-v4-1``, ``<area>-v4-4``)
+with the highest level of its work directory against ``disk_needed``. One JSON line per run: seconds (per phase), peak RSS (``ru_maxrss``), the
 bytes GDAL downloaded (``CPL_VSIL_SHOW_NETWORK_STATS``) and the measured numbers. ``NM4_71_WORK_COMPRESS=none``
 writes the work file of ``workfile`` without compression (the job's files are deflate).
 """
@@ -54,12 +55,20 @@ ONE = ["red"]
 FOUR = ["blue", "green", "red", "nir"]
 INDEX_BANDS = ["blue", "green", "red", "nir", "swir16", "NDVI"]
 NDVI = {"op": "band_math", "op_version": 2, "params": {"expression": "(nir-red)/(nir+red)", "name": "NDVI"}}
-VARIANTS = ("job", "exact", "preview", "workfile", "truth")
+VARIANTS = ("job", "exact", "preview", "workfile", "truth", "disk")
 #: What a case of cost (``<area>-1``, ``<area>-4``) and a case of deviation (``<area>-idx``) run.
 _COST_VARIANTS = ("job", "exact", "workfile")
 _INDEX_VARIANTS = ("exact", "preview", "truth")
+_V4_VARIANTS = ("disk",)
 PERCENTS = (2, 25, 50, 75, 98)
 UNLIMITED = 10**12
+
+
+def _normalize_v4(bands: list[str]) -> dict:
+    """The step as the panel sends it since NM4-71: version 4, no numbers; the job measures them."""
+    step = _normalize(bands)
+    params = {key: value for key, value in step["params"].items() if key != "measured"}
+    return {**step, "op_version": 4, "params": params}
 
 
 def _normalize(bands: list[str]) -> dict:
@@ -85,6 +94,8 @@ def _cases() -> dict[str, tuple[str | None, list[dict], list[str]]]:
         cases[f"{area}-1"] = (area, [_normalize(ONE)], ONE)
         cases[f"{area}-4"] = (area, [_normalize(FOUR)], FOUR)
         cases[f"{area}-idx"] = (area, [NDVI], INDEX_BANDS)
+        cases[f"{area}-v4-1"] = (area, [_normalize_v4(ONE)], ONE)
+        cases[f"{area}-v4-4"] = (area, [_normalize_v4(FOUR)], FOUR)
     return cases
 
 
@@ -384,6 +395,51 @@ def _truth(recipe) -> dict:
     return {"seconds": round(time.perf_counter() - started, 2), "numbers": numbers}
 
 
+def _disk(recipe, workdir: Path) -> dict:
+    """The real run of version 4 with the highest level of the work directory, sampled in ``progress`` and by a thread."""
+    import threading
+
+    from earthx.processing.core import run
+    from earthx.processing.plan import disk_needed
+
+    peak = 0
+
+    def level() -> None:
+        nonlocal peak
+        size = 0
+        for entry in os.scandir(workdir):
+            try:
+                size += entry.stat().st_size
+            except FileNotFoundError:
+                pass
+        peak = max(peak, size)
+
+    done = threading.Event()
+
+    def sample() -> None:
+        while not done.wait(0.2):
+            level()
+
+    sampler = threading.Thread(target=sample, daemon=True)
+    sampler.start()
+    started = time.perf_counter()
+    try:
+        result = run(recipe, workdir=workdir, progress=lambda done_blocks, total: level(), operators=REGISTRY)
+    finally:
+        done.set()
+        sampler.join()
+    seconds = time.perf_counter() - started
+    level()
+    return {
+        "seconds": round(seconds, 2),
+        "pixels": result.meta.width * result.meta.height,
+        "peak_disk_mb": round(peak / 1e6, 1),
+        "disk_needed_mb": round(disk_needed(recipe, REGISTRY) / 1e6, 1),
+        "result_mb": round(result.path.stat().st_size / 1e6, 2),
+        "measured": result.properties.get("earthx:normalize"),
+    }
+
+
 def _child(path: Path, variant: str) -> None:
     from earthx.processing.core import worker_environment
     from earthx.processing.recipe import parse_recipe
@@ -400,6 +456,8 @@ def _child(path: Path, variant: str) -> None:
             line = _area(recipe, MAX_AREA_PIXELS)
         elif variant == "workfile":
             line = _workfile(recipe, Path(workdir))
+        elif variant == "disk":
+            line = _disk(recipe, Path(workdir))
         else:
             line = _truth(recipe)
     line["rss_mb"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
@@ -425,7 +483,11 @@ def _run(directory: Path, cases: list[str], variants: list[str]) -> None:
     env = {**os.environ, "CPL_VSIL_SHOW_NETWORK_STATS": "YES"}
     for name in cases:
         for variant in variants:
-            if variant not in (_INDEX_VARIANTS if name.endswith("-idx") else _COST_VARIANTS):
+            if name.endswith("-idx"):
+                wanted = _INDEX_VARIANTS
+            else:
+                wanted = _V4_VARIANTS if "-v4-" in name else _COST_VARIANTS
+            if variant not in wanted:
                 continue
             child = subprocess.run(
                 [sys.executable, "-W", "ignore", __file__, "_child", str(directory / f"{name}.json"), variant],
