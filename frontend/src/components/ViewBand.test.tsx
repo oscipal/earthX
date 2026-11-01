@@ -172,7 +172,7 @@ describe('the dropdown "Band" of the view', () => {
 describe('choosing a band', () => {
   it('puts the colormap and the range of a band in the fields, measured from the scene, and draws nothing until "Apply"', async () => {
     mount();
-    expect(colormapSelect().options[0].textContent).toBe('RGB'); // fixed: three bands have no colormap
+    expect(colormapSelect().options[0].textContent).toBe('— none —'); // fixed: three bands have no colormap
     choose('band:B04');
     await settle();
     expect(select().value).toBe('band:B04');
@@ -337,17 +337,23 @@ describe('a layer pinned with a band', () => {
   });
 
   // Otto, 1.11.2026 (Browsertest zu #272): the settings of a layer change the layer itself, at its place, and are kept with "Save" only.
-  it('is drawn from another band at once, as the same layer at the same place, and from RGB again', async () => {
+  // Otto, 1.11.2026: a band chosen in the settings of a layer is seen once "Apply" is pressed, as in the view.
+  it('is drawn from another band once "Apply" is pressed, as the same layer at the same place, and from RGB again', async () => {
     await pinWithBand();
     const [first] = store().layers;
     expect(layerAssets()).toEqual(['B04']);
     choose('band:B08');
+    await settle();
+    expect(layerAssets()).toEqual(['B04']); // chosen, not drawn
+    apply();
     await settle();
     expect(store().layers.map((l) => l.id)).toEqual([first.id]); // no layer is added, none behind it
     expect(layerAssets()).toEqual(['B08']);
     expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B08' });
     expect(layerTiles().every((url) => url.includes('B08'))).toBe(true);
     choose('');
+    await settle();
+    apply();
     await settle();
     expect(store().layers.map((l) => l.id)).toEqual([first.id]);
     expect(layerAssets()).toEqual(['visual']);
@@ -368,6 +374,8 @@ describe('a layer pinned with a band', () => {
     await pinWithBand();
     choose('band:B08');
     await settle();
+    apply();
+    await settle();
     expect(layerAssets()).toEqual(['B08']);
     act(() => store().exitFocus());
     expect(layerAssets()).toEqual(['B04']);
@@ -377,6 +385,8 @@ describe('a layer pinned with a band', () => {
     act(() => store().selectLayer(store().layers[0].id));
     act(() => root.render(<ViewerControls />));
     choose('index:NDVI');
+    await settle();
+    apply();
     await settle();
     expect(store().layers[0].restore.appliedRender).toMatchObject({ index: 'NDVI' });
     act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
@@ -388,6 +398,8 @@ describe('a layer pinned with a band', () => {
   it('is kept with "Save": the settings close with the new picture', async () => {
     await pinWithBand();
     choose('band:B08');
+    await settle();
+    apply();
     await settle();
     expect(container.querySelector('.vc-save')!.textContent).toBe('Save');
     expect(container.querySelector('.vc-save')!.getAttribute('aria-disabled')).toBeNull();
@@ -428,6 +440,8 @@ describe('a layer pinned with a band', () => {
   it('is drawn with an index from a band, and back, with no quicklook under the index', async () => {
     await pinWithBand();
     choose('index:NDVI');
+    await settle();
+    apply();
     await settle();
     expect(store().layers[0].restore.appliedRender).toMatchObject({ index: 'NDVI' });
     expect(store().layers[0].restore.appliedRender.band).toBeUndefined();

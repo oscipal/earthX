@@ -258,6 +258,14 @@ async function checkDraw(browser, theme, viewport) {
   // Another band for the layer: "Apply to all" keeps it, the layer is drawn from that band's asset, and no job is started.
   await field(page).locator('select').selectOption('band:red');
   await page.waitForTimeout(800);
+  // Chosen, not drawn: the layer is as it was until "Apply" (Otto, 1.11.2026); then it is this layer that changes, at its place.
+  const before = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers.map((l) => [l.id, l.restore.appliedRender.band ?? null]));
+  if (JSON.stringify(before) !== JSON.stringify([[before[0][0], null]])) problems.push(`the layer changed before "Apply": ${JSON.stringify(before)}`);
+  await page.locator('.scene-view .vc-apply').click();
+  await page.waitForTimeout(1500);
+  const count = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers.length);
+  if (count !== 1) problems.push(`${count} layers after a band was applied in the settings of a layer`);
+  if ((await page.locator('.scene-view .vc-save').textContent()) !== 'Save') problems.push('the button of the settings of a layer is not "Save"');
   await page.locator('.scene-view .vc-save').click();
   await page.waitForTimeout(1500);
   const banded = await page.evaluate(async () => {
@@ -270,6 +278,8 @@ async function checkDraw(browser, theme, viewport) {
   // And the index again, as the rest of the check goes on with it.
   await field(page).locator('select').selectOption('index:NDWI');
   await page.waitForTimeout(500);
+  await page.locator('.scene-view .vc-apply').click();
+  await page.waitForTimeout(1500);
   await page.locator('.scene-view .vc-save').click();
   await page.waitForTimeout(1500);
 

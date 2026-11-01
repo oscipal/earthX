@@ -251,7 +251,8 @@ describe('the dataset', () => {
       dataset()!.dispatchEvent(new Event('change', { bubbles: true }));
     });
     expect(useAppStore.getState().shownImage).toContain('dem');
-    expect(title()).toBe('Copernicus DEM · AOI crop');
+    expect(title()).toBe('Temporary');
+    expect((document.querySelector('.vc-title') as HTMLElement).title).toBe('Copernicus DEM · cropped to the AOI');
   });
 });
 
@@ -319,11 +320,11 @@ describe('"Apply to all" for the images of a dataset', () => {
 describe('an image of three bands', () => {
   const colormapOptions = () => [...(colormapField()!.parentElement!.querySelector('select') as HTMLSelectElement).options].map((o) => o.textContent);
 
-  it('has the box of the colormap with RGB in it and nothing else to choose, and the fields and buttons stay', () => {
+  it('has the box of the colormap with "none" in it, locked, and nothing else to choose, and the fields and buttons stay', () => {
     s2TrueColor = ['red', 'green', 'blue'];
     mount(THREE);
     expect(colormapField()).toBeDefined();
-    expect(colormapOptions()).toEqual(['RGB']);
+    expect(colormapOptions()).toEqual(['— none —']);
     expect(container.querySelectorAll('.vc-num input')).toHaveLength(2);
     expect(button('Apply')).toBeDefined();
     expect([...container.querySelector('.vc-render')!.children].map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'DIV']);
@@ -337,7 +338,7 @@ describe('an image of three bands', () => {
     const single = place(colormapField());
     s2TrueColor = ['red', 'green', 'blue'];
     mount({ ...THREE, D: info('dem') });
-    expect(colormapOptions()).toEqual(['RGB']);
+    expect(colormapOptions()).toEqual(['— none —']);
     expect(place(colormapField())).toBe(single);
     act(() => useAppStore.getState().chooseViewDataset('dem'));
     expect(colormapOptions()[0]).toBe('— none —');

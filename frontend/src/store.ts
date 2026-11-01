@@ -2558,8 +2558,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Only the fields change: the map draws it once "Apply" is pressed, like the colormap and the range.
       return pendingFieldsOf(preset ? indexLookOf(preset) : plain);
     });
-    // In the settings of a layer the picture is the layer's: it changes at once (Otto, 1.11.2026).
-    if (get().viewOfLayer) void get().applyRender();
   },
   // One band of the data in place of the standard picture or an index: only the fields change, and the range is measured for the
   // band as for any other pick, so that "Apply" has values to draw (NM4-45). The image is drawn from the asset of the band once
@@ -2572,16 +2570,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (band === null) {
       const saved = s.savedLooks[shown.datasetId];
       set(pendingFieldsOf(saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId)));
-      if (get().viewOfLayer) void get().applyRender();
       return;
     }
     const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);
     if (!bandAssetsOf(item, collection).includes(band)) return;
     set({ pendingBand: band, pendingIndex: '', pendingColormapName: '', pendingVmin: '', pendingVmax: '' });
-    // The range is measured first; in the settings of a layer the band is then drawn at once (Otto, 1.11.2026).
-    void get().autoStretch().then(() => {
-      if (get().viewOfLayer && get().pendingBand === band) void get().applyRender();
-    });
+    void get().autoStretch();
   },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
@@ -2598,8 +2592,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     } else {
       set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
     }
-    // The settings of a pinned layer change the layer itself, at its place in the list (Otto, 1.11.2026): what is applied is seen at once
-    // and kept only with "Save"; closing the settings puts the saved look back (`revertViewLayer`).
+    // The settings of a pinned layer change the layer itself, at its place in the list (Otto, 1.11.2026): what is applied is seen, as in
+    // the view, once "Apply" is pressed (also a band); it is kept only with "Save", and closing the settings puts the saved look back
+    // (`revertViewLayer`).
     const now = get();
     const layer = now.viewOfLayer ? layerOfView(now.layers, { ...now, aoi: now.viewAoi }) : null;
     if (!layer) return;

@@ -262,7 +262,7 @@ describe('"Apply" and "Save" of RGB', () => {
     await openControls();
     const select = colormapField()!.querySelector('select')!;
     expect(select.disabled).toBe(true);
-    expect(select.selectedOptions[0].textContent).toBe('RGB');
+    expect(select.selectedOptions[0].textContent).toBe('— none —');
     expect([input('vmin').value, input('vmax').value]).toEqual(['0.02', '0.7']);
   });
 

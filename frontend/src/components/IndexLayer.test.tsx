@@ -161,16 +161,18 @@ describe('the view of a layer of the layer manager', () => {
     expect(indexField()!.querySelector('select')!.disabled).toBe(false);
   });
 
-  it('changes the picture of the layer at once, as the same layer: another index, then the standard picture again', async () => {
+  it('changes the picture of the layer with "Apply", as the same layer: another index, then the standard picture again', async () => {
     setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1' });
     useAppStore.getState().chooseViewIndex('NDWI');
     await act(async () => { await Promise.resolve(); });
+    expect(useAppStore.getState().layers[0].restore.appliedRender).toEqual(NDVI); // chosen, not drawn
+    await act(async () => { await useAppStore.getState().applyRender(); });
     expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['L1']);
     const kept = useAppStore.getState().layers[0];
     expect(kept.restore.appliedRender).toMatchObject({ index: 'NDWI', colormapName: 'rdbu', rescale: '-1,1' });
     expect(kept.overlays.filter((o) => o.kind === 'raster').every((o) => o.kind === 'raster' && o.tileUrl.includes('NDWI'))).toBe(true);
     useAppStore.getState().chooseViewIndex(null);
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await useAppStore.getState().applyRender(); });
     const plain = useAppStore.getState().layers[0];
     expect(plain.restore.appliedRender.index).toBeUndefined();
     expect(plain.overlays.filter((o) => o.kind === 'raster').every((o) => o.kind === 'raster' && !o.tileUrl.includes('band_math'))).toBe(true);

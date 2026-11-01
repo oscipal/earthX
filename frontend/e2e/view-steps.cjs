@@ -195,7 +195,7 @@ async function run(browser, { theme, viewport }) {
   // 4. The dataset.
   await page.selectOption('select[aria-label="Dataset"]', 'dem');
   await expectColour('the dropdown shows the elevation tile', 'DEM_1');
-  if (!(await page.locator('.vc-title').first().textContent()).includes('Copernicus DEM')) problems.push('the head does not name the elevation model');
+  if (!((await page.locator('.vc-title').first().getAttribute('title')) ?? '').includes('Copernicus DEM')) problems.push('the tooltip of the head does not name the elevation model');
   const demBox = await colormapBox();
   if (!demBox || demBox.options[0] !== '— none —') problems.push(`the elevation image has no colormap box: ${JSON.stringify(demBox)}`);
   if (demBox && rgbBox && (Math.abs(demBox.x - rgbBox.x) > 1 || Math.abs(demBox.y - rgbBox.y) > 1)) problems.push(`the colormap box moved: ${JSON.stringify(rgbBox)} -> ${JSON.stringify(demBox)}`);

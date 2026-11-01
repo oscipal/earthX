@@ -159,7 +159,7 @@ describe('the settings of a result layer', () => {
     expect(names()).toEqual(['Band', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     const colormap = [...container.querySelectorAll<HTMLLabelElement>('label.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!;
     expect(colormap.querySelector('select')!.disabled).toBe(true);
-    expect(colormap.querySelector('select')!.selectedOptions[0].textContent).toBe('RGB');
+    expect(colormap.querySelector('select')!.selectedOptions[0].textContent).toBe('— none —');
     expect(colormap.title).toBe('True colour: three bands, no colormap');
     expect([...container.querySelectorAll<HTMLOptionElement>('.band-select option')].map((o) => o.textContent)).toEqual(['RGB', 'red', 'green', 'blue']);
   });

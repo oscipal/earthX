@@ -18,7 +18,7 @@ import { RGB, RGB_LABEL } from '../processingBands';
 import { bandPlacesOfTileUrl, defaultRange, rangeOfTileUrl, renderOfRange, resultPathOfTileUrl } from '../resultLayer';
 import { useAppStore } from '../store';
 import AutoScaleButton from './AutoScaleButton';
-import RenderFields from './RenderFields';
+import RenderFields, { NO_COLORMAP } from './RenderFields';
 import Tip from './Tip';
 import OpacityRow from './OpacityRow';
 import { useEscClose } from './useEscClose';
@@ -184,7 +184,7 @@ function Controls({ layer }: { layer: MapLayer }) {
               vmin={unit === 'percent' ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } } : { value: draft.vmin, onChange: (vmin) => edit({ vmin }) }}
               vmax={unit === 'percent' ? { value: typed.high, onChange: (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } } : { value: draft.vmax, onChange: (vmax) => edit({ vmax }) }}
               unit={{ value: unit, onChange: setUnit }}
-              colormap={info.band === RGB ? { fixed: RGB_LABEL, title: 'True colour: three bands, no colormap' } : { value: draft.colormap, onChange: (colormap) => edit({ colormap }) }}
+              colormap={info.band === RGB ? { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' } : { value: draft.colormap, onChange: (colormap) => edit({ colormap }) }}
             />
             <div className="vc-buttons">
               <AutoScaleButton title={unit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Put the range of the statistics of this result in the fields'} busy={measuring} onClick={auto} />

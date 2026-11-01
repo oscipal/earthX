@@ -9,6 +9,9 @@ import { UNIT_LABELS, UNIT_TIP, type RangeUnit } from '../percentRange';
 import { COLORMAPS } from '../render';
 import BandSelect, { type BandOption } from './BandSelect';
 
+// What the box of the colormap says where a picture of three bands has none: it stays in its place, locked, and says "none" (Otto, 1.11.2026).
+export const NO_COLORMAP = '— none —';
+
 export interface IndexOption {
   name: string;
   tip: string;

@@ -162,7 +162,7 @@ describe('the dropdown "Band" with the presets', () => {
 
   it('shows the colormap and the range of the preset in the fields, and a colormap to choose where the dataset draws RGB', () => {
     mount();
-    expect([...colormapSelect().options].map((o) => o.textContent)).toEqual(['RGB']);
+    expect([...colormapSelect().options].map((o) => o.textContent)).toEqual(['— none —']);
     choose('index:NDWI');
     expect(colormapSelect().value).toBe('rdbu');
     expect([...colormapSelect().options].map((o) => o.value)).toEqual(['', ...COLORMAPS]);

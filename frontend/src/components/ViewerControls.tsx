@@ -19,7 +19,6 @@ import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_T
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
-import { viewKind } from '../viewKind';
 import { layerShownName } from '../layerName';
 import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
@@ -29,7 +28,7 @@ import Eye from './Eye';
 import OpacityRow from './OpacityRow';
 import { useEscClose } from './useEscClose';
 import type { BandOption } from './BandSelect';
-import RenderFields from './RenderFields';
+import RenderFields, { NO_COLORMAP } from './RenderFields';
 
 export default function ViewerControls() {
   const pendingColormapName = useAppStore((s) => s.pendingColormapName);
@@ -179,7 +178,8 @@ export default function ViewerControls() {
       ) : (
       <div className="vc-head">
         <span className="vc-title" title={title}>
-          {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
+          {/* The view of the search is a temporary picture, not a layer (Otto, 1.11.2026); what it shows stands in the tooltip. */}
+          Temporary
         </span>
         {datasetIds.length > 1 && shown && (
           <select
@@ -251,7 +251,7 @@ export default function ViewerControls() {
           vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
           unit={{ value: pendingUnit, onChange: setPendingUnit }}
           // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
-          colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: 'RGB', title: 'True colour: three bands, no colormap' }}
+          colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' }}
           placeholder="auto"
         />
         <div className="vc-buttons">
