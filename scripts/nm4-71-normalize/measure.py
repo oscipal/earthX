@@ -486,7 +486,7 @@ def _run(directory: Path, cases: list[str], variants: list[str]) -> None:
             if name.endswith("-idx"):
                 wanted = _INDEX_VARIANTS
             else:
-                wanted = _V4_VARIANTS if "-v4-" in name else _COST_VARIANTS
+                wanted = _V4_VARIANTS if "-v4-" in name else (*_COST_VARIANTS, "disk")
             if variant not in wanted:
                 continue
             child = subprocess.run(
