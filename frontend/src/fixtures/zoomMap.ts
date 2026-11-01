@@ -1,4 +1,4 @@
-import { TILE_LEVEL_AHEAD } from '../mosaic';
+import { tileLevelAhead } from '../tileSize';
 import { liveMap } from './liveMap';
 
 // `raster-opacity` at a map zoom: a number, or a zoom step (`['step', ['zoom'], below, from, above]`).
@@ -11,8 +11,9 @@ function opacityAt(opacity: unknown, zoom: number): number {
 // A `liveMap` that also says what MapLibre would draw at a map zoom, and holds back "the map is idle" until the test
 // lets it: tiles that load late are tiles the test has not yet called idle for.
 //
-// A raster source is asked for level L from map zoom L - 1.5 (`mosaic.ts::TILE_LEVEL_AHEAD`) and never below; a layer's
-// `maxzoom` hides it from there; an image is drawn at the opacity its expression gives at that zoom.
+// A raster source is asked for level L from map zoom L - 1.5 (256-px tiles) or L - 0.5 (512-px ones,
+// `tileSize.ts::tileLevelAhead`) and never below; a layer's `maxzoom` hides it from there; an image is drawn at the
+// opacity its expression gives at that zoom.
 export function zoomMap(initial?: string[]) {
   const live = liveMap(initial);
   const waiting: (() => void)[] = [];
@@ -25,10 +26,11 @@ export function zoomMap(initial?: string[]) {
   const drawsAt = (id: string, zoom: number): boolean => {
     const layer = live.layers.get(id);
     if (!layer?.source || !live.visible(id)) return false;
-    const source = live.sources.get(layer.source) as { type: string; minzoom?: number } | undefined;
+    const source = live.sources.get(layer.source) as { type: string; minzoom?: number; tileSize?: number } | undefined;
     if (!source) return false;
     if (layer.maxzoom !== undefined && zoom >= layer.maxzoom) return false;
-    if (source.type === 'raster' && zoom < (source.minzoom ?? 0) - TILE_LEVEL_AHEAD) return false;
+    // MapLibre's own tile size for a raster source that names none is 512.
+    if (source.type === 'raster' && zoom < (source.minzoom ?? 0) - tileLevelAhead(source.tileSize ?? 512)) return false;
     return opacityAt(layer.paint['raster-opacity'], zoom) > 0;
   };
   // The map layers that show something at this zoom, bottom to top.
