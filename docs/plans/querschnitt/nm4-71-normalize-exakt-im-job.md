@@ -400,3 +400,10 @@ Der Höchststand liegt beim Schreiben des COG, nicht beim Messen; die Arbeitsdat
 
 - **A — Platz bei der Annahme.** 1. Wie bisher: `disk_needed` geht mit dem Auftrag, `worker` lehnt vor dem Start ab, wenn der Platz fehlt. **(Empfehlung)** 2. Zusätzlich eine feste Obergrenze bei der Annahme (Wert wäre festzulegen, z. B. 20 GB).
 - **B — Methodentext mit Zahlen.** 1. So lassen: Zahlen in `earthx:normalize`, der Text sagt, wie gemessen wurde. **(Empfehlung)** 2. Methodentext nach dem Lauf neu schreiben.
+
+## 17. Antworten (Otto, 01.11.2026, zu #273)
+
+- **A — Platz bei der Annahme:** Option 1, wie bisher (`disk_needed` mit dem Auftrag, `worker` prüft den freien Platz vor dem Start); keine feste Obergrenze.
+- **B — Methodentext mit Zahlen:** Option 1, so lassen; die Zahlen stehen in `earthx:normalize`.
+- **Auslegungen aus §16:** angenommen.
+- **Replay-Test des Wolkenfilters** (`test_aoi_cloud_filter_live`, „each scene is read once“): nicht anfassen, Backlog 68.
