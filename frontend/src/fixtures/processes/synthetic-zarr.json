@@ -386,7 +386,7 @@
           },
           "step_normalize_v4": {
             "additionalProperties": false,
-            "description": "Rescale the values of the bands named: a fixed range, two percentiles, a z-score, or the median and the interquartile range.",
+            "description": "Rescale the values of the bands named: a fixed range, two percentiles, a z-score, or the median and the interquartile range. The job measures the numbers of the last three exactly over the AOI.",
             "properties": {
               "op": {
                 "const": "normalize"
@@ -396,7 +396,7 @@
               },
               "params": {
                 "additionalProperties": false,
-                "description": "The step of version 4: ``method``, the ``bands`` it converts, and the fields of that method, all given (B10).\n\nOne model for all four methods; the fields of the others stay out (:meth:`_method`), so a recipe says exactly\nwhat its method needs.\n\nThe numbers of ``percentile``, ``zscore`` and ``robust`` are measured in the run, not in the recipe.",
+                "description": "The step of version 4: ``method``, the ``bands`` it converts, and the fields of that method, all given (B10).\n\nThe fields of version 3 without ``measured``. A statistical method (``percentile``, ``zscore``, ``robust``) is not\ngiven its numbers: the job counts the bands over the AOI at full resolution and takes the exact numbers\nfrom that count (NM4-71). ``linear`` measures nothing. Only a job runs this version.",
                 "properties": {
                   "bands": {
                     "description": "Names of the bands to convert, each once; the others of the stock are left as they are.",
@@ -527,7 +527,7 @@
                   "method",
                   "bands"
                 ],
-                "title": "NormalizeParamsV3",
+                "title": "NormalizeParamsV4",
                 "type": "object"
               }
             },
