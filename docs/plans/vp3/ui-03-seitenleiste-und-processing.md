@@ -73,6 +73,8 @@ Zum Processing-Manager: „Unübersichtliche Gruppen“, „eigentlich das Panel
 
 Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #272 (NM4-54) und #274. Belegstufen wie in UI-02: [P] Code oder Primärquelle gelesen, [M] in der Sitzung gemessen, [S] nur Zusammenfassung einer Websuche (vor einer Entscheidung gegenzuprüfen), [A] eigene Ableitung.
 
+**Abgrenzung zu UI-04 (Otto, 01.11.2026):** NM4-56 geht in UI-04 „Einheitlichkeit“ auf (`docs/plans/vp3/ui-04-einheitlichkeit.md`, kommt mit der nächsten Doku-Runde): Bestandsaufnahme über die ganze Oberfläche, Begriffsliste, Leitfaden `docs/ui/leitfaden.md`, Prüfungen gegen Rückfälle, Zahlenformat, weniger Text und schmale Fenster. **UI-03 legt die Tokens fest, UI-04 zieht sie überall durch.** Wo §3 und §4 oben NM4-56 nennen, gilt UI-04 (Originaltext bleibt stehen).
+
 **Vorgabe Otto (01.11.2026, zum Plan):** Die Regeln aus #272 gelten auch in der Seitenleiste: am Layer ist ein Band erst mit „Apply“ zu sehen, „Save“ speichert; „Temporary“ steht neben dem Titel der Ansicht wie umgesetzt; die Colormap bei RGB heißt „— none —“.
 
 ### 7.0 Kurzfassung
@@ -82,8 +84,8 @@ Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main`
 - **Processing und Seitenleiste** teilen sich den rechten Rand (Empfehlung V2, §7.2): das Processing-Panel liegt in derselben Spalte, breiter, und deckt die Einstellungen ab, solange es offen ist; beim Schließen sind sie wieder da. Frage 1.
 - **Unter 900 px:** die Seitenleiste wird ein Blatt von unten (von der Leiste bis zum rechten Rand, höchstens 55 % der Höhe, Griff zum Einklappen auf den Kopf), wie heute das Processing-Panel; Auswahl- und Zeitleiste liegen darüber (§7.2).
 - **Tokens** in einer neuen Datei `frontend/src/tokens.css`: Abstände 4/8/12/16/24/32, Schriftgrade 11/12/13/15/17, Radien 6/10/Pille, Linien, Steuerhöhe 28 px, Farben hell/dunkel (die heutigen Namen bleiben). Eine Schriftfamilie: System-Schrift, Ziffern gleich breit (Frage 4, ersetzt die Monospace-Regel des Prototyps).
-- **Schnitt:** UI-03a Seitenleiste + Tokens (diese Session), UI-03b Processing-Panel (nach #273), UI-03c Processing-Manager (nach UI-03b). NM4-56 behält Zahlenformat, weniger Text in den übrigen Panels und die drei Funde bei 320/360 px (§7.6).
-- **Fragen an Otto:** acht, am Ende (§7.8).
+- **Schnitt:** UI-03a Seitenleiste + Tokens (diese Session), UI-03b Processing-Panel (nach #273), UI-03c Processing-Manager (nach UI-03b). UI-04 zieht die Tokens durch die übrige Oberfläche und übernimmt Zahlenformat, weniger Text, Begriffsliste, Leitfaden und die drei Funde bei 320/360 px (§7.6).
+- **Fragen an Otto:** sieben offen, am Ende (§7.8); Frage 7 hat Otto mit UI-04 beantwortet.
 
 ### 7.1 Stand im Code [P]
 
@@ -193,7 +195,7 @@ Ein Bauteil `Inspector.tsx` mit drei Inhalten (Ansicht der Suche, angeheftete An
 
 - **Schrift (Frage 4):** Empfehlung System-Schrift überall mit `font-variant-numeric: tabular-nums` (Ziffern gleich breit, Zahlen stehen untereinander); Großschreibung und Sperrung nur noch für Abschnittsüberschriften. Das ersetzt die Monospace-Regel des Prototyps (Inventar, „HUD-Oberflächendesign“); die dunklen Tafeln und Farbtoken bleiben.
 - **Kleinster Grad 11 px** (heute 8–10 px an rund 34 Stellen): Lesbarkeit und Kontrast, im Inventar als Mangel vermerkt.
-- **Umfang je Teil:** Teil 1 legt alle Tokens an, stellt Seitenleiste, die gemeinsamen Bedienelemente (`.ghost-btn`, `.primary-btn`, `select`, Zahlfelder, `.pp-seg`, `.close-x`) und die Schrift um. Teil 2 und 3 stellen ihre Bereiche um. Die übrigen Panels (Suche, Layer-Manager, Ergebnisse) stellt NM4-56 um (Frage 7).
+- **Umfang je Teil:** Teil 1 legt alle Tokens an, stellt Seitenleiste, die gemeinsamen Bedienelemente (`.ghost-btn`, `.primary-btn`, `select`, Zahlfelder, `.pp-seg`, `.close-x`) und die Schrift um. Teil 2 und 3 stellen ihre Bereiche um. Die übrigen Panels (Suche, Layer-Manager, Ergebnisse, Menüs, Dialoge) stellt UI-04 um; dort kommen auch der Leitfaden und die Prüfungen gegen Rückfälle über die ganze Oberfläche hin. Der Token-Test von UI-03 ist so gebaut, dass UI-04 nur die Liste der geprüften Bereiche erweitert.
 
 ### 7.5 Recherche mit Quellen
 
@@ -205,16 +207,17 @@ Ein Bauteil `Inspector.tsx` mit drei Inhalten (Ansicht der Suche, angeheftete An
 2. **UI-03b, neue Session:** Processing-Panel breiter (`--sheet-wide-width`), Abschnitte Herkunft/Eingabe · Bandvorrat · Schritte · Ausgabe · Vorschau · Start, Schritte als Karten (Kopf: Name, Umbenennen, ↑ ↓, Entfernen; Inhalt im selben Raster). Erst nach dem Merge von #273 (NM4-71 ändert `ProcessingPanel.tsx`, `StepForm.tsx`, `NormalizeFields.tsx`) und nicht gleichzeitig mit einem Frontend-Teil von NM4-71.
 3. **UI-03c, neue Session nach UI-03b:** Processing-Manager: Gruppe als Kopfzeile mit Anzahl und Zustand, Jobs in gleicher Zeilenform mit festen Spalten (Status · Titel · Datum · Aktionen), je Zeile ein Hauptknopf (Download bzw. Retry/Restore) und „⋯“ für den Rest (heute schon `RowMenu`). Breite: das Panel links bleibt 340 px, außer Otto will den Manager breiter (Frage 8).
 
-**Konflikte:** #270 (NM4-29b) und #273 (NM4-71) berühren `ViewerControls`, `ResultControls`, `index.css` und `App.tsx` nicht [P, `git diff --stat`]; Teil 1 kann neben ihnen laufen. Teil 2 kollidiert mit #273. NM4-56 kommt nach UI-03 (Plan: „als letzte Frontend-Aufgabe vor M5, allein“).
+**Konflikte:** #270 (NM4-29b) und #273 (NM4-71) berühren `ViewerControls`, `ResultControls`, `index.css` und `App.tsx` nicht [P, `git diff --stat`]; Teil 1 kann neben ihnen laufen. Teil 2 kollidiert mit #273. UI-04 (mit NM4-56) kommt nach UI-03 und baut auf den Tokens auf; UI-03 ändert deshalb nach Teil 1 keine Werte der Tokens mehr ohne Frage an Otto.
 
-**Mit NM4-56 zusammen, nicht doppelt [A]:**
+**Grenze zu UI-04, nicht doppelt [A]:**
 
-| Thema | UI-03 | NM4-56 |
+| Thema | UI-03 | UI-04 |
 |---|---|---|
-| Zahlenformat (NM4-21) | nicht berührt; Felder zeigen weiter, was der Store liefert | eine Formatierfunktion für alle Anzeigen, auch in der Seitenleiste |
-| Weniger Text (NM4-22) | Seitenleiste, Processing-Panel und -Manager gleich nach der Regel (Erklärung hinter (i)/Tooltip) | übrige Panels; Bestandsaufnahme markiert die UI-03-Bereiche als erledigt |
+| Zahlenformat (NM4-21) | nicht berührt; Felder zeigen weiter, was der Store liefert | eine Formatierfunktion für alle Anzeigen, auch in der Seitenleiste (UI-04) |
+| Weniger Text (NM4-22) | Seitenleiste, Processing-Panel und -Manager gleich nach der Regel (Erklärung hinter (i)/Tooltip) | übrige Panels; die Bestandsaufnahme markiert die UI-03-Bereiche als erledigt |
 | Schmale Fenster | Seitenleiste als Blatt, Leiste unten über dem Blatt, Zoomknöpfe | die drei Funde aus Punkt 58 (320 px Control-Menü, Ebenenliste über Statusleiste, Statusmeldung) |
-| Tokens | anlegen; Seitenleiste, Bedienelemente, Processing | übrige Panels umstellen (Frage 7) |
+| Tokens | festlegen (`tokens.css`); Seitenleiste, gemeinsame Bedienelemente, Schrift, Processing-Panel und -Manager | überall durchziehen, Prüfung gegen Rückfälle über die ganze Oberfläche |
+| Begriffe, Leitfaden | Wortlaut der Seitenleiste und des Processing wie heute (Englisch, kurz) | Begriffsliste, `docs/ui/leitfaden.md` (UI-03 liefert dafür §7.3 und §7.4 als Grundlage) |
 
 ### 7.7 Prüfung und Abnahme von Teil 1
 
@@ -230,5 +233,5 @@ Ein Bauteil `Inspector.tsx` mit drei Inhalten (Ansicht der Suche, angeheftete An
 4. **Schrift:** (1) System-Schrift überall, Ziffern gleich breit (**Empfehlung**, ersetzt Monospace aus dem Prototyp); (2) System-Schrift, Monospace für Zahlen und Kennungen; (3) Monospace bleibt.
 5. **Unter 900 px:** (1) Blatt von unten, höchstens 55 % Höhe, einklappbar (**Empfehlung**); (2) Blatt über die ganze Höhe.
 6. **Gesperrt statt weg in der Seitenleiste:** (1) Opacity in der Ansicht der Suche gesperrt („Add to layers to set the opacity“), am Layer ein Abschnitt „Actions“ mit ⇩ Download (**Empfehlung**); (2) Opacity und „Actions“ nur, wo sie gelten.
-7. **Tokens für die übrigen Panels:** (1) in NM4-56 (**Empfehlung**); (2) eigene Aufgabe nach UI-03; (3) in UI-03c.
+7. **Tokens für die übrigen Panels:** **entschieden (Otto, 01.11.2026):** UI-04 „Einheitlichkeit“ zieht sie überall durch; NM4-56 geht darin auf.
 8. **Processing-Manager (Teil 3):** (1) bleibt 340 px links, Ordnung über feste Spalten und „⋯“ (**Empfehlung**); (2) breiter (420 px), alle Panels links mit.
