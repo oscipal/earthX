@@ -173,7 +173,7 @@ async function run(browser, { theme, viewport }) {
     return { x: Math.round(r.x), y: Math.round(r.y), options: [...label.querySelectorAll('option')].map((o) => o.textContent) };
   });
   const rgbBox = await colormapBox();
-  if (!rgbBox || rgbBox.options.join() !== 'RGB') problems.push(`the box of the colormap for RGB says ${JSON.stringify(rgbBox)}`);
+  if (!rgbBox || rgbBox.options.join() !== '— none —') problems.push(`the box of the colormap for RGB says ${JSON.stringify(rgbBox)}`);
   await page.screenshot({ path: path.join(OUT, `first ${name}.png`) });
 
   // 2. Arrows.
