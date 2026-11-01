@@ -29,21 +29,52 @@ FIXTURE = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "earth_se
 DATASET = SENTINEL_2_L2A.dataset_id
 ITEM = "SYNTH_T00AAA_20260724T100000_L2A"
 BASE = f"/collections/{DATASET}/items/{ITEM}"
-DELAY = 0.03
 SIX = 6
 
 
-class Source:
-    """An item source that answers after a delay, counts its calls and can fail."""
+class Arrivals:
+    """Holds the source back until a number of requests have asked for an item, instead of for a stretch of time.
 
-    def __init__(self, item: dict[str, Any], failure: Exception | None = None) -> None:
+    "At the same moment" is what the fetches are bundled for, and a delay in the source only stands for it: when the
+    machine is busy, a request reaches the fetches after the first fetch has ended, and the source is asked twice with
+    nothing wrong in the code. ``wait`` returns once ``expected`` requests have come to ``ItemFetches.get``, however
+    long that takes. A request joins, or starts the fetch, in the same step in which it is counted, so the source
+    cannot answer between the count and the join.
+    """
+
+    def __init__(self, fetches: mosaic_tiles.ItemFetches, monkeypatch: pytest.MonkeyPatch, expected: int) -> None:
+        self._expected = expected
+        self._arrived = 0
+        self._all = asyncio.Event()
+        get = fetches.get
+
+        async def counting(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            self._arrived += 1
+            if self._arrived >= self._expected:
+                self._all.set()
+            return await get(*args, **kwargs)
+
+        monkeypatch.setattr(fetches, "get", counting)
+
+    async def wait(self) -> None:
+        await self._all.wait()
+
+
+class Source:
+    """An item source that answers when its ``arrivals`` say so, counts its calls and can fail."""
+
+    def __init__(self, item: dict[str, Any], failure: Exception | None = None, arrivals: Arrivals | None = None) -> None:
         self.item = item
         self.failure = failure
+        self.arrivals = arrivals
         self.calls: list[tuple[str, str]] = []
 
     async def __call__(self, dataset: str, item_id: str) -> dict[str, Any]:
         self.calls.append((dataset, item_id))
-        await asyncio.sleep(DELAY)
+        if self.arrivals is None:
+            await asyncio.sleep(0)
+        else:
+            await self.arrivals.wait()
         if self.failure is not None:
             raise self.failure
         return self.item
@@ -67,6 +98,12 @@ def app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     return app
 
 
+@pytest.fixture
+def six(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> Arrivals:
+    """The source of a test waits for six requests."""
+    return Arrivals(app.state.earthx_item_fetches, monkeypatch, SIX)
+
+
 def client(app: FastAPI) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
@@ -76,8 +113,8 @@ async def statistics(http: httpx.AsyncClient, path: str = BASE) -> httpx.Respons
 
 
 class TestSixTilesOfOneColdScene:
-    async def test_the_item_is_fetched_once(self, app: FastAPI, item: dict[str, Any]) -> None:
-        source = Source(item)
+    async def test_the_item_is_fetched_once(self, app: FastAPI, item: dict[str, Any], six: Arrivals) -> None:
+        source = Source(item, arrivals=six)
         app.state.earthx_item_source = source
         async with client(app) as http:
             responses = await asyncio.gather(*(statistics(http) for _ in range(SIX)))
@@ -85,13 +122,15 @@ class TestSixTilesOfOneColdScene:
         assert source.calls == [(DATASET, ITEM)]
         assert app.state.earthx_item_fetches._running == {}
 
-    async def test_other_scenes_are_fetched_each_once_and_not_waited_for(self, app: FastAPI, item: dict[str, Any]) -> None:
+    async def test_other_scenes_are_fetched_each_once_and_not_waited_for(
+        self, app: FastAPI, item: dict[str, Any], six: Arrivals
+    ) -> None:
         other = {**item, "id": "SYNTH_T00BBB_20260724T100000_L2A"}
         items = {ITEM: item, other["id"]: other}
 
         async def source(dataset: str, item_id: str) -> dict[str, Any]:
             calls.append(item_id)
-            await asyncio.sleep(DELAY)
+            await six.wait()
             return items[item_id]
 
         calls: list[str] = []
@@ -117,9 +156,9 @@ class TestSixTilesOfOneColdScene:
         ],
     )
     async def test_a_source_that_fails_gives_every_tile_the_same_answer(
-        self, app: FastAPI, item: dict[str, Any], failure: Exception, status: int, detail: str
+        self, app: FastAPI, item: dict[str, Any], six: Arrivals, failure: Exception, status: int, detail: str
     ) -> None:
-        source = Source(item, failure)
+        source = Source(item, failure, six)
         app.state.earthx_item_source = source
         async with client(app) as http:
             responses = await asyncio.gather(*(statistics(http) for _ in range(SIX)))
@@ -128,9 +167,9 @@ class TestSixTilesOfOneColdScene:
         assert app.state.earthx_item_fetches._running == {}
 
     async def test_an_item_that_is_not_the_one_asked_for_is_the_same_502_for_all(
-        self, app: FastAPI, item: dict[str, Any]
+        self, app: FastAPI, item: dict[str, Any], six: Arrivals
     ) -> None:
-        source = Source({**item, "id": "SOMETHING_ELSE"})
+        source = Source({**item, "id": "SOMETHING_ELSE"}, arrivals=six)
         app.state.earthx_item_source = source
         async with client(app) as http:
             responses = await asyncio.gather(*(statistics(http) for _ in range(SIX)))
@@ -162,9 +201,9 @@ class TestWithoutConcurrency:
 
 class TestTheHelperItself:
     async def test_six_calls_fetch_once_and_a_refusal_is_the_http_exception_it_always_was(
-        self, app: FastAPI, item: dict[str, Any]
+        self, app: FastAPI, item: dict[str, Any], six: Arrivals
     ) -> None:
-        source = Source(item, UpstreamError(404, "not found"))
+        source = Source(item, UpstreamError(404, "not found"), six)
         app.state.earthx_item_source = source
         results = await asyncio.gather(*(_fetch_item(app.state, DATASET, ITEM) for _ in range(SIX)), return_exceptions=True)
         assert all(isinstance(result, HTTPException) for result in results)
@@ -173,10 +212,10 @@ class TestTheHelperItself:
         }
         assert len(source.calls) == 1
 
-    async def test_an_unknown_dataset_is_a_404_for_all(self, app: FastAPI, item: dict[str, Any]) -> None:
+    async def test_an_unknown_dataset_is_a_404_for_all(self, app: FastAPI, item: dict[str, Any], six: Arrivals) -> None:
         from earthx.adapters.errors import UnknownCollection
 
-        source = Source(item, UnknownCollection("nope"))
+        source = Source(item, UnknownCollection("nope"), six)
         app.state.earthx_item_source = source
         results = await asyncio.gather(*(_fetch_item(app.state, "nope", ITEM) for _ in range(SIX)), return_exceptions=True)
         assert {(result.status_code, result.detail) for result in results} == {(404, "no dataset 'nope'")}  # type: ignore[union-attr]

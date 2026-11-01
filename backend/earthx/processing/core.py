@@ -445,7 +445,7 @@ def _pixel_kernels(image: ImageData, steps: tuple[PlannedStep, ...]) -> ImageDat
 
 def _transform_meta(meta: RasterMeta, steps: tuple[PlannedStep, ...]) -> RasterMeta:
     for step in steps:
-        meta = step.operator.transform(meta, step.params)
+        meta = step.advance(meta)
     return meta
 
 

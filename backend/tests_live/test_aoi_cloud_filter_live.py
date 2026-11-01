@@ -201,6 +201,9 @@ async def test_a_search_with_both_ranges_keeps_what_meets_both_and_reads_each_sc
         reads.append(path.item_id)
         return real(path, aoi, classes)
 
+    # The scenes the test before left measuring (a response keeps the ones it did not take) would call `counting` too,
+    # whenever their thread gets to run, and be counted as reads of this search.
+    await aoi_cloud_filter.settle()
     aoi_cloud_filter.measure_aoi_clouds = counting
     try:
         first = await run_filter(request, fetch_page=fetch_page, measure=measurer, limit=3, token=None)

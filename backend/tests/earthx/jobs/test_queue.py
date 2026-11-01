@@ -49,6 +49,21 @@ def _pick(conn: psycopg.Connection, worker: str = "w1", lease: float = 60.0):
     return claim(conn, worker=worker, lease_seconds=lease)
 
 
+def _failing(conn: psycopg.Connection, run_id: int, attempt: int, kind: str) -> tuple[str | None, float, float]:
+    """``finish_failed``, and the least and the most the backoff it set can have been, in seconds.
+
+    The database clock is read before and after the call. The wait is ``not_before`` minus the moment the call set it,
+    which lies between the two readings, so the bounds hold however long the call took. Measured against a reading
+    taken afterwards, the elapsed time shrinks the wait and a draw near the lower end of the jitter falls under the
+    limit of the test, the more often the busier the machine is.
+    """
+    before = conn.execute("SELECT clock_timestamp()").fetchone()[0]  # type: ignore[index]
+    status = finish_failed(conn, run_id, attempt, kind)
+    after = conn.execute("SELECT clock_timestamp()").fetchone()[0]  # type: ignore[index]
+    not_before = run_row(conn, run_id, "not_before")[0]
+    return status, (not_before - after).total_seconds(), (not_before - before).total_seconds()
+
+
 def _lease_runs_out(conn: psycopg.Connection, run_id: int) -> None:
     conn.execute(
         "UPDATE public.earthx_run SET lease_until = clock_timestamp() - interval '1 second' WHERE run_id = %s",
@@ -371,31 +386,27 @@ class TestRetry:
         run_id, _ = add_run(db)
         picked = _pick(db)
         assert picked is not None
-        assert finish_failed(db, run_id, picked.attempt, kind) == "accepted"
-        status, worker, lease, wait, progress, finished = run_row(
-            db,
-            run_id,
-            "status",
-            "worker",
-            "lease_until",
-            "extract(epoch FROM not_before - clock_timestamp())",
-            "progress",
-            "finished_at",
+        outcome, least, most = _failing(db, run_id, picked.attempt, kind)
+        assert outcome == "accepted"
+        status, worker, lease, progress, finished = run_row(
+            db, run_id, "status", "worker", "lease_until", "progress", "finished_at"
         )
         assert (status, worker, lease, progress, finished) == ("accepted", None, None, 0, None)
-        assert 24 <= wait <= 36, "30 s ± 20 % after the first attempt"
+        assert most >= 24 and least <= 36, "30 s ± 20 % after the first attempt"
         assert _pick(db) is None, "not before the backoff is over"
 
     def test_each_attempt_waits_twice_as_long(self, db: psycopg.Connection) -> None:
         run_id, _ = add_run(db)
-        waits = []
+        bounds = []
         for _ in range(2):
             db.execute("UPDATE public.earthx_run SET not_before = clock_timestamp()")
             picked = _pick(db)
             assert picked is not None
-            finish_failed(db, run_id, picked.attempt, "source_5xx")
-            waits.append(run_row(db, run_id, "extract(epoch FROM not_before - clock_timestamp())")[0])
-        assert 24 <= waits[0] <= 36 and 48 <= waits[1] <= 72
+            _, least, most = _failing(db, run_id, picked.attempt, "source_5xx")
+            bounds.append((least, most))
+        (first_least, first_most), (second_least, second_most) = bounds
+        assert first_most >= 24 and first_least <= 36, "30 s ± 20 % after the first attempt"
+        assert second_most >= 48 and second_least <= 72, "60 s ± 20 % after the second"
 
     def test_the_wait_has_jitter(self, db: psycopg.Connection) -> None:
         waits = set()
