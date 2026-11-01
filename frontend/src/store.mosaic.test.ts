@@ -323,6 +323,44 @@ describe('adding a mosaic to the layers', () => {
   });
 });
 
+describe('adding to the layers while the mosaic is on its way (NM4-12)', () => {
+  it('drops the pin without a word when the view is closed meanwhile', async () => {
+    let answerMosaic: (r: Response) => void = () => {};
+    tiler(() => new Promise<Response>((resolve) => (answerMosaic = resolve)));
+    const entering = useAppStore.getState().enterFocus(true);
+    await vi.waitFor(() => expect(useAppStore.getState().focusMode).toBe(true));
+    useAppStore.getState().addCurrentToLayers();
+    expect(useAppStore.getState().pinLoading).toBe(true);
+
+    useAppStore.getState().exitFocus();
+    answerMosaic(json(TILEJSON(['A', 'B', 'C'])));
+    await entering;
+    await vi.waitFor(() => expect(useAppStore.getState().pinLoading).toBe(false));
+    const s = useAppStore.getState();
+    expect(s.layers).toEqual([]);
+    expect([s.error, s.notice]).toEqual([null, null]);
+  });
+
+  it('clears an earlier message when the pin goes through, and a second click makes no second layer', async () => {
+    let answerMosaic: (r: Response) => void = () => {};
+    tiler(() => new Promise<Response>((resolve) => (answerMosaic = resolve)));
+    const entering = useAppStore.getState().enterFocus(true);
+    await vi.waitFor(() => expect(useAppStore.getState().focusMode).toBe(true));
+    useAppStore.setState({ error: 'Nothing to add — search and pick a time step first.' });
+
+    useAppStore.getState().addCurrentToLayers();
+    expect(useAppStore.getState().error).toBeNull();
+    useAppStore.getState().addCurrentToLayers();
+    useAppStore.getState().addAllToLayers();
+    answerMosaic(json(TILEJSON(['A', 'B', 'C'])));
+    await entering;
+    await vi.waitFor(() => expect(useAppStore.getState().layers).toHaveLength(1));
+    await vi.waitFor(() => expect(useAppStore.getState().pinLoading).toBe(false));
+    expect(useAppStore.getState().layers).toHaveLength(1);
+    expect(useAppStore.getState().error).toBeNull();
+  });
+});
+
 describe('adding a part of the view to the layers', () => {
   const pickTwo = async (cropToAoi: boolean, mosaic: (url: string) => Response | Promise<Response>) => {
     tiler(mosaic);
