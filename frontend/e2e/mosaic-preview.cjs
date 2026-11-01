@@ -100,7 +100,7 @@ async function check(browser, theme, viewport, scenario) {
       return json({ b1: { count: 900, min: -0.2, max: 0.9, percentile_2: -0.1, percentile_98: 0.8, unit: null } });
     }
     if (url.pathname.includes('/tiles/')) {
-      seen.itemTiles.push(url.pathname);
+      seen.itemTiles.push(url.pathname + url.search);
       return route.fulfill({ status: 200, contentType: 'image/png', body: TILE });
     }
     return json({ detail: 'not made up' }, 404);
@@ -186,7 +186,9 @@ async function check(browser, theme, viewport, scenario) {
     if (seen.statistics.length !== 1 || !seen.statistics[0].includes(`/items/${ORDER[0]}/statistics`)) problems.push(`the statistics asked: ${seen.statistics.join(', ')}; not once over ${ORDER[0]}`);
     const first = new URLSearchParams(seen.mosaicTiles[0] ?? '');
     if (JSON.stringify(first.getAll('item')) !== JSON.stringify([...SCENES].sort())) problems.push(`the mosaic tile names the scenes ${first.getAll('item')}`);
-    for (const key of first.keys()) if (!['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name'].includes(key)) problems.push(`the mosaic tile carries ${key}`);
+    for (const key of first.keys()) if (!['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name', 'band', 'tilesize'].includes(key)) problems.push(`the mosaic tile carries ${key}`);
+    // NM4-29b: the tiles of a mosaic are 512 px; those of a scene are not asked in a size (the tiler's 256).
+    if (seen.mosaicTiles.some((search) => new URLSearchParams(search).get('tilesize') !== '512')) problems.push('a mosaic tile does not ask for tilesize=512');
     if ((await badges().first().getAttribute('title')) !== null) problems.push('"Preview" carries a hint though the mosaic is drawn');
   } else {
     await page.waitForTimeout(2500);
@@ -199,6 +201,7 @@ async function check(browser, theme, viewport, scenario) {
     if (/Preview per scene|may differ from the job/.test(panel)) problems.push('the panel carries the hint as text');
     if (seen.mosaicTiles.length !== 0) problems.push('a refused mosaic asked for tiles');
     if (seen.itemTiles.length === 0) problems.push('no scene was drawn instead');
+    if (seen.itemTiles.some((tile) => tile.includes('tilesize'))) problems.push('a scene tile names a size, not the tiler\'s 256');
     if (seen.itemProbes.length < 1) problems.push('the first scene was not asked about the chain');
     // A narrow window hides the map behind the panel: the tooltip of the badge in the panel is the one to look at.
     await (viewport === 'wide' ? badge : inPanel).hover();
