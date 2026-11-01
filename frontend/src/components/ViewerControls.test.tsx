@@ -85,6 +85,23 @@ describe('the head', () => {
     expect(title().textContent).toBe(text);
   });
 
+  // Otto, 1.11.2026 (zu #272): the view of the search is a temporary picture, and a yellow box between the title and the date says so.
+  it('has a badge "Temporary" right after the title, before the date with the arrows, in the style of the "Preview" badge', () => {
+    mount();
+    const temporary = container.querySelector('.vc-temporary') as HTMLElement;
+    expect(temporary.textContent).toBe('Temporary');
+    expect(temporary.previousElementSibling).toBe(title());
+    expect(temporary.nextElementSibling?.classList.contains('vc-stepper')).toBe(true);
+    expect(temporary.classList.contains('pp-badge')).toBe(true);
+    expect(CSS).toMatch(/\.preview-badge,\s*\.pp-badge \{[^}]*border: 1px solid var\(--accent-2\)/u);
+  });
+
+  it('has no box "Temporary" in the settings of a layer: a layer is not temporary', () => {
+    mount({ viewOfLayer: true, layers: [{ id: 'L1', name: 'Optical', visible: true, opacity: 1, overlays: [], restore: { focusMode: true, downloaded: scenes(1), appliedRender: {}, activeGroupIndex: 0, selectedIds: [], itemIds: [], groupItemIds: [], aoi: null, cropToAoi: true, datasetId: 'optical' } } as never], viewLayerId: 'L1' });
+    expect(container.querySelector('.vc-temporary')).toBeNull();
+    act(() => useAppStore.setState({ viewOfLayer: false, layers: [], viewLayerId: null }));
+  });
+
   // Otto, 31.10.2026 (zu #257): the date is chosen with the arrows (`ViewerControls.steps.test.tsx`), so the head does not say it.
   it.each([
     [['2025-07-29T23:30:00Z'], 1],
@@ -273,6 +290,21 @@ describe('"Save" of the view of a pinned layer', () => {
     expect(save()!.title).toBe(NOTHING_TO_SAVE_ONE_IMAGE);
   });
 
+  // Otto, 1.11.2026 (zu #272): "Temporary" goes when the image is a layer, and comes back with a change.
+  it('takes off "Temporary" while a layer holds the image as it is drawn, and puts it back with an applied change; the fields alone do not', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [], cropToAoi: false });
+    expect(container.querySelector('.vc-temporary')).not.toBeNull();
+    mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    expect(container.querySelector('.vc-temporary')).toBeNull();
+    type(vmax(), '2000');
+    expect(container.querySelector('.vc-temporary')).toBeNull(); // typed, not drawn
+    act(() => void (container.querySelector('.vc-apply') as HTMLButtonElement).click());
+    expect(container.querySelector('.vc-temporary')).not.toBeNull();
+    type(vmax(), '3000');
+    act(() => void (container.querySelector('.vc-apply') as HTMLButtonElement).click());
+    expect(container.querySelector('.vc-temporary')).toBeNull();
+  });
+
   it('stands beside "Apply", under "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
     mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
     expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
@@ -344,7 +376,8 @@ describe('the layout contract in index.css', () => {
     const height = Number(/--row-height: (\d+)px/u.exec(cluster)?.[1]);
     // The fields of the view and of the settings of a result are as high as the cluster.
     expect(Number(/--row-height: (\d+)px/u.exec(rule('.scene-view'))?.[1])).toBe(height);
-    expect(Number(/--row-height: (\d+)px/u.exec(rule('.result-controls'))?.[1])).toBe(height);
+    // The settings of a result are the view's box (`.scene-view`), with no rules of their own for size or places (NM4-54 part 5).
+    expect(CSS).not.toMatch(/^\.result-controls\b/mu);
     expect(cluster).toContain('height: var(--row-height)');
     expect(cluster).toContain('grid-template-rows: 1fr 1fr');
     // "Save" takes both rows of the second column.

@@ -95,6 +95,10 @@ export interface MapLayer {
   // data without a time axis such as the elevation model (NM4-65 part 3). Set where the layer is made: it does not follow
   // the search, which moves on.
   date?: string;
+  // What the layer was saved with while its settings are open and something else is applied or its opacity is changed (NM4-54, Otto,
+  // 1.11.2026): "Save" makes the layer as it is drawn its own, closing the settings without it puts this back. Only the parts that changed
+  // are here.
+  saved?: { opacity: number; overlays?: LayerOverlay[]; downloaded?: LayerRestore['downloaded']; appliedRender?: LayerRestore['appliedRender'] };
   // A hint for the tooltip of the layer's name, never a line of text in its row: a preview drawn scene by scene where
   // the job is a mosaic says it may differ from the job (`processingPreview.ts::SCENE_PREVIEW_HINT`).
   note?: string;

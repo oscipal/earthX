@@ -249,9 +249,10 @@ async function check(browser, { theme, viewport }) {
   await page.waitForSelector('.scene-view .vc-apply');
   if ((await page.locator('.scene-view .vc-actions').count()) !== 0) problems.push('a layer opened from the manager has a row of buttons');
   if ((await page.locator('.scene-view .vc-head .close-x').count()) !== 1) problems.push('no red x in the box of the layer');
-  if ((await page.locator('.scene-view .vc-opacity, .scene-view input[type="range"]').count()) !== 0) problems.push('the box of the layer has a line more than its one row');
+  // The box of every layer (NM4-54 part 5): the opacity of the layer is its row under the fields.
+  if ((await page.locator('.scene-view .vc-opacity input[type="range"]').count()) !== 1) problems.push('the box of the layer has no row for its opacity');
   const children = await page.locator('.scene-view > *').evaluateAll((els) => els.map((e) => e.className.split(' ')[0]));
-  if (children.join() !== 'vc-head,vc-render') problems.push(`the box of the layer holds ${children}, not the head and one row`);
+  if (children.join() !== 'vc-head,vc-render,vc-opacity') problems.push(`the box of the layer holds ${children}, not the head, the fields and the opacity`);
   const title = await page.locator('.scene-view .vc-title').textContent();
   if (title !== 'OPTICAL · A CROP · 2026-07-01') problems.push(`the title of the box: ${title}`);
   const boxBox = await page.locator('.scene-view').boundingBox();

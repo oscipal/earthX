@@ -94,7 +94,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe B (ändert Ergebnis-Bytes), Backend und Frontend.
 11. **Normalize klarer und mit mehreren Methoden** (Otto, 22.10.2026).
    - **Backend erledigt:** NM4-11, PR #244 (31.10.2026): `normalize` Version 3 mit `method` (linear, Perzentile, Z-Score, robust) und gemessenen Werten im Rezept (Messung vorher über die Statistik-Route aus NM4-19), bitgleich Kachel/Job/Runner. Frontend: NM4-11b (Plan im Abschnitt), nach NM4-43e. Wiedervorlage „gleiche Werte für alle Aufträge“ (Punkt 60).
-   - **Frontend:** NM4-11b, PR #269 (01.11.2026). Otto, 01.11.2026: Normalize wirkt im Bandvorrat an Ort und Stelle (danach ist z. B. „red“ das normalisierte Band); ⚙ am Ergebnis behält die gespeicherten Werte. Exakte Messung im Job: Punkt 71.
+   - **Frontend erledigt:** NM4-11b, PR #269 (gemergt 01.11.2026): Feld „Method“ mit vier Methoden, Messung über die Statistik-Route (höchstens vier zugleich im Stapel), Zielbereich-Vorgabe 0–1, messende Methoden ohne AOI und hinter `reproject` gesperrt; `NORMALIZE_V3` gelistet. Otto, 01.11.2026: Normalize wirkt im Bandvorrat an Ort und Stelle (danach ist z. B. „red“ das normalisierte Band); ⚙ am Ergebnis behält die gespeicherten Werte. Exakte Messung im Job: Punkt 71.
    - **Stand 27.10.2026:** wartet auf die Entscheidung zu Punkt 43.
    - **Plan:** `querschnitt/nm4-11-normalize-methoden.md`
    - **Klarer:** Im Panel steht kurz, was der Schritt tut, mit Beispiel (etwa „NDVI −1…1 → 0…1“) und der Formel der gewählten Methode. Die Felder tragen verständliche Namen und Hilfetexte (Englisch).
@@ -187,6 +187,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Im Plan zu klären:** Schnittstelle (POST-Route, Größen- und Punktgrenze der Geometrie wie bei der Annahme), Cache-Schlüssel ohne AOI im Klartext, Messung über mehrere Szenen bzw. Mosaik eines Überflugs, gleiche Methode wie im Job (festes Histogramm, M4-32a) damit die Werte übereinstimmen, Kosten.
    - **Aufgabe:** Stufe B (neue Route im `tiler`, Datenschutz), Backend und Frontend.
 20. **Processing-Panel klarer gegliedert** (Otto, 24.10.2026).
+   - **Aufgegangen in UI-03 Teil 2 (Otto, 01.11.2026):** nicht einzeln starten; siehe Punkt 72.
    - **Stand 27.10.2026:** wartet auf die Entscheidung zu Punkt 43 (Ausgabe am Ende des Panels).
    - **Plan:** `querschnitt/nm4-20-panel-gliederung.md`
    - **Soll:** Die Bereiche „Bands“, „Processing steps“, „Output“ und „Preview“ sind deutlich voneinander abgesetzt (etwa eigene Karten oder Abschnitte mit Überschrift, Abstand, Trennlinie, ggf. einklappbar).
@@ -251,6 +252,8 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Berührt:** Zuordnung Kartenzoom → Kachelstufe (`TILE_LEVEL_AHEAD`, `previewMaxZoom`, `zoomHint`), die freigegebenen Stufen je Datensatz (`earthx:viewer`, `adr/0007` §12.10) und die Grenzen der Mosaik-Kachel (M4-17 §5).
    - **Aufgabe:** Stufe B, Frontend und `tiler`; nach NM4-26.
    - **Backend erledigt:** NM4-29, PR #227 (Plan dort freigegeben). Frontend: NM4-29b (gestartet 01.11.2026).
+   - **Frontend:** NM4-29b, PR #270 (01.11.2026): 512 px nur für Mosaik und Mosaik-Vorschau, Größe aus der Kachel-URL; Mosaik ab Kartenzoom 7,5. Messung (12 Szenen, Zoom 11,5): Anfragen 77 → 24; letzte Kachel unbegrenzt −52/−55 %, bei 100 Mbit/s −9/−6 %, **erste Kachel bei 100 Mbit/s 6 → 13 s**. Otto prüft abends auf seiner Leitung, ob er mergt.
+   - **Für M5 vormerken:** Gröbere Daten (z. B. 300 m, Wetterraster 1 km) bekommen mit 512 px und Mosaik ab Stufe 8 eher keine Mosaik-Vorschau mehr (Szene für Szene). Beim Onboarding grober Raster prüfen (`earthx:viewer`, `MIN_MOSAIC_ZOOM` je Datensatz?).
 30. **Nicht Mögliches ausblenden statt ausgrauen** (Otto, 26.10.2026).
    - **Zusammengelegt (29.10.2026):** wird mit Paket NM4-56 umgesetzt; nicht einzeln starten.
    - **Entfällt (Otto, 31.10.2026):** „bin eigentlich grade happy mit den sachen wie sie sind“ – kein Durchgang über die ältere Oberfläche; aus NM4-56 gestrichen. Die Regel unten gilt weiter für Neues.
@@ -276,6 +279,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 
 33. **Originale mit einem Klick herunterladen** (Otto, 26.10.2026: „einfach einen Download-Button drücken ohne extra Steps“).
    - **Erledigt:** NM4-33, PR #233 (31.10.2026): „⇩ Download full scene(s)“ lädt je Szene ein ZIP, im Browser per Service Worker gestreamt (client-zip 2.5.1, STORE), Assets aus der Registry, `ATTRIBUTION.txt`, `item.json`; ohne CORS (DEM) Einzeldateien; Chrome fragt einmal je Website nach „mehrere Dateien“.
+   - **Otto, 01.11.2026:** keine Größenangabe im Tooltip des Download-Knopfs.
    - **Freigegeben (Otto, 29.10.2026, PR #233):** A2 – ein Klick lädt `ATTRIBUTION.txt` und die Originale nacheinander direkt von der Quelle (mit CORS per `fetch` unter `<Szene>_<Asset>.tif`, ohne CORS als normaler Browser-Download), kein Byte über das Backend; Grenze 500 MB je Datei (Wiedervorlage DS-04 wegen S1 um 1 GB). Offen: ob der Browser einmalig nach „mehrere Dateien“ fragt (Prüfung bei Otto).
    - **Plan:** `querschnitt/nm4-33-originale-ein-klick.md`
    - **Benennung (UI-01g, Otto 26.10.2026):** Der Knopf heißt „Download full scene“ bzw. bei mehreren Szenen „Download full scenes“ (Originale, nicht gemergt).
@@ -322,6 +326,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 48. **Datennähe: eine Hauptquelle, Rechnen und Rendern dort, wo die Daten liegen** (Otto, 28.10.2026).
    - **Plan:** `querschnitt/nm4-48-datennaehe.md` (Stufe C, ADR).
    - **Angenommen (Otto, 30.10.2026, PR #248):** `adr/0022` F1–F7 wie empfohlen – Rechnen in der EU (Raum Frankfurt), Quellen föderiert, `data_region` als Registry-Feld und Kriterium im M5-Plan, CDSE nur als Katalog, Sentinel-2 Wiedervorlage EOPF-Zarr (bis dahin Earth Search mit Cache), Planetary Computer nur S1-RTC; EU reicht (Rechtsfrage CH bis M6 offen). Messung Stufe 1 (Otto, 30.10.2026, ~22 Uhr, ohne VPN): Q1/Q2/Q3 ES-S2 Oregon 1226 ms / 305 ms / 1 MB/s; EU-Quellen (S1, DEM, S2-JP2, EOPF, PC) 135–188 ms / 39–49 ms / 8–12 MB/s; **S2-JP2 in Frankfurt anonym lesbar (206)**; Q4 EOPF 61, PC 97, CDSE 553, Earth Search 682 ms. P1 kalte Mosaik-Kachel 26,5/21,7/18,5 s (28.10.: 6,0 s), P2 warm 503 ms (28.10.: 160 ms), P3 Zuschnitt 10,7 s, P4 Job 12,5 s. A/B mit Stand von #215 (Otto, 30.10., schlechtes Netz): Kachel bei beiden ähnlich langsam (Netz), Job und evtl. Zuschnitt auf main langsamer – Punkt 62. Stufe 2 (Test-VMs) nur nach ausdrücklicher Freigabe.
+   - **Messung tagsüber (Otto, 01.11.2026, Skript `nm4-48-messung.ps1`, ohne VPN):** Q1 kalt / Q2 warm / Q3 Durchsatz: ES-S2 us-west-2 1057 ms / 232 ms / 3,6 MB/s; ES-S1 eu-central-1 157/49/11,6; DEM eu-central-1 130/44/12; S2-JP2 eu-central-1 148/45/10; EOPF Wien 173/36/10,2; PC West Europe 148/40/7,8. Suche Q4: Earth Search 640 ms, EOPF 53, PC 97, CDSE 1108. Plattform lokal: Mosaik-Kachel kalt 6,7–7,3 s, warm 0,27 s, Zuschnitt 4,3 s, Job-Skript 8,2 s (Lauf 3,8 s). Bestätigt die Abend-Messung: Oregon ~7× mehr Latenz und ~3× weniger Durchsatz als EU; kalte Kachel vor allem Weg nach Oregon. EU-Kandidaten für S2: EOPF-Zarr (Wien), PC-COG (West Europe, anonymes Token), S2-JP2 (Frankfurt).
    - **Anlass:** Lokal gemessen (28.10.2026) braucht die erste Mosaik-Kachel kalt 6,0 s, fast alles ist Weg über das Netz. Sentinel-2 von Earth Search liegt in AWS `us-west-2` (Oregon); die Plattform soll in EU/CH laufen (projektuebersicht §4).
    - **Kandidaten:** (A) Earth Search mit Rechnern in AWS `us-west-2` (schnell, aber außerhalb der EU); (B) Copernicus Data Space Ecosystem mit CloudFerro bzw. Open Telekom Cloud (EU, alle Copernicus-Daten, S3-Zugang mit kostenlosem Konto); (C) Planetary Computer mit Azure West Europe (EU, viele Datensätze, Token anonym).
    - **Aufgabe:** Stufe C, ADR mit Recherche und Messung (Latenz und Durchsatz je Region, Kosten, Abdeckung der Datensätze, Lizenz, Ausfall, Bindung an einen Anbieter; Föderation bleibt). Vor der Wahl des Cloud-Anbieters in M6, am besten zu Beginn von M5 (Auswahl der Quellen). Messung braucht Ottos Rechner oder Test-VMs, aus Cloud-Sessions sind die Quellen nicht erreichbar (adr/0002).
@@ -385,6 +390,10 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 71. **Normalize: Vorschau ohne AOI geschätzt, Job immer exakt** (Otto, 01.11.2026): Die messenden Methoden gehen für die Vorschau auch ohne AOI und über 2048² (Messung auf Overview); ein gestarteter Job nimmt immer die exakten Werte über die ganze Fläche.
    - **Plan:** `querschnitt/nm4-71-normalize-exakt-im-job.md`
    - **Aufgabe:** Stufe B, Backend und Frontend, nach NM4-11b (#269).
+   - **Entschieden (Otto, 01.11.2026, PR #273):** alle sechs Fragen Option 1 – exakte Messung im Job über eine Arbeitsdatei (Quellen einmal gelesen, kein Zustand zwischen Jobs), `normalize` Version 4 ohne Zahlen (exakte Werte im Ergebnis; Version 3 bleibt für Vorschau, alte Rezepte und ⚙), ⚙ behält die exakten Zahlen des Ergebnisses, Perzentile exakt zweistufig, Vorschau bis 2048² auch ohne AOI, ein PR; KE1–KE10 wie vorgeschlagen. Messung: Job mit exakter Messung 27–52 % länger (ganze Szene, 4 Bänder 269 → 409 s), Speicher ≤ 483 MB. Auflagen: Plattenplatz der Arbeitsdatei messen, Grenze in der Schätzung, Löschen auch bei Abbruch/Fehler/DELETE; Runner liest Version 4 bitgleich; Tooltip „Z-score“ mit Hinweis auf Ausreißer und „Robust“. **Runner-Image erst nach diesem Merge neu bauen.**
+72. **Seitenleiste rechts, aufgeräumtes Processing, einheitliches Erscheinungsbild** (Otto, 01.11.2026): Einstellungen von Ansicht und Layer als Seitenleiste rechts (öffnet bei Klick, rotes „x“), Layer-Manager und Leiste unten bleiben; Processing-Panel und -Manager breiter, Gruppen übersichtlich, „apple mäßiges design dass alles einheitlich seinen platz hat“. Nimmt NM4-20 auf.
+   - **Plan:** `vp3/ui-03-seitenleiste-und-processing.md`
+   - **Aufgabe:** Stufe B (Konzept zuerst), dann Teil 1 in derselben Session; Teile 2 und 3 je neue Session. Nach NM4-54 (#272), vor NM4-56.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).

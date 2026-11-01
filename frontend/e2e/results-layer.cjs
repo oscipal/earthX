@@ -170,14 +170,14 @@ async function run(browser, { theme, viewport }) {
     });
   }, BBOX);
   const rows = await page.locator('.layer-manager .layer-row [data-col="name"]').allTextContents();
-  if (rows.join('|') !== 'Job result|Results') problems.push(`the layer manager lists ${rows.join(', ')}`);
+  if (rows.join('|') !== 'Job result|Search results') problems.push(`the layer manager lists ${rows.join(', ')}`);
   await expectColour('the job pinned over "Results"', JOB);
   await page.locator('#rail-results').click();
   await page.screenshot({ path: path.join(OUT, `to-top button ${name}.png`) });
   await page.locator('#rail-results').click();
-  const greyed = () => page.locator('.results-head button[aria-label="Put results on top of the layers"]').getAttribute('aria-disabled');
+  const greyed = () => page.locator('.results-head button[aria-label="Put search results on top of the layers"]').getAttribute('aria-disabled');
   if ((await greyed()) !== null) problems.push('the button is greyed out with a layer over "Results"');
-  await click('results', page.locator('.results-head button[aria-label="Put results on top of the layers"]'), 'the button "Results" on top');
+  await click('results', page.locator('.results-head button[aria-label="Put search results on top of the layers"]'), 'the button "Results" on top');
   if ((await greyed()) !== 'true') problems.push('the button is not greyed out with "Results" on top');
   await page.locator('#rail-results').click();
   await page.screenshot({ path: path.join(OUT, `to-top greyed ${name}.png`) });

@@ -51,7 +51,7 @@ from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.dependencies.utils import solve_dependencies
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from rasterio.errors import RasterioError, RasterioIOError
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from rio_tiler.models import ImageData
@@ -144,6 +144,12 @@ RESULT_PATH_START = "/results/"
 # the asset(s) travel in the body (a mosaic can name several of each, and an AOI
 # polygon does not belong in a query string) — so it cannot share ROUTER_PREFIX.
 DOWNLOAD_ROUTE = "/collections/{dataset}/download"
+
+# The order of the scenes of a pass, without a mosaic (NM4-24): a POST with the ids in the body, as a pass the mosaic
+# tile refuses can have more scenes than a URL takes. Apart from the mosaic router, whose routes are the tile and its TileJSON.
+SCENE_ORDER_ROUTE = "/collections/{dataset}/scene-order"
+# Scenes one such request may name: the largest overpasses of a continental AOI over a season stay far below it.
+MAX_ORDER_ITEMS = 500
 
 # At most one download whose planned output reaches LARGE_DOWNLOAD_THRESHOLD_BYTES
 # runs at a time in this process (F10a, M3-18 §10): measured (plan §10.3/§10.4)
@@ -914,6 +920,56 @@ async def mosaic_scenes(
     return MosaicOperatorInput(dataset, scenes_with_steps, tuple(run_steps), bounds, None if plan is None else plan.bands)
 
 
+class MosaicOrderRequest(BaseModel):
+    """Body of ``POST /collections/{dataset}/scene-order`` (NM4-24): the scenes of one pass and the asset they are read from.
+
+    A field the route does not know is refused, as a parameter the mosaic tile does not declare is: an AOI or a filter
+    that was quietly dropped would look like an answer to a question the route never heard.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[str] = Field(
+        min_length=mosaic_tiles.MIN_MOSAIC_ITEMS,
+        max_length=MAX_ORDER_ITEMS,
+        description="item ids of one pass, each once",
+    )
+    asset: str = Field(min_length=1, max_length=128, description="the asset key whose CRS decides the order")
+
+
+async def scene_order(
+    request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")], body: MosaicOrderRequest
+) -> dict[str, list[str]]:
+    """The order a mosaic reads these scenes in, without a mosaic: ``{"order": [item id, ...]}`` (NM4-24).
+
+    For a pass the mosaic tile cannot take (more than 64 scenes, a mosaic the tile refused, a dataset released below
+    z8 only) the map draws the scenes one by one; this answers with the order of :func:`mosaic_order` so that they
+    lie in an overlap as the mosaic, the crop and the export have them. The ids travel in the body, as 64 and more of
+    them do not belong in a URL. Only the items and the CRS of the asset are read, no pixel; the licence tier and
+    the item cache are those of the mosaic tile.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    _check_display_allowed(config)
+    try:
+        if len(set(body.items)) != len(body.items):
+            raise OrderRefused(400, "name each item once", "order")
+        if not all(mosaic_tiles.ITEM_ID.match(item_id) for item_id in body.items):
+            raise OrderRefused(400, "an item id has the shape the sources give theirs", "order")
+        if getattr(state, "earthx_cache_pool", None) is None:
+            raise OrderRefused(
+                503, "scene orders need the item cache, and the catalogue database is not reachable", "items"
+            )
+        ids = sorted(body.items)
+        items = await mosaic_tiles.fetch_items(state.earthx_item_fetches, state.earthx_item_source, dataset, ids)
+        crs_by_item = {
+            item_id: _resolve_ref(items[item_id], config=config, item=item_id, asset=body.asset).crs for item_id in ids
+        }
+        return {"order": mosaic_order(crs_by_item)}
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+
+
 def _describe_one(
     items: dict[str, dict[str, Any]],
     refs: dict[tuple[str, str], ResolvedAsset],
@@ -1499,6 +1555,13 @@ def build_app(
     # The tiles of a finished job (M4-13c-5): read from the object store, not through the registry.
     app.state.earthx_results = None
     app.include_router(build_result_factory().router, prefix=RESULT_ROUTER_PREFIX, tags=["Results"])
+    app.add_api_route(
+        SCENE_ORDER_ROUTE,
+        scene_order,
+        methods=["POST"],
+        tags=["Mosaic tiles"],
+        summary="The order a mosaic reads the scenes of a pass in",
+    )
     app.add_api_route(
         DOWNLOAD_ROUTE,
         download_crop,

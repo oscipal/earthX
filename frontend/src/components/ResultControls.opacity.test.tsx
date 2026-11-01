@@ -92,3 +92,47 @@ describe('the opacity slider in the settings of a layer', () => {
     expect(rule(".vc-field input[type='range']:focus-visible")).toContain('outline: 2px solid var(--accent)');
   });
 });
+
+// Otto, 1.11.2026 (Browsertest zu #272): the opacity is kept with "Save" only; closing the settings without it puts the saved one back.
+describe('the opacity of a result whose settings are open', () => {
+  it('is seen at once and kept with "Save"', () => {
+    useAppStore.setState({ layers: [layer(1)], resultViewLayerId: 'R1' });
+    act(() => root.render(<ResultControls />));
+    act(() => useAppStore.getState().setLayerOpacity('R1', 0.4));
+    expect(useAppStore.getState().layers[0]).toMatchObject({ opacity: 0.4, saved: { opacity: 1 } });
+    const save = container.querySelector('.vc-save') as HTMLButtonElement;
+    expect(save.getAttribute('aria-disabled')).toBeNull();
+    act(() => save.click());
+    expect(useAppStore.getState().layers[0].saved).toBeUndefined();
+    act(() => useAppStore.getState().closeResultView());
+    expect(useAppStore.getState().layers[0].opacity).toBe(0.4);
+  });
+
+  it('goes back to the saved one when the settings close without it: the x, Esc, another layer', () => {
+    useAppStore.setState({ layers: [layer(1), { ...layer(0.8), id: 'R2' }], resultViewLayerId: 'R1' });
+    act(() => root.render(<ResultControls />));
+    act(() => useAppStore.getState().setLayerOpacity('R1', 0.2));
+    act(() => useAppStore.getState().closeResultView());
+    expect(useAppStore.getState().layers[0].opacity).toBe(1);
+    expect(useAppStore.getState().layers[0].saved).toBeUndefined();
+    // Esc.
+    useAppStore.setState({ resultViewLayerId: 'R1' });
+    act(() => root.render(<ResultControls />));
+    act(() => useAppStore.getState().setLayerOpacity('R1', 0.2));
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(useAppStore.getState().resultViewLayerId).toBeNull();
+    expect(useAppStore.getState().layers[0].opacity).toBe(1);
+    // Another layer.
+    useAppStore.setState({ resultViewLayerId: 'R1' });
+    act(() => useAppStore.getState().setLayerOpacity('R1', 0.2));
+    act(() => useAppStore.getState().selectLayer('R2'));
+    expect(useAppStore.getState().layers.map((l) => l.opacity)).toEqual([1, 0.8]);
+  });
+
+  it('is not set aside for a layer whose settings are not open', () => {
+    useAppStore.setState({ layers: [layer(1)], resultViewLayerId: null });
+    act(() => useAppStore.getState().setLayerOpacity('R1', 0.5));
+    expect(useAppStore.getState().layers[0].opacity).toBe(0.5);
+    expect(useAppStore.getState().layers[0].saved).toBeUndefined();
+  });
+});

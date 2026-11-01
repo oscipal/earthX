@@ -6,7 +6,7 @@ import type { DatasetOption } from './datasets';
 import type { LayerOverlay } from './layers';
 import type { IndexPreset } from './indexPresets';
 import { buildTileUrl } from './mapLayers';
-import { stackLikeView, viewOfPass } from './mosaic';
+import { inStackOrder, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import { underlayOf } from './underlay';
 import { indexRastersOfPass } from './viewIndex';
@@ -38,7 +38,8 @@ export function overlaysOfPass(
 ): LayerOverlay[] | null {
   const view = viewOfPass(datasetId, entries, mosaics);
   if (view.kind === 'pending') return null;
-  const plain = view.kind === 'mosaic' ? view.rasters : stackLikeView(entries.map(([, info]) => info));
+  // Scene by scene the pass lies in the order of the mosaic, as in the crop and the export (NM4-24), not in the order of the ticks.
+  const plain = view.kind === 'mosaic' ? view.rasters : stackLikeView(inStackOrder(entries, view.order).map(([, info]) => info));
   const rasters = index ? indexRastersOfPass(plain, entries, datasetId, index).rasters : plain;
   return [...(index ? [] : underlays), ...rasters.map((raster) => rasterOverlay(raster, render, clip))];
 }
