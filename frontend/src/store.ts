@@ -43,7 +43,7 @@ import { flipNext, flipStart } from './layerFlip';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
 import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
-import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
+import { isMosaicPass, mosaicTemplateOf, orderedPass, orderKeyOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
@@ -567,8 +567,9 @@ function overlaysOfEntries(
   const sections = sectionsForView(s);
   const groups = sections.flatMap((section) => section.groups);
   const items = sections.flatMap((section) => section.items);
-  const overlays = passesOf(entries, groups).map((pass) => {
-    const datasetId = pass[0][1].datasetId;
+  const overlays = passesOf(entries, groups).map((first) => {
+    const datasetId = first[0][1].datasetId;
+    const pass = orderedPass(datasetId, first, s.mosaics);
     const dataset = s.datasets.find((d) => d.id === datasetId);
     return overlaysOfPass(datasetId, pass, s.mosaics, look, clip, underlaysOf(pass, items, dataset, clip), viewIndexOf(look, dataset?.collection));
   });
@@ -764,7 +765,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
   });
 }
 
-// In flight, by the mosaic's template: two views that want one mosaic ask the tiler once.
+// In flight, by the mosaic's template (or the key of an order): two views that want one mosaic ask the tiler once.
 const mosaicLoads = new Map<string, Promise<void>>();
 
 // Loads the TileJSON of each pass that a mosaic would draw, once. The tiler fills its item cache by
@@ -777,28 +778,73 @@ async function fetchMosaics(
   requests: { datasetId: string; entries: SceneEntry[] }[],
 ): Promise<void> {
   const failures: string[] = [];
+  const orderFailures: string[] = [];
   await Promise.all(
     requests.map(async ({ datasetId, entries }) => {
       const template = mosaicTemplateOf(datasetId, entries);
-      if (!template || get().mosaics[template]) return;
-      let load = mosaicLoads.get(template);
-      if (!load) {
-        load = (async () => {
-          let info: Mosaics[string] = null;
-          try {
-            const json = await api.fetchMosaicTileJson(datasetId, entries.map(([id]) => id), entries[0][1].asset);
-            info = { tileUrl: template, bounds: json.bounds, minZoom: json.minzoom, maxZoom: json.maxzoom, order: json.order };
-          } catch (e) {
-            failures.push((e as Error).message);
-          }
-          if (info || get().mosaics[template] === undefined) set({ mosaics: { ...get().mosaics, [template]: info } });
-        })().finally(() => mosaicLoads.delete(template));
-        mosaicLoads.set(template, load);
-      }
-      await load;
+      if (template) await loadMosaic(set, get, datasetId, entries, template, failures);
+      // A pass drawn scene by scene (too big for a mosaic, a mosaic the tiler refused, a dataset released below z8 only)
+      // lies in the order of the mosaic, the crop and the export, which only the tiler knows (NM4-24).
+      if (template === null || get().mosaics[template] === null) await loadOrder(set, get, datasetId, entries, orderFailures);
     }),
   );
   if (failures.length > 0) set({ notice: `Could not load the mosaic (${failures[0]}); its scenes are drawn one by one.` });
+  else if (orderFailures.length > 0) {
+    set({ notice: `Could not read the stacking order of the scenes (${orderFailures[0]}); they lie in the order of the selection.` });
+  }
+}
+
+// The order of the scenes of one pass, once, kept under `orderKeyOf`; `null` where the tiler could not give it (the scenes then
+// lie in the order of the selection, as before) so that it is not asked again until the search is made anew.
+async function loadOrder(
+  set: SetState,
+  get: GetState,
+  datasetId: string,
+  entries: SceneEntry[],
+  failures: string[],
+): Promise<void> {
+  const key = orderKeyOf(datasetId, entries);
+  if (!key || get().mosaics[key] !== undefined) return;
+  let load = mosaicLoads.get(key);
+  if (!load) {
+    load = (async () => {
+      let order: string[] | null = null;
+      try {
+        order = await api.fetchSceneOrder(datasetId, entries.map(([id]) => id), entries[0][1].asset);
+      } catch (e) {
+        failures.push((e as Error).message);
+      }
+      set({ mosaics: { ...get().mosaics, [key]: order ? { order } : null } });
+    })().finally(() => mosaicLoads.delete(key));
+    mosaicLoads.set(key, load);
+  }
+  await load;
+}
+
+async function loadMosaic(
+  set: SetState,
+  get: GetState,
+  datasetId: string,
+  entries: SceneEntry[],
+  template: string,
+  failures: string[],
+): Promise<void> {
+  if (get().mosaics[template]) return;
+  let load = mosaicLoads.get(template);
+  if (!load) {
+    load = (async () => {
+      let info: Mosaics[string] = null;
+      try {
+        const json = await api.fetchMosaicTileJson(datasetId, entries.map(([id]) => id), entries[0][1].asset);
+        info = { tileUrl: template, bounds: json.bounds, minZoom: json.minzoom, maxZoom: json.maxzoom, order: json.order };
+      } catch (e) {
+        failures.push((e as Error).message);
+      }
+      if (info || get().mosaics[template] === undefined) set({ mosaics: { ...get().mosaics, [template]: info } });
+    })().finally(() => mosaicLoads.delete(template));
+    mosaicLoads.set(template, load);
+  }
+  await load;
 }
 
 function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections: ResultSection[]): string {

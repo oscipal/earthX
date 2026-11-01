@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { buildMosaicOperatorTileTemplate, buildMosaicTileTemplate } from './api';
 import {
+  inStackOrder,
   isMosaicPass,
   MAX_MOSAIC_REQUEST_BYTES,
   MAX_MOSAIC_SCENES,
   mosaicRequestBytes,
   mosaicsOfView,
   mosaicTemplateOf,
+  orderedPass,
+  orderKeyOf,
   oversizeNote,
   passesOf,
   sameMosaics,
@@ -203,5 +206,71 @@ describe('the length of a mosaic request (NM4-04b)', () => {
     const ids = Array.from({ length: MAX_MOSAIC_SCENES }, (_, i) => `${'S'.repeat(57)}${String(i).padStart(3, '0')}`);
     const template = buildMosaicOperatorTileTemplate(DATASET, ids, ['red', 'nir', 'scl'], [step, step]);
     expect(mosaicRequestBytes(template, 14)).toBeLessThan(MAX_MOSAIC_REQUEST_BYTES);
+  });
+});
+
+describe('the order of the scenes of a pass drawn scene by scene (NM4-24)', () => {
+  const ids = (entries: SceneEntry[]) => entries.map(([id]) => id);
+
+  it('has a key of its own, apart from the mosaic template, and none for a single scene', () => {
+    const entries = pass('A', 'B');
+    expect(orderKeyOf(DATASET, entries)).toBe(`order|${mosaicTemplateOf(DATASET, entries)}`);
+    expect(orderKeyOf(DATASET, pass('A'))).toBeNull();
+    // Whatever the order of the selection, the same key: the scenes of the pass are the question.
+    expect(orderKeyOf(DATASET, pass('B', 'A'))).toBe(orderKeyOf(DATASET, entries));
+  });
+
+  it('has a key for a pass too big for a mosaic, which has no template', () => {
+    const many = pass(...Array.from({ length: MAX_MOSAIC_SCENES + 1 }, (_, i) => `S${i}`));
+    expect(mosaicTemplateOf(DATASET, many)).toBeNull();
+    expect(orderKeyOf(DATASET, many)).toMatch(/^order\|/);
+  });
+
+  // A dataset released below z8 only: no mosaic for it, its passes are drawn scene by scene.
+  const coarse = (...ids: string[]) => ids.map((id) => entry(id, { maxZoom: 6 }));
+
+  it('is the order of the scenes in a view drawn scene by scene, as the tiler gave it', () => {
+    const entries = coarse('B', 'A', 'C');
+    const key = orderKeyOf(DATASET, entries) as string;
+    const view = viewOfPass(DATASET, entries, { [key]: { order: ['A', 'B', 'C'] } });
+    expect(view).toEqual({ kind: 'scenes', order: ['A', 'B', 'C'] });
+    expect(ids(orderedPass(DATASET, entries, { [key]: { order: ['A', 'B', 'C'] } }))).toEqual(['A', 'B', 'C']);
+  });
+
+  it('is the order of the selection where the tiler has not given one, and where it could not', () => {
+    const entries = coarse('B', 'A');
+    const key = orderKeyOf(DATASET, entries) as string;
+    expect(viewOfPass(DATASET, entries, {})).toEqual({ kind: 'scenes' });
+    expect(viewOfPass(DATASET, entries, { [key]: null })).toEqual({ kind: 'scenes' });
+    expect(ids(orderedPass(DATASET, entries, {}))).toEqual(['B', 'A']);
+  });
+
+  it('follows a mosaic the tiler refused (null) with the order it gave for the scenes', () => {
+    const entries = pass('B', 'A');
+    const mosaics: Mosaics = { [mosaicTemplateOf(DATASET, entries) as string]: null, [orderKeyOf(DATASET, entries) as string]: { order: ['A', 'B'] } };
+    expect(ids(orderedPass(DATASET, entries, mosaics))).toEqual(['A', 'B']);
+  });
+
+  it('leaves a mosaic alone: it has its own order (earthx:order)', () => {
+    const entries = pass('B', 'A');
+    const mosaics: Mosaics = { ...mosaicOf(entries, { order: ['A', 'B'] }), [orderKeyOf(DATASET, entries) as string]: { order: ['B', 'A'] } };
+    expect(viewOfPass(DATASET, entries, mosaics).kind).toBe('mosaic');
+    expect(ids(orderedPass(DATASET, entries, mosaics))).toEqual(['B', 'A']);
+  });
+
+  it('puts a scene the order does not name after the ones it names, and keeps what it was given otherwise', () => {
+    expect(ids(inStackOrder(pass('X', 'B', 'A', 'Y'), ['A', 'B']))).toEqual(['A', 'B', 'X', 'Y']);
+    expect(ids(inStackOrder(pass('B', 'A'), undefined))).toEqual(['B', 'A']);
+    expect(inStackOrder([], ['A'])).toEqual([]);
+  });
+
+  it('is part of what a view asks for, so that its arrival draws the view again', () => {
+    const entries = pass('B', 'A');
+    const key = orderKeyOf(DATASET, entries) as string;
+    const order = { order: ['A', 'B'] };
+    const picked = mosaicsOfView({ [key]: order, 'order|other': { order: ['Z'] } }, DATASET, entries, undefined);
+    expect(picked).toEqual({});
+    const together = mosaicsOfView({ [key]: order, 'order|other': { order: ['Z'] } }, DATASET, entries, [group('B', 'A')]);
+    expect(together).toEqual({ [key]: order });
   });
 });

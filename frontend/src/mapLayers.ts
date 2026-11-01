@@ -17,7 +17,7 @@ import type { LayerOverlay, MapLayer } from './layers';
 import { indexRasterOf, viewIndexOf } from './viewIndex';
 import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
-import { passesOf, stackLikeView, viewOfPass } from './mosaic';
+import { inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
@@ -595,7 +595,8 @@ function retireDynamicMosaic(map: MapLibreMap, hold = false): void {
 // then gone as soon as that is, inside it nothing changes, and there is no frame with the basemap in between.
 function clipRetired(map: MapLibreMap, clip: GeoJSON.Geometry): void {
   const old = retiring;
-  if (!old || old.map !== map) return;
+  // A map that cannot say when a source has loaded (`retireDynamicMosaic` has taken its old picture away at once) is left alone.
+  if (!old || old.map !== map || typeof map.on !== 'function') return;
   const stale = () => retiring?.id !== old.id;
   for (const [lyrId, redraw] of redraws) {
     if (!lyrId.startsWith(`${old.bank}-`) || /-c\d+$/.test(lyrId) || redraw.clippedTo === clip || !map.getLayer(lyrId)) continue;
@@ -1146,7 +1147,8 @@ export function syncFocusRaster(
   const drawn = passesOf(Object.entries(s.downloaded), s.groups).map((entries) => {
     const view = viewOfPass(dataset?.id ?? null, entries, s.mosaics);
     if (view.kind === 'scenes') {
-      const own = entries.slice(0, Math.max(0, MAX_MOSAIC_LAYERS - single));
+      // In the order of the mosaic where the tiler gave it (NM4-24), else of the selection.
+      const own = inStackOrder(entries, view.order).slice(0, Math.max(0, MAX_MOSAIC_LAYERS - single));
       single += own.length;
       return { entries: own, view };
     }
