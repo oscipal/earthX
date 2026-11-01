@@ -133,10 +133,10 @@ describe('the "x"', () => {
     expect(state().activeGroupIndex).toBe(before.group);
   });
 
-  it('leaves hidden results hidden: closing shows nothing and hides nothing', () => {
+  it('has no block at all while the results are hidden, so there is nothing to close that shows or hides them', () => {
     act(() => useAppStore.setState({ resultsOnMap: false }));
     render(true, true);
-    act(() => closeButton()!.click());
+    expect(block()).toBeNull();
     expect(state().resultsOnMap).toBe(false);
   });
 
@@ -224,20 +224,38 @@ describe('with the results hidden on the map', () => {
     expect(bar()).toBeNull();
   });
 
-  it('keeps the timeline alone, and brings the bar back with the results', () => {
+  // Otto, 1.11.2026 (zu #272): the eye of "Search results" off takes the whole block, bar and timeline; ticks and time step stay.
+  it('has neither the bar nor the timeline, and brings both back with the results', () => {
     render(true, true);
     expect(bar()).not.toBeNull();
+    expect(container.querySelector('.time-slider')).not.toBeNull();
     hide();
+    expect(block()).toBeNull();
     expect(bar()).toBeNull();
-    expect(block()).not.toBeNull();
-    expect(block()!.querySelector('.close-x')).not.toBeNull();
+    expect(container.querySelector('.time-slider')).toBeNull();
     act(() => useAppStore.setState({ resultsOnMap: true }));
     expect(bar()).not.toBeNull();
+    expect(container.querySelector('.time-slider')).not.toBeNull();
+  });
+
+  it('keeps the ticks and the time step while it is away, and is back when a scene is ticked', () => {
+    render(true, true);
+    act(() => useAppStore.setState({ selectedIds: ['a0'] }));
+    const before = { ticks: state().selectedIds, group: state().activeGroupIndex };
+    hide();
+    expect(block()).toBeNull();
+    expect({ ticks: state().selectedIds, group: state().activeGroupIndex }).toEqual(before);
+    act(() => state().toggleSelected('b0'));
+    expect(state().resultsOnMap).toBe(true);
+    expect(block()).not.toBeNull();
+    expect(state().selectedIds).toEqual(['a0', 'b0']);
+    expect(state().activeGroupIndex).toBe(before.group);
   });
 
   it('is the same beside a view: the bar of the ticked scenes is gone, the view is not touched', () => {
     render(true, false);
     hide();
+    expect(block()).toBeNull();
     expect(bar()).toBeNull();
   });
 });
