@@ -28,7 +28,6 @@ import type { Bbox } from './types';
 
 const PROTOCOL = 'earthx-clip';
 const PREFIX = `${PROTOCOL}://`;
-const TILE_PX = 256;
 // WGS84 semi-major axis — the sphere radius the WebMercatorQuad tile matrix
 // (and every XYZ raster tile scheme) is built on.
 const EARTH_RADIUS_M = 6378137;
@@ -145,18 +144,19 @@ function exteriorAndHoles(geom: GeoJSON.Geometry): number[][][] {
 }
 
 // Every ring (exterior and holes, of every polygon of a MultiPolygon) of the
-// AOI, each projected into this tile's own 256x256 pixel space. One shared
+// AOI, each projected into this tile's own pixel space of `size` x `size` (the loaded image's: 256 px for a scene, 512 px
+// for a mosaic, `tileSize.ts`). One shared
 // `evenodd`-filled path from all of them masks holes and disjoint polygons
 // correctly regardless of a ring's winding direction (the GeoJSON right-hand
 // rule is meant to hold, but real-world data does not always comply, and
 // `evenodd` never has to care).
-export function ringsToTilePixels(geom: GeoJSON.Geometry, z: number, x: number, y: number): [number, number][][] {
+export function ringsToTilePixels(geom: GeoJSON.Geometry, z: number, x: number, y: number, size: number): [number, number][][] {
   const [minX, minY, maxX, maxY] = tileMercBounds(z, x, y);
   const w = maxX - minX;
   const h = maxY - minY;
   const project = ([lon, lat]: number[]): [number, number] => {
     const [mx, my] = lonLatToMerc([lon, lat]);
-    return [((mx - minX) / w) * TILE_PX, ((maxY - my) / h) * TILE_PX];
+    return [((mx - minX) / w) * size, ((maxY - my) / h) * size];
   };
   return exteriorAndHoles(geom).map((ring) => ring.map(project));
 }
@@ -211,6 +211,6 @@ export const aoiClipProtocol: AddProtocolAction = async (params, abortController
   const res = await fetch(inner, { signal: abortController.signal });
   if (!res.ok) throw new Error(`earthx-clip: ${res.status} ${res.statusText} fetching the tile`);
   const bitmap = await createImageBitmap(await res.blob());
-  const rings = ringsToTilePixels(entry.geometry, z, x, y);
+  const rings = ringsToTilePixels(entry.geometry, z, x, y, bitmap.width);
   return { data: await maskedBitmap(bitmap, rings) };
 };
