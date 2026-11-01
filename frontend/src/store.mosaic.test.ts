@@ -265,7 +265,7 @@ describe('adding a mosaic to the layers', () => {
     expect(overlays.every((o) => o.kind === 'raster' && o.tileUrl.startsWith('earthx-clip://'))).toBe(true);
     const mosaic = overlays[3];
     expect(mosaic.kind === 'raster' && mosaic.tileUrl).toContain('/mosaic/tiles/');
-    expect(overlays.slice(0, 3).map((o) => o.kind === 'raster' && o.hideFrom)).toEqual([6.5, 6.5, 6.5]);
+    expect(overlays.slice(0, 3).map((o) => o.kind === 'raster' && o.hideFrom)).toEqual([7.5, 7.5, 7.5]);
     expect(layers[0].restore.itemIds).toEqual(['A', 'B', 'C']);
   });
 

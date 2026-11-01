@@ -41,10 +41,10 @@ import {
   shortenPlan,
   previewSpec,
   rescaleOf,
-  tileResolution,
   type PreviewPlan,
   type PreviewSpec,
 } from './processingPreview';
+import { tileMetres, tileSizeOf } from './tileSize';
 import type { Collection, StacItem } from './types';
 
 const S2 = processInfo(s2 as unknown as ProcessDescription);
@@ -342,7 +342,7 @@ describe('previewSpec', () => {
 
   it('marks its overlays as a preview, held under the pixel size of the data', () => {
     const spec = previewSpec({ ...base, plan: ready([bandMath('red')]) })!;
-    expect(tileResolution(51, spec.maxZoom)).toBeGreaterThan(10);
+    expect(tileMetres(51, spec.maxZoom, 256)).toBeGreaterThan(10);
     expect(previewOverlays(spec, null)[0]).toMatchObject({ kind: 'raster', bounds: [10, 50, 11, 51], preview: true });
   });
 
@@ -406,7 +406,7 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
 
   it('carries no AOI, no id of a job, a recipe or a permalink and no hash, in any URL it builds', () => {
     const spec = previewSpec({ ...base, area: 'aoi', dataset: wide })!;
-    const known = new Set(['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name']);
+    const known = new Set(['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name', 'tilesize']);
     for (const url of [spec.mosaics[0].url, spec.mosaics[0].probe, spec.probe, spec.measure, ...spec.scenes.map((s) => s.url)]) {
       expect(url).not.toContain('#');
       expect([...new Set(query(url).searchParams.keys())].filter((name) => !known.has(name))).toEqual([]);
@@ -440,11 +440,15 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
     expect(spec.scenes.map((s) => [s.id, s.below])).toEqual([['S2_D', 8], ['S2_B', 8], ['S2_A', 8], ['S2_C', 8]]);
     expect(query(spec.measure).pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2_D/statistics');
     const overlays = previewOverlays(spec, null);
-    expect(overlays[0]).toMatchObject({ minZoom: 8, maxZoom: 13, preview: true });
+    // The mosaic's tiles are 512 px: its last level is one below the scenes' (13), and it is asked for from map zoom 7.5,
+    // where the scenes step aside (NM4-29b).
+    expect(spec.maxZoom).toBe(13);
+    expect(overlays[0]).toMatchObject({ minZoom: 8, maxZoom: 12, preview: true });
     expect(overlays[0]).not.toHaveProperty('hideFrom');
     expect(overlays.slice(1).map((o) => o.kind === 'raster' && [o.minZoom, o.maxZoom, o.hideFrom])).toEqual(
-      Array(4).fill([5, 7, 6.5]),
+      Array(4).fill([5, 7, 7.5]),
     );
+    expect(overlays.map((o) => o.kind === 'raster' && tileSizeOf(o.tileUrl))).toEqual([512, 256, 256, 256, 256]);
     expect(overlays.slice(1).map((o) => o.kind === 'raster' && query(o.tileUrl).pathname.split('/')[4])).toEqual(['S2_D', 'S2_B', 'S2_A', 'S2_C']);
   });
 
@@ -823,17 +827,29 @@ describe('the pixel size of the data (F4)', () => {
 describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
   const at51 = [[10, 50, 11, 51]] as [number, number, number, number][];
 
-  it('computes metres per pixel of a 256-pixel Web Mercator tile', () => {
-    expect(tileResolution(0, 0)).toBeCloseTo(156543.03392, 4);
-    expect(tileResolution(0, 14)).toBeCloseTo(9.5546, 3);
-    expect(tileResolution(60, 14)).toBeCloseTo(4.7773, 3);
+  it('computes metres per pixel of a Web Mercator tile of its size', () => {
+    expect(tileMetres(0, 0, 256)).toBeCloseTo(156543.03392, 4);
+    expect(tileMetres(0, 14, 256)).toBeCloseTo(9.5546, 3);
+    expect(tileMetres(60, 14, 256)).toBeCloseTo(4.7773, 3);
+    // A 512-px tile of level L has the pixels of a 256-px tile of level L + 1.
+    expect(tileMetres(51, 13, 512)).toBeCloseTo(tileMetres(51, 14, 256), 6);
+  });
+
+  it('ends a 512-px preview one level lower than a 256-px one of the same data (NM4-29b)', () => {
+    // 10 m at 51° N: 256-px tiles are held at level 13, and a 512-px tile of level 12 is as coarse as one of level 13.
+    expect(previewMaxZoom(at51, 10, { min: 8, max: 22 }, 256)).toBe(13);
+    expect(previewMaxZoom(at51, 10, { min: 8, max: 22 }, 512)).toBe(12);
+    expect(tileMetres(51, 12, 512)).toBeGreaterThan(10);
+    expect(tileMetres(51, 13, 512)).toBeLessThanOrEqual(10);
+    // The default is the 256-px tile.
+    expect(previewMaxZoom(at51, 10, { min: 8, max: 22 })).toBe(13);
   });
 
   it('stops at the last level whose tiles are coarser than the data, where the scene is farthest from the equator', () => {
     // 10 m at 51° N: level 13 is 12.0 m per pixel, level 14 is 6.0 m.
     expect(previewMaxZoom(at51, 10, { min: 8, max: 22 })).toBe(13);
-    expect(tileResolution(51, 13)).toBeGreaterThan(10);
-    expect(tileResolution(51, 14)).toBeLessThan(10);
+    expect(tileMetres(51, 13, 256)).toBeGreaterThan(10);
+    expect(tileMetres(51, 14, 256)).toBeLessThan(10);
     // At the equator level 13 is 19.1 m, level 14 is 9.55 m: the same level, as 9.55 < 10.
     expect(previewMaxZoom([[10, -1, 11, 1]], 10, { min: 8, max: 22 })).toBe(13);
     // 30 m (a DEM): level 12 is 38 m at the equator, level 13 is 19 m.
@@ -841,7 +857,7 @@ describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
   });
 
   it('uses a level while it is coarser than the data and not once it is as fine', () => {
-    const level13 = tileResolution(0, 13);
+    const level13 = tileMetres(0, 13, 256);
     const equator = [[10, -1, 11, 1]] as [number, number, number, number][];
     expect(previewMaxZoom(equator, level13 * 0.999, { min: 0, max: 22 })).toBe(13);
     expect(previewMaxZoom(equator, level13 * 1.001, { min: 0, max: 22 })).toBe(12);
@@ -856,8 +872,8 @@ describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
   ] as const)('holds every tile under the pixel size at its farthest latitude (%s)', (_, gsd, bbox) => {
     const level = previewMaxZoom([bbox as unknown as [number, number, number, number]], gsd, { min: 0, max: 22 });
     const farthest = Math.max(Math.abs(bbox[1]), Math.abs(bbox[3]));
-    expect(tileResolution(farthest, level)).toBeGreaterThan(gsd);
-    expect(tileResolution(farthest, level + 1)).toBeLessThanOrEqual(gsd);
+    expect(tileMetres(farthest, level, 256)).toBeGreaterThan(gsd);
+    expect(tileMetres(farthest, level + 1, 256)).toBeLessThanOrEqual(gsd);
   });
 
   it('takes the scene farthest from the equator when there are several', () => {

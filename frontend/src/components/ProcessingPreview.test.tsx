@@ -2041,7 +2041,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(tiles).toEqual(['items', 'items', 'mosaic']);
     const mosaic = layer.overlays[2];
     expect(mosaic).toMatchObject({ kind: 'raster', minZoom: 8, preview: true });
-    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', maxZoom: 7, hideFrom: 6.5, preview: true });
+    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', maxZoom: 7, hideFrom: 7.5, preview: true });
     expect(layer.restore.itemIds).toEqual(['S2B_B', 'S2B_A']);
   });
 

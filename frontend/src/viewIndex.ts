@@ -14,13 +14,13 @@ import {
   MAX_MOSAIC_REQUEST_BYTES,
   mosaicRequestBytes,
   passesOf,
-  TILE_LEVEL_AHEAD,
   viewOfPass,
   type Mosaics,
   type PlannedRaster,
   type SceneEntry,
 } from './mosaic';
 import { canonicalJson } from './processing';
+import { firstZoomOf } from './tileSize';
 import type { AppliedRender, Collection, TimeStepGroup } from './types';
 
 // The names an expression reads, in the order it first names them (a preset names no function). The registry checks that
@@ -103,9 +103,9 @@ export function indexBlockOf(args: {
     const rasters = view.kind === 'mosaic' ? view.rasters : pass.map(([, info]) => info);
     const planned = view.kind === 'pending' ? { rasters, block: null } : indexRastersOfPass(rasters, pass, datasetId, preset);
     if (planned.block) return planned.block;
-    for (const raster of planned.rasters) lowest = Math.min(lowest, raster.minZoom);
+    for (const raster of planned.rasters) lowest = Math.min(lowest, firstZoomOf(raster.minZoom, raster.tileUrl));
   }
-  return lowest !== Infinity && mapZoom < lowest - TILE_LEVEL_AHEAD ? 'zoom' : null;
+  return lowest !== Infinity && mapZoom < lowest ? 'zoom' : null;
 }
 
 // The statistics of the index over one scene, for "auto-scale": the same tile route with the same step.

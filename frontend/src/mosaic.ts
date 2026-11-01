@@ -12,6 +12,7 @@
 //            scene on top of an overlap does not change when the map zooms across z8.
 
 import { buildMosaicTileTemplate } from './api';
+import { firstZoomOf } from './tileSize';
 import type { DownloadedInfo, TimeStepGroup } from './types';
 
 // Mirror `earthx.api.mosaic_tiles` (`MIN_MOSAIC_ZOOM`, `MIN_MOSAIC_ITEMS`, `MAX_MOSAIC_ITEMS`,
@@ -26,10 +27,9 @@ export const MAX_MOSAIC_OPERATOR_ASSETS = 4;
 export const MAX_MOSAIC_REQUEST_BYTES = 7168;
 
 // A source's `minzoom`/`maxzoom` are tile levels, a layer's `maxzoom` is a map zoom. MapLibre rounds the map zoom
-// for a raster source and asks 256-px tiles for the level above it (`placeRaster`), so tile level L is first
-// asked at map zoom L - 1.5: from there the mosaic is loaded and the scenes under it have to be out of sight.
-export const TILE_LEVEL_AHEAD = 1.5;
-
+// for a raster source and asks for the level above it where its tiles are smaller than 512 px (`tileSize.ts`), so a
+// mosaic's level L (512 px) is first asked at map zoom L - 0.5: from there the mosaic is loaded and the scenes under it
+// (256 px, asked from L - 1.5) have to be out of sight.
 // The bytes of a mosaic tile's request as the tiler counts them (`check_length`): path and query, without the address
 // of the API, with the largest tile of `level` in the place of the grid's placeholders (the longest of its tiles).
 export function mosaicRequestBytes(tileUrl: string, level: number): number {
@@ -131,7 +131,7 @@ export function viewOfPass(datasetId: string | null, entries: SceneEntry[], mosa
       bounds: info.bounds,
       minZoom: info.minZoom,
       maxZoom: mosaic.minZoom - 1, // `isMosaicPass`: every scene is released at least to z8
-      hideFrom: mosaic.minZoom - TILE_LEVEL_AHEAD,
+      hideFrom: firstZoomOf(mosaic.minZoom, mosaic.tileUrl),
     }));
   return { kind: 'mosaic', rasters: [...below, mosaic] };
 }

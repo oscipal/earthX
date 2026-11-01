@@ -4,6 +4,7 @@
 
 import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
 import { AOI_BODY_KEY, aoiCountsOf, type AoiCounts } from './aoiFilter';
+import { MOSAIC_TILE_SIZE } from './tileSize';
 import type { Bbox, Collection, StacItem } from './types';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
@@ -366,8 +367,9 @@ function mosaicQuery(itemIds: readonly string[], asset: string): string {
 
 const mosaicBase = (datasetId: string) => `${BASE}/collections/${encodeURIComponent(datasetId)}/mosaic`;
 
+// A mosaic tile is 512 px (`tileSize.ts`); the TileJSON of the same pass names no size, the tiler gives its own.
 export function buildMosaicTileTemplate(datasetId: string, itemIds: readonly string[], asset: string): string {
-  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicQuery(itemIds, asset)}`;
+  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicQuery(itemIds, asset)}&tilesize=${MOSAIC_TILE_SIZE}`;
 }
 
 // What the client reads of a mosaic's TileJSON: the surface (`bounds`), the levels it
@@ -478,7 +480,7 @@ export function buildMosaicOperatorTileTemplate(
   steps: readonly TileStep[],
   band: ShownBands = null,
 ): string {
-  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicOperatorQuery(itemIds, assets, steps, band)}`;
+  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicOperatorQuery(itemIds, assets, steps, band)}&tilesize=${MOSAIC_TILE_SIZE}`;
 }
 
 // Its TileJSON: the cheap question, with the refusals of the tiles and `earthx:order`, the scenes in the order a
