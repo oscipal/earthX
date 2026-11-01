@@ -407,3 +407,5 @@ Der Höchststand liegt beim Schreiben des COG, nicht beim Messen; die Arbeitsdat
 - **B — Methodentext mit Zahlen:** Option 1, so lassen; die Zahlen stehen in `earthx:normalize`.
 - **Auslegungen aus §16:** angenommen.
 - **Replay-Test des Wolkenfilters** (`test_aoi_cloud_filter_live`, „each scene is read once“): nicht anfassen, Backlog 68.
+
+**Prüfskript nach Ottos Lauf (01.11.2026).** `"$Text: …"` war für 5.1 ein Laufwerksverweis und brach beim Parsen ab; jetzt `"${Text}: …"`, Datei UTF-8 mit BOM, ein statischer Test hält beides fest. Schritt 1 fand keine Szene: Um 7 °E / 46 °N überlappen zwei Sentinel-2-Kacheln nur um rund 0,09°, das feste Quadrat von 0,3° passte in keinen Umriss. Das Quadrat wird jetzt in den Umriss der wolkenärmsten Szene gelegt (so nah am alten Punkt wie möglich), bei keinem Treffer folgt ein weiterer Zeitraum, sonst nennt der Schritt die gezählten Gründe ohne Kennung und Koordinate. Die Auswahl läuft im Test unter `pwsh` gegen eine nachgestellte Suchantwort (CI; in der Sitzung gibt es kein PowerShell). Derselbe `"$Text:"`-Fehler steht in `scripts/checks/nm4-11-normalize.ps1` (nicht geändert).
