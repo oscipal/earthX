@@ -36,6 +36,11 @@ export function indexOfLayer(layer: MapLayer, datasets: readonly DatasetOption[]
   return layer.restore.appliedRender ? viewIndexOf(layer.restore.appliedRender, dataset?.collection) : null;
 }
 
+// The index a layer's download offers besides its raw bands (Otto, 1.11.2026): the one it shows, where it can be computed.
+export function indexOfferedFor(layer: MapLayer, datasets: readonly DatasetOption[]): IndexPreset | null {
+  return indexDownloadBlock(layer, datasets) === null ? indexOfLayer(layer, datasets) : null;
+}
+
 // Why the index of a layer cannot be downloaded, or `null`: only an AOI crop can (a whole scene is a job of its own to start in
 // Processing), and only where the licence allows processing.
 export function indexDownloadBlock(layer: MapLayer, datasets: readonly DatasetOption[]): string | null {

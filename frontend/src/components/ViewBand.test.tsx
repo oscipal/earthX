@@ -229,15 +229,11 @@ describe('choosing a band', () => {
     expect(store().pendingBand).toBe('B08');
   });
 
-  it('refuses a band the item does not have, and does nothing in the view of a layer', async () => {
+  it('refuses a band the item does not have', async () => {
     mount();
     act(() => store().chooseViewBand('B99'));
     expect(store().pendingBand).toBe('');
     act(() => store().chooseViewBand('visual'));
-    expect(store().pendingBand).toBe('');
-    mount({ viewOfLayer: true });
-    expect(select().disabled).toBe(true);
-    act(() => store().chooseViewBand('B04'));
     expect(store().pendingBand).toBe('');
   });
 
@@ -306,3 +302,66 @@ describe('a band and the layer manager', () => {
     expect(select().value).toBe('band:B04');
   });
 });
+
+// Otto, 1.11.2026 (zu #272): "Add to layers" pins the whole view, not only the band: the layer keeps every band and RGB of the view, and
+// only the setting stays as the view had it. The dropdown of the layer is free, "Apply to all" keeps a new choice for the layer.
+describe('a layer pinned with a band', () => {
+  async function pinWithBand() {
+    mount();
+    choose('band:B04');
+    await settle();
+    apply();
+    await settle();
+    act(() => store().addCurrentToLayers());
+    await act(async () => {
+      await vi.waitFor(() => expect(store().layers).toHaveLength(1));
+    });
+    act(() => store().exitFocus());
+    act(() => store().selectLayer(store().layers[0].id));
+    act(() => root.render(<ViewerControls />));
+    await settle();
+  }
+  const layerAssets = () => Object.values(store().layers[0].restore.downloaded).map((d) => d.asset);
+  const layerTiles = () => store().layers[0].overlays.flatMap((o) => (o.kind === 'raster' ? [o.tileUrl] : []));
+
+  it('shows the picture it was pinned with in the dropdown, which is free, with every band and RGB still in it', async () => {
+    await pinWithBand();
+    expect(store().viewOfLayer).toBe(true);
+    expect(select().disabled).toBe(false);
+    expect(select().value).toBe('band:B04');
+    expect([...select().options].map((o) => o.textContent)).toEqual(['RGB', 'B04', 'B08', '──────────', 'NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
+    expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B04' });
+    // The scenes remember the asset the standard picture comes from.
+    expect(Object.values(store().layers[0].restore.downloaded).every((d) => d.baseAsset === 'visual')).toBe(true);
+  });
+
+  it('is drawn from another band, and from RGB again, once "Apply to all" keeps the choice for the layer', async () => {
+    await pinWithBand();
+    expect(layerAssets()).toEqual(['B04']);
+    choose('band:B08');
+    await settle();
+    // Not kept before it is asked for.
+    expect(layerAssets()).toEqual(['B04']);
+    await act(async () => { await store().saveViewLook(); });
+    expect(layerAssets()).toEqual(['B08']);
+    expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B08' });
+    expect(layerTiles().every((url) => url.includes('B08'))).toBe(true);
+    choose('');
+    await act(async () => { await store().saveViewLook(); });
+    expect(layerAssets()).toEqual(['visual']);
+    expect(store().layers[0].restore.appliedRender.band).toBeUndefined();
+    expect(layerTiles().every((url) => url.includes('visual'))).toBe(true);
+  });
+
+  it('is drawn with an index from a band, and back, with no quicklook under the index', async () => {
+    await pinWithBand();
+    choose('index:NDVI');
+    await act(async () => { await store().saveViewLook(); });
+    expect(store().layers[0].restore.appliedRender).toMatchObject({ index: 'NDVI' });
+    expect(store().layers[0].restore.appliedRender.band).toBeUndefined();
+    expect(layerAssets()).toEqual(['visual']);
+    expect(layerTiles().every((url) => url.includes('band_math'))).toBe(true);
+    expect(store().layers[0].overlays.some((o) => o.kind === 'image')).toBe(false);
+  });
+});
+

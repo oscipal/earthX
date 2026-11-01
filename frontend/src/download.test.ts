@@ -119,6 +119,18 @@ describe('downloadRequestFor', () => {
     expect(req?.assets).toEqual(['visual']);
   });
 
+  // Otto, 1.11.2026 (zu #272): a layer pinned with a band downloads the raw bands of its scenes, not the one band it draws now.
+  it('asks for the asset the scenes were opened with, not the band the layer draws', () => {
+    const req = downloadRequestFor(
+      layer({
+        downloaded: { S2A_1: { datasetId: 'sentinel-2-c1-l2a', tileUrl: 't1', bounds: [10, 47, 11, 48], asset: 'B04', baseAsset: 'visual', minZoom: 0, maxZoom: 19 } },
+        appliedRender: { band: 'B04' },
+      }),
+      DATASETS,
+    );
+    expect(req?.assets).toEqual(['visual']);
+  });
+
   // V-6: a quicklook-only layer (pinned straight from the results list,
   // never viewed at full resolution) can now be downloaded too, over the
   // dataset's default visualisation asset — same reasoning as

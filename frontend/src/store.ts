@@ -80,7 +80,7 @@ import {
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
 import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
-import { downloadIndexCrop, estimateIndexDownload, indexOfLayer, type IndexNote } from './indexDownload';
+import { downloadIndexCrop, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
@@ -1510,6 +1510,9 @@ export interface AppState {
   downloadStatus: string | null;
   // What the dialog says of the download of an index: the estimate, or the limit that stops it (NM4-14b); `null` for any other.
   downloadIndexNote: IndexNote | null;
+  // What the dialog of a layer that shows an index downloads (Otto, 1.11.2026): its raw bands, or the index as a job would give it.
+  downloadAs: 'raw' | 'index';
+  setDownloadAs: (what: 'raw' | 'index') => void;
   enterFocus: (cropToAoi: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
   addAllToLayers: () => void;
@@ -1668,6 +1671,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloading: false,
   downloadStatus: null,
   downloadIndexNote: null,
+  downloadAs: 'raw',
   playing: false,
   shownGroupIndex: null,
   revealNotBefore: 0,
@@ -2130,16 +2134,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const layer = s.layers.find((l) => l.id === id);
     if (!layer) return;
     const outcome = decideDownloadOutcomeForLayer(layer, s.datasets);
-    set({ downloadOutcome: outcome });
-    if (outcome === 'crop' && indexOfLayer(layer, s.datasets)) {
-      // What the job of an index will cost, asked as "Review" asks it; a limit that applies stops the download here, with its reason.
-      const controller = new AbortController();
-      indexDownloadAbort = controller;
-      set({ downloadIndexNote: { state: 'estimating' } });
-      const note = await estimateIndexDownload({ layer, datasets: s.datasets, signal: controller.signal });
-      if (!controller.signal.aborted && get().downloadDialogLayerId === id) set({ downloadIndexNote: note });
-      return;
-    }
+    set({ downloadOutcome: outcome, downloadAs: 'raw', downloadIndexNote: null });
     if (outcome !== 'originals') return;
     const datasetId = layer.restore.datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
@@ -2243,8 +2238,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
       downloadIndexNote: null,
+      downloadAs: 'raw',
       downloadStatus: null,
     });
+  },
+  // The dialog of a layer that shows an index offers its raw bands and the index; the index asks what its job will cost when it is chosen.
+  setDownloadAs: async (what) => {
+    const s = get();
+    const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
+    indexDownloadAbort?.abort();
+    if (!layer || (what === 'index' && !indexOfferedFor(layer, s.datasets))) {
+      set({ downloadAs: 'raw', downloadIndexNote: null });
+      return;
+    }
+    if (what === 'raw') {
+      set({ downloadAs: 'raw', downloadIndexNote: null });
+      return;
+    }
+    // What the job of an index will cost, asked as "Review" asks it; a limit that applies stops the download here, with its reason.
+    const controller = new AbortController();
+    indexDownloadAbort = controller;
+    set({ downloadAs: 'index', downloadIndexNote: { state: 'estimating' } });
+    const note = await estimateIndexDownload({ layer, datasets: s.datasets, signal: controller.signal });
+    if (!controller.signal.aborted && get().downloadDialogLayerId === layer.id) set({ downloadIndexNote: note });
   },
   setDownloadResolution: (factor) => set({ downloadResolution: factor, downloadExportOffer: null }),
 
@@ -2271,7 +2287,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     // A layer that shows an index is downloaded as that index, computed as a job would, with no job in the list (NM4-14b).
-    if (layer && indexOfLayer(layer, s.datasets)) {
+    if (layer && s.downloadAs === 'index' && indexOfferedFor(layer, s.datasets)) {
       // Only what the estimate let through (or a try that failed, which may be tried again).
       const note = s.downloadIndexNote;
       if (note?.state !== 'ready' && note?.state !== 'failed') return;
@@ -2485,8 +2501,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   chooseViewIndex: (name) =>
     set((s) => {
       const shown = shownImageOf(viewImagesOf(s), s.shownImage);
-      // A layer keeps the index it was added with: it is not chosen again from the layer manager.
-      if (!shown || !s.focusMode || s.viewOfLayer) return {};
+      if (!shown || !s.focusMode) return {};
       const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
       // Without an index the image goes back to what the dataset shows: the look saved for it ("Apply to all") unless that
       // names an index too, else the standard one.
@@ -2503,7 +2518,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   chooseViewBand: (band) => {
     const s = get();
     const shown = shownImageOf(viewImagesOf(s), s.shownImage);
-    if (!shown || !s.focusMode || s.viewOfLayer) return;
+    if (!shown || !s.focusMode) return;
     const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
     if (band === null) {
       const saved = s.savedLooks[shown.datasetId];
@@ -2535,27 +2550,46 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPendingPercent: (end, text) => set(end === 'low' ? { pendingPercentLow: text } : { pendingPercentHigh: text }),
   // "Save" (NM4-53, Otto 29.10.2026): the fields become the look of every image of the dataset that is shown, for the
   // length of the view. If the view is the picture of a pinned layer, the layer keeps the look too (NM4-50).
-  saveViewLook: () => {
+  saveViewLook: async () => {
     // Percentiles that are not applied yet give their values first, so that what is kept is what is drawn; only then is it
     // asynchronous, any other "Save" is done when the call returns.
     if (get().pendingUnit === 'percent' && !samePercent(get().appliedRender.percent, pendingPercentOf(get()))) {
       return applyPercentRender(set, get).then(() => {
-        if (samePercent(get().appliedRender.percent, pendingPercentOf(get()))) void get().saveViewLook();
+        if (samePercent(get().appliedRender.percent, pendingPercentOf(get()))) return get().saveViewLook();
       });
     }
-    const s = get();
+    let s = get();
     const render = { ...s.appliedRender, ...lookOfPendingFields(s) };
     const layer = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
     let layers = s.layers;
     if (layer) {
-      // The same scenes as the layer has, drawn with the look: its rasters are made again, its quicklook underlays stay.
-      const fresh = overlaysOfEntries({ ...s, appliedRender: render }, Object.entries(layer.restore.downloaded), layer.restore.cropToAoi ? layer.restore.aoi : null);
+      // The same scenes as the layer has, drawn with the look: its rasters are made again (from the asset of the band the look names,
+      // or the index it computes, NM4-45), its quicklook underlays stay where the look has none. Any band or index of the dataset can
+      // be chosen again here, as in the view the layer came from (Otto, 1.11.2026).
+      const clip = layer.restore.cropToAoi ? layer.restore.aoi : null;
+      const entries = Object.entries(layer.restore.downloaded).map(([id, info]): SceneEntry => [id, withAsset(id, info, assetOfLook(info, render))]);
+      const collection = s.datasets.find((d) => d.id === layer.restore.datasetId)?.collection;
+      const index = viewIndexOf(render, collection);
+      const groups = sectionsForView(s).flatMap((section) => section.groups);
+      const block = index && layer.restore.datasetId ? indexBlockOf({ datasetId: layer.restore.datasetId, entries, groups, mosaics: s.mosaics, preset: index, mapZoom: Infinity }) : null;
+      if (index && block) {
+        set({ error: `${indexNote(block, index.name)}. Start a job in Processing for the whole scenes.` });
+        return;
+      }
+      let fresh = overlaysOfEntries({ ...s, appliedRender: render }, entries, clip);
+      if (fresh === null) {
+        // The mosaic of another band is not known yet: ask for it, then make the layer.
+        await fetchMosaics(set, get, passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass })));
+        s = get();
+        fresh = overlaysOfEntries({ ...s, appliedRender: render }, entries, clip);
+      }
       if (fresh === null) {
         set({ error: 'The layer cannot be saved yet: its scenes are still loading.' });
         return;
       }
-      const overlays = [...layer.overlays.filter((o) => o.kind === 'image'), ...fresh.filter((o) => o.kind === 'raster')];
-      layers = s.layers.map((l) => (l.id === layer.id ? { ...l, overlays, restore: { ...l.restore, appliedRender: { ...render } } } : l));
+      const quicklooks = index ? [] : layer.overlays.some((o) => o.kind === 'image') ? layer.overlays.filter((o) => o.kind === 'image') : fresh.filter((o) => o.kind === 'image');
+      const overlays = [...quicklooks, ...fresh.filter((o) => o.kind === 'raster')];
+      layers = s.layers.map((l) => (l.id === layer.id ? { ...l, overlays, restore: { ...l.restore, downloaded: Object.fromEntries(entries), appliedRender: { ...render } } } : l));
     }
     const images = viewImagesOf(s);
     const shown = shownImageOf(images, s.shownImage);

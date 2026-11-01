@@ -240,7 +240,7 @@ async function checkDraw(browser, theme, viewport) {
   const started = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().jobs.length);
   if (started !== 0) problems.push(`${started} job(s) were started`);
 
-  // The layer manager: the view of the layer shows its index, locked.
+  // The layer manager: the view of the layer shows its index, with the dropdown free (Otto, 1.11.2026, zu #272).
   await page.evaluate(async () => {
     const { useAppStore } = await import('/src/store.ts');
     useAppStore.getState().exitFocus();
@@ -248,10 +248,28 @@ async function checkDraw(browser, theme, viewport) {
   });
   await page.locator('.layer-row [data-col="name"]').first().click({ force: true });
   await page.waitForSelector('.scene-view .vc-apply');
-  // The box of every layer (NM4-54 part 5): the dropdown keeps its place, locked.
-  if ((await field(page).locator('select').isDisabled()) !== true) problems.push('the dropdown "Band" of a layer is not locked');
+  // The box of every layer (NM4-54 part 5): the same fields; the dropdown is free, as in the view the layer came from.
+  if ((await field(page).locator('select').isDisabled()) !== false) problems.push('the dropdown "Band" of a layer is locked');
+  if ((await field(page).locator('select').inputValue()) !== 'index:NDWI') problems.push('the layer does not show its index in the dropdown');
   if ((await page.locator('.scene-view .vc-render > label > span').allTextContents()).join('|') !== 'Band|vmin|vmax|Colormap') problems.push('the settings of the layer are not the fields of every layer');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_layer.png`) });
+  // Another band for the layer: "Apply to all" keeps it, the layer is drawn from that band's asset, and no job is started.
+  await field(page).locator('select').selectOption('band:red');
+  await page.waitForTimeout(800);
+  await page.locator('.scene-view .vc-save').click();
+  await page.waitForTimeout(1500);
+  const banded = await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    const [l] = useAppStore.getState().layers;
+    return { look: l.restore.appliedRender, urls: l.overlays.filter((o) => o.kind === 'raster').map((o) => o.tileUrl) };
+  });
+  if (banded.look.band !== 'red' || banded.look.index) problems.push(`the layer's look after a band is ${JSON.stringify(banded.look)}`);
+  if (!banded.urls.every((u) => u.includes('asset=red') && !u.includes('band_math'))) problems.push(`the layer is not drawn from the band: ${JSON.stringify(banded.urls)}`);
+  // And the index again, as the rest of the check goes on with it.
+  await field(page).locator('select').selectOption('index:NDWI');
+  await page.waitForTimeout(500);
+  await page.locator('.scene-view .vc-save').click();
+  await page.waitForTimeout(1500);
 
   // Its ⇩: the index as a Processing job would give it, with no panel and no job to see.
   await page.evaluate(async () => {
@@ -260,10 +278,16 @@ async function checkDraw(browser, theme, viewport) {
     useAppStore.setState({ dock: 'layers' });
   });
   const download = page.locator('.layer-row [data-col="download"]').first();
-  if ((await download.getAttribute('title')) !== 'Download the NDWI of the AOI crop, computed as a Processing job would') problems.push(`the ⇩ says ${await download.getAttribute('title')}`);
+  if ((await download.getAttribute('title')) !== 'Download the AOI crop, one file per group; the NDWI too, computed as a Processing job would') problems.push(`the ⇩ says ${await download.getAttribute('title')}`);
   await download.click({ force: true });
   const dialog = page.locator('.dialog-panel');
   await dialog.waitFor();
+  // The dialog starts with the raw bands, as for any layer; the index is chosen besides them.
+  const rawText = await dialog.innerText();
+  if (!/asset/.test(rawText) || (await dialog.locator('input[name="download-as"]').count()) !== 2) problems.push(`the dialog does not start with the raw bands: ${rawText.slice(0, 160)}`);
+  if ((await dialog.locator('input[name="download-as"]').first().isChecked()) !== true) problems.push('the raw bands are not chosen to begin with');
+  await dialog.locator('input[name="download-as"]').nth(1).check();
+  await page.waitForTimeout(300);
   const dialogText = await dialog.innerText();
   if (!/NDWI \(\(G - N\) \/ \(G \+ N\)\)/.test(dialogText)) problems.push(`the dialog does not name the index: ${dialogText.slice(0, 160)}`);
   if (await dialog.locator('.dialog-resolution').count()) problems.push('the dialog offers a resolution for an index');

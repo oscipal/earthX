@@ -1192,3 +1192,8 @@ Aufgabe NM4-24 (Paket NM4-54, Stufe A). Seit NM4-02 lesen Zuschnitt, Export, Mos
 - **Prüfungen und Kosten** wie bei der Mosaik-Kachel: Lizenzstufe mindestens `display` (403), unbekannter Datensatz (404/410), Item-Cache nötig (503), Items über denselben `ItemFetches` (je Item einmal, vier gleichzeitig). Es wird kein Pixel eines Assets gelesen und kein Mosaik gebaut; gelesen werden nur die Items und das CRS des Assets.
 - **Grenze 500.** Größere Zeitscheiben bekommen keine Reihenfolge: das Frontend behält dann die Auswahlreihenfolge und sagt es in einer Meldung. Der Wert steht in `MAX_ORDER_ITEMS`.
 - **Frontend.** Die Reihenfolge liegt neben den Mosaiken im Store (`mosaics`, Schlüssel `order|<Vorlage>`); die Ansicht, ein angehefteter Layer und die Quicklook-Unterlagen stapeln danach (`mosaic.ts::inStackOrder`). Bekannte Grenze bleibt: Bei gemischten CRS ordnet der Job nur Szenen, die die AOI berühren (`adr/0014` §15p); die Route ordnet alle genannten Szenen.
+
+## Nachtrag NM4-45 (2026-11-01): ein Band in der Ansicht über den Parameter `asset`
+
+Die Ansicht zeichnet ein einzelnes Band, indem sie die Szenen von dessen Asset zeichnet: Kachel-Route (`?asset=`, M2-04) und Mosaik-Kachel (`asset`, ein Asset je Kachel) nehmen den Schlüssel schon, eine neue Route oder ein Registry-Feld war nicht nötig. Das Mosaik eines anderen Assets ist ein anderes Mosaik (anderer Schlüssel im Store, eigene TileJSON-Anfrage); bis es da ist, bleibt das Bild davor stehen. Die Bänder nennt das Item, nicht die Registry (`adr/0014` §15 Nachtrag NM4-45).
+

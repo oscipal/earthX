@@ -117,8 +117,8 @@ export default function ViewerControls() {
     ...bandAssets.filter((asset) => asset !== standardAsset).map((asset) => ({ value: `band:${asset}`, label: asset })),
     ...(presets.length > 0 ? [{ value: '|', label: '', separator: true }, ...presets.map((preset) => ({ value: `index:${preset.name}`, label: preset.name, title: presetTip(preset) }))] : []),
   ];
-  // A dropdown with one entry offers no choice and is not shown. The view of a layer of the layer manager keeps what the layer was added with
-  // (Otto, 1.11.2026): its dropdown stays in its place, locked.
+  // A dropdown with one entry offers no choice and is not shown. The view of a layer of the layer manager has it free, as the view the
+  // layer came from (Otto, 1.11.2026): "Apply to all" keeps the choice for the layer.
   const showBand = bandOptions.filter((option) => !option.separator).length > 1;
   const bandValue = chosen ? `index:${chosen.name}` : pendingBand ? `band:${pendingBand}` : '';
   const chooseView = (value: string) => {
@@ -236,8 +236,7 @@ export default function ViewerControls() {
                   value: bandValue,
                   options: bandOptions,
                   onChange: chooseView,
-                  disabled: viewOfLayer,
-                  title: viewOfLayer ? 'A layer keeps the picture it was added with' : chosen ? presetTip(chosen) : BAND_TIP,
+                  title: chosen ? presetTip(chosen) : BAND_TIP,
                 }
               : undefined
           }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
-import { indexDownloadBlock, indexOfLayer } from '../indexDownload';
+import { indexOfferedFor } from '../indexDownload';
 import { flipIdOf } from '../layerFlip';
 import { layerShownName } from '../layerName';
 import type { MapLayer } from '../layers';
@@ -203,9 +203,9 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           disabled={downloadOutcome === 'disabled' || !canDownloadLayer(l, datasets)}
           title={
             downloadOutcome === 'disabled'
-              ? (indexDownloadBlock(l, datasets) ?? 'Draw an AOI to download this layer')
-              : indexOfLayer(l, datasets)
-                ? `Download the ${indexOfLayer(l, datasets)!.name} of the AOI crop, computed as a Processing job would`
+              ? 'Draw an AOI to download this layer'
+              : indexOfferedFor(l, datasets)
+                ? `Download the AOI crop, one file per group; the ${indexOfferedFor(l, datasets)!.name} too, computed as a Processing job would`
                 : downloadOutcome === 'originals'
                 ? 'Download the original files, straight from the source'
                 : 'Download the AOI crop, one file per group'
