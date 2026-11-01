@@ -1,7 +1,7 @@
 // Browser check of the quick calculation of an index in the view (NM4-14b, review of Otto 31.10.2026), in a real browser with
 // made-up answers of the tiler:
 //   1. The dropdown "Band" (with the presets under a line) stands first in the settings of the view, the settings keep their grid (no overlap, nothing over the
-//      edge, the buttons as high as the fields); a dataset without presets has none and the row is as before.
+//      edge, the buttons as high as the fields); a dataset without presets offers the bands alone.
 //   2. Choosing an index puts it into the fields; "Apply" draws it, through the tile route with an operator (the mosaic of the pass here): the tiles ask for
 //      `op=band_math`, the band named like the index, the range and colormap of the preset, and no raw asset.
 //   3. Zoomed out the choice stays and a short note says "Zoom in to compute NDWI", with the explanation in its tooltip; no tile is
@@ -118,7 +118,7 @@ async function checkLayout(browser, theme, viewport) {
   const labels = await page.locator('.scene-view .vc-render > label > span').allTextContents();
   if (labels.join('|') !== 'Band|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
   const options = await field(page).locator('option').allTextContents();
-  if (options.join('|') !== 'RGB|──────────|NDVI|NDWI|NDSI|NBR|EVI') problems.push(`the options are ${options}`);
+  if (options.join('|') !== 'RGB|red|green|blue|nir|swir16|swir22|──────────|NDVI|NDWI|NDSI|NBR|EVI') problems.push(`the options are ${options}`);
   const report = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
     const view = document.querySelector('.scene-view');
@@ -141,13 +141,14 @@ async function checkLayout(browser, theme, viewport) {
   return { name, problems };
 }
 
-// 1b. No dropdown without presets.
+// 1b. Without presets the dropdown offers the bands of the item and nothing under a line (the fixture's scenes carry single-band assets).
 async function checkNone(browser, theme, viewport) {
   const name = `none ${theme} ${viewport}`;
   const { context, page, problems } = await open(browser, theme, viewport, []);
-  if ((await field(page).count()) !== 0) problems.push('a dataset without presets has the dropdown');
+  const options = await field(page).locator('option').allTextContents();
+  if (options.join('|') !== 'RGB|red|green|blue|nir|swir16|swir22') problems.push(`the options are ${options}`);
   const labels = await page.locator('.scene-view .vc-render > label > span').allTextContents();
-  if (labels.join('|') !== 'vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
+  if (labels.join('|') !== 'Band|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
   await context.close();
   return { name, problems };
 }
