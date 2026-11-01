@@ -1051,15 +1051,16 @@ export function orderRetired(job: JobEntry, descriptions: Record<string, Descrip
 }
 
 // The numbers the locked statistical steps of a result keep (NM4-71): those its job wrote to `earthx:normalize`, by the index of the
-// step; for a result that lacks the property (from before NM4-71) those of the copy of its order. Where the property is there but
-// has no numbers for a step or one of its bands, the step measures anew in the run.
+// step; else those of the copy of its order, a step of version 3 that carried them and so measured nothing (and a result from
+// before NM4-71, which lacks the property). A step of version 4 without numbers for it or one of its bands measures anew.
 function lockedNumbers(draft: Draft, runs: readonly NormalizeRun[] | null): { measured: Record<number, Measured>; anew: number[] } {
   const measured: Record<number, Measured> = {};
   const anew: number[] = [];
   draft.steps.forEach((step, index) => {
     const method = step.values.method;
     if (step.op !== 'normalize' || !isStatistical(method)) return;
-    const numbers = runs ? measuredFromRuns(runs, index, method as Method, namesIn(String(step.values.bands ?? ''))) : draft.measured[index];
+    const fromRuns = runs ? measuredFromRuns(runs, index, method as Method, namesIn(String(step.values.bands ?? ''))) : null;
+    const numbers = fromRuns ?? draft.measured[index];
     if (numbers) measured[step.key] = numbers;
     else if (runs) anew.push(step.key);
   });

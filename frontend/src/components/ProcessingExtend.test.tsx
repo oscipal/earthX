@@ -1129,11 +1129,17 @@ describe('the numbers of a normalize step of the result (NM4-11b, NM4-71, adr/00
       expect(sentSteps()[0]).toEqual(v4({ method: 'zscore', bands: ['red', 'nir'] }));
     });
 
-    it('keeps the step as version 4 where the property has no entry for it, even if the copy holds numbers', async () => {
-      useProcessingStore.setState({ jobs: [entry({ order: order(), normalize: [{ ...RUN, step: 3 }] as never })] });
+    it('keeps the numbers of a step of version 3 in the copy, which measured nothing and so has no entry in the property', async () => {
+      // A gear on a result of a gear: step 0 went as version 3 with numbers, a step of version 4 appended to it measured.
+      const appended = v4({ method: 'zscore', bands: ['red'] });
+      useProcessingStore.setState({
+        jobs: [entry({ order: parent({ steps: [zscore, appended], output }), normalize: [{ ...RUN, step: 1 }] as never })],
+      });
       await process(['red']);
-      expect(view().built?.order?.steps[0].op_version).toBe(4);
-      expect(store().fixed?.result?.anew).toHaveLength(1);
+      expect(view().built?.order?.steps[0]).toMatchObject({ op_version: 3, params: { measured: KEPT } });
+      expect(view().built?.order?.steps[1]).toMatchObject({ op_version: 3, params: { measured: FROM_RESULT } });
+      expect(store().fixed?.result?.anew).toEqual([]);
+      expect(asked()).toHaveLength(0);
     });
 
     it('keeps the fixed range of a locked step as version 4', async () => {
