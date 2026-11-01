@@ -348,3 +348,14 @@ Lokal geändert und danach verworfen: `ZOOM = 13` statt 14, `tilesize=512` in de
 - **Dokumente:** Nachtrag NM4-29b in `adr/0006` (Kachelgröße je Quelle im Frontend, Mosaik ab Kartenzoom 7,5); Log-Zeile mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern.
 - Frontend `npm run lint`, `npx tsc -b --pretty false`, `npm test`; alle vier Pflicht-Checks der CI grün; vor „fertig“ ist `main` geholt.
 - **Grenzen:** Oberflächentexte nur auf Englisch, wenig Text, Erklärungen im Tooltip (UI-01 §4). Keine neue Abhängigkeit ohne Frage an Otto. Keine AOI, Job-, Rezept- oder Permalink-Kennungen, Hashes, `href` oder signierten URLs in Logs oder URLs. `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
+
+## 18. Umsetzung NM4-29b (01.11.2026)
+
+Draft-PR [#270](https://github.com/oscipal/earthX/pull/270), nur Frontend.
+
+- **Größe aus der Vorlage:** `tileSize.ts` liest `tilesize` aus der Kachel-URL (`tileSizeOf`); `placeRaster` und `syncPreview` setzen `tileSize` der Quelle daraus. Die Vorlagen des Mosaiks (mit und ohne Schritte) tragen `tilesize=512`, alle anderen keine Größe; das Ergebnis `tilesize=256`.
+- **Zoomregel:** `TILE_LEVEL_AHEAD` entfällt zugunsten von `tileLevelAhead(Größe)` (0,5 bei 512, 1,5 bei 256). Das Mosaik ab z8 erscheint ab Kartenzoom 7,5, die Szenen darunter treten dort zurück (`mosaic.ts`, `processingPreview.ts`, `zoomHint.ts`, `viewIndex.ts`, `fixtures/zoomMap.ts`).
+- **Vorschau und Ergebnis:** `previewMaxZoom` nimmt die Kachelgröße (die Mosaik-Vorschau eine Stufe tiefer, `PreviewMosaic.maxZoom`); `isOverview` rechnet mit der Größe der Quelle.
+- **AOI-Zuschnitt:** `ringsToTilePixels` bekommt die Größe, das Protokoll gibt `bitmap.width` mit.
+- **Messung, Tests, Browser:** im PR. Browser-Skripte: `frontend/e2e/tile-size.cjs` (Größen, Zoomschwelle, AOI-Rand) und `frontend/e2e/tile-size-measure.cjs` (Anfragen und Zeit am echten `tiler`).
+- **Nachtrag:** `adr/0006` §5 „Nachtrag NM4-29b“.

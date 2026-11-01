@@ -21,6 +21,7 @@ import {
   searchItems,
   uploadAoi,
 } from './api';
+import { tileSizeOf } from './tileSize';
 
 describe('buildSearchBody', () => {
   it('carries the collections, bbox, datetime range, limit and token', () => {
@@ -743,7 +744,23 @@ describe('the mosaic of a time step (M4-17)', () => {
     expect(template).toContain('/collections/a%20b/mosaic/');
     const params = new URL(template, 'http://localhost').searchParams;
     expect(params.getAll('item')).toEqual(['x&y=1', 'z/../w']);
-    expect([...params.keys()].sort()).toEqual(['asset', 'item', 'item']);
+    expect([...params.keys()].sort()).toEqual(['asset', 'item', 'item', 'tilesize']);
+  });
+
+  it('asks for 512-px tiles, which the tiler takes as 256 or 512 (NM4-29b)', () => {
+    expect(new URL(buildMosaicTileTemplate('d', ['a', 'b'], 'x'), 'http://localhost').searchParams.get('tilesize')).toBe('512');
+    expect(tileSizeOf(buildMosaicTileTemplate('d', ['a', 'b'], 'x'))).toBe(512);
+  });
+
+  it('leaves the TileJSON of the same pass without a size', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      return { ok: true, status: 200, statusText: '', json: async () => ({ bounds: [0, 0, 1, 1], minzoom: 8, maxzoom: 19, 'earthx:order': ['a'] }) } as Response;
+    });
+    await fetchMosaicTileJson('d', ['a', 'b'], 'x');
+    vi.unstubAllGlobals();
+    expect(urls[0]).not.toContain('tilesize');
   });
 });
 

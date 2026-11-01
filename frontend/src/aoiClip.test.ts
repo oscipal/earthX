@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  aoiClipProtocol,
   bboxesOverlap,
   clipTileUrl,
   lonLatToMerc,
@@ -155,13 +156,31 @@ describe('ringsToTilePixels', () => {
       [minx, maxy],
       [minx, miny],
     ]);
-    const [ring] = ringsToTilePixels(exact, z, x, y);
+    const [ring] = ringsToTilePixels(exact, z, x, y, 256);
     const xs = ring.map(([px]) => px);
     const ys = ring.map(([, py]) => py);
     expect(Math.min(...xs)).toBeCloseTo(0, 3);
     expect(Math.max(...xs)).toBeCloseTo(256, 3);
     expect(Math.min(...ys)).toBeCloseTo(0, 3);
     expect(Math.max(...ys)).toBeCloseTo(256, 3);
+  });
+
+  it('maps the same polygon onto the whole pixel space of a 512-px tile, not onto a quarter of it (NM4-29b)', () => {
+    const [z, x, y] = [5, 10, 12];
+    const [minx, miny, maxx, maxy] = tileLonLatBounds(z, x, y);
+    const exact = poly([
+      [minx, miny],
+      [maxx, miny],
+      [maxx, maxy],
+      [minx, maxy],
+      [minx, miny],
+    ]);
+    const [ring] = ringsToTilePixels(exact, z, x, y, 512);
+    expect(Math.max(...ring.map(([px]) => px))).toBeCloseTo(512, 3);
+    expect(Math.max(...ring.map(([, py]) => py))).toBeCloseTo(512, 3);
+    // The middle of the tile in longitude lies at the middle of the picture, 256 px in.
+    const [ring2] = ringsToTilePixels(poly([[(minx + maxx) / 2, miny], [maxx, miny], [maxx, maxy], [(minx + maxx) / 2, miny]]), z, x, y, 512);
+    expect(ring2[0][0]).toBeCloseTo(256, 3);
   });
 
   it('projects a polygon east of the tile to pixels beyond its right edge', () => {
@@ -174,7 +193,7 @@ describe('ringsToTilePixels', () => {
       [maxx + 1, 11],
       [maxx + 1, 10],
     ]);
-    const [ring] = ringsToTilePixels(east, z, x, y);
+    const [ring] = ringsToTilePixels(east, z, x, y, 256);
     expect(ring.every(([px]) => px > 256)).toBe(true);
   });
 
@@ -186,7 +205,7 @@ describe('ringsToTilePixels', () => {
         [[[12, 47], [12.1, 47], [12.1, 47.1], [12, 47.1], [12, 47]]],
       ],
     };
-    expect(ringsToTilePixels(multi, 5, 10, 12)).toHaveLength(2);
+    expect(ringsToTilePixels(multi, 5, 10, 12, 256)).toHaveLength(2);
   });
 
   it('returns exterior ring and hole separately for a polygon with a hole', () => {
@@ -197,6 +216,69 @@ describe('ringsToTilePixels', () => {
         [[11, 47.2], [12, 47.2], [12, 47.5], [11, 47.5], [11, 47.2]],
       ],
     };
-    expect(ringsToTilePixels(withHole, 5, 10, 12)).toHaveLength(2);
+    expect(ringsToTilePixels(withHole, 5, 10, 12, 256)).toHaveLength(2);
+  });
+});
+
+// The protocol in a browser-less test: the picture a tile arrives as, the canvas it is masked on and the path of the AOI
+// it is masked with are recorded, not drawn.
+describe('aoiClipProtocol on a tile of 256 and of 512 px (NM4-29b)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const WEST_HALF_AT = (z: number, x: number, y: number) => {
+    const [minx, miny, maxx, maxy] = tileLonLatBounds(z, x, y);
+    // Left half of the tile in longitude, which is the left half in Web Mercator too.
+    return poly([[minx - 0.1, miny - 0.1], [(minx + maxx) / 2, miny - 0.1], [(minx + maxx) / 2, maxy + 0.1], [minx - 0.1, maxy + 0.1], [minx - 0.1, miny - 0.1]]);
+  };
+
+  async function maskedWith(tileSize: number, aoi: GeoJSON.Geometry) {
+    const points: [number, number][] = [];
+    let canvasSize: [number, number] | null = null;
+    class FakePath {
+      moveTo(x: number, y: number) {
+        points.push([x, y]);
+      }
+      lineTo(x: number, y: number) {
+        points.push([x, y]);
+      }
+      closePath() {}
+    }
+    class FakeCanvas {
+      width: number;
+      height: number;
+      constructor(width: number, height: number) {
+        [this.width, this.height] = [width, height];
+        canvasSize = [width, height];
+      }
+      getContext() {
+        return { save() {}, restore() {}, clip() {}, drawImage() {} };
+      }
+      transferToImageBitmap() {
+        return { width: this.width, height: this.height };
+      }
+    }
+    vi.stubGlobal('Path2D', FakePath);
+    vi.stubGlobal('OffscreenCanvas', FakeCanvas);
+    vi.stubGlobal('createImageBitmap', async () => ({ width: tileSize, height: tileSize }));
+    vi.stubGlobal('fetch', async () => ({ ok: true, blob: async () => new Blob() }));
+    const [z, x, y] = [5, 17, 11];
+    const template = `${TEMPLATE}&tilesize=${tileSize}`;
+    const url = substituteZXY(clipTileUrl(template, aoi), z, x, y);
+    await aoiClipProtocol({ url } as never, new AbortController());
+    return { points, canvasSize: canvasSize! };
+  }
+
+  it.each([256, 512])('cuts a %i-px tile at the AOI over the whole tile, not over a quarter of it', async (size) => {
+    const { points, canvasSize } = await maskedWith(size, WEST_HALF_AT(5, 17, 11));
+    expect(canvasSize).toEqual([size, size]);
+    const xs = points.map(([px]) => px);
+    const ys = points.map(([, py]) => py);
+    // The AOI reaches from beyond the left edge to the middle of the tile, and from the top to the bottom.
+    expect(Math.min(...xs)).toBeLessThan(0);
+    expect(xs.filter((px) => px > 0).every((px) => Math.abs(px - size / 2) < 1)).toBe(true);
+    expect(Math.min(...ys)).toBeLessThan(0);
+    expect(Math.max(...ys)).toBeGreaterThan(size);
   });
 });
