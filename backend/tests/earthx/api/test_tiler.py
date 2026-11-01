@@ -33,6 +33,7 @@ from earthx.api.tiler import (
     DOWNLOAD_ROUTE,
     MOSAIC_ROUTER_PREFIX,
     ROUTER_PREFIX,
+    SCENE_ORDER_ROUTE,
     build_app,
 )
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
@@ -139,7 +140,8 @@ class TestNoFreeAddress:
         (a mosaic can list several), not because it skips the catalogue — every
         item it touches still resolves through ``earthx_item_source`` like any
         other route here. The statistics of an order's area (NM4-19) are the same case: the order, with its
-        items and its AOI, travels in the body. The mosaic tiles (M4-17b) name the dataset in the path and the items
+        items and its AOI, travels in the body. So is the order of the scenes of a pass without a mosaic (NM4-24): the
+        ids travel in the body, and every item still resolves through the source. The mosaic tiles (M4-17b) name the dataset in the path and the items
         of one overpass in the query, each fetched through the same source. The tiles of a job
         result (M4-13c-5) are the last: they name a result, which the object store holds, and no
         source at all.
@@ -147,7 +149,7 @@ class TestNoFreeAddress:
         rendering = [
             path
             for path in client.app.openapi()["paths"]
-            if path not in ("/health", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE)
+            if path not in ("/health", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE)
             and not path.startswith((RESULT_ROUTER_PREFIX, MOSAIC_ROUTER_PREFIX))
         ]
         assert rendering
