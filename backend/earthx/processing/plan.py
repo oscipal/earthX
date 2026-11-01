@@ -135,8 +135,9 @@ MEMORY_BYTES_PER_SCENE_BAND = 1_200_000
 #: Added for every band a step measures, measured NM4-71 (`test_memory_mask_normalize.py`, `normalize` version 4 with a
 #: percentile stretch over every band of a 4096² scene, ``VmHWM`` with ``GDAL_CACHEMAX`` 64 MB): 1 band 347 MB, 2 bands
 #: 433 MB, 4 bands 516 MB, against 333, 366 and 432 MB of base and share per band alone. The least share that covers all
-#: three is 34 MB (2 bands); 40 MB keeps a margin, and the sum stays above every measured peak.
-MEMORY_BYTES_PER_MEASURED_BAND = 40_000_000
+#: three is 34 MB (2 bands). The CI runner measured 457 MB for 2 bands, which needs 46 MB; 60 MB keeps a margin on both
+#: machines, and the sum stays above every measured peak.
+MEMORY_BYTES_PER_MEASURED_BAND = 60_000_000
 
 #: Bytes per value where an item names no data type, as the download estimate assumes.
 _FALLBACK_BYTES_PER_VALUE = 8
