@@ -140,7 +140,7 @@ describe('what is not possible is not there', () => {
   it('puts them in the head, the dataset and then the date with the arrows, between the title and the eye', () => {
     mount({ ...THREE, D: info('dem') });
     const head = [...container.querySelector('.vc-head')!.children].map((el) => el.className);
-    expect(head).toEqual(['vc-title', 'vc-dataset', 'vc-stepper', 'vc-eye']);
+    expect(head).toEqual(['vc-title', 'vc-temporary', 'vc-dataset', 'vc-stepper', 'vc-eye']);
     expect(container.querySelectorAll('.vc-head .vc-dataset, .vc-head .vc-stepper')).toHaveLength(2);
   });
 
@@ -251,8 +251,7 @@ describe('the dataset', () => {
       dataset()!.dispatchEvent(new Event('change', { bubbles: true }));
     });
     expect(useAppStore.getState().shownImage).toContain('dem');
-    expect(title()).toBe('Temporary');
-    expect((document.querySelector('.vc-title') as HTMLElement).title).toBe('Copernicus DEM · cropped to the AOI');
+    expect(title()).toBe('Copernicus DEM · AOI crop');
   });
 });
 

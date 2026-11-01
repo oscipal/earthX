@@ -28,6 +28,7 @@ import Eye from './Eye';
 import OpacityRow from './OpacityRow';
 import { useEscClose } from './useEscClose';
 import type { BandOption } from './BandSelect';
+import { viewKind } from '../viewKind';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
 
 export default function ViewerControls() {
@@ -178,7 +179,10 @@ export default function ViewerControls() {
       ) : (
       <div className="vc-head">
         <span className="vc-title" title={title}>
-          {/* The view of the search is a temporary picture, not a layer (Otto, 1.11.2026); what it shows stands in the tooltip. */}
+          {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
+        </span>
+        {/* The view of the search is a temporary picture, not a layer (Otto, 1.11.2026): a yellow box between the title and the date. */}
+        <span className="vc-temporary" title="The view of the search is temporary: add it to the layers to keep it">
           Temporary
         </span>
         {datasetIds.length > 1 && shown && (

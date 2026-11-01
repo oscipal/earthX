@@ -164,7 +164,7 @@ async function run(browser, { theme, viewport }) {
   if ((await row()) !== '2025-08-03') problems.push(`the switcher says ${JSON.stringify(await row())}, expected "2025-08-03"`);
   if (/\d{4}-\d{2}-\d{2}/.test(await page.locator('.vc-title').first().textContent())) problems.push('the title of the head has a date');
   const order = await page.evaluate(() => [...document.querySelector('.vc-head').children].map((el) => el.className.split(' ')[0]));
-  if (order.join() !== 'vc-title,vc-dataset,vc-stepper,vc-eye') problems.push(`the head holds ${order.join(', ')}`);
+  if (order.join() !== 'vc-title,vc-temporary,vc-dataset,vc-stepper,vc-eye') problems.push(`the head holds ${order.join(', ')}`);
   if ((await page.getByRole('button', { name: 'Apply to all' }).count()) !== 1) problems.push('"Apply to all" is not there');
   const colormapBox = () => page.evaluate(() => {
     const label = [...document.querySelectorAll('.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap');
@@ -195,7 +195,7 @@ async function run(browser, { theme, viewport }) {
   // 4. The dataset.
   await page.selectOption('select[aria-label="Dataset"]', 'dem');
   await expectColour('the dropdown shows the elevation tile', 'DEM_1');
-  if (!((await page.locator('.vc-title').first().getAttribute('title')) ?? '').includes('Copernicus DEM')) problems.push('the tooltip of the head does not name the elevation model');
+  if (!(await page.locator('.vc-title').first().textContent()).includes('Copernicus DEM')) problems.push('the head does not name the elevation model');
   const demBox = await colormapBox();
   if (!demBox || demBox.options[0] !== '— none —') problems.push(`the elevation image has no colormap box: ${JSON.stringify(demBox)}`);
   if (demBox && rgbBox && (Math.abs(demBox.x - rgbBox.x) > 1 || Math.abs(demBox.y - rgbBox.y) > 1)) problems.push(`the colormap box moved: ${JSON.stringify(rgbBox)} -> ${JSON.stringify(demBox)}`);

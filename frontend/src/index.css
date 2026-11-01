@@ -472,6 +472,20 @@ body.dragging * {
 /* In the head, between the title and the eye (NM4-53, Otto 31.10.2026): the dataset to choose and the date with the arrows.
    Where they do not fit beside the title (a narrow window) they take a line of their own under it, the eye staying with the
    title. The title is what gives way: it is cut with "…" and given in full as its tooltip. */
+/* "Temporary", the mark of the view of the search, between the title and the date: a yellow box that reads on both panels. */
+.scene-view .vc-temporary {
+  flex: none;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border: 1px solid #c9a227;
+  border-radius: 4px;
+  background: #ffe066;
+  color: #4a3b00;
+  font-size: 11px;
+  line-height: 18px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
 .scene-view .vc-dataset {
   flex: 0 1 130px;
   min-width: 0;

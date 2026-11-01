@@ -75,16 +75,30 @@ const eye = () => container.querySelector('.vc-eye') as HTMLButtonElement;
 const row = (name: 'vc-render' | 'vc-actions') => container.querySelector(`.${name}`)!;
 
 describe('the head', () => {
-  // Otto, 1.11.2026 (zu #272): the view of the search is a temporary picture, and says so; what it shows is the tooltip.
   it.each([
-    [true, 1, 'Sentinel-2 L2A · cropped to the AOI'],
+    [true, 1, 'Sentinel-2 L2A · AOI crop'],
     [false, 1, 'Sentinel-2 L2A · whole scene'],
-    [true, 3, 'Sentinel-2 L2A · cropped to the AOI · 3 scenes merged'],
-    [false, 3, 'Sentinel-2 L2A · whole scene · 3 scenes merged'],
-  ])('says "Temporary": crop %s, %s scene(s), and has what it shows as its tooltip "%s"', (cropToAoi, count, tip) => {
+    [true, 3, 'Sentinel-2 L2A · AOI crop · 3 scenes merged'],
+    [false, 3, 'Sentinel-2 L2A · 3 scenes merged'],
+  ])('is one short line: crop %s, %s scene(s) -> "%s"', (cropToAoi, count, text) => {
     mount({ cropToAoi, downloaded: scenes(count) });
-    expect(title().textContent).toBe('Temporary');
-    expect(title().title).toBe(tip);
+    expect(title().textContent).toBe(text);
+  });
+
+  // Otto, 1.11.2026 (zu #272): the view of the search is a temporary picture, and a yellow box between the title and the date says so.
+  it('has a box "Temporary" right after the title, before the date with the arrows, in yellow', () => {
+    mount();
+    const temporary = container.querySelector('.vc-temporary') as HTMLElement;
+    expect(temporary.textContent).toBe('Temporary');
+    expect(temporary.previousElementSibling).toBe(title());
+    expect(temporary.nextElementSibling?.classList.contains('vc-stepper')).toBe(true);
+    expect(CSS).toMatch(/\.scene-view \.vc-temporary \{[^}]*border: 1px solid[^}]*background: #ffe066;/u);
+  });
+
+  it('has no box "Temporary" in the settings of a layer: a layer is not temporary', () => {
+    mount({ viewOfLayer: true, layers: [{ id: 'L1', name: 'Optical', visible: true, opacity: 1, overlays: [], restore: { focusMode: true, downloaded: scenes(1), appliedRender: {}, activeGroupIndex: 0, selectedIds: [], itemIds: [], groupItemIds: [], aoi: null, cropToAoi: true, datasetId: 'optical' } } as never], viewLayerId: 'L1' });
+    expect(container.querySelector('.vc-temporary')).toBeNull();
+    act(() => useAppStore.setState({ viewOfLayer: false, layers: [], viewLayerId: null }));
   });
 
   // Otto, 31.10.2026 (zu #257): the date is chosen with the arrows (`ViewerControls.steps.test.tsx`), so the head does not say it.
@@ -101,8 +115,7 @@ describe('the head', () => {
 
   it('has no empty separator for a product without an instant, and the scenes merged in the tooltip', () => {
     mount({ groups: withDays([undefined]) });
-    expect(title().textContent).toBe('Temporary');
-    expect(title().title).toBe('Sentinel-2 L2A · cropped to the AOI');
+    expect(title().textContent).toBe('Sentinel-2 L2A · AOI crop');
     mount({ downloaded: scenes(2), groups: withDays(['2025-07-29T10:00:00Z', '2025-08-03T10:00:00Z']) });
     expect(title().title).toBe('Sentinel-2 L2A · cropped to the AOI · 2 scenes merged');
   });
@@ -116,7 +129,7 @@ describe('the head', () => {
   it('gives the whole text as the tooltip, for the cut-off one', () => {
     mount({ cropToAoi: true, downloaded: scenes(3) }, 'Copernicus DEM GLO-30, global 30 m digital surface model');
     expect(title().title).toBe('Copernicus DEM GLO-30, global 30 m digital surface model · cropped to the AOI · 3 scenes merged');
-    expect(title().textContent).toBe('Temporary');
+    expect(title().textContent).toContain('Copernicus DEM GLO-30, global 30 m digital surface model');
   });
 
   it('gives the dates of the helper in UTC, as a day or a span, and none for bad or missing ones', () => {
