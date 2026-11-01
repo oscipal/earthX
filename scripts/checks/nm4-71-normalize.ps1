@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     NM4-71: normalize version 4 measures exactly in the job; the preview estimates, also without an AOI.
 
@@ -224,7 +224,7 @@ function Get-JobResult {
     $placed = Invoke-Http -Method Post -Uri "$ApiUrl/processing/processes/recipe/execution" -Body ('{"inputs": {"recipe": ' + $Order + '}}')
     $job = ConvertFrom-JsonSafe $placed.Content
     if (($placed.Status -ne 201 -and $placed.Status -ne 200) -or $null -eq $job -or -not $job.jobID) {
-        Write-Fail "$Text: Job starten" 'HTTP 201 mit jobID' (Get-Detail $placed)
+        Write-Fail "${Text}: Job starten" 'HTTP 201 mit jobID' (Get-Detail $placed)
         return $null
     }
     $statusUrl = "$ApiUrl/processing/jobs/$([string]$job.jobID)"
@@ -236,13 +236,13 @@ function Get-JobResult {
         if ($poll.Status -eq 200) { $state = [string](ConvertFrom-JsonSafe $poll.Content).status }
     }
     if ($state -ne 'successful') {
-        Write-Fail "$Text: Job fertig" "successful in $JobTimeoutSeconds s (laeuft der Dienst worker?)" $state
+        Write-Fail "${Text}: Job fertig" "successful in $JobTimeoutSeconds s (laeuft der Dienst worker?)" $state
         return $null
     }
     $results = Invoke-Http -Uri "$statusUrl/results" -TimeoutSec 60
     $document = ConvertFrom-JsonSafe $results.Content
     if ($null -eq $document -or $null -eq $document.result.properties) {
-        Write-Fail "$Text: Statistik des Jobs lesen" 'result.properties.bands[0].statistics' (Get-Detail $results)
+        Write-Fail "${Text}: Statistik des Jobs lesen" 'result.properties.bands[0].statistics' (Get-Detail $results)
         return $null
     }
     $properties = $document.result.properties
