@@ -344,7 +344,8 @@ describe('the layout contract in index.css', () => {
     const height = Number(/--row-height: (\d+)px/u.exec(cluster)?.[1]);
     // The fields of the view and of the settings of a result are as high as the cluster.
     expect(Number(/--row-height: (\d+)px/u.exec(rule('.scene-view'))?.[1])).toBe(height);
-    expect(Number(/--row-height: (\d+)px/u.exec(rule('.result-controls'))?.[1])).toBe(height);
+    // The settings of a result are the view's box (`.scene-view`), with no rules of their own for size or places (NM4-54 part 5).
+    expect(CSS).not.toMatch(/^\.result-controls\b/mu);
     expect(cluster).toContain('height: var(--row-height)');
     expect(cluster).toContain('grid-template-rows: 1fr 1fr');
     // "Save" takes both rows of the second column.

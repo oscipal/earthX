@@ -153,10 +153,14 @@ describe('the settings of a result layer', () => {
     expect(container.querySelector<HTMLSelectElement>('.band-select select')!.value).toBe('1');
   });
 
-  it('have no colormap for "RGB", and the band dropdown offers it first', () => {
+  it('keep the colormap in its place for "RGB", locked, and the band dropdown offers it first (NM4-54 part 5)', () => {
     useAppStore.setState({ layers: [layer(RGB)], resultViewLayerId: 'R1' });
     act(() => root.render(<ResultControls />));
-    expect(names()).toEqual(['Band', 'vmin', 'vmax', 'Opacity']);
+    expect(names()).toEqual(['Band', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    const colormap = [...container.querySelectorAll<HTMLLabelElement>('label.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!;
+    expect(colormap.querySelector('select')!.disabled).toBe(true);
+    expect(colormap.querySelector('select')!.selectedOptions[0].textContent).toBe('RGB');
+    expect(colormap.title).toBe('True colour: three bands, no colormap');
     expect([...container.querySelectorAll<HTMLOptionElement>('.band-select option')].map((o) => o.textContent)).toEqual(['RGB', 'red', 'green', 'blue']);
   });
 

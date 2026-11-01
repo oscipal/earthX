@@ -26,6 +26,7 @@ import AutoScaleButton from './AutoScaleButton';
 import Chevron from './Chevron';
 import CloseButton from './CloseButton';
 import Eye from './Eye';
+import OpacityRow from './OpacityRow';
 import type { BandOption } from './BandSelect';
 import RenderFields from './RenderFields';
 
@@ -287,6 +288,7 @@ export default function ViewerControls() {
           </button>
         </div>
       </div>
+      {compact && layer && <OpacityRow layer={layer} />}
 
       {index && indexBlock && (
         <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>

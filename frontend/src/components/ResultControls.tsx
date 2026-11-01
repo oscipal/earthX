@@ -20,6 +20,7 @@ import { useAppStore } from '../store';
 import AutoScaleButton from './AutoScaleButton';
 import RenderFields from './RenderFields';
 import Tip from './Tip';
+import OpacityRow from './OpacityRow';
 import CloseButton from './CloseButton';
 
 const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap && samePercent(a.percent, b.percent);
@@ -36,7 +37,6 @@ const WHOLE_NUMBERS_TIP = 'A result of whole numbers is drawn as it is: it has n
 function Controls({ layer }: { layer: MapLayer }) {
   const info = layer.result;
   const tileUrl = layer.overlays.find((o) => o.kind === 'raster')?.tileUrl ?? '';
-  const setOpacity = useAppStore((s) => s.setLayerOpacity);
   const restyle = useAppStore((s) => s.restyleResultLayer);
   const save = useAppStore((s) => s.saveResultLayer);
   const close = useAppStore((s) => s.closeResultView);
@@ -54,6 +54,9 @@ function Controls({ layer }: { layer: MapLayer }) {
   const adjustable = info.dataType !== null && /^float/.test(info.dataType);
   // What cannot be set at all is not shown: a result of whole numbers is drawn as it is, an expired one not at all.
   const settable = adjustable && !info.expired && !info.deleted;
+  // The dropdown "Band" is there for a result of several bands, as the box of every layer has it where there is a choice.
+  const bands = info.bands ?? [];
+  const hasBand = bands.length > 1;
   const edit = (patch: Partial<PreviewRange>) => {
     setDraft((d) => ({ ...d, ...patch }));
     setProblem(null);
@@ -149,7 +152,7 @@ function Controls({ layer }: { layer: MapLayer }) {
   };
 
   return (
-    <div className="panel viewer-controls result-controls">
+    <div className="panel viewer-controls scene-view result-controls">
       <div className="vc-head">
         <span className="vc-title" title={layerShownName(layer)}>{layerShownName(layer).toUpperCase()}</span>
         <div className="results-head-right">
@@ -158,17 +161,17 @@ function Controls({ layer }: { layer: MapLayer }) {
         </div>
       </div>
 
-      <div className="vc-render">
+      <div className={`vc-render${hasBand ? ' has-index' : ''}`}>
         {settable && (
           <>
             <RenderFields
               band={
-                info.bands && info.bands.length > 1
+                hasBand
                   ? {
                       value: String(info.band ?? 0),
                       options: [
                         ...(info.colour ? [{ value: RGB, label: RGB_LABEL }] : []),
-                        ...info.bands.map((b, place) => ({ value: String(place), label: b.name || `Band ${place + 1}` })),
+                        ...bands.map((b, place) => ({ value: String(place), label: b.name || `Band ${place + 1}` })),
                       ],
                       title: 'The band of the result this layer draws',
                       onChange: (place) => chooseBand(layer.id, place === RGB ? RGB : Number(place)),
@@ -178,7 +181,7 @@ function Controls({ layer }: { layer: MapLayer }) {
               vmin={unit === 'percent' ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } } : { value: draft.vmin, onChange: (vmin) => edit({ vmin }) }}
               vmax={unit === 'percent' ? { value: typed.high, onChange: (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } } : { value: draft.vmax, onChange: (vmax) => edit({ vmax }) }}
               unit={{ value: unit, onChange: setUnit }}
-              colormap={info.band === RGB ? null : { value: draft.colormap, onChange: (colormap) => edit({ colormap }) }}
+              colormap={info.band === RGB ? { fixed: RGB_LABEL, title: 'True colour: three bands, no colormap' } : { value: draft.colormap, onChange: (colormap) => edit({ colormap }) }}
             />
             <div className="vc-buttons">
               <AutoScaleButton title={unit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Put the range of the statistics of this result in the fields'} busy={measuring} onClick={auto} />
@@ -203,20 +206,8 @@ function Controls({ layer }: { layer: MapLayer }) {
             </div>
           </>
         )}
-        <label className="vc-field">
-          <span>Opacity</span>
-          <input
-            type="range"
-            className="lm-opacity"
-            min={0}
-            max={1}
-            step={0.05}
-            value={layer.opacity}
-            title={`Opacity ${Math.round(layer.opacity * 100)}%`}
-            onChange={(e) => setOpacity(layer.id, Number(e.target.value))}
-          />
-        </label>
       </div>
+      <OpacityRow layer={layer} />
       {settable && problem && (
         <p className="hint-text warn" role="alert">
           {problem}
