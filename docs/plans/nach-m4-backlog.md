@@ -392,7 +392,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe B, Backend und Frontend, nach NM4-11b (#269).
    - **Entschieden (Otto, 01.11.2026, PR #273):** alle sechs Fragen Option 1 – exakte Messung im Job über eine Arbeitsdatei (Quellen einmal gelesen, kein Zustand zwischen Jobs), `normalize` Version 4 ohne Zahlen (exakte Werte im Ergebnis; Version 3 bleibt für Vorschau, alte Rezepte und ⚙), ⚙ behält die exakten Zahlen des Ergebnisses, Perzentile exakt zweistufig, Vorschau bis 2048² auch ohne AOI, ein PR; KE1–KE10 wie vorgeschlagen. Messung: Job mit exakter Messung 27–52 % länger (ganze Szene, 4 Bänder 269 → 409 s), Speicher ≤ 483 MB. Auflagen: Plattenplatz der Arbeitsdatei messen, Grenze in der Schätzung, Löschen auch bei Abbruch/Fehler/DELETE; Runner liest Version 4 bitgleich; Tooltip „Z-score“ mit Hinweis auf Ausreißer und „Robust“. **Runner-Image erst nach diesem Merge neu bauen.**
 72. **Seitenleiste rechts, aufgeräumtes Processing, einheitliches Erscheinungsbild** (Otto, 01.11.2026): Einstellungen von Ansicht und Layer als Seitenleiste rechts (öffnet bei Klick, rotes „x“), Layer-Manager und Leiste unten bleiben; Processing-Panel und -Manager breiter, Gruppen übersichtlich, „apple mäßiges design dass alles einheitlich seinen platz hat“. Nimmt NM4-20 auf.
-   - **Plan:** `ui-03-seitenleiste-und-processing.md`
+   - **Plan:** `vp3/ui-03-seitenleiste-und-processing.md`
    - **Aufgabe:** Stufe B (Konzept zuerst), dann Teil 1 in derselben Session; Teile 2 und 3 je neue Session. Nach NM4-54 (#272), vor NM4-56.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
