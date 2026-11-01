@@ -144,12 +144,12 @@ function exteriorAndHoles(geom: GeoJSON.Geometry): number[][][] {
 }
 
 // Every ring (exterior and holes, of every polygon of a MultiPolygon) of the
-// AOI, each projected into this tile's own pixel space of `size` x `size` (the loaded image's: 256 px for a scene, 512 px
-// for a mosaic, `tileSize.ts`). One shared
-// `evenodd`-filled path from all of them masks holes and disjoint polygons
-// correctly regardless of a ring's winding direction (the GeoJSON right-hand
-// rule is meant to hold, but real-world data does not always comply, and
-// `evenodd` never has to care).
+// AOI, each projected into this tile's own pixel space of `size` x `size` (the
+// loaded image's: 256 px for a scene, 512 px for a mosaic, `tileSize.ts`). One
+// shared `evenodd`-filled path from all of them masks holes and disjoint
+// polygons correctly regardless of a ring's winding direction (the GeoJSON
+// right-hand rule is meant to hold, but real-world data does not always
+// comply, and `evenodd` never has to care).
 export function ringsToTilePixels(geom: GeoJSON.Geometry, z: number, x: number, y: number, size: number): [number, number][][] {
   const [minX, minY, maxX, maxY] = tileMercBounds(z, x, y);
   const w = maxX - minX;

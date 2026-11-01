@@ -505,7 +505,7 @@ export function previewSpec(args: {
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
-      ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order]), below: scenes.map((s) => s.below ?? null) } : {}),
+      ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order, m.maxZoom]), below: scenes.map((s) => s.below ?? null) } : {}),
       minZoom: dataset.zoom.min,
       maxZoom,
       clipToAoi,
