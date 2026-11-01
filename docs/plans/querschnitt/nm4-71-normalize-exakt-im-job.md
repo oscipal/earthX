@@ -367,3 +367,36 @@ KE1–KE10 wie vorgeschlagen. **Auflagen:**
 1. Den Plattenplatz der Arbeitsdatei je Auftrag messen und im PR nennen; die Grenze in die Kostenschätzung bzw. die Annahme aufnehmen; die Arbeitsdatei auch bei Abbruch, Fehler und `DELETE` löschen (Test).
 2. Der Runner liest `normalize` Version 4 und rechnet bitgleich zum Job (Test).
 3. Tooltip „Z-score“: Hinweis auf Ausreißer bei Indizes, Verweis auf „Robust“ (KE10).
+
+## 16. Umsetzung (01.11.2026)
+
+Draft-PR [#273](https://github.com/oscipal/earthX/pull/273) trägt Plan und Umsetzung (Frage 6: ein PR). Umfang: Backend-Code +690/−90, Backend-Tests +2 188/−25, Frontend-Code +490/−217, Frontend-Tests +637/−265, Browser-Skript +236/−56, Prozess-Fixtures neu erzeugt (+20/−442), Skripte (Messung, Prüfanleitung) +1 019, Dokumente +337. Weit über dem Richtwert, wie in §9.7 angekündigt.
+
+**Auslegungen von Claude** (gelten, bis Otto widerspricht):
+
+1. **Messen vor einem `reproject`** geht: gezählt wird auf dem Raster des Durchgangs, der die Arbeitsdatei schreibt (vor dem Warp das des Vorrats), so wie die Route den Anfang der Kette vor NM4-71 gemessen hat. Der Methodentext sagt deshalb „measured in the run over the AOI at full resolution“ statt „at the resolution of the result“.
+2. **Methodentext ohne Zahlen.** `provenance.methods` entsteht bei der Annahme, vor dem Lauf; er nennt für Version 4 keine Zahlen (Abweichung von KE4). Die Zahlen stehen in `earthx:normalize`. Die Lineage hat die Form von Version 3.
+3. **`earthx:normalize` fehlt**, wenn kein messender Schritt läuft (keine leere Liste); alte Ergebnisse bleiben byte-gleich.
+4. **Kachel mit Version 4: `422`** „does not run as a tile“ wie jeder Operator ohne `T1` (die Freigabe-ADR nannte `400`; korrigiert).
+5. **Speicher:** Der Messdurchgang hält mehr (synthetisch 4096², 4 Bänder: 516 statt 425 MB; echte ganze Szene, 4 Bänder: 486 statt 413 MB RSS). `memory_needed` zählt 40 MB je gemessenem Band des größten Schnitts (`MEMORY_BYTES_PER_MEASURED_BAND`).
+6. **Arbeitsdateien** werden gelöscht, sobald der Durchgang, der sie liest, fertig ist (auch in Ketten mit `reproject`); höchstens zwei Durchgangsdateien liegen zugleich im Arbeitsordner. Die Namen zählen weiter hoch (`pass-1.tif`, …).
+7. **KE8:** zwei Gründe, „has no valid value over the AOI“ und (Z-Score) „has no finite standard deviation over the AOI“. In der Vorschau ist ein Band ohne gültigen Wert nur ein Hinweis am Schritt; der Auftrag geht raus, der Job scheitert mit dem Grund.
+8. **⚙:** Zahlen aus `earthx:normalize` je `step`; fehlt dort ein Eintrag, gelten die Zahlen der Auftragskopie (ein Schritt Version 3, der nichts maß); fehlen beide oder ein Band (z. B. ein Band, das der Planer im Eltern-Job gestrichen hat, weil die Ausgabe es nicht brauchte), bleibt der Schritt Version 4 und misst im neuen Lauf. Fehlt die Eigenschaft am Eintrag des Jobs, lädt das Panel das Ergebnisdokument einmal nach.
+9. **Vorschau:** Gemessen wird nur für die gezeigte Einheit (bei mehreren Aufträgen der erste); die Messung des Bildbereichs (NM4-19) bekommt die Kette als Version 3.
+
+**Plattenplatz (Auflage 1)** [M], echter Kern, dieselbe Sentinel-2-Szene wie §8.3, Höchststand aller Dateien im Arbeitsordner (alle 0,2 s und je Block gemessen) gegen `disk_needed`:
+
+| Fläche, Bänder | Version 3 heute | Version 4 | Arbeitsdatei allein (§8.3) | `disk_needed` |
+|---|---|---|---|---|
+| 41 km, 1 | 201 MB | 198 MB | 40 MB | 806 MB |
+| 41 km, 4 | 814 MB | 888 MB | 167 MB | 2 347 MB |
+| 82 km, 4 | 2 942 MB | 3 235 MB | 658 MB | 7 309 MB |
+| ganze Szene, 1 | 1 182 MB | 1 167 MB | 266 MB | 3 488 MB |
+| ganze Szene, 4 | 4 813 MB | 5 327 MB | 1 112 MB | 12 665 MB |
+
+Der Höchststand liegt beim Schreiben des COG, nicht beim Messen; die Arbeitsdatei ist dann schon gelöscht. Version 4 braucht bis 11 % mehr Platz als Version 3 und bleibt überall unter 45 % von `disk_needed`. Die Annahme rechnet `disk_needed` wie bisher, `worker` prüft den freien Platz vor dem Start (`disk_space`); eine feste Obergrenze bei der Annahme gibt es weiter nicht (Frage A unten). Gelöscht wird die Arbeitsdatei bei Erfolg, Fehler und Abbruch im Kern (`_Run.cleanup`, Tests in `test_normalize_exact.py`), der Arbeitsordner nach jedem Lauf von `worker`, auch nach `DELETE`, Beenden und Tod des Kindes (`jobs/test_worker.py`).
+
+**Offene Fragen an Otto:**
+
+- **A — Platz bei der Annahme.** 1. Wie bisher: `disk_needed` geht mit dem Auftrag, `worker` lehnt vor dem Start ab, wenn der Platz fehlt. **(Empfehlung)** 2. Zusätzlich eine feste Obergrenze bei der Annahme (Wert wäre festzulegen, z. B. 20 GB).
+- **B — Methodentext mit Zahlen.** 1. So lassen: Zahlen in `earthx:normalize`, der Text sagt, wie gemessen wurde. **(Empfehlung)** 2. Methodentext nach dem Lauf neu schreiben.
