@@ -210,6 +210,19 @@ describe('"Apply" with percentiles', () => {
     expect(state().appliedRender.rescale).toBe('30,2800');
   });
 
+  it('is open for a change of the colormap alone, once the percentiles are applied (Otto, 01.11.2026)', async () => {
+    typed('3', '97');
+    click(button('Apply'));
+    await settle();
+    expect(button('Apply').getAttribute('aria-disabled')).toBe('true');
+    act(() => state().setPendingColormapName('magma'));
+    expect(button('Apply').getAttribute('aria-disabled')).toBeNull();
+    click(button('Apply'));
+    await settle();
+    expect(state().appliedRender).toMatchObject({ colormapName: 'magma', percent: { low: '3', high: '97' } });
+    expect(button('Apply').getAttribute('aria-disabled')).toBe('true');
+  });
+
   it('refuses what is no whole percent or in the wrong order, says why, and asks nothing', async () => {
     for (const [low, high, problem] of [['abc', '98', PERCENT_PROBLEMS.number], ['2.5', '98', PERCENT_PROBLEMS.number], ['2', '101', PERCENT_PROBLEMS.number], ['98', '2', PERCENT_PROBLEMS.order], ['50', '50', PERCENT_PROBLEMS.order]]) {
       mount();

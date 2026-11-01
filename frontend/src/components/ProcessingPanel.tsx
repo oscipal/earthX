@@ -417,8 +417,9 @@ function PreviewSection({ view }: { view: OrderView }) {
   const [percentProblem, setPercentProblem] = useState<string | null>(null);
   const percentMode = rangeUnit === 'percent';
   const typedPair = percentMode ? percentOf(typed) : null;
-  // Applied already: the percentiles typed are the ones of the range in force.
-  const percentApplied = percentMode && typedPair !== null && rangeByHand && samePercent(typedPair, range.percent);
+  // Applied already: the percentiles typed are the ones of the range in force, and the colormap chosen is the one drawn. A change of
+  // the colormap alone is something to apply (Otto, 01.11.2026).
+  const percentApplied = percentMode && typedPair !== null && rangeByHand && samePercent(typedPair, range.percent) && rangeDraft.colormap === range.colormap;
   const loading = usePreviewLoading();
   const plan = planPreview(steps, view.info, measuredNumbers(steps, view.built));
   const valueRange = rescaleOf(rangeDraft);
