@@ -8,6 +8,7 @@
 // text shown at the step). No `eval`, no `new Function`.
 
 import { refineMaskValues } from './maskValues';
+import { fieldsOfMethod, refineNormalize } from './normalizeMethods';
 import type { JsonSchema } from './processing';
 
 export type FieldKind = 'string' | 'number' | 'integer' | 'integers' | 'numbers' | 'names' | 'boolean' | 'enum' | 'const';
@@ -336,15 +337,18 @@ export interface ParamsResult {
   errors: Record<string, string>;
 }
 
-// `op` lets a step's own rules between its fields in: the numbers a `mask_values` step needs depend on its condition.
+// `op` lets a step's own rules between its fields in: the numbers a `mask_values` step needs depend on its condition, the fields of a `normalize` step on its method.
 export function paramsFrom(fields: readonly Field[], values: Readonly<Record<string, FieldValue>>, op?: string): ParamsResult {
   const params: Record<string, unknown> = {};
   const errors: Record<string, string> = {};
-  for (const field of fields) {
+  // A `normalize` step of version 3 takes the fields of its method and no others.
+  const methods = op === 'normalize' && fields.some((field) => field.name === 'method');
+  for (const field of methods ? fieldsOfMethod(fields, values.method) : fields) {
     const { value, error } = valueOf(field, values[field.name]);
     if (error) errors[field.name] = error;
     else if (value !== undefined) params[field.name] = value;
   }
   if (op === 'mask_values') refineMaskValues(params, errors);
+  if (methods) refineNormalize(params, errors);
   return { params, errors };
 }

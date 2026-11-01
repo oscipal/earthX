@@ -158,7 +158,7 @@ const CASES: Case[] = [
     bands: ['data'],
     data: DEM_DATA,
     aoi: SQUARE,
-    steps: [draft(cop, 'normalize', { bands: 'data', in_min: '0', in_max: '3000', out_min: '0', out_max: '1', clip: true })],
+    steps: [draft(cop, 'normalize', { method: 'linear', bands: 'data', in_min: '0', in_max: '3000', out_min: '0', out_max: '1', clip: true })],
     dtype: 'float32',
   },
   {

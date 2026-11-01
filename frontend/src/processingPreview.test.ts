@@ -61,8 +61,8 @@ function normalize(key = 5, values: Record<string, string | boolean> = {}): Draf
   return {
     key,
     op: 'normalize',
-    opVersion: 2,
-    values: { bands: 'red', in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
+    opVersion: 3,
+    values: { method: 'linear', bands: 'red', in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
   };
 }
 
@@ -134,7 +134,7 @@ describe('planPreview (adr/0014 §6.1)', () => {
   it('shows the longest start of tile steps, and says there are more', () => {
     const plan = ready([bandMath('red + nir'), normalize(), reproject(), bandMath('red', 3)]);
     expect(plan.steps.map((s) => s.operator.op)).toEqual(['band_math', 'normalize']);
-    expect(plan.steps[1].params).toEqual({ bands: ['red'], in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
+    expect(plan.steps[1].params).toEqual({ method: 'linear', bands: ['red'], in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
     expect(plan.further).toBe(true);
   });
 
@@ -272,9 +272,9 @@ describe('previewSpec', () => {
     const url = new URL(spec.scenes[0].url, 'http://localhost');
     expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
     expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
-    expect(url.searchParams.getAll('op_version')).toEqual(['2', '2']);
+    expect(url.searchParams.getAll('op_version')).toEqual(['3', '2']);
     expect(url.searchParams.getAll('params')).toEqual([
-      '{"bands":["red"],"clip":true,"in_max":0.5,"in_min":0,"out_max":255,"out_min":0}',
+      '{"bands":["red"],"clip":true,"in_max":0.5,"in_min":0,"method":"linear","out_max":255,"out_min":0}',
       '{"expression":"red / 2","name":"Band_Math_3"}',
     ]);
     expect(spec.title).toBe('Normalize → Band math');

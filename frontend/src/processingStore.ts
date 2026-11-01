@@ -133,6 +133,8 @@ import {
   type DataBand,
   type Draft,
   type DraftStep,
+  type MeasureEntry,
+  type MeasureNeed,
   type Pass,
   type ProcessInfo,
 } from './processingOrder';
@@ -166,6 +168,7 @@ import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
+import { startValues } from './normalizeMethods';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
 import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
@@ -333,6 +336,9 @@ interface ProcessingState {
   // The reason a name field holds a name that breaks a rule, by step: only what the person has typed and not left yet or
   // a name a loaded recipe brought; never a name the steps and the output use (review of #250).
   nameProblems: Record<number, string>;
+  // What the route of NM4-19 said to the questions of the statistical `normalize` steps, by the text of the question (NM4-11b).
+  // In memory only: the text holds the AOI.
+  measures: ReadonlyMap<string, MeasureEntry>;
   // The one band of a dataset that has only one, while it is in the output because the panel put it there on opening and
   // the person has not touched the choice: the first result of a band math step takes its place (review of #250).
   lonelyAuto: string | null;
@@ -442,6 +448,9 @@ interface ProcessingState {
   setShown: (name: string) => void;
   loadRecipe: (text: string) => Promise<LoadResult>;
   restoreOrder: (order: Order, view: PermalinkView, options?: { converted?: boolean }) => Promise<LoadResult>;
+  // Asks the questions not asked yet, a few at a time; the answers arrive in `measures`. A failed answer is asked again by `retryMeasures`.
+  ensureMeasures: (needs: readonly MeasureNeed[]) => void;
+  retryMeasures: () => void;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
   placeOrder: (
@@ -515,6 +524,10 @@ export interface OrderView {
   output: string[];
   // Why steps, "Review" and "Start job" wait: a name field holds a name that breaks a rule. `null` for none.
   nameBlock: string | null;
+  // Why "Review" and "Start job" wait: a statistical `normalize` step has no numbers yet, or its measurement failed (NM4-11b, KE2).
+  // `needs` are the questions the orders of all jobs need answered.
+  measureBlock: string | null;
+  needs: MeasureNeed[];
   // The assets the order reads or the preview needs: those of the output, of the expressions, of `normalize` and the layer
   // of a mask, in the item's order.
   assets: string[];
@@ -717,7 +730,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const outside = inner && drawn !== null && clipped === null;
   const buildFor = (itemIds: string[]): BuiltOrder | null => {
     if (!info || !dataset) return null;
-    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info });
+    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info, measures: p.measures });
     if (outside) return { ...result, order: null, problems: [...result.problems, OUTSIDE_TEXT] };
     return foreign.length === 0 ? result : { ...result, order: null, problems: [...result.problems, foreignReason(foreign)] };
   };
@@ -758,6 +771,8 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     maskHidden: from !== null && maskLayer !== null && !kept.has(maskLayer.band),
     output,
     nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames, hidden, from?.locked ?? 0),
+    measureBlock: builtParts.find((part) => part.built?.waiting)?.built?.waiting ?? null,
+    needs: [...new Map(builtParts.flatMap((part) => part.built?.needs ?? []).map((need) => [need.key, need])).values()],
     assets,
     maskLayer,
     maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
@@ -1029,6 +1044,7 @@ const EMPTY_DRAFT = {
   steps: [] as DraftStep[],
   output: [] as string[],
   nameProblems: {} as Record<number, string>,
+  measures: new Map<string, MeasureEntry>() as ReadonlyMap<string, MeasureEntry>,
   lonelyAuto: null as string | null,
   dtype: null,
   shown: null as string | null,
@@ -1723,6 +1739,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         added = defaultName([...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
         values.name = added;
       } else if (op === 'normalize' && 'bands' in values) {
+        if ('method' in values) Object.assign(values, startValues());
         values.bands = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
       } else if (op === 'mask_values') {
         // The band to look at is proposed like that of a normalize step; "below" is where a threshold usually starts.
@@ -1919,6 +1936,25 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         whose: 'this layer',
       });
     },
+
+    ensureMeasures: (needs) => {
+      const fresh = needs.filter((need) => !get().measures.has(need.key) && !asking.has(need.key));
+      for (const need of fresh) asking.add(need.key);
+      void runPool(fresh, ESTIMATE_PARALLEL, new AbortController().signal, async (need) => {
+        let entry: MeasureEntry;
+        try {
+          entry = { state: 'ready', answer: await postAreaStatistics(need.datasetId, need.body) };
+        } catch (error) {
+          entry = { state: 'failed', reason: refusalMessage(error) };
+        }
+        asking.delete(need.key);
+        set((s) => {
+          const kept = [...s.measures].slice(-(NORMALIZE_MEASURES_KEPT - 1));
+          return { measures: new Map([...kept.filter(([key]) => key !== need.key), [need.key, entry]]) };
+        });
+      });
+    },
+    retryMeasures: () => set((s) => ({ measures: new Map([...s.measures].filter(([, entry]) => entry.state !== 'failed')) })),
 
     reviewOrder: async () => {
       const view = orderView(useAppStore.getState(), get());
@@ -2356,6 +2392,9 @@ function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'
 // expression asks for no measure per key, nor a refusal twice). The key of an area measure is the text of the order,
 // which carries the AOI: it lives here in memory and goes into no URL, storage, log or message.
 const MEASURES_KEPT = 50;
+// The same for the measures of the `normalize` steps (NM4-11b), and the questions on their way: `ensureMeasures` asks each once.
+const NORMALIZE_MEASURES_KEPT = 50;
+const asking = new Set<string>();
 const measures = new Map<string, PreviewMeasure>();
 const failedMeasures = new Set<string>();
 const measuring = new Map<string, Promise<PreviewMeasure | null>>();
