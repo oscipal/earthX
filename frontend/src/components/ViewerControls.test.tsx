@@ -291,14 +291,17 @@ describe('"Save" of the view of a pinned layer', () => {
   });
 
   // Otto, 1.11.2026 (zu #272): "Temporary" goes when the image is a layer, and comes back with a change.
-  it('takes off "Temporary" while a layer holds the image as it looks, and puts it back with a change of the fields', () => {
+  it('takes off "Temporary" while a layer holds the image as it is drawn, and puts it back with an applied change; the fields alone do not', () => {
     mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [], cropToAoi: false });
     expect(container.querySelector('.vc-temporary')).not.toBeNull();
     mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
     expect(container.querySelector('.vc-temporary')).toBeNull();
     type(vmax(), '2000');
+    expect(container.querySelector('.vc-temporary')).toBeNull(); // typed, not drawn
+    act(() => void (container.querySelector('.vc-apply') as HTMLButtonElement).click());
     expect(container.querySelector('.vc-temporary')).not.toBeNull();
     type(vmax(), '3000');
+    act(() => void (container.querySelector('.vc-apply') as HTMLButtonElement).click());
     expect(container.querySelector('.vc-temporary')).toBeNull();
   });
 

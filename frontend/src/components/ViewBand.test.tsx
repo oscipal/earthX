@@ -473,12 +473,29 @@ describe('the mark "Temporary" and the layers', () => {
     expect(temporary()).toBe(true);
     await pin('addCurrentToLayers');
     expect(temporary()).toBe(false);
+    // The range the view measures when it opens is typed into the fields and applied nowhere: no change.
+    act(() => useAppStore.setState({ pendingVmin: '12', pendingVmax: '2999' }));
+    expect(temporary()).toBe(false);
     choose('band:B04');
     await settle();
-    expect(temporary()).toBe(true); // chosen: something changed
+    expect(temporary()).toBe(false); // chosen, not drawn
+    apply();
+    await settle();
+    expect(temporary()).toBe(true); // drawn: something changed
     choose('');
     await settle();
+    apply();
+    await settle();
     expect(temporary()).toBe(false); // back to what the layer holds
+  });
+
+  it('is gone at once with "Add all to layers", though the fields hold a measured range (Otto, 1.11.2026)', async () => {
+    twoImages();
+    act(() => useAppStore.setState({ pendingVmin: '12', pendingVmax: '2999' }));
+    expect(temporary()).toBe(true);
+    await pin('addAllToLayers');
+    await vi.waitFor(() => expect(store().layers).toHaveLength(2));
+    expect(temporary()).toBe(false);
   });
 
   it('is on the step that was pinned no more, and on another step of the view still', async () => {
@@ -502,6 +519,8 @@ describe('the mark "Temporary" and the layers', () => {
     await settle();
     expect(temporary()).toBe(false);
     choose('band:B04');
+    await settle();
+    apply();
     await settle();
     expect(temporary()).toBe(true);
     act(() => store().stepImage(-1));

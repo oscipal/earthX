@@ -15,7 +15,7 @@ import { showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf } from '../viewBand';
-import { lookChanged, lookOfPendingFields, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
+import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
@@ -152,10 +152,9 @@ export default function ViewerControls() {
   // An index is drawn with a colormap whatever the dataset's own picture is.
   const colormap = chosen || pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   const at = shown ? here.indexOf(shown) : -1;
-  // Temporary where no layer holds the image as it looks now, the fields included (Otto, 1.11.2026).
-  const temporary = shown
-    ? isTemporaryImage(layers, shown, { ...appliedRender, ...lookOfPendingFields({ pendingColormapName, pendingVmin, pendingVmax, pendingIndex, pendingBand, pendingUnit, pendingPercentLow, pendingPercentHigh }) }, { cropToAoi: cropToAoi && viewAoi !== null, aoi: viewAoi })
-    : false;
+  // Temporary where no layer holds the image as it is drawn now (Otto, 1.11.2026). What is only typed in the fields does not count: the
+  // measured range that stands in them when the view opens is no change; "Apply" is.
+  const temporary = shown ? isTemporaryImage(layers, shown, appliedRender, { cropToAoi: cropToAoi && viewAoi !== null, aoi: viewAoi }) : false;
   const datasetIds = datasetIdsOf(images);
   // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
   const stepText = shown ? (shown.date ?? shown.groupLabel) : '';
