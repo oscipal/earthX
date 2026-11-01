@@ -135,22 +135,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const indexField = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Index') ?? null;
+const indexField = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Band') ?? null;
 
 describe('the view of a layer of the layer manager', () => {
-  it('has no dropdown at all, not even a locked one: the index of a layer is the one it was added with', () => {
-    setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1' });
+  // Otto, 1.11.2026 (NM4-54 part 5): the box of every layer is the same; what a layer cannot do stays in its place, locked.
+  it('has the dropdown in its place, locked: the picture of a layer is the one it was added with', () => {
+    setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1', pendingIndex: 'NDVI' });
     act(() => root.render(<ViewerControls />));
-    expect(indexField()).toBeNull();
-    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(false);
-    expect(container.textContent).not.toContain('Index');
+    expect(indexField()!.querySelector('select')!.disabled).toBe(true);
+    expect(indexField()!.querySelector('select')!.value).toBe('index:NDVI');
+    expect(indexField()!.title).toBe('A layer keeps the picture it was added with');
+    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(true);
   });
 
-  it('has none for a layer without an index either', () => {
+  it('has it for a layer without an index too, showing the standard picture', () => {
     setState({ viewOfLayer: true, appliedRender: { rescale: '0,3000' }, layers: [layer({ rescale: '0,3000' })], viewLayerId: 'L1' });
     act(() => root.render(<ViewerControls />));
-    expect(indexField()).toBeNull();
-    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(false);
+    expect(indexField()!.querySelector('select')!.disabled).toBe(true);
+    expect(indexField()!.querySelector('select')!.value).toBe('');
   });
 
   it('keeps the dropdown open in the live view of the search, even after the view was added as a layer', () => {

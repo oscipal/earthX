@@ -63,6 +63,7 @@ export function pendingFieldsOf(render: AppliedRender): {
   pendingVmin: string;
   pendingVmax: string;
   pendingIndex: string;
+  pendingBand: string;
   pendingUnit: RangeUnit;
   pendingPercentLow: string;
   pendingPercentHigh: string;
@@ -73,6 +74,7 @@ export function pendingFieldsOf(render: AppliedRender): {
     pendingVmin: vmin,
     pendingVmax: vmax,
     pendingIndex: render.index ?? '',
+    pendingBand: render.band ?? '',
     // A look typed in percentiles shows "%" again (NM4-65 part 4).
     pendingUnit: render.percent ? 'percent' : 'value',
     pendingPercentLow: render.percent?.low ?? DEFAULT_PERCENT.low,
@@ -93,6 +95,7 @@ type PendingFields = {
   pendingVmin: string;
   pendingVmax: string;
   pendingIndex?: string;
+  pendingBand?: string;
   pendingUnit?: RangeUnit;
   pendingPercentLow?: string;
   pendingPercentHigh?: string;
@@ -110,11 +113,12 @@ export function lookOfPendingFields(p: PendingFields): AppliedRender {
     colormapName: p.pendingColormapName || undefined,
     rescale: vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
     index: p.pendingIndex || undefined,
+    band: p.pendingBand || undefined,
     percent: pendingPercentOf(p) ?? undefined,
   };
 }
 
-// Whether "Apply" would draw anything else than `applied` shows: another colormap, range or index. NDVI, EVI and NBR share one range
+// Whether "Apply" would draw anything else than `applied` shows: another colormap, range, index or band. NDVI, EVI and NBR share one range
 // and colormap (−1…1, rdylgn) and are three different pictures all the same.
 export function lookChanged(applied: AppliedRender, p: PendingFields): boolean {
   const asked = lookOfPendingFields(p);
@@ -122,6 +126,7 @@ export function lookChanged(applied: AppliedRender, p: PendingFields): boolean {
     (applied.colormapName || undefined) !== asked.colormapName ||
     (applied.rescale || undefined) !== asked.rescale ||
     (applied.index || undefined) !== asked.index ||
+    (applied.band || undefined) !== asked.band ||
     // Typed in percentiles and not applied yet: the values still hold the ones of the percentiles before.
     !samePercent(applied.percent, asked.percent) ||
     (p.pendingUnit === 'percent' && asked.percent === undefined)

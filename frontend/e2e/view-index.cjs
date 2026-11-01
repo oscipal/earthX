@@ -1,12 +1,12 @@
 // Browser check of the quick calculation of an index in the view (NM4-14b, review of Otto 31.10.2026), in a real browser with
 // made-up answers of the tiler:
-//   1. The dropdown "Index" stands first in the settings of the view, the settings keep their grid (no overlap, nothing over the
+//   1. The dropdown "Band" (with the presets under a line) stands first in the settings of the view, the settings keep their grid (no overlap, nothing over the
 //      edge, the buttons as high as the fields); a dataset without presets has none and the row is as before.
 //   2. Choosing an index puts it into the fields; "Apply" draws it, through the tile route with an operator (the mosaic of the pass here): the tiles ask for
 //      `op=band_math`, the band named like the index, the range and colormap of the preset, and no raw asset.
 //   3. Zoomed out the choice stays and a short note says "Zoom in to compute NDWI", with the explanation in its tooltip; no tile is
 //      asked for; zoomed in the note is gone and the tiles come.
-//   4. "Add to layers" pins the index as a layer whose tiles compute it. The layer manager has no "Index" field at all. Its ⇩ downloads
+//   4. "Add to layers" pins the index as a layer whose tiles compute it. The view of a layer has the dropdown locked. Its ⇩ downloads
 //      the index as a Processing job would give it (the job API is made up here): the dialog shows the estimate, a file comes, and no
 //      Processing panel opens and no job stands in the list of jobs. Its ⚙ opens the panel with the index as the one band.
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
@@ -105,7 +105,7 @@ async function open(browser, theme, viewport, presets) {
   return { context, page, problems, tiles, jobs };
 }
 
-const field = (page) => page.locator('.scene-view .vc-render label', { hasText: /^Index/ });
+const field = (page) => page.locator('.scene-view .vc-render label', { hasText: /^Band/ });
 const fly = async (page, zoom, center = [10.5, 50.5]) => {
   await page.evaluate(async ({ zoom, center }) => (await import('/src/store.ts')).useAppStore.setState({ flyToView: { center, zoom } }), { zoom, center });
   await page.waitForTimeout(1800);
@@ -116,9 +116,9 @@ async function checkLayout(browser, theme, viewport) {
   const name = `layout ${theme} ${viewport}`;
   const { context, page, problems } = await open(browser, theme, viewport, PRESETS);
   const labels = await page.locator('.scene-view .vc-render > label > span').allTextContents();
-  if (labels.join('|') !== 'Index|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
+  if (labels.join('|') !== 'Band|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
   const options = await field(page).locator('option').allTextContents();
-  if (options.join('|') !== '— none —|NDVI|NDWI|NDSI|NBR|EVI') problems.push(`the options are ${options}`);
+  if (options.join('|') !== 'RGB|──────────|NDVI|NDWI|NDSI|NBR|EVI') problems.push(`the options are ${options}`);
   const report = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
     const view = document.querySelector('.scene-view');
@@ -158,7 +158,7 @@ async function checkDraw(browser, theme, viewport) {
   const { context, page, problems, tiles, jobs } = await open(browser, theme, viewport, PRESETS);
   await page.waitForTimeout(1500);
   tiles.length = 0;
-  await field(page).locator('select').selectOption('NDWI');
+  await field(page).locator('select').selectOption('index:NDWI');
   // Chosen, not drawn: nothing of the index is asked for before "Apply".
   await page.waitForTimeout(1500);
   if (tiles.some((t) => t.includes('op=band_math'))) problems.push('the index was drawn before "Apply"');
@@ -199,7 +199,7 @@ async function checkDraw(browser, theme, viewport) {
     if ((await note.textContent()) !== 'Zoom in to compute NDWI') problems.push(`the note says ${await note.textContent()}`);
     if ((await note.getAttribute('title')) !== NOTE_TIP) problems.push(`the note's tooltip is ${await note.getAttribute('title')}`);
   }
-  if ((await field(page).locator('select').inputValue()) !== 'NDWI') problems.push('the choice did not stay');
+  if ((await field(page).locator('select').inputValue()) !== 'index:NDWI') problems.push('the choice did not stay');
   if (tiles.some((t) => t.includes('/tiles/') && !t.includes('op=band_math'))) problems.push('a raw band is drawn while the index waits for the zoom');
   const noteBox = await note.boundingBox();
   const viewBox = await page.locator('.scene-view').boundingBox();
@@ -247,8 +247,9 @@ async function checkDraw(browser, theme, viewport) {
   });
   await page.locator('.layer-row [data-col="name"]').first().click({ force: true });
   await page.waitForSelector('.scene-view .vc-apply');
-  if ((await field(page).count()) !== 0) problems.push('the view of a layer has an "Index" field');
-  if ((await page.locator('.scene-view .vc-render > label > span').allTextContents()).join('|') !== 'vmin|vmax|Colormap') problems.push('the settings of the layer are not as for a dataset without presets');
+  // The box of every layer (NM4-54 part 5): the dropdown keeps its place, locked.
+  if ((await field(page).locator('select').isDisabled()) !== true) problems.push('the dropdown "Band" of a layer is not locked');
+  if ((await page.locator('.scene-view .vc-render > label > span').allTextContents()).join('|') !== 'Band|vmin|vmax|Colormap') problems.push('the settings of the layer are not the fields of every layer');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_layer.png`) });
 
   // Its ⇩: the index as a Processing job would give it, with no panel and no job to see.

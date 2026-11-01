@@ -13,10 +13,12 @@ import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
+import { trueColorOf } from '../processingOrder';
+import { BAND_TIP, bandAssetsOf } from '../viewBand';
 import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
-import { indexBlockOf, INDEX_TIP, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
+import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { viewKind } from '../viewKind';
 import { layerShownName } from '../layerName';
 import { layerOfView } from '../viewLayer';
@@ -24,6 +26,7 @@ import AutoScaleButton from './AutoScaleButton';
 import Chevron from './Chevron';
 import CloseButton from './CloseButton';
 import Eye from './Eye';
+import type { BandOption } from './BandSelect';
 import RenderFields from './RenderFields';
 
 export default function ViewerControls() {
@@ -78,6 +81,8 @@ export default function ViewerControls() {
   const stepImage = useAppStore((s) => s.stepImage);
   const chooseViewDataset = useAppStore((s) => s.chooseViewDataset);
   const chooseViewIndex = useAppStore((s) => s.chooseViewIndex);
+  const chooseViewBand = useAppStore((s) => s.chooseViewBand);
+  const pendingBand = useAppStore((s) => s.pendingBand);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const viewOfLayer = useAppStore((s) => s.viewOfLayer);
   const pendingIndex = useAppStore((s) => s.pendingIndex);
@@ -101,8 +106,25 @@ export default function ViewerControls() {
   // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
   const chosen = viewIndexOf({ index: pendingIndex }, shownDataset?.collection);
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
-  // The view of a layer of the layer manager has no dropdown: the index of a layer is the one it was added with (Otto, 1.11.2026).
-  const showIndex = presets.length > 0 && !viewOfLayer;
+  // One dropdown "Band" (NM4-45, Otto, 31.10.2026): the standard picture first ("RGB" where the dataset has a true-colour one), the
+  // single bands of the data, and after a line the index presets of the dataset (the quick calculation of NM4-14b).
+  const standardAsset = shownDataset?.collection['earthx:default_render']?.assets[0] ?? null;
+  const bandAssets = shownDataset && shown ? bandAssetsOf(sectionsForView({ sections, openSectionId, datasetId, items, groups }).flatMap((section) => section.items).find((it) => it.id === shown.ids[0]), shownDataset.collection) : [];
+  const trueColour = shownDataset ? trueColorOf(shownDataset.collection) !== null : false;
+  const bandOptions: BandOption[] = [
+    { value: '', label: trueColour ? 'RGB' : (standardAsset ?? 'Standard') },
+    ...bandAssets.filter((asset) => asset !== standardAsset).map((asset) => ({ value: `band:${asset}`, label: asset })),
+    ...(presets.length > 0 ? [{ value: '|', label: '', separator: true }, ...presets.map((preset) => ({ value: `index:${preset.name}`, label: preset.name, title: presetTip(preset) }))] : []),
+  ];
+  // A dropdown with one entry offers no choice and is not shown. The view of a layer of the layer manager keeps what the layer was added with
+  // (Otto, 1.11.2026): its dropdown stays in its place, locked.
+  const showBand = bandOptions.filter((option) => !option.separator).length > 1;
+  const bandValue = chosen ? `index:${chosen.name}` : pendingBand ? `band:${pendingBand}` : '';
+  const chooseView = (value: string) => {
+    if (value.startsWith('index:')) chooseViewIndex(value.slice('index:'.length));
+    else if (value.startsWith('band:')) chooseViewBand(value.slice('band:'.length));
+    else chooseViewIndex(null);
+  };
   // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
   // is still open from the search keeps all of it, also once its image is pinned.
   const compact = viewOfLayer && layer !== null;
@@ -118,7 +140,7 @@ export default function ViewerControls() {
         })
       : null;
   // An index is drawn with a colormap whatever the dataset's own picture is.
-  const colormap = chosen || !shownDataset ? true : showsColormap(shownDataset.collection);
+  const colormap = chosen || pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   const at = shown ? here.indexOf(shown) : -1;
   const datasetIds = datasetIdsOf(images);
   // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
@@ -205,15 +227,16 @@ export default function ViewerControls() {
       </div>
       )}
 
-      <div className={`vc-render${showIndex ? ' has-index' : ''}`}>
+      <div className={`vc-render${showBand ? ' has-index' : ''}`}>
         <RenderFields
-          index={
-            showIndex
+          band={
+            showBand
               ? {
-                  value: chosen?.name ?? '',
-                  options: presets.map((preset) => ({ name: preset.name, tip: presetTip(preset) })),
-                  tip: chosen ? presetTip(chosen) : INDEX_TIP,
-                  onChange: chooseViewIndex,
+                  value: bandValue,
+                  options: bandOptions,
+                  onChange: chooseView,
+                  disabled: viewOfLayer,
+                  title: viewOfLayer ? 'A layer keeps the picture it was added with' : chosen ? presetTip(chosen) : BAND_TIP,
                 }
               : undefined
           }

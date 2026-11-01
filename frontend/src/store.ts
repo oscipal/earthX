@@ -43,6 +43,7 @@ import { flipNext, flipStart } from './layerFlip';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
 import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
+import { assetOfLook, bandAssetsOf, withAsset } from './viewBand';
 import { isMosaicPass, mosaicTemplateOf, orderedPass, orderKeyOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
@@ -436,6 +437,7 @@ const LEAVE_FOCUS = {
   pendingVmin: '',
   pendingVmax: '',
   pendingIndex: '',
+  pendingBand: '',
   pendingUnit: 'value' as RangeUnit,
   pendingPercentLow: DEFAULT_PERCENT.low,
   pendingPercentHigh: DEFAULT_PERCENT.high,
@@ -669,7 +671,7 @@ async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
   try {
     const stats = index
       ? await api.fetchStatisticsAt(api.withPercentiles(indexStatisticsUrl(info.datasetId, itemId, index), asked))
-      : await api.fetchStatistics(info.datasetId, itemId, info.asset, asked);
+      : await api.fetchStatistics(info.datasetId, itemId, assetOfLook(info, { band: s.pendingBand || undefined }), asked);
     const range = rescaleAtPercent(Object.values(stats), checked);
     if (!range) {
       set({ notice: NO_RANGE_AT_PERCENT });
@@ -1356,6 +1358,8 @@ export interface AppState {
   pendingVmax: string;
   // The index the fields stand for, drawn once "Apply" is pressed (NM4-14b); '' = none.
   pendingIndex: string;
+  // The single band the fields stand for, drawn once "Apply" is pressed (NM4-45); '' = the standard picture.
+  pendingBand: string;
   // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4); with "percent" the fields show the two percentiles, and
   // `pendingVmin`/`pendingVmax` hold the values they gave at the last "Apply".
   pendingUnit: RangeUnit;
@@ -1519,6 +1523,8 @@ export interface AppState {
   // Puts an index of the dataset the image shows into the fields, with its range and colormap (NM4-14b); `null` puts the standard look of
   // the dataset there. Nothing is drawn until "Apply".
   chooseViewIndex: (name: string | null) => void;
+  // The single band the fields stand for (NM4-45); `null` goes back to the standard picture.
+  chooseViewBand: (band: string | null) => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
@@ -1621,6 +1627,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingVmin: '',
   pendingVmax: '',
   pendingIndex: '',
+  pendingBand: '',
   pendingUnit: 'value',
   pendingPercentLow: DEFAULT_PERCENT.low,
   pendingPercentHigh: DEFAULT_PERCENT.high,
@@ -2484,12 +2491,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Without an index the image goes back to what the dataset shows: the look saved for it ("Apply to all") unless that
       // names an index too, else the standard one.
       const saved = s.savedLooks[shown.datasetId];
-      const plain = saved && !saved.index ? saved : defaultLookOf(s, shown.datasetId);
+      const plain = saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId);
       const preset = name === null ? null : viewIndexOf({ index: name }, collection);
       if (name !== null && !preset) return {};
       // Only the fields change: the map draws it once "Apply" is pressed, like the colormap and the range.
       return pendingFieldsOf(preset ? indexLookOf(preset) : plain);
     }),
+  // One band of the data in place of the standard picture or an index: only the fields change, and the range is measured for the
+  // band as for any other pick, so that "Apply" has values to draw (NM4-45). The image is drawn from the asset of the band once
+  // "Apply" is pressed (`reconcileBands`).
+  chooseViewBand: (band) => {
+    const s = get();
+    const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+    if (!shown || !s.focusMode || s.viewOfLayer) return;
+    const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
+    if (band === null) {
+      const saved = s.savedLooks[shown.datasetId];
+      set(pendingFieldsOf(saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId)));
+      return;
+    }
+    const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);
+    if (!bandAssetsOf(item, collection).includes(band)) return;
+    set({ pendingBand: band, pendingIndex: '', pendingColormapName: '', pendingVmin: '', pendingVmax: '' });
+    void get().autoStretch();
+  },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
@@ -2558,7 +2583,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
     set({ focusLoading: true });
     try {
-      const stats = index ? await api.fetchStatisticsAt(indexStatisticsUrl(info.datasetId, itemId!, index)) : await api.fetchStatistics(info.datasetId, itemId!, info.asset);
+      const stats = index ? await api.fetchStatisticsAt(indexStatisticsUrl(info.datasetId, itemId!, index)) : await api.fetchStatistics(info.datasetId, itemId!, assetOfLook(info, { band: s.pendingBand || undefined }));
       const range = autoRescale(stats);
       if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
     } catch (e) {
@@ -3004,4 +3029,33 @@ export const useAppStore = create<AppState>((set, get) => ({
 // goes without asking, and the layer is drawn as saved again (NM4-50).
 useAppStore.subscribe((s, prev) => {
   if (prev.resultViewLayerId !== null && prev.resultViewLayerId !== s.resultViewLayerId) s.revertResultLayer(prev.resultViewLayerId);
+});
+
+// The scenes of each image of the view are drawn from the asset its look names (NM4-45): a band is a look like the colormap, and the
+// store keeps the two together in one place, whatever changed the look (applying, "Apply to all", stepping to another image, a layer
+// opened again). Only a look with a band, or a scene already moved to one, is touched. The mosaic of the new asset is asked for.
+function reconcileBands(): void {
+  const s = useAppStore.getState();
+  if (!s.focusMode || Object.keys(s.downloaded).length === 0) return;
+  const images = viewImagesOf(s);
+  const shown = shownImageOf(images, s.shownImage);
+  let downloaded = s.downloaded;
+  for (const image of images) {
+    const look = lookOfImage(s, image, shown);
+    for (const id of image.ids) {
+      const info = downloaded[id];
+      if (!info) continue;
+      const moved = withAsset(id, info, assetOfLook(info, look));
+      if (moved !== info) downloaded = { ...downloaded, [id]: moved };
+    }
+  }
+  if (downloaded === s.downloaded) return;
+  useAppStore.setState({ downloaded });
+  void s.loadMosaics();
+}
+
+useAppStore.subscribe((s, prev) => {
+  if (s.appliedRender !== prev.appliedRender || s.viewLooks !== prev.viewLooks || s.savedLooks !== prev.savedLooks || s.shownImage !== prev.shownImage) {
+    reconcileBands();
+  }
 });

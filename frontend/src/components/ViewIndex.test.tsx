@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// The dropdown "Index" of the view of scenes (NM4-14b, review of Otto 31.10.2026): the presets of the dataset under "— none —", the
-// tooltip with the formula, the short note where the index cannot be drawn (and its explanation), and no dropdown for a dataset
-// without presets (the DEM).
+// The presets in the dropdown "Band" of the view of scenes (NM4-14b, review of Otto 31.10.2026; one dropdown with the bands since
+// NM4-45): the presets of the dataset under the standard picture and a line, the tooltip with the formula, the short note where the
+// index cannot be drawn (and its explanation), and no dropdown for a dataset with nothing to choose (the DEM).
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -88,7 +88,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const field = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Index') ?? null;
+const field = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Band') ?? null;
 const select = () => field()?.querySelector('select') as HTMLSelectElement;
 const colormapSelect = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!.querySelector('select')!;
 const note = () => container.querySelector<HTMLElement>('.vc-note');
@@ -99,10 +99,11 @@ const choose = (value: string) =>
     select().dispatchEvent(new Event('change', { bubbles: true }));
   });
 
-describe('the dropdown "Index"', () => {
-  it('lists the presets of the dataset in the order of the registry, under "— none —", with "none" chosen to begin with', () => {
+describe('the dropdown "Band" with the presets', () => {
+  it('lists the presets of the dataset in the order of the registry, under "RGB" and a line, with "RGB" chosen to begin with', () => {
     mount();
-    expect([...select().options].map((o) => o.textContent)).toEqual(['— none —', 'NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
+    expect([...select().options].map((o) => o.textContent)).toEqual(['RGB', '──────────', 'NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
+    expect([...select().options].map((o) => o.disabled)).toEqual([false, true, false, false, false, false, false]);
     expect(select().value).toBe('');
   });
 
@@ -124,21 +125,21 @@ describe('the dropdown "Index"', () => {
 
   it('says what an index is in the tooltip: title and formula; and what the dropdown is while none is chosen', () => {
     mount();
-    expect(field()!.title).toContain('Quick calculation');
+    expect(field()!.title).toContain('quick calculation');
     expect(field()!.title).toContain('from zoom 8');
     expect(field()!.title).toContain('start a job in Processing');
-    expect([...select().options].find((o) => o.value === 'NDVI')!.title).toBe('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');
-    choose('NDVI');
+    expect([...select().options].find((o) => o.value === 'index:NDVI')!.title).toBe('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');
+    choose('index:NDVI');
     expect(field()!.title).toBe('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');
-    expect([...select().options].find((o) => o.value === 'NDWI')!.title).toContain('(McFeeters 1996)');
+    expect([...select().options].find((o) => o.value === 'index:NDWI')!.title).toContain('(McFeeters 1996)');
   });
 
   it('draws the choice once "Apply" is pressed, not before (Otto, 1.11.2026): the choice is in the fields, "Apply" opens', () => {
     mount();
     const button = container.querySelector('.vc-apply') as HTMLButtonElement;
     expect(button.getAttribute('aria-disabled')).toBe('true');
-    choose('NDWI');
-    expect(select().value).toBe('NDWI');
+    choose('index:NDWI');
+    expect(select().value).toBe('index:NDWI');
     expect(useAppStore.getState().appliedRender).toEqual({ rescale: '0,3000' });
     expect(button.getAttribute('aria-disabled')).toBeNull();
     apply();
@@ -155,14 +156,14 @@ describe('the dropdown "Index"', () => {
     mount(SENTINEL_2_PRESETS, { appliedRender: { index: 'EVI', colormapName: 'rdylgn', rescale: '-1,1' }, pendingColormapName: 'rdylgn', pendingVmin: '-1', pendingVmax: '1' });
     const button = container.querySelector('.vc-apply') as HTMLButtonElement;
     expect(button.getAttribute('aria-disabled')).toBe('true');
-    choose('NDVI');
+    choose('index:NDVI');
     expect(button.getAttribute('aria-disabled')).toBeNull();
   });
 
   it('shows the colormap and the range of the preset in the fields, and a colormap to choose where the dataset draws RGB', () => {
     mount();
     expect([...colormapSelect().options].map((o) => o.textContent)).toEqual(['RGB']);
-    choose('NDWI');
+    choose('index:NDWI');
     expect(colormapSelect().value).toBe('rdbu');
     expect([...colormapSelect().options].map((o) => o.value)).toEqual(['', ...COLORMAPS]);
     expect(COLORMAPS).toContain('rdbu');
@@ -217,7 +218,7 @@ describe('the note under the settings', () => {
     mount(SENTINEL_2_PRESETS, { mapZoom: 5, appliedRender: { index: 'NDVI', colormapName: 'rdylgn', rescale: '-1,1' } });
     expect(note()!.textContent).toBe('Zoom in to compute NDVI');
     expect(note()!.title).toBe('The quick calculation works from zoom 8. For whole scenes start a job in Processing.');
-    expect(select().value).toBe('NDVI'); // the choice stays
+    expect(select().value).toBe('index:NDVI'); // the choice stays
   });
 
   it('is gone once the map is zoomed in, and comes back when it is zoomed out again', () => {
@@ -232,7 +233,7 @@ describe('the note under the settings', () => {
   it('names the index being chosen, and is there the moment it is chosen out of reach', () => {
     mount(SENTINEL_2_PRESETS, { mapZoom: 5 });
     none();
-    choose('NDWI');
+    choose('index:NDWI');
     none(); // not drawn yet, so nothing to say
     apply();
     expect(note()!.textContent).toBe('Zoom in to compute NDWI');
@@ -253,7 +254,7 @@ describe('the note under the settings', () => {
     });
     expect(note()!.textContent).toBe('EVI cannot be computed here');
     expect(note()!.title).toContain('start a job in Processing');
-    expect(select().value).toBe('EVI');
+    expect(select().value).toBe('index:EVI');
   });
 
   it('is one short line, no more than a sentence', () => {
