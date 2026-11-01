@@ -195,7 +195,7 @@ describe('"Apply to all" with indices of one range (Otto, 1.11.2026)', () => {
   it('is locked again once every image shows it, and for any other of the three the moment it is chosen', () => {
     twoImages();
     act(() => useAppStore.getState().chooseViewIndex('NDVI'));
-    act(() => useAppStore.getState().saveViewLook());
+    act(() => void useAppStore.getState().saveViewLook());
     expect(locked()).toBe(true);
     // Chosen but not applied: "Apply to all" takes what the fields hold, so it has something to do.
     act(() => useAppStore.getState().chooseViewIndex('NBR'));
