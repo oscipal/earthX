@@ -341,7 +341,7 @@ export interface ParamsResult {
 export function paramsFrom(fields: readonly Field[], values: Readonly<Record<string, FieldValue>>, op?: string): ParamsResult {
   const params: Record<string, unknown> = {};
   const errors: Record<string, string> = {};
-  // A `normalize` step of version 3 takes the fields of its method and no others.
+  // A `normalize` step of version 4 takes the fields of its method and no others.
   const methods = op === 'normalize' && fields.some((field) => field.name === 'method');
   for (const field of methods ? fieldsOfMethod(fields, values.method) : fields) {
     const { value, error } = valueOf(field, values[field.name]);

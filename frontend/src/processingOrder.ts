@@ -11,7 +11,23 @@ import { groupIndexOfItem } from './grouping';
 import { canonicalJson, type AoiProvenance, type JsonSchema, type Order, type OrderStep, type ProcessDescription } from './processing';
 import type { AreaStatistics } from './api';
 import { bandNamesOf, isBandMath, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
-import { AFTER_REPROJECT, MEASURING, NO_AOI, isStatistical, keptMeasured, measuredFrom, measuredText, normalizeForm, upgradedValues, type Measured, type Method } from './normalizeMethods';
+import {
+  AFTER_REPROJECT,
+  ANEW,
+  KEPT,
+  MEASURING,
+  NORMALIZE_VERSION,
+  TILE_VERSION,
+  isStatistical,
+  keptMeasured,
+  measuredFrom,
+  measuredText,
+  normalizeForm,
+  previewNote,
+  upgradedValues,
+  type Measured,
+  type Method,
+} from './normalizeMethods';
 import { initialValues, paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
 import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
@@ -73,7 +89,7 @@ export function processInfo(description: ProcessDescription): ProcessInfo {
       ...(typeof def.description === 'string' ? { description: def.description } : {}),
       tiers: Array.isArray(def['x-earthx-tiers']) ? def['x-earthx-tiers'].filter((t) => typeof t === 'string') : [],
       kind: typeof def['x-earthx-kind'] === 'string' ? def['x-earthx-kind'] : null,
-      form: op === 'normalize' && opVersion === 3 ? normalizeForm(stepProps?.params) : paramsForm(stepProps?.params, defs),
+      form: op === 'normalize' && opVersion === NORMALIZE_VERSION ? normalizeForm(stepProps?.params) : paramsForm(stepProps?.params, defs),
     });
   }
   const inputDef = defOf(defs, '#/$defs/InputRequest');
@@ -507,22 +523,25 @@ export interface DraftStep {
 }
 
 // What the route of NM4-19 said of a question (NM4-11b), by the text of the question: the numbers, or why there are none.
-// Held in memory only: the text holds the AOI.
+// Held in memory only: the text holds the AOI. The answer is for the preview only; the job measures itself (NM4-71).
 export type MeasureEntry = { state: 'ready'; answer: AreaStatistics } | { state: 'failed'; reason: string };
 
-// A question the order needs answered: the steps before a statistical `normalize` step, the bands it converts, as float64.
+// A question the preview needs answered: the steps before a statistical `normalize` step, the bands it converts, as float64.
 export interface MeasureNeed {
   key: string;
   datasetId: string;
   body: Order;
 }
 
-// Where a statistical `normalize` step stands: `text` is the tooltip of its numbers or the reason it waits.
+// Where the preview's measure of a statistical `normalize` step stands: `text` is the tooltip of its numbers or the reason it
+// waits. It never holds the order back: the job measures itself.
 export interface MeasureStatus {
   state: 'measuring' | 'failed' | 'ready';
   text: string;
-  // The numbers of a step that has them: the preview draws the step with them even where the order is not whole yet.
+  // The numbers of a step that has them: the preview draws the step with them.
   measured?: Measured;
+  // A failure that asking again does not mend (a band without a valid value).
+  final?: boolean;
 }
 
 export interface StepProblem {
@@ -533,11 +552,13 @@ export interface StepProblem {
 
 export interface BuiltOrder {
   order: Order | null;
+  // The order as the tiler and the route of NM4-19 take it: `normalize` of version 4 as version 3, the statistical methods with the
+  // numbers measured for the preview. `null` where the order is, and where a statistical step has no numbers yet.
+  previewOrder: Order | null;
   stepProblems: StepProblem[];
   problems: string[];
-  // The questions the order needs answered before it is complete, and why it waits for them: the first step's reason.
+  // The questions the preview needs answered (the shown order only).
   needs: MeasureNeed[];
-  waiting: string | null;
 }
 
 // Why the job cannot start while the output holds no band (adr/0020 §9).
@@ -623,8 +644,12 @@ export function buildOrder(args: {
   info: ProcessInfo;
   // The answers to the questions of the statistical `normalize` steps, by `MeasureNeed.key` (NM4-11b).
   measures?: ReadonlyMap<string, MeasureEntry>;
-  // The numbers the locked steps of a result keep from its job, by step key: they are not measured again (NM4-05b).
+  // The numbers the locked steps of a result keep from its job, by step key: they are not measured again (NM4-05b, NM4-71).
   kept?: ReadonlyMap<number, Measured>;
+  // The locked steps whose numbers the result lacks, by step key: measured anew in the run.
+  anew?: ReadonlySet<number>;
+  // This order is the one the preview shows, the only one that asks for measures; the other orders of a batch measure in their run.
+  shown?: boolean;
 }): BuiltOrder {
   const { datasetId, itemIds, area, aoi, steps, bands, data, dtype, info } = args;
   const hidden = args.hidden ?? [];
@@ -639,34 +664,41 @@ export function buildOrder(args: {
     built.push({ op: step.op, op_version: step.opVersion, params });
     return { errors: { ...errors, ...bandProblems(step, index, steps, data, index < locked ? [] : hidden) } };
   });
-  const { needs, waiting } = measureSteps({ ...args, built, stepProblems });
+  const { needs, tiles } = measureSteps({ ...args, built, stepProblems });
   if (itemIds.length === 0) problems.push('Pick a pass.');
   if (area === 'aoi' && !isArea(aoi)) problems.push('Draw an area as AOI.');
   if (steps.length === 0) problems.push('Add a step.');
   if (steps.length > info.maxSteps) problems.push(`At most ${info.maxSteps} steps.`);
   if (bands.length === 0) problems.push(EMPTY_OUTPUT);
   if (!dtype) problems.push('Pick an output data type.');
-  const stepsOk = stepProblems.every((p) => !p.unsupported && Object.keys(p.errors).length === 0 && (!p.measure || p.measure.state === 'ready'));
-  if (problems.length > 0 || !stepsOk) return { order: null, stepProblems, problems, needs, waiting };
-  return {
-    order: {
-      recipe_version: 2,
-      inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)] }],
-      ...(area === 'aoi' && isArea(aoi) ? { aoi: orderAoi(aoi) } : {}),
-      steps: built,
-      output: { kind: 'raster', format: 'cog', dtype, bands: [...bands] },
-    },
-    stepProblems,
-    problems,
-    needs,
-    waiting,
+  const stepsOk = stepProblems.every((p) => !p.unsupported && Object.keys(p.errors).length === 0);
+  if (problems.length > 0 || !stepsOk) return { order: null, previewOrder: null, stepProblems, problems, needs };
+  const order: Order = {
+    recipe_version: 2,
+    inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)] }],
+    ...(area === 'aoi' && isArea(aoi) ? { aoi: orderAoi(aoi) } : {}),
+    steps: built,
+    output: { kind: 'raster', format: 'cog', dtype, bands: [...bands] },
   };
+  const whole = tiles.length === built.length && tiles.every((tile) => tile !== null);
+  const previewOrder = !whole ? null : tiles.every((tile, i) => tile === built[i]) ? order : { ...order, steps: tiles as OrderStep[] };
+  return { order, previewOrder, stepProblems, problems, needs };
 }
 
-// The statistical `normalize` steps (NM4-11b): each needs the numbers of its bands over the AOI, measured on the steps before it
-// (float64, as the core rolls between steps). Gives the questions to ask and, where an answer is in, writes `measured` into the
-// params of the step; the steps are taken in order, since the question of a later one holds the numbers of an earlier. A step
-// that cannot be measured (no AOI, after a reprojection, an error before it) gets its reason as the error of `method`.
+// A step as the tiler and the route take it: `normalize` of version 4 is version 3, which carries the numbers of a statistical
+// method in `measured` (NM4-71: the job measures, the tile cannot). `null` for such a step without numbers.
+function tileStepOf(step: OrderStep, measured?: Measured): OrderStep | null {
+  if (step.op !== 'normalize' || step.op_version !== NORMALIZE_VERSION) return step;
+  if (!isStatistical(step.params.method)) return { ...step, op_version: TILE_VERSION };
+  return measured ? { ...step, op_version: TILE_VERSION, params: { ...step.params, measured } } : null;
+}
+
+// The statistical `normalize` steps (NM4-11b, NM4-71): the job measures them itself, so the order carries no numbers. The preview
+// needs them: for each step it asks for the numbers of its bands over the area, measured on the steps before it (float64, as the core
+// rolls between steps; the steps before it as the tile takes them, with their own numbers, so the questions go in order). Gives the
+// questions to ask and, where an answer is in, the numbers in the status of the step, and the steps as the tiler takes them. A step
+// after a reprojection cannot be measured and gets its reason as the error of `method`. A locked step of a result keeps the numbers
+// of its job: it becomes version 3 with them and is not measured.
 function measureSteps(args: {
   datasetId: string;
   itemIds: readonly string[];
@@ -677,12 +709,14 @@ function measureSteps(args: {
   stepProblems: StepProblem[];
   measures?: ReadonlyMap<string, MeasureEntry>;
   kept?: ReadonlyMap<number, Measured>;
-}): { needs: MeasureNeed[]; waiting: string | null } {
-  const { datasetId, itemIds, area, aoi, steps, built, stepProblems, measures, kept } = args;
+  anew?: ReadonlySet<number>;
+  shown?: boolean;
+}): { needs: MeasureNeed[]; tiles: Array<OrderStep | null> } {
+  const { datasetId, itemIds, area, aoi, steps, built, stepProblems, measures, kept, anew } = args;
   const needs: MeasureNeed[] = [];
-  let waiting: string | null = null;
-  if (built.length !== steps.length) return { needs, waiting };
-  const wait = (text: string) => (waiting ??= text);
+  const tiles: Array<OrderStep | null> = [];
+  if (built.length !== steps.length) return { needs, tiles };
+  tiles.push(...built.map((step) => tileStepOf(step)));
   let blocked = false;
   steps.forEach((step, index) => {
     const params = built[index].params;
@@ -692,33 +726,31 @@ function measureSteps(args: {
     // A locked step of a result keeps the numbers of its job: the result is an entity of its own and is not measured again.
     const own = kept?.get(step.key);
     if (own) {
-      params.measured = own;
-      problem.measure = { state: 'ready', text: `${measuredText(method, own)}\nKept from the result.`, measured: own };
-      return;
-    }
-    if (!(area === 'aoi' && isArea(aoi))) {
-      problem.errors.method = NO_AOI;
+      built[index] = { ...built[index], op_version: TILE_VERSION, params: { ...params, measured: own } };
+      tiles[index] = built[index];
+      problem.measure = { state: 'ready', text: `${measuredText(method, own)}\n${KEPT}`, measured: own };
       return;
     }
     if (built.slice(0, index).some((earlier) => earlier.op === 'reproject')) {
       problem.errors.method = AFTER_REPROJECT;
       return;
     }
+    if (args.shown === false || (area === 'aoi' && !isArea(aoi))) return;
     // An error before it, or in its bands: nothing is asked. The fields of the target range do not matter to the question, so it is
     // asked as soon as the method is chosen.
     const wrong = stepProblems.slice(0, index).some((p) => Object.keys(p.errors).length > 0) || problem.errors.bands !== undefined;
     if (blocked || wrong || itemIds.length === 0) return;
-    const bandNames = params.bands as string[];
-    if (steps.slice(0, index).some((other, i) => other.op === 'normalize' && isStatistical(built[i].params.method) && built[i].params.measured === undefined)) {
+    if (tiles.slice(0, index).some((earlier) => earlier === null)) {
       problem.measure = { state: 'measuring', text: MEASURING };
-      wait('Normalize: measuring the bands…');
       return;
     }
+    const bandNames = params.bands as string[];
+    // Without an AOI the question holds none: the route measures the whole scenes.
     const body: Order = {
       recipe_version: 2,
       inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)] }],
-      aoi: orderAoi(aoi),
-      steps: built.slice(0, index).map((earlier) => ({ ...earlier })),
+      ...(area === 'aoi' && isArea(aoi) ? { aoi: orderAoi(aoi) } : {}),
+      steps: tiles.slice(0, index).map((earlier) => ({ ...earlier! })),
       output: { kind: 'raster', format: 'cog', dtype: 'float64', bands: [...bandNames] },
     };
     const key = canonicalJson(body);
@@ -726,36 +758,25 @@ function measureSteps(args: {
     const entry = measures?.get(key);
     if (!entry) {
       problem.measure = { state: 'measuring', text: MEASURING };
-      wait('Normalize: measuring the bands…');
       return;
     }
     if (entry.state === 'failed') {
       problem.measure = { state: 'failed', text: `The measurement failed: ${entry.reason}` };
-      wait(`Normalize: the measurement failed: ${entry.reason}`);
       return;
     }
     const low = typeof params.low === 'number' ? params.low : 0;
     const high = typeof params.high === 'number' ? params.high : 100;
     const found = measuredFrom(method, low, high, bandNames, entry.answer);
     if ('without' in found) {
-      problem.errors.bands = `No valid values over the AOI in ${found.without.join(', ')}.`;
+      problem.measure = { state: 'failed', text: `No valid values in ${found.without.join(', ')} to measure.`, final: true };
       blocked = true;
       return;
     }
-    params.measured = found.measured;
-    problem.measure = { state: 'ready', text: measuredText(method, found.measured), measured: found.measured };
+    tiles[index] = tileStepOf(built[index], found.measured);
+    const text = [measuredText(method, found.measured), ...(anew?.has(step.key) ? [ANEW] : []), previewNote(entry.answer.exact)].join('\n');
+    problem.measure = { state: 'ready', text, measured: found.measured };
   });
-  return { needs, waiting };
-}
-
-// Where a step stands over the jobs of a batch: a failed measurement comes first, then one that runs, else the first job's
-// numbers. Of several jobs the text names the job (`label`) that is not done, since each measures over its own area (NM4-11b).
-export function worstMeasure(entries: readonly { label: string; status: MeasureStatus | undefined }[], several: boolean): MeasureStatus | undefined {
-  const rank = { failed: 0, measuring: 1, ready: 2 };
-  const present = entries.filter((entry): entry is { label: string; status: MeasureStatus } => entry.status !== undefined);
-  if (present.length === 0) return undefined;
-  const worst = present.reduce((a, b) => (rank[b.status.state] < rank[a.status.state] ? b : a));
-  return several && worst.status.state !== 'ready' ? { ...worst.status, text: `${worst.label}: ${worst.status.text}` } : worst.status;
+  return { needs, tiles };
 }
 
 // The numbers measured for the statistical `normalize` steps of the draft, by step key: what the preview draws them with.
@@ -778,8 +799,8 @@ export interface Draft {
   steps: DraftStep[];
   // The bands of the output; empty for a crop, which names assets.
   bands: string[];
-  // The numbers each step holds as `measured`, in step order: `null` for a step that has none. The panel measures again; only the
-  // locked steps of a result keep them (`extendResult`).
+  // The numbers each step holds as `measured` (version 3), in step order: `null` for a step that has none. The form does not take
+  // them (the job measures, NM4-71); only "process further" reads them, for a result that has no `earthx:normalize` (`extendResult`).
   measured: Array<Measured | null>;
   // `null` for an output without a data type (a crop).
   dtype: string | null;
@@ -812,8 +833,8 @@ export function draftFromOrder(
     const { fields } = operator.form;
     const methods = step.op === 'normalize' && fields.some((f) => f.name === 'method');
     for (const name of Object.keys(step.params)) {
-      // The numbers a statistical method measured are not taken over: the panel measures again for this selection (NM4-11b, KE3).
-      if (!fields.some((f) => f.name === name) && !(methods && name === 'measured')) problems.push(`${where}: unknown parameter ${name}.`);
+      // The numbers a statistical method of version 3 measured are not taken into the form: the job measures (NM4-71). Version 4 has none.
+      if (!fields.some((f) => f.name === name) && !(methods && step.op_version === 3 && name === 'measured')) problems.push(`${where}: unknown parameter ${name}.`);
     }
     const values = initialValues(fields);
     for (const field of fields) {
@@ -829,8 +850,9 @@ export function draftFromOrder(
       else if (field.kind === 'names' && Array.isArray(raw) && raw.every((n) => typeof n === 'string')) values[field.name] = raw.join(', ');
       else problems.push(`${where}: ${field.name} has the wrong type.`);
     }
-    // Version 2 of `normalize` was the fixed range: it comes as version 3 `linear` with the same numbers.
-    if (methods && step.op_version < operator.opVersion) Object.assign(values, upgradedValues(values));
+    // Version 2 of `normalize` was the fixed range: it comes as `linear` with the same numbers. Version 3 has its method; a statistical
+    // one loses its numbers (the job measures, NM4-71), `linear` stays bit for bit.
+    if (methods && step.op_version < 3) Object.assign(values, upgradedValues(values));
     for (const [name, message] of Object.entries(paramsFrom(fields, values, step.op).errors)) problems.push(`${where}: ${name}: ${message}`);
     steps.push({ key: nextKey(), op: step.op, opVersion: operator.opVersion, values });
     measured.push(methods && isStatistical(step.params.method) ? keptMeasured(step.params.measured) : null);

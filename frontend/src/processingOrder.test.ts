@@ -54,7 +54,7 @@ describe('processInfo from the fixtures (K3)', () => {
       ['band_math', 2, ['T1', 'T2'], 'pixel'],
       ['mask', 2, ['T1', 'T2'], 'pixel'],
       ['mask_values', 1, ['T1', 'T2'], 'pixel'],
-      ['normalize', 3, ['T1', 'T2'], 'pixel'],
+      ['normalize', 4, ['T2'], 'pixel'],
       ['reproject', 4, ['T2'], 'grid'],
     ]);
     expect(S2).toMatchObject({ maxSteps: 16, variableSeparator: null });
@@ -666,7 +666,7 @@ describe('buildOrder', () => {
   });
 
   it('writes the bands of a normalize step as a list of names, each once, in the order typed', () => {
-    const normalize = step('normalize', 3, { method: 'linear', bands: 'red, nir;red', in_min: '0', in_max: '1', out_min: '0', out_max: '255', clip: false });
+    const normalize = step('normalize', 4, { method: 'linear', bands: 'red, nir;red', in_min: '0', in_max: '1', out_min: '0', out_max: '255', clip: false });
     const order = buildOrder({ ...base, steps: [normalize], bands: ['red', 'nir'] }).order;
     expect(order?.steps[0].params).toMatchObject({ bands: ['red', 'nir'], in_min: 0, out_max: 255, clip: false });
   });
@@ -782,7 +782,7 @@ describe('buildOrder', () => {
     });
 
     it('refuses the bands of a normalize step that name a result added later', () => {
-      const normalize = step('normalize', 3, { method: 'linear', bands: 'Later', in_min: '0', in_max: '1', out_min: '0', out_max: '1', clip: false }, 1);
+      const normalize = step('normalize', 4, { method: 'linear', bands: 'Later', in_min: '0', in_max: '1', out_min: '0', out_max: '1', clip: false }, 1);
       const built = buildOrder({ ...base, steps: [normalize, ndvi('Later', 2)], bands: ['Later'] });
       expect(built.order).toBeNull();
       expect(errorsOf(built)[0]).toEqual({ bands: "'Later' is added by a later step" });
@@ -822,10 +822,10 @@ describe('buildOrder', () => {
 
     it('lets a normalize step name the result of an earlier step, and asks for at least one band', () => {
       const values = { method: 'linear', in_min: '0', in_max: '1', out_min: '0', out_max: '1', clip: false };
-      const ok = buildOrder({ ...base, steps: [ndvi('NDVI', 1), step('normalize', 3, { ...values, bands: 'NDVI' }, 2)] });
+      const ok = buildOrder({ ...base, steps: [ndvi('NDVI', 1), step('normalize', 4, { ...values, bands: 'NDVI' }, 2)] });
       expect(ok.problems).toEqual([]);
       expect(errorsOf(ok)).toEqual([{}, {}]);
-      const none = buildOrder({ ...base, steps: [ndvi('NDVI', 1), step('normalize', 3, { ...values, bands: '' }, 2)] });
+      const none = buildOrder({ ...base, steps: [ndvi('NDVI', 1), step('normalize', 4, { ...values, bands: '' }, 2)] });
       expect(errorsOf(none)[1]).toEqual({ bands: 'Pick at least one band.' });
     });
   });

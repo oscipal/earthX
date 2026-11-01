@@ -196,6 +196,7 @@ describe('the processing side bar and the manager of the jobs', () => {
     resampled: null,
     failure: null,
     failureKind: null,
+    normalize: null,
     error: null,
     cancelling: false,
     retrying: false,

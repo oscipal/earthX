@@ -1,4 +1,4 @@
-// The fields of a "Normalize" step of version 3 (NM4-11b): the method, the bands, and what the method takes. The fields
+// The fields of a "Normalize" step of version 4 (NM4-11b, NM4-71): the method, the bands, and what the method takes. The fields
 // depend on the method, which the schema cannot say, so the panel lays them out (`normalizeMethods.ts` holds the rules).
 // Little text: what a method does, its formula and an example are the tooltip of the "Method" label.
 
@@ -25,9 +25,9 @@ export default function NormalizeFields({
   values: Record<string, FieldValue>;
   errors: Record<string, string>;
   showErrors: boolean;
-  // Why the methods that measure cannot be chosen here (no AOI, after a reprojection), or `null`.
+  // Why the methods that measure cannot be chosen here (after a reprojection), or `null`.
   locked: string | null;
-  // Where the measure of a statistical method stands.
+  // Where the measure of a statistical method stands: it is for the preview, the job measures itself.
   measure: MeasureStatus | undefined;
   onRetry: () => void;
   // The chips for the bands (the same block as in the other steps).
@@ -155,15 +155,17 @@ export default function NormalizeFields({
           {measure.state === 'measuring' && 'Measuring…'}
           {measure.state === 'ready' && (
             <>
-              Measured over the AOI ✓<Tip text={measure.text} />
+              Preview measured ✓<Tip text={measure.text} />
             </>
           )}
           {measure.state === 'failed' && (
             <>
               <span className="error">Not measured.</span> <Tip tone="warn" text={measure.text} symbol="⚠" />{' '}
-              <button type="button" className="link-btn" onClick={onRetry}>
-                Retry
-              </button>
+              {!measure.final && (
+                <button type="button" className="link-btn" onClick={onRetry}>
+                  Retry
+                </button>
+              )}
             </>
           )}
         </p>

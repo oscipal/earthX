@@ -61,7 +61,7 @@ function normalize(key = 5, values: Record<string, string | boolean> = {}): Draf
   return {
     key,
     op: 'normalize',
-    opVersion: 3,
+    opVersion: 4,
     values: { method: 'linear', bands: 'red', in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
   };
 }
@@ -253,6 +253,15 @@ describe('a statistical normalize step in the chain (NM4-11b)', () => {
     expect(planPreview([zscore(6)], S2, numbers)).toEqual({ state: 'off', reason: 'Normalize has no measured numbers yet.' });
     const fixed = planPreview([normalize()], S2, numbers);
     expect(fixed.state === 'ready' && 'measured' in fixed.steps[0].params).toBe(false);
+  });
+
+  it('takes version 4, which runs only as a job, to the tile as version 3 (NM4-71), the fixed range with the same fields', () => {
+    const operator = S2.operators.find((o) => o.op === 'normalize')!;
+    expect([operator.opVersion, operator.tiers]).toEqual([4, ['T2']]);
+    const plan = planPreview([bandMath('red + nir'), zscore(), normalize(6)], S2, numbers);
+    if (plan.state !== 'ready') throw new Error('no plan');
+    expect(plan.steps.map((s) => [s.step.opVersion, s.version])).toEqual([[2, 2], [4, 3], [4, 3]]);
+    expect(plan.steps[2].params).toEqual({ method: 'linear', bands: ['red'], in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
   });
 
   it('ends the start before a step whose parameters are longer than the tile route takes', () => {
