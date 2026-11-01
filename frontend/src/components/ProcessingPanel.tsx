@@ -37,7 +37,7 @@ import {
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
 import { AFTER_REPROJECT, NO_AOI } from '../normalizeMethods';
-import type { MeasureNeed } from '../processingOrder';
+import { measuredNumbers, type MeasureNeed } from '../processingOrder';
 import {
   OUTSIDE_TEXT,
   orderView,
@@ -407,7 +407,7 @@ function PreviewSection({ view }: { view: OrderView }) {
   const setShown = useProcessingStore((s) => s.setShown);
   const unit = previewUnit(preview, measure);
   const loading = usePreviewLoading();
-  const plan = planPreview(steps, view.info);
+  const plan = planPreview(steps, view.info, measuredNumbers(steps, view.built));
   const range = rescaleOf(rangeDraft);
   // The band the map shows, and what it reads for it (adr/0020 §10): the limit of the tile is that of these assets.
   const read =
@@ -755,7 +755,7 @@ export default function ProcessingPanel() {
                             earlier={earlier}
                             dataBands={view.selectable}
                             units={Object.fromEntries(view.dataBands.flatMap((b) => (b.unit ? [[b.name, b.unit]] : [])))}
-                            measure={problem?.measure}
+                            measure={view.measures[index]}
                             statisticsLock={
                               view.area !== 'aoi' || !view.aoi
                                 ? NO_AOI

@@ -115,6 +115,8 @@ import {
   draftFromOrder,
   isArea,
   clipArea,
+  measuredNumbers,
+  worstMeasure,
   lonelyBand,
   maskAssetOf,
   maskLayerOf,
@@ -135,6 +137,7 @@ import {
   type DraftStep,
   type MeasureEntry,
   type MeasureNeed,
+  type MeasureStatus,
   type Pass,
   type ProcessInfo,
 } from './processingOrder';
@@ -527,6 +530,8 @@ export interface OrderView {
   // Why "Review" and "Start job" wait: a statistical `normalize` step has no numbers yet, or its measurement failed (NM4-11b, KE2).
   // `needs` are the questions the orders of all jobs need answered.
   measureBlock: string | null;
+  // Where each statistical `normalize` step stands over all jobs (`worstMeasure`), by step index; `undefined` for the other steps.
+  measures: Array<MeasureStatus | undefined>;
   needs: MeasureNeed[];
   // The assets the order reads or the preview needs: those of the output, of the expressions, of `normalize` and the layer
   // of a mask, in the item's order.
@@ -639,6 +644,14 @@ function clipToResult(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon, fixed: Fixed,
   const result = outer === null ? aoi : clipArea(aoi, outer);
   lastClip = { inputs, result };
   return result;
+}
+
+// Why "Review" and "Start job" wait for a measure: a failure first, else the first that runs; of several jobs the one that is not done.
+function measureBlockOf(parts: ReadonlyArray<{ unit: BatchUnit; built: BuiltOrder | null }>, several: boolean): string | null {
+  const waiting = parts.filter((part) => part.built?.waiting);
+  const part = waiting.find((w) => w.built!.waiting!.includes('failed')) ?? waiting[0];
+  if (!part) return null;
+  return several ? `${part.unit.label}: ${part.built!.waiting}` : part.built!.waiting;
 }
 
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
@@ -771,7 +784,10 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     maskHidden: from !== null && maskLayer !== null && !kept.has(maskLayer.band),
     output,
     nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames, hidden, from?.locked ?? 0),
-    measureBlock: builtParts.find((part) => part.built?.waiting)?.built?.waiting ?? null,
+    measureBlock: measureBlockOf(builtParts, runAs !== 'one'),
+    measures: p.steps.map((_, index) =>
+      worstMeasure(builtParts.map(({ unit, built: b }) => ({ label: unit.label, status: b?.stepProblems[index]?.measure })), runAs !== 'one'),
+    ),
     needs: [...new Map(builtParts.flatMap((part) => part.built?.needs ?? []).map((need) => [need.key, need])).values()],
     assets,
     maskLayer,
@@ -2330,7 +2346,7 @@ function startLook(
 ): { range: PreviewRange | null; bandRanges: Record<string, PreviewRange>; shownBand: string | null } {
   const own = handRangeOf(p);
   if (view.output.length <= 1) return { range: own, bandRanges: {}, shownBand: null };
-  const plan = planPreview(p.steps, view.info);
+  const plan = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
   const band = plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
   // The colour picture has no colormap, whatever the fields of the range hold.
   const kept = own && band === RGB ? { ...own, colormap: '' } : own;
@@ -2344,7 +2360,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   const app = useAppStore.getState();
   const view = orderView(app, p);
   if (!view.info || !view.pass || view.outside || processBlockReason(view.dataset, sceneCountOf(app, p)) !== null) return null;
-  const full = planPreview(p.steps, view.info);
+  const full = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
   if (full.state !== 'ready') return null;
   const plan = limit === undefined ? full : shortenPlan(full, limit);
   if (plan === null) return null;
@@ -2672,6 +2688,7 @@ useProcessingStore.subscribe((s, prev) => {
     s.area !== prev.area ||
     s.runAs !== prev.runAs ||
     s.steps !== prev.steps ||
+    s.measures !== prev.measures ||
     s.output !== prev.output ||
     s.dtype !== prev.dtype ||
     s.shown !== prev.shown ||

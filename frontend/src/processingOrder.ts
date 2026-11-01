@@ -11,7 +11,7 @@ import { groupIndexOfItem } from './grouping';
 import { canonicalJson, type AoiProvenance, type JsonSchema, type Order, type OrderStep, type ProcessDescription } from './processing';
 import type { AreaStatistics } from './api';
 import { bandNamesOf, isBandMath, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
-import { AFTER_REPROJECT, MEASURING, NO_AOI, isStatistical, measuredFrom, measuredText, normalizeForm, upgradedValues, type Method } from './normalizeMethods';
+import { AFTER_REPROJECT, MEASURING, NO_AOI, isStatistical, measuredFrom, measuredText, normalizeForm, upgradedValues, type Measured, type Method } from './normalizeMethods';
 import { initialValues, paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
 import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
@@ -521,6 +521,8 @@ export interface MeasureNeed {
 export interface MeasureStatus {
   state: 'measuring' | 'failed' | 'ready';
   text: string;
+  // The numbers of a step that has them: the preview draws the step with them even where the order is not whole yet.
+  measured?: Measured;
 }
 
 export interface StepProblem {
@@ -731,9 +733,29 @@ function measureSteps(args: {
       return;
     }
     params.measured = found.measured;
-    problem.measure = { state: 'ready', text: measuredText(method, found.measured) };
+    problem.measure = { state: 'ready', text: measuredText(method, found.measured), measured: found.measured };
   });
   return { needs, waiting };
+}
+
+// Where a step stands over the jobs of a batch: a failed measurement comes first, then one that runs, else the first job's
+// numbers. Of several jobs the text names the job (`label`) that is not done, since each measures over its own area (NM4-11b).
+export function worstMeasure(entries: readonly { label: string; status: MeasureStatus | undefined }[], several: boolean): MeasureStatus | undefined {
+  const rank = { failed: 0, measuring: 1, ready: 2 };
+  const present = entries.filter((entry): entry is { label: string; status: MeasureStatus } => entry.status !== undefined);
+  if (present.length === 0) return undefined;
+  const worst = present.reduce((a, b) => (rank[b.status.state] < rank[a.status.state] ? b : a));
+  return several && worst.status.state !== 'ready' ? { ...worst.status, text: `${worst.label}: ${worst.status.text}` } : worst.status;
+}
+
+// The numbers measured for the statistical `normalize` steps of the draft, by step key: what the preview draws them with.
+export function measuredNumbers(steps: readonly DraftStep[], built: BuiltOrder | null): Map<number, Measured> {
+  const numbers = new Map<number, Measured>();
+  steps.forEach((step, index) => {
+    const measured = built?.stepProblems[index]?.measure?.measured;
+    if (measured) numbers.set(step.key, measured);
+  });
+  return numbers;
 }
 
 // What the panel takes from a recipe or an order (M4-19d): the other way round
