@@ -61,8 +61,8 @@ function normalize(key = 5, values: Record<string, string | boolean> = {}): Draf
   return {
     key,
     op: 'normalize',
-    opVersion: 2,
-    values: { bands: 'red', in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
+    opVersion: 3,
+    values: { method: 'linear', bands: 'red', in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
   };
 }
 
@@ -134,7 +134,7 @@ describe('planPreview (adr/0014 §6.1)', () => {
   it('shows the longest start of tile steps, and says there are more', () => {
     const plan = ready([bandMath('red + nir'), normalize(), reproject(), bandMath('red', 3)]);
     expect(plan.steps.map((s) => s.operator.op)).toEqual(['band_math', 'normalize']);
-    expect(plan.steps[1].params).toEqual({ bands: ['red'], in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
+    expect(plan.steps[1].params).toEqual({ method: 'linear', bands: ['red'], in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
     expect(plan.further).toBe(true);
   });
 
@@ -228,6 +228,55 @@ describe('planPreview (adr/0014 §6.1)', () => {
   });
 });
 
+describe('a statistical normalize step in the chain (NM4-11b)', () => {
+  const zscore = (key = 5, values: Record<string, string | boolean> = {}) => normalize(key, { method: 'zscore', ...values });
+  const numbers = new Map([[5, { factor: 1, bands: { red: { mean: 2000, stddev: 500 } } }]]);
+
+  it('is drawn with the numbers measured for it, in its parameters', () => {
+    const plan = planPreview([bandMath('red + nir'), zscore()], S2, numbers);
+    expect(plan.state === 'ready' && plan.steps[1].params).toEqual({
+      method: 'zscore',
+      bands: ['red'],
+      measured: { factor: 1, bands: { red: { mean: 2000, stddev: 500 } } },
+    });
+  });
+
+  it('ends the start before the step while it has no numbers, and says what is missing where it is the first', () => {
+    const plan = planPreview([bandMath('red + nir'), zscore(), bandMath('red', 3)], S2);
+    expect(plan.state === 'ready' && plan.steps.map((s) => s.operator.op)).toEqual(['band_math']);
+    expect(plan.state === 'ready' && plan.further).toBe(true);
+    expect(planPreview([zscore()], S2)).toEqual({ state: 'off', reason: 'Normalize has no measured numbers yet.' });
+    expect(planPreview([normalize(5, { method: 'zscore', bands: '' })], S2)).toEqual({ state: 'off', reason: 'Complete the step to see the preview.' });
+  });
+
+  it('takes the numbers of its own step only, and none for the fixed range', () => {
+    expect(planPreview([zscore(6)], S2, numbers)).toEqual({ state: 'off', reason: 'Normalize has no measured numbers yet.' });
+    const fixed = planPreview([normalize()], S2, numbers);
+    expect(fixed.state === 'ready' && 'measured' in fixed.steps[0].params).toBe(false);
+  });
+
+  it('ends the start before a step whose parameters are longer than the tile route takes', () => {
+    const bands = Array.from({ length: 80 }, (_, i) => `band_${i}`);
+    const many = { factor: 1, bands: Object.fromEntries(bands.map((name) => [name, { mean: 2000.123456, stddev: 500.654321 }])) };
+    const plan = planPreview([bandMath('red'), zscore(5, { bands: bands.join(', ') })], S2, new Map([[5, many]]));
+    expect(plan.state === 'ready' && plan.steps.map((s) => s.operator.op)).toEqual(['band_math']);
+    expect(plan.state === 'ready' && plan.further).toBe(true);
+  });
+
+  it('makes the tile URL carry the numbers, and a new key where they change', () => {
+    const base = { dataset: DATASET, items: [item('S2_A', { gsd: 10 })], assets: ['red', 'nir'], info: S2, range: DEFAULT_RANGE, area: 'scene' as const };
+    const plan = planPreview([zscore()], S2, numbers);
+    if (plan.state !== 'ready') throw new Error('no plan');
+    const a = previewSpec({ ...base, plan })!;
+    const url = new URL(a.scenes[0].url, 'http://localhost');
+    expect(url.searchParams.getAll('op_version')).toEqual(['3']);
+    expect(JSON.parse(url.searchParams.get('params')!)).toMatchObject({ method: 'zscore', measured: { bands: { red: { mean: 2000, stddev: 500 } } } });
+    const other = planPreview([zscore()], S2, new Map([[5, { factor: 1, bands: { red: { mean: 2100, stddev: 500 } } }]]));
+    if (other.state !== 'ready') throw new Error('no plan');
+    expect(previewSpec({ ...base, plan: other })!.key).not.toBe(a.key);
+  });
+});
+
 describe('rescaleOf', () => {
   it('writes min,max for the tile URL', () => {
     expect(rescaleOf(DEFAULT_RANGE)).toEqual({ rescale: '-1,1' });
@@ -272,9 +321,9 @@ describe('previewSpec', () => {
     const url = new URL(spec.scenes[0].url, 'http://localhost');
     expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
     expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
-    expect(url.searchParams.getAll('op_version')).toEqual(['2', '2']);
+    expect(url.searchParams.getAll('op_version')).toEqual(['3', '2']);
     expect(url.searchParams.getAll('params')).toEqual([
-      '{"bands":["red"],"clip":true,"in_max":0.5,"in_min":0,"out_max":255,"out_min":0}',
+      '{"bands":["red"],"clip":true,"in_max":0.5,"in_min":0,"method":"linear","out_max":255,"out_min":0}',
       '{"expression":"red / 2","name":"Band_Math_3"}',
     ]);
     expect(spec.title).toBe('Normalize → Band math');

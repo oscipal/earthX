@@ -642,3 +642,12 @@ print(ok.sum(), d.sum(), 100 * d.sum() / ok.sum())
 git diff --stat origin/main...origin/claude/relaxed-rubin-4saw3t
 #   (nur Dateien unter docs/)
 ```
+
+## Nachtrag NM4-11b: Die gesperrten Schritte eines Ergebnisses behalten ihre gemessenen Zahlen (2026-11-01; zu §8, Nachtrag NM4-05b; `adr/0014` „§15 Nachtrag NM4-11b“)
+
+Otto, 01.11.2026 (Antwort zu [#269](https://github.com/oscipal/earthX/pull/269)): Ein Ergebnis ist eine eigene Entität. Nimmt „⚙“ den Auftrag eines Ergebnisses auf, stehen seine Schritte gesperrt und unsichtbar am Anfang. Ein gesperrter Schritt `normalize` Version 3 mit statistischer Methode behält die Werte `measured` aus der Auftragskopie: Das Panel misst ihn nicht neu, auch wenn die AOI eine andere ist, und der neue Auftrag rechnet die Schritte des Ergebnisses mit denselben Zahlen wie das Ergebnis. Neu angehängte Schritte messen frisch, über die jetzt gewählte Fläche, auf einer Kette, die die gehaltenen Zahlen trägt.
+
+- **Nur dieser Fall.** Eine `recipe.json`, ein Permalink und die Ablage im Browser nehmen `measured` weiter nicht über, das Panel misst dort für die aktuelle Auswahl neu (`plans/querschnitt/nm4-11-normalize-methoden.md` KE3).
+- **Umsetzung.** `draftFromOrder` listet die Zahlen je Schritt getrennt von den Werten des Formulars (`Draft.measured`, nur wenn sie die Form haben, die der Server schreibt, `keptMeasured`); `extendResult` hängt sie nach Schlüssel an `fixed.result.measured`; `buildOrder` nimmt sie für diese Schritte statt zu fragen (Tooltip „Kept from the result.“). Ein Schritt, dessen Zahlen eine andere Form haben, wird gemessen.
+- **Test mit Gegenprobe** (`ProcessingExtend.test.tsx`): Nichts wird für den gesperrten Schritt gefragt, der Auftrag trägt seine Zahlen, ein angehängter Schritt fragt über die gewählte AOI auf einer Kette mit den gehaltenen Zahlen, eine `recipe.json` desselben Auftrags misst neu. Ohne die Ausnahme scheitern die ersten beiden.
+

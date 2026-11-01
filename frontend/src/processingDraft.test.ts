@@ -233,4 +233,63 @@ describe('draftFromOrder', () => {
       expect(draftFromOrder(order, infoOf('cop-dem-glo-30'), keys()).problems.join(' ')).toMatch(/resolution/u);
     });
   });
+
+  describe('the methods of a normalize step (NM4-11b)', () => {
+    const normalize = () => structuredClone(FIXTURES['./fixtures/orders/normalize-dem-with-drawn-aoi.json'].inputs.recipe);
+    const withStep = (op_version: number, params: Record<string, unknown>) => {
+      const order = normalize();
+      order.steps[0] = { op: 'normalize', op_version, params };
+      return order;
+    };
+    const FIXED = { bands: ['data'], in_min: 0, in_max: 3000, out_min: 0, out_max: 1, clip: true };
+
+    it('takes version 2, the fixed range, as version 3 with the method linear and the same numbers, with a note', () => {
+      const order = withStep(2, FIXED);
+      const { draft, problems, notes } = draftFromOrder(order, infoOf('cop-dem-glo-30'), keys());
+      expect(problems).toEqual([]);
+      expect(notes).toEqual(['Step 1 (normalize): version 2 is taken as version 3.']);
+      expect(draft.steps[0]).toMatchObject({ op: 'normalize', opVersion: 3, values: { method: 'linear', bands: 'data', in_min: '0', in_max: '3000', clip: true } });
+      expect(roundTrip(order).built.order?.steps[0]).toEqual({
+        op: 'normalize',
+        op_version: 3,
+        params: { method: 'linear', bands: ['data'], in_min: 0, in_max: 3000, out_min: 0, out_max: 1, clip: true },
+      });
+    });
+
+    it('reads the method and its fields, and leaves the measured numbers behind: the panel measures again (KE3)', () => {
+      const measured = { factor: 1, bands: { data: { p_low: 12, p_high: 2000 } } };
+      const order = withStep(3, { method: 'percentile', bands: ['data'], low: 5, high: 95, out_min: 0, out_max: 1, clip: false, measured });
+      const { draft, problems, notes } = draftFromOrder(order, infoOf('cop-dem-glo-30'), keys());
+      expect(problems).toEqual([]);
+      expect(notes).toEqual([]);
+      expect(draft.steps[0].values).toMatchObject({ method: 'percentile', low: '5', high: '95', clip: false });
+      // The steps of the draft do not hold them; the draft lists them apart, and only "process further" of a result keeps them.
+      expect(JSON.stringify(draft.steps)).not.toContain('2000');
+      expect(draft.measured).toEqual([measured]);
+      const built = roundTrip(order).built;
+      expect(built.order).toBeNull();
+      expect(built.needs).toHaveLength(1);
+      expect(built.waiting).toBe('Normalize: measuring the bands…');
+    });
+
+    it('reads z-score and robust with no fields besides the bands', () => {
+      for (const method of ['zscore', 'robust']) {
+        const measured = { factor: 1, bands: { data: method === 'zscore' ? { mean: 1, stddev: 2 } : { p25: 1, median: 2, p75: 3 } } };
+        const { draft, problems } = draftFromOrder(withStep(3, { method, bands: ['data'], measured }), infoOf('cop-dem-glo-30'), keys());
+        expect(problems, method).toEqual([]);
+        expect(draft.steps[0].values.method).toBe(method);
+      }
+    });
+
+    it('refuses what the form refuses: no method, a method of the panel that is not one, a field of another operator', () => {
+      const info = infoOf('cop-dem-glo-30');
+      expect(draftFromOrder(withStep(3, { bands: ['data'] }), info, keys()).problems).toEqual(['Step 1 (normalize): method: Required.']);
+      expect(draftFromOrder(withStep(3, { method: 'median', bands: ['data'] }), info, keys()).problems).toEqual([
+        'Step 1 (normalize): method: Pick one of the options.',
+      ]);
+      expect(draftFromOrder(withStep(3, { method: 'zscore', bands: ['data'], threshold: 1 }), info, keys()).problems).toEqual([
+        'Step 1 (normalize): unknown parameter threshold.',
+      ]);
+    });
+  });
 });

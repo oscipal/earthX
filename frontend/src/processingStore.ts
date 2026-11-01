@@ -116,6 +116,8 @@ import {
   draftFromOrder,
   isArea,
   clipArea,
+  measuredNumbers,
+  worstMeasure,
   lonelyBand,
   maskAssetOf,
   maskLayerOf,
@@ -134,6 +136,9 @@ import {
   type DataBand,
   type Draft,
   type DraftStep,
+  type MeasureEntry,
+  type MeasureNeed,
+  type MeasureStatus,
   type Pass,
   type ProcessInfo,
 } from './processingOrder';
@@ -167,6 +172,7 @@ import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
+import { startValues, type Measured } from './normalizeMethods';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import { datesOfIds, knownItems } from './layerDate';
 import { resamplingParts } from './resamplingWarning';
@@ -215,6 +221,9 @@ export interface FixedResult {
   bands: string[];
   // What the process description made of the steps (an older version taken as the listed one).
   notes: string[];
+  // The numbers the locked steps measured when the job ran, by step key: they keep them, the result is an entity of its own
+  // (NM4-11b, adr/0019 Nachtrag NM4-05b). Steps added later measure for the area they are given.
+  measured: Record<number, Measured>;
 }
 
 // Scenes fetched one by one because a layer or the full-resolution view names them
@@ -336,6 +345,9 @@ interface ProcessingState {
   // The reason a name field holds a name that breaks a rule, by step: only what the person has typed and not left yet or
   // a name a loaded recipe brought; never a name the steps and the output use (review of #250).
   nameProblems: Record<number, string>;
+  // What the route of NM4-19 said to the questions of the statistical `normalize` steps, by the text of the question (NM4-11b).
+  // In memory only: the text holds the AOI.
+  measures: ReadonlyMap<string, MeasureEntry>;
   // The one band of a dataset that has only one, while it is in the output because the panel put it there on opening and
   // the person has not touched the choice: the first result of a band math step takes its place (review of #250).
   lonelyAuto: string | null;
@@ -454,6 +466,9 @@ interface ProcessingState {
   setShown: (name: string) => void;
   loadRecipe: (text: string) => Promise<LoadResult>;
   restoreOrder: (order: Order, view: PermalinkView, options?: { converted?: boolean }) => Promise<LoadResult>;
+  // Asks the questions not asked yet, a few at a time; the answers arrive in `measures`. A failed answer is asked again by `retryMeasures`.
+  ensureMeasures: (needs: readonly MeasureNeed[]) => void;
+  retryMeasures: () => void;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
   placeOrder: (
@@ -527,6 +542,12 @@ export interface OrderView {
   output: string[];
   // Why steps, "Review" and "Start job" wait: a name field holds a name that breaks a rule. `null` for none.
   nameBlock: string | null;
+  // Why "Review" and "Start job" wait: a statistical `normalize` step has no numbers yet, or its measurement failed (NM4-11b, KE2).
+  // `needs` are the questions the orders of all jobs need answered.
+  measureBlock: string | null;
+  // Where each statistical `normalize` step stands over all jobs (`worstMeasure`), by step index; `undefined` for the other steps.
+  measures: Array<MeasureStatus | undefined>;
+  needs: MeasureNeed[];
   // The assets the order reads or the preview needs: those of the output, of the expressions, of `normalize` and the layer
   // of a mask, in the item's order.
   assets: string[];
@@ -640,6 +661,18 @@ function clipToResult(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon, fixed: Fixed,
   return result;
 }
 
+// The numbers the locked steps of a result keep, by step key.
+const keptOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlyMap<number, Measured> | undefined =>
+  p.fixed?.result ? new Map(Object.entries(p.fixed.result.measured).map(([key, measured]) => [Number(key), measured])) : undefined;
+
+// Why "Review" and "Start job" wait for a measure: a failure first, else the first that runs; of several jobs the one that is not done.
+function measureBlockOf(parts: ReadonlyArray<{ unit: BatchUnit; built: BuiltOrder | null }>, several: boolean): string | null {
+  const waiting = parts.filter((part) => part.built?.waiting);
+  const part = waiting.find((w) => w.built!.waiting!.includes('failed')) ?? waiting[0];
+  if (!part) return null;
+  return several ? `${part.unit.label}: ${part.built!.waiting}` : part.built!.waiting;
+}
+
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
   const scenes = withExtraScenes(selection, p.extraScenes);
   // What an entry fixed is the order's area, whatever the map holds; but in the panel of a result "AOI only" is the map's AOI, inside
@@ -729,7 +762,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const outside = inner && drawn !== null && clipped === null;
   const buildFor = (itemIds: string[]): BuiltOrder | null => {
     if (!info || !dataset) return null;
-    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info });
+    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info, measures: p.measures, kept: keptOf(p) });
     if (outside) return { ...result, order: null, problems: [...result.problems, OUTSIDE_TEXT] };
     return foreign.length === 0 ? result : { ...result, order: null, problems: [...result.problems, foreignReason(foreign)] };
   };
@@ -770,6 +803,11 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     maskHidden: from !== null && maskLayer !== null && !kept.has(maskLayer.band),
     output,
     nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames, hidden, from?.locked ?? 0),
+    measureBlock: measureBlockOf(builtParts, runAs !== 'one'),
+    measures: p.steps.map((_, index) =>
+      worstMeasure(builtParts.map(({ unit, built: b }) => ({ label: unit.label, status: b?.stepProblems[index]?.measure })), runAs !== 'one'),
+    ),
+    needs: [...new Map(builtParts.flatMap((part) => part.built?.needs ?? []).map((need) => [need.key, need])).values()],
     assets,
     maskLayer,
     maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
@@ -1041,6 +1079,7 @@ const EMPTY_DRAFT = {
   steps: [] as DraftStep[],
   output: [] as string[],
   nameProblems: {} as Record<number, string>,
+  measures: new Map<string, MeasureEntry>() as ReadonlyMap<string, MeasureEntry>,
   lonelyAuto: null as string | null,
   dtype: null,
   shown: null as string | null,
@@ -1167,7 +1206,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       fixed: {
         itemIds: draft.groups.flat(),
         aoi: draft.aoi,
-        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes },
+        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes, measured: {} },
       },
     }));
     if (!taken.ok) useAppStore.setState({ error: taken.reason });
@@ -1768,6 +1807,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         added = defaultName([...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
         values.name = added;
       } else if (op === 'normalize' && 'bands' in values) {
+        if ('method' in values) Object.assign(values, startValues());
         values.bands = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
       } else if (op === 'mask_values') {
         // The band to look at is proposed like that of a normalize step; "below" is where a threshold usually starts.
@@ -1936,6 +1976,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             locked: draft.steps.length,
             bands: [...draft.bands],
             notes,
+            measured: Object.fromEntries(draft.steps.flatMap((step, i) => (draft.measured[i] ? [[step.key, draft.measured[i]]] : []))),
           },
         },
       }));
@@ -1964,6 +2005,25 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         whose: 'this layer',
       });
     },
+
+    ensureMeasures: (needs) => {
+      const fresh = needs.filter((need) => !get().measures.has(need.key) && !asking.has(need.key));
+      for (const need of fresh) asking.add(need.key);
+      void runPool(fresh, ESTIMATE_PARALLEL, new AbortController().signal, async (need) => {
+        let entry: MeasureEntry;
+        try {
+          entry = { state: 'ready', answer: await postAreaStatistics(need.datasetId, need.body) };
+        } catch (error) {
+          entry = { state: 'failed', reason: refusalMessage(error) };
+        }
+        asking.delete(need.key);
+        set((s) => {
+          const kept = [...s.measures].slice(-(NORMALIZE_MEASURES_KEPT - 1));
+          return { measures: new Map([...kept.filter(([key]) => key !== need.key), [need.key, entry]]) };
+        });
+      });
+    },
+    retryMeasures: () => set((s) => ({ measures: new Map([...s.measures].filter(([, entry]) => entry.state !== 'failed')) })),
 
     reviewOrder: async () => {
       const view = orderView(useAppStore.getState(), get());
@@ -2348,7 +2408,7 @@ function startLook(
 ): { range: PreviewRange | null; bandRanges: Record<string, PreviewRange>; shownBand: string | null } {
   const own = handRangeOf(p);
   if (view.output.length <= 1) return { range: own, bandRanges: {}, shownBand: null };
-  const plan = planPreview(p.steps, view.info);
+  const plan = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
   const band = plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
   // The colour picture has no colormap, whatever the fields of the range hold.
   const kept = own && band === RGB ? { ...own, colormap: '' } : own;
@@ -2362,7 +2422,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   const app = useAppStore.getState();
   const view = orderView(app, p);
   if (!view.info || !view.pass || view.outside || processBlockReason(view.dataset, sceneCountOf(app, p)) !== null) return null;
-  const full = planPreview(p.steps, view.info);
+  const full = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
   if (full.state !== 'ready') return null;
   const plan = limit === undefined ? full : shortenPlan(full, limit);
   if (plan === null) return null;
@@ -2410,6 +2470,9 @@ function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'
 // expression asks for no measure per key, nor a refusal twice). The key of an area measure is the text of the order,
 // which carries the AOI: it lives here in memory and goes into no URL, storage, log or message.
 const MEASURES_KEPT = 50;
+// The same for the measures of the `normalize` steps (NM4-11b), and the questions on their way: `ensureMeasures` asks each once.
+const NORMALIZE_MEASURES_KEPT = 50;
+const asking = new Set<string>();
 const measures = new Map<string, PreviewMeasure>();
 const failedMeasures = new Set<string>();
 const measuring = new Map<string, Promise<PreviewMeasure | null>>();
@@ -2687,6 +2750,7 @@ useProcessingStore.subscribe((s, prev) => {
     s.area !== prev.area ||
     s.runAs !== prev.runAs ||
     s.steps !== prev.steps ||
+    s.measures !== prev.measures ||
     s.output !== prev.output ||
     s.dtype !== prev.dtype ||
     s.shown !== prev.shown ||

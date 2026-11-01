@@ -452,7 +452,7 @@ describe('the data type after normalize (Otto, 22.10.2026)', () => {
     expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('uint16');
     click(button('＋ Normalize'));
     // The step scales the bands it names; the type follows once one of them is in the output.
-    const bands = [...container.querySelectorAll('fieldset.pp-classes')].find((f) => f.querySelector('legend')!.textContent!.startsWith('Bands'))!;
+    const bands = [...container.querySelectorAll('fieldset.pp-classes')].find((f) => f.querySelector('legend')!.textContent!.startsWith('Band'))!;
     click([...bands.querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.textContent === 'red')!);
     expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('float32');
     const options = [...container.querySelectorAll('select option')].map((o) => o.textContent);
