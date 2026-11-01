@@ -8,7 +8,7 @@ seams the tests use — ``vsicurl_path`` and the resolver — enters
 runs one step over every band of the COG (two, or more since NM4-43b) — the test operator ``scale``, or with ``step`` set to
 ``reproject`` the platform's ``reproject`` to EPSG:3035 with ``bilinear`` at 10 m, with
 ``reproject-lanczos`` with ``lanczos`` at 30 m, with ``normalize`` the platform's
-``normalize`` over its bands (``normalize-zscore``, ``-percentile`` and ``-robust``: version 3, NM4-11), with ``mask-values`` the platform's ``mask_values`` (DS-06), with ``mask`` its ``mask`` over its bands and the 20 m
+``normalize`` over its bands (``normalize-zscore``, ``-percentile`` and ``-robust``: version 3, NM4-11; ``normalize-v4-…`` over four bands: version 4, NM4-71), with ``mask-values`` the platform's ``mask_values`` (DS-06), with ``mask`` its ``mask`` over its bands and the 20 m
 classification layer ``layer`` (a second COG, M4-18) — and prints one JSON line: peak
 resident memory in MB, the resident memory after the imports, seconds and blocks.
 Nothing here opens a socket.
@@ -101,6 +101,21 @@ STEPS_V3 = {
     },
 }
 
+#: NM4-71: version 4 over the four bands of a scene (``big_1`` … ``big_n``, as many as the scene has): the run counts them in the pass before the step,
+#: reads them again for the exact percentiles, and runs the step in a pass of its own.
+STEPS_V4 = {
+    "normalize-v4-percentile": {
+        "method": "percentile",
+        "low": 2,
+        "high": 98,
+        "out_min": 0.0,
+        "out_max": 1.0,
+        "clip": True,
+    },
+    "normalize-v4-zscore": {"method": "zscore"},
+    "normalize-v4-robust": {"method": "robust"},
+}
+
 #: DS-06: ``mask_values`` over the two bands of the scene, in a recipe of version 2 like the methods above.
 STEPS_V2 = {
     "mask-values": {
@@ -111,11 +126,18 @@ STEPS_V2 = {
 }
 
 
-def _step(name: str) -> dict:
+def v4_bands(count: int) -> list[str]:
+    """The names of the bands of a scene of ``count`` bands: ``big_1`` … ``big_n``, or ``big`` for a scene of one."""
+    return [f"big_{index}" for index in range(1, count + 1)] if count > 1 else ["big"]
+
+
+def _step(name: str, count: int = 2) -> dict:
     if name in STEPS:
         return STEPS[name]
     if name in STEPS_V2:
         return STEPS_V2[name]
+    if name in STEPS_V4:
+        return {"op": "normalize", "op_version": 4, "params": {**STEPS_V4[name], "bands": v4_bands(count)}}
     return {"op": "normalize", "op_version": 3, "params": STEPS_V3[name]}
 
 
@@ -155,12 +177,12 @@ def main(
             {"name": "s2", "dataset": "synthetic", "groups": [["ITEM_BIG"]], "assets": assets, "resolved": entries}
         ],
         "aoi": sources.whole(size, size),
-        "steps": [_step(step)],
+        "steps": [_step(step, bands)],
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
-    if step in STEPS_V3 or step in STEPS_V2:
+    if step in STEPS_V3 or step in STEPS_V2 or step in STEPS_V4:
         data["recipe_version"] = 2
-        data["output"]["bands"] = _V3_BANDS
+        data["output"]["bands"] = v4_bands(bands) if step in STEPS_V4 else _V3_BANDS
     from tests.earthx.processing.recipes import recipe_of_data
 
     recipe = recipe_of_data(data, OPERATORS)

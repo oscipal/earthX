@@ -21,14 +21,22 @@ percentiles), ``zscore`` and ``robust`` (median and interquartile range). Every 
 numbers of a statistical one are *in the recipe*, measured before the run over the area by the route of NM4-19
 (``measured``, adr/0014 §15 Nachtrag NM4-11): the step stays a pure pixel step, the tile and the job give the same
 bytes, and the runner measures nothing. Where the span of a band is 0 the divisor is 1, as in scikit-learn.
+
+**Version 4 (NM4-71)** takes the numbers out of the recipe again, for the job only: the same fields without ``measured``,
+and the run measures the bands of a statistical method over the AOI at full resolution, exactly (adr/0014
+Nachtrag NM4-71). The step says so with ``measures``; the planner ends the pass before it, the core counts the bands in that
+pass, refines the percentiles from the work file it left (:mod:`earthx.processing.statistics`) and hands the step its numbers
+(``with_measured``, the internal :class:`MeasuredNormalizeV4`). From there the kernel is version 3's, so version 4 with the
+numbers it measured gives the bytes of version 3 with the same numbers; ``linear`` measures nothing and gives those of
+versions 1 to 3. Version 3 stays accepted (the tile, old recipes, "⚙" on a result) and is no longer listed.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import math
-from collections.abc import Callable
-from typing import Literal
+from collections.abc import Callable, Mapping
+from typing import Any, Literal
 
 import numpy
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -42,11 +50,15 @@ __all__ = [
     "NORMALIZE",
     "NORMALIZE_V2",
     "NORMALIZE_V3",
+    "NORMALIZE_V4",
+    "MEASURED_PROPERTY",
     "BandValues",
     "Measured",
+    "MeasuredNormalizeV4",
     "NormalizeParams",
     "NormalizeParamsV2",
     "NormalizeParamsV3",
+    "NormalizeParamsV4",
 ]
 
 _MAX_BANDS = 256
@@ -346,11 +358,12 @@ class Measured(BaseModel):
     bands: dict[str, BandValues] = Field(min_length=1, max_length=_MAX_BANDS, description="Numbers by band name.")
 
 
-class NormalizeParamsV3(BaseModel):
-    """The step of version 3: ``method``, the ``bands`` it converts, and the fields of that method, all given (B10).
+class _MethodFields(BaseModel):
+    """``method``, the ``bands`` it converts, and the fields of that method, all given (B10): versions 3 and 4 alike.
 
-    One model for all four methods; the fields of the others stay out (:meth:`_method`), so a recipe says exactly
-    what its method needs.
+    One model for all four methods; the fields of the others stay out (:meth:`_check_fields`), so a recipe says exactly
+    what its method needs. The numbers a statistical method measures are not here: version 3 carries them in the recipe
+    (``measured``), version 4 measures them in the run.
     """
 
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
@@ -374,29 +387,21 @@ class NormalizeParamsV3(BaseModel):
         default=None, allow_inf_nan=False, description="linear, percentile: target range end; below out_min reverses."
     )
     clip: bool | None = Field(default=None, description="linear, percentile: limit the result to the target range.")
-    measured: Measured | None = Field(
-        default=None, description="percentile, zscore, robust: the numbers of each band, measured before the run."
-    )
 
     @field_validator("bands")
     @classmethod
     def _names(cls, value: list[str]) -> list[str]:
         return _checked_names(value)
 
-    @model_validator(mode="after")
-    def _method(self) -> NormalizeParamsV3:
+    def _check_fields(self) -> None:
         given = {name for name in _ALL_FIELDS if getattr(self, name) is not None}
         wanted = set(_FIELDS[self.method])
         if missing := sorted(wanted - given):
             raise ValueError(f"method {self.method} needs {', '.join(missing)}")
         if foreign := sorted(given - wanted):
             raise ValueError(f"method {self.method} takes no {', '.join(foreign)}")
-        if (self.measured is None) != (not _VALUES[self.method]):
-            raise ValueError(
-                f"method {self.method} takes no measured numbers"
-                if self.measured is not None
-                else f"method {self.method} needs measured numbers"
-            )
+
+    def _check_ranges(self) -> None:
         if self.method in ("linear", "percentile"):
             assert self.out_min is not None and self.out_max is not None
             if self.out_min == self.out_max:
@@ -409,9 +414,6 @@ class NormalizeParamsV3(BaseModel):
                 raise ValueError("in_min is below in_max")
             if not math.isfinite(self.in_max - self.in_min):
                 raise ValueError("the ranges are too wide")
-        if self.measured is not None:
-            self._check_measured(self.measured)
-        return self
 
     def _check_measured(self, measured: Measured) -> None:
         if set(measured.bands) != set(self.bands):
@@ -442,14 +444,46 @@ class NormalizeParamsV3(BaseModel):
                     raise ValueError(f"measured of {name}: the range is too wide")
 
 
+class NormalizeParamsV3(_MethodFields):
+    """The step of version 3: ``method``, the ``bands`` it converts, and the fields of that method, all given (B10).
+
+    One model for all four methods; the fields of the others stay out (:meth:`_method`), so a recipe says exactly
+    what its method needs.
+    """
+
+    measured: Measured | None = Field(
+        default=None, description="percentile, zscore, robust: the numbers of each band, measured before the run."
+    )
+
+    @model_validator(mode="after")
+    def _method(self) -> NormalizeParamsV3:
+        self._check_fields()
+        if (self.measured is None) != (not _VALUES[self.method]):
+            raise ValueError(
+                f"method {self.method} takes no measured numbers"
+                if self.measured is not None
+                else f"method {self.method} needs measured numbers"
+            )
+        self._check_ranges()
+        if self.measured is not None:
+            self._check_measured(self.measured)
+        return self
+
+
 def _divisor(span: float) -> float:
     """A span of 0 (the band is constant over the area) divides by 1, as scikit-learn's scalers do (plan KE10)."""
     return span if span != 0 else 1.0
 
 
-def _kernel(params: NormalizeParamsV3) -> Callable[[str, numpy.ndarray, numpy.ndarray], numpy.ma.MaskedArray]:
-    """The conversion of one named band: ``(name, values as float64, mask) → float32 with NaN``."""
-    method, measured = params.method, params.measured
+def _kernel(
+    params: _MethodFields, measured: Measured | None
+) -> Callable[[str, numpy.ndarray, numpy.ndarray], numpy.ma.MaskedArray]:
+    """The conversion of one named band: ``(name, values as float64, mask) → float32 with NaN``.
+
+    ``measured`` holds the numbers of a statistical method: those of the recipe (version 3) or those the run measured
+    (version 4). The kernel is the same for both, which is why version 4 gives the bytes of version 3 with its numbers.
+    """
+    method = params.method
 
     def kernel(name: str, values: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArray:
         if method == "linear":
@@ -477,11 +511,11 @@ def _kernel(params: NormalizeParamsV3) -> Callable[[str, numpy.ndarray, numpy.nd
 def _run_v3(image: ImageData, params: BaseModel) -> ImageData:
     """The stock with the named bands converted by the method and the others untouched."""
     assert isinstance(params, NormalizeParamsV3)
-    return _convert_listed(image, params.bands, _kernel(params))
+    return _convert_listed(image, params.bands, _kernel(params, params.measured))
 
 
 def _transform_v3(meta: RasterMeta, params: BaseModel) -> RasterMeta:
-    assert isinstance(params, NormalizeParamsV3)
+    assert isinstance(params, _MethodFields)
     return _converted_meta(meta, params.bands)
 
 
@@ -498,11 +532,11 @@ def _restrict_v3(params: BaseModel, kept: frozenset[str]) -> BaseModel:
 
 
 def _bands_used_v3(params: BaseModel) -> BandUse:
-    assert isinstance(params, NormalizeParamsV3)
+    assert isinstance(params, _MethodFields)
     return BandUse(acts_on=frozenset(params.bands))
 
 
-def _clipped(params: NormalizeParamsV3) -> str:
+def _clipped(params: _MethodFields) -> str:
     return "limited to the target range" if params.clip else "continued along the same line"
 
 
@@ -513,9 +547,8 @@ def _how_measured(params: NormalizeParamsV3) -> str:
     return f"as measured before the run{coarser}"
 
 
-def _per_band(params: NormalizeParamsV3, show: Callable[[BandValues], str]) -> str:
-    assert params.measured is not None
-    return "; ".join(f"{name}: {show(params.measured.bands[name])}" for name in params.bands)
+def _per_band(params: _MethodFields, measured: Measured, show: Callable[[BandValues], str]) -> str:
+    return "; ".join(f"{name}: {show(measured.bands[name])}" for name in params.bands)
 
 
 def _ordinal(percent: int) -> str:
@@ -531,7 +564,7 @@ def _number(value: float | None) -> str:
 
 
 def _lineage_v3(params: BaseModel) -> str:
-    assert isinstance(params, NormalizeParamsV3)
+    assert isinstance(params, _MethodFields)
     bands = ", ".join(params.bands)
     if params.method == "linear":
         assert params.in_min is not None and params.in_max is not None
@@ -545,8 +578,12 @@ def _lineage_v3(params: BaseModel) -> str:
     return f"normalize: {params.method} of {bands}"
 
 
-def _method_v3(params: BaseModel) -> str:
-    assert isinstance(params, NormalizeParamsV3)
+def _method_text(params: _MethodFields, measured: Measured | None, how: str) -> str:
+    """The methods sentence of version 3 and 4: ``how`` says where the numbers come from, ``measured`` shows them.
+
+    Without ``measured`` (version 4 as the recipe has it, before the run) the numbers are left out; the
+    constant-band sentence needs them and is left out too.
+    """
     bands = ", ".join(params.bands)
     noun = "band" if len(params.bands) == 1 else "bands"
     verb = "was" if len(params.bands) == 1 else "were"
@@ -558,32 +595,41 @@ def _method_v3(params: BaseModel) -> str:
             f"the range {params.out_min:g} to {params.out_max:g}, values outside the source range {_clipped(params)}, "
             "in 32-bit floating point."
         )
-    how = _how_measured(params)
+
+    def shown(show: Callable[[BandValues], str]) -> str:
+        return how if measured is None else f"{_per_band(params, measured, show)}; {how}"
+
     if params.method == "percentile":
         assert params.out_min is not None and params.out_max is not None
-        shown = _per_band(params, lambda v: f"{_number(v.p_low)} to {_number(v.p_high)}")
+        assert params.low is not None and params.high is not None
+        where = shown(lambda v: f"{_number(v.p_low)} to {_number(v.p_high)}")
         return (
             f"The {noun} {bands} {verb} stretched from the {_ordinal(params.low)} to the {_ordinal(params.high)} percentile "
-            f"({shown}; {how}) onto the range {params.out_min:g} to {params.out_max:g}, values outside "
+            f"({where}) onto the range {params.out_min:g} to {params.out_max:g}, values outside "
             f"{_clipped(params)}, in 32-bit floating point."
         )
     if params.method == "zscore":
-        shown = _per_band(params, lambda v: f"mean {_number(v.mean)}, standard deviation {_number(v.stddev)}")
+        where = shown(lambda v: f"mean {_number(v.mean)}, standard deviation {_number(v.stddev)}")
         text = (
             f"The {noun} {bands} {verb} standardised, (x - mean) / standard deviation, with the mean and the population "
-            f"standard deviation of the {noun} ({shown}; {how}), in 32-bit floating point."
+            f"standard deviation of the {noun} ({where}), in 32-bit floating point."
         )
-        if any(v.stddev == 0 for v in params.measured.bands.values()):  # type: ignore[union-attr]
+        if measured is not None and any(v.stddev == 0 for v in measured.bands.values()):
             text += " A band that is constant (standard deviation 0) was only centred."
         return text
-    shown = _per_band(params, lambda v: f"median {_number(v.median)}, interquartile range {_number(_iqr(v))}")
+    where = shown(lambda v: f"median {_number(v.median)}, interquartile range {_number(_iqr(v))}")
     text = (
         f"The {noun} {bands} {verb} scaled robustly, (x - median) / interquartile range, with the median and the "
-        f"interquartile range (75th minus 25th percentile) of the {noun} ({shown}; {how}), in 32-bit floating point."
+        f"interquartile range (75th minus 25th percentile) of the {noun} ({where}), in 32-bit floating point."
     )
-    if any(_iqr(v) == 0 for v in params.measured.bands.values()):  # type: ignore[union-attr]
+    if measured is not None and any(_iqr(v) == 0 for v in measured.bands.values()):
         text += " A band that is constant (interquartile range 0) was only centred."
     return text
+
+
+def _method_v3(params: BaseModel) -> str:
+    assert isinstance(params, NormalizeParamsV3)
+    return _method_text(params, params.measured, _how_measured(params) if params.measured else "")
 
 
 def _iqr(values: BandValues) -> float:
@@ -591,7 +637,8 @@ def _iqr(values: BandValues) -> float:
     return values.p75 - values.p25
 
 
-#: Version 3 (NM4-11): the methods. Listed since NM4-11b, the panel sends it; runs as a tile and as a job.
+#: Version 3 (NM4-11): the methods, with the numbers in the recipe. Accepted since NM4-71, no longer listed: the panel sends
+#: version 4 for a job; this is the form of the tile, of recipes written before and of "⚙" on a result.
 NORMALIZE_V3 = dataclasses.replace(
     NORMALIZE_V2,
     op_version=3,
@@ -607,5 +654,153 @@ NORMALIZE_V3 = dataclasses.replace(
     method=_method_v3,
     bands_used=_bands_used_v3,
     restrict=_restrict_v3,
+    listed=False,
+)
+
+
+# --- Version 4 (NM4-71): measured in the run ----------------------------------------------------------------------
+
+#: What the methods text says of the numbers of version 4 (plan NM4-71 KE4).
+_MEASURED_IN_THE_RUN = "measured in the run over the AOI at full resolution"
+
+#: The property of the result that holds the numbers each measuring step used (adr/0014 Nachtrag NM4-71).
+MEASURED_PROPERTY = "earthx:normalize"
+
+
+class NormalizeParamsV4(_MethodFields):
+    """The step of version 4: ``method``, the ``bands`` it converts, and the fields of that method, all given (B10).
+
+    The fields of version 3 without ``measured``. A statistical method (``percentile``, ``zscore``, ``robust``) is not
+    given its numbers: the job counts the bands over the AOI at full resolution and takes the exact numbers
+    from that count (NM4-71). ``linear`` measures nothing. Only a job runs this version.
+    """
+
+    @model_validator(mode="after")
+    def _method(self) -> NormalizeParamsV4:
+        self._check_fields()
+        self._check_ranges()
+        return self
+
+
+class MeasuredNormalizeV4(NormalizeParamsV4):
+    """Version 4 after the run measured it: the same step with its numbers (``factor`` 1, full resolution).
+
+    Internal: no operator names this model, so no recipe can carry it. :func:`_with_measured` makes it; the kernel, the
+    lineage and the methods text read it.
+    """
+
+    measured: Measured
+
+    @model_validator(mode="after")
+    def _numbers(self) -> MeasuredNormalizeV4:
+        if self.method == "linear":
+            raise ValueError("method linear measures nothing")
+        if self.measured.factor != 1:
+            raise ValueError("version 4 measures at full resolution")
+        self._check_measured(self.measured)
+        return self
+
+
+def _measures_v4(params: BaseModel) -> frozenset[str]:
+    assert isinstance(params, NormalizeParamsV4)
+    return frozenset() if params.method == "linear" else frozenset(params.bands)
+
+
+def _measure_percents_v4(params: BaseModel) -> tuple[int, ...]:
+    """The percents the method needs exactly; the minimum and the maximum (0 and 100) come with the count."""
+    assert isinstance(params, NormalizeParamsV4)
+    if params.method == "percentile":
+        return tuple(percent for percent in (params.low, params.high) if percent is not None and 0 < percent < 100)
+    return (25, 50, 75) if params.method == "robust" else ()
+
+
+def _band_values(method: str, low: int | None, high: int | None, statistics: Mapping[str, Any]) -> BandValues | None:
+    """The numbers of one band from its statistics, or ``None`` where it has no usable value."""
+    if not statistics.get("count"):
+        return None
+    if method == "percentile":
+        p_low = statistics["minimum"] if low == 0 else statistics[f"percentile_{low}"]
+        p_high = statistics["maximum"] if high == 100 else statistics[f"percentile_{high}"]
+        return BandValues(p_low=float(p_low), p_high=float(p_high))
+    if method == "zscore":
+        if "stddev" not in statistics:  # not finite: the values are too large to have a spread
+            return None
+        return BandValues(mean=float(statistics["mean"]), stddev=float(statistics["stddev"]))
+    return BandValues(
+        p25=float(statistics["percentile_25"]),
+        median=float(statistics["percentile_50"]),
+        p75=float(statistics["percentile_75"]),
+    )
+
+
+def _with_measured(params: BaseModel, numbers: Mapping[str, Mapping[str, Any]]) -> BaseModel:
+    """The step with the numbers the run measured over the AOI; :class:`RecipeInvalid` for a band without a valid value (KE8)."""
+    assert isinstance(params, NormalizeParamsV4)
+    values = {}
+    for name in params.bands:
+        found = _band_values(params.method, params.low, params.high, numbers[name])
+        if found is None:
+            raise RecipeInvalid(f"normalize: band {name} has no valid value over the AOI")
+        values[name] = found
+    try:
+        return MeasuredNormalizeV4(
+            **params.model_dump(),
+            measured=Measured(factor=1, bands=values),
+        )
+    except ValueError as error:
+        raise RecipeInvalid(f"normalize: the numbers measured over the AOI do not fit the step: {error}") from None
+
+
+def _measured_report(params: BaseModel) -> dict[str, Any]:
+    assert isinstance(params, MeasuredNormalizeV4)
+    wanted = _VALUES[params.method]
+    return {
+        "method": params.method,
+        "bands": {
+            name: {field: getattr(params.measured.bands[name], field) for field in wanted} for name in params.bands
+        },
+    }
+
+
+def _run_v4(image: ImageData, params: BaseModel) -> ImageData:
+    """The stock with the named bands converted. A statistical method runs only with its numbers (:func:`_with_measured`)."""
+    assert isinstance(params, NormalizeParamsV4)
+    measured = params.measured if isinstance(params, MeasuredNormalizeV4) else None
+    if measured is None and params.method != "linear":
+        raise RuntimeError("normalize runs a statistical method only with the numbers measured in the run")
+    return _convert_listed(image, params.bands, _kernel(params, measured))
+
+
+def _restrict_v4(params: BaseModel, kept: frozenset[str]) -> BaseModel:
+    """The step for a stock without the bands nobody needs; it has no numbers yet, the run measures what is left."""
+    assert isinstance(params, NormalizeParamsV4) and not isinstance(params, MeasuredNormalizeV4)
+    return params.model_copy(update={"bands": [name for name in params.bands if name in kept]})
+
+
+def _method_v4(params: BaseModel) -> str:
+    """The sentence of the recipe, which holds no numbers; the numbers are in ``earthx:normalize`` of the result."""
+    assert isinstance(params, NormalizeParamsV4)
+    measured = params.measured if isinstance(params, MeasuredNormalizeV4) else None
+    return _method_text(params, measured, _MEASURED_IN_THE_RUN)
+
+
+#: Version 4 (NM4-71): the numbers of a statistical method are measured in the run, exactly, over the AOI at full resolution
+#: (the raster of the pass before the step). A job only (``T2``); ``linear`` is version 3's, bit for bit, and measures nothing.
+NORMALIZE_V4 = dataclasses.replace(
+    NORMALIZE_V3,
+    op_version=4,
+    params=NormalizeParamsV4,
+    tiers=frozenset({Tier.T2}),
+    description=(
+        "Rescale the values of the bands named: a fixed range, two percentiles, a z-score, or the median and the "
+        "interquartile range. The job measures the numbers of the last three exactly over the AOI."
+    ),
+    run=_run_v4,
+    method=_method_v4,
+    restrict=_restrict_v4,
+    measures=_measures_v4,
+    measure_percents=_measure_percents_v4,
+    with_measured=_with_measured,
+    measured_report=_measured_report,
     listed=True,
 )
