@@ -15,7 +15,7 @@ const BASE = process.env.BASE ?? 'http://localhost:5173';
 const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-layer-rows');
 const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, middle: { width: 1000, height: 760 }, narrow: { width: 360, height: 740 } };
-const COLUMNS = ['eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove'];
+const COLUMNS = ['grip', 'eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove'];
 
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 
@@ -31,6 +31,7 @@ async function check(browser, { theme, viewport }) {
     return route.fulfill({ status: 404, contentType: 'application/json', body: '{"detail":"not made up"}' });
   });
   await page.goto(BASE);
+  await page.waitForSelector('.dataset-toggle, .app-rail');
   await page.evaluate(async () => {
     const { useAppStore } = await import('/src/store.ts');
     const future = new Date(Date.now() + 86_400_000).toISOString();

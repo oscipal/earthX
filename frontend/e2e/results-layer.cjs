@@ -134,7 +134,7 @@ async function run(browser, { theme, viewport }) {
   await page.waitForSelector('.time-slider');
   const x = Math.round(win.width * 0.6);
   // High enough to stay clear of the bars of a view, which cover the middle of a narrow window.
-  const y = Math.round(win.height * 0.25);
+  const y = Math.round(win.height * 0.18);
   const settle = async (want) => {
     let c = [0, 0, 0];
     for (let t = 0; t < 6000; t += 100) {

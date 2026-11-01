@@ -83,9 +83,20 @@ export interface Estimate {
   units: number;
 }
 
+// Which bands the job brings to one grid, and how (`resampling` of the estimate, NM4-65 part 7): the grid, the method, the value
+// bands whose source lies on another grid, and the scenes of another UTM zone. The server writes it from the recipe alone.
+export interface Resampling {
+  grid: { resolution: number; crs: string | null };
+  method: string;
+  bands: { band: string; resolution: number; crs: string | null }[];
+  scenes: { count: number; of: number; crs: string | null } | null;
+}
+
 export interface EstimateDocument {
   estimate: Estimate;
   skippedItems: string[];
+  // `null`: no value band is resampled; also for an order of an older server.
+  resampling?: Resampling | null;
 }
 
 export type JobState = 'accepted' | 'running' | 'successful' | 'failed' | 'dismissed';
@@ -229,7 +240,35 @@ export function parseEstimate(value: unknown): EstimateDocument | null {
   return {
     estimate: e as unknown as Estimate,
     skippedItems: Array.isArray(skippedItems) ? skippedItems.filter((x) => typeof x === 'string') : [],
+    resampling: parseResampling((value as Record<string, unknown>).resampling),
   };
+}
+
+const text = (value: unknown): string | null => (typeof value === 'string' && value !== '' && value.length <= 64 ? value : null);
+const positive = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null);
+
+// The resampling of an estimate as far as it reads whole; `null` for anything else, so that a document of another shape
+// asks no question the panel cannot describe.
+export function parseResampling(value: unknown): Resampling | null {
+  if (!value || typeof value !== 'object') return null;
+  const { grid, method, bands, scenes } = value as Record<string, unknown>;
+  const g = grid as Record<string, unknown> | null;
+  const resolution = positive(g?.resolution);
+  const name = text(method);
+  if (!g || resolution === null || name === null) return null;
+  const readBands = (Array.isArray(bands) ? bands : []).flatMap((entry) => {
+    const b = entry as Record<string, unknown> | null;
+    const band = text(b?.band);
+    const res = positive(b?.resolution);
+    return band !== null && res !== null ? [{ band, resolution: res, crs: text(b?.crs) }] : [];
+  });
+  const sc = scenes as Record<string, unknown> | null;
+  const count = sc && typeof sc.count === 'number' && Number.isInteger(sc.count) && sc.count > 0 ? sc.count : null;
+  const of = sc && typeof sc.of === 'number' && Number.isInteger(sc.of) && sc.of > 0 ? sc.of : null;
+  const readScenes = count !== null && of !== null ? { count, of, crs: text(sc?.crs) } : null;
+  // Nothing to say is no warning.
+  if (readBands.length === 0 && readScenes === null) return null;
+  return { grid: { resolution, crs: text(g.crs) }, method: name, bands: readBands, scenes: readScenes };
 }
 
 export async function estimateOrder(order: Order, signal?: AbortSignal): Promise<EstimateDocument> {

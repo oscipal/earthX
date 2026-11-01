@@ -38,8 +38,10 @@ import {
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
+import { datesOfIds, dateOf, knownItems } from './layerDate';
+import { flipNext, flipStart } from './layerFlip';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
-import { isResultExpired, restyledTileUrl } from './resultLayer';
+import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
 import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
@@ -47,7 +49,9 @@ import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
-import { appliedRenderFrom, autoRescale, lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
+import type { Percent } from './percentRange';
+import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
+import { appliedRenderFrom, autoRescale, lookChanged, lookOfPendingFields, pendingFieldsOf, pendingPercentOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
   buildSections,
@@ -60,7 +64,7 @@ import {
   withSourceState,
 } from './sections';
 import { overlaysOfPass, underlaysOf } from './searchLayers';
-import { moveEntry, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
+import { clampResultsAt, moveEntry, moveEntryTo, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
 import {
   filterQuery,
   hasFilterError,
@@ -73,6 +77,7 @@ import {
   type FilterQueryByCollection,
 } from './searchFilters';
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
+import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, estimateIndexDownload, indexOfLayer, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
@@ -369,6 +374,8 @@ export interface DerivedLayer {
   // The scenes the picture was made from.
   itemIds: string[];
   cropToAoi: boolean;
+  // The acquisition date it shows; where it is left out, the scenes are looked up (NM4-65 part 3).
+  date?: string | null;
 }
 
 // A layer belongs to the dataset it was pinned from (F4): choosing it makes that
@@ -429,6 +436,9 @@ const LEAVE_FOCUS = {
   pendingVmin: '',
   pendingVmax: '',
   pendingIndex: '',
+  pendingUnit: 'value' as RangeUnit,
+  pendingPercentLow: DEFAULT_PERCENT.low,
+  pendingPercentHigh: DEFAULT_PERCENT.high,
 } as const;
 
 // The list-facing state an open section stands for: its scenes and groups, first
@@ -633,6 +643,47 @@ export function datasetSavable(s: AppState): boolean {
   return images.some((image) => image.datasetId === shown.datasetId && image.key !== shown.key && lookChanged(lookOfImage(s, image, shown), s));
 }
 
+// The first scene of the image the view shows (of the view where nothing is shown yet): the one its range is measured on.
+function firstSceneOfView(s: AppState): { itemId: string | undefined; info: DownloadedInfo | undefined } {
+  const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+  const itemId = shown?.ids[0] ?? Object.keys(s.downloaded)[0];
+  return { itemId, info: itemId === undefined ? undefined : s.downloaded[itemId] };
+}
+
+// "Apply" with percentiles in the fields (NM4-65 part 4): the tiler measures the two percentiles on the first scene of the image
+// shown (the index of the fields as it will be drawn), the values go into the fields and the look. What is drawn is the values;
+// the look keeps the percentiles for the fields to show "%" again.
+async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
+  const s = get();
+  const checked = checkPercent({ low: s.pendingPercentLow, high: s.pendingPercentHigh });
+  if ('problem' in checked) {
+    set({ notice: checked.problem });
+    return;
+  }
+  const { itemId, info } = firstSceneOfView(s);
+  if (!info || itemId === undefined) return;
+  const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
+  const asked = [checked.low, checked.high].filter((n) => n !== 0 && n !== 100);
+  set({ focusLoading: true });
+  try {
+    const stats = index
+      ? await api.fetchStatisticsAt(api.withPercentiles(indexStatisticsUrl(info.datasetId, itemId, index), asked))
+      : await api.fetchStatistics(info.datasetId, itemId, info.asset, asked);
+    const range = rescaleAtPercent(Object.values(stats), checked);
+    if (!range) {
+      set({ notice: NO_RANGE_AT_PERCENT });
+      return;
+    }
+    set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
+    const now = get();
+    set({ appliedRender: { ...now.appliedRender, ...lookOfPendingFields(now) } });
+  } catch (e) {
+    set({ notice: `Could not measure the percentiles: ${(e as Error).message}` });
+  } finally {
+    set({ focusLoading: false });
+  }
+}
+
 // "Add to layers" and "Add all to layers" in the view: the image that is shown, or every image, one layer each, all in one
 // step with the first on the bottom of the new ones, so that the last image of the list lies on top (NM4-53). A layer
 // takes the look its image is drawn with. Where a mosaic is not known yet it waits for it, as it always did.
@@ -672,6 +723,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
     return;
   }
   const groups = sectionsForView(s).flatMap((section) => section.groups);
+  const known = knownItems(s);
   const batchId = nextBatchId();
   const layers = built.map(({ image, entries, overlays }, i): MapLayer => {
     const itemIds = entries.map(([id]) => id);
@@ -684,6 +736,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
       visible: true,
       opacity: 1,
       overlays: overlays ?? [],
+      ...dateOf(datesOfIds(itemIds, known)),
       restore: {
         focusMode: true,
         downloaded: Object.fromEntries(entries),
@@ -1088,9 +1141,17 @@ function setResultsOnMap(on: boolean) {
 // search and a crop. Unticking changes nothing.
 // Any change of the ticks by a click, of a scene, a group or "Select all", ends the playing of the timeline (NM4-18, Otto,
 // 30.10.2026).
-function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap'>, selectedIds: string[]) {
+// A scene ticked while a layer is open from the layer manager closes the box of that layer: the box of the search results takes
+// its place (NM4-65, Otto, 1.11.2026). A view that is still open from the search stays, with the ticks beside it.
+function ticking(s: Pick<AppState, 'selectedIds' | 'resultsOnMap' | 'viewOfLayer'>, selectedIds: string[]) {
   const ticked = selectedIds.some((id) => !s.selectedIds.includes(id));
-  return { selectedIds, playing: false, selectionBlockClosed: false, ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}) };
+  return {
+    selectedIds,
+    playing: false,
+    selectionBlockClosed: false,
+    ...(ticked && !s.resultsOnMap ? setResultsOnMap(true) : {}),
+    ...(ticked && s.viewOfLayer ? LEAVE_FOCUS : {}),
+  };
 }
 
 // What every replacement of the results resets besides the results themselves.
@@ -1249,6 +1310,11 @@ export interface AppState {
   pendingVmax: string;
   // The index the fields stand for, drawn once "Apply" is pressed (NM4-14b); '' = none.
   pendingIndex: string;
+  // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4); with "percent" the fields show the two percentiles, and
+  // `pendingVmin`/`pendingVmax` hold the values they gave at the last "Apply".
+  pendingUnit: RangeUnit;
+  pendingPercentLow: string;
+  pendingPercentHigh: string;
 
   // --- data ---
   config: { point_buffer_deg: number } | null; // no server config endpoint any more; the client default (0.05) applies
@@ -1356,7 +1422,7 @@ export interface AppState {
   // when it is over, as before once the job is restored (NM4-27).
   syncDeletedResults: (until: ReadonlyMap<string, number>, now: number) => void;
   // Draws a result layer another way: the tile URL is rebuilt, so the map makes a new source of it.
-  restyleResultLayer: (id: string, render: AppliedRender) => void;
+  restyleResultLayer: (id: string, render: AppliedRender, percent?: Percent | null) => void;
   // "Save" of a result's settings: what "Apply" draws is the layer's own look from now on.
   saveResultLayer: (id: string) => void;
   // The settings are closed: a look that was applied and not saved goes, the layer is drawn as saved again.
@@ -1366,6 +1432,18 @@ export interface AppState {
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
+  // "Flip through layers" (NM4-65 part 9): on, the layer `flipLayerId` is drawn over all the others and the list stays as it is.
+  flipThrough: boolean;
+  flipLayerId: string | null;
+  setFlipThrough: (on: boolean) => void;
+  // The layer to draw on top, by a click on its row; only while flipping is on.
+  flipTo: (id: string) => void;
+  // One step down (1) or up (-1) the list; stops at the ends.
+  flipStep: (dir: 1 | -1) => void;
+  // The band a result layer draws as a layer of its own, named after the band and drawn as the band is now (NM4-65 part 2).
+  addBandAsLayer: (id: string) => void;
+  // A layer (or "Results", `null`) to a place of the list as it is drawn, by the grip of its row (NM4-65).
+  moveRowTo: (id: string | null, to: number) => void;
   // The entry "Results" one step up or down among the layers (NM4-59).
   moveResults: (dir: 'up' | 'down') => void;
   // The entry "Results" on top of the layer manager, over every layer (Otto, 30.10.2026, zu #249).
@@ -1400,8 +1478,10 @@ export interface AppState {
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
   applyRender: () => void;
+  setPendingUnit: (unit: RangeUnit) => void;
+  setPendingPercent: (end: 'low' | 'high', text: string) => void;
   // "Save" in the view of a pinned layer: the look typed and applied becomes the layer's own (NM4-50).
-  saveViewLook: () => void;
+  saveViewLook: () => void | Promise<void>;
   autoStretch: () => Promise<void>;
   zoomToView: () => void;
   setActiveGroupIndex: (i: number) => void;
@@ -1495,6 +1575,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingVmin: '',
   pendingVmax: '',
   pendingIndex: '',
+  pendingUnit: 'value',
+  pendingPercentLow: DEFAULT_PERCENT.low,
+  pendingPercentHigh: DEFAULT_PERCENT.high,
 
   config: null,
   datasets: [],
@@ -1704,12 +1787,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const activeGroup = s.groups[s.activeGroupIndex];
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
     const batchId = nextBatchId();
-    const makeLayer = (name: string, overlays: LayerOverlay[], restore: LayerRestore, salt: number): MapLayer => ({
+    const makeLayer = (name: string, overlays: LayerOverlay[], restore: LayerRestore, salt: number, date: string | null): MapLayer => ({
       id: `L${batchId}${salt}`,
       name,
       visible: true,
       opacity: 1,
       overlays,
+      ...dateOf(date),
       restore,
     });
 
@@ -1773,6 +1857,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datasetId: s.datasetId,
       },
       0,
+      viewDates(items),
     );
     set({ layers: [layer, ...s.layers], resultsAt: resultsAtAfterAdding(s.resultsAt, 1), notice: `Added "${name}" to layers.` });
   },
@@ -1786,6 +1871,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       opacity: 1,
       overlays: input.overlays,
       derived: input.derived,
+      ...dateOf(input.date === undefined ? datesOfIds(input.itemIds, knownItems(s)) : input.date),
       ...(input.note ? { note: input.note } : {}),
       ...(input.result ? { result: input.result } : {}),
       restore: {
@@ -1825,7 +1911,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     }),
   // "Apply": draws the result with this look. The look it was saved with is kept until "Save" or until the settings close.
-  restyleResultLayer: (id, render) =>
+  restyleResultLayer: (id, render, percent) =>
     set((s) => ({
       layers: s.layers.map((l) => {
         if (l.id !== id || l.derived !== 'result' || !l.result) return l;
@@ -1833,16 +1919,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         const overlays = l.overlays.map((o) => (o.kind === 'raster' ? { ...o, tileUrl: restyledTileUrl(o.tileUrl, render) } : o));
         const now = overlays.find((o) => o.kind === 'raster')?.tileUrl;
         const saved = l.result.savedTileUrl ?? was;
+        // What the saved look was typed as, kept while another is applied (NM4-65 part 4).
+        const savedPercent = l.result.savedTileUrl !== undefined ? l.result.savedPercent : (l.result.percent ?? null);
         // Back at the saved look: nothing is unsaved.
-        const { savedTileUrl: _kept, ...info } = l.result;
-        return { ...l, overlays, result: saved === undefined || saved === now ? info : { ...info, savedTileUrl: saved } };
+        const { savedTileUrl: _kept, savedPercent: _keptPercent, percent: _percent, ...info } = l.result;
+        const typed = percent ? { percent } : {};
+        return { ...l, overlays, result: saved === undefined || saved === now ? { ...info, ...typed } : { ...info, ...typed, savedTileUrl: saved, savedPercent: savedPercent ?? null } };
       }),
     })),
   saveResultLayer: (id) =>
     set((s) => ({
       layers: s.layers.map((l) => {
         if (l.id !== id || !l.result?.savedTileUrl) return l;
-        const { savedTileUrl: _saved, ...info } = l.result;
+        const { savedTileUrl: _saved, savedPercent: _savedPercent, ...info } = l.result;
         return { ...l, result: info };
       }),
     })),
@@ -1851,14 +1940,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       layers: s.layers.map((l) => {
         const saved = l.id === id ? l.result?.savedTileUrl : undefined;
         if (!l.result || saved === undefined) return l;
-        const { savedTileUrl: _saved, ...info } = l.result;
+        const { savedTileUrl: _saved, savedPercent, percent: _percent, ...info } = l.result;
         let first = true;
         const overlays = l.overlays.map((o) => {
           if (o.kind !== 'raster' || !first) return o;
           first = false;
           return { ...o, tileUrl: saved };
         });
-        return { ...l, overlays, result: info };
+        return { ...l, overlays, result: { ...info, ...(savedPercent ? { percent: savedPercent } : {}) } };
       }),
     })),
   closeResultView: () => set({ resultViewLayerId: null }),
@@ -1873,7 +1962,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLayerOpacity: (id, opacity) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
   moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
+  flipThrough: false,
+  flipLayerId: null,
+  setFlipThrough: (on) =>
+    set((s) => {
+      if (!on) return { flipThrough: false, flipLayerId: null };
+      // One layer has nothing to flip through.
+      // It starts with the layer that was worked on last: the one whose settings are open, else the one of the view.
+      return s.layers.length < 2 ? {} : { flipThrough: true, flipLayerId: flipStart(s.layers, s.flipLayerId ?? s.resultViewLayerId ?? s.viewLayerId) };
+    }),
+  flipTo: (id) =>
+    set((s) => (s.flipThrough && s.layers.some((l) => l.id === id) ? { flipLayerId: id } : {})),
+  flipStep: (dir) =>
+    set((s) => {
+      if (!s.flipThrough) return {};
+      const next = flipNext(s.layers, s.flipLayerId, dir);
+      return next === null || next === s.flipLayerId ? {} : { flipLayerId: next };
+    }),
+  addBandAsLayer: (id) => {
+    const s = get();
+    const at = s.layers.findIndex((l) => l.id === id);
+    const made = at < 0 ? null : bandLayerOf(s.layers[at], `P${nextBatchId()}0`);
+    if (!made) return;
+    // Just above the layer it comes from; "Results" keeps its layers, so it moves down by one where the new layer is over it.
+    const layers = [...s.layers.slice(0, at), made, ...s.layers.slice(at)];
+    set({ layers, resultsAt: at < clampResultsAt(s.resultsAt, s.layers) ? s.resultsAt + 1 : s.resultsAt, notice: `Added "${made.name}" to layers.` });
+  },
   moveResults: (dir) => set((s) => moveEntry(s.layers, s.resultsAt, null, dir, hasResultsPanel(s.sections)) ?? {}),
+  moveRowTo: (id, to) => set((s) => moveEntryTo(s.layers, s.resultsAt, id, to, hasResultsPanel(s.sections)) ?? {}),
   resultsToTop: () => set({ resultsAt: 0 }),
   // Only what the processing panel needs of a layer (M4-13c-2, Otto 19.10.2026):
   // its dataset, if it is not the active one, and — for a layer cut to its AOI,
@@ -2337,11 +2453,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   // "Apply" draws the shown image with the fields and nothing else (NM4-53); other images keep their look.
   applyRender: () => {
     const s = get();
+    // Typed in percentiles, the values come from the statistics first (NM4-65 part 4).
+    if (s.pendingUnit === 'percent') {
+      void applyPercentRender(set, get);
+      return;
+    }
     set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
   },
+  setPendingUnit: (pendingUnit) => set({ pendingUnit }),
+  setPendingPercent: (end, text) => set(end === 'low' ? { pendingPercentLow: text } : { pendingPercentHigh: text }),
   // "Save" (NM4-53, Otto 29.10.2026): the fields become the look of every image of the dataset that is shown, for the
   // length of the view. If the view is the picture of a pinned layer, the layer keeps the look too (NM4-50).
   saveViewLook: () => {
+    // Percentiles that are not applied yet give their values first, so that what is kept is what is drawn; only then is it
+    // asynchronous, any other "Save" is done when the call returns.
+    if (get().pendingUnit === 'percent' && !samePercent(get().appliedRender.percent, pendingPercentOf(get()))) {
+      return applyPercentRender(set, get).then(() => {
+        if (samePercent(get().appliedRender.percent, pendingPercentOf(get()))) void get().saveViewLook();
+      });
+    }
     const s = get();
     const render = { ...s.appliedRender, ...lookOfPendingFields(s) };
     const layer = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
@@ -2370,10 +2500,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // the pending fields only — still needs "Apply" to take effect on the map.
   autoStretch: async () => {
     const s = get();
+    // In percentiles the usual stretch is the 2nd to the 98th (NM4-65 part 4): nothing to measure, "Apply" takes the values.
+    if (s.pendingUnit === 'percent') {
+      set({ pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
+      return;
+    }
     // The first scene of the image that is shown (the first of the view where nothing is shown yet).
-    const shown = shownImageOf(viewImagesOf(s), s.shownImage);
-    const itemId = shown?.ids[0] ?? Object.keys(s.downloaded)[0];
-    const info = itemId === undefined ? undefined : s.downloaded[itemId];
+    const { itemId, info } = firstSceneOfView(s);
     if (!info) return;
     // The index in the fields is measured as it will be drawn: the tile route with the same step, not the asset of the scene.
     const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);

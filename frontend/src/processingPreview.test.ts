@@ -674,7 +674,7 @@ describe('the measure over the AOI (NM4-19)', () => {
   const ndvi = { minimum: -1.3, maximum: 1.5, mean: 0.3, stddev: 0.2, count: 900, valid_percent: 100, percentile_2: 0, percentile_98: 0.91 };
 
   it('reads the statistics of the results document: the numbers a colour scale is chosen from, the unit, whether it is exact', () => {
-    expect(areaMeasureOf('K', answer(ndvi, 'm', false), true)).toEqual({
+    expect(areaMeasureOf('K', answer(ndvi, 'm', false), true)).toMatchObject({
       key: 'K',
       stats: { bands: [{ minimum: -1.3, maximum: 1.5, percentile2: 0, percentile98: 0.91 }], expression: true },
       unit: 'm',
@@ -734,13 +734,19 @@ describe('the measure of a preview (M4-19c)', () => {
     measureOf('K', Object.fromEntries(bands.map((b, i) => [`b${i + 1}`, b])) as never, true);
 
   it('reads the numbers a colour scale is chosen from, and the unit', () => {
-    expect(ask({ ...band, unit: 'm' })).toEqual({
+    expect(ask({ ...band, unit: 'm' })).toMatchObject({
       key: 'K',
       stats: { bands: [{ minimum: -0.2, maximum: 0.9, percentile2: -0.1, percentile98: 0.8 }], expression: true },
       unit: 'm',
       source: 'scene',
       exact: true,
     });
+  });
+
+  // NM4-65 part 4: the statistics are kept whole, for the percentiles typed in the fields; a band without a valid pixel has none.
+  it('keeps what the statistics named of each band with a valid pixel', () => {
+    expect(ask({ ...band, percentile_3: -0.15 }).raw).toEqual([expect.objectContaining({ percentile_3: -0.15 })]);
+    expect(ask({ count: 0, min: null, max: null, percentile_2: null, percentile_98: null, unit: null }).raw).toEqual([]);
   });
 
   it('names no value of a band without a valid pixel, and no scale when no band has one', () => {

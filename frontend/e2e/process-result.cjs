@@ -119,7 +119,7 @@ async function check(browser, theme, viewport) {
     const { context, page } = await open(browser, theme, viewport);
     await setUp(page, false);
     if ((await gear(page).evaluate((e) => e.tagName)) !== 'SPAN') problems.push('there is a ⚙ without the order of the job');
-    if ((await page.locator('.layer-row').first().locator(':scope > *').count()) !== 9) problems.push('the row lost a place without ⚙');
+    if ((await page.locator('.layer-row').first().locator(':scope > *').count()) !== 10) problems.push('the row lost a place without ⚙');
     await context.close();
   }
 

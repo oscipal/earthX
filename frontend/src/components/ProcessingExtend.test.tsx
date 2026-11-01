@@ -128,6 +128,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     range: null,
     bandRanges: {},
     shownBand: null,
+    dates: null,
     archived: false,
     groupId: GROUP,
     batchId: null,
@@ -163,14 +164,17 @@ const ESTIMATE = {
 let container: HTMLDivElement;
 let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
+// What the estimate adds to its answer: the resampling of the order (NM4-65 part 7).
+let estimateExtra: object = {};
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  estimateExtra = {};
   sessionStorage.clear();
   localStorage.clear();
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === `/processing/processes/recipe?dataset=${DATASET}`) return json(s2);
-    if (init?.method === 'POST' && url.endsWith('/estimate')) return json(ESTIMATE);
+    if (init?.method === 'POST' && url.endsWith('/estimate')) return json({ ...ESTIMATE, ...estimateExtra });
     if (init?.method === 'POST' && url.endsWith('/execution')) {
       return json({ processID: 'recipe', type: 'process', jobID: NEW_JOB, status: 'accepted', message: '', progress: 0, created: '2026-10-31T10:00:00Z', expires: new Date(Date.now() + 7 * 86_400_000).toISOString(), recipeID: 'r', links: [] }, 201);
     }
@@ -288,12 +292,12 @@ describe('whether a result layer can be processed further', () => {
 });
 
 describe('the ⚙ of a result layer', () => {
-  it('is there and active with the order of the job, and the row keeps its nine places', () => {
+  it('is there and active with the order of the job, and the row keeps its ten places', () => {
     act(() => root.render(<LayerManager />));
     expect(gear().tagName).toBe('BUTTON');
     expect(gear().disabled).toBe(false);
     expect(gear().title).toBe(PROCESS_RESULT_TEXT);
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(10);
   });
 
   it('is active for an expired result, and says that everything runs again from the scenes', () => {
@@ -308,7 +312,7 @@ describe('the ⚙ of a result layer', () => {
     act(() => root.render(<LayerManager />));
     expect(gear().tagName).toBe('SPAN');
     expect(gear().getAttribute('aria-hidden')).toBe('true');
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(10);
     // A call that bypasses the row does nothing, and says why.
     await store().extendResult('R1');
     expect(store().open).toBe(false);
@@ -679,6 +683,18 @@ describe('the panel from a result', () => {
     expect(output()).toEqual(['red']);
   });
 
+  // NM4-65 part 3: the layer of the result shows the day of the scenes, read while the search still knows them.
+  it('keeps the day of the scenes it read for the new job, for the layer of its result', async () => {
+    await process();
+    click(button('＋ Band math'));
+    typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 2');
+    click(button('Review'));
+    await flush();
+    click(button('Start job'));
+    await flush();
+    expect(useProcessingStore.getState().jobs.find((j) => j.jobID === NEW_JOB)?.dates).toBe('2026-07-01');
+  });
+
   it('sends one ordinary order with all the steps in order, and starts a new job', async () => {
     await process();
     click(button('＋ Band math'));
@@ -865,5 +881,112 @@ describe('a result of several bands, and RGB', () => {
     });
     await process(['red', 'green']);
     expect([...(show()?.options ?? [])].map((o) => o.value)).toEqual(['red', 'green']);
+  });
+});
+
+
+// NM4-65 part 7 (Otto, 31.10.2026; 1.11.2026: "die soll kommen, wenn ich auf Review drücke"): where the estimate says bands are
+// brought to a common grid, the review asks first: what is resampled to which grid, by which method, what it means for the
+// values; "Continue" keeps the review (and "Start job" is open), "Cancel" drops it (and "Start job" stays shut).
+describe('the warning at the review of a job that resamples bands', () => {
+  const FACTS = {
+    resampling: {
+      grid: { resolution: 10, crs: 'EPSG:32632' },
+      method: 'nearest',
+      bands: [{ band: 'rededge1', resolution: 20, crs: 'EPSG:32632' }],
+      scenes: null,
+    },
+  };
+  const dialog = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
+  const startButton = () => button('Start job') as HTMLButtonElement;
+  async function prepare() {
+    await process();
+    click(button('＋ Band math'));
+    typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 2');
+  }
+  async function review() {
+    await prepare();
+    click(button('Review'));
+    await flush();
+  }
+
+  it('asks when the review is there, with the grid, the bands, the method and what it means', async () => {
+    estimateExtra = FACTS;
+    await review();
+    expect(dialog()).not.toBeNull();
+    expect(dialog()!.getAttribute('aria-modal')).toBe('true');
+    expect(dialog()!.querySelector('h2')!.textContent).toBe('Values are resampled');
+    const text = dialog()!.textContent!;
+    expect(text).toContain('The values are brought to one grid of 10 m in EPSG:32632, by nearest neighbour.');
+    expect(text).toContain('Resampled: rededge1 (20 m).');
+    expect(text).toContain('no new values appear');
+    expect([...dialog()!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Continue']);
+    // The safe answer has the focus, and nothing is started.
+    expect(document.activeElement?.textContent).toBe('Cancel');
+    expect(execution()).toHaveLength(0);
+  });
+
+  it('"Continue" keeps the review: the estimate stays and "Start job" starts the job without asking again', async () => {
+    estimateExtra = FACTS;
+    await review();
+    click(dialog()!.querySelectorAll('button')[1]);
+    expect(dialog()).toBeNull();
+    expect(container.querySelector('.pp-estimate')).not.toBeNull();
+    expect(startButton().disabled).toBe(false);
+    click(startButton());
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(execution()).toHaveLength(1);
+  });
+
+  it('"Cancel" and Escape drop the review: no estimate, "Start job" shut, nothing sent', async () => {
+    estimateExtra = FACTS;
+    await review();
+    click(dialog()!.querySelectorAll('button')[0]);
+    expect(dialog()).toBeNull();
+    expect(container.querySelector('.pp-estimate')).toBeNull();
+    expect(startButton().disabled).toBe(true);
+    click(button('Review'));
+    await flush();
+    expect(dialog()).not.toBeNull();
+    act(() => dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(dialog()).toBeNull();
+    expect(container.querySelector('.pp-estimate')).toBeNull();
+    expect(execution()).toHaveLength(0);
+  });
+
+  it('asks at every review, also of the same order', async () => {
+    estimateExtra = FACTS;
+    await review();
+    click(dialog()!.querySelectorAll('button')[1]);
+    click(button('Review'));
+    await flush();
+    expect(dialog()).not.toBeNull();
+  });
+
+  it('does not ask where nothing is resampled: the review shows the estimate and "Start job" is open', async () => {
+    await review();
+    expect(dialog()).toBeNull();
+    expect(container.querySelector('.pp-estimate')).not.toBeNull();
+    click(startButton());
+    await flush();
+    expect(execution()).toHaveLength(1);
+  });
+
+  it('is not asked while the review is still running, and not for a review that was refused', async () => {
+    estimateExtra = FACTS;
+    await prepare();
+    fetchMock.mockImplementationOnce(async () => json({ detail: 'refused' }, 422));
+    click(button('Review'));
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(useProcessingStore.getState().resamplingAsking).toBeNull();
+  });
+
+  it('leaves the old exclamation mark out of the panel, the job rows and the layer manager', async () => {
+    estimateExtra = FACTS;
+    await review();
+    expect(container.textContent).not.toContain('Resampled to a common grid');
+    expect(container.querySelector('.tip.warn')).toBeNull();
   });
 });

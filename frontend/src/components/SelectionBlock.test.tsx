@@ -210,3 +210,34 @@ describe('what shows the block again', () => {
     expect(state().selectionBlockClosed).toBe(true);
   });
 });
+
+// NM4-65 (Otto, 1.11.2026): "Wenn die results ausgeblendet sind dann soll auch nicht die box erscheinen mit „crop and merge to AOI“".
+describe('with the results hidden on the map', () => {
+  const hide = () => act(() => useAppStore.setState({ resultsOnMap: false }));
+  const bar = () => container.querySelector('.download-bar');
+
+  it('has no bar of the selection: nothing of it is on the map to act on', () => {
+    render(true, false);
+    expect(bar()).not.toBeNull();
+    hide();
+    expect(block()).toBeNull();
+    expect(bar()).toBeNull();
+  });
+
+  it('keeps the timeline alone, and brings the bar back with the results', () => {
+    render(true, true);
+    expect(bar()).not.toBeNull();
+    hide();
+    expect(bar()).toBeNull();
+    expect(block()).not.toBeNull();
+    expect(block()!.querySelector('.close-x')).not.toBeNull();
+    act(() => useAppStore.setState({ resultsOnMap: true }));
+    expect(bar()).not.toBeNull();
+  });
+
+  it('is the same beside a view: the bar of the ticked scenes is gone, the view is not touched', () => {
+    render(true, false);
+    hide();
+    expect(bar()).toBeNull();
+  });
+});

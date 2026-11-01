@@ -16,6 +16,7 @@ import { DEFAULT_RANGE } from '../processingPreview';
 import { layerProcessBlock, orderView, useProcessingStore } from '../processingStore';
 import { resultRender, resultStats } from '../resultLayer';
 import { bboxToPolygon } from '../geoUtils';
+import { layerShownName } from '../layerName';
 import { useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import LayerManager from './LayerManager';
@@ -582,7 +583,7 @@ describe('the preview section', () => {
     it('starts at -1 to 1 with rdylgn and draws a new range only after "Apply"', async () => {
       await withNdvi();
       expect(inputs().map((i) => i.value)).toEqual(['-1', '1']);
-      expect(section().querySelector('select')!.value).toBe('rdylgn');
+      expect(section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!.value).toBe('rdylgn');
       typeInto(inputs()[1], '0.8');
       await afterDebounce();
       expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale')).toBe('-1,1');
@@ -604,7 +605,7 @@ describe('the preview section', () => {
 
     it('takes another colormap, or none', async () => {
       await withNdvi();
-      const select_ = section().querySelector('select')!;
+      const select_ = section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!;
       act(() => {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
         setter.call(select_, '');
@@ -642,7 +643,7 @@ describe('the preview section', () => {
       await withNdvi();
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
       expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
-      expect(section().querySelector('select')!.value).toBe('viridis');
+      expect(section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!.value).toBe('viridis');
       expect(store().range).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdylgn' }); // no choice of the user's
     });
 
@@ -722,7 +723,7 @@ describe('the preview section', () => {
       expect(rescale()).toBe('120,2400');
       typeInto(inputs()[0], '-1');
       typeInto(inputs()[1], '1');
-      const select_ = section().querySelector('select')!;
+      const select_ = section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!;
       act(() => {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
         setter.call(select_, 'rdylgn');
@@ -2057,7 +2058,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       expect(layer.note).toBe(HINT);
       mount(<LayerManager />);
       expect(nameButton().getAttribute('title')).toContain(HINT);
-      expect(nameButton().getAttribute('title')).toContain(`${layer.name} — `);
+      expect(nameButton().getAttribute('title')).toContain(`${layerShownName(layer)} — `);
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('per scene');
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('may differ');
     });
@@ -2070,7 +2071,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       expect(useAppStore.getState().layers[0].note).toBeUndefined();
       mount(<LayerManager />);
       expect(nameButton().getAttribute('title')).not.toContain('per scene');
-      expect(nameButton().getAttribute('title')).toBe(`${useAppStore.getState().layers[0].name} — view this layer / continue working on it`);
+      expect(nameButton().getAttribute('title')).toBe(`${layerShownName(useAppStore.getState().layers[0])} — view this layer / continue working on it`);
     });
   });
 

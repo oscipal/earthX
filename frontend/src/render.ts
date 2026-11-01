@@ -5,6 +5,7 @@
 // single pair to every output band when only one is given.
 
 import type { BandStatistics } from './api';
+import { DEFAULT_PERCENT, percentOf, samePercent, type RangeUnit } from './percentRange';
 import type { AppliedRender, EarthxDefaultRender } from './types';
 
 // Named colormaps rio-tiler/matplotlib ship — generic, not tied to any dataset.
@@ -57,9 +58,26 @@ export function appliedRenderFrom(render: EarthxDefaultRender): AppliedRender {
 // The fields of the view's controls for a look, the other way round: what "Apply" would send back to make the same
 // picture. Where a view starts from a layer, the controls show what the layer was made with (NM4-50). The index (NM4-14b) is one
 // of the fields: it is drawn once "Apply" is pressed, like the colormap and the range.
-export function pendingFieldsOf(render: AppliedRender): { pendingColormapName: string; pendingVmin: string; pendingVmax: string; pendingIndex: string } {
+export function pendingFieldsOf(render: AppliedRender): {
+  pendingColormapName: string;
+  pendingVmin: string;
+  pendingVmax: string;
+  pendingIndex: string;
+  pendingUnit: RangeUnit;
+  pendingPercentLow: string;
+  pendingPercentHigh: string;
+} {
   const [vmin = '', vmax = ''] = (render.rescale ?? '').split(',');
-  return { pendingColormapName: render.colormapName ?? '', pendingVmin: vmin, pendingVmax: vmax, pendingIndex: render.index ?? '' };
+  return {
+    pendingColormapName: render.colormapName ?? '',
+    pendingVmin: vmin,
+    pendingVmax: vmax,
+    pendingIndex: render.index ?? '',
+    // A look typed in percentiles shows "%" again (NM4-65 part 4).
+    pendingUnit: render.percent ? 'percent' : 'value',
+    pendingPercentLow: render.percent?.low ?? DEFAULT_PERCENT.low,
+    pendingPercentHigh: render.percent?.high ?? DEFAULT_PERCENT.high,
+  };
 }
 
 // What the disabled "Apply" and "Save" say in their tooltips (the view of scenes and of a result).
@@ -70,7 +88,19 @@ export const NOTHING_TO_APPLY_TO_ALL_LAYER = 'Nothing to apply to all: the layer
 export const NOTHING_TO_SAVE_IMAGES = 'Nothing to apply to all: every image of this dataset is drawn like this';
 export const NOTHING_TO_SAVE_ONE_IMAGE = 'Nothing to apply to all: this dataset has only one image in the view';
 
-type PendingFields = { pendingColormapName: string; pendingVmin: string; pendingVmax: string; pendingIndex?: string };
+type PendingFields = {
+  pendingColormapName: string;
+  pendingVmin: string;
+  pendingVmax: string;
+  pendingIndex?: string;
+  pendingUnit?: RangeUnit;
+  pendingPercentLow?: string;
+  pendingPercentHigh?: string;
+};
+
+// The percentiles the fields stand for, where "%" is on and they are a valid pair.
+export const pendingPercentOf = (p: PendingFields) =>
+  p.pendingUnit === 'percent' ? percentOf({ low: p.pendingPercentLow ?? '', high: p.pendingPercentHigh ?? '' }) : null;
 
 // What the fields of the controls ask for: the colormap, and a range once both ends are typed.
 export function lookOfPendingFields(p: PendingFields): AppliedRender {
@@ -80,6 +110,7 @@ export function lookOfPendingFields(p: PendingFields): AppliedRender {
     colormapName: p.pendingColormapName || undefined,
     rescale: vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
     index: p.pendingIndex || undefined,
+    percent: pendingPercentOf(p) ?? undefined,
   };
 }
 
@@ -90,7 +121,10 @@ export function lookChanged(applied: AppliedRender, p: PendingFields): boolean {
   return (
     (applied.colormapName || undefined) !== asked.colormapName ||
     (applied.rescale || undefined) !== asked.rescale ||
-    (applied.index || undefined) !== asked.index
+    (applied.index || undefined) !== asked.index ||
+    // Typed in percentiles and not applied yet: the values still hold the ones of the percentiles before.
+    !samePercent(applied.percent, asked.percent) ||
+    (p.pendingUnit === 'percent' && asked.percent === undefined)
   );
 }
 

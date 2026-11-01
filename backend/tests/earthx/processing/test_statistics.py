@@ -14,7 +14,7 @@ from fractions import Fraction
 import numpy
 import pytest
 
-from earthx.processing.statistics import BandStatistics, gdal_tags, summarize
+from earthx.processing.statistics import MEASURE_PERCENTILES, PERCENTILES, BandStatistics, gdal_tags, summarize
 
 #: The relative width of one bin of the float histogram: 7 bits of the significand.
 BIN = 2.0**-7
@@ -104,6 +104,22 @@ class TestAgainstAnIndependentComputation:
             assert summary["mean"] == _exact_mean(values) and summary["count"] == values.size
         else:
             _assert_independent(summary, values, values.size, exact_percentiles=exact)
+
+
+class TestEveryWholePercent:
+    """NM4-65: a measure adds every whole percent to the two a result carries."""
+
+    def test_the_measure_adds_all_but_the_two_of_a_result(self) -> None:
+        assert PERCENTILES == (2, 98)
+        assert sorted({*PERCENTILES, *MEASURE_PERCENTILES}) == list(range(1, 100))
+        assert not set(PERCENTILES) & set(MEASURE_PERCENTILES)
+
+    def test_each_is_the_nearest_rank_for_integers_of_16_bits(self) -> None:
+        values = RNG.integers(0, 60000, size=5003).astype(numpy.uint16)
+        summary = _gathered(values).summary(values.size, MEASURE_PERCENTILES)
+        for percent in range(1, 100):
+            true = int(numpy.percentile(values.astype(numpy.float64), percent, method="inverted_cdf"))
+            assert summary[f"percentile_{percent}"] == true, percent
 
 
 class TestDeterminism:

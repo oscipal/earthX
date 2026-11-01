@@ -83,7 +83,8 @@ export default function Popover({
     }
     if (focusOnOpen && placement && !focused.current) {
       focused.current = true;
-      if (form) ref.current?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled)')?.focus();
+      // Not the close "x" (NM4-65): it stays one Tab away.
+      if (form) ref.current?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled):not(.close-x)')?.focus();
       else focusFirstItem(ref.current);
     }
   }, [open, focusOnOpen, form, placement]);

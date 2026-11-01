@@ -18,7 +18,8 @@
 
 import { create } from 'zustand';
 
-import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, type AreaStatistics } from './api';
+import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, withPercentiles, type AreaStatistics } from './api';
+import { checkPercent, NO_RANGE_AT_PERCENT, rescaleAtPercent, type Percent } from './percentRange';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import { resultsGroupByOfOption, type DatasetOption } from './datasets';
 import { indexPresetsOf } from './indexPresets';
@@ -167,6 +168,8 @@ import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
+import { datesOfIds, knownItems } from './layerDate';
+import { resamplingParts } from './resamplingWarning';
 import type { MapLayer } from './layers';
 import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
 import type { IndexPreset } from './indexPresets';
@@ -362,6 +365,11 @@ interface ProcessingState {
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
+  // The order whose review says that bands are resampled to a common grid (NM4-65 part 7): the warning to confirm is open for it.
+  // "Continue" keeps the review, "Cancel" drops it, so that "Start job" stays shut.
+  resamplingAsking: string | null;
+  confirmResampling: () => void;
+  declineResampling: () => void;
   // The review of a batch: one outcome per job, for the batch it was asked for.
   batch: { key: string; parts: PartOutcome[] } | null;
   reviewing: boolean;
@@ -387,6 +395,10 @@ interface ProcessingState {
   processFocusView: () => Promise<void>;
   setRangeDraft: (patch: Partial<PreviewRange>) => void;
   applyRange: () => void;
+  // "Apply" with percentiles in the fields (NM4-65 part 4): the values come from the measure of the preview, or, where it does not
+  // name those percentiles (the measure of a scene), from the tiler on the first scene of the preview. Resolves to the reason
+  // there is none, or `null` once the range is applied.
+  applyRangePercent: (percent: Percent) => Promise<string | null>;
   // Back to the range the measure calls for (M4-19c), measured again where the measure failed.
   autoStretch: () => void;
   pinPreview: () => void;
@@ -1044,6 +1056,7 @@ const EMPTY_DRAFT = {
   rangeEdited: false,
   reviewAsked: false,
   estimate: null,
+  resamplingAsking: null as string | null,
   batch: null as { key: string; parts: PartOutcome[] } | null,
   reviewing: false,
   reviewError: null,
@@ -1289,6 +1302,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       range: null,
       bandRanges: {},
       shownBand: null,
+      dates: null,
       order: null,
       deletedUntil: null,
       serverDeleted: false,
@@ -1296,6 +1310,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       superseded: false,
       ...job,
     };
+    // The day of the scenes is read while they are known: the layer of the result shows it long after the search has moved on.
+    if (job.dates === undefined && job.order) blank.dates = datesOfOrder(job.order);
     blank.titleDefault = job.titleDefault ?? job.title ?? null;
     const entry = jobEntry(blank, status, Date.now());
     set((s) => {
@@ -1531,9 +1547,36 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // The pass in view is the one of the image the head of the view shows.
       openCrop(cropToAoi && isArea(viewAoi) ? { itemIds: ids, aoi: viewAoi, result: null } : null, extraScenes, shown?.ids ?? []);
     },
-    setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch }, rangeEdited: true })),
+    // Values typed by hand are no percentiles any more (NM4-65 part 4).
+    setRangeDraft: (patch) =>
+      set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch, ...('vmin' in patch || 'vmax' in patch ? { percent: undefined } : {}) }, rangeEdited: true })),
     applyRange: () => {
       if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeByHand: true, rangeEdited: false }));
+    },
+    confirmResampling: () => set({ resamplingAsking: null }),
+    declineResampling: () => set({ resamplingAsking: null, estimate: null, batch: null }),
+    applyRangePercent: async (percent) => {
+      const checked = checkPercent(percent);
+      if ('problem' in checked) return checked.problem;
+      const spec = wantedPreview();
+      const measure = get().measure;
+      // The measure of this very preview, if it names every percentile asked for.
+      const asked = [checked.low, checked.high].filter((n) => n !== 0 && n !== 100);
+      const named = measure && spec && measure.key === spec.measure && measure.raw && measure.raw.length > 0 && measure.raw.every((band) => asked.every((n) => typeof band[`percentile_${n}`] === 'number'));
+      let bands = named ? measure.raw! : null;
+      if (!bands) {
+        if (!spec) return 'There is no preview to take the percentiles from.';
+        try {
+          bands = Object.values(await fetchStatisticsAt(withPercentiles(spec.sceneMeasure, asked)));
+        } catch (error) {
+          return `Could not measure the percentiles: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+      const range = rescaleAtPercent(bands, checked);
+      if (!range) return NO_RANGE_AT_PERCENT;
+      const look: PreviewRange = { ...get().rangeDraft, vmin: String(range[0]), vmax: String(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
+      set({ rangeDraft: look, range: look, rangeByHand: true, rangeEdited: false });
+      return null;
     },
     autoStretch: () => {
       failedMeasures.clear();
@@ -1618,6 +1661,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           stats,
           preset,
           ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
+          ...(ownRangeOf(job, job.bands, place)?.percent ? { percent: ownRangeOf(job, job.bands, place)!.percent } : {}),
         },
         overlays: [
           {
@@ -1638,6 +1682,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         ],
         itemIds: [],
         cropToAoi: false,
+        date: job.dates,
       });
     },
     // The order behind the details is read from the operators of the dataset, as `openProcessing` does.
@@ -1929,11 +1974,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const controller = new AbortController();
       estimating = controller;
       const key = view.key;
-      set({ reviewing: true, reviewError: null, startError: null, batchStartRefusals: null, estimate: null, batch: null });
+      set({ reviewing: true, reviewError: null, startError: null, batchStartRefusals: null, estimate: null, batch: null, resamplingAsking: null });
       try {
         if (view.runAs === 'one') {
           const doc = await estimateOrder(order, controller.signal);
-          set({ estimate: { key, doc }, reviewing: false });
+          set({ estimate: { key, doc }, reviewing: false, resamplingAsking: resamplingParts(doc, null).length > 0 ? key : null });
           return;
         }
         // A batch: every job asks for its own estimate, a few at a time; one the
@@ -1949,7 +1994,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           }
         });
         if (controller.signal.aborted) return;
-        set({ batch: { key, parts: outcomes.filter((o): o is PartOutcome => o !== undefined) }, reviewing: false });
+        const parts = outcomes.filter((o): o is PartOutcome => o !== undefined);
+        set({ batch: { key, parts }, reviewing: false, resamplingAsking: resamplingParts(null, parts).length > 0 ? key : null });
       } catch (error) {
         if (controller.signal.aborted || isAbort(error)) return;
         set({ reviewing: false, reviewError: refusalOf(error, key, get().steps) });
@@ -2071,14 +2117,15 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
           // What was applied and not saved belongs to the band it was applied to: it goes with it.
-          const { savedTileUrl: _unsaved, ...kept } = l.result;
+          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, percent: _percent, ...kept } = l.result;
           let first = true;
           const overlays = l.overlays.map((o) => {
             if (o.kind !== 'raster' || !first) return o;
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, stats, preset } };
+          const typed = ownRangeOf(job, info.bands!, place)?.percent;
+          return { ...l, overlays, result: { ...kept, band: place, stats, preset, ...(typed ? { percent: typed } : {}) } };
         }),
       });
     },
@@ -2167,6 +2214,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             range: job.range,
             bandRanges: job.bandRanges,
             shownBand: job.shownBand,
+            dates: job.dates,
             order: job.order,
           },
           jobID,
@@ -2283,6 +2331,12 @@ function previewReadOf(view: OrderView, plan: Extract<PreviewPlan, { state: 'rea
     pick,
     trueColor: view.trueColor,
   });
+}
+
+// The day of the scenes an order reads, among the scenes the page knows now (`layerDate.ts`); `null` where they are not known
+// or have no instant.
+function datesOfOrder(order: Order): string | null {
+  return datesOfIds(order.inputs.flatMap((input) => input.groups.flat()), knownItems(useAppStore.getState()));
 }
 
 // What a job keeps of the preview it was started from (NM4-43e PR 2): the band the map showed, which the layer of a result of

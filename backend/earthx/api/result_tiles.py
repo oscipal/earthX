@@ -24,13 +24,23 @@ What this process remembers is two small entries per result for a few seconds �
 and the signed URLs (10 minutes, so that GDAL's read cache, which is keyed by URL, still hits for the next
 tile). Neither is state a second instance would miss: two instances answer a URL the same way.
 
-Not here, on purpose: ``op``, ``expression`` and every other free parameter (``400``), and statistics,
-info and point queries (plan M4-13c §5).
+* **Its numbers.** ``GET /results/{result_id}/statistics`` answers the statistics of the result's bands as the
+  results document writes them (``name``, ``data_type``, ``statistics``), with ``percentile_1`` to ``percentile_99``
+  from the histogram of `processing.statistics`. It counts only what the tile shows: the pixels ``mask.tif`` marks, and
+  of those the valid ones. A raster of more than :data:`STATISTICS_MAX_PIXELS` (4096 x 4096) pixels is read on a grid an
+  whole factor coarser (an overview where the file has one; ``nearest`` where not), in strips, so the memory stays
+  small and the numbers the same on every machine. The answer does not say so. This one route lifts the "statistics
+  are not served" of plan M4-13c §5 (Otto, NM4-65, 1.11.2026, adr/0006 Nachtrag NM4-65): the range of a result's
+  colour scale is entered as percentiles, and the results document holds only the 2 and the 98 % value.
+
+Not here, on purpose: ``op``, ``expression`` and every other free parameter (``400``), info and point queries
+(plan M4-13c §5).
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -39,8 +49,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 import numpy
-from fastapi import HTTPException, Path, Request
+import rasterio
+from fastapi import Depends, HTTPException, Path, Request
+from rasterio.enums import Resampling
+from rasterio.windows import Window
 from starlette.concurrency import run_in_threadpool
+from starlette.responses import JSONResponse
 from titiler.core.dependencies import BidxParams
 
 from earthx.access.tiles import EarthxTilerFactory
@@ -53,8 +67,8 @@ LOGGER = logging.getLogger("earthx.api.result_tiles")
 ROUTER_PREFIX = "/results/{result_id}"
 RESULT_FILE = "result.tif"
 MASK_FILE = "mask.tif"
-# `AssetPath` carries a dataset and an item for the statistics cache of a source; a result has neither,
-# and its statistics are not served (plan M4-13c §5).
+# `AssetPath` carries a dataset and an item for the statistics cache of a source; a result has neither
+# and its statistics are not cached.
 _NO_DATASET = "results"
 
 # How long the answer of a `HEAD` is believed (plan §3.4: "höchstens 60 s").
@@ -68,6 +82,13 @@ CACHE_SIZE = 128
 # source is released at (`sentinel-2-c1-l2a`, `earthx.catalog.datasets`).
 RESULT_MIN_ZOOM = 0
 RESULT_MAX_ZOOM = 19
+
+# The raster of a result is counted on at most this many pixels; a larger one on a coarser grid (`result_statistics`).
+STATISTICS_MAX_PIXELS = 4096 * 4096
+# Pixels per read of the statistics: a strip of rows of this size is in memory at a time, per band.
+_STRIP_PIXELS = 1 << 20
+# How long a client may keep the statistics at most; never beyond the end of the result's life.
+STATISTICS_MAX_AGE = timedelta(minutes=5)
 
 # TiTiler's free parameters, and the operator of a source's tile: a result is read as it is.
 _REFUSED_PARAMETERS = ("expression", "algorithm", "algorithm_params", "op", "op_version", "params")
@@ -128,6 +149,13 @@ class ResultSources:
             while len(self._entries) > CACHE_SIZE:
                 self._entries.popitem(last=False)
         return entry.urls
+
+
+    def remaining(self, result_id: str) -> timedelta:
+        """How long the result is served, as of the last :meth:`urls`; zero for one this process has forgotten."""
+        with self._lock:
+            entry = self._entries.get(result_id)
+        return timedelta(0) if entry is None else max(timedelta(0), entry.modified + RESULT_TTL - self._now())
 
 
 def gdal_path(url: str) -> str:
@@ -224,12 +252,79 @@ async def result_path(
     return ResultPath(gdal_path(result_url), mask=mask)
 
 
+def result_statistics(path: ResultPath, env: dict[str, str]) -> list[dict[str, Any]]:
+    """The bands of ``result.tif`` with their statistics over the pixels ``mask.tif`` marks (NM4-65).
+
+    Blocking: GDAL reads over HTTP. Strips of rows, band by band into the histograms of
+    :class:`~earthx.processing.statistics.BandStatistics`, in a fixed order. More than :data:`STATISTICS_MAX_PIXELS`
+    pixels are read on a grid ``k`` times coarser (``k`` the smallest whole number that fits, ``nearest``; the file's
+    overview where it has one). A band without a valid pixel inside the mask has ``count`` 0 and ``valid_percent`` 0.
+    """
+    from earthx.processing.core import area_factor
+    from earthx.processing.statistics import MEASURE_PERCENTILES, BandStatistics
+
+    with rasterio.Env(**env), CogReader(path) as result, CogReader(path.mask) as mask:
+        raster, marks = result.dataset, mask.dataset
+        same_grid = (marks.width, marks.height) == (raster.width, raster.height)
+        if not same_grid or not marks.transform.almost_equals(raster.transform):
+            raise HTTPException(status_code=502, detail="the mask does not belong to the result")
+        try:
+            bands = [BandStatistics(dtype) for dtype in raster.dtypes]
+        except TypeError:
+            detail = "statistics are not served for the data type of this result"
+            raise HTTPException(status_code=422, detail=detail) from None
+        factor = area_factor(raster.width, raster.height, STATISTICS_MAX_PIXELS)
+        width, rows = -(-raster.width // factor), -(-raster.height // factor)
+        step = max(1, _STRIP_PIXELS // width)
+        inside_pixels = 0
+        for top in range(0, rows, step):
+            height = min(step, rows - top)
+            window = Window(0, top * factor, raster.width, min(height * factor, raster.height - top * factor))
+            shape = (raster.count, height, width)
+            data = raster.read(window=window, out_shape=shape, masked=True, resampling=Resampling.nearest)
+            inside = marks.read(1, window=window, out_shape=(height, width), resampling=Resampling.nearest) != 0
+            inside_pixels += int(inside.sum())
+            for values, statistics in zip(data, bands, strict=True):
+                counted = inside & ~numpy.ma.getmaskarray(values)
+                statistics.add(numpy.ma.getdata(values)[counted])
+        names = [name or str(index) for index, name in enumerate(raster.descriptions, start=1)]
+        return [
+            {
+                "name": name,
+                "data_type": dtype,
+                "statistics": statistics.summary(max(inside_pixels, 1), MEASURE_PERCENTILES),
+            }
+            for name, dtype, statistics in zip(names, raster.dtypes, bands, strict=True)
+        ]
+
+
 class ResultTilerFactory(EarthxTilerFactory):
-    """TiTiler's tile and TileJSON routes over a result, and no others."""
+    """TiTiler's tile and TileJSON routes over a result, and the one statistics route of ours."""
 
     def register_routes(self) -> None:
         self.tile()
         self.tilejson()
+        self.statistics_route()
+
+    def statistics_route(self) -> None:
+        """Register ``GET /statistics``: the numbers of the bands inside the area, for the colour scale (NM4-65)."""
+
+        @self.router.get(
+            "/statistics",
+            response_class=JSONResponse,
+            responses={200: {"content": {"application/json": {}}, "description": "Statistics of the result's bands."}},
+            operation_id=f"{self.operation_prefix}getResultStatistics",
+        )
+        async def statistics(
+            request: Request,
+            src_path=Depends(self.path_dependency),
+            env=Depends(self.environment_dependency),
+        ) -> JSONResponse:
+            bands = await run_in_threadpool(result_statistics, src_path, env)
+            # The path dependency has looked the result up, so the entry of its life is there.
+            remaining = request.app.state.earthx_results.remaining(request.path_params["result_id"]) - MIN_REMAINING
+            age = max(0, math.floor(min(STATISTICS_MAX_AGE, remaining).total_seconds()))
+            return JSONResponse({"bands": bands}, headers={"Cache-Control": f"private, max-age={age}"})
 
 
 def result_environment(request: Request) -> dict[str, str]:

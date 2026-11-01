@@ -12,7 +12,7 @@ import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
 import { jobEntry, jobId, NOW } from '../fixtures/jobEntries';
 import { resetJobs, useProcessingStore } from '../processingStore';
-import LayerManager, { DELETED_LAYER_TIP, EXPIRED_LAYER_TEXT, HIDE_LAYER_TIP, RESAMPLED_LAYER_TEXT, SHOW_LAYER_TIP } from './LayerManager';
+import LayerManager, { DELETED_LAYER_TIP, EXPIRED_LAYER_TEXT, HIDE_LAYER_TIP, SHOW_LAYER_TIP } from './LayerManager';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -189,10 +189,10 @@ describe('LayerManager', () => {
       act(() => root.render(<LayerManager />));
     });
 
-    it('have the nine places in the same order, whatever the kind of layer', () => {
+    it('have the ten places in the same order, whatever the kind of layer', () => {
       expect(rows()).toHaveLength(kinds.length);
       for (const row of rows()) {
-        expect(places(row)).toEqual(['eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+        expect(places(row)).toEqual(['grip', 'eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
       }
     });
 
@@ -225,8 +225,9 @@ describe('LayerManager', () => {
     it('say their notes in a symbol with a tooltip, in the place of the note', () => {
       const note = rows()[kinds.findIndex((k) => k.id === 'old')].querySelector('[data-col="note"]')!;
       expect(note.className).toBe('lm-note');
-      expect(note.querySelector('.tip')?.getAttribute('data-tip')).toBe(`${EXPIRED_LAYER_TEXT} ${RESAMPLED_LAYER_TEXT}`);
+      expect(note.querySelector('.tip')?.getAttribute('data-tip')).toBe(EXPIRED_LAYER_TEXT);
       // No text of a note lies in the row, which keeps its height.
+      // A result that was resampled has no note any more (NM4-65 part 7): the warning came before its job.
       expect(rows()[kinds.findIndex((k) => k.id === 'old')].textContent).not.toContain('Resampled');
     });
 
@@ -331,9 +332,9 @@ describe('the result layer of a deleted job', () => {
     expect(useAppStore.getState().layers[1].result?.deleted).toBeFalsy();
   });
 
-  it('keeps its nine places', () => {
+  it('keeps its ten places', () => {
     deleteJobAt(1, NOW + DAY);
-    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
   });
 
   it('cannot be switched on with the eye while it is locked, and can still be removed', () => {
