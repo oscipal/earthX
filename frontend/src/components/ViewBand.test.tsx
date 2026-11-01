@@ -13,6 +13,7 @@ import { datasetsFrom } from '../datasets';
 import { SENTINEL_2_PRESETS } from '../fixtures/indexPresets';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacAsset, StacItem } from '../types';
+import { viewLayerOf } from '../viewLayer';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -335,28 +336,99 @@ describe('a layer pinned with a band', () => {
     expect(Object.values(store().layers[0].restore.downloaded).every((d) => d.baseAsset === 'visual')).toBe(true);
   });
 
-  it('is drawn from another band, and from RGB again, once "Apply to all" keeps the choice for the layer', async () => {
+  // Otto, 1.11.2026 (Browsertest zu #272): the settings of a layer change the layer itself, at its place, and are kept with "Save" only.
+  it('is drawn from another band at once, as the same layer at the same place, and from RGB again', async () => {
     await pinWithBand();
+    const [first] = store().layers;
     expect(layerAssets()).toEqual(['B04']);
     choose('band:B08');
     await settle();
-    // Not kept before it is asked for.
-    expect(layerAssets()).toEqual(['B04']);
-    await act(async () => { await store().saveViewLook(); });
+    expect(store().layers.map((l) => l.id)).toEqual([first.id]); // no layer is added, none behind it
     expect(layerAssets()).toEqual(['B08']);
     expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B08' });
     expect(layerTiles().every((url) => url.includes('B08'))).toBe(true);
     choose('');
-    await act(async () => { await store().saveViewLook(); });
+    await settle();
+    expect(store().layers.map((l) => l.id)).toEqual([first.id]);
     expect(layerAssets()).toEqual(['visual']);
     expect(store().layers[0].restore.appliedRender.band).toBeUndefined();
     expect(layerTiles().every((url) => url.includes('visual'))).toBe(true);
   });
 
+  it('is the picture of the view while it is changed: the view draws no picture of its own besides the layer', async () => {
+    await pinWithBand();
+    choose('band:B08');
+    await settle();
+    await act(async () => { await store().applyRender(); });
+    const s = store();
+    expect(viewLayerOf(s.layers, { ...s, aoi: s.viewAoi })?.id).toBe(s.layers[0].id);
+  });
+
+  it('is put back as saved when the settings are closed without "Save": by the x, by Esc, by another layer', async () => {
+    await pinWithBand();
+    choose('band:B08');
+    await settle();
+    expect(layerAssets()).toEqual(['B08']);
+    act(() => store().exitFocus());
+    expect(layerAssets()).toEqual(['B04']);
+    expect(store().layers[0].saved).toBeUndefined();
+    expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B04' });
+    // Esc.
+    act(() => store().selectLayer(store().layers[0].id));
+    act(() => root.render(<ViewerControls />));
+    choose('index:NDVI');
+    await settle();
+    expect(store().layers[0].restore.appliedRender).toMatchObject({ index: 'NDVI' });
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(store().viewOfLayer).toBe(false);
+    expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B04' });
+    expect(layerAssets()).toEqual(['B04']);
+  });
+
+  it('is kept with "Save": the settings close with the new picture', async () => {
+    await pinWithBand();
+    choose('band:B08');
+    await settle();
+    expect(container.querySelector('.vc-save')!.textContent).toBe('Save');
+    expect(container.querySelector('.vc-save')!.getAttribute('aria-disabled')).toBeNull();
+    act(() => void (container.querySelector('.vc-save') as HTMLButtonElement).click());
+    await settle();
+    expect(store().layers[0].saved).toBeUndefined();
+    expect(container.querySelector('.vc-save')!.getAttribute('aria-disabled')).toBe('true');
+    act(() => store().exitFocus());
+    expect(layerAssets()).toEqual(['B08']);
+    expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B08' });
+  });
+
+  it('keeps the opacity apart as well: seen at once, kept with "Save", gone with the close', async () => {
+    await pinWithBand();
+    act(() => store().setLayerOpacity(store().layers[0].id, 0.4));
+    expect(store().layers[0].opacity).toBe(0.4);
+    expect(container.querySelector('.vc-save')!.getAttribute('aria-disabled')).toBeNull();
+    act(() => store().exitFocus());
+    expect(store().layers[0].opacity).toBe(1);
+    act(() => store().selectLayer(store().layers[0].id));
+    act(() => root.render(<ViewerControls />));
+    act(() => store().setLayerOpacity(store().layers[0].id, 0.4));
+    act(() => void (container.querySelector('.vc-save') as HTMLButtonElement).click());
+    await settle();
+    act(() => store().exitFocus());
+    expect(store().layers[0].opacity).toBe(0.4);
+  });
+
+  it('is not touched by the opacity of a layer whose settings are not open', async () => {
+    await pinWithBand();
+    const id = store().layers[0].id;
+    act(() => store().exitFocus());
+    act(() => store().setLayerOpacity(id, 0.3));
+    expect(store().layers[0].saved).toBeUndefined();
+    expect(store().layers[0].opacity).toBe(0.3);
+  });
+
   it('is drawn with an index from a band, and back, with no quicklook under the index', async () => {
     await pinWithBand();
     choose('index:NDVI');
-    await act(async () => { await store().saveViewLook(); });
+    await settle();
     expect(store().layers[0].restore.appliedRender).toMatchObject({ index: 'NDVI' });
     expect(store().layers[0].restore.appliedRender.band).toBeUndefined();
     expect(layerAssets()).toEqual(['visual']);

@@ -15,7 +15,7 @@ import { showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf } from '../viewBand';
-import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
+import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
@@ -27,6 +27,7 @@ import Chevron from './Chevron';
 import CloseButton from './CloseButton';
 import Eye from './Eye';
 import OpacityRow from './OpacityRow';
+import { useEscClose } from './useEscClose';
 import type { BandOption } from './BandSelect';
 import RenderFields from './RenderFields';
 
@@ -52,6 +53,8 @@ export default function ViewerControls() {
   // "Save" keeps the look for the layer the view is the picture of and for every image of the dataset (NM4-53).
   const savable = useAppStore((s) => {
     const own = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
+    // The settings of a layer: there is something to keep where the layer was changed (applied, its opacity) or the fields ask for more.
+    if (s.viewOfLayer && own) return own.saved !== undefined || lookChanged(own.restore.appliedRender, s);
     return (own !== null && lookChanged(own.restore.appliedRender, s)) || datasetSavable(s);
   });
   const focusLoading = useAppStore((s) => s.focusLoading);
@@ -129,6 +132,10 @@ export default function ViewerControls() {
   // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
   // is still open from the search keeps all of it, also once its image is pinned.
   const compact = viewOfLayer && layer !== null;
+  // The settings of a layer close with Esc as with the x; the view of the search stays open.
+  useEscClose(() => {
+    if (compact) exitFocus();
+  });
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -270,11 +277,15 @@ export default function ViewerControls() {
             aria-disabled={!savable || undefined}
             title={
               savable
-                ? layer
-                  ? 'Draw every image of this dataset with these values and keep them for this layer'
-                  : 'Draw every image of this dataset with these values'
-                : layer
-                  ? NOTHING_TO_APPLY_TO_ALL_LAYER
+                ? compact
+                  ? 'Keep this picture, these values and this opacity for the layer; closing the settings without it puts the saved layer back'
+                  : layer
+                    ? 'Draw every image of this dataset with these values and keep them for this layer'
+                    : 'Draw every image of this dataset with these values'
+                : compact
+                  ? NOTHING_TO_SAVE
+                  : layer
+                    ? NOTHING_TO_APPLY_TO_ALL_LAYER
                   : here.length > 1
                     ? NOTHING_TO_SAVE_IMAGES
                     : NOTHING_TO_SAVE_ONE_IMAGE
@@ -283,7 +294,7 @@ export default function ViewerControls() {
               if (savable) saveViewLook();
             }}
           >
-            Apply to all
+            {compact ? 'Save' : 'Apply to all'}
           </button>
         </div>
       </div>

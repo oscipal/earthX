@@ -21,6 +21,7 @@ import AutoScaleButton from './AutoScaleButton';
 import RenderFields from './RenderFields';
 import Tip from './Tip';
 import OpacityRow from './OpacityRow';
+import { useEscClose } from './useEscClose';
 import CloseButton from './CloseButton';
 
 const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap && samePercent(a.percent, b.percent);
@@ -40,6 +41,7 @@ function Controls({ layer }: { layer: MapLayer }) {
   const restyle = useAppStore((s) => s.restyleResultLayer);
   const save = useAppStore((s) => s.saveResultLayer);
   const close = useAppStore((s) => s.closeResultView);
+  useEscClose(close);
   const setJobRange = useProcessingStore((s) => s.setJobRange);
   const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   // What the typed fields hold, from what the layer draws now; a layer drawn another way starts over.
@@ -71,7 +73,8 @@ function Controls({ layer }: { layer: MapLayer }) {
   // is open and says why it cannot).
   const asked = withPercent(draft, unit === 'percent' ? (typedPair ?? { low: typed.low, high: typed.high }) : undefined);
   const canApply = !sameRange(asked, drawn);
-  const canSave = !sameRange(asked, saved);
+  // Also where only the opacity was changed: it is kept with "Save" too (NM4-54, Otto, 1.11.2026).
+  const canSave = !sameRange(asked, saved) || layer.saved !== undefined;
   const render = (range: PreviewRange) => {
     const made = renderOfRange(range);
     if (!made) {

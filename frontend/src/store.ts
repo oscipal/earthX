@@ -653,6 +653,43 @@ function firstSceneOfView(s: AppState): { itemId: string | undefined; info: Down
   return { itemId, info: itemId === undefined ? undefined : s.downloaded[itemId] };
 }
 
+// The layer drawn with a look (NM4-45, NM4-54): its scenes from the asset of the band the look names (or the index it computes), its
+// rasters made again, its quicklook underlays kept where the look has none. `{ problem }` where that cannot be done now.
+type LayerDrawn = { overlays: LayerOverlay[]; restore: { downloaded: MapLayer['restore']['downloaded']; appliedRender: AppliedRender } };
+
+// The layer drawn with a look, at once where the mosaics of its bands are known: `{ need }` names the passes whose mosaic has to be
+// asked for first, `{ problem }` says why it cannot be done.
+function layerDraw(
+  get: GetState,
+  layer: MapLayer,
+  render: AppliedRender,
+): LayerDrawn | { problem: string } | { need: { datasetId: string; entries: SceneEntry[] }[] } {
+  const s = get();
+  const clip = layer.restore.cropToAoi ? layer.restore.aoi : null;
+  const entries = Object.entries(layer.restore.downloaded).map(([id, info]): SceneEntry => [id, withAsset(id, info, assetOfLook(info, render))]);
+  const collection = s.datasets.find((d) => d.id === layer.restore.datasetId)?.collection;
+  const index = viewIndexOf(render, collection);
+  const groups = sectionsForView(s).flatMap((section) => section.groups);
+  const block = index && layer.restore.datasetId ? indexBlockOf({ datasetId: layer.restore.datasetId, entries, groups, mosaics: s.mosaics, preset: index, mapZoom: Infinity }) : null;
+  if (index && block) return { problem: `${indexNote(block, index.name)}. Start a job in Processing for the whole scenes.` };
+  const fresh = overlaysOfEntries({ ...s, appliedRender: render }, entries, clip);
+  if (fresh === null) return { need: passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass })) };
+  const current = s.layers.find((l) => l.id === layer.id) ?? layer;
+  const quicklooks = index ? [] : current.overlays.some((o) => o.kind === 'image') ? current.overlays.filter((o) => o.kind === 'image') : fresh.filter((o) => o.kind === 'image');
+  return { overlays: [...quicklooks, ...fresh.filter((o) => o.kind === 'raster')], restore: { downloaded: Object.fromEntries(entries), appliedRender: { ...render } } };
+}
+
+// The same, asking for the mosaic of another band first where it has to (NM4-45).
+async function layerDrawnWith(set: SetState, get: GetState, layer: MapLayer, render: AppliedRender): Promise<LayerDrawn | { problem: string }> {
+  let drawn = layerDraw(get, layer, render);
+  if ('need' in drawn) {
+    await fetchMosaics(set, get, drawn.need);
+    drawn = layerDraw(get, layer, render);
+  }
+  if ('need' in drawn) return { problem: 'The layer cannot be saved yet: its scenes are still loading.' };
+  return drawn;
+}
+
 // "Apply" with percentiles in the fields (NM4-65 part 4): the tiler measures the two percentiles on the first scene of the image
 // shown (the index of the fields as it will be drawn), the values go into the fields and the look. What is drawn is the values;
 // the look keeps the percentiles for the fields to show "%" again.
@@ -1532,7 +1569,9 @@ export interface AppState {
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
-  applyRender: () => void;
+  applyRender: () => void | Promise<void>;
+  // Puts back what a pinned layer was saved with, when its settings are closed without "Save" (NM4-54, Otto, 1.11.2026).
+  revertViewLayer: (id: string) => void;
   setPendingUnit: (unit: RangeUnit) => void;
   setPendingPercent: (end: 'low' | 'high', text: string) => void;
   // "Save" in the view of a pinned layer: the look typed and applied becomes the layer's own (NM4-50).
@@ -1987,17 +2026,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveResultLayer: (id) =>
     set((s) => ({
       layers: s.layers.map((l) => {
-        if (l.id !== id || !l.result?.savedTileUrl) return l;
+        if (l.id !== id || !l.result) return l;
         const { savedTileUrl: _saved, savedPercent: _savedPercent, ...info } = l.result;
-        return { ...l, result: info };
+        return { ...l, result: info, saved: undefined };
       }),
     })),
   revertResultLayer: (id) =>
     set((s) => ({
       layers: s.layers.map((l) => {
-        const saved = l.id === id ? l.result?.savedTileUrl : undefined;
-        if (!l.result || saved === undefined) return l;
-        const { savedTileUrl: _saved, savedPercent, percent: _percent, ...info } = l.result;
+        // The opacity set aside goes back first; the look has its own record (`savedTileUrl`).
+        const withOpacity = l.id === id && l.saved ? { ...l, opacity: l.saved.opacity, saved: undefined } : l;
+        const saved = withOpacity.id === id ? withOpacity.result?.savedTileUrl : undefined;
+        if (!withOpacity.result || saved === undefined) return withOpacity;
+        const { savedTileUrl: _saved, savedPercent, percent: _percent, ...info } = withOpacity.result;
+        l = withOpacity;
         let first = true;
         const overlays = l.overlays.map((o) => {
           if (o.kind !== 'raster' || !first) return o;
@@ -2016,8 +2058,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   toggleLayerVisible: (id) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
+  // The opacity is part of what the settings of a layer keep with "Save": while they are open it is set aside once (NM4-54, Otto, 1.11.2026).
   setLayerOpacity: (id, opacity) =>
-    set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
+    set((s) => {
+      const open = (s.viewOfLayer && s.viewLayerId === id) || s.resultViewLayerId === id;
+      return { layers: s.layers.map((l) => (l.id === id ? { ...l, opacity, ...(open && !l.saved ? { saved: { opacity: l.opacity } } : {}) } : l)) };
+    }),
   moveLayer: (id, dir) => set((s) => moveEntry(s.layers, s.resultsAt, id, dir, hasResultsPanel(s.sections)) ?? {}),
   flipThrough: false,
   flipLayerId: null,
@@ -2498,7 +2544,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const first = images.find((image) => image.datasetId === datasetId);
       return first && s.focusMode && first.key !== shown?.key ? moveToImage(s, first, shown) : {};
     }),
-  chooseViewIndex: (name) =>
+  chooseViewIndex: (name) => {
     set((s) => {
       const shown = shownImageOf(viewImagesOf(s), s.shownImage);
       if (!shown || !s.focusMode) return {};
@@ -2511,7 +2557,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (name !== null && !preset) return {};
       // Only the fields change: the map draws it once "Apply" is pressed, like the colormap and the range.
       return pendingFieldsOf(preset ? indexLookOf(preset) : plain);
-    }),
+    });
+    // In the settings of a layer the picture is the layer's: it changes at once (Otto, 1.11.2026).
+    if (get().viewOfLayer) void get().applyRender();
+  },
   // One band of the data in place of the standard picture or an index: only the fields change, and the range is measured for the
   // band as for any other pick, so that "Apply" has values to draw (NM4-45). The image is drawn from the asset of the band once
   // "Apply" is pressed (`reconcileBands`).
@@ -2523,12 +2572,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (band === null) {
       const saved = s.savedLooks[shown.datasetId];
       set(pendingFieldsOf(saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId)));
+      if (get().viewOfLayer) void get().applyRender();
       return;
     }
     const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);
     if (!bandAssetsOf(item, collection).includes(band)) return;
     set({ pendingBand: band, pendingIndex: '', pendingColormapName: '', pendingVmin: '', pendingVmax: '' });
-    void get().autoStretch();
+    // The range is measured first; in the settings of a layer the band is then drawn at once (Otto, 1.11.2026).
+    void get().autoStretch().then(() => {
+      if (get().viewOfLayer && get().pendingBand === band) void get().applyRender();
+    });
   },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
@@ -2537,15 +2590,42 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Commits the pending fields (F18) — nothing renders differently until this
   // runs, which is the point of an explicit "Apply".
   // "Apply" draws the shown image with the fields and nothing else (NM4-53); other images keep their look.
-  applyRender: () => {
+  applyRender: async () => {
     const s = get();
     // Typed in percentiles, the values come from the statistics first (NM4-65 part 4).
     if (s.pendingUnit === 'percent') {
-      void applyPercentRender(set, get);
+      await applyPercentRender(set, get);
+    } else {
+      set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
+    }
+    // The settings of a pinned layer change the layer itself, at its place in the list (Otto, 1.11.2026): what is applied is seen at once
+    // and kept only with "Save"; closing the settings puts the saved look back (`revertViewLayer`).
+    const now = get();
+    const layer = now.viewOfLayer ? layerOfView(now.layers, { ...now, aoi: now.viewAoi }) : null;
+    if (!layer) return;
+    const render = { ...now.appliedRender };
+    let drawn = layerDraw(get, layer, render);
+    if ('need' in drawn) drawn = await layerDrawnWith(set, get, layer, render);
+    if ('problem' in drawn) {
+      set({ error: drawn.problem });
       return;
     }
-    set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
+    set((t) => ({
+      layers: t.layers.map((l) =>
+        l.id === layer.id
+          ? { ...l, ...drawn, restore: { ...l.restore, ...drawn.restore }, saved: l.saved ?? { opacity: l.opacity, overlays: l.overlays, downloaded: l.restore.downloaded, appliedRender: l.restore.appliedRender } }
+          : l,
+      ),
+    }));
   },
+  revertViewLayer: (id) =>
+    set((s) => ({
+      layers: s.layers.map((l) => {
+        if (l.id !== id || !l.saved) return l;
+        const { opacity, overlays, downloaded, appliedRender } = l.saved;
+        return { ...l, opacity, overlays: overlays ?? l.overlays, restore: { ...l.restore, downloaded: downloaded ?? l.restore.downloaded, appliedRender: appliedRender ?? l.restore.appliedRender }, saved: undefined };
+      }),
+    })),
   setPendingUnit: (pendingUnit) => set({ pendingUnit }),
   setPendingPercent: (end, text) => set(end === 'low' ? { pendingPercentLow: text } : { pendingPercentHigh: text }),
   // "Save" (NM4-53, Otto 29.10.2026): the fields become the look of every image of the dataset that is shown, for the
@@ -2563,33 +2643,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const layer = layerOfView(s.layers, { ...s, aoi: s.viewAoi });
     let layers = s.layers;
     if (layer) {
-      // The same scenes as the layer has, drawn with the look: its rasters are made again (from the asset of the band the look names,
-      // or the index it computes, NM4-45), its quicklook underlays stay where the look has none. Any band or index of the dataset can
-      // be chosen again here, as in the view the layer came from (Otto, 1.11.2026).
-      const clip = layer.restore.cropToAoi ? layer.restore.aoi : null;
-      const entries = Object.entries(layer.restore.downloaded).map(([id, info]): SceneEntry => [id, withAsset(id, info, assetOfLook(info, render))]);
-      const collection = s.datasets.find((d) => d.id === layer.restore.datasetId)?.collection;
-      const index = viewIndexOf(render, collection);
-      const groups = sectionsForView(s).flatMap((section) => section.groups);
-      const block = index && layer.restore.datasetId ? indexBlockOf({ datasetId: layer.restore.datasetId, entries, groups, mosaics: s.mosaics, preset: index, mapZoom: Infinity }) : null;
-      if (index && block) {
-        set({ error: `${indexNote(block, index.name)}. Start a job in Processing for the whole scenes.` });
+      let drawn = layerDraw(get, layer, render);
+      if ('need' in drawn) drawn = await layerDrawnWith(set, get, layer, render);
+      if ('problem' in drawn) {
+        set({ error: drawn.problem });
         return;
       }
-      let fresh = overlaysOfEntries({ ...s, appliedRender: render }, entries, clip);
-      if (fresh === null) {
-        // The mosaic of another band is not known yet: ask for it, then make the layer.
-        await fetchMosaics(set, get, passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass })));
-        s = get();
-        fresh = overlaysOfEntries({ ...s, appliedRender: render }, entries, clip);
-      }
-      if (fresh === null) {
-        set({ error: 'The layer cannot be saved yet: its scenes are still loading.' });
-        return;
-      }
-      const quicklooks = index ? [] : layer.overlays.some((o) => o.kind === 'image') ? layer.overlays.filter((o) => o.kind === 'image') : fresh.filter((o) => o.kind === 'image');
-      const overlays = [...quicklooks, ...fresh.filter((o) => o.kind === 'raster')];
-      layers = s.layers.map((l) => (l.id === layer.id ? { ...l, overlays, restore: { ...l.restore, downloaded: Object.fromEntries(entries), appliedRender: { ...render } } } : l));
+      s = get();
+      // "Save" in the view of a layer keeps the layer as it is drawn: what was set aside for the settings to be closed is not wanted any more.
+      layers = s.layers.map((l) => (l.id === layer.id ? { ...l, ...drawn, saved: undefined, restore: { ...l.restore, ...drawn.restore } } : l));
     }
     const images = viewImagesOf(s);
     const shown = shownImageOf(images, s.shownImage);
@@ -3092,4 +3154,10 @@ useAppStore.subscribe((s, prev) => {
   if (s.appliedRender !== prev.appliedRender || s.viewLooks !== prev.viewLooks || s.savedLooks !== prev.savedLooks || s.shownImage !== prev.shownImage) {
     reconcileBands();
   }
+});
+
+// The settings of a pinned layer are closed — the red x, Esc, another layer chosen, the view left: what was applied and not saved goes
+// without asking, and the layer is drawn as saved again (NM4-54, Otto, 1.11.2026).
+useAppStore.subscribe((s, prev) => {
+  if (prev.viewOfLayer && prev.viewLayerId !== null && (!s.viewOfLayer || s.viewLayerId !== prev.viewLayerId)) s.revertViewLayer(prev.viewLayerId);
 });

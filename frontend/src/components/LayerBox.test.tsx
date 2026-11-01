@@ -129,7 +129,7 @@ describe('a layer opened from the layer manager', () => {
   // the opacity of the layer in the row under them.
   it('has the fields and the buttons of the settings of any layer in one row, and the opacity under them', () => {
     expect(labels()).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
-    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
     const box = container.querySelector('.scene-view')!;
     expect([...box.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-head', 'vc-render', 'vc-opacity']);
     expect(container.querySelectorAll('.vc-opacity input[type="range"]')).toHaveLength(1);
@@ -156,7 +156,7 @@ describe('a layer opened from the layer manager', () => {
     act(() => useAppStore.setState({ cropToAoi: true, viewAoi: crop.restore.aoi, layers: [crop] }));
     expect(container.querySelector('.vc-actions')).toBeNull();
     expect(labels()).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
-    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
   });
 });
 

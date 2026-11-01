@@ -184,10 +184,10 @@ describe('"Apply to all" with indices of one range (Otto, 1.11.2026)', () => {
   it('is open when the image shown has another index than the other image, though NDVI and EVI are drawn alike', () => {
     twoImages();
     act(() => useAppStore.getState().chooseViewIndex('NDVI'));
-    act(() => useAppStore.getState().applyRender());
+    act(() => void useAppStore.getState().applyRender());
     act(() => useAppStore.getState().stepImage(1));
     act(() => useAppStore.getState().chooseViewIndex('EVI'));
-    act(() => useAppStore.getState().applyRender());
+    act(() => void useAppStore.getState().applyRender());
     expect(useAppStore.getState().appliedRender).toMatchObject({ index: 'EVI', colormapName: 'rdylgn', rescale: '-1,1' });
     expect(locked()).toBe(false);
   });
