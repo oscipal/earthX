@@ -166,7 +166,7 @@ describe('the rows of buttons', () => {
     const first = [...row('vc-render').children];
     expect(first).toHaveLength(4);
     expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'DIV']);
-    expect([first[0], first[1], first[2]].map((el) => el.querySelector('span')?.textContent)).toEqual(['Colormap', 'vmin', 'vmax']);
+    expect([first[0], first[1], first[2]].map((el) => el.querySelector('span')?.textContent)).toEqual(['vmin', 'vmax', 'Colormap']);
     expect([...first[3].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
     expect([...row('vc-actions').children].map((el) => el.textContent)).toEqual(['＋ Add to layers', '⚙ Process', '‹ Change image', '✕ Clear']);
   });
@@ -358,6 +358,7 @@ describe('the layout contract in index.css', () => {
     expect(buttons).toContain('align-items: center');
     expect(buttons).toContain('justify-content: center');
     expect(rule('.vc-buttons')).toContain('grid-template-columns: 1fr 1fr');
+    expect(rule('.scene-view .vc-render > :nth-child(3)')).toContain('grid-column: span 3');
     expect(rule('.scene-view .vc-render > :nth-child(4)')).toContain('grid-column: span 5');
     expect(rule('.scene-view .vc-field select,\n.scene-view .vc-field input')).toContain('height: var(--row-height)');
     expect(rule('.scene-view .vc-render')).toContain('align-items: end');

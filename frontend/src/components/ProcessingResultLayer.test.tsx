@@ -14,7 +14,7 @@ import { layerProcessBlock, NO_COPY_TEXT, setTrackerOptions, useProcessingStore,
 import { MIN_REMAINING_MS, resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
 import JobDetails from './JobDetails';
-import LayerManager, { EXPIRED_LAYER_TEXT, RESAMPLED_LAYER_TEXT } from './LayerManager';
+import LayerManager, { EXPIRED_LAYER_TEXT } from './LayerManager';
 import PreviewBadge, { OVERVIEW_TITLE } from './PreviewBadge';
 
 declare global {
@@ -57,6 +57,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     range: null,
     bandRanges: {},
     shownBand: null,
+    dates: null,
     archived: false,
     groupId: null,
     batchId: null,
@@ -196,6 +197,28 @@ describe('the layer a result becomes', () => {
     ]);
   });
 
+  // NM4-65 part 3: the acquisition date of the scenes of the job, kept with the job, shows on the layer of its result.
+  it('carries the day of the scenes of its job, and none where the job has none', async () => {
+    useProcessingStore.setState({ jobs: [entry({ dates: '2026-07-01 – 2026-07-06' })] });
+    await showOnMap();
+    expect(layers()[0].date).toBe('2026-07-01 – 2026-07-06');
+    act(() => useAppStore.setState({ layers: [] }));
+    useProcessingStore.setState({ jobs: [entry({ dates: null })] });
+    await showOnMap();
+    expect(layers()[0]).not.toHaveProperty('date');
+  });
+
+  // NM4-65 part 4: a range the job was saved with, typed in percentiles, shows "%" again on the layer.
+  it('carries the percentiles the range of its job was typed as', async () => {
+    useProcessingStore.setState({ jobs: [entry({ range: { vmin: '3', vmax: '97', colormap: 'viridis', percent: { low: '3', high: '97' } } })] });
+    await showOnMap();
+    expect(layers()[0].result).toMatchObject({ percent: { low: '3', high: '97' } });
+    act(() => useAppStore.setState({ layers: [] }));
+    useProcessingStore.setState({ jobs: [entry({ range: { vmin: '3', vmax: '97', colormap: 'viridis' } })] });
+    await showOnMap();
+    expect(layers()[0].result).not.toHaveProperty('percent');
+  });
+
   it('is drawn with the range of the preview, as it stands', async () => {
     useProcessingStore.setState({ range: { vmin: '0', vmax: '0.5', colormap: 'viridis' } });
     await showOnMap();
@@ -290,7 +313,7 @@ describe('the layer a result becomes', () => {
           jobs: [
             {
               jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM', titleDefault: null, createdAt: '2026-10-10T12:00:00Z',
-              archived: false, groupId: null, batchId: null, part: null, range, bandRanges: {}, shownBand: null, order: null,
+              archived: false, groupId: null, batchId: null, part: null, range, bandRanges: {}, shownBand: null, dates: null, order: null,
               deletedUntil: null, serverDeleted: false, lost: false, superseded: false,
             },
           ],
@@ -416,7 +439,7 @@ describe('the layer a result becomes', () => {
     const empty = container.querySelector('.layer-row [data-col="process"]');
     expect(empty?.tagName).toBe('SPAN');
     expect(empty?.getAttribute('aria-hidden')).toBe('true');
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(10);
     expect(button('⇩')).toBeUndefined();
   });
 
@@ -432,13 +455,14 @@ describe('the layer a result becomes', () => {
     expect(container.textContent).not.toMatch(/\bunit\b/iu);
   });
 
-  it('says in its row that the result was resampled to a common grid', async () => {
+  // NM4-65 part 7: the exclamation mark "Resampled to a common grid" is gone; the warning comes before the job.
+  it('says nothing in its row of a result that was resampled to a common grid, and shows no symbol', async () => {
     useProcessingStore.setState({ jobs: [entry({ resampled: true })] });
     await showOnMap();
     act(() => root.render(<LayerManager />));
-    expect(notesOfRows()).toEqual([RESAMPLED_LAYER_TEXT]);
-    // A note is a symbol with a tooltip, not a line of its own: the row keeps its height (UI-01 §6.11).
-    expect(container.textContent).not.toContain(RESAMPLED_LAYER_TEXT);
+    expect(notesOfRows()).toEqual([]);
+    expect(container.querySelector('.lm-note')).toBeNull();
+    expect(container.textContent).not.toContain('Resampled');
   });
 });
 

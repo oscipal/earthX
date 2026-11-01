@@ -264,14 +264,24 @@ class TestThePercentilesOfNormalize:
         job = _job_statistics(_order(), tmp_path / "work")[0]
         assert {name for name in job if name.startswith("percentile_")} == {"percentile_2", "percentile_98"}
 
-    def test_an_answer_stored_before_the_percentiles_is_not_served(self) -> None:
-        """The key carries the version of the answer's form, so a cache of the older form is measured anew."""
+    def test_a_measure_carries_every_whole_percent(self, client: TestClient) -> None:
+        """NM4-65: a range is entered as percentiles from 1 to 99, so each of them is in the answer, 2 and 98 included."""
+        response = _post(client, _order())
+        assert response.status_code == 200, response.text
+        for band in response.json()["bands"]:
+            assert {name for name in band["statistics"] if name.startswith("percentile_")} == {
+                f"percentile_{percent}" for percent in range(1, 100)
+            }
+
+    @pytest.mark.parametrize("version", ["v1", "v2"])
+    def test_an_answer_stored_before_the_percentiles_is_not_served(self, version: str) -> None:
+        """The key carries the version of the answer's form, so a cache of an older form is measured anew."""
         recipe = asyncio.run(
             estimate_order(json.dumps(_order()), registry=REGISTRY, operators=OPERATORS, item_source=Fetches())
         ).recipe
         assert area_statistics_cache_key(recipe) != hashlib.sha256(
             json.dumps(
-                {"kind": "area-statistics/v1", "earthx": earthx.__version__, "recipe": recipe_hash(recipe)},
+                {"kind": f"area-statistics/{version}", "earthx": earthx.__version__, "recipe": recipe_hash(recipe)},
                 separators=(",", ":"),
                 sort_keys=True,
             ).encode()

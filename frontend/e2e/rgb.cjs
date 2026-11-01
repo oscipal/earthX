@@ -108,7 +108,7 @@ async function checkShow(browser, theme, viewport) {
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
   await page.waitForSelector('.pp-range input[type=number]', { timeout: 15000 });
   const fields = () => page.$$eval('.pp-range input[type=number]', (i) => i.map((x) => x.value));
-  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select', (s) => s.length);
+  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select:not(.vc-unit)', (s) => s.length);
   const options = () => page.$$eval('.pp-show select option', (o) => o.map((x) => `${x.value}=${x.textContent}`));
   const tileBands = () =>
     page.evaluate(async () => {
@@ -229,7 +229,8 @@ async function checkLayer(browser, theme, viewport) {
   await page.waitForSelector('.result-controls', { timeout: 5000 });
   const fields = await page.$$eval('.result-controls input[type=number]', (i) => i.map((x) => x.value));
   if (fields.join() !== '0.02,0.7') problems.push(`the view of RGB says ${fields}, not 0.02,0.7`);
-  const colormaps = await page.$$eval('.result-controls select', (s) => s.length);
+  // The settings have the dropdown "Band" now (NM4-65 part 6); only the field "Colormap" must be missing.
+  const colormaps = await page.$$eval('.result-controls .vc-field', (fields) => fields.filter((f) => f.querySelector('span')?.textContent === 'Colormap').length);
   if (colormaps !== 0) problems.push('the view of RGB shows a colormap field');
   const view = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };

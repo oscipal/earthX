@@ -516,9 +516,22 @@ function operatorQuery(assets: readonly string[], steps: readonly TileStep[], ba
   return params.toString();
 }
 
-export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string): string {
+// `percentiles`: whole percents the tiler adds to its answer as `percentile_N` (at most 20, `p` of the route); the two of
+// "vmin"/"vmax" typed in percentiles (NM4-65 part 4).
+export const withPercentiles = (url: string, percentiles: readonly number[]): string =>
+  percentiles.length === 0 ? url : `${url}${url.includes('?') ? '&' : '?'}${percentiles.map((n) => `p=${n}`).join('&')}`;
+
+export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string, percentiles: readonly number[] = []): string {
   const params = new URLSearchParams({ asset });
-  return `${itemBase(datasetId, itemId)}/statistics?${params.toString()}`;
+  return withPercentiles(`${itemBase(datasetId, itemId)}/statistics?${params.toString()}`, percentiles);
+}
+
+// The statistics of a result over the pixels its mask marks (`GET /results/{id}/statistics`, NM4-65 part 4): the bands as the
+// results document has them, each with its `statistics` and every whole percent as `percentile_N`. `410` once the result is gone.
+export async function fetchResultStatistics(resultPath: string, signal?: AbortSignal): Promise<{ statistics?: Record<string, unknown> }[]> {
+  const body = await jsonOrThrow<{ bands?: { statistics?: Record<string, unknown> }[] }>(await fetch(`${BASE}${resultPath}/statistics`, { signal }));
+  if (!Array.isArray(body.bands)) throw new Error('the tiler answered with statistics the page cannot read');
+  return body.bands;
 }
 
 // rio-tiler's `BandStatistics`, plain JSON (backend/earthx/access/tiles.py) —
@@ -538,8 +551,9 @@ export async function fetchStatistics(
   datasetId: string,
   itemId: string,
   asset: string,
+  percentiles: readonly number[] = [],
 ): Promise<Record<string, BandStatistics>> {
-  return jsonOrThrow(await fetch(buildStatisticsUrl(datasetId, itemId, asset)));
+  return jsonOrThrow(await fetch(buildStatisticsUrl(datasetId, itemId, asset, percentiles)));
 }
 
 // The statistics at an address the panel built (`buildOperatorStatisticsUrl`).

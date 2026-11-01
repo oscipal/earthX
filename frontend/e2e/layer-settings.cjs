@@ -1,6 +1,6 @@
 // Browser check of the settings of a layer (NM4-50, Otto 29.10.2026 and 30.10.2026, zu #234): in the settings of a result
 // layer, of a pinned scene layer and in a view that is no layer's "Apply" stands under "auto-scale" (one button, one width),
-// "Save" beside "Apply" (not in a view that is no layer's), and the cluster is no higher than the row of the fields. "Apply" and "Save" are locked while there is nothing to do and
+// "Save" (in the view: "Apply to all", always there since #257) beside "Apply", and the cluster is no higher than the row of the fields. "Apply" and "Save" are locked while there is nothing to do and
 // say why; "Apply" draws the layer with the typed look, what is not saved goes when the settings are closed, "Save" keeps it.
 // Light and dark theme, a wide and a narrow window; a screenshot per case.
 //
@@ -77,7 +77,10 @@ async function check(browser, { kind, theme, viewport }) {
     }
   }, { kind });
   const root = kind === 'result' ? '.result-controls' : '.scene-view';
-  const hasSave = kind !== 'view';
+  // "Apply to all" is in every view since #257; locked with its reason where it has nothing to do: in a layer's view the layer is
+  // saved as it is drawn, in a view of one image there is no other image to draw alike.
+  const hasSave = true;
+  const lockedSaveTip = { result: 'Nothing to save: the layer is saved as it is drawn', layer: 'Nothing to apply to all: the layer is saved as it is drawn', view: 'Nothing to apply to all: this dataset has only one image in the view' }[kind];
   await page.waitForSelector(`${root} .vc-apply`);
   fs.mkdirSync(OUT, { recursive: true });
   const shot = (step) => page.screenshot({ path: path.join(OUT, `${label.replace(/ /g, '_')}_${step}.png`) });
@@ -114,7 +117,8 @@ async function check(browser, { kind, theme, viewport }) {
   for (const [name, b] of [['auto', auto], ['Apply', apply], ['Save', save]]) if (b && !within(b, panel)) problems.push(`"${name}" leaves the panel`);
   if (viewport === 'wide') {
     const fields = await page.locator(`${root} .vc-render > .vc-field`).evaluateAll((els) => els.slice(0, 3).map((el) => el.getBoundingClientRect().toJSON()));
-    if (fields.some((f) => Math.abs(f.y - fields[0].y) > 4)) problems.push('the three fields are not on one line');
+    // By their bottoms: the field vmin has the unit dropdown over its label (NM4-65), so its top is higher.
+    if (fields.some((f) => Math.abs(f.y + f.height - (fields[0].y + fields[0].height)) > 4)) problems.push('the three fields are not on one line');
     if (fields.some((f) => f.y + f.height < apply.y + apply.height - 1.5)) problems.push('the buttons stand lower than the fields');
   }
   const sideways = await page.evaluate((sel) => { const el = document.querySelector(sel); return el ? el.scrollWidth > el.clientWidth + 1 : false; }, root);
@@ -126,14 +130,15 @@ async function check(browser, { kind, theme, viewport }) {
   if ((await tip('.vc-apply')) !== 'Nothing to apply: the map shows these values') problems.push(`the tooltip of the locked "Apply": ${await tip('.vc-apply')}`);
   if (hasSave) {
     if (await disabled('.vc-save') !== 'true') problems.push('"Save" is open though nothing changed');
-    if ((await tip('.vc-save')) !== 'Nothing to save: the layer is saved as it is drawn') problems.push(`the tooltip of the locked "Save": ${await tip('.vc-save')}`);
-  } else if ((await page.locator(`${root} .vc-save`).count()) !== 0) problems.push('a view that is no layer\'s has a "Save"');
+    if ((await tip('.vc-save')) !== lockedSaveTip) problems.push(`the tooltip of the locked "Save": ${await tip('.vc-save')}`);
+  }
 
   // Typing opens them; "Apply" draws; the map asks for tiles with the new look.
   const vmax = page.locator(`${root} .vc-field input`).nth(1);
   await vmax.fill('2000');
   if (await disabled('.vc-apply') === 'true') problems.push('"Apply" stays locked after a change');
-  if (hasSave && await disabled('.vc-save') === 'true') problems.push('"Save" stays locked after a change');
+  // A view of one image has no other image to draw alike: its "Apply to all" stays locked.
+  if (kind !== 'view' && await disabled('.vc-save') === 'true') problems.push('"Save" stays locked after a change');
   tiles.length = 0;
   await page.locator(`${root} .vc-apply`).click();
   await page.waitForTimeout(1200);
@@ -145,7 +150,7 @@ async function check(browser, { kind, theme, viewport }) {
     // Not saved: closing it takes the look back, the tiles are asked for with the saved look.
     if (await disabled('.vc-save') === 'true') problems.push('"Save" is locked after "Apply" though nothing is saved');
     tiles.length = 0;
-    await page.getByRole('button', { name: '‹ Close' }).click();
+    await page.locator('.result-controls .close-x').click();
     await page.waitForTimeout(1200);
     if (!tiles.some((t) => t.includes('1900'))) problems.push(`the saved look was not drawn again after the settings were closed: ${tiles.slice(0, 2).join(' | ')}`);
     const url = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers[0].overlays[0].tileUrl);
@@ -158,7 +163,7 @@ async function check(browser, { kind, theme, viewport }) {
     await page.locator(`${root} .vc-save`).click();
     await page.waitForTimeout(800);
     if (await disabled('.vc-save') !== 'true') problems.push('"Save" is open right after it was used');
-    await page.getByRole('button', { name: '‹ Close' }).click();
+    await page.locator('.result-controls .close-x').click();
     const kept = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers[0].overlays[0].tileUrl);
     if (!kept.includes('rescale=180%2C2100')) problems.push(`"Save" did not keep the look: ${kept}`);
     await shot('3-saved');

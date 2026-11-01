@@ -119,7 +119,7 @@ describe('the window', () => {
 
   it('closes the whole window with the cross', () => {
     show(jobEntry(1));
-    click(button('✕'));
+    click(container.querySelector('.close-x'));
     expect(useProcessingStore.getState()).toMatchObject({ open: false, detailJobID: null });
   });
 
@@ -189,9 +189,12 @@ describe('what it says of the job', () => {
     expect([...container.querySelectorAll('[role="alert"]')].map((a) => a.textContent)).toEqual(['The source failed', 'The result could not be shown on the map.']);
   });
 
-  it('marks a finished result that was resampled, as a symbol with the text as its tooltip', () => {
+  // NM4-65 part 7 (Otto, 31.10.2026): no exclamation mark any more; a warning to confirm comes before the job instead.
+  it('marks a finished result that was resampled by no symbol and no tooltip', () => {
     show(finished(1, { resampled: true }));
-    expect(container.querySelector('.tip.warn')?.getAttribute('data-tip')).toBe('Resampled to a common grid');
+    expect(container.querySelector('.tip.warn')).toBeNull();
+    expect(container.querySelector('.tip')).toBeNull();
+    expect(container.textContent).not.toContain('Resampled');
     show(finished(1, { resampled: false }));
     expect(container.querySelector('.tip')).toBeNull();
   });

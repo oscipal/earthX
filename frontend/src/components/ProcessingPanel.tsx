@@ -14,6 +14,8 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
+import { resamplingParts } from '../resamplingWarning';
+import { DEFAULT_PERCENT, percentOf, samePercent, type Percent, type RangeUnit } from '../percentRange';
 import { totalOf } from '../processingBatch';
 import {
   EMPTY_OUTPUT,
@@ -49,15 +51,16 @@ import {
 } from '../processingStore';
 import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
-import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
-import BandSelect from './BandSelect';
+import RenderFields from './RenderFields';
+import ResamplingDialog from './ResamplingDialog';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
 import Tip from './Tip';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
+import CloseButton from './CloseButton';
 
 // What the server says when the output needs more memory than a job may use (`plan.py`, 413).
 const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
@@ -406,9 +409,19 @@ function PreviewSection({ view }: { view: OrderView }) {
   const shown = useProcessingStore((s) => s.shown);
   const setShown = useProcessingStore((s) => s.setShown);
   const unit = previewUnit(preview, measure);
+  // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4): in percentiles the fields hold what was typed.
+  const range = useProcessingStore((s) => s.range);
+  const applyRangePercent = useProcessingStore((s) => s.applyRangePercent);
+  const [rangeUnit, setRangeUnit] = useState<RangeUnit>(() => (rangeByHand && range.percent ? 'percent' : 'value'));
+  const [typed, setTyped] = useState<Percent>(() => range.percent ?? DEFAULT_PERCENT);
+  const [percentProblem, setPercentProblem] = useState<string | null>(null);
+  const percentMode = rangeUnit === 'percent';
+  const typedPair = percentMode ? percentOf(typed) : null;
+  // Applied already: the percentiles typed are the ones of the range in force.
+  const percentApplied = percentMode && typedPair !== null && rangeByHand && samePercent(typedPair, range.percent);
   const loading = usePreviewLoading();
   const plan = planPreview(steps, view.info, measuredNumbers(steps, view.built));
-  const range = rescaleOf(rangeDraft);
+  const valueRange = rescaleOf(rangeDraft);
   // The band the map shows, and what it reads for it (adr/0020 §10): the limit of the tile is that of these assets.
   const read =
     plan.state === 'ready'
@@ -444,58 +457,62 @@ function PreviewSection({ view }: { view: OrderView }) {
       ) : (
         <>
           <div className="pp-range" role="group" aria-label="Range and colormap">
-            {read && read.choices.length > 1 && read.band !== null && (
-              <BandSelect
-                label="Show"
-                className="pp-show"
-                title="The band the map shows"
-                value={read.band}
-                options={read.choices.map((name) => ({ value: name, label: bandLabel(name) }))}
-                onChange={setShown}
-              />
-            )}
-            <label className="vc-field vc-num">
-              <span>min</span>
-              <input type="number" value={rangeDraft.vmin} onChange={(e) => setRangeDraft({ vmin: e.target.value })} />
-            </label>
-            <div className="pp-bound">
-              <label className="vc-field vc-num">
-                <span>max</span>
-                <input type="number" value={rangeDraft.vmax} onChange={(e) => setRangeDraft({ vmax: e.target.value })} />
-              </label>
-              {unit && (
-                <span className="pp-unit" aria-label="Unit of the range">
-                  {unit}
-                </span>
-              )}
-            </div>
-            {read?.band !== RGB && (
-              <label className="vc-field">
-                <span>Colormap</span>
-                <select value={rangeDraft.colormap} onChange={(e) => setRangeDraft({ colormap: e.target.value })}>
-                  <option value="">— none —</option>
-                  {COLORMAPS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <button type="button" className="primary-btn vc-apply" disabled={'problem' in range} onClick={() => applyRange()}>
+            <RenderFields
+              band={
+                read && read.choices.length > 1 && read.band !== null
+                  ? {
+                      className: 'pp-show',
+                      title: 'The band the map shows',
+                      value: read.band,
+                      options: read.choices.map((name) => ({ value: name, label: bandLabel(name) })),
+                      onChange: setShown,
+                    }
+                  : undefined
+              }
+              vmin={percentMode ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setPercentProblem(null); } } : { value: rangeDraft.vmin, onChange: (vmin) => setRangeDraft({ vmin }) }}
+              unit={{
+                value: rangeUnit,
+                onChange: (next) => {
+                  setRangeUnit(next);
+                  setPercentProblem(null);
+                  // Back in values the draft is no percentiles any more: it keeps the values they gave.
+                  if (next === 'value' && rangeDraft.percent) setRangeDraft({ percent: undefined });
+                },
+              }}
+              vmax={{
+                value: percentMode ? typed.high : rangeDraft.vmax,
+                onChange: (vmax) => (percentMode ? (setTyped((t) => ({ ...t, high: vmax })), setPercentProblem(null)) : setRangeDraft({ vmax })),
+                after: unit ? (
+                  <span className="pp-unit" aria-label="Unit of the range">
+                    {unit}
+                  </span>
+                ) : undefined,
+              }}
+              colormap={read?.band === RGB ? null : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
+            />
+            <button
+              type="button"
+              className="primary-btn vc-apply"
+              disabled={percentMode ? percentApplied : 'problem' in valueRange}
+              onClick={() => (percentMode ? void applyRangePercent(typed).then(setPercentProblem) : applyRange())}
+            >
               Apply
             </button>
             <button
               type="button"
               className="link-btn"
-              disabled={!rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
+              disabled={percentMode ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
               title="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
-              onClick={() => autoStretch()}
+              onClick={() => {
+                if (percentMode) setTyped(DEFAULT_PERCENT);
+                else autoStretch();
+              }}
             >
               Auto stretch
             </button>
           </div>
-          {'problem' in range && <p className="hint-text error">{range.problem}</p>}
+          {!percentMode && 'problem' in valueRange && <p className="hint-text error">{valueRange.problem}</p>}
+          {percentMode && percentProblem && <p className="hint-text error">{percentProblem}</p>}
           {rangeNote && <p className="hint-text">{rangeNote}</p>}
           {read?.assets.length === 0 && <p className="hint-text">Pick a band for the output to see the preview.</p>}
           {read && read.assets.length > MAX_PREVIEW_ASSETS && (
@@ -599,6 +616,10 @@ export default function ProcessingPanel() {
       ? 'Start job'
       : `Start ${batch && taken < view.parts.length ? `${taken} of ${view.parts.length}` : view.parts.length} jobs`;
   const startReady = view.runAs === 'one' ? !!estimate : taken > 0;
+  // Bands that are brought to a common grid ask for a confirmation when the review is there (NM4-65 part 7, Otto, 1.11.2026:
+  // "wenn ich auf review drücke"): "Continue" keeps the review, "Cancel" drops it.
+  const resampling = resamplingParts(estimate, batch);
+  const askResampling = resampling.length > 0 && view.key !== null && p.resamplingAsking === view.key;
   const showErrors = p.reviewAsked;
   const sceneCount = view.pass?.items.length ?? 0;
   // A refusal belongs to the order it refused; a changed draft hides it.
@@ -644,9 +665,7 @@ export default function ProcessingPanel() {
         </button>
         <div className="vc-head">
           <span className="vc-title">PROCESSING</span>
-          <button type="button" className="link-btn" title="Close the panel" onClick={close}>
-            ✕
-          </button>
+          <CloseButton onClick={close} />
         </div>
         {!reason && (
           <section className="pp-section" aria-label="Selection">
@@ -879,6 +898,7 @@ export default function ProcessingPanel() {
           ))}
           {tooLarge && <TooLarge hasAoi={hasAoi} />}
           <ShareLink view={view} />
+          {askResampling && <ResamplingDialog parts={resampling} onCancel={p.declineResampling} onContinue={p.confirmResampling} />}
         </section>
       )}
     </div>

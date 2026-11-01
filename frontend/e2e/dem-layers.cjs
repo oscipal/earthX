@@ -214,7 +214,7 @@ async function check(browser, { name, theme, viewport }) {
   await page.getByRole('button', { name: /Crop( & merge)? to AOI/ }).click();
   await page.waitForSelector('.viewer-controls');
   await page.locator('.results-head').getByRole('button', { name: 'Hide results' }).click().catch(() => {});
-  await page.locator('.viewer-controls select').selectOption('viridis');
+  await page.locator('.viewer-controls select:not(.vc-unit)').selectOption('viridis');
   await page.locator('.viewer-controls .vc-apply').click();
   await expectOn('the view after "Apply"', COLOURS.viridis);
   // The preview is the scenes as they are; the crop is the part of one scene under the AOI.
@@ -251,16 +251,17 @@ async function check(browser, { name, theme, viewport }) {
   await page.getByRole('button', { name: new RegExp(`^${spec.title}|Copernicus|Sentinel`) }).first().isVisible().catch(() => false);
   await page.locator('.layer-row:not(.results-row) .lm-name').first().click();
   await page.waitForSelector('.viewer-controls');
-  await page.locator('.viewer-controls select').selectOption('magma');
+  await page.locator('.viewer-controls select:not(.vc-unit)').selectOption('magma');
   await page.locator('.viewer-controls input[type="number"]').first().fill('5');
   await page.locator('.viewer-controls .vc-apply').click();
   await page.waitForTimeout(500);
-  await page.getByRole('button', { name: /Clear/ }).click();
+  // A layer opened from the manager closes with its red x (it has no "Clear" any more, NM4-65).
+  await page.locator('.viewer-controls .close-x').click();
   await page.locator('.layer-row:not(.results-row) .lm-name').first().click();
   await page.waitForSelector('.viewer-controls');
   await page.waitForTimeout(800);
   const controls = await page.evaluate(() => ({
-    colormap: document.querySelector('.viewer-controls select')?.value,
+    colormap: document.querySelector('.viewer-controls select:not(.vc-unit)')?.value,
     vmin: document.querySelector('.viewer-controls input[type="number"]')?.value,
   }));
   if (controls.colormap !== 'viridis' || controls.vmin !== '10') problems.push(`the controls of the layer show ${controls.colormap}, ${controls.vmin}; the layer was made with viridis, 10`);

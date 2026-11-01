@@ -70,7 +70,7 @@ def area_statistics_cache_key(recipe: Any) -> str:
     from earthx.processing.recipe import recipe_hash
 
     payload = json.dumps(
-        {"kind": "area-statistics/v2", "earthx": earthx.__version__, "recipe": recipe_hash(recipe)},
+        {"kind": "area-statistics/v3", "earthx": earthx.__version__, "recipe": recipe_hash(recipe)},
         separators=(",", ":"),
         sort_keys=True,
     )

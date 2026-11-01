@@ -41,6 +41,7 @@ import {
   type Operator,
   type ProcessInfo,
 } from './processingOrder';
+import type { Percent } from './percentRange';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
 import { isStatistical, type Measured } from './normalizeMethods';
 import { paramsFrom, type Field } from './schemaForm';
@@ -76,6 +77,8 @@ export interface PreviewRange {
   vmax: string;
   // `''`: no colormap.
   colormap: string;
+  // What the range was typed as where it was typed in percentiles (NM4-65 part 4): `vmin`/`vmax` hold the values they gave.
+  percent?: Percent;
 }
 
 export const DEFAULT_RANGE: PreviewRange = {
@@ -564,6 +567,9 @@ export interface PreviewMeasure {
   source: 'area' | 'scene' | 'fallback';
   // Over the AOI: the values are the result's; else the tiler read a coarser raster. Always `true` for a scene.
   exact: boolean;
+  // What the statistics named of each band that has a valid pixel, whole: where "vmin"/"vmax" typed in percentiles are read
+  // from, if they name them (NM4-65 part 4).
+  raw?: Record<string, unknown>[];
 }
 
 const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
@@ -594,7 +600,7 @@ export function measureOf(
   });
   const unit = commonUnit(bands.map((band) => (typeof band.unit === 'string' ? band.unit : null)));
   const named = read.some((band) => band.minimum !== null && band.maximum !== null);
-  return { key, stats: named ? { bands: read, expression } : null, unit, source, exact: true };
+  return { key, stats: named ? { bands: read, expression } : null, unit, source, exact: true, raw: bands.filter((band) => (finite(band.count) ?? 0) > 0) };
 }
 
 // The statistics over the AOI as a measure: the object of the results document per band, read as a result's are.
@@ -605,6 +611,7 @@ export function areaMeasureOf(key: string, answer: AreaStatistics, expression: b
     unit: commonUnit(answer.bands.map((band) => band.unit)),
     source: 'area',
     exact: answer.exact,
+    raw: answer.bands.map((band) => band.statistics).filter((stats) => (finite(stats.count) ?? 0) > 0),
   };
 }
 

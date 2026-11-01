@@ -273,6 +273,17 @@ describe('closing keeps the values', () => {
     expect(useAppStore.getState().searchFilters).toEqual(kept);
   });
 
+  // NM4-65 part 8: the red "x" of every closing, here beside the dataset box; it closes like "Done".
+  it('the red "x" closes it, gives the focus back to the button and keeps the values', () => {
+    filled();
+    const cross = popup()!.querySelector<HTMLButtonElement>('.advanced-top .close-x')!;
+    expect(cross.title).toBe('Close');
+    act(() => cross.click());
+    expect(popup()).toBeNull();
+    expect(document.activeElement).toBe(button());
+    expect(useAppStore.getState().searchFilters).toEqual(kept);
+  });
+
   it('Escape closes it and gives the focus back to the button', () => {
     filled();
     key(field('Cloud cover, to'), 'Escape');
@@ -637,7 +648,9 @@ describe('"Filter within AOI only"', () => {
     expect(container.querySelectorAll('.within-aoi')).toHaveLength(1);
     expect(text(within())).toBe('Filter within AOI only');
     const body = container.querySelector('.advanced-popup-body')!;
-    expect([...body.children].map((c) => c.className.split(' ')[0])).toEqual(['dataset-select', 'within-aoi', 'advanced-fields', 'advanced-actions']);
+    expect([...body.children].map((c) => c.className.split(' ')[0])).toEqual(['advanced-top', 'within-aoi', 'advanced-fields', 'advanced-actions']);
+    // The dataset box and the red x (NM4-65 part 8) share the first line.
+    expect([...body.firstElementChild!.children].map((c) => c.className.split(' ')[0])).toEqual(['dataset-select', 'close-x']);
   });
 
   it('is not there for a dataset none of whose filters depend on the area', () => {

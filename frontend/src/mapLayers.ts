@@ -87,7 +87,17 @@ function restackAll(map: MapLibreMap): void {
   if (typeof map.getLayersOrder !== 'function') return;
   const pinned = wantedOverlays.filter((w) => isPlaced(map, w));
   const results = [...resultsKeys].filter(([id]) => map.getLayer(id)).sort(byKey).map(([id]) => id);
-  const want = [...pinned.filter((w) => !w.above).map((w) => w.lyrId), ...results, ...pinned.filter((w) => w.above).map((w) => w.lyrId)];
+  // "Flip through layers" (NM4-65 part 9): the chosen layer lies over every other picture of the app, only the outlines of the
+  // results (their last tier) stay over it, as they do over every layer. The list is not touched: it is this order that changes.
+  const flipped = pinned.filter((w) => w.flip).map((w) => w.lyrId);
+  const outlines = new Set(flipped.length === 0 ? [] : [...resultsKeys].filter(([, key]) => key.tier >= TIERS.indexOf('outline')).map(([id]) => id));
+  const want = [
+    ...pinned.filter((w) => !w.above && !w.flip).map((w) => w.lyrId),
+    ...results.filter((id) => !outlines.has(id)),
+    ...pinned.filter((w) => w.above && !w.flip).map((w) => w.lyrId),
+    ...flipped,
+    ...results.filter((id) => outlines.has(id)),
+  ];
   const order = map.getLayersOrder();
   const top = rastersTop(map);
   let above = top;
@@ -826,6 +836,8 @@ interface WantedOverlay {
   sig: string;
   // Of a layer above "Results" in the list (NM4-59).
   above: boolean;
+  // Of the layer that "Flip through layers" draws on top of all the others (NM4-65 part 9).
+  flip: boolean;
 }
 
 interface PlacedOverlay {
@@ -849,7 +861,7 @@ function overlaySignature(ov: LayerOverlay): string {
 // The overlays up to the budget, bottom to top, and how many did not fit. The budget is spent from the
 // top: the layers on top of the list, and of a layer its topmost overlays (the mosaic of a time step),
 // are always whole; what is left out is the bottom of the stack.
-function wantedOverlaysOf(layers: MapLayer[], above: number): { wanted: WantedOverlay[]; notDrawn: number } {
+function wantedOverlaysOf(layers: MapLayer[], above: number, flipId: string | null = null): { wanted: WantedOverlay[]; notDrawn: number } {
   const wanted: WantedOverlay[] = [];
   let notDrawn = 0;
   for (const [index, layer] of layers.entries()) {
@@ -869,6 +881,7 @@ function wantedOverlaysOf(layers: MapLayer[], above: number): { wanted: WantedOv
         opacity: layer.opacity,
         sig: overlaySignature(overlay),
         above: index < above,
+        flip: layer.id === flipId,
       });
     }
   }
@@ -928,9 +941,10 @@ function placeWanted(map: MapLibreMap, w: WantedOverlay, dataUrl?: string): void
 }
 
 // Returns how many overlays the budget left out (`overlayBudgetNote`). `resultsAt`: how many layers of the list lie
-// above "Results" (`store.ts`); none where it is left out, as before NM4-59.
-export function syncLayers(map: MapLibreMap, layers: MapLayer[], resultsAt = 0): number {
-  const { wanted, notDrawn } = wantedOverlaysOf(layers, resultsAt);
+// above "Results" (`store.ts`); none where it is left out, as before NM4-59. `flipId`: the layer "Flip through layers" draws
+// over all the others (NM4-65 part 9); none, the order of the list.
+export function syncLayers(map: MapLibreMap, layers: MapLayer[], resultsAt = 0, flipId: string | null = null): number {
+  const { wanted, notDrawn } = wantedOverlaysOf(layers, resultsAt, flipId);
   wantedOverlays = wanted;
   const known = new Map(wanted.map((w) => [w.lyrId, w]));
   // Gone from the list, or built from something else now: out.

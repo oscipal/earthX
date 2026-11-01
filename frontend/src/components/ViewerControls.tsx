@@ -13,15 +13,18 @@ import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
-import { COLORMAPS, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
+import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, INDEX_TIP, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { viewKind } from '../viewKind';
+import { layerShownName } from '../layerName';
 import { layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Chevron from './Chevron';
+import CloseButton from './CloseButton';
 import Eye from './Eye';
+import RenderFields from './RenderFields';
 
 export default function ViewerControls() {
   const pendingColormapName = useAppStore((s) => s.pendingColormapName);
@@ -30,6 +33,11 @@ export default function ViewerControls() {
   const setPendingColormapName = useAppStore((s) => s.setPendingColormapName);
   const setPendingVmin = useAppStore((s) => s.setPendingVmin);
   const setPendingVmax = useAppStore((s) => s.setPendingVmax);
+  const pendingUnit = useAppStore((s) => s.pendingUnit);
+  const pendingPercentLow = useAppStore((s) => s.pendingPercentLow);
+  const pendingPercentHigh = useAppStore((s) => s.pendingPercentHigh);
+  const setPendingUnit = useAppStore((s) => s.setPendingUnit);
+  const setPendingPercent = useAppStore((s) => s.setPendingPercent);
   const applyRender = useAppStore((s) => s.applyRender);
   // Whether "Apply" would draw anything else than the map shows.
   const changed = useAppStore((s) => lookChanged(s.appliedRender, s));
@@ -95,6 +103,9 @@ export default function ViewerControls() {
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
   // The view of a layer of the layer manager has no dropdown: the index of a layer is the one it was added with (Otto, 1.11.2026).
   const showIndex = presets.length > 0 && !viewOfLayer;
+  // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
+  // is still open from the search keeps all of it, also once its image is pinned.
+  const compact = viewOfLayer && layer !== null;
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -123,6 +134,19 @@ export default function ViewerControls() {
 
   return (
     <div className="panel viewer-controls scene-view">
+      {compact ? (
+        // The view of a layer opened from the layer manager has the box of every layer: its name, the way to close it, the fields
+        // and nothing under them: one row, as before, with no row of buttons for pinning, processing or changing the image (NM4-65, Otto,
+        // 1.11.2026).
+        <div className="vc-head">
+          <span className="vc-title" title={layerShownName(layer)}>
+            {layerShownName(layer).toUpperCase()}
+          </span>
+          <div className="results-head-right">
+            <CloseButton onClick={() => exitFocus()} />
+          </div>
+        </div>
+      ) : (
       <div className="vc-head">
         <span className="vc-title" title={title}>
           {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
@@ -179,60 +203,30 @@ export default function ViewerControls() {
           <Eye off={!showDownloaded} />
         </button>
       </div>
+      )}
 
       <div className={`vc-render${showIndex ? ' has-index' : ''}`}>
-        {showIndex && (
-          <label className="vc-field" title={chosen ? presetTip(chosen) : INDEX_TIP}>
-            <span>Index</span>
-            <select value={chosen?.name ?? ''} onChange={(e) => chooseViewIndex(e.target.value || null)}>
-              <option value="">— none —</option>
-              {presets.map((preset) => (
-                <option key={preset.name} value={preset.name} title={presetTip(preset)}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <label className="vc-field">
-          <span>Colormap</span>
-          {colormap ? (
-            <select value={pendingColormapName} onChange={(e) => setPendingColormapName(e.target.value)}>
-              <option value="">— none —</option>
-              {COLORMAPS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          ) : (
-            // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
-            <select value="" title="True colour: three bands, no colormap" onChange={() => undefined}>
-              <option value="">RGB</option>
-            </select>
-          )}
-        </label>
-        <label className="vc-field vc-num">
-          <span>vmin</span>
-          <input
-            type="number"
-            value={pendingVmin}
-            placeholder="auto"
-            onChange={(e) => setPendingVmin(e.target.value)}
-          />
-        </label>
-        <label className="vc-field vc-num">
-          <span>vmax</span>
-          <input
-            type="number"
-            value={pendingVmax}
-            placeholder="auto"
-            onChange={(e) => setPendingVmax(e.target.value)}
-          />
-        </label>
+        <RenderFields
+          index={
+            showIndex
+              ? {
+                  value: chosen?.name ?? '',
+                  options: presets.map((preset) => ({ name: preset.name, tip: presetTip(preset) })),
+                  tip: chosen ? presetTip(chosen) : INDEX_TIP,
+                  onChange: chooseViewIndex,
+                }
+              : undefined
+          }
+          vmin={pendingUnit === 'percent' ? { value: pendingPercentLow, onChange: (text) => setPendingPercent('low', text) } : { value: pendingVmin, onChange: setPendingVmin }}
+          vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
+          unit={{ value: pendingUnit, onChange: setPendingUnit }}
+          // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
+          colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: 'RGB', title: 'True colour: three bands, no colormap' }}
+          placeholder="auto"
+        />
         <div className="vc-buttons">
           <AutoScaleButton
-            title={focusLoading ? 'Measuring the range…' : 'Measure the 2nd/98th percentile stretch from the source again'}
+            title={focusLoading ? 'Measuring the range…' : pendingUnit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Measure the 2nd/98th percentile stretch from the source again'}
             busy={focusLoading}
             onClick={() => void autoStretch()}
           />
@@ -277,43 +271,45 @@ export default function ViewerControls() {
         </p>
       )}
 
-      <div className={`vc-actions${images.length > 1 ? ' has-all' : ''}`}>
-        <button
-          type="button"
-          className="ghost-btn"
-          title={images.length > 1 ? 'Pin the image that is shown into the layer manager' : 'Pin this image into the layer manager'}
-          disabled={pinLoading}
-          onClick={() => addCurrentToLayers()}
-        >
-          {pinLoading ? 'Loading…' : '＋ Add to layers'}
-        </button>
-        {images.length > 1 && (
+      {!compact && (
+        <div className={`vc-actions${images.length > 1 ? ' has-all' : ''}`}>
           <button
             type="button"
             className="ghost-btn"
-            title={`Pin all ${images.length} images of the view into the layer manager, one layer each`}
+            title={images.length > 1 ? 'Pin the image that is shown into the layer manager' : 'Pin this image into the layer manager'}
             disabled={pinLoading}
-            onClick={() => addAllToLayers()}
+            onClick={() => addCurrentToLayers()}
           >
-            {pinLoading ? 'Loading…' : '＋ Add all to layers'}
+            {pinLoading ? 'Loading…' : '＋ Add to layers'}
           </button>
-        )}
-        <button
-          type="button"
-          className="ghost-btn"
-          disabled={processBlock !== null}
-          title={processBlock ?? 'Build a processing job for the scenes of this view'}
-          onClick={() => void processFocusView()}
-        >
-          ⚙ Process
-        </button>
-        <button type="button" className="ghost-btn" title="Remove this view and choose another scene from the results" onClick={() => changeImage()}>
-          ‹ Change image
-        </button>
-        <button type="button" className="ghost-btn" title="Remove this view from the map" onClick={() => exitFocus()}>
-          ✕ Clear
-        </button>
-      </div>
+          {images.length > 1 && (
+            <button
+              type="button"
+              className="ghost-btn"
+              title={`Pin all ${images.length} images of the view into the layer manager, one layer each`}
+              disabled={pinLoading}
+              onClick={() => addAllToLayers()}
+            >
+              {pinLoading ? 'Loading…' : '＋ Add all to layers'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="ghost-btn"
+            disabled={processBlock !== null}
+            title={processBlock ?? 'Build a processing job for the scenes of this view'}
+            onClick={() => void processFocusView()}
+          >
+            ⚙ Process
+          </button>
+          <button type="button" className="ghost-btn" title="Remove this view and choose another scene from the results" onClick={() => changeImage()}>
+            ‹ Change image
+          </button>
+          <button type="button" className="ghost-btn" title="Remove this view from the map" onClick={() => exitFocus()}>
+            ✕ Clear
+          </button>
+        </div>
+      )}
     </div>
   );
 }

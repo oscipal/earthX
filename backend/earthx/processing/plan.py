@@ -42,6 +42,7 @@ from earthx.access.crop_rules import (
     bytes_per_pixel,
     compute_crop_region,
     estimate_output_dims,
+    target_crs,
 )
 from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
@@ -53,17 +54,23 @@ __all__ = [
     "EXPORT_FACTOR",
     "MAX_JOB_MEMORY_BYTES",
     "RASTER_WITHOUT_STEP_FACTOR",
+    "RESAMPLING_METHOD",
     "SECONDS_PER_ASSET",
     "SECONDS_PER_EXPORT_MB",
     "SECONDS_PER_EXPORT_MB_PER_ITEM",
     "SECONDS_PER_INPUT_MB",
     "SECONDS_PER_OUTPUT_BAND_MPIXEL",
     "DISK_RESERVE_BYTES",
+    "BandOnOtherGrid",
     "CostEstimate",
+    "GridFacts",
     "PlannedStep",
+    "ResamplingFacts",
+    "ScenesInOtherZone",
     "Segment",
     "check_bands",
     "crop_window",
+    "describe_resampling",
     "disk_needed",
     "estimate",
     "export_outputs",
@@ -595,6 +602,118 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         units=output_pixels / 1_000_000 * stock.weighted_bands,
         memory_bytes=memory,
     )
+
+
+#: How the core brings a value band of a coarser asset, or a scene of another zone, onto the grid of the finest
+#: asset: read with ``nearest`` (``source.common_grid``, ``mosaic``, which warps with the constants of ``reproject``).
+RESAMPLING_METHOD = "nearest"
+
+#: Two pixel sizes are the same grid up to this (``source._GRID_TOLERANCE``).
+_SAME_SIZE = 1e-6
+
+
+@dataclass(frozen=True, slots=True)
+class GridFacts:
+    """The grid the values of a job lie on: the finest pixel size (metres, the item's ``gsd``) and the CRS, if the item names one."""
+
+    resolution: float
+    crs: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class BandOnOtherGrid:
+    """A band of the data that reaches the result and whose source does not lie on the grid of the job."""
+
+    band: str
+    resolution: float
+    crs: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ScenesInOtherZone:
+    """``count`` of the ``of`` scenes of a mosaic lie in another CRS than ``crs``, the one most scenes share."""
+
+    count: int
+    of: int
+    crs: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplingFacts:
+    """What a raster job converts silently, from the recipe alone (no read): the values of ``bands`` and of ``scenes``."""
+
+    grid: GridFacts
+    method: str
+    bands: tuple[BandOnOtherGrid, ...]
+    scenes: ScenesInOtherZone | None
+
+
+def _crs_by_asset(recipe: Recipe) -> dict[str, str | None]:
+    """The CRS each asset is read in: the one most of its scenes are in, as the mosaic picks its target (``target_crs``)."""
+    scenes: dict[str, dict[str, str | None]] = {}
+    for entry in recipe.inputs[0].resolved:
+        scenes.setdefault(entry.asset.asset, {})[entry.asset.item_id] = entry.asset.crs
+    return {asset: target_crs(crs_by_item) for asset, crs_by_item in scenes.items()}
+
+
+def _feeding_bands(live: Sequence[PlannedStep], output: Sequence[str]) -> frozenset[str]:
+    """The bands of the data whose values reach the output.
+
+    Worked from the end through the steps that run. A step that adds a band (``band_math``) hands on what it reads;
+    what a step that adds none reads is the layer it decides by (``mask``, ``mask_values``, :class:`BandUse`): it
+    hides pixels and gives no value, so it does not feed the result.
+    """
+    feeding = frozenset(output)
+    for step in reversed(live):
+        use = step.operator.bands_used(step.params)
+        if use.adds is not None and use.adds in feeding:
+            feeding = (feeding - {use.adds}) | use.reads
+    return feeding
+
+
+def describe_resampling(recipe: Recipe, operators: OperatorRegistry) -> ResamplingFacts | None:
+    """What a raster job converts onto a common grid without being asked to, or ``None``; reads nothing.
+
+    The rule of the job (:func:`~earthx.processing.source.common_grid` and ``_source_meta`` of the core): the grid is
+    that of the asset with the finest ``gsd`` (:func:`_finest`); a band is converted where its asset has another pixel
+    size or CRS, and a scene of a mosaic where it lies in another CRS than most (:func:`target_crs`). Like the flag
+    ``earthx:resampled`` of the result, only a band that reaches the output counts (:func:`_feeding_bands`): a
+    classification layer that only masks is read onto the grid and does not appear.
+
+    ``None`` as well for an export (native values), for an order with a ``grid`` step (``reproject``: the person chose
+    the target and the method, that step describes it) and where an asset has no ``gsd`` (the estimate refuses that
+    before). A CRS the item does not name is ``None`` in the facts: it is neither compared nor guessed.
+    """
+    if not isinstance(recipe.output, RasterOutput):
+        return None
+    live = live_steps(plan_steps(recipe.steps, operators), recipe.output.bands)
+    entries = _asset_entries(recipe)
+    if any(step.operator.kind == "grid" for step in live) or not entries or any(e.gsd is None for e in entries):
+        return None
+    finest = _finest(entries)
+    crs_of = _crs_by_asset(recipe)
+    grid = GridFacts(finest.gsd, crs_of[finest.asset.asset])
+
+    def on_grid(entry: ResolvedInput) -> bool:
+        crs = crs_of[entry.asset.asset]
+        return math.isclose(entry.gsd, grid.resolution, rel_tol=_SAME_SIZE) and (
+            crs is None or grid.crs is None or crs == grid.crs
+        )
+
+    feeding = _feeding_bands(live, recipe.output.bands)
+    bands = tuple(
+        BandOnOtherGrid(name, entry.gsd, crs_of[entry.asset.asset])
+        for entry in entries
+        if not on_grid(entry)
+        for name in expected_band_names(entry) or [entry.asset.asset]
+        if name in feeding
+    )
+    scenes = None
+    crs_by_scene = {e.asset.item_id: e.asset.crs for e in recipe.inputs[0].resolved if e.asset.asset == finest.asset.asset}
+    if len(crs_by_scene) > 1 and (target := target_crs(crs_by_scene)) is not None:
+        apart = sum(1 for crs in crs_by_scene.values() if crs is not None and crs != target)
+        scenes = ScenesInOtherZone(apart, len(crs_by_scene), target) if apart else None
+    return ResamplingFacts(grid, RESAMPLING_METHOD, bands, scenes) if bands or scenes else None
 
 
 def export_outputs(recipe: Recipe) -> list[PlannedOutput]:
