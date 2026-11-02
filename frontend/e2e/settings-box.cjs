@@ -142,6 +142,8 @@ async function measure(page) {
     const round = (n) => Math.round(n * 10) / 10;
     const rect = (e) => (e ? (({ x, y, width, height, right, bottom }) => ({ x: round(x), y: round(y), w: round(width), h: round(height), right: round(right), bottom: round(bottom) }))(e.getBoundingClientRect()) : null);
     const bar = document.querySelector('aside.inspector');
+    // Under 900 px with controls for a finger the sheet scrolls: measured from its top.
+    bar.querySelector('.insp-body').scrollTop = 0;
     const base = rect(bar);
     const field = (name) => [...bar.querySelectorAll('.vc-render label')].find((l) => l.querySelector('span')?.textContent === name);
     const heading = (name) => [...bar.querySelectorAll('.insp-heading')].find((h) => h.textContent === name);
