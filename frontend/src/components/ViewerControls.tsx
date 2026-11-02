@@ -107,7 +107,6 @@ export default function ViewerControls() {
   // What the head cuts short, in full.
   const title = [datasetTitle, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
   const here = shown ? imagesOfDataset(images, shown.datasetId) : [];
-  const originalsAllowed = isCogFormat(shown ? datasets.find((d) => d.id === shown.datasetId) : undefined);
   // What "Download full scene" will load, told in its tooltip.
   const originalsSummary = useMemo(() => {
     const dataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
@@ -120,6 +119,7 @@ export default function ViewerControls() {
   }, [shown, datasets, sections, openSectionId, datasetId, items, groups]);
   // An image of three bands has no colormap field.
   const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
+  const originalsAllowed = isCogFormat(shownDataset);
   // The index of the dataset the image shows in place of a band (NM4-14b): a dataset without presets has no dropdown.
   const presets = indexPresetsOf(shownDataset?.collection);
   // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
