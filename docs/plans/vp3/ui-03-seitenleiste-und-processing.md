@@ -297,3 +297,7 @@ Ersetzt die betroffenen Stellen von §7.2 (Skizze), §7.3 (Felder, Opacity, Acti
 9. **Antworten Otto zu den offenen Fragen (02.11.2026):** (1) Esc schließt auch Menüs, Auswahllisten und Tooltips nicht (Option 2); sie schließen mit einer Wahl bzw. einem Klick daneben, ein Tooltip, wenn Zeiger oder Fokus gehen. (2) Ein Klick neben „Advanced search“ schließt das Pop-up weiter (Option 1). (3) „Quick processing“ für UI-03d wie unter 8 (Option 1).
 10. **Seitenleiste bis ganz oben:** Seitenleiste und Processing-Panel in derselben Spalte reichen ohne Spalt von der Oberkante bis zum Fuß (`top: 0`); die Knöpfe oben („Zoom to selection“, „Basemap“, Thema) stehen links neben der Spalte. Ersetzt „volle Höhe unter der Knopfzeile“ aus Frage 3.
 11. **„Select a scene“** steht als ruhige Pille mit Haken-Symbol mittig zwischen Oberkante des Blocks und Zeitleiste.
+
+### 7.11 Nachtrag UI-03c (02.11.2026): Stand der Umsetzung
+
+Umgesetzt wie §7.9. Abweichungen und Auslegungen (Vorschlag, bis Otto widerspricht): Ein teils links hinausgeschobenes Fenster wird mit negativem `x` gemerkt, solange 120 px sichtbar sind; Retry und Download/Restore behalten je einen festen Platz vor „⋯“, statt eines gemeinsamen Hauptknopfs (bei einem Stapel können beide gelten); Gruppen: Umbenennen und Entfernen im Menü „⋯“ des Kopfes, Anzahl und „n running“ im Kopf. Browserprüfung: `frontend/e2e/jobs-window.cjs` (neu); `job-retry.cjs` an das Fenster angepasst.
