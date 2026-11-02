@@ -157,8 +157,8 @@ Ein Bauteil `Inspector.tsx` mit drei Inhalten (Ansicht der Suche, angeheftete An
 ├────────────────────────────────────┤
 │ DISPLAY                            │  Abschnitt 1
 │ Band      [ RGB                 ▾] │
-│ Range     [ 100   ] – [ 2900  ]    │
-│           [ Values | %  ]          │
+│ vmin      [ 100                 ]  │
+│ vmax      [ 2900          ] [Val▾] │
 │ Colormap  [ — none —            ▾] │  gesperrt bei RGB, Grund im Tooltip
 │ Opacity   ━━━━━━━━━━━━━━○  80 %    │  gesperrt in der Ansicht der Suche (Frage 6)
 │ [ Auto ]  [ Apply ]  [ Apply to all]│  bzw. „Save“ am Layer
@@ -170,12 +170,13 @@ Ein Bauteil `Inspector.tsx` mit drei Inhalten (Ansicht der Suche, angeheftete An
 └────────────────────────────────────┘
 ```
 
+- **Namen:** Band · vmin · vmax · Colormap wie überall (Regel NM4-65 Teil 6); der Umschalter „Value / %“ bleibt das kleine Dropdown hinter vmax. Die Skizze in §7.2 mit „Min/Max“ ist nur Kurzschrift.
 - **Raster:** Beschriftung links in einer Spalte von 72 px (Apple-Formular, §7.5), Bedienelement rechts; jede Zeile 28 px hoch, 8 px Abstand, 24 px zwischen Abschnitten; Abschnittsüberschrift 11 px, halbfett, `--muted`. Keine Rahmen um Abschnitte, nur eine Linie unter dem Kopf.
 - **Gesperrt statt weg:** was für die Wahl nicht gilt, bleibt an seinem Platz, gesperrt mit Grund im Tooltip (Colormap bei RGB, Pfeile bei einem Bild, Band bei einem Ergebnis mit einem Band). Regeln aus #272 unverändert (Vorgabe oben): Apply zeichnet, Save behält, Schließen ohne Save stellt den gespeicherten Stand her.
 - **Kopf, Zeile 2 am Layer:** das Aufnahmedatum als Text an der Stelle von `‹ Datum ›` (NM4-65), Pfeile gesperrt („A layer holds one image“); ohne Datum bleibt die Zeile leer stehen, damit „Display“ immer an derselben Höhe beginnt [A].
 - **Actions je Art (Frage 6):** Ansicht der Suche: „＋ Add to layers“, „＋ Add all to layers“ (gesperrt bei einem Bild), „⚙ Process“, „‹ Change image“, „✕ Clear“, wie heute. **Downloads liegen heute nicht in der Box** [P]: die der Auswahl („⇩ Download crop“, „⇩ Download full scene“) in der Auswahlleiste unten, die eines Layers (⇩, auch „Download (ZIP)“ eines Ergebnisses) in seiner Zeile im Layer-Manager. Empfehlung: ⇩ zusätzlich in „Actions“ der Seitenleiste, mit derselben Funktion und demselben Dialog (`DownloadDialog`), ohne sie an den alten Stellen zu entfernen; Entfernen eines Layers bleibt nur im Layer-Manager.
 - **Wechsel:** eine andere Ansicht bzw. ein anderer Layer tauscht den Inhalt, die Leiste bleibt stehen (kein Schließen und Öffnen, keine Animation); für den alten Layer gilt „Schließen ohne Save“ wie heute.
-- **Schließen:** rotes x (`CloseButton`) und Esc (`useEscClose`, Ausnahmen wie heute: Feld, Menü, Panel am Rand). Fokus nach dem Schließen auf das Element, das sie geöffnet hat (Layer-Zeile bzw. Knopf der Auswahlleiste) [A].
+- **Schließen:** rotes x (`CloseButton`) und Esc (`useEscClose`, Ausnahmen wie heute: Feld, Menü, Panel am Rand). Auslegung (Vorschlag, gilt bis Otto widerspricht): An der Ansicht der Suche tun x und Esc, was „✕ Clear“ tut (`exitFocus`: Ansicht von der Karte, „Temporary“ geht), denn eine Ansicht ohne Seitenleiste hätte keinen Weg zurück zu ihren Einstellungen; das ersetzt für Esc „die Ansicht der Suche bleibt offen“ aus #272. Am Layer wie heute: Schließen ohne „Save“ stellt den gespeicherten Stand her. Fokus nach dem Schließen auf das Element, das sie geöffnet hat (Layer-Zeile bzw. Knopf der Auswahlleiste) [A].
 - **Bedienelemente:** Segment-Umschalter (Values | %), Schieber (Opacity), Dropdowns und Zahlfelder einheitlich in Höhe 28 px, Radius 6 px, gleiche Fokuslinie; Knöpfe in zwei Formen (gefüllt für den Hauptknopf, Umriss für die übrigen).
 
 ### 7.4 Tokens
