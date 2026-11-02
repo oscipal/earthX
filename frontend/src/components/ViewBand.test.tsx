@@ -491,6 +491,22 @@ describe('the mark "Temporary" and the layers', () => {
     expect(temporary()).toBe(false); // back to what the layer holds
   });
 
+  // Otto, 2.11.2026: compared by what is drawn, not by whether something was changed.
+  it('is gone again when the range is changed, applied, and set back to the values of the layer, typed as other text', async () => {
+    mount({ selectedIds: [] });
+    await pin('addCurrentToLayers');
+    expect(temporary()).toBe(false);
+    act(() => useAppStore.setState({ pendingVmin: '100', pendingVmax: '2000' }));
+    apply();
+    await settle();
+    expect(temporary()).toBe(true);
+    act(() => useAppStore.setState({ pendingVmin: '0.0', pendingVmax: '3000.0' }));
+    apply();
+    await settle();
+    expect(store().appliedRender.rescale).toBe('0.0,3000.0');
+    expect(temporary()).toBe(false);
+  });
+
   it('is gone at once with "Add all to layers", though the fields hold a measured range (Otto, 1.11.2026)', async () => {
     twoImages();
     act(() => useAppStore.setState({ pendingVmin: '12', pendingVmax: '2999' }));

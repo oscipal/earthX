@@ -12,11 +12,11 @@ import { DRAW_AOI_TO_CROP, isCogFormat, layerDownloadKind, noOriginalsReason } f
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { showsColormap } from '../datasets';
+import { defaultRenderOf, showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
-import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
+import { appliedRenderFrom, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
@@ -164,7 +164,11 @@ export default function ViewerControls() {
   const at = shown ? here.indexOf(shown) : -1;
   // Temporary where no layer holds the image as it is drawn now (Otto, 1.11.2026). What is only typed in the fields does not count: the
   // measured range that stands in them when the view opens is no change; "Apply" is.
-  const temporary = shown ? isTemporaryImage(layers, shown, appliedRender, { cropToAoi: cropToAoi && viewAoi !== null, aoi: viewAoi }) : false;
+  const standardLook = useMemo(() => {
+    const render = shownDataset ? defaultRenderOf(shownDataset.collection) : null;
+    return render ? appliedRenderFrom(render) : {};
+  }, [shownDataset]);
+  const temporary = shown ? isTemporaryImage(layers, shown, appliedRender, { cropToAoi: cropToAoi && viewAoi !== null, aoi: viewAoi }, standardLook) : false;
   const datasetIds = datasetIdsOf(images);
   // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
   const stepText = shown ? (shown.date ?? shown.groupLabel) : '';

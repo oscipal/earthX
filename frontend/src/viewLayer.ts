@@ -60,17 +60,33 @@ export function viewShown(viewLayer: MapLayer | null, showDownloaded: boolean): 
 // when it was made of exactly its scenes, cut the same way, and has the look the image has (what the fields ask for included): "Add to
 // layers" takes the mark off the image it pinned, and a change of the look, of the scenes or of the crop puts it back; "Add all to
 // layers" takes it off every image it pinned, so that a step that was not changed shows none.
+// Looks are compared by what they draw (Otto, 2.11.2026): changed and set back, the image is the layer's again. `base` is the standard
+// look of the dataset, which a look of the standard picture draws where it says nothing.
 export function isTemporaryImage(
   layers: readonly MapLayer[],
   image: { ids: readonly string[]; datasetId: string },
   look: AppliedRender,
   view: { cropToAoi: boolean; aoi: GeoJSON.Geometry | null },
+  base: AppliedRender = {},
 ): boolean {
+  const drawn = drawnLook(look, base);
   return !layers.some((layer) => {
     const r = layer.restore;
     if (layer.derived || !r.focusMode || r.datasetId !== image.datasetId || r.cropToAoi !== view.cropToAoi) return false;
     if (view.cropToAoi && JSON.stringify(r.aoi) !== JSON.stringify(view.aoi)) return false;
     if (r.itemIds.length !== image.ids.length || !image.ids.every((id) => r.itemIds.includes(id))) return false;
-    return sameRender(r.appliedRender, look);
+    return drawnLook(r.appliedRender, base) === drawn;
   });
+}
+
+// What a look draws, as one text: the range as numbers, the standard look where the standard picture leaves a field empty. How the range
+// was typed (`percent`) draws nothing of its own.
+function drawnLook(look: AppliedRender, base: AppliedRender): string {
+  const standard = !look.band && !look.index && !look.bidx;
+  const field = (key: 'expression' | 'colormapName' | 'rescale') => look[key] || (standard ? base[key] : undefined) || '';
+  const rescale = field('rescale')
+    .split(',')
+    .map((end) => (end.trim() === '' || !Number.isFinite(Number(end)) ? end.trim() : String(Number(end))))
+    .join(',');
+  return JSON.stringify([look.band || '', look.index || '', look.bidx || '', field('expression'), field('colormapName'), rescale]);
 }
