@@ -1,5 +1,5 @@
-// How the result of a job is drawn (UI-01 §6.11): range, colormap and opacity of a result layer, in the place
-// of `ViewerControls` and with the same fields. The default is the one of the statistics (M4-32); "Apply"
+// How the result of a job is drawn (UI-01 §6.11): range, colormap and opacity of a result layer, in the settings bar (`Inspector.tsx`)
+// in the place of `ViewerControls` and with the same fields. The default is the one of the statistics (M4-32); "Apply"
 // draws the result with what is typed, "Save" keeps that for the layer and the job, "auto" puts the default in the
 // fields. What is applied and not saved goes when the settings are closed (Otto, 29.10.2026, zu #234). No unit shows
 // here (Otto, 24.10.2026).
@@ -16,13 +16,15 @@ import { useProcessingStore } from '../processingStore';
 import { NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
 import { RGB, RGB_LABEL } from '../processingBands';
 import { bandPlacesOfTileUrl, defaultRange, rangeOfTileUrl, renderOfRange, resultPathOfTileUrl } from '../resultLayer';
+import { layerDownloadKind } from '../download';
 import { useAppStore } from '../store';
+import { ONE_BAND_TIP } from '../viewBand';
 import AutoScaleButton from './AutoScaleButton';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
 import Tip from './Tip';
 import OpacityRow from './OpacityRow';
-import { useEscClose } from './useEscClose';
-import CloseButton from './CloseButton';
+import { InspectorHead, InspectorSection, LayerStepper } from './InspectorParts';
+import LayerDownload from './LayerDownload';
 
 const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap && samePercent(a.percent, b.percent);
 
@@ -41,7 +43,6 @@ function Controls({ layer }: { layer: MapLayer }) {
   const restyle = useAppStore((s) => s.restyleResultLayer);
   const save = useAppStore((s) => s.saveResultLayer);
   const close = useAppStore((s) => s.closeResultView);
-  useEscClose(close);
   const setJobRange = useProcessingStore((s) => s.setJobRange);
   const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   // What the typed fields hold, from what the layer draws now; a layer drawn another way starts over.
@@ -155,67 +156,79 @@ function Controls({ layer }: { layer: MapLayer }) {
   };
 
   return (
-    <div className="panel viewer-controls scene-view result-controls">
-      <div className="vc-head">
-        <span className="vc-title" title={layerShownName(layer)}>{layerShownName(layer).toUpperCase()}</span>
-        <div className="results-head-right">
-          <CloseButton title="Close" onClick={() => close()} />
-          {!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
-        </div>
-      </div>
+    <div className="viewer-controls scene-view result-controls">
+      <InspectorHead
+        title={layerShownName(layer)}
+        tip={layerShownName(layer)}
+        mark={!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
+        onClose={() => close()}
+      >
+        <LayerStepper date={layer.date} />
+      </InspectorHead>
 
-      <div className={`vc-render${hasBand ? ' has-index' : ''}`}>
-        {settable && (
-          <>
-            <RenderFields
-              band={
-                hasBand
-                  ? {
-                      value: String(info.band ?? 0),
-                      options: [
-                        ...(info.colour ? [{ value: RGB, label: RGB_LABEL }] : []),
-                        ...bands.map((b, place) => ({ value: String(place), label: b.name || `Band ${place + 1}` })),
-                      ],
-                      title: 'The band of the result this layer draws',
-                      onChange: (place) => chooseBand(layer.id, place === RGB ? RGB : Number(place)),
-                    }
-                  : undefined
-              }
-              vmin={unit === 'percent' ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } } : { value: draft.vmin, onChange: (vmin) => edit({ vmin }) }}
-              vmax={unit === 'percent' ? { value: typed.high, onChange: (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } } : { value: draft.vmax, onChange: (vmax) => edit({ vmax }) }}
-              unit={{ value: unit, onChange: setUnit }}
-              colormap={info.band === RGB ? { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' } : { value: draft.colormap, onChange: (colormap) => edit({ colormap }) }}
-            />
-            <div className="vc-buttons">
-              <AutoScaleButton title={unit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Put the range of the statistics of this result in the fields'} busy={measuring} onClick={auto} />
-              <button
-                type="button"
-                className="ghost-btn vc-apply"
-                aria-disabled={!canApply || undefined}
-                title={canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY}
-                onClick={apply}
-              >
-                Apply
-              </button>
-              <button
-                type="button"
-                className="primary-btn vc-save"
-                aria-disabled={!canSave || undefined}
-                title={canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE}
-                onClick={keep}
-              >
-                Save
-              </button>
+      <div className="insp-body">
+        <InspectorSection title="Display">
+          <div className="vc-render">
+            {settable && (
+              <RenderFields
+                // One band is no choice: the field stays, locked, and says so.
+                band={{
+                  value: String(info.band ?? 0),
+                  options: [
+                    ...(info.colour ? [{ value: RGB, label: RGB_LABEL }] : []),
+                    ...(bands.length > 0 ? bands : [{ name: '' }]).map((b, place) => ({ value: String(place), label: b.name || `Band ${place + 1}` })),
+                  ],
+                  title: hasBand ? 'The band of the result this layer draws' : ONE_BAND_TIP,
+                  disabled: !hasBand,
+                  onChange: (place) => chooseBand(layer.id, place === RGB ? RGB : Number(place)),
+                }}
+                vmin={unit === 'percent' ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } } : { value: draft.vmin, onChange: (vmin) => edit({ vmin }) }}
+                vmax={unit === 'percent' ? { value: typed.high, onChange: (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } } : { value: draft.vmax, onChange: (vmax) => edit({ vmax }) }}
+                unit={{ value: unit, onChange: setUnit }}
+                colormap={info.band === RGB ? { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' } : { value: draft.colormap, onChange: (colormap) => edit({ colormap }) }}
+                scale
+              />
+            )}
+            <OpacityRow layer={layer} />
+            {settable && (
+              <div className="vc-buttons">
+                <AutoScaleButton title={unit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Put the range of the statistics of this result in the fields'} busy={measuring} onClick={auto} />
+                <button
+                  type="button"
+                  className="ghost-btn vc-apply"
+                  aria-disabled={!canApply || undefined}
+                  title={canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY}
+                  onClick={apply}
+                >
+                  Apply
+                </button>
+                <button
+                  type="button"
+                  className="primary-btn vc-save"
+                  aria-disabled={!canSave || undefined}
+                  title={canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE}
+                  onClick={keep}
+                >
+                  Save
+                </button>
+              </div>
+            )}
+          </div>
+          {settable && problem && (
+            <p className="hint-text warn" role="alert">
+              {problem}
+            </p>
+          )}
+        </InspectorSection>
+
+        {layerDownloadKind(layer) !== null && (
+          <InspectorSection title="Actions">
+            <div className="vc-actions">
+              <LayerDownload layer={layer} className="ghost-btn" label="Download" />
             </div>
-          </>
+          </InspectorSection>
         )}
       </div>
-      <OpacityRow layer={layer} />
-      {settable && problem && (
-        <p className="hint-text warn" role="alert">
-          {problem}
-        </p>
-      )}
     </div>
   );
 }

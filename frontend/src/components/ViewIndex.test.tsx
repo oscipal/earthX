@@ -107,19 +107,18 @@ describe('the dropdown "Band" with the presets', () => {
     expect(select().value).toBe('');
   });
 
-  it('stands first in the row of the settings, which grows a column class for it', () => {
+  it('stands first in the row of the settings', () => {
     mount();
-    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(true);
     expect(container.querySelector('.vc-render')!.firstElementChild).toBe(field());
   });
 
   it.each([
     ['an empty list (the DEM)', []],
     ['no field (a backend before NM4-14a)', null],
-  ])('is not there for a dataset with %s', (_, presets) => {
+  ])('is locked, with the reason, for a dataset with %s', (_, presets) => {
     mount(presets);
-    expect(field()).toBeNull();
-    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(false);
+    expect(select().disabled).toBe(true);
+    expect(field()!.title).toBe('This picture has one band');
     expect(container.textContent).not.toContain('Index');
   });
 
@@ -264,10 +263,7 @@ describe('the note under the settings', () => {
 });
 
 describe('the layout (the CSS the view is made with)', () => {
-  it('gives the dropdown, colormap, vmin and vmax two columns each and the buttons four, and the narrow window two columns for each of the four', () => {
-    expect(CSS).toMatch(/\.scene-view \.vc-render\.has-index > :nth-child\(1\),[\s\S]*?:nth-child\(4\) \{\s*grid-column: span 2;/u);
-    expect(CSS).toMatch(/\.scene-view \.vc-render\.has-index > :nth-child\(5\) \{\s*grid-column: span 4;/u);
-    expect(CSS).toMatch(/\.app\[data-theme='normal'\] \.scene-view \.vc-note \{\s*color: #8a5a00;/u);
-    expect(CSS).toMatch(/@media \(max-width: 599px\) \{[\s\S]*?\.vc-render\.has-index > :nth-child\(n \+ 1\):nth-child\(-n \+ 4\) \{\s*grid-column: span 2;/u);
+  it('has the yellow note in a darker yellow on the light theme, where the pale one does not read', () => {
+    expect(CSS).toMatch(/\.app\[data-theme='normal'\] \.inspector \.vc-note \{\s*color: #8a5a00;/u);
   });
 });

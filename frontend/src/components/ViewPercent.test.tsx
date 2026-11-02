@@ -116,19 +116,20 @@ const settle = async () => act(async () => {
 const asked = () => fetchMock.mock.calls.map(([url]) => String(url));
 
 describe('the switch "value / %"', () => {
-  it('is a small dropdown in the label line of the field vmax with words, "absolute value" to begin with, and names the field', () => {
+  // Otto, 2.11.2026: in the row "Scale", after vmin and vmax, not over a field.
+  it('is a small dropdown with words after vmin and vmax in the row "Scale", "absolute value" to begin with', () => {
     expect(unitText()).toBe('absolute');
     expect([...chip().options].map((o) => o.textContent)).toEqual(['absolute', 'percentile']);
     expect(chip().title).toBe(UNIT_TIP);
     expect(chip().getAttribute('aria-label')).toBe('Range unit');
-    expect(chip().closest('label')!.querySelector('span')!.textContent).toBe('vmax');
-    // After the field in the markup, so that the label names the field; the style puts it in the line of the label.
-    const vmax = container.querySelectorAll('.vc-num input')[1];
-    expect(chip().previousElementSibling).toBe(vmax);
-    expect(vmax.getAttribute('aria-labelledby')).toBe(chip().closest('label')!.querySelector('span')!.id);
+    const row = chip().closest('.vc-scale')!;
+    expect(row.querySelector(':scope > span')!.textContent).toBe('Scale');
+    expect(row.getAttribute('aria-labelledby')).toBe(row.querySelector(':scope > span')!.id);
+    const [vmin, vmax] = [...row.querySelectorAll<HTMLInputElement>('.vc-num input')];
+    expect([vmin.placeholder, vmax.placeholder]).toEqual(['vmin', 'vmax']);
+    expect([...row.querySelectorAll('.vc-num .sr-only')].map((s) => s.textContent)).toEqual(['vmin', 'vmax']);
+    expect(chip().previousElementSibling).toBe(vmax.closest('label'));
     expect(container.querySelectorAll('.vc-unit')).toHaveLength(1);
-    // The field vmin has nothing but its word and its box.
-    expect(container.querySelector('.vc-num')!.children).toHaveLength(2);
   });
 
   it('turns the fields into percentiles, 2 and 98 to begin with, whole numbers from 0 to 100', () => {

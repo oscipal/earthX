@@ -2,8 +2,9 @@
 //
 // DS-02c (Otto, 30.10.2026): "Advanced search" is a button above "Search", with the number of filters set, and a
 // pop-up with the filters of one dataset at a time under the headings of the registry. The button is there only while
-// a ticked dataset has filters; the pop-up keeps the values of each dataset apart, closes on "Done", Escape and a click
-// beside it without losing a value, marks fields that are wrong and leaves "Search" held back while one is.
+// a ticked dataset has filters; the pop-up keeps the values of each dataset apart, closes on "Done", its red x and a click
+// beside it without losing a value (not on Escape, Otto, 2.11.2026), marks fields that are wrong and leaves "Search" held back
+// while one is.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -284,12 +285,13 @@ describe('closing keeps the values', () => {
     expect(useAppStore.getState().searchFilters).toEqual(kept);
   });
 
-  it('Escape closes it and gives the focus back to the button', () => {
+  it('stays open on Escape, with the focus and the values where they were (Otto, 2.11.2026)', () => {
     filled();
+    act(() => field('Cloud cover, to').focus());
     key(field('Cloud cover, to'), 'Escape');
-    expect(popup()).toBeNull();
-    expect(document.activeElement).toBe(button());
-    expect(useAppStore.getState().searchFilters).toEqual(kept);
+    expect(popup()).not.toBeNull();
+    expect(document.activeElement).toBe(field('Cloud cover, to'));
+    expect(field('Cloud cover, to').value).toBe('20');
   });
 
   it('a click beside it closes it', () => {
@@ -318,16 +320,18 @@ describe('closing keeps the values', () => {
     expect(titles()).toEqual(['Relative orbit']);
   });
 
-  it('Escape in the list of datasets closes the list only; the next Escape the pop-up', () => {
+  it('Escape closes neither the list of datasets nor the pop-up (Otto, 2.11.2026); a click beside the list does', () => {
     pick('optical', 'radar');
     open();
     act(() => box().click());
     expect(options()).toHaveLength(2);
     key(document, 'Escape');
-    expect(options()).toHaveLength(0);
+    expect(options()).toHaveLength(2);
     expect(popup()).not.toBeNull();
+    act(() => box().click());
+    expect(options()).toHaveLength(0);
     key(box(), 'Escape');
-    expect(popup()).toBeNull();
+    expect(popup()).not.toBeNull();
   });
 
   it('Tab moves between the fields instead of closing it', () => {
@@ -340,7 +344,7 @@ describe('closing keeps the values', () => {
 
   it('opens again with what was in it', () => {
     filled();
-    key(field('Cloud cover, to'), 'Escape');
+    act(() => popup()!.querySelector<HTMLButtonElement>('.advanced-top .close-x')!.click());
     open();
     expect(field('Cloud cover, to').value).toBe('20');
     expect(container.querySelector<HTMLInputElement>('.filter-check input')!.checked).toBe(true);

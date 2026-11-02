@@ -283,6 +283,34 @@ describe('an image that is temporary', () => {
     expect(isTemporaryImage(layers, image(['a']), RENDER, view)).toBe(false);
   });
 
+  // Otto, 2.11.2026: changed and set back, the image is the layer's again; what counts is what is drawn, not that it was changed.
+  describe('compared by what is drawn', () => {
+    const BASE: AppliedRender = { rescale: '0,3000' };
+    it('is not when the look is set back to the values of the layer, typed as other text', () => {
+      const layers = [pinned('L1', ['a'], { rescale: '0,3000' })];
+      expect(isTemporaryImage(layers, image(['a']), { rescale: '0.0,3000.00' }, view, BASE)).toBe(false);
+      expect(isTemporaryImage(layers, image(['a']), { rescale: ' 0 , 3000 ' }, view, BASE)).toBe(false);
+    });
+
+    it('is not when the layer draws the standard picture and the view types its values in', () => {
+      const layers = [pinned('L1', ['a'], {})];
+      expect(isTemporaryImage(layers, image(['a']), { rescale: '0,3000' }, view, BASE)).toBe(false);
+      expect(isTemporaryImage(layers, image(['a']), { rescale: '0,2999' }, view, BASE)).toBe(true);
+    });
+
+    it('is not for the same values typed as percentiles, which only say how they were typed', () => {
+      const layers = [pinned('L1', ['a'], { rescale: '12,2999' })];
+      expect(isTemporaryImage(layers, image(['a']), { rescale: '12,2999', percent: { low: '2', high: '98' } }, view, BASE)).toBe(false);
+    });
+
+    it('is still for a band, an index or a colormap the layer does not draw', () => {
+      const layers = [pinned('L1', ['a'], {})];
+      expect(isTemporaryImage(layers, image(['a']), { band: 'B04', rescale: '0,3000' }, view, BASE)).toBe(true);
+      expect(isTemporaryImage(layers, image(['a']), { index: 'NDVI' }, view, BASE)).toBe(true);
+      expect(isTemporaryImage(layers, image(['a']), { colormapName: 'magma' }, view, BASE)).toBe(true);
+    });
+  });
+
   it('does not count a layer that is no view of scenes (a result, a preview)', () => {
     const result = { ...pinned('R', ['a'], RENDER), derived: 'result' as const };
     expect(isTemporaryImage([result], image(['a']), RENDER, view)).toBe(true);

@@ -108,6 +108,13 @@ export function selectionItemsFrom(s: Pick<AppState, 'groups' | 'activeGroupInde
   return picked.length ? picked : (group?.items ?? []);
 }
 
+// The scenes of the image the view shows, when a download is asked for it and not for the ticks of the list (`openDownloadForView`).
+export interface DownloadView {
+  datasetId: string;
+  items: StacItem[];
+  label: string;
+}
+
 // The ticks that are not on scenes of another dataset of the search (NM4-50): the ticks stay over a change of the
 // dataset, and what acts on the picked scenes — the bar of the selection, a view, a job — acts on the open one's.
 export function ticksOfOpen(s: Pick<AppState, 'sections' | 'openSectionId' | 'selectedIds'>): string[] {
@@ -423,6 +430,7 @@ const NO_ANSWER_FILTERS: SectionSearchAnswer & { ignoredFilters: string[]; incom
 // result goes with it: both stand in the place of the search results.
 const LEAVE_FOCUS = {
   focusMode: false,
+  viewOpacity: 1,
   viewLayerId: null,
   viewOfLayer: false,
   resultViewLayerId: null,
@@ -774,7 +782,8 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
       id: `L${batchId}${i}`,
       name,
       visible: true,
-      opacity: 1,
+      // The view's own opacity goes with its picture into the layer (Otto, 2.11.2026).
+      opacity: s.viewOpacity,
       overlays: overlays ?? [],
       ...dateOf(datesOfIds(itemIds, known)),
       restore: {
@@ -1318,6 +1327,8 @@ export interface AppState {
   // swaps ViewBar for ViewerControls (App.tsx); the results list stays whatever the view.
   focusMode: boolean;
   showDownloaded: boolean;
+  // The opacity of the view of the search, which is no layer (Otto, 2.11.2026); 1 for every new view.
+  viewOpacity: number;
   // The image of the view that is drawn (`viewImages.ts`); null draws the first. The others are not on the map.
   shownImage: string | null;
   // The look of the images of the view (NM4-53, Otto 29.10.2026), for the length of the view only: what "Apply" drew on
@@ -1357,6 +1368,8 @@ export interface AppState {
   // layer — downloading a selected quicklook's original data straight from
   // the results list, before "Add to layers"/"View full resolution".
   downloadSelection: boolean;
+  // With `downloadSelection`: the dialog is for the image the view shows (`openDownloadForView`), not for the ticks of the list.
+  downloadView: DownloadView | null;
   // The resolution choice in the open download dialog (F10c, M3-18 §10).
   // Native (`1`) every time the dialog opens — never chosen automatically,
   // and never remembered from a previous download.
@@ -1540,6 +1553,7 @@ export interface AppState {
   activateViewContext: () => void;
   openDownloadDialog: (id: string) => Promise<void>;
   openDownloadForSelection: (kind: 'crop' | 'originals') => void;
+  openDownloadForView: (kind: 'crop' | 'originals') => void;
   closeDownloadDialog: () => void;
   setDownloadResolution: (factor: ResolutionFactor) => void;
   confirmDownload: () => Promise<void>;
@@ -1566,6 +1580,7 @@ export interface AppState {
   // The single band the fields stand for (NM4-45); `null` goes back to the standard picture.
   chooseViewBand: (band: string | null) => void;
   toggleDownloaded: () => void;
+  setViewOpacity: (opacity: number) => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
@@ -1643,6 +1658,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   resultsOnMap: loadResultsOnMap(),
   focusMode: false,
   showDownloaded: true,
+  viewOpacity: 1,
   shownImage: null,
   viewLooks: {},
   savedLooks: {},
@@ -1657,6 +1673,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   resultViewLayerId: null,
   downloadDialogLayerId: null,
   downloadSelection: false,
+  downloadView: null,
   downloadResolution: 1,
   downloadOutcome: null,
   downloadOriginalLinks: null,
@@ -2168,6 +2185,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       downloadDialogLayerId: id,
       downloadSelection: false,
+      downloadView: null,
       downloadResolution: 1,
       downloadOutcome: null,
       downloadOriginalLinks: null,
@@ -2272,12 +2290,56 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
     });
   },
+  // The same dialog for the image the view shows (the settings bar, Otto, 2.11.2026): its scenes, not the ticks of the list, with
+  // the same refusals as `openDownloadForSelection`.
+  openDownloadForView: (kind) => {
+    const s = get();
+    const image = shownImageOf(viewImagesOf(s), s.shownImage);
+    const dataset = s.datasets.find((d) => d.id === image?.datasetId);
+    if (kind === 'crop' && !s.aoi) {
+      set({ error: DRAW_AOI_TO_CROP });
+      return;
+    }
+    if (kind === 'originals' && !isCogFormat(dataset)) {
+      set({ error: noOriginalsReason(dataset) });
+      return;
+    }
+    if (!image) {
+      set({ error: 'Nothing to download — the view shows no image.' });
+      return;
+    }
+    const items = sectionsForView(s)
+      .filter((section) => section.datasetId === image.datasetId)
+      .flatMap((section) => section.items)
+      .filter((it) => image.ids.includes(it.id));
+    if (items.length === 0) {
+      set({ error: 'Nothing to download — the view shows no image.' });
+      return;
+    }
+    const open = {
+      downloadDialogLayerId: null,
+      downloadSelection: true,
+      downloadView: { datasetId: image.datasetId, items, label: image.groupLabel },
+      downloadResolution: 1 as const,
+      downloadSkippedGroupsNotice: null,
+      downloadExportOffer: null,
+      error: null,
+    };
+    if (kind === 'crop') {
+      set({ ...open, downloadOutcome: 'crop', downloadOriginalLinks: null, downloadPasses: null });
+      return;
+    }
+    const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
+    const groups = [{ label: image.groupLabel || 'Group 1', items }];
+    set({ ...open, downloadOutcome: 'originals', downloadOriginalLinks: asset ? originalFileLinks(groups, [asset], assetHostsOf(dataset)) : [], downloadPasses: groups });
+  },
   closeDownloadDialog: () => {
     // Closing the dialog stops the computing of an index (what it placed is dismissed).
     indexDownloadAbort?.abort();
     set({
       downloadDialogLayerId: null,
       downloadSelection: false,
+      downloadView: null,
       downloadOutcome: null,
       downloadOriginalLinks: null,
       downloadPasses: null,
@@ -2321,15 +2383,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   confirmDownload: async () => {
     const s = get();
     const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
-    const dataset = s.datasets.find((d) => d.id === s.datasetId);
-    const req = s.downloadSelection
-      ? downloadRequestForSelection(dataset, groupItemIdsFor(selectionItemsFrom(s).map((it) => it.id), s.groups), s.aoi)
-      : layer && downloadRequestFor(layer, s.datasets);
+    const view = s.downloadSelection ? s.downloadView : null;
+    const dataset = s.datasets.find((d) => d.id === (view?.datasetId ?? s.datasetId));
+    const sceneIds = view ? [view.items.map((it) => it.id)] : groupItemIdsFor(selectionItemsFrom(s).map((it) => it.id), s.groups);
+    const req = s.downloadSelection ? downloadRequestForSelection(dataset, sceneIds, s.aoi) : layer && downloadRequestFor(layer, s.datasets);
     const name = s.downloadSelection
-      ? `${dataset?.title ?? s.datasetId ?? '?'} · ${s.groups[s.activeGroupIndex]?.label ?? ''}`
+      ? `${dataset?.title ?? s.datasetId ?? '?'} · ${view?.label ?? s.groups[s.activeGroupIndex]?.label ?? ''}`
       : (layer?.name ?? '');
     if (!req) {
-      set({ downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null });
+      set({ downloadDialogLayerId: null, downloadSelection: false, downloadView: null, downloadOutcome: null });
       return;
     }
     // A layer that shows an index is downloaded as that index, computed as a job would, with no job in the list (NM4-14b).
@@ -2353,7 +2415,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         // The reason stays in the dialog, which may try again.
         set({ downloading: false, downloadStatus: null, downloadIndexNote: { state: 'failed', ...problem } });
       } else {
-        set({ downloading: false, downloadStatus: null, downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null, notice: `Downloaded "${name}".` });
+        set({ downloading: false, downloadStatus: null, downloadDialogLayerId: null, downloadSelection: false, downloadView: null, downloadOutcome: null, notice: `Downloaded "${name}".` });
       }
       return;
     }
@@ -2386,6 +2448,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({
           downloadDialogLayerId: null,
           downloadSelection: false,
+          downloadView: null,
           downloadOutcome: null,
           notice: `Downloaded "${name}".`,
         });
@@ -2520,7 +2583,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // of the results stay.
   exitFocus: () => set({ ...LEAVE_FOCUS }),
   // "Change image": takes the view off the map and opens the results to choose another scene. Show or hide stays.
-  changeImage: () => set((s) => ({ ...LEAVE_FOCUS, ...(hasResultsPanel(s.sections) ? { dock: 'results' as const } : {}) })),
+  // "Change image" goes back to the search results: they are shown and their row goes on top of the layer manager (Otto, 2.11.2026).
+  changeImage: () => set((s) => ({ ...LEAVE_FOCUS, ...setResultsOnMap(true), resultsAt: 0, ...(hasResultsPanel(s.sections) ? { dock: 'results' as const } : {}) })),
   showImage: (key) =>
     set((s) => {
       const images = viewImagesOf(s);
@@ -2578,6 +2642,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     void get().autoStretch();
   },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
+  setViewOpacity: (opacity) => set({ viewOpacity: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1 }),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
   setPendingVmax: (pendingVmax) => set({ pendingVmax }),

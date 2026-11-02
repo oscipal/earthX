@@ -145,7 +145,6 @@ describe('the view of a layer of the layer manager', () => {
     act(() => root.render(<ViewerControls />));
     expect(indexField()!.querySelector('select')!.disabled).toBe(false);
     expect(indexField()!.querySelector('select')!.value).toBe('index:NDVI');
-    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(true);
   });
 
   it('has it free for a layer without an index too, showing the standard picture', () => {

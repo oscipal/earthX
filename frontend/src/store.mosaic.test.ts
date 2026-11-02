@@ -620,14 +620,15 @@ describe('the results on the map around a full-resolution view (Otto, 26.10.2026
     expect(useAppStore.getState().selectedIds).toEqual(['A']);
   });
 
-  it('"Change image" leaves the view and opens the results, and leaves the switch and the tick', async () => {
+  it('"Change image" leaves the view, opens the results and shows them (Otto, 2.11.2026), and leaves the tick', async () => {
     tiler();
-    useAppStore.setState({ resultsOnMap: false, selectedIds: ['A'], dock: null, sections: [{ datasetId: ID, items: useAppStore.getState().items, groups: useAppStore.getState().groups, notes: [] }] as never });
+    useAppStore.setState({ resultsOnMap: false, selectedIds: ['A'], dock: null, resultsAt: 1, sections: [{ datasetId: ID, items: useAppStore.getState().items, groups: useAppStore.getState().groups, notes: [] }] as never });
     await useAppStore.getState().enterFocus(false);
     useAppStore.getState().changeImage();
     expect(useAppStore.getState().focusMode).toBe(false);
     expect(useAppStore.getState().dock).toBe('results');
-    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(useAppStore.getState().resultsAt).toBe(0);
     expect(useAppStore.getState().selectedIds).toEqual(['A']);
   });
 

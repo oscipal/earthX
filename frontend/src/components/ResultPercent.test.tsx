@@ -98,7 +98,7 @@ describe('the switch in the settings of a result', () => {
     expect(unitText()).toBe('absolute');
     toggleUnit();
     expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
-    expect([...container.querySelectorAll('.vc-field > span')].map((s) => s.textContent)).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect([...container.querySelectorAll('.vc-field > span')].map((s) => s.textContent)).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
   });
 
   it('is not there where nothing can be set: a result of whole numbers, one that is gone', () => {
@@ -196,7 +196,7 @@ describe('"Apply" with percentiles', () => {
     typedPercent('3', '97');
     click(button('Apply'));
     await settle();
-    const select = container.querySelector<HTMLSelectElement>('.result-controls .vc-field select:not(.vc-unit)')!;
+    const select = [...container.querySelectorAll<HTMLLabelElement>('.result-controls label.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!.querySelector('select')!;
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'turbo');
       select.dispatchEvent(new Event('change', { bubbles: true }));

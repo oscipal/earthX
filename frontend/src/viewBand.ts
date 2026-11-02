@@ -35,3 +35,6 @@ export function withAsset(id: string, info: DownloadedInfo, asset: string): Down
 // The tooltip of the dropdown "Band" of the view.
 export const BAND_TIP =
   'The picture of the image: the standard one, one band of the data, or the quick calculation of an index (from zoom 8; for whole scenes start a job in Processing).';
+
+// What the locked dropdown says where the picture has one band and so nothing to choose.
+export const ONE_BAND_TIP = 'This picture has one band';

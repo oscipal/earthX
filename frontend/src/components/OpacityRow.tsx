@@ -1,14 +1,18 @@
-// The opacity of a layer in the box of its settings: the same row in the box of a result and in the box of a layer of scenes
-// (NM4-54 part 5, Otto, 1.11.2026).
+// The opacity in the settings bar: the same row for a result, a layer of scenes (NM4-54 part 5, Otto, 1.11.2026) and the view of the
+// search, which is no layer and has an opacity of its own (Otto, 2.11.2026; replaces the locked row of the same day).
 
 import { useAppStore } from '../store';
 import type { MapLayer } from '../layers';
 
-export default function OpacityRow({ layer }: { layer: MapLayer }) {
-  const setOpacity = useAppStore((s) => s.setLayerOpacity);
+export default function OpacityRow({ layer }: { layer?: MapLayer }) {
+  const setLayerOpacity = useAppStore((s) => s.setLayerOpacity);
+  const viewOpacity = useAppStore((s) => s.viewOpacity);
+  const setViewOpacity = useAppStore((s) => s.setViewOpacity);
+  const opacity = layer ? layer.opacity : viewOpacity;
+  const title = `Opacity ${Math.round(opacity * 100)}%`;
   return (
     <div className="vc-opacity">
-      <label className="vc-field">
+      <label className="vc-field" title={title}>
         <span>Opacity</span>
         <input
           type="range"
@@ -16,9 +20,13 @@ export default function OpacityRow({ layer }: { layer: MapLayer }) {
           min={0}
           max={1}
           step={0.05}
-          value={layer.opacity}
-          title={`Opacity ${Math.round(layer.opacity * 100)}%`}
-          onChange={(e) => setOpacity(layer.id, Number(e.target.value))}
+          value={opacity}
+          title={title}
+          onChange={(e) => {
+            const value = Number(e.target.value);
+            if (layer) setLayerOpacity(layer.id, value);
+            else setViewOpacity(value);
+          }}
         />
       </label>
     </div>

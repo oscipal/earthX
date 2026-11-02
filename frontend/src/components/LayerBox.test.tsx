@@ -2,8 +2,8 @@
 //
 // NM4-65 (Otto, 1.11.2026): "Verschiedene Layer haben verschiedene Boxen. Das darf nicht sein." A layer opened from the layer
 // manager has the box of every layer — its name (with the date), the red x, the fields, "Apply" and "Apply to all" in one row,
-// as before — and no second row of buttons (pin, process, change image, clear) and no further line. A view that is still open from the search keeps
-// all of it, also once its image is pinned.
+// as before — and none of the actions of the search (pin, process, change image, clear). A view that is still open from the search keeps
+// all of it, also once its image is pinned. In the settings bar (UI-03a) the layer's actions are its download.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -105,33 +105,39 @@ afterEach(() => {
 });
 
 const labels = () => [...container.querySelectorAll('.vc-field > span')].map((s) => s.textContent);
+const actions = () => [...container.querySelectorAll('.vc-actions > *')].map((b) => b.textContent?.trim());
 const buttons = () => [...container.querySelectorAll('.vc-buttons button')].map((b) => b.textContent?.trim());
 
 describe('a layer opened from the layer manager', () => {
   beforeEach(() => mount(true));
 
-  it('has no row of buttons: no pinning, no processing, no "Change image", no "Clear"', () => {
-    expect(container.querySelector('.vc-actions')).toBeNull();
+  it('has none of the actions of the search: no pinning, no processing, no "Change image", no "Clear"', () => {
+    expect(actions()).toEqual(['⇩ Download']);
     const text = container.textContent!;
     for (const gone of ['Add to layers', 'Add all to layers', 'Process', 'Change image', 'Clear']) expect(text, gone).not.toContain(gone);
   });
 
-  it('has the head of every layer: its name with the date, in the style of a title, and the red x', () => {
-    expect(container.querySelector('.vc-title')!.textContent).toBe('OPTICAL · CROP · 2026-07-01');
+  it('has the head of every layer: its name with the date, in the style of a title, the date with locked arrows, and the red x', () => {
+    expect(container.querySelector('.vc-title')!.textContent).toBe('Optical · crop · 2026-07-01');
     expect(container.querySelector('.vc-title')!.getAttribute('title')).toBe('Optical · crop · 2026-07-01');
     expect(container.querySelectorAll('.vc-head .close-x')).toHaveLength(1);
     expect(container.querySelector('.vc-head .close-x')!.getAttribute('title')).toBe('Close');
-    // No stepper, no dataset box, no eye of the view: the layer has its own eye in the manager.
-    expect(container.querySelector('.vc-stepper, .vc-dataset, .vc-eye')).toBeNull();
+    // The place of the time step of the view holds the date of the layer and two locked arrows; no dataset box, no eye of the view: the layer has its own eye in the manager.
+    expect(container.querySelector('.vc-step-text')!.textContent).toBe('2026-07-01');
+    expect([...container.querySelectorAll('.vc-step')].map((b) => [b.getAttribute('aria-disabled'), b.getAttribute('title')])).toEqual([
+      ['true', 'A layer holds one image'],
+      ['true', 'A layer holds one image'],
+    ]);
+    expect(container.querySelector('.vc-dataset, .vc-eye')).toBeNull();
   });
 
-  // Otto, 1.11.2026 (NM4-54 part 5): the box of a layer of scenes is the box of a result: the fields and the buttons in one row, and
-  // the opacity of the layer in the row under them.
-  it('has the fields and the buttons of the settings of any layer in one row, and the opacity under them', () => {
-    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
+  // Otto, 1.11.2026 (NM4-54 part 5): the box of a layer of scenes is the box of a result: the fields, the opacity and the buttons in one place.
+  it('has the fields, the opacity and the buttons of the settings of any layer, in that order', () => {
+    expect(labels()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
     const box = container.querySelector('.scene-view')!;
-    expect([...box.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-head', 'vc-render', 'vc-opacity']);
+    expect([...box.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-head', 'insp-body']);
+    expect([...container.querySelector('.vc-render')!.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-field', 'vc-field', 'vc-field', 'vc-opacity', 'vc-buttons']);
     expect(container.querySelectorAll('.vc-opacity input[type="range"]')).toHaveLength(1);
   });
 
@@ -154,8 +160,8 @@ describe('a layer opened from the layer manager', () => {
     const crop = layer();
     crop.restore = { ...crop.restore, cropToAoi: true, aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } };
     act(() => useAppStore.setState({ cropToAoi: true, viewAoi: crop.restore.aoi, layers: [crop] }));
-    expect(container.querySelector('.vc-actions')).toBeNull();
-    expect(labels()).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(actions()).toEqual(['⇩ Download']);
+    expect(labels()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
   });
 });
@@ -163,14 +169,13 @@ describe('a layer opened from the layer manager', () => {
 describe('a view that is still open from the search', () => {
   it('keeps all of it with no layer, and with its image pinned', () => {
     mount(false, []);
-    expect(container.querySelector('.vc-actions')).not.toBeNull();
-    expect(container.querySelectorAll('.vc-actions > *').length).toBeGreaterThanOrEqual(4);
+    expect(actions()).toContain('＋ Add to layers');
     expect(container.querySelector('.vc-stepper')).not.toBeNull();
     mount(false);
-    expect(container.querySelector('.vc-actions')).not.toBeNull();
+    expect(actions()).toContain('＋ Add to layers');
     expect(container.textContent).toContain('Add to layers');
-    expect(container.querySelector('.vc-head .close-x')).toBeNull();
-    expect(container.textContent).toContain('Clear');
+    expect(container.querySelectorAll('.vc-head .close-x')).toHaveLength(1);
+    expect(actions()).toContain('‹ Change image');
     expect(container.querySelector('.vc-title')!.textContent).not.toContain('2026-07-01 ·');
   });
 });
@@ -212,6 +217,6 @@ describe('a click on a search result while a layer is open from the layer manage
     act(() => useAppStore.setState({ items: [scene, item2], groups: [{ key: ['a'], label: 'a', items: [scene, item2] }] }));
     act(() => state().toggleSelected('s9'));
     expect(state().focusMode).toBe(true);
-    expect(container.querySelector('.scene-view .vc-actions')).not.toBeNull();
+    expect(actions()).toContain('＋ Add to layers');
   });
 });

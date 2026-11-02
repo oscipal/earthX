@@ -13,6 +13,7 @@ import CSS from '../index.css?raw';
 import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
 import LayerManager from './LayerManager';
+import Inspector from './Inspector';
 import ResultControls from './ResultControls';
 
 declare global {
@@ -79,7 +80,7 @@ describe('the opacity slider in the settings of a layer', () => {
 
   it('has no padding and no frame of its own, so the track fills its box (the cause was `.vc-field input`)', () => {
     // The generic rule that caused it is still there for text boxes…
-    expect(rule('.vc-field select,\n.vc-field input,\n.vc-field textarea,\n.vc-dataset')).toContain('padding: 6px 8px');
+    expect(rule('.vc-field select,\n.vc-field input,\n.vc-field textarea,\n.vc-dataset')).toContain('padding: var(--space-1) var(--space-2)');
     // …and the slider is taken out of it, by a rule that is later and more specific.
     const own = rule(".vc-field input[type='range']");
     expect(own).toContain('padding: 0');
@@ -89,7 +90,7 @@ describe('the opacity slider in the settings of a layer', () => {
   });
 
   it('keeps a visible focus ring now that the frame is gone', () => {
-    expect(rule(".vc-field input[type='range']:focus-visible")).toContain('outline: 2px solid var(--accent)');
+    expect(CSS).toMatch(/\.vc-field input:focus-visible[^{]*\{[^}]*outline: 2px solid var\(--focus\)/u);
   });
 });
 
@@ -108,18 +109,18 @@ describe('the opacity of a result whose settings are open', () => {
     expect(useAppStore.getState().layers[0].opacity).toBe(0.4);
   });
 
-  it('goes back to the saved one when the settings close without it: the x, Esc, another layer', () => {
+  it('goes back to the saved one when the settings close without it: closing them, the x of the bar, another layer', () => {
     useAppStore.setState({ layers: [layer(1), { ...layer(0.8), id: 'R2' }], resultViewLayerId: 'R1' });
     act(() => root.render(<ResultControls />));
     act(() => useAppStore.getState().setLayerOpacity('R1', 0.2));
     act(() => useAppStore.getState().closeResultView());
     expect(useAppStore.getState().layers[0].opacity).toBe(1);
     expect(useAppStore.getState().layers[0].saved).toBeUndefined();
-    // Esc.
+    // The red x of the settings bar (Esc closes nothing, Otto, 2.11.2026).
     useAppStore.setState({ resultViewLayerId: 'R1' });
-    act(() => root.render(<ResultControls />));
+    act(() => root.render(<Inspector />));
     act(() => useAppStore.getState().setLayerOpacity('R1', 0.2));
-    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    act(() => document.querySelector<HTMLButtonElement>('aside.inspector .close-x')!.click());
     expect(useAppStore.getState().resultViewLayerId).toBeNull();
     expect(useAppStore.getState().layers[0].opacity).toBe(1);
     // Another layer.

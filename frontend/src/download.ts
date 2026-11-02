@@ -9,6 +9,7 @@ import type { ExportJobHint, ResolutionFactor } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
+import { isJobId } from './processing';
 import type { LicenseFlags, StacItem } from './types';
 
 // `groups` (M3-17, replacing the flat `items` list): item ids per group, in
@@ -369,4 +370,11 @@ export function resolutionOptionLabel(items: StacItem[], asset: string, factor: 
 // user finding out after a failed request.
 export function canExportLicense(flags: LicenseFlags | null | undefined): boolean {
   return flags?.tier === 'processing';
+}
+
+// What a layer offers to download: the ZIP of its result (not once the results are gone), the dialog of the AOI crop and the original
+// files for a layer of scenes, or nothing. The row of the layer manager and the settings bar ask the same.
+export function layerDownloadKind(layer: MapLayer): 'zip' | 'dialog' | null {
+  if (layer.result) return layer.result.expired || layer.result.deleted === true || !isJobId(layer.result.jobID) ? null : 'zip';
+  return !layer.derived && layer.restore.itemIds.length > 0 ? 'dialog' : null;
 }

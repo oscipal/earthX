@@ -4,11 +4,6 @@
    [data-theme] on .app / <body>.
    =========================================================================== */
 
-:root {
-  --mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
-  --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
-}
-
 *,
 *::before,
 *::after {
@@ -23,43 +18,14 @@ body,
 }
 
 body {
-  font-family: var(--mono);
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
 }
 
-/* --- theme tokens --- */
-.app[data-theme='tech'] {
-  --panel-bg: rgba(6, 12, 16, 0.82);
-  --panel-border: rgba(120, 220, 255, 0.32);
-  --accent: #19e0ff;
-  --accent-2: #ffd166;
-  --text: #d7f2ff;
-  --muted: #7fa8b8;
-  --input-bg: rgba(10, 20, 26, 0.9);
-  --glow: 0 0 18px rgba(25, 224, 255, 0.18);
-  --row-hover: rgba(25, 224, 255, 0.08);
-  /* Behind the map and the globe: what shows where no imagery is drawn. */
-  --map-bg: #04070a;
-}
-
-.app[data-theme='normal'] {
-  --panel-bg: rgba(255, 255, 255, 0.94);
-  --panel-border: rgba(20, 40, 60, 0.16);
-  --accent: #0a7ea4;
-  --accent-2: #c76b00;
-  --text: #10222c;
-  --muted: #5a6b74;
-  --input-bg: rgba(255, 255, 255, 0.96);
-  --glow: 0 2px 10px rgba(0, 0, 0, 0.12);
-  --row-hover: rgba(10, 126, 164, 0.08);
-  --map-bg: #ffffff;
-}
-
 .app {
-  /* The rail and the panel beside it (UI-01 §6.9). The boxes over the map stand where they are anchored, whether a
-     panel is open or not (NM4-66): they are centred in the map beside the rail. */
-  --rail-width: 48px;
-  --dock-width: 340px;
+  /* The boxes over the map stand where they are anchored, whether a panel is open or not (NM4-66): they are centred in
+     the map beside the rail (widths: `tokens.css`, UI-01 §6.9). */
   position: relative;
   width: 100vw;
   height: 100vh;
@@ -136,11 +102,6 @@ body.dragging * {
 .draggable[data-band='selection'] {
   z-index: 1;
 }
-/* The block of the selection bar and the timeline (NM4-66). With a bar it is as wide as the bar (`.fill`); the timeline
-   alone is narrower, and never wider than the stack. */
-.draggable.time-only {
-  width: min(560px, 100%);
-}
 .selection-block {
   box-sizing: border-box;
   width: 100%;
@@ -157,6 +118,29 @@ body.dragging * {
 }
 .selection-block > .download-bar {
   padding-top: 2px;
+}
+/* With no scene ticked: what to do, in the place of the buttons (Otto, 2.11.2026). A quiet pill in the middle between the top of the block
+   and the timeline: it rises into the row of the "x", which keeps to the right edge. */
+.selection-block > .select-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: calc(100% - 2 * var(--space-6));
+  margin: calc(-1 * var(--space-1)) auto var(--space-3);
+  padding: var(--space-1) var(--space-4);
+  box-sizing: border-box;
+  border: var(--line-width) dashed var(--line);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+}
+.selection-block > .select-hint svg {
+  flex: none;
+  color: var(--accent);
 }
 .selection-block > .download-bar + .time-slider {
   border-top: 1px solid var(--panel-border);
@@ -191,7 +175,7 @@ body.dragging * {
 .zoom-btn {
   padding: 9px 14px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   letter-spacing: 1px;
   cursor: pointer;
@@ -231,20 +215,13 @@ body.dragging * {
 .menu-group-label {
   padding: 2px 10px;
   color: var(--muted);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 9px;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
 
 /* --- full-resolution viewer controls (focus mode) --- */
-.viewer-controls {
-  width: 100%;
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 .vc-head {
   display: flex;
   justify-content: space-between;
@@ -264,65 +241,17 @@ body.dragging * {
   flex: 1;
   min-width: 90px;
 }
-.vc-render {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
 .vc-apply {
   padding: 6px 16px;
   align-self: flex-end;
 }
-/* "auto-scale" on top and "Apply" under it, both of one format, together as high as the fields they stand beside (the
-   input of the colormap, vmin and vmax); "Save", the one blue button, beside them and as high as the two together (Otto,
-   30.10.2026). A view that is no layer's has no "Save": the two stay in the left column. */
-.vc-buttons {
-  --row-height: 34px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 4px 6px;
-  align-self: flex-end;
-  box-sizing: border-box;
-  height: var(--row-height);
-  min-width: 0;
-}
-.vc-buttons > button {
-  align-self: stretch;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 0;
-  margin: 0;
-  padding: 0 8px;
-  font-size: 10px;
-  line-height: 1;
-  white-space: nowrap;
-}
-.vc-buttons > .vc-auto {
-  grid-area: 1 / 1;
-}
-.vc-buttons > .vc-apply {
-  grid-area: 2 / 1;
-}
-.vc-buttons > .vc-save {
-  grid-area: 1 / 2 / 3 / 3;
-  font-size: 12px;
-}
-.vc-buttons > button[aria-disabled='true'] {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-/* The box of a result is the box of the view of scenes (`.scene-view`): the same width, the same grid, the same places for the
-   fields and the buttons (NM4-54 part 5, Otto, 1.11.2026). */
+/* The labelled fields of the settings bar, the processing panel and its preview (NM4-54 part 5, Otto, 1.11.2026); the bar lays them out
+   as a form (`.inspector .vc-field`). */
 .vc-field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: 10px;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -331,14 +260,20 @@ body.dragging * {
 .vc-field input,
 .vc-field textarea,
 .vc-dataset {
-  padding: 6px 8px;
+  padding: var(--space-1) var(--space-2);
   background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--font);
+  font-size: var(--text-sm);
   outline: none;
+}
+/* One height for the fields of a panel (a tick box and a slider keep their own). */
+.vc-field select,
+.vc-field input:not([type='checkbox'], [type='radio'], [type='range']),
+.vc-dataset {
+  min-height: var(--control-height);
 }
 .vc-field select:focus,
 .vc-field input:focus,
@@ -362,10 +297,12 @@ body.dragging * {
   width: auto;
   min-width: 0;
   max-width: calc(100% - 31px);
+  /* Below the one height of the fields of a panel (`min-height` above), which would push it into the field. */
+  min-height: 0;
   height: 16px;
   border-radius: 4px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: var(--text-xs);
   letter-spacing: 0;
   text-transform: none;
   text-overflow: ellipsis;
@@ -376,13 +313,9 @@ body.dragging * {
   line-height: 14px;
   background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%23889'/%3E%3C/svg%3E") no-repeat right 2px center;
 }
-/* The field vmax is as wide as its word and the dropdown need where the box is its own (the result and the preview; in the view the
-   grid gives the width). */
+/* The field vmax is as wide as its word and the dropdown need (the preview; the settings bar gives it the width of the column). */
 .vc-field.vc-num:has(.vc-unit) input {
   width: 116px;
-}
-.scene-view .vc-field.vc-num:has(.vc-unit) input {
-  width: 100%;
 }
 .vc-field.vc-num .vc-unit:hover,
 .vc-field.vc-num .vc-unit:focus-visible {
@@ -395,54 +328,288 @@ body.dragging * {
   padding: 0;
   border: 0;
   background: none;
-  height: 30px;
+  height: var(--control-height);
   box-sizing: border-box;
-}
-.vc-field input[type='range']:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
 }
 .vc-actions {
   display: flex;
   gap: 8px;
 }
-/* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
-   head, so the rows of buttons are the same width and that width is the width of the view. Row 1: vmin and vmax two
-   columns each, colormap three, and five for "auto-scale" with "Apply" under it and "Apply to all" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
-   the buttons in one row, four or with several images five of one width (Otto, 1.11.2026: the view is two rows high under its head,
-   wider rather than taller). Every field of row 1 is 34px high. Below 600 px the grid has four
-   columns and the rows wrap; no text ends up outside its cell. */
-.scene-view {
-  --cell: 46px;
-  --row-height: 34px;
-  box-sizing: border-box;
-  width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--rail-width) - 24px));
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 10px 8px;
-  align-items: end;
+/* --- the settings bar (UI-03a, `Inspector.tsx`) ---
+   One column at the right edge, from the top to the foot of the window with no gap (Otto, 2.11.2026; the top buttons move left of it), for the view of the search, the pinned view and
+   the settings of a result: head (title, mark, eye, x; dataset and time step or date), "Display", "Actions". Head and foot stand,
+   the middle scrolls. Spacing, type and radii come from `tokens.css` (checked by `tokens.test.ts`). */
+.inspector.panel {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--inspector-width);
+  display: flex;
+  flex-direction: column;
+  border-width: 0 0 0 var(--line-width);
+  border-color: var(--line);
+  border-radius: 0;
 }
-.scene-view > * {
-  min-width: 0;
+.inspector[hidden] {
+  display: none;
 }
-.scene-view .vc-head {
-  grid-column: 1 / -1;
+.inspector .viewer-controls {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.inspector .vc-head {
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--line-width) solid var(--line);
+}
+/* Both rows are as high as a control, whatever they hold, so that "Display" begins at one height for the three kinds. */
+.inspector .insp-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
-  /* As high as the head of the view of the search (the eye and the arrows are 28px), so that the box of a layer, whose head has
-     the name and the x only, has its fields at the same place (NM4-54 part 5). */
-  min-height: 28px;
+  min-height: var(--control-height);
 }
-.scene-view .vc-title {
-  flex: 1 1 120px;
+.inspector .vc-title {
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  letter-spacing: 1px;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+  color: var(--text);
+}
+.inspector .vc-temporary {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.inspector .vc-dataset {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.inspector .vc-stepper {
+  flex: 0 1 auto;
+  margin-left: auto;
+  gap: var(--space-2);
+}
+.inspector .insp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.inspector .insp-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.inspector .insp-heading {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inspector .vc-render {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+/* A form: the label in a column of its own, the control filling the rest; every row as high as a control. A field that does not apply
+   keeps its place and is locked, its tooltip says why. */
+.inspector .vc-field {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 0 var(--space-2);
+  min-height: var(--control-height);
+  font-size: var(--text-sm);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.inspector .vc-field > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.inspector .vc-field select,
+.inspector .vc-field input:not([type='range']) {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
+  box-sizing: border-box;
+}
+.inspector .vc-field input[type='number'] {
+  appearance: textfield;
+}
+.inspector .vc-field select:disabled,
+.inspector .vc-field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* A name for a screen reader only. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* "Scale" (Otto, 2.11.2026): vmin and vmax side by side, of one width, and the switch "absolute / percentile" after them, as high as
+   they are; it shows what fits and the rest with "…". */
+.inspector .vc-scale-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.inspector .vc-scale-fields .vc-field {
+  display: block;
+  min-width: 0;
+}
+.inspector .vc-scale-fields input,
+.inspector .vc-scale-fields select {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
+  box-sizing: border-box;
+}
+.inspector .vc-scale-fields input[type='number'] {
+  padding-right: var(--space-2);
+  padding-left: var(--space-2);
+  appearance: textfield;
+}
+/* No arrows in the number fields of the bar: they would take the room of the digits. */
+.inspector input[type='number']::-webkit-inner-spin-button,
+.inspector input[type='number']::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+.inspector .vc-scale .vc-unit {
+  width: auto;
+  padding: 0 var(--space-4) 0 var(--space-2);
+  appearance: none;
+  background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%23889'/%3E%3C/svg%3E") no-repeat right var(--space-2) center;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.inspector .vc-opacity .lm-opacity {
+  width: 100%;
+}
+.inspector .vc-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.inspector .vc-buttons > button {
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+}
+.inspector .vc-buttons > button[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.inspector .vc-note {
+  margin: 0;
+}
+.app[data-theme='normal'] .inspector .vc-note {
+  color: #8a5a00;
+}
+/* The actions in pairs (Otto, 2.11.2026): two columns of one width, every button as high as a control; none wraps its words, a long
+   one is cut with "…" and its tooltip has it in full. */
+.inspector .vc-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.inspector .vc-actions > * {
+  min-width: 0;
+  display: block;
+  padding: var(--space-1) var(--space-1);
+  overflow: hidden;
+  font-size: var(--text-sm);
+  line-height: calc(var(--control-height) - 2 * var(--space-1) - 2 * var(--line-width));
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-decoration: none;
+}
+/* The column is taken from the map: what stands at the bottom and the map controls move left of it. */
+@media (min-width: 900px) {
+  .app.has-inspector .overlay.bottom {
+    left: calc((100% + var(--rail-width) - var(--inspector-width)) / 2);
+    width: min(760px, calc(100vw - var(--rail-width) - var(--inspector-width) - 32px));
+  }
+  .app.has-inspector .overlay.status {
+    left: calc((100% + var(--rail-width) - var(--inspector-width)) / 2);
+    width: min(560px, calc(100vw - var(--rail-width) - var(--inspector-width) - 32px));
+  }
+  .app.has-inspector .maplibregl-ctrl-bottom-right {
+    right: var(--inspector-width);
+  }
+  /* The column reaches the top: the buttons there stand left of it, of the settings bar or of the processing panel. */
+  .app.has-inspector .overlay.top-right {
+    right: calc(var(--inspector-width) + var(--space-4));
+  }
+  .overlay.top-right.beside-sheet {
+    right: calc(var(--pp-sheet-width) + var(--space-4));
+  }
+}
+/* Narrow windows: a sheet from the bottom with the grip of the processing panel, at most 55 % high; what stands at the bottom lies above
+   it (its height is measured, `Inspector.tsx`). */
+@media (max-width: 899px) {
+  .inspector.panel {
+    top: auto;
+    left: var(--rail-width);
+    width: auto;
+    max-height: 55vh;
+    border-width: var(--line-width) 0 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .inspector .pp-grip {
+    display: block;
+    flex: none;
+  }
+  /* A narrower margin, so that a pair of actions keeps its words in half the width of a phone ("Download full scene"). */
+  .inspector .insp-body {
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
+  }
+  .inspector .vc-actions > * {
+    padding-right: calc(var(--space-1) / 2);
+    padding-left: calc(var(--space-1) / 2);
+  }
+  .inspector.folded .insp-body,
+  .inspector.folded .insp-row2 {
+    display: none;
+  }
+  .inspector.folded .vc-head {
+    border-bottom: 0;
+  }
+  .app.has-inspector .overlay.bottom {
+    bottom: calc(var(--inspector-sheet-height, 0px) + 12px);
+  }
+  .app.has-inspector .maplibregl-ctrl-bottom-right {
+    bottom: var(--inspector-sheet-height, 0px);
+  }
 }
 .vc-eye {
   flex: none;
@@ -465,26 +632,6 @@ body.dragging * {
 }
 .vc-eye.off {
   color: var(--muted);
-}
-.scene-view .vc-head {
-  flex-wrap: wrap;
-}
-/* In the head, between the title and the eye (NM4-53, Otto 31.10.2026): the dataset to choose and the date with the arrows.
-   Where they do not fit beside the title (a narrow window) they take a line of their own under it, the eye staying with the
-   title. The title is what gives way: it is cut with "…" and given in full as its tooltip. */
-/* "Temporary", the mark of the view of the search, between the title and the date: the badge of the "Preview" of the processing panel
-   (`.pp-badge`, Otto, 1.11.2026), which keeps its size in the head. */
-.scene-view .vc-temporary {
-  flex: none;
-  white-space: nowrap;
-}
-.scene-view .vc-dataset {
-  flex: 0 1 130px;
-  min-width: 0;
-  height: 28px;
-  box-sizing: border-box;
-  padding: 2px 6px;
-  font-size: 11px;
 }
 .vc-stepper {
   flex: 0 1 auto;
@@ -532,108 +679,6 @@ body.dragging * {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-}
-@media (max-width: 599px) {
-  .scene-view .vc-head .vc-eye {
-    order: 1;
-  }
-  .scene-view .vc-head .vc-dataset,
-  .scene-view .vc-head .vc-stepper {
-    order: 2;
-  }
-}
-.scene-view .vc-render {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: subgrid;
-  gap: 8px;
-  align-items: end;
-}
-/* With the dropdown "Index" (a dataset that offers indices, NM4-14b) it takes the first two columns, and vmin, vmax and
-   colormap two each; the buttons keep four. The order is Band · Index · vmin · vmax · colormap everywhere (NM4-65). */
-.scene-view .vc-render.has-index > :nth-child(1),
-.scene-view .vc-render.has-index > :nth-child(2),
-.scene-view .vc-render.has-index > :nth-child(3),
-.scene-view .vc-render.has-index > :nth-child(4) {
-  grid-column: span 2;
-}
-.scene-view .vc-render.has-index > :nth-child(5) {
-  grid-column: span 4;
-}
-/* The short note under the settings where the index cannot be drawn (`viewIndex.ts`); its tooltip says why. The pale yellow
-   of `.hint-text.warn` does not read on the light panel. */
-.scene-view .vc-head .results-head-right {
-  margin-left: auto;
-}
-.scene-view .vc-note {
-  grid-column: 1 / -1;
-  margin: 0;
-}
-.app[data-theme='normal'] .scene-view .vc-note {
-  color: #8a5a00;
-}
-.scene-view .vc-actions {
-  --buttons: 4;
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(var(--buttons), minmax(0, 1fr));
-  gap: 8px;
-  align-items: end;
-}
-.scene-view .vc-actions.has-all {
-  --buttons: 5;
-}
-.scene-view .vc-render > :nth-child(1),
-.scene-view .vc-render > :nth-child(2) {
-  grid-column: span 2;
-}
-.scene-view .vc-render > :nth-child(3) {
-  grid-column: span 3;
-}
-.scene-view .vc-render > :nth-child(4) {
-  grid-column: span 5;
-}
-.scene-view .vc-actions > * {
-  min-width: 0;
-  min-height: 44px;
-  padding: 6px 8px;
-  line-height: 1.25;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-.scene-view .vc-field select,
-.scene-view .vc-field input {
-  width: 100%;
-  min-width: 0;
-  height: var(--row-height);
-  box-sizing: border-box;
-}
-@media (max-width: 599px) {
-  .scene-view {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .scene-view .vc-render.has-index > :nth-child(n + 1):nth-child(-n + 4) {
-    grid-column: span 2;
-  }
-  .scene-view .vc-render.has-index > :nth-child(5) {
-    grid-column: span 4;
-  }
-  .scene-view .vc-render > :nth-child(n + 1):nth-child(-n + 2) {
-    grid-column: span 2;
-  }
-  .scene-view .vc-render > :nth-child(3) {
-    grid-column: span 4;
-  }
-  .scene-view .vc-render > :nth-child(4) {
-    grid-column: span 4;
-  }
-  .scene-view .vc-actions,
-  .scene-view .vc-actions.has-all {
-    --buttons: 2;
-  }
-  .scene-view .vc-actions.has-all > :nth-child(5) {
-    grid-column: 1 / -1;
-  }
 }
 .ghost-btn.danger {
   border-color: #ff5a6e;
@@ -749,13 +794,14 @@ input[type='text'],
 input[type='search'],
 input[type='date'] {
   width: 100%;
-  padding: 8px 10px;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2);
   background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--font);
+  font-size: var(--text-sm);
   outline: none;
 }
 input[type='text']:focus,
@@ -874,7 +920,7 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   padding: 6px 8px;
   border-radius: 4px;
@@ -902,7 +948,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -954,7 +1000,7 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   padding: 6px 8px;
   border-radius: 4px;
@@ -1002,16 +1048,34 @@ input[type='date']:focus {
   grid-column: auto;
 }
 
+/* One focus ring for the shared controls (UI-03 §7.3). */
+.ghost-btn:focus-visible,
+.primary-btn:focus-visible,
+.link-btn:focus-visible,
+.pp-seg:focus-visible,
+.close-x:focus-visible,
+.vc-field select:focus-visible,
+.vc-field input:focus-visible,
+.vc-field textarea:focus-visible,
+.vc-dataset:focus-visible,
+input[type='text']:focus-visible,
+input[type='search']:focus-visible,
+input[type='date']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 /* --- buttons --- */
 .primary-btn {
-  padding: 10px 14px;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
   background: var(--accent);
   color: #04141a;
   border: none;
-  border-radius: 6px;
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-sm);
   letter-spacing: 0.5px;
   cursor: pointer;
   box-shadow: var(--glow);
@@ -1025,13 +1089,14 @@ input[type='date']:focus {
   box-shadow: none;
 }
 .ghost-btn {
-  padding: 10px 14px;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
   background: none;
   color: var(--text);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  font-family: var(--mono);
-  font-size: 12px;
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .ghost-btn {
@@ -1134,7 +1199,7 @@ input[type='date']:focus {
   border: none;
   border-top: 1px solid var(--panel-border);
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   cursor: pointer;
 }
@@ -1290,7 +1355,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--muted);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   text-align: left;
   cursor: pointer;
@@ -1352,7 +1417,7 @@ input[type='date']:focus {
   border: 1px dashed var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   letter-spacing: 0.5px;
   cursor: pointer;
@@ -1402,7 +1467,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   text-align: left;
   cursor: pointer;
@@ -1469,7 +1534,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -1654,7 +1719,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   outline: none;
 }
@@ -1759,7 +1824,7 @@ input[type='date']:focus {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   color: var(--text);
   cursor: pointer;
@@ -1790,7 +1855,7 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   padding: 8px 6px;
   cursor: pointer;
@@ -1835,8 +1900,8 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--accent);
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--font);
+  font-size: var(--text-xs);
   cursor: pointer;
   padding: 0;
 }
@@ -1850,20 +1915,13 @@ input[type='date']:focus {
   height: 20px;
   padding: 0;
   background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: #ff5a6e;
+  border: var(--line-width) solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--danger);
   cursor: pointer;
 }
 .close-x:hover {
   border-color: currentColor;
-}
-.close-x:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 1px;
-}
-.app[data-theme='normal'] .close-x {
-  color: #c62840;
 }
 .link-btn.off {
   color: var(--muted);
@@ -2000,7 +2058,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   outline: none;
 }
@@ -2130,7 +2188,7 @@ input[type='date']:focus {
   background: none;
   border: 1px solid transparent;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
   padding: 2px 0;
@@ -2183,7 +2241,7 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
@@ -2246,22 +2304,6 @@ input[type='date']:focus {
 .lm-add-band {
   grid-column: -2;
   align-self: center;
-}
-/* The opacity of a layer in its box, the row under the fields (a result and a layer of scenes alike). */
-.scene-view .vc-opacity {
-  grid-column: 1 / -1;
-  /* As high as the row of buttons of the view of the search, so that the boxes are as high as each other where they can be. */
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-}
-.scene-view .vc-opacity .vc-field {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-}
-.scene-view .vc-opacity .lm-opacity {
-  width: 160px;
 }
 
 /* --- the rail and the panels beside it (UI-01 §6.9) --- */
@@ -2341,7 +2383,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   font-weight: 400;
   line-height: 1.4;
@@ -2490,7 +2532,7 @@ input[type='date']:focus {
   border: none;
   border-radius: 4px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   text-align: left;
   cursor: pointer;
 }
@@ -2538,7 +2580,7 @@ button.pm-open:hover {
   border: 1px solid transparent;
   border-radius: 4px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 14px;
   text-decoration: none;
   cursor: pointer;
@@ -2595,7 +2637,7 @@ a.pm-icon:hover {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   text-align: left;
   cursor: pointer;
@@ -2637,7 +2679,7 @@ a.pm-icon:hover {
   border: 1px solid var(--accent);
   border-radius: 4px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
 }
 /* Job details in the processing window. */
@@ -2882,17 +2924,17 @@ a.pm-icon:hover {
 }
 
 /* --- processing panel (M4-13b; side bar since M4-13c §3.1) --- */
-/* A fixed side bar at the right edge, from below the top buttons to the foot of
-   the window: the map stays free on the left for the preview. Head and foot
+/* A fixed side bar at the right edge, from the top to the foot of
+   the window, in the column of the settings bar (UI-03a): the map stays free on the left for the preview. Head and foot
    stay put, the middle scrolls. The list of jobs is the processing manager
    beside the rail; a click on a job shows its details here. */
 :root {
   --pp-sheet-width: clamp(420px, 36vw, 600px);
 }
 .processing-sheet {
-  top: 64px;
-  right: 16px;
-  bottom: 16px;
+  top: 0;
+  right: 0;
+  bottom: 0;
   width: var(--pp-sheet-width);
   z-index: 12;
   display: flex;
@@ -2954,12 +2996,21 @@ a.pm-icon:hover {
   width: 100%;
   box-sizing: border-box;
   resize: vertical;
-  font-family: var(--mono);
+  /* A band-math expression is code. */
+  font-family: var(--font-mono);
 }
 /* The bottom bar (selection, time slider) centred in the map left of the side bar. */
 .bottom.beside-sheet {
-  left: calc((100% + var(--rail-width) - var(--pp-sheet-width) - 16px) / 2);
-  width: min(760px, calc(100vw - var(--rail-width) - var(--pp-sheet-width) - 64px));
+  left: calc((100% + var(--rail-width) - var(--pp-sheet-width)) / 2);
+  width: min(760px, calc(100vw - var(--rail-width) - var(--pp-sheet-width) - 32px));
+}
+/* In the column of the settings bar: flush with the edge and the foot, a line on the left, no corners. */
+@media (min-width: 900px) {
+  .processing-sheet .processing-panel {
+    border-width: 0 0 0 var(--line-width);
+    border-color: var(--line);
+    border-radius: 0;
+  }
 }
 /* Narrow screens: a sheet from below over the full width, at most 60 % of the
    height, with a grip that folds it down to its head; the map stays above. */
@@ -3089,7 +3140,7 @@ a.pm-icon:hover {
   padding-left: 14px;
 }
 .pp-field {
-  gap: 4px;
+  gap: var(--space-1);
 }
 .pp-field input,
 .pp-field select {
@@ -3195,14 +3246,17 @@ a.pm-icon:hover {
 }
 .pp-chip,
 .pp-seg {
-  padding: 3px 8px;
+  padding: var(--space-1) var(--space-2);
   background: none;
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--font);
+  font-size: var(--text-xs);
   cursor: pointer;
+}
+.pp-seg {
+  min-height: var(--control-height);
 }
 .pp-chip.on,
 .pp-seg.on {
@@ -3310,7 +3364,7 @@ a.pm-icon:hover {
   border-bottom: 1px solid var(--panel-border);
 }
 .dialog-original-name {
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -3451,7 +3505,7 @@ a.pm-icon:hover {
   gap: 8px;
   min-width: 0;
   padding: 6px 14px;
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   color: var(--accent);
 }

@@ -1,6 +1,6 @@
 // Browser check of the settings of a layer (NM4-50, Otto 29.10.2026 and 30.10.2026, zu #234): in the settings of a result
-// layer, of a pinned scene layer and in a view that is no layer's "Apply" stands under "auto-scale" (one button, one width),
-// "Save" (in the view: "Apply to all", always there since #257) beside "Apply", and the cluster is no higher than the row of the fields. "Apply" and "Save" are locked while there is nothing to do and
+// layer, of a pinned scene layer and in a view that is no layer's "auto-scale", "Apply" and "Save" (in the view: "Apply to all", always
+// there since #257) stand in one row of one size, the height of a field, under the fields in the settings bar. "Apply" and "Save" are locked while there is nothing to do and
 // say why; "Apply" draws the layer with the typed look, what is not saved goes when the settings are closed, "Save" keeps it.
 // Light and dark theme, a wide and a narrow window; a screenshot per case.
 //
@@ -19,7 +19,6 @@ const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, height: 740 } };
 
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
-const within = (inner, outer) => inner.x >= outer.x - 0.5 && inner.y >= outer.y - 0.5 && inner.x + inner.width <= outer.x + outer.width + 0.5 && inner.y + inner.height <= outer.y + outer.height + 0.5;
 
 async function check(browser, { kind, theme, viewport }) {
   const label = `${kind} ${theme} ${viewport}`;
@@ -88,39 +87,31 @@ async function check(browser, { kind, theme, viewport }) {
   const disabled = (selector) => page.locator(`${root} ${selector}`).first().getAttribute('aria-disabled');
   const tip = (selector) => page.locator(`${root} ${selector}`).first().getAttribute('title');
 
-  // Layout: the cluster under the fields' row height, "Apply" under "auto", "Save" beside "Apply", nothing over the edge.
+  // Layout (the settings bar, UI-03a): the fields one under the other, then the buttons in one row of one size and the height of a field,
+  // "Save" set off by its colour, nothing over the edge.
   const panel = await box('');
-  const cluster = await box('.vc-buttons');
   const auto = await box('.vc-buttons > :nth-child(1)');
   const apply = await box('.vc-buttons > :nth-child(2)');
-  const save = hasSave ? await box('.vc-buttons > :nth-child(3)') : null;
-  if (Math.abs(auto.width - apply.width) > 1) problems.push(`"auto-scale" is ${auto.width.toFixed(1)} px wide, "Apply" ${apply.width.toFixed(1)} px`);
+  const save = await box('.vc-buttons > :nth-child(3)');
   if ((await page.locator(`${root} .vc-buttons > :nth-child(1)`).textContent())?.trim() !== 'auto-scale') problems.push('the first button is not "auto-scale"');
   const input = await page.locator(`${root} .vc-field input`).first().boundingBox();
-  if (Math.abs(cluster.height - input.height) > 1.5) problems.push(`the buttons are ${cluster.height.toFixed(1)} px high, the input of the fields ${input.height.toFixed(1)} px`);
-  if (Math.abs(auto.height + apply.height + 4 - cluster.height) > 1.5) problems.push('"auto-scale" and "Apply" together are not as high as the buttons');
-  if (Math.abs(auto.height - apply.height) > 1 || Math.abs(auto.width - apply.width) > 1) problems.push('"auto-scale" and "Apply" are not of one size');
-  if (hasSave) {
-    const saveBox = await box('.vc-buttons > :nth-child(3)');
-    if (Math.abs(saveBox.height - cluster.height) > 1.5) problems.push(`"Save" is ${saveBox.height.toFixed(1)} px high, the buttons together ${cluster.height.toFixed(1)} px`);
+  for (const [name, b] of [['auto-scale', auto], ['Apply', apply], ['Save', save]]) {
+    if (Math.abs(b.height - input.height) > 1.5) problems.push(`"${name}" is ${b.height.toFixed(1)} px high, the input of the fields ${input.height.toFixed(1)} px`);
+    if (Math.abs(b.y - auto.y) > 1) problems.push(`"${name}" is not in the row of "auto-scale"`);
+    if (Math.abs(b.width - auto.width) > 1.5) problems.push(`"${name}" is ${b.width.toFixed(1)} px wide, "auto-scale" ${auto.width.toFixed(1)} px`);
+    if (b.x < panel.x - 0.5 || b.x + b.width > panel.x + panel.width + 0.5) problems.push(`"${name}" leaves the panel`);
   }
+  if (apply.x < auto.x + auto.width - 0.5 || save.x < apply.x + apply.width - 0.5) problems.push('the buttons are not in the order "auto-scale", "Apply", "Save"');
+  if (overlap(auto, apply) || overlap(apply, save)) problems.push('the buttons overlap');
   // Of one format, and only "Save" blue (the background of a primary button).
   const looks = await page.locator(`${root} .vc-buttons > button`).evaluateAll((els) => els.map((el) => { const c = getComputedStyle(el); return { name: el.textContent.trim(), bg: c.backgroundColor, border: c.borderTopWidth + c.borderTopStyle, size: c.fontSize, radius: c.borderRadius }; }));
   const [lookAuto, lookApply] = looks;
   if (lookAuto.bg !== lookApply.bg || lookAuto.border !== lookApply.border || lookAuto.size !== lookApply.size || lookAuto.radius !== lookApply.radius) problems.push(`"auto-scale" and "Apply" look different: ${JSON.stringify([lookAuto, lookApply])}`);
-  if (hasSave && looks[2].bg === lookApply.bg) problems.push('"Save" is not set off from "Apply" by its colour');
-  if (apply.y < auto.y + auto.height - 0.5) problems.push('"Apply" is not under "auto"');
-  if (save && (save.y > auto.y + 1 || save.y + save.height < apply.y + apply.height - 1)) problems.push('"Save" does not stand beside both "auto-scale" and "Apply"');
-  if (save && save.x < apply.x + apply.width - 0.5) problems.push('"Save" is not right of "Apply"');
-  if (save && overlap(apply, save)) problems.push('"Apply" and "Save" overlap');
-  if (overlap(auto, apply)) problems.push('"auto" and "Apply" overlap');
-  for (const [name, b] of [['auto', auto], ['Apply', apply], ['Save', save]]) if (b && !within(b, panel)) problems.push(`"${name}" leaves the panel`);
-  if (viewport === 'wide') {
-    const fields = await page.locator(`${root} .vc-render > .vc-field`).evaluateAll((els) => els.slice(0, 3).map((el) => el.getBoundingClientRect().toJSON()));
-    // By their bottoms: the field vmin has the unit dropdown over its label (NM4-65), so its top is higher.
-    if (fields.some((f) => Math.abs(f.y + f.height - (fields[0].y + fields[0].height)) > 4)) problems.push('the three fields are not on one line');
-    if (fields.some((f) => f.y + f.height < apply.y + apply.height - 1.5)) problems.push('the buttons stand lower than the fields');
-  }
+  if (looks[2].bg === lookApply.bg) problems.push('"Save" is not set off from "Apply" by its colour');
+  // The fields are rows of one column, in order, over the buttons.
+  const rows = await page.locator(`${root} .vc-render > *`).evaluateAll((els) => els.map((el) => ({ name: el.querySelector('span')?.textContent ?? el.className.split(' ')[0], ...el.getBoundingClientRect().toJSON() })));
+  rows.forEach((row, i) => { if (i > 0 && row.y < rows[i - 1].y + rows[i - 1].height - 0.5) problems.push(`"${row.name}" is not under "${rows[i - 1].name}"`); });
+  if (rows.map((r) => r.name).join() !== 'Band,Scale,Colormap,Opacity,vc-buttons') problems.push(`the rows of the settings: ${rows.map((r) => r.name)}`);
   const sideways = await page.evaluate((sel) => { const el = document.querySelector(sel); return el ? el.scrollWidth > el.clientWidth + 1 : false; }, root);
   if (sideways) problems.push('the panel scrolls sideways');
   await shot('1-opened');
@@ -172,7 +163,8 @@ async function check(browser, { kind, theme, viewport }) {
     // The settings of a pinned layer: closing them loses what was applied; "Save" keeps it for the layer.
     const layerUrl = () => page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers[0].overlays[0].tileUrl);
     if (!(await layerUrl()).includes('rescale=0%2C3000')) problems.push('"Apply" changed the layer');
-    await page.getByRole('button', { name: /Clear/ }).click();
+    // The red x closes the settings of the layer (no "Clear", Otto, 2.11.2026).
+    await page.locator(`${root} .vc-head .close-x`).click();
     await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().selectLayer('S1'));
     await page.waitForSelector(`${root} .vc-apply`);
     if ((await page.locator(`${root} .vc-field input`).nth(1).inputValue()) !== '3000') problems.push('the settings show the applied look after they were closed and opened again');

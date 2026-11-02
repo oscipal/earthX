@@ -14,6 +14,7 @@ import { SENTINEL_2_PRESETS } from '../fixtures/indexPresets';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacAsset, StacItem } from '../types';
 import { viewLayerOf } from '../viewLayer';
+import Inspector from './Inspector';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -147,10 +148,11 @@ describe('the dropdown "Band" of the view', () => {
     expect([...select().options].map((o) => o.value).filter((v) => v.startsWith('band:'))).toEqual(['band:B02', 'band:B03']);
   });
 
-  it('is not there when it would have one entry: no band besides the standard picture and no preset', () => {
+  it('is locked, with the reason, when it would have one entry: no band besides the standard picture and no preset', () => {
     mount({}, collection({ 'earthx:index_presets': [] }), { visual: tiff(3) });
-    expect(field('Band')).toBeNull();
-    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(false);
+    expect(field('Band')).not.toBeNull();
+    expect(select().disabled).toBe(true);
+    expect(field('Band')!.title).toBe('This picture has one band');
   });
 
   it('is there for bands alone, without presets', () => {
@@ -370,7 +372,7 @@ describe('a layer pinned with a band', () => {
     expect(viewLayerOf(s.layers, { ...s, aoi: s.viewAoi })?.id).toBe(s.layers[0].id);
   });
 
-  it('is put back as saved when the settings are closed without "Save": by the x, by Esc, by another layer', async () => {
+  it('is put back as saved when the settings are closed without "Save": by closing the view, by the x of the bar, by another layer', async () => {
     await pinWithBand();
     choose('band:B08');
     await settle();
@@ -381,15 +383,15 @@ describe('a layer pinned with a band', () => {
     expect(layerAssets()).toEqual(['B04']);
     expect(store().layers[0].saved).toBeUndefined();
     expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B04' });
-    // Esc.
+    // The red x of the settings bar (Esc closes nothing, Otto, 2.11.2026).
     act(() => store().selectLayer(store().layers[0].id));
-    act(() => root.render(<ViewerControls />));
+    act(() => root.render(<Inspector />));
     choose('index:NDVI');
     await settle();
     apply();
     await settle();
     expect(store().layers[0].restore.appliedRender).toMatchObject({ index: 'NDVI' });
-    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    act(() => document.querySelector<HTMLButtonElement>('aside.inspector .close-x')!.click());
     expect(store().viewOfLayer).toBe(false);
     expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B04' });
     expect(layerAssets()).toEqual(['B04']);
@@ -487,6 +489,22 @@ describe('the mark "Temporary" and the layers', () => {
     apply();
     await settle();
     expect(temporary()).toBe(false); // back to what the layer holds
+  });
+
+  // Otto, 2.11.2026: compared by what is drawn, not by whether something was changed.
+  it('is gone again when the range is changed, applied, and set back to the values of the layer, typed as other text', async () => {
+    mount({ selectedIds: [] });
+    await pin('addCurrentToLayers');
+    expect(temporary()).toBe(false);
+    act(() => useAppStore.setState({ pendingVmin: '100', pendingVmax: '2000' }));
+    apply();
+    await settle();
+    expect(temporary()).toBe(true);
+    act(() => useAppStore.setState({ pendingVmin: '0.0', pendingVmax: '3000.0' }));
+    apply();
+    await settle();
+    expect(store().appliedRender.rescale).toBe('0.0,3000.0');
+    expect(temporary()).toBe(false);
   });
 
   it('is gone at once with "Add all to layers", though the fields hold a measured range (Otto, 1.11.2026)', async () => {

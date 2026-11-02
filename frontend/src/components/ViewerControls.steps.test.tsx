@@ -137,11 +137,11 @@ describe('what is not possible is not there', () => {
     expect(next()!.getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('puts them in the head, the dataset and then the date with the arrows, between the title and the eye', () => {
+  it('puts them in the second row of the head, the dataset and then the date with the arrows, under the title and the eye', () => {
     mount({ ...THREE, D: info('dem') });
-    const head = [...container.querySelector('.vc-head')!.children].map((el) => el.className);
-    expect(head).toEqual(['vc-title', 'pp-badge vc-temporary', 'vc-dataset', 'vc-stepper', 'vc-eye']);
-    expect(container.querySelectorAll('.vc-head .vc-dataset, .vc-head .vc-stepper')).toHaveLength(2);
+    const [first, second] = [...container.querySelector('.vc-head')!.children].map((row) => [...row.children].map((el) => el.className));
+    expect(first).toEqual(['vc-title', 'pp-badge vc-temporary', 'vc-eye', 'close-x']);
+    expect(second).toEqual(['vc-dataset', 'vc-stepper']);
   });
 
   it('has the arrows but no dataset to choose where the view holds one dataset', () => {
@@ -326,7 +326,7 @@ describe('an image of three bands', () => {
     expect(colormapOptions()).toEqual(['— none —']);
     expect(container.querySelectorAll('.vc-num input')).toHaveLength(2);
     expect(button('Apply')).toBeDefined();
-    expect([...container.querySelector('.vc-render')!.children].map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'DIV']);
+    expect([...container.querySelector('.vc-render')!.children].map((el) => el.className)).toEqual(['vc-field band-select', 'vc-field vc-scale', 'vc-field', 'vc-opacity', 'vc-buttons']);
   });
 
   it('has the colormaps to choose for a single band, and the same box in the same place for both', () => {
@@ -353,13 +353,13 @@ describe('an image of three bands', () => {
 });
 
 describe('"Add to layers" and "Add all to layers"', () => {
-  it('has "Add all to layers" only where the view holds more than one image', () => {
+  it('has "Add all to layers" always, locked with the reason where the view holds one image', () => {
     mount({ A: info('s2') });
-    expect(button('＋ Add all to layers')).toBeUndefined();
-    expect(container.querySelector('.vc-actions')!.className).not.toContain('has-all');
+    expect(button('＋ Add all to layers')!.disabled).toBe(true);
+    expect(button('＋ Add all to layers')!.title).toBe('There is only one image');
     mount(THREE);
-    expect(button('＋ Add all to layers')).toBeDefined();
-    expect(container.querySelector('.vc-actions')!.className).toContain('has-all');
+    expect(button('＋ Add all to layers')!.disabled).toBe(false);
+    expect(button('＋ Add all to layers')!.title).toBe('Pin all 3 images of the view into the layer manager, one layer each');
   });
 
   it('pins the image shown with "Add to layers" and every image of every dataset with "Add all to layers"', () => {
@@ -383,10 +383,11 @@ describe('"Add to layers" and "Add all to layers"', () => {
     ]);
   });
 
-  it('puts every new layer on top of the list', () => {
+  it('puts every new layer on top of the layers, under "Search results" on top (Otto, 2.11.2026)', () => {
     mount(THREE);
     act(() => useAppStore.setState({ layers: [], resultsAt: 0 }));
     act(() => button('＋ Add all to layers')!.click());
-    expect(useAppStore.getState().resultsAt).toBe(3);
+    expect(useAppStore.getState().layers).toHaveLength(3);
+    expect(useAppStore.getState().resultsAt).toBe(0);
   });
 });

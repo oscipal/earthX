@@ -115,8 +115,8 @@ const fly = async (page, zoom, center = [10.5, 50.5]) => {
 async function checkLayout(browser, theme, viewport) {
   const name = `layout ${theme} ${viewport}`;
   const { context, page, problems } = await open(browser, theme, viewport, PRESETS);
-  const labels = await page.locator('.scene-view .vc-render > label > span').allTextContents();
-  if (labels.join('|') !== 'Band|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
+  const labels = await page.locator('.scene-view .vc-render > .vc-field > span').allTextContents();
+  if (labels.join('|') !== 'Band|Scale|Colormap') problems.push(`the fields are ${labels}`);
   const options = await field(page).locator('option').allTextContents();
   if (options.join('|') !== 'RGB|red|green|blue|nir|swir16|swir22|──────────|NDVI|NDWI|NDSI|NBR|EVI') problems.push(`the options are ${options}`);
   const report = await page.evaluate(() => {
@@ -147,8 +147,8 @@ async function checkNone(browser, theme, viewport) {
   const { context, page, problems } = await open(browser, theme, viewport, []);
   const options = await field(page).locator('option').allTextContents();
   if (options.join('|') !== 'RGB|red|green|blue|nir|swir16|swir22') problems.push(`the options are ${options}`);
-  const labels = await page.locator('.scene-view .vc-render > label > span').allTextContents();
-  if (labels.join('|') !== 'Band|vmin|vmax|Colormap') problems.push(`the fields are ${labels}`);
+  const labels = await page.locator('.scene-view .vc-render > .vc-field > span').allTextContents();
+  if (labels.join('|') !== 'Band|Scale|Colormap') problems.push(`the fields are ${labels}`);
   await context.close();
   return { name, problems };
 }
@@ -253,7 +253,7 @@ async function checkDraw(browser, theme, viewport) {
   // The box of every layer (NM4-54 part 5): the same fields; the dropdown is free, as in the view the layer came from.
   if ((await field(page).locator('select').isDisabled()) !== false) problems.push('the dropdown "Band" of a layer is locked');
   if ((await field(page).locator('select').inputValue()) !== 'index:NDWI') problems.push('the layer does not show its index in the dropdown');
-  if ((await page.locator('.scene-view .vc-render > label > span').allTextContents()).join('|') !== 'Band|vmin|vmax|Colormap') problems.push('the settings of the layer are not the fields of every layer');
+  if ((await page.locator('.scene-view .vc-render > .vc-field > span').allTextContents()).join('|') !== 'Band|Scale|Colormap') problems.push('the settings of the layer are not the fields of every layer');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_layer.png`) });
   // Another band for the layer: "Apply to all" keeps it, the layer is drawn from that band's asset, and no job is started.
   await field(page).locator('select').selectOption('band:red');

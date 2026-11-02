@@ -178,6 +178,9 @@ async function checkEdges(browser, theme, viewport) {
   for (const scenario of ['mosaic', 'scenes']) {
     const opened = await open(browser, theme, viewport, scenario);
     problems.push(...opened.problems);
+    // At 360 px the settings bar is a sheet over the lower half of the map: folded to its head, it leaves the AOI free.
+    const grip = opened.page.locator('.inspector .pp-grip');
+    if (viewport === 'narrow' && (await grip.count()) > 0) await grip.click();
     await fly(opened.page, ZOOM);
     found[scenario] = await edgesOf(opened.page, Math.round(-(mercator(CENTRE[1]) - mercator(MAP_CENTRE[1]))));
     await opened.page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_${scenario}.png`) });
@@ -188,7 +191,7 @@ async function checkEdges(browser, theme, viewport) {
   const expected = [-(HALF_LON / 360) * PX, (HALF_LON / 360) * PX, -(mercator(CENTRE[1] + HALF_LAT) - mercator(MAP_CENTRE[1])), -(mercator(CENTRE[1] - HALF_LAT) - mercator(MAP_CENTRE[1]))];
   for (const scenario of ['mosaic', 'scenes']) {
     const edges = found[scenario];
-    // At 360 px the panel of the view lies over the south edge: three edges are seen there.
+    // At 360 px the head of the folded sheet and the bands above it lie over the south edge: three edges are seen there.
     if (edges.slice(0, viewport === 'narrow' ? 3 : 4).some((e) => e === null)) {
       problems.push(`${scenario}: no green picture at the middle of the map (${JSON.stringify(edges)})`);
       continue;

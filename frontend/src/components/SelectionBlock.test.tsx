@@ -87,11 +87,14 @@ describe('one block', () => {
     expect(rule('.download-bar')).not.toMatch(/\bwidth:|min-width|max-width/u);
   });
 
-  it('is the timeline alone with nothing ticked, and the bar alone where there are no time steps', () => {
+  it('keeps its width with nothing ticked and says "Select a scene" in the place of the buttons; the bar alone where there are no time steps', () => {
     render(false, true);
-    expect(container.querySelector('.download-bar')).toBeNull();
+    expect(container.querySelector('.download-bar button')).toBeNull();
+    expect(container.querySelector('.select-hint')!.textContent).toBe('Select a scene');
     expect(container.querySelector('.time-slider')).not.toBeNull();
-    expect(container.querySelector('.draggable')!.classList.contains('time-only')).toBe(true);
+    expect(container.querySelector('.draggable')!.classList.contains('fill')).toBe(true);
+    expect(container.querySelector('.draggable')!.classList.contains('time-only')).toBe(false);
+    expect(CSS).not.toContain('.time-only');
     render(true, false);
     expect(container.querySelector('.download-bar')).not.toBeNull();
     expect(container.querySelector('.time-slider')).toBeNull();

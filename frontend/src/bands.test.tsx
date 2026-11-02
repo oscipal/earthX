@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 //
 // Otto, 27.10.2026 (zu #211): a band that was moved stays at its place on the screen, whether other bands appear,
-// disappear or change their height, and no other band takes over its shift; bands that were not moved stack from the
-// bottom edge as before, and every band stays completely inside the window.
+// disappear or change their height; a band that was not moved stands at the bottom edge as before, and every band stays
+// completely inside the window. Since UI-03a (2.11.2026) the view and the settings of a result are no bands any more: they stand
+// in the settings bar at the right edge, at a fixed place; the block of the selection bar and the timeline is the one band left.
 //
 // jsdom has no layout. The tests give the bottom stack (`.overlay.bottom`) the one the style sheet describes: a column
 // that grows upwards from 20 px above the bottom edge of the window, a gap of 10 px, items centred, a left edge that
@@ -63,15 +64,16 @@ const GAP = 10;
 const STACK_WIDTH = 760;
 const HEAD = 22; // the head of the block with its "x"
 const BAR_ALONE = HEAD + 66;
-const TIMELINE_ALONE = HEAD + 72;
+const HINT = 52; // "Select a scene" in the place of the buttons
+const TIMELINE_ALONE = HEAD + HINT + 72;
 const STACK_LEFT = 284; // `left: calc((100% + var(--rail-width)) / 2)` less half the width, the dock open or not
 
 let container: HTMLDivElement;
 let root: Root;
 
 // The block of the bar and the timeline: a head for the "x", the bar, the timeline, as far as they are there.
-const heightOf = (band: HTMLElement) =>
-  band.querySelector('.scene-view') ? 168 : HEAD + (band.querySelector('.download-bar') ? 66 : 0) + (band.querySelector('.time-slider') ? 72 : 0);
+const heightOf = (band: HTMLElement) => HEAD + (band.querySelector('.download-bar') ? 66 : 0) + (band.querySelector('.select-hint') ? HINT : 0) + (band.querySelector('.time-slider') ? 72 : 0);
+// The block is as wide as the stack, with or without a ticked scene (Otto, 2.11.2026).
 const widthOf = (band: HTMLElement) => (band.classList.contains('fill') ? STACK_WIDTH : 300);
 const number = (value: string) => parseFloat(value) || 0;
 
@@ -131,9 +133,9 @@ const state = () => useAppStore.getState();
 const flush = () => act(async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); });
 const click = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
-// The three bands by what is in them, not by an attribute of the band.
+// The band by what is in it, not by an attribute of the band; the view is in the settings bar.
 const selectionBar = () => container.querySelector('.download-bar')?.closest<HTMLElement>('.draggable') ?? null;
-const view = () => container.querySelector('.scene-view')?.closest<HTMLElement>('.draggable') ?? null;
+const view = () => container.querySelector<HTMLElement>('.inspector .scene-view');
 const timeline = () => container.querySelector('.time-slider')?.closest<HTMLElement>('.draggable') ?? null;
 const placeOf = (find: () => HTMLElement | null) => {
   const band = find();
@@ -195,7 +197,7 @@ async function cropWithBarBeside() {
 describe('a band that was moved stays where it was put (Otto, 27.10.2026)', () => {
   it('"Change image" in the view, which makes room for the time line and opens the dock, leaves the bar of the selection where it was put', async () => {
     await cropWithBarBeside();
-    dragBy(selectionBar()!, -80, -30);
+    dragBy(selectionBar()!, -80, -200);
     const put = placeOf(selectionBar as () => HTMLElement);
     expect(put).not.toEqual(flowPlaces().get(selectionBar()!));
 
@@ -207,23 +209,22 @@ describe('a band that was moved stays where it was put (Otto, 27.10.2026)', () =
     expect(placeOf(selectionBar as () => HTMLElement)).toEqual(put);
   });
 
-  it('a band moved in the view is not where the timeline stands after "Change image": no band takes over its shift', async () => {
+  it('the view stands in the settings bar, not in the stack: nothing there to move, and the timeline stands on the bottom edge after "Change image"', async () => {
     act(() => state().toggleSelected('a0'));
     await act(() => state().enterFocus(true));
     act(() => useAppStore.setState({ dock: null }));
-    dragBy(view()!, 120, -90);
+    expect(view()!.closest('.draggable')).toBeNull();
+    expect(container.querySelector('.overlay.bottom')!.contains(view())).toBe(false);
 
     changeImage();
     await flush();
     expect(view()).toBeNull();
-    // The crop took the results off the map, and the block with them (Otto, 1.11.2026): the eye brings the timeline back.
-    expect(timeline()).toBeNull();
-    act(() => state().toggleResultsOnMap());
-    await flush();
+    // The crop took the results off the map; "Change image" shows them again, and the timeline with them (Otto, 2.11.2026).
+    expect(state().resultsOnMap).toBe(true);
     // Not moved, the timeline stands where the stack puts it: on the bottom edge of the window, nothing above.
     const bottom = placeOf(timeline as () => HTMLElement);
     expect(bottom.top).toBe(WINDOW.height - BOTTOM_EDGE - TIMELINE_ALONE);
-    expect(bottom.left).toBe(STACK_LEFT + (STACK_WIDTH - 300) / 2);
+    expect(bottom.left).toBe(STACK_LEFT);
   });
 
   it('the band, back after it went, stands where it was left', async () => {
@@ -237,32 +238,23 @@ describe('a band that was moved stays where it was put (Otto, 27.10.2026)', () =
     expect(placeOf(selectionBar as () => HTMLElement)).toEqual(put);
   });
 
-  it('stays when the band under it changes its height: a view (168 px) instead of the time line (61 px)', async () => {
+  it('stays when the content of the block changes its height: a view instead of the time line', async () => {
     act(() => state().toggleSelected('a0'));
     await flush();
     dragBy(selectionBar()!, 0, -120);
     const put = placeOf(selectionBar as () => HTMLElement);
     expect(timeline()).not.toBeNull();
     await act(() => state().enterFocus(false)); // the view of a0: no tick beside it, the bar goes
-    act(() => state().toggleSelected('a1')); // and comes back, over the view
+    act(() => state().toggleSelected('a1')); // and comes back, beside the view
     expect(view()).not.toBeNull();
     expect(placeOf(selectionBar as () => HTMLElement)).toEqual(put);
   });
 });
 
-describe('the other bands stack from the bottom as before', () => {
-  it('a band that is not moved ignores the room of a band that was moved', async () => {
+describe('the block that was not moved stands on the bottom edge as before', () => {
+  it('with a view open it stands on the bottom edge: the view is in the settings bar and takes no room of the stack', async () => {
     await cropWithBarBeside();
-    const before = placeOf(view as () => HTMLElement);
-    expect(before.top).toBe(WINDOW.height - BOTTOM_EDGE - 168);
-    dragBy(selectionBar()!, -100, -100);
-    // The block is no part of the stack any more: the view stays on the bottom edge, the stack is not higher.
-    expect(placeOf(view as () => HTMLElement)).toEqual(before);
-  });
-
-  it('without a moved band, the block stands above the band under it, as before', async () => {
-    await cropWithBarBeside();
-    expect(placeOf(selectionBar as () => HTMLElement).top).toBe(WINDOW.height - BOTTOM_EDGE - 168 - GAP - BAR_ALONE);
+    expect(placeOf(selectionBar as () => HTMLElement).top).toBe(WINDOW.height - BOTTOM_EDGE - BAR_ALONE);
   });
 });
 
@@ -275,11 +267,11 @@ describe('the bands and the panels beside the rail (NM4-66)', () => {
     await cropWithBarBeside();
     dragBy(selectionBar()!, -120, -40);
     const put = placeOf(selectionBar as () => HTMLElement);
-    const stacked = placeOf(view as () => HTMLElement);
+    const bar = view();
     for (const dock of [...PANELS, null]) {
       act(() => useAppStore.setState({ dock }));
       expect(placeOf(selectionBar as () => HTMLElement), `moved band, dock ${dock}`).toEqual(put);
-      expect(placeOf(view as () => HTMLElement), `stacked band, dock ${dock}`).toEqual(stacked);
+      expect(view(), `settings bar, dock ${dock}`).toBe(bar);
     }
   });
 
@@ -320,7 +312,7 @@ describe('a band stays completely inside the window', () => {
     await flush();
     dragBy(timeline()!, 5000, 5000);
     const place = placeOf(timeline as () => HTMLElement);
-    expect(place.left).toBe(WINDOW.width - 300 - 8);
+    expect(place.left).toBe(WINDOW.width - STACK_WIDTH - 8);
     expect(place.top).toBe(WINDOW.height - TIMELINE_ALONE - 8);
     dragBy(timeline()!, -9000, -9000);
     expect(placeOf(timeline as () => HTMLElement)).toEqual({ left: 8, top: 8 });
@@ -329,12 +321,12 @@ describe('a band stays completely inside the window', () => {
   it('is brought back into the visible area when the window gets smaller', async () => {
     await flush();
     dragBy(timeline()!, 400, 0);
-    expect(placeOf(timeline as () => HTMLElement).left).toBeGreaterThan(700);
+    expect(placeOf(timeline as () => HTMLElement).left).toBe(WINDOW.width - STACK_WIDTH - 8);
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 800 });
     Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 500 });
     act(() => void window.dispatchEvent(new Event('resize')));
     const place = placeOf(timeline as () => HTMLElement);
-    expect(place.left).toBeLessThanOrEqual(800 - 300 - 8);
+    expect(place.left).toBeLessThanOrEqual(800 - STACK_WIDTH - 8);
     expect(place.top).toBeLessThanOrEqual(500 - TIMELINE_ALONE - 8);
     expect(place.left).toBeGreaterThanOrEqual(8);
     expect(place.top).toBeGreaterThanOrEqual(8);

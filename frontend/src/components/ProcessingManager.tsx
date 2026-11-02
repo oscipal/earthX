@@ -101,7 +101,6 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
       </button>
       <Popover
         anchorRef={anchor}
-        triggerRef={button}
         open={mode !== 'closed'}
         onClose={() => onMode('closed')}
         className="pm-menu-list"

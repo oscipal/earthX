@@ -190,17 +190,17 @@ async function check(browser, { theme, viewport }) {
   await within.locator('input').click({ force: true });
   expect('the locked switch went on', !(await within.locator('input').isChecked()));
   await shot('1-locked');
-  await page.keyboard.press('Escape');
+  await popup.locator('.advanced-top .close-x').click();
 
   // 2. An AOI is not enough, one date is not enough; a point is no area; AOI and both dates free it.
   await store((s, aoi) => { s.getState().setAoi(aoi); s.getState().flyTo([9.2, 46.6, 12.2, 48.4]); }, AOI);
   await button.click();
   expect('the switch is free with an AOI alone', await locked());
-  await page.keyboard.press('Escape');
+  await popup.locator('.advanced-top .close-x').click();
   await store((s) => s.getState().setDateFrom('2026-07-01'));
   await button.click();
   expect('the switch is free with one date', await locked());
-  await page.keyboard.press('Escape');
+  await popup.locator('.advanced-top .close-x').click();
   await store((s) => s.getState().setDateTo('2026-07-31'));
   await button.click();
   expect('the switch is locked with an AOI and both dates', !(await locked()));
@@ -211,11 +211,11 @@ async function check(browser, { theme, viewport }) {
   expect('the tooltip carries the note of the registry', tip.includes("Sen2Cor's classification can miss thin cirrus"), tip);
   expect('the tooltip names the coverage map', tip.includes('The coverage map shows the scene filter only.'), tip);
   await shot('2-free');
-  await page.keyboard.press('Escape');
+  await popup.locator('.advanced-top .close-x').click();
   await store((s) => s.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } }));
   await button.click();
   expect('the tooltip for a point', (await within.getAttribute('title')) === 'Draw an area to use this filter', await within.getAttribute('title'));
-  await page.keyboard.press('Escape');
+  await popup.locator('.advanced-top .close-x').click();
   await store((s) => s.setState({ aoiPoint: null }));
 
   // 3. The DEM alone has no switch.
@@ -240,7 +240,7 @@ async function check(browser, { theme, viewport }) {
   expect('the switch overlaps the fields', !overlap(w, firstField), `${JSON.stringify(w)} ${JSON.stringify(firstField)}`);
   expect('the page scrolls sideways', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   await shot('3-on');
-  await page.keyboard.press('Escape');
+  await popup.locator('.advanced-top .close-x').click();
   await page.getByRole('button', { name: 'Coverage', exact: true }).click();
   await page.waitForTimeout(900);
   expect('the coverage asked the cloud range of the scene while the switch is on', JSON.stringify(requests.coverage.at(-1)) === JSON.stringify({ query: null }), JSON.stringify(requests.coverage.at(-1)));
@@ -310,7 +310,7 @@ async function check(browser, { theme, viewport }) {
   await page.waitForSelector('.control-panel');
   await button.click();
   await within.locator('input').click();
-  await page.keyboard.press('Escape');
+  await popup.locator('.advanced-top .close-x').click();
   const plain = asked();
   await searchButton.click();
   await until('the plain search did not answer', async () => asked() > plain);
@@ -325,7 +325,7 @@ async function check(browser, { theme, viewport }) {
   await button.click();
   await within.locator('input').click();
   await fields('Cloud cover, to').fill('0.1');
-  await page.keyboard.press('Escape');
+  await popup.locator('.advanced-top .close-x').click();
   const none = asked();
   await searchButton.click();
   await until('the third answer was not asked', async () => asked() >= none + 3);

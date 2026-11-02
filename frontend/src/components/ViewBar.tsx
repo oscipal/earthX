@@ -13,20 +13,9 @@ import { useMemo } from 'react';
 import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { scenesOf, summaryOf, summaryText } from '../originals';
+import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { selectionItemsFrom, ticksOfOpen, ticksOfSearch, useAppStore } from '../store';
 import { sectionsForView } from '../viewImages';
-
-// What a click on "Download full scenes" does (NM4-33): a ZIP of the original files of each scene where the source
-// lets the page read them, else the files themselves; either way straight from the source.
-// It starts with what the click will load: the scenes and the size of their files, or that the size is not known
-// (Otto, 31.10.2026: no limit and no question, so this is where it is told).
-function originalsTitle(plural: boolean, zip: boolean, summary: string): string {
-  if (!zip) return `${summary}. Download the original file${plural ? 's' : ''} of the selected scene${plural ? 's' : ''}, straight from the source.`;
-  return plural
-    ? `${summary}. Download each selected scene as one ZIP of its original files, straight from the source. Your browser may ask once to allow several downloads.`
-    : `${summary}. Download the selected scene as one ZIP of its original files, straight from the source.`;
-}
 
 // "12 scenes · Sentinel-2 L2A 8 · Copernicus DEM 4": how the ticks are spread over the datasets, where they are in several.
 function spreadText(ticks: ReadonlySet<string>, sections: ReturnType<typeof sectionsForView>, titleOf: (id: string) => string): string {

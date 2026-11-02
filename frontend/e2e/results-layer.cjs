@@ -159,7 +159,7 @@ async function run(browser, { theme, viewport }) {
   };
 
   await expectColour('the open group', COLOURS[0]);
-  // 1. Otto's click path: the job pinned goes on top, over "Results" (Otto, zu #249).
+  // 1. Otto's click path: the job pinned comes under "Results", which stays on top (Otto, 2.11.2026; replaces "over it", zu #249).
   await page.evaluate(async (bbox) => {
     (await import('/src/store.ts')).useAppStore.getState().pinDerivedLayer({
       name: 'Job result',
@@ -170,8 +170,11 @@ async function run(browser, { theme, viewport }) {
     });
   }, BBOX);
   const rows = await page.locator('.layer-manager .layer-row [data-col="name"]').allTextContents();
-  if (rows.join('|') !== 'Job result|Search results') problems.push(`the layer manager lists ${rows.join(', ')}`);
-  await expectColour('the job pinned over "Results"', JOB);
+  if (rows.join('|') !== 'Search results|Job result') problems.push(`the layer manager lists ${rows.join(', ')}`);
+  await expectColour('the job pinned under "Results"', COLOURS[0]);
+  // Moved down by the user, "Results" lies under the job, and the button brings it back on top.
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().moveResults('down'));
+  await expectColour('the job over "Results" moved down', JOB);
   await page.locator('#rail-results').click();
   await page.screenshot({ path: path.join(OUT, `to-top button ${name}.png`) });
   await page.locator('#rail-results').click();
@@ -215,6 +218,8 @@ async function run(browser, { theme, viewport }) {
       downloaded: { SYNTH_2: { tileUrl: `${location.origin}/collections/synthetic/items/SYNTH_2/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=data`, bounds: [10.2, 46.9, 10.4, 48.7], asset: 'data', minZoom: 0, maxZoom: 14 } },
     });
     useAppStore.getState().toggleSelected('SYNTH_1');
+    // The bar of the selection stands above the settings sheet of a view and, in a narrow window, over the probe: it is not what is looked at.
+    useAppStore.getState().closeSelectionBlock();
   });
   await expectColour('a view open: the open group over the ticked scene of another group', COLOURS[0]);
   await page.screenshot({ path: path.join(OUT, `view ${name}.png`) });

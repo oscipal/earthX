@@ -163,8 +163,9 @@ async function run(browser, { theme, viewport }) {
   const row = () => text('.vc-step-text');
   if ((await row()) !== '2025-08-03') problems.push(`the switcher says ${JSON.stringify(await row())}, expected "2025-08-03"`);
   if (/\d{4}-\d{2}-\d{2}/.test(await page.locator('.vc-title').first().textContent())) problems.push('the title of the head has a date');
-  const order = await page.evaluate(() => [...document.querySelector('.vc-head').children].map((el) => el.className.split(' ')[0]));
-  if (order.join() !== 'vc-title,pp-badge,vc-dataset,vc-stepper,vc-eye') problems.push(`the head holds ${order.join(', ')}`);
+  // The head of the settings bar: title, mark, eye and x in the first row; the dataset and the date with the arrows in the second.
+  const order = await page.evaluate(() => [...document.querySelector('.vc-head').children].map((row) => [...row.children].map((el) => el.className.split(' ')[0]).join()));
+  if (order.join(' | ') !== 'vc-title,pp-badge,vc-eye,close-x | vc-dataset,vc-stepper') problems.push(`the head holds ${order.join(' | ')}`);
   if ((await page.getByRole('button', { name: 'Apply to all' }).count()) !== 1) problems.push('"Apply to all" is not there');
   const colormapBox = () => page.evaluate(() => {
     const label = [...document.querySelectorAll('.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap');
@@ -228,18 +229,17 @@ async function run(browser, { theme, viewport }) {
   if (!names.some((n) => n.includes('S2B'))) problems.push(`no layer is named after the satellite: ${JSON.stringify(names)}`);
   await page.screenshot({ path: path.join(OUT, `layers ${name}.png`) });
 
-  // 7. Head and two rows: all the buttons of the second row lie in one row, and in a wide window the panel is wider than high.
+  // 7. The actions in the bar: in pairs (Otto, 2.11.2026), of one width and one height (none wraps its words), no "Clear".
   const shape = await page.evaluate(() => {
-    const panel = document.querySelector('.scene-view').getBoundingClientRect();
-    const tops = [...document.querySelectorAll('.scene-view .vc-actions > *')].map((b) => Math.round(b.getBoundingClientRect().top));
-    const heads = [...document.querySelectorAll('.scene-view .vc-head, .scene-view .vc-render, .scene-view .vc-actions')].map((r) => Math.round(r.getBoundingClientRect().top));
-    return { width: panel.width, height: panel.height, oneRow: new Set(tops).size === 1, rows: new Set(heads).size };
+    const els = [...document.querySelectorAll('.inspector .vc-actions > *')];
+    const boxes = els.map((b) => b.getBoundingClientRect());
+    return { columns: new Set(boxes.map((b) => Math.round(b.left))).size, widths: new Set(boxes.map((b) => Math.round(b.width))).size, heights: new Set(boxes.map((b) => Math.round(b.height))).size, count: boxes.length, cut: els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent) };
   });
-  if (win.width >= 600) {
-    if (!shape.oneRow) problems.push('the buttons of the second row are not in one row');
-    if (shape.height >= shape.width) problems.push(`the panel is not wider than high (${shape.width} x ${shape.height})`);
-    if (shape.rows !== 3) problems.push(`the panel is not the head and two rows (${shape.rows} rows)`);
-  }
+  if (shape.count !== 6) problems.push(`${shape.count} actions, six expected`);
+  if (shape.columns !== 2) problems.push(`the actions are in ${shape.columns} columns, two expected`);
+  if (shape.cut.length > 0) problems.push(`actions cut short: ${shape.cut.join(', ')}`);
+  if (shape.widths !== 1) problems.push(`the actions are of ${shape.widths} different widths`);
+  if (shape.heights !== 1) problems.push(`the actions are of ${shape.heights} different heights`);
   await page.screenshot({ path: path.join(OUT, `shape ${name}.png`) });
 
   // 8. Everything inside the panel and the panel inside the window.

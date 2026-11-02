@@ -45,7 +45,8 @@ export default function DownloadDialog() {
   const layerDataset = useAppStore((s) =>
     s.datasets.find((d) => d.id === (layer?.restore.datasetId ?? s.datasetId)),
   );
-  const selectionDataset = useAppStore((s) => s.datasets.find((d) => d.id === s.datasetId));
+  const view = useAppStore((s) => (s.downloadSelection ? s.downloadView : null));
+  const selectionDataset = useAppStore((s) => s.datasets.find((d) => d.id === (view?.datasetId ?? s.datasetId)));
   // Selected via the raw, stable slices and combined here (not inside the
   // selector): a selector that returns a freshly filtered array or a `?? []`
   // literal is a new reference on every call, which zustand's `useSyncExternalStore`
@@ -58,13 +59,14 @@ export default function DownloadDialog() {
   const activeGroup = useAppStore((s) => s.groups[s.activeGroupIndex]);
   const selectionItems = useMemo(
     () => {
+      if (view) return view.items;
       const picked = items.filter((it) => selectedIds.includes(it.id));
       return picked.length ? picked : (activeGroup?.items ?? []);
     },
-    [selectedIds, items, activeGroup],
+    [view, selectedIds, items, activeGroup],
   );
   const selectionAoi = useAppStore((s) => s.aoi);
-  const activeGroupLabel = activeGroup?.label ?? '';
+  const activeGroupLabel = view?.label ?? activeGroup?.label ?? '';
   const downloading = useAppStore((s) => s.downloading);
   const close = useAppStore((s) => s.closeDownloadDialog);
   const confirm = useAppStore((s) => s.confirmDownload);
@@ -157,10 +159,7 @@ export default function DownloadDialog() {
   const req = selectionMode
     ? downloadRequestForSelection(
         selectionDataset,
-        groupItemIdsFor(
-          selectionItems.map((it) => it.id),
-          groups,
-        ),
+        view ? [selectionItems.map((it) => it.id)] : groupItemIdsFor(selectionItems.map((it) => it.id), groups),
         selectionAoi,
       )
     : layer

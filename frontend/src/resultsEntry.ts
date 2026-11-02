@@ -4,9 +4,9 @@
 
 import type { MapLayer } from './layers';
 
-// New layers always come onto the top of the list, over "Results" too (Otto, 30.10.2026, zu #249): "Results" keeps the
-// layers that were above it, and the new ones go above them.
-export const resultsAtAfterAdding = (resultsAt: number, added: number): number => resultsAt + added;
+// "Search results" stays on top unless the user moved it down (Otto, 2.11.2026; replaces "new layers over Results" of 30.10.2026):
+// on top, new layers come right under it; moved down, it keeps the layers that were above it and the new ones go above them.
+export const resultsAtAfterAdding = (resultsAt: number, added: number): number => (resultsAt === 0 ? 0 : resultsAt + added);
 
 // Layers left the list: "Results" moves up by those of them that were above it.
 export const resultsAtAfterRemoving = (before: readonly MapLayer[], resultsAt: number, kept: (layer: MapLayer) => boolean): number =>

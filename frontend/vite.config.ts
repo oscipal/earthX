@@ -34,8 +34,9 @@ export default defineConfig({
     // mounted inside a panel that slides away, and only rendering a component
     // catches that.
     include: ['src/**/*.test.{ts,tsx}'],
-    // `mapStyles.test.ts` reads `index.css` as text (`?raw`) to check the theme
-    // tokens; without this vitest hands every stylesheet back empty.
-    css: { include: [/index\.css/] },
+    // `mapStyles.test.ts` and `tokens.test.ts` read `index.css` and `tokens.css`
+    // as text (`?raw`) to check the theme tokens; without this vitest hands
+    // every stylesheet back empty.
+    css: { include: [/(?:index|tokens)\.css/] },
   },
 })

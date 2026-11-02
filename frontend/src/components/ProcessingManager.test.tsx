@@ -206,13 +206,15 @@ describe('the menu of a row', () => {
     expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['RenameR', 'Move to group…G', 'ArchiveA', 'DeleteD']);
   });
 
-  it('closes on Escape and gives the focus back to its button', () => {
+  it('stays open on Escape, with the focus where it was (Otto, 2.11.2026: Esc closes nothing)', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     menuOf(rows()[0]);
-    key(document.querySelector('[role="menu"] button')!, 'Escape');
-    expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(document.activeElement).toBe(container.querySelector('button[aria-haspopup="menu"]'));
+    const first = document.querySelector<HTMLElement>('[role="menu"] button')!;
+    act(() => first.focus());
+    key(first, 'Escape');
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    expect(document.activeElement).toBe(first);
   });
 
   it('lies outside the scrolling list, over the whole window, so the panel cannot cut it off', () => {
@@ -242,8 +244,8 @@ describe('the menu of a row', () => {
     click(items()[1]);
     expect(items().map((b) => b.textContent)).toEqual(['Ungrouped', 'Field 7']);
     expect(document.activeElement).toBe(items()[0]);
-    // Escape still works from there.
-    key(items()[0], 'Escape');
+    // A click beside it closes it from there (Esc does not, Otto, 2.11.2026).
+    act(() => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })));
     expect(document.querySelector('[role="menu"]')).toBeNull();
   });
 

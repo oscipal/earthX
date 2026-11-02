@@ -1,5 +1,6 @@
 // The block at the bottom of the map (NM4-66), in a real browser with made-up scenes (no backend):
-//   1. The bar of the selection and the timeline are one panel, one grip, and as wide as each other.
+//   1. The bar of the selection and the timeline are one panel, one grip, and as wide as each other; with nothing ticked the block keeps
+//      its width and says "Select a scene" (Otto, 2.11.2026).
 //   2. The row of dates: first, before, an arrow, shown, an arrow, after, last; "<" and ">" go a step; no date twice.
 //   3. A small red "x" at the top right, over no button; it hides the block and leaves the ticks alone; a click on a scene
 //      or an opened group in the list brings it back.
@@ -82,6 +83,9 @@ async function run(browser, theme, viewport) {
   await page.waitForSelector('.time-slider');
   if ((await page.locator('.download-bar').count()) !== 0) problems.push('the bar shows with nothing ticked');
   if ((await page.locator('.close-x').count()) !== 1) problems.push('no "x" on the timeline alone');
+  // "Select a scene" in the place of the buttons, and the block as wide as with a ticked scene (Otto, 2.11.2026).
+  if ((await page.locator('.selection-block .select-hint').textContent()) !== 'Select a scene') problems.push('no "Select a scene" with nothing ticked');
+  const aloneBox = await box('.selection-block');
   await page.screenshot({ path: path.join(OUT, `${name} timeline.png`) });
 
   // --- tick a scene in the list: one block --------------------------------------------------------------------------
@@ -91,6 +95,8 @@ async function run(browser, theme, viewport) {
   if (blocks !== 1) problems.push(`${blocks} blocks`);
   if ((await page.locator('.drag-grip').count()) !== 1 || (await page.locator('.selection-block .panel, .selection-block.panel').count()) > 1) problems.push('more than one grip or panel');
   const [blockBox, barBox, timeBox] = [await box('.selection-block'), await box('.download-bar'), await box('.time-slider')];
+  if (!near(aloneBox.width, blockBox.width) || !near(aloneBox.x, blockBox.x)) problems.push(`the block is ${aloneBox.width} wide with nothing ticked and ${blockBox.width} with a scene`);
+  if ((await page.locator('.selection-block .select-hint').count()) !== 0) problems.push('"Select a scene" stays with a ticked scene');
   if (!near(barBox.width, timeBox.width) || !near(barBox.width, blockBox.width - 2) || !near(barBox.x, timeBox.x)) {
     problems.push(`bar ${barBox.width} x ${barBox.x}, timeline ${timeBox.width} x ${timeBox.x}, block ${blockBox.width}: not one width`);
   }

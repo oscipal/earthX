@@ -243,11 +243,12 @@ describe('the settings and "Save" of a layer made from a band', () => {
   const button = (label: string) => [...container.querySelectorAll('.result-controls button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
   const vmax = () => container.querySelectorAll<HTMLInputElement>('.result-controls .vc-num input')[1];
 
-  it('read vmin · vmax · Colormap without a Band dropdown, and "Save" says it keeps the look for this layer only', async () => {
+  it('read Band (locked, one band) · vmin · vmax · Colormap, and "Save" says it keeps the look for this layer only', async () => {
     await show();
     click(addButton());
     open(0);
-    expect([...container.querySelectorAll('.result-controls .vc-field > span')].map((s) => s.textContent)).toEqual(['vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect([...container.querySelectorAll('.result-controls .vc-field > span')].map((s) => s.textContent)).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(container.querySelector<HTMLSelectElement>('.result-controls .band-select select')!.disabled).toBe(true);
     expect(button('Save').title).toBe('Nothing to save: the layer is saved as it is drawn');
     typeInto(vmax(), '0.5');
     expect(button('Save').title).toBe('Keep these values for this layer only');

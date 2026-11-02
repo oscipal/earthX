@@ -1,6 +1,6 @@
-// NM4-59 (Otto, 30.10.2026, replaces the order of 27.10.2026, zu #211): within "Results" the view is the bottom tier, the
-// quicklooks of the search results lie over it and the outlines of the results over both. Whichever of the two is drawn
-// first, and after a style load has laid the map's own layers again.
+// Otto, 2.11.2026 (replaces NM4-59 of 30.10.2026, which put the view at the bottom): within "Results" the view lies over the
+// quicklooks of the search results, the outlines of the results over both. Whichever of the two is drawn first, and after a
+// style load has laid the map's own layers again.
 
 import { describe, expect, it } from 'vitest';
 
@@ -52,13 +52,13 @@ function expectOrder(live: Live) {
   expect(resultLayers(live)).toHaveLength(2);
   const top = (ids: string[]) => Math.min(...ids.map((id) => index(live, id)));
   const bottom = (ids: string[]) => Math.max(...ids.map((id) => index(live, id)));
-  // The results over the view, both under the outlines of the selection.
-  expect(bottom(viewLayers(live))).toBeLessThan(top(resultLayers(live)));
-  expect(bottom(resultLayers(live))).toBeLessThan(index(live, 'mosaicsel-line'));
+  // The view over the results, both under the outlines of the selection.
+  expect(bottom(resultLayers(live))).toBeLessThan(top(viewLayers(live)));
+  expect(bottom(viewLayers(live))).toBeLessThan(index(live, 'mosaicsel-line'));
 }
 
 describe('the quicklooks of the results and the view', () => {
-  it('puts the results over the view when the view is drawn first', () => {
+  it('puts the view over the results when the view is drawn first', () => {
     const live = freshMap();
     view(live);
     results(live);
@@ -119,14 +119,18 @@ describe('the quicklooks of the results and the view', () => {
 });
 
 // Otto, 27.10.2026: "ein angeklicktes Search Result ist immer der oberste Layer", within "Results" since NM4-59: the quicklook
-// of a ticked scene of the open group lies over the view and over the other quicklooks, whichever was drawn first.
-describe('the quicklook of a ticked search result is the top picture of the results', () => {
+// of a ticked scene of the open group lies over the other quicklooks, whichever was drawn first; since 2.11.2026 under the view.
+describe('the quicklook of a ticked search result is the top quicklook of the results', () => {
   const ticked = ['S1'];
   const tickedResults = (live: Live) => syncResultsOverlay(live.map as never, { items: [scene('S1'), scene('S2')], selectedIds: ticked, dataset: dataset() });
   const rasters = (live: Live) => live.stack.filter((id) => /^(m|n|res|preview)-.*(lyr)/u.test(id) || id.startsWith('preview-lyr'));
 
-  function expectTickedOnTop(live: Live, tickedLayer: string) {
-    const others = rasters(live).filter((id) => id !== tickedLayer);
+  // `view`: a view is drawn (browsing has none, and its quicklooks share the ids of a view's bank).
+  function expectTickedOnTop(live: Live, tickedLayer: string, view = true) {
+    const views = view ? viewLayers(live) : [];
+    const others = rasters(live).filter((id) => id !== tickedLayer && !views.includes(id));
+    // The view lies over it (Otto, 2.11.2026).
+    for (const id of views) expect(index(live, id)).toBeGreaterThan(index(live, tickedLayer));
     expect(others.length).toBeGreaterThan(0);
     expect(index(live, tickedLayer)).toBeGreaterThan(Math.max(...others.map((id) => index(live, id))));
     // Under the marker of the overlays (UI-02b): names and graticule stay over the quicklook of a ticked scene.
@@ -140,12 +144,12 @@ describe('the quicklook of a ticked search result is the top picture of the resu
     ['the view first', (live: Live) => { view(live); tickedResults(live); }],
     ['the results first', (live: Live) => { tickedResults(live); view(live); }],
     ['the view again after the results', (live: Live) => { tickedResults(live); view(live); view(live); tickedResults(live); view(live); }],
-  ])('over the view and the unticked quicklook, with %s', (_name, draw) => {
+  ])('over the unticked quicklook and under the view, with %s', (_name, draw) => {
     const live = freshMap();
     draw(live);
-    // S1 is ticked, S2 is not: S2 lies over the view too, under S1.
+    // S1 is ticked, S2 is not: S2 lies under S1, and both under the view.
     expectTickedOnTop(live, 'res-tiles-lyr-0');
-    expect(index(live, 'res-tiles-lyr-1')).toBeGreaterThan(Math.max(...viewLayers(live).map((id) => index(live, id))));
+    expect(index(live, 'res-tiles-lyr-1')).toBeLessThan(Math.min(...viewLayers(live).map((id) => index(live, id))));
   });
 
   it('after a style load, which lays everything again', () => {
@@ -160,16 +164,16 @@ describe('the quicklook of a ticked search result is the top picture of the resu
     // The ticked scene comes second, so it is drawn after S1's quicklook: it must still end up over it.
     syncBrowseMosaic(live.map as never, { items: [scene('S2'), scene('S1')], selectedIds: ticked, dataset: dataset() });
     expect(live.stack.filter((id) => id.startsWith('m-tiles-lyr-'))).toHaveLength(2);
-    expectTickedOnTop(live, 'm-tiles-lyr-1');
+    expectTickedOnTop(live, 'm-tiles-lyr-1', false);
   });
 
   it('over the other quicklooks while browsing when the ticked scene is the first of the list', () => {
     const live = freshMap();
     syncBrowseMosaic(live.map as never, { items: [scene('S1'), scene('S2')], selectedIds: ticked, dataset: dataset() });
-    expectTickedOnTop(live, 'm-tiles-lyr-0');
+    expectTickedOnTop(live, 'm-tiles-lyr-0', false);
   });
 
-  it('is no different from the others when nothing is ticked: over the view', () => {
+  it('is no different from the others when nothing is ticked: under the view', () => {
     const live = freshMap();
     view(live);
     syncResultsOverlay(live.map as never, { items: [scene('S1'), scene('S2')], selectedIds: [], dataset: dataset() });
