@@ -1294,8 +1294,9 @@ function forgetSearch() {
   };
 }
 
-// The panels beside the rail (UI-01 §6.9). One is open at a time, or none.
-export type DockPanel = 'controls' | 'layers' | 'jobs' | 'results';
+// The panels beside the rail (UI-01 §6.9). One is open at a time, or none. The jobs are no panel of the dock: they
+// float in a window of their own (UI-03c, `JobsWindow.tsx`).
+export type DockPanel = 'controls' | 'layers' | 'results';
 
 // Sliding the control panel away leaves another panel where it is.
 const withoutControls = (dock: DockPanel | null): DockPanel | null => (dock === 'controls' ? null : dock);

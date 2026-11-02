@@ -39,7 +39,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ collections: [] }), { status: 200 })));
   useAppStore.setState({ dock: 'controls', layers: [], toolMode: 'none', aoi: null, groups: [], selectedIds: [], focusMode: false });
-  useProcessingStore.setState({ open: false, detailJobID: null, jobs: [] });
+  useProcessingStore.setState({ open: false, managerOpen: false, detailJobID: null, jobs: [] });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -117,10 +117,21 @@ describe('the panels', () => {
     expect(useAppStore.getState().dock).toBe('layers');
     expect(slot('layers')!.hidden).toBe(false);
     expect(slot('controls')!.hidden).toBe(true);
-    click(symbol('jobs'));
-    expect(slot('jobs')!.hidden).toBe(false);
+    click(symbol('controls'));
+    expect(slot('controls')!.hidden).toBe(false);
     expect(slot('layers')!.hidden).toBe(true);
     expect(container.querySelectorAll('.dock-slot:not([hidden])')).toHaveLength(1);
+  });
+
+  it('are not touched by the jobs: their window opens beside whichever panel is open', () => {
+    click(symbol('layers'));
+    click(symbol('jobs'));
+    expect(useAppStore.getState().dock).toBe('layers');
+    expect(slot('layers')!.hidden).toBe(false);
+    expect(container.querySelector('#jobs-window')).not.toBeNull();
+    expect(symbol('jobs').getAttribute('aria-pressed')).toBe('true');
+    expect(symbol('jobs').hasAttribute('aria-expanded')).toBe(false);
+    expect(symbol('jobs').getAttribute('aria-controls')).toBe('jobs-window');
   });
 
   it('close with a second click on the open symbol, and the map is free', () => {
@@ -146,10 +157,11 @@ describe('the panels', () => {
     expect(container.querySelector('.layer-manager')).not.toBeNull();
   });
 
-  it('mount the job manager only while it is open: it follows jobs', () => {
+  it('mount the job manager only while its window is open: it follows jobs', () => {
     expect(container.querySelector('.processing-manager')).toBeNull();
+    expect(symbol('jobs').hasAttribute('aria-controls')).toBe(false);
     click(symbol('jobs'));
-    expect(container.querySelector('.processing-manager')).not.toBeNull();
+    expect(container.querySelector('#jobs-window .processing-manager')).not.toBeNull();
     click(symbol('jobs'));
     expect(container.querySelector('.processing-manager')).toBeNull();
   });
@@ -175,8 +187,13 @@ describe('the panels', () => {
 describe('the keyboard', () => {
   it('gives the Tab key one stop in the rail: the open panel\'s symbol', () => {
     expect(stops()).toEqual([0, -1, -1, -1]);
+    click(symbol('layers'));
+    expect(stops()).toEqual([-1, 0, -1, -1]);
+  });
+
+  it('leaves the stop where it is when the window of the jobs opens: it is no panel of the dock', () => {
     click(symbol('jobs'));
-    expect(stops()).toEqual([-1, -1, 0, -1]);
+    expect(stops()).toEqual([0, -1, -1, -1]);
   });
 
   it('keeps the stop on the last symbol focused where no panel is open', () => {
@@ -250,16 +267,16 @@ describe('the keyboard', () => {
     expect(useAppStore.getState().dock).toBe('layers');
   });
 
-  it('leaves the menu of a job row and the panel open on Escape (Otto, 2.11.2026: Esc closes no menu either)', () => {
+  it('leaves the menu of a job row and the window open on Escape (Otto, 2.11.2026: Esc closes no menu either)', () => {
     act(() => useProcessingStore.setState({ jobs: [jobEntry(1)] }));
     click(symbol('jobs'));
     click(container.querySelector('button[aria-haspopup="menu"]')!);
     const first = document.querySelector('[role="menu"] button')!;
     key(first, 'Escape');
     expect(document.querySelector('[role="menu"]')).not.toBeNull();
-    expect(useAppStore.getState().dock).toBe('jobs');
+    expect(useProcessingStore.getState().managerOpen).toBe(true);
     key(container.querySelector('.processing-manager h2')!, 'Escape');
-    expect(useAppStore.getState().dock).toBe('jobs');
+    expect(useProcessingStore.getState().managerOpen).toBe(true);
   });
 });
 

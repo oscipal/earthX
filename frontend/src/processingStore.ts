@@ -329,6 +329,10 @@ export interface PartOutcome {
 
 interface ProcessingState {
   open: boolean;
+  // The floating window of the jobs (UI-03c): open or not, whatever else is open.
+  managerOpen: boolean;
+  toggleManager: () => void;
+  closeManager: () => void;
   // The job whose details the processing window shows instead of the order (UI-01 §6.8), or `null`.
   detailJobID: string | null;
   descriptions: Record<string, Description>;
@@ -1551,6 +1555,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
 
   return {
     open: false,
+    managerOpen: false,
+    toggleManager: () => set((s) => ({ managerOpen: !s.managerOpen })),
+    closeManager: () => set({ managerOpen: false }),
     detailJobID: null,
     descriptions: {},
     crs: {},

@@ -298,7 +298,11 @@ Ersetzt die betroffenen Stellen von §7.2 (Skizze), §7.3 (Felder, Opacity, Acti
 10. **Seitenleiste bis ganz oben:** Seitenleiste und Processing-Panel in derselben Spalte reichen ohne Spalt von der Oberkante bis zum Fuß (`top: 0`); die Knöpfe oben („Zoom to selection“, „Basemap“, Thema) stehen links neben der Spalte. Ersetzt „volle Höhe unter der Knopfzeile“ aus Frage 3.
 11. **„Select a scene“** steht als ruhige Pille mit Haken-Symbol mittig zwischen Oberkante des Blocks und Zeitleiste.
 
-### 7.11 Nachtrag UI-03d: Quick processing, Histogramm, Layer-Aktionen, Colormaps (Otto, 02.11.2026, Stufe A)
+### 7.11 Nachtrag UI-03c (02.11.2026): Stand der Umsetzung
+
+Umgesetzt wie §7.9. Abweichungen und Auslegungen (Vorschlag, bis Otto widerspricht): Ein teils links hinausgeschobenes Fenster wird mit negativem `x` gemerkt, solange 120 px sichtbar sind; Retry und Download/Restore behalten je einen festen Platz vor „⋯“, statt eines gemeinsamen Hauptknopfs (bei einem Stapel können beide gelten); Gruppen: Umbenennen und Entfernen im Menü „⋯“ des Kopfes, Anzahl und „n running“ im Kopf. Browserprüfung: `frontend/e2e/jobs-window.cjs` (neu); `job-retry.cjs` an das Fenster angepasst.
+
+### 7.12 Nachtrag UI-03d: Quick processing, Histogramm, Layer-Aktionen, Colormaps (Otto, 02.11.2026, Stufe A)
 
 **Auftrag (Kurzfassung, drei Nachrichten von Otto vom 02.11.2026).** (1) Abschnitt „Quick processing“ über „Actions“: kleine Knöpfe, drei je Reihe, die Index-Presets und „Enhance contrast“, Formel im Tooltip; „Band“ nur noch Original und RGB. (2) Index sofort ohne Job; „Add to layers“ mit Index heftet nur den Index an; Download wie #264. (3) „Enhance contrast“: Kontrast je Kanal (p2–p98), nur Darstellung; bei Einzelbändern wie „auto-scale“. (4) Knöpfe zeigen ihren Zustand, zweiter Klick oder Bandwahl hebt auf. (5) Histogramm in „Scale“ mit zwei Schiebern, synchron mit Feldern und Umschalter; bei RGB drei, je Kanal ein Bereich (Kachel-Route, Ergebnis-Layer, „Save“, bitgleich). Nachgereicht: am Layer „Process“, „Remove layer“ (Mülleimer), Umbenennen im Kopf (nicht leer), keine Pfeile bei nur einem Datum, „Add current view to layers“ als Kopie; Colormap-Dropdown mit kleiner Auswahl und „More…“, eigene Seitenleiste mit allen Colormaps (Vorschau, Gruppen, Suche, „Reverse“, Zurück „‹“, Esc schließt nichts), „Reverse“ neben der Colormap, Liste und Farben vom tiler, ein Bauteil überall, mindestens die Standard-Farbverläufe von QGIS.
 
