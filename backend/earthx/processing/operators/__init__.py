@@ -1,7 +1,7 @@
 """Operator registry: what an operator is, which ones exist, where they apply (adr/0014 §5)."""
 
 from earthx.processing.operators.band_math import BAND_MATH, BAND_MATH_V2, BandMathParams, BandMathParamsV2
-from earthx.processing.operators.base import BandMeta, BandUse, Operator, RasterMeta, Requirement, Tier
+from earthx.processing.operators.base import BandMeta, BandUse, Grid, Operator, RasterMeta, Requirement, Tier
 from earthx.processing.operators.mask import MASK, MASK_V2, MaskParams
 from earthx.processing.operators.mask_values import MASK_VALUES, MaskValuesParams
 from earthx.processing.operators.normalize import (
@@ -32,6 +32,7 @@ __all__ = [
     "BandMathParamsV2",
     "BandMeta",
     "BandUse",
+    "Grid",
     "MASK",
     "MASK_V2",
     "MASK_VALUES",
