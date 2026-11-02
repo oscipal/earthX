@@ -560,6 +560,15 @@ body.dragging * {
     display: block;
     flex: none;
   }
+  /* A narrower margin, so that a pair of actions keeps its words in half the width of a phone ("Download full scene"). */
+  .inspector .insp-body {
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
+  }
+  .inspector .vc-actions > * {
+    padding-right: calc(var(--space-1) / 2);
+    padding-left: calc(var(--space-1) / 2);
+  }
   .inspector.folded .insp-body,
   .inspector.folded .insp-row2 {
     display: none;
