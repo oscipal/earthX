@@ -33,10 +33,6 @@ export default function SelectionBlock({ bar, timeline }: { bar: boolean; timeli
           <ViewBar />
         ) : (
           <p className="select-hint" role="status">
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-              <rect x="2" y="2" width="12" height="12" rx="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M5 8.2l2 2 4-4.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
             {SELECT_A_SCENE}
           </p>
         )}
