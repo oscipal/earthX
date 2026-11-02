@@ -297,3 +297,70 @@ Ersetzt die betroffenen Stellen von §7.2 (Skizze), §7.3 (Felder, Opacity, Acti
 9. **Antworten Otto zu den offenen Fragen (02.11.2026):** (1) Esc schließt auch Menüs, Auswahllisten und Tooltips nicht (Option 2); sie schließen mit einer Wahl bzw. einem Klick daneben, ein Tooltip, wenn Zeiger oder Fokus gehen. (2) Ein Klick neben „Advanced search“ schließt das Pop-up weiter (Option 1). (3) „Quick processing“ für UI-03d wie unter 8 (Option 1).
 10. **Seitenleiste bis ganz oben:** Seitenleiste und Processing-Panel in derselben Spalte reichen ohne Spalt von der Oberkante bis zum Fuß (`top: 0`); die Knöpfe oben („Zoom to selection“, „Basemap“, Thema) stehen links neben der Spalte. Ersetzt „volle Höhe unter der Knopfzeile“ aus Frage 3.
 11. **„Select a scene“** steht als ruhige Pille mit Haken-Symbol mittig zwischen Oberkante des Blocks und Zeitleiste.
+
+### 7.11 Nachtrag UI-03d: Quick processing, Histogramm, Layer-Aktionen, Colormaps (Otto, 02.11.2026, Stufe A)
+
+**Auftrag (Kurzfassung, drei Nachrichten von Otto vom 02.11.2026).** (1) Abschnitt „Quick processing“ über „Actions“: kleine Knöpfe, drei je Reihe, die Index-Presets und „Enhance contrast“, Formel im Tooltip; „Band“ nur noch Original und RGB. (2) Index sofort ohne Job; „Add to layers“ mit Index heftet nur den Index an; Download wie #264. (3) „Enhance contrast“: Kontrast je Kanal (p2–p98), nur Darstellung; bei Einzelbändern wie „auto-scale“. (4) Knöpfe zeigen ihren Zustand, zweiter Klick oder Bandwahl hebt auf. (5) Histogramm in „Scale“ mit zwei Schiebern, synchron mit Feldern und Umschalter; bei RGB drei, je Kanal ein Bereich (Kachel-Route, Ergebnis-Layer, „Save“, bitgleich). Nachgereicht: am Layer „Process“, „Remove layer“ (Mülleimer), Umbenennen im Kopf (nicht leer), keine Pfeile bei nur einem Datum, „Add current view to layers“ als Kopie; Colormap-Dropdown mit kleiner Auswahl und „More…“, eigene Seitenleiste mit allen Colormaps (Vorschau, Gruppen, Suche, „Reverse“, Zurück „‹“, Esc schließt nichts), „Reverse“ neben der Colormap, Liste und Farben vom tiler, ein Bauteil überall, mindestens die Standard-Farbverläufe von QGIS.
+
+**Umgesetzt (Draft-PR, Branch `claude/tender-bell-l3340r`).**
+
+- Backend: Operator-Kachel (Item, Mosaik) nimmt bei drei `band=` ein oder drei `rescale`, sonst `400`; Ergebnis-Statistik mit `histogram` (64 Klassen aus dem festen Histogramm, `BandStatistics.histogram`); Route `GET /colormaps` mit Gruppen, Vorschau und `_r`; `rocket` und `mako` ergänzt (seaborn, BSD-3-Clause); jede Colormap hat eine umgekehrte. Nachtrag in `adr/0006`.
+- Frontend: Bereich je Kanal im Look (`a,b;c,d;e,f`, drei gleiche als ein Paar) für Ansicht, Layer, „Apply to all“/„Save“ und Ergebnis-Layer; Histogramme mit zwei Schiebern je Band bzw. Kanal; „Quick processing“; Layer nur mit Index (`restore.indexOnly`); Layer-Aktionen und Umbenennen; Colormap-Feld (`ColormapField`) und -Liste (`ColormapPicker`) für Seitenleiste, Ergebnis-Layer und Processing-Vorschau; `/colormaps` im Vite-Proxy.
+
+**Auslegungen (Vorschlag, gelten bis Otto widerspricht).**
+
+- (a) „Enhance contrast“ und die Histogramme der Ansicht messen wie „auto-scale“: erste Szene des gezeigten Bildes, ganze Szene (GET-Statistik). Über die AOI misst nur der Ergebnis-Layer (Statistik über seine Maske); für die Ansicht siehe Frage 1.
+- (b) „Enhance contrast“ setzt die Felder auf „percentile“ 2/98 und zeichnet sofort; bei RGB nimmt jeder Kanal seine eigenen Perzentile, bei einem Band ist es dasselbe wie „auto-scale“ mit „Apply“. Zweiter Klick zeichnet, was vorher gezeichnet war. „Ein“ ist der Knopf, solange die Felder das gezeichnete Ergebnis verlangen.
+- (c) RGB in „percentile“: ein Paar Perzentile für alle drei Kanäle, jeder Kanal bei seinen eigenen Werten (das ist zugleich „Enhance contrast“); in „absolute“ drei Zeilen vmin/vmax. Ein Schieber in „percentile“ schreibt das gemeinsame Paar.
+- (d) „auto-scale“ setzt bei RGB weiter einen gemeinsamen Bereich (wie bisher).
+- (e) Index-Knöpfe: Zustand nach den Feldern; die Wahl eines Bandes hebt ihn sofort auf, gezeichnet wird das Band wie bisher erst mit „Apply“. Das gezeichnete Index steht nicht wählbar im Dropdown „Band“, damit es sagt, was die Karte zeigt.
+- (f) Ein mit Index angehefteter Layer ist nur der Index: „Band“ und die anderen Indizes gesperrt („This layer holds the index only“), „Enhance contrast“ frei; ⇩ lädt den Index als Job wie #264, ohne Rohbänder; ein solcher Layer aus ganzen Szenen hat ⇩ gesperrt mit Grund. Layer, die vor UI-03d mit Index angeheftet wurden, bleiben die ganze Ansicht.
+- (g) „Quick processing“ auch in den Einstellungen eines angehefteten Layers (die Presets waren dort im Dropdown); nicht am Ergebnis-Layer.
+- (h) „Remove layer“ in der Seitenleiste tut, was der Layer-Manager tut: Ergebnis-Einstellungen schließen, die Ansicht eines angehefteten Layers bleibt als „Temporary“ stehen.
+- (i) „Add current view to layers“: zeichnet nicht angewendete Felder zuerst, legt die Kopie „<Name> (copy)“ direkt über dem Layer an und öffnet deren Einstellungen; der ursprüngliche Layer geht auf seinen gespeicherten Stand zurück.
+- (j) Umbenennen: Klick auf Titel oder Stift, Enter oder Verlassen speichert, leer behält den alten Namen; das Datum hängt weiter am Namen. Esc im Namensfeld verwirft nur die Eingabe (vorhandenes Bauteil der Jobliste), schließt nichts.
+- (k) Kurzliste der Colormaps: gray, viridis, magma, rdylgn, rdbu, terrain (Vorschlag Otto); eine aus „More…“ gewählte steht dazu, solange sie gewählt ist.
+- (l) „Reverse“ für alle Colormaps; rio-tiler hat für `cfastie`, `rplumbo`, `schwarzwald` kein `_r`, der tiler kehrt deren Tabelle um.
+- (m) Die Colormap-Liste blendet die Einstellungen aus wie Processing; aus dem Processing-Panel geöffnet liegt sie über dessen rechtem Teil (320 px). Unter 900 px Blatt mit Griff.
+- (n) Balkenhöhe im Histogramm als Wurzel der Anzahl, damit flache Ausläufer sichtbar bleiben.
+- (o) Nebenbei behoben: die Meldung oben („Added … to layers“) war bei 360 px 6 px zu breit und ließ die Seite seitlich scrollen.
+
+**Abgleich mit QGIS.** Quelle: `resources/symbology-style.xml` von QGIS, `release-3_40` (4178dfd8) und `master` (19a6ceae), je 35 `<colorramp>` vom Typ `gradient`, gleiche Namen. ColorBrewer, cpt-city, Preset und Random sind dort nur Dialoge zum Anlegen, keine mitgelieferten Verläufe.
+
+| QGIS | tiler | Herkunft, Lizenz | Hinweis |
+|---|---|---|---|
+| Blues, Greens, Greys, Oranges, Purples, Reds, BuGn, BuPu, GnBu, OrRd, PuBu, PuBuGn, PuRd, RdPu, YlGn, YlGnBu, YlOrBr, YlOrRd | gleichnamig (klein) | ColorBrewer, Apache-2.0 | QGIS interpoliert teils aus 5 Klassen, rio-tiler aus 9 |
+| BrBG, PiYG, PRGn, PuOr, RdBu, RdGy, RdYlBu, RdYlGn, Spectral | gleichnamig | ColorBrewer, Apache-2.0 | QGIS 5 Klassen, rio-tiler 11: Farbwirkung merklich anders |
+| Viridis, Magma, Inferno, Plasma, Cividis, Turbo | gleichnamig | matplotlib (Viridis-Familie CC0), Turbo Google Apache-2.0 | gleiche Verläufe |
+| Rocket, Mako | **ergänzt** (`rocket`, `mako`) | seaborn `cm.py`, BSD-3-Clause, Copyright Michael L. Waskom; Lizenz in `backend/earthx/access/colormap_data/` | Endfarben gleich denen von QGIS (3,5,26 → 250,235,221; 11,4,5 → 222,245,229) |
+
+cpt-city liefert QGIS nur als Katalog für den Browser (`resources/cpt-city-qgis-min`), mit Lizenz je Verlauf; nicht übernommen. Lohnend wären höchstens einzelne Höhen- oder Bathymetrie-Verläufe nach Einzelprüfung. Die Gruppen folgen matplotlib (`colormap_reference.py`) und cmocean (`docs/source/index.rst`); `cfastie`, `rplumbo`, `schwarzwald` (rio-tiler) unter „other“.
+
+**Fragen an Otto.**
+
+1. „Enhance contrast“ und Histogramm der Ansicht über die AOI statt über die ganze erste Szene? (1) so lassen wie „auto-scale“ (heute); (2) **Empfehlung:** eigene Folgeaufgabe, eine POST-Route für die Statistik der Ansicht mit der AOI nur im Body (wie NM4-19), dann messen „auto-scale“, „Enhance contrast“ und Histogramm über den Zuschnitt; (3) über die bestehende AOI-Statistik der Jobs, braucht aber einen Schritt im Auftrag und eignet sich für RGB nicht.
+2. Umfang: etwa 1 700 geänderte Zeilen Produktivcode (ohne Tests, Browser-Skripte, Dokumente und die Farbtabellen), mit allem etwa 4 100, weit über dem Richtwert 400. (1) **Empfehlung:** so lassen, die Commits sind nach Themen getrennt; (2) in drei PRs teilen (UI-03d, Layer-Aktionen, Colormaps).
+3. Die Farbwerte der ColorBrewer-Verläufe von QGIS (5 Klassen) weichen von rio-tilers (9/11 Klassen) ab. (1) **Empfehlung:** die Namen genügen, die Werte von rio-tiler bleiben; (2) die QGIS-Werte als eigene Colormaps (`qgis_rdylgn` …) ergänzen.
+4. Esc im Feld des Layer-Namens verwirft die Eingabe (Auslegung j). (1) **Empfehlung:** so lassen, es schließt nichts; (2) auch dort ohne Wirkung.
+
+**Prüfanleitung für Otto (Browser und PowerShell 5.1).**
+
+```powershell
+docker compose up -d --build api tiler
+Invoke-RestMethod http://localhost:8001/colormaps | Select-Object -ExpandProperty groups | ForEach-Object { "$($_.name): $($_.colormaps.Count)" }
+# sequential: 55, diverging: 17, cyclic: 4, qualitative: 12, other: 21
+cd frontend; npm run dev
+```
+
+Im Browser (`http://localhost:5173`, hell und dunkel, breit und schmal):
+
+1. Sentinel-2 suchen, Szene wählen, „Crop to AOI“. In der Seitenleiste: „Band“ hat RGB und die Einzelbänder, keine Indizes; darunter „Scale“ mit drei Zeilen R/G/B und drei farbigen Histogrammen; „Quick processing“ mit NDVI, NDWI, NDSI / NBR, EVI, Enhance contrast.
+2. Einen roten Schieber ziehen: nur die Zeile R ändert sich; eine Zahl tippen: der Schieber folgt. „Apply“ zeichnet; DevTools → Network: die Kachel trägt drei `rescale`.
+3. „Enhance contrast“: der Knopf ist hervorgehoben, die Felder zeigen „percentile“ 2/98, die Karte wird kräftiger; zweiter Klick: das Bild davor.
+4. „NDVI“: sofort gezeichnet, ein Histogramm, „Band“ zeigt NDVI (nicht wählbar); zweiter Klick: RGB. Zoom unter 8: „Zoom in to compute NDVI“.
+5. NDVI wählen, „Add to layers“; im Layer-Manager den Layer öffnen: „Band“ gesperrt („This layer holds the index only“), andere Indizes gesperrt; ⇩: der Dialog lädt NDVI ohne Wahl „Raw bands“.
+6. Am Layer: keine Pfeile neben dem Datum; Stift → neuer Name → Enter (auch im Layer-Manager); leerer Name → alter Name bleibt; „Add current view to layers“ legt „… (copy)“ an; Mülleimer entfernt den Layer.
+7. Colormap → „More…“: Liste mit Vorschau und Gruppen, Suche „rd“, „Reverse“; Klick auf `rocket` → zurück, `rocket` steht im Dropdown; „⇄“ daneben kehrt um (Kachel `colormap_name=rocket_r`); „‹“ geht ohne Wahl zurück; Esc schließt nichts. Dasselbe im Processing-Panel (Vorschau) und am Ergebnis-Layer.
+8. Ergebnis-Layer mit RGB: drei Zeilen und Histogramme; „Save“ und erneutes Öffnen behalten die drei Bereiche.
+
+Browser-Skripte der Sitzung: `e2e/quick-processing.cjs` (neu; mit `REAL_COLORMAPS=1` gegen den laufenden tiler), nachgezogen `view-index`, `settings-box`, `rgb`, `nm4-65`, `view-steps`, `colormap-apply`.
