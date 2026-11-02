@@ -15,6 +15,7 @@ import { rangeOfTileUrl } from '../resultLayer';
 import { useAppStore } from '../store';
 import type { MapLayer } from '../layers';
 import ResultControls from './ResultControls';
+import { forgetHistograms } from './useHistograms';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -44,6 +45,7 @@ let root: Root;
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  forgetHistograms();
   body = () => json({ bands: [{ name: 'a', statistics: stat(-5, 205, 3, 97) }] });
   fetchMock = vi.fn(async () => body());
   vi.stubGlobal('fetch', fetchMock);
@@ -61,9 +63,11 @@ afterEach(() => {
 });
 
 const state = () => useAppStore.getState();
+// The histograms of "Scale" (UI-03d) are read when the settings open; what is counted below are the reads of the percentiles.
 const open = (l: MapLayer = layer()) => {
   act(() => useAppStore.setState({ layers: [l], resultViewLayerId: 'R1' }));
   act(() => root.render(<ResultControls />));
+  fetchMock.mockClear();
 };
 const chip = () => container.querySelector<HTMLSelectElement>('.vc-unit')!;
 const toggleUnit = () => {

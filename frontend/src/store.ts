@@ -1561,6 +1561,11 @@ export interface AppState {
   revertResultLayer: (id: string) => void;
   closeResultView: () => void;
   removeLayer: (id: string) => void;
+  // A new name for a layer, in the settings bar and the layer manager alike (UI-03d); an empty one is refused (`false`).
+  renameLayer: (id: string, name: string) => boolean;
+  // "Add current view to layers" of a layer (Otto, 2.11.2026): a copy of the layer as it is drawn now becomes a new layer, the layer
+  // itself stays as it was saved.
+  copyLayerAsShown: (id: string) => void;
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
@@ -2108,12 +2113,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       }),
     })),
   closeResultView: () => set({ resultViewLayerId: null }),
+  // The same from the layer manager and from the settings bar (UI-03d): a result's settings close, the view of a pinned layer stays
+  // as a temporary picture.
   removeLayer: (id) =>
     set((s) => ({
       layers: s.layers.filter((l) => l.id !== id),
       resultsAt: resultsAtAfterRemoving(s.layers, s.resultsAt, (l) => l.id !== id),
       ...(s.resultViewLayerId === id ? { resultViewLayerId: null } : {}),
     })),
+  renameLayer: (id, name) => {
+    const text = name.trim();
+    if (text === '' || !get().layers.some((l) => l.id === id)) return false;
+    set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, name: text } : l)) }));
+    return true;
+  },
+  copyLayerAsShown: (id) => {
+    const s = get();
+    const at = s.layers.findIndex((l) => l.id === id);
+    if (at < 0) return;
+    const { saved: _saved, ...source } = s.layers[at];
+    const copy: MapLayer = {
+      ...source,
+      id: `C${nextBatchId()}0`,
+      name: `${source.name} (copy)`,
+      ...(source.result ? { result: { ...source.result, savedTileUrl: undefined, savedPercent: undefined } } : {}),
+    };
+    // Just above the layer it is copied from, as a layer made from a band; then its settings are the ones open, and the layer it
+    // comes from goes back to what it was saved with (closing its settings without "Save").
+    const layers = [...s.layers.slice(0, at), copy, ...s.layers.slice(at)];
+    set({ layers, resultsAt: at < clampResultsAt(s.resultsAt, s.layers) ? s.resultsAt + 1 : s.resultsAt, notice: `Added "${copy.name}" to layers.` });
+    if (s.resultViewLayerId === id) set({ resultViewLayerId: copy.id });
+    else if (s.viewOfLayer && s.viewLayerId === id) get().selectLayer(copy.id);
+  },
   toggleLayerVisible: (id) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
   // The opacity is part of what the settings of a layer keep with "Save": while they are open it is set aside once (NM4-54, Otto, 1.11.2026).

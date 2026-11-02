@@ -18,7 +18,6 @@ import { useProcessingStore } from '../processingStore';
 import { NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
 import { RGB, RGB_LABEL } from '../processingBands';
 import { bandPlacesOfTileUrl, defaultRange, rangeOfTileUrl, renderOfRange, resultPathOfTileUrl } from '../resultLayer';
-import { layerDownloadKind } from '../download';
 import { useAppStore } from '../store';
 import { ONE_BAND_TIP } from '../viewBand';
 import AutoScaleButton from './AutoScaleButton';
@@ -28,7 +27,7 @@ import { useHistograms } from './useHistograms';
 import Tip from './Tip';
 import OpacityRow from './OpacityRow';
 import { InspectorHead, InspectorSection, LayerStepper } from './InspectorParts';
-import LayerDownload from './LayerDownload';
+import LayerActions from './LayerActions';
 
 // The range as drawn: one pair, or one for each channel of a colour picture (UI-03d).
 const scaleText = (range: PreviewRange) => (range.channels?.length ? (rescaleOfChannels(range.channels) ?? '') : `${range.vmin},${range.vmax}`);
@@ -56,6 +55,7 @@ function Controls({ layer }: { layer: MapLayer }) {
   const restyle = useAppStore((s) => s.restyleResultLayer);
   const save = useAppStore((s) => s.saveResultLayer);
   const close = useAppStore((s) => s.closeResultView);
+  const renameLayer = useAppStore((s) => s.renameLayer);
   const setJobRange = useProcessingStore((s) => s.setJobRange);
   const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   // What the typed fields hold, from what the layer draws now; a layer drawn another way starts over.
@@ -196,6 +196,7 @@ function Controls({ layer }: { layer: MapLayer }) {
         tip={layerShownName(layer)}
         mark={!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
         onClose={() => close()}
+        rename={{ name: layer.name, onRename: (name) => renameLayer(layer.id, name) }}
       >
         <LayerStepper date={layer.date} />
       </InspectorHead>
@@ -269,13 +270,16 @@ function Controls({ layer }: { layer: MapLayer }) {
           )}
         </InspectorSection>
 
-        {layerDownloadKind(layer) !== null && (
-          <InspectorSection title="Actions">
-            <div className="vc-actions">
-              <LayerDownload layer={layer} className="ghost-btn" label="Download" />
-            </div>
-          </InspectorSection>
-        )}
+        <InspectorSection title="Actions">
+          <LayerActions
+            layer={layer}
+            beforeCopy={async () => {
+              if (!settable || !canApply) return true;
+              const range = known() ?? (await resolve());
+              return range !== null && draw(range);
+            }}
+          />
+        </InspectorSection>
       </div>
     </div>
   );

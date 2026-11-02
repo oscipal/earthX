@@ -17,10 +17,12 @@ export function useHistograms(key: string | null, load: () => Promise<Histogram[
     let current = true;
     let pending = asked.get(key);
     if (!pending) {
-      pending = loader.current().catch(() => null);
+      // A failure is asked again with the next question of the same key; statistics without histograms are an answer.
+      pending = loader.current().catch(() => {
+        asked.delete(key);
+        return null;
+      });
       asked.set(key, pending);
-      // A failure is asked again with the next question of the same key.
-      void pending.then((histograms) => histograms === null && asked.delete(key));
     }
     void pending.then((histograms) => current && setAnswer({ key, histograms }));
     return () => {

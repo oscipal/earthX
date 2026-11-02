@@ -610,6 +610,48 @@ body.dragging * {
 .inspector .range-hist input[type='range']:focus-visible::-webkit-slider-thumb {
   outline: 2px solid var(--focus);
 }
+/* The name of a layer in the head is renamed in place (Otto, 2.11.2026): the title is a button that looks like the title, the pencil
+   beside it is small and quiet. */
+.inspector .vc-title-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: text;
+}
+.inspector .vc-pencil {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.inspector .vc-pencil:hover {
+  color: var(--text);
+}
+.inspector .vc-rename .pm-rename {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+}
+/* "Remove layer": a small bin at the end of the last row of the actions. */
+.inspector .vc-actions > .vc-remove {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  padding: 0;
+}
 /* "Quick processing" (Otto, 2.11.2026): small buttons, three in a row; the one that is on is filled. */
 .inspector .vc-quick {
   display: grid;

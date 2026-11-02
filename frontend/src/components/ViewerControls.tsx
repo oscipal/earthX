@@ -8,7 +8,7 @@
 
 import { useMemo } from 'react';
 
-import { DRAW_AOI_TO_CROP, isCogFormat, layerDownloadKind, noOriginalsReason } from '../download';
+import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
@@ -28,7 +28,7 @@ import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Eye from './Eye';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
-import LayerDownload from './LayerDownload';
+import LayerActions from './LayerActions';
 import OpacityRow from './OpacityRow';
 import type { BandOption } from './BandSelect';
 import { viewKind } from '../viewKind';
@@ -112,6 +112,7 @@ export default function ViewerControls() {
   const viewOfLayer = useAppStore((s) => s.viewOfLayer);
   const pendingIndex = useAppStore((s) => s.pendingIndex);
   const pendingChannels = useAppStore((s) => s.pendingChannels);
+  const renameLayer = useAppStore((s) => s.renameLayer);
   const setPendingChannel = useAppStore((s) => s.setPendingChannel);
   const quickIndex = useAppStore((s) => s.quickIndex);
   const enhanceContrast = useAppStore((s) => s.enhanceContrast);
@@ -241,6 +242,7 @@ export default function ViewerControls() {
         }
         onClose={() => exitFocus()}
         closeTitle={compact ? undefined : 'Close and drop this view'}
+        rename={compact ? { name: layer.name, onRename: (name) => renameLayer(layer.id, name) } : undefined}
       >
         {compact ? (
           <LayerStepper date={layer.date} />
@@ -265,6 +267,7 @@ export default function ViewerControls() {
               <Stepper
                 text={stepText}
                 tip={stepTitle}
+                single={here.length <= 1}
                 onKeyDown={onKeys}
                 previous={{ disabled: at <= 0, title: here.length <= 1 ? 'There is only one image' : at <= 0 ? 'This is the first image' : 'Previous image', onClick: () => stepImage(-1) }}
                 next={{ disabled: at >= here.length - 1, title: here.length <= 1 ? 'There is only one image' : at >= here.length - 1 ? 'This is the last image' : 'Next image', onClick: () => stepImage(1) }}
@@ -395,13 +398,15 @@ export default function ViewerControls() {
         </InspectorSection>
 
         {compact ? (
-          layerDownloadKind(layer) !== null && (
-            <InspectorSection title="Actions">
-              <div className="vc-actions">
-                <LayerDownload layer={layer} className="ghost-btn" label="Download" />
-              </div>
-            </InspectorSection>
-          )
+          <InspectorSection title="Actions">
+            <LayerActions
+              layer={layer}
+              beforeCopy={async () => {
+                if (changed) await applyRender();
+                return true;
+              }}
+            />
+          </InspectorSection>
         ) : (
           <InspectorSection title="Actions">
             {/* In pairs (Otto, 2.11.2026): what to look at next, what to keep, what to download. */}
