@@ -1,19 +1,17 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
-import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
-import { indexOfferedFor } from '../indexDownload';
 import { flipIdOf } from '../layerFlip';
 import { layerShownName } from '../layerName';
 import type { MapLayer } from '../layers';
-import { isJobId, resultUrl } from '../processing';
 import { RGB, RGB_LABEL } from '../processingBands';
-import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_RESULT_TEXT, useProcessingStore, ZIP_LABEL } from '../processingStore';
-import { MIN_REMAINING_MS, RESULT_ZIP } from '../resultLayer';
+import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_RESULT_TEXT, useProcessingStore } from '../processingStore';
+import { MIN_REMAINING_MS } from '../resultLayer';
 import { hasResultsPanel } from '../sections';
 import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
 import BandSelect from './BandSelect';
 import Eye from './Eye';
+import LayerDownload from './LayerDownload';
 import ResultsEye from './ResultsEye';
 import Tip from './Tip';
 import { useRowDrag, type RowDrag } from './useRowDrag';
@@ -94,17 +92,6 @@ function Grip({ dnd }: { dnd: RowDnd }) {
   );
 }
 
-// "Download (ZIP)" of a result layer: the archive of the job, the same link as in its details. Once the
-// results are gone there is nothing to download: the place stays empty and the ⚠ of the row says why.
-function ResultDownload({ jobID, expired }: { jobID: string; expired: boolean }) {
-  if (expired || !isJobId(jobID)) return <Slot col="download" />;
-  return (
-    <a className="lm-btn" data-col="download" href={resultUrl(jobID, RESULT_ZIP)} download rel="noopener noreferrer" title={ZIP_LABEL} aria-label={ZIP_LABEL}>
-      ⇩
-    </a>
-  );
-}
-
 // One row, ten places in a fixed order: grip, eye, name, opacity, up, down, process, download, note, remove.
 function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: MapLayer; index: number; last: boolean; dnd: RowDnd; flipped: boolean; flipping: boolean }) {
   const remove = useAppStore((s) => s.removeLayer);
@@ -113,12 +100,10 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   const move = useAppStore((s) => s.moveLayer);
   const select = useAppStore((s) => s.selectLayer);
   const flipTo = useAppStore((s) => s.flipTo);
-  const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasets = useAppStore((s) => s.datasets);
   const processLayer = useProcessingStore((s) => s.processLayer);
   const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   const addBand = useAppStore((s) => s.addBandAsLayer);
-  const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
   const jobs = useProcessingStore((s) => s.jobs);
   const processBlock = layerProcessBlock(l, datasets, jobs);
   const locked = l.result?.deleted === true;
@@ -193,30 +178,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           ⚙
         </button>
       )}
-      {l.result ? (
-        <ResultDownload jobID={l.result.jobID} expired={l.result.expired || locked} />
-      ) : !l.derived && l.restore.itemIds.length > 0 ? (
-        <button
-          type="button"
-          className="lm-btn"
-          data-col="download"
-          disabled={downloadOutcome === 'disabled' || !canDownloadLayer(l, datasets)}
-          title={
-            downloadOutcome === 'disabled'
-              ? 'Draw an AOI to download this layer'
-              : indexOfferedFor(l, datasets)
-                ? `Download the AOI crop, one file per group; the ${indexOfferedFor(l, datasets)!.name} too, computed as a Processing job would`
-                : downloadOutcome === 'originals'
-                ? 'Download the original files, straight from the source'
-                : 'Download the AOI crop, one file per group'
-          }
-          onClick={() => void openDownload(l.id)}
-        >
-          ⇩
-        </button>
-      ) : (
-        <Slot col="download" />
-      )}
+      <LayerDownload layer={l} col="download" empty={<Slot col="download" />} />
       {notes.length > 0 ? (
         <span className="lm-note" data-col="note">
           <Tip text={notes.join(' ')} symbol="⚠" tone="warn" />

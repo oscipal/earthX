@@ -13,6 +13,7 @@ import {
   downloadRequestForSelection,
   isCogFormat,
   isDirectDownloadHref,
+  layerDownloadKind,
   linkListText,
   noOriginalsReason,
   originalFileLinks,
@@ -554,5 +555,26 @@ describe('noOriginalsReason', () => {
       'Some Zarr store has no single original file per scene. Use Download crop.',
     );
     expect(noOriginalsReason(undefined)).toMatch(/^This dataset has no single original file/);
+  });
+});
+
+describe('layerDownloadKind', () => {
+  const result = (patch: Partial<NonNullable<MapLayer['result']>> = {}): MapLayer => ({
+    ...layer(),
+    derived: 'result',
+    result: { jobID: 'abcdefghij0123456789_-', expires: '2099-01-01T00:00:00Z', gsd: null, resampled: null, expired: false, dataType: null, stats: null, ...patch },
+  });
+
+  it('is the dialog for a layer of scenes and the archive for a result', () => {
+    expect(layerDownloadKind(layer())).toBe('dialog');
+    expect(layerDownloadKind(result())).toBe('zip');
+  });
+
+  it('offers nothing once the results are gone, for a job that was deleted or an id that is none, and for a layer without scenes', () => {
+    expect(layerDownloadKind(result({ expired: true }))).toBeNull();
+    expect(layerDownloadKind(result({ deleted: true }))).toBeNull();
+    expect(layerDownloadKind(result({ jobID: '../x' }))).toBeNull();
+    expect(layerDownloadKind(layer({ itemIds: [] }))).toBeNull();
+    expect(layerDownloadKind({ ...layer(), derived: 'preview' })).toBeNull();
   });
 });
