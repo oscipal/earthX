@@ -43,6 +43,8 @@ const PREVIEW_LYR = 'preview-lyr-';
 // because a pinned layer that is switched on draws the same (`settleViewTwin`).
 const viewPictures = new Map<string, string>();
 const viewTwinsHidden = new Set<string>();
+// The opacity of the view of the search (Otto, 2.11.2026): every picture of the view is laid and shown with it.
+let viewOpacity = 1;
 
 // Bumped on each syncMosaic so slow async quicklook processing can tell whether
 // it has been superseded before it touches the map.
@@ -518,7 +520,7 @@ function removeDynamic(map: MapLibreMap, which: DynamicBank): void {
 }
 
 function revealArriving(map: MapLibreMap): void {
-  for (const lyr of arriving) if (map.getLayer(lyr)) map.setPaintProperty(lyr, 'raster-opacity', 1);
+  for (const lyr of arriving) if (map.getLayer(lyr)) map.setPaintProperty(lyr, 'raster-opacity', viewOpacity);
   arriving.clear();
 }
 
@@ -628,7 +630,7 @@ function clipRetired(map: MapLibreMap, clip: GeoJSON.Geometry): void {
     };
     redraw.clippedTo = clip;
     if (redraw.kind === 'tiles') {
-      placeRaster(map, cutSrc, cutLyr, clipTileUrl(redraw.tileUrl, clip), redraw.bounds, 1, redraw.zoom);
+      placeRaster(map, cutSrc, cutLyr, clipTileUrl(redraw.tileUrl, clip), redraw.bounds, viewOpacity, redraw.zoom);
       arrived();
     } else {
       const rings = redraw.ringsFor(clip);
@@ -636,7 +638,7 @@ function clipRetired(map: MapLibreMap, clip: GeoJSON.Geometry): void {
       loadProcessed(redraw.url, redraw.nodataMax, rings, (dataUrl) => {
         if (stale() || !map.getLayer(lyrId)) return;
         try {
-          placeImage(map, cutSrc, cutLyr, dataUrl, redraw.coords, 1);
+          placeImage(map, cutSrc, cutLyr, dataUrl, redraw.coords, viewOpacity);
         } catch {
           return; /* map/style went away while loading */
         }
@@ -870,7 +872,7 @@ function addQuicklookUnderlay(
     if (gen !== syncGen) return; // a newer sync superseded this one
     pendingImages--;
     try {
-      placeImage(map, srcId, lyrId, dataUrl, underlay.coords, 1);
+      placeImage(map, srcId, lyrId, dataUrl, underlay.coords, viewOpacity);
       redraws.set(lyrId, { kind: 'image', url: underlay.url, coords: underlay.coords, nodataMax: underlay.nodataMax, ringsFor, clippedTo: clip });
       // The quicklook of a pinned layer of the same scene takes its place (`drawsPicture`).
       drawsPicture(map, lyrId, overlaySignature(underlay));
@@ -897,7 +899,7 @@ function addTiles(
   const lyrId = dynamicId('tiles-lyr', i);
   keyResults(lyrId, 'view');
   const tileUrl = buildTileUrl(info.tileUrl, render);
-  placeRaster(map, srcId, lyrId, clipTileUrl(tileUrl, clip), info.bounds, 1, info);
+  placeRaster(map, srcId, lyrId, clipTileUrl(tileUrl, clip), info.bounds, viewOpacity, info);
   redraws.set(lyrId, { kind: 'tiles', tileUrl, bounds: info.bounds, zoom: info, clippedTo: clip });
   drawsPicture(map, lyrId, tilesPicture(info, render, clip));
 }
@@ -1008,6 +1010,15 @@ function settleViewTwin(map: MapLibreMap, lyrId: string): void {
   setVisibility(map, lyrId, !twin);
   if (twin) viewTwinsHidden.add(lyrId);
   else viewTwinsHidden.delete(lyrId);
+}
+
+// A new opacity for the pictures of the view: only their paint changes, no tile is loaded again. A picture held back for the next step
+// (`holdBack`) stays at 0 and is shown with this opacity.
+export function setViewOpacity(map: MapLibreMap, opacity: number): void {
+  viewOpacity = Math.max(0, Math.min(1, opacity));
+  for (const lyrId of viewPictures.keys()) {
+    for (const id of [lyrId, cutId(lyrId)]) if (map.getLayer(id) && !arriving.has(id)) map.setPaintProperty(id, 'raster-opacity', viewOpacity);
+  }
 }
 
 function settleViewTwins(map: MapLibreMap): void {

@@ -133,11 +133,11 @@ describe('a layer opened from the layer manager', () => {
 
   // Otto, 1.11.2026 (NM4-54 part 5): the box of a layer of scenes is the box of a result: the fields, the opacity and the buttons in one place.
   it('has the fields, the opacity and the buttons of the settings of any layer, in that order', () => {
-    expect(labels()).toEqual(['Band', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(labels()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
     const box = container.querySelector('.scene-view')!;
     expect([...box.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-head', 'insp-body']);
-    expect([...container.querySelector('.vc-render')!.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-field', 'vc-field', 'vc-field', 'vc-field', 'vc-opacity', 'vc-buttons']);
+    expect([...container.querySelector('.vc-render')!.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-field', 'vc-field', 'vc-field', 'vc-opacity', 'vc-buttons']);
     expect(container.querySelectorAll('.vc-opacity input[type="range"]')).toHaveLength(1);
   });
 
@@ -161,7 +161,7 @@ describe('a layer opened from the layer manager', () => {
     crop.restore = { ...crop.restore, cropToAoi: true, aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } };
     act(() => useAppStore.setState({ cropToAoi: true, viewAoi: crop.restore.aoi, layers: [crop] }));
     expect(actions()).toEqual(['⇩ Download']);
-    expect(labels()).toEqual(['Band', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(labels()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
   });
 });
@@ -175,7 +175,7 @@ describe('a view that is still open from the search', () => {
     expect(actions()).toContain('＋ Add to layers');
     expect(container.textContent).toContain('Add to layers');
     expect(container.querySelectorAll('.vc-head .close-x')).toHaveLength(1);
-    expect(container.textContent).toContain('Clear');
+    expect(actions()).toContain('‹ Change image');
     expect(container.querySelector('.vc-title')!.textContent).not.toContain('2026-07-01 ·');
   });
 });

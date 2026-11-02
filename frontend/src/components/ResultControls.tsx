@@ -186,6 +186,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                 vmax={unit === 'percent' ? { value: typed.high, onChange: (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } } : { value: draft.vmax, onChange: (vmax) => edit({ vmax }) }}
                 unit={{ value: unit, onChange: setUnit }}
                 colormap={info.band === RGB ? { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' } : { value: draft.colormap, onChange: (colormap) => edit({ colormap }) }}
+                scale
               />
             )}
             <OpacityRow layer={layer} />

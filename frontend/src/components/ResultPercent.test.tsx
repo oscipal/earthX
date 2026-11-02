@@ -98,7 +98,7 @@ describe('the switch in the settings of a result', () => {
     expect(unitText()).toBe('absolute');
     toggleUnit();
     expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
-    expect([...container.querySelectorAll('.vc-field > span')].map((s) => s.textContent)).toEqual(['Band', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect([...container.querySelectorAll('.vc-field > span')].map((s) => s.textContent)).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
   });
 
   it('is not there where nothing can be set: a result of whole numbers, one that is gone', () => {

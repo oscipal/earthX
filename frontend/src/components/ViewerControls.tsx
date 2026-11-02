@@ -3,8 +3,8 @@
 // that was product-specific (products.ts, removed with M2-07a).
 //
 // Otto, 27.10.2026 (zu #211): what does not fit the head is cut with "…" and given in full as the tooltip.
-// "Change image" leaves the view and keeps the choice of scenes; "Clear" takes the view off the map and drops the
-// choice. Neither touches "Hide results".
+// "Change image" leaves the view, keeps the choice of scenes and shows the search results; the red x takes the view off the map and
+// drops it, as "Clear" did (Otto, 2.11.2026: no "Clear" any more).
 
 import { useMemo } from 'react';
 
@@ -21,12 +21,12 @@ import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
-import { isTemporaryImage, layerOfView } from '../viewLayer';
+import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Eye from './Eye';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
 import LayerDownload from './LayerDownload';
-import OpacityRow, { OPACITY_LOCKED_TIP, OPACITY_PINNED_TIP } from './OpacityRow';
+import OpacityRow from './OpacityRow';
 import type { BandOption } from './BandSelect';
 import { viewKind } from '../viewKind';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
@@ -49,6 +49,8 @@ export default function ViewerControls() {
   const autoStretch = useAppStore((s) => s.autoStretch);
   // The pinned layer this view was opened from: its settings are these, and "Save" keeps the look for it (NM4-50).
   const layer = useAppStore((s) => layerOfView(s.layers, { ...s, aoi: s.viewAoi }));
+  // The pinned layer that draws the view as it is now, in the view's place: its opacity is the one the slider sets.
+  const drawnBy = useAppStore((s) => viewLayerOf(s.layers, { ...s, aoi: s.viewAoi }));
   const saveViewLook = useAppStore((s) => s.saveViewLook);
   // "Save" keeps the look for the layer the view is the picture of and for every image of the dataset (NM4-53).
   const savable = useAppStore((s) => {
@@ -204,6 +206,7 @@ export default function ViewerControls() {
           )
         }
         onClose={() => exitFocus()}
+        closeTitle={compact ? undefined : 'Close and drop this view'}
       >
         {compact ? (
           <LayerStepper date={layer.date} />
@@ -255,9 +258,10 @@ export default function ViewerControls() {
               // The bar stays as it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
               colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' }}
               placeholder="auto"
+              scale
             />
-            {/* A view that is no layer has no opacity to set (Otto, 2.11.2026). */}
-            {compact && layer ? <OpacityRow layer={layer} /> : <OpacityRow locked={layer ? OPACITY_PINNED_TIP : OPACITY_LOCKED_TIP} />}
+            {/* The view of the search has an opacity of its own; a layer that draws it has its own (Otto, 2.11.2026). */}
+            <OpacityRow layer={compact ? layer : (drawnBy ?? undefined)} />
             <div className="vc-buttons">
               <AutoScaleButton
                 title={focusLoading ? 'Measuring the range…' : pendingUnit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Measure the 2nd/98th percentile stretch from the source again'}
@@ -319,7 +323,20 @@ export default function ViewerControls() {
           )
         ) : (
           <InspectorSection title="Actions">
+            {/* In pairs (Otto, 2.11.2026): what to look at next, what to keep, what to download. */}
             <div className="vc-actions">
+              <button type="button" className="ghost-btn" title="Remove this view, show the search results and choose another scene" onClick={() => changeImage()}>
+                ‹ Change image
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={processBlock !== null}
+                title={processBlock ?? 'Build a processing job for the scenes of this view'}
+                onClick={() => void processFocusView()}
+              >
+                ⚙ Process
+              </button>
               <button
                 type="button"
                 className="ghost-btn"
@@ -341,18 +358,6 @@ export default function ViewerControls() {
               <button
                 type="button"
                 className="ghost-btn"
-                disabled={processBlock !== null}
-                title={processBlock ?? 'Build a processing job for the scenes of this view'}
-                onClick={() => void processFocusView()}
-              >
-                ⚙ Process
-              </button>
-              <button type="button" className="ghost-btn" title="Remove this view and choose another scene from the results" onClick={() => changeImage()}>
-                ‹ Change image
-              </button>
-              <button
-                type="button"
-                className="ghost-btn"
                 disabled={!aoi}
                 title={aoi ? 'Download the image shown at full resolution as the AOI crop, one file per group' : DRAW_AOI_TO_CROP}
                 onClick={() => openDownloadForView('crop')}
@@ -367,9 +372,6 @@ export default function ViewerControls() {
                 onClick={() => openDownloadForView('originals')}
               >
                 ⇩ Download full scene
-              </button>
-              <button type="button" className="ghost-btn" title="Remove this view from the map" onClick={() => exitFocus()}>
-                ✕ Clear
               </button>
             </div>
           </InspectorSection>

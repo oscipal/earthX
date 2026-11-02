@@ -31,11 +31,31 @@ interface Props {
   // The switch "value / %" of the range (NM4-65 part 4): with "%" the two fields hold percentiles. Left out where a place has
   // no statistics to read them from.
   unit?: { value: RangeUnit; onChange: (unit: RangeUnit) => void };
+  // The settings bar (Otto, 2.11.2026): vmin and vmax side by side in one row "Scale", the switch of the range after them.
+  scale?: boolean;
 }
 
-export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder, unit }: Props) {
+export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder, unit, scale = false }: Props) {
   const percent = unit?.value === 'percent';
   const hint = percent ? undefined : placeholder;
+  const range = scale ? (
+    <ScaleRow vmin={vmin} vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
+  ) : (
+    <>
+      <label className="vc-field vc-num">
+        <span>vmin</span>
+        <input type="number" value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
+      </label>
+      {vmax.after ? (
+        <div className="pp-bound">
+          <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
+          {vmax.after}
+        </div>
+      ) : (
+        <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
+      )}
+    </>
+  );
   return (
     <>
       {band && <BandSelect label="Band" {...band} />}
@@ -52,18 +72,7 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
           </select>
         </label>
       )}
-      <label className="vc-field vc-num">
-        <span>vmin</span>
-        <input type="number" value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
-      </label>
-      {vmax.after ? (
-        <div className="pp-bound">
-          <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
-          {vmax.after}
-        </div>
-      ) : (
-        <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
-      )}
+      {range}
       {colormap && (
         <label className="vc-field" title={'fixed' in colormap ? colormap.title : undefined}>
           <span>Colormap</span>
@@ -107,5 +116,33 @@ function VmaxField({ vmax, placeholder, percent, unit }: { vmax: Props['vmax']; 
         </select>
       )}
     </label>
+  );
+}
+
+// One row "Scale": vmin and vmax side by side, each with its name as placeholder and as a label for a screen reader, and the switch of
+// the range after them, not over a field (Otto, 2.11.2026). An empty field is measured; its tooltip says so.
+function ScaleRow({ vmin, vmax, placeholder, percent, unit }: { vmin: Props['vmin']; vmax: Props['vmax']; placeholder?: string; percent: boolean; unit: Props['unit'] }) {
+  const nameId = useId();
+  const tip = (name: string) => (placeholder ? `${name}; empty: ${placeholder}` : name);
+  return (
+    <div className="vc-field vc-scale" role="group" aria-labelledby={nameId}>
+      <span id={nameId}>Scale</span>
+      <div className="vc-scale-fields">
+        <label className="vc-field vc-num" title={tip('vmin')}>
+          <span className="sr-only">vmin</span>
+          <input type="number" value={vmin.value} placeholder="vmin" {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
+        </label>
+        <label className="vc-field vc-num" title={tip('vmax')}>
+          <span className="sr-only">vmax</span>
+          <input type="number" value={vmax.value} placeholder="vmax" {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmax.onChange(e.target.value)} />
+        </label>
+        {unit && (
+          <select className="vc-unit" aria-label="Range unit" title={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
+            <option value="value">{UNIT_LABELS.value}</option>
+            <option value="percent">{UNIT_LABELS.percent}</option>
+          </select>
+        )}
+      </div>
+    </div>
   );
 }

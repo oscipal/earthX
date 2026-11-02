@@ -149,14 +149,14 @@ describe('the settings of a result layer', () => {
   it('read Band · vmin · vmax · Colormap, like the preview and the view', () => {
     useAppStore.setState({ layers: [layer(1)], resultViewLayerId: 'R1' });
     act(() => root.render(<ResultControls />));
-    expect(names()).toEqual(['Band', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(names()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     expect(container.querySelector<HTMLSelectElement>('.band-select select')!.value).toBe('1');
   });
 
   it('keep the colormap in its place for "RGB", locked, and the band dropdown offers it first (NM4-54 part 5)', () => {
     useAppStore.setState({ layers: [layer(RGB)], resultViewLayerId: 'R1' });
     act(() => root.render(<ResultControls />));
-    expect(names()).toEqual(['Band', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(names()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     const colormap = [...container.querySelectorAll<HTMLLabelElement>('label.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!;
     expect(colormap.querySelector('select')!.disabled).toBe(true);
     expect(colormap.querySelector('select')!.selectedOptions[0].textContent).toBe('— none —');
@@ -169,7 +169,7 @@ describe('the settings of a result layer', () => {
     one.result!.bands = [{ name: 'data', stats: null }];
     useAppStore.setState({ layers: [one], resultViewLayerId: 'R1' });
     act(() => root.render(<ResultControls />));
-    expect(names()).toEqual(['Band', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect(names()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     const band = container.querySelector<HTMLLabelElement>('.band-select')!;
     expect(band.querySelector('select')!.disabled).toBe(true);
     expect(band.title).toBe('This picture has one band');

@@ -326,7 +326,7 @@ describe('an image of three bands', () => {
     expect(colormapOptions()).toEqual(['— none —']);
     expect(container.querySelectorAll('.vc-num input')).toHaveLength(2);
     expect(button('Apply')).toBeDefined();
-    expect([...container.querySelector('.vc-render')!.children].map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'LABEL', 'DIV', 'DIV']);
+    expect([...container.querySelector('.vc-render')!.children].map((el) => el.className)).toEqual(['vc-field band-select', 'vc-field vc-scale', 'vc-field', 'vc-opacity', 'vc-buttons']);
   });
 
   it('has the colormaps to choose for a single band, and the same box in the same place for both', () => {

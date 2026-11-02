@@ -141,7 +141,7 @@ interface Effect {
   startsOver?: boolean;
 }
 const OPERATIONS: [string, () => Promise<void> | void, Effect][] = [
-  ['"Clear" in the view', async () => { await openView(); click(viewButton('Clear')); }, {}],
+  ['the red x of the view', async () => { await openView(); click(viewClose()); }, {}],
   // "Change image" goes back to the results: it shows them (Otto, 2.11.2026).
   ['"Change image" in the view', async () => { await openView(); click(viewButton('Change image')); }, { switchTo: true }],
   ['"Crop to AOI"', () => openView(true), { switchTo: false, unticks: true }],
@@ -363,7 +363,7 @@ describe('Otto\'s click path (27.10.2026)', () => {
     expect(resultsOnMapOf(state()).overlay.length).toBeGreaterThan(0);
   });
 
-  it('"Clear" of the area, then the view\'s own "Clear"', async () => {
+  it('"Clear" of the area, then the view\'s own x', async () => {
     act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
     click(buttonWith('Crop to AOI'));
     await flush();
@@ -372,7 +372,7 @@ describe('Otto\'s click path (27.10.2026)', () => {
     click(areaClear());
     expect(state().aoi).toBeNull();
     expect(state().focusMode).toBe(true);
-    click(viewButton('Clear'));
+    click(viewClose());
     expect(state().focusMode).toBe(false);
     expect(state().downloaded).toEqual({});
   });
@@ -403,14 +403,14 @@ describe('Otto\'s click path (27.10.2026)', () => {
   });
 });
 
-describe('"Clear" and "Change image" in the view', () => {
-  it('"Clear" takes the view off the map and nothing else: the tick, what was pinned, the switch and the panel stay', async () => {
+describe('the red x and "Change image" in the view', () => {
+  it('the red x takes the view off the map and nothing else, as "Clear" did: the tick, what was pinned, the switch and the panel stay', async () => {
     const layer = { id: 'pinned', name: 'Pinned', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET, itemIds: [], groupItemIds: [], downloaded: {}, appliedRender: {}, selectedIds: [] } } as never;
     act(() => state().toggleSelected('a0'));
     act(() => useAppStore.setState({ layers: [layer], resultsOnMap: false, dock: 'controls' }));
     await openView();
     const pinned = state().layers;
-    click(viewButton('Clear'));
+    click(viewClose());
     const s = state();
     expect(s.focusMode).toBe(false);
     expect(s.downloaded).toEqual({});
@@ -436,7 +436,8 @@ describe('"Clear" and "Change image" in the view', () => {
 
   it('have the tooltips of what they do', async () => {
     await openView();
-    expect(viewButton('Clear').title).toBe('Remove this view from the map');
-    expect(viewButton('Change image').title).toBe('Remove this view and choose another scene from the results');
+    expect(viewClose().title).toBe('Close and drop this view');
+    expect(viewButton('Change image').title).toBe('Remove this view, show the search results and choose another scene');
+    expect([...container.querySelectorAll('.scene-view button')].some((b) => b.textContent?.includes('Clear'))).toBe(false);
   });
 });

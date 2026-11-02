@@ -17,11 +17,13 @@ interface HeadProps {
   mark?: ReactNode;
   eye?: ReactNode;
   onClose: () => void;
+  // The tooltip of the x, where closing does more than close.
+  closeTitle?: string;
   // Row 2; the row keeps its height when it is empty.
   children?: ReactNode;
 }
 
-export function InspectorHead({ title, tip, mark, eye, onClose, children }: HeadProps) {
+export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, children }: HeadProps) {
   return (
     <div className="vc-head">
       <div className="insp-row">
@@ -30,7 +32,7 @@ export function InspectorHead({ title, tip, mark, eye, onClose, children }: Head
         </span>
         {mark}
         {eye}
-        <CloseButton onClick={onClose} />
+        <CloseButton onClick={onClose} title={closeTitle} />
       </div>
       <div className="insp-row insp-row2">{children}</div>
     </div>

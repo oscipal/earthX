@@ -1,17 +1,15 @@
-// The opacity of a layer in the settings bar: the same row for a result and for a layer of scenes (NM4-54 part 5, Otto, 1.11.2026).
-// The view of the search is no layer and has none: the row stays, locked, with the reason (Otto, 2.11.2026).
+// The opacity in the settings bar: the same row for a result, a layer of scenes (NM4-54 part 5, Otto, 1.11.2026) and the view of the
+// search, which is no layer and has an opacity of its own (Otto, 2.11.2026; replaces the locked row of the same day).
 
 import { useAppStore } from '../store';
 import type { MapLayer } from '../layers';
 
-export const OPACITY_LOCKED_TIP = 'Add to layers to set the opacity';
-// The image of the view is pinned already: its layer has the opacity, set where the layer is opened from the layer manager.
-export const OPACITY_PINNED_TIP = 'Open this layer from the layer manager to set its opacity';
-
-export default function OpacityRow({ layer, locked }: { layer?: MapLayer; locked?: string }) {
-  const setOpacity = useAppStore((s) => s.setLayerOpacity);
-  const opacity = layer?.opacity ?? 1;
-  const title = locked ?? `Opacity ${Math.round(opacity * 100)}%`;
+export default function OpacityRow({ layer }: { layer?: MapLayer }) {
+  const setLayerOpacity = useAppStore((s) => s.setLayerOpacity);
+  const viewOpacity = useAppStore((s) => s.viewOpacity);
+  const setViewOpacity = useAppStore((s) => s.setViewOpacity);
+  const opacity = layer ? layer.opacity : viewOpacity;
+  const title = `Opacity ${Math.round(opacity * 100)}%`;
   return (
     <div className="vc-opacity">
       <label className="vc-field" title={title}>
@@ -24,9 +22,10 @@ export default function OpacityRow({ layer, locked }: { layer?: MapLayer; locked
           step={0.05}
           value={opacity}
           title={title}
-          disabled={locked !== undefined}
           onChange={(e) => {
-            if (layer) setOpacity(layer.id, Number(e.target.value));
+            const value = Number(e.target.value);
+            if (layer) setLayerOpacity(layer.id, value);
+            else setViewOpacity(value);
           }}
         />
       </label>

@@ -247,7 +247,7 @@ describe('the settings and "Save" of a layer made from a band', () => {
     await show();
     click(addButton());
     open(0);
-    expect([...container.querySelectorAll('.result-controls .vc-field > span')].map((s) => s.textContent)).toEqual(['Band', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    expect([...container.querySelectorAll('.result-controls .vc-field > span')].map((s) => s.textContent)).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     expect(container.querySelector<HTMLSelectElement>('.result-controls .band-select select')!.disabled).toBe(true);
     expect(button('Save').title).toBe('Nothing to save: the layer is saved as it is drawn');
     typeInto(vmax(), '0.5');

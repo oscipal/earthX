@@ -21,6 +21,7 @@ import {
   overlayBudgetNote,
   setAoiData,
   setCoverageDisplay,
+  setViewOpacity,
   syncBrowseMosaic,
   syncFocusRaster,
   syncHighlight,
@@ -394,6 +395,13 @@ export default function MapView() {
       if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
   }, [layers, resultsAt, viewLayer, showDownloaded, flipId]);
+
+  // The opacity of the view of the search (Otto, 2.11.2026): before the view's own effect, so that a new picture is laid with it.
+  const viewOpacity = useAppStore((s) => s.viewOpacity);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current) setViewOpacity(map, viewOpacity);
+  }, [viewOpacity]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload

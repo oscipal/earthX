@@ -75,7 +75,6 @@ const head = () => container.querySelector('.vc-head')!;
 const title = () => container.querySelector('.vc-title') as HTMLElement;
 const eye = () => container.querySelector('.vc-eye') as HTMLButtonElement;
 const row = (name: 'vc-render' | 'vc-actions') => container.querySelector(`.${name}`)!;
-const labelOf = (el: Element) => el.querySelector('span')?.textContent;
 
 describe('the head', () => {
   it.each([
@@ -191,29 +190,31 @@ describe('the eye', () => {
 });
 
 describe('the fields and the buttons', () => {
-  const ACTIONS = ['＋ Add to layers', '＋ Add all to layers', '⚙ Process', '‹ Change image', '⇩ Download crop', '⇩ Download full scene', '✕ Clear'];
+  // In pairs, no "Clear" (Otto, 2.11.2026).
+  const ACTIONS = ['‹ Change image', '⚙ Process', '＋ Add to layers', '＋ Add all to layers', '⇩ Download crop', '⇩ Download full scene'];
   const actions = () => [...row('vc-actions').children] as HTMLButtonElement[];
   const actionNamed = (text: string) => actions().find((b) => b.textContent === text)!;
 
   it('has the fields in the order of the place, then the opacity and the buttons "auto-scale", "Apply", "Apply to all"; the actions under them', () => {
     mount();
     const first = [...row('vc-render').children];
-    expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'LABEL', 'DIV', 'DIV']);
-    expect(first.slice(0, 4).map(labelOf)).toEqual(['Band', 'vmin', 'vmax', 'Colormap']);
-    expect(first[4].classList.contains('vc-opacity')).toBe(true);
-    expect([...first[5].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+    expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'DIV', 'LABEL', 'DIV', 'DIV']);
+    expect(first.slice(0, 3).map((el) => el.querySelector(':scope > span')!.textContent)).toEqual(['Band', 'Scale', 'Colormap']);
+    expect([...first[1].querySelectorAll('input')].map((el) => el.placeholder)).toEqual(['vmin', 'vmax']);
+    expect(first[3].classList.contains('vc-opacity')).toBe(true);
+    expect([...first[4].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
     expect(actions().map((el) => el.textContent)).toEqual(ACTIONS);
   });
 
-  it('has the tooltips of what "Change image" and "Clear" do', () => {
+  it('has the tooltips of what "Change image" and the red x do', () => {
     mount();
-    expect(actions()[3].title).toBe('Remove this view and choose another scene from the results');
-    expect(actions()[6].title).toBe('Remove this view from the map');
+    expect(actionNamed('‹ Change image').title).toBe('Remove this view, show the search results and choose another scene');
+    expect(container.querySelector('.vc-head .close-x')!.getAttribute('title')).toBe('Close and drop this view');
   });
 
-  it('"Clear" takes the view off the map and nothing else: the tick, the results panel and the switch stay', () => {
+  it('the red x takes the view off the map and nothing else, as "Clear" did: the tick, the results panel and the switch stay', () => {
     mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false });
-    act(() => actions()[6].click());
+    act(() => container.querySelector<HTMLButtonElement>('.vc-head .close-x')!.click());
     const s = useAppStore.getState();
     expect(s.focusMode).toBe(false);
     expect(s.downloaded).toEqual({});
@@ -235,7 +236,7 @@ describe('the fields and the buttons', () => {
 
   it('puts "auto-scale", "Apply" and "Apply to all" in one row (NM4-53)', () => {
     mount();
-    const cluster = row('vc-render').children[5];
+    const cluster = row('vc-render').children[4];
     expect(cluster.classList.contains('vc-buttons')).toBe(true);
     expect([...cluster.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
     expect(container.textContent).not.toContain('Save');
@@ -399,10 +400,11 @@ describe('the layout contract in index.css', () => {
     expect(rule('.inspector .vc-render')).toContain('gap: var(--space-2)');
   });
 
-  it('puts "auto-scale", "Apply" and "Save" in three columns of one width, the actions one per line without wrapping', () => {
+  it('puts "auto-scale", "Apply" and "Save" in three columns of one width, the actions in pairs without wrapping', () => {
     expect(rule('.inspector .vc-buttons')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
-    expect(rule('.inspector .vc-actions')).toContain('flex-direction: column');
+    expect(rule('.inspector .vc-actions')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
     expect(rule('.inspector .vc-actions > *')).toContain('white-space: nowrap');
+    expect(rule('.inspector .vc-actions > *')).toContain('text-overflow: ellipsis');
     expect(rule('.inspector .vc-actions > *')).toContain('min-width: 0');
   });
 

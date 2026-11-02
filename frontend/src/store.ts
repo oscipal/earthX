@@ -430,6 +430,7 @@ const NO_ANSWER_FILTERS: SectionSearchAnswer & { ignoredFilters: string[]; incom
 // result goes with it: both stand in the place of the search results.
 const LEAVE_FOCUS = {
   focusMode: false,
+  viewOpacity: 1,
   viewLayerId: null,
   viewOfLayer: false,
   resultViewLayerId: null,
@@ -781,7 +782,8 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
       id: `L${batchId}${i}`,
       name,
       visible: true,
-      opacity: 1,
+      // The view's own opacity goes with its picture into the layer (Otto, 2.11.2026).
+      opacity: s.viewOpacity,
       overlays: overlays ?? [],
       ...dateOf(datesOfIds(itemIds, known)),
       restore: {
@@ -1325,6 +1327,8 @@ export interface AppState {
   // swaps ViewBar for ViewerControls (App.tsx); the results list stays whatever the view.
   focusMode: boolean;
   showDownloaded: boolean;
+  // The opacity of the view of the search, which is no layer (Otto, 2.11.2026); 1 for every new view.
+  viewOpacity: number;
   // The image of the view that is drawn (`viewImages.ts`); null draws the first. The others are not on the map.
   shownImage: string | null;
   // The look of the images of the view (NM4-53, Otto 29.10.2026), for the length of the view only: what "Apply" drew on
@@ -1576,6 +1580,7 @@ export interface AppState {
   // The single band the fields stand for (NM4-45); `null` goes back to the standard picture.
   chooseViewBand: (band: string | null) => void;
   toggleDownloaded: () => void;
+  setViewOpacity: (opacity: number) => void;
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
@@ -1653,6 +1658,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   resultsOnMap: loadResultsOnMap(),
   focusMode: false,
   showDownloaded: true,
+  viewOpacity: 1,
   shownImage: null,
   viewLooks: {},
   savedLooks: {},
@@ -2636,6 +2642,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     void get().autoStretch();
   },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
+  setViewOpacity: (opacity) => set({ viewOpacity: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1 }),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
   setPendingVmax: (pendingVmax) => set({ pendingVmax }),

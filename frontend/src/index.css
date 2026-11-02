@@ -450,18 +450,44 @@ body.dragging * {
   opacity: 0.55;
   cursor: not-allowed;
 }
-/* The switch "absolute / percentile" sits inside the end of the field vmax. */
-.inspector .vc-field.vc-num .vc-unit {
-  top: 50%;
-  right: var(--space-1);
-  max-width: 50%;
-  height: var(--control-height-sm);
-  padding: 0 var(--space-3) 0 var(--space-1);
-  line-height: var(--control-height-sm);
-  transform: translateY(-50%);
+/* A name for a screen reader only. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
-.inspector .vc-field.vc-num:has(.vc-unit) input {
-  padding-right: calc(var(--space-6) * 2);
+/* "Scale" (Otto, 2.11.2026): vmin and vmax side by side, of one width, and the switch "absolute / percentile" after them, as high as
+   they are; it shows what fits and the rest with "…". */
+.inspector .vc-scale-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.inspector .vc-scale-fields .vc-field {
+  display: block;
+  min-width: 0;
+}
+.inspector .vc-scale-fields input,
+.inspector .vc-scale-fields select {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
+  box-sizing: border-box;
+}
+.inspector .vc-scale-fields input[type='number'] {
+  appearance: textfield;
+}
+.inspector .vc-scale .vc-unit {
+  width: auto;
+  padding: 0 var(--space-4) 0 var(--space-2);
+  appearance: none;
+  background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%23889'/%3E%3C/svg%3E") no-repeat right var(--space-2) center;
+  color: var(--muted);
+  font-size: var(--text-xs);
 }
 .inspector .vc-opacity .lm-opacity {
   width: 100%;
@@ -486,19 +512,23 @@ body.dragging * {
 .app[data-theme='normal'] .inspector .vc-note {
   color: #8a5a00;
 }
-/* One action per line: every button as high as a control, none wraps its words. */
+/* The actions in pairs (Otto, 2.11.2026): two columns of one width, every button as high as a control; none wraps its words, a long
+   one is cut with "…" and its tooltip has it in full. */
 .inspector .vc-actions {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
 }
 .inspector .vc-actions > * {
   min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-1) var(--space-2);
+  display: block;
+  padding: var(--space-1) var(--space-1);
+  overflow: hidden;
+  font-size: var(--text-sm);
+  line-height: calc(var(--control-height) - 2 * var(--space-1) - 2 * var(--line-width));
+  text-align: center;
   white-space: nowrap;
+  text-overflow: ellipsis;
   text-decoration: none;
 }
 /* The column is taken from the map: what stands at the bottom and the map controls move left of it. */

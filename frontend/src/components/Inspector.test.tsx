@@ -229,12 +229,14 @@ describe('the places', () => {
     expect(aside()!.querySelector('.vc-title')!.textContent).toBe('Result R1');
   });
 
-  it('has the actions of the search in a fixed order, the downloads of the shown image among them', () => {
+  // Otto, 2.11.2026: in pairs, and no "Clear": the red x closes the view and drops it.
+  it('has the actions of the search in pairs, the downloads of the shown image last, and no "Clear"', () => {
     act(() => root.render(<Inspector />));
     openView();
     expect([...aside()!.querySelectorAll('.vc-actions > *')].map((b) => b.textContent)).toEqual([
-      '＋ Add to layers', '＋ Add all to layers', '⚙ Process', '‹ Change image', '⇩ Download crop', '⇩ Download full scene', '✕ Clear',
+      '‹ Change image', '⚙ Process', '＋ Add to layers', '＋ Add all to layers', '⇩ Download crop', '⇩ Download full scene',
     ]);
+    expect(aside()!.querySelector('.vc-head .close-x')!.getAttribute('title')).toBe('Close and drop this view');
   });
 
   it('has the download of the row of the layer manager as the action of a layer', () => {
@@ -337,7 +339,7 @@ describe('closing', () => {
     expect(state().layers[0].opacity).toBe(0.6);
   });
 
-  it('does what "Clear" does on the view of the search: the x takes the view off the map', () => {
+  it('closes the view of the search with the x and drops it, as "Clear" did; the tick and the switch stay', () => {
     act(() => root.render(<Inspector />));
     openView({ selectedIds: ['s1'], resultsOnMap: false });
     click(aside()!.querySelector('.close-x'));
@@ -345,9 +347,7 @@ describe('closing', () => {
     expect(state().focusMode).toBe(false);
     expect(state().downloaded).toEqual({});
     expect(state().selectedIds).toEqual(['s1']);
-    openView();
-    click(button('✕ Clear'));
-    expect(aside()).toBeNull();
+    expect(state().resultsOnMap).toBe(false);
   });
 
   it('gives the focus back to what had it when the bar opened, if that is still there, and nowhere else', () => {
@@ -385,25 +385,55 @@ describe('closing', () => {
 });
 
 describe('what does not apply is locked, with its reason', () => {
-  it('locks the opacity of the view of the search at 1, with the reason in its tooltip', () => {
+  // Otto, 2.11.2026 (replaces the locked opacity of the same day): the view of the search has an opacity of its own.
+  it('lets the opacity of the view of the search be set, 1 for every new view, and gives it to the layer it is pinned to', () => {
     act(() => root.render(<Inspector />));
     openView();
-    const slider = field('Opacity').querySelector('input')!;
-    expect(slider.disabled).toBe(true);
-    expect(slider.value).toBe('1');
-    expect(slider.title).toBe('Add to layers to set the opacity');
-    expect(field('Opacity').title).toBe('Add to layers to set the opacity');
-    // The slider of a layer works.
-    openPinnedView();
-    expect(field('Opacity').querySelector('input')!.disabled).toBe(false);
+    const slider = () => field('Opacity').querySelector('input')!;
+    expect(slider().disabled).toBe(false);
+    expect(slider().value).toBe('1');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider(), '0.4');
+      slider().dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(state().viewOpacity).toBe(0.4);
+    expect(slider().title).toBe('Opacity 40%');
+    // The eye of the view is there and works too.
+    click(aside()!.querySelector('.vc-eye'));
+    expect(state().showDownloaded).toBe(false);
+    click(aside()!.querySelector('.vc-head .close-x'));
+    expect(state().viewOpacity).toBe(1);
   });
 
-  it('locks the opacity of a view whose image is pinned but that was not opened from the layer manager, and points to the layer', () => {
+  it('gives its opacity to the layer "Add to layers" makes, and keeps it between 0 and 1', async () => {
     act(() => root.render(<Inspector />));
-    openView({ cropToAoi: false, viewAoi: null, viewOfLayer: false, viewLayerId: 'L1', layers: [pinned()], downloaded: { s0: info('s0') }, items: [scene('s0', '2026-07-01')], groups: [{ key: ['a'], label: 'Day 1', items: [scene('s0', '2026-07-01')] }] });
+    openView();
+    act(() => state().setViewOpacity(0.35));
+    click(button('＋ Add to layers'));
+    await act(async () => {
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    });
+    expect(state().layers[0].opacity).toBe(0.35);
+    act(() => state().setViewOpacity(3));
+    expect(state().viewOpacity).toBe(1);
+    act(() => state().setViewOpacity(-1));
+    expect(state().viewOpacity).toBe(0);
+    act(() => state().setViewOpacity(Number.NaN));
+    expect(state().viewOpacity).toBe(1);
+  });
+
+  it('sets the opacity of the pinned layer that draws the view in its place, where there is one', () => {
+    act(() => root.render(<Inspector />));
+    openView({ cropToAoi: false, viewAoi: null, viewOfLayer: false, viewLayerId: 'L1', layers: [pinned()], appliedRender: { rescale: '0,3000' }, downloaded: { s0: info('s0') }, items: [scene('s0', '2026-07-01')], groups: [{ key: ['a'], label: 'Day 1', items: [scene('s0', '2026-07-01')] }] });
     const slider = field('Opacity').querySelector('input')!;
-    expect(slider.disabled).toBe(true);
-    expect(slider.title).toBe('Open this layer from the layer manager to set its opacity');
+    expect(slider.disabled).toBe(false);
+    expect(slider.value).toBe('0.6');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '0.2');
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(state().layers[0].opacity).toBe(0.2);
+    expect(state().viewOpacity).toBe(1);
   });
 
   it('locks the colormap of a picture of three bands as "— none —", and says why', () => {
