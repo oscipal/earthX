@@ -229,14 +229,15 @@ async function run(browser, { theme, viewport }) {
   if (!names.some((n) => n.includes('S2B'))) problems.push(`no layer is named after the satellite: ${JSON.stringify(names)}`);
   await page.screenshot({ path: path.join(OUT, `layers ${name}.png`) });
 
-  // 7. The actions in the bar: two columns of one width.
+  // 7. The actions in the bar: one per line, of one width and one height (none wraps its words).
   const shape = await page.evaluate(() => {
     const boxes = [...document.querySelectorAll('.inspector .vc-actions > *')].map((b) => b.getBoundingClientRect());
-    return { columns: new Set(boxes.map((b) => Math.round(b.left))).size, widths: new Set(boxes.map((b) => Math.round(b.width))).size, count: boxes.length };
+    return { columns: new Set(boxes.map((b) => Math.round(b.left))).size, widths: new Set(boxes.map((b) => Math.round(b.width))).size, heights: new Set(boxes.map((b) => Math.round(b.height))).size, count: boxes.length };
   });
   if (shape.count !== 7) problems.push(`${shape.count} actions, seven expected`);
-  if (shape.columns !== 2) problems.push(`the actions are in ${shape.columns} columns, two expected`);
+  if (shape.columns !== 1) problems.push(`the actions are in ${shape.columns} columns, one expected`);
   if (shape.widths !== 1) problems.push(`the actions are of ${shape.widths} different widths`);
+  if (shape.heights !== 1) problems.push(`the actions are of ${shape.heights} different heights`);
   await page.screenshot({ path: path.join(OUT, `shape ${name}.png`) });
 
   // 8. Everything inside the panel and the panel inside the window.
