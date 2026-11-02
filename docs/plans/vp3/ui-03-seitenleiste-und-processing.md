@@ -125,7 +125,7 @@ Maße (Breite der freien Karte = Fenster − Leiste − Panel − Seitenleiste):
 
 | Fenster | Leiste | Panel links | Karte frei | Seitenleiste | Processing (V2) |
 |---|---|---|---|---|---|
-| 1920 | 48 | 340 | 1212 (ohne Panel 1552) | 320 | 600 statt 320 → Karte 932 |
+| 1920 | 48 | 340 | 1212 (ohne Panel 1552) | 320 | 640 statt 320 → Karte 892 |
 | 1280 | 48 | 340 | 572 (ohne Panel 912) | 320 | 520 statt 320 → Karte 372 |
 | 360 | 48 | über die Karte (wie heute) | 312 | Blatt von unten, 312 × höchstens 55 % | Blatt wie heute |
 
@@ -140,7 +140,7 @@ Maße (Breite der freien Karte = Fenster − Leiste − Panel − Seitenleiste):
 
 - **V1** Processing-Panel nach links an den Platz des Panels (breit, 520–600 px), Seitenleiste rechts bleibt immer frei für Einstellungen. Nachteil: Layer-Manager und Suche sind verdeckt, solange Processing offen ist; die Details eines Jobs ersetzen die Liste der Jobs (Rückweg „‹ Jobs“ nötig); bei 1280 px mit Seitenleiste nur 352 px Karte.
 - **V2 (Empfehlung)** eine Spalte rechts: das Processing-Panel öffnet an der Stelle der Seitenleiste, breiter (`clamp(520px, 34vw, 640px)`: 1280 → 520, 1920 → 640), und deckt die Einstellungen ab; schließt es (rotes x, Esc), sind die Einstellungen wieder da, mit dem, was darin stand. Wie ein Schritt tiefer auf demselben Platz („⚙ Process“ in der Ansicht führt nach rechts weiter, x führt zurück). Die Jobliste links und die Details rechts bleiben wie heute. Nachteil: Während Processing offen ist, sind die Einstellungen der Ansicht nicht zu sehen; das Panel hat seine eigene Vorschau mit Band · vmin · vmax · Colormap.
-- **V3** beide nebeneinander rechts (Seitenleiste links neben Processing). Bei 1280 px bleiben mit Panel links 32 px Karte; nur ab etwa 1600 px brauchbar.
+- **V3** beide nebeneinander rechts (Seitenleiste links neben Processing). Bei 1280 px bleiben mit Panel links 52 px Karte; nur ab etwa 1600 px brauchbar.
 
 **Unter 900 px (Frage 5):** die Seitenleiste wird ein Blatt von unten, von der Leiste links bis zum rechten Rand, höchstens 55 % der Höhe, mit dem Griff des Processing-Panels (Klick klappt auf den Kopf ein, Titel und x bleiben sichtbar). Auswahl- und Zeitleiste stehen darüber (wie heute `.beside-sheet` unter 900 px); ist das Blatt eingeklappt, rücken sie nach unten. Zoomknöpfe und Attribution rücken über das Blatt. Alternative: Blatt über die ganze Höhe (dann ist die Karte nicht zu sehen, während man die Werte ändert).
 
@@ -171,7 +171,7 @@ Ein Bauteil `Inspector.tsx` mit drei Inhalten (Ansicht der Suche, angeheftete An
 - **Raster:** Beschriftung links in einer Spalte von 72 px (Apple-Formular, §7.5), Bedienelement rechts; jede Zeile 28 px hoch, 8 px Abstand, 24 px zwischen Abschnitten; Abschnittsüberschrift 11 px, halbfett, `--muted`. Keine Rahmen um Abschnitte, nur eine Linie unter dem Kopf.
 - **Gesperrt statt weg:** was für die Wahl nicht gilt, bleibt an seinem Platz, gesperrt mit Grund im Tooltip (Colormap bei RGB, Pfeile bei einem Bild, Band bei einem Ergebnis mit einem Band). Regeln aus #272 unverändert (Vorgabe oben): Apply zeichnet, Save behält, Schließen ohne Save stellt den gespeicherten Stand her.
 - **Kopf, Zeile 2 am Layer:** das Aufnahmedatum als Text an der Stelle von `‹ Datum ›` (NM4-65), Pfeile gesperrt („A layer holds one image“); ohne Datum bleibt die Zeile leer stehen, damit „Display“ immer an derselben Höhe beginnt [A].
-- **Actions je Art (Frage 6):** Ansicht der Suche: „＋ Add to layers“, „＋ Add all to layers“ (gesperrt bei einem Bild), „⚙ Process“, „‹ Change image“, „✕ Clear“, wie heute. Angeheftete Ansicht und Ergebnis-Layer: Empfehlung, der Abschnitt bleibt mit den Knöpfen, die der Layer-Manager heute in der Zeile hat (⇩ Download), Entfernen bleibt im Layer-Manager.
+- **Actions je Art (Frage 6):** Ansicht der Suche: „＋ Add to layers“, „＋ Add all to layers“ (gesperrt bei einem Bild), „⚙ Process“, „‹ Change image“, „✕ Clear“, wie heute. **Downloads liegen heute nicht in der Box** [P]: die der Auswahl („⇩ Download crop“, „⇩ Download full scene“) in der Auswahlleiste unten, die eines Layers (⇩, auch „Download (ZIP)“ eines Ergebnisses) in seiner Zeile im Layer-Manager. Empfehlung: ⇩ zusätzlich in „Actions“ der Seitenleiste, mit derselben Funktion und demselben Dialog (`DownloadDialog`), ohne sie an den alten Stellen zu entfernen; Entfernen eines Layers bleibt nur im Layer-Manager.
 - **Wechsel:** eine andere Ansicht bzw. ein anderer Layer tauscht den Inhalt, die Leiste bleibt stehen (kein Schließen und Öffnen, keine Animation); für den alten Layer gilt „Schließen ohne Save“ wie heute.
 - **Schließen:** rotes x (`CloseButton`) und Esc (`useEscClose`, Ausnahmen wie heute: Feld, Menü, Panel am Rand). Fokus nach dem Schließen auf das Element, das sie geöffnet hat (Layer-Zeile bzw. Knopf der Auswahlleiste) [A].
 - **Bedienelemente:** Segment-Umschalter (Values | %), Schieber (Opacity), Dropdowns und Zahlfelder einheitlich in Höhe 28 px, Radius 6 px, gleiche Fokuslinie; Knöpfe in zwei Formen (gefüllt für den Hauptknopf, Umriss für die übrigen).
@@ -199,7 +199,36 @@ Ein Bauteil `Inspector.tsx` mit drei Inhalten (Ansicht der Suche, angeheftete An
 
 ### 7.5 Recherche mit Quellen
 
-(folgt)
+Abgerufen am 02.11.2026. Erreichbar waren aus der Sitzung `developer.apple.com` (HIG und SwiftUI-Doku über deren JSON-Daten) und `raw.githubusercontent.com`; die Seiten von Esri (doc.arcgis.com), Google (developers.google.com), Copernicus/Sentinel Hub, Material (m3.material.io), IBM Carbon und designtokens.org waren gesperrt und sind **nur Suchtreffer** [S], vor einer Entscheidung, die an ihnen hängt, gegenzuprüfen.
+
+**Apple, im Original gelesen [P]:**
+
+- **Inspector rechts, im schmalen Fenster ein Blatt:** SwiftUI `inspector(isPresented:content:)`: „an inspector can present as a trailing column in a horizontally regular size class, but adapt to a sheet in a horizontally compact size class“. `inspectorColumnWidth(_:)` und `inspectorColumnWidth(min:ideal:max:)`: Beispiel mit fester Breite 225 pt bzw. ideal 225, min 150, max 400 pt. → Platz rechts und Blatt unter 900 px (§7.2); 320 px liegt im Bereich, den Apple als Beispiel nennt [A]. https://developer.apple.com/documentation/swiftui/view/inspector(ispresented:content:), https://developer.apple.com/documentation/swiftui/view/inspectorcolumnwidth(min:ideal:max:)
+- **Split Views:** Keynote (macOS) legt „slide navigator, presenter notes, and the inspector pane in areas that surround the main slide canvas“; „Consider letting people hide a pane“; „Provide multiple ways to reveal hidden panes“; „Prefer the thin divider style. The thin divider measures one point in width“. → eine Linie statt Rahmen, Schließen per x und Esc. https://developer.apple.com/design/human-interface-guidelines/split-views
+- **Sidebars:** „Avoid putting critical information or actions at the bottom of a sidebar“; „Consider automatically hiding and revealing a sidebar when its container window resizes“. → die Knöpfe stehen direkt unter den Feldern im Abschnitt „Display“, nicht am Fuß der Leiste; Blatt unter 900 px. https://developer.apple.com/design/human-interface-guidelines/sidebars
+- **Layout:** „Group related items … you might use negative space, container shapes, or separator lines“; „Align elements to make them easier to scan“; wichtiges oben und vorn. → Abstand und Überschrift statt Kästen, Beschriftungsspalte. https://developer.apple.com/design/human-interface-guidelines/layout
+- **Typografie macOS (Tabelle „macOS built-in text styles“):** Title 2 17 pt, Title 3 15 pt, Headline 13 pt fett, Body 13 pt, Callout 12 pt, Subheadline 11 pt, Footnote und Caption 10 pt. → Schriftgrade 17/15/13/12/11 (§7.4); 10 pt lassen wir wegen Kontrast auf halbdurchsichtigen Tafeln weg [A]. „use typefaces designed for optimized legibility, like the system fonts“. https://developer.apple.com/design/human-interface-guidelines/typography
+- **Segmented Controls:** „a segmented control in an inspector could let people choose one or more attributes“; Segmente gleich breit. → „Values | %“. https://developer.apple.com/design/human-interface-guidelines/segmented-controls
+- **Toggles:** Schalter-Stil „only in a list row“; außerhalb ein Knopf, der sich wie ein Schalter verhält. → Auge bleibt Knopf. https://developer.apple.com/design/human-interface-guidelines/toggles
+- **Pop-up und Pull-down Buttons:** Pop-up für „a flat list of mutually exclusive options“ (Band, Colormap, Datensatz); Pull-down für Befehle, „Avoid putting all of a view's actions in one pull-down button“, Menü erst ab drei Einträgen. → Teil 3: Hauptknopf sichtbar, Seltenes hinter „⋯“. https://developer.apple.com/design/human-interface-guidelines/pop-up-buttons, https://developer.apple.com/design/human-interface-guidelines/pull-down-buttons
+- **Sheets:** Detents „medium“ und „large“, „Include a grabber in a resizable sheet“. → Blatt bis 55 % mit Griff (§7.2). https://developer.apple.com/design/human-interface-guidelines/sheets
+- **Lists and Tables:** gruppierter Stil mit Kopf, Fuß und Abstand; kurze Zeilentexte, Auslassung in der Mitte, wo Anfang und Ende zählen. → Teil 3. https://developer.apple.com/design/human-interface-guidelines/lists-and-tables
+
+**Kartenanwendungen:**
+
+- **QGIS, im Original gelesen [P]:** Der „Layer Styling“-Panel (F7, Ctrl+3) ist ein andockbares Panel statt des modalen Eigenschaften-Dialogs; oben ein Dropdown der Layer, darunter Symbology, Transparency, Histogram für Raster; „Apply“ wendet an, ein Haken „Live update“ zeichnet sofort. → bestätigt Apply als eigenen Schritt (Regel aus #272) und den Inhalt-Tausch bei anderem Layer. Dass das Panel standardmäßig rechts andockt, steht dort nicht (nur eigene Kenntnis, nicht belegt). https://raw.githubusercontent.com/qgis/QGIS-Documentation/master/docs/user_manual/introduction/general_tools.rst (Abschnitt „Layer Styling Panel“)
+- **Esri Calcite (Bausteine von ArcGIS Online), im Original gelesen [P]:** `calcite-shell-panel` hat drei Breiten: S `12vw` (150–300 px), M `20vw` (240–420 px), L `45vw` (340–680 px). → Seitenleiste 320 px liegt in M, Processing 520–640 px in L. https://raw.githubusercontent.com/Esri/calcite-design-system/main/packages/calcite-components/src/components/shell-panel/shell-panel.scss
+- **ArcGIS Online Map Viewer, nur Suchtreffer [S]:** „Properties pane“ für Informationen und Darstellung eines Layers, Stile über den „Settings toolbar“; die Lage rechts ist in den Treffern nicht belegt. https://doc.arcgis.com/en/arcgis-online/create-maps/set-layer-properties.htm
+- **Google Earth Engine Code Editor, nur Suchtreffer [S]:** Darstellung eines Layers über `visParams` (`bands`, `min`, `max`, `palette`, `opacity` 0–1) in `Map.addLayer`; der Dialog der Layer-Einstellungen in der Oberfläche ist in den Treffern nicht beschrieben. https://developers.google.com/earth-engine/apidocs/map-addlayer
+- **Copernicus Browser / EO Browser, nur Suchtreffer [S]:** Visualisierungen im linken Panel (vordefiniert oder eigenes Skript), „Add to compare“, Vergleich mit „Split“ und „Opacity“. → Gegenbeispiel: dort steht alles links, Einstellungen und Ergebnisse in einer Spalte. https://documentation.dataspace.copernicus.eu/Applications/Browser.html
+
+**Schmale Fenster, Tokens, nur Suchtreffer [S]:**
+
+- **Material 3 Bottom Sheets:** „standard“ ohne Abdunkelung, „modal“ mit; Griff optional, mindestens 48 dp Zielgröße (aus Umsetzungsdokus, die auf m3.material.io verweisen). → Blatt ohne Abdunkelung, damit die Karte bedienbar bleibt. https://api.flutter.dev/flutter/material/BottomSheet-class.html
+- **IBM Carbon Spacing:** Skala aus Vielfachen von 2, 4 und 8, Tokens `$spacing-01` … `$spacing-13`, Werte unabhängig von der Fenstergröße. → Skala 4/8/12/16/24/32. https://carbondesignsystem.com/elements/spacing/overview/
+- **Design Tokens Community Group:** erste stabile Fassung des Formats 2025.10 (28.10.2025). → Wir legen die Tokens als CSS-Variablen an (keine neue Abhängigkeit); ein Export in dieses Format wäre später ohne Umbau möglich [A]. https://www.w3.org/community/design-tokens/2025/10/28/design-tokens-specification-reaches-first-stable-version/
+
+**Folgerung [A]:** Apple, Calcite und QGIS ordnen die Einstellungen des Gewählten in einer eigenen Spalte, rechts (Apple ausdrücklich „trailing“), schmal (225–420 px), im schmalen Fenster als Blatt; Anwenden ist ein eigener Schritt (QGIS). EO Browser stellt alles links in eine Spalte; das ist das, was Otto heute als „quer durch“ empfindet.
 
 ### 7.6 Schnitt und Konflikte
 
@@ -232,6 +261,6 @@ Ein Bauteil `Inspector.tsx` mit drei Inhalten (Ansicht der Suche, angeheftete An
 3. **Rand:** (1) bündig am rechten Rand, volle Höhe unter der Knopfzeile, wie das Panel links (**Empfehlung**); (2) schwebend mit 16 px Abstand und runden Ecken wie heute das Processing-Panel.
 4. **Schrift:** (1) System-Schrift überall, Ziffern gleich breit (**Empfehlung**, ersetzt Monospace aus dem Prototyp); (2) System-Schrift, Monospace für Zahlen und Kennungen; (3) Monospace bleibt.
 5. **Unter 900 px:** (1) Blatt von unten, höchstens 55 % Höhe, einklappbar (**Empfehlung**); (2) Blatt über die ganze Höhe.
-6. **Gesperrt statt weg in der Seitenleiste:** (1) Opacity in der Ansicht der Suche gesperrt („Add to layers to set the opacity“), am Layer ein Abschnitt „Actions“ mit ⇩ Download (**Empfehlung**); (2) Opacity und „Actions“ nur, wo sie gelten.
+6. **Opacity und Downloads in der Seitenleiste:** (1) Opacity in der Ansicht der Suche gesperrt mit Grund („Add to layers to set the opacity“); ⇩ zusätzlich in „Actions“ (Ansicht: Zuschnitt und ganze Szene wie in der Auswahlleiste; Layer: wie in seiner Zeile), die alten Stellen bleiben (**Empfehlung**); (2) Opacity nur am Layer, Downloads nur an den heutigen Stellen; (3) wie (1), aber die Downloads ziehen ganz in die Seitenleiste um (Auswahlleiste und Layer-Zeile ohne ⇩).
 7. **Tokens für die übrigen Panels:** **entschieden (Otto, 01.11.2026):** UI-04 „Einheitlichkeit“ zieht sie überall durch; NM4-56 geht darin auf.
 8. **Processing-Manager (Teil 3):** (1) bleibt 340 px links, Ordnung über feste Spalten und „⋯“ (**Empfehlung**); (2) breiter (420 px), alle Panels links mit.
