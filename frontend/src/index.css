@@ -510,6 +510,124 @@ body.dragging * {
   color: var(--muted);
   font-size: var(--text-xs);
 }
+/* A colour picture in values (UI-03d): a row of vmin and vmax for each channel, its letter in front, the switch in the first row. */
+.inspector .vc-scale-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.inspector .vc-channels {
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+}
+.inspector .vc-chip {
+  min-width: var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+}
+.inspector .vc-chip-red {
+  color: var(--channel-red);
+}
+.inspector .vc-chip-green {
+  color: var(--channel-green);
+}
+.inspector .vc-chip-blue {
+  color: var(--channel-blue);
+}
+/* The histogram of a band under its range, with the two sliders over it; the bars between them full, the rest faint. Only the knobs
+   take the pointer, so either can be taken where they overlap the bars of the other. */
+.inspector .range-hists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.inspector .range-hist {
+  position: relative;
+  height: var(--control-height);
+  border-bottom: var(--line-width) solid var(--line);
+  color: var(--accent);
+}
+.inspector .range-hist-red {
+  color: var(--channel-red);
+}
+.inspector .range-hist-green {
+  color: var(--channel-green);
+}
+.inspector .range-hist-blue {
+  color: var(--channel-blue);
+}
+.inspector .range-hist-bars {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.inspector .range-hist-bars rect {
+  fill: currentColor;
+}
+.inspector .range-hist-bars rect.out {
+  opacity: 0.25;
+}
+.inspector .range-hist input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  appearance: none;
+}
+.inspector .range-hist input[type='range']::-webkit-slider-runnable-track {
+  height: 100%;
+  background: none;
+}
+.inspector .range-hist input[type='range']::-moz-range-track {
+  height: 100%;
+  background: none;
+}
+.inspector .range-hist input[type='range']::-webkit-slider-thumb {
+  width: var(--space-3);
+  height: 100%;
+  border: var(--line-width) solid var(--text);
+  border-radius: var(--radius-sm);
+  background: var(--panel-bg);
+  pointer-events: auto;
+  cursor: ew-resize;
+  appearance: none;
+}
+.inspector .range-hist input[type='range']::-moz-range-thumb {
+  width: var(--space-3);
+  height: 100%;
+  border: var(--line-width) solid var(--text);
+  border-radius: var(--radius-sm);
+  background: var(--panel-bg);
+  pointer-events: auto;
+  cursor: ew-resize;
+}
+.inspector .range-hist input[type='range']:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--focus);
+}
+/* "Quick processing" (Otto, 2.11.2026): small buttons, three in a row; the one that is on is filled. */
+.inspector .vc-quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.inspector .vc-quick > button {
+  min-width: 0;
+  padding: var(--space-1) var(--space-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.inspector .vc-quick > button.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--panel-bg);
+}
 .inspector .vc-opacity .lm-opacity {
   width: 100%;
 }
