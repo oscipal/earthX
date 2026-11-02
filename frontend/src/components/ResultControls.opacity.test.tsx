@@ -109,18 +109,18 @@ describe('the opacity of a result whose settings are open', () => {
     expect(useAppStore.getState().layers[0].opacity).toBe(0.4);
   });
 
-  it('goes back to the saved one when the settings close without it: the x, Esc, another layer', () => {
+  it('goes back to the saved one when the settings close without it: closing them, the x of the bar, another layer', () => {
     useAppStore.setState({ layers: [layer(1), { ...layer(0.8), id: 'R2' }], resultViewLayerId: 'R1' });
     act(() => root.render(<ResultControls />));
     act(() => useAppStore.getState().setLayerOpacity('R1', 0.2));
     act(() => useAppStore.getState().closeResultView());
     expect(useAppStore.getState().layers[0].opacity).toBe(1);
     expect(useAppStore.getState().layers[0].saved).toBeUndefined();
-    // Esc, which the settings bar takes.
+    // The red x of the settings bar (Esc closes nothing, Otto, 2.11.2026).
     useAppStore.setState({ resultViewLayerId: 'R1' });
     act(() => root.render(<Inspector />));
     act(() => useAppStore.getState().setLayerOpacity('R1', 0.2));
-    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    act(() => document.querySelector<HTMLButtonElement>('aside.inspector .close-x')!.click());
     expect(useAppStore.getState().resultViewLayerId).toBeNull();
     expect(useAppStore.getState().layers[0].opacity).toBe(1);
     // Another layer.

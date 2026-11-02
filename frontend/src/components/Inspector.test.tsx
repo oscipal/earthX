@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
 // The settings bar (UI-03a, Otto, 2.11.2026): one bar for the view of the search, the pinned view and the settings of a result layer, the same
-// places for all three, the content swapped without closing the bar, the x and Esc to close it, what does not apply locked with its
-// reason, and out of the way of the processing panel without losing what was typed.
+// places for all three, the content swapped without closing the bar, the red x (and "Clear") to close it and Esc closing nothing, what
+// does not apply locked with its reason, and out of the way of the processing panel without losing what was typed.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 import { datasetsFrom } from '../datasets';
 import { DRAW_AOI_TO_CROP } from '../download';
+import { inspectorKindOf } from '../inspectorKind';
 import type { MapLayer } from '../layers';
 import { RGB } from '../processingBands';
 import { resetJobs, useProcessingStore } from '../processingStore';
@@ -300,31 +301,30 @@ describe('closing', () => {
     expect(state().layers[0].opacity).toBe(0.2);
   });
 
-  it('closes with Esc as with the x, and puts back what was not saved; after "Save" it stays', () => {
+  // Otto, 2.11.2026: Esc closes nothing. The bar of each kind closes with its red x or "✕ Clear" only, and nothing typed in it is lost.
+  it.each([
+    ['the settings of a result layer', () => openResult()],
+    ['the pinned view', () => openPinnedView()],
+    ['the view of the search', () => openView()],
+  ])('stays open on Escape for %s, with what was changed in it', (_, openIt) => {
     act(() => root.render(<Inspector />));
-    openResult();
-    act(() => state().setLayerOpacity('R1', 0.2));
-    key(document.body, 'Escape');
-    expect(aside()).toBeNull();
-    expect(state().layers[0].opacity).toBe(1);
-    openResult();
-    act(() => state().setLayerOpacity('R1', 0.2));
-    click(button('Save'));
-    key(document.body, 'Escape');
-    expect(aside()).toBeNull();
-    expect(state().layers[0].opacity).toBe(0.2);
+    openIt();
+    const kind = inspectorKindOf(state());
+    type(field('vmin').querySelector('input')!, '7');
+    for (const target of [document.body, aside()!.querySelector<HTMLElement>('.vc-title')!, field('vmin').querySelector('input')!, field('Opacity').querySelector('input')!]) {
+      key(target, 'Escape');
+      expect(aside(), target.tagName).not.toBeNull();
+    }
+    expect(inspectorKindOf(state())).toBe(kind);
+    expect(field('vmin').querySelector('input')!.value).toBe('7');
   });
 
-  it('closes the pinned view with the x and with Esc, and the layer stays', () => {
+  it('closes the pinned view with the x, and the layer stays', () => {
     act(() => root.render(<Inspector />));
     openPinnedView();
     click(aside()!.querySelector('.close-x'));
     expect(aside()).toBeNull();
     expect(state().focusMode).toBe(false);
-    expect(state().layers.map((l) => l.id)).toEqual(['L1']);
-    openPinnedView();
-    key(document.body, 'Escape');
-    expect(aside()).toBeNull();
     expect(state().layers.map((l) => l.id)).toEqual(['L1']);
   });
 
@@ -333,11 +333,11 @@ describe('closing', () => {
     openPinnedView();
     act(() => state().setLayerOpacity('L1', 0.1));
     expect(state().layers[0].saved).toBeDefined();
-    key(document.body, 'Escape');
+    click(aside()!.querySelector('.close-x'));
     expect(state().layers[0].opacity).toBe(0.6);
   });
 
-  it('does what "Clear" does on the view of the search: the x and Esc take the view off the map', () => {
+  it('does what "Clear" does on the view of the search: the x takes the view off the map', () => {
     act(() => root.render(<Inspector />));
     openView({ selectedIds: ['s1'], resultsOnMap: false });
     click(aside()!.querySelector('.close-x'));
@@ -345,10 +345,6 @@ describe('closing', () => {
     expect(state().focusMode).toBe(false);
     expect(state().downloaded).toEqual({});
     expect(state().selectedIds).toEqual(['s1']);
-    openView();
-    key(document.body, 'Escape');
-    expect(aside()).toBeNull();
-    expect(state().downloaded).toEqual({});
     openView();
     click(button('✕ Clear'));
     expect(aside()).toBeNull();
@@ -385,55 +381,6 @@ describe('closing', () => {
     // The opener was the body: nothing to give back.
     expect(document.activeElement).toBe(other);
     other.remove();
-  });
-});
-
-describe('Esc where it belongs to something else', () => {
-  it('does not close the bar in a number field, a dropdown or on the slider', () => {
-    act(() => root.render(<Inspector />));
-    openResult();
-    for (const target of [field('vmin').querySelector('input')!, field('Colormap').querySelector('select')!, field('Opacity').querySelector('input')!, aside()!.querySelector('.vc-unit')!]) {
-      key(target, 'Escape');
-      expect(aside(), target.tagName).not.toBeNull();
-    }
-    expect(state().resultViewLayerId).toBe('R1');
-  });
-
-  it('does not close the view of the search in a field either', () => {
-    act(() => root.render(<Inspector />));
-    openView();
-    key(field('vmin').querySelector('input')!, 'Escape');
-    expect(aside()).not.toBeNull();
-    expect(state().focusMode).toBe(true);
-  });
-
-  it('does not close the bar for the Esc of a panel at the side, a menu or a dialog', () => {
-    act(() => root.render(<><div className="overlay dock"><button id="in-dock" /></div><div role="menu"><button id="in-menu" /></div><Inspector /></>));
-    openResult();
-    key(container.querySelector('#in-dock')!, 'Escape');
-    key(container.querySelector('#in-menu')!, 'Escape');
-    expect(aside()).not.toBeNull();
-  });
-
-  it('does not close the bar while the processing panel is open: Esc is the panel\'s then', () => {
-    act(() => root.render(<Inspector />));
-    openView();
-    act(() => useProcessingStore.setState({ open: true }));
-    key(document.body, 'Escape');
-    expect(state().focusMode).toBe(true);
-    expect(aside()).not.toBeNull();
-    act(() => useProcessingStore.setState({ open: false }));
-    key(document.body, 'Escape');
-    expect(aside()).toBeNull();
-  });
-
-  it('ignores a key that is not Esc and an Esc another part of the page took', () => {
-    act(() => root.render(<Inspector />));
-    openResult();
-    key(document.body, 'Enter');
-    document.addEventListener('keydown', (e) => e.preventDefault(), { once: true, capture: true });
-    key(document.body, 'Escape');
-    expect(aside()).not.toBeNull();
   });
 });
 
@@ -649,7 +596,7 @@ describe('the sheet under 900 px', () => {
     act(() => root.render(<Inspector />));
     openResult();
     click(aside()!.querySelector('.pp-grip'));
-    key(document.body, 'Escape');
+    click(aside()!.querySelector('.close-x'));
     openResult();
     expect(aside()!.classList.contains('folded')).toBe(false);
   });

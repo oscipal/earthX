@@ -304,8 +304,8 @@ function useFlipping(listRef: RefObject<HTMLUListElement | null>) {
 const WHEEL_NOTCH = 40;
 const WHEEL_PAUSE_MS = 180;
 
-// Keys in the manager while flipping. Esc ends it and, taken here, does not close the panel as well (`App.tsx` leaves a key
-// that was taken alone). ↑/↓ step, but not in a field, where the arrows are the field's (the opacity slider, a dropdown).
+// Keys in the manager while flipping. Esc ends it, the one thing Esc does besides "Cancel" in a dialog (Otto, 2.11.2026). ↑/↓ step,
+// but not in a field, where the arrows are the field's (the opacity slider, a dropdown).
 function onFlipKeys(event: ReactKeyboardEvent<HTMLElement>, step: (dir: 1 | -1) => void, end: () => void) {
   if (event.key === 'Escape' && !event.defaultPrevented && !(event.target as HTMLElement).closest('input, textarea, select, .popover, [role="menu"]')) {
     event.preventDefault();

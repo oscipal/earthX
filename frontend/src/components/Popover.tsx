@@ -1,6 +1,6 @@
 // Every dropdown of the viewer (Otto, 30.09.2026): it lies over what is below it
 // instead of pushing it down, stays inside the window — opening upwards when
-// there is more room there — closes on Escape and on a click beside it, and is
+// there is more room there — closes on Escape (not a pop-up with fields) and on a click beside it, and is
 // worked with the keyboard (arrow keys, Home/End, Enter, Escape, Tab).
 //
 // Rendered through a portal into `.app`: the panels are moved with `transform`,
@@ -35,8 +35,8 @@ export default function Popover({
   // Move the focus into the dropdown when it opens (a button opened it); a text
   // field that opens one keeps the focus until the user presses the down arrow.
   focusOnOpen?: boolean;
-  // A pop-up with fields in it (DS-02c): Tab and the arrow keys stay with the fields, and a dropdown that opens inside
-  // it (its own `Popover`, lying over this one) is no click or key "beside" it.
+  // A pop-up with fields in it (DS-02c): Tab and the arrow keys stay with the fields, a dropdown that opens inside it (its own
+  // `Popover`, lying over this one) is no click "beside" it, and Esc does not close it.
   form?: boolean;
   children: ReactNode;
 }) {
@@ -98,9 +98,8 @@ export default function Popover({
       onClose();
     };
     const escape = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      // The dropdown inside a pop-up takes this key first; this one stays.
-      if (form && document.activeElement?.closest('.popover') && !ref.current?.contains(document.activeElement)) return;
+      // A pop-up with fields is a window: Esc does not close it, its red x does (Otto, 2.11.2026). A list or a menu still closes.
+      if (e.key !== 'Escape' || form) return;
       onClose();
       if (ref.current?.contains(document.activeElement)) triggerRef.current?.focus();
     };

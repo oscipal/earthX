@@ -244,12 +244,11 @@ describe('one panel at a time', () => {
     expect(useAppStore.getState().dock).toBe('controls');
   });
 
-  it('closes with Escape from inside, and hands the focus back to its symbol', async () => {
+  it('stays open on Escape from inside: it closes with its symbol (Otto, 2.11.2026)', async () => {
     await search();
     const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     act(() => slot('results').querySelector('.results-head h2')!.dispatchEvent(event));
-    expect(useAppStore.getState().dock).toBeNull();
-    expect(document.activeElement).toBe(symbol('results'));
+    expect(useAppStore.getState().dock).toBe('results');
   });
 });
 

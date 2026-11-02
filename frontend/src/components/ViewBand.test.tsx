@@ -372,7 +372,7 @@ describe('a layer pinned with a band', () => {
     expect(viewLayerOf(s.layers, { ...s, aoi: s.viewAoi })?.id).toBe(s.layers[0].id);
   });
 
-  it('is put back as saved when the settings are closed without "Save": by the x, by Esc, by another layer', async () => {
+  it('is put back as saved when the settings are closed without "Save": by closing the view, by the x of the bar, by another layer', async () => {
     await pinWithBand();
     choose('band:B08');
     await settle();
@@ -383,7 +383,7 @@ describe('a layer pinned with a band', () => {
     expect(layerAssets()).toEqual(['B04']);
     expect(store().layers[0].saved).toBeUndefined();
     expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B04' });
-    // Esc, which the settings bar takes.
+    // The red x of the settings bar (Esc closes nothing, Otto, 2.11.2026).
     act(() => store().selectLayer(store().layers[0].id));
     act(() => root.render(<Inspector />));
     choose('index:NDVI');
@@ -391,7 +391,7 @@ describe('a layer pinned with a band', () => {
     apply();
     await settle();
     expect(store().layers[0].restore.appliedRender).toMatchObject({ index: 'NDVI' });
-    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    act(() => document.querySelector<HTMLButtonElement>('aside.inspector .close-x')!.click());
     expect(store().viewOfLayer).toBe(false);
     expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B04' });
     expect(layerAssets()).toEqual(['B04']);

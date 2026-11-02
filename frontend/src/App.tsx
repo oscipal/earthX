@@ -1,4 +1,4 @@
-import { useEffect, type KeyboardEvent } from 'react';
+import { useEffect } from 'react';
 
 import AppRail from './components/AppRail';
 import BasemapMenu from './components/BasemapMenu';
@@ -14,7 +14,7 @@ import ResultsPanel from './components/ResultsPanel';
 import SelectionBlock from './components/SelectionBlock';
 import StatusBar from './components/StatusBar';
 import TipLayer from './components/TipLayer';
-import { dockPanelId, railButtonId } from './dock';
+import { dockPanelId } from './dock';
 import { inspectorKindOf } from './inspectorKind';
 import { openPermalinkInAddress } from './permalink';
 import { useProcessingStore } from './processingStore';
@@ -23,7 +23,6 @@ import { ticksOfSearch, useAppStore } from './store';
 export default function App() {
   const loadDatasets = useAppStore((s) => s.loadDatasets);
   const dock = useAppStore((s) => s.dock);
-  const closeDock = useAppStore((s) => s.closeDock);
   const focusMode = useAppStore((s) => s.focusMode);
   const resultView = useAppStore((s) => s.resultViewLayerId !== null);
   const inspectorOpen = useAppStore((s) => inspectorKindOf(s) !== null);
@@ -51,16 +50,6 @@ export default function App() {
     resumeJobs();
   }, [resumeJobs]);
 
-  // Esc closes the open panel and hands the focus back to its symbol. Not while a field, a menu or a pop-over
-  // has its own use for the key.
-  const onDockKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Escape' || event.defaultPrevented || !dock) return;
-    const target = event.target as HTMLElement;
-    if (target.closest('input, textarea, select, .popover, [role="menu"]')) return;
-    closeDock();
-    document.getElementById(railButtonId(dock))?.focus();
-  };
-
   return (
     <div className={`app${inspectorOpen && !processingOpen ? ' has-inspector' : ''}`} data-theme={theme}>
       <MapView />
@@ -70,7 +59,7 @@ export default function App() {
 
       {/* The control menu, the layer manager and the results stay mounted (what they hold survives a change
           of panel); the job manager follows jobs, so it exists only while it is open. */}
-      <div className="overlay dock" hidden={!dock} onKeyDown={onDockKeyDown}>
+      <div className="overlay dock" hidden={!dock}>
         <div className="dock-slot" id={dockPanelId('controls')} hidden={dock !== 'controls'}>
           <ControlPanel />
         </div>

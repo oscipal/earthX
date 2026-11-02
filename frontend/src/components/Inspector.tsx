@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useProcessingStore } from '../processingStore';
 import { inspectorKindOf } from '../inspectorKind';
 import { useAppStore } from '../store';
-import { useEscClose } from './useEscClose';
 import ResultControls from './ResultControls';
 import ViewerControls from './ViewerControls';
 
@@ -53,18 +52,10 @@ function Sheet({ kind, hidden }: { kind: 'view' | 'result'; hidden: boolean }) {
 
 export default function Inspector() {
   const kind = useAppStore(inspectorKindOf);
-  const exitFocus = useAppStore((s) => s.exitFocus);
-  const closeResultView = useAppStore((s) => s.closeResultView);
   const processingOpen = useProcessingStore((s) => s.open);
   const open = kind !== null;
 
-  // Esc closes as the x does: the view leaves the map, a result layer goes back to what was saved. Not while the processing panel is
-  // open: Esc is its own then.
-  useEscClose(() => {
-    if (!kind || processingOpen) return;
-    if (kind === 'view') exitFocus();
-    else closeResultView();
-  });
+  // Esc closes nothing here: the bar is closed with its red x or "✕ Clear" only (Otto, 2.11.2026).
 
   // Whatever had the focus when the bar opened gets it back when it closes, if it is still there.
   const origin = useRef<HTMLElement | null>(null);
