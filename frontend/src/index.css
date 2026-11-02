@@ -102,11 +102,6 @@ body.dragging * {
 .draggable[data-band='selection'] {
   z-index: 1;
 }
-/* The block of the selection bar and the timeline (NM4-66). With a bar it is as wide as the bar (`.fill`); the timeline
-   alone is narrower, and never wider than the stack. */
-.draggable.time-only {
-  width: min(560px, 100%);
-}
 .selection-block {
   box-sizing: border-box;
   width: 100%;
@@ -123,6 +118,16 @@ body.dragging * {
 }
 .selection-block > .download-bar {
   padding-top: 2px;
+}
+/* With no scene ticked: what to do, in the place and at the height of the buttons, so that the block keeps its size (Otto, 2.11.2026). */
+.selection-block > .select-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--control-height) + var(--space-3));
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-md);
 }
 .selection-block > .download-bar + .time-slider {
   border-top: 1px solid var(--panel-border);
