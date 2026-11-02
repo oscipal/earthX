@@ -150,3 +150,7 @@ class TestThreeBandsAsOneColourPicture:
 
     def test_a_colormap_on_one_band_still_draws(self, rig: Rig, uploaded: str) -> None:
         _png(rig, uploaded, "bidx=2&rescale=150,250&colormap_name=viridis")
+
+    def test_the_colormaps_added_to_rio_tilers_draw_a_result_too(self, rig: Rig, uploaded: str) -> None:
+        """UI-03d: the result route takes the colormaps of `access/colormaps.py`, reversed ones included."""
+        assert _png(rig, uploaded, "bidx=2&rescale=150,250&colormap_name=mako") != _png(rig, uploaded, "bidx=2&rescale=150,250&colormap_name=mako_r")

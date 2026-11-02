@@ -59,6 +59,7 @@ from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
+from earthx.access.colormaps import catalog as colormap_catalog
 from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
@@ -1610,6 +1611,14 @@ def build_app(
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "service": "tiler"}
+
+    @app.get("/colormaps", tags=["Colormaps"])
+    def colormaps() -> JSONResponse:
+        """The colormaps every tile route takes as ``colormap_name``, by group, each with a preview and its reversed name.
+
+        The same answer for everyone and every time this version runs: a day in the browser's cache (UI-03d).
+        """
+        return JSONResponse(colormap_catalog(), headers={"Cache-Control": "public, max-age=86400"})
 
     return app
 
