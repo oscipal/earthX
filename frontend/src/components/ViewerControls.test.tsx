@@ -398,9 +398,10 @@ describe('the layout contract in index.css', () => {
     expect(rule('.inspector .vc-render')).toContain('gap: var(--space-2)');
   });
 
-  it('puts "auto-scale", "Apply" and "Save" in three columns of one width, the actions in two', () => {
+  it('puts "auto-scale", "Apply" and "Save" in three columns of one width, the actions one per line without wrapping', () => {
     expect(rule('.inspector .vc-buttons')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
-    expect(rule('.inspector .vc-actions')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(rule('.inspector .vc-actions')).toContain('flex-direction: column');
+    expect(rule('.inspector .vc-actions > *')).toContain('white-space: nowrap');
     expect(rule('.inspector .vc-actions > *')).toContain('min-width: 0');
   });
 });

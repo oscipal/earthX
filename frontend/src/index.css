@@ -479,9 +479,10 @@ body.dragging * {
 .app[data-theme='normal'] .inspector .vc-note {
   color: #8a5a00;
 }
+/* One action per line: every button as high as a control, none wraps its words. */
 .inspector .vc-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
 }
 .inspector .vc-actions > * {
@@ -490,7 +491,7 @@ body.dragging * {
   align-items: center;
   justify-content: center;
   padding: var(--space-1) var(--space-2);
-  text-align: center;
+  white-space: nowrap;
   text-decoration: none;
 }
 /* The column is taken from the map: what stands at the bottom and the map controls move left of it. */
