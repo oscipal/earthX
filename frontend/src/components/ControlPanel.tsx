@@ -170,7 +170,6 @@ function PlaceSearchField() {
           clearLabel="Clear place name"
           onKeyDown={(e) => {
             if (e.key === 'Enter') void runSearch();
-            if (e.key === 'Escape') setShowResults(false);
             if (e.key === 'ArrowDown' && showResults) {
               e.preventDefault();
               focusFirstItem(resultsRef.current);
@@ -563,7 +562,6 @@ function CoverageButton() {
       </button>
       <Popover
         anchorRef={rowRef}
-        triggerRef={buttonRef}
         open={choosing && picked.length > 1}
         onClose={close}
         className="coverage-choice"

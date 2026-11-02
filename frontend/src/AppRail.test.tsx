@@ -250,13 +250,13 @@ describe('the keyboard', () => {
     expect(useAppStore.getState().dock).toBe('layers');
   });
 
-  it('closes the menu of a job row with Escape and leaves the panel open, also on the next Escape', () => {
+  it('leaves the menu of a job row and the panel open on Escape (Otto, 2.11.2026: Esc closes no menu either)', () => {
     act(() => useProcessingStore.setState({ jobs: [jobEntry(1)] }));
     click(symbol('jobs'));
     click(container.querySelector('button[aria-haspopup="menu"]')!);
     const first = document.querySelector('[role="menu"] button')!;
     key(first, 'Escape');
-    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
     expect(useAppStore.getState().dock).toBe('jobs');
     key(container.querySelector('.processing-manager h2')!, 'Escape');
     expect(useAppStore.getState().dock).toBe('jobs');

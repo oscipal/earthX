@@ -320,14 +320,16 @@ describe('closing keeps the values', () => {
     expect(titles()).toEqual(['Relative orbit']);
   });
 
-  it('Escape in the list of datasets closes the list only, and the next Escape nothing', () => {
+  it('Escape closes neither the list of datasets nor the pop-up (Otto, 2.11.2026); a click beside the list does', () => {
     pick('optical', 'radar');
     open();
     act(() => box().click());
     expect(options()).toHaveLength(2);
     key(document, 'Escape');
-    expect(options()).toHaveLength(0);
+    expect(options()).toHaveLength(2);
     expect(popup()).not.toBeNull();
+    act(() => box().click());
+    expect(options()).toHaveLength(0);
     key(box(), 'Escape');
     expect(popup()).not.toBeNull();
   });

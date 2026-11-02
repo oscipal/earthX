@@ -1,7 +1,7 @@
 // Every dropdown of the viewer (Otto, 30.09.2026): it lies over what is below it
 // instead of pushing it down, stays inside the window — opening upwards when
-// there is more room there — closes on Escape (not a pop-up with fields) and on a click beside it, and is
-// worked with the keyboard (arrow keys, Home/End, Enter, Escape, Tab).
+// there is more room there — closes on a click beside it or a choice in it, not on Escape (Otto, 2.11.2026: Esc closes nothing), and
+// is worked with the keyboard (arrow keys, Home/End, Enter, Tab).
 //
 // Rendered through a portal into `.app`: the panels are moved with `transform`,
 // which would make them the containing block of a `position: fixed` child and
@@ -14,7 +14,6 @@ import { focusFirstItem, placePopover, popoverItems, type Placement } from '../p
 
 export default function Popover({
   anchorRef,
-  triggerRef = anchorRef,
   open,
   onClose,
   className,
@@ -25,8 +24,6 @@ export default function Popover({
   children,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
-  // Where the focus returns on Escape, if not the anchor itself.
-  triggerRef?: RefObject<HTMLElement | null>;
   open: boolean;
   onClose: () => void;
   className: string;
@@ -97,19 +94,9 @@ export default function Popover({
       if (form && (target as Element).closest?.('.popover')) return;
       onClose();
     };
-    const escape = (e: KeyboardEvent) => {
-      // A pop-up with fields is a window: Esc does not close it, its red x does (Otto, 2.11.2026). A list or a menu still closes.
-      if (e.key !== 'Escape' || form) return;
-      onClose();
-      if (ref.current?.contains(document.activeElement)) triggerRef.current?.focus();
-    };
     document.addEventListener('pointerdown', away);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('pointerdown', away);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [open, onClose, anchorRef, triggerRef, form]);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open, onClose, anchorRef, form]);
 
   if (!open) return null;
   const host = anchorRef.current?.closest('.app') ?? document.body;

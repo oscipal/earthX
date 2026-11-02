@@ -255,11 +255,10 @@ describe('the keyboard and the mouse', () => {
     expect(document.activeElement?.textContent).toBe('Mercator');
   });
 
-  it('closes on Escape and gives the focus back to the button', () => {
+  it('stays open on Escape (Otto, 2.11.2026: Esc closes nothing)', () => {
     open();
     act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-    expect(menu()).toBeNull();
-    expect(document.activeElement).toBe(trigger());
+    expect(menu()).not.toBeNull();
   });
 
   it('closes on a click beside it', () => {

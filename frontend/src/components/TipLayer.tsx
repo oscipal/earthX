@@ -26,20 +26,15 @@ export default function TipLayer() {
     const hide = (event: Event) => {
       if (tipOf(event.target)) setAnchor(null);
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setAnchor(null);
-    };
     document.addEventListener('mouseover', show);
     document.addEventListener('focusin', show);
     document.addEventListener('mouseout', hide);
     document.addEventListener('focusout', hide);
-    document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mouseover', show);
       document.removeEventListener('focusin', show);
       document.removeEventListener('mouseout', hide);
       document.removeEventListener('focusout', hide);
-      document.removeEventListener('keydown', onKey);
     };
   }, []);
 
