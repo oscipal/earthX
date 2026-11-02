@@ -14,7 +14,7 @@ const ROOT_TOKENS = [
   '--text-xs', '--text-sm', '--text-md', '--text-lg', '--text-xl',
   '--leading-tight', '--leading', '--weight-regular', '--weight-semibold',
   '--radius-sm', '--radius-md', '--radius-full', '--line-width',
-  '--control-height', '--control-height-sm',
+  '--control-height', '--control-height-sm', '--control-height-touch',
   '--rail-width', '--dock-width', '--inspector-width', '--sheet-wide-width',
   '--font', '--font-mono',
 ];
@@ -46,6 +46,19 @@ describe('tokens.css', () => {
     expect(root).toContain('--text-xs: 11px');
     expect(root).toContain('--control-height: 28px');
     expect(root).toContain('--sheet-wide-width: clamp(520px, 34vw, 640px)');
+  });
+
+  // Otto, 2.11.2026: on a touch screen and under 900 px a control is 40–44 px high, from a token of its own.
+  it('makes every control as high as the touch token on a touch screen and under 900 px', () => {
+    const touch = Number(/--control-height-touch:\s*(\d+)px/u.exec(block(tokens, ':root'))?.[1]);
+    expect(touch).toBeGreaterThanOrEqual(40);
+    expect(touch).toBeLessThanOrEqual(44);
+    const media = /@media \(pointer: coarse\), \(max-width: 899px\) \{\s*:root \{([^}]*)\}/u.exec(tokens);
+    expect(media?.[1]).toContain('--control-height: var(--control-height-touch)');
+    // Nothing else sets the height for touch: the plain value stays the one of a mouse.
+    expect(block(tokens, ':root')).toContain('--control-height: 28px');
+    expect(tokens.match(/--control-height:/gu)).toHaveLength(2);
+    expect(index).not.toMatch(/--control-height(?:-touch)?:/u);
   });
 
   it('is the only place of the theme blocks, the rail width and the families', () => {

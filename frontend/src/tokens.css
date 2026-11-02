@@ -30,6 +30,8 @@
 
   --control-height: 28px;
   --control-height-sm: 22px;
+  /* For a finger (Otto, 2.11.2026): what `--control-height` becomes on a touch screen and in a window under 900 px. */
+  --control-height-touch: 44px;
 
   /* The rail, the panel beside it, the side bar and the wide sheet (UI-01 §6.9, UI-03 §7.2). */
   --rail-width: 48px;
@@ -40,6 +42,13 @@
   /* One family; the monospace one is for code, formulas and expressions only. */
   --font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
+}
+
+/* A touch screen, or a window as narrow as a phone's: every control as high as a finger needs. */
+@media (pointer: coarse), (max-width: 899px) {
+  :root {
+    --control-height: var(--control-height-touch);
+  }
 }
 
 /* --- theme tokens --- */
