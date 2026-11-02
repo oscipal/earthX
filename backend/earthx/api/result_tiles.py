@@ -26,7 +26,8 @@ tile). Neither is state a second instance would miss: two instances answer a URL
 
 * **Its numbers.** ``GET /results/{result_id}/statistics`` answers the statistics of the result's bands as the
   results document writes them (``name``, ``data_type``, ``statistics``), with ``percentile_1`` to ``percentile_99``
-  from the histogram of `processing.statistics`. It counts only what the tile shows: the pixels ``mask.tif`` marks, and
+  from the histogram of `processing.statistics`, and a ``histogram`` of 64 bins for the slider of the range (UI-03d,
+  ``[counts, edges]`` as rio-tiler writes one). It counts only what the tile shows: the pixels ``mask.tif`` marks, and
   of those the valid ones. A raster of more than :data:`STATISTICS_MAX_PIXELS` (4096 x 4096) pixels is read on a grid an
   whole factor coarser (an overview where the file has one; ``nearest`` where not), in strips, so the memory stays
   small and the numbers the same on every machine. The answer does not say so. This one route lifts the "statistics
@@ -292,7 +293,8 @@ def result_statistics(path: ResultPath, env: dict[str, str]) -> list[dict[str, A
             {
                 "name": name,
                 "data_type": dtype,
-                "statistics": statistics.summary(max(inside_pixels, 1), MEASURE_PERCENTILES),
+                "statistics": statistics.summary(max(inside_pixels, 1), MEASURE_PERCENTILES)
+                | ({"histogram": statistics.histogram()} if statistics.count else {}),
             }
             for name, dtype, statistics in zip(names, raster.dtypes, bands, strict=True)
         ]
