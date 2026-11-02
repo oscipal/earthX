@@ -132,6 +132,10 @@ class TestNoFreeAddress:
         assert ("query", "url") not in parameters
         assert not [name for where, name in parameters if where == "query" and "url" in name.lower()]
 
+    def test_the_list_of_colormaps_takes_no_parameter(self, client: TestClient) -> None:
+        """The one route outside the catalogue besides health has nothing to name an address with."""
+        assert client.app.openapi()["paths"]["/colormaps"]["get"].get("parameters", []) == []
+
     def test_every_path_names_a_dataset_and_an_item(self, client: TestClient) -> None:
         """There is no route that could render without going through the catalogue.
 
@@ -143,13 +147,13 @@ class TestNoFreeAddress:
         items and its AOI, travels in the body. So is the order of the scenes of a pass without a mosaic (NM4-24): the
         ids travel in the body, and every item still resolves through the source. The mosaic tiles (M4-17b) name the dataset in the path and the items
         of one overpass in the query, each fetched through the same source. The tiles of a job
-        result (M4-13c-5) are the last: they name a result, which the object store holds, and no
-        source at all.
+        result (M4-13c-5) name a result, which the object store holds, and no
+        source at all. ``/colormaps`` (UI-03d) renders nothing and reads no source: it lists the names the tiles take.
         """
         rendering = [
             path
             for path in client.app.openapi()["paths"]
-            if path not in ("/health", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE)
+            if path not in ("/health", "/colormaps", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE)
             and not path.startswith((RESULT_ROUTER_PREFIX, MOSAIC_ROUTER_PREFIX))
         ]
         assert rendering
