@@ -32,7 +32,7 @@ export default function SelectionBlock({ bar, timeline }: { bar: boolean; timeli
         {showBar ? (
           <ViewBar />
         ) : (
-          <p className="download-bar select-hint" role="status">
+          <p className="select-hint" role="status">
             {SELECT_A_SCENE}
           </p>
         )}

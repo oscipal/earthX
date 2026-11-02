@@ -109,26 +109,28 @@ describe('the entry "Results" in the layer manager', () => {
     expect(container.querySelector('.layer-manager .results-head-right')?.textContent).toBe('0');
   });
 
-  it('lets a pinned layer go on top, over it, also while it is on top (Otto, zu #249)', () => {
+  // Otto, 2.11.2026 (replaces "a new layer goes over it" of 30.10.2026, zu #249): it stays on top unless the user moves it down.
+  it('stays on top while a layer is pinned: the new layer comes right under it', () => {
     pin('Job one');
-    expect(rowNames()).toEqual(['Job one', 'Search results']);
+    expect(rowNames()).toEqual(['Search results', 'Job one']);
     pin('Job two');
-    expect(rowNames()).toEqual(['Job two', 'Job one', 'Search results']);
-    expect(state().resultsAt).toBe(2);
+    expect(rowNames()).toEqual(['Search results', 'Job two', 'Job one']);
+    expect(state().resultsAt).toBe(0);
   });
 
-  it('moves with ▲/▼ among the layers, and a layer pinned then goes on top, over it', () => {
+  it('moves with ▲/▼ among the layers; moved down, a layer pinned then goes on top, over it', () => {
     pin('Job one');
     pin('Job two');
-    click(resultsButton('up'));
-    expect(rowNames()).toEqual(['Job two', 'Search results', 'Job one']);
-    click(resultsButton('up'));
-    expect(rowNames()).toEqual(['Search results', 'Job two', 'Job one']);
-    expect(resultsButton('up').disabled).toBe(true);
-    pin('Job three');
-    expect(rowNames()).toEqual(['Job three', 'Search results', 'Job two', 'Job one']);
     click(resultsButton('down'));
+    expect(rowNames()).toEqual(['Job two', 'Search results', 'Job one']);
+    pin('Job three');
     expect(rowNames()).toEqual(['Job three', 'Job two', 'Search results', 'Job one']);
+    click(resultsButton('up'));
+    click(resultsButton('up'));
+    expect(rowNames()).toEqual(['Search results', 'Job three', 'Job two', 'Job one']);
+    expect(resultsButton('up').disabled).toBe(true);
+    pin('Job four');
+    expect(rowNames()).toEqual(['Search results', 'Job four', 'Job three', 'Job two', 'Job one']);
   });
 
   it('changes places with a layer whose ▲/▼ points at it', () => {
@@ -144,7 +146,8 @@ describe('the entry "Results" in the layer manager', () => {
     pin('Job one');
     pin('Job two');
     pin('Job three');
-    click(resultsButton('up'));
+    click(resultsButton('down'));
+    click(resultsButton('down'));
     expect(rowNames()).toEqual(['Job three', 'Job two', 'Search results', 'Job one']);
     click(rowOf('Job one').querySelector('[data-col="remove"]')!);
     expect(rowNames()).toEqual(['Job three', 'Job two', 'Search results']);
@@ -155,6 +158,7 @@ describe('the entry "Results" in the layer manager', () => {
 
   it('goes back on top with every search, and "Load more" leaves it', async () => {
     pin('Job one');
+    click(resultsButton('down'));
     expect(state().resultsAt).toBe(1);
     await act(() => state().loadMore());
     expect(state().resultsAt).toBe(1);
@@ -230,7 +234,7 @@ describe('"Results" on top, from the results list', () => {
 
   it('does nothing while greyed out', () => {
     pin('Job one');
-    act(() => state().resultsToTop());
+    expect(greyed()).toBe(true);
     expect(greyed()).toBe(true);
     const before = rowNames();
     click(toTop());
@@ -240,6 +244,8 @@ describe('"Results" on top, from the results list', () => {
   it('puts "Results" over every layer, and is greyed out then', () => {
     pin('Job one');
     pin('Job two');
+    act(() => state().moveResults('down'));
+    act(() => state().moveResults('down'));
     expect(rowNames()).toEqual(['Job two', 'Job one', 'Search results']);
     expect(greyed()).toBe(false);
     expect(toTop().title).toBe(RESULTS_TO_TOP_TIP);
@@ -257,11 +263,11 @@ describe('"Results" on top, from the results list', () => {
     expect(state().layers).toBe(layers);
   });
 
-  it('is open again once a new layer goes over "Results"', () => {
+  it('stays greyed out when a layer is pinned: the layer comes under "Results" (Otto, 2.11.2026)', () => {
     pin('Job one');
-    click(toTop());
     expect(greyed()).toBe(true);
     pin('Job two');
-    expect(greyed()).toBe(false);
+    expect(greyed()).toBe(true);
+    expect(rowNames()[0]).toBe('Search results');
   });
 });

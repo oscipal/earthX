@@ -60,7 +60,8 @@ const OVERLAYS_BASE = 'overlays-base';
 // to top; in a tier the rank decides (the order of the ticks, the last ticked on top), and of equal rank the layer that
 // was placed later. Every layer is placed at the top and given its key; `restackAll` then lays all of them out from the
 // state alone, whatever was on the map when a picture arrived.
-const TIERS = ['view', 'otherTicked', 'openRest', 'openTicked', 'preview', 'outline'] as const;
+// The view and the live preview lie over the quicklooks of the search (Otto, 2.11.2026; replaces the view at the bottom of 30.10.2026).
+const TIERS = ['otherTicked', 'openRest', 'openTicked', 'view', 'preview', 'outline'] as const;
 type Tier = (typeof TIERS)[number];
 interface ResultsKey {
   tier: number;
@@ -1238,8 +1239,8 @@ export function syncBrowseMosaic(map: MapLibreMap, s: PreviewState): void {
   settleRetired(map);
 }
 
-// The quicklooks of the search results while a full-resolution view is open, with the eye of "Results" on: over the
-// view, which is the bottom tier of "Results" (NM4-59, Otto, 30.10.2026; replaces the view over them of 27.10.2026). Their
+// The quicklooks of the search results while a full-resolution view is open, with the eye of "Results" on: under the
+// view, which lies over them in "Results" (Otto, 2.11.2026; replaces the view at the bottom of 30.10.2026). Their
 // own id range (`res-…`), apart from the view's two banks, so that neither sync takes the other's layers away.
 const RESULTS_KINDS = ['img-lyr', 'img-src', 'tiles-lyr', 'tiles-src'] as const;
 let resultsGen = 0;

@@ -64,14 +64,16 @@ const GAP = 10;
 const STACK_WIDTH = 760;
 const HEAD = 22; // the head of the block with its "x"
 const BAR_ALONE = HEAD + 66;
-const TIMELINE_ALONE = HEAD + 72;
+const HINT = 52; // "Select a scene" in the place of the buttons
+const TIMELINE_ALONE = HEAD + HINT + 72;
 const STACK_LEFT = 284; // `left: calc((100% + var(--rail-width)) / 2)` less half the width, the dock open or not
 
 let container: HTMLDivElement;
 let root: Root;
 
 // The block of the bar and the timeline: a head for the "x", the bar, the timeline, as far as they are there.
-const heightOf = (band: HTMLElement) => HEAD + (band.querySelector('.download-bar') ? 66 : 0) + (band.querySelector('.time-slider') ? 72 : 0);
+const heightOf = (band: HTMLElement) => HEAD + (band.querySelector('.download-bar') ? 66 : 0) + (band.querySelector('.select-hint') ? HINT : 0) + (band.querySelector('.time-slider') ? 72 : 0);
+// The block is as wide as the stack, with or without a ticked scene (Otto, 2.11.2026).
 const widthOf = (band: HTMLElement) => (band.classList.contains('fill') ? STACK_WIDTH : 300);
 const number = (value: string) => parseFloat(value) || 0;
 
@@ -217,14 +219,12 @@ describe('a band that was moved stays where it was put (Otto, 27.10.2026)', () =
     changeImage();
     await flush();
     expect(view()).toBeNull();
-    // The crop took the results off the map, and the block with them (Otto, 1.11.2026): the eye brings the timeline back.
-    expect(timeline()).toBeNull();
-    act(() => state().toggleResultsOnMap());
-    await flush();
+    // The crop took the results off the map; "Change image" shows them again, and the timeline with them (Otto, 2.11.2026).
+    expect(state().resultsOnMap).toBe(true);
     // Not moved, the timeline stands where the stack puts it: on the bottom edge of the window, nothing above.
     const bottom = placeOf(timeline as () => HTMLElement);
     expect(bottom.top).toBe(WINDOW.height - BOTTOM_EDGE - TIMELINE_ALONE);
-    expect(bottom.left).toBe(STACK_LEFT + (STACK_WIDTH - 300) / 2);
+    expect(bottom.left).toBe(STACK_LEFT);
   });
 
   it('the band, back after it went, stands where it was left', async () => {
@@ -312,7 +312,7 @@ describe('a band stays completely inside the window', () => {
     await flush();
     dragBy(timeline()!, 5000, 5000);
     const place = placeOf(timeline as () => HTMLElement);
-    expect(place.left).toBe(WINDOW.width - 300 - 8);
+    expect(place.left).toBe(WINDOW.width - STACK_WIDTH - 8);
     expect(place.top).toBe(WINDOW.height - TIMELINE_ALONE - 8);
     dragBy(timeline()!, -9000, -9000);
     expect(placeOf(timeline as () => HTMLElement)).toEqual({ left: 8, top: 8 });
@@ -321,12 +321,12 @@ describe('a band stays completely inside the window', () => {
   it('is brought back into the visible area when the window gets smaller', async () => {
     await flush();
     dragBy(timeline()!, 400, 0);
-    expect(placeOf(timeline as () => HTMLElement).left).toBeGreaterThan(700);
+    expect(placeOf(timeline as () => HTMLElement).left).toBe(WINDOW.width - STACK_WIDTH - 8);
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 800 });
     Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 500 });
     act(() => void window.dispatchEvent(new Event('resize')));
     const place = placeOf(timeline as () => HTMLElement);
-    expect(place.left).toBeLessThanOrEqual(800 - 300 - 8);
+    expect(place.left).toBeLessThanOrEqual(800 - STACK_WIDTH - 8);
     expect(place.top).toBeLessThanOrEqual(500 - TIMELINE_ALONE - 8);
     expect(place.left).toBeGreaterThanOrEqual(8);
     expect(place.top).toBeGreaterThanOrEqual(8);

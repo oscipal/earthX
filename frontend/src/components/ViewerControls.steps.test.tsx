@@ -383,10 +383,11 @@ describe('"Add to layers" and "Add all to layers"', () => {
     ]);
   });
 
-  it('puts every new layer on top of the list', () => {
+  it('puts every new layer on top of the layers, under "Search results" on top (Otto, 2.11.2026)', () => {
     mount(THREE);
     act(() => useAppStore.setState({ layers: [], resultsAt: 0 }));
     act(() => button('＋ Add all to layers')!.click());
-    expect(useAppStore.getState().resultsAt).toBe(3);
+    expect(useAppStore.getState().layers).toHaveLength(3);
+    expect(useAppStore.getState().resultsAt).toBe(0);
   });
 });

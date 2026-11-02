@@ -193,6 +193,7 @@ describe('the eye', () => {
 describe('the fields and the buttons', () => {
   const ACTIONS = ['＋ Add to layers', '＋ Add all to layers', '⚙ Process', '‹ Change image', '⇩ Download crop', '⇩ Download full scene', '✕ Clear'];
   const actions = () => [...row('vc-actions').children] as HTMLButtonElement[];
+  const actionNamed = (text: string) => actions().find((b) => b.textContent === text)!;
 
   it('has the fields in the order of the place, then the opacity and the buttons "auto-scale", "Apply", "Apply to all"; the actions under them', () => {
     mount();
@@ -221,15 +222,15 @@ describe('the fields and the buttons', () => {
     expect(s.resultsOnMap).toBe(false);
   });
 
-  it('"Change image" takes the view off the map and opens the results, and leaves the tick and the switch', () => {
+  it('"Change image" takes the view off the map, opens the results and shows them, and leaves the tick (Otto, 2.11.2026)', () => {
     const sections = [{ datasetId: 'optical', items: withDays([undefined])[0].items, groups: [], notes: [] }] as never;
     mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false, sections });
-    act(() => actions()[3].click());
+    act(() => actionNamed('‹ Change image').click());
     const s = useAppStore.getState();
     expect(s.focusMode).toBe(false);
     expect(s.dock).toBe('results');
     expect(s.selectedIds).toEqual(['s0']);
-    expect(s.resultsOnMap).toBe(false);
+    expect(s.resultsOnMap).toBe(true);
   });
 
   it('puts "auto-scale", "Apply" and "Apply to all" in one row (NM4-53)', () => {

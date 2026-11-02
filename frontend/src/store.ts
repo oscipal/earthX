@@ -2577,7 +2577,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // of the results stay.
   exitFocus: () => set({ ...LEAVE_FOCUS }),
   // "Change image": takes the view off the map and opens the results to choose another scene. Show or hide stays.
-  changeImage: () => set((s) => ({ ...LEAVE_FOCUS, ...(hasResultsPanel(s.sections) ? { dock: 'results' as const } : {}) })),
+  // "Change image" goes back to the search results: they are shown and their row goes on top of the layer manager (Otto, 2.11.2026).
+  changeImage: () => set((s) => ({ ...LEAVE_FOCUS, ...setResultsOnMap(true), resultsAt: 0, ...(hasResultsPanel(s.sections) ? { dock: 'results' as const } : {}) })),
   showImage: (key) =>
     set((s) => {
       const images = viewImagesOf(s);
