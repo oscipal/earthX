@@ -75,12 +75,12 @@ async function check(browser, theme, viewport) {
     if (!ok) problems.push(`${theme} ${viewport}: ${label}`);
   };
   // In values.
-  await colormap.selectOption('plasma');
+  await colormap.selectOption('terrain');
   await step('values: "Apply" stays locked after the colormap alone changed', !(await locked()));
   await apply.click();
   await page.waitForTimeout(900);
   const [inStore, inUrl] = await drawn();
-  await step(`values: the preview is not drawn with plasma (${inStore}, ${inUrl})`, inStore === 'plasma' && inUrl === 'plasma');
+  await step(`values: the preview is not drawn with terrain (${inStore}, ${inUrl})`, inStore === 'terrain' && inUrl === 'terrain');
   // In percentiles, applied.
   await unit.selectOption('percent');
   await apply.click();

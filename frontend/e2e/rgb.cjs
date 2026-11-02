@@ -3,7 +3,8 @@
 //      only where the output has no Band math result; the preview asks the tiler for `band=red&band=green&band=blue`, measures
 //      the three together, draws them with one range and shows no colormap field; a single band has its colormap again.
 //   2. "Band" in the row of a result layer: "RGB" stands on top, the layer starts with it where the result has no Band math
-//      result, draws three `bidx` with one range and no colormap, and the view of the layer shows no colormap field.
+//      result, draws three `bidx` with one range and no colormap, and the view of the layer has a row of fields for each channel and the
+//      colormap locked at "— none —" (UI-03d).
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -227,11 +228,12 @@ async function checkLayer(browser, theme, viewport) {
     useAppStore.setState({ resultViewLayerId: useAppStore.getState().layers[0].id });
   });
   await page.waitForSelector('.result-controls', { timeout: 5000 });
+  // A row of vmin and vmax for each channel (UI-03d), each with the one range of the three bands to begin with.
   const fields = await page.$$eval('.result-controls input[type=number]', (i) => i.map((x) => x.value));
-  if (fields.join() !== '0.02,0.7') problems.push(`the view of RGB says ${fields}, not 0.02,0.7`);
-  // The settings have the dropdown "Band" now (NM4-65 part 6); only the field "Colormap" must be missing.
-  const colormaps = await page.$$eval('.result-controls .vc-field', (fields) => fields.filter((f) => f.querySelector('span')?.textContent === 'Colormap').length);
-  if (colormaps !== 0) problems.push('the view of RGB shows a colormap field');
+  if (fields.join() !== '0.02,0.7,0.02,0.7,0.02,0.7') problems.push(`the view of RGB says ${fields}, not 0.02,0.7 for each channel`);
+  // The field "Colormap" stays in its place, locked at "— none —" (NM4-54, Otto, 1.11.2026).
+  const colormaps = await page.$$eval('.result-controls .vc-field', (fields) => fields.filter((f) => f.querySelector('span')?.textContent === 'Colormap').map((f) => [f.querySelector('select')?.disabled, f.querySelector('select')?.selectedOptions[0]?.textContent]));
+  if (JSON.stringify(colormaps) !== JSON.stringify([[true, '— none —']])) problems.push(`the colormap of RGB is ${JSON.stringify(colormaps)}, not locked at "— none —"`);
   const view = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
     const root = document.querySelector('.result-controls');

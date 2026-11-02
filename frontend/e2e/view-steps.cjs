@@ -6,7 +6,7 @@
 //   2. "‹" shows the earlier overpass (red), "›" the later again; the arrows are greyed out at the ends;
 //   3. the arrow keys step while an arrow has the focus;
 //   4. the dropdown shows the elevation tile (blue); the box of the colormap is where it was for both, offering RGB and nothing else
-//      for the Sentinel-2 images, and the arrows are greyed out for a dataset of one image;
+//      for the Sentinel-2 images, and a dataset of one image has its date without arrows (Otto, 2.11.2026);
 //   5. "Add to layers" pins the image shown, "Add all to layers" every image, one layer each;
 //   6. the head, the dropdown and the buttons stay inside the panel, and the panel inside the window; "Apply to all" is always there;
 //   7. in a wide window the panel is the head and two rows (all its buttons in one row), and wider than high.
@@ -199,10 +199,12 @@ async function run(browser, { theme, viewport }) {
   if (!(await page.locator('.vc-title').first().textContent()).includes('Copernicus DEM')) problems.push('the head does not name the elevation model');
   const demBox = await colormapBox();
   if (!demBox || demBox.options[0] !== '— none —') problems.push(`the elevation image has no colormap box: ${JSON.stringify(demBox)}`);
-  if (demBox && rgbBox && (Math.abs(demBox.x - rgbBox.x) > 1 || Math.abs(demBox.y - rgbBox.y) > 1)) problems.push(`the colormap box moved: ${JSON.stringify(rgbBox)} -> ${JSON.stringify(demBox)}`);
+  // The colour picture has a row of fields for each channel (UI-03d): the box keeps its column, not its height.
+  if (demBox && rgbBox && Math.abs(demBox.x - rgbBox.x) > 1) problems.push(`the colormap box moved sideways: ${JSON.stringify(rgbBox)} -> ${JSON.stringify(demBox)}`);
   if (!(await row())) problems.push('a dataset of one image has no date');
+  // One date: no arrows (Otto, 2.11.2026).
   for (const name of ['Previous image', 'Next image']) {
-    if ((await page.getByRole('button', { name }).getAttribute('aria-disabled')) !== 'true') problems.push(`"${name}" is not greyed out for a dataset of one image`);
+    if ((await page.getByRole('button', { name }).count()) !== 0) problems.push(`"${name}" is there for a dataset of one image`);
   }
   if ((await page.getByRole('button', { name: 'Apply to all' }).getAttribute('aria-disabled')) !== 'true') problems.push('"Apply to all" is not locked for a dataset of one image');
   if (!(await page.getByRole('button', { name: 'Apply to all' }).getAttribute('title')).includes('only one image')) problems.push('"Apply to all" does not say why it is locked');
