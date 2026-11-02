@@ -91,6 +91,11 @@ describe('one block', () => {
     render(false, true);
     expect(container.querySelector('.download-bar button')).toBeNull();
     expect(container.querySelector('.select-hint')!.textContent).toBe('Select a scene');
+    // Plain text: no symbol, no box (Otto, 2.11.2026); the line above the timeline stands as it does with the buttons.
+    expect(container.querySelector('.select-hint svg')).toBeNull();
+    const hint = /\.selection-block > \.select-hint \{[^}]*\}/u.exec(CSS)![0];
+    expect(hint).not.toMatch(/border|background|border-radius/u);
+    expect(CSS).toMatch(/\.select-hint \+ \.time-slider,\s*\.selection-block > \.download-bar \+ \.time-slider \{[^}]*border-top/u);
     expect(container.querySelector('.time-slider')).not.toBeNull();
     expect(container.querySelector('.draggable')!.classList.contains('fill')).toBe(true);
     expect(container.querySelector('.draggable')!.classList.contains('time-only')).toBe(false);
