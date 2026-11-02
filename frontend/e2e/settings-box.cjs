@@ -7,8 +7,11 @@
 //   3. Nothing lies outside the bar, and nothing scrolls sideways.
 //   4. The bar of the selection and the timeline stands in the middle of the free map, not under the bar (under 900 px above the sheet); the
 //      zoom buttons are visible and left of the bar (above the sheet).
-//   5. A swap (layer to layer), the x and Esc.
-// In the light and the dark theme, at 1280 x 800, 1920 x 1080 and 360 x 740; a screenshot per case (the table of places is printed).
+//   5. A swap (layer to layer), the x, and Esc that closes nothing.
+//   6. The height of a control (Otto, 2.11.2026): the fields and the buttons with words are 28 px with a mouse from 900 px, and
+//      40–44 px under 900 px and on a touch screen (`--control-height-touch`).
+// In the light and the dark theme, at 1280 x 800, 1920 x 1080, 360 x 740 and 1280 x 800 with a touch screen; a screenshot per case (the
+// table of places and heights is printed).
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
 //   node e2e/settings-box.cjs               # BASE=http://localhost:5173 OUT=<directory for the screenshots>, ONLY=1 for one theme and one window
@@ -24,7 +27,7 @@ const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-se
 const THEMES = process.env.ONLY ? { light: 'normal' } : { light: 'normal', dark: 'tech' };
 const VIEWPORTS = process.env.ONLY
   ? { hd: { width: 1280, height: 800 } }
-  : { hd: { width: 1280, height: 800 }, full: { width: 1920, height: 1080 }, narrow: { width: 360, height: 740 } };
+  : { hd: { width: 1280, height: 800 }, full: { width: 1920, height: 1080 }, narrow: { width: 360, height: 740 }, touch: { width: 1280, height: 800, touch: true } };
 const RAIL = 48;
 const BAR = 320;
 const TOP = 64;
@@ -38,7 +41,9 @@ const PRESETS = [['NDVI', 'Normalized Difference Vegetation Index', '(nir - red)
 }));
 
 async function open(browser, theme, viewport) {
-  const context = await browser.newContext({ viewport: VIEWPORTS[viewport] });
+  const { width, height, touch = false } = VIEWPORTS[viewport];
+  // A touch screen is `(pointer: coarse)` for the page.
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch });
   await context.addInitScript((t) => localStorage.setItem('earthx.theme', t), THEMES[theme]);
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
@@ -170,6 +175,13 @@ async function measure(page) {
       zoom: zoom ? rect(zoom) : null,
       zoomVisible: zoom ? getComputedStyle(zoom).visibility !== 'hidden' && zoom.getBoundingClientRect().width > 0 : false,
       window: { w: window.innerWidth, h: window.innerHeight },
+      // The fields and the buttons with words, in the bar and in the bar of the selection (not the switch of the range, an icon or the grip).
+      controls: [...document.querySelectorAll('aside.inspector, .overlay.bottom')]
+        .flatMap((root) => [...root.querySelectorAll('select:not(.vc-unit), input[type="number"], input[type="text"], .ghost-btn, .primary-btn, .pp-seg')])
+        .filter((e) => e.getBoundingClientRect().height > 0)
+        .map((e) => ({ name: (e.textContent || e.getAttribute('aria-label') || e.tagName).trim().slice(0, 24), h: round(e.getBoundingClientRect().height) })),
+      // The fields of the bar, one line each: exactly as high as the token.
+      fields: [...bar.querySelectorAll('.vc-render select:not(.vc-unit), .vc-render input[type="number"]')].map((e) => round(e.getBoundingClientRect().height)),
     };
   });
 }
@@ -208,9 +220,18 @@ function checkCase(tag, m, vp, problems) {
   else if (!m.zoomVisible) problems.push(`${tag}: the zoom buttons are not visible`);
   else if (!narrow && m.zoom.right > bar.x) problems.push(`${tag}: the zoom buttons end at ${m.zoom.right}, under the bar (${bar.x})`);
   else if (narrow && m.zoom.bottom > bar.y + 0.5) problems.push(`${tag}: the zoom buttons end at ${m.zoom.bottom}, under the sheet (${bar.y})`);
+  // The height of a control: 28 px for a mouse, 40–44 px for a finger.
+  const finger = narrow || vp.touch === true;
+  if (m.controls.length === 0) problems.push(`${tag}: no control measured`);
+  const low = finger ? 40 : 28;
+  const wrong = m.controls.filter(({ h }) => h < low - 0.5);
+  if (wrong.length > 0) problems.push(`${tag}: controls lower than ${low} px: ${wrong.slice(0, 4).map((c) => `${c.name} ${c.h}`).join(', ')}`);
+  const height = finger ? [40, 44] : [28, 28];
+  const off = m.fields.filter((h) => h < height[0] - 0.5 || h > height[1] + 0.5);
+  if (m.fields.length === 0 || off.length > 0) problems.push(`${tag}: the fields of the bar are ${JSON.stringify(m.fields)} px high, not ${height.join('–')}`);
 }
 
-// A swap, the x and Esc.
+// A swap, the x, and Esc that closes nothing.
 async function behaviour(browser, theme, viewport, problems) {
   const tag = `${theme} ${viewport}`;
   const { context, page, problems: own } = await open(browser, theme, viewport);
@@ -226,20 +247,18 @@ async function behaviour(browser, theme, viewport, problems) {
   if ((await title()) === first) problems.push(`${tag}: the title did not change with the layer`);
   await page.locator('aside.inspector .close-x').click();
   if ((await page.locator('aside.inspector').count()) !== 0) problems.push(`${tag}: the x did not close the bar of a layer`);
+  // Esc closes nothing (Otto, 2.11.2026): not the bar of a layer, not the view of the search, not from a field.
   await resultLayers(page, 'rgb');
   await page.keyboard.press('Escape');
-  if ((await page.locator('aside.inspector').count()) !== 0) problems.push(`${tag}: Esc did not close the bar of a layer`);
-  await seed(page);
-  await page.locator('aside.inspector .close-x').click();
-  if ((await page.locator('aside.inspector').count()) !== 0) problems.push(`${tag}: the x did not close the view of the search`);
+  if ((await page.locator('aside.inspector').count()) !== 1) problems.push(`${tag}: Esc closed the bar of a layer`);
   await seed(page);
   await page.keyboard.press('Escape');
-  if ((await page.locator('aside.inspector').count()) !== 0) problems.push(`${tag}: Esc did not close the view of the search`);
-  // Esc in a field is the field's.
-  await seed(page);
+  if ((await page.locator('aside.inspector').count()) !== 1) problems.push(`${tag}: Esc closed the view of the search`);
   await page.locator('aside.inspector .vc-num input').first().focus();
   await page.keyboard.press('Escape');
   if ((await page.locator('aside.inspector').count()) !== 1) problems.push(`${tag}: Esc in a field closed the bar`);
+  await page.locator('aside.inspector .close-x').click();
+  if ((await page.locator('aside.inspector').count()) !== 0) problems.push(`${tag}: the x did not close the view of the search`);
   problems.push(...own.map((p) => `${tag}: ${p}`));
   await context.close();
 }
@@ -276,7 +295,7 @@ async function behaviour(browser, theme, viewport, problems) {
         if (rgb.colormapLocked !== true || !rgb.colormapTitle) problems.push(`${tag}: the colormap of RGB (${kind}) is not locked with its reason (${JSON.stringify([rgb.colormapLocked, rgb.colormapTitle])})`);
         if (band.colormapLocked !== false) problems.push(`${tag}: the colormap of a band (${kind}) is locked`);
         const m = found[`${kind}/rgb`];
-        rows.push(`${theme.padEnd(5)} ${viewport.padEnd(6)} ${kind.padEnd(7)} bar ${m.bar.x},${m.bar.y} ${m.bar.w}x${m.bar.h}  band y${m.band.y} vmin y${m.vmin.y} vmax y${m.vmax.y} cmap y${m.colormap.y} opacity y${m.opacity.y} buttons y${m.buttons.y} actions y${m.actions.y}  bottom ${m.block ? `${m.block.x}…${m.block.right} y${m.block.y}` : '-'}  zoom ${m.zoom ? `${m.zoom.x}…${m.zoom.right}` : '-'}`);
+        rows.push(`${theme.padEnd(5)} ${viewport.padEnd(6)} ${kind.padEnd(7)} bar ${m.bar.x},${m.bar.y} ${m.bar.w}x${m.bar.h}  band y${m.band.y} vmin y${m.vmin.y} vmax y${m.vmax.y} cmap y${m.colormap.y} opacity y${m.opacity.y} buttons y${m.buttons.y} actions y${m.actions.y}  bottom ${m.block ? `${m.block.x}…${m.block.right} y${m.block.y}` : '-'}  zoom ${m.zoom ? `${m.zoom.x}…${m.zoom.right}` : '-'}  controls ${Math.min(...m.controls.map((c) => c.h))}…${Math.max(...m.controls.map((c) => c.h))}`);
       }
     }
     for (const viewport of Object.keys(VIEWPORTS)) await behaviour(browser, theme, viewport, problems);
