@@ -5,6 +5,8 @@ import { useAppStore } from '../store';
 import type { MapLayer } from '../layers';
 
 export const OPACITY_LOCKED_TIP = 'Add to layers to set the opacity';
+// The image of the view is pinned already: its layer has the opacity, set where the layer is opened from the layer manager.
+export const OPACITY_PINNED_TIP = 'Open this layer from the layer manager to set its opacity';
 
 export default function OpacityRow({ layer, locked }: { layer?: MapLayer; locked?: string }) {
   const setOpacity = useAppStore((s) => s.setLayerOpacity);

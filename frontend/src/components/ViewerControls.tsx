@@ -26,7 +26,7 @@ import AutoScaleButton from './AutoScaleButton';
 import Eye from './Eye';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
 import LayerDownload from './LayerDownload';
-import OpacityRow, { OPACITY_LOCKED_TIP } from './OpacityRow';
+import OpacityRow, { OPACITY_LOCKED_TIP, OPACITY_PINNED_TIP } from './OpacityRow';
 import type { BandOption } from './BandSelect';
 import { viewKind } from '../viewKind';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
@@ -117,7 +117,6 @@ export default function ViewerControls() {
       .filter((it) => shown.ids.includes(it.id));
     return summaryText(summaryOf(dataset.collection, scenesOf(dataset.collection, [{ label: '', items: wanted }])));
   }, [shown, datasets, sections, openSectionId, datasetId, items, groups]);
-  // An image of three bands has no colormap field.
   const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
   const originalsAllowed = isCogFormat(shownDataset);
   // The index of the dataset the image shows in place of a band (NM4-14b): a dataset without presets has no dropdown.
@@ -135,8 +134,8 @@ export default function ViewerControls() {
     ...bandAssets.filter((asset) => asset !== standardAsset).map((asset) => ({ value: `band:${asset}`, label: asset })),
     ...(presets.length > 0 ? [{ value: '|', label: '', separator: true }, ...presets.map((preset) => ({ value: `index:${preset.name}`, label: preset.name, title: presetTip(preset) }))] : []),
   ];
-  // A dropdown with one entry offers no choice and is not shown. The view of a layer of the layer manager has it free, as the view the
-  // layer came from (Otto, 1.11.2026): "Apply to all" keeps the choice for the layer.
+  // A dropdown with one entry offers no choice: it stays, locked, and says so. The view of a layer of the layer manager has it free, as
+  // the view the layer came from (Otto, 1.11.2026).
   const showBand = bandOptions.filter((option) => !option.separator).length > 1;
   const bandValue = chosen ? `index:${chosen.name}` : pendingBand ? `band:${pendingBand}` : '';
   const chooseView = (value: string) => {
@@ -258,7 +257,7 @@ export default function ViewerControls() {
               placeholder="auto"
             />
             {/* A view that is no layer has no opacity to set (Otto, 2.11.2026). */}
-            {compact && layer ? <OpacityRow layer={layer} /> : <OpacityRow locked={OPACITY_LOCKED_TIP} />}
+            {compact && layer ? <OpacityRow layer={layer} /> : <OpacityRow locked={layer ? OPACITY_PINNED_TIP : OPACITY_LOCKED_TIP} />}
             <div className="vc-buttons">
               <AutoScaleButton
                 title={focusLoading ? 'Measuring the range…' : pendingUnit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Measure the 2nd/98th percentile stretch from the source again'}

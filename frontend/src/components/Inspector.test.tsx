@@ -451,6 +451,14 @@ describe('what does not apply is locked, with its reason', () => {
     expect(field('Opacity').querySelector('input')!.disabled).toBe(false);
   });
 
+  it('locks the opacity of a view whose image is pinned but that was not opened from the layer manager, and points to the layer', () => {
+    act(() => root.render(<Inspector />));
+    openView({ cropToAoi: false, viewAoi: null, viewOfLayer: false, viewLayerId: 'L1', layers: [pinned()], downloaded: { s0: info('s0') }, items: [scene('s0', '2026-07-01')], groups: [{ key: ['a'], label: 'Day 1', items: [scene('s0', '2026-07-01')] }] });
+    const slider = field('Opacity').querySelector('input')!;
+    expect(slider.disabled).toBe(true);
+    expect(slider.title).toBe('Open this layer from the layer manager to set its opacity');
+  });
+
   it('locks the colormap of a picture of three bands as "— none —", and says why', () => {
     act(() => root.render(<Inspector />));
     openResult([result('R1', { bands: RESULT_BANDS, band: RGB, colour: { red: 0, green: 1, blue: 2 } } as never)]);
