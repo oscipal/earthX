@@ -3,20 +3,19 @@ import { useEffect, type KeyboardEvent } from 'react';
 import AppRail from './components/AppRail';
 import BasemapMenu from './components/BasemapMenu';
 import ControlPanel from './components/ControlPanel';
-import Draggable from './components/Draggable';
 import DownloadDialog from './components/DownloadDialog';
+import Inspector from './components/Inspector';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
 import PreviewBadge from './components/PreviewBadge';
 import ProcessingManager from './components/ProcessingManager';
 import ProcessingPanel from './components/ProcessingPanel';
-import ResultControls from './components/ResultControls';
 import ResultsPanel from './components/ResultsPanel';
 import SelectionBlock from './components/SelectionBlock';
 import StatusBar from './components/StatusBar';
 import TipLayer from './components/TipLayer';
-import ViewerControls from './components/ViewerControls';
 import { dockPanelId, railButtonId } from './dock';
+import { inspectorKindOf } from './inspectorKind';
 import { openPermalinkInAddress } from './permalink';
 import { useProcessingStore } from './processingStore';
 import { ticksOfSearch, useAppStore } from './store';
@@ -27,6 +26,7 @@ export default function App() {
   const closeDock = useAppStore((s) => s.closeDock);
   const focusMode = useAppStore((s) => s.focusMode);
   const resultView = useAppStore((s) => s.resultViewLayerId !== null);
+  const inspectorOpen = useAppStore((s) => inspectorKindOf(s) !== null);
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
   const hasSelection = useAppStore((s) => ticksOfSearch(s).length > 0);
@@ -62,7 +62,7 @@ export default function App() {
   };
 
   return (
-    <div className="app" data-theme={theme}>
+    <div className={`app${inspectorOpen && !processingOpen ? ' has-inspector' : ''}`} data-theme={theme}>
       <MapView />
 
       <AppRail />
@@ -112,23 +112,15 @@ export default function App() {
       {/* Beside the processing side bar, not under it: the time slider picks the pass of an order. */}
       <div className={`overlay bottom${processingOpen ? ' beside-sheet' : ''}`}>
         {focusMode ? (
-          <>
-            <SelectionBlock bar={tickedBesideView} timeline={false} />
-            <Draggable id="view" key="view">
-              <ViewerControls />
-            </Draggable>
-          </>
+          <SelectionBlock bar={tickedBesideView} timeline={false} />
         ) : resultView ? (
-          <>
-            <SelectionBlock bar={hasSelection} timeline={false} />
-            <Draggable id="result" key="result">
-              <ResultControls />
-            </Draggable>
-          </>
+          <SelectionBlock bar={hasSelection} timeline={false} />
         ) : (
           <SelectionBlock bar={hasSelection} timeline={hasGroups} />
         )}
       </div>
+
+      <Inspector />
 
       {processingOpen && (
         <div className="overlay processing-sheet">

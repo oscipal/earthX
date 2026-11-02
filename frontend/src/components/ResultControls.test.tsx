@@ -165,7 +165,7 @@ describe('a click on a result layer', () => {
     expect(useAppStore.getState().downloaded).toEqual({});
     expect(useAppStore.getState().selectedIds).toEqual(['scene']);
     expect(container.querySelector('.result-controls')).not.toBeNull();
-    expect(container.querySelector('.vc-title')?.textContent).toBe('RESULT · BAND MATH');
+    expect(container.querySelector('.vc-title')?.textContent).toBe('Result · Band math');
     expect(layers().map((l) => l.id)).toEqual([layers()[0].id]);
   });
 

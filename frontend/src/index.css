@@ -204,13 +204,6 @@ body.dragging * {
 }
 
 /* --- full-resolution viewer controls (focus mode) --- */
-.viewer-controls {
-  width: 100%;
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 .vc-head {
   display: flex;
   justify-content: space-between;
@@ -230,60 +223,12 @@ body.dragging * {
   flex: 1;
   min-width: 90px;
 }
-.vc-render {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
 .vc-apply {
   padding: 6px 16px;
   align-self: flex-end;
 }
-/* "auto-scale" on top and "Apply" under it, both of one format, together as high as the fields they stand beside (the
-   input of the colormap, vmin and vmax); "Save", the one blue button, beside them and as high as the two together (Otto,
-   30.10.2026). A view that is no layer's has no "Save": the two stay in the left column. */
-.vc-buttons {
-  --row-height: 34px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 4px 6px;
-  align-self: flex-end;
-  box-sizing: border-box;
-  height: var(--row-height);
-  min-width: 0;
-}
-.vc-buttons > button {
-  align-self: stretch;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 0;
-  margin: 0;
-  padding: 0 8px;
-  font-size: 10px;
-  line-height: 1;
-  white-space: nowrap;
-}
-.vc-buttons > .vc-auto {
-  grid-area: 1 / 1;
-}
-.vc-buttons > .vc-apply {
-  grid-area: 2 / 1;
-}
-.vc-buttons > .vc-save {
-  grid-area: 1 / 2 / 3 / 3;
-  font-size: 12px;
-}
-.vc-buttons > button[aria-disabled='true'] {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-/* The box of a result is the box of the view of scenes (`.scene-view`): the same width, the same grid, the same places for the
-   fields and the buttons (NM4-54 part 5, Otto, 1.11.2026). */
+/* The labelled fields of the settings bar, the processing panel and its preview (NM4-54 part 5, Otto, 1.11.2026); the bar lays them out
+   as a form (`.inspector .vc-field`). */
 .vc-field {
   display: flex;
   flex-direction: column;
@@ -348,13 +293,9 @@ body.dragging * {
   line-height: 14px;
   background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%23889'/%3E%3C/svg%3E") no-repeat right 2px center;
 }
-/* The field vmax is as wide as its word and the dropdown need where the box is its own (the result and the preview; in the view the
-   grid gives the width). */
+/* The field vmax is as wide as its word and the dropdown need (the preview; the settings bar gives it the width of the column). */
 .vc-field.vc-num:has(.vc-unit) input {
   width: 116px;
-}
-.scene-view .vc-field.vc-num:has(.vc-unit) input {
-  width: 100%;
 }
 .vc-field.vc-num .vc-unit:hover,
 .vc-field.vc-num .vc-unit:focus-visible {
@@ -374,43 +315,226 @@ body.dragging * {
   display: flex;
   gap: 8px;
 }
-/* The view of scenes (`ViewerControls.tsx`, Otto 27.10.2026): one grid of twelve columns for everything under the
-   head, so the rows of buttons are the same width and that width is the width of the view. Row 1: vmin and vmax two
-   columns each, colormap three, and five for "auto-scale" with "Apply" under it and "Apply to all" beside them (`.vc-buttons`, Otto 29./30.10.2026). Row 2:
-   the buttons in one row, four or with several images five of one width (Otto, 1.11.2026: the view is two rows high under its head,
-   wider rather than taller). Every field of row 1 is 34px high. Below 600 px the grid has four
-   columns and the rows wrap; no text ends up outside its cell. */
-.scene-view {
-  --cell: 46px;
-  --row-height: 34px;
-  box-sizing: border-box;
-  width: min(calc(12 * var(--cell) + 11 * 8px + 32px), calc(100vw - var(--rail-width) - 24px));
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 10px 8px;
-  align-items: end;
+/* --- the settings bar (UI-03a, `Inspector.tsx`) ---
+   One column at the right edge, from below the top buttons to the foot of the window, for the view of the search, the pinned view and
+   the settings of a result: head (title, mark, eye, x; dataset and time step or date), "Display", "Actions". Head and foot stand,
+   the middle scrolls. Spacing, type and radii come from `tokens.css` (checked by `tokens.test.ts`). */
+.inspector.panel {
+  position: absolute;
+  z-index: 12;
+  top: 64px;
+  right: 0;
+  bottom: 0;
+  width: var(--inspector-width);
+  display: flex;
+  flex-direction: column;
+  border-width: 0 0 0 var(--line-width);
+  border-color: var(--line);
+  border-radius: 0;
 }
-.scene-view > * {
-  min-width: 0;
+.inspector[hidden] {
+  display: none;
 }
-.scene-view .vc-head {
-  grid-column: 1 / -1;
+.inspector .viewer-controls {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.inspector .vc-head {
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--line-width) solid var(--line);
+}
+/* Both rows are as high as a control, whatever they hold, so that "Display" begins at one height for the three kinds. */
+.inspector .insp-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
-  /* As high as the head of the view of the search (the eye and the arrows are 28px), so that the box of a layer, whose head has
-     the name and the x only, has its fields at the same place (NM4-54 part 5). */
-  min-height: 28px;
+  min-height: var(--control-height);
 }
-.scene-view .vc-title {
-  flex: 1 1 120px;
+.inspector .vc-title {
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  letter-spacing: 1px;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+  color: var(--text);
+}
+.inspector .vc-temporary {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.inspector .vc-dataset {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.inspector .vc-stepper {
+  flex: 0 1 auto;
+  margin-left: auto;
+  gap: var(--space-2);
+}
+.inspector .insp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.inspector .insp-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.inspector .insp-heading {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inspector .vc-render {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+/* A form: the label in a column of its own, the control filling the rest; every row as high as a control. A field that does not apply
+   keeps its place and is locked, its tooltip says why. */
+.inspector .vc-field {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 0 var(--space-2);
+  min-height: var(--control-height);
+  font-size: var(--text-sm);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.inspector .vc-field > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.inspector .vc-field select,
+.inspector .vc-field input:not([type='range']) {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
+  box-sizing: border-box;
+}
+.inspector .vc-field input[type='number'] {
+  appearance: textfield;
+}
+.inspector .vc-field select:disabled,
+.inspector .vc-field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* The switch "absolute / percentile" sits inside the end of the field vmax. */
+.inspector .vc-field.vc-num .vc-unit {
+  top: 50%;
+  right: var(--space-1);
+  max-width: 50%;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-3) 0 var(--space-1);
+  line-height: var(--control-height-sm);
+  transform: translateY(-50%);
+}
+.inspector .vc-field.vc-num:has(.vc-unit) input {
+  padding-right: calc(var(--space-6) * 2);
+}
+.inspector .vc-opacity .lm-opacity {
+  width: 100%;
+}
+.inspector .vc-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.inspector .vc-buttons > button {
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+}
+.inspector .vc-buttons > button[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.inspector .vc-note {
+  margin: 0;
+}
+.app[data-theme='normal'] .inspector .vc-note {
+  color: #8a5a00;
+}
+.inspector .vc-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.inspector .vc-actions > * {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1) var(--space-2);
+  text-align: center;
+  text-decoration: none;
+}
+/* The column is taken from the map: what stands at the bottom and the map controls move left of it. */
+@media (min-width: 900px) {
+  .app.has-inspector .overlay.bottom {
+    left: calc((100% + var(--rail-width) - var(--inspector-width)) / 2);
+    width: min(760px, calc(100vw - var(--rail-width) - var(--inspector-width) - 32px));
+  }
+  .app.has-inspector .overlay.status {
+    left: calc((100% + var(--rail-width) - var(--inspector-width)) / 2);
+    width: min(560px, calc(100vw - var(--rail-width) - var(--inspector-width) - 32px));
+  }
+  .app.has-inspector .maplibregl-ctrl-bottom-right {
+    right: var(--inspector-width);
+  }
+}
+/* Narrow windows: a sheet from the bottom with the grip of the processing panel, at most 55 % high; what stands at the bottom lies above
+   it (its height is measured, `Inspector.tsx`). */
+@media (max-width: 899px) {
+  .inspector.panel {
+    top: auto;
+    left: var(--rail-width);
+    width: auto;
+    max-height: 55vh;
+    border-width: var(--line-width) 0 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .inspector .pp-grip {
+    display: block;
+    flex: none;
+  }
+  .inspector.folded .insp-body,
+  .inspector.folded .insp-row2 {
+    display: none;
+  }
+  .inspector.folded .vc-head {
+    border-bottom: 0;
+  }
+  .app.has-inspector .overlay.bottom {
+    bottom: calc(var(--inspector-sheet-height, 0px) + 12px);
+  }
+  .app.has-inspector .maplibregl-ctrl-bottom-right {
+    bottom: var(--inspector-sheet-height, 0px);
+  }
 }
 .vc-eye {
   flex: none;
@@ -433,26 +557,6 @@ body.dragging * {
 }
 .vc-eye.off {
   color: var(--muted);
-}
-.scene-view .vc-head {
-  flex-wrap: wrap;
-}
-/* In the head, between the title and the eye (NM4-53, Otto 31.10.2026): the dataset to choose and the date with the arrows.
-   Where they do not fit beside the title (a narrow window) they take a line of their own under it, the eye staying with the
-   title. The title is what gives way: it is cut with "…" and given in full as its tooltip. */
-/* "Temporary", the mark of the view of the search, between the title and the date: the badge of the "Preview" of the processing panel
-   (`.pp-badge`, Otto, 1.11.2026), which keeps its size in the head. */
-.scene-view .vc-temporary {
-  flex: none;
-  white-space: nowrap;
-}
-.scene-view .vc-dataset {
-  flex: 0 1 130px;
-  min-width: 0;
-  height: 28px;
-  box-sizing: border-box;
-  padding: 2px 6px;
-  font-size: 11px;
 }
 .vc-stepper {
   flex: 0 1 auto;
@@ -500,108 +604,6 @@ body.dragging * {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-}
-@media (max-width: 599px) {
-  .scene-view .vc-head .vc-eye {
-    order: 1;
-  }
-  .scene-view .vc-head .vc-dataset,
-  .scene-view .vc-head .vc-stepper {
-    order: 2;
-  }
-}
-.scene-view .vc-render {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: subgrid;
-  gap: 8px;
-  align-items: end;
-}
-/* With the dropdown "Index" (a dataset that offers indices, NM4-14b) it takes the first two columns, and vmin, vmax and
-   colormap two each; the buttons keep four. The order is Band · Index · vmin · vmax · colormap everywhere (NM4-65). */
-.scene-view .vc-render.has-index > :nth-child(1),
-.scene-view .vc-render.has-index > :nth-child(2),
-.scene-view .vc-render.has-index > :nth-child(3),
-.scene-view .vc-render.has-index > :nth-child(4) {
-  grid-column: span 2;
-}
-.scene-view .vc-render.has-index > :nth-child(5) {
-  grid-column: span 4;
-}
-/* The short note under the settings where the index cannot be drawn (`viewIndex.ts`); its tooltip says why. The pale yellow
-   of `.hint-text.warn` does not read on the light panel. */
-.scene-view .vc-head .results-head-right {
-  margin-left: auto;
-}
-.scene-view .vc-note {
-  grid-column: 1 / -1;
-  margin: 0;
-}
-.app[data-theme='normal'] .scene-view .vc-note {
-  color: #8a5a00;
-}
-.scene-view .vc-actions {
-  --buttons: 4;
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(var(--buttons), minmax(0, 1fr));
-  gap: 8px;
-  align-items: end;
-}
-.scene-view .vc-actions.has-all {
-  --buttons: 5;
-}
-.scene-view .vc-render > :nth-child(1),
-.scene-view .vc-render > :nth-child(2) {
-  grid-column: span 2;
-}
-.scene-view .vc-render > :nth-child(3) {
-  grid-column: span 3;
-}
-.scene-view .vc-render > :nth-child(4) {
-  grid-column: span 5;
-}
-.scene-view .vc-actions > * {
-  min-width: 0;
-  min-height: 44px;
-  padding: 6px 8px;
-  line-height: 1.25;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-.scene-view .vc-field select,
-.scene-view .vc-field input {
-  width: 100%;
-  min-width: 0;
-  height: var(--row-height);
-  box-sizing: border-box;
-}
-@media (max-width: 599px) {
-  .scene-view {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .scene-view .vc-render.has-index > :nth-child(n + 1):nth-child(-n + 4) {
-    grid-column: span 2;
-  }
-  .scene-view .vc-render.has-index > :nth-child(5) {
-    grid-column: span 4;
-  }
-  .scene-view .vc-render > :nth-child(n + 1):nth-child(-n + 2) {
-    grid-column: span 2;
-  }
-  .scene-view .vc-render > :nth-child(3) {
-    grid-column: span 4;
-  }
-  .scene-view .vc-render > :nth-child(4) {
-    grid-column: span 4;
-  }
-  .scene-view .vc-actions,
-  .scene-view .vc-actions.has-all {
-    --buttons: 2;
-  }
-  .scene-view .vc-actions.has-all > :nth-child(5) {
-    grid-column: 1 / -1;
-  }
 }
 .ghost-btn.danger {
   border-color: #ff5a6e;
@@ -2227,22 +2229,6 @@ input[type='date']:focus-visible {
 .lm-add-band {
   grid-column: -2;
   align-self: center;
-}
-/* The opacity of a layer in its box, the row under the fields (a result and a layer of scenes alike). */
-.scene-view .vc-opacity {
-  grid-column: 1 / -1;
-  /* As high as the row of buttons of the view of the search, so that the boxes are as high as each other where they can be. */
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-}
-.scene-view .vc-opacity .vc-field {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-}
-.scene-view .vc-opacity .lm-opacity {
-  width: 160px;
 }
 
 /* --- the rail and the panels beside it (UI-01 §6.9) --- */

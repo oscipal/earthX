@@ -1,14 +1,18 @@
-// The opacity of a layer in the box of its settings: the same row in the box of a result and in the box of a layer of scenes
-// (NM4-54 part 5, Otto, 1.11.2026).
+// The opacity of a layer in the settings bar: the same row for a result and for a layer of scenes (NM4-54 part 5, Otto, 1.11.2026).
+// The view of the search is no layer and has none: the row stays, locked, with the reason (Otto, 2.11.2026).
 
 import { useAppStore } from '../store';
 import type { MapLayer } from '../layers';
 
-export default function OpacityRow({ layer }: { layer: MapLayer }) {
+export const OPACITY_LOCKED_TIP = 'Add to layers to set the opacity';
+
+export default function OpacityRow({ layer, locked }: { layer?: MapLayer; locked?: string }) {
   const setOpacity = useAppStore((s) => s.setLayerOpacity);
+  const opacity = layer?.opacity ?? 1;
+  const title = locked ?? `Opacity ${Math.round(opacity * 100)}%`;
   return (
     <div className="vc-opacity">
-      <label className="vc-field">
+      <label className="vc-field" title={title}>
         <span>Opacity</span>
         <input
           type="range"
@@ -16,9 +20,12 @@ export default function OpacityRow({ layer }: { layer: MapLayer }) {
           min={0}
           max={1}
           step={0.05}
-          value={layer.opacity}
-          title={`Opacity ${Math.round(layer.opacity * 100)}%`}
-          onChange={(e) => setOpacity(layer.id, Number(e.target.value))}
+          value={opacity}
+          title={title}
+          disabled={locked !== undefined}
+          onChange={(e) => {
+            if (layer) setOpacity(layer.id, Number(e.target.value));
+          }}
         />
       </label>
     </div>

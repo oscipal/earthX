@@ -1,20 +1,21 @@
-// The full-resolution view: its head, the stretch and colormap controls (F18), the layer-manager hook and the way
-// back to browsing. Unlike the BIOMASS prototype's ViewerControls, there is no polarization/decomposition UI here —
+// The full-resolution view in the settings bar (`Inspector.tsx`): its head, the stretch and colormap controls (F18), the layer-manager
+// hook and the way back to browsing. Unlike the BIOMASS prototype's ViewerControls, there is no polarization/decomposition UI here —
 // that was product-specific (products.ts, removed with M2-07a).
 //
-// Otto, 27.10.2026 (zu #211): the head is one line and never wider than the two rows of buttons below it, which share
-// one grid and decide the width of the whole view; what does not fit is cut with "…" and given in full as the tooltip.
+// Otto, 27.10.2026 (zu #211): what does not fit the head is cut with "…" and given in full as the tooltip.
 // "Change image" leaves the view and keeps the choice of scenes; "Clear" takes the view off the map and drops the
 // choice. Neither touches "Hide results".
 
 import { useMemo } from 'react';
 
+import { DRAW_AOI_TO_CROP, isCogFormat, layerDownloadKind, noOriginalsReason } from '../download';
+import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
-import { BAND_TIP, bandAssetsOf } from '../viewBand';
+import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
 import { lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { datasetSavable, shownImageOf, useAppStore } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
@@ -22,11 +23,10 @@ import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex
 import { layerShownName } from '../layerName';
 import { isTemporaryImage, layerOfView } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
-import Chevron from './Chevron';
-import CloseButton from './CloseButton';
 import Eye from './Eye';
-import OpacityRow from './OpacityRow';
-import { useEscClose } from './useEscClose';
+import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
+import LayerDownload from './LayerDownload';
+import OpacityRow, { OPACITY_LOCKED_TIP } from './OpacityRow';
 import type { BandOption } from './BandSelect';
 import { viewKind } from '../viewKind';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
@@ -59,6 +59,8 @@ export default function ViewerControls() {
   });
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
+  const aoi = useAppStore((s) => s.aoi);
+  const openDownloadForView = useAppStore((s) => s.openDownloadForView);
   const viewAoi = useAppStore((s) => s.viewAoi);
   const layers = useAppStore((s) => s.layers);
   const exitFocus = useAppStore((s) => s.exitFocus);
@@ -105,6 +107,17 @@ export default function ViewerControls() {
   // What the head cuts short, in full.
   const title = [datasetTitle, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
   const here = shown ? imagesOfDataset(images, shown.datasetId) : [];
+  const originalsAllowed = isCogFormat(shown ? datasets.find((d) => d.id === shown.datasetId) : undefined);
+  // What "Download full scene" will load, told in its tooltip.
+  const originalsSummary = useMemo(() => {
+    const dataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
+    if (!shown || !dataset) return '';
+    const wanted = sectionsForView({ sections, openSectionId, datasetId, items, groups })
+      .filter((section) => section.datasetId === shown.datasetId)
+      .flatMap((section) => section.items)
+      .filter((it) => shown.ids.includes(it.id));
+    return summaryText(summaryOf(dataset.collection, scenesOf(dataset.collection, [{ label: '', items: wanted }])));
+  }, [shown, datasets, sections, openSectionId, datasetId, items, groups]);
   // An image of three bands has no colormap field.
   const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
   // The index of the dataset the image shows in place of a band (NM4-14b): a dataset without presets has no dropdown.
@@ -134,10 +147,6 @@ export default function ViewerControls() {
   // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
   // is still open from the search keeps all of it, also once its image is pinned.
   const compact = viewOfLayer && layer !== null;
-  // The settings of a layer close with Esc as with the x; the view of the search stays open.
-  useEscClose(() => {
-    if (compact) exitFocus();
-  });
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -168,194 +177,205 @@ export default function ViewerControls() {
   };
 
   return (
-    <div className="panel viewer-controls scene-view">
-      {compact ? (
-        // The view of a layer opened from the layer manager has the box of every layer: its name, the way to close it, the fields
-        // and nothing under them: one row, as before, with no row of buttons for pinning, processing or changing the image (NM4-65, Otto,
-        // 1.11.2026).
-        <div className="vc-head">
-          <span className="vc-title" title={layerShownName(layer)}>
-            {layerShownName(layer).toUpperCase()}
-          </span>
-          <div className="results-head-right">
-            <CloseButton onClick={() => exitFocus()} />
-          </div>
-        </div>
-      ) : (
-      <div className="vc-head">
-        <span className="vc-title" title={title}>
-          {[datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
-        </span>
-        {/* The view of the search is a temporary picture, not a layer (Otto, 1.11.2026): the badge of "Preview", between the title and the date. */}
-        {temporary && (
-          <span className="pp-badge vc-temporary" title="This picture is not a layer: add it to the layers to keep it">
-            Temporary
-          </span>
-        )}
-        {datasetIds.length > 1 && shown && (
-          <select
-            className="vc-dataset"
-            aria-label="Dataset"
-            title={`Dataset of the image shown: ${datasetTitle}`}
-            value={shown.datasetId}
-            onChange={(e) => chooseViewDataset(e.target.value)}
-          >
-            {datasetIds.map((id) => (
-              <option key={id} value={id}>
-                {datasetTitleOf(id)}
-              </option>
-            ))}
-          </select>
-        )}
-        {shown && (
-          <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeys}>
-            <button
-              type="button"
-              className="vc-step"
-              aria-label="Previous image"
-              aria-disabled={at <= 0 || undefined}
-              title={here.length <= 1 ? 'There is only one image' : at <= 0 ? 'This is the first image' : 'Previous image'}
-              onClick={() => stepImage(-1)}
-            >
-              <Chevron direction="left" />
-            </button>
-            <span className="vc-step-text" title={stepTitle}>
-              {stepText}
+    <div className="viewer-controls scene-view">
+      {/* A pinned view has the head of every layer (NM4-65): its name and date, no eye, no dataset. The view of the search is a temporary
+          picture, not a layer (Otto, 1.11.2026): "Temporary", the badge of "Preview", beside the title. */}
+      <InspectorHead
+        title={compact ? layerShownName(layer) : [datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
+        tip={compact ? layerShownName(layer) : title}
+        mark={
+          !compact &&
+          temporary && (
+            <span className="pp-badge vc-temporary" title="This picture is not a layer: add it to the layers to keep it">
+              Temporary
             </span>
+          )
+        }
+        eye={
+          !compact && (
             <button
               type="button"
-              className="vc-step"
-              aria-label="Next image"
-              aria-disabled={at >= here.length - 1 || undefined}
-              title={here.length <= 1 ? 'There is only one image' : at >= here.length - 1 ? 'This is the last image' : 'Next image'}
-              onClick={() => stepImage(1)}
+              className={`vc-eye${showDownloaded ? '' : ' off'}`}
+              title={showDownloaded ? 'Hide image' : 'Show image'}
+              aria-label={showDownloaded ? 'Hide image' : 'Show image'}
+              onClick={() => toggleDownloaded()}
             >
-              <Chevron direction="right" />
+              <Eye off={!showDownloaded} />
             </button>
-          </div>
+          )
+        }
+        onClose={() => exitFocus()}
+      >
+        {compact ? (
+          <LayerStepper date={layer.date} />
+        ) : (
+          <>
+            {datasetIds.length > 1 && shown && (
+              <select
+                className="vc-dataset"
+                aria-label="Dataset"
+                title={`Dataset of the image shown: ${datasetTitle}`}
+                value={shown.datasetId}
+                onChange={(e) => chooseViewDataset(e.target.value)}
+              >
+                {datasetIds.map((id) => (
+                  <option key={id} value={id}>
+                    {datasetTitleOf(id)}
+                  </option>
+                ))}
+              </select>
+            )}
+            {shown && (
+              <Stepper
+                text={stepText}
+                tip={stepTitle}
+                onKeyDown={onKeys}
+                previous={{ disabled: at <= 0, title: here.length <= 1 ? 'There is only one image' : at <= 0 ? 'This is the first image' : 'Previous image', onClick: () => stepImage(-1) }}
+                next={{ disabled: at >= here.length - 1, title: here.length <= 1 ? 'There is only one image' : at >= here.length - 1 ? 'This is the last image' : 'Next image', onClick: () => stepImage(1) }}
+              />
+            )}
+          </>
         )}
-        <button
-          type="button"
-          className={`vc-eye${showDownloaded ? '' : ' off'}`}
-          title={showDownloaded ? 'Hide image' : 'Show image'}
-          aria-label={showDownloaded ? 'Hide image' : 'Show image'}
-          onClick={() => toggleDownloaded()}
-        >
-          <Eye off={!showDownloaded} />
-        </button>
-      </div>
-      )}
+      </InspectorHead>
 
-      <div className={`vc-render${showBand ? ' has-index' : ''}`}>
-        <RenderFields
-          band={
-            showBand
-              ? {
-                  value: bandValue,
-                  options: bandOptions,
-                  onChange: chooseView,
-                  title: chosen ? presetTip(chosen) : BAND_TIP,
+      <div className="insp-body">
+        <InspectorSection title="Display">
+          <div className="vc-render">
+            <RenderFields
+              // One band is no choice: the field stays, locked, and says so.
+              band={{
+                value: bandValue,
+                options: bandOptions,
+                onChange: chooseView,
+                title: !showBand ? ONE_BAND_TIP : chosen ? presetTip(chosen) : BAND_TIP,
+                disabled: !showBand,
+              }}
+              vmin={pendingUnit === 'percent' ? { value: pendingPercentLow, onChange: (text) => setPendingPercent('low', text) } : { value: pendingVmin, onChange: setPendingVmin }}
+              vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
+              unit={{ value: pendingUnit, onChange: setPendingUnit }}
+              // The bar stays as it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
+              colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' }}
+              placeholder="auto"
+            />
+            {/* A view that is no layer has no opacity to set (Otto, 2.11.2026). */}
+            {compact && layer ? <OpacityRow layer={layer} /> : <OpacityRow locked={OPACITY_LOCKED_TIP} />}
+            <div className="vc-buttons">
+              <AutoScaleButton
+                title={focusLoading ? 'Measuring the range…' : pendingUnit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Measure the 2nd/98th percentile stretch from the source again'}
+                busy={focusLoading}
+                onClick={() => void autoStretch()}
+              />
+              <button
+                type="button"
+                className="ghost-btn vc-apply"
+                aria-disabled={!changed || undefined}
+                title={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
+                onClick={() => {
+                  if (changed) applyRender();
+                }}
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                className="primary-btn vc-save"
+                aria-disabled={!savable || undefined}
+                title={
+                  savable
+                    ? compact
+                      ? 'Keep this picture, these values and this opacity for the layer; closing the settings without it puts the saved layer back'
+                      : layer
+                        ? 'Draw every image of this dataset with these values and keep them for this layer'
+                        : 'Draw every image of this dataset with these values'
+                    : compact
+                      ? NOTHING_TO_SAVE
+                      : layer
+                        ? NOTHING_TO_APPLY_TO_ALL_LAYER
+                        : here.length > 1
+                          ? NOTHING_TO_SAVE_IMAGES
+                          : NOTHING_TO_SAVE_ONE_IMAGE
                 }
-              : undefined
-          }
-          vmin={pendingUnit === 'percent' ? { value: pendingPercentLow, onChange: (text) => setPendingPercent('low', text) } : { value: pendingVmin, onChange: setPendingVmin }}
-          vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
-          unit={{ value: pendingUnit, onChange: setPendingUnit }}
-          // The box stays where it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
-          colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' }}
-          placeholder="auto"
-        />
-        <div className="vc-buttons">
-          <AutoScaleButton
-            title={focusLoading ? 'Measuring the range…' : pendingUnit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Measure the 2nd/98th percentile stretch from the source again'}
-            busy={focusLoading}
-            onClick={() => void autoStretch()}
-          />
-          <button
-            type="button"
-            className="ghost-btn vc-apply"
-            aria-disabled={!changed || undefined}
-            title={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
-            onClick={() => {
-              if (changed) applyRender();
-            }}
-          >
-            Apply
-          </button>
-          <button
-            type="button"
-            className="primary-btn vc-save"
-            aria-disabled={!savable || undefined}
-            title={
-              savable
-                ? compact
-                  ? 'Keep this picture, these values and this opacity for the layer; closing the settings without it puts the saved layer back'
-                  : layer
-                    ? 'Draw every image of this dataset with these values and keep them for this layer'
-                    : 'Draw every image of this dataset with these values'
-                : compact
-                  ? NOTHING_TO_SAVE
-                  : layer
-                    ? NOTHING_TO_APPLY_TO_ALL_LAYER
-                  : here.length > 1
-                    ? NOTHING_TO_SAVE_IMAGES
-                    : NOTHING_TO_SAVE_ONE_IMAGE
-            }
-            onClick={() => {
-              if (savable) saveViewLook();
-            }}
-          >
-            {compact ? 'Save' : 'Apply to all'}
-          </button>
-        </div>
-      </div>
-      {compact && layer && <OpacityRow layer={layer} />}
-
-      {index && indexBlock && (
-        <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>
-          {indexNote(indexBlock, index.name)}
-        </p>
-      )}
-
-      {!compact && (
-        <div className={`vc-actions${images.length > 1 ? ' has-all' : ''}`}>
-          <button
-            type="button"
-            className="ghost-btn"
-            title={images.length > 1 ? 'Pin the image that is shown into the layer manager' : 'Pin this image into the layer manager'}
-            disabled={pinLoading}
-            onClick={() => addCurrentToLayers()}
-          >
-            {pinLoading ? 'Loading…' : '＋ Add to layers'}
-          </button>
-          {images.length > 1 && (
-            <button
-              type="button"
-              className="ghost-btn"
-              title={`Pin all ${images.length} images of the view into the layer manager, one layer each`}
-              disabled={pinLoading}
-              onClick={() => addAllToLayers()}
-            >
-              {pinLoading ? 'Loading…' : '＋ Add all to layers'}
-            </button>
+                onClick={() => {
+                  if (savable) saveViewLook();
+                }}
+              >
+                {compact ? 'Save' : 'Apply to all'}
+              </button>
+            </div>
+          </div>
+          {index && indexBlock && (
+            <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>
+              {indexNote(indexBlock, index.name)}
+            </p>
           )}
-          <button
-            type="button"
-            className="ghost-btn"
-            disabled={processBlock !== null}
-            title={processBlock ?? 'Build a processing job for the scenes of this view'}
-            onClick={() => void processFocusView()}
-          >
-            ⚙ Process
-          </button>
-          <button type="button" className="ghost-btn" title="Remove this view and choose another scene from the results" onClick={() => changeImage()}>
-            ‹ Change image
-          </button>
-          <button type="button" className="ghost-btn" title="Remove this view from the map" onClick={() => exitFocus()}>
-            ✕ Clear
-          </button>
-        </div>
-      )}
+        </InspectorSection>
+
+        {compact ? (
+          layerDownloadKind(layer) !== null && (
+            <InspectorSection title="Actions">
+              <div className="vc-actions">
+                <LayerDownload layer={layer} className="ghost-btn" label="Download" />
+              </div>
+            </InspectorSection>
+          )
+        ) : (
+          <InspectorSection title="Actions">
+            <div className="vc-actions">
+              <button
+                type="button"
+                className="ghost-btn"
+                title={images.length > 1 ? 'Pin the image that is shown into the layer manager' : 'Pin this image into the layer manager'}
+                disabled={pinLoading}
+                onClick={() => addCurrentToLayers()}
+              >
+                {pinLoading ? 'Loading…' : '＋ Add to layers'}
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                title={images.length > 1 ? `Pin all ${images.length} images of the view into the layer manager, one layer each` : 'There is only one image'}
+                disabled={pinLoading || images.length <= 1}
+                onClick={() => addAllToLayers()}
+              >
+                {pinLoading ? 'Loading…' : '＋ Add all to layers'}
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={processBlock !== null}
+                title={processBlock ?? 'Build a processing job for the scenes of this view'}
+                onClick={() => void processFocusView()}
+              >
+                ⚙ Process
+              </button>
+              <button type="button" className="ghost-btn" title="Remove this view and choose another scene from the results" onClick={() => changeImage()}>
+                ‹ Change image
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={!aoi}
+                title={aoi ? 'Download the image shown at full resolution as the AOI crop, one file per group' : DRAW_AOI_TO_CROP}
+                onClick={() => openDownloadForView('crop')}
+              >
+                ⇩ Download crop
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={!originalsAllowed}
+                title={originalsAllowed ? originalsTitle(count > 1, shownDataset?.collection['earthx:access']?.cors === true, originalsSummary) : noOriginalsReason(shownDataset)}
+                onClick={() => openDownloadForView('originals')}
+              >
+                ⇩ Download full scene
+              </button>
+              <button type="button" className="ghost-btn" title="Remove this view from the map" onClick={() => exitFocus()}>
+                ✕ Clear
+              </button>
+            </div>
+          </InspectorSection>
+        )}
+      </div>
     </div>
   );
 }

@@ -7,7 +7,7 @@ import index from './index.css?raw';
 import tokens from './tokens.css?raw';
 
 // The areas already moved onto the tokens; UI-04 adds the other panels here.
-const CHECKED_AREAS = ['.ghost-btn', '.primary-btn', '.pp-seg', '.close-x'] as const;
+const CHECKED_AREAS = ['.ghost-btn', '.primary-btn', '.pp-seg', '.close-x', '.inspector'] as const;
 
 const ROOT_TOKENS = [
   '--space-1', '--space-2', '--space-3', '--space-4', '--space-5', '--space-6',
@@ -62,7 +62,7 @@ describe('tokens.css', () => {
 });
 
 describe('hard values in the checked areas of index.css', () => {
-  it('finds none in the shared controls', () => {
+  it('finds none in the shared controls and the settings bar', () => {
     expect(hardValues(index, CHECKED_AREAS)).toEqual([]);
   });
 

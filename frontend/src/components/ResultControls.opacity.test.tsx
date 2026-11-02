@@ -13,6 +13,7 @@ import CSS from '../index.css?raw';
 import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
 import LayerManager from './LayerManager';
+import Inspector from './Inspector';
 import ResultControls from './ResultControls';
 
 declare global {
@@ -115,9 +116,9 @@ describe('the opacity of a result whose settings are open', () => {
     act(() => useAppStore.getState().closeResultView());
     expect(useAppStore.getState().layers[0].opacity).toBe(1);
     expect(useAppStore.getState().layers[0].saved).toBeUndefined();
-    // Esc.
+    // Esc, which the settings bar takes.
     useAppStore.setState({ resultViewLayerId: 'R1' });
-    act(() => root.render(<ResultControls />));
+    act(() => root.render(<Inspector />));
     act(() => useAppStore.getState().setLayerOpacity('R1', 0.2));
     act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(useAppStore.getState().resultViewLayerId).toBeNull();

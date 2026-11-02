@@ -14,6 +14,7 @@ import { SENTINEL_2_PRESETS } from '../fixtures/indexPresets';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacAsset, StacItem } from '../types';
 import { viewLayerOf } from '../viewLayer';
+import Inspector from './Inspector';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -147,10 +148,11 @@ describe('the dropdown "Band" of the view', () => {
     expect([...select().options].map((o) => o.value).filter((v) => v.startsWith('band:'))).toEqual(['band:B02', 'band:B03']);
   });
 
-  it('is not there when it would have one entry: no band besides the standard picture and no preset', () => {
+  it('is locked, with the reason, when it would have one entry: no band besides the standard picture and no preset', () => {
     mount({}, collection({ 'earthx:index_presets': [] }), { visual: tiff(3) });
-    expect(field('Band')).toBeNull();
-    expect(container.querySelector('.vc-render')!.classList.contains('has-index')).toBe(false);
+    expect(field('Band')).not.toBeNull();
+    expect(select().disabled).toBe(true);
+    expect(field('Band')!.title).toBe('This picture has one band');
   });
 
   it('is there for bands alone, without presets', () => {
@@ -381,9 +383,9 @@ describe('a layer pinned with a band', () => {
     expect(layerAssets()).toEqual(['B04']);
     expect(store().layers[0].saved).toBeUndefined();
     expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B04' });
-    // Esc.
+    // Esc, which the settings bar takes.
     act(() => store().selectLayer(store().layers[0].id));
-    act(() => root.render(<ViewerControls />));
+    act(() => root.render(<Inspector />));
     choose('index:NDVI');
     await settle();
     apply();

@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 //
-// Otto, 27.10.2026 (zu #211): the view of scenes has a head of one line, an eye for "Hide image", two rows of buttons
-// of one width, and "✕ Clear". The CSS contract is read off `index.css`, as `mapStyles.test.ts` does for the theme.
+// Otto, 27.10.2026 (zu #211): the view of scenes has a head with an eye for "Hide image", its fields and buttons, and "✕ Clear". Since
+// UI-03a (2.11.2026) it stands in the settings bar: the head has two rows, then "Display" and "Actions". The CSS contract is read off
+// `index.css`, as `mapStyles.test.ts` does for the theme.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CSS from '../index.css?raw';
+import TOKENS from '../tokens.css?raw';
 import { datasetsFrom } from '../datasets';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
@@ -73,6 +75,7 @@ const head = () => container.querySelector('.vc-head')!;
 const title = () => container.querySelector('.vc-title') as HTMLElement;
 const eye = () => container.querySelector('.vc-eye') as HTMLButtonElement;
 const row = (name: 'vc-render' | 'vc-actions') => container.querySelector(`.${name}`)!;
+const labelOf = (el: Element) => el.querySelector('span')?.textContent;
 
 describe('the head', () => {
   it.each([
@@ -85,15 +88,24 @@ describe('the head', () => {
     expect(title().textContent).toBe(text);
   });
 
-  // Otto, 1.11.2026 (zu #272): the view of the search is a temporary picture, and a yellow box between the title and the date says so.
-  it('has a badge "Temporary" right after the title, before the date with the arrows, in the style of the "Preview" badge', () => {
+  // Otto, 1.11.2026 (zu #272): the view of the search is a temporary picture, and a yellow box beside the title says so.
+  it('has a badge "Temporary" right after the title, before the eye and the x, in the style of the "Preview" badge', () => {
     mount();
     const temporary = container.querySelector('.vc-temporary') as HTMLElement;
     expect(temporary.textContent).toBe('Temporary');
     expect(temporary.previousElementSibling).toBe(title());
-    expect(temporary.nextElementSibling?.classList.contains('vc-stepper')).toBe(true);
+    expect(temporary.nextElementSibling).toBe(eye());
     expect(temporary.classList.contains('pp-badge')).toBe(true);
     expect(CSS).toMatch(/\.preview-badge,\s*\.pp-badge \{[^}]*border: 1px solid var\(--accent-2\)/u);
+  });
+
+  it('has the dataset and the date with the arrows in a second row, under the title', () => {
+    mount();
+    const rows = head().children;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].contains(title())).toBe(true);
+    expect(rows[1].querySelector('.vc-stepper')).not.toBeNull();
+    expect(rows[0].querySelector('.vc-stepper')).toBeNull();
   });
 
   it('has no box "Temporary" in the settings of a layer: a layer is not temporary', () => {
@@ -151,9 +163,10 @@ describe('the head', () => {
 });
 
 describe('the eye', () => {
-  it('is in the head, on the right, with the tooltip of what a click does', () => {
+  it('is in the first row of the head, before the red x, with the tooltip of what a click does', () => {
     mount({ showDownloaded: true });
-    expect(head().lastElementChild).toBe(eye());
+    expect(eye().nextElementSibling).toBe(container.querySelector('.vc-head .close-x'));
+    expect(head().firstElementChild!.contains(eye())).toBe(true);
     expect(eye().title).toBe('Hide image');
     expect(eye().getAttribute('aria-label')).toBe('Hide image');
     expect(eye().textContent).toBe('');
@@ -177,27 +190,29 @@ describe('the eye', () => {
   });
 });
 
-describe('the rows of buttons', () => {
-  it('has three fields and the buttons "auto-scale" and "Apply" in the first row, and four buttons in the second', () => {
+describe('the fields and the buttons', () => {
+  const ACTIONS = ['＋ Add to layers', '＋ Add all to layers', '⚙ Process', '‹ Change image', '⇩ Download crop', '⇩ Download full scene', '✕ Clear'];
+  const actions = () => [...row('vc-actions').children] as HTMLButtonElement[];
+
+  it('has the fields in the order of the place, then the opacity and the buttons "auto-scale", "Apply", "Apply to all"; the actions under them', () => {
     mount();
     const first = [...row('vc-render').children];
-    expect(first).toHaveLength(4);
-    expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'DIV']);
-    expect([first[0], first[1], first[2]].map((el) => el.querySelector('span')?.textContent)).toEqual(['vmin', 'vmax', 'Colormap']);
-    expect([...first[3].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
-    expect([...row('vc-actions').children].map((el) => el.textContent)).toEqual(['＋ Add to layers', '⚙ Process', '‹ Change image', '✕ Clear']);
+    expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'LABEL', 'DIV', 'DIV']);
+    expect(first.slice(0, 4).map(labelOf)).toEqual(['Band', 'vmin', 'vmax', 'Colormap']);
+    expect(first[4].classList.contains('vc-opacity')).toBe(true);
+    expect([...first[5].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+    expect(actions().map((el) => el.textContent)).toEqual(ACTIONS);
   });
 
   it('has the tooltips of what "Change image" and "Clear" do', () => {
     mount();
-    const buttons = [...row('vc-actions').children] as HTMLButtonElement[];
-    expect(buttons[2].title).toBe('Remove this view and choose another scene from the results');
-    expect(buttons[3].title).toBe('Remove this view from the map');
+    expect(actions()[3].title).toBe('Remove this view and choose another scene from the results');
+    expect(actions()[6].title).toBe('Remove this view from the map');
   });
 
   it('"Clear" takes the view off the map and nothing else: the tick, the results panel and the switch stay', () => {
     mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false });
-    act(() => ([...row('vc-actions').children][3] as HTMLButtonElement).click());
+    act(() => actions()[6].click());
     const s = useAppStore.getState();
     expect(s.focusMode).toBe(false);
     expect(s.downloaded).toEqual({});
@@ -209,7 +224,7 @@ describe('the rows of buttons', () => {
   it('"Change image" takes the view off the map and opens the results, and leaves the tick and the switch', () => {
     const sections = [{ datasetId: 'optical', items: withDays([undefined])[0].items, groups: [], notes: [] }] as never;
     mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false, sections });
-    act(() => ([...row('vc-actions').children][2] as HTMLButtonElement).click());
+    act(() => actions()[3].click());
     const s = useAppStore.getState();
     expect(s.focusMode).toBe(false);
     expect(s.dock).toBe('results');
@@ -217,9 +232,9 @@ describe('the rows of buttons', () => {
     expect(s.resultsOnMap).toBe(false);
   });
 
-  it('puts "Apply" under "auto-scale", in one cluster with "Apply to all" beside them (NM4-53)', () => {
+  it('puts "auto-scale", "Apply" and "Apply to all" in one row (NM4-53)', () => {
     mount();
-    const cluster = row('vc-render').children[3];
+    const cluster = row('vc-render').children[5];
     expect(cluster.classList.contains('vc-buttons')).toBe(true);
     expect([...cluster.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
     expect(container.textContent).not.toContain('Save');
@@ -305,7 +320,7 @@ describe('"Save" of the view of a pinned layer', () => {
     expect(container.querySelector('.vc-temporary')).toBeNull();
   });
 
-  it('stands beside "Apply", under "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
+  it('stands beside "Apply", after "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
     mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
     expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
     expect(save()!.getAttribute('aria-disabled')).toBe('true');
@@ -339,7 +354,7 @@ describe('"Save" of the view of a pinned layer', () => {
   });
 });
 
-// The grid cannot be laid out in jsdom: what the CSS promises is read off the file.
+// The layout cannot be laid out in jsdom: what the CSS promises is read off the file.
 describe('the layout contract in index.css', () => {
   const rule = (selector: string): string => {
     const start = CSS.indexOf(`${selector} {`);
@@ -347,73 +362,45 @@ describe('the layout contract in index.css', () => {
     return CSS.slice(start, CSS.indexOf('}', start));
   };
 
-  it('puts the head and both rows in one grid of twelve columns, which decides the width of the view', () => {
-    expect(rule('.scene-view')).toContain('grid-template-columns: repeat(12, minmax(0, 1fr))');
-    expect(rule('.scene-view')).toMatch(/width: min\(/u);
-    expect(rule('.scene-view .vc-render')).toContain('grid-template-columns: subgrid');
-    expect(rule('.scene-view .vc-head')).toContain('grid-column: 1 / -1');
+  it('puts the bar at the right edge from 64 px to the foot, 320 px wide, with a line on the left and no corners', () => {
+    const bar = rule('.inspector.panel');
+    for (const declaration of ['top: 64px', 'right: 0', 'bottom: 0', 'width: var(--inspector-width)', 'border-radius: 0', 'border-width: 0 0 0 var(--line-width)']) expect(bar).toContain(declaration);
+    expect(Number(/--inspector-width: (\d+)px/u.exec(TOKENS)?.[1])).toBe(320);
   });
 
-  it('cuts a long title with "…" and lets it shrink, so the head is never wider than the rows', () => {
-    const title = rule('.scene-view .vc-title');
+  it('makes it a sheet from the bottom under 900 px, at most 55 % high, round at the top', () => {
+    expect(CSS).toMatch(/@media \(max-width: 899px\) \{\s*\.inspector\.panel \{[^}]*top: auto;[^}]*left: var\(--rail-width\);[^}]*max-height: 55vh;[^}]*border-radius: var\(--radius-md\) var\(--radius-md\) 0 0;/u);
+  });
+
+  it('keeps the head standing and lets the middle scroll', () => {
+    expect(rule('.inspector .vc-head')).toContain('flex: none');
+    expect(rule('.inspector .insp-body')).toContain('overflow-y: auto');
+    expect(rule('.inspector .insp-body')).toContain('min-height: 0');
+  });
+
+  it('cuts a long title with "…" and lets it shrink', () => {
+    const title = rule('.inspector .vc-title');
     expect(title).toContain('text-overflow: ellipsis');
     expect(title).toContain('overflow: hidden');
     expect(title).toContain('white-space: nowrap');
     expect(title).toContain('min-width: 0');
   });
 
-  it('lets the dataset and the date in the head shrink and the head wrap below the title, never wider than the rows (NM4-53)', () => {
-    expect(rule('.scene-view .vc-head')).toContain('min-width: 0');
-    expect(CSS).toMatch(/\.scene-view \.vc-head \{\s*flex-wrap: wrap;/u);
-    expect(rule('.scene-view .vc-dataset')).toContain('min-width: 0');
-    expect(rule('.vc-stepper')).toContain('min-width: 0');
-    expect(rule('.vc-step-text')).toContain('text-overflow: ellipsis');
-    expect(rule('.scene-view .vc-title')).toContain('flex: 1 1 120px');
+  it('makes both rows of the head as high as a control, so that "Display" begins at one height', () => {
+    expect(rule('.inspector .insp-row')).toContain('min-height: var(--control-height)');
   });
 
-  it('makes "auto-scale" and "Apply" together as high as the fields, and "Apply to all" as high as the two together', () => {
-    const cluster = rule('.vc-buttons');
-    const height = Number(/--row-height: (\d+)px/u.exec(cluster)?.[1]);
-    // The fields of the view and of the settings of a result are as high as the cluster.
-    expect(Number(/--row-height: (\d+)px/u.exec(rule('.scene-view'))?.[1])).toBe(height);
-    // The settings of a result are the view's box (`.scene-view`), with no rules of their own for size or places (NM4-54 part 5).
-    expect(CSS).not.toMatch(/^\.result-controls\b/mu);
-    expect(cluster).toContain('height: var(--row-height)');
-    expect(cluster).toContain('grid-template-rows: 1fr 1fr');
-    // "Save" takes both rows of the second column.
-    expect(rule('.vc-buttons > .vc-save')).toContain('grid-area: 1 / 2 / 3 / 3');
-    expect(rule('.vc-buttons > .vc-auto')).toContain('grid-area: 1 / 1');
-    expect(rule('.vc-buttons > .vc-apply')).toContain('grid-area: 2 / 1');
-    const buttons = rule('.vc-buttons > button');
-    expect(buttons).not.toMatch(/\n  height:/u);
-    // `.vc-apply` aligns itself to the end of a row: in the cluster every button fills its cell, or "Apply" is lower than "auto-scale".
-    expect(buttons).toContain('align-self: stretch');
-    expect(buttons).toContain('align-items: center');
-    expect(buttons).toContain('justify-content: center');
-    expect(rule('.vc-buttons')).toContain('grid-template-columns: 1fr 1fr');
-    expect(rule('.scene-view .vc-render > :nth-child(3)')).toContain('grid-column: span 3');
-    expect(rule('.scene-view .vc-render > :nth-child(4)')).toContain('grid-column: span 5');
-    expect(rule('.scene-view .vc-field select,\n.scene-view .vc-field input')).toContain('height: var(--row-height)');
-    expect(rule('.scene-view .vc-render')).toContain('align-items: end');
-    expect(rule('.scene-view .vc-actions')).toContain('align-items: end');
+  it('lays the fields out as a form: a label column of 72 px, the control filling the rest, a row as high as a control', () => {
+    const field = rule('.inspector .vc-field');
+    expect(field).toContain('grid-template-columns: 72px minmax(0, 1fr)');
+    expect(field).toContain('min-height: var(--control-height)');
+    expect(rule('.inspector .vc-field select,\n.inspector .vc-field input:not([type=\'range\'])')).toContain('height: var(--control-height)');
+    expect(rule('.inspector .vc-render')).toContain('gap: var(--space-2)');
   });
 
-  // Otto, 1.11.2026: the view is two rows high under its head and wider rather than taller; its buttons are in one row.
-  it('puts the buttons of the second row in one row, four or five of one width, and wraps them below 600 px', () => {
-    expect(rule('.scene-view .vc-actions')).toContain('grid-template-columns: repeat(var(--buttons), minmax(0, 1fr))');
-    expect(rule('.scene-view .vc-actions')).toContain('--buttons: 4');
-    expect(rule('.scene-view .vc-actions.has-all')).toContain('--buttons: 5');
-    expect(CSS).toMatch(/@media \(max-width: 599px\) \{\s*\.scene-view \{\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u);
-    expect(CSS).toMatch(/\.scene-view \.vc-actions\.has-all \{\s*--buttons: 2;/u);
-  });
-
-  it('is wide enough for five buttons in one row, and wider than it is high', () => {
-    const cell = Number(/--cell: (\d+)px/u.exec(rule('.scene-view'))?.[1]);
-    const inner = 12 * cell + 11 * 8;
-    expect((inner - 4 * 8) / 5).toBeGreaterThanOrEqual(110);
-  });
-
-  it('breaks a word that is too long for its button instead of running over the edge', () => {
-    expect(rule('.scene-view .vc-actions > *')).toContain('overflow-wrap: anywhere');
+  it('puts "auto-scale", "Apply" and "Save" in three columns of one width, the actions in two', () => {
+    expect(rule('.inspector .vc-buttons')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
+    expect(rule('.inspector .vc-actions')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(rule('.inspector .vc-actions > *')).toContain('min-width: 0');
   });
 });

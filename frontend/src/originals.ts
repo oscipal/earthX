@@ -166,6 +166,17 @@ export function summaryText({ scenes, bytes, unknown }: Summary): string {
   return unknown ? `${count} · ${formatBytes(bytes)} and more, some sizes unknown` : `${count} · ${formatBytes(bytes)}`;
 }
 
+// What a click on "Download full scenes" does (NM4-33): a ZIP of the original files of each scene where the source
+// lets the page read them, else the files themselves; either way straight from the source.
+// It starts with what the click will load: the scenes and the size of their files, or that the size is not known
+// (Otto, 31.10.2026: no limit and no question, so this is where it is told).
+export function originalsTitle(plural: boolean, zip: boolean, summary: string): string {
+  if (!zip) return `${summary}. Download the original file${plural ? 's' : ''} of the selected scene${plural ? 's' : ''}, straight from the source.`;
+  return plural
+    ? `${summary}. Download each selected scene as one ZIP of its original files, straight from the source. Your browser may ask once to allow several downloads.`
+    : `${summary}. Download the selected scene as one ZIP of its original files, straight from the source.`;
+}
+
 export function sceneItemJson(item: StacItem): string {
   return `${JSON.stringify(item, null, 2)}\n`;
 }

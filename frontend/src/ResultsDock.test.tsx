@@ -343,7 +343,7 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
   });
 
-  it('shows the bar of the selection above the controls of the view once a scene is ticked that the view does not draw', async () => {
+  it('shows the bar of the selection at the bottom, beside the settings bar of the view, once a scene is ticked that the view does not draw', async () => {
     answer = MANY;
     await search();
     act(() => useAppStore.setState({ focusMode: true, downloaded: { c0: {} as never }, selectedIds: ['c0'] }));
@@ -354,10 +354,12 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     expect(container.querySelector('.download-bar')?.textContent).toContain('2');
     expect(container.querySelector('.viewer-controls')).not.toBeNull();
     const bottom = container.querySelector('.overlay.bottom')!;
-    expect(bottom.querySelector('.download-bar')!.compareDocumentPosition(bottom.querySelector('.viewer-controls')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bottom.querySelector('.download-bar')).not.toBeNull();
+    expect(bottom.querySelector('.viewer-controls')).toBeNull();
+    expect(container.querySelector('.inspector .viewer-controls')).not.toBeNull();
   });
 
-  it('shows the bar of the selection above the controls of a result view once a scene is ticked', async () => {
+  it('shows the bar of the selection beside the settings of a result view once a scene is ticked', async () => {
     await search();
     act(() => useAppStore.setState({ resultViewLayerId: 'some-layer', selectedIds: [] }));
     expect(container.querySelector('.download-bar')).toBeNull();
