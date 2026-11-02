@@ -128,6 +128,10 @@ class RasterMeta:
         return (abs(self.transform.a), abs(self.transform.e))
 
 
+#: Where a step that lays a new pixel grid puts it: transform, width and height.
+Grid = tuple[Affine, int, int]
+
+
 def _no_extra_requirements(params: BaseModel) -> frozenset[str]:
     return frozenset()
 
@@ -207,6 +211,13 @@ class Operator:
     #: What a step that ran with its numbers reports in the property ``earthx:normalize`` of the result, without the
     #: place of the step and ``exact``, which the core adds: the method and the numbers by band.
     measured_report: Callable[[BaseModel], dict[str, Any]] | None = None
+    #: For a step that lays a new grid (``reproject``): the grid it would lay on a raster, which costs a projection of the
+    #: raster's outline, and it depends on the CRS and the bounds of the raster and on the parameters, nothing else. The
+    #: planner works it out once and hands it to :attr:`transform_on` wherever it asks the step for the raster after it
+    #: (:meth:`earthx.processing.plan.PlannedStep.place`). ``None`` for a step that has none.
+    place: Callable[[RasterMeta, BaseModel], Grid] | None = None
+    #: ``transform`` on a grid that :attr:`place` gave for the same raster and parameters; the same result as ``transform``.
+    transform_on: Callable[[RasterMeta, BaseModel, Grid], RasterMeta] | None = None
 
     def __post_init__(self) -> None:
         if not _OP_NAME.match(self.op):
