@@ -1,13 +1,17 @@
-// The settings box of every layer is one box (NM4-54 part 5, Otto, 1.11.2026), in a real browser: a job's result, a pinned view
-// ("Crop to AOI") and the view of the search, each drawn as RGB, as one band and as an index. Measured: the box and its fields.
-//   1. The form does not change with the picture: for each kind of layer the box has the same size, and every field the same
-//      place, whether RGB, a band or an index is drawn (the colormap of RGB stays, locked, with its reason in the tooltip).
-//   2. The three kinds are the same box: the same width, and the fields and the buttons in the same places (the view of the search
-//      has the row of its buttons under them, a layer has its opacity under them).
-// In the light and the dark theme, at 1280 and 360 px; a screenshot per case (the table of sizes is printed).
+// The settings bar at the right edge (UI-03a, Otto, 2.11.2026), in a real browser: a job's result, a pinned view ("Crop to AOI") and the
+// view of the search, each drawn as RGB, as one band and as an index. Measured: the bar, its fields and what stands around it.
+//   1. Place and size: from 1280 px the bar is flush at the right edge, 320 px wide, from 64 px to the foot; under 900 px it is a sheet from the
+//      bottom, from the rail to the right edge, at most 55 % high.
+//   2. The three kinds are one bar: Band, vmin, vmax, Colormap, Opacity, the row of buttons and "Actions" stand at the same height (counted
+//      from the top of the bar) for every kind and every picture; the colormap of RGB stays, locked, with its reason in the tooltip.
+//   3. Nothing lies outside the bar, and nothing scrolls sideways.
+//   4. The bar of the selection and the timeline stands in the middle of the free map, not under the bar (under 900 px above the sheet); the
+//      zoom buttons are visible and left of the bar (above the sheet).
+//   5. A swap (layer to layer), the x and Esc.
+// In the light and the dark theme, at 1280 x 800, 1920 x 1080 and 360 x 740; a screenshot per case (the table of places is printed).
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
-//   node e2e/settings-box.cjs               # BASE=http://localhost:5173 OUT=<directory for the screenshots>
+//   node e2e/settings-box.cjs               # BASE=http://localhost:5173 OUT=<directory for the screenshots>, ONLY=1 for one theme and one window
 //
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
@@ -18,9 +22,16 @@ const path = require('node:path');
 const BASE = process.env.BASE ?? 'http://localhost:5173';
 const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-settings-box');
 const THEMES = process.env.ONLY ? { light: 'normal' } : { light: 'normal', dark: 'tech' };
-const VIEWPORTS = process.env.ONLY ? { wide: { width: 1280, height: 800 } } : { wide: { width: 1280, height: 800 }, narrow: { width: 360, height: 740 } };
+const VIEWPORTS = process.env.ONLY
+  ? { hd: { width: 1280, height: 800 } }
+  : { hd: { width: 1280, height: 800 }, full: { width: 1920, height: 1080 }, narrow: { width: 360, height: 740 } };
+const RAIL = 48;
+const BAR = 320;
+const TOP = 64;
 const FOOTPRINT = [10, 50, 11, 51];
 const SCENES = ['SYNTH_A', 'SYNTH_B'];
+// A third scene is ticked and not in the view, so that the bar of the selection stands at the bottom.
+const TICKED = 'SYNTH_C';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const PRESETS = [['NDVI', 'Normalized Difference Vegetation Index', '(nir - red) / (nir + red)', 'rdylgn', '(N - R)/(N + R)']].map(([name, title, expression, colormap_name, formula]) => ({
   name, title, expression, rescale: [[-1, 1]], colormap_name, formula, reference: 'https://example.org/formula',
@@ -49,14 +60,14 @@ async function open(browser, theme, viewport) {
 
 // The store of the page: the view of the search with the dataset, then whatever the case needs.
 async function seed(page) {
-  await page.evaluate(async ({ scenes, footprint, presets }) => {
+  await page.evaluate(async ({ scenes, ticked, footprint, presets }) => {
     const { useAppStore } = await import('/src/store.ts');
     const { datasetsFrom } = await import('/src/datasets.ts');
     const info = (id) => ({ datasetId: 'optical', tileUrl: `/collections/optical/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`, bounds: footprint, asset: 'visual', minZoom: 8, maxZoom: 14 });
     const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
     const aoi = { type: 'Polygon', coordinates: [[[10.2, 50.2], [10.8, 50.2], [10.8, 50.8], [10.2, 50.8], [10.2, 50.2]]] };
     const tiff = (n) => ({ href: 'https://example.org/x.tif', type: COG, 'raster:bands': Array.from({ length: n }, () => ({ data_type: 'uint16', nodata: 0 })) });
-    const items = scenes.map((id) => ({ id, collection: 'optical', bbox: footprint, properties: { datetime: '2026-07-01T10:00:00Z', gsd: 10 }, assets: { visual: tiff(3), B04: tiff(1), B08: tiff(1) } }));
+    const items = [...scenes, ticked].map((id) => ({ id, collection: 'optical', bbox: footprint, properties: { datetime: '2026-07-01T10:00:00Z', gsd: 10 }, assets: { visual: tiff(3), B04: tiff(1), B08: tiff(1) } }));
     const collection = {
       id: 'optical', title: 'Sentinel-2 L2A', 'earthx:format': 'cog', 'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
       'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: [[0, 3000]], colormap_name: null, expression: null, resampling: 'nearest' },
@@ -67,16 +78,16 @@ async function seed(page) {
     };
     useAppStore.setState({
       datasets: datasetsFrom([collection]), datasetId: 'optical', items, groups: [{ key: ['a'], label: '2026-07-01', items }], activeGroupIndex: 0,
-      selectedIds: scenes, downloaded: Object.fromEntries(scenes.map((id) => [id, info(id)])), focusMode: true, cropToAoi: true, viewAoi: aoi, aoi, showDownloaded: true, dock: null,
+      selectedIds: [...scenes, ticked], downloaded: Object.fromEntries(scenes.map((id) => [id, info(id)])), focusMode: true, cropToAoi: true, viewAoi: aoi, aoi, showDownloaded: true, dock: null,
       appliedRender: { rescale: '0,3000' }, pendingColormapName: '', pendingVmin: '0', pendingVmax: '3000', layers: [], mosaics: {}, error: null, mapZoom: 12,
       flyToView: { center: [10.5, 50.5], zoom: 10 },
     });
     await useAppStore.getState().loadMosaics();
-  }, { scenes: SCENES, footprint: FOOTPRINT, presets: PRESETS });
-  await page.waitForSelector('.scene-view .vc-apply');
+  }, { scenes: SCENES, ticked: TICKED, footprint: FOOTPRINT, presets: PRESETS });
+  await page.waitForSelector('.inspector .vc-apply');
 }
 
-const pick = (page, value) => page.locator('.scene-view .vc-render label', { hasText: /^Band/ }).locator('select').selectOption(value);
+const pick = (page, value) => page.locator('.inspector .vc-render label', { hasText: /^Band/ }).locator('select').selectOption(value);
 const settle = (page) => page.waitForTimeout(600);
 
 // The look of the view of the search: RGB, a band, an index (chosen and applied).
@@ -84,26 +95,24 @@ async function look(page, what) {
   if (what === 'rgb') return;
   await pick(page, what === 'band' ? 'band:B04' : 'index:NDVI');
   await settle(page);
-  await page.locator('.scene-view .vc-apply').click();
+  await page.locator('.inspector .vc-apply').click();
   await settle(page);
 }
 
-// The result layer of a job with the bands red, green, blue and NDVI, drawn as RGB, as the band "red" or as the band "NDVI".
-async function resultBox(page, what) {
+// The result layers of a job with the bands red, green, blue and NDVI; the first is drawn as RGB, as the band "red" or as the band "NDVI".
+async function resultLayers(page, what) {
   await page.evaluate(async ({ what }) => {
     const { useAppStore } = await import('/src/store.ts');
     const band = what === 'rgb' ? '@rgb' : what === 'band' ? 0 : 3;
-    useAppStore.setState({
-      focusMode: false, downloaded: {}, viewOfLayer: false, resultViewLayerId: 'R1', dock: 'layers',
-      layers: [{
-        id: 'R1', name: 'Result · bands', visible: true, opacity: 1, derived: 'result', restore: { datasetId: null, itemIds: [] },
-        overlays: [{ kind: 'raster', tileUrl: '/results/AbCdEfGhIjKlMnOpQrSt_-/tiles/{z}/{x}/{y}?tilesize=256&colormap_name=viridis&rescale=0%2C1', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }],
-        result: {
-          jobID: 'AbCdEfGhIjKlMnOpQrSt_-', expires: new Date(Date.now() + 86_400_000).toISOString(), gsd: 10, resampled: null, expired: false, dataType: 'float32', stats: null,
-          bands: ['red', 'green', 'blue', 'NDVI'].map((name) => ({ name, stats: null })), band, colour: [0, 1, 2],
-        },
-      }],
+    const layer = (id, place) => ({
+      id, name: `Result · bands ${id}`, visible: true, opacity: 1, derived: 'result', restore: { datasetId: null, itemIds: [] },
+      overlays: [{ kind: 'raster', tileUrl: '/results/AbCdEfGhIjKlMnOpQrSt_-/tiles/{z}/{x}/{y}?tilesize=256&colormap_name=viridis&rescale=0%2C1', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }],
+      result: {
+        jobID: 'AbCdEfGhIjKlMnOpQrSt_-', expires: new Date(Date.now() + 86_400_000).toISOString(), gsd: 10, resampled: null, expired: false, dataType: 'float32', stats: null,
+        bands: ['red', 'green', 'blue', 'NDVI'].map((name) => ({ name, stats: null })), band: place, colour: [0, 1, 2],
+      },
     });
+    useAppStore.setState({ focusMode: false, downloaded: {}, viewOfLayer: false, resultViewLayerId: 'R1', dock: 'layers', layers: [layer('R1', band), layer('R2', '@rgb')] });
   }, { what });
   await page.waitForSelector('.result-controls .vc-apply');
 }
@@ -119,43 +128,121 @@ async function pinnedBox(page, what) {
     useAppStore.getState().exitFocus();
     useAppStore.getState().selectLayer(layer.id);
   });
-  await page.waitForSelector('.scene-view .vc-apply');
+  await page.waitForSelector('.inspector .vc-apply');
 }
 
-// What the box measures: itself and the places of its parts.
+// What the page measures: the bar, the places of its parts (from its top), what lies outside it, the bands around it.
 async function measure(page) {
   return page.evaluate(() => {
-    const rect = (e) => (e ? (({ x, y, width, height }) => ({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, w: Math.round(width * 10) / 10, h: Math.round(height * 10) / 10 }))(e.getBoundingClientRect()) : null);
-    const box = document.querySelector('.scene-view');
-    const field = (name) => [...box.querySelectorAll('.vc-render label')].find((l) => l.querySelector('span')?.textContent === name);
-    const base = rect(box);
-    // Places are counted from the end of the head: the head of the view of the search holds more (the dataset, the arrows, the
-    // eye) and wraps in a narrow window; the rest of the box is what has to be alike.
-    const headEnd = rect(box.querySelector('.vc-head')).y + rect(box.querySelector('.vc-head')).h - base.y;
-    const rel = (e, fromHead = true) => {
+    const round = (n) => Math.round(n * 10) / 10;
+    const rect = (e) => (e ? (({ x, y, width, height, right, bottom }) => ({ x: round(x), y: round(y), w: round(width), h: round(height), right: round(right), bottom: round(bottom) }))(e.getBoundingClientRect()) : null);
+    const bar = document.querySelector('aside.inspector');
+    const base = rect(bar);
+    const field = (name) => [...bar.querySelectorAll('.vc-render label')].find((l) => l.querySelector('span')?.textContent === name);
+    const heading = (name) => [...bar.querySelectorAll('.insp-heading')].find((h) => h.textContent === name);
+    const at = (e) => {
       const r = rect(e);
-      return r && { x: Math.round((r.x - base.x) * 10) / 10, y: Math.round((r.y - base.y - (fromHead ? headEnd : 0)) * 10) / 10, w: r.w, h: r.h };
+      return r && { x: round(r.x - base.x), y: round(r.y - base.y), w: r.w, h: r.h };
     };
     const colormap = field('Colormap')?.querySelector('select');
+    const body = bar.querySelector('.insp-body');
+    const bottom = document.querySelector('.overlay.bottom .draggable');
+    const zoom = document.querySelector('.maplibregl-ctrl-zoom-in');
     return {
-      box: { w: base.w, h: base.h },
-      head: rel(box.querySelector('.vc-head'), false),
-      band: rel(field('Band')),
-      vmin: rel(field('vmin')),
-      vmax: rel(field('vmax')),
-      colormap: rel(field('Colormap')),
-      buttons: rel(box.querySelector('.vc-buttons')),
-      opacity: rel(box.querySelector('.vc-opacity')),
-      actions: rel(box.querySelector('.vc-actions')),
+      bar: base,
+      scrolls: body.scrollHeight > body.clientHeight + 1,
+      sideways: body.scrollWidth > body.clientWidth + 1,
+      row1: at(bar.querySelector('.insp-row')),
+      row2: at(bar.querySelector('.insp-row2')),
+      band: at(field('Band')),
+      vmin: at(field('vmin')),
+      vmax: at(field('vmax')),
+      colormap: at(field('Colormap')),
+      opacity: at(field('Opacity')),
+      buttons: at(bar.querySelector('.vc-buttons')),
+      display: at(heading('Display')),
+      actions: at(heading('Actions')),
       colormapLocked: colormap ? colormap.disabled : null,
       colormapTitle: field('Colormap')?.title ?? null,
-      escapes: [...box.querySelectorAll('*')].some((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.right > base.x + base.w + 1 || r.left < base.x - 1); }),
+      outside: [...bar.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.right > base.right + 1 || r.left < base.x - 1); }).map((e) => e.className || e.tagName).slice(0, 4),
+      bands: bottom ? rect(document.querySelector('.overlay.bottom')) : null,
+      block: rect(bottom),
+      zoom: zoom ? rect(zoom) : null,
+      zoomVisible: zoom ? getComputedStyle(zoom).visibility !== 'hidden' && zoom.getBoundingClientRect().width > 0 : false,
+      window: { w: window.innerWidth, h: window.innerHeight },
     };
   });
 }
 
-const KINDS = { job: resultBox, pinned: pinnedBox, search: async (page, what) => look(page, what) };
-const PARTS = ['band', 'vmin', 'vmax', 'colormap', 'buttons'];
+const KINDS = { job: async (page, what) => resultLayers(page, what), pinned: pinnedBox, search: async (page, what) => look(page, what) };
+const PLACES = ['row1', 'row2', 'band', 'vmin', 'vmax', 'colormap', 'opacity', 'buttons', 'display', 'actions'];
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// What one case has to show, whatever the picture and the kind.
+function checkCase(tag, m, vp, problems) {
+  const narrow = vp.width < 900;
+  const { bar } = m;
+  if (!narrow) {
+    if (bar.right !== vp.width) problems.push(`${tag}: the bar ends at ${bar.right}, not at the right edge (${vp.width})`);
+    if (bar.w !== BAR) problems.push(`${tag}: the bar is ${bar.w} wide, not ${BAR}`);
+    if (bar.y !== TOP) problems.push(`${tag}: the bar begins at ${bar.y}, not at ${TOP}`);
+    if (bar.bottom !== vp.height) problems.push(`${tag}: the bar ends at ${bar.bottom}, not at the foot (${vp.height})`);
+  } else {
+    if (bar.right !== vp.width || bar.x !== RAIL) problems.push(`${tag}: the sheet spans ${bar.x}…${bar.right}, not ${RAIL}…${vp.width}`);
+    if (bar.bottom !== vp.height) problems.push(`${tag}: the sheet ends at ${bar.bottom}, not at the foot (${vp.height})`);
+    if (bar.h > vp.height * 0.55 + 1) problems.push(`${tag}: the sheet is ${bar.h} high, more than 55 % of ${vp.height}`);
+  }
+  if (m.outside.length > 0) problems.push(`${tag}: outside the bar: ${m.outside.join(', ')}`);
+  if (m.sideways) problems.push(`${tag}: the bar scrolls sideways`);
+  // The bar of the selection stands in the free map, centred, and not under the bar.
+  if (!m.bands || !m.block) problems.push(`${tag}: the bar of the selection is not there`);
+  else if (!narrow) {
+    const centre = (m.bands.x + m.bands.right) / 2;
+    const free = (RAIL + bar.x) / 2;
+    if (Math.abs(centre - free) > 1.5) problems.push(`${tag}: the bottom bar is centred at ${centre}, the free map at ${free}`);
+    if (m.block.right > bar.x) problems.push(`${tag}: the bottom bar ends at ${m.block.right}, under the bar (${bar.x})`);
+    if (m.block.x < RAIL) problems.push(`${tag}: the bottom bar begins at ${m.block.x}, over the rail`);
+  } else if (m.block.bottom > bar.y + 0.5) problems.push(`${tag}: the bottom bar ends at ${m.block.bottom}, under the sheet (${bar.y})`);
+  // The zoom buttons.
+  if (!m.zoom) problems.push(`${tag}: no zoom buttons`);
+  else if (!m.zoomVisible) problems.push(`${tag}: the zoom buttons are not visible`);
+  else if (!narrow && m.zoom.right > bar.x) problems.push(`${tag}: the zoom buttons end at ${m.zoom.right}, under the bar (${bar.x})`);
+  else if (narrow && m.zoom.bottom > bar.y + 0.5) problems.push(`${tag}: the zoom buttons end at ${m.zoom.bottom}, under the sheet (${bar.y})`);
+}
+
+// A swap, the x and Esc.
+async function behaviour(browser, theme, viewport, problems) {
+  const tag = `${theme} ${viewport}`;
+  const { context, page, problems: own } = await open(browser, theme, viewport);
+  await seed(page);
+  await resultLayers(page, 'rgb');
+  await page.evaluate(() => { window.__bar = document.querySelector('aside.inspector'); });
+  const title = () => page.locator('aside.inspector .vc-title').textContent();
+  const first = await title();
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().selectLayer('R2'));
+  await settle(page);
+  const sameBar = await page.evaluate(() => window.__bar === document.querySelector('aside.inspector') && window.__bar.isConnected);
+  if (!sameBar) problems.push(`${tag}: the bar was made again for the next layer`);
+  if ((await title()) === first) problems.push(`${tag}: the title did not change with the layer`);
+  await page.locator('aside.inspector .close-x').click();
+  if ((await page.locator('aside.inspector').count()) !== 0) problems.push(`${tag}: the x did not close the bar of a layer`);
+  await resultLayers(page, 'rgb');
+  await page.keyboard.press('Escape');
+  if ((await page.locator('aside.inspector').count()) !== 0) problems.push(`${tag}: Esc did not close the bar of a layer`);
+  await seed(page);
+  await page.locator('aside.inspector .close-x').click();
+  if ((await page.locator('aside.inspector').count()) !== 0) problems.push(`${tag}: the x did not close the view of the search`);
+  await seed(page);
+  await page.keyboard.press('Escape');
+  if ((await page.locator('aside.inspector').count()) !== 0) problems.push(`${tag}: Esc did not close the view of the search`);
+  // Esc in a field is the field's.
+  await seed(page);
+  await page.locator('aside.inspector .vc-num input').first().focus();
+  await page.keyboard.press('Escape');
+  if ((await page.locator('aside.inspector').count()) !== 1) problems.push(`${tag}: Esc in a field closed the bar`);
+  problems.push(...own.map((p) => `${tag}: ${p}`));
+  await context.close();
+}
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
@@ -172,41 +259,31 @@ const PARTS = ['band', 'vmin', 'vmax', 'colormap', 'buttons'];
           await KINDS[kind](page, what);
           await settle(page);
           found[`${kind}/${what}`] = await measure(page);
-          await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${kind}_${what}_${theme}_${viewport}.png`) });
+          checkCase(`${kind}/${what} ${theme} ${viewport}`, found[`${kind}/${what}`], VIEWPORTS[viewport], problems);
+          await page.screenshot({ path: path.join(OUT, `${kind}_${what}_${theme}_${viewport}.png`) });
           problems.push(...own.map((p) => `${kind}/${what} ${theme} ${viewport}: ${p}`));
           await context.close();
         }
       }
-      const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-      for (const kind of Object.keys(KINDS)) {
-        const [rgb, band, index] = ['rgb', 'band', 'index'].map((what) => found[`${kind}/${what}`]);
-        const tag = `${kind} ${theme} ${viewport}`;
-        // 1. The form does not change with the picture.
-        for (const [name, other] of [['band', band], ['index', index]]) {
-          if (!same(rgb.box, other.box)) problems.push(`${tag}: the box is ${JSON.stringify(rgb.box)} at RGB and ${JSON.stringify(other.box)} at ${name}`);
-          for (const part of PARTS) if (!same(rgb[part], other[part])) problems.push(`${tag}: "${part}" is at ${JSON.stringify(rgb[part])} at RGB and ${JSON.stringify(other[part])} at ${name}`);
-        }
-        if (rgb.colormap === null || rgb.colormapLocked !== true || !rgb.colormapTitle) problems.push(`${tag}: the colormap of RGB is not there locked with its reason (${JSON.stringify([rgb.colormap, rgb.colormapLocked, rgb.colormapTitle])})`);
-        if (band.colormapLocked !== false) problems.push(`${tag}: the colormap of a band is locked`);
-        for (const [what, m] of [['rgb', rgb], ['band', band], ['index', index]]) if (m.escapes) problems.push(`${tag}/${what}: something is outside the box`);
-        rows.push(`${theme.padEnd(5)} ${viewport.padEnd(6)} ${kind.padEnd(7)} head ${rgb.head.h} box ${rgb.box.w} x ${rgb.box.h}   opacity row ${rgb.opacity ? 'yes' : 'no '}  actions row ${rgb.actions ? 'yes' : 'no '}`);
-      }
-      // 2. The three kinds are the same box.
-      const [job, pinned, search] = ['job', 'pinned', 'search'].map((kind) => found[`${kind}/rgb`]);
+      // The same places for every kind and every picture.
+      const reference = found['job/rgb'];
       const tag = `${theme} ${viewport}`;
-      if (viewport === 'wide' && !(job.head.h === pinned.head.h && pinned.head.h === search.head.h)) problems.push(`${tag}: the heads are ${job.head.h}, ${pinned.head.h} and ${search.head.h} high`);
-      if (viewport === 'wide' && !(job.box.h === pinned.box.h && pinned.box.h === search.box.h)) problems.push(`${tag}: the boxes are ${job.box.h}, ${pinned.box.h} and ${search.box.h} high`);
-      if (!(job.box.w === pinned.box.w && pinned.box.w === search.box.w)) problems.push(`${tag}: the boxes are ${job.box.w}, ${pinned.box.w} and ${search.box.w} wide`);
-      for (const part of ['vmin', 'vmax', 'colormap', 'buttons']) {
-        for (const [name, other] of [['pinned', pinned], ['search', search]]) {
-          if (!same(job[part], other[part])) problems.push(`${tag}: "${part}" of the job layer is at ${JSON.stringify(job[part])}, of the ${name} view at ${JSON.stringify(other[part])}`);
-        }
+      for (const [name, m] of Object.entries(found)) {
+        for (const place of PLACES) if (!same(reference[place], m[place])) problems.push(`${tag}: "${place}" of ${name} is at ${JSON.stringify(m[place])}, of job/rgb at ${JSON.stringify(reference[place])}`);
+      }
+      for (const kind of Object.keys(KINDS)) {
+        const [rgb, band] = ['rgb', 'band'].map((what) => found[`${kind}/${what}`]);
+        if (rgb.colormapLocked !== true || !rgb.colormapTitle) problems.push(`${tag}: the colormap of RGB (${kind}) is not locked with its reason (${JSON.stringify([rgb.colormapLocked, rgb.colormapTitle])})`);
+        if (band.colormapLocked !== false) problems.push(`${tag}: the colormap of a band (${kind}) is locked`);
+        const m = found[`${kind}/rgb`];
+        rows.push(`${theme.padEnd(5)} ${viewport.padEnd(6)} ${kind.padEnd(7)} bar ${m.bar.x},${m.bar.y} ${m.bar.w}x${m.bar.h}  band y${m.band.y} vmin y${m.vmin.y} vmax y${m.vmax.y} cmap y${m.colormap.y} opacity y${m.opacity.y} buttons y${m.buttons.y} actions y${m.actions.y}  bottom ${m.block ? `${m.block.x}…${m.block.right} y${m.block.y}` : '-'}  zoom ${m.zoom ? `${m.zoom.x}…${m.zoom.right}` : '-'}`);
       }
     }
+    for (const viewport of Object.keys(VIEWPORTS)) await behaviour(browser, theme, viewport, problems);
   }
   await browser.close();
   console.log(rows.join('\n'));
-  console.log(problems.length === 0 ? 'ok: one box' : `FAIL\n${problems.join('\n')}`);
+  console.log(problems.length === 0 ? 'ok: one bar' : `FAIL\n${problems.join('\n')}`);
   console.log(`screenshots: ${OUT}`);
   process.exit(problems.length === 0 ? 0 : 1);
 })();

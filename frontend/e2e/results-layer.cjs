@@ -215,6 +215,8 @@ async function run(browser, { theme, viewport }) {
       downloaded: { SYNTH_2: { tileUrl: `${location.origin}/collections/synthetic/items/SYNTH_2/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=data`, bounds: [10.2, 46.9, 10.4, 48.7], asset: 'data', minZoom: 0, maxZoom: 14 } },
     });
     useAppStore.getState().toggleSelected('SYNTH_1');
+    // The bar of the selection stands above the settings sheet of a view and, in a narrow window, over the probe: it is not what is looked at.
+    useAppStore.getState().closeSelectionBlock();
   });
   await expectColour('a view open: the open group over the ticked scene of another group', COLOURS[0]);
   await page.screenshot({ path: path.join(OUT, `view ${name}.png`) });

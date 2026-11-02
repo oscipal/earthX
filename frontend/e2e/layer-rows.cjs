@@ -72,7 +72,7 @@ async function check(browser, { theme, viewport }) {
   });
   await page.screenshot({ path: path.join(OUT, `rows ${name}.png`) });
 
-  // The view of a result at the foot of the map.
+  // The settings of a result in the bar at the right edge.
   await page.evaluate(async () => {
     const { useAppStore } = await import('/src/store.ts');
     useAppStore.getState().selectLayer('result');
@@ -84,7 +84,7 @@ async function check(browser, { theme, viewport }) {
   );
   const window = VIEWPORTS[viewport];
   if (view.x < -0.5 || view.x + view.width > window.width + 0.5 || view.y + view.height > window.height + 0.5) problems.push(`the view of the result leaves the window: ${JSON.stringify(view)}`);
-  // The foot of the map (the view of a result, the time slider, the bar of the selection) lies between the rail or
+  // The foot of the map (the time slider, the bar of the selection) lies between the rail or
   // the panel and the right edge, with the panel open and shut.
   for (const dock of ['layers', null]) {
     await page.evaluate(async (d) => (await import('/src/store.ts')).useAppStore.setState({ dock: d }), dock);

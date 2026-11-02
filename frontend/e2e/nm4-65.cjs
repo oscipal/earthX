@@ -155,13 +155,13 @@ async function check(browser, { theme, viewport }) {
   else {
     const options = await unit.locator('option').allTextContents();
     if (options.join() !== 'absolute,percentile') problems.push(`the options of the unit: ${options}`);
-    // In the label line of the field vmax, to the right of its word and no further right than its box (Otto, 1.11.2026).
+    // Inside the end of the field vmax, to the right of its word (the settings bar, UI-03a).
     const unitBox = await unit.boundingBox();
     const vmaxLabel = page.locator('.result-controls .vc-num').nth(1);
-    // The box of the word itself (the span is as wide as the field): the range of its text.
+    // The box of the word itself (the span is as wide as the column): the range of its text.
     const vmaxWord = await vmaxLabel.locator('span').evaluate((el) => { const range = document.createRange(); range.selectNodeContents(el); const r = range.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });
     const vmaxInput = await vmaxLabel.locator('input').boundingBox();
-    if (unitBox.y + unitBox.height > vmaxInput.y + 0.5) problems.push('the unit dropdown is not in the label line of vmax');
+    if (unitBox.y < vmaxInput.y - 0.5 || unitBox.y + unitBox.height > vmaxInput.y + vmaxInput.height + 0.5) problems.push('the unit dropdown is not inside the field vmax');
     if (Math.abs(unitBox.y + unitBox.height / 2 - (vmaxWord.y + vmaxWord.height / 2)) > 8) problems.push('the unit dropdown is not in the row of the word vmax');
     if (unitBox.x + unitBox.width > vmaxInput.x + vmaxInput.width + 0.5) problems.push(`the unit dropdown reaches beyond the box of vmax: ${unitBox.x + unitBox.width} against ${vmaxInput.x + vmaxInput.width}`);
     if (unitBox.x < vmaxWord.x + vmaxWord.width - 0.5) problems.push('the unit dropdown covers the word vmax');
@@ -246,22 +246,24 @@ async function check(browser, { theme, viewport }) {
       }],
     });
   });
-  await page.waitForSelector('.scene-view .vc-apply');
-  if ((await page.locator('.scene-view .vc-actions').count()) !== 0) problems.push('a layer opened from the manager has a row of buttons');
+  await page.waitForSelector('.inspector .vc-apply');
+  // A layer has the download in its actions and none of the actions of the search.
+  const actions = (await page.locator('.inspector .vc-actions > *').allTextContents()).map((t) => t.trim());
+  if (actions.join() !== '⇩ Download') problems.push(`a layer opened from the manager has the actions ${actions}`);
   if ((await page.locator('.scene-view .vc-head .close-x').count()) !== 1) problems.push('no red x in the box of the layer');
-  // The box of every layer (NM4-54 part 5): the opacity of the layer is its row under the fields.
+  // The box of every layer (NM4-54 part 5): the opacity of the layer is a row under the fields.
   if ((await page.locator('.scene-view .vc-opacity input[type="range"]').count()) !== 1) problems.push('the box of the layer has no row for its opacity');
   const children = await page.locator('.scene-view > *').evaluateAll((els) => els.map((e) => e.className.split(' ')[0]));
-  if (children.join() !== 'vc-head,vc-render,vc-opacity') problems.push(`the box of the layer holds ${children}, not the head, the fields and the opacity`);
+  if (children.join() !== 'vc-head,insp-body') problems.push(`the box of the layer holds ${children}, not the head and the body`);
   const title = await page.locator('.scene-view .vc-title').textContent();
-  if (title !== 'OPTICAL · A CROP · 2026-07-01') problems.push(`the title of the box: ${title}`);
+  if (title !== 'Optical · a crop · 2026-07-01') problems.push(`the title of the box: ${title}`);
   const boxBox = await page.locator('.scene-view').boundingBox();
   const closeBox = await page.locator('.scene-view .vc-head .close-x').boundingBox();
   if (closeBox.x + closeBox.width > boxBox.x + boxBox.width + 0.5) problems.push('the red x leaves the box');
   await shot('7-layer-box');
   await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ viewOfLayer: false }));
-  await page.waitForSelector('.scene-view .vc-actions');
-  if ((await page.locator('.scene-view .vc-actions > *').count()) < 4) problems.push('the view still open from the search lost its buttons');
+  await page.waitForSelector('.inspector .vc-actions button:has-text("Add to layers")');
+  if ((await page.locator('.inspector .vc-actions > *').count()) < 4) problems.push('the view still open from the search lost its buttons');
   await shot('8-view-open');
 
   await context.close();
