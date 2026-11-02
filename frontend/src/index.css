@@ -81,7 +81,8 @@ body {
   top: 16px;
   left: calc((100% + var(--rail-width)) / 2);
   transform: translateX(-50%);
-  width: min(560px, 90vw);
+  /* Centred on the map right of the rail: no wider than that, or a phone scrolls sideways (UI-03d, seen at 360 px). */
+  width: min(560px, calc(100vw - var(--rail-width) - 16px));
 }
 
 /* --- draggable panels --- */
@@ -672,6 +673,8 @@ body.dragging * {
 /* All colormaps: a bar over the settings or the processing panel, at the same place; under 900 px the sheet of the settings. */
 .inspector.panel.colormap-picker {
   z-index: 14;
+  /* Opaque: the processing panel under it does not show through the tint of the panels. */
+  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
 }
 .inspector .vc-back {
   flex: none;
@@ -741,10 +744,11 @@ body.dragging * {
 }
 .inspector .vc-quick > button {
   min-width: 0;
-  padding: var(--space-1) var(--space-1);
+  padding: 0 var(--space-1);
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+  overflow-wrap: normal;
 }
 .inspector .vc-quick > button.on {
   border-color: var(--accent);

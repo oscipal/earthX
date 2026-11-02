@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+import { useColormapPicker } from '../colormapPicker';
 import { useProcessingStore } from '../processingStore';
 import { inspectorKindOf } from '../inspectorKind';
 import { useAppStore } from '../store';
@@ -53,6 +54,8 @@ function Sheet({ kind, hidden }: { kind: 'view' | 'result'; hidden: boolean }) {
 export default function Inspector() {
   const kind = useAppStore(inspectorKindOf);
   const processingOpen = useProcessingStore((s) => s.open);
+  // The list of all colormaps takes the place of the bar while it is open, and gives it back as it was (UI-03d).
+  const pickerOpen = useColormapPicker((s) => s.request !== null);
   const open = kind !== null;
 
   // Esc closes nothing here: the bar is closed with its red x or "✕ Clear" only (Otto, 2.11.2026).
@@ -70,5 +73,5 @@ export default function Inspector() {
     };
   }, [open]);
 
-  return kind ? <Sheet kind={kind} hidden={processingOpen} /> : null;
+  return kind ? <Sheet kind={kind} hidden={processingOpen || pickerOpen} /> : null;
 }
