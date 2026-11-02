@@ -27,6 +27,14 @@ band tags of ``result.tif``, as ``gdalinfo -stats`` would, and over the pixels t
 marks into ``statistics`` of the band in the properties, which the map's colour scale
 is taken from. The mask is written first, so that pass reads it block by block.
 
+**Measuring steps (NM4-71, adr/0014 Nachtrag NM4-71).** A step that measures (``Operator.measures``, ``normalize`` version 4
+with a statistical method) needs numbers over the AOI before it runs. The planner ends the
+pass before it; that pass counts the bands of the step over the mask as it writes its ``float64`` work file
+(:class:`_Measure`), a local pass over that file makes the percentiles exact
+(:class:`~earthx.processing.statistics.PercentileRefinement`), and the step runs in the next pass with its numbers
+(``Operator.with_measured``). The sources are read once. The numbers are reported in the property ``earthx:normalize``. A
+work file is deleted as soon as the pass that reads it is done; ``cleanup`` does the rest after an error or a cancel.
+
 **Progress and cancel (approved F5).** ``progress(done, total)`` after every block.
 To stop, the callback raises :class:`~earthx.processing.errors.RunCancelled`; the
 core removes every file it wrote and re-raises, as it does for any other failure.
@@ -71,10 +79,11 @@ from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.export import Attachments, ExportResult, check_export, export
 from earthx.processing.mosaic import open_mosaic
 from earthx.processing.operators import REGISTRY, BandMeta, OperatorRegistry, RasterMeta
+from earthx.processing.operators.normalize import MEASURED_PROPERTY
 from earthx.processing.plan import PlannedStep, Segment, crop_window, live_steps, plan_steps, segments, stock_steps
 from earthx.processing.recipe import AppliedScaling, CropOutput, RasterOutput, Recipe, engine_versions
 from earthx.processing.source import Source, common_grid, merge_images
-from earthx.processing.statistics import BandStatistics, gdal_tags, summarize
+from earthx.processing.statistics import BandStatistics, PercentileRefinement, gdal_tags, summarize
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
 
@@ -290,6 +299,13 @@ class _Run:
         self.valid_pixels = 0
         #: Per band, over the pixels the mask marks (M4-32).
         self.statistics: list[dict[str, Any]] = []
+        #: The pass files named so far; a name is never used twice, whatever has been deleted since.
+        self.passes = 0
+        #: The parameters of each step that ran with measured numbers, by ``id`` of the recipe's step they belong to
+        #: (what lineage reads).
+        self.resolved: dict[int, Any] = {}
+        #: The report of each step that measured, in the order they ran, for the property ``earthx:normalize``.
+        self.measured: list[dict[str, Any]] = []
 
     def tick(self) -> None:
         self.done += 1
@@ -304,6 +320,12 @@ class _Run:
         for name in self.written:
             workfile_path(self.workdir, name).unlink(missing_ok=True)
 
+    def drop(self, name: str) -> None:
+        """Delete a work file that no pass reads any more."""
+        workfile_path(self.workdir, name).unlink(missing_ok=True)
+        if name in self.written:
+            self.written.remove(name)
+
     def write_pass(
         self,
         name: str,
@@ -312,7 +334,10 @@ class _Run:
         nodata: float,
         block: Callable[[Window], numpy.ma.MaskedArray],
         count_valid: bool,
+        measure: _Measure | None = None,
     ) -> None:
+        """One pass into the new file ``name``; the last pass (``count_valid``) counts the statistics of the result,
+        a pass before a measuring step counts the bands of that step (``measure``, NM4-71)."""
         with ExitStack() as files:
             # A pass that a later pass reads is stored band by band: reading one band of a pixel-interleaved
             # tile unpacks all its bands, which a per-band warp does once per band (NM4-43b). The last pass,
@@ -333,18 +358,50 @@ class _Run:
             inside_pixels = 0
             for window in _blocks(meta.width, meta.height):
                 data = _cast(block(window), dtype)
-                if mask is not None:
+                if mask is not None or measure is not None:
                     values, valid, written = _written(data, nodata)
-                    self.valid_pixels += int(valid.any(axis=0).sum())
-                    inside = mask.read(1, window=window) == 1
-                    inside_pixels += int(inside.sum())
-                    _count(values, written, inside, whole, area)
+                    if measure is not None:
+                        measure.count(values, written, window)
+                    if mask is not None:
+                        self.valid_pixels += int(valid.any(axis=0).sum())
+                        inside = mask.read(1, window=window) == 1
+                        inside_pixels += int(inside.sum())
+                        _count(values, written, inside, whole, area)
                 dst.write(numpy.ma.filled(data, nodata), window=window)
                 self.tick()
-            if mask is not None:
+            if count_valid:
                 for index, statistics in enumerate(whole, start=1):
                     dst.update_tags(index, **gdal_tags(statistics.summary(meta.width * meta.height)))
                 self.statistics = [statistics.summary(max(inside_pixels, 1)) for statistics in area]
+
+
+class _Measure:
+    """The count of the bands a measuring step needs, made in the pass that writes them (NM4-71).
+
+    The values are those the pass writes into its ``float64`` file (after :func:`_cast`): valid, finite, inside the AOI.
+    ``indices`` are the places of the bands in that file. The AOI is rasterised on the grid of that file with the rule of
+    ``mask.tif`` (``all_touched``): behind a ``grid`` step that is the grid of the result and the mask is the same,
+    before it the grid of the stock, which the mask file does not cover (plan NM4-71, Otto's decision of 01.11.2026).
+    """
+
+    def __init__(self, step: PlannedStep, meta: RasterMeta, aoi: dict) -> None:
+        self.step = step
+        self.transform = meta.transform
+        self.geometry = transform_geom("EPSG:4326", meta.crs, aoi)
+        wanted = step.operator.measures(step.params)
+        self.indices = [index for index, band in enumerate(meta.bands) if band.name in wanted]
+        self.names = [meta.bands[index].name for index in self.indices]
+        self.statistics = [BandStatistics(_INTERMEDIATE_DTYPE) for _ in self.indices]
+        self.inside_pixels = 0
+
+    def inside(self, window: Window) -> numpy.ndarray:
+        return _mask_block(self.geometry, window, self.transform) == 1
+
+    def count(self, values: numpy.ndarray, valid: numpy.ndarray, window: Window) -> None:
+        inside = self.inside(window)
+        self.inside_pixels += int(inside.sum())
+        for band, statistics in zip(self.indices, self.statistics, strict=True):
+            statistics.add(values[band][valid[band] & inside])
 
 
 def _written(data: numpy.ma.MaskedArray, nodata: float) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
@@ -416,9 +473,12 @@ def _properties(
     engine: dict[str, str],
     scenes: int,
     statistics: list[dict[str, Any]],
+    measured: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """The STAC properties of the result (§5.6): projection, bands with the statistics of the area, software,
-    lineage, honesty flag."""
+    lineage, honesty flag, and where steps measured (NM4-71) the numbers they used.
+
+    ``planned`` holds a measuring step with the numbers it ran with, so lineage names what was converted."""
     crs = CRS.from_user_input(meta.crs)
     epsg = crs.to_epsg()
     properties: dict[str, Any] = {"proj:code": f"EPSG:{epsg}"} if epsg is not None else {"proj:wkt2": crs.to_wkt()}
@@ -443,6 +503,8 @@ def _properties(
         values = [entry[key] for entry in added if key in entry]
         properties[key] = values[0] if len(values) == 1 else values
     properties["earthx:resampled"] = meta.resampled
+    if measured:
+        properties[MEASURED_PROPERTY] = measured
     return properties
 
 
@@ -498,20 +560,24 @@ def run(
             stack.enter_context(rasterio.Env(**process_gdal_options()))
             sources = _open_sources(recipe, stack)
             finest, _ = common_grid(sources)  # refuses assets that are neither one grid nor nested
-            window, transform = crop_window(
-                recipe.aoi.model_dump(mode="json"), finest.crs.to_string(), finest.transform, finest.width, finest.height
-            )
+            aoi = recipe.aoi.model_dump(mode="json")
+            window, transform = crop_window(aoi, finest.crs.to_string(), finest.transform, finest.width, finest.height)
             metas = [_source_meta(sources, finest, window, transform)]
             passes = segments(stock_steps(metas[0], planned, output.bands))
             for segment in passes:
                 metas.append(_transform_meta(metas[-1], segment.steps))
             state.total = sum(_block_count(meta) for meta in metas[1:])
+            for index, segment in enumerate(passes[1:]):
+                if (step := segment.measuring) is not None and step.operator.measure_percents(step.params):
+                    state.total += _block_count(metas[index + 1])  # the local pass that makes the percentiles exact
             # Before the passes: the last one reads the mask for the statistics of the area.
-            _write_mask(state, metas[-1], recipe.aoi.model_dump(mode="json"))
+            _write_mask(state, metas[-1], aoi)
             previous: str | None = None
             for index, segment in enumerate(passes):
                 last = index == len(passes) - 1
-                previous = _run_pass(
+                upcoming = None if last else passes[index + 1].measuring
+                measure = None if upcoming is None else _Measure(upcoming, metas[index + 1], aoi)
+                written = _run_pass(
                     state,
                     segment,
                     sources if index == 0 else None,
@@ -522,7 +588,13 @@ def run(
                     metas[index + 1],
                     output,
                     last,
+                    measure,
                 )
+                if previous is not None:
+                    state.drop(previous)  # the pass that read it is done
+                previous = written
+                if measure is not None:
+                    passes[index + 1] = _measured(state, recipe, passes[index + 1], measure, written, metas[index + 1])
             nodata = _nodata_for(output.dtype, metas[-1])
             # The honesty flag of the result is that of the bands in it, not of every band that was read (backlog 51).
             final = replace(
@@ -573,7 +645,17 @@ def run(
         path=workfile_path(workdir, RESULT_NAME),
         mask_path=workfile_path(workdir, MASK_NAME),
         meta=final,
-        properties=_properties(final, live_steps(planned, output.bands), engine, _scenes(recipe), state.statistics),
+        properties=_properties(
+            final,
+            [
+                replace(step, params=state.resolved.get(id(step.step), step.params))
+                for step in live_steps(planned, output.bands)
+            ],
+            engine,
+            _scenes(recipe),
+            state.statistics,
+            state.measured,
+        ),
         scaling=scaling,
         blocks=state.done,
         valid_pixels=state.valid_pixels,
@@ -613,7 +695,8 @@ def area_statistics(
     window's corner; the reader picks an overview there, and the values are those of that read. A coarse pixel
     of a single scene whose centre lies just past the raster's edge reads the edge value rather than nothing,
     so ``count`` and ``valid_percent`` there are a little higher than the job's. Only ``pixel`` steps: a
-    ``grid`` step changes the grid the job counts on.
+    ``grid`` step changes the grid the job counts on, and a step that measures in the run (``Operator.measures``, NM4-71) has
+    no place in the start of the chain this measures: the numbers of such a step are the result of this very count.
 
     The GDAL options are the caller's (:func:`run` enters those of `readers`).
     """
@@ -623,6 +706,11 @@ def area_statistics(
     planned = plan_steps(recipe.steps, operators)
     if any(step.operator.kind == "grid" for step in planned):
         raise UnsupportedRecipe("the area is measured for pixel steps only; a grid step changes the grid of the result")
+    if any(step.operator.measures(step.params) for step in live_steps(planned, output.bands)):
+        raise UnsupportedRecipe(
+            "the area is measured at the start of the chain, up to the step; a step that measures its numbers in the run "
+            "(normalize version 4 with a statistical method) does not belong in it"
+        )
     aoi = recipe.aoi.model_dump(mode="json")
     with ExitStack() as stack:
         sources = _open_sources(recipe, stack)
@@ -669,16 +757,26 @@ def _run_pass(
     target_meta: RasterMeta,
     output: RasterOutput,
     last: bool,
+    measure: _Measure | None = None,
 ) -> str:
-    """One pass into a new file in the work directory; returns its name."""
-    name = f"pass-{len(state.written)}.tif"
+    """One pass into a new file in the work directory; returns its name.
+
+    ``measure`` counts the bands of the step that follows while the pass writes them (NM4-71)."""
+    state.passes += 1
+    name = f"pass-{state.passes}.tif"
     dtype = output.dtype if last else _INTERMEDIATE_DTYPE
     nodata = _nodata_for(dtype, target_meta)
     if segment.kind == "grid":
         step = segment.steps[0]
         with open_workfile(state.workdir, previous) as src:
             state.write_pass(
-                name, target_meta, dtype, nodata, lambda w: step.operator.run(src, target_meta, w, step.params), last
+                name,
+                target_meta,
+                dtype,
+                nodata,
+                lambda w: step.operator.run(src, target_meta, w, step.params),
+                last,
+                measure,
             )
         return name
     if sources is not None:
@@ -686,7 +784,7 @@ def _run_pass(
         def block(w: Window) -> numpy.ma.MaskedArray:
             return _pixel_kernels(_read_block(sources, grid, window, w), segment.steps).array
 
-        state.write_pass(name, target_meta, dtype, nodata, block, last)
+        state.write_pass(name, target_meta, dtype, nodata, block, last, measure)
         return name
     with open_workfile(state.workdir, previous) as src:
 
@@ -696,5 +794,58 @@ def _run_pass(
             image = ImageData(data, bounds=bounds, crs=src.crs, band_names=[band.name for band in source_meta.bands])
             return _pixel_kernels(image, segment.steps).array
 
-        state.write_pass(name, target_meta, dtype, nodata, local_block, last)
+        state.write_pass(name, target_meta, dtype, nodata, local_block, last, measure)
     return name
+
+
+def _refine(
+    state: _Run, name: str, meta: RasterMeta, measure: _Measure, refinements: list[PercentileRefinement]
+) -> None:
+    """A local pass over the work file ``name``: the second look that makes the percentiles of the measured bands exact.
+
+    It reads only the bands of the step, one block at a time, and counts the values the pass before counted: valid (not NaN,
+    which marks a masked pixel in the file), finite, inside the AOI.
+    """
+    with open_workfile(state.workdir, name) as src:
+        for window in _blocks(meta.width, meta.height):
+            inside = measure.inside(window)
+            for index, refinement in zip(measure.indices, refinements, strict=True):
+                if refinement.needed:
+                    values = src.read(index + 1, window=window)
+                    refinement.add(values[inside & numpy.isfinite(values)])
+            state.tick()
+
+
+def _measured(state: _Run, recipe: Recipe, segment: Segment, measure: _Measure, name: str, meta: RasterMeta) -> Segment:
+    """``segment`` with its first step given the numbers measured in the pass that wrote ``name`` (NM4-71).
+
+    The count of that pass gives the minimum, maximum, count, mean and standard deviation; the percentiles are made exact
+    from the work file. The numbers go to the step (``Operator.with_measured``) and to the report of the result. A band
+    without a valid value fails the run before the second look (:class:`RecipeInvalid`, from the step).
+    """
+    step = measure.step
+    pixels = max(measure.inside_pixels, 1)
+    numbers = {
+        band: statistics.summary(pixels) for band, statistics in zip(measure.names, measure.statistics, strict=True)
+    }
+    percents = step.operator.measure_percents(step.params)
+    if percents and all(summary["count"] for summary in numbers.values()):
+        refinements = [statistics.refine_targets(percents) for statistics in measure.statistics]
+        if any(refinement.needed for refinement in refinements):
+            _refine(state, name, meta, measure, refinements)
+        else:  # every percentile lay in a bin of one value: the second look is not needed, its blocks count as done
+            for _ in _blocks(meta.width, meta.height):
+                state.tick()
+        for band, refinement in zip(measure.names, refinements, strict=True):
+            numbers[band].update({f"percentile_{percent}": value for percent, value in refinement.values().items()})
+    assert step.operator.with_measured is not None and step.operator.measured_report is not None
+    resolved = step.operator.with_measured(step.params, numbers)
+    state.resolved[id(step.step)] = resolved
+    state.measured.append(
+        {
+            "step": next(index for index, recipe_step in enumerate(recipe.steps) if recipe_step is step.step),
+            **step.operator.measured_report(resolved),
+            "exact": True,
+        }
+    )
+    return Segment(segment.kind, (replace(step, params=resolved), *segment.steps[1:]))

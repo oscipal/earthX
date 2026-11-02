@@ -384,19 +384,19 @@
               "T2"
             ]
           },
-          "step_normalize_v3": {
+          "step_normalize_v4": {
             "additionalProperties": false,
-            "description": "Rescale the values of the bands named: a fixed range, two percentiles, a z-score, or the median and the interquartile range.",
+            "description": "Rescale the values of the bands named: a fixed range, two percentiles, a z-score, or the median and the interquartile range. The job measures the numbers of the last three exactly over the AOI.",
             "properties": {
               "op": {
                 "const": "normalize"
               },
               "op_version": {
-                "const": 3
+                "const": 4
               },
               "params": {
                 "additionalProperties": false,
-                "description": "The step of version 3: ``method``, the ``bands`` it converts, and the fields of that method, all given (B10).\n\nOne model for all four methods; the fields of the others stay out (:meth:`_method`), so a recipe says exactly\nwhat its method needs.",
+                "description": "The step of version 4: ``method``, the ``bands`` it converts, and the fields of that method, all given (B10).\n\nThe fields of version 3 without ``measured``. A statistical method (``percentile``, ``zscore``, ``robust``) is not\ngiven its numbers: the job counts the bands over the AOI at full resolution and takes the exact numbers\nfrom that count (NM4-71). ``linear`` measures nothing. Only a job runs this version.",
                 "properties": {
                   "bands": {
                     "description": "Names of the bands to convert, each once; the others of the stock are left as they are.",
@@ -485,18 +485,6 @@
                     "description": "percentile: percent that becomes out_min.",
                     "title": "Low"
                   },
-                  "measured": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/$defs/step_normalize_v3__Measured"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ],
-                    "default": null,
-                    "description": "percentile, zscore, robust: the numbers of each band, measured before the run."
-                  },
                   "method": {
                     "description": "linear: a fixed range; percentile: two percentiles; zscore; robust: median and IQR.",
                     "enum": [
@@ -539,7 +527,7 @@
                   "method",
                   "bands"
                 ],
-                "title": "NormalizeParamsV3",
+                "title": "NormalizeParamsV4",
                 "type": "object"
               }
             },
@@ -552,137 +540,8 @@
             "type": "object",
             "x-earthx-kind": "pixel",
             "x-earthx-tiers": [
-              "T1",
               "T2"
             ]
-          },
-          "step_normalize_v3__BandValues": {
-            "additionalProperties": false,
-            "description": "The numbers measured for one band; which are given depends on the method (:class:`Measured`).",
-            "properties": {
-              "mean": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Mean of the band.",
-                "title": "Mean"
-              },
-              "median": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Median.",
-                "title": "Median"
-              },
-              "p25": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "First quartile.",
-                "title": "P25"
-              },
-              "p75": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Third quartile.",
-                "title": "P75"
-              },
-              "p_high": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Value at the high percentile.",
-                "title": "P High"
-              },
-              "p_low": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Value at the low percentile.",
-                "title": "P Low"
-              },
-              "stddev": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Population standard deviation.",
-                "title": "Stddev"
-              }
-            },
-            "title": "BandValues",
-            "type": "object"
-          },
-          "step_normalize_v3__Measured": {
-            "additionalProperties": false,
-            "description": "What the route of NM4-19 measured before the run, per band, and how coarsely (``factor`` 1 is exact).",
-            "properties": {
-              "bands": {
-                "additionalProperties": {
-                  "$ref": "#/$defs/step_normalize_v3__BandValues"
-                },
-                "description": "Numbers by band name.",
-                "maxProperties": 256,
-                "minProperties": 1,
-                "title": "Bands",
-                "type": "object"
-              },
-              "factor": {
-                "description": "1 when read at the resolution of the result, else how many times coarser.",
-                "maximum": 10000,
-                "minimum": 1,
-                "title": "Factor",
-                "type": "integer"
-              }
-            },
-            "required": [
-              "factor",
-              "bands"
-            ],
-            "title": "Measured",
-            "type": "object"
           },
           "step_reproject_v4": {
             "additionalProperties": false,
@@ -844,7 +703,7 @@
                   "$ref": "#/$defs/step_mask_values_v1"
                 },
                 {
-                  "$ref": "#/$defs/step_normalize_v3"
+                  "$ref": "#/$defs/step_normalize_v4"
                 },
                 {
                   "$ref": "#/$defs/step_reproject_v4"

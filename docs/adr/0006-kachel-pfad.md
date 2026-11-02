@@ -797,6 +797,31 @@ deshalb in den Anwendungs-Cache (12.3).
   gefragt; das Mosaik erscheint damit ab Kartenzoom 7,5 statt 6,5 (Frage 3, Option 1).
 - **Bitgleichheit:** siehe `adr/0014` §15 Nachtrag NM4-29.
 
+**Nachtrag NM4-29b (2026-11-01, zu #270):** Kachelgröße je Quelle im Frontend
+(`plans/querschnitt/nm4-29-kacheln-512.md` §15, §17).
+
+- **Wer welche Größe zeichnet:** Mosaik und Mosaik-Vorschau (Mosaik-Kachel mit und ohne
+  Schritte) fragen `tilesize=512`, Szene, Item-Vorschau und Ergebnis 256 px. Die Größe steht in
+  der Kachel-Vorlage; die Quelle in MapLibre liest ihr `tileSize` aus der Vorlage
+  (`frontend/src/tileSize.ts`), beides kann nicht auseinanderlaufen. Die TileJSON-Anfragen
+  nennen keine Größe.
+- **Zoomschwelle:** MapLibre fragt eine Rasterquelle auf Stufe `round(Zoom + log2(512 / tileSize))`.
+  Stufe L wird bei 512 px ab Kartenzoom L − 0,5, bei 256 px ab L − 1,5 gefragt. Das Mosaik ab z8
+  erscheint damit ab Kartenzoom 7,5 (vorher 6,5); die Einzelszenen darunter treten dort zurück,
+  und der Zoomhinweis nennt dieselbe Schwelle. `MIN_MOSAIC_ZOOM` bleibt 8.
+  Folge: Zwischen Kartenzoom 6,5 und 7,5 zeigt die Karte die Szenen unter dem Mosaik aus Stufe 7,
+  bis zu etwa 2,6-fach gestreckt (vorher höchstens etwa 1,4-fach, weil sie bei 6,5 wichen). Wer das
+  nicht will, setzt `maxZoom` der Szenen auf 8; das kostet mehr 256er-Anfragen kurz vor dem Mosaik
+  und ist eine Frage an Otto.
+- **Vorschau:** Die Mosaik-Vorschau endet eine Stufe tiefer als die Szenen-Vorschau, weil eine
+  512er-Kachel dieselbe Pixelgröße hat wie die 256er-Kachel der nächsten Stufe (Otto, 19.10.2026:
+  nie so fein wie die Daten).
+- **AOI-Zuschnitt im Browser:** Die Maske liegt im Pixelraum des geladenen Bildes, nicht in festen
+  256 px.
+- **Messung** (echter Browser, echter `tiler` des Messgeräts, NDVI-Mosaik aus 12 Szenen, 1920×1080,
+  Zoom 11,5): 77 → 24 Anfragen, letzte Kachel 22,2/24,0 → 10,7/10,8 s ohne Leitungsgrenze,
+  29,1/28,5 → 26,4/26,7 s bei 100 Mbit/s [M]. Wiedervorlage M6 (HTTP/2 bzw. CDN) bleibt.
+
 ### 5.1 Wo der Kachel-Pfad liegt — eine Modulgrenze, die auffällt
 
 Die Zusammensetzung passt **nicht** in `access`. `access` darf `gateway` nach

@@ -9,6 +9,7 @@ import { RGB, RGB_LABEL, startBand } from './processingBands';
 import { presetFor, presetRange, type IndexPreset } from './indexPresets';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, statsFrom, type ResultStats } from './render';
+import { levelAskedAt, TILE_SIZE, tileMetres } from './tileSize';
 import type { AppliedRender, Bbox } from './types';
 
 // The path of the output `tiles` (`api/processing_docs.py::TILES_HREF`), in the shape the
@@ -46,10 +47,10 @@ export function tilesHref(doc: Record<string, { href?: unknown }>): string | nul
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
 // The tile URL of a result without any style: the TileJSON's address with its last
-// two segments swapped for the tile route, 256-pixel tiles like every other source.
+// two segments swapped for the tile route, 256-pixel tiles like a scene (a mosaic's are 512, `tileSize.ts`).
 export function resultTileTemplate(href: string): string {
   if (!TILES_HREF.test(href)) throw new Error('not the tiles of a result');
-  return `${BASE}${href.replace(/WebMercatorQuad\/tilejson\.json$/, 'tiles/WebMercatorQuad/{z}/{x}/{y}')}?tilesize=256`;
+  return `${BASE}${href.replace(/WebMercatorQuad\/tilejson\.json$/, 'tiles/WebMercatorQuad/{z}/{x}/{y}')}?tilesize=${TILE_SIZE}`;
 }
 
 // --- how it is drawn --------------------------------------------------------
@@ -200,7 +201,7 @@ export function renderOfRange(range: PreviewRange): AppliedRender | null {
 }
 
 // The tile URL of a result drawn another way: its style is the part after the first `&`
-// (`resultTileTemplate` ends in `?tilesize=256`), and only that part changes. The band (`bidx`) stays unless `render` names one.
+// (`resultTileTemplate` ends in `?tilesize=…`), and only that part changes. The band (`bidx`) stays unless `render` names one.
 // The three bands of a colour picture take no colormap: the tiler refuses it.
 export function restyledTileUrl(tileUrl: string, render: AppliedRender): string {
   const amp = tileUrl.indexOf('&');
@@ -233,7 +234,7 @@ export function defaultRange(info: Pick<ResultLayerInfo, 'dataType' | 'stats' | 
 export const positive = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 
-// Metres per degree of longitude at the equator (WGS 84 sphere of `tileResolution`).
+// Metres per degree of longitude at the equator (WGS 84 sphere of `tileSize.ts::tileMetres`).
 const METRES_PER_DEGREE = 111_319.49;
 
 // The pixel size of the result in metres: the `gsd` of its properties, which the job
@@ -247,13 +248,8 @@ export function resultGsd(stated: number | null, width: number | null, bounds: B
   return positive(((east - west) / width) * METRES_PER_DEGREE * Math.cos((middle * Math.PI) / 180));
 }
 
-// Metres per pixel of a 256-pixel Web Mercator tile at `latitude` and level `zoom`.
-function tileMetres(latitude: number, zoom: number): number {
-  return (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
-}
-
 // "Overview": the tile the map asks for at this zoom is coarser than the result
-// (plan §3.3, F4 (1)). The level is the one MapLibre requests for 256-pixel tiles,
+// (plan §3.3, F4 (1)). The level is the one MapLibre requests for tiles of `tileSize` px (a result's are 256),
 // held at the result's own finest level; the latitude is the one nearest the equator
 // in view, where the tile is coarsest — so the badge stays as long as any part of the
 // view is drawn coarser than the result.
@@ -262,16 +258,17 @@ export function isOverview(args: {
   mapZoom: number;
   viewport: Bbox | null;
   maxZoom: number;
+  tileSize?: number;
 }): boolean {
-  const { gsd, mapZoom, viewport, maxZoom } = args;
+  const { gsd, mapZoom, viewport, maxZoom, tileSize = TILE_SIZE } = args;
   if (gsd === null) return false;
-  const zoom = Math.min(Math.round(mapZoom + 1), maxZoom);
+  const zoom = Math.min(levelAskedAt(mapZoom, tileSize), maxZoom);
   let latitude = 0;
   if (viewport) {
     const [, south, , north] = viewport;
     latitude = south <= 0 && north >= 0 ? 0 : Math.min(Math.abs(south), Math.abs(north));
   }
-  return tileMetres(Math.min(latitude, 89), zoom) > gsd;
+  return tileMetres(Math.min(latitude, 89), zoom, tileSize) > gsd;
 }
 
 // --- life -------------------------------------------------------------------

@@ -182,7 +182,7 @@ class TestOrderSchema:
             "#/$defs/step_coarsen_v1",
             "#/$defs/step_mask_v2",
             "#/$defs/step_mask_values_v1",
-            "#/$defs/step_normalize_v3",
+            "#/$defs/step_normalize_v4",
             "#/$defs/step_reproject_v4",
             "#/$defs/step_scale_v1",
         ]
@@ -215,9 +215,7 @@ class TestOrderSchema:
             "step_band_math_v2",
             "step_mask_v2",
             "step_mask_values_v1",
-            "step_normalize_v3",
-            "step_normalize_v3__BandValues",
-            "step_normalize_v3__Measured",
+            "step_normalize_v4",
             "step_reproject_v4",
         ]
         assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
@@ -294,14 +292,22 @@ class TestWhatThePanelReads:
         assert schema["$defs"]["step_reproject_v4"]["x-earthx-kind"] == "grid"
 
     def test_the_newest_version_of_the_bands_steps_is_offered_and_the_older_ones_are_accepted_only(self) -> None:
-        """NM4-43e: the panel builds the stock of bands (version 2); NM4-11b: it builds version 3 of `normalize` (adr/0020 §11, §13)."""
+        """NM4-43e: the panel builds the stock of bands (version 2); NM4-71: it builds version 4 of `normalize` (adr/0020 §11, §13)."""
         steps = order_schema(REAL_OPERATORS)["properties"]["steps"]["items"]["oneOf"]
         offered = sorted(entry["$ref"].rsplit("/", 1)[1] for entry in steps)
-        assert offered == ["step_band_math_v2", "step_mask_v2", "step_mask_values_v1", "step_normalize_v3", "step_reproject_v4"]
+        assert offered == [
+            "step_band_math_v2",
+            "step_mask_v2",
+            "step_mask_values_v1",
+            "step_normalize_v4",
+            "step_reproject_v4",
+        ]
         for op in ("band_math", "mask"):
             assert REAL_OPERATORS.operator(op, 2).stock and REAL_OPERATORS.operator(op, 2).listed
-        assert REAL_OPERATORS.operator("normalize", 3).stock and REAL_OPERATORS.operator("normalize", 3).listed
-        assert REAL_OPERATORS.operator("normalize", 2).stock and not REAL_OPERATORS.operator("normalize", 2).listed
+        assert REAL_OPERATORS.operator("normalize", 4).stock and REAL_OPERATORS.operator("normalize", 4).listed
+        for version in (2, 3):  # accepted: the tile, old recipes and "⚙" on a result send version 3
+            assert REAL_OPERATORS.operator("normalize", version).stock
+            assert not REAL_OPERATORS.operator("normalize", version).listed
         for op in ("band_math", "mask", "normalize"):
             assert not REAL_OPERATORS.operator(op, 1).stock and not REAL_OPERATORS.operator(op, 1).listed
 

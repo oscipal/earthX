@@ -31,7 +31,7 @@ describe('overlaysOfPass', () => {
     const overlays = rasters(overlaysOfPass('dem', entries, mosaicOf(), RENDER, AOI));
     expect(overlays).toHaveLength(3);
     expect(overlays.every((o) => o.tileUrl.startsWith('earthx-clip://'))).toBe(true);
-    expect(overlays.slice(0, 2).map((o) => [o.maxZoom, o.hideFrom])).toEqual([[7, 6.5], [7, 6.5]]);
+    expect(overlays.slice(0, 2).map((o) => [o.maxZoom, o.hideFrom])).toEqual([[7, 7.5], [7, 7.5]]);
     expect(overlays[2].tileUrl).toContain('/collections/dem/mosaic/tiles/');
     expect(overlays[2].tileUrl).toContain('colormap_name=terrain');
     expect([overlays[2].minZoom, overlays[2].maxZoom, overlays[2].hideFrom]).toEqual([8, 15, undefined]);

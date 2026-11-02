@@ -91,7 +91,14 @@ PASS = {
     )
     for name in ("A", "B")
 }
-ITEMS = {SCENE["id"]: SCENE, **{item["id"]: item for item in PASS.values()}}
+#: A scene larger than the route reads at the job's resolution: 2600 × 1900, 4.9 million pixels against 2048² (NM4-71).
+BIG_WIDTH, BIG_HEIGHT = 2600, 1900
+BIG = _item(
+    "ITEM_BIG",
+    {"red": {"href": sources.url("big_red"), "raster:bands": [_RED]}},
+    _footprint(sources.CRS, sources.ORIGIN_X, sources.ORIGIN_Y, BIG_WIDTH, BIG_HEIGHT),
+)
+ITEMS = {SCENE["id"]: SCENE, BIG["id"]: BIG, **{item["id"]: item for item in PASS.values()}}
 
 #: Inside the scene, away from its nodata corner; the box holds values the area does not (M4-32).
 AOI = sources.aoi_around(sources.ORIGIN_X + 1000, sources.ORIGIN_Y - 4800, sources.ORIGIN_X + 5000, sources.ORIGIN_Y - 1000)
@@ -161,6 +168,7 @@ def files(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     }
     for name in ("A", "B"):
         built[f"{name}_red"] = mosaic._cog(root / f"{name}.tif", name)
+    built["big_red"] = sources.build_band_cog(root / "big_red.tif", sources.ramp(BIG_WIDTH, BIG_HEIGHT, 1200))
     return built
 
 
@@ -451,11 +459,105 @@ class TestReadFailures:
         assert sources.HOST not in text and sources.HOST not in response.text
 
 
+class TestWithoutAnAoi:
+    """NM4-71: an order without ``aoi`` is measured over the union of the footprints, as the job would take it."""
+
+    def test_a_scene_inside_the_limit_is_measured_exactly_like_the_job(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        response = _post(client, _order(aoi=None))
+        assert _statistics(response) == _job_statistics(_order(aoi=None), tmp_path / "work")
+        assert response.json()["exact"] is True and response.json()["factor"] == 1
+
+    def test_a_large_scene_is_read_on_a_coarser_grid_and_says_so(self, client: TestClient) -> None:
+        document = _order(items=("ITEM_BIG",), assets=("red",), steps=[], aoi=None)
+        response = _post(client, document)
+        assert response.status_code == 200, response.text
+        answer = response.json()
+        assert answer["factor"] > 1 and answer["exact"] is False
+        assert answer["bands"][0]["statistics"]["count"] > 0
+
+    def test_the_log_of_that_measure_names_no_area(self, client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.DEBUG):
+            assert _post(client, _order(items=("ITEM_BIG",), assets=("red",), steps=[], aoi=None)).status_code == 200
+        text = " ".join(JsonFormatter().format(record) for record in caplog.records)
+        assert "area statistics measured" in text and "factor" in text
+        assert "coordinates" not in text and "Polygon" not in text and "ITEM_BIG" not in text
+
+    def test_the_key_of_the_cache_is_the_recipes_with_the_union_put_in(
+        self, client: TestClient, cache: FakeCache
+    ) -> None:
+        _post(client, _order(aoi=None))
+        _post(client, _order(aoi=None))
+        _post(client, _order())
+        assert len(cache.stored) == 2
+
+    def test_the_other_limits_stay(self, client: TestClient) -> None:
+        grid = {
+            "op": "reproject",
+            "op_version": 4,
+            "params": {"crs": "EPSG:3035", "resolution": 20.0, "resampling": "nearest"},
+        }
+        refused = _post(client, _order_v2([grid], ["red"], aoi=None))
+        assert refused.status_code == 422 and "a grid step changes the grid" in refused.json()["detail"]
+        other = _post(client, _order(dataset="another", aoi=None))
+        assert other.status_code == 422 and "another dataset" in other.json()["detail"]
+
+
+class TestAStepThatMeasuresInTheRun:
+    """``normalize`` version 4 measures in the job; the route measures the start of a chain and takes none of it (NM4-71)."""
+
+    def _step(self, method: str = "zscore") -> dict[str, Any]:
+        params = {
+            "method": method,
+            "bands": ["red"],
+            **({"low": 2, "high": 98, "out_min": 0.0, "out_max": 1.0, "clip": True} if method == "percentile" else {}),
+        }
+        return {"op": "normalize", "op_version": 4, "params": params}
+
+    @pytest.mark.parametrize("method", ["zscore", "percentile", "robust"])
+    def test_a_statistical_step_in_the_start_of_the_chain_is_a_422_with_the_reason(
+        self, client: TestClient, method: str
+    ) -> None:
+        response = _post(client, _order_v2([self._step(method)], ["red"], dtype="float64"))
+        assert response.status_code == 422, response.text
+        assert "measures its numbers in the run" in response.json()["detail"]
+
+    def test_linear_measures_nothing_and_may_stand_in_the_start(self, client: TestClient) -> None:
+        linear = {
+            "op": "normalize",
+            "op_version": 4,
+            "params": {
+                "method": "linear",
+                "bands": ["red"],
+                "in_min": 0.0,
+                "in_max": 0.5,
+                "out_min": 0.0,
+                "out_max": 1.0,
+                "clip": True,
+            },
+        }
+        response = _post(client, _order_v2([linear], ["red"], dtype="float64"))
+        assert response.status_code == 200, response.text
+        assert response.json()["exact"] is True
+
+    def test_a_step_that_the_planner_drops_is_not_in_the_chain_that_is_measured(self, client: TestClient) -> None:
+        assert _post(client, _order_v2([self._step()], ["nir"], dtype="float64")).status_code == 200
+
+    def test_numbers_in_a_step_of_version_4_are_refused_before_any_read(
+        self, client: TestClient, fetches: Fetches
+    ) -> None:
+        step = self._step()
+        step["params"]["measured"] = {"factor": 1, "bands": {"red": {"mean": 0.1, "stddev": 0.2}}}
+        response = _post(client, _order_v2([step], ["red"]))
+        assert response.status_code == 422 and "measured: extra_forbidden" in response.json()["detail"], response.text
+        assert AOI_DIGITS not in response.text and fetches.asked == []
+
+
 class TestBeforeAnyItemIsFetched:
     @pytest.mark.parametrize(
         ("document", "status", "words"),
         [
-            (_order(aoi=None), 422, "with an AOI only"),
             (_order(dataset="another"), 422, "another dataset"),
             ([1, 2], 422, "JSON object"),
             (b"{not json", 400, "not JSON"),

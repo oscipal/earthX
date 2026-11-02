@@ -8,9 +8,11 @@ from earthx.processing.operators.normalize import (
     NORMALIZE,
     NORMALIZE_V2,
     NORMALIZE_V3,
+    NORMALIZE_V4,
     NormalizeParams,
     NormalizeParamsV2,
     NormalizeParamsV3,
+    NormalizeParamsV4,
 )
 from earthx.processing.operators.registry import JSON_SCHEMA_DIALECT, REGISTRY, OperatorRegistry, applicable
 from earthx.processing.operators.reproject import (
@@ -36,11 +38,13 @@ __all__ = [
     "NORMALIZE",
     "NORMALIZE_V2",
     "NORMALIZE_V3",
+    "NORMALIZE_V4",
     "MaskParams",
     "MaskValuesParams",
     "NormalizeParams",
     "NormalizeParamsV2",
     "NormalizeParamsV3",
+    "NormalizeParamsV4",
     "REPROJECT",
     "REPROJECT_V2",
     "REPROJECT_V3",

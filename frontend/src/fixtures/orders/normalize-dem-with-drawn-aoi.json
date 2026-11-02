@@ -43,7 +43,7 @@
       "steps": [
         {
           "op": "normalize",
-          "op_version": 3,
+          "op_version": 4,
           "params": {
             "method": "linear",
             "bands": [

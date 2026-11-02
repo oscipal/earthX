@@ -152,16 +152,18 @@ describe('why an index is not drawn (indexBlockOf)', () => {
     expect(indexBlockOf(args)).toBeNull();
   });
 
-  it('is the zoom below the level the tiles start at, less the lead MapLibre has', () => {
+  it('is the zoom below the level the tiles start at, less the lead MapLibre has: half a level for the 512-px mosaic', () => {
     expect(indexBlockOf({ ...args, mapZoom: 5 })).toBe('zoom');
-    expect(indexBlockOf({ ...args, mapZoom: 6.4 })).toBe('zoom');
-    expect(indexBlockOf({ ...args, mapZoom: 6.5 })).toBeNull();
+    expect(indexBlockOf({ ...args, mapZoom: 7.4 })).toBe('zoom');
+    expect(indexBlockOf({ ...args, mapZoom: 7.5 })).toBeNull();
     expect(indexBlockOf({ ...args, mapZoom: 8 })).toBeNull();
   });
 
-  it('is the same for scenes drawn one by one: the level of the scenes', () => {
+  it('is the same for scenes drawn one by one: the level of the scenes, a level and a half ahead (256-px tiles)', () => {
     const one = entries(1, 8);
     expect(indexBlockOf({ ...args, entries: one, groups: group(one), mosaics: {}, mapZoom: 4 })).toBe('zoom');
+    expect(indexBlockOf({ ...args, entries: one, groups: group(one), mosaics: {}, mapZoom: 6.4 })).toBe('zoom');
+    expect(indexBlockOf({ ...args, entries: one, groups: group(one), mosaics: {}, mapZoom: 6.5 })).toBeNull();
     expect(indexBlockOf({ ...args, entries: one, groups: group(one), mosaics: {}, mapZoom: 9 })).toBeNull();
   });
 

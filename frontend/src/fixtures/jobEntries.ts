@@ -45,6 +45,7 @@ export function jobEntry(n: number, over: Partial<JobEntry> = {}): JobEntry {
     resampled: null,
     failure: null,
     failureKind: null,
+    normalize: null,
     error: null,
     cancelling: false,
     retrying: false,

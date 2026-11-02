@@ -120,11 +120,12 @@ describe('viewOfPass', () => {
     expect([mosaic.minZoom, mosaic.maxZoom, mosaic.hideFrom]).toEqual([8, 19, undefined]);
   });
 
-  it('steps each scene aside where the mosaic is first asked for, so a source is not overzoomed above z7', () => {
+  it('steps each scene aside where the mosaic is first asked for (7.5), and asks them for no level above z7', () => {
     const view = viewOfPass(DATASET, entries, mosaicOf(entries));
     if (view.kind !== 'mosaic') throw new Error('expected a mosaic');
+    // The mosaic's 512-px tiles of level 8 are asked for from map zoom 7.5 (a 256-px source only from 6.5, NM4-29b).
     for (const scene of view.rasters.slice(0, -1)) {
-      expect([scene.minZoom, scene.maxZoom, scene.hideFrom]).toEqual([0, 7, 6.5]);
+      expect([scene.minZoom, scene.maxZoom, scene.hideFrom]).toEqual([0, 7, 7.5]);
     }
   });
 

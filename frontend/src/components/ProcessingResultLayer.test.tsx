@@ -39,6 +39,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     resampled: false,
     failure: null,
     failureKind: null,
+    normalize: null,
     error: null,
     cancelling: false,
     retrying: false,

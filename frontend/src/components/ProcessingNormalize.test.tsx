@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// The "Normalize" step of the processing panel (NM4-11b): the methods, the measure over the AOI before the order is whole,
-// what "Review" and "Start job" say while it waits, and the locks. No backend: `fetch` answers the process description, the
-// statistics over the AOI and the estimate.
+// The "Normalize" step of the processing panel (NM4-11b, NM4-71): the methods, the job's order (version 4, no numbers), the
+// measure for the preview alone (the tile gets version 3 with the numbers), what the (i) says of it, and the locks. No backend:
+// `fetch` answers the process description, the statistics and the estimate.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -267,21 +267,32 @@ describe('the step', () => {
     expect(step().querySelectorAll('p:not(.hint-text)')).toHaveLength(0);
   });
 
-  it('sends version 3 with the fields of the fixed range and nothing measured, without a question to the route', async () => {
+
+  it('sends version 4 with the fields of the fixed range and nothing measured, without a question to the route', async () => {
     await withNormalize();
     for (const [label, value] of [['From min', '0'], ['From max', '10000'], ['Target min', '0'], ['Target max', '1']] as const) typeInto(box(label), value);
     click(button('Review'));
     await flush();
     const sent = JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps;
     expect(sent).toEqual([
-      { op: 'normalize', op_version: 3, params: { method: 'linear', bands: ['red'], in_min: 0, in_max: 10000, out_min: 0, out_max: 1, clip: false } },
+      { op: 'normalize', op_version: 4, params: { method: 'linear', bands: ['red'], in_min: 0, in_max: 10000, out_min: 0, out_max: 1, clip: false } },
     ]);
     expect(questions()).toHaveLength(0);
   });
+
+  it('tells at "Z-score" that outliers weigh, and where to go instead', async () => {
+    await withNormalize();
+    expect(tipsOf(step())).toContain('Sensitive to outliers, e.g. in indices; prefer Robust (median, IQR) there.');
+    await setMethod('zscore');
+    expect(tipsOf(step())).toContain('Sensitive to outliers, e.g. in indices; prefer Robust (median, IQR) there.');
+  });
 });
 
-describe('the measure', () => {
-  it('asks the route once for the bands over the AOI as float64, and sends the numbers in the recipe', async () => {
+describe('the measure (for the preview alone)', () => {
+  const sentSteps = () => JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps;
+  const previewSteps = () => orderView(selectionState(useAppStore.getState()), store()).built?.previewOrder?.steps;
+
+  it('asks the route once for the bands over the AOI as float64, and the order the job gets holds no numbers', async () => {
     await withNormalize();
     await setMethod('percentile');
     expect(questions()).toHaveLength(1);
@@ -291,13 +302,20 @@ describe('the measure', () => {
       steps: [],
       output: { kind: 'raster', format: 'cog', dtype: 'float64', bands: ['red'] },
     });
-    expect(step().textContent).toContain('Measured over the AOI ✓');
+    expect(step().textContent).toContain('Preview measured ✓');
     expect(tipsOf(step())).toContain('red: p_low 200, p_high 6000');
     fillTarget();
     click(button('Review'));
     await flush();
-    const sent = JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps;
-    expect(sent).toEqual([
+    expect(sentSteps()).toEqual([
+      {
+        op: 'normalize',
+        op_version: 4,
+        params: { method: 'percentile', bands: ['red'], low: 2, high: 98, out_min: 0, out_max: 1, clip: false },
+      },
+    ]);
+    // The tile gets version 3 with the numbers.
+    expect(previewSteps()).toEqual([
       {
         op: 'normalize',
         op_version: 3,
@@ -316,37 +334,42 @@ describe('the measure', () => {
   });
 
   it.each([
-    ['percentile', { p_low: 200, p_high: 6000 }],
-    ['zscore', { mean: 2000, stddev: 500 }],
-    ['robust', { p25: 1500, median: 1900, p75: 2400 }],
-  ])('%s: the numbers of each band chosen come from the answer', async (method, numbers) => {
+    ['linear', undefined, ['bands', 'clip', 'in_max', 'in_min', 'method', 'out_max', 'out_min']],
+    ['percentile', { p_low: 200, p_high: 6000 }, ['bands', 'clip', 'high', 'low', 'method', 'out_max', 'out_min']],
+    ['zscore', { mean: 2000, stddev: 500 }, ['bands', 'method']],
+    ['robust', { p25: 1500, median: 1900, p75: 2400 }, ['bands', 'method']],
+  ])('%s: the job gets version 4 without `measured`; the tile gets version 3, with the numbers of each band chosen', async (method, numbers, keys) => {
     await withNormalize({ bands: 'red, nir' });
     await setMethod(method);
-    if (method === 'percentile') fillTarget();
+    if (method === 'linear') {
+      typeInto(box('From min'), '0');
+      typeInto(box('From max'), '10000');
+    }
+    if (method === 'percentile' || method === 'linear') fillTarget();
     click(button('Review'));
     await flush();
-    const params = JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps[0].params;
-    expect(params.measured).toEqual({ factor: 1, bands: { red: numbers, nir: numbers } });
-    expect(Object.keys(params).sort()).toEqual(
-      method === 'percentile'
-        ? ['bands', 'clip', 'high', 'low', 'measured', 'method', 'out_max', 'out_min']
-        : ['bands', 'measured', 'method'],
-    );
+    const [job] = sentSteps();
+    expect(job.op_version).toBe(4);
+    expect(Object.keys(job.params).sort()).toEqual(keys);
+    const [tile] = previewSteps()!;
+    expect(tile.op_version).toBe(3);
+    if (numbers) expect(tile.params.measured).toEqual({ factor: 1, bands: { red: numbers, nir: numbers } });
+    else expect(Object.keys(tile.params).sort()).toEqual(keys);
   });
 
-  it('takes the minimum and the maximum for 0–100 %', async () => {
+  it('takes the minimum and the maximum for 0–100 % into the tile', async () => {
     await withNormalize();
     await setMethod('percentile');
     choose(rangeSelect(), '0–100 %');
     fillTarget();
+    expect(previewSteps()![0].params).toMatchObject({ low: 0, high: 100, measured: { bands: { red: { p_low: 100, p_high: 9000 } } } });
     click(button('Review'));
     await flush();
-    const params = JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps[0].params;
-    expect(params).toMatchObject({ low: 0, high: 100, measured: { bands: { red: { p_low: 100, p_high: 9000 } } } });
+    expect(sentSteps()[0].params).toMatchObject({ low: 0, high: 100 });
     expect(questions()).toHaveLength(1);
   });
 
-  it('holds "Review" and "Start job" with the reason as their tooltip while the route has not answered', async () => {
+  it('does not hold "Review" and "Start job" while the route has not answered', async () => {
     let answer!: () => void;
     const gate = new Promise<void>((resolve) => (answer = resolve));
     const before = statistics;
@@ -356,60 +379,76 @@ describe('the measure', () => {
         return before(JSON.parse(String(init!.body)));
       }
       if (url === DESCRIPTION) return json(s2);
+      if (url === '/processing/processes/recipe/estimate') return json(ESTIMATE);
       return json({}, 404);
     });
     await withNormalize();
     await setMethod('zscore');
     expect(step().textContent).toContain('Measuring…');
-    for (const label of ['Review', 'Start job']) {
-      expect(button(label).disabled).toBe(true);
-      expect(button(label).title).toBe('Normalize: measuring the bands…');
-    }
+    expect(button('Review').disabled).toBe(false);
+    expect(button('Review').title).not.toContain('measuring');
+    expect(button('Start job').title).not.toContain('measuring');
     click(button('Review'));
-    expect(estimates()).toHaveLength(0);
+    await flush();
+    expect(estimates()).toHaveLength(1);
+    expect(sentSteps()).toEqual([{ op: 'normalize', op_version: 4, params: { method: 'zscore', bands: ['red'] } }]);
+    expect(button('Start job').disabled).toBe(false);
     answer();
     await flush();
     expect(step().textContent).not.toContain('Measuring…');
-    expect(button('Review').disabled).toBe(false);
-    expect(button('Review').title).not.toContain('measuring');
   });
 
-  it('says that the measurement failed, with the reason of the route, and asks again on "Retry"', async () => {
+  it('says at the step that the measurement failed, with the reason of the route, asks again on "Retry", and holds nothing back', async () => {
     statistics = () => json({ detail: 'The area is too large to measure.' }, 422);
     await withNormalize();
     await setMethod('zscore');
     expect(step().textContent).toContain('Not measured.');
-    expect(button('Review').disabled).toBe(true);
-    expect(button('Review').title).toMatch(/^Normalize: the measurement failed: .*The area is too large to measure\./u);
-    expect(button('Start job').title).toBe(button('Review').title);
+    expect(tipsOf(step())).toMatch(/The measurement failed: .*The area is too large to measure\./u);
+    expect(button('Review').disabled).toBe(false);
+    click(button('Review'));
+    await flush();
+    expect(estimates()).toHaveLength(1);
+    expect(button('Start job').disabled).toBe(false);
     expect(questions()).toHaveLength(1);
+    // The tile has no numbers, so the map ends before the step.
+    expect(previewSteps()).toBeUndefined();
     statistics = (body) => json({ bands: body.output.bands.map((name) => ({ name, unit: null, statistics: STATISTICS })), exact: true, factor: 1 });
     click(button('Retry'));
     await flush();
     expect(questions()).toHaveLength(2);
-    expect(step().textContent).toContain('Measured over the AOI ✓');
-    expect(button('Review').disabled).toBe(false);
+    expect(step().textContent).toContain('Preview measured ✓');
+    expect(previewSteps()).toHaveLength(1);
   });
 
-  it('names the bands that have no valid value over the AOI, and does not wait', async () => {
+  it('names the bands that have no valid value, without "Retry", and the job is still sent (it fails with its reason)', async () => {
     statistics = (body) => json({ bands: body.output.bands.map((name) => ({ name, unit: null, statistics: { count: 0, valid_percent: 0 } })), exact: true, factor: 1 });
     await withNormalize();
     await setMethod('zscore');
-    expect(step().textContent).toContain('No valid values over the AOI in red.');
+    expect(step().textContent).toContain('Not measured.');
+    expect(tipsOf(step())).toContain('No valid values in red to measure.');
+    expect([...step().querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Retry');
     expect(button('Review').disabled).toBe(false);
     click(button('Review'));
     await flush();
-    expect(estimates()).toHaveLength(0);
+    expect(estimates()).toHaveLength(1);
   });
 
-  it('says a coarser read in the tooltip of the numbers and carries the factor into the recipe', async () => {
-    statistics = (body) => json({ bands: body.output.bands.map((name) => ({ name, unit: null, statistics: STATISTICS })), exact: false, factor: 3 });
+  it.each([
+    [false, 3, 'Preview estimated on a coarser read; the job measures exactly.'],
+    [true, 1, 'Preview measured exactly over the AOI.'],
+  ])('says behind the (i) what the route read, exact %s', async (exact, factor, note) => {
+    statistics = (body) => json({ bands: body.output.bands.map((name) => ({ name, unit: null, statistics: STATISTICS })), exact, factor });
     await withNormalize();
     await setMethod('zscore');
-    expect(tipsOf(step())).toContain('3 times coarser');
+    expect(tipsOf(step())).toContain(note);
+    expect(tipsOf(step()).includes('coarser')).toBe(!exact);
+    // A line of text beside the (i) there is none.
+    expect(step().textContent).not.toContain(note);
+    // The factor goes into the tile; the job measures exactly itself.
+    expect(previewSteps()![0].params.measured).toMatchObject({ factor });
     click(button('Review'));
     await flush();
-    expect(JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps[0].params.measured.factor).toBe(3);
+    expect(JSON.stringify(sentSteps())).not.toContain('measured');
   });
 
   it('measures again when the AOI, the bands, the scene or a step before the step changes, and not otherwise', async () => {
@@ -446,7 +485,7 @@ describe('the measure', () => {
     expect(questions().at(-1).steps.map((s: { op: string }) => s.op)).toEqual(['mask_values']);
   });
 
-  it('measures a second step on the first one, after the first has its numbers', async () => {
+  it('measures a second step on the first one as the tile takes it (version 3 with its numbers); the job gets version 4 for both', async () => {
     await withNormalize();
     await setMethod('zscore');
     click(button('＋ Normalize'));
@@ -456,11 +495,11 @@ describe('the measure', () => {
     await flush();
     expect(questions()).toHaveLength(2);
     expect(questions()[1].steps.map((s: { op: string }) => s.op)).toEqual(['normalize']);
-    expect(questions()[1].steps[0].params.measured.bands.red).toEqual({ mean: 2000, stddev: 500 });
+    expect(questions()[1].steps[0]).toMatchObject({ op_version: 3, params: { measured: { bands: { red: { mean: 2000, stddev: 500 } } } } });
     click(button('Review'));
     await flush();
-    const sent = JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps;
-    expect(sent.map((s: { params: { method: string } }) => s.params.method)).toEqual(['zscore', 'robust']);
+    expect(sentSteps().map((s: { op_version: number; params: { method: string } }) => [s.op_version, s.params.method])).toEqual([[4, 'zscore'], [4, 'robust']]);
+    expect(JSON.stringify(sentSteps())).not.toContain('measured');
   });
 
   it('puts the AOI into no address: the questions are POSTs to the dataset, with the AOI in the body only', async () => {
@@ -475,12 +514,13 @@ describe('the measure', () => {
     expect(JSON.stringify(questions()[0])).toContain('50.4');
   });
 
-  it('has the same question in the view as the one asked', async () => {
+  it('has the same question in the view as the one asked, and nothing that holds the order back', async () => {
     const key = await withNormalize();
     await setMethod('zscore');
     const view = orderView(selectionState(useAppStore.getState()), store());
     expect(view.needs.map((need) => need.body)).toEqual(questions());
-    expect(view.measureBlock).toBeNull();
+    expect(view.built?.order).not.toBeNull();
+    expect(view).not.toHaveProperty('measureBlock');
     expect(store().steps[0].key).toBe(key);
   });
 });
@@ -493,7 +533,7 @@ describe('the preview', () => {
     await flush();
   };
 
-  it('draws the step with the numbers measured, takes no part of it before, and puts the AOI into no tile address', async () => {
+  it('draws the step with the numbers measured as version 3, takes no part of it before, and puts the AOI into no tile address', async () => {
     await withNormalize();
     vi.useFakeTimers();
     try {
@@ -515,6 +555,24 @@ describe('the preview', () => {
     }
   });
 
+  it('draws the fixed range as version 3 with the same fields, without asking the route', async () => {
+    await withNormalize();
+    vi.useFakeTimers();
+    try {
+      typeInto(box('From min'), '0');
+      typeInto(box('From max'), '10000');
+      await afterDebounce();
+      const url = new URL(store().preview!.scenes[0].url, 'http://localhost');
+      expect(url.searchParams.getAll('op_version')).toEqual(['3']);
+      expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ method: 'linear', bands: ['red'], in_min: 0, in_max: 10000, out_min: 0, out_max: 1, clip: false });
+      // No question for numbers; the range of the picture over the AOI (NM4-19) is asked on the order as the route takes it, version 3.
+      expect(questions().filter((q) => q.output.dtype === 'float64')).toEqual([]);
+      for (const q of questions()) expect(q.steps.map((s: { op_version: number }) => s.op_version)).toEqual([3]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('shows nothing while the numbers are missing, and says why', async () => {
     statistics = () => json({ detail: 'The area is too large to measure.' }, 422);
     await withNormalize();
@@ -527,6 +585,61 @@ describe('the preview', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('without an AOI', () => {
+  it('lets the methods that measure be chosen, and asks the route for the whole scenes: the body holds no AOI', async () => {
+    await withNormalize({ area: 'scene', aoi: null });
+    expect([...methodSelect().options].map((o) => [o.value, o.disabled])).toEqual([
+      ['linear', false],
+      ['percentile', false],
+      ['zscore', false],
+      ['robust', false],
+    ]);
+    expect(tipsOf(step())).not.toContain('Draw an AOI');
+    await setMethod('zscore');
+    expect(questions()).toHaveLength(1);
+    expect(questions()[0]).not.toHaveProperty('aoi');
+    expect(questions()[0]).toMatchObject({ steps: [], output: { dtype: 'float64', bands: ['red'] } });
+    expect(step().textContent).toContain('Preview measured ✓');
+  });
+
+  it('sends the job without an AOI and without numbers, and says the preview is an estimate where the route says so', async () => {
+    statistics = (body) => json({ bands: body.output.bands.map((name) => ({ name, unit: null, statistics: STATISTICS })), exact: false, factor: 6 });
+    await withNormalize({ area: 'scene', aoi: null });
+    await setMethod('robust');
+    expect(tipsOf(step())).toContain('Preview estimated on a coarser read; the job measures exactly.');
+    expect(button('Review').disabled).toBe(false);
+    click(button('Review'));
+    await flush();
+    const recipe = JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe;
+    expect(recipe).not.toHaveProperty('aoi');
+    expect(recipe.steps).toEqual([{ op: 'normalize', op_version: 4, params: { method: 'robust', bands: ['red'] } }]);
+  });
+
+  it('puts nothing of an area into an address', async () => {
+    await withNormalize({ area: 'scene', aoi: null });
+    await setMethod('percentile');
+    click(button('Review'));
+    await flush();
+    for (const [url] of fetchMock.mock.calls) expect(String(url)).not.toMatch(/aoi|coordinates|50\.4/u);
+  });
+
+  it('measures the whole scenes when the AOI goes away, and does not hold the order back', async () => {
+    await withNormalize();
+    await setMethod('zscore');
+    expect(questions()).toHaveLength(1);
+    act(() => useAppStore.setState({ aoi: null }));
+    store().setArea('scene');
+    await flush();
+    expect(questions()).toHaveLength(2);
+    expect(questions()[1]).not.toHaveProperty('aoi');
+    expect(step().textContent).not.toContain('Draw an AOI');
+    expect(button('Review').disabled).toBe(false);
+    click(button('Review'));
+    await flush();
+    expect(estimates()).toHaveLength(1);
   });
 });
 
@@ -549,70 +662,33 @@ describe('several jobs (Run as)', () => {
     await setMethod('zscore');
   }
 
-  it('measures each job over its own scene, in the recipe of that job', async () => {
+  it('measures only the area shown, one question however many jobs, and every job gets version 4 without numbers', async () => {
     statistics = (body) => json({ bands: bandsOf(body as never, sceneOf(body as never)), exact: true, factor: 1 });
     await withScenes();
-    expect(questions().map(sceneOf).sort()).toEqual(['S1', 'S2', 'S3']);
+    expect(questions()).toHaveLength(1);
+    expect(['S1', 'S2', 'S3']).toContain(sceneOf(questions()[0]));
     expect(button('Review').disabled).toBe(false);
     click(button('Review'));
     await flush();
     const sent = estimates().map(([, init]) => JSON.parse(String(init.body)).inputs.recipe);
-    expect(sent.map((r) => [sceneOf(r), r.steps[0].params.measured.bands.red.mean]).sort()).toEqual([
-      ['S1', 1000],
-      ['S2', 2000],
-      ['S3', 3000],
-    ]);
+    expect(sent.map((r) => sceneOf(r)).sort()).toEqual(['S1', 'S2', 'S3']);
+    for (const recipe of sent) expect(recipe.steps).toEqual([{ op: 'normalize', op_version: 4, params: { method: 'zscore', bands: ['red'] } }]);
+    expect(questions()).toHaveLength(1);
   });
 
-  it('holds all jobs while one is measured, and names the job whose measurement failed, with "Retry"', async () => {
-    statistics = (body) =>
-      sceneOf(body as never) === 'S2'
-        ? json({ detail: 'The area is too large to measure.' }, 422)
-        : json({ bands: bandsOf(body as never, sceneOf(body as never)), exact: true, factor: 1 });
+  it('holds no job back when the measurement of the shown area fails, and says it at the step with "Retry"', async () => {
+    statistics = () => json({ detail: 'The area is too large to measure.' }, 422);
     await withScenes();
-    expect(questions()).toHaveLength(3);
-    expect(button('Review').disabled).toBe(true);
-    expect(button('Review').title).toMatch(/^S2: Normalize: the measurement failed: .*The area is too large to measure\./u);
-    expect(button('Start 3 jobs').title).toBe(button('Review').title);
+    expect(questions()).toHaveLength(1);
+    expect(button('Review').disabled).toBe(false);
+    expect(button('Start 3 jobs').title).not.toContain('measurement');
     expect(step().textContent).toContain('Not measured.');
-    expect(tipsOf(step())).toContain('S2: The measurement failed');
+    expect(tipsOf(step())).toContain('The measurement failed');
     statistics = (body) => json({ bands: bandsOf(body as never, sceneOf(body as never)), exact: true, factor: 1 });
     click(button('Retry'));
     await flush();
-    // Only the failed question is asked again.
-    expect(questions()).toHaveLength(4);
-    expect(button('Review').disabled).toBe(false);
-  });
-
-  it('asks a few at a time, as the estimates are', async () => {
-    let running = 0;
-    let most = 0;
-    const waiters: Array<() => void> = [];
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-      if (url === DESCRIPTION) return json(s2);
-      if (url === STATISTICS_ROUTE) {
-        const body = JSON.parse(String(init!.body));
-        running += 1;
-        most = Math.max(most, running);
-        await new Promise<void>((resolve) => waiters.push(resolve));
-        running -= 1;
-        return json({ bands: bandsOf(body, sceneOf(body)), exact: true, factor: 1 });
-      }
-      return json({}, 404);
-    });
-    select(Array.from({ length: 6 }, (_, i) => scene(`S${i + 1}`)));
-    await openPanel();
-    store().setArea('aoi');
-    store().setRunAs('scene');
-    click(button('＋ Normalize'));
-    store().updateStep(store().steps[0].key, 'bands', 'red');
-    await setMethod('zscore');
-    for (let i = 0; i < 12 && waiters.length < 6; i++) {
-      waiters.splice(0).forEach((resolve) => resolve());
-      await flush();
-    }
-    expect(most).toBeLessThanOrEqual(4);
-    expect(most).toBeGreaterThan(1);
+    expect(questions()).toHaveLength(2);
+    expect(step().textContent).toContain('Preview measured ✓');
   });
 });
 
@@ -626,23 +702,45 @@ describe('a recipe.json that is loaded', () => {
     });
   const load = (text: string) => act(() => useProcessingStore.getState().loadRecipe(text));
 
-  it('does not take the numbers it holds: the panel measures for the selection in front of it', async () => {
+  it('takes a statistical step of version 3 as version 4 without its numbers: the job measures', async () => {
     select([scene('S2B_A')]);
     await openPanel();
     const stale = { factor: 1, bands: { red: { mean: 1, stddev: 2 } } };
     const result = await load(recipe({ op: 'normalize', op_version: 3, params: { method: 'zscore', bands: ['red'], measured: stale } }));
-    expect(result).toEqual({ ok: true, notes: [] });
-    expect(store().steps[0]).toMatchObject({ op: 'normalize', opVersion: 3, values: { method: 'zscore', bands: 'red' } });
+    expect(result).toEqual({ ok: true, notes: ['Step 1 (normalize): version 3 is taken as version 4.'] });
+    expect(store().steps[0]).toMatchObject({ op: 'normalize', opVersion: 4, values: { method: 'zscore', bands: 'red' } });
     expect(JSON.stringify(store().steps)).not.toContain('stddev');
-    // The file leaves the area alone: whole scene, so the method waits for an AOI, and nothing is asked.
-    expect(questions()).toHaveLength(0);
-    store().setArea('aoi');
+    // The file leaves the area alone: whole scene. The preview is measured over the whole scenes, without an AOI.
     await flush();
     expect(questions()).toHaveLength(1);
+    expect(questions()[0]).not.toHaveProperty('aoi');
+    store().setArea('aoi');
+    await flush();
+    expect(questions()).toHaveLength(2);
     click(button('Review'));
     await flush();
-    const params = JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps[0].params;
-    expect(params.measured).toEqual({ factor: 1, bands: { red: { mean: 2000, stddev: 500 } } });
+    const params = JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps[0];
+    expect(params).toEqual({ op: 'normalize', op_version: 4, params: { method: 'zscore', bands: ['red'] } });
+  });
+
+  it('takes version 3 with the fixed range as version 4 with the same numbers', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    const fixed = { method: 'linear', bands: ['red'], in_min: 0, in_max: 10000, out_min: 0, out_max: 1, clip: true };
+    const result = await load(recipe({ op: 'normalize', op_version: 3, params: fixed }));
+    expect(result).toEqual({ ok: true, notes: ['Step 1 (normalize): version 3 is taken as version 4.'] });
+    click(button('Review'));
+    await flush();
+    expect(JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps[0]).toEqual({ op: 'normalize', op_version: 4, params: fixed });
+    expect(questions()).toHaveLength(0);
+  });
+
+  it('takes a file with version 4 as it is, without a note', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    const result = await load(recipe({ op: 'normalize', op_version: 4, params: { method: 'robust', bands: ['red'] } }));
+    expect(result).toEqual({ ok: true, notes: [] });
+    expect(store().steps[0]).toMatchObject({ opVersion: 4, values: { method: 'robust', bands: 'red' } });
   });
 
   it('takes a file with version 2 as the fixed range with the same numbers, and says so', async () => {
@@ -651,8 +749,8 @@ describe('a recipe.json that is loaded', () => {
     const result = await load(
       recipe({ op: 'normalize', op_version: 2, params: { bands: ['red'], in_min: 0, in_max: 10000, out_min: 0, out_max: 1, clip: true } }),
     );
-    expect(result).toEqual({ ok: true, notes: ['Step 1 (normalize): version 2 is taken as version 3.'] });
-    expect(store().steps[0]).toMatchObject({ opVersion: 3, values: { method: 'linear', in_min: '0', in_max: '10000', out_min: '0', out_max: '1', clip: true } });
+    expect(result).toEqual({ ok: true, notes: ['Step 1 (normalize): version 2 is taken as version 4.'] });
+    expect(store().steps[0]).toMatchObject({ opVersion: 4, values: { method: 'linear', in_min: '0', in_max: '10000', out_min: '0', out_max: '1', clip: true } });
     expect(methodSelect().value).toBe('linear');
     expect(box('From max').value).toBe('10000');
     store().setArea('aoi');
@@ -660,48 +758,25 @@ describe('a recipe.json that is loaded', () => {
     await flush();
     expect(JSON.parse(String(estimates().at(-1)![1].body)).inputs.recipe.steps[0]).toEqual({
       op: 'normalize',
-      op_version: 3,
+      op_version: 4,
       params: { method: 'linear', bands: ['red'], in_min: 0, in_max: 10000, out_min: 0, out_max: 1, clip: true },
     });
     expect(questions()).toHaveLength(0);
   });
 
-  it('refuses a method the panel does not know, with the step named', async () => {
+  it('refuses a method the panel does not know, and numbers in version 4, with the step named', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    const result = await load(recipe({ op: 'normalize', op_version: 3, params: { method: 'median', bands: ['red'] } }));
-    expect(result).toMatchObject({ ok: false });
-    expect(JSON.stringify(result)).toContain('Step 1 (normalize)');
+    const unknown = await load(recipe({ op: 'normalize', op_version: 4, params: { method: 'median', bands: ['red'] } }));
+    expect(unknown).toMatchObject({ ok: false });
+    expect(JSON.stringify(unknown)).toContain('Step 1 (normalize)');
+    const numbers = await load(recipe({ op: 'normalize', op_version: 4, params: { method: 'zscore', bands: ['red'], measured: { factor: 1, bands: {} } } }));
+    expect(numbers).toMatchObject({ ok: false });
+    expect(JSON.stringify(numbers)).toContain('unknown parameter measured');
   });
 });
 
 describe('the locks', () => {
-  it('has no method that measures without an AOI: the options are off, with the reason, and a step that holds one says so', async () => {
-    await withNormalize({ area: 'scene', aoi: null });
-    const options = [...methodSelect().options];
-    expect(options.map((o) => [o.value, o.disabled])).toEqual([
-      ['linear', false],
-      ['percentile', true],
-      ['zscore', true],
-      ['robust', true],
-    ]);
-    expect(tipsOf(step())).toContain('Draw an AOI; the values are measured over it');
-    expect(questions()).toHaveLength(0);
-  });
-
-  it('turns off the options for an AOI that is gone, and tells a step that has one chosen', async () => {
-    await withNormalize();
-    await setMethod('zscore');
-    act(() => useAppStore.setState({ aoi: null }));
-    store().setArea('scene');
-    await flush();
-    expect(step().textContent).toContain('Draw an AOI; the values are measured over it');
-    expect(button('Review').disabled).toBe(false);
-    click(button('Review'));
-    await flush();
-    expect(estimates()).toHaveLength(0);
-  });
-
   it('turns off the options after a reprojection, with the reason, and measures above it', async () => {
     await withNormalize();
     click(button(/＋ Reproject/u));
@@ -712,5 +787,15 @@ describe('the locks', () => {
     expect([...methodSelect(1).options].map((o) => o.disabled)).toEqual([false, true, true, true]);
     expect(tipsOf(step(1))).toContain('Move Normalize above Reproject; the values are measured before a reprojection');
     expect(questions()).toHaveLength(0);
+  });
+
+  it('keeps a step that holds a method after a reprojection out of the order, with the reason at the method', async () => {
+    await withNormalize();
+    await setMethod('zscore');
+    click(button(/＋ Reproject/u));
+    store().moveStep(store().steps[1].key, -1);
+    await flush();
+    expect(tipsOf(step(1))).toContain('Move Normalize above Reproject');
+    expect(orderView(selectionState(useAppStore.getState()), store()).built?.order).toBeNull();
   });
 });

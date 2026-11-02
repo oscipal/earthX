@@ -20,6 +20,7 @@ import { useMemo } from 'react';
 
 import { previewOverlays, previewTitle } from '../processingPreview';
 import { isOverview } from '../resultLayer';
+import { tileSizeOf } from '../tileSize';
 import { clipAoiOf, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import { zoomInTo } from '../zoomHint';
@@ -49,7 +50,7 @@ export default function PreviewBadge() {
       !l.result.expired &&
       !l.result.deleted &&
       l.overlays.some(
-        (o) => o.kind === 'raster' && isOverview({ gsd: l.result?.gsd ?? null, mapZoom, viewport, maxZoom: o.maxZoom }),
+        (o) => o.kind === 'raster' && isOverview({ gsd: l.result?.gsd ?? null, mapZoom, viewport, maxZoom: o.maxZoom, tileSize: tileSizeOf(o.tileUrl) }),
       ),
   );
   // A layer or the preview of the panel that starts at a level above this zoom: the map says so, instead of nothing.

@@ -117,7 +117,6 @@ import {
   isArea,
   clipArea,
   measuredNumbers,
-  worstMeasure,
   lonelyBand,
   maskAssetOf,
   maskLayerOf,
@@ -172,7 +171,7 @@ import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
-import { startValues, type Measured } from './normalizeMethods';
+import { isStatistical, measuredFromRuns, normalizeRuns, startValues, type Measured, type Method, type NormalizeRun } from './normalizeMethods';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import { datesOfIds, knownItems } from './layerDate';
 import { resamplingParts } from './resamplingWarning';
@@ -222,8 +221,11 @@ export interface FixedResult {
   // What the process description made of the steps (an older version taken as the listed one).
   notes: string[];
   // The numbers the locked steps measured when the job ran, by step key: they keep them, the result is an entity of its own
-  // (NM4-11b, adr/0019 Nachtrag NM4-05b). Steps added later measure for the area they are given.
+  // (NM4-11b, adr/0019 Nachtrag NM4-05b). From `earthx:normalize` of the result, else from the copy of the order. Steps added later
+  // measure for the area they are given.
   measured: Record<number, Measured>;
+  // The locked statistical steps of a result that has `earthx:normalize` but no numbers for them: they measure anew in the run (NM4-71).
+  anew: number[];
 }
 
 // Scenes fetched one by one because a layer or the full-resolution view names them
@@ -297,6 +299,9 @@ export interface JobEntry extends ShelfJob {
   // The bands of the raster in the order of the file, each with its statistics, for the colour scale of the layer
   // (NM4-43e PR 2); empty until the results are read, and for a result from before the bands were named.
   bands: ResultBand[];
+  // `earthx:normalize` of the result: the measuring steps that ran, with their numbers (NM4-71); `null` until the results are read,
+  // and for a result from before the property.
+  normalize: NormalizeRun[] | null;
 }
 
 // The jobs of one batch (M4-13c-4) are one entry of the manager (UI-01 §6.10).
@@ -542,10 +547,8 @@ export interface OrderView {
   output: string[];
   // Why steps, "Review" and "Start job" wait: a name field holds a name that breaks a rule. `null` for none.
   nameBlock: string | null;
-  // Why "Review" and "Start job" wait: a statistical `normalize` step has no numbers yet, or its measurement failed (NM4-11b, KE2).
-  // `needs` are the questions the orders of all jobs need answered.
-  measureBlock: string | null;
-  // Where each statistical `normalize` step stands over all jobs (`worstMeasure`), by step index; `undefined` for the other steps.
+  // Where the preview's measure of each statistical `normalize` step stands, by step index; `undefined` for the other steps. It holds
+  // nothing back: the job measures itself (NM4-71). It is for the shown order (the first job of a batch); `needs` are its questions.
   measures: Array<MeasureStatus | undefined>;
   needs: MeasureNeed[];
   // The assets the order reads or the preview needs: those of the output, of the expressions, of `normalize` and the layer
@@ -665,13 +668,7 @@ function clipToResult(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon, fixed: Fixed,
 const keptOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlyMap<number, Measured> | undefined =>
   p.fixed?.result ? new Map(Object.entries(p.fixed.result.measured).map(([key, measured]) => [Number(key), measured])) : undefined;
 
-// Why "Review" and "Start job" wait for a measure: a failure first, else the first that runs; of several jobs the one that is not done.
-function measureBlockOf(parts: ReadonlyArray<{ unit: BatchUnit; built: BuiltOrder | null }>, several: boolean): string | null {
-  const waiting = parts.filter((part) => part.built?.waiting);
-  const part = waiting.find((w) => w.built!.waiting!.includes('failed')) ?? waiting[0];
-  if (!part) return null;
-  return several ? `${part.unit.label}: ${part.built!.waiting}` : part.built!.waiting;
-}
+const anewOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlySet<number> | undefined => (p.fixed?.result ? new Set(p.fixed.result.anew) : undefined);
 
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
   const scenes = withExtraScenes(selection, p.extraScenes);
@@ -760,14 +757,15 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     extraIds.has(item.id) ? (p.extraScenes?.datasetId ?? null) : (selection.openSectionId ?? selection.datasetId);
   const foreign = dataset ? foreignScenes(dataset.id, pass?.items ?? [], foundUnder) : [];
   const outside = inner && drawn !== null && clipped === null;
-  const buildFor = (itemIds: string[]): BuiltOrder | null => {
+  // Only the first order is the one the preview shows and measures for; the other orders of a batch measure in their own run.
+  const buildFor = (itemIds: string[], shown: boolean): BuiltOrder | null => {
     if (!info || !dataset) return null;
-    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info, measures: p.measures, kept: keptOf(p) });
-    if (outside) return { ...result, order: null, problems: [...result.problems, OUTSIDE_TEXT] };
-    return foreign.length === 0 ? result : { ...result, order: null, problems: [...result.problems, foreignReason(foreign)] };
+    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info, measures: p.measures, kept: keptOf(p), anew: anewOf(p), shown });
+    if (outside) return { ...result, order: null, previewOrder: null, problems: [...result.problems, OUTSIDE_TEXT] };
+    return foreign.length === 0 ? result : { ...result, order: null, previewOrder: null, problems: [...result.problems, foreignReason(foreign)] };
   };
-  const builtParts = units.map((unit) => ({ unit, built: buildFor(unit.items.map((i) => i.id)) }));
-  const built = builtParts[0]?.built ?? buildFor([]);
+  const builtParts = units.map((unit, index) => ({ unit, built: buildFor(unit.items.map((i) => i.id), index === 0) }));
+  const built = builtParts[0]?.built ?? buildFor([], true);
   const parts: OrderPart[] = builtParts.map(({ unit, built: b }) => ({ unit, order: b?.order ?? null }));
   // The text of the order, or of all orders of a batch: one serialisation either way.
   const key =
@@ -803,11 +801,8 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     maskHidden: from !== null && maskLayer !== null && !kept.has(maskLayer.band),
     output,
     nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames, hidden, from?.locked ?? 0),
-    measureBlock: measureBlockOf(builtParts, runAs !== 'one'),
-    measures: p.steps.map((_, index) =>
-      worstMeasure(builtParts.map(({ unit, built: b }) => ({ label: unit.label, status: b?.stepProblems[index]?.measure })), runAs !== 'one'),
-    ),
-    needs: [...new Map(builtParts.flatMap((part) => part.built?.needs ?? []).map((need) => [need.key, need])).values()],
+    measures: p.steps.map((_, index) => built?.stepProblems[index]?.measure),
+    needs: built?.needs ?? [],
     assets,
     maskLayer,
     maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
@@ -1055,6 +1050,23 @@ export function orderRetired(job: JobEntry, descriptions: Record<string, Descrip
   return description?.state === 'error' && description.retired !== undefined;
 }
 
+// The numbers the locked statistical steps of a result keep (NM4-71): those its job wrote to `earthx:normalize`, by the index of the
+// step; else those of the copy of its order, a step of version 3 that carried them and so measured nothing (and a result from
+// before NM4-71, which lacks the property). A step of version 4 without numbers for it or one of its bands measures anew.
+function lockedNumbers(draft: Draft, runs: readonly NormalizeRun[] | null): { measured: Record<number, Measured>; anew: number[] } {
+  const measured: Record<number, Measured> = {};
+  const anew: number[] = [];
+  draft.steps.forEach((step, index) => {
+    const method = step.values.method;
+    if (step.op !== 'normalize' || !isStatistical(method)) return;
+    const fromRuns = runs ? measuredFromRuns(runs, index, method as Method, namesIn(String(step.values.bands ?? ''))) : null;
+    const numbers = fromRuns ?? draft.measured[index];
+    if (numbers) measured[step.key] = numbers;
+    else if (runs) anew.push(step.key);
+  });
+  return { measured, anew };
+}
+
 // The names a draft uses that this selection has no band for: the notes of a loaded recipe. Where the data lists no
 // bands at all there is nothing to compare with.
 function missingBands(draft: { steps: readonly DraftStep[]; bands: readonly string[] }, view: OrderView): string[] {
@@ -1206,12 +1218,21 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       fixed: {
         itemIds: draft.groups.flat(),
         aoi: draft.aoi,
-        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes, measured: {} },
+        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes, measured: {}, anew: [] },
       },
     }));
     if (!taken.ok) useAppStore.setState({ error: taken.reason });
     // The preview lies with the entry "Results", above the layer it is made from.
     else useAppStore.getState().resultsToTop();
+  };
+
+  // `earthx:normalize` of the result of a job, or `null` where the result does not say (it has none, is gone, or the answer fails).
+  const readNormalize = async (jobID: string): Promise<NormalizeRun[] | null> => {
+    try {
+      return normalizeRuns((await fetchResults(jobID)).result?.properties?.['earthx:normalize']);
+    } catch {
+      return null;
+    }
   };
 
   const updateJob = (jobID: string, patch: Partial<JobEntry>) => {
@@ -1255,6 +1276,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           : null,
         statistics: resultStats(properties),
         bands: resultBands(properties, get().jobs.find((j) => j.jobID === jobID)?.order ?? null),
+        normalize: normalizeRuns(properties?.['earthx:normalize']),
       });
     } catch (error) {
       if (error instanceof HttpError && error.status === 410) {
@@ -1323,6 +1345,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       tiles: null,
       statistics: null,
       bands: [],
+      normalize: null,
     };
   };
 
@@ -1962,6 +1985,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!layer?.result || block !== null || !job?.order) return void useAppStore.setState({ error: block ?? NO_COPY_TEXT });
       const { order } = job;
       const groupId = job.groupId ?? get().batches.find((b) => b.id === job.batchId)?.groupId ?? null;
+      // The numbers the result's job measured (NM4-71): in the properties of the result, which the panel has read when the job ended;
+      // asked for here where it has not. Only a chain with a statistical step needs them.
+      const measuring = order.steps.some((step) => step.op === 'normalize' && isStatistical(step.params.method));
+      const runs = measuring ? (job.normalize ?? (await readNormalize(job.jobID))) : null;
       const taken = await takeOrder(order, 'this result', (draft, notes) => ({
         // The area of the result is "Whole scene" here; "AOI only" is another AOI inside it. Its bands are in the list of the output,
         // none of them checked, as the bands of a scene are (Otto, 2026-10-31).
@@ -1976,7 +2003,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             locked: draft.steps.length,
             bands: [...draft.bands],
             notes,
-            measured: Object.fromEntries(draft.steps.flatMap((step, i) => (draft.measured[i] ? [[step.key, draft.measured[i]]] : []))),
+            ...lockedNumbers(draft, runs),
           },
         },
       }));
@@ -2427,7 +2454,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   const plan = limit === undefined ? full : shortenPlan(full, limit);
   if (plan === null) return null;
   const jobs = view.parts.map((part) => part.unit.items);
-  const order = view.parts[0]?.order ?? null;
+  const order = view.built?.previewOrder ?? null;
   // The map reads what the band it shows needs, not all that the order reads (adr/0020 §4, §10).
   const read = previewReadOf(view, plan, p.shown);
   const args = {

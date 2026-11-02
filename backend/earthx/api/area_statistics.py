@@ -7,6 +7,12 @@ AOI its result would carry. The order becomes a recipe through the job's own int
 by the job's own code (:func:`~earthx.processing.core.area_statistics`): the colour scale of the
 preview is then the one of the result.
 
+An order without ``aoi`` is measured too (NM4-71, adr/0014 Nachtrag NM4-71): the intake puts the union of the
+footprints of the scenes in its place, as it does for a job. The route still reads at most
+:data:`~earthx.processing.core.MAX_AREA_PIXELS`, so over a whole scene it answers from a coarser grid (``factor`` above
+1, ``exact`` false); the job measures exactly. A step that measures in the run (``normalize`` version 4) is no part of
+the start of the chain this route measures: the core refuses it.
+
 The AOI travels in the body and nowhere else: the path names the dataset only, the access log writes
 method, path, status and duration (`earthx.logging`), and the one line of this route names no
 area, no item and no key. The key of the cache is a hash over the recipe and with it over the AOI
@@ -115,7 +121,7 @@ def _positions(coordinates: Any) -> int:
 
 
 def _check_order(raw: bytes, dataset: str) -> None:
-    """What can be refused before the intake fetches an item: no area, too many positions, another dataset.
+    """What can be refused before the intake fetches an item: too many positions, another dataset.
 
     Anything else that is wrong with the order is the intake's to say, in its own words.
     """
@@ -128,8 +134,6 @@ def _check_order(raw: bytes, dataset: str) -> None:
     if not isinstance(order, dict):
         raise HTTPException(status_code=422, detail="the order is a JSON object")
     aoi = order.get("aoi")
-    if aoi is None:
-        raise HTTPException(status_code=422, detail="aoi: the area is measured for an order with an AOI only")
     if isinstance(aoi, dict) and _positions(aoi.get("coordinates")) > MAX_AOI_POINTS:
         raise HTTPException(status_code=413, detail=f"aoi: the area has more than {MAX_AOI_POINTS} positions")
     inputs = order.get("inputs")

@@ -25,9 +25,9 @@ import {
   MAX_MOSAIC_SCENES,
   MIN_MOSAIC_SCENES,
   MIN_MOSAIC_ZOOM,
-  TILE_LEVEL_AHEAD,
   mosaicRequestBytes,
 } from './mosaic';
+import { MOSAIC_TILE_SIZE, TILE_SIZE, tileLevelAhead, tileMetres } from './tileSize';
 import { canonicalJson, type Order } from './processing';
 import { indexPresetsOf, presetFor, presetRange } from './indexPresets';
 import { assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
@@ -43,7 +43,7 @@ import {
 } from './processingOrder';
 import type { Percent } from './percentRange';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
-import { isStatistical, type Measured } from './normalizeMethods';
+import { NORMALIZE_VERSION, TILE_VERSION, isStatistical, type Measured } from './normalizeMethods';
 import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
@@ -103,6 +103,8 @@ export interface PlannedStep {
   step: DraftStep;
   operator: Operator;
   params: Record<string, unknown>;
+  // The version the tile takes: `normalize` of version 4 (job only) goes to the tile as version 3 (NM4-71).
+  version: number;
 }
 
 export type PreviewPlan =
@@ -117,13 +119,14 @@ export type PreviewPlan =
 
 // The operator of a step that can be a tile and the fields of its form, or the text why
 // there is no picture: the operator is not on the dataset's list, it does not run as a tile
-// (`T1`, `pixel`), or the panel has no form for it.
-function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[] } | { reason: string } {
+// (`T1`, `pixel`), or the panel has no form for it. `normalize` of version 4 runs only as a job; its tile is version 3.
+function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[]; version: number } | { reason: string } {
   const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
   if (!operator) return { reason: NO_PREVIEW_UNLISTED };
-  if (!operator.tiers.includes('T1') || operator.kind !== 'pixel') return { reason: NO_PREVIEW };
+  const asVersion3 = operator.op === 'normalize' && operator.opVersion === NORMALIZE_VERSION;
+  if (!asVersion3 && (!operator.tiers.includes('T1') || operator.kind !== 'pixel')) return { reason: NO_PREVIEW };
   if (!operator.form.supported) return { reason: NO_PREVIEW_FORM };
-  return { operator, fields: operator.form.fields };
+  return { operator, fields: operator.form.fields, version: asVersion3 ? TILE_VERSION : operator.opVersion };
 }
 
 // What the tile route takes of the parameters of one step, in characters (`MAX_OPERATOR_PARAMS_CHARS` of the backend).
@@ -139,7 +142,7 @@ const waitsForNumbers = (step: DraftStep, params: Record<string, unknown>): bool
 // a step that cannot be drawn is shown. Without steps there is nothing to say.
 //
 // A statistical `normalize` step is drawn with the numbers measured for it (`numbers`, by step key, NM4-11b): the tile
-// takes them in its parameters. Without them, or with parameters longer than the tile route takes, the start ends before it.
+// takes them in its parameters, as version 3. Without them, or with parameters longer than the tile route takes, the start ends before it.
 export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | null, numbers: ReadonlyMap<number, Measured> = new Map()): PreviewPlan {
   const first = steps[0];
   if (!info || !first) return { state: 'off', reason: null };
@@ -155,7 +158,7 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
       params.measured = measured;
     }
     if (canonicalJson(params).length > MAX_OPERATOR_PARAMS_CHARS) break;
-    planned.push({ step, operator: found.operator, params });
+    planned.push({ step, operator: found.operator, params, version: found.version });
   }
   if (planned.length === 0) {
     const found = tileStep(first, info);
@@ -336,8 +339,10 @@ export interface PreviewMosaic {
   url: string;
   // Its TileJSON: what `probeMosaic` asks.
   probe: string;
-  // Its first level.
+  // Its first and its last level: its tiles are 512 px (`tileSize.ts`), so a level is as fine as the next one of a scene's,
+  // and the last is one lower than the scenes' (`previewMaxZoom`).
   minZoom: number;
+  maxZoom: number;
 }
 
 export interface PreviewSpec {
@@ -454,13 +459,16 @@ export function previewSpec(args: {
   const shown: string[] | null = band === null ? null : band === RGB ? [...args.bands!] : [band];
   const asked: ShownBands = shown === null ? null : shown.length === 1 ? shown[0] : shown;
   const render = { rescale: rescale.rescale, colormapName: band === RGB ? undefined : range.colormap || undefined };
-  const chain = plan.steps.map(({ step, params }) => ({ op: step.op, opVersion: step.opVersion, paramsJson: canonicalJson(params) }));
+  const chain = plan.steps.map(({ step, params, version }) => ({ op: step.op, opVersion: version, paramsJson: canonicalJson(params) }));
   // Without a pixel size there is no level to hold the preview under: it is drawn
   // as before, up to the last released level, and "Preview" says what it is (Otto,
   // 19.10.2026).
   const gsd = finestGsd(items, assets, info.variableSeparator);
-  const maxZoom =
-    gsd === null ? dataset.zoom.max : previewMaxZoom(items.flatMap((item) => (item.bbox ? [item.bbox] : [])), gsd, dataset.zoom);
+  const bboxes = items.flatMap((item) => (item.bbox ? [item.bbox] : []));
+  const maxZoomOf = (tileSize: number) => (gsd === null ? dataset.zoom.max : previewMaxZoom(bboxes, gsd, dataset.zoom, tileSize));
+  const maxZoom = maxZoomOf(TILE_SIZE);
+  // The mosaic's tiles are 512 px, a level finer than the scenes' at the same level.
+  const mosaicMaxZoom = maxZoomOf(MOSAIC_TILE_SIZE);
   // The levels from which a pass is one mosaic: the tiler takes none below `MIN_MOSAIC_ZOOM`.
   const firstLevel = Math.max(MIN_MOSAIC_ZOOM, dataset.zoom.min);
 
@@ -473,17 +481,17 @@ export function previewSpec(args: {
       unit.length < MIN_MOSAIC_SCENES ||
       unit.length > MAX_MOSAIC_SCENES ||
       assets.length > MAX_MOSAIC_OPERATOR_ASSETS ||
-      maxZoom < MIN_MOSAIC_ZOOM
+      mosaicMaxZoom < MIN_MOSAIC_ZOOM
     ) {
       return null;
     }
     const ids = unit.map((item) => item.id);
     const url = buildTileUrl(buildMosaicOperatorTileTemplate(dataset.id, ids, assets, chain, asked), render);
-    if (mosaicRequestBytes(url, maxZoom) > MAX_MOSAIC_REQUEST_BYTES) return null;
+    if (mosaicRequestBytes(url, mosaicMaxZoom) > MAX_MOSAIC_REQUEST_BYTES) return null;
     const probe = buildMosaicOperatorTileJsonUrl(dataset.id, ids, assets, chain, asked);
     const answer = answers?.get(probe);
     if (answer?.state === 'scenes') return null;
-    return { order: readOrder(answer?.state === 'taken' ? answer.order : [], ids), bounds, url, probe, minZoom: firstLevel };
+    return { order: readOrder(answer?.state === 'taken' ? answer.order : [], ids), bounds, url, probe, minZoom: firstLevel, maxZoom: mosaicMaxZoom };
   };
   const mosaics = jobs.flatMap((unit) => mosaicOf(unit) ?? []);
   const mosaicked = new Set(mosaics.flatMap((mosaic) => mosaic.order));
@@ -519,7 +527,7 @@ export function previewSpec(args: {
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
-      ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order]), below: scenes.map((s) => s.below ?? null) } : {}),
+      ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order, m.maxZoom]), below: scenes.map((s) => s.below ?? null) } : {}),
       minZoom: dataset.zoom.min,
       maxZoom,
       clipToAoi,
@@ -653,7 +661,7 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
     tileUrl: clipTileUrl(mosaic.url, clip),
     bounds: mosaic.bounds,
     minZoom: mosaic.minZoom,
-    maxZoom: spec.maxZoom,
+    maxZoom: mosaic.maxZoom,
     preview: true as const,
   }));
   const scenes = spec.scenes.map((scene) => ({
@@ -662,7 +670,7 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
     bounds: scene.bbox,
     minZoom: spec.minZoom,
     maxZoom: scene.below === undefined ? spec.maxZoom : Math.min(spec.maxZoom, scene.below - 1),
-    ...(scene.below === undefined ? {} : { hideFrom: scene.below - TILE_LEVEL_AHEAD }),
+    ...(scene.below === undefined ? {} : { hideFrom: scene.below - tileLevelAhead(MOSAIC_TILE_SIZE) }),
     preview: true as const,
   }));
   return [...mosaics, ...scenes];
@@ -670,20 +678,21 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
 
 // --- never as fine as the data (Otto, 19.10.2026) ---------------------------
 
-// Metres per pixel of a 256-pixel Web Mercator tile at `latitude`.
-export function tileResolution(latitude: number, zoom: number): number {
-  return (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
-}
-
 // The last tile level the preview asks for. A tile is the finest where the scene
 // lies farthest from the equator, so the level is chosen there: every tile is
 // coarser than `gsd` (strictly), everywhere in the scenes. Above it the map
 // stretches the last level, the picture gets blurry and no finer. Held within the
 // released levels; a dataset whose lowest level is already finer than the data
-// cannot be held under it, and keeps that level.
-export function previewMaxZoom(bboxes: readonly Bbox[], gsd: number, zoom: { min: number; max: number }): number {
+// cannot be held under it, and keeps that level. A tile of 512 px is as fine as the next level's of 256 px, so the
+// last level for it is one lower.
+export function previewMaxZoom(
+  bboxes: readonly Bbox[],
+  gsd: number,
+  zoom: { min: number; max: number },
+  tileSize: number = TILE_SIZE,
+): number {
   const farthest = Math.max(0, ...bboxes.flatMap(([, south, , north]) => [Math.abs(south), Math.abs(north)]));
-  const coarsest = (156543.03392 * Math.cos((Math.min(farthest, 89) * Math.PI) / 180)) / gsd;
+  const coarsest = tileMetres(Math.min(farthest, 89), 0, tileSize) / gsd;
   // The largest whole level below log2(coarsest): its tiles are still coarser than `gsd`.
   const level = Math.ceil(Math.log2(coarsest)) - 1;
   return Math.max(zoom.min, Math.min(zoom.max, level));

@@ -19,6 +19,7 @@ import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
 import { inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
+import { tileSizeOf } from './tileSize';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 const AOI_SRC = 'aoi-src';
@@ -266,7 +267,7 @@ function placeRaster(
   map.addSource(srcId, {
     type: 'raster',
     tiles: [tileUrl],
-    tileSize: 256,
+    tileSize: tileSizeOf(tileUrl),
     bounds,
     minzoom: zoom.minZoom,
     maxzoom: zoom.maxZoom,
@@ -734,7 +735,7 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
       map.addSource(srcId, {
         type: 'raster',
         tiles: [overlay.tileUrl],
-        tileSize: 256,
+        tileSize: tileSizeOf(overlay.tileUrl),
         bounds: overlay.bounds,
         minzoom: overlay.minZoom,
         maxzoom: overlay.maxZoom,
