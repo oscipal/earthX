@@ -8,8 +8,8 @@ import { Fragment, useId, type ReactNode } from 'react';
 import { CHANNEL_NAMES, type ChannelRange } from '../channels';
 
 import { UNIT_LABELS, UNIT_TIP, type RangeUnit } from '../percentRange';
-import { COLORMAPS } from '../render';
 import BandSelect, { type BandOption } from './BandSelect';
+import ColormapField from './ColormapField';
 
 // What the box of the colormap says where a picture of three bands has none: it stays in its place, locked, and says "none" (Otto, 1.11.2026).
 export const NO_COLORMAP = '— none —';
@@ -79,26 +79,19 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
         </label>
       )}
       {range}
-      {colormap && (
-        <label className="vc-field" title={'fixed' in colormap ? colormap.title : undefined}>
-          <span>Colormap</span>
-          {'fixed' in colormap ? (
-            // Not left out: the field keeps its place whatever band is drawn, locked, and its tooltip says why (NM4-54 part 5).
+      {colormap &&
+        ('fixed' in colormap ? (
+          // Not left out: the field keeps its place whatever band is drawn, locked, and its tooltip says why (NM4-54 part 5).
+          <label className="vc-field" title={colormap.title}>
+            <span>Colormap</span>
             <select value="" disabled aria-label="Colormap" title={colormap.title} onChange={() => undefined}>
               <option value="">{colormap.fixed}</option>
             </select>
-          ) : (
-            <select value={colormap.value} onChange={(e) => colormap.onChange(e.target.value)}>
-              <option value="">— none —</option>
-              {COLORMAPS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          )}
-        </label>
-      )}
+          </label>
+        ) : (
+          // One field wherever a colormap is chosen, with "More…" and "Reverse" (UI-03d).
+          <ColormapField value={colormap.value} onChange={colormap.onChange} />
+        ))}
     </>
   );
 }

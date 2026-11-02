@@ -9,24 +9,6 @@ import { channelsOfRescale, rescaleOfChannels, type ChannelRange } from './chann
 import { DEFAULT_PERCENT, percentOf, samePercent, type RangeUnit } from './percentRange';
 import type { AppliedRender, EarthxDefaultRender } from './types';
 
-// Named colormaps rio-tiler/matplotlib ship — generic, not tied to any dataset.
-export const COLORMAPS = [
-  'viridis',
-  'plasma',
-  'inferno',
-  'magma',
-  'cividis',
-  'turbo',
-  'greens',
-  'ylgn',
-  'rdylgn',
-  'rdbu',
-  'spectral',
-  'terrain',
-  'gist_earth',
-  'greys',
-];
-
 export function autoRescale(stats: Record<string, BandStatistics>): [number, number] | null {
   const bands = Object.values(stats);
   const los = bands.map((b) => b.percentile_2).filter((v) => typeof v === 'number' && Number.isFinite(v));

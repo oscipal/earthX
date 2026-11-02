@@ -11,7 +11,7 @@ import CSS from '../index.css?raw';
 import { datasetsFrom } from '../datasets';
 import { SENTINEL_2_PRESETS } from '../fixtures/indexPresets';
 import { mosaicTemplateOf } from '../mosaic';
-import { COLORMAPS } from '../render';
+import { SHORT_COLORMAPS } from '../colormaps';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import ViewerControls from './ViewerControls';
@@ -159,7 +159,7 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     expect([...select().options].find((o) => o.value === 'index:NDWI')!.disabled).toBe(true);
     // No request but the statistics: no job is placed.
     const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
-    expect(calls.every((url) => url.includes('/statistics'))).toBe(true);
+    expect(calls.every((url) => url.includes('/statistics') || url.endsWith('/colormaps'))).toBe(true);
     await press('NDWI');
     expect(useAppStore.getState().appliedRender).toEqual({ rescale: '0,3000' });
     expect(pressed()).toEqual([]);
@@ -186,8 +186,9 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     expect([...colormapSelect().options].map((o) => o.textContent)).toEqual(['— none —']);
     await press('NDWI');
     expect(colormapSelect().value).toBe('rdbu');
-    expect([...colormapSelect().options].map((o) => o.value)).toEqual(['', ...COLORMAPS]);
-    expect(COLORMAPS).toContain('rdbu');
+    // The few of the field and "More…" (UI-03d); the whole list is the tiler's.
+    expect([...colormapSelect().options].map((o) => o.textContent)).toEqual(['— none —', ...SHORT_COLORMAPS, 'More…']);
+    expect(SHORT_COLORMAPS).toContain('rdbu');
     const [vmin, vmax] = container.querySelectorAll<HTMLInputElement>('.vc-num input');
     expect([vmin.value, vmax.value]).toEqual(['-1', '1']);
   });

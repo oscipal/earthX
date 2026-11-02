@@ -114,7 +114,7 @@ const settle = async () => act(async () => {
   for (let i = 0; i < 6; i++) await Promise.resolve();
 });
 // The questions of the range; the histograms of "Scale" (UI-03d) are asked on their own.
-const asked = () => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => !url.includes('histogram_bins'));
+const asked = () => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => !url.includes('histogram_bins') && !url.endsWith('/colormaps'));
 
 describe('the switch "value / %"', () => {
   // Otto, 2.11.2026: in the row "Scale", after vmin and vmax, not over a field.

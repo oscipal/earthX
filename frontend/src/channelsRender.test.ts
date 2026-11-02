@@ -201,3 +201,11 @@ describe('rescaleOf with channels', () => {
     expect(rescaleOf({ vmin: '', vmax: '', colormap: '' })).toEqual({ problem: 'Enter a number for both ends of the range.' });
   });
 });
+
+describe('a reversed colormap of a result layer (UI-03d)', () => {
+  it('is drawn and read back as the tiler names it', () => {
+    const render = renderOfRange({ vmin: '0', vmax: '1', colormap: 'mako_r' });
+    expect(render).toMatchObject({ colormapName: 'mako_r' });
+    expect(rangeOfTileUrl(buildTileUrl('/results/x/tiles/{z}/{x}/{y}?tilesize=256', render!)).colormap).toBe('mako_r');
+  });
+});

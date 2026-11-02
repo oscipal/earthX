@@ -652,6 +652,87 @@ body.dragging * {
   width: var(--control-height);
   padding: 0;
 }
+/* The field "Colormap" (UI-03d): the dropdown and "Reverse" beside it, as high as it. */
+.inspector .vc-colormap-row,
+.pp-range .vc-colormap-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.vc-reverse {
+  min-width: var(--control-height);
+  padding: 0 var(--space-2);
+}
+.vc-reverse.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--panel-bg);
+}
+/* All colormaps: a bar over the settings or the processing panel, at the same place; under 900 px the sheet of the settings. */
+.inspector.panel.colormap-picker {
+  z-index: 14;
+}
+.inspector .vc-back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.inspector .cm-search {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--control-height);
+  box-sizing: border-box;
+  padding: 0 var(--space-2);
+}
+.inspector .cm-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inspector .cm-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2);
+  border: var(--line-width) solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.inspector .cm-item:hover {
+  background: var(--row-hover);
+}
+.inspector .cm-item.on {
+  border-color: var(--accent);
+}
+.inspector .cm-strip {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+}
+.inspector .cm-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 /* "Quick processing" (Otto, 2.11.2026): small buttons, three in a row; the one that is on is filled. */
 .inspector .vc-quick {
   display: grid;

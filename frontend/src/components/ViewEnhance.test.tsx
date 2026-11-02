@@ -253,3 +253,22 @@ describe('the histograms of "Scale"', () => {
     expect(container.querySelectorAll('.vc-num input')).toHaveLength(2);
   });
 });
+
+describe('a reversed colormap (UI-03d)', () => {
+  it('is drawn, kept by "Apply to all" and pinned with the layer as the tiler\'s name with "_r"', async () => {
+    mount();
+    await press('NDVI');
+    act(() => state().setPendingColormapName('rdylgn_r'));
+    await act(async () => {
+      await state().applyRender();
+    });
+    expect(state().appliedRender.colormapName).toBe('rdylgn_r');
+    await act(async () => {
+      await state().saveViewLook();
+    });
+    expect(state().savedLooks.optical).toMatchObject({ colormapName: 'rdylgn_r' });
+    act(() => state().addCurrentToLayers());
+    const raster = state().layers[0].overlays.find((o) => o.kind === 'raster');
+    expect(raster && raster.kind === 'raster' ? new URL(raster.tileUrl, 'http://x').searchParams.get('colormap_name') : null).toBe('rdylgn_r');
+  });
+});

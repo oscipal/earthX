@@ -4,6 +4,7 @@ import AppRail from './components/AppRail';
 import BasemapMenu from './components/BasemapMenu';
 import ControlPanel from './components/ControlPanel';
 import DownloadDialog from './components/DownloadDialog';
+import ColormapPicker from './components/ColormapPicker';
 import Inspector from './components/Inspector';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
@@ -110,6 +111,7 @@ export default function App() {
       </div>
 
       <Inspector />
+      <ColormapPicker />
 
       {processingOpen && (
         <div className="overlay processing-sheet">

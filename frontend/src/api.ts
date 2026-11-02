@@ -8,7 +8,7 @@ import { MOSAIC_TILE_SIZE } from './tileSize';
 import { HISTOGRAM_BINS } from './histogram';
 import type { Bbox, Collection, StacItem } from './types';
 
-const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+export const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
 interface StacLink {
   rel: string;

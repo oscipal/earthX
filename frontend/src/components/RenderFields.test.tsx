@@ -112,10 +112,10 @@ describe('RenderFields', () => {
     const [vmin, vmax] = [...container.querySelectorAll('input')];
     type(vmin, '2');
     type(vmax, '9');
-    type(colormap, 'turbo');
+    type(colormap, 'magma');
     type(index, 'NDVI');
     type(index, '');
-    expect(calls).toEqual(['vmin=2', 'vmax=9', 'colormap=turbo', 'index=NDVI', 'index=null']);
+    expect(calls).toEqual(['vmin=2', 'vmax=9', 'colormap=magma', 'index=NDVI', 'index=null']);
   });
 });
 

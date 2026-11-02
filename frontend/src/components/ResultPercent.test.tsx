@@ -63,6 +63,8 @@ afterEach(() => {
 });
 
 const state = () => useAppStore.getState();
+// The reads of the statistics; the list of the colormaps (UI-03d) is asked on its own.
+const reads = () => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => !url.endsWith('/colormaps'));
 // The histograms of "Scale" (UI-03d) are read when the settings open; what is counted below are the reads of the percentiles.
 const open = (l: MapLayer = layer()) => {
   act(() => useAppStore.setState({ layers: [l], resultViewLayerId: 'R1' }));
@@ -125,8 +127,8 @@ describe('"Apply" with percentiles', () => {
     typedPercent('3', '97');
     click(button('Apply'));
     await settle();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toBe(`/results/${RESULT}/statistics`);
+    expect(reads()).toHaveLength(1);
+    expect(reads()[0]).toBe(`/results/${RESULT}/statistics`);
     expect(rangeOfTileUrl(urlOf())).toMatchObject({ vmin: '3', vmax: '97', colormap: 'viridis' });
     expect(state().layers[0].result).toMatchObject({ percent: { low: '3', high: '97' } });
     // What was saved before stays the saved look, with how it was typed.
@@ -172,7 +174,7 @@ describe('"Apply" with percentiles', () => {
     click(button('Apply'));
     await settle();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(PERCENT_PROBLEMS.order);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(reads()).toEqual([]);
     expect(urlOf()).toContain('rescale=0%2C100');
   });
 
@@ -202,13 +204,13 @@ describe('"Apply" with percentiles', () => {
     await settle();
     const select = [...container.querySelectorAll<HTMLLabelElement>('.result-controls label.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!.querySelector('select')!;
     act(() => {
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'turbo');
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'magma');
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
     click(button('Apply'));
     await settle();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(urlOf()).toContain('colormap_name=turbo');
+    expect(reads()).toHaveLength(1);
+    expect(urlOf()).toContain('colormap_name=magma');
     expect(state().layers[0].result).toMatchObject({ percent: { low: '3', high: '97' } });
   });
 
@@ -217,7 +219,7 @@ describe('"Apply" with percentiles', () => {
     typedPercent('10', '90');
     click(button('auto-scale'));
     expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(reads()).toEqual([]);
   });
 });
 
