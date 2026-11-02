@@ -229,13 +229,15 @@ async function run(browser, { theme, viewport }) {
   if (!names.some((n) => n.includes('S2B'))) problems.push(`no layer is named after the satellite: ${JSON.stringify(names)}`);
   await page.screenshot({ path: path.join(OUT, `layers ${name}.png`) });
 
-  // 7. The actions in the bar: one per line, of one width and one height (none wraps its words).
+  // 7. The actions in the bar: in pairs (Otto, 2.11.2026), of one width and one height (none wraps its words), no "Clear".
   const shape = await page.evaluate(() => {
-    const boxes = [...document.querySelectorAll('.inspector .vc-actions > *')].map((b) => b.getBoundingClientRect());
-    return { columns: new Set(boxes.map((b) => Math.round(b.left))).size, widths: new Set(boxes.map((b) => Math.round(b.width))).size, heights: new Set(boxes.map((b) => Math.round(b.height))).size, count: boxes.length };
+    const els = [...document.querySelectorAll('.inspector .vc-actions > *')];
+    const boxes = els.map((b) => b.getBoundingClientRect());
+    return { columns: new Set(boxes.map((b) => Math.round(b.left))).size, widths: new Set(boxes.map((b) => Math.round(b.width))).size, heights: new Set(boxes.map((b) => Math.round(b.height))).size, count: boxes.length, cut: els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent) };
   });
-  if (shape.count !== 7) problems.push(`${shape.count} actions, seven expected`);
-  if (shape.columns !== 1) problems.push(`the actions are in ${shape.columns} columns, one expected`);
+  if (shape.count !== 6) problems.push(`${shape.count} actions, six expected`);
+  if (shape.columns !== 2) problems.push(`the actions are in ${shape.columns} columns, two expected`);
+  if (shape.cut.length > 0) problems.push(`actions cut short: ${shape.cut.join(', ')}`);
   if (shape.widths !== 1) problems.push(`the actions are of ${shape.widths} different widths`);
   if (shape.heights !== 1) problems.push(`the actions are of ${shape.heights} different heights`);
   await page.screenshot({ path: path.join(OUT, `shape ${name}.png`) });

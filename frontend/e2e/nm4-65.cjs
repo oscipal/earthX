@@ -155,16 +155,13 @@ async function check(browser, { theme, viewport }) {
   else {
     const options = await unit.locator('option').allTextContents();
     if (options.join() !== 'absolute,percentile') problems.push(`the options of the unit: ${options}`);
-    // Inside the end of the field vmax, to the right of its word (the settings bar, UI-03a).
+    // In the row "Scale", after vmin and vmax, beside them and not over them (Otto, 2.11.2026).
     const unitBox = await unit.boundingBox();
-    const vmaxLabel = page.locator('.result-controls .vc-num').nth(1);
-    // The box of the word itself (the span is as wide as the column): the range of its text.
-    const vmaxWord = await vmaxLabel.locator('span').evaluate((el) => { const range = document.createRange(); range.selectNodeContents(el); const r = range.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });
-    const vmaxInput = await vmaxLabel.locator('input').boundingBox();
-    if (unitBox.y < vmaxInput.y - 0.5 || unitBox.y + unitBox.height > vmaxInput.y + vmaxInput.height + 0.5) problems.push('the unit dropdown is not inside the field vmax');
-    if (Math.abs(unitBox.y + unitBox.height / 2 - (vmaxWord.y + vmaxWord.height / 2)) > 8) problems.push('the unit dropdown is not in the row of the word vmax');
-    if (unitBox.x + unitBox.width > vmaxInput.x + vmaxInput.width + 0.5) problems.push(`the unit dropdown reaches beyond the box of vmax: ${unitBox.x + unitBox.width} against ${vmaxInput.x + vmaxInput.width}`);
-    if (unitBox.x < vmaxWord.x + vmaxWord.width - 0.5) problems.push('the unit dropdown covers the word vmax');
+    const vmaxInput = await page.locator('.result-controls .vc-scale .vc-num input').nth(1).boundingBox();
+    if (Math.abs(unitBox.y + unitBox.height / 2 - (vmaxInput.y + vmaxInput.height / 2)) > 1) problems.push('the unit dropdown is not in the row of vmin and vmax');
+    if (unitBox.x < vmaxInput.x + vmaxInput.width - 0.5) problems.push('the unit dropdown lies over the field vmax');
+    const unitText = await unit.evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+    if (!unitText) problems.push('the unit dropdown cuts its word');
     const text = await unit.evaluate((el) => el.selectedOptions[0].textContent);
     if (text !== 'absolute') problems.push(`the unit starts as "${text}"`);
     await unit.selectOption('percent');
