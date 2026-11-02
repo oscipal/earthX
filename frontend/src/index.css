@@ -279,6 +279,8 @@ body.dragging * {
   width: auto;
   min-width: 0;
   max-width: calc(100% - 31px);
+  /* Below the one height of the fields of a panel (`min-height` above), which would push it into the field. */
+  min-height: 0;
   height: 16px;
   border-radius: 4px;
   color: var(--muted);

@@ -404,4 +404,8 @@ describe('the layout contract in index.css', () => {
     expect(rule('.inspector .vc-actions > *')).toContain('white-space: nowrap');
     expect(rule('.inspector .vc-actions > *')).toContain('min-width: 0');
   });
+
+  it('keeps the switch of the range below the one height of the fields, so that it stays in the line of the label', () => {
+    expect(rule('.vc-field.vc-num .vc-unit')).toContain('min-height: 0');
+  });
 });
