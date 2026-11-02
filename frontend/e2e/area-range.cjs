@@ -25,7 +25,8 @@ const SCENE_HINT = 'Range measured over the first whole scene';
 const COARSE_HINT = 'Range measured on a coarser read; the result may differ';
 
 // What the tiler would answer over the AOI, and for the first whole scene.
-const band = (values) => ({ name: 'b1', ...(values.unit ? { unit: values.unit } : {}), statistics: { mean: 0.3, valid_percent: 100, ...values.statistics } });
+// The band_math step names its output band "result" (the recipe the panel builds); the answer must name it, or the panel falls back.
+const band = (values) => ({ name: 'result', ...(values.unit ? { unit: values.unit } : {}), statistics: { mean: 0.3, valid_percent: 100, ...values.statistics } });
 const NDVI = { statistics: { minimum: -1.3, maximum: 1.5, count: 900, percentile_2: 0, percentile_98: 0.91 } };
 const DEM = { unit: 'm', statistics: { minimum: -11000, maximum: 8848.86, count: 900, percentile_2: -10000, percentile_98: 8000 } };
 const SCENE = { b1: { count: 900, min: 100, max: 2500, percentile_2: 120, percentile_98: 2400, unit: null } };
@@ -101,7 +102,7 @@ async function check(browser, { name, theme, viewport }) {
     const leaves = [
       ...[...row.querySelectorAll('input')].map((e) => ({ what: `field ${e.value}`, e })),
       ...[...row.querySelectorAll('.pp-unit')].map((e) => ({ what: `unit ${e.textContent}`, e })),
-      ...[...row.querySelectorAll('select')].map((e) => ({ what: 'colormap', e })),
+      ...[...row.querySelectorAll('select')].map((e) => ({ what: `select ${e.getAttribute('aria-label') ?? e.closest('label')?.querySelector('span')?.textContent ?? 'band'}`, e })),
       ...[...row.querySelectorAll('button')].map((e) => ({ what: `button ${e.textContent}`, e })),
     ].map(({ what, e }) => ({ what, ...box(e), cutOff: e.tagName === 'INPUT' && e.scrollWidth > e.clientWidth }));
     const body = row.closest('.pp-body') ?? document.querySelector('.processing-panel');
@@ -113,7 +114,7 @@ async function check(browser, { name, theme, viewport }) {
       scrolls: body.scrollWidth > body.clientWidth + 1,
       unit: row.querySelector('.pp-unit')?.textContent ?? null,
       fields: [...row.querySelectorAll('input')].map((e) => e.value),
-      colormap: row.querySelector('select')?.value,
+      colormap: [...row.querySelectorAll('.vc-field')].find((field) => field.querySelector('span')?.textContent === 'Colormap')?.querySelector('select')?.value,
       hint: badge?.getAttribute('title') ?? null,
       badge: badge ? box(badge) : null,
       heading: box(document.querySelector('section[aria-label="Preview on the map"] .pp-heading')),
