@@ -7,6 +7,7 @@ import type { StyleSpecification, TransformStyleFunction } from 'maplibre-gl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CSS from './index.css?raw';
+import TOKENS from './tokens.css?raw';
 import { BASEMAP_IDS, BASEMAPS, ESRI_ATTRIBUTION, OPENFREEMAP_ATTRIBUTION, type BasemapId } from './basemaps';
 import { appLayers, publishedStyle } from './fixtures/publishedStyle';
 import { NO_OVERLAYS } from './overlays';
@@ -26,9 +27,9 @@ import {
 
 // The declarations of one theme's token block, e.g. `.app[data-theme='normal']`.
 function tokenBlock(theme: string): string {
-  const start = CSS.indexOf(`.app[data-theme='${theme}'] {`);
+  const start = TOKENS.indexOf(`.app[data-theme='${theme}'] {`);
   expect(start).toBeGreaterThanOrEqual(0);
-  return CSS.slice(start, CSS.indexOf('}', start));
+  return TOKENS.slice(start, TOKENS.indexOf('}', start));
 }
 function mapBg(block: string): string | null {
   return /--map-bg:\s*([^;]+);/.exec(block)?.[1].trim() ?? null;

@@ -79,7 +79,7 @@ describe('the opacity slider in the settings of a layer', () => {
 
   it('has no padding and no frame of its own, so the track fills its box (the cause was `.vc-field input`)', () => {
     // The generic rule that caused it is still there for text boxes…
-    expect(rule('.vc-field select,\n.vc-field input,\n.vc-field textarea,\n.vc-dataset')).toContain('padding: 6px 8px');
+    expect(rule('.vc-field select,\n.vc-field input,\n.vc-field textarea,\n.vc-dataset')).toContain('padding: var(--space-1) var(--space-2)');
     // …and the slider is taken out of it, by a rule that is later and more specific.
     const own = rule(".vc-field input[type='range']");
     expect(own).toContain('padding: 0');
@@ -89,7 +89,7 @@ describe('the opacity slider in the settings of a layer', () => {
   });
 
   it('keeps a visible focus ring now that the frame is gone', () => {
-    expect(rule(".vc-field input[type='range']:focus-visible")).toContain('outline: 2px solid var(--accent)');
+    expect(CSS).toMatch(/\.vc-field input:focus-visible[^{]*\{[^}]*outline: 2px solid var\(--focus\)/u);
   });
 });
 

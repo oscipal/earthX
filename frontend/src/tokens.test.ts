@@ -1,0 +1,132 @@
+// UI-03 §7.4: the tokens exist in both themes, and the areas that use them hold no hard spacing, size or radius.
+
+import { describe, expect, it } from 'vitest';
+
+import { hardValues } from './cssTokens';
+import index from './index.css?raw';
+import tokens from './tokens.css?raw';
+
+// The areas already moved onto the tokens; UI-04 adds the other panels here.
+const CHECKED_AREAS = ['.ghost-btn', '.primary-btn', '.pp-seg', '.close-x'] as const;
+
+const ROOT_TOKENS = [
+  '--space-1', '--space-2', '--space-3', '--space-4', '--space-5', '--space-6',
+  '--text-xs', '--text-sm', '--text-md', '--text-lg', '--text-xl',
+  '--leading-tight', '--leading', '--weight-regular', '--weight-semibold',
+  '--radius-sm', '--radius-md', '--radius-full', '--line-width',
+  '--control-height', '--control-height-sm',
+  '--rail-width', '--dock-width', '--inspector-width', '--sheet-wide-width',
+  '--font', '--font-mono',
+];
+const THEME_TOKENS = [
+  '--panel-bg', '--panel-border', '--accent', '--accent-2', '--text', '--muted', '--input-bg', '--glow', '--row-hover', '--map-bg',
+  '--line', '--line-soft', '--surface-2', '--danger', '--focus',
+];
+
+// The declarations of the first block that opens with `selector {`.
+function block(css: string, selector: string): string {
+  const start = css.indexOf(`${selector} {`);
+  if (start < 0) return '';
+  return css.slice(start, css.indexOf('}', start));
+}
+
+describe('tokens.css', () => {
+  it.each(ROOT_TOKENS)('defines %s in :root', (name) => {
+    expect(block(tokens, ':root')).toMatch(new RegExp(`\\s${name}:\\s*\\S`, 'u'));
+  });
+
+  it.each(['tech', 'normal'])('defines every colour token in the %s theme', (theme) => {
+    const body = block(tokens, `.app[data-theme='${theme}']`);
+    for (const name of THEME_TOKENS) expect(body, name).toMatch(new RegExp(`\\s${name}:\\s*\\S`, 'u'));
+  });
+
+  it('holds the values of the plan', () => {
+    const root = block(tokens, ':root');
+    expect(root).toContain('--space-3: 12px');
+    expect(root).toContain('--text-xs: 11px');
+    expect(root).toContain('--control-height: 28px');
+    expect(root).toContain('--sheet-wide-width: clamp(520px, 34vw, 640px)');
+  });
+
+  it('is the only place of the theme blocks, the rail width and the families', () => {
+    expect(index).not.toMatch(/^\.app\[data-theme='(?:tech|normal)'\] \{[^}]*--panel-bg/mu);
+    expect(index).not.toMatch(/--(?:rail|dock)-width:/u);
+    expect(index).not.toMatch(/var\(--(?:mono|sans)\)/u);
+  });
+
+  it('keeps the monospace family for code only', () => {
+    const uses = index.split('\n').filter((line) => line.includes('var(--font-mono)'));
+    expect(uses).toHaveLength(1);
+    expect(block(index, '.pp-field textarea')).toContain('var(--font-mono)');
+  });
+});
+
+describe('hard values in the checked areas of index.css', () => {
+  it('finds none in the shared controls', () => {
+    expect(hardValues(index, CHECKED_AREAS)).toEqual([]);
+  });
+
+  it('sets the close cross in one colour token for both themes', () => {
+    expect(block(index, '.close-x')).toContain('color: var(--danger)');
+    expect(index).not.toMatch(/\.app\[data-theme='normal'\] \.close-x/u);
+  });
+});
+
+describe('hardValues', () => {
+  const areas = ['.ghost-btn'];
+
+  it('reports one hard padding and nothing else', () => {
+    expect(hardValues('.ghost-btn { padding: 5px }', areas)).toEqual(['.ghost-btn { padding: 5px }']);
+  });
+
+  it('ignores tokens, zero and other units', () => {
+    const css = '.ghost-btn { padding: var(--space-2); margin: 0; gap: 0px; font-size: 1em; border-radius: 50%; width: 20px; }';
+    expect(hardValues(css, areas)).toEqual([]);
+  });
+
+  it('reports a hard length next to a token', () => {
+    expect(hardValues('.ghost-btn { padding: 4px var(--space-2) }', areas)).toHaveLength(1);
+    expect(hardValues('.ghost-btn { margin: -2px }', areas)).toHaveLength(1);
+    expect(hardValues('.ghost-btn { font-size: 0.75rem }', areas)).toHaveLength(1);
+    expect(hardValues('.ghost-btn { padding-left: 3px !important }', areas)).toHaveLength(1);
+  });
+
+  it('lets a calculation with a token pass, not one without', () => {
+    expect(hardValues('.ghost-btn { padding: calc(var(--space-2) + 2px) }', areas)).toEqual([]);
+    expect(hardValues('.ghost-btn { padding: calc(4px + 2px) }', areas)).toHaveLength(1);
+  });
+
+  it('reads every checked property and its longhands', () => {
+    const css = '.ghost-btn { margin-top: 1px; row-gap: 2px; border-top-left-radius: 3px; border-radius: 4px; }';
+    expect(hardValues(css, areas)).toHaveLength(4);
+  });
+
+  it('ignores a hard value in a comment', () => {
+    expect(hardValues('/* .ghost-btn { padding: 5px } */ .ghost-btn { /* padding: 6px; */ color: red }', areas)).toEqual([]);
+  });
+
+  it('reads each selector of a list and the rules in a media query', () => {
+    expect(hardValues('.a, .ghost-btn:hover, .b { gap: 3px }', areas)).toEqual(['.ghost-btn:hover { gap: 3px }']);
+    expect(hardValues('.a, .b { gap: 3px }', areas)).toEqual([]);
+    expect(hardValues('@media (max-width: 900px) { .ghost-btn { padding: 5px } .other { padding: 5px } }', areas)).toHaveLength(1);
+    expect(hardValues('@media (max-width: 900px) { .ghost-btn { padding: var(--space-1) } }', areas)).toEqual([]);
+  });
+
+  it('matches a whole class name at the start of a selector', () => {
+    expect(hardValues('.ghost-btnx { padding: 5px }', areas)).toEqual([]);
+    expect(hardValues('.load-more .ghost-btn { padding: 5px }', areas)).toEqual([]);
+    expect(hardValues('.ghost-btn.danger { padding: 5px }', areas)).toHaveLength(1);
+    expect(hardValues('.ghost-btn[aria-disabled="true"] { padding: 5px }', areas)).toHaveLength(1);
+  });
+
+  it('survives a comma or a semicolon inside a string or a URL, and a missing last semicolon', () => {
+    const css = ".a[data-x='1,2'], .ghost-btn { background: url(\"data:image/svg+xml;utf8,<svg/>\"); padding: 2px }";
+    expect(hardValues(css, areas)).toHaveLength(1);
+  });
+
+  it('copes with empty and broken input', () => {
+    expect(hardValues('', areas)).toEqual([]);
+    expect(hardValues('} } .ghost-btn { padding: 2px', areas)).toHaveLength(1);
+    expect(hardValues('.ghost-btn { padding: 2px }', [])).toEqual([]);
+  });
+});

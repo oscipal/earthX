@@ -9,6 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CSS from '../index.css?raw';
+import TOKENS from '../tokens.css?raw';
 import { focusFirstItem } from '../popover';
 import CloseButton from './CloseButton';
 
@@ -55,10 +56,12 @@ describe('CloseButton', () => {
 
   it('is small and red in both themes, with a focus ring', () => {
     const rule = (selector: string) => CSS.slice(CSS.indexOf(`\n${selector} {`), CSS.indexOf('}', CSS.indexOf(`\n${selector} {`)));
-    expect(rule('.close-x')).toContain('color: #ff5a6e');
+    const theme = (name: string) => TOKENS.slice(TOKENS.indexOf(`.app[data-theme='${name}'] {`));
+    expect(rule('.close-x')).toContain('color: var(--danger)');
     expect(rule('.close-x')).toMatch(/width: 20px/u);
-    expect(rule(".app[data-theme='normal'] .close-x")).toContain('color: #c62840');
-    expect(rule('.close-x:focus-visible')).toContain('outline');
+    expect(theme('tech')).toContain('--danger: #ff5a6e');
+    expect(theme('normal')).toContain('--danger: #c62840');
+    expect(CSS).toMatch(/\.close-x:focus-visible[^{]*\{[^}]*outline: 2px solid var\(--focus\)/u);
   });
 });
 

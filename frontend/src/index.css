@@ -4,11 +4,6 @@
    [data-theme] on .app / <body>.
    =========================================================================== */
 
-:root {
-  --mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
-  --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
-}
-
 *,
 *::before,
 *::after {
@@ -23,7 +18,8 @@ body,
 }
 
 body {
-  font-family: var(--mono);
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
 }
 
@@ -161,7 +157,7 @@ body.dragging * {
 .zoom-btn {
   padding: 9px 14px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   letter-spacing: 1px;
   cursor: pointer;
@@ -201,7 +197,7 @@ body.dragging * {
 .menu-group-label {
   padding: 2px 10px;
   color: var(--muted);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 9px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -291,8 +287,8 @@ body.dragging * {
 .vc-field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: 10px;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -301,14 +297,20 @@ body.dragging * {
 .vc-field input,
 .vc-field textarea,
 .vc-dataset {
-  padding: 6px 8px;
+  padding: var(--space-1) var(--space-2);
   background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--font);
+  font-size: var(--text-sm);
   outline: none;
+}
+/* One height for the fields of a panel (a tick box and a slider keep their own). */
+.vc-field select,
+.vc-field input:not([type='checkbox'], [type='radio'], [type='range']),
+.vc-dataset {
+  min-height: var(--control-height);
 }
 .vc-field select:focus,
 .vc-field input:focus,
@@ -335,7 +337,7 @@ body.dragging * {
   height: 16px;
   border-radius: 4px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: var(--text-xs);
   letter-spacing: 0;
   text-transform: none;
   text-overflow: ellipsis;
@@ -365,12 +367,8 @@ body.dragging * {
   padding: 0;
   border: 0;
   background: none;
-  height: 30px;
+  height: var(--control-height);
   box-sizing: border-box;
-}
-.vc-field input[type='range']:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
 }
 .vc-actions {
   display: flex;
@@ -719,13 +717,14 @@ input[type='text'],
 input[type='search'],
 input[type='date'] {
   width: 100%;
-  padding: 8px 10px;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2);
   background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--font);
+  font-size: var(--text-sm);
   outline: none;
 }
 input[type='text']:focus,
@@ -844,7 +843,7 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   padding: 6px 8px;
   border-radius: 4px;
@@ -872,7 +871,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -924,7 +923,7 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   padding: 6px 8px;
   border-radius: 4px;
@@ -972,16 +971,34 @@ input[type='date']:focus {
   grid-column: auto;
 }
 
+/* One focus ring for the shared controls (UI-03 §7.3). */
+.ghost-btn:focus-visible,
+.primary-btn:focus-visible,
+.link-btn:focus-visible,
+.pp-seg:focus-visible,
+.close-x:focus-visible,
+.vc-field select:focus-visible,
+.vc-field input:focus-visible,
+.vc-field textarea:focus-visible,
+.vc-dataset:focus-visible,
+input[type='text']:focus-visible,
+input[type='search']:focus-visible,
+input[type='date']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 /* --- buttons --- */
 .primary-btn {
-  padding: 10px 14px;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
   background: var(--accent);
   color: #04141a;
   border: none;
-  border-radius: 6px;
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-sm);
   letter-spacing: 0.5px;
   cursor: pointer;
   box-shadow: var(--glow);
@@ -995,13 +1012,14 @@ input[type='date']:focus {
   box-shadow: none;
 }
 .ghost-btn {
-  padding: 10px 14px;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
   background: none;
   color: var(--text);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  font-family: var(--mono);
-  font-size: 12px;
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .ghost-btn {
@@ -1104,7 +1122,7 @@ input[type='date']:focus {
   border: none;
   border-top: 1px solid var(--panel-border);
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   cursor: pointer;
 }
@@ -1260,7 +1278,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--muted);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   text-align: left;
   cursor: pointer;
@@ -1322,7 +1340,7 @@ input[type='date']:focus {
   border: 1px dashed var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   letter-spacing: 0.5px;
   cursor: pointer;
@@ -1372,7 +1390,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   text-align: left;
   cursor: pointer;
@@ -1439,7 +1457,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -1624,7 +1642,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   outline: none;
 }
@@ -1729,7 +1747,7 @@ input[type='date']:focus {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   color: var(--text);
   cursor: pointer;
@@ -1760,7 +1778,7 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   padding: 8px 6px;
   cursor: pointer;
@@ -1805,8 +1823,8 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--accent);
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--font);
+  font-size: var(--text-xs);
   cursor: pointer;
   padding: 0;
 }
@@ -1820,20 +1838,13 @@ input[type='date']:focus {
   height: 20px;
   padding: 0;
   background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: #ff5a6e;
+  border: var(--line-width) solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--danger);
   cursor: pointer;
 }
 .close-x:hover {
   border-color: currentColor;
-}
-.close-x:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 1px;
-}
-.app[data-theme='normal'] .close-x {
-  color: #c62840;
 }
 .link-btn.off {
   color: var(--muted);
@@ -1970,7 +1981,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12px;
   outline: none;
 }
@@ -2100,7 +2111,7 @@ input[type='date']:focus {
   background: none;
   border: 1px solid transparent;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
   padding: 2px 0;
@@ -2153,7 +2164,7 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
@@ -2311,7 +2322,7 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   font-weight: 400;
   line-height: 1.4;
@@ -2460,7 +2471,7 @@ input[type='date']:focus {
   border: none;
   border-radius: 4px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   text-align: left;
   cursor: pointer;
 }
@@ -2508,7 +2519,7 @@ button.pm-open:hover {
   border: 1px solid transparent;
   border-radius: 4px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 14px;
   text-decoration: none;
   cursor: pointer;
@@ -2565,7 +2576,7 @@ a.pm-icon:hover {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   text-align: left;
   cursor: pointer;
@@ -2607,7 +2618,7 @@ a.pm-icon:hover {
   border: 1px solid var(--accent);
   border-radius: 4px;
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
 }
 /* Job details in the processing window. */
@@ -2924,7 +2935,8 @@ a.pm-icon:hover {
   width: 100%;
   box-sizing: border-box;
   resize: vertical;
-  font-family: var(--mono);
+  /* A band-math expression is code. */
+  font-family: var(--font-mono);
 }
 /* The bottom bar (selection, time slider) centred in the map left of the side bar. */
 .bottom.beside-sheet {
@@ -3059,7 +3071,7 @@ a.pm-icon:hover {
   padding-left: 14px;
 }
 .pp-field {
-  gap: 4px;
+  gap: var(--space-1);
 }
 .pp-field input,
 .pp-field select {
@@ -3165,14 +3177,17 @@ a.pm-icon:hover {
 }
 .pp-chip,
 .pp-seg {
-  padding: 3px 8px;
+  padding: var(--space-1) var(--space-2);
   background: none;
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--font);
+  font-size: var(--text-xs);
   cursor: pointer;
+}
+.pp-seg {
+  min-height: var(--control-height);
 }
 .pp-chip.on,
 .pp-seg.on {
@@ -3280,7 +3295,7 @@ a.pm-icon:hover {
   border-bottom: 1px solid var(--panel-border);
 }
 .dialog-original-name {
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -3421,7 +3436,7 @@ a.pm-icon:hover {
   gap: 8px;
   min-width: 0;
   padding: 6px 14px;
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 11px;
   color: var(--accent);
 }
