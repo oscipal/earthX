@@ -71,9 +71,9 @@ Zum Processing-Manager: „Unübersichtliche Gruppen“, „eigentlich das Panel
 
 ## 7. Plan (01.11.2026, zur Freigabe durch Otto)
 
-Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #272 (NM4-54) und #274. Belegstufen wie in UI-02: [P] Code oder Primärquelle gelesen, [M] in der Sitzung gemessen, [S] nur Zusammenfassung einer Websuche (vor einer Entscheidung gegenzuprüfen), [A] eigene Ableitung.
+Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #272 (NM4-54), #273 (NM4-71) und #270 (NM4-29b), geholt am 02.11.2026. Belegstufen wie in UI-02: [P] Code oder Primärquelle gelesen, [M] in der Sitzung gemessen, [S] nur Zusammenfassung einer Websuche (vor einer Entscheidung gegenzuprüfen), [A] eigene Ableitung.
 
-**Abgrenzung zu UI-04 (Otto, 01.11.2026):** NM4-56 geht in UI-04 „Einheitlichkeit“ auf (`docs/plans/vp3/ui-04-einheitlichkeit.md`, kommt mit der nächsten Doku-Runde): Bestandsaufnahme über die ganze Oberfläche, Begriffsliste, Leitfaden `docs/ui/leitfaden.md`, Prüfungen gegen Rückfälle, Zahlenformat, weniger Text und schmale Fenster. **UI-03 legt die Tokens fest, UI-04 zieht sie überall durch.** Wo §3 und §4 oben NM4-56 nennen, gilt UI-04 (Originaltext bleibt stehen).
+**Abgrenzung zu UI-04 (Otto, 01.11.2026):** NM4-56 geht in UI-04 „Einheitlichkeit“ auf (`docs/plans/vp3/ui-04-einheitlichkeit.md`, seit 02.11.2026 auf `main`): Bestandsaufnahme über die ganze Oberfläche, Begriffsliste, Leitfaden `docs/ui/leitfaden.md`, Prüfungen gegen Rückfälle, Zahlenformat, weniger Text und schmale Fenster. **UI-03 legt die Tokens fest, UI-04 zieht sie überall durch.** Wo §3 und §4 oben NM4-56 nennen, gilt UI-04 (Originaltext bleibt stehen).
 
 **Vorgabe Otto (01.11.2026, zum Plan):** Die Regeln aus #272 gelten auch in der Seitenleiste: am Layer ist ein Band erst mit „Apply“ zu sehen, „Save“ speichert; „Temporary“ steht neben dem Titel der Ansicht wie umgesetzt; die Colormap bei RGB heißt „— none —“.
 
@@ -84,7 +84,7 @@ Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main`
 - **Processing und Seitenleiste** teilen sich den rechten Rand (Empfehlung V2, §7.2): das Processing-Panel liegt in derselben Spalte, breiter, und deckt die Einstellungen ab, solange es offen ist; beim Schließen sind sie wieder da. Frage 1.
 - **Unter 900 px:** die Seitenleiste wird ein Blatt von unten (von der Leiste bis zum rechten Rand, höchstens 55 % der Höhe, Griff zum Einklappen auf den Kopf), wie heute das Processing-Panel; Auswahl- und Zeitleiste liegen darüber (§7.2).
 - **Tokens** in einer neuen Datei `frontend/src/tokens.css`: Abstände 4/8/12/16/24/32, Schriftgrade 11/12/13/15/17, Radien 6/10/Pille, Linien, Steuerhöhe 28 px, Farben hell/dunkel (die heutigen Namen bleiben). Eine Schriftfamilie: System-Schrift, Ziffern gleich breit (Frage 4, ersetzt die Monospace-Regel des Prototyps).
-- **Schnitt:** UI-03a Seitenleiste + Tokens (diese Session), UI-03b Processing-Panel (nach #273), UI-03c Processing-Manager (nach UI-03b). UI-04 zieht die Tokens durch die übrige Oberfläche und übernimmt Zahlenformat, weniger Text, Begriffsliste, Leitfaden und die drei Funde bei 320/360 px (§7.6).
+- **Schnitt:** UI-03a Seitenleiste + Tokens (diese Session), UI-03b Processing-Panel (nach UI-03a; #273 ist gemergt), UI-03c Processing-Manager (nach UI-03b). UI-04 zieht die Tokens durch die übrige Oberfläche und übernimmt Zahlenformat, weniger Text, Begriffsliste, Leitfaden und die drei Funde bei 320/360 px (§7.6).
 - **Fragen an Otto:** sieben offen, am Ende (§7.8); Frage 7 hat Otto mit UI-04 beantwortet.
 
 ### 7.1 Stand im Code [P]
@@ -233,10 +233,10 @@ Abgerufen am 02.11.2026. Erreichbar waren aus der Sitzung `developer.apple.com` 
 ### 7.6 Schnitt und Konflikte
 
 1. **UI-03a, diese Session nach Freigabe:** Tokens (`tokens.css`), Schrift, gemeinsame Bedienelemente, `Inspector.tsx` mit den drei Inhalten, Platz rechts und Blatt unter 900 px, Mitte der Leiste unten und der Statusleiste, Zoomknöpfe/Attribution, Processing auf dem Platz der Seitenleiste (V2) mit unveränderter Breite. Tests (vitest, jsdom) und Browser-Skripte `settings-box.cjs` (neu: Platz und Maße der Leiste bei 1280/1920/360, Wechsel, x, Esc), `view-index`, `view-steps`, `nm4-65`, `play-steps`, `results-layer`, `dem-layers`, `layer-settings` nachgezogen. Geschätzt 350–450 Zeilen ohne Tests; liegt es darüber, Schnitt in 3a1 (Tokens, Schrift, Bedienelemente) und 3a2 (Seitenleiste).
-2. **UI-03b, neue Session:** Processing-Panel breiter (`--sheet-wide-width`), Abschnitte Herkunft/Eingabe · Bandvorrat · Schritte · Ausgabe · Vorschau · Start, Schritte als Karten (Kopf: Name, Umbenennen, ↑ ↓, Entfernen; Inhalt im selben Raster). Erst nach dem Merge von #273 (NM4-71 ändert `ProcessingPanel.tsx`, `StepForm.tsx`, `NormalizeFields.tsx`) und nicht gleichzeitig mit einem Frontend-Teil von NM4-71.
+2. **UI-03b, neue Session:** Processing-Panel breiter (`--sheet-wide-width`), Abschnitte Herkunft/Eingabe · Bandvorrat · Schritte · Ausgabe · Vorschau · Start, Schritte als Karten (Kopf: Name, Umbenennen, ↑ ↓, Entfernen; Inhalt im selben Raster). #273 (NM4-71, ändert `ProcessingPanel.tsx`, `StepForm.tsx`, `NormalizeFields.tsx`) ist seit 02.11.2026 gemergt; UI-03b baut auf diesem Stand auf und läuft nicht gleichzeitig mit einem weiteren Frontend-Teil von NM4-71.
 3. **UI-03c, neue Session nach UI-03b:** Processing-Manager: Gruppe als Kopfzeile mit Anzahl und Zustand, Jobs in gleicher Zeilenform mit festen Spalten (Status · Titel · Datum · Aktionen), je Zeile ein Hauptknopf (Download bzw. Retry/Restore) und „⋯“ für den Rest (heute schon `RowMenu`). Breite: das Panel links bleibt 340 px, außer Otto will den Manager breiter (Frage 8).
 
-**Konflikte:** #270 (NM4-29b) und #273 (NM4-71) berühren `ViewerControls`, `ResultControls`, `index.css` und `App.tsx` nicht [P, `git diff --stat`]; Teil 1 kann neben ihnen laufen. Teil 2 kollidiert mit #273. UI-04 (mit NM4-56) kommt nach UI-03 und baut auf den Tokens auf; UI-03 ändert deshalb nach Teil 1 keine Werte der Tokens mehr ohne Frage an Otto.
+**Konflikte:** #270 (NM4-29b) und #273 (NM4-71) sind gemergt (02.11.2026); kein offener Frontend-PR berührt die Seitenleiste. Die drei Teile laufen nacheinander, weil sie sich `index.css` und `tokens.css` teilen. UI-04 (mit NM4-56, Plan `docs/plans/vp3/ui-04-einheitlichkeit.md`) startet nach dem Merge aller Teile von UI-03, allein, und baut auf den Tokens auf; seine Prüfung „keine festen Farb- oder Abstandswerte außerhalb der Tokens“ setzt auf dem Token-Test aus §7.4 auf; UI-03 ändert deshalb nach Teil 1 keine Werte der Tokens mehr ohne Frage an Otto.
 
 **Grenze zu UI-04, nicht doppelt [A]:**
 
