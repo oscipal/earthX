@@ -525,12 +525,12 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
 def _bands_request(request: Request) -> tuple[str, ...] | None:
     """The ``band`` of the query: the one band of the stock a tile shows (NM4-43d), or ``None`` where the URL names none.
 
-    Or three, in the order red, green, blue, for a colour picture (NM4-64): they share one ``rescale`` and take no
-    colormap, which paints one band. Two bands have no picture.
+    Or three, in the order red, green, blue, for a colour picture (NM4-64): one ``rescale`` for all three, or one for
+    each channel in the same order (UI-03d), and no colormap, which paints one band. Two bands have no picture.
 
     ``400`` for a name that is empty, longer than :data:`MAX_BAND_CHARS` or given twice, for a number of names other
-    than one or three, and for a colormap or several ``rescale`` next to three; whether the steps leave such bands is
-    for :func:`_band_plan`.
+    than one or three, and for a colormap or a number of ``rescale`` other than one or three next to three; whether
+    the steps leave such bands is for :func:`_band_plan`.
     """
     given = request.query_params.getlist("band")
     if not given:
@@ -545,8 +545,10 @@ def _bands_request(request: Request) -> tuple[str, ...] | None:
     if len(given) > 1:
         if any(name in request.query_params for name in ("colormap_name", "colormap")):
             raise HTTPException(status_code=400, detail="a picture of three bands takes no colormap")
-        if len(request.query_params.getlist("rescale")) > 1:
-            raise HTTPException(status_code=400, detail="a picture of three bands takes one rescale for all of them")
+        if len(request.query_params.getlist("rescale")) not in (0, 1, COLOUR_BANDS):
+            raise HTTPException(
+                status_code=400, detail="a picture of three bands takes one rescale for all of them or one for each"
+            )
     return tuple(given)
 
 
@@ -698,7 +700,8 @@ _BandQuery = Annotated[
     Query(
         description=(
             "the band of the stock a tile with steps of version 2 shows; the last band a `band_math` step added if none is "
-            f"named, else the first. Three, in the order red, green, blue, for a colour picture (no colormap, one `rescale`). "
+            "named, else the first. Three, in the order red, green, blue, for a colour picture (no colormap; one "
+            "`rescale`, or one per channel). "
             f"At most {MAX_BAND_CHARS} characters each"
         ),
     ),

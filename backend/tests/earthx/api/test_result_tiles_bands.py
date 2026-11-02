@@ -129,6 +129,19 @@ class TestThreeBandsAsOneColourPicture:
         # Band 1 lies below the range, band 3 above it: a range of its own for each would not show that.
         assert picture[0].max() < 128 < picture[2].min()
 
+    def test_a_range_for_each_channel_stretches_each_by_its_own(self, rig: Rig, uploaded: str) -> None:
+        """UI-03d: ``rescale`` three times, in the order of ``bidx``."""
+        ranges = ((100.0, 101.0), (200.0, 201.0), (300.0, 301.0))
+        raw = _values(_tile(rig, uploaded, "bidx=1&bidx=2&bidx=3"))
+        query = "bidx=1&bidx=2&bidx=3&" + "&".join(f"rescale={low},{high}" for low, high in ranges)
+        picture = _values(_png(rig, uploaded, query))
+        for channel, (low, high) in enumerate(ranges):
+            valid = ~raw[channel].mask & ~picture[channel].mask
+            expected = numpy.clip((raw[channel].data[valid] - low) / (high - low) * 255, 0, 255)
+            assert numpy.abs(picture[channel].data[valid].astype(float) - expected).max() <= 1.0
+            # Counter-check: each band lies inside its own range; one shared range would leave two of them at 0 or 255.
+            assert 0 < numpy.ma.median(picture[channel]) < 255
+
     def test_a_colormap_on_three_bands_is_refused_and_not_a_server_error(self, rig: Rig, uploaded: str) -> None:
         z, x, y = TILE
         query = "bidx=1&bidx=2&bidx=3&rescale=0,500&colormap_name=viridis"
