@@ -46,7 +46,7 @@ from earthx.access.crop_rules import (
     target_crs,
 )
 from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
-from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
+from earthx.processing.operators import BandMeta, Grid, Operator, OperatorRegistry, RasterMeta, Tier
 from earthx.processing.operators.select import SELECT_BANDS, SelectParams
 from earthx.processing.recipe import Band, CropOutput, RasterOutput, Recipe, ResolvedInput, Step
 from earthx.processing.source import expected_band_names, units_of
@@ -144,12 +144,49 @@ _FALLBACK_BYTES_PER_VALUE = 8
 
 
 @dataclass(frozen=True, slots=True)
+class Placed:
+    """The grid a step lays, with what it was worked out from: the raster's CRS and bounds, and the parameters."""
+
+    crs: str
+    bounds: tuple[float, float, float, float]
+    params: object
+    grid: Grid
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedStep:
-    """One step with its operator looked up and its parameters validated."""
+    """One step with its operator looked up and its parameters validated.
+
+    A step that lays a new grid (``reproject``) projects the outline of the raster it is applied to to find it, and the
+    planner asks for the raster behind the step in several places of one order. :meth:`place` works the grid out once
+    and the step carries it from there on, to be used only for the same raster and parameters; it lives and dies with
+    the order's plan and is kept nowhere else.
+    """
 
     step: Step
     operator: Operator
     params: object
+    placed: Placed | None = None
+
+    def place(self, meta: RasterMeta) -> PlannedStep:
+        """The step with its grid for ``meta``; itself where the operator lays none or it has the grid already."""
+        if self.operator.place is None or self._grid_for(meta) is not None:
+            return self
+        grid = self.operator.place(meta, self.params)  # type: ignore[arg-type]
+        return replace(self, placed=Placed(meta.crs, meta.bounds, self.params, grid))
+
+    def advance(self, meta: RasterMeta) -> RasterMeta:
+        """The raster behind the step, as ``operator.transform`` gives it, on the grid worked out before if there is one."""
+        grid = self._grid_for(meta)
+        if grid is None or self.operator.transform_on is None:
+            return self.operator.transform(meta, self.params)  # type: ignore[arg-type]
+        return self.operator.transform_on(meta, self.params, grid)  # type: ignore[arg-type]
+
+    def _grid_for(self, meta: RasterMeta) -> Grid | None:
+        placed = self.placed
+        if placed is None or (placed.crs, placed.bounds, placed.params) != (meta.crs, meta.bounds, self.params):
+            return None
+        return placed.grid
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,11 +314,13 @@ def stock_steps(meta: RasterMeta, planned: Sequence[PlannedStep], output: Sequen
     _refuse_chain_of_version_1(planned)
     needed, dead = _trace(planned, output)
     full = meta
+    placed = list(planned)
     for index, step in enumerate(planned):
         if dead[index]:
             continue
         try:
-            full = step.operator.transform(full, step.params)
+            placed[index] = step.place(full)
+            full = placed[index].advance(full)
         except RecipeInvalid as error:
             if len(planned) == 1:
                 raise
@@ -306,14 +345,14 @@ def stock_steps(meta: RasterMeta, planned: Sequence[PlannedStep], output: Sequen
             current = SELECT_BANDS.transform(current, steps[-1].params)
 
     narrow(needed[0])
-    for index, step in enumerate(planned):
+    for index, step in enumerate(placed):
         if dead[index]:
             continue
         if step.operator.restrict is not None:
             # The bands of the step that the planner dropped are not converted; the others are, as before.
             step = replace(step, params=step.operator.restrict(step.params, needed[index + 1]))
         steps.append(step)
-        current = step.operator.transform(current, step.params)
+        current = step.advance(current)
         narrow(needed[index + 1])
     return steps
 
@@ -594,7 +633,7 @@ def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> _Stock:
             changed = {use.adds} if use.adds is not None else names if use.acts_on is None else names & use.acts_on
             weighted += step.operator.cost_factor(step.params) * len(changed)
             touched |= changed
-        meta = step.operator.transform(meta, step.params)
+        meta = step.advance(meta)
         widest = max(widest, len(meta.bands))
     weighted += RASTER_WITHOUT_STEP_FACTOR * len({band.name for band in meta.bands} - touched)
     return _Stock(

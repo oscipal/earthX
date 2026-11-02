@@ -6,6 +6,8 @@ prototype's `/api/…` routes (see `docs/plans/m2/m2-format-und-viewer.md`).
 
 ## Development
 
+Needs Node `^22.22.2 || ^24.15.0 || >=26` (the `engines` field of `package.json`; `jsdom@30` is the strictest).
+
 ```sh
 npm install
 npm run dev
