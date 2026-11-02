@@ -2850,7 +2850,7 @@ a.pm-icon:hover {
 
 /* --- processing panel (M4-13b; side bar since M4-13c §3.1) --- */
 /* A fixed side bar at the right edge, from below the top buttons to the foot of
-   the window: the map stays free on the left for the preview. Head and foot
+   the window, in the column of the settings bar (UI-03a): the map stays free on the left for the preview. Head and foot
    stay put, the middle scrolls. The list of jobs is the processing manager
    beside the rail; a click on a job shows its details here. */
 :root {
@@ -2858,8 +2858,8 @@ a.pm-icon:hover {
 }
 .processing-sheet {
   top: 64px;
-  right: 16px;
-  bottom: 16px;
+  right: 0;
+  bottom: 0;
   width: var(--pp-sheet-width);
   z-index: 12;
   display: flex;
@@ -2926,8 +2926,16 @@ a.pm-icon:hover {
 }
 /* The bottom bar (selection, time slider) centred in the map left of the side bar. */
 .bottom.beside-sheet {
-  left: calc((100% + var(--rail-width) - var(--pp-sheet-width) - 16px) / 2);
-  width: min(760px, calc(100vw - var(--rail-width) - var(--pp-sheet-width) - 64px));
+  left: calc((100% + var(--rail-width) - var(--pp-sheet-width)) / 2);
+  width: min(760px, calc(100vw - var(--rail-width) - var(--pp-sheet-width) - 32px));
+}
+/* In the column of the settings bar: flush with the edge and the foot, a line on the left, no corners. */
+@media (min-width: 900px) {
+  .processing-sheet .processing-panel {
+    border-width: 0 0 0 var(--line-width);
+    border-color: var(--line);
+    border-radius: 0;
+  }
 }
 /* Narrow screens: a sheet from below over the full width, at most 60 % of the
    height, with a grip that folds it down to its head; the map stays above. */
