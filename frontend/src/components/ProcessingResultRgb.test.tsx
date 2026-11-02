@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // "RGB" in the dropdown "Band" of a result layer (NM4-64): the three bands of `earthx:true_color` as one colour picture, drawn
-// from three `bidx` with one range for all of them and no colormap. No backend: `fetch` answers the TileJSON.
+// from three `bidx` with one range for all of them or one for each channel (UI-03d), and no colormap. No backend: `fetch` answers the TileJSON.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -243,14 +243,21 @@ describe('the picture of RGB', () => {
   });
 });
 
-describe('"Apply" and "Save" of RGB', () => {
-  const input = (label: string) => [...container.querySelectorAll('.vc-field')].find((f) => f.textContent?.startsWith(label))!.querySelector('input')!;
+describe('"Apply" and "Save" of RGB, a range for each channel (UI-03d)', () => {
+  const input = (label: string) => [...container.querySelectorAll<HTMLLabelElement>('.vc-num')].find((f) => f.querySelector('.sr-only')?.textContent === label)!.querySelector('input')!;
   const type = (label: string, value: string) =>
     act(() => {
       Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input(label), value);
       input(label).dispatchEvent(new Event('input', { bubbles: true }));
     });
   const button = (label: string) => [...container.querySelectorAll('button')].find((b) => b.textContent === label)!;
+  const values = () => ['red', 'green', 'blue'].flatMap((c) => [input(`${c} vmin`).value, input(`${c} vmax`).value]);
+  const typeAll = (pairs: [string, string][]) =>
+    pairs.forEach(([low, high], i) => {
+      const channel = ['red', 'green', 'blue'][i];
+      type(`${channel} vmin`, low);
+      type(`${channel} vmax`, high);
+    });
 
   async function openControls() {
     await colourOnly();
@@ -258,49 +265,77 @@ describe('"Apply" and "Save" of RGB', () => {
     act(() => root.render(<ResultControls />));
   }
 
-  it('keeps the colormap field in its place, locked at "RGB", and shows the range of the three bands in vmin and vmax', async () => {
+  it('keeps the colormap field in its place, locked at "RGB", and shows the one range of the three bands in each channel', async () => {
     await openControls();
     const select = colormapField()!.querySelector('select')!;
     expect(select.disabled).toBe(true);
     expect(select.selectedOptions[0].textContent).toBe('— none —');
-    expect([input('vmin').value, input('vmax').value]).toEqual(['0.02', '0.7']);
+    expect(values()).toEqual(['0.02', '0.7', '0.02', '0.7', '0.02', '0.7']);
   });
 
-  it('draws the three bands with the typed range and still no colormap', async () => {
+  it('draws three equal ranges as one, and still no colormap', async () => {
     await openControls();
-    type('vmin', '0');
-    type('vmax', '0.5');
+    typeAll([['0', '0.5'], ['0', '0.5'], ['0', '0.5']]);
     act(() => button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(query().getAll('bidx')).toEqual(['3', '2', '1']);
     expect(query().getAll('rescale')).toEqual(['0,0.5']);
     expect(query().has('colormap_name')).toBe(false);
   });
 
-  it('keeps the range for RGB, as for a band, and for no other band', async () => {
+  it('draws each channel with its own range, in the order red, green, blue', async () => {
     await openControls();
-    type('vmin', '0');
-    type('vmax', '0.5');
+    typeAll([['0.05', '0.7'], ['0.04', '0.5'], ['0.02', '0.4']]);
+    act(() => button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
+    // Counter-check: one channel typed wrong draws nothing new and says which.
+    type('green vmax', '0.01');
+    act(() => button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
+    expect(container.textContent).toContain('The lower end of green must be below the upper end.');
+  });
+
+  it('keeps the ranges for RGB with "Save", as for a band, and for no other band', async () => {
+    await openControls();
+    typeAll([['0.05', '0.7'], ['0.04', '0.5'], ['0.02', '0.4']]);
     expect(button('Save').title).toContain('this band');
     act(() => button('Save').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     const job = useProcessingStore.getState().jobs[0];
-    expect(job.bandRanges[RGB]).toMatchObject({ vmin: '0', vmax: '0.5', colormap: '' });
+    expect(job.bandRanges[RGB]).toMatchObject({ colormap: '', channels: [{ vmin: '0.05', vmax: '0.7' }, { vmin: '0.04', vmax: '0.5' }, { vmin: '0.02', vmax: '0.4' }] });
     expect(Object.keys(job.bandRanges)).toEqual([RGB]);
     expect(job.range).toBeNull();
+    expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
   });
 
-  it('puts the range of the three bands back with the auto button', async () => {
+  it('takes each channel at the percentiles of its own values', async () => {
+    const stats = { bands: [{ statistics: BLUE }, { statistics: GREEN }, { statistics: RED }] }; // the file of `colourOnly`
+    vi.mocked(fetch).mockImplementation(async (url) => (String(url) === HREF ? json(TILE_JSON) : String(url).endsWith('/statistics') ? json(stats) : json({ title: 'Not found' })));
     await openControls();
-    type('vmin', '5');
-    type('vmax', '6');
+    const unit = container.querySelector<HTMLSelectElement>('.vc-unit')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(unit, 'percent');
+      unit.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => {
+      button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.waitFor(() => expect(query().getAll('rescale')).toHaveLength(3));
+    });
+    // red, green, blue: each its own 2nd and 98th percentile.
+    expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
+  });
+
+  it('puts the one range of the three bands back with the auto button', async () => {
+    await openControls();
+    typeAll([['5', '6'], ['1', '2'], ['3', '4']]);
     const auto = [...container.querySelectorAll('button')].find((b) => /auto/i.test(b.textContent ?? '') || /auto/i.test(b.title))!;
     act(() => auto.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-    expect([input('vmin').value, input('vmax').value]).toEqual(['0.02', '0.7']);
+    expect(values()).toEqual(['0.02', '0.7', '0.02', '0.7', '0.02', '0.7']);
   });
 
-  it('shows the colormap field again for a single band', async () => {
+  it('shows the colormap field again for a single band, with one pair of fields', async () => {
     await show();
     act(() => useAppStore.setState({ resultViewLayerId: layers()[0].id }));
     act(() => root.render(<ResultControls />));
     expect(colormapField()).toBeDefined();
+    expect(container.querySelectorAll('.vc-num input')).toHaveLength(2);
   });
 });

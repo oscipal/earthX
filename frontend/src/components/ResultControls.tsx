@@ -7,6 +7,8 @@
 import { useState } from 'react';
 
 import { fetchResultStatistics } from '../api';
+import { channelsAtPercent, channelsOf, rescaleOfChannels } from '../channels';
+import { histogramOf, type Histogram } from '../histogram';
 
 import { layerShownName } from '../layerName';
 import type { MapLayer } from '../layers';
@@ -21,12 +23,23 @@ import { useAppStore } from '../store';
 import { ONE_BAND_TIP } from '../viewBand';
 import AutoScaleButton from './AutoScaleButton';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
+import ScaleHistograms from './ScaleHistograms';
+import { useHistograms } from './useHistograms';
 import Tip from './Tip';
 import OpacityRow from './OpacityRow';
 import { InspectorHead, InspectorSection, LayerStepper } from './InspectorParts';
 import LayerDownload from './LayerDownload';
 
-const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap && samePercent(a.percent, b.percent);
+// The range as drawn: one pair, or one for each channel of a colour picture (UI-03d).
+const scaleText = (range: PreviewRange) => (range.channels?.length ? (rescaleOfChannels(range.channels) ?? '') : `${range.vmin},${range.vmax}`);
+const sameRange = (a: PreviewRange, b: PreviewRange) => scaleText(a) === scaleText(b) && a.colormap === b.colormap && samePercent(a.percent, b.percent);
+
+// The histograms of the bands a result layer draws, from the statistics of the result over its mask.
+async function resultHistograms(path: string, places: readonly number[]): Promise<Histogram[] | null> {
+  const bands = await fetchResultStatistics(path);
+  const read = places.map((place) => histogramOf(bands[place]?.statistics));
+  return read.length > 0 && read.every((h) => h !== null) ? (read as Histogram[]) : null;
+}
 
 const SAVE_TIP = {
   job: 'Keep these values for this layer and for every layer of this job',
@@ -53,7 +66,15 @@ function Controls({ layer }: { layer: MapLayer }) {
   const [unit, setUnit] = useState<RangeUnit>(() => (layer.result?.percent ? 'percent' : 'value'));
   const [typed, setTyped] = useState<Percent>(() => layer.result?.percent ?? DEFAULT_PERCENT);
   const [measuring, setMeasuring] = useState(false);
+  const path = resultPathOfTileUrl(tileUrl);
+  const places = bandPlacesOfTileUrl(tileUrl);
+  const histograms = useHistograms(path && info && !info.expired && !info.deleted ? `${path}|${places.join(',')}` : null, () => resultHistograms(path!, places));
   if (!info) return null;
+  const colour = info.band === RGB;
+  // A colour picture in values: the range of each channel, the one range three times until one is changed.
+  const channelValues = draft.channels?.length ? draft.channels : channelsOf(draft.vmin, draft.vmax);
+  const editChannel = (channel: number, end: 'vmin' | 'vmax', text: string) =>
+    edit({ channels: channelValues.map((range, index) => (index === channel ? { ...range, [end]: text } : range)), ...(channel === 0 ? { [end]: text } : {}) });
   const adjustable = info.dataType !== null && /^float/.test(info.dataType);
   // What cannot be set at all is not shown: a result of whole numbers is drawn as it is, an expired one not at all.
   const settable = adjustable && !info.expired && !info.deleted;
@@ -66,7 +87,13 @@ function Controls({ layer }: { layer: MapLayer }) {
   };
 
   // What the layer draws now and what it is saved with: "Apply" is for the first to change, "Save" for the second.
-  const withPercent = (range: PreviewRange, percent: Percent | undefined): PreviewRange => ({ colormap: range.colormap, vmin: range.vmin, vmax: range.vmax, ...(percent ? { percent } : {}) });
+  const withPercent = (range: PreviewRange, percent: Percent | undefined): PreviewRange => ({
+    colormap: range.colormap,
+    vmin: range.vmin,
+    vmax: range.vmax,
+    ...(range.channels?.length ? { channels: range.channels } : {}),
+    ...(percent ? { percent } : {}),
+  });
   const drawn = withPercent(rangeOfTileUrl(tileUrl), info.percent);
   const saved = withPercent(rangeOfTileUrl(info.savedTileUrl ?? tileUrl), info.savedTileUrl === undefined ? info.percent : (info.savedPercent ?? undefined));
   const typedPair = unit === 'percent' ? percentOf(typed) : null;
@@ -103,7 +130,14 @@ function Controls({ layer }: { layer: MapLayer }) {
         setProblem(NO_RANGE_AT_PERCENT);
         return null;
       }
-      const made: PreviewRange = { ...draft, vmin: String(range[0]), vmax: String(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
+      // A colour picture takes each channel at the percentiles of its own values (UI-03d).
+      const channels = colour ? channelsAtPercent(wanted, checked) : null;
+      const { channels: _drop, ...rest } = draft;
+      const made: PreviewRange = {
+        ...rest,
+        ...(channels ? { vmin: channels[0].vmin, vmax: channels[0].vmax, channels } : { vmin: String(range[0]), vmax: String(range[1]) }),
+        percent: { low: String(checked.low), high: String(checked.high) },
+      };
       setDraft(made);
       setProblem(null);
       return made;
@@ -185,6 +219,20 @@ function Controls({ layer }: { layer: MapLayer }) {
                 vmin={unit === 'percent' ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } } : { value: draft.vmin, onChange: (vmin) => edit({ vmin }) }}
                 vmax={unit === 'percent' ? { value: typed.high, onChange: (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } } : { value: draft.vmax, onChange: (vmax) => edit({ vmax }) }}
                 unit={{ value: unit, onChange: setUnit }}
+                channels={colour ? { values: channelValues, onChange: editChannel } : undefined}
+                histograms={
+                  histograms && (
+                    <ScaleHistograms
+                      histograms={histograms}
+                      unit={unit}
+                      vmin={unit === 'percent' ? typed.low : draft.vmin}
+                      vmax={unit === 'percent' ? typed.high : draft.vmax}
+                      onVmin={unit === 'percent' ? (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } : (vmin) => edit({ vmin })}
+                      onVmax={unit === 'percent' ? (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } : (vmax) => edit({ vmax })}
+                      channels={colour ? { values: channelValues, onChange: editChannel } : undefined}
+                    />
+                  )
+                }
                 colormap={info.band === RGB ? { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' } : { value: draft.colormap, onChange: (colormap) => edit({ colormap }) }}
                 scale
               />

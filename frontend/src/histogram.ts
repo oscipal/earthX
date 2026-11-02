@@ -34,8 +34,9 @@ export function percentAt(h: Histogram, value: number): number {
   let below = 0;
   for (let i = 0; i < h.counts.length; i += 1) {
     const [low, high] = [h.edges[i], h.edges[i + 1]];
-    if (value >= high) below += h.counts[i];
-    else if (value > low) below += (h.counts[i] * (value - low)) / (high - low);
+    const count = Math.max(0, h.counts[i]);
+    if (value >= high) below += count;
+    else if (value > low) below += (count * (value - low)) / (high - low);
   }
   return Math.max(0, Math.min(100, (100 * below) / all));
 }
