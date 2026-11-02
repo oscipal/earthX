@@ -24,13 +24,25 @@ function Picker({ value, onPick }: { value: string; onPick: (name: string) => vo
   const groups = useColormapGroups();
   const [query, setQuery] = useState('');
   const [reversed, setReversed] = useState(isReversed(value));
+  // Under 900 px a sheet with the grip of the settings, which folds it to its head.
+  const [folded, setFolded] = useState(false);
   const chosen = baseOf(value);
   const shown = useMemo(() => {
     const text = query.trim().toLowerCase();
     return (groups === null || groups === 'failed' ? [] : groups).map((group) => ({ ...group, colormaps: group.colormaps.filter((c) => c.name.includes(text)) })).filter((group) => group.colormaps.length > 0);
   }, [groups, query]);
   return (
-    <aside className="inspector panel colormap-picker" aria-label="Colormaps">
+    <aside className={`inspector panel colormap-picker${folded ? ' folded' : ''}`} aria-label="Colormaps">
+      <button
+        type="button"
+        className="pp-grip"
+        aria-expanded={!folded}
+        aria-label={folded ? 'Show the colormaps' : 'Fold the colormaps down'}
+        title={folded ? 'Show the colormaps' : 'Fold the colormaps down'}
+        onClick={() => setFolded(!folded)}
+      >
+        {folded ? '▴' : '▾'}
+      </button>
       <div className="vc-head">
         <div className="insp-row">
           <button type="button" className="vc-back" title={BACK_TIP} aria-label={BACK_TIP} onClick={close}>
