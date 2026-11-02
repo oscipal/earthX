@@ -364,9 +364,13 @@ describe('the layout contract in index.css', () => {
     return CSS.slice(start, CSS.indexOf('}', start));
   };
 
-  it('puts the bar at the right edge from 64 px to the foot, 320 px wide, with a line on the left and no corners', () => {
+  // Otto, 2.11.2026: from the top, with no gap; the top buttons stand left of it.
+  it('puts the bar at the right edge from the top to the foot, 320 px wide, with a line on the left and no corners', () => {
     const bar = rule('.inspector.panel');
-    for (const declaration of ['top: 64px', 'right: 0', 'bottom: 0', 'width: var(--inspector-width)', 'border-radius: 0', 'border-width: 0 0 0 var(--line-width)']) expect(bar).toContain(declaration);
+    expect(rule('  .app.has-inspector .overlay.top-right')).toContain('right: calc(var(--inspector-width) + var(--space-4))');
+    expect(rule('  .overlay.top-right.beside-sheet')).toContain('right: calc(var(--pp-sheet-width) + var(--space-4))');
+    expect(rule('.processing-sheet')).toContain('top: 0');
+    for (const declaration of ['top: 0;', 'right: 0', 'bottom: 0', 'width: var(--inspector-width)', 'border-radius: 0', 'border-width: 0 0 0 var(--line-width)']) expect(bar).toContain(declaration);
     expect(Number(/--inspector-width: (\d+)px/u.exec(TOKENS)?.[1])).toBe(320);
   });
 

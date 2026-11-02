@@ -76,7 +76,7 @@ export default function App() {
         )}
       </div>
 
-      <div className="overlay top-right">
+      <div className={`overlay top-right${processingOpen ? ' beside-sheet' : ''}`}>
         <button
           type="button"
           className="panel zoom-btn"

@@ -1,6 +1,7 @@
 // The settings bar at the right edge (UI-03a, Otto, 2.11.2026), in a real browser: a job's result, a pinned view ("Crop to AOI") and the
 // view of the search, each drawn as RGB, as one band and as an index. Measured: the bar, its fields and what stands around it.
-//   1. Place and size: from 1280 px the bar is flush at the right edge, 320 px wide, from 64 px to the foot; under 900 px it is a sheet from the
+//   1. Place and size: from 1280 px the bar is flush at the right edge, 320 px wide, from the top to the foot with no gap, the buttons
+//      at the top left of it (Otto, 2.11.2026); under 900 px it is a sheet from the
 //      bottom, from the rail to the right edge, at most 55 % high.
 //   2. The three kinds are one bar: Band, vmin, vmax, Colormap, Opacity, the row of buttons and "Actions" stand at the same height (counted
 //      from the top of the bar) for every kind and every picture; the colormap of RGB stays, locked, with its reason in the tooltip.
@@ -30,7 +31,7 @@ const VIEWPORTS = process.env.ONLY
   : { hd: { width: 1280, height: 800 }, full: { width: 1920, height: 1080 }, narrow: { width: 360, height: 740 }, touch: { width: 1280, height: 800, touch: true } };
 const RAIL = 48;
 const BAR = 320;
-const TOP = 64;
+const TOP = 0;
 const FOOTPRINT = [10, 50, 11, 51];
 const SCENES = ['SYNTH_A', 'SYNTH_B'];
 // A third scene is ticked and not in the view, so that the bar of the selection stands at the bottom.
@@ -155,6 +156,7 @@ async function measure(page) {
     const body = bar.querySelector('.insp-body');
     const bottom = document.querySelector('.overlay.bottom .draggable');
     const zoom = document.querySelector('.maplibregl-ctrl-zoom-in');
+    const topButtons = rect(document.querySelector('.overlay.top-right'));
     return {
       bar: base,
       scrolls: body.scrollHeight > body.clientHeight + 1,
@@ -175,6 +177,7 @@ async function measure(page) {
       bands: bottom ? rect(document.querySelector('.overlay.bottom')) : null,
       block: rect(bottom),
       zoom: zoom ? rect(zoom) : null,
+      topButtons,
       zoomVisible: zoom ? getComputedStyle(zoom).visibility !== 'hidden' && zoom.getBoundingClientRect().width > 0 : false,
       window: { w: window.innerWidth, h: window.innerHeight },
       // The fields and the buttons with words, in the bar and in the bar of the selection (not the switch of the range, an icon or the grip).
@@ -201,6 +204,7 @@ function checkCase(tag, m, vp, problems) {
     if (bar.w !== BAR) problems.push(`${tag}: the bar is ${bar.w} wide, not ${BAR}`);
     if (bar.y !== TOP) problems.push(`${tag}: the bar begins at ${bar.y}, not at ${TOP}`);
     if (bar.bottom !== vp.height) problems.push(`${tag}: the bar ends at ${bar.bottom}, not at the foot (${vp.height})`);
+    if (!m.topButtons || m.topButtons.right > bar.x) problems.push(`${tag}: the buttons at the top end at ${m.topButtons?.right}, over the bar (${bar.x})`);
   } else {
     if (bar.right !== vp.width || bar.x !== RAIL) problems.push(`${tag}: the sheet spans ${bar.x}…${bar.right}, not ${RAIL}…${vp.width}`);
     if (bar.bottom !== vp.height) problems.push(`${tag}: the sheet ends at ${bar.bottom}, not at the foot (${vp.height})`);
