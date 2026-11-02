@@ -52,6 +52,8 @@ import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
+import { channelsAtPercent, channelsOf, CHANNEL_COUNT, type ChannelRange } from './channels';
+import { trueColorOf } from './processingOrder';
 import { appliedRenderFrom, autoRescale, lookChanged, lookOfPendingFields, pendingFieldsOf, pendingPercentOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
@@ -444,11 +446,13 @@ const LEAVE_FOCUS = {
   pendingColormapName: '',
   pendingVmin: '',
   pendingVmax: '',
+  pendingChannels: [] as ChannelRange[],
   pendingIndex: '',
   pendingBand: '',
   pendingUnit: 'value' as RangeUnit,
   pendingPercentLow: DEFAULT_PERCENT.low,
   pendingPercentHigh: DEFAULT_PERCENT.high,
+  enhance: null,
 } as const;
 
 // The list-facing state an open section stands for: its scenes and groups, first
@@ -655,6 +659,25 @@ export function datasetSavable(s: AppState): boolean {
 }
 
 // The first scene of the image the view shows (of the view where nothing is shown yet): the one its range is measured on.
+// Whether the fields stand for the colour picture of the dataset ("RGB"): no band, no index, and a dataset with a true-colour one.
+export function colourView(s: AppState): boolean {
+  if (s.pendingBand || s.pendingIndex) return false;
+  const { info } = firstSceneOfView(s);
+  return trueColorOf(s.datasets.find((d) => d.id === info?.datasetId)?.collection) !== null;
+}
+
+// Whether "Enhance contrast" is on: the fields still ask for the look it drew.
+export const enhanceOn = (s: AppState): boolean => s.enhance !== null && !lookChanged(s.enhance.look, s);
+
+// The statistics the fields of the view are measured with (`autoStretch`, the histograms of "Scale"): the first scene of the image
+// shown, the index of the fields as the tile route computes it, else the asset of the band in the fields. `null` before a scene is open.
+export function viewStatisticsUrl(s: AppState): string | null {
+  const { itemId, info } = firstSceneOfView(s);
+  if (!info || itemId === undefined) return null;
+  const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
+  return index ? indexStatisticsUrl(info.datasetId, itemId, index) : api.buildStatisticsUrl(info.datasetId, itemId, assetOfLook(info, { band: s.pendingBand || undefined }));
+}
+
 function firstSceneOfView(s: AppState): { itemId: string | undefined; info: DownloadedInfo | undefined } {
   const shown = shownImageOf(viewImagesOf(s), s.shownImage);
   const itemId = shown?.ids[0] ?? Object.keys(s.downloaded)[0];
@@ -717,12 +740,14 @@ async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
     const stats = index
       ? await api.fetchStatisticsAt(api.withPercentiles(indexStatisticsUrl(info.datasetId, itemId, index), asked))
       : await api.fetchStatistics(info.datasetId, itemId, assetOfLook(info, { band: s.pendingBand || undefined }), asked);
+    // A colour picture takes each channel at the percentiles of its own values (UI-03d).
+    const channels = colourView(s) ? channelsAtPercent(Object.values(stats), checked) : null;
     const range = rescaleAtPercent(Object.values(stats), checked);
     if (!range) {
       set({ notice: NO_RANGE_AT_PERCENT });
       return;
     }
-    set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
+    set(channels ? { pendingVmin: channels[0].vmin, pendingVmax: channels[0].vmax, pendingChannels: channels } : { pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
     const now = get();
     set({ appliedRender: { ...now.appliedRender, ...lookOfPendingFields(now) } });
   } catch (e) {
@@ -798,6 +823,8 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
         aoi: clip ?? s.aoi,
         cropToAoi: clip !== null,
         datasetId: image.datasetId,
+        // An index chosen in "Quick processing" is pinned alone, not the whole view (UI-03d, Otto, 2.11.2026).
+        ...(viewIndexOf(look, s.datasets.find((d) => d.id === image.datasetId)?.collection) ? { indexOnly: true as const } : {}),
       },
     };
   });
@@ -1406,6 +1433,8 @@ export interface AppState {
   pendingColormapName: string; // '' = none
   pendingVmin: string;
   pendingVmax: string;
+  // The three ranges of a colour picture, set channel by channel (UI-03d); empty while `pendingVmin`/`pendingVmax` hold for all three.
+  pendingChannels: ChannelRange[];
   // The index the fields stand for, drawn once "Apply" is pressed (NM4-14b); '' = none.
   pendingIndex: string;
   // The single band the fields stand for, drawn once "Apply" is pressed (NM4-45); '' = the standard picture.
@@ -1415,6 +1444,9 @@ export interface AppState {
   pendingUnit: RangeUnit;
   pendingPercentLow: string;
   pendingPercentHigh: string;
+  // "Enhance contrast" of "Quick processing" (UI-03d): the look it drew and the one drawn before it, which a second click puts back. It
+  // is on while the fields ask for what it drew.
+  enhance: { look: AppliedRender; before: AppliedRender } | null;
 
   // --- data ---
   config: { point_buffer_deg: number } | null; // no server config endpoint any more; the client default (0.05) applies
@@ -1584,6 +1616,13 @@ export interface AppState {
   setPendingColormapName: (v: string) => void;
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
+  setPendingChannel: (channel: number, end: 'vmin' | 'vmax', text: string) => void;
+  // "Quick processing" (UI-03d): an index drawn at once, without a job and without "Apply"; a second click goes back to the picture of
+  // the dataset.
+  quickIndex: (name: string) => Promise<void>;
+  // "Enhance contrast": each band (each channel of a colour picture) stretched from its 2nd to its 98th percentile and drawn at once;
+  // a second click puts back what was drawn before.
+  enhanceContrast: () => Promise<void>;
   applyRender: () => void | Promise<void>;
   // Puts back what a pinned layer was saved with, when its settings are closed without "Save" (NM4-54, Otto, 1.11.2026).
   revertViewLayer: (id: string) => void;
@@ -1685,11 +1724,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingColormapName: '',
   pendingVmin: '',
   pendingVmax: '',
+  pendingChannels: [],
   pendingIndex: '',
   pendingBand: '',
   pendingUnit: 'value',
   pendingPercentLow: DEFAULT_PERCENT.low,
   pendingPercentHigh: DEFAULT_PERCENT.high,
+  enhance: null,
 
   config: null,
   datasets: [],
@@ -2199,6 +2240,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!layer) return;
     const outcome = decideDownloadOutcomeForLayer(layer, s.datasets);
     set({ downloadOutcome: outcome, downloadAs: 'raw', downloadIndexNote: null });
+    // A layer of an index alone is downloaded as that index (UI-03d, as in NM4-14b): there are no raw bands to choose.
+    if (layer.restore.indexOnly && indexOfferedFor(layer, s.datasets)) void get().setDownloadAs('index');
     if (outcome !== 'originals') return;
     const datasetId = layer.restore.datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
@@ -2638,7 +2681,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);
     if (!bandAssetsOf(item, collection).includes(band)) return;
-    set({ pendingBand: band, pendingIndex: '', pendingColormapName: '', pendingVmin: '', pendingVmax: '' });
+    set({ pendingBand: band, pendingIndex: '', pendingColormapName: '', pendingVmin: '', pendingVmax: '', pendingChannels: [] });
     void get().autoStretch();
   },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
@@ -2646,6 +2689,32 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
   setPendingVmax: (pendingVmax) => set({ pendingVmax }),
+  // One end of one channel: the first change splits the shared range into three.
+  setPendingChannel: (channel, end, text) =>
+    set((s) => {
+      const channels = s.pendingChannels.length === CHANNEL_COUNT ? s.pendingChannels : channelsOf(s.pendingVmin, s.pendingVmax);
+      return { pendingChannels: channels.map((range, index) => (index === channel ? { ...range, [end]: text } : range)) };
+    }),
+  quickIndex: async (name) => {
+    const s = get();
+    s.chooseViewIndex(s.pendingIndex === name ? null : name);
+    set({ enhance: null });
+    await get().applyRender();
+  },
+  enhanceContrast: async () => {
+    const s = get();
+    if (enhanceOn(s)) {
+      set({ ...pendingFieldsOf(s.enhance!.before), enhance: null });
+      await get().applyRender();
+      return;
+    }
+    const before = { ...s.appliedRender };
+    set({ pendingUnit: 'percent', pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
+    await get().applyRender();
+    const now = get();
+    // Only where the percentiles could be measured: else the fields say why and nothing is on.
+    if (samePercent(now.appliedRender.percent, DEFAULT_PERCENT)) set({ enhance: { look: lookOfPendingFields(now), before } });
+  },
   // Commits the pending fields (F18) — nothing renders differently until this
   // runs, which is the point of an explicit "Apply".
   // "Apply" draws the shown image with the fields and nothing else (NM4-53); other images keep their look.
@@ -2732,16 +2801,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
       return;
     }
-    // The first scene of the image that is shown (the first of the view where nothing is shown yet).
-    const { itemId, info } = firstSceneOfView(s);
-    if (!info) return;
-    // The index in the fields is measured as it will be drawn: the tile route with the same step, not the asset of the scene.
-    const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
+    // The first scene of the image that is shown (the first of the view where nothing is shown yet); the index in the fields is
+    // measured as it will be drawn: the tile route with the same step, not the asset of the scene.
+    const url = viewStatisticsUrl(s);
+    if (!url) return;
     set({ focusLoading: true });
     try {
-      const stats = index ? await api.fetchStatisticsAt(indexStatisticsUrl(info.datasetId, itemId!, index)) : await api.fetchStatistics(info.datasetId, itemId!, assetOfLook(info, { band: s.pendingBand || undefined }));
+      const stats = await api.fetchStatisticsAt(url);
       const range = autoRescale(stats);
-      if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
+      if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
     } catch (e) {
       set({ notice: `Could not measure a stretch automatically: ${(e as Error).message}` });
     } finally {

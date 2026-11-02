@@ -140,24 +140,43 @@ const indexField = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-r
 describe('the view of a layer of the layer manager', () => {
   // Otto, 1.11.2026 (NM4-54, zu #272): a layer that was pinned with a band or an index has the dropdown free, as the view it came from;
   // this replaces the lock of NM4-14b ("a layer keeps the index it was added with").
-  it('has the dropdown free, showing the picture of the layer', () => {
+  // UI-03d (Otto, 2.11.2026): the indices are in "Quick processing"; the dropdown has the bands of the original only, which these
+  // scenes do not have, so it is locked; the buttons are free.
+  const quick = () => [...container.querySelectorAll<HTMLButtonElement>('.vc-quick button')];
+  const pressed = () => quick().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent);
+
+  it('has the presets free, the index of the layer on, for a layer pinned with the whole view', () => {
     setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1', pendingIndex: 'NDVI' });
     act(() => root.render(<ViewerControls />));
-    expect(indexField()!.querySelector('select')!.disabled).toBe(false);
+    expect(quick().every((b) => !b.disabled)).toBe(true);
+    expect(pressed()).toEqual(['NDVI']);
     expect(indexField()!.querySelector('select')!.value).toBe('index:NDVI');
   });
 
-  it('has it free for a layer without an index too, showing the standard picture', () => {
+  it('has them free for a layer without an index too, none on, the dropdown showing the standard picture', () => {
     setState({ viewOfLayer: true, appliedRender: { rescale: '0,3000' }, layers: [layer({ rescale: '0,3000' })], viewLayerId: 'L1' });
     act(() => root.render(<ViewerControls />));
-    expect(indexField()!.querySelector('select')!.disabled).toBe(false);
+    expect(quick().every((b) => !b.disabled)).toBe(true);
+    expect(pressed()).toEqual([]);
     expect(indexField()!.querySelector('select')!.value).toBe('');
   });
 
-  it('keeps the dropdown open in the live view of the search, even after the view was added as a layer', () => {
-    setState({ viewOfLayer: false, layers: [layer(NDVI)], viewLayerId: 'L1' });
+  it('keeps them free in the live view of the search, even after the view was added as a layer', () => {
+    setState({ viewOfLayer: false, layers: [layer(NDVI, { indexOnly: true })], viewLayerId: 'L1' });
     act(() => root.render(<ViewerControls />));
-    expect(indexField()!.querySelector('select')!.disabled).toBe(false);
+    expect(quick().every((b) => !b.disabled)).toBe(true);
+  });
+
+  it('locks the dropdown and the other indices of a layer that holds an index alone, and says why; "Enhance contrast" stays', () => {
+    setState({ viewOfLayer: true, layers: [layer(NDVI, { indexOnly: true })], viewLayerId: 'L1', pendingIndex: 'NDVI' });
+    act(() => root.render(<ViewerControls />));
+    const select = indexField()!.querySelector('select')!;
+    expect(select.disabled).toBe(true);
+    expect([...select.options].map((o) => o.textContent)).toEqual(['NDVI']);
+    expect(indexField()!.title).toBe('This layer holds the index only');
+    expect(quick().filter((b) => b.disabled).map((b) => b.textContent)).toEqual(['NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
+    expect(quick().find((b) => b.textContent === 'NDWI')!.title).toContain('This layer holds the index only');
+    expect(quick().find((b) => b.textContent === 'Enhance contrast')!.disabled).toBe(false);
   });
 
   it('changes the picture of the layer with "Apply", as the same layer: another index, then the standard picture again', async () => {
@@ -200,6 +219,29 @@ describe('the view of a layer of the layer manager', () => {
 
 describe('the ⇩ of a layer that shows an index', () => {
   const button = () => container.querySelector<HTMLButtonElement>('[data-col="download"]')!;
+
+  // UI-03d: a layer of an index alone is downloaded as that index, as in NM4-14b.
+  it('downloads the index alone of a layer pinned with an index of "Quick processing"', () => {
+    setState({ layers: [layer(NDVI, { indexOnly: true })] });
+    act(() => root.render(<LayerManager />));
+    expect(button().disabled).toBe(false);
+    expect(button().title).toBe('Download the NDVI of the AOI crop, computed as a Processing job would');
+  });
+
+  it('is locked with the reason for such a layer of whole scenes: a job of Processing computes those', () => {
+    setState({ layers: [layer(NDVI, { indexOnly: true, cropToAoi: false })] });
+    act(() => root.render(<LayerManager />));
+    expect(button().disabled).toBe(true);
+    expect(button().title).toBe('The index of whole scenes is computed by a job: start one in Processing.');
+  });
+
+  it('opens the dialog on the index, with no raw bands to choose', async () => {
+    setState({ layers: [layer(NDVI, { indexOnly: true })] });
+    await act(async () => {
+      await useAppStore.getState().openDownloadDialog('L1');
+    });
+    expect(useAppStore.getState().downloadAs).toBe('index');
+  });
 
   it('says what it downloads: the raw crop, and the index besides, as a Processing job would give it', () => {
     setState({ layers: [layer(NDVI)] });
@@ -277,6 +319,18 @@ describe('the dialog of the download', () => {
     await act(async () => { await useAppStore.getState().openDownloadDialog('L1'); });
     await settle();
     expect(container.querySelector('input[name="download-as"]')).toBeNull();
+  });
+
+  it('is the index alone for a layer of an index of "Quick processing" (UI-03d): no raw bands to choose, the estimate asked at once', async () => {
+    answers(() => undefined);
+    setState({ layers: [layer(NDVI, { indexOnly: true })] });
+    act(() => root.render(<DownloadDialog />));
+    await act(async () => { await useAppStore.getState().openDownloadDialog('L1'); });
+    await settle();
+    expect(container.querySelector('input[name="download-as"]')).toBeNull();
+    expect(container.textContent).toContain('NDVI ((N - R)/(N + R))');
+    expect(container.querySelector('.dialog-resolution')).toBeNull();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(true);
   });
 
   it('names the index and its formula, offers no resolution and says what it will cost, with the limits in the tooltip', async () => {

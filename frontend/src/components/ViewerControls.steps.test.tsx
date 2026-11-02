@@ -324,7 +324,8 @@ describe('an image of three bands', () => {
     mount(THREE);
     expect(colormapField()).toBeDefined();
     expect(colormapOptions()).toEqual(['— none —']);
-    expect(container.querySelectorAll('.vc-num input')).toHaveLength(2);
+    // A range for each channel (UI-03d): vmin and vmax of red, green and blue.
+    expect(container.querySelectorAll('.vc-num input')).toHaveLength(6);
     expect(button('Apply')).toBeDefined();
     expect([...container.querySelector('.vc-render')!.children].map((el) => el.className)).toEqual(['vc-field band-select', 'vc-field vc-scale', 'vc-field', 'vc-opacity', 'vc-buttons']);
   });

@@ -78,6 +78,9 @@ export interface LayerRestore {
   // stays pinned, and a download has to name the dataset the pinned items
   // actually belong to, not whatever is picked in the panel right now.
   datasetId: string | null;
+  // Pinned with an index of "Quick processing" (UI-03d, Otto, 2.11.2026): the layer is that index and nothing else, no band and no
+  // other index to choose, and its download is the index as a job computes it (NM4-14b).
+  indexOnly?: true;
 }
 
 export interface MapLayer {

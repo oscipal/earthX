@@ -159,7 +159,7 @@ const KINDS: [string, () => void][] = [
 ];
 
 describe('the places', () => {
-  it.each(KINDS)('is an aside "Settings" with the head, then "Display", then "Actions": %s', (_, open) => {
+  it.each(KINDS)('is an aside "Settings" with the head, then "Display", "Quick processing" for scenes, then "Actions": %s', (kind, open) => {
     act(() => root.render(<Inspector />));
     expect(aside()).toBeNull();
     open();
@@ -171,7 +171,8 @@ describe('the places', () => {
     expect(head.children[0].querySelector('.vc-title')).not.toBeNull();
     expect(head.children[0].querySelector('.close-x')).not.toBeNull();
     expect(head.children[1].classList.contains('insp-row2')).toBe(true);
-    expect(headings()).toEqual(['Display', 'Actions']);
+    // "Quick processing" stands over "Actions" for scenes (UI-03d, Otto, 2.11.2026); a result has no index of a dataset to compute.
+    expect(headings()).toEqual(kind === 'the settings of a result' ? ['Display', 'Actions'] : ['Display', 'Quick processing', 'Actions']);
   });
 
   it.each(KINDS)('has the same fields in the same order, the opacity under them and the buttons last: %s', (_, open) => {

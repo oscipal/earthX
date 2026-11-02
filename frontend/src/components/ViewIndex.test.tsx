@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 //
-// The presets in the dropdown "Band" of the view of scenes (NM4-14b, review of Otto 31.10.2026; one dropdown with the bands since
-// NM4-45): the presets of the dataset under the standard picture and a line, the tooltip with the formula, the short note where the
-// index cannot be drawn (and its explanation), and no dropdown for a dataset with nothing to choose (the DEM).
+// The presets of the view of scenes (NM4-14b, review of Otto 31.10.2026), since UI-03d buttons in "Quick processing" (Otto, 2.11.2026):
+// drawn at once, on or off, the tooltip with the formula, the short note where the index cannot be drawn (and its explanation).
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -62,6 +61,10 @@ function mount(presets: unknown[] | null = SENTINEL_2_PRESETS, over: Partial<App
       pendingVmin: '0',
       pendingVmax: '3000',
       pendingIndex: over.appliedRender?.index ?? '',
+      pendingBand: '',
+      pendingChannels: [],
+      pendingUnit: 'value',
+      enhance: null,
       mosaics: {},
       mapZoom: 12,
       layers: [],
@@ -92,77 +95,96 @@ const field = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render
 const select = () => field()?.querySelector('select') as HTMLSelectElement;
 const colormapSelect = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!.querySelector('select')!;
 const note = () => container.querySelector<HTMLElement>('.vc-note');
-const apply = () => act(() => (container.querySelector('.vc-apply') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const choose = (value: string) =>
   act(() => {
     Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(select(), value);
     select().dispatchEvent(new Event('change', { bubbles: true }));
   });
 
-describe('the dropdown "Band" with the presets', () => {
-  it('lists the presets of the dataset in the order of the registry, under "RGB" and a line, with "RGB" chosen to begin with', () => {
+const quick = () => [...container.querySelectorAll<HTMLButtonElement>('.vc-quick button')];
+const quickButton = (name: string) => quick().find((b) => b.textContent === name)!;
+const press = async (name: string) => {
+  await act(async () => {
+    quickButton(name).click();
+  });
+};
+const pressed = () => quick().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent);
+
+describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
+  it('has the presets of the dataset in the order of the registry and "Enhance contrast", none of them on', () => {
     mount();
-    expect([...select().options].map((o) => o.textContent)).toEqual(['RGB', '──────────', 'NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
-    expect([...select().options].map((o) => o.disabled)).toEqual([false, true, false, false, false, false, false]);
-    expect(select().value).toBe('');
+    expect(quick().map((b) => b.textContent)).toEqual(['NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI', 'Enhance contrast']);
+    expect(pressed()).toEqual([]);
   });
 
-  it('stands first in the row of the settings', () => {
+  it('stands between "Display" and "Actions"', () => {
     mount();
-    expect(container.querySelector('.vc-render')!.firstElementChild).toBe(field());
+    expect([...container.querySelectorAll('.insp-heading')].map((h) => h.textContent)).toEqual(['Display', 'Quick processing', 'Actions']);
+  });
+
+  it('has three in a row, in two rows', () => {
+    expect(CSS).toMatch(/\.inspector \.vc-quick \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/u);
+  });
+
+  it('leaves the presets out of the dropdown "Band": the original and its bands only', () => {
+    mount();
+    expect([...select().options].map((o) => o.textContent)).toEqual(['RGB']);
+    expect(select().value).toBe('');
+    expect(field()!.title).toBe('This picture has one band');
   });
 
   it.each([
     ['an empty list (the DEM)', []],
     ['no field (a backend before NM4-14a)', null],
-  ])('is locked, with the reason, for a dataset with %s', (_, presets) => {
+  ])('has "Enhance contrast" alone for a dataset with %s', (_, presets) => {
     mount(presets);
-    expect(select().disabled).toBe(true);
-    expect(field()!.title).toBe('This picture has one band');
-    expect(container.textContent).not.toContain('Index');
+    expect(quick().map((b) => b.textContent)).toEqual(['Enhance contrast']);
   });
 
-  it('says what an index is in the tooltip: title and formula; and what the dropdown is while none is chosen', () => {
+  it('says what an index is in the tooltip: title and formula', () => {
     mount();
-    expect(field()!.title).toContain('quick calculation');
-    expect(field()!.title).toContain('from zoom 8');
-    expect(field()!.title).toContain('start a job in Processing');
-    expect([...select().options].find((o) => o.value === 'index:NDVI')!.title).toBe('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');
-    choose('index:NDVI');
-    expect(field()!.title).toBe('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');
-    expect([...select().options].find((o) => o.value === 'index:NDWI')!.title).toContain('(McFeeters 1996)');
+    expect(quickButton('NDVI').title).toContain('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');
+    expect(quickButton('NDWI').title).toContain('(McFeeters 1996)');
+    expect(quickButton('Enhance contrast').title).toContain('2nd to its 98th percentile');
   });
 
-  it('draws the choice once "Apply" is pressed, not before (Otto, 1.11.2026): the choice is in the fields, "Apply" opens', () => {
+  it('draws an index at once, with no "Apply" and no job, and shows it on; a second click goes back to the picture of the dataset', async () => {
     mount();
-    const button = container.querySelector('.vc-apply') as HTMLButtonElement;
-    expect(button.getAttribute('aria-disabled')).toBe('true');
-    choose('index:NDWI');
-    expect(select().value).toBe('index:NDWI');
-    expect(useAppStore.getState().appliedRender).toEqual({ rescale: '0,3000' });
-    expect(button.getAttribute('aria-disabled')).toBeNull();
-    apply();
+    await press('NDWI');
     expect(useAppStore.getState().appliedRender).toEqual({ index: 'NDWI', colormapName: 'rdbu', rescale: '-1,1' });
-    expect(button.getAttribute('aria-disabled')).toBe('true');
-    choose('');
-    expect(useAppStore.getState().appliedRender.index).toBe('NDWI');
-    apply();
+    expect(pressed()).toEqual(['NDWI']);
+    expect((container.querySelector('.vc-apply') as HTMLButtonElement).getAttribute('aria-disabled')).toBe('true');
+    // The field "Band" says what is drawn, and the index is no band to pick there.
+    expect(select().value).toBe('index:NDWI');
+    expect([...select().options].find((o) => o.value === 'index:NDWI')!.disabled).toBe(true);
+    // No request but the statistics: no job is placed.
+    const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(calls.every((url) => url.includes('/statistics'))).toBe(true);
+    await press('NDWI');
     expect(useAppStore.getState().appliedRender).toEqual({ rescale: '0,3000' });
+    expect(pressed()).toEqual([]);
     expect(select().value).toBe('');
   });
 
-  it('opens "Apply" for an index of the range and colormap the map shows already: NDVI after EVI', () => {
-    mount(SENTINEL_2_PRESETS, { appliedRender: { index: 'EVI', colormapName: 'rdylgn', rescale: '-1,1' }, pendingColormapName: 'rdylgn', pendingVmin: '-1', pendingVmax: '1' });
-    const button = container.querySelector('.vc-apply') as HTMLButtonElement;
-    expect(button.getAttribute('aria-disabled')).toBe('true');
-    choose('index:NDVI');
-    expect(button.getAttribute('aria-disabled')).toBeNull();
+  it('takes one index at a time: another one puts the first away', async () => {
+    mount();
+    await press('NDVI');
+    await press('EVI');
+    expect(pressed()).toEqual(['EVI']);
+    expect(useAppStore.getState().appliedRender.index).toBe('EVI');
   });
 
-  it('shows the colormap and the range of the preset in the fields, and a colormap to choose where the dataset draws RGB', () => {
+  it('is put away by a band picked in the dropdown', async () => {
+    mount(SENTINEL_2_PRESETS, { items: [{ ...item('s0'), assets: { red: { href: 'r.tif', type: 'image/tiff; application=geotiff; profile=cloud-optimized', 'eo:bands': [{ name: 'red' }] } } }, item('s1')] as StacItem[] });
+    await press('NDVI');
+    choose('band:red');
+    expect(pressed()).toEqual([]);
+  });
+
+  it('shows the colormap and the range of the preset in the fields, and a colormap to choose where the dataset draws RGB', async () => {
     mount();
     expect([...colormapSelect().options].map((o) => o.textContent)).toEqual(['— none —']);
-    choose('index:NDWI');
+    await press('NDWI');
     expect(colormapSelect().value).toBe('rdbu');
     expect([...colormapSelect().options].map((o) => o.value)).toEqual(['', ...COLORMAPS]);
     expect(COLORMAPS).toContain('rdbu');
@@ -229,13 +251,12 @@ describe('the note under the settings', () => {
     expect(note()!.textContent).toBe('Zoom in to compute NDVI');
   });
 
-  it('names the index being chosen, and is there the moment it is chosen out of reach', () => {
+  it('names the index drawn, and is there the moment it is drawn out of reach', async () => {
     mount(SENTINEL_2_PRESETS, { mapZoom: 5 });
     none();
-    choose('index:NDWI');
-    none(); // not drawn yet, so nothing to say
-    apply();
+    await press('NDWI');
     expect(note()!.textContent).toBe('Zoom in to compute NDWI');
+    expect(note()!.closest('.insp-section')!.querySelector('.insp-heading')!.textContent).toBe('Quick processing');
   });
 
   it('says it cannot be computed where the tile route cannot take the scenes (the request is too long), at any zoom', () => {
