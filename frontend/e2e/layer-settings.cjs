@@ -111,7 +111,7 @@ async function check(browser, { kind, theme, viewport }) {
   // The fields are rows of one column, in order, over the buttons.
   const rows = await page.locator(`${root} .vc-render > *`).evaluateAll((els) => els.map((el) => ({ name: el.querySelector('span')?.textContent ?? el.className.split(' ')[0], ...el.getBoundingClientRect().toJSON() })));
   rows.forEach((row, i) => { if (i > 0 && row.y < rows[i - 1].y + rows[i - 1].height - 0.5) problems.push(`"${row.name}" is not under "${rows[i - 1].name}"`); });
-  if (rows.map((r) => r.name).join() !== 'Band,vmin,vmax,Colormap,Opacity,vc-buttons') problems.push(`the rows of the settings: ${rows.map((r) => r.name)}`);
+  if (rows.map((r) => r.name).join() !== 'Band,Scale,Colormap,Opacity,vc-buttons') problems.push(`the rows of the settings: ${rows.map((r) => r.name)}`);
   const sideways = await page.evaluate((sel) => { const el = document.querySelector(sel); return el ? el.scrollWidth > el.clientWidth + 1 : false; }, root);
   if (sideways) problems.push('the panel scrolls sideways');
   await shot('1-opened');
@@ -163,7 +163,8 @@ async function check(browser, { kind, theme, viewport }) {
     // The settings of a pinned layer: closing them loses what was applied; "Save" keeps it for the layer.
     const layerUrl = () => page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers[0].overlays[0].tileUrl);
     if (!(await layerUrl()).includes('rescale=0%2C3000')) problems.push('"Apply" changed the layer');
-    await page.getByRole('button', { name: /Clear/ }).click();
+    // The red x closes the settings of the layer (no "Clear", Otto, 2.11.2026).
+    await page.locator(`${root} .vc-head .close-x`).click();
     await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().selectLayer('S1'));
     await page.waitForSelector(`${root} .vc-apply`);
     if ((await page.locator(`${root} .vc-field input`).nth(1).inputValue()) !== '3000') problems.push('the settings show the applied look after they were closed and opened again');
