@@ -4,6 +4,7 @@
 // state lives in `processingStore.ts` and `store.ts`.
 
 import type { MapLayer, ResultLayerInfo } from './layers';
+import { channelsOfRescale } from './channels';
 import { buildTileUrl } from './mapLayers';
 import { RGB, RGB_LABEL, startBand } from './processingBands';
 import { presetFor, presetRange, type IndexPreset } from './indexPresets';
@@ -184,6 +185,8 @@ export function resultRender(
 
 // The range and colormap a render stands for, as the fields of the result view show them.
 export function rangeOfRender(render: AppliedRender): PreviewRange {
+  const channels = channelsOfRescale(render.rescale);
+  if (channels) return { vmin: channels[0].vmin, vmax: channels[0].vmax, colormap: render.colormapName ?? '', channels };
   const [vmin = '', vmax = ''] = render.rescale?.split(',') ?? [];
   return { vmin, vmax, colormap: render.colormapName ?? '' };
 }
@@ -191,7 +194,8 @@ export function rangeOfRender(render: AppliedRender): PreviewRange {
 // The range and colormap a tile URL asks for: what a result layer draws now.
 export function rangeOfTileUrl(tileUrl: string): PreviewRange {
   const query = new URLSearchParams(tileUrl.slice(tileUrl.indexOf('?') + 1));
-  return rangeOfRender({ rescale: query.get('rescale') ?? undefined, colormapName: query.get('colormap_name') ?? undefined });
+  const rescale = query.getAll('rescale');
+  return rangeOfRender({ rescale: rescale.length > 0 ? rescale.join(';') : undefined, colormapName: query.get('colormap_name') ?? undefined });
 }
 
 // The same range and colormap in the shape of a request.

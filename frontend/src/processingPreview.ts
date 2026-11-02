@@ -3,6 +3,7 @@
 // "Preview", and the layer a preview becomes. Pure functions; the state lives in
 // `processingStore.ts`.
 
+import { checkChannels, type ChannelRange } from './channels';
 import { clipTileUrl } from './aoiClip';
 import {
   buildMosaicOperatorTileJsonUrl,
@@ -79,6 +80,8 @@ export interface PreviewRange {
   colormap: string;
   // What the range was typed as where it was typed in percentiles (NM4-65 part 4): `vmin`/`vmax` hold the values they gave.
   percent?: Percent;
+  // A colour picture of a result with a range for each channel (UI-03d); `vmin`/`vmax` are then the first.
+  channels?: ChannelRange[];
 }
 
 export const DEFAULT_RANGE: PreviewRange = {
@@ -88,6 +91,7 @@ export const DEFAULT_RANGE: PreviewRange = {
 };
 
 export function rescaleOf(range: PreviewRange): { rescale: string } | { problem: string } {
+  if (range.channels?.length) return checkChannels(range.channels);
   const number = (text: string) => (text.trim() === '' ? NaN : Number(text));
   const low = number(range.vmin);
   const high = number(range.vmax);
