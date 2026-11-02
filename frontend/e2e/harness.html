@@ -14,7 +14,8 @@
   <body>
     <div id="map"></div>
     <script type="module">
-      import maplibregl from 'maplibre-gl';
+      import * as maplibregl from 'maplibre-gl';
+      import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
       import { fetchResultTileJson } from '/src/processing.ts';
       import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, buildTileUrl } from '/src/mapLayers.ts';
       import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '/src/aoiClip.ts';
@@ -23,6 +24,7 @@
       import { overlaysOfPass, underlaysOf } from '/src/searchLayers.ts';
       import { previewDataset, previewScene, quicklookDataset, quicklookScene, sceneInfo } from '/src/fixtures/viewScenes.ts';
 
+      maplibregl.setWorkerUrl(workerUrl);
       maplibregl.addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
       const EMPTY = [255, 0, 255];
       const map = new maplibregl.Map({

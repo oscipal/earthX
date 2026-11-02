@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { addProtocol, Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
+import { addProtocol, Map as MapLibreMap, NavigationControl, setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import {
   TerraDraw,
   TerraDrawPointMode,
@@ -84,6 +85,9 @@ function reportViewport(map: MapLibreMap): void {
 // is a maplibre-gl-wide registration (M3-09), so re-mounting `MapView` gains
 // nothing from repeating it (and `addProtocol` is idempotent either way).
 addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
+
+// maplibre-gl 6 ships ES modules only; under a bundler its worker has to be named once (migration guide v5 to v6).
+setWorkerUrl(workerUrl);
 
 // The same list while its scenes are the same ones: an effect that draws them runs again only for another list.
 function useSameScenes(items: StacItem[]): StacItem[] {
