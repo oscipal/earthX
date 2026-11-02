@@ -5,13 +5,14 @@
 // the focus or else the one under the pointer, with no click first (never while a field has the keys); the arrow
 // keys go from row to row.
 
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type HTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, type ShelfGroup } from '../jobShelf';
 import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter, type JobFilter } from '../preferences';
 import { isJobId } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
+import CloseButton from './CloseButton';
 import DownloadAll from './DownloadAll';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
@@ -642,24 +643,88 @@ function FoldButton({ name, listId, collapsed, onToggle, count }: { name: string
   );
 }
 
+// "⋯" at the end of a group's head, the same place as in a row: the rare things, rename and remove. A group that is not empty
+// cannot be removed; the entry stays, with its reason as the tooltip.
+function GroupMenu({ group, empty, onRename, anchor }: { group: ShelfGroup; empty: boolean; onRename: () => void; anchor: RefObject<HTMLElement | null> }) {
+  const removeGroup = useProcessingStore((s) => s.removeGroup);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="pm-menu">
+      <button
+        type="button"
+        className="pm-icon"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${group.name}`}
+        title="Actions"
+        onClick={() => setOpen(!open)}
+      >
+        ⋯
+      </button>
+      <Popover anchorRef={anchor} open={open} onClose={() => setOpen(false)} className="pm-menu-list" role="menu" ariaLabel={`Actions for ${group.name}`} focusOnOpen>
+        <div className="pm-menu-items">
+          <button
+            type="button"
+            role="menuitem"
+            aria-label={`Rename ${group.name}`}
+            onClick={() => {
+              setOpen(false);
+              onRename();
+            }}
+          >
+            Rename
+          </button>
+          {/* `aria-disabled`, not `disabled`: the entry stays reachable by keyboard, and so does the reason. */}
+          <button
+            type="button"
+            role="menuitem"
+            aria-disabled={!empty}
+            title={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
+            aria-label={empty ? `Remove ${group.name}` : `Remove ${group.name}: ${GROUP_NOT_EMPTY_TIP}`}
+            onClick={() => {
+              if (!empty) return;
+              setOpen(false);
+              removeGroup(group.id);
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      </Popover>
+    </div>
+  );
+}
+
+// What a head says of its jobs: how many rows there are, and how many of the jobs run.
+function GroupFacts({ count, running }: { count: number; running: number }) {
+  return (
+    <>
+      <span className="pm-count" aria-label={`${count} ${count === 1 ? 'row' : 'rows'}`}>{count}</span>
+      {running > 0 && <span className="pm-state">{running} running</span>}
+    </>
+  );
+}
+
 function GroupHeading({
   group,
   empty,
   collapsed,
   count,
+  running,
   onToggle,
 }: {
   group: ShelfGroup;
   empty: boolean;
   collapsed: boolean;
   count: number;
+  running: number;
   onToggle: () => void;
 }) {
   const renameGroup = useProcessingStore((s) => s.renameGroup);
-  const removeGroup = useProcessingStore((s) => s.removeGroup);
   const [renaming, setRenaming] = useState(false);
+  const head = useRef<HTMLElement>(null);
   return (
-    <header className="pm-group-head">
+    <header className="pm-group-head" ref={head}>
       <FoldButton name={group.name} listId={`pm-group-${group.id}`} collapsed={collapsed} onToggle={onToggle} count={count} />
       {renaming ? (
         <InlineRename
@@ -673,32 +738,21 @@ function GroupHeading({
           onCancel={() => setRenaming(false)}
         />
       ) : (
-        <h3 className="pm-group-name">
-          {group.name}
-          {collapsed && <span className="pm-count"> ({count})</span>}
-        </h3>
+        <>
+          <h3 className="pm-group-name">{group.name}</h3>
+          <GroupFacts count={count} running={running} />
+        </>
       )}
-      <button type="button" className="pm-icon" title="Rename this group" aria-label={`Rename ${group.name}`} onClick={() => setRenaming(true)}>
-        ✎
-      </button>
-      {/* `aria-disabled`, not `disabled`: the symbol stays reachable by keyboard, and so does the reason. */}
-      <button
-        type="button"
-        className="pm-icon has-tip"
-        aria-disabled={!empty}
-        data-tip={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
-        aria-label={empty ? `Remove ${group.name}` : `Remove ${group.name}: ${GROUP_NOT_EMPTY_TIP}`}
-        onClick={() => {
-          if (empty) removeGroup(group.id);
-        }}
-      >
-        ✕
-      </button>
+      <GroupMenu group={group} empty={empty} onRename={() => setRenaming(true)} anchor={head} />
     </header>
   );
 }
 
 const UNGROUPED = 'ungrouped';
+
+// The jobs that run in these rows (the parts of a batch count each).
+const runningOf = (entries: readonly Entry[]): number =>
+  entries.reduce((sum, e) => sum + (e.kind === 'job' ? Number(e.job.phase === 'active') : e.parts.filter((p) => p.phase === 'active').length), 0);
 
 // What a dragged row carries: the job or the batch, never more than its own id, and never leaving the page.
 const DRAG_TYPE = 'application/x-earthx-job-row';
@@ -770,7 +824,13 @@ const emptyText = (filter: JobFilter, total: number): string =>
         ? 'No deleted jobs.'
         : 'No active jobs.';
 
-export default function ProcessingManager() {
+// In its window (`JobsWindow.tsx`) the head is the handle to drag by and carries the red x.
+export interface WindowChrome {
+  headProps: HTMLAttributes<HTMLDivElement>;
+  onClose: () => void;
+}
+
+export default function ProcessingManager({ chrome }: { chrome?: WindowChrome }) {
   // A focus still due when the manager closes is not wanted any more.
   useEffect(() => () => clearTimeout(refocusTimer), []);
   useEffect(() => {
@@ -824,12 +884,16 @@ export default function ProcessingManager() {
   ].filter((section) => section.group !== null || section.entries.length > 0 || groups.length > 0);
 
   return (
-    <div className="panel dock-panel processing-manager" role="region" aria-label="Processing jobs">
-      <div className="results-head pm-head">
-        <h2>Jobs</h2>
+    <div className={`panel processing-manager${chrome ? ' windowed' : ' dock-panel'}`} role="region" aria-label="Processing jobs">
+      <div className="results-head pm-head" {...chrome?.headProps}>
+        <h2>
+          {chrome && <span className="pm-grip" aria-hidden="true" />}
+          Jobs
+        </h2>
         <div className="results-head-right">
           <Tip text={KEPT_HERE_TIP} />
           {shelf === 'trimmed' && <Tip text={STORAGE_FULL_TIP} symbol="⚠" tone="warn" />}
+          {chrome && <CloseButton onClick={chrome.onClose} />}
         </div>
       </div>
       <div className="pm-tools">
@@ -896,15 +960,14 @@ export default function ProcessingManager() {
               }}
             >
               {group ? (
-                <GroupHeading group={group} empty={empty} collapsed={folded} count={entries.length} onToggle={() => toggle(id)} />
+                <GroupHeading group={group} empty={empty} collapsed={folded} count={entries.length} running={runningOf(entries)} onToggle={() => toggle(id)} />
               ) : (
                 groups.length > 0 && (
                   <header className="pm-group-head">
                     <FoldButton name="Ungrouped" listId={listId} collapsed={folded} onToggle={() => toggle(id)} count={entries.length} />
-                    <h3 className="pm-group-name">
-                      Ungrouped
-                      {folded && <span className="pm-count"> ({entries.length})</span>}
-                    </h3>
+                    <h3 className="pm-group-name">Ungrouped</h3>
+                    <GroupFacts count={entries.length} running={runningOf(entries)} />
+                    <span className="pm-icon" aria-hidden="true" />
                   </header>
                 )
               )}

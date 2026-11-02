@@ -100,6 +100,11 @@ const type = (input: HTMLInputElement, value: string) => {
   });
 };
 const key = (target: Element, name: string) => act(() => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })));
+// An entry of the menu "⋯" in the head of a group: opened first, then found in the pop-up over the window.
+const groupItem = (group: string, label: string): HTMLButtonElement => {
+  click(container.querySelector(`.pm-group[aria-label="${group}"] button[aria-label="Actions for ${group}"]`));
+  return document.querySelector<HTMLButtonElement>(`[role="menuitem"][aria-label="${label}"]`)!;
+};
 const field = () => container.querySelector<HTMLInputElement>('input.pm-rename')!;
 
 describe('the rows', () => {
@@ -445,7 +450,7 @@ describe('groups', () => {
   it('renames a group, and keeps its jobs', () => {
     put({ jobs: [jobEntry(1, { groupId: GROUP })], groups: [{ id: GROUP, name: 'Field 7' }] });
     mount();
-    click(container.querySelector('button[aria-label="Rename Field 7"]'));
+    click(groupItem('Field 7', 'Rename Field 7'));
     type(field(), 'Field 8');
     key(field(), 'Enter');
     expect(container.querySelector('.pm-group[aria-label="Field 8"] .pm-group-head h3')?.textContent).toBe('Field 8');
@@ -456,13 +461,13 @@ describe('groups', () => {
   it('lets only an empty group go, and a group that holds an archived job is not empty', () => {
     put({ jobs: [jobEntry(1, { groupId: GROUP, archived: true })], groups: [{ id: GROUP, name: 'Field 7' }, { id: OTHER_GROUP, name: 'Empty' }] });
     mount();
-    const full = container.querySelector<HTMLButtonElement>('button[aria-label^="Remove Field 7"]')!;
+    const full = groupItem('Field 7', 'Remove Field 7: ' + GROUP_NOT_EMPTY_TIP);
     expect(full.getAttribute('aria-disabled')).toBe('true');
-    expect(full.getAttribute('data-tip')).toBe(GROUP_NOT_EMPTY_TIP);
+    expect(full.title).toBe(GROUP_NOT_EMPTY_TIP);
     click(full);
     expect(useProcessingStore.getState().groups).toHaveLength(2);
     expect(useProcessingStore.getState().removeGroup(GROUP)).toBe(false);
-    click(container.querySelector('button[aria-label="Remove Empty"]'));
+    click(groupItem('Empty', 'Remove Empty'));
     expect(useProcessingStore.getState().groups.map((g) => g.name)).toEqual(['Field 7']);
   });
 
@@ -1075,10 +1080,12 @@ describe('folding a group up', () => {
     expect(group('Field 7').querySelectorAll('.pm-row')).toHaveLength(2);
     click(fold('Field 7'));
     expect(group('Field 7').querySelectorAll('.pm-row')).toHaveLength(0);
-    expect(group('Field 7').querySelector('.pm-group-name')?.textContent).toBe('Field 7 (2)');
+    expect(group('Field 7').querySelector('.pm-count')?.textContent).toBe('2');
     expect(fold('Field 7').getAttribute('aria-expanded')).toBe('false');
     click(fold('Field 7'));
     expect(group('Field 7').querySelectorAll('.pm-row')).toHaveLength(2);
+    // The head says the count open as well as folded; the name is the name alone.
+    expect(group('Field 7').querySelector('.pm-count')?.textContent).toBe('2');
     expect(group('Field 7').querySelector('.pm-group-name')?.textContent).toBe('Field 7');
   });
 
@@ -1122,16 +1129,16 @@ describe('folding a group up', () => {
     put({ jobs: [jobEntry(1, { groupId: GROUP }), jobEntry(2, { groupId: GROUP, archived: true })], groups: [{ id: GROUP, name: 'Field 7' }] });
     mount();
     click(fold('Field 7'));
-    expect(group('Field 7').querySelector('.pm-group-name')?.textContent).toBe('Field 7 (1)');
+    expect(group('Field 7').querySelector('.pm-count')?.textContent).toBe('1');
     click(button('All'));
-    expect(group('Field 7').querySelector('.pm-group-name')?.textContent).toBe('Field 7 (2)');
+    expect(group('Field 7').querySelector('.pm-count')?.textContent).toBe('2');
   });
 
   it('does not stop a group from being renamed or removed while it is folded', () => {
     put({ groups: [{ id: GROUP, name: 'Empty' }] });
     mount();
     click(fold('Empty'));
-    click(container.querySelector('button[aria-label="Remove Empty"]'));
+    click(groupItem('Empty', 'Remove Empty'));
     expect(useProcessingStore.getState().groups).toEqual([]);
   });
 
