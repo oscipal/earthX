@@ -18,6 +18,7 @@ import {
   bboxContains,
   clampBboxLongitude,
   FOOTPRINT_FETCH_LIMIT,
+  FOOTPRINT_MIN_ZOOM,
   levelForViewport,
   roundBboxToGrid,
   showFootprints,
@@ -207,6 +208,8 @@ let coverageDebounceHandle: number | undefined;
 // started can tell it has been superseded and must not overwrite fresher
 // state (the same pattern `mapLayers.ts` uses for quicklook loads).
 let coverageGen = 0;
+// The last question `refreshCoverage` sent (dataset, level, area, dates, filters), to leave out its repeats.
+let coverageQuestion = '';
 
 // M3-19 §3: the last few viewport (no-AOI) answers, so a pan/zoom that stays
 // inside a bbox already asked for skips the request instead of repeating it.
@@ -314,6 +317,12 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
     viewport = bandViewportBbox(s.viewportBbox);
     bbox = roundBboxToGrid(viewport, level - VIEWPORT_ROUND_LEVELS);
   }
+
+  // The same question as the one on its way or on the map is not sent again: with an AOI every `moveend` asked anew.
+  // Whether the zoom allows footprints is part of it, since the level can stay the same across that brake.
+  const question = JSON.stringify([datasetId, level, hasAoi, bbox, datetime, filters, s.mapZoom >= FOOTPRINT_MIN_ZOOM]);
+  if (question === coverageQuestion && (s.coverageLoading || s.coverage !== null)) return;
+  coverageQuestion = question;
 
   const gen = ++coverageGen;
 

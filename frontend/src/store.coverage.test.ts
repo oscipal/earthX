@@ -2,7 +2,8 @@
 //
 // The coverage map after a search (Otto, 03.11.2026): a search needs an AOI, and with an AOI the coverage asked for the
 // level of the map's zoom alone, four to five levels coarser than the map without an AOI asks at the same zoom. At the
-// first zoom of the page that is level 1, four cells for the whole globe: a quarter of the world in one cell. The server is a stand-in that answers every question with one cell.
+// first zoom of the page that is level 1, four cells for the whole globe: a quarter of the world in one cell. And every
+// `moveend` sent the same question again. The server is a stand-in that answers every question with one cell.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -95,5 +96,66 @@ describe('the coverage map with an AOI', () => {
     await settle();
     expect(asked).toEqual([{ method: 'POST', zoom: levelForViewport(1.6, window.innerWidth, window.innerHeight) }]);
     expect(asked[0].zoom).toBeGreaterThan(1);
+  });
+});
+
+describe('the same question is not asked again', () => {
+  it('sends one request for many moves of the map at the same level', async () => {
+    useAppStore.getState().setAoi(AOI);
+    useAppStore.getState().showCoverageFor('optical');
+    await settle();
+    expect(asked).toHaveLength(1);
+    for (let i = 0; i < 11; i += 1) {
+      useAppStore.getState().setMapViewport(1.6 + i * 0.01, [VIEW[0] + i, VIEW[1], VIEW[2] + i, VIEW[3]], WINDOW);
+      await settle();
+    }
+    expect(asked).toHaveLength(1);
+    expect(useAppStore.getState().coverageLoading).toBe(false);
+  });
+
+  it('does not ask again while the same question is on its way', async () => {
+    useAppStore.getState().setAoi(AOI);
+    useAppStore.getState().showCoverageFor('optical');
+    useAppStore.getState().setMapViewport(1.61, VIEW, WINDOW);
+    await settle();
+    expect(asked).toHaveLength(1);
+  });
+
+  it('asks again when the question changes, and after the map was hidden and shown', async () => {
+    useAppStore.getState().setAoi(AOI);
+    useAppStore.getState().showCoverageFor('optical');
+    await settle();
+    useAppStore.getState().setDateFrom('2026-01-01');
+    await settle();
+    expect(asked).toHaveLength(2);
+    useAppStore.getState().hideCoverage();
+    useAppStore.getState().showCoverageFor('optical');
+    await settle();
+    expect(asked).toHaveLength(3);
+  });
+
+  it('asks again when the zoom crosses the brake of the footprints at the same level', async () => {
+    const wide = { width: 1920, height: 1080 };
+    expect(levelForViewport(3.99, wide.width, wide.height)).toBe(levelForViewport(4.01, wide.width, wide.height));
+    useAppStore.setState({ mapZoom: 3.99, viewportSize: wide });
+    useAppStore.getState().setAoi(AOI);
+    useAppStore.getState().showCoverageFor('optical');
+    await settle();
+    useAppStore.getState().setMapViewport(4.01, VIEW, wide);
+    await settle();
+    expect(asked).toHaveLength(2);
+  });
+
+  it('asks again after a failed answer', async () => {
+    useAppStore.getState().setAoi(AOI);
+    await settle();
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 502, statusText: 'Bad Gateway', json: async () => ({ detail: 'x' }) } as Response);
+    useAppStore.getState().showCoverageFor('optical');
+    await settle();
+    expect(useAppStore.getState().coverageError).not.toBeNull();
+    useAppStore.getState().setMapViewport(1.62, VIEW, WINDOW);
+    await settle();
+    expect(asked).toHaveLength(1);
+    expect(useAppStore.getState().coverage?.level).toBe(levelForViewport(1.6, WINDOW.width, WINDOW.height));
   });
 });
