@@ -918,7 +918,8 @@ describe('download outcome (M3-17 plan §4)', () => {
       expect(s.downloadSelection).toBe(true);
       expect(s.downloadOutcome).toBe('crop');
       expect(s.error).toBeNull();
-      expect(fetch).not.toHaveBeenCalled();
+      // Only the bands of the scenes are asked of the platform (NM4-75), no scene is fetched.
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([`/collections/${COG_DATASET.id}/bands`]);
     });
 
     it('no AOI, a COG dataset: the originals outcome, links built straight from store.items', () => {
@@ -937,7 +938,7 @@ describe('download outcome (M3-17 plan §4)', () => {
       expect(s.downloadOriginalLinks).toEqual([
         { itemId: 'S1', groupLabel: 'Overpass A', asset: 'visual', href: 'https://data.test/S1.tif' },
       ]);
-      expect(fetch).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([`/collections/${COG_DATASET.id}/bands`]);
     });
 
     it('no AOI, a COG dataset: keeps the scenes of each group for a mosaic job (M4-12b)', () => {
@@ -1119,7 +1120,8 @@ describe('download outcome (M3-17 plan §4)', () => {
 
       const s = useAppStore.getState();
       expect(s.downloadOutcome).toBe('originals');
-      expect(fetch).toHaveBeenCalledTimes(2);
+      // The two scenes, and the bands of them asked of the platform.
+      expect(vi.mocked(fetch).mock.calls.filter(([url]) => !String(url).endsWith('/bands'))).toHaveLength(2);
       expect(s.downloadOriginalLinks).toEqual([
         { itemId: 'S1', groupLabel: 'Group 1', asset: 'visual', href: 'https://data.test/S1.tif' },
         { itemId: 'S2', groupLabel: 'Group 2', asset: 'visual', href: 'https://data.test/S2.tif' },

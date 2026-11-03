@@ -32,16 +32,18 @@ const SPECS = [
 
 function item(id, host) {
   const assets = {};
-  for (const [key, name, common, wavelength, gsd] of SPECS) {
-    assets[key] = {
-      href: `${host}/${id}/${key}.tif`, type: COG, roles: ['data'], gsd, 'file:size': 1_000_000,
-      ...(wavelength === null ? {} : { 'eo:bands': [{ name, common_name: common, center_wavelength: wavelength }] }),
-      'raster:bands': [{ data_type: 'uint16', nodata: 0 }],
-    };
-  }
+  for (const [key, , , , gsd] of SPECS) assets[key] = { href: `${host}/${id}/${key}.tif`, type: COG, roles: ['data'], gsd, 'file:size': 1_000_000 };
   assets.visual = { href: `${host}/${id}/visual.tif`, type: COG, roles: ['visual'], gsd: 10 };
   return { id, collection: 'e2e', bbox: [10, 50, 11, 51], properties: { datetime: '2026-07-02T10:15:00Z' }, assets };
 }
+
+// What the platform answers to `POST /collections/{dataset}/bands`: the table of bands of the scenes.
+const bandsAnswer = () => ({
+  bands: SPECS.map(([key, name, common, wavelength, gsd]) => ({
+    asset: key, name, common_name: common, wavelength_um: wavelength, resolution_m: gsd, data_type: 'uint16', scale: null, offset: null, nodata: 0,
+    unit: key === 'scl' ? null : '1', categorical: key === 'scl', preselected: wavelength !== null || key === 'scl',
+  })),
+});
 
 const collection = (host) => ({
   id: 'e2e', title: 'Made-up multispectral',
@@ -78,6 +80,7 @@ async function openApp(browser, { theme, viewport, resampling }) {
     if (url.origin !== BASE) return route.abort();
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (/^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
+    if (url.pathname.endsWith('/bands')) return json(bandsAnswer());
     if (url.pathname.endsWith('/download')) {
       seen.download.push(JSON.parse(req.postData() ?? '{}'));
       return route.fulfill({ status: 200, contentType: 'application/zip', headers: { 'x-total-groups': '1', 'x-skipped-groups': '0' }, body: 'PK' });
@@ -130,6 +133,7 @@ async function layout(page, label, problems, narrow) {
 const openDialog = async (page, kind) => {
   await page.evaluate((k) => import('/src/store.ts').then(({ useAppStore }) => useAppStore.getState().openDownloadForSelection(k)), kind);
   await page.waitForSelector('.dialog-panel');
+  await page.waitForSelector('.dialog-bands');
 };
 const shot = (page, name, selector = '.dialog-download') => page.locator(selector).screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}.png`) });
 

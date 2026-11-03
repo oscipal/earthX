@@ -9,6 +9,7 @@ import {
   buildTileTemplate,
   downloadCrop,
   errorDetail,
+  fetchBands,
   fetchCoverage,
   fetchItem,
   fetchMosaicTileJson,
@@ -922,5 +923,38 @@ describe('fetchSceneOrder (NM4-24)', () => {
   it.each([['no order', {}], ['numbers', { order: [1, 2] }], ['a text', { order: 'AB' }]])('refuses an answer with %s', async (_name, body) => {
     vi.stubGlobal('fetch', answer(200, body));
     await expect(fetchSceneOrder('d', ['A', 'B'], 'visual')).rejects.toThrow('cannot read');
+  });
+});
+
+// NM4-75: the table of bands of the download dialog is the platform's answer for the scenes named.
+describe('fetchBands', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const answer = { bands: [{ asset: 'a', name: 'A', common_name: null, wavelength_um: 0.5, resolution_m: 10, categorical: false, preselected: true }] };
+
+  it('posts the scene ids in the body, never in the address, and reads the rows', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(answer), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const found = await fetchBands('some/dataset', ['S1', 'S2']);
+    expect(fetchMock.mock.calls[0][0]).toBe('/collections/some%2Fdataset/bands');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ items: ['S1', 'S2'] });
+    expect(found).toEqual([expect.objectContaining({ asset: 'a', name: 'A', wavelength: 0.5, resolution: 10, preselected: true })]);
+  });
+
+  it('names at most the first five scenes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ bands: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await fetchBands('d', ['1', '2', '3', '4', '5', '6', '7']);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).items).toEqual(['1', '2', '3', '4', '5']);
+  });
+
+  it('throws the refusal of the platform, and an answer that is no list of bands', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: 'unknown scene' }), { status: 404, headers: { 'Content-Type': 'application/json' } })));
+    await expect(fetchBands('d', ['x'])).rejects.toThrow('unknown scene');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ nothing: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    await expect(fetchBands('d', ['x'])).rejects.toThrow(/cannot read/);
   });
 });

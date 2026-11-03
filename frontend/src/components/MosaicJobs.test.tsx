@@ -200,7 +200,7 @@ describe('beside the download (Zusatz 1a, NM4-33)', () => {
     expect(buttons(MERGED)).toHaveLength(1);
     expect(container.querySelector('.dialog-mosaics')).toBeNull();
     expect(placed()).toHaveLength(0);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.filter(([url]) => !String(url).endsWith('/bands'))).toEqual([]);
   });
 
   it('does not offer the merge for one scene', async () => {
