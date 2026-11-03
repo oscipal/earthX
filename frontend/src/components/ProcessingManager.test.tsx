@@ -12,7 +12,9 @@ import { batchEntry, finished, jobEntry, jobId, NOW, status } from '../fixtures/
 import { SHELF_KEY } from '../jobShelf';
 import { resetJobs, setTrackerOptions, useProcessingStore } from '../processingStore';
 import css from '../index.css?raw';
-import ProcessingManager, { GROUP_NOT_EMPTY_TIP, NOT_KEPT_TEXT, STORAGE_FULL_TIP } from './ProcessingManager';
+import { useAppStore } from '../store';
+import tokens from '../tokens.css?raw';
+import ProcessingManager, { ADD_TO_LAYERS_TIP, ALREADY_A_LAYER_TIP, GROUP_NOT_EMPTY_TIP, NOT_KEPT_TEXT, STORAGE_FULL_TIP } from './ProcessingManager';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -275,14 +277,15 @@ describe('rename', () => {
     expect(stored().jobs[0].title).toBe('Field 7 · NDVI');
   });
 
-  it('brings the default title back for an empty name', () => {
+  it('takes no empty name: the title stays as it was (Otto, 3.11.2026)', () => {
     put({ jobs: [jobEntry(1, { title: 'Mine', titleDefault: 'Band math · Sentinel-2 L2A · 1 Oct' })] });
     mount();
     menuOf(rows()[0]);
     click(item('Rename'));
     type(field(), '   ');
     key(field(), 'Enter');
-    expect(titles()).toEqual(['Band math · Sentinel-2 L2A · 1 Oct']);
+    expect(titles()).toEqual(['Mine']);
+    expect(container.querySelector('input.pm-rename')).toBeNull();
   });
 
   it('drops the edit on Escape and keeps the title', () => {
@@ -1724,5 +1727,136 @@ describe('a job the server no longer has', () => {
     await vi.waitFor(() => expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('No longer available'));
     expect(titles()).toEqual(['Kept']);
     expect(stored().jobs[0]).toMatchObject({ jobID: jobId(1), lost: true });
+  });
+});
+
+// Otto, 3.11.2026 (#283): a job is one line in the dock, with the pencil at its title and "＋" before "⇩" and "⋯".
+describe('the line of a job', () => {
+  const tiles = { href: '/results/r/WebMercatorQuad/tilejson.json', width: 1000, gsd: 10 };
+  const places = (row: Element) => [...row.querySelector('.pm-line')!.children].map((e) => e.getAttribute('aria-label')?.split(':')[0] ?? e.className.split(' ')[0]);
+  const addButton = (row: Element) => row.querySelector<HTMLButtonElement>('button[aria-label^="Add to layers"]');
+
+  it('keeps the title alone in the button that opens the details, with the full title as its tooltip, and the status and the date beside it', () => {
+    const long = 'A job with a title that is much longer than the line of the dock can hold';
+    put({ jobs: [finished(1, { title: long })] });
+    mount();
+    const row = rows()[0];
+    const open = row.querySelector<HTMLButtonElement>('.pm-open')!;
+    expect(open.title).toBe(long);
+    expect([...open.children].map((c) => c.className)).toEqual(['pm-title']);
+    expect(row.querySelector('.pm-meta')!.parentElement).toBe(row.querySelector('.pm-line'));
+    expect(row.querySelector('.pm-state')!.textContent).toBe('Finished');
+    expect(row.querySelector('.pm-until')!.textContent).toMatch(/^until 27 Oct, \d{2}:\d{2}$/u);
+  });
+
+  it('puts the pencil after the title and "＋", "⇩", "⋯" at the end, in that order', () => {
+    put({ jobs: [finished(1, { tiles })] });
+    mount();
+    expect(places(rows()[0])).toEqual(['pm-open', 'pm-meta', 'Rename Band math · Sentinel-2 L2A · 1 Oct'.split(':')[0], 'Add to layers', 'Download (ZIP)', 'pm-menu']);
+  });
+
+  it('renames in place with the pencil, drops an empty name and an Escape, and keeps a new one', () => {
+    put({ jobs: [finished(1, { title: 'Mine' })] });
+    mount();
+    const pencil = () => rows()[0].querySelector<HTMLButtonElement>('.pm-edit')!;
+    expect(pencil().title).toBe('Rename');
+    click(pencil());
+    type(field(), '');
+    key(field(), 'Enter');
+    expect(titles()).toEqual(['Mine']);
+    click(pencil());
+    type(field(), 'Changed');
+    key(field(), 'Escape');
+    expect(titles()).toEqual(['Mine']);
+    expect(container.querySelector('.pm-row')).not.toBeNull();
+    click(pencil());
+    type(field(), 'Field 7 · NDVI');
+    key(field(), 'Enter');
+    expect(titles()).toEqual(['Field 7 · NDVI']);
+    expect(stored().jobs[0].title).toBe('Field 7 · NDVI');
+  });
+
+  it('has no pencil on the part of a batch, whose name is its scene', () => {
+    put({ jobs: [finished(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
+    mount();
+    click(container.querySelector('.pm-open'));
+    const part = container.querySelector('.pm-parts .pm-row')!;
+    expect(part.querySelector('.pm-edit')).toBeNull();
+    expect(container.querySelector('.pm-row.batch .pm-edit')).not.toBeNull();
+  });
+
+  describe('"＋" Add to layers', () => {
+    it('is there for a finished job with a result on the map, and draws it as a layer', () => {
+      const show = vi.fn(async () => undefined);
+      put({ jobs: [finished(1, { tiles })], showResultOnMap: show });
+      useAppStore.setState({ layers: [] });
+      mount();
+      const add = addButton(rows()[0])!;
+      expect(add.title).toBe(ADD_TO_LAYERS_TIP);
+      expect(add.getAttribute('aria-disabled')).toBeNull();
+      click(add);
+      expect(show).toHaveBeenCalledWith(jobId(1));
+    });
+
+    it('is not there for a job that is not finished, or has no result to draw: the place stays empty', () => {
+      put({
+        jobs: [
+          jobEntry(1, { phase: 'active', status: status({ jobID: jobId(1), status: 'running', progress: 40 }) }),
+          jobEntry(2),
+          finished(3),
+          finished(4, { tiles, expired: true }),
+        ],
+      });
+      mount();
+      for (const row of rows()) expect(addButton(row), row.textContent ?? '').toBeNull();
+      // The symbols of the other places do not move: "⋯" is the last one in every row.
+      for (const row of rows()) expect(row.querySelector('.pm-line')!.lastElementChild!.classList.contains('pm-menu')).toBe(true);
+    });
+
+    it('stays, locked with its reason, when the result is a layer already, and does nothing', () => {
+      const show = vi.fn(async () => undefined);
+      put({ jobs: [finished(1, { tiles })], showResultOnMap: show });
+      useAppStore.setState({ layers: [{ id: 'L1', name: 'Result', visible: true, opacity: 1, overlays: [], derived: 'result', result: { jobID: jobId(1) } } as never] });
+      mount();
+      const add = addButton(rows()[0])!;
+      expect(add.getAttribute('aria-disabled')).toBe('true');
+      expect(add.getAttribute('data-tip')).toBe(ALREADY_A_LAYER_TIP);
+      expect(add.getAttribute('aria-label')).toBe(`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`);
+      click(add);
+      expect(show).not.toHaveBeenCalled();
+    });
+
+    it('takes the place of "Run again", which a finished job does not have', () => {
+      put({ jobs: [finished(1, { tiles }), jobEntry(2)] });
+      mount();
+      expect(addButton(rows()[0])).not.toBeNull();
+      expect(rows()[0].querySelector('button[aria-label^="Run again"]')).toBeNull();
+      expect(addButton(rows()[1])).toBeNull();
+    });
+  });
+
+  describe('the contract in index.css', () => {
+    const block = (selector: string) => {
+      const start = css.indexOf(`\n${selector} {`);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(start, css.indexOf('}', start));
+    };
+
+    it('lays a job out as one line of eight places in the dock, which is as wide as the other panels (340 px)', () => {
+      expect(Number(/--dock-width: (\d+)px/u.exec(tokens)?.[1])).toBe(340);
+      const line = block('.pm-line');
+      expect(line).toContain('display: grid');
+      expect(line).toContain('grid-template-columns: var(--pm-lead) var(--pm-status) minmax(0, 1fr) auto var(--pm-date) repeat(3, var(--pm-icon))');
+      // No second line from a container query, whatever the width of the list.
+      expect(css).not.toMatch(/@container \(max-width: \d+px\) \{\s*\.pm-open/u);
+      expect(block('.pm-state')).toContain('grid-row: 1');
+      expect(block('.pm-until')).toContain('grid-row: 1');
+    });
+
+    it('puts the status and the date under the title only where a finger needs 44 px symbols: a touch screen and under 900 px', () => {
+      const media = css.slice(css.indexOf('@media (pointer: coarse), (max-width: 899px) {\n  .pm-list'));
+      expect(media).toContain('--pm-icon: var(--control-height)');
+      expect(media).toMatch(/\.pm-until \{\s*grid-column: 3;\s*grid-row: 2;/u);
+    });
   });
 });

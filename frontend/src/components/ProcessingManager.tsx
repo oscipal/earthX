@@ -12,6 +12,7 @@ import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter,
 import { isJobId } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
+import { useAppStore } from '../store';
 import DownloadAll from './DownloadAll';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
@@ -323,6 +324,37 @@ function UntilText({ job, state, now }: { job: JobEntry; state: JobState; now: n
   );
 }
 
+// "✎" at the title of a row: the title is edited in place. An empty name is not taken.
+function RenameButton({ name, onRename }: { name: string; onRename: () => void }) {
+  return (
+    <button type="button" className="pm-icon pm-edit" title="Rename" aria-label={`Rename ${name}`} onClick={onRename}>
+      ✎
+    </button>
+  );
+}
+
+export const ADD_TO_LAYERS_TIP = 'Add to layers';
+export const ALREADY_A_LAYER_TIP = 'This result is already a layer';
+
+// "＋" of a finished job: its result as a layer on the map. Where the result is one already, the symbol stays and says why it is locked.
+function AddToLayers({ job, name }: { job: JobEntry; name: string }) {
+  const showOnMap = useProcessingStore((s) => s.showResultOnMap);
+  const isLayer = useAppStore((s) => s.layers.some((l) => l.result?.jobID === job.jobID));
+  if (isLayer) {
+    // `aria-disabled`, not `disabled`: the symbol stays reachable by keyboard, and so does the reason.
+    return (
+      <button type="button" className="pm-icon has-tip" aria-disabled="true" data-tip={ALREADY_A_LAYER_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`}>
+        ＋
+      </button>
+    );
+  }
+  return (
+    <button type="button" className="pm-icon" title={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
+      ＋
+    </button>
+  );
+}
+
 function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; now: number; part?: boolean; groups: ShelfGroup[] } & DragProps) {
   const open = useProcessingStore((s) => s.openJobDetails);
   const cancelJob = useProcessingStore((s) => s.cancelJob);
@@ -373,7 +405,8 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
             label="Job title"
             maxLength={MAX_TITLE_LENGTH}
             onSave={(name) => {
-              rename(job.jobID, name);
+              // An empty name is no name: the old one stays.
+              if (name.trim()) rename(job.jobID, name);
               setRenaming(false);
             }}
             onCancel={() => setRenaming(false)}
@@ -389,17 +422,24 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
             }}
           >
             <span className="pm-title">{title}</span>
-            <span className={`pm-meta ${state.key}`}>
-              <span className="pm-state" title={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
-                {state.text}
-              </span>
-              <UntilText job={job} state={state} now={now} />
-              {job.archived && <span className="pm-tag">Archived</span>}
-              {job.superseded && <span className="pm-tag">Superseded</span>}
-            </span>
           </button>
         )}
-        <RetryButton offered={canRetry(job, now, retired)} name={title} tip={RETRY_TIP} busy={job.retrying} onRetry={() => void retryJob(job.jobID)} />
+        <span className={`pm-meta ${state.key}`}>
+          <span className="pm-state" title={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
+            {state.text}
+          </span>
+          <UntilText job={job} state={state} now={now} />
+          {job.archived && <span className="pm-tag">Archived</span>}
+          {job.superseded && <span className="pm-tag">Superseded</span>}
+        </span>
+        {!part && !renaming && <RenameButton name={title} onRename={() => setRenaming(true)} />}
+        {canRetry(job, now, retired) ? (
+          <RetryButton offered name={title} tip={RETRY_TIP} busy={job.retrying} onRetry={() => void retryJob(job.jobID)} />
+        ) : state.key === 'finished' && job.tiles ? (
+          <AddToLayers job={job} name={title} />
+        ) : (
+          <span className="pm-icon" aria-hidden="true" />
+        )}
         {restorable && job.deletedUntil ? (
           <RestoreButton name={title} until={job.deletedUntil} busy={job.deleting} onRestore={() => void restoreTarget(target)} />
         ) : (
@@ -501,7 +541,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             label="Batch title"
             maxLength={MAX_TITLE_LENGTH}
             onSave={(name) => {
-              renameBatch(batch.id, name);
+              if (name.trim()) renameBatch(batch.id, name);
               setRenaming(false);
             }}
             onCancel={() => setRenaming(false)}
@@ -517,24 +557,25 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             }}
           >
             <span className="pm-title">{batch.title}</span>
-            <span className="pm-meta">
-              <span className="pm-state">{batchSummary(count)}</span>
-              {restoreUntil ? (
-                <span className="pm-until" title={restoreUntil}>
-                  restore until {formatUntil(restoreUntil, now)}
-                </span>
-              ) : (
-                count.expires &&
-                count.deleted < parts.length && (
-                  <span className="pm-until" title={count.expires}>
-                    until {formatUntil(count.expires, now)}
-                  </span>
-                )
-              )}
-              {batch.archived && <span className="pm-tag">Archived</span>}
-            </span>
           </button>
         )}
+        <span className="pm-meta">
+          <span className="pm-state">{batchSummary(count)}</span>
+          {restoreUntil ? (
+            <span className="pm-until" title={restoreUntil}>
+              restore until {formatUntil(restoreUntil, now)}
+            </span>
+          ) : (
+            count.expires &&
+            count.deleted < parts.length && (
+              <span className="pm-until" title={count.expires}>
+                until {formatUntil(count.expires, now)}
+              </span>
+            )
+          )}
+          {batch.archived && <span className="pm-tag">Archived</span>}
+        </span>
+        {!renaming && <RenameButton name={batch.title} onRename={() => setRenaming(true)} />}
         <RetryButton
           offered={retryable.length > 0}
           name={batch.title}
@@ -588,9 +629,9 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
               <div className="pm-line">
                 <span className="pm-open">
                   <span className="pm-title">{refused.label}</span>
-                  <span className="pm-meta">
-                    <span className="pm-state">Refused</span>
-                  </span>
+                </span>
+                <span className="pm-meta">
+                  <span className="pm-state">Refused</span>
                 </span>
                 <Tip text={refused.message} />
               </div>

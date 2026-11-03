@@ -1,9 +1,10 @@
 // The processing manager docked at the left (UI-03c, docked again on 3.11.2026 in #283), in a real browser:
-//   1. Width: the panel is 440 px wide from 900 px (`--dock-width`, as wide as the other panels), flush from the top to the foot beside the
+//   1. Width: the panel is 340 px wide from 900 px (`--dock-width`, as wide as the other panels), flush from the top to the foot beside the
 //      rail; under 900 px it covers the map from the rail to the right edge.
-//   2. From 900 px every row of a job is one line with four places: status, title, date, actions; the status, the title and the date stand
-//      at the same x in every row, a group head has its count and "n running" and its menu at the right.
-//   3. Under 900 px (a column of about 260 px) the narrow form applies: status and date under the title.
+//   2. From 900 px every row of a job is one line: status, title with its pencil, date, then "＋" (finished jobs), "⇩" and "⋯" in that order;
+//      the status, the title, the pencil and the date stand at the same x in every row, the title is cut with "…" and holds its whole text
+//      as a tooltip, a group head has its count and "n running" and its menu at the right.
+//   3. Under 900 px (a column of about 260 px, symbols a finger high) the narrow form applies: status and date under the title.
 //   4. Nothing scrolls sideways, nothing lies outside the panel, the symbols of a row do not overlap.
 // In the light and the dark theme, at 1280 x 800, 1920 x 1080 and 360 x 740; a screenshot per case.
 //
@@ -52,9 +53,9 @@ async function check(browser, theme, viewport) {
     });
     const jobs = [
       base(1, { phase: 'active', groupId: group, status: { status: 'running', progress: 40 } }),
-      base(2, { phase: 'successful', archive: 'result.zip', groupId: group }),
+      base(2, { phase: 'successful', archive: 'result.zip', groupId: group, tiles: { href: '/results/r2/WebMercatorQuad/tilejson.json', width: 1000, gsd: 10 } }),
       base(3, { phase: 'active', status: { status: 'running', progress: 70 } }),
-      base(4, { phase: 'successful', archive: 'result.zip' }),
+      base(4, { phase: 'successful', archive: 'result.zip', tiles: { href: '/results/r4/WebMercatorQuad/tilejson.json', width: 1000, gsd: 10 } }),
       base(5, {}),
     ].map((j) => ({ ...j, status: j.status ? { jobID: j.jobID, message: '', expires: j.expires, ...j.status } : { jobID: j.jobID, status: j.phase === 'successful' ? 'successful' : 'failed', message: '', progress: 100, expires: j.expires } }));
     useProcessingStore.setState({ groups: [{ id: group, name: 'Field 7' }], jobs });
@@ -69,9 +70,13 @@ async function check(browser, theme, viewport) {
     const rows = [...panel.querySelectorAll('.pm-rows > .pm-row')].map((row) => {
       const open = row.querySelector('.pm-open');
       const line = row.querySelector('.pm-line');
+      const symbol = (e) => ({ label: e.getAttribute('aria-label') ?? e.textContent, ...box(e) });
       return {
-        state: box(open.querySelector('.pm-state')), title: box(open.querySelector('.pm-title')), until: box(open.querySelector('.pm-until')),
-        icons: [...line.querySelectorAll('.pm-icon, a.pm-icon')].map(box), line: box(line),
+        state: box(row.querySelector('.pm-state')), title: box(open.querySelector('.pm-title')), until: box(row.querySelector('.pm-until')),
+        tooltip: open.title, shown: open.querySelector('.pm-title').textContent,
+        edit: row.querySelector('.pm-edit') ? box(row.querySelector('.pm-edit')) : null,
+        icons: [...line.querySelectorAll(':scope > .pm-icon')].map(box), line: box(line),
+        tail: [...line.children].slice(-3).map(symbol),
       };
     });
     return {
@@ -84,8 +89,8 @@ async function check(browser, theme, viewport) {
   const narrow = size.width < 900;
   if (narrow) {
     if (Math.abs(report.dock.x - RAIL) > 1 || Math.abs(report.dock.right - report.view.width) > 1) problems.push(`the panel does not cover the map from the rail: ${JSON.stringify(report.dock)}`);
-  } else if (Math.abs(report.dock.width - 440) > 1 || Math.abs(report.dock.x - RAIL) > 1 || report.dock.y > 1 || Math.abs(report.dock.bottom - report.view.height) > 1) {
-    problems.push(`the panel is not 440 px wide and flush beside the rail: ${JSON.stringify(report.dock)}`);
+  } else if (Math.abs(report.dock.width - 340) > 1 || Math.abs(report.dock.x - RAIL) > 1 || report.dock.y > 1 || Math.abs(report.dock.bottom - report.view.height) > 1) {
+    problems.push(`the panel is not 340 px wide and flush beside the rail: ${JSON.stringify(report.dock)}`);
   }
   if (report.scrolls) problems.push('the panel or the page scrolls sideways');
   if (report.rows.length !== 5) problems.push(`${report.rows.length} rows, not 5`);
@@ -95,11 +100,17 @@ async function check(browser, theme, viewport) {
     } else if (row.state.x >= row.title.x || row.title.right > row.until.x + 0.5 || Math.abs(row.state.y - row.title.y) > 8 || Math.abs(row.until.y - row.title.y) > 8) {
       problems.push(`a row is not one line of status, title, date: ${JSON.stringify([row.state, row.title, row.until].map((b) => [Math.round(b.x), Math.round(b.y)]))}`);
     }
-    if (row.title.width < 90 && !narrow) problems.push(`the title is only ${Math.round(row.title.width)} px wide`);
+    if (!narrow && row.edit && (row.edit.x < row.title.right - 0.5 || row.edit.right > row.until.x + 0.5)) problems.push('the pencil is not between the title and the date');
+    if (!row.tooltip.startsWith('Job ')) problems.push(`the tooltip of the title is "${row.tooltip}", not its whole text`);
     for (let i = 0; i < row.icons.length; i++) {
       for (let j = i + 1; j < row.icons.length; j++) if (overlap(row.icons[i], row.icons[j])) problems.push('two symbols of a row overlap');
       if (row.icons[i].right > report.panel.right + 0.5) problems.push('a symbol leaves the panel');
     }
+  }
+  // "＋" before "⇩" before "⋯" in the rows of the finished jobs (the 2nd and the 5th: Job 4 and Job 2).
+  for (const index of [1, 4]) {
+    const tail = report.rows[index]?.tail.map((t) => (t.label.startsWith('Add to layers') ? '+' : t.label === 'Download (ZIP)' ? 'dl' : t.label === '⋯' ? 'menu' : t.label));
+    if (JSON.stringify(tail) !== JSON.stringify(['+', 'dl', 'menu'])) problems.push(`the symbols of row ${index + 1} are ${JSON.stringify(tail)}, not ＋ ⇩ ⋯`);
   }
   if (!narrow) {
     for (const key of ['state', 'title', 'until']) {
@@ -125,5 +136,5 @@ async function check(browser, theme, viewport) {
     console.log(`${failed} case(s) with problems`);
     process.exit(1);
   }
-  console.log('the jobs are docked, 440 px wide, one line of four places from 900 px, the narrow form under it');
+  console.log('the jobs are docked, 340 px wide, one line with pencil, ＋, ⇩ and ⋯ from 900 px, the narrow form under it');
 })();

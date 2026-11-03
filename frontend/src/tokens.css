@@ -35,7 +35,7 @@
 
   /* The rail, the panel beside it, the side bar and the wide sheet (UI-01 §6.9, UI-03 §7.2). */
   --rail-width: 48px;
-  --dock-width: 440px;
+  --dock-width: 340px;
   --inspector-width: 320px;
   /* The column of the names in a form: the settings bar's, and the processing panel sets its own wider one. */
   --form-label-width: 72px;
