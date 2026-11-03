@@ -7,7 +7,7 @@ import index from './index.css?raw';
 import tokens from './tokens.css?raw';
 
 // The areas already moved onto the tokens; UI-04 adds the other panels here. The window of the jobs (UI-03c) is every `.pm-…` class of
-// the manager's rows, heads and menu; the details of a job (`.pm-detail-title`, `.pm-facts`, …) belong to the processing panel (UI-03b).
+// the manager's rows, heads and menu; the details of a job (`.pm-detail-title`, `.pm-facts`, …) are checked with the processing panel below (UI-03b).
 const MANAGER = [
   '.jobs-window', '.jw-handle', '.processing-manager', '.windowed',
   '.pm-head', '.pm-grip', '.pm-tools', '.pm-filter', '.pm-note', '.pm-new-group', '.pm-empty', '.pm-list',
@@ -15,7 +15,14 @@ const MANAGER = [
   '.pm-state', '.pm-until', '.pm-tag', '.pm-title', '.pm-icon', '.pm-progress', '.pm-fault', '.pm-menu', '.pm-menu-list',
   '.pm-menu-items', '.pm-key', '.pm-fold', '.pm-chevron', '.pm-count', '.pm-rename',
 ] as const;
-const CHECKED_AREAS = ['.ghost-btn', '.primary-btn', '.pp-seg', '.close-x', '.inspector', ...MANAGER] as const;
+// The processing panel (UI-03b) is the `.processing-…` classes, every `.pp-…` class of the sheet and the details of a job in it;
+// `.pp-badge` is shared with the mark of the preview on the map and waits for UI-04.
+const PANEL = [
+  '.processing-sheet', '.processing-panel',
+  '.pm-detail-title', '.pm-title-text', '.pm-title-edit', '.pm-facts', '.pm-steps', '.pm-step-values',
+  ...new Set(index.match(/\.pp-[a-z-]+/gu) ?? []),
+].filter((selector) => selector !== '.pp-badge');
+const CHECKED_AREAS = ['.ghost-btn', '.primary-btn', '.close-x', '.inspector', ...PANEL, ...MANAGER] as const;
 
 const ROOT_TOKENS = [
   '--space-1', '--space-2', '--space-3', '--space-4', '--space-5', '--space-6',
@@ -83,7 +90,7 @@ describe('tokens.css', () => {
 });
 
 describe('hard values in the checked areas of index.css', () => {
-  it('finds none in the shared controls, the settings bar and the window of the jobs', () => {
+  it('finds none in the shared controls, the settings bar, the processing panel and the window of the jobs', () => {
     expect(hardValues(index, CHECKED_AREAS)).toEqual([]);
   });
 

@@ -37,6 +37,8 @@
   --rail-width: 48px;
   --dock-width: 340px;
   --inspector-width: 320px;
+  /* The column of the names in a form: the settings bar's, and the processing panel sets its own wider one. */
+  --form-label-width: 72px;
   --sheet-wide-width: clamp(520px, 34vw, 640px);
 
   /* One family; the monospace one is for code, formulas and expressions only. */

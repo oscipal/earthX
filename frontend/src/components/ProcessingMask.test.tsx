@@ -158,7 +158,7 @@ async function openPanel() {
 
 function button(label: string | RegExp): HTMLButtonElement {
   const found = [...container.querySelectorAll('button')].find((b) =>
-    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+    typeof label === 'string' ? (b.textContent?.trim() === label || b.getAttribute('aria-label') === label) : label.test(b.textContent ?? ''),
   );
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found as HTMLButtonElement;
@@ -345,7 +345,7 @@ describe('the layer in the order', () => {
     await openPanel();
     click(chip('scl'));
     click(button('＋ Mask by class'));
-    click(button('✕ Remove'));
+    click(button('Remove'));
     expect(chip('scl').getAttribute('aria-pressed')).toBe('true');
     expect(store().output).toEqual(['scl']);
   });

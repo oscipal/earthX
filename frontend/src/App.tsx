@@ -67,7 +67,7 @@ export default function App() {
   }, [resumeJobs]);
 
   return (
-    <div className={`app${inspectorOpen && !processingOpen ? ' has-inspector' : ''}${managerOpen && jobsFront ? ' jobs-front' : ''}`} data-theme={theme}>
+    <div className={`app${inspectorOpen && !processingOpen ? ' has-inspector' : ''}${processingOpen ? ' has-sheet' : ''}${managerOpen && jobsFront ? ' jobs-front' : ''}`} data-theme={theme}>
       <MapView />
 
       <AppRail />

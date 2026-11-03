@@ -350,6 +350,14 @@ export default function StepForm({
   const bandsField = fields.find((f) => f.name === 'bands');
   // The title is the number and the name of the step.
   const name = stepName(operator, values, index);
+  // "Rename" in the head takes the person to the field of the name, which keeps the rules about a name.
+  const rename = () => {
+    const field = document.getElementById(`pp-step-${stepKey}-name`);
+    if (field instanceof HTMLInputElement) {
+      field.focus();
+      field.select();
+    }
+  };
   return (
     <li className="pp-step" aria-label={`Step ${index + 1}: ${operator?.title ?? 'unknown operator'}`}>
       <div className="pp-step-head">
@@ -358,20 +366,19 @@ export default function StepForm({
           {operator && <span className="pp-step-op"> {operator.title.toLowerCase()}</span>}
         </span>
         <span className="pp-step-actions">
-          <button type="button" className="link-btn" title="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
-            ↑ Up
+          {bandMath && (
+            <button type="button" className="pp-icon-btn" aria-label="Rename" title="Rename the band this step adds" onClick={rename}>
+              ✎
+            </button>
+          )}
+          <button type="button" className="pp-icon-btn" aria-label="Move up" title="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
+            ↑
           </button>
-          <button
-            type="button"
-            className="link-btn"
-            title="Move this step down"
-            disabled={index === count - 1}
-            onClick={() => onMove(1)}
-          >
-            ↓ Down
+          <button type="button" className="pp-icon-btn" aria-label="Move down" title="Move this step down" disabled={index === count - 1} onClick={() => onMove(1)}>
+            ↓
           </button>
-          <button type="button" className="link-btn" title="Remove this step" onClick={onRemove}>
-            ✕ Remove
+          <button type="button" className="pp-icon-btn danger" aria-label="Remove" title="Remove this step" onClick={onRemove}>
+            ✕
           </button>
         </span>
       </div>

@@ -217,12 +217,12 @@ describe('the dropdown "Show"', () => {
     expect(show()).toBeNull();
   });
 
-  it('stands left of vmin and vmax, which keep to one row with it (NM4-65: the same names everywhere)', async () => {
+  it('stands first in the fields of the settings bar, over the row "Scale" with vmin and vmax (NM4-65: the same names everywhere)', async () => {
     await ndvi(undefined, ['result', 'red']);
     const row = section().querySelector('.pp-range')!;
     expect(row.firstElementChild!.classList.contains('pp-show')).toBe(true);
     expect(row.querySelector('.pp-show span')!.textContent).toBe('Band');
-    expect([...row.querySelectorAll('.vc-field > span')].slice(0, 4).map((s) => s.textContent)).toEqual(['Band', 'vmin', 'vmax', 'Colormap']);
+    expect([...row.querySelectorAll('.vc-field > span')].slice(0, 5).map((s) => s.textContent)).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap']);
   });
 
   it('lists every band of the output, the results above the bands of the data', async () => {

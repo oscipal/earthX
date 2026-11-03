@@ -172,7 +172,7 @@ export default function JobDetails() {
         >
           {folded ? '▴' : '▾'}
         </button>
-        <div className="vc-head">
+        <div className="pp-title-row">
           <button type="button" className="link-btn" title="Back to the order" onClick={back}>
             ‹ Order
           </button>

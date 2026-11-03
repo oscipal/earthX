@@ -941,13 +941,13 @@ describe('the preview section', () => {
       expect(unit()).toBe('m');
     });
 
-    it('puts the unit in an element of its own beside the max field, never inside a field', async () => {
+    it('puts the unit in an element of its own under the fields of "Scale", never inside a field', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       const element = section().querySelector('.pp-unit')!;
       expect(element.closest('label')).toBeNull();
-      expect(element.previousElementSibling?.matches('label.vc-num')).toBe(true);
-      expect(element.previousElementSibling?.textContent).toContain('max');
+      expect(element.previousElementSibling?.matches('.vc-scale-fields')).toBe(true);
+      expect(element.previousElementSibling?.textContent).toContain('vmax');
     });
 
     it.each([['1'], [null], ['']])('writes no unit beside the range for %j', async (value) => {

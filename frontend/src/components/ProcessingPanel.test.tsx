@@ -192,7 +192,7 @@ async function openPanel() {
 
 function button(label: string | RegExp, within: Element = container): HTMLButtonElement {
   const found = [...within.querySelectorAll('button')].find((b) =>
-    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+    typeof label === 'string' ? (b.textContent?.trim() === label || b.getAttribute('aria-label') === label) : label.test(b.textContent ?? ''),
   );
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found as HTMLButtonElement;
@@ -2017,7 +2017,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
 
     it('does not hold back a step that is not a reproject', async () => {
       await refused();
-      click(button(/Remove/, container.querySelector('.pp-step')!));
+      click(button('Remove', container.querySelector('.pp-step')!));
       click(button('＋ Band math'));
       typeInto(container.querySelector('textarea[id$="-expression"]')!, 'data * 2');
       expect(button('Review').disabled).toBe(false);
