@@ -1647,7 +1647,8 @@ export interface AppState {
   // What the dialog of a layer that shows an index downloads (Otto, 1.11.2026): its raw bands, or the index as a job would give it.
   downloadAs: 'raw' | 'index';
   setDownloadAs: (what: 'raw' | 'index') => void;
-  enterFocus: (cropToAoi: boolean) => Promise<void>;
+  // `merge` (the default): with a view open, the scenes picked are added to it, as if its scenes and the new ones were ticked together (UI-03e).
+  enterFocus: (cropToAoi: boolean, merge?: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
   addAllToLayers: () => void;
   exitFocus: () => void;
@@ -1895,7 +1896,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     const dataset = s.datasets.find((d) => d.id === id);
     if (section.origin === 'name' && section.items.length > 0 && dataset?.viewable && dataset.browse === 'full_resolution') {
-      void get().enterFocus(false);
+      void get().enterFocus(false, false);
     }
     void runFallback(set, get, id, false);
   },
@@ -2607,8 +2608,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // (`ViewBar.tsx`) was pressed — "Crop to AOI" or "View full selection"
   // (M3-09); the AOI clip itself happens later, on the map
   // (`mapLayers.ts::syncFocusRaster`), never here.
-  enterFocus: async (cropToAoi) => {
+  // "Crop to AOI" and "View whole scene" with a view open (Otto, 3.11.2026, zu #282): no second view. The scenes picked join the open one, exactly
+  // as if its scenes and the new ones were ticked together and the button pressed (NM4-53): the same pass is merged into the same image,
+  // another day is a new step, another dataset an entry of the dataset dropdown. The look of the view stays; the layer that held the
+  // view no longer holds it as it is, so the image is "Temporary".
+  enterFocus: async (cropToAoi, merge = true) => {
     const s = get();
+    const open = merge && s.focusMode && s.resultViewLayerId === null && Object.keys(s.downloaded).length > 0;
     const picked = viewSelectionFrom(s);
     if (picked.length === 0) {
       set({ error: 'Nothing to view — pick a time step or select scenes first.' });
@@ -2638,6 +2644,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       looks[dataset.id] = appliedRenderFrom(render);
       for (const it of items) {
         if (!it.bbox) continue;
+        // A scene the open view has already is not added again.
+        if (open && it.id in s.downloaded) continue;
         if (it.id in downloaded) {
           problem ??= `Scene ${it.id} is in two datasets; the view shows it once.`;
           continue;
@@ -2652,16 +2660,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
       }
     }
-    if (Object.keys(downloaded).length === 0) {
+    if (Object.keys(downloaded).length === 0 && !open) {
       set({ error: problem ?? 'None of the selected scenes carry a bounding box to render.' });
       return;
     }
-    const images = viewImagesOf({ ...s, downloaded });
-    const first = firstImageOf(images, s);
+    if (open && Object.keys(downloaded).length === 0 && problem) {
+      set({ error: problem });
+      return;
+    }
+    const added = downloaded;
+    const all = open ? { ...s.downloaded, ...added } : added;
+    const images = viewImagesOf({ ...s, downloaded: all });
+    // With a view open the image shown stays, unless a scene made an image of its own (another day, another dataset): that one is shown.
+    const shownBefore = open ? shownImageOf(viewImagesOf(s), s.shownImage) : null;
+    const newImage = open ? images.find((image) => image.ids.some((id) => id in added) && !viewImagesOf(s).some((old) => old.key === image.key)) : undefined;
+    const first = open ? (newImage ?? images.find((image) => image.key === shownBefore?.key) ?? firstImageOf(images, s)) : firstImageOf(images, s);
     const applied = (first && looks[first.datasetId]) || {};
     // Scenes of a time step too big for one mosaic are drawn one by one, and only so many of those.
     const groups = sectionsForView(s).flatMap((section) => section.groups);
-    const passes = passesOf(Object.entries(downloaded), groups);
+    const passes = passesOf(Object.entries(all), groups);
     const oneByOne = passes.filter((pass) => !isMosaicPass(pass)).reduce((sum, pass) => sum + pass.length, 0);
     const oversize = oversizeNote(passes, Math.max(0, oneByOne - MAX_MOSAIC_LAYERS));
     const note = oversize ?? problem;
@@ -2677,19 +2694,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       // A crop takes the results off the map and drops the tick of the scenes it was made of, so that their quicklooks
       // do not lie beside the crop; the view does not hang on the choice any more, and a scene ticked again shows like any
       // other (Otto, 27.10.2026). The whole scene keeps the tick and the switch.
-      ...(cropToAoi ? { selectedIds: s.selectedIds.filter((id) => !(id in downloaded)), ...setResultsOnMap(false) } : {}),
+      ...(cropToAoi ? { selectedIds: s.selectedIds.filter((id) => !(id in all)), ...setResultsOnMap(false) } : {}),
       showDownloaded: true,
-      downloaded,
-      shownImage: first?.key ?? null,
-      viewLooks: {},
-      savedLooks: {},
-      appliedRender: applied,
-      ...pendingFieldsOf(applied),
+      downloaded: all,
+      ...(open
+        ? first && shownBefore && first.key !== shownBefore.key
+          ? moveToImage(s, first, shownBefore)
+          : {}
+        : { shownImage: first?.key ?? null, viewLooks: {}, savedLooks: {}, appliedRender: applied, ...pendingFieldsOf(applied) }),
     });
     // The stretch and the mosaics are asked for together; the view says "Loading…" until both are here,
     // because a time step draws nothing until its mosaic has answered.
     const mosaics = get().loadMosaics();
-    await get().autoStretch();
+    // A view that stays keeps the fields it has: the range measured at the start is the new view's.
+    if (!open) await get().autoStretch();
     set({ focusLoading: true });
     await mosaics;
     set({ focusLoading: false });
@@ -3354,7 +3372,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // meaningful coarse-tile preview shows the found scene in full
     // resolution directly — a scene lookup carries no AOI, so this is
     // always "View full selection", never a crop.
-    if (dataset?.browse === 'full_resolution') await get().enterFocus(false);
+    if (dataset?.browse === 'full_resolution') await get().enterFocus(false, false);
   },
 }));
 

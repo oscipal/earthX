@@ -12,7 +12,7 @@ import CSS from '../index.css?raw';
 import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
-import SelectionBlock from './SelectionBlock';
+import SelectionBlock, { selectionBlockModeOf } from './SelectionBlock';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -265,5 +265,48 @@ describe('with the results hidden on the map', () => {
     hide();
     expect(block()).toBeNull();
     expect(bar()).toBeNull();
+  });
+});
+
+// Otto, 3.11.2026 (zu #282): with a view open the block is there as long as the search results are shown.
+describe('with a view open', () => {
+  const view = { focusMode: true, resultView: false, hasSelection: false, tickedBesideView: false, hasGroups: true };
+
+  it('says "Select a scene" and has the timeline with nothing ticked beside the view', () => {
+    expect(selectionBlockModeOf(view)).toEqual({ bar: false, timeline: true });
+    const { bar, timeline } = selectionBlockModeOf(view);
+    useAppStore.setState({ focusMode: true, selectedIds: [] });
+    render(bar, timeline);
+    expect(container.querySelector('.select-hint')!.textContent).toBe('Select a scene');
+    expect(container.querySelector('.time-slider')).not.toBeNull();
+  });
+
+  it('has the buttons of the scenes ticked beside the view', () => {
+    expect(selectionBlockModeOf({ ...view, tickedBesideView: true })).toEqual({ bar: true, timeline: true });
+    useAppStore.setState({ focusMode: true, selectedIds: ['b'] });
+    render(true, true);
+    expect([...container.querySelectorAll('.download-bar button')].map((b) => b.textContent)).toContain('Crop to AOI');
+    expect(container.querySelector('.select-hint')).toBeNull();
+  });
+
+  it('is not there while the results are hidden, and is back with the eye', () => {
+    useAppStore.setState({ focusMode: true, resultsOnMap: false });
+    render(false, true);
+    expect(container.innerHTML).toBe('');
+    useAppStore.setState({ resultsOnMap: true });
+    render(false, true);
+    expect(container.querySelector('.select-hint')).not.toBeNull();
+  });
+
+  it('has no timeline where the search has no time steps: the hint alone', () => {
+    expect(selectionBlockModeOf({ ...view, hasGroups: false })).toEqual({ bar: false, timeline: false });
+  });
+
+  it('is what it was for a result of a job and for browsing', () => {
+    expect(selectionBlockModeOf({ focusMode: false, resultView: true, hasSelection: true, tickedBesideView: false, hasGroups: true })).toEqual({ bar: true, timeline: false });
+    expect(selectionBlockModeOf({ focusMode: false, resultView: true, hasSelection: false, tickedBesideView: false, hasGroups: true })).toEqual({ bar: false, timeline: false });
+    expect(selectionBlockModeOf({ focusMode: false, resultView: false, hasSelection: true, tickedBesideView: false, hasGroups: true })).toEqual({ bar: true, timeline: true });
+    // Ticks the view is made of are no scenes beside it: the buttons are not shown for them.
+    expect(selectionBlockModeOf({ ...view, hasSelection: true, tickedBesideView: false }).bar).toBe(false);
   });
 });
