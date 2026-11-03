@@ -4213,10 +4213,6 @@ a.pm-icon:hover {
   padding: var(--space-1) var(--space-2);
   white-space: nowrap;
 }
-/* The unit of the range, small under the fields of "Scale". */
-.vc-scale-body > .pp-unit {
-  align-self: flex-end;
-}
 
 /* --- "Within AOI" in the results (DS-03b) --- */
 /* The state of the search in the head of the list: "12 found / 180 checked" and "Stop" while it goes on. */

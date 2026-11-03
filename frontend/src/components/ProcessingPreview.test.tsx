@@ -575,7 +575,7 @@ describe('the preview section', () => {
     await openPanel();
     click(button('＋ Band math'));
     typeInto(expression(), '1 + 1');
-    expect(section().textContent).toContain('Pick a band for the output to see the preview.');
+    expect(section().textContent).toContain('Choose a band for the output to see the preview.');
     expect(store().preview).toBeNull();
   });
 
@@ -651,7 +651,7 @@ describe('the preview section', () => {
   });
 
   // M4-19c: the range of a preview is measured once, on the first scene, and chosen by the rule of a result's.
-  describe('the measured range and the unit (M4-19c)', () => {
+  describe('the measured range (M4-19c)', () => {
     const inputs = () => [...section().querySelectorAll<HTMLInputElement>('input[type="number"]')];
     const asked = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/statistics?'));
     const rescale = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale');
@@ -713,7 +713,7 @@ describe('the preview section', () => {
       expect(store().range).toEqual({ vmin: '-1', vmax: '0.8', colormap: 'rdylgn' });
     });
 
-    it('keeps the range of the user across expressions, and "Auto stretch" gives the measure back', async () => {
+    it('keeps the range of the user across expressions, and "Auto-scale" gives the measure back', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       typeInto(inputs()[0], '0');
@@ -723,11 +723,11 @@ describe('the preview section', () => {
       typeInto(expression(), 'nir / red');
       await afterDebounce();
       expect(rescale()).toBe('0,5');
-      click(button('Auto stretch'));
+      click(button('Auto-scale'));
       await afterDebounce();
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
       expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
-      expect(button('Auto stretch').disabled).toBe(true);
+      expect(button('Auto-scale').disabled).toBe(true);
     });
 
     it('does not write over what the user is typing when the measure arrives', async () => {
@@ -749,7 +749,7 @@ describe('the preview section', () => {
       expect(rescale()).toBe('120,2400');
     });
 
-    it('draws the start range once the user applies it against a measure, and lets Auto stretch take it back', async () => {
+    it('draws the start range once the user applies it against a measure, and lets Auto-scale take it back', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       expect(rescale()).toBe('120,2400');
@@ -764,8 +764,8 @@ describe('the preview section', () => {
       click(button('Apply'));
       await afterDebounce();
       expect([rescale(), colormap()]).toEqual(['-1,1', 'rdylgn']);
-      expect(button('Auto stretch').disabled).toBe(false);
-      click(button('Auto stretch'));
+      expect(button('Auto-scale').disabled).toBe(false);
+      click(button('Auto-scale'));
       await afterDebounce();
       expect(rescale()).toBe('120,2400');
     });
@@ -835,7 +835,7 @@ describe('the preview section', () => {
         await flush();
         expect(seen).toEqual(['-1,1', '120,2400']);
         expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
-        expect(unit()).toBe('m');
+        expect(unit()).toBeNull();
       });
 
       it('does not redraw when the late measure calls for the same range', async () => {
@@ -909,7 +909,7 @@ describe('the preview section', () => {
       });
     });
 
-    it('keeps the start range, says so and does not ask again when the measure fails; "Auto stretch" asks again', async () => {
+    it('keeps the start range, says so and does not ask again when the measure fails; "Auto-scale" asks again', async () => {
       statistics = () => new Response('{}', { status: 502 });
       await withNdvi();
       expect(rescale()).toBe('-1,1');
@@ -920,8 +920,8 @@ describe('the preview section', () => {
       await afterDebounce();
       expect(asked()).toHaveLength(2);
       statistics = () => measured({ b1: DEM_VALUES });
-      expect(button('Auto stretch').disabled).toBe(false);
-      click(button('Auto stretch'));
+      expect(button('Auto-scale').disabled).toBe(false);
+      click(button('Auto-scale'));
       await afterDebounce();
       expect(asked()).toHaveLength(3);
       expect(rescale()).toBe('120,2400');
@@ -935,19 +935,11 @@ describe('the preview section', () => {
       expect(section().textContent).not.toContain('could not be measured');
     });
 
-    it('writes the unit beside the range, where the steps leave one', async () => {
+    it('writes no unit at "Scale", also where the data have one (Otto, 03.11.2026)', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
-      expect(unit()).toBe('m');
-    });
-
-    it('puts the unit in an element of its own under the fields of "Scale", never inside a field', async () => {
-      statistics = () => measured({ b1: DEM_VALUES });
-      await withNdvi();
-      const element = section().querySelector('.pp-unit')!;
-      expect(element.closest('label')).toBeNull();
-      expect(element.previousElementSibling?.matches('.vc-scale-fields')).toBe(true);
-      expect(element.previousElementSibling?.textContent).toContain('vmax');
+      expect(unit()).toBeNull();
+      expect(section().querySelector('.vc-scale')?.textContent).not.toMatch(/\bm\b/u);
     });
 
     it.each([['1'], [null], ['']])('writes no unit beside the range for %j', async (value) => {
@@ -962,7 +954,7 @@ describe('the preview section', () => {
       expect(unit()).toBeNull();
     });
 
-    it('shows the unit of a hand range as soon as the measure is in, and drops that of a former preview', async () => {
+    it('shows no unit for a hand range, nor that of a former preview', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       typeInto(inputs()[1], '5');
@@ -976,7 +968,7 @@ describe('the preview section', () => {
     it('puts the unit into no layer: the preview pinned to the layer manager shows none', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
-      expect(unit()).toBe('m');
+      expect(unit()).toBeNull();
       click(button('＋ Add preview to layers'));
       expect(useAppStore.getState().layers[0]).not.toHaveProperty('unit');
       const manager = document.createElement('div');
@@ -1087,10 +1079,10 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     expect(title()).toBeNull();
   });
 
-  it('takes the unit from the answer, and shows its range in the fields', async () => {
+  it('shows the range of the answer in the fields, without its unit', async () => {
     areaStatistics = () => areaAnswer([areaBand(DEM)]);
     await aoiOnly();
-    expect(unit()).toBe('m');
+    expect(unit()).toBeNull();
     expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
     expect([...section().querySelectorAll<HTMLInputElement>('input[type="number"]')].map((i) => i.value)).toEqual(['120', '2400']);
   });
@@ -1230,14 +1222,14 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       expect(title()).toBe(SCENE_HINT);
     });
 
-    it('measures over the AOI again with "Auto stretch", which a fall-back enables', async () => {
+    it('measures over the AOI again with "Auto-scale", which a fall-back enables', async () => {
       areaStatistics = () => new Response('{}', { status: 502 });
       await aoiOnly();
       fellBack();
       warned('status 502');
-      expect(button('Auto stretch').disabled).toBe(false);
+      expect(button('Auto-scale').disabled).toBe(false);
       areaStatistics = () => areaAnswer([areaBand({ ...DEM, percentile_2: 130 })]);
-      click(button('Auto stretch'));
+      click(button('Auto-scale'));
       await afterDebounce();
       expect(posted()).toHaveLength(2);
       expect(store().measure).toMatchObject({ source: 'area' });
@@ -2223,7 +2215,7 @@ describe('layerProcessBlock', () => {
     const datasets = [dataset()];
     expect(layerProcessBlock(pinned('L1'), datasets)).toBeNull();
     expect(layerProcessBlock({ ...pinned('P1'), derived: 'preview' }, datasets)).toBe('A result cannot be processed further yet.');
-    expect(layerProcessBlock(pinned('L1', { datasetId: 'unknown' }), datasets)).toBe('Pick a dataset first.');
+    expect(layerProcessBlock(pinned('L1', { datasetId: 'unknown' }), datasets)).toBe('Choose a dataset first.');
     expect(layerProcessBlock(pinned('L1', { itemIds: [] }), datasets)).toBe('Select a scene first.');
   });
 });

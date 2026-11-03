@@ -36,7 +36,6 @@ import {
   planPreview,
   previewRead,
   previewTitle,
-  previewUnit,
   rescaleOf,
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
@@ -55,7 +54,7 @@ import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
-import RenderFields from './RenderFields';
+import RenderFields, { NO_COLORMAP } from './RenderFields';
 import ResamplingDialog from './ResamplingDialog';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
@@ -289,7 +288,6 @@ function areaLatitude(area: Area, aoi: GeoJSON.Geometry | null, scenes: readonly
 function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
   const area = useProcessingStore((s) => s.area);
   const setArea = useProcessingStore((s) => s.setArea);
-  const scenes = (view.pass?.items.length ?? 0) > 1 ? 'scenes' : 'scene';
   // On a result "Whole scene" is the result's own area, and "AOI only" another AOI inside it (NM4-05b).
   const result = view.fixed?.result != null;
   return (
@@ -316,11 +314,7 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           AOI only
         </button>
       </div>
-      {area === 'scene' ? (
-        <p className="pp-help">
-          {result ? 'The result covers the area it has.' : `The result covers the whole ${scenes}; the mask marks where they have data.`}
-        </p>
-      ) : !hasAoi ? (
+      {area === 'scene' ? null : !hasAoi ? (
         <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
       ) : (
         view.outside && <p className="hint-text error">{OUTSIDE_TEXT}</p>
@@ -410,7 +404,6 @@ function PreviewSection({ view }: { view: OrderView }) {
   const autoStretch = useProcessingStore((s) => s.autoStretch);
   const shown = useProcessingStore((s) => s.shown);
   const setShown = useProcessingStore((s) => s.setShown);
-  const unit = previewUnit(preview, measure);
   // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4): in percentiles the fields hold what was typed.
   const range = useProcessingStore((s) => s.range);
   const applyRangePercent = useProcessingStore((s) => s.applyRangePercent);
@@ -486,13 +479,8 @@ function PreviewSection({ view }: { view: OrderView }) {
               vmax={{
                 value: percentMode ? typed.high : rangeDraft.vmax,
                 onChange: (vmax) => (percentMode ? (setTyped((t) => ({ ...t, high: vmax })), setPercentProblem(null)) : setRangeDraft({ vmax })),
-                after: unit ? (
-                  <span className="pp-unit" aria-label="Unit of the range">
-                    {unit}
-                  </span>
-                ) : undefined,
               }}
-              colormap={read?.band === RGB ? null : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
+              colormap={read?.band === RGB ? { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' } : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
             />
             <div className="pp-buttons">
               <button

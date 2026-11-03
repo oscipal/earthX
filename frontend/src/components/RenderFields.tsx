@@ -25,7 +25,8 @@ interface Props {
   // The index a dataset offers in place of a band; left out where there is none.
   index?: { value: string; options: readonly IndexOption[]; tip: string; onChange: (name: string | null) => void };
   vmin: { value: string; onChange: (value: string) => void };
-  vmax: { value: string; onChange: (value: string) => void; after?: ReactNode };
+  // No unit stands at the range (Otto, 03.11.2026): the unit of the data is in BANDS.txt and the metadata.
+  vmax: { value: string; onChange: (value: string) => void };
   // A colormap to pick, or a fixed one-entry box (a picture of three bands is "RGB"); left out with `null`.
   colormap: { value: string; onChange: (value: string) => void } | { fixed: string; title: string } | null;
   // What the empty ends of the range say.
@@ -59,14 +60,7 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
         <span>vmin</span>
         <input type="number" value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
       </label>
-      {vmax.after ? (
-        <div className="pp-bound">
-          <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
-          {vmax.after}
-        </div>
-      ) : (
-        <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
-      )}
+      <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
     </>
   );
   return (
@@ -195,7 +189,6 @@ function ScaleRow({ vmin, vmax, placeholder, percent, unit, channels, below }: {
             {unit && <UnitSelect unit={unit} />}
           </div>
         )}
-        {vmax.after}
         {below}
       </div>
     </div>
