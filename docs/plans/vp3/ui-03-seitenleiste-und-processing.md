@@ -383,3 +383,31 @@ Im Browser (`http://localhost:5173`, hell und dunkel, breit und schmal):
 8. Ergebnis-Layer mit RGB: drei Zeilen und Histogramme; „Save“ und erneutes Öffnen behalten die drei Bereiche.
 
 Browser-Skripte der Sitzung: `e2e/quick-processing.cjs` (neu; mit `REAL_COLORMAPS=1` gegen den laufenden tiler), nachgezogen `view-index`, `settings-box`, `rgb`, `nm4-65`, `view-steps`, `colormap-apply`.
+
+### 7.13 Nachtrag UI-03e: Messung der Ansicht über die AOI (Otto, 03.11.2026, Stufe A, keine eigene Plan-Datei)
+
+Folgeaufgabe aus §7.12 (Antwort Otto zu #280, Punkt 1): „auto-scale“, „Enhance contrast“ und die Histogramme von „Scale“ messen das gezeigte Bild über den Zuschnitt, mit der POST-Statistik-Route aus NM4-19, ohne neue Route. Umsetzung nach den fünf Schritten von oben; sie **ersetzt Auslegung (a)** für Ansicht und Layer-Einstellungen (zugeschnitten: Fläche, sonst wie bisher die erste Szene, ganze Szene).
+
+**Umgesetzt.**
+
+- Backend: `histogram` in der Antwort der Route (`core.area_statistics(histogram=True)`), Cache-Schlüssel `area-statistics/v4`; Nachtrag in `adr/0006`. Tests mit Gegenprobe: dieselben Zahlen wie der Job (Band ohne Schritt, Farbbild mit drei Bändern, Index als `band_math` Version 2), Band gleich seinen skalierten Rohwerten, Histogramm zählt, was der Job zählt, keines ohne gültigen Pixel.
+- Frontend: `viewMeasure.ts` baut den Auftrag je Darstellung (Index: ein `band_math`-Schritt Version 2 wie bei `indexOrdersOfScenes`, dessen Band als Ausgabe; Band und Farbbild: ohne Schritt, die Bänder des gezeigten Assets laut Item, `visual` also `visual_1` … `visual_3`; immer `float32`), schickt ihn an die Route, rechnet die Antwort mit `scale`/`offset` des Items je Band in Rohwerte zurück und gibt sie in der Form der GET-Statistik weiter, so dass `autoRescale`, `rescaleAtPercent`, `channelsAtPercent` und `histogramOf` unverändert lesen. Der Store wählt die Messung über `viewMeasure` (ein Objekt je Zustand); `autoStretch`, die Perzentile von „Apply“/„Enhance contrast“ und die Histogramme in `ViewerControls` gehen alle durch `measureView`. Eine Frage wird je Auftrag einmal gestellt (Antworten im Speicher der Seite, der Text trägt die AOI und steht in keiner URL, keinem Speicher und keinem Log).
+
+**Auslegungen (Vorschlag, gelten bis Otto widerspricht).**
+
+- (a) Gemessen werden alle Szenen des gezeigten Bildes (eine Gruppe, wie das Mosaik der Karte), nicht nur die erste. Über 16 Dateien (Szenen mal Assets) sagt die Route `413`.
+- (b) Rückfall auf die erste ganze Szene bei `413` und `422`, mit der Meldung „The area could not be measured: the range is measured over the first whole scene.“ bei „auto-scale“, „Enhance contrast“ und „Apply“ in Perzentilen; die Histogramme fallen still zurück (sie laufen bei jeder Änderung). Jeder andere Fehler (`5xx`, Netz) fällt **nicht** zurück, sondern bleibt die Meldung wie bisher.
+- (c) Kein Auftrag an die Fläche, wenn sich nichts zurückrechnen lässt: Szenen des Bildes mit verschiedener Skalierung (Sentinel-2 vor und nach Baseline 04.00 hat einen anderen `offset`), ein Band ohne positives `scale`, ein Asset, dessen Bänder das Item nicht beschreibt, ein Datensatz, der kein COG ist. Dann misst die Ansicht die erste Szene wie bisher, ohne Meldung (gefragt wurde die Fläche nie).
+- (d) Der Auftrag wird in `viewMeasure.ts` gebaut und nicht über `indexOrdersOfScenes`; das bräuchte die Prozessbeschreibung des Datensatzes (eine Anfrage mehr) nur für den Ausgabetyp, und `band_math` gibt `float32`. Der Index-Schritt ist derselbe.
+- (e) Ohne Zuschnitt (`cropToAoi` aus) ändert sich nichts: erste Szene, ganze Szene.
+- (f) Die Rückrechnung gilt für Minimum, Maximum, Mittel, Perzentile, Kanten des Histogramms; die Standardabweichung wird durch `scale` geteilt. Aus Float32-Werten zurückgerechnete Rohwerte weichen im Bereich von 1e-7 relativ von den gespeicherten ab; das ist unter der Auflösung der Schieber.
+
+**Nicht geprüft in der Sitzung:** Browserlauf gegen den laufenden tiler mit echten Sentinel-2-Szenen (keine Quelle erreichbar). Die Prüfanleitung unten braucht Otto.
+
+**Prüfanleitung für Otto** (zusätzlich zu §7.12, Browser, `docker compose up -d --build api tiler`): Sentinel-2 suchen, Szene wählen, „Crop to AOI“ mit kleiner AOI in einem Feld (Wald oder See, nicht die ganze Szene).
+
+1. „auto-scale“ in „absolute“: die Felder zeigen Werte der AOI, nicht der Szene (DevTools → Network: `POST /collections/…/statistics`, Body mit `visual_1` … `visual_3`; die URL trägt keine Koordinaten).
+2. „Enhance contrast“: drei Zeilen mit je eigenem Bereich der AOI, die Histogramme darunter zeigen die Werte der AOI; ein Band (z. B. `red`) hat Bereiche in Rohwerten (um 1000–4000), nicht in 0–1.
+3. NDVI: Felder und Histogramm im Bereich −1…1 der AOI.
+4. Crop abschalten: wieder die erste ganze Szene, kein `POST`.
+5. AOI über mehr als 16 Dateien (viele Szenen eines Bildes, NDVI mit zwei Assets): Meldung „The area could not be measured …“, die Felder zeigen die erste Szene.
