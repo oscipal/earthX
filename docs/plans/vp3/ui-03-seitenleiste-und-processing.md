@@ -403,16 +403,15 @@ Der Manager („Jobs“) öffnet wieder als Panel links neben der Leiste, wie vo
 
 **Antworten Otto (03.11.2026, zu #283), umgesetzt:**
 
-1. **Panels links 440 px statt 340** (`--dock-width`; Otto: „generell zu schmal“): Suche, Layer-Manager, Ergebnisse und Jobs, damit die Zeilen des Managers einzeilig mit vier Spalten passen. Die schmale Zeilenform (Status und Datum unter dem Titel) gilt erst unter 400 px Listenbreite (vorher 440 px); die Spalte „Status“ ist 5,5 em breit (vorher 7 em). Der Titel hat dann rund 100 px. Ersetzt „340 px“ in §7.0, §7.1, §7.2 und §7.4 (Originaltexte bleiben stehen).
+1. ~~Panels links 440 px statt 340~~ **ersetzt am 03.11.2026 durch die zweite Antwort unten:** Mit 440 px lag der linke Teil der Auswahlleiste unten mit „Crop to AOI“ unter dem Panel (`e2e/dem-layers.cjs` rot bei 1280 px); Otto: zurück auf 340 px, die Leiste unten bleibt unverändert (Regel NM4-66).
 2. **`earthx.jobsWindow` wird einmal beim Start gelöscht** (`forgetJobsWindow`, in `App`); ein gesperrter oder werfender Speicher lässt den Eintrag liegen, ohne Meldung.
 3. **`e2e/process-result.cjs` angepasst:** die Zeile des Layers hat elf Plätze (mit Stift aus UI-03d), die Prüfung wartet auf das leere Feld statt auf ein sichtbares ⚙, und die Seite stellt ihre Jobs zuerst wieder her.
 
-**Maße mit 440 px (Breite der freien Karte = Fenster − Leiste − Panel links − rechte Spalte):**
+**Zweite Antwort Otto (03.11.2026, zu #283), umgesetzt:**
 
-| Fenster | Leiste | Panel links | Karte frei, Seitenleiste 320 | Karte frei, Processing (`--sheet-wide-width`) | Jobs |
-|---|---|---|---|---|---|
-| 1920 | 48 | 440 | 1112 (ohne Panel 1552) | 832 bei 640 px (ohne Panel 1232) | eine Zeile, vier Spalten |
-| 1280 | 48 | 440 | 472 (ohne Panel 912) | 272 bei 520 px (ohne Panel 712) | eine Zeile, vier Spalten |
-| 360 | 48 | 312 (von der Leiste bis zum rechten Rand, über der Karte, wie bisher unter 900 px) | Blatt von unten | Blatt von unten | schmale Zeilenform |
-
-Bei 1280 px bleiben mit Panel links und Processing 272 px Karte: das Panel links lässt sich mit seinem Knopf schließen. Browser: `frontend/e2e/jobs-dock.cjs` (neu; hell/dunkel, 1280, 1920, 360: Breite, eine Zeile mit vier Spalten an gleichen Plätzen, Gruppenköpfe, schmale Form unter 900 px, kein Überlauf) und `job-retry.cjs`.
+- **Panels links wieder 340 px** (`--dock-width`), wie vor der ersten Antwort. Die Maße von §7.2 und §7.4 gelten: 1920 px: Leiste 48, Panel 340, Karte frei 1212 (ohne Panel 1552), mit Processing (640 px) 892; 1280 px: 572 (ohne Panel 912), mit Processing (520 px) 372; 360 px: Panel 312 px über der Karte. Die Leiste unten bleibt unverändert.
+- **Eine Zeile je Job im Dock, keine zweizeilige Form:** Status als Text („Finished“, „70%“, …), Titel gekürzt mit „…“ und der volle Titel als Tooltip, ✎ am Titel, Datum („until 8 Nov, 19:15“), dann ＋, ⇩, ⋯ in dieser Reihenfolge. Die Zeile ist ein Raster aus acht Plätzen (Vorsatz für den Pfeil eines Stapels, Status, Titel, ✎, Datum, drei Symbole); ein Platz, den eine Zeile nicht braucht, bleibt leer. Titel und Datum stehen in der Zeile nebeneinander, der Titel-Knopf (öffnet die Details) trägt nur den Titel.
+- **✎** benennt den Titel an Ort und Stelle um (wie vor UI-03c); ein leerer Name wird nicht genommen, der alte bleibt (gilt auch für „Rename“ im Menü und die Taste R, und für Stapel). Das Teil eines Stapels hat kein ✎. Esc bricht nur die Eingabe ab.
+- **＋ „Add to layers“** (Tooltip) bei fertigen Jobs mit Ergebnis auf der Karte (`showResultOnMap`, wie „Show on map“ in den Jobdetails). Ist das Ergebnis schon ein Layer, bleibt ＋ gesperrt mit Grund („This result is already a layer“). Es teilt den Platz mit „↻“, das nur Jobs haben, die nicht fertig sind; bei allen anderen Jobs bleibt der Platz leer.
+- **Auslegung (Vorschlag):** Bei 340 px (Listenbreite 323 px) bleiben dem Titel rund 40 px (etwa sechs Zeichen): Status 4,5 em, Datum 8,5 em, vier Symbole und ✎ brauchen den Rest. Das ist die Folge von „eine Zeile“ mit Datum und fünf Symbolen. Die zweizeilige Form (Status und Datum unter dem Titel, Symbole über beide Zeilen) gilt nur **unter 900 px und auf Touch-Bildschirmen**, weil dort die Symbole 44 px hoch sein müssen (Regel Otto, 02.11.2026) und eine Zeile nicht reicht. Alternative für das Dock: das Datum nur als Tooltip, dann bleiben rund 130 px Titel.
+- Browser: `e2e/jobs-dock.cjs` (angepasst: 340 px, eine Zeile, Reihenfolge ＋ ⇩ ⋯, ✎ zwischen Titel und Datum, Tooltip, schmale Form unter 900 px), `job-retry.cjs`, `dem-layers.cjs`.
