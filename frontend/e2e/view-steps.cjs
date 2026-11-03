@@ -165,7 +165,8 @@ async function run(browser, { theme, viewport }) {
   if (/\d{4}-\d{2}-\d{2}/.test(await page.locator('.vc-title').first().textContent())) problems.push('the title of the head has a date');
   // The head of the settings bar: title, mark, eye and x in the first row; the dataset and the date with the arrows in the second.
   const order = await page.evaluate(() => [...document.querySelector('.vc-head').children].map((row) => [...row.children].map((el) => el.className.split(' ')[0]).join()));
-  if (order.join(' | ') !== 'vc-title,pp-badge,vc-eye,close-x | vc-dataset,vc-stepper') problems.push(`the head holds ${order.join(' | ')}`);
+  // Row 2 ends with "Copy original scene name" (UI-03e, Otto, 3.11.2026).
+  if (order.join(' | ') !== 'vc-title,pp-badge,vc-eye,close-x | vc-dataset,vc-stepper,vc-scene-names') problems.push(`the head holds ${order.join(' | ')}`);
   if ((await page.getByRole('button', { name: 'Apply to all' }).count()) !== 1) problems.push('"Apply to all" is not there');
   const colormapBox = () => page.evaluate(() => {
     const label = [...document.querySelectorAll('.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap');

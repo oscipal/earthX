@@ -1,7 +1,7 @@
 // Browser check of the choice "RGB" (NM4-64), in a real browser with made-up answers of the tiler:
 //   1. "Show" in the preview: with the three bands of the colour picture in the output "RGB" stands on top; it is the start
 //      only where the output has no Band math result; the preview asks the tiler for `band=red&band=green&band=blue`, measures
-//      the three together, draws them with one range and shows no colormap field; a single band has its colormap again.
+//      the three together, draws them with one range and a locked colormap "— none —"; a single band has its colormap again.
 //   2. "Band" in the row of a result layer: "RGB" stands on top, the layer starts with it where the result has no Band math
 //      result, draws three `bidx` with one range and no colormap, and the view of the layer has a row of fields for each channel
 //      (UI-03d) and keeps its field "Colormap" in its place, locked, "— none —", with the reason in its tooltip (NM4-54 part 5, UI-03a).
@@ -109,7 +109,9 @@ async function checkShow(browser, theme, viewport) {
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
   await page.waitForSelector('.pp-range input[type=number]', { timeout: 15000 });
   const fields = () => page.$$eval('.pp-range input[type=number]', (i) => i.map((x) => x.value));
-  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select:not(.vc-unit)', (s) => s.length);
+  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select:not(.vc-unit):not(:disabled)', (s) => s.length);
+  // At RGB the colormap keeps its place, locked on "— none —", as in the settings bar (UI-04 §7.2 row 27).
+  const lockedColormap = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select:disabled:not(.vc-unit)', (s) => s.map((x) => x.textContent).join());
   const options = () => page.$$eval('.pp-show select option', (o) => o.map((x) => `${x.value}=${x.textContent}`));
   const tileBands = () =>
     page.evaluate(async () => {
@@ -141,7 +143,8 @@ async function checkShow(browser, theme, viewport) {
   if (!colourStatistics) problems.push('no statistics asked for red,green,blue');
   else if (colourStatistics.getAll('asset').join() !== 'red,green,blue') problems.push(`the picture reads ${colourStatistics.getAll('asset')}, not red,green,blue`);
   if ((await fields()).join() !== '0.02,0.7') problems.push(`the fields of RGB say ${await fields()}, not 0.02,0.7`);
-  if ((await colormapField()) !== 0) problems.push('RGB shows a colormap field');
+  if ((await colormapField()) !== 0) problems.push('RGB shows a colormap to choose');
+  if ((await lockedColormap()) !== '— none —') problems.push(`the colormap of RGB is not a locked "— none —": ${await lockedColormap()}`);
   const rgb = await tileBands();
   if (rgb.band.join() !== 'red,green,blue' || rgb.colormap !== null || rgb.rescale.join() !== '0.02,0.7') problems.push(`the tiles of RGB ask ${JSON.stringify(rgb)}`);
   const layout = await page.evaluate(() => {

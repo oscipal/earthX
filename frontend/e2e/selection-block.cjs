@@ -82,7 +82,7 @@ async function run(browser, theme, viewport) {
   // --- the timeline alone: nothing is ticked ------------------------------------------------------------------------
   await page.waitForSelector('.time-slider');
   if ((await page.locator('.download-bar').count()) !== 0) problems.push('the bar shows with nothing ticked');
-  if ((await page.locator('.close-x').count()) !== 1) problems.push('no "x" on the timeline alone');
+  if ((await page.locator('.selection-block .close-x').count()) !== 1) problems.push('no "x" on the timeline alone');
   // "Select a scene" in the place of the buttons, and the block as wide as with a ticked scene (Otto, 2.11.2026).
   if ((await page.locator('.selection-block .select-hint').textContent()) !== 'Select a scene') problems.push('no "Select a scene" with nothing ticked');
   const aloneBox = await box('.selection-block');
@@ -109,9 +109,9 @@ async function run(browser, theme, viewport) {
   for (const b of buttons) {
     if (x.x < b.right && x.x + x.width > b.left && x.y < b.bottom && x.y + x.height > b.top) problems.push('the "x" lies over a button of the bar');
   }
-  const colour = await page.locator('.close-x').evaluate((e) => getComputedStyle(e).color);
+  const colour = await page.locator('.selection-block .close-x').evaluate((e) => getComputedStyle(e).color);
   if (!/^rgb\((255, 90, 110|198, 40, 64)\)$/.test(colour)) problems.push(`the "x" is ${colour}, not red`);
-  if ((await page.locator('.close-x').getAttribute('title')) !== 'Close') problems.push('the "x" has no tooltip "Close"');
+  if ((await page.locator('.selection-block .close-x').getAttribute('title')) !== 'Close') problems.push('the "x" has no tooltip "Close"');
 
   // --- the row of dates ---------------------------------------------------------------------------------------------
   // activeGroupIndex 3 of 7 (newest first): shown 2026-07-04.
