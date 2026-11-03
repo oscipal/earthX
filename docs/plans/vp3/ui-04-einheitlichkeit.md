@@ -261,6 +261,8 @@ Kein Symbol mehr als Textzeichen. Erlaubt bleiben typografische Zeichen im Text:
 | **5** | RGB je Kanal im Ergebnis-Layer und in der Processing-Vorschau, Permalink mit Kanälen (Backend-Ausnahme, §7.6) | 300–350 | neu |
 | **6** | NM4-56: Zahlenformat (NM4-21), weniger Text mit (i) (NM4-22, Zeilen 8, 31), Datums- und Prozentformat (Zeilen 33, 41, 49), schmale Fenster (Punkt 58: Toolbar 320 px, Statusleiste bei 360 px, Statusmeldung über den Kopfknöpfen) | 350–400 | neu |
 
+**Stand 03.11.2026:** Teil 1 ist umgesetzt (#285, Log-Zeile „UI-04 Teil 1 umgesetzt“). In Teil 2 entfällt die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts`.
+
 Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Teile quer durch dieselben Dateien gehen. Teil 4 kann vor Teil 3 kommen, wenn Otto es zuerst sehen will. Die Teile 2 bis 6 bekommen je einen eigenen Plan-Abschnitt in dieser Datei („§8 Teil n“), damit eine neue Session ohne dieses Gespräch auskommt.
 
 ### 7.8 Fragen an Otto
