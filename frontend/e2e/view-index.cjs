@@ -2,7 +2,8 @@
 // Otto 2.11.2026), in a real browser with made-up answers of the tiler:
 //   1. The dropdown "Band" (the original and its bands, no presets) stands first in the settings of the view, the settings keep their grid
 //      (no overlap, nothing over the edge, the buttons as high as the fields); the presets are buttons of "Quick processing".
-//   2. A click on an index draws it at once, through the tile route with an operator (the mosaic of the pass here): the tiles ask for
+//   2. A click on an index puts it into the fields, "Apply" draws it (Otto, 3.11.2026), through the tile route with an operator (the
+//      mosaic of the pass here): the tiles ask for
 //      `op=band_math`, the band named like the index, the range and colormap of the preset, and no raw asset; the button is on.
 //   3. Zoomed out the choice stays and a short note says "Zoom in to compute NDWI", with the explanation in its tooltip; no tile is
 //      asked for; zoomed in the note is gone and the tiles come.
@@ -163,10 +164,14 @@ async function checkDraw(browser, theme, viewport) {
   const { context, page, problems, tiles, jobs } = await open(browser, theme, viewport, PRESETS);
   await page.waitForTimeout(1500);
   tiles.length = 0;
-  // Drawn at once, with no "Apply" (UI-03d), and the button is on.
+  // Into the fields, the button on, nothing of the index asked for; "Apply" draws it (Otto, 3.11.2026).
   await page.locator('.scene-view .vc-quick button', { hasText: 'NDWI' }).click();
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(1500);
   if ((await page.locator('.scene-view .vc-quick button', { hasText: 'NDWI' }).getAttribute('aria-pressed')) !== 'true') problems.push('the button of the index is not on');
+  if (tiles.some((t) => t.includes('op=band_math'))) problems.push('the index was drawn before "Apply"');
+  if ((await page.locator('.scene-view .vc-apply').getAttribute('aria-disabled')) === 'true') problems.push('"Apply" stays locked after an index was chosen');
+  await page.locator('.scene-view .vc-apply').click();
+  await page.waitForTimeout(2500);
   if ((await page.locator('.scene-view .vc-apply').getAttribute('aria-disabled')) !== 'true') problems.push('"Apply" is open after the index was drawn');
   // Tiles of the raw view that were in flight when the index was chosen may still arrive; none follows the first of the index.
   const first = tiles.findIndex((t) => t.includes('op=band_math'));

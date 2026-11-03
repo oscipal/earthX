@@ -100,9 +100,11 @@ const settle = (page) => page.waitForTimeout(600);
 // The look of the view of the search: RGB, a band, an index (chosen and applied).
 async function look(page, what) {
   if (what === 'rgb') return;
-  // An index is a button of "Quick processing", drawn at once (UI-03d); a band is chosen and applied.
+  // An index is a button of "Quick processing" (UI-03d), a band a choice of the dropdown; either is drawn with "Apply".
   if (what === 'index') {
     await page.locator('.inspector .vc-quick button', { hasText: 'NDVI' }).click();
+    await settle(page);
+    await page.locator('.inspector .vc-apply').click();
     await settle(page);
     return;
   }
@@ -314,7 +316,8 @@ async function behaviour(browser, theme, viewport, problems) {
         const what = name.split('/')[1];
         const own = found[`job/${what}`];
         for (const place of PLACES_OF_A_PICTURE) if (!same(own[place], m[place])) problems.push(`${tag}: "${place}" of ${name} is at ${JSON.stringify(m[place])}, of job/${what} at ${JSON.stringify(own[place])}`);
-        if (name.startsWith('search/') && !same(found[`pinned/${what}`].actions, m.actions)) problems.push(`${tag}: "Actions" of ${name} is at ${JSON.stringify(m.actions)}, of pinned/${what} at ${JSON.stringify(found[`pinned/${what}`].actions)}`);
+        // A pinned index is the index alone and has no "Quick processing" (Otto, 3.11.2026): its "Actions" stand higher.
+        if (name.startsWith('search/') && what !== 'index' && !same(found[`pinned/${what}`].actions, m.actions)) problems.push(`${tag}: "Actions" of ${name} is at ${JSON.stringify(m.actions)}, of pinned/${what} at ${JSON.stringify(found[`pinned/${what}`].actions)}`);
       }
       for (const kind of Object.keys(KINDS)) {
         const [rgb, band] = ['rgb', 'band'].map((what) => found[`${kind}/${what}`]);

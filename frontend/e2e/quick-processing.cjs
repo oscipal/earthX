@@ -1,7 +1,7 @@
 // UI-03d in a real browser (Otto, 2.11.2026): "Quick processing", the histograms of "Scale", the list of colormaps and the actions of a
 // layer in the settings bar. In the light and the dark theme, at 1280 x 800 and 360 x 740; a screenshot per case.
-//   1. "Quick processing" stands between "Display" and "Actions", three buttons in a row, two rows, all of one width; an index is drawn at
-//      once and the button is on; "Enhance contrast" stretches each channel on its own (three ranges in the look) and is on.
+//   1. "Quick processing" stands between "Display" and "Actions", three buttons in a row, two rows, all of one width; an index goes into
+//      the fields, the button is on, and "Apply" draws it (Otto, 3.11.2026); "Enhance contrast" stretches each channel on its own (three ranges in the look) and is on.
 //   2. RGB has three histograms (red, green, blue) with a row of vmin and vmax each; an index has one. Nothing lies outside the bar and
 //      nothing scrolls sideways.
 //   3. "More…" opens the list of all colormaps in the place of the bar, with previews; a click chooses and goes back, the choice stands in
@@ -152,10 +152,13 @@ async function runCase(browser, theme, viewport, results) {
     if (!enhanced || enhanced.split(';').length !== 3) fail(`enhance: ${enhanced}`);
     if ((await page.getAttribute('.inspector .vc-quick button:has-text("Enhance contrast")', 'aria-pressed')) !== 'true') fail('enhance not on');
     await shot('enhanced');
-    // An index: one histogram, the button on, at once.
+    // An index: into the fields, the button on, one histogram; drawn with "Apply" (Otto, 3.11.2026).
     await page.locator('.inspector .vc-quick button', { hasText: 'NDVI' }).click();
     await settle(page);
-    if ((await store(page, (s) => s.appliedRender.index)) !== 'NDVI') fail('NDVI not drawn');
+    if ((await store(page, (s) => s.appliedRender.index)) === 'NDVI') fail('NDVI drawn before "Apply"');
+    await page.locator('.inspector .vc-apply').click();
+    await settle(page);
+    if ((await store(page, (s) => s.appliedRender.index)) !== 'NDVI') fail('NDVI not drawn with "Apply"');
     if ((await page.$$('.inspector .range-hist')).length !== 1) fail('index has not one histogram');
     if ((await page.getAttribute('.inspector .vc-quick button:has-text("NDVI")', 'aria-pressed')) !== 'true') fail('NDVI not on');
     // "Enhance contrast" is for RGB only (Otto, 3.11.2026).
