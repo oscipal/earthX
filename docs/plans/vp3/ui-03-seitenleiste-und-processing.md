@@ -358,6 +358,8 @@ Umsetzung der Folgeaufgabe, ohne neue Route:
 
 Schätzung 180–220 Zeilen Code ohne Tests, über dem Richtwert 150. In diesem PR bleibt die Messung wie „auto-scale“ (erste Szene, ganze Szene); Auslegung (a) gilt weiter bis zur Folgeaufgabe.
 
+**Browsertest Otto (03.11.2026, zu #280), umgesetzt.** (1) Der Mülleimer „Remove layer“ ist so breit wie die anderen Aktionen. (2) Im Layer-Manager entfernt ein Mülleimer statt ✕, und ein Stift am Ende der Titelzeile benennt um (wie im Kopf der Seitenleiste: leer behält den alten Namen, Esc bricht ab). (3) „Add current view to layers“ steht in zwei Zeilen und ist ganz lesbar. (4) „Quick processing“ zeigt nur, was gilt: „Enhance contrast“ nur bei RGB, die Indizes nur bei einem Datensatz mit Presets (Sentinel-2), an einem Index-Layer nichts; gilt nichts, fehlt der Abschnitt, und der Hinweis eines Index steht unter den Feldern. Ersetzt Auslegung (g) „Quick processing auch am Layer“ für Index-Layer und die Regel „gesperrt statt weg“ für diesen Abschnitt. (5) Die Schieber des Histogramms sind dünne Linien; die Greiffläche bleibt breiter.
+
 **Prüfanleitung für Otto (Browser und PowerShell 5.1).**
 
 ```powershell
