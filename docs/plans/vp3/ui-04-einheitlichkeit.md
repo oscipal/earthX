@@ -65,6 +65,10 @@ Nach UI-03b, in diesem Plan zu klären und zu schneiden:
    - (c) Ein Einstellungsmenü sitzt ganz unten in der Leiste links (Lucide „settings“, Tooltip „Settings“) und enthält Basemap und Erscheinungsbild (Light / Dark / System). Die bisherigen Stellen für Basemap und Light/Dark entfallen.
    - Zu allen drei: Tests mit Gegenprobe, Browserprüfung, Eintrag im Leitfaden.
 6. Grundlage des Leitfadens sind alle Regeln und Begriffe aus UI-03 (#277–#283) und NM4-75 (#284, `adr/0028`).
+7. **Zusatz (03.11.2026, später am Tag):**
+   - (a) Im Processing-Panel entfällt bei „Whole scene“ bzw. „Full scene“ der Hinweis „The result covers the whole scene; the mask marks where they have data.“ ersatzlos.
+   - (b) Bei „Scale“ (vmin/vmax) steht keine Einheit, überall wo Scale vorkommt: Seitenleiste, Layer, Ergebnis-Layer, Processing-Vorschau. Die Einheiten bleiben in `BANDS.txt` und in den Metadaten.
+   - Tests mit Gegenprobe; Eintrag im Leitfaden.
 
 ### 7.1 Wie erhoben
 
@@ -134,6 +138,9 @@ Legende: **S** = Symbol, **T** = Text/Begriff, **B** = Bauteil/Stil, **V** = Ver
 | 49 | Zahlen | `toFixed` verstreut; „50%“ neben „42 %“; „max. 1 MB“ | NM4-21 | eine Formatierfunktion laut `querschnitt/nm4-21-zahlenformat.md`; Prozent ohne Leerzeichen („50%“, englisch) | 6 |
 | 50 | Veraltete Kommentare | `Inspector.tsx` nennt „✕ Clear“, `TipLayer.tsx` sagt, Esc schließe | – | in Teil 1 berichtigen | 1 |
 | 51 | Tote Regeln | `.vc-polmodes`, Klassen ohne Regel (`dialog-as`, `resampling-*`, `results-head-right`) | B | in Teil 3 entfernen bzw. zuordnen | 3 |
+
+| 52 | Processing-Panel: „Area: Whole scene“ | Absatz „The result covers the whole {scene(s)}; the mask marks where they have data.“, bei einem Ergebnis „The result covers the area it has.“ (`ProcessingPanel.tsx`) | Vorgabe 7a | der Absatz entfällt ersatzlos; Auslegung: auch die Fassung für ein Ergebnis, weil sie im selben Fall „Whole scene“ steht | 1 |
+| 53 | „Scale“ | Processing-Vorschau: Einheit des Bandes hinter vmax (`pp-unit`, aria „Unit of the range“); Seitenleiste und Ergebnis-Layer reichen eine Einheit an `RenderFields`/`ScaleHistograms` durch, wo eine bekannt ist | Vorgabe 7b | keine Einheit an „Scale“, auch nicht im Histogramm; „absolute / percentile“ bleibt (keine Maßeinheit, sondern die Art des Bereichs); die Einheit an den Band-Chips („· dB“) bleibt, sie gehört nicht zu Scale | 1 |
 
 Esc-Wege heute (Vorgabe 2): `ResamplingDialog` (Cancel), `LayerManager`/`AppRail` (Flip beenden), `InlineRename` (Umbenennen abbrechen, Otto zu #280 Frage 4), `useRowDrag` (Ziehen abbrechen, nichts wird abgelegt). Sonst schließt nichts mit Esc. Die zwei letzten schließen nichts und bleiben; der Leitfaden nennt sie als Abbruch, nicht als Schließen.
 
@@ -228,8 +235,9 @@ Kein Symbol mehr als Textzeichen. Erlaubt bleiben typografische Zeichen im Text:
 3. **Symbole:** Keine Symbol-Textzeichen (Liste aus §7.3) als JSX-Text oder in Knopftexten. `lucide-react` wird nur in `icons.ts` importiert (eine `no-restricted-imports`-Regel in oxlint, sonst ein Test).
 4. **Farben und Maße:** Der Token-Test (`tokens.test.ts`) gilt für alle Klassen in `index.css`, nicht nur für die aufgezählten Bereiche: keine `#hex`/`rgb()`/`rgba()` außerhalb von `tokens.css`. Ausnahmen stehen mit Grund in einer kurzen Liste (Daten-Legenden, Kanalfarben der Histogramme laufen schon über Tokens).
 5. **Schrift (Vorgabe 4):** statisch keine `font-family`/`font:`-Angabe außer `var(--font)`, `inherit` und `var(--font-mono)` an genau einer Regel (Band-Math); kein `fontFamily` in TSX. Dazu ein Browser-Skript: Jeder sichtbare Textknoten hat die berechnete Familie von `--font`, die Band-Math-Fläche `--font-mono`; Gegenprobe mit einem eingeschleusten Knoten in Arial.
-6. **Begriffe:** Eine Liste verbotener Wörter je Begriff (z. B. „Dismiss“, „Pin “, „picture“, „Try again“, „Auto stretch“, „scene(s)“, „ & “, „...“) prüft alle Zeichenketten in `components/**/*.tsx` und den Textmodulen; Gegenprobe je Wort.
-7. **Sperren:** Jeder Knopf mit `disabled`/`aria-disabled` hat einen Tooltip mit Grund. Statisch nicht sicher prüfbar, darum ein jsdom-Durchgang über die wichtigsten Panels: Jeder gesperrte Knopf hat `title` oder `data-tip`, und der Text ist nicht der Aktionstext.
+6. **Keine Einheit an „Scale“ (Vorgabe 7b):** jsdom-Test je Stelle (Seitenleiste mit Band mit Einheit, Layer, Ergebnis-Layer, Processing-Vorschau): In der Zeile „Scale“ und im Histogramm steht die Einheit des Bandes nicht; Gegenprobe mit dem alten `pp-unit`.
+7. **Begriffe:** Eine Liste verbotener Wörter je Begriff (z. B. „Dismiss“, „Pin “, „picture“, „Try again“, „Auto stretch“, „scene(s)“, „ & “, „...“) prüft alle Zeichenketten in `components/**/*.tsx` und den Textmodulen; Gegenprobe je Wort.
+8. **Sperren:** Jeder Knopf mit `disabled`/`aria-disabled` hat einen Tooltip mit Grund. Statisch nicht sicher prüfbar, darum ein jsdom-Durchgang über die wichtigsten Panels: Jeder gesperrte Knopf hat `title` oder `data-tip`, und der Text ist nicht der Aktionstext.
 
 ### 7.6 RGB je Kanal und Permalink (Vorgabe 1)
 
@@ -246,7 +254,7 @@ Kein Symbol mehr als Textzeichen. Erlaubt bleiben typografische Zeichen im Text:
 
 | Teil | Inhalt | Umfang (Schätzung) | Session |
 |---|---|---|---|
-| **1** | Leitfaden `docs/ui/leitfaden.md` (Begriffe, Bauteile, Symbole, Regeln für Texte, Sperren, Schließen, Speichern, Esc, Einstellungsmenü, Zoom, Relief); Begriffe und Texte nach §7.4 (Zeilen 6, 8 Grund im Tooltip, 11, 14–16, 19–20, 24, 27–28, 34–36, 38–40, 50); Schließen über `CloseButton` auch in der Statusleiste; Prüfungen 1, 2, 6 und 7 | 350–400 Zeilen (ohne Leitfaden etwa 300) | diese |
+| **1** | Leitfaden `docs/ui/leitfaden.md` (Begriffe, Bauteile, Symbole, Regeln für Texte, Sperren, Schließen, Speichern, Esc, Einstellungsmenü, Zoom, Relief, keine Einheit an „Scale“); Begriffe und Texte nach §7.4 (Zeilen 6, 8 Grund im Tooltip, 11, 14–16, 19–20, 24, 27–28, 34–36, 38–40, 50, 52, 53); Schließen über `CloseButton` auch in der Statusleiste; Prüfungen 1, 2, 6, 7 und 8 | 380–420 Zeilen (ohne Leitfaden etwa 330) | diese |
 | **2** | Lucide: `lucide-react` als Abhängigkeit, `icons.ts`, alle Symbole nach §7.3, `Eye`/`Icons`/`Chevron` entfallen, `CloseButton` mit `x`; Hinweisdatei; Prüfung 3; Browser-Skripte mit Symbol-Selektoren nachziehen | 300–400 | neu |
 | **3** | Bauteile und Tokens: Knopffamilien → vier Formen, `Badge`, Hinweise/Fehler, Sperr-Deckkraft, Fokusring, feste Farben → Tokens, Schrift (Vorgabe 4) mit Prüfungen 4 und 5, tote Regeln; Tooltip-Weg nach Frage 3 | 400+, darum in 3a (Knöpfe, Sperren, Fokus) und 3b (Hinweise, Abzeichen, Farben, Schrift) | je neu |
 | **4** | Einstellungsmenü in der Leiste (Basemap, Overlays, Projektion, Light/Dark/System), Relief nur als Overlay mit altem Permalink, „Zoom to selection“ über alles Gewählte (Vorgaben 5a–5c); Theme „System“ folgt `prefers-color-scheme` und wird als `earthx.theme = "system"` gemerkt | 250–300 | neu |
