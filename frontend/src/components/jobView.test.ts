@@ -167,22 +167,22 @@ describe('the count of a batch with deleted and forgotten parts', () => {
   });
 });
 
-describe('formatShortDate (the column "Until" of the manager)', () => {
+describe('formatShortDate (the column "Expires" of the manager)', () => {
   const local = (y: number, mo: number, d: number, h: number, mi: number) => new Date(y, mo - 1, d, h, mi).toISOString();
-  const NOW = new Date(2026, 10, 3, 12, 0).getTime();
 
-  it('is day.month-hour:minute, with no zero in front of the day and the month and two digits for the time', () => {
-    expect(formatShortDate(local(2026, 11, 8, 23, 48), NOW)).toBe('8.11-23:48');
-    expect(formatShortDate(local(2026, 1, 5, 7, 4), NOW)).toBe('5.1-07:04');
-    expect(formatShortDate(local(2026, 12, 31, 0, 0), NOW)).toBe('31.12-00:00');
+  it('is DDMMM-HH:MM: two digits for the day, three capital letters for the month, two digits each for the time', () => {
+    expect(formatShortDate(local(2026, 10, 8, 12, 34))).toBe('08OCT-12:34');
+    expect(formatShortDate(local(2026, 1, 5, 7, 4))).toBe('05JAN-07:04');
+    expect(formatShortDate(local(2026, 12, 31, 0, 0))).toBe('31DEC-00:00');
+    expect(formatShortDate(local(2026, 11, 8, 23, 48))).toBe('08NOV-23:48');
   });
 
-  it('names the year only when it is not this one', () => {
-    expect(formatShortDate(local(2027, 1, 2, 9, 30), NOW)).toBe('2.1.2027-09:30');
+  it('has the same shape for every month and a year that is not this one', () => {
+    for (let month = 1; month <= 12; month += 1) expect(formatShortDate(local(2027, month, 9, 9, 5))).toMatch(/^09[A-Z]{3}-09:05$/u);
   });
 
   it('gives back what is no date, and has no "until" in it', () => {
-    expect(formatShortDate('soon', NOW)).toBe('soon');
-    expect(formatShortDate(local(2026, 11, 8, 23, 48), NOW)).not.toMatch(/until/iu);
+    expect(formatShortDate('soon')).toBe('soon');
+    expect(formatShortDate(local(2026, 11, 8, 23, 48))).not.toMatch(/until/iu);
   });
 });

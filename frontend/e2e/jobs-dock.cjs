@@ -1,12 +1,13 @@
 // The processing manager docked at the left (UI-03c, docked again on 3.11.2026 in #283), in a real browser:
 //   1. Width: the panel is 340 px wide from 900 px (`--dock-width`, as wide as the other panels), flush from the top to the foot beside the
 //      rail; under 900 px it covers the map from the rail to the right edge.
-//   2. From 900 px every row of a job is one line: title with its pencil, date, then "＋" (finished jobs), "⇩" ("↻" in its place for a job
-//      that failed) and "⋯"; the title, the pencil and the date stand at the same x in every row, the title is cut with "…" and holds its whole
-//      text as a tooltip, a group head has its count and "n running" and its menu at the right. There is no column of the state: it stands in
-//      the place of the date while a job runs ("70%").
-//      The columns have titles over the list (Title, Until) at the x of the places of the row; the date is "8.11-23:48", no "until".
-//      A running job has a line of two pixels at the top edge of its row, as wide as the row, with the progress in it.
+//   2. From 900 px every row of a job is one line: title, date, then "＋" (finished jobs), "⇩" ("↻" in its place for a job that failed) and
+//      "⋯"; the pencil lies over the end of the title, in the place of the title; the title is cut with "…" and holds its whole text as a
+//      tooltip, a group head has its count and "n running" and its menu at the right. There is no column of the state: it stands in the
+//      place of the date while a job runs ("70%").
+//      The titles of the columns (Title, Expires) stand under the head of every open group, small and with no background, at the x of the
+//      places of the row; the columns are as wide in every group; the date is "08OCT-12:34", no "until".
+//      A running job has a line of two pixels at the bottom edge of its row, as wide as the row, with the progress in it.
 //   3. Under 900 px (a column of about 260 px, symbols a finger high) the narrow form applies: status and date under the title.
 //   4. Nothing scrolls sideways, nothing lies outside the panel, the symbols of a row do not overlap.
 // In the light and the dark theme, at 1280 x 800, 1920 x 1080 and 360 x 740; a screenshot per case.
@@ -79,7 +80,7 @@ async function check(browser, theme, viewport) {
         title: box(open.querySelector('.pm-title')), until: box(row.querySelector('.pm-until')), untilShown: getComputedStyle(row.querySelector('.pm-until')).display !== 'none',
         bar: row.querySelector(':scope > .pm-progress') ? box(row.querySelector(':scope > .pm-progress')) : null, rowBox: box(row),
         tooltip: open.title, shown: open.querySelector('.pm-title').textContent,
-        edit: row.querySelector('.pm-edit') ? box(row.querySelector('.pm-edit')) : null,
+        edit: row.querySelector('.pm-edit') ? box(row.querySelector('.pm-edit')) : null, open: box(open), group: row.closest('.pm-group').getAttribute('aria-label'),
         icons: [...line.querySelectorAll(':scope > .pm-icon')].map(box), line: box(line),
         tail: [...line.children].slice(-3).map(symbol),
       };
@@ -88,7 +89,7 @@ async function check(browser, theme, viewport) {
       view: { width: window.innerWidth, height: window.innerHeight }, panel: box(panel), dock: box(document.querySelector('.dock')),
       scrolls: document.documentElement.scrollWidth > window.innerWidth || panel.querySelector('.pm-list').scrollWidth > panel.querySelector('.pm-list').clientWidth + 1,
       rows,
-      columns: panel.querySelector('.pm-columns') ? { shown: getComputedStyle(panel.querySelector('.pm-columns')).display !== 'none', texts: [...panel.querySelector('.pm-columns').children].map((c) => c.textContent), title: box(panel.querySelector('.pm-col-title')), until: box(panel.querySelector('.pm-col-until')) } : null,
+      columns: [...panel.querySelectorAll('.pm-group')].map((g) => g.querySelector('.pm-columns')).map((c) => c ? { shown: getComputedStyle(c).display !== 'none', texts: [...c.children].map((x) => x.textContent), title: box(c.querySelector('.pm-col-title')), until: box(c.querySelector('.pm-col-until')), size: getComputedStyle(c.querySelector('.pm-col-title')).fontSize, bg: getComputedStyle(c).backgroundColor, inGroup: c.previousElementSibling.className } : null),
       dates: [...panel.querySelectorAll('.pm-row:not(.batch) .pm-until')].map((e) => e.textContent),
       opens: [...panel.querySelectorAll('.pm-row:not(.batch) .pm-open')].map(box),
       heads: [...panel.querySelectorAll('.pm-group-head')].map((h) => ({ count: h.querySelector('.pm-count')?.textContent ?? null, running: h.querySelector('.pm-state')?.textContent ?? null, menu: !!h.querySelector('.pm-menu') })),
@@ -108,7 +109,7 @@ async function check(browser, theme, viewport) {
     } else if (row.untilShown && (row.title.right > row.until.x + 0.5 || Math.abs(row.until.y - row.title.y) > 8)) {
       problems.push(`a row is not one line of title and date: ${JSON.stringify([row.title, row.until].map((b) => [Math.round(b.x), Math.round(b.y)]))}`);
     }
-    if (!narrow && row.edit && row.untilShown && (row.edit.x < row.title.right - 0.5 || row.edit.right > row.until.x + 0.5)) problems.push('the pencil is not between the title and the date');
+    if (!narrow && row.edit && (row.edit.right > row.open.right + 0.5 || row.edit.x < row.open.x || row.edit.x > row.title.right)) problems.push('the pencil does not lie over the end of the title');
     if (!row.tooltip.startsWith('Job ')) problems.push(`the tooltip of the title is "${row.tooltip}", not its whole text`);
     for (let i = 0; i < row.icons.length; i++) {
       for (let j = i + 1; j < row.icons.length; j++) if (overlap(row.icons[i], row.icons[j])) problems.push('two symbols of a row overlap');
@@ -127,20 +128,27 @@ async function check(browser, theme, viewport) {
     }
   }
   if (JSON.stringify(report.heads.map((h) => [h.count, h.running])) !== JSON.stringify([['3', '1 running'], ['2', '1 running']])) problems.push(`the heads say ${JSON.stringify(report.heads)}`);
-  if (!report.columns) problems.push('no titles of the columns');
+  if (report.columns.some((c) => !c)) problems.push('a group has no titles of the columns');
   else if (narrow) {
-    if (report.columns.shown) problems.push('the titles of the columns show in the narrow form');
+    if (report.columns.some((c) => c.shown)) problems.push('the titles of the columns show in the narrow form');
   } else {
-    if (JSON.stringify(report.columns.texts) !== JSON.stringify(['Title', 'Until'])) problems.push(`the columns are ${JSON.stringify(report.columns.texts)}`);
-    if (Math.abs(report.columns.title.x - report.opens[0].x) > 1) problems.push(`the title "Title" is at ${report.columns.title.x}, the title of a row at ${report.opens[0].x}`);
-    if (Math.abs(report.columns.until.right - report.rows[1].until.right) > 1) problems.push('the title "Until" is not over the date');
+    for (const c of report.columns) {
+      if (JSON.stringify(c.texts) !== JSON.stringify(['Title', 'Expires'])) problems.push(`the columns are ${JSON.stringify(c.texts)}`);
+      if (c.inGroup !== 'pm-group-head') problems.push('the titles of the columns do not stand under the head of the group');
+      if (c.bg !== 'rgba(0, 0, 0, 0)') problems.push(`the titles of the columns have a background: ${c.bg}`);
+      if (parseFloat(c.size) > 11.5) problems.push(`the titles of the columns are ${c.size} high`);
+      if (Math.abs(c.title.x - report.columns[0].title.x) > 0.5 || Math.abs(c.until.x - report.columns[0].until.x) > 0.5 || Math.abs(c.title.width - report.columns[0].title.width) > 0.5) problems.push('the columns are not as wide in every group');
+    }
+    // The titles stand at the places of the row, whichever group.
+    for (const row of report.rows) if (Math.abs(row.open.x - report.columns[0].title.x) > 1 || Math.abs(row.open.width - report.columns[0].title.width) > 1) problems.push(`the title of the row in "${row.group}" is not as wide as the column`);
+    for (const row of report.rows.filter((r) => r.untilShown)) if (Math.abs(row.until.right - report.columns[0].until.right) > 1) problems.push(`the date of the row in "${row.group}" is not under "Expires"`);
   }
   // Running jobs (Job 3 and Job 1): a line of two pixels at the top edge of the row, and the state where the date would stand; nothing like it on the others.
   for (const index of [0, 3]) {
     const row = report.rows[index];
     if (!row.bar) problems.push(`row ${index + 1} has no line of progress`);
-    else if (row.bar.height > 3 || Math.abs(row.bar.y - row.rowBox.y) > 1 || Math.abs(row.bar.width - row.rowBox.width) > 1) problems.push(`the line of progress of row ${index + 1} is ${JSON.stringify(row.bar)} in ${JSON.stringify(row.rowBox)}`);
-    if (!narrow && (!row.stateShown || !/^\d+%$/.test(row.stateText) || row.untilShown || Math.abs(row.state.right - report.rows[1].until.right) > 1)) problems.push(`row ${index + 1} does not show its state in the place of the date: ${row.stateText}`);
+    else if (row.bar.height > 3 || Math.abs(row.bar.bottom - row.rowBox.bottom) > 1 || Math.abs(row.bar.width - row.rowBox.width) > 1) problems.push(`the line of progress of row ${index + 1} is ${JSON.stringify(row.bar)} in ${JSON.stringify(row.rowBox)}`);
+    if (!narrow && (!row.stateShown || !/^\d+%$/.test(row.stateText) || row.untilShown || Math.abs(row.state.right - report.columns[0].until.right) > 1)) problems.push(`row ${index + 1} does not show its state in the place of the date: ${row.stateText}`);
   }
   for (const index of [1, 2, 4]) if (report.rows[index].bar) problems.push(`row ${index + 1} has a line of progress without running`);
   // "Run again" (Job 5) stands where the finished job has its download.
@@ -150,7 +158,7 @@ async function check(browser, theme, viewport) {
     if (!failed.label.startsWith('Run again')) problems.push(`the failed job has "${failed.label}" in the place of the download`);
     else if (Math.abs(failed.x - done.x) > 1) problems.push(`"Run again" is at ${failed.x}, the download at ${done.x}`);
   }
-  for (const date of report.dates) if (!/^\d{1,2}\.\d{1,2}-\d{2}:\d{2}$/.test(date)) problems.push(`the date reads "${date}", not 8.11-23:48`);
+  for (const date of report.dates) if (!/^\d{2}[A-Z]{3}-\d{2}:\d{2}$/.test(date)) problems.push(`the date reads "${date}", not 08OCT-12:34`);
   if (!report.heads[1].menu) problems.push('the head of a group has no menu');
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}.png`) });
   await context.close();

@@ -27,10 +27,6 @@ export const STORAGE_FULL_TIP = 'Browser storage is full: copies of the oldest o
 export const NOT_KEPT_TEXT = 'This browser does not keep your jobs. Download results before you close the tab.';
 export const GROUP_NOT_EMPTY_TIP = 'Only an empty group can be removed.';
 
-// The title of the column of the dates: what the date says depends on what the list shows. In "Expired" it is when the job expired, in
-// "Deleted" when it expires (until when it can be restored), elsewhere until when it stays.
-const UNTIL_COLUMN: Record<JobFilter, string> = { active: 'Until', expired: 'Expired', deleted: 'Expires', all: 'Until' };
-
 // How far the menu of a row is open: closed, the list of actions, or the list of groups to move to.
 type MenuMode = 'closed' | 'menu' | 'move';
 
@@ -310,21 +306,22 @@ export function RetryButton({ offered, name, tip, busy, onRetry }: { offered: bo
   );
 }
 
-// The date in the column "Until": when a job goes (a deleted one: until when it can be restored, or else when it expired; one that
-// expired: when it did). A job that is cancelled or forgotten by the server has no time to name; its state stands in the place of the date.
-function UntilText({ job, state, now }: { job: JobEntry; state: JobState; now: number }) {
+// The date in the column "Expires": when a job goes (a deleted one: the day a day after its deletion, which is also the end of the time
+// to restore it; one that expired: when it did). A job that is cancelled or forgotten by the server has no time to name; its state stands in the place of the date.
+function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
   if (state.key === 'deleted') {
-    const restorable = canRestore(job, now) && job.deletedUntil;
+    // A deleted job expires a day after it was deleted: that is the day in the column, whether it can still be restored or not.
+    const day = job.deletedUntil ?? job.expires;
     return (
-      <span className="pm-until" title={restorable ? job.deletedUntil! : job.expires}>
-        {formatShortDate(restorable ? job.deletedUntil! : job.expires, now)}
+      <span className="pm-until" title={day}>
+        {formatShortDate(day)}
       </span>
     );
   }
   if (state.key === 'cancelled' || state.key === 'unavailable') return null;
   return (
     <span className="pm-until" title={job.expires}>
-      {formatShortDate(job.expires, now)}
+      {formatShortDate(job.expires)}
     </span>
   );
 }
@@ -433,7 +430,7 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
           <span className="pm-state" title={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
             {state.text}
           </span>
-          <UntilText job={job} state={state} now={now} />
+          <UntilText job={job} state={state} />
           {job.archived && <span className="pm-tag">Archived</span>}
           {job.superseded && <span className="pm-tag">Superseded</span>}
         </span>
@@ -515,6 +512,8 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
   const restorable = parts.filter((p) => canRestore(p, now));
   // The soonest end of the days in which a part can still be restored: after it not every part can.
   const restoreUntil = restorable.map((p) => p.deletedUntil ?? '').sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+  // Once every part is deleted for good the column still names the day: the latest of theirs.
+  const deletedDay = parts.map((p) => p.deletedUntil ?? '').filter(Boolean).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   return (
     <li
       ref={row}
@@ -564,13 +563,17 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
           <span className="pm-state">{batchSummary(count)}</span>
           {restoreUntil ? (
             <span className="pm-until" title={restoreUntil}>
-              {formatShortDate(restoreUntil, now)}
+              {formatShortDate(restoreUntil)}
+            </span>
+          ) : count.deleted === parts.length && deletedDay ? (
+            <span className="pm-until" title={deletedDay}>
+              {formatShortDate(deletedDay)}
             </span>
           ) : (
             count.expires &&
             count.deleted < parts.length && (
               <span className="pm-until" title={count.expires}>
-                {formatShortDate(count.expires, now)}
+                {formatShortDate(count.expires)}
               </span>
             )
           )}
@@ -959,12 +962,6 @@ export default function ProcessingManager() {
         </div>
       )}
       <div className="pm-list">
-        {shown.length > 0 && (
-          <div className="pm-columns" aria-hidden="true">
-            <span className="pm-col-title">Title</span>
-            <span className="pm-col-until">{UNTIL_COLUMN[filter]}</span>
-          </div>
-        )}
         {shown.length === 0 && groups.length === 0 && <p className="hint-text pm-empty">{emptyText(filter, all.length)}</p>}
         {sections.map(({ group, entries, empty }) => {
           const id = group?.id ?? UNGROUPED;
@@ -1009,6 +1006,13 @@ export default function ProcessingManager() {
                 )
               )}
               {/* With no group there is no heading to fold under: the jobs are all there is. */}
+              {/* Under the head of every open group (and over the jobs, where there is no group) stand the titles of the columns. */}
+              {(!folded || (!group && groups.length === 0)) && entries.length > 0 && (
+                <div className="pm-columns" aria-hidden="true">
+                  <span className="pm-col-title">Title</span>
+                  <span className="pm-col-until">Expires</span>
+                </div>
+              )}
               {(!folded || (!group && groups.length === 0)) && (
                 <ul className="pm-rows" id={listId}>
                   {entries.map((entry) =>
