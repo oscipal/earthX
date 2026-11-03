@@ -2964,10 +2964,10 @@ button.pm-open:hover {
 }
 .pm-tags,
 .pm-meta > .pm-tag {
-  grid-column: 1;
+  grid-column: 1 / -1;
   grid-row: 2;
 }
-/* The marks of a job ("Archived", "Superseded") stand side by side under the title, never one over the other. */
+/* The marks of a job ("Archived", "Superseded") stand side by side under the title, across as many columns as they need, never one over the other. */
 .pm-tags {
   display: flex;
   flex-wrap: nowrap;
@@ -3182,10 +3182,10 @@ a.pm-icon:hover {
     justify-self: end;
     padding: 0 var(--space-1);
   }
-  /* Across the title and the pencil, so that the two marks stand side by side here too. */
+  /* Across all the columns, so that the two marks stand side by side here too, whatever the width. */
   .pm-tags,
   .pm-meta > .pm-tag {
-    grid-column: 1 / 3;
+    grid-column: 1 / -1;
     grid-row: 3;
   }
   .pm-row:not(.refused) > .pm-line > :nth-last-child(3) {

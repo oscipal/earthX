@@ -1822,8 +1822,9 @@ describe('the line of a job', () => {
     expect(tags.parentElement!.classList.contains('pm-meta')).toBe(true);
     expect([...one.querySelector('.pm-tags')!.children].map((t) => t.textContent)).toEqual(['Archived']);
     expect(css).toMatch(/\.pm-tags \{\s*display: flex;\s*flex-wrap: nowrap;/u);
-    // Under 900 px they have the width of the title and the pencil, so that they stand side by side there too.
-    expect(css).toMatch(/\.pm-tags,\s*\.pm-meta > \.pm-tag \{\s*grid-column: 1 \/ 3;\s*grid-row: 3;/u);
+    // They stand across all the columns, in the dock and under 900 px, so that they stand side by side whatever the width.
+    expect(css).toMatch(/\.pm-tags,\s*\.pm-meta > \.pm-tag \{\s*grid-column: 1 \/ -1;\s*grid-row: 2;/u);
+    expect(css).toMatch(/\.pm-tags,\s*\.pm-meta > \.pm-tag \{\s*grid-column: 1 \/ -1;\s*grid-row: 3;/u);
     // A job with no mark has no place for it.
     put({ jobs: [finished(3)] });
     expect(container.querySelector('.pm-tags')).toBeNull();
