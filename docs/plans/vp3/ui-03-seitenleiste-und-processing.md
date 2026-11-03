@@ -340,12 +340,23 @@ Umgesetzt wie §7.9. Abweichungen und Auslegungen (Vorschlag, bis Otto widerspri
 
 cpt-city liefert QGIS nur als Katalog für den Browser (`resources/cpt-city-qgis-min`), mit Lizenz je Verlauf; nicht übernommen. Lohnend wären höchstens einzelne Höhen- oder Bathymetrie-Verläufe nach Einzelprüfung. Die Gruppen folgen matplotlib (`colormap_reference.py`) und cmocean (`docs/source/index.rst`); `cfastie`, `rplumbo`, `schwarzwald` (rio-tiler) unter „other“.
 
-**Fragen an Otto.**
+**Antworten Otto (03.11.2026, zu #280).** (1) „Enhance contrast“ und Histogramm der Ansicht sollen über die AOI bzw. den Zuschnitt messen, mit der vorhandenen POST-Statistik-Route aus NM4-19 (AOI nur im Body), keine neue Route; ist das klein (Richtwert unter 150 Zeilen Code), in diesem PR, sonst als Folgeaufgabe beschreiben und hier so lassen. (2) Ein PR: ok. (3) ColorBrewer: gleiche Namen genügen. (4) Esc im Namensfeld bricht das Umbenennen ab: ok.
 
-1. „Enhance contrast“ und Histogramm der Ansicht über die AOI statt über die ganze erste Szene? (1) so lassen wie „auto-scale“ (heute); (2) **Empfehlung:** eigene Folgeaufgabe, eine POST-Route für die Statistik der Ansicht mit der AOI nur im Body (wie NM4-19), dann messen „auto-scale“, „Enhance contrast“ und Histogramm über den Zuschnitt; (3) über die bestehende AOI-Statistik der Jobs, braucht aber einen Schritt im Auftrag und eignet sich für RGB nicht.
-2. Umfang: etwa 1 700 geänderte Zeilen Produktivcode (ohne Tests, Browser-Skripte, Dokumente und die Farbtabellen), mit allem etwa 4 100, weit über dem Richtwert 400. (1) **Empfehlung:** so lassen, die Commits sind nach Themen getrennt; (2) in drei PRs teilen (UI-03d, Layer-Aktionen, Colormaps).
-3. Die Farbwerte der ColorBrewer-Verläufe von QGIS (5 Klassen) weichen von rio-tilers (9/11 Klassen) ab. (1) **Empfehlung:** die Namen genügen, die Werte von rio-tiler bleiben; (2) die QGIS-Werte als eigene Colormaps (`qgis_rdylgn` …) ergänzen.
-4. Esc im Feld des Layer-Namens verwirft die Eingabe (Auslegung j). (1) **Empfehlung:** so lassen, es schließt nichts; (2) auch dort ohne Wirkung.
+**Zu (1): nicht klein, deshalb Folgeaufgabe (Vorschlag „UI-03e“).** Befund am Code und mit dem Testaufbau der Route (`test_tiler_area_statistics`):
+
+- Die Route nimmt einen Auftrag ohne Schritt an, der Bänder der Daten ausgibt (Ausgabe `float32`), und misst sie über die AOI.
+- Sie misst wie der Job **in physikalischen Werten** (`raster:scale`/`raster:offset` angewandt, z. B. Reflektanz 0,06–0,21). Die Kacheln der Ansicht für ein Band und für RGB (`visual`) zeichnen **Rohwerte** (Item- und Mosaik-Kachel ohne Umrechnung). Ein so gemessener Bereich passte nicht zu den Kacheln; nur beim Index (Operator-Kachel, physikalisch) stimmen die Einheiten.
+- Mit der Ausgabe `uint16` zählt die Route keinen Pixel (die Werte werden in den Ausgabetyp gewandelt), ein Band zweimal in der Ausgabe ist `422`.
+
+Umsetzung der Folgeaufgabe, ohne neue Route:
+
+1. Auftrag je Darstellung: Index wie `indexOrdersOfScenes` (ein `band_math`-Schritt), Band ohne Schritt mit dem Band als Ausgabe (`float32`), RGB mit den drei Bändern des `visual`-Assets (zu prüfen, wie die Ausgabe sie nennt); die AOI des Zuschnitts im Body; ohne Zuschnitt wie heute die erste Szene.
+2. Die Antwort im Frontend in Rohwerte zurückrechnen, mit `scale`/`offset` des Items je Band (linear und steigend, gilt also auch für Perzentile und Kanten des Histogramms); Index unverändert.
+3. `histogram` auch in der Antwort der Route (`BandStatistics.histogram`, wie bei der Ergebnis-Statistik; Cache-Schlüssel `area-statistics/v4`).
+4. „auto-scale“, „Enhance contrast“ und Histogramm messen dieselbe Frage; bei `413`/`422` Rückfall auf die erste Szene mit Hinweis wie in der Processing-Vorschau.
+5. Tests mit Gegenprobe: dieselben Zahlen wie der Job über die AOI (Index) bzw. in Rohwerten umgerechnet (Band, RGB); ohne Zuschnitt unverändert.
+
+Schätzung 180–220 Zeilen Code ohne Tests, über dem Richtwert 150. In diesem PR bleibt die Messung wie „auto-scale“ (erste Szene, ganze Szene); Auslegung (a) gilt weiter bis zur Folgeaufgabe.
 
 **Prüfanleitung für Otto (Browser und PowerShell 5.1).**
 
