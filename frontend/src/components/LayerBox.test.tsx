@@ -132,7 +132,7 @@ describe('a layer opened from the layer manager', () => {
   // Otto, 1.11.2026 (NM4-54 part 5): the box of a layer of scenes is the box of a result: the fields, the opacity and the buttons in one place.
   it('has the fields, the opacity and the buttons of the settings of any layer, in that order', () => {
     expect(labels()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
-    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
+    expect(buttons()).toEqual(['Auto-scale', 'Apply', 'Save']);
     const box = container.querySelector('.scene-view')!;
     expect([...box.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-head', 'insp-body']);
     expect([...container.querySelector('.vc-render')!.children].map((c) => c.className.split(' ')[0])).toEqual(['vc-field', 'vc-field', 'vc-field', 'vc-opacity', 'vc-buttons']);
@@ -160,7 +160,7 @@ describe('a layer opened from the layer manager', () => {
     act(() => useAppStore.setState({ cropToAoi: true, viewAoi: crop.restore.aoi, layers: [crop] }));
     expect(actions()).toEqual(['⚙ Process', '⇩ Download', '＋ Add current view to layers', '']);
     expect(labels()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
-    expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
+    expect(buttons()).toEqual(['Auto-scale', 'Apply', 'Save']);
   });
 });
 

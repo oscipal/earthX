@@ -679,12 +679,12 @@ describe('buildOrder', () => {
   });
 
   it.each([
-    ['no scene', { itemIds: [] }, 'Pick a pass.'],
+    ['no scene', { itemIds: [] }, 'Choose a pass.'],
     ['a line as AOI', { aoi: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } }, 'Draw an area as AOI.'],
     ['no step', { steps: [] }, 'Add a step.'],
     ['17 steps', { steps: Array.from({ length: 17 }, () => base.steps[0]) }, 'At most 16 steps.'],
     ['no band in the output', { bands: [] }, EMPTY_OUTPUT],
-    ['no data type', { dtype: '' }, 'Pick an output data type.'],
+    ['no data type', { dtype: '' }, 'Choose an output data type.'],
   ])('blocks %s', (_, change, problem) => {
     const built = buildOrder({ ...base, ...change } as Parameters<typeof buildOrder>[0]);
     expect(built.order).toBeNull();
@@ -692,7 +692,7 @@ describe('buildOrder', () => {
   });
 
   it('says why the output is empty, in the words of the Start button', () => {
-    expect(EMPTY_OUTPUT).toBe('Pick at least one band for the output.');
+    expect(EMPTY_OUTPUT).toBe('Choose at least one band for the output.');
   });
 
   it('blocks a step whose form does not fit and says where', () => {
@@ -826,7 +826,7 @@ describe('buildOrder', () => {
       expect(ok.problems).toEqual([]);
       expect(errorsOf(ok)).toEqual([{}, {}]);
       const none = buildOrder({ ...base, steps: [ndvi('NDVI', 1), step('normalize', 4, { ...values, bands: '' }, 2)] });
-      expect(errorsOf(none)[1]).toEqual({ bands: 'Pick at least one band.' });
+      expect(errorsOf(none)[1]).toEqual({ bands: 'Choose at least one band.' });
     });
   });
 });

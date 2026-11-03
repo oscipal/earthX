@@ -728,7 +728,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       ],
     });
     act(() => root.render(<ControlPanel />));
-    expect(container.textContent).toContain('3 scene(s) found');
+    expect(container.textContent).toContain('3 scenes found');
   });
 
   it('the scene name field has a "×" while it holds text, which empties it', () => {
@@ -823,10 +823,10 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(document.activeElement).toBe(choices()[0]);
     });
 
-    it('"Clear coverage" is on only while a coverage map is shown, and hides it', () => {
+    it('"Hide coverage" is on only while a coverage map is shown, and hides it', () => {
       const clear = () => container.querySelector('.coverage-clear-btn') as HTMLButtonElement;
       setUp(['optical']);
-      expect(clear().textContent).toBe('Clear coverage');
+      expect(clear().textContent).toBe('Hide coverage');
       expect(clear().disabled).toBe(true);
       act(() => button().click());
       expect(useAppStore.getState().showCoverage).toBe(true);
@@ -837,10 +837,10 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(clear().disabled).toBe(true);
     });
 
-    it('"Coverage" and "Clear coverage" share one row', () => {
+    it('"Coverage" and "Hide coverage" share one row', () => {
       setUp(['optical']);
       const row = container.querySelector('.coverage-button-wrap')!;
-      expect([...row.children].map((c) => c.textContent)).toEqual(['Coverage', 'Clear coverage']);
+      expect([...row.children].map((c) => c.textContent)).toEqual(['Coverage', 'Hide coverage']);
     });
 
     it('is visible but off when no dataset is picked', () => {

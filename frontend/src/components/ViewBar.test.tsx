@@ -229,7 +229,7 @@ describe('the labels of the bar (UI-01g)', () => {
     select('cog', AOI);
     show();
     expect(labels()).toEqual([
-      'Crop & merge to AOI',
+      'Crop and merge to AOI',
       'View merged scenes',
       '⇩ Download merged crop',
       '⇩ Download full scenes',
@@ -251,7 +251,7 @@ describe('the labels of the bar (UI-01g)', () => {
   it('say in their tooltips that the view and the downloads are at full resolution', () => {
     select('cog', AOI);
     show();
-    expect(button('Crop & merge to AOI').title).toContain('full resolution');
+    expect(button('Crop and merge to AOI').title).toContain('full resolution');
     expect(button('View merged scenes').title).toContain('full resolution');
     expect(button('⇩ Download merged crop').title).toContain('full resolution');
   });
@@ -317,7 +317,7 @@ describe('ticks in several datasets', () => {
 
   it('lets the buttons that start a view take them all', () => {
     twoDatasets(['A', 'E1']);
-    expect(button('Crop & merge to AOI').disabled).toBe(false);
+    expect(button('Crop and merge to AOI').disabled).toBe(false);
     expect(button('View merged scenes').disabled).toBe(false);
   });
 

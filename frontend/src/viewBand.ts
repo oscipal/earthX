@@ -33,7 +33,7 @@ export function withAsset(id: string, info: DownloadedInfo, asset: string): Down
 }
 
 // The tooltip of the dropdown "Band" of the view.
-export const BAND_TIP = 'The picture of the image: the standard one or one band of the data. The indices are in Quick processing.';
+export const BAND_TIP = 'What the image shows: the standard picture or one band of the data. The indices are in Quick processing.';
 
 // What the locked dropdown says where the picture has one band and so nothing to choose.
-export const ONE_BAND_TIP = 'This picture has one band';
+export const ONE_BAND_TIP = 'This image has one band';

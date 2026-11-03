@@ -35,7 +35,7 @@ function Sheet({ kind, hidden }: { kind: 'view' | 'result'; hidden: boolean }) {
   const [folded, setFolded] = useState(false);
   useSheetHeight(ref);
   return (
-    <aside ref={ref} className={`inspector panel${folded ? ' folded' : ''}`} aria-label="Settings" hidden={hidden}>
+    <aside ref={ref} className={`inspector panel${folded ? ' folded' : ''}`} aria-label={kind === 'result' ? 'Layer settings' : 'Image settings'} hidden={hidden}>
       <button
         type="button"
         className="pp-grip"
@@ -58,7 +58,7 @@ export default function Inspector() {
   const pickerOpen = useColormapPicker((s) => s.request !== null);
   const open = kind !== null;
 
-  // Esc closes nothing here: the bar is closed with its red x or "✕ Clear" only (Otto, 2.11.2026).
+  // Esc closes nothing here: the bar is closed with its red x only (Otto, 2.11.2026).
 
   // Whatever had the focus when the bar opened gets it back when it closes, if it is still there.
   const origin = useRef<HTMLElement | null>(null);

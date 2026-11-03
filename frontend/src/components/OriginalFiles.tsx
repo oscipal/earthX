@@ -161,7 +161,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
             title="Stop the download. Files already saved stay."
             onClick={() => control.current?.abort()}
           >
-            Cancel
+            Stop
           </button>
         )}
         {!running && failed && (

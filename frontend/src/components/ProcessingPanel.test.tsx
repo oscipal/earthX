@@ -1130,7 +1130,7 @@ describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
     await openPanel();
     click(button('Review'));
     await flush();
-    expect(container.textContent).toContain('Pick a pass.');
+    expect(container.textContent).toContain('Choose a pass.');
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
   });
 

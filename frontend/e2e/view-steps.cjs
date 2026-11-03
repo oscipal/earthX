@@ -1,5 +1,5 @@
 // The view of scenes steps through its images (NM4-53, Otto, 31.10.2026, zu #257): two overpasses of a Sentinel-2 like
-// dataset (three bands, RGB) and one elevation tile, ticked, then "Crop & merge to AOI". Each scene is one solid colour,
+// dataset (three bands, RGB) and one elevation tile, ticked, then "Crop and merge to AOI". Each scene is one solid colour,
 // and the pixel in the middle of the map is read:
 //   1. the view opens with the image of the group that is open (green, the later overpass); the head says the date only (no satellite)
 //      between the title and the eye, with the dataset to choose, and the title has no date;
@@ -157,7 +157,7 @@ async function run(browser, { theme, viewport }) {
   const text = (selector) => page.locator(selector).first().textContent();
 
   // 1. Crop & merge over two overpasses and the elevation tile.
-  await page.getByRole('button', { name: 'Crop & merge to AOI' }).click();
+  await page.getByRole('button', { name: 'Crop and merge to AOI' }).click();
   await page.waitForSelector('.vc-head .vc-stepper');
   await expectColour('the open group (the later overpass) first', 'S2_B');
   const row = () => text('.vc-step-text');

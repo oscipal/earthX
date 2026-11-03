@@ -125,7 +125,7 @@ describe('the parameters a method writes', () => {
       out_min: 'Required.',
       out_max: 'Required.',
     });
-    expect(paramsFrom(FIELDS, { method: 'zscore', bands: '' }, 'normalize').errors).toEqual({ bands: 'Pick at least one band.' });
+    expect(paramsFrom(FIELDS, { method: 'zscore', bands: '' }, 'normalize').errors).toEqual({ bands: 'Choose at least one band.' });
   });
 
   it('refuses numbers the server would refuse, with a comma as a decimal mark, and a range that is not on offer', () => {

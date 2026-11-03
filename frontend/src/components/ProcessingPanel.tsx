@@ -105,7 +105,7 @@ function RecipeLoader() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.json')) return setOutcome({ ok: false, message: 'Pick a .json file.' });
+    if (!file.name.toLowerCase().endsWith('.json')) return setOutcome({ ok: false, message: 'Choose a .json file.' });
     if (file.size > MAX_RECIPE_BYTES) return setOutcome({ ok: false, message: 'The file is larger than 1 MB.' });
     setBusy(true);
     setOutcome(null);
@@ -176,7 +176,7 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
   );
 }
 
-// "Select Bands that are processed" (adr/0020 §9, §14): the bands of the output, the results of the steps ("New") and
+// "Select bands to process" (adr/0020 §9, §14): the bands of the output, the results of the steps ("New") and
 // the bands of the data ("Data"), a click each. Nothing is checked for the person, but the result of a step and the one
 // band of a dataset that has only one.
 function OutputBands({ view }: { view: OrderView }) {
@@ -210,7 +210,7 @@ function OutputBands({ view }: { view: OrderView }) {
   return (
     <section className="pp-section" aria-label="Output">
       <div className="pp-bands-head">
-        <h3 className="pp-heading">Select Bands that are processed</h3>
+        <h3 className="pp-heading">Select bands to process</h3>
         <Tip text="The bands of the result. Click a band to put it into the output or take it out." />
         <span className="pp-help" aria-label="Output summary">
           {count} band{count === 1 ? '' : 's'} · {view.dtype}
@@ -493,7 +493,7 @@ function PreviewSection({ view }: { view: OrderView }) {
                   else autoStretch();
                 }}
               >
-                Auto stretch
+                Auto-scale
               </button>
               <button
                 type="button"
@@ -508,7 +508,7 @@ function PreviewSection({ view }: { view: OrderView }) {
           {!percentMode && 'problem' in valueRange && <p className="hint-text error">{valueRange.problem}</p>}
           {percentMode && percentProblem && <p className="hint-text error">{percentProblem}</p>}
           {rangeNote && <p className="hint-text">{rangeNote}</p>}
-          {read?.assets.length === 0 && <p className="hint-text">Pick a band for the output to see the preview.</p>}
+          {read?.assets.length === 0 && <p className="hint-text">Choose a band for the output to see the preview.</p>}
           {read && read.assets.length > MAX_PREVIEW_ASSETS && (
             <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
           )}
@@ -526,7 +526,7 @@ function PreviewSection({ view }: { view: OrderView }) {
               type="button"
               className="ghost-btn"
               disabled={!preview}
-              title="Pin this preview into the layer manager"
+              title="Add this preview to the layers"
               onClick={() => pinPreview()}
             >
               ＋ Add preview to layers

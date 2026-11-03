@@ -196,9 +196,9 @@ describe('draftFromOrder', () => {
     });
 
     it('are refused as an object, a list of numbers, or an empty list', () => {
-      expect(check({ data: true }).problems).toEqual(['Step 1 (normalize): bands has the wrong type.', 'Step 1 (normalize): bands: Pick at least one band.']);
+      expect(check({ data: true }).problems).toEqual(['Step 1 (normalize): bands has the wrong type.', 'Step 1 (normalize): bands: Choose at least one band.']);
       expect(check([1, 2]).problems.join(' ')).toMatch(/bands has the wrong type/u);
-      expect(check([]).problems).toEqual(['Step 1 (normalize): bands: Pick at least one band.']);
+      expect(check([]).problems).toEqual(['Step 1 (normalize): bands: Choose at least one band.']);
     });
   });
 

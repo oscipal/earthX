@@ -217,7 +217,7 @@ describe('"Apply" with percentiles', () => {
   it('puts the usual stretch, 2 and 98, in the fields with "auto-scale", and reads nothing', () => {
     open();
     typedPercent('10', '90');
-    click(button('auto-scale'));
+    click(button('Auto-scale'));
     expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
     expect(reads()).toEqual([]);
   });

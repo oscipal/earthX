@@ -145,7 +145,7 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(text(box())).toContain('Optical imagery');
     expect(text(box())).toContain('staging');
     expect(text(box().querySelector('.rg-count'))).toBe('2');
-    expect(container.querySelector('h2')?.textContent).toBe('Results (0/3)');
+    expect(container.querySelector('h2')?.textContent).toBe('Search results (0/3)');
   });
 
   it('starts on the first dataset with scenes and shows its time steps', () => {
@@ -294,7 +294,7 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(toggle().getAttribute('aria-pressed')).toBe('false');
     expect(toggle().classList.contains('off')).toBe(true);
     expect(container.querySelectorAll('.result-group')).toHaveLength(2);
-    expect(container.querySelector('h2')?.textContent).toBe('Results (0/3)');
+    expect(container.querySelector('h2')?.textContent).toBe('Search results (0/3)');
     act(() => toggle().click());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
     expect(toggle().title).toBe(HIDE_RESULTS_TIP);

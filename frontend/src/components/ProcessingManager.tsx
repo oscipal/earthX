@@ -932,7 +932,7 @@ export default function ProcessingManager() {
   ].filter((section) => section.group !== null || section.entries.length > 0 || groups.length > 0);
 
   return (
-    <div className="panel dock-panel processing-manager" role="region" aria-label="Processing jobs">
+    <div className="panel dock-panel processing-manager" role="region" aria-label="Jobs">
       <div className="results-head pm-head">
         <h2>Jobs</h2>
         <div className="results-head-right">

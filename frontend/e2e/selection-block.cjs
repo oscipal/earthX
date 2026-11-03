@@ -131,16 +131,16 @@ async function run(browser, theme, viewport) {
   if (viewport === 'wide' && hiddenNow.some(Boolean)) problems.push('a date is hidden in the wide window');
   if (viewport === 'narrow') console.log(`  ${name}: hidden dates at ${Math.round(blockBox.width)} px:`, hiddenNow.map((h, i) => (h ? row[i] : null)).filter(Boolean).join(' '));
 
-  await page.getByRole('button', { name: 'Previous step' }).click();
+  await page.getByRole('button', { name: 'Previous time step' }).click();
   if ((await page.locator('.time-dates strong').innerText()) !== '2026-07-03') problems.push('"<" did not go to the step before');
   if ((await state('s.activeGroupIndex')) !== 4) problems.push('the step is not 4 of 7 in the store');
-  await page.getByRole('button', { name: 'Next step' }).click();
-  await page.getByRole('button', { name: 'Next step' }).click();
+  await page.getByRole('button', { name: 'Next time step' }).click();
+  await page.getByRole('button', { name: 'Next time step' }).click();
   if ((await page.locator('.time-dates strong').innerText()) !== '2026-07-05') problems.push('">" did not go to the step after');
   // At the ends the arrow is not there, and the other elements keep their place.
   const before = await page.locator('.time-dates strong').evaluate((e) => e.getBoundingClientRect().x);
-  for (let i = 0; i < 6; i++) if (await page.getByRole('button', { name: 'Next step' }).count()) await page.getByRole('button', { name: 'Next step' }).click();
-  if ((await page.getByRole('button', { name: 'Next step' }).count()) !== 0) problems.push('">" at the newest step');
+  for (let i = 0; i < 6; i++) if (await page.getByRole('button', { name: 'Next time step' }).count()) await page.getByRole('button', { name: 'Next time step' }).click();
+  if ((await page.getByRole('button', { name: 'Next time step' }).count()) !== 0) problems.push('">" at the newest step');
   if ((await page.locator('.time-dates strong').innerText()) !== '2026-07-07') problems.push('not at the newest step');
   const after = await page.locator('.time-dates strong').evaluate((e) => e.getBoundingClientRect().x);
   if (!near(before, after, 80) && viewport === 'wide') problems.push(`the date shown moved from ${before} to ${after}`);

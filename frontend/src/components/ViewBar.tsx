@@ -87,7 +87,7 @@ export default function ViewBar() {
         }
         onClick={() => enterFocus(true)}
       >
-        {focusLoading ? 'Loading…' : plural ? 'Crop & merge to AOI' : 'Crop to AOI'}
+        {focusLoading ? 'Loading…' : plural ? 'Crop and merge to AOI' : 'Crop to AOI'}
       </button>
       <button
         type="button"

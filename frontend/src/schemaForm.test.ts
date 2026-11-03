@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { initialValues, integersIn, namesIn, numbersIn, paramsForm, paramsFrom, type Field } from './schemaForm';
+import { fieldTitle, initialValues, integersIn, namesIn, numbersIn, paramsForm, paramsFrom, type Field } from './schemaForm';
 
 function fields(schema: unknown, defs = {}): Field[] {
   const form = paramsForm(schema, defs);
@@ -283,8 +283,8 @@ describe('a list of texts', () => {
   });
 
   it('asks for the list when it is required and empty', () => {
-    expect(read('').errors.bands).toBe('Pick at least one band.');
-    expect(read(' , ').errors.bands).toBe('Pick at least one band.');
+    expect(read('').errors.bands).toBe('Choose at least one band.');
+    expect(read(' , ').errors.bands).toBe('Choose at least one band.');
   });
 
   it('leaves an optional list empty out of the params', () => {
@@ -306,5 +306,16 @@ describe('a list of texts', () => {
   it('stays "not supported by this panel" for items with a keyword it does not know', () => {
     const form = paramsForm({ type: 'object', properties: { x: { type: 'array', items: { type: 'string', minLength: 2 } } } });
     expect(form.supported).toBe(false);
+  });
+});
+
+describe('fieldTitle: the names of the fields as the interface writes them (UI-04)', () => {
+  it('writes an acronym in capitals, and leaves every other word as it is', () => {
+    expect(fieldTitle('Crs')).toBe('CRS');
+    expect(fieldTitle('Target Crs')).toBe('Target CRS');
+    expect(fieldTitle('Aoi only')).toBe('AOI only');
+    expect(fieldTitle('Resolution')).toBe('Resolution');
+    expect(fieldTitle('Crsx')).toBe('Crsx');
+    expect(fieldTitle('')).toBe('');
   });
 });

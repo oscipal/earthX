@@ -47,9 +47,9 @@ afterEach(() => {
 
 describe('the time slider', () => {
   it('has play, the slider and the position, and no link or image count', () => {
-    expect([...container.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Previous step', 'Play']);
+    expect([...container.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Previous time step', 'Play']);
     expect(container.querySelector('input[type="range"]')).not.toBeNull();
-    expect(container.querySelector('.time-count')?.textContent).toBe('1/2');
+    expect(container.querySelector('.time-count')?.textContent).toBe('1 / 2');
     expect(container.textContent).not.toMatch(/select all frames|add to layers|image/i);
   });
 
@@ -111,15 +111,15 @@ describe('the labels of the time slider', () => {
     act(() => useAppStore.setState({ playing: true }));
     const count = () => container.querySelector('.time-count');
     // Asked for, but the picture on the map has not had its time yet: the step is on its way as planned.
-    expect(count()?.textContent).toBe('2/3');
+    expect(count()?.textContent).toBe('2 / 3');
     act(() => vi.advanceTimersByTime(STEP_DWELL_MS + STEP_LATE_AFTER_MS - 1));
-    expect(count()?.textContent).toBe('2/3');
+    expect(count()?.textContent).toBe('2 / 3');
     act(() => vi.advanceTimersByTime(1));
     expect(count()?.textContent).toBe('Loading…');
     expect(count()?.getAttribute('title')).toMatch(/stays/);
     // On the map, and the one after it is asked for: not late yet.
     act(() => useAppStore.setState({ shownGroupIndex: 1 }));
-    expect(count()?.textContent).toBe('1/3');
+    expect(count()?.textContent).toBe('1 / 3');
   });
 
   it('has the date only, and no "Loading…", when it is paused', () => {
@@ -128,7 +128,7 @@ describe('the labels of the time slider', () => {
     act(() => container.querySelector<HTMLButtonElement>('.play-btn')!.click());
     expect(useAppStore.getState().playing).toBe(false);
     expect(shown()).toBe('2026-07-24');
-    expect(container.querySelector('.time-count')?.textContent).toBe('2/3');
+    expect(container.querySelector('.time-count')?.textContent).toBe('2 / 3');
   });
 });
 
@@ -155,7 +155,7 @@ describe('the row of dates', () => {
 
   it('has the round button and the chevron of the stepper in the view of an image, not a button of its own', () => {
     at(3);
-    for (const [label, direction] of [['Previous step', 'left'], ['Next step', 'right']] as const) {
+    for (const [label, direction] of [['Previous time step', 'left'], ['Next time step', 'right']] as const) {
       const button = arrow(label)!;
       expect(button.className).toBe('vc-step');
       expect(button.querySelector('svg path')!.getAttribute('d')).toBe(direction === 'left' ? 'M9 2.5 4.5 7 9 11.5' : 'M5 2.5 9.5 7 5 11.5');
@@ -166,18 +166,18 @@ describe('the row of dates', () => {
 
   it('names the neighbour in the tooltip of its arrow, where a narrow block has no room to print it', () => {
     at(3);
-    expect(arrow('Previous step')!.title).toBe('Previous step: 2026-07-03');
-    expect(arrow('Next step')!.title).toBe('Next step: 2026-07-05');
+    expect(arrow('Previous time step')!.title).toBe('Previous time step: 2026-07-03');
+    expect(arrow('Next time step')!.title).toBe('Next time step: 2026-07-05');
   });
 
   it('has no arrow where there is no step, and keeps the place so that nothing moves', () => {
     at(0);
-    expect(arrow('Previous step')).toBeNull();
-    expect(arrow('Next step')).not.toBeNull();
+    expect(arrow('Previous time step')).toBeNull();
+    expect(arrow('Next time step')).not.toBeNull();
     const count = container.querySelectorAll('.time-dates > *').length;
     at(6);
-    expect(arrow('Previous step')).not.toBeNull();
-    expect(arrow('Next step')).toBeNull();
+    expect(arrow('Previous time step')).not.toBeNull();
+    expect(arrow('Next time step')).toBeNull();
     expect(container.querySelectorAll('.time-dates > *')).toHaveLength(count);
     // What is not there is hidden from everyone, also from a screen reader.
     expect([...container.querySelectorAll('.time-dates .gone')].every((el) => el.getAttribute('aria-hidden') === 'true' && el.textContent === '' || el.getAttribute('aria-hidden') === 'true')).toBe(true);
@@ -191,14 +191,14 @@ describe('the row of dates', () => {
 
   it('goes one step to the older with "<" and one to the newer with ">", and the list follows', () => {
     at(3);
-    act(() => arrow('Previous step')!.click());
+    act(() => arrow('Previous time step')!.click());
     expect(useAppStore.getState().activeGroupIndex).toBe(SEVEN.length - 1 - 2);
     expect(useAppStore.getState().expandedGroupIndex).toBe(SEVEN.length - 1 - 2);
     expect(cells()[3]).toBe('2026-07-03');
-    act(() => arrow('Next step')!.click());
-    act(() => arrow('Next step')!.click());
+    act(() => arrow('Next time step')!.click());
+    act(() => arrow('Next time step')!.click());
     expect(cells()[3]).toBe('2026-07-05');
-    expect(container.querySelector('.time-count')?.textContent).toBe('3/7');
+    expect(container.querySelector('.time-count')?.textContent).toBe('3 / 7');
   });
 
   it('goes on from the step that is on the map while it plays, and ends the playing', () => {
@@ -209,7 +209,7 @@ describe('the row of dates', () => {
       act(() => useAppStore.setState({ playing: true }));
       expect(useAppStore.getState().activeGroupIndex).toBe(SEVEN.length - 1 - 4);
       expect(cells()[3]).toBe('2026-07-04');
-      act(() => arrow('Previous step')!.click());
+      act(() => arrow('Previous time step')!.click());
       expect(useAppStore.getState().playing).toBe(false);
       // One step before the one on the map (position 2), not before the one asked for.
       expect(useAppStore.getState().activeGroupIndex).toBe(SEVEN.length - 1 - 2);

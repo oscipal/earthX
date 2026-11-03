@@ -361,7 +361,7 @@ function MultiSelectToggle() {
   const setMultiSelect = useAppStore((s) => s.setMultiSelect);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   return (
-    <label className="multi-select-toggle" title="Pick several datasets and search them together">
+    <label className="multi-select-toggle" title="Choose several datasets and search them together">
       <input type="checkbox" checked={multiSelect} disabled={busy} onChange={(e) => setMultiSelect(e.target.checked)} />
       Select multiple datasets
     </label>
@@ -532,7 +532,7 @@ function CoverageButton() {
         disabled={picked.length === 0}
         title={
           picked.length === 0
-            ? 'Pick a dataset to see its coverage'
+            ? 'Choose a dataset to see its coverage'
             : showCoverage
               ? 'Coverage map on — click to change or hide it'
               : 'Show how densely a dataset covers the world'
@@ -560,7 +560,7 @@ function CoverageButton() {
         title={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
         onClick={() => hideCoverage()}
       >
-        Clear coverage
+        Hide coverage
       </button>
       <Popover
         anchorRef={rowRef}

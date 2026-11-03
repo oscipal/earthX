@@ -89,7 +89,7 @@ describe('countBatch', () => {
 describe('batchSummary', () => {
   it('reads "12 done · 3 running · 1 refused · 1 failed" and leaves out what is zero', () => {
     const count = { done: 12, running: 3, refused: 1, failed: 1, expired: 0, cancelled: 0, unavailable: 0, deleted: 0, total: 17, progress: 0, expires: null };
-    expect(batchSummary(count)).toBe('12 done · 3 running · 1 refused · 1 failed');
+    expect(batchSummary(count)).toBe('12 finished · 3 running · 1 refused · 1 failed');
     expect(batchSummary({ ...count, done: 0, running: 0, refused: 0, failed: 0, expired: 2 })).toBe('2 expired');
   });
 });
@@ -159,7 +159,7 @@ describe('the count of a batch with deleted and forgotten parts', () => {
   it('counts them apart and says so in the summary', () => {
     const count = countBatch(batch, parts, NOW);
     expect(count).toMatchObject({ done: 1, deleted: 1, unavailable: 1, expired: 0 });
-    expect(batchSummary(count)).toBe('1 done · 1 unavailable · 1 deleted');
+    expect(batchSummary(count)).toBe('1 finished · 1 unavailable · 1 deleted');
   });
 
   it('names the end of the parts that still stand and not of those that are deleted or forgotten', () => {

@@ -118,7 +118,7 @@ describe('the rows', () => {
     expect(rows()).toEqual(['Done', 'Done']);
     expect([...container.querySelectorAll('.dialog-original-name')].map((e) => e.textContent)).toEqual(['A.zip', 'B.zip']);
     expect(ch.jobs).toEqual(['A.zip', 'B.zip']);
-    expect(button('Cancel')).toBeUndefined();
+    expect(button('Stop')).toBeUndefined();
     expect(button('Retry failed')).toBeUndefined();
   });
 
@@ -139,15 +139,15 @@ describe('the rows', () => {
     expect(rows()).toEqual(['Started in your browser', 'Started in your browser']);
   });
 
-  it('Cancel stops the scene that runs and the ones that wait; Retry failed loads only those, once', async () => {
+  it('Stop stops the scene that runs and the ones that wait; Retry failed loads only those, once', async () => {
     const ch = channel((job) => job.zipName === 'B.zip' && ch.jobs.filter((name) => name === 'B.zip').length === 1);
     page.zip = ch.zip;
     await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B', 'C')} started />);
     expect(rows()).toEqual(['Done', 'Loading 40 %', 'Waiting']);
     expect(button('Retry failed')).toBeUndefined();
-    await press('Cancel');
+    await press('Stop');
     expect(rows()).toEqual(['Done', 'Cancelled', 'Cancelled']);
-    expect(button('Cancel')).toBeUndefined();
+    expect(button('Stop')).toBeUndefined();
     await press('Retry failed');
     expect(rows()).toEqual(['Done', 'Done', 'Done']);
     expect(ch.jobs).toEqual(['A.zip', 'B.zip', 'B.zip', 'C.zip']);

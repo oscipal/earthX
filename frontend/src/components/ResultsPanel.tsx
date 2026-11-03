@@ -244,7 +244,7 @@ export function AoiProgress({ datasetId }: { datasetId: string | null }) {
         {counts?.found ?? 0} found / {counts?.checked ?? 0} checked
       </span>
       {walking && (
-        <button type="button" className="ghost-btn aoi-stop" title="Stop checking. What is found stays; Load more goes on." onClick={stop}>
+        <button type="button" className="ghost-btn aoi-stop" title="Stop checking. What is found stays." onClick={stop}>
           Stop
         </button>
       )}
@@ -295,7 +295,7 @@ export default function ResultsPanel() {
   return (
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
-        <h2 title="Selected scenes / scenes found">Results ({selected}/{totalItems(sections)})</h2>
+        <h2 title="Selected scenes / scenes found">Search results ({selected}/{totalItems(sections)})</h2>
         <div className="results-head-switches">
           <ResultsToTop />
           <ResultsEye />

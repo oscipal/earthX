@@ -862,7 +862,7 @@ async function selectScenes(ids: readonly string[], whose: string): Promise<Extr
   let extra: ExtraScenes = { datasetId: app.datasetId, items: [], groups: [] };
   if (missing.length > 0) {
     const dataset = app.datasets.find((d) => d.id === app.datasetId);
-    if (!app.datasetId || !dataset?.viewable) return fail('Pick a dataset first.');
+    if (!app.datasetId || !dataset?.viewable) return fail('Choose a dataset first.');
     const datasetId = app.datasetId;
     const answers = await Promise.allSettled(missing.map((id) => fetchItem(datasetId, id)));
     if (generation !== entryGeneration) return null;
@@ -1941,7 +1941,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!read.ok) return { ok: false, reason: read.reason };
       const { order } = read;
       const datasetId = useAppStore.getState().datasetId;
-      if (!datasetId) return { ok: false, reason: 'Pick a dataset first.' };
+      if (!datasetId) return { ok: false, reason: 'Choose a dataset first.' };
       if (order.steps.length === 0) return { ok: false, reason: 'This recipe has no steps.' };
       const description = await describe(datasetId);
       if (description?.state !== 'ready') return { ok: false, reason: 'The process description of the dataset could not be loaded.' };

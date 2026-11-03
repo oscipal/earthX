@@ -323,7 +323,7 @@ describe('the result layer of a deleted job', () => {
     const eye = locked.querySelector<HTMLElement>('[data-col="eye"]')!;
     expect(eye.getAttribute('title')).toBe(DELETED_LAYER_TIP);
     expect(eye.getAttribute('aria-disabled')).toBe('true');
-    expect(DELETED_LAYER_TIP).toBe('Job deleted – restore to show');
+    expect(DELETED_LAYER_TIP).toBe('Job deleted: restore it to show it');
     expect(locked.querySelector('[data-col="opacity"]')?.hasAttribute('disabled')).toBe(true);
     expect(locked.querySelector('[data-col="download"]')?.tagName).toBe('SPAN');
     expect(locked.querySelector('[data-col="note"]')?.className).toBe('lm-slot');
