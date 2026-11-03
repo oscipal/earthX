@@ -18,7 +18,7 @@ import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
 import Popover from './Popover';
 import { focusFirstItem } from '../popover';
-import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, formatUntil, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
+import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, formatShortDate, formatUntil, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
 import Tip from './Tip';
 import { useBundleDownload } from './useBundleDownload';
 
@@ -26,6 +26,10 @@ export const KEPT_HERE_TIP = "Jobs are kept in this browser only: a private wind
 export const STORAGE_FULL_TIP = 'Browser storage is full: copies of the oldest orders were dropped.';
 export const NOT_KEPT_TEXT = 'This browser does not keep your jobs. Download results before you close the tab.';
 export const GROUP_NOT_EMPTY_TIP = 'Only an empty group can be removed.';
+
+// The title of the column of the dates: what the date says depends on what the list shows. In "Expired" it is when the job expired, in
+// "Deleted" when it expires (until when it can be restored), elsewhere until when it stays.
+const UNTIL_COLUMN: Record<JobFilter, string> = { active: 'Until', expired: 'Expired', deleted: 'Expires', all: 'Until' };
 
 // How far the menu of a row is open: closed, the list of actions, or the list of groups to move to.
 type MenuMode = 'closed' | 'menu' | 'move';
@@ -306,20 +310,21 @@ export function RetryButton({ offered, name, tip, busy, onRetry }: { offered: bo
   );
 }
 
-// When a job goes: "until" for one that stands, "restore until" for a deleted one whose day is not over. A job that is
-// cancelled, deleted for good or forgotten by the server has no time to name.
+// The date in the column "Until": when a job goes (a deleted one: until when it can be restored, or else when it expired; one that
+// expired: when it did). A job that is cancelled or forgotten by the server has no time to name; its state stands in the place of the date.
 function UntilText({ job, state, now }: { job: JobEntry; state: JobState; now: number }) {
   if (state.key === 'deleted') {
-    return canRestore(job, now) && job.deletedUntil ? (
-      <span className="pm-until" title={job.deletedUntil}>
-        restore until {formatUntil(job.deletedUntil, now)}
+    const restorable = canRestore(job, now) && job.deletedUntil;
+    return (
+      <span className="pm-until" title={restorable ? job.deletedUntil! : job.expires}>
+        {formatShortDate(restorable ? job.deletedUntil! : job.expires, now)}
       </span>
-    ) : null;
+    );
   }
   if (state.key === 'cancelled' || state.key === 'unavailable') return null;
   return (
     <span className="pm-until" title={job.expires}>
-      until {formatUntil(job.expires, now)}
+      {formatShortDate(job.expires, now)}
     </span>
   );
 }
@@ -433,15 +438,11 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
           {job.superseded && <span className="pm-tag">Superseded</span>}
         </span>
         {!part && !renaming && <RenameButton name={title} onRename={() => setRenaming(true)} />}
-        {canRetry(job, now, retired) ? (
-          <RetryButton offered name={title} tip={RETRY_TIP} busy={job.retrying} onRetry={() => void retryJob(job.jobID)} />
-        ) : state.key === 'finished' && job.tiles ? (
-          <AddToLayers job={job} name={title} />
-        ) : (
-          <span className="pm-icon" aria-hidden="true" />
-        )}
+        {state.key === 'finished' && job.tiles ? <AddToLayers job={job} name={title} /> : <span className="pm-icon" aria-hidden="true" />}
         {restorable && job.deletedUntil ? (
           <RestoreButton name={title} until={job.deletedUntil} busy={job.deleting} onRestore={() => void restoreTarget(target)} />
+        ) : canRetry(job, now, retired) ? (
+          <RetryButton offered name={title} tip={RETRY_TIP} busy={job.retrying} onRetry={() => void retryJob(job.jobID)} />
         ) : (
           <DownloadZip job={job} now={now} />
         )}
@@ -559,17 +560,17 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             <span className="pm-title">{batch.title}</span>
           </button>
         )}
-        <span className="pm-meta">
+        <span className={`pm-meta${running ? ' running' : ''}`}>
           <span className="pm-state">{batchSummary(count)}</span>
           {restoreUntil ? (
             <span className="pm-until" title={restoreUntil}>
-              restore until {formatUntil(restoreUntil, now)}
+              {formatShortDate(restoreUntil, now)}
             </span>
           ) : (
             count.expires &&
             count.deleted < parts.length && (
               <span className="pm-until" title={count.expires}>
-                until {formatUntil(count.expires, now)}
+                {formatShortDate(count.expires, now)}
               </span>
             )
           )}
@@ -958,6 +959,12 @@ export default function ProcessingManager() {
         </div>
       )}
       <div className="pm-list">
+        {shown.length > 0 && (
+          <div className="pm-columns" aria-hidden="true">
+            <span className="pm-col-title">Title</span>
+            <span className="pm-col-until">{UNTIL_COLUMN[filter]}</span>
+          </div>
+        )}
         {shown.length === 0 && groups.length === 0 && <p className="hint-text pm-empty">{emptyText(filter, all.length)}</p>}
         {sections.map(({ group, entries, empty }) => {
           const id = group?.id ?? UNGROUPED;

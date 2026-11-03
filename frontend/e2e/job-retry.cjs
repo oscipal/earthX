@@ -84,7 +84,7 @@ async function check(browser, { theme, viewport }) {
   if (JSON.stringify(found) !== JSON.stringify(want)) problems.push(`the symbols under "Active": ${JSON.stringify(found)}, not ${JSON.stringify(want)}`);
   const layout = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
-    return [...document.querySelectorAll('.pm-rows > .pm-row > .pm-line')].map((line) => ({ line: box(line), leaves: [...line.children].map((e) => ({ what: e.getAttribute('aria-label') ?? e.textContent?.slice(0, 12), ...box(e) })), scrolls: line.scrollWidth > line.clientWidth + 1 }));
+    return [...document.querySelectorAll('.pm-rows > .pm-row > .pm-line')].map((line) => ({ line: box(line), leaves: [...line.children].map((e) => ({ what: e.getAttribute('aria-label') ?? e.textContent?.slice(0, 12), ...box(e) })).filter((e) => e.width > 1), scrolls: line.scrollWidth > line.clientWidth + 1 }));
   });
   for (const row of layout) {
     for (let i = 0; i < row.leaves.length; i++) {

@@ -2761,7 +2761,7 @@ input[type='date']:focus-visible {
 .pm-list {
   --pm-chevron: var(--control-height-sm);
   --pm-status: 4.5em;
-  --pm-date: 8.5em;
+  --pm-date: 6.2em;
   --pm-icon: var(--control-height-sm);
   flex: 1;
   min-height: 0;
@@ -2839,12 +2839,13 @@ input[type='date']:focus-visible {
   color: var(--muted);
   text-decoration: line-through;
 }
-/* One line for a job, in the places of a grid: lead (the arrow of a batch), status, title (the one that grows), pencil, date, then the
-   symbols "＋" or "↻", "⇩" and "⋯". A place a row lacks stays empty. */
+/* One line for a job, in the places of a grid: lead (the arrow of a batch), title (the one that grows), pencil, date, then the symbols
+   "＋", "↻"/"↺"/"⇩" and "⋯". The state is no column of its own: it stands in the place of the date while the job runs, waits or is
+   cancelled, and for a screen reader always. A place a row lacks stays empty. */
 .pm-line {
   --pm-lead: 0px;
   display: grid;
-  grid-template-columns: var(--pm-lead) var(--pm-status) minmax(0, 1fr) auto var(--pm-date) repeat(3, var(--pm-icon));
+  grid-template-columns: var(--pm-lead) minmax(0, 1fr) auto var(--pm-date) repeat(3, var(--pm-icon));
   align-items: center;
   column-gap: var(--space-1);
   border-radius: var(--radius-sm);
@@ -2859,7 +2860,7 @@ input[type='date']:focus-visible {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .pm-open {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 1;
   min-width: 0;
   min-height: var(--pm-icon);
@@ -2882,18 +2883,48 @@ button.pm-open:hover {
   background: var(--row-hover);
 }
 .pm-line > .pm-rename {
-  grid-column: 3 / 6;
+  grid-column: 2 / 4;
   grid-row: 1;
 }
 .pm-line > .pm-chevron {
   grid-column: 1;
   grid-row: 1;
 }
+/* The titles of the columns, in the places of the row (the tracks are in `em` of the row's size, so the font size is set on the titles, not
+   on the grid) and over it while the list scrolls. */
+.pm-columns {
+  --pm-lead: 0px;
+  position: sticky;
+  top: calc(-1 * var(--space-2));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: var(--pm-lead) minmax(0, 1fr) auto var(--pm-date) repeat(3, var(--pm-icon));
+  column-gap: var(--space-1);
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  background: var(--panel-bg);
+  border-bottom: var(--line-width) solid var(--line-soft);
+  color: var(--muted);
+}
+.pm-columns > * {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pm-col-title {
+  grid-column: 2;
+  padding: 0 var(--space-1);
+}
+.pm-col-until {
+  grid-column: 4;
+  text-align: right;
+}
 .pm-meta {
   display: contents;
 }
-.pm-state,
 .pm-until,
+.pm-line .pm-state,
 .pm-tag {
   font-size: var(--text-xs);
   color: var(--muted);
@@ -2901,9 +2932,24 @@ button.pm-open:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pm-state {
-  grid-column: 2;
+/* For a screen reader only, until the job runs, waits or is cancelled: then it stands where the date would. */
+.pm-line .pm-state {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+}
+.pm-meta:is(.running, .waiting, .checking, .cancelled, .unavailable) .pm-state {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  grid-column: 4;
   grid-row: 1;
+  text-align: right;
+}
+.pm-meta:is(.running, .waiting, .checking) .pm-until {
+  display: none;
 }
 .pm-title {
   min-width: 0;
@@ -2912,30 +2958,30 @@ button.pm-open:hover {
   white-space: nowrap;
 }
 .pm-edit {
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 1;
 }
 .pm-until {
-  grid-column: 5;
+  grid-column: 4;
   grid-row: 1;
   text-align: right;
 }
 .pm-tag {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 2;
   padding: 0 var(--space-1);
   color: var(--accent-2);
 }
 .pm-row:not(.refused) > .pm-line > :nth-last-child(3) {
-  grid-column: 6;
+  grid-column: 5;
   grid-row: 1;
 }
 .pm-row:not(.refused) > .pm-line > :nth-last-child(2) {
-  grid-column: 7;
+  grid-column: 6;
   grid-row: 1;
 }
 .pm-row:not(.refused) > .pm-line > :last-child {
-  grid-column: 8;
+  grid-column: 7;
   grid-row: 1;
 }
 .pm-meta.failed .pm-state {
@@ -2983,12 +3029,33 @@ a.pm-icon:hover {
 .pm-icon[aria-disabled='true']:focus-visible {
   border-color: transparent;
 }
+/* A running job: a line of two pixels at the top edge of its row, which touches the row above (the line between the two jobs). */
+.pm-row {
+  position: relative;
+}
 .pm-progress {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
   display: block;
-  width: calc(100% - var(--space-2));
-  height: var(--space-1);
-  margin: var(--space-1) var(--space-1) 0;
+  width: 100%;
+  height: calc(var(--line-width) * 2);
+  margin: 0;
+  border: 0;
+  appearance: none;
+  background: var(--line-soft);
+  color: var(--accent);
   accent-color: var(--accent);
+}
+.pm-progress::-webkit-progress-bar {
+  background: var(--line-soft);
+}
+.pm-progress::-webkit-progress-value {
+  background: var(--accent);
+}
+.pm-progress::-moz-progress-bar {
+  background: var(--accent);
 }
 .pm-fault {
   display: block;
@@ -3077,15 +3144,28 @@ a.pm-icon:hover {
   .pm-list {
     --pm-icon: var(--control-height);
   }
+  .pm-columns {
+    display: none;
+  }
   .pm-line {
     grid-template-columns: var(--pm-lead) auto minmax(0, 1fr) auto repeat(3, var(--pm-icon));
   }
   .pm-open {
     grid-column: 2 / 4;
   }
-  .pm-state {
+  /* Here the state stands under the title as a word of its own, and the date beside it. */
+  .pm-line .pm-state,
+  .pm-meta:is(.running, .waiting, .checking, .cancelled, .unavailable) .pm-state {
+    position: static;
+    width: auto;
+    height: auto;
+    clip-path: none;
     grid-column: 2;
     grid-row: 2;
+    text-align: left;
+  }
+  .pm-meta:is(.running, .waiting, .checking) .pm-until {
+    display: block;
   }
   .pm-until {
     grid-column: 3;

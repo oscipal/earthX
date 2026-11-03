@@ -132,7 +132,7 @@ describe('Delete with D', () => {
     click(button('Deleted'));
     expect(states()).toEqual(['Deleted']);
     expect(rows()[0].classList.contains('deleted')).toBe(true);
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^restore until 21 Oct, \d{2}:\d{2}$/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^21\.10-\d{2}:\d{2}$/u);
     expect(rows()[0].querySelector('.pm-until')?.getAttribute('title')).toBe(new Date(NOW + DAY).toISOString());
     expect(job(1)).toMatchObject({ phase: 'dismissed', serverDeleted: true, deletedUntil: new Date(NOW + DAY).toISOString() });
     expect(stored().jobs[0]).toMatchObject({ jobID: jobId(1), deletedUntil: new Date(NOW + DAY).toISOString(), serverDeleted: true });
@@ -341,7 +341,7 @@ describe('Restore', () => {
     expect(rows()).toHaveLength(0);
     click(button('Active'));
     expect(states()).toEqual(['Finished']);
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^until 27 Oct, \d{2}:\d{2}$/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^27\.10-\d{2}:\d{2}$/u);
     expect(job(1)).toMatchObject({ deletedUntil: null, serverDeleted: false, phase: 'successful' });
     expect(stored().jobs[0].deletedUntil).toBeUndefined();
     // The results are read again: the download is back.
@@ -366,7 +366,9 @@ describe('Restore', () => {
     click(button('Deleted'));
     expect(states()).toEqual(['Deleted']);
     expect(restoreIcon(rows()[0])).toBeNull();
-    expect(rows()[0].querySelector('.pm-until')).toBeNull();
+    // The column of the dates says when the job expired, since there is no day to restore it any more.
+    expect(rows()[0].querySelector('.pm-until')?.getAttribute('title')).toBe(job(1).expires);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^\d+\.\d+-\d{2}:\d{2}$/u);
   });
 
   it('does not ask once the day is over, whatever the screen still shows', async () => {
@@ -430,7 +432,7 @@ describe('an entry the server cannot hold any more', () => {
     expect(asked).toEqual([]);
     expect(job(1)).toMatchObject({ serverDeleted: false, deletedUntil: new Date(NOW + DAY).toISOString() });
     click(button('Deleted'));
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^restore until 21 Oct/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^21\.10-\d{2}:\d{2}$/u);
     click(restoreIcon(rows()[0]));
     await settle();
     expect(asked).toEqual([]);
@@ -516,7 +518,7 @@ describe('a batch', () => {
     expect(rows()).toHaveLength(0);
     click(button('Deleted'));
     expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('3 deleted');
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^restore until 21 Oct/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^21\.10-\d{2}:\d{2}$/u);
   });
 
   it('is deleted by a key pressed on one of its parts: the part has no key of its own', async () => {

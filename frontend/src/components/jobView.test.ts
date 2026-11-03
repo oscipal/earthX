@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { batchEntry, finished, jobEntry, NOW, status } from '../fixtures/jobEntries';
 import { MIN_REMAINING_MS } from '../resultLayer';
-import { batchSummary, canDelete, canRestore, countBatch, deletableParts, formatUntil, jobLabel, jobState } from './jobView';
+import { batchSummary, canDelete, canRestore, countBatch, deletableParts, formatShortDate, formatUntil, jobLabel, jobState } from './jobView';
 
 describe('jobState', () => {
   it('names the state of a job that waits, runs or has not been asked yet', () => {
@@ -164,5 +164,25 @@ describe('the count of a batch with deleted and forgotten parts', () => {
 
   it('names the end of the parts that still stand and not of those that are deleted or forgotten', () => {
     expect(countBatch(batch, parts, NOW).expires).toBe(parts[0].expires);
+  });
+});
+
+describe('formatShortDate (the column "Until" of the manager)', () => {
+  const local = (y: number, mo: number, d: number, h: number, mi: number) => new Date(y, mo - 1, d, h, mi).toISOString();
+  const NOW = new Date(2026, 10, 3, 12, 0).getTime();
+
+  it('is day.month-hour:minute, with no zero in front of the day and the month and two digits for the time', () => {
+    expect(formatShortDate(local(2026, 11, 8, 23, 48), NOW)).toBe('8.11-23:48');
+    expect(formatShortDate(local(2026, 1, 5, 7, 4), NOW)).toBe('5.1-07:04');
+    expect(formatShortDate(local(2026, 12, 31, 0, 0), NOW)).toBe('31.12-00:00');
+  });
+
+  it('names the year only when it is not this one', () => {
+    expect(formatShortDate(local(2027, 1, 2, 9, 30), NOW)).toBe('2.1.2027-09:30');
+  });
+
+  it('gives back what is no date, and has no "until" in it', () => {
+    expect(formatShortDate('soon', NOW)).toBe('soon');
+    expect(formatShortDate(local(2026, 11, 8, 23, 48), NOW)).not.toMatch(/until/iu);
   });
 });

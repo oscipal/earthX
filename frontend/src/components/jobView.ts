@@ -37,6 +37,16 @@ export function formatUntil(iso: string, now: number = Date.now()): string {
   return `${MONTH_DAY.format(date)}${year}, ${HOUR_MINUTE.format(date)}`;
 }
 
+// "8.11-23:48": the day and the month without a zero in front, the hour and the minute, in the time of the browser; the year only when it
+// is not this one. The column "Until" of the manager says what the date is.
+export function formatShortDate(iso: string, now: number = Date.now()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const year = YEAR.format(date) === YEAR.format(now) ? '' : `.${YEAR.format(date)}`;
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${date.getDate()}.${date.getMonth() + 1}${year}-${two(date.getHours())}:${two(date.getMinutes())}`;
+}
+
 export interface BatchCount {
   done: number;
   running: number;

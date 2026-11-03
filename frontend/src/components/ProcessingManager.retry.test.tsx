@@ -122,6 +122,20 @@ const cancelled = (n: number, over: Partial<JobEntry> = {}): JobEntry =>
 const expiredJob = (n: number, over: Partial<JobEntry> = {}): JobEntry =>
   finished(n, { expires: new Date(NOW - DAY).toISOString(), expired: true, order: ORDER, ...over });
 
+describe('the place of the symbol (Otto, 3.11.2026)', () => {
+  it('is the place of the download: "Run again" stands where a finished job has "Download (ZIP)", and "+" has a place of its own before it', () => {
+    put({ jobs: [failed(1), finished(2, { order: ORDER })] });
+    mount();
+    tab('All');
+    const tail = (row: Element) => [...row.querySelector('.pm-line')!.children].slice(-3);
+    const [first, second] = topRows().map(tail);
+    expect(first[1].getAttribute('aria-label')).toMatch(/^Run again/u);
+    expect(second[1].getAttribute('aria-label')).toBe('Download (ZIP)');
+    expect(first.map((e) => e.className.split(' ')[0])).toEqual(['pm-icon', 'pm-icon', 'pm-menu']);
+    expect(second.map((e) => e.className.split(' ')[0])).toEqual(['pm-icon', 'pm-icon', 'pm-menu']);
+  });
+});
+
 describe('the symbol', () => {
   it.each([
     ['a failed job', () => failed(1)],

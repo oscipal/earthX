@@ -124,7 +124,7 @@ describe('the rows', () => {
     const first = rows()[0];
     expect(first.querySelector('.pm-state')?.textContent).toBe('70%');
     expect(first.querySelector('progress')?.getAttribute('value')).toBe('70');
-    expect(first.querySelector('.pm-until')?.textContent).toMatch(/^until 27 Oct, \d{2}:\d{2}$/u);
+    expect(first.querySelector('.pm-until')?.textContent).toMatch(/^27\.10-\d{2}:\d{2}$/u);
   });
 
   it('shows a finished job as such, with "Download (ZIP)" at the end of the row and nothing else', () => {
@@ -158,7 +158,7 @@ describe('the rows', () => {
     expect(off.getAttribute('data-tip')).toBe('Expired: results are kept for 7 days.');
     expect(off.disabled).toBe(false);
     // The date stays, so the user can see when it went.
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^until \d+ Oct, \d{2}:\d{2}$/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^\d+\.10-\d{2}:\d{2}$/u);
   });
 
   it('shows a failed job with its reason, and a cancelled one as cancelled', () => {
@@ -1746,7 +1746,69 @@ describe('the line of a job', () => {
     expect([...open.children].map((c) => c.className)).toEqual(['pm-title']);
     expect(row.querySelector('.pm-meta')!.parentElement).toBe(row.querySelector('.pm-line'));
     expect(row.querySelector('.pm-state')!.textContent).toBe('Finished');
-    expect(row.querySelector('.pm-until')!.textContent).toMatch(/^until 27 Oct, \d{2}:\d{2}$/u);
+    expect(row.querySelector('.pm-until')!.textContent).toMatch(/^27\.10-\d{2}:\d{2}$/u);
+  });
+
+  it('has "+" and the download in two places of their own and "⋯" last, and leaves both empty for a job that runs', () => {
+    put({ jobs: [finished(1, { tiles }), jobEntry(3, { phase: 'active', status: status({ jobID: jobId(3), status: 'running', progress: 40 }) })] });
+    mount();
+    const [done, running] = rows().map((r) => [...r.querySelector('.pm-line')!.children].slice(-3));
+    expect(done.map((e) => e.getAttribute('aria-label')?.split(':')[0] ?? e.className)).toEqual(['Add to layers', 'Download (ZIP)', 'pm-menu']);
+    expect(running[0].getAttribute('aria-hidden')).toBe('true');
+    expect(running[1].getAttribute('aria-hidden')).toBe('true');
+    expect(running[2].classList.contains('pm-menu')).toBe(true);
+    // The state stands where the date would: the date is not drawn, for a screen reader the state is there.
+    expect(rows()[1].querySelector('.pm-meta.running .pm-state')!.textContent).toBe('40%');
+  });
+
+  it('puts the progress of a job that runs at the top of its row as a bar of its own, and none on a finished one', () => {
+    put({ jobs: [jobEntry(1, { phase: 'active', status: status({ jobID: jobId(1), status: 'running', progress: 70 }) }), finished(2)] });
+    mount();
+    const [running, done] = rows();
+    expect(running.querySelector(':scope > progress.pm-progress')!.getAttribute('value')).toBe('70');
+    expect(done.querySelector('progress')).toBeNull();
+  });
+
+  it('names the columns over the list, in the places of the row, and writes the date without "until"', () => {
+    put({ jobs: [finished(1)] });
+    mount();
+    const header = container.querySelector('.pm-columns')!;
+    expect([...header.children].map((c) => c.textContent)).toEqual(['Title', 'Until']);
+    expect(header.getAttribute('aria-hidden')).toBe('true');
+    expect(header.parentElement!.classList.contains('pm-list')).toBe(true);
+    expect(rows()[0].querySelector('.pm-until')!.textContent).toMatch(/^\d+\.\d+-\d{2}:\d{2}$/u);
+    expect(rows()[0].textContent).not.toMatch(/until/iu);
+  });
+
+  it('says in the title of the dates what they are: until when a job stays, when it expired, when a deleted one expires', () => {
+    put({
+      jobs: [
+        finished(1),
+        finished(2, { expires: new Date(NOW - 86_400_000).toISOString(), expired: true }),
+        finished(3, { phase: 'dismissed', deletedUntil: new Date(NOW + 3_600_000).toISOString(), serverDeleted: true }),
+      ],
+    });
+    mount();
+    const dates = () => container.querySelector('.pm-col-until')!.textContent;
+    expect(dates()).toBe('Until');
+    click(button('Expired'));
+    expect(dates()).toBe('Expired');
+    click(button('Deleted'));
+    expect(dates()).toBe('Expires');
+    click(button('All'));
+    expect(dates()).toBe('Until');
+  });
+
+  it('has no titles of columns over an empty list', () => {
+    put({ jobs: [] });
+    mount();
+    expect(container.querySelector('.pm-columns')).toBeNull();
+  });
+
+  it('hides the titles where the status and the date stand under the title', () => {
+    const media = css.slice(css.indexOf('@media (pointer: coarse), (max-width: 899px) {\n  .pm-list'));
+    expect(media).toMatch(/\.pm-columns \{\s*display: none;/u);
+    expect(css).toMatch(/\.pm-columns \{[^}]*grid-template-columns: var\(--pm-lead\) minmax\(0, 1fr\) auto var\(--pm-date\) repeat\(3, var\(--pm-icon\)\)/u);
   });
 
   it('puts the pencil after the title and "＋", "⇩", "⋯" at the end, in that order', () => {
@@ -1842,15 +1904,26 @@ describe('the line of a job', () => {
       return css.slice(start, css.indexOf('}', start));
     };
 
-    it('lays a job out as one line of eight places in the dock, which is as wide as the other panels (340 px)', () => {
+    it('lays a job out as one line of seven places in the dock, which is as wide as the other panels (340 px)', () => {
       expect(Number(/--dock-width: (\d+)px/u.exec(tokens)?.[1])).toBe(340);
       const line = block('.pm-line');
       expect(line).toContain('display: grid');
-      expect(line).toContain('grid-template-columns: var(--pm-lead) var(--pm-status) minmax(0, 1fr) auto var(--pm-date) repeat(3, var(--pm-icon))');
+      expect(line).toContain('grid-template-columns: var(--pm-lead) minmax(0, 1fr) auto var(--pm-date) repeat(3, var(--pm-icon))');
       // No second line from a container query, whatever the width of the list.
       expect(css).not.toMatch(/@container \(max-width: \d+px\) \{\s*\.pm-open/u);
-      expect(block('.pm-state')).toContain('grid-row: 1');
       expect(block('.pm-until')).toContain('grid-row: 1');
+    });
+
+    it('has no column for the state: it is for a screen reader, and stands in the place of the date while a job runs, waits or is cancelled', () => {
+      expect(block('.pm-line .pm-state')).toMatch(/position: absolute;[^}]*clip-path: inset\(50%\)/u);
+      expect(block('.pm-meta:is(.running, .waiting, .checking, .cancelled, .unavailable) .pm-state')).toContain('grid-column: 4');
+      expect(block('.pm-meta:is(.running, .waiting, .checking) .pm-until')).toContain('display: none');
+    });
+
+    it('draws the progress of a running job as a line of two pixels at the top edge of its row, touching the row above', () => {
+      const bar = block('.pm-progress');
+      for (const declaration of ['position: absolute', 'top: 0', 'left: 0', 'right: 0', 'height: calc(var(--line-width) * 2)', 'margin: 0']) expect(bar).toContain(declaration);
+      expect(css).toMatch(/\n\.pm-row \{\s*position: relative;/u);
     });
 
     it('puts the status and the date under the title only where a finger needs 44 px symbols: a touch screen and under 900 px', () => {
