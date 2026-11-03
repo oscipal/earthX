@@ -40,3 +40,11 @@
 - Teil 1 danach in derselben Session: Tests mit Gegenprobe (inkl. der neuen Prüfungen gegen Rückfälle), Browserprüfung (Hell/Dunkel, 1280 und 360 px), Prüfanleitung für Otto; berührte Browser-Skripte nachgezogen.
 - Alle vier Pflicht-Checks grün; Log-Zeile mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern (pflegt der Planungs-Chat).
 - Vor „fertig“ ist main geholt.
+
+## 6. Vorgemerkt aus UI-03e (Otto, 03.11.2026, zu #282)
+
+Nach UI-03b, in diesem Plan zu klären und zu schneiden:
+
+- **Ergebnis-Layer in RGB:** absolute/percentile je Kanal in den Einstellungen eines Job-Ergebnisses (`ResultControls`, `PreviewRange`), wie UI-03e es für die Ansicht und angeheftete Layer umgesetzt hat (`AppliedRender.percentChannels`, `ChannelRange.percent`).
+- **Permalink:** Erweiterung um Kanäle und Einheit je Kanal (`view.range` hält heute ein `vmin`/`vmax` und die Colormap; das Schema prüft das Backend, `jobs/permalinks.py`). Bis dahin bleibt der Permalink unverändert.
+
