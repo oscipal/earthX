@@ -59,9 +59,9 @@ from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
-from earthx.access.band_export import ExportPlanError, band_meta_of_items, band_table, plan_files
+from earthx.access.band_export import ExportPlanError, band_count, band_meta_of_items, band_table, plan_files
 from earthx.access.colormaps import catalog as colormap_catalog
-from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order
+from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order, target_crs
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
     RESOLUTION_FACTORS,
@@ -1254,6 +1254,16 @@ async def download_crop(
         )
         for asset in wanted
     }  # fmt: skip
+    if body.form != "per_band":
+        several = [
+            asset
+            for asset in wanted
+            if any((band_count(item, asset) or 1) > 1 for item in all_matched if asset in item.get("assets", {}))
+        ]
+        if several:
+            raise HTTPException(
+                status_code=422, detail=f"{', '.join(several)} has several bands in one file; only one file per band can hold it"
+            )
     try:
         plan_files(body.form, [band_metas[asset] for asset in wanted], body.common_resolution)
     except ExportPlanError as error:
@@ -1336,9 +1346,10 @@ async def download_crop(
             }
         )
         if len(crs_names) > 1:
+            target = target_crs({str(item.get("id")): _resolve_ref(item, config=config, item=str(item.get("id")), asset=wanted[0]).crs for item in matched})
             bands_notes = [
                 "Note: the scenes of a mosaic of this download lie in more than one coordinate reference system "
-                f"({', '.join(crs_names)}); they were reprojected to EPSG:4326 and merged."
+                f"({', '.join(crs_names)}); those not in {target} were reprojected to it and merged."
             ]
             break
 

@@ -13,9 +13,11 @@ the block reader that lays every band of a file on one grid (:class:`StackReader
 the kind of band (finer: ``nearest``, the values stay; coarser: ``average`` for measurements, ``mode`` for a
 classification layer).
 
-**The grid is the crop's grid** (EPSG:4326 at the native pixel size, :func:`~earthx.access.crop_rules.native_crop_grid`),
-so the files of one resolution lie on exactly the grid the per-band files of that resolution have; a
-common resolution is the same grid with larger or smaller pixels (``pixel_scale``).
+**The grid is the source's** (Otto, 03.11.2026): the CRS of the scenes, their pixel size and pixel lattice
+(:func:`~earthx.access.crop_rules.source_crop_grid`), so a band of the source's own resolution is a plain copy of
+its pixels. The files of one resolution lie on exactly the grid the per-band files of that resolution have; a common
+resolution is the same lattice with larger or smaller pixels (``pixel_scale``). Only scenes in another CRS than the
+group's (the one most of them share) are warped onto it.
 
 Values are the source's own (integers, nodata, scale and offset as tags), never rescaled here.
 """
@@ -32,9 +34,11 @@ from typing import Any
 import numpy
 from rasterio.enums import Resampling
 from rasterio.vrt import WarpedVRT
+from rasterio.warp import transform_geom
 from rasterio.windows import Window
 from rasterio.windows import transform as window_transform
 from rio_tiler.constants import WGS84_CRS
+from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 
 from earthx.access.crop_rules import asset_gsd, merge_first_valid, rasterize_aoi
@@ -51,6 +55,7 @@ __all__ = [
     "ExportPlanError",
     "FilePlan",
     "StackReader",
+    "aoi_on_grid",
     "apply_band_tags",
     "band_count",
     "band_meta_of_items",
@@ -331,16 +336,19 @@ _WARP = {"none": Resampling.nearest, "nearest": Resampling.nearest, "average": R
 class StackReader:
     """The bands of one output file, read block by block on one grid, the items of a mosaic merged first-valid.
 
-    ``bands`` holds, per band of the file, the opened datasets of the items in the order of the mosaic;
-    ``methods`` the resampling of each band (:func:`resampling_for`). Every band is a view of its dataset
-    warped onto ``transform``/``width``/``height`` in EPSG:4326, so a band that already has the grid's
-    pixel size is the crop's own ``nearest`` warp, bit for bit. The views live as long as ``stack``.
+    ``assets`` holds, per asset of the file, the opened datasets of the items in the order of the mosaic;
+    ``methods`` the resampling of each asset (:func:`resampling_for`). An asset contributes its bands, one for the
+    bands the export stacks and every band an asset has for the file of one asset. Every asset is a view of its
+    dataset warped onto ``crs``/``transform``/``width``/``height``; where the dataset already has that grid (the CRS of
+    the source and its pixel lattice, :func:`~earthx.access.crop_rules.source_crop_grid`) the view is a plain copy of
+    its pixels. A scene in another CRS is warped onto the grid. The views live as long as ``stack``.
     """
 
     def __init__(
         self,
-        bands: Sequence[Sequence[Any]],
+        assets: Sequence[Sequence[Any]],
         methods: Sequence[str],
+        crs: Any,
         transform: Any,
         width: int,
         height: int,
@@ -348,16 +356,17 @@ class StackReader:
     ):
         self.height = height
         self.width = width
+        self.crs = crs
         self.transform = transform
         self._vrts: list[list[Any]] = []
-        for datasets, method in zip(bands, methods, strict=True):
-            if any(dataset.count != 1 for dataset in datasets):
-                raise ExportPlanError("a band of a stacked file has exactly one band in its source")
+        for datasets, method in zip(assets, methods, strict=True):
+            if len({dataset.count for dataset in datasets}) != 1:
+                raise ExportPlanError("the scenes of a mosaic differ in their bands")
             self._vrts.append(
                 [
                     stack.enter_context(
                         WarpedVRT(
-                            dataset, crs=WGS84_CRS, transform=transform, width=width, height=height,
+                            dataset, crs=crs, transform=transform, width=width, height=height,
                             resampling=_WARP[method],
                         )  # fmt: skip
                     )
@@ -366,29 +375,30 @@ class StackReader:
             )
         first = [vrts[0] for vrts in self._vrts]
         self.dtype = numpy.result_type(*[numpy.dtype(vrt.dtypes[0]) for vrt in first]).name
-        nodata = {vrt.nodata for vrt in first}
+        self.band_nodata = [vrt.nodata for vrt in first for _ in range(vrt.count)]
+        self.count = len(self.band_nodata)
+        nodata = set(self.band_nodata)
         #: One value for the file where the bands agree on it; a GeoTIFF has no nodata per band.
         self.nodata: float | None = nodata.pop() if len(nodata) == 1 else None
-        self.band_nodata = [vrt.nodata for vrt in first]
 
     def read(self, window: Window) -> numpy.ma.MaskedArray:
         """The block of every band, masked where no item has a value."""
         planes = [
-            merge_first_valid(vrt.read(1, window=window, masked=True) for vrt in vrts).astype(self.dtype)
+            merge_first_valid(vrt.read(window=window, masked=True) for vrt in vrts).astype(self.dtype)
             for vrts in self._vrts
         ]
-        return numpy.ma.stack(planes)
+        return numpy.ma.concatenate(planes, axis=0)
 
 
-def file_profile(reader: StackReader, metas: Sequence[BandMeta], *, block_size: int) -> dict[str, Any]:
-    """The plain GeoTIFF profile of a file: the grid of ``reader``, one band per entry of ``metas``."""
+def file_profile(reader: StackReader, *, block_size: int) -> dict[str, Any]:
+    """The plain GeoTIFF profile of a file: the grid of ``reader`` and all its bands."""
     return {
         "driver": "GTiff",
         "dtype": reader.dtype,
-        "count": len(metas),
+        "count": reader.count,
         "height": reader.height,
         "width": reader.width,
-        "crs": WGS84_CRS,
+        "crs": reader.crs,
         "transform": reader.transform,
         "tiled": True,
         "blockxsize": block_size,
@@ -414,6 +424,8 @@ def write_blocks(
 ) -> bool:
     """Writes every block of ``reader`` to ``dst`` and the mask of ``aoi`` (1 inside) to ``mask_dst``; whether any pixel in the AOI had a value.
 
+    ``aoi`` is in the CRS of the grid (:func:`aoi_on_grid`).
+
     A pixel no item has a value for gets its band's own nodata, else 0. The mask never changes the data (M3-18 §3).
     """
     fills = [0 if nodata is None else nodata for nodata in reader.band_nodata]
@@ -430,6 +442,12 @@ def write_blocks(
         if on_block is not None:
             on_block()
     return any_valid
+
+
+def aoi_on_grid(aoi: Mapping[str, Any] | BaseGeometry, crs: Any) -> BaseGeometry:
+    """The AOI (WGS84) in the CRS of an output grid, for its mask."""
+    geometry = aoi if isinstance(aoi, Mapping) else mapping(aoi)
+    return shape(transform_geom(WGS84_CRS, crs, dict(geometry)))
 
 
 def apply_band_tags(dst: Any, metas: Sequence[BandMeta]) -> None:

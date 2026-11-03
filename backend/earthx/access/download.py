@@ -101,6 +101,12 @@ unaffected by this — both still carry the *original*, un-clipped AOI exactly
 as drawn or uploaded; only the grid the data and the mask are written on
 shrinks to match what the items actually cover.
 
+**The grid is the source's (NM4-75, Otto 03.11.2026; adr/0028).** The files of a layout lie in the CRS of the
+scenes, at their pixel size and on their pixel lattice (:func:`~earthx.access.crop_rules.source_crop_grid`); only a
+scene of another CRS than its group's is warped onto it. :func:`_laid_out_crop_bytes` writes them. The reading of
+the sections above (EPSG:4326 at the native resolution, ``crop_asset``, ``_write_native_windowed_cog``) is what
+remains for a reader that offers no raster dataset (a Zarr store) and what the export job without a layout writes.
+
 **The rules are shared (M4-11 F1).** Grid, extent, mask, COG profile, size estimate
 and the names inside the ZIP live in :mod:`earthx.access.crop_rules`, so the export
 job of `processing` writes the same files without loading this module.
@@ -151,6 +157,7 @@ from earthx.access.band_export import (
     ExportPlanError,
     FilePlan,
     StackReader,
+    aoi_on_grid,
     apply_band_tags,
     band_meta,
     bands_text,
@@ -181,6 +188,7 @@ from earthx.access.crop_rules import (
     mask_profile,
     native_crop_grid,
     rasterize_aoi,
+    source_crop_grid,
 )
 from earthx.catalog.registry import AcquisitionYears, Attributable, DatasetConfig, acquisition_years
 from earthx.readers.cog import AssetPath
@@ -887,7 +895,11 @@ def _verified_crop(
     )
 
 
-def _stacked_crop_bytes(
+class NoRasterToRead(ExportPlanError):
+    """The reader offers no raster dataset to lay a grid on (a Zarr store, or a double in a test)."""
+
+
+def _laid_out_crop_bytes(
     open_reader: Callable[..., BaseReader],
     plan: FilePlan,
     metas: Sequence[BandMeta],
@@ -896,14 +908,21 @@ def _stacked_crop_bytes(
     mask_geometry: Mapping[str, Any],
     *,
     form: str,
+    resolution_factor: int = 1,
 ) -> AssetCropBytes:
-    """One stacked file (several bands, one grid) and its mask, written block by block in memory (NM4-75)."""
+    """One file of a layout (one band, several bands of a resolution, or all) and its mask, written block by block in memory.
+
+    On the grid of the source (CRS, pixel size and lattice of the scenes, :func:`source_crop_grid`) and only
+    resampled where the form asks for it (:func:`resampling_for`) or a scene lies in another CRS (NM4-75).
+    """
     region = shapely_shape(region_geometry)
-    aoi = shapely_shape(mask_geometry)
-    methods = [resampling_for(meta, plan.resolution_m if form == FORM_MULTI_BAND else None) for meta in metas]
+    if form == FORM_MULTI_BAND:
+        methods = [resampling_for(meta, plan.resolution_m) for meta in metas]
+    else:
+        methods = ["nearest" if resolution_factor != 1 else "none"] * len(metas)
     # The grid is laid from the finest band of the file; a common resolution scales its pixels.
     finest = min(range(len(metas)), key=lambda index: metas[index].resolution_m or math.inf)
-    scale = 1.0
+    scale = float(resolution_factor)
     if form == FORM_MULTI_BAND:
         assert plan.resolution_m is not None and metas[finest].resolution_m is not None
         scale = plan.resolution_m / metas[finest].resolution_m
@@ -914,17 +933,21 @@ def _stacked_crop_bytes(
             for crop in crops:
                 opened = [stack.enter_context(open_reader(path)) for path in crop.paths]
                 if any(getattr(reader, "dataset", None) is None for reader in opened):
-                    raise ExportPlanError("these bands cannot be stacked: the source has no raster to read")
+                    raise NoRasterToRead("these bands cannot be laid out: the source has no raster to read")
                 datasets.append([reader.dataset for reader in opened])
-            transform, width, height = native_crop_grid(datasets[finest][0], region, pixel_scale=scale)
-            reader = StackReader(datasets, methods, transform, width, height, stack)
-            profile = file_profile(reader, metas, block_size=BLOCK_SIZE)
+            if form != FORM_PER_BAND and any(ds.count != 1 for group in datasets for ds in group):
+                raise ExportPlanError("a band of a stacked file has exactly one band in its source")
+            crs, transform, width, height = source_crop_grid(datasets[finest][0], region, pixel_scale=scale)
+            reader = StackReader(datasets, methods, crs, transform, width, height, stack)
+            profile = file_profile(reader, block_size=BLOCK_SIZE)
+            aoi = aoi_on_grid(mask_geometry, crs)
             with MemoryFile() as plain_mem, MemoryFile() as mask_mem, MemoryFile() as cog_mem:
                 with (
                     plain_mem.open(**profile) as dst,
-                    mask_mem.open(**mask_profile(height=height, width=width, crs=profile["crs"], transform=transform)) as mask_dst,
+                    mask_mem.open(**mask_profile(height=height, width=width, crs=crs, transform=transform)) as mask_dst,
                 ):
-                    apply_band_tags(dst, metas)
+                    if reader.count == len(metas):
+                        apply_band_tags(dst, metas)
                     if not write_blocks(reader, dst, mask_dst, aoi, block_size=BLOCK_SIZE):
                         raise AoiOutsideItems("the AOI does not cover any valid pixel of these bands")
                 with plain_mem.open() as plain_ds:
@@ -1294,18 +1317,28 @@ def build_download_zip(
                 crops_by_asset = {crop.asset: crop for crop in group.crops}
                 for plan in plans:
                     members = [metas[asset] for asset in plan.assets]
+                    crop_bytes = None
                     if form == FORM_PER_BAND:
                         crop = crops_by_asset[plan.assets[0]]
-                        crop_bytes = _verified_crop(
-                            open_reader, crop.paths, group.region_geometry,
-                            asset=crop.asset, width=crop.width, height=crop.height, mask_geometry=aoi_geometry,
-                            meta=metas[crop.asset],
-                        )  # fmt: skip
+                        if not isinstance(crop.paths[0], ZarrAsset):
+                            try:
+                                crop_bytes = _laid_out_crop_bytes(
+                                    open_reader, plan, members, [crop], group.region_geometry, aoi_geometry,
+                                    form=form, resolution_factor=resolution_factor,
+                                )  # fmt: skip
+                            except NoRasterToRead:
+                                crop_bytes = None
+                        if crop_bytes is None:  # a store with no raster dataset: the read of the reader itself, in WGS84
+                            crop_bytes = _verified_crop(
+                                open_reader, crop.paths, group.region_geometry,
+                                asset=crop.asset, width=crop.width, height=crop.height, mask_geometry=aoi_geometry,
+                                meta=metas[crop.asset],
+                            )  # fmt: skip
                         methods = ["none" if resolution_factor == 1 else "nearest"]
                         exports = [plan.resolution_m]
                         written = None
                     else:
-                        crop_bytes = _stacked_crop_bytes(
+                        crop_bytes = _laid_out_crop_bytes(
                             open_reader, plan, members, [crops_by_asset[asset] for asset in plan.assets],
                             group.region_geometry, aoi_geometry, form=form,
                         )  # fmt: skip

@@ -202,9 +202,9 @@ class TestPolygonMissesTheFootprintDespiteTheBbox:
 class TestMosaicAcrossUtmZones:
     """"Zwei Szenen einer Gruppe in verschiedenen UTM-Zonen": adjacent MGRS
     tiles straddling a zone boundary are a real, if infrequent, mosaic case —
-    both items reproject to the same WGS84 output grid regardless of their
-    own native CRS (the module docstring: `.part()`'s `dst_crs` defaults to
-    the AOI's own, WGS84, never either item's own CRS)."""
+    both items are laid on the grid of the first one (the zone most scenes of a
+    group lie in, `mosaic_order` puts those first): the scene in the other zone
+    is warped onto it, the others are copied as they are (NM4-75)."""
 
     def test_a_mosaic_of_two_utm_zones_merges_without_error(self) -> None:
         data = np.full((3, 20, 20), 77, dtype="uint8")
@@ -242,6 +242,25 @@ class TestMosaicAcrossUtmZones:
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
             with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as ds:
                 assert (ds.dataset_mask() == 255).any()
+                assert ds.crs.to_epsg() == 32632  # the CRS of the first scene, not WGS84
+
+    def test_a_scene_in_the_other_zone_is_warped_and_one_in_the_zone_of_the_grid_is_copied(self) -> None:
+        first = np.full((1, 20, 20), 11, dtype="uint8")
+        second = np.full((1, 20, 20), 22, dtype="uint8")
+        mem32 = _memcog(first, crs=UTM32, transform=from_origin(500000, 5700000, 10, 10))
+        # The other zone's scene lies where the first one's grid has no pixels of the first scene: east of it.
+        east = rasterio.warp.transform_bounds(UTM32, UTM33, 500200, 5699800, 500400, 5700000)
+        mem33 = _memcog(second, crs=UTM33, transform=from_origin(east[0], east[3], 10, 10))
+        aoi = _polygon(_bbox_to_wgs84(UTM32, (500000, 5699800, 500400, 5700000)))
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A, years=YEARS, open_reader=open_reader,
+            crops=[dl.AssetCrop(asset="red", paths=(_asset_path(mem32, item_id="A", asset="red"), _asset_path(mem33, item_id="B", asset="red")))],
+            aoi_geometry=aoi, item_ids=["A", "B"],
+        )  # fmt: skip
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive, rasterio.io.MemoryFile(archive.read("exports/red.tif")) as mf, mf.open() as ds:
+            values = set(np.unique(ds.read(1)[ds.dataset_mask() == 255]))
+            assert values == {11, 22}  # both scenes are in it, each with its own values, nothing averaged
+            assert (ds.transform.a, -ds.transform.e) == (10.0, 10.0)
 
 
 class TestMaskMatchesEachAssetsOwnResolution:

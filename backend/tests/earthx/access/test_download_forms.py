@@ -318,3 +318,40 @@ class TestGroupsAndRefusals:
                 aoi_geometry=far, item_ids=["ITEM1"], form="per_resolution", band_metas=metas,
             )  # fmt: skip
         assert "zip" not in str(type(raised.value)).lower()
+
+
+class TestTheGridIsTheSources:
+    """Otto, 03.11.2026: every export lies in the CRS of the source, at its pixel size, on its pixel lattice."""
+
+    @pytest.mark.parametrize("form", ["per_band", "per_resolution"])
+    def test_crs_pixel_size_and_pixels_are_the_sources_and_nothing_is_resampled(self, form: str) -> None:
+        names = {"per_band": "exports/B04_red_10m.tif", "per_resolution": "exports/bands_10m.tif"}
+        with _zip(["red"], form=form) as archive, _open(archive, names[form]) as mem, mem.open() as ds:
+            assert ds.crs.to_epsg() == 32632
+            assert (ds.transform.a, -ds.transform.e) == (10.0, 10.0)
+            # The grid lies on the lattice of the source: its origin is a whole number of pixels from the source's.
+            assert (ds.transform.c - ORIGIN[0]) % 10 == 0 and (ORIGIN[1] - ds.transform.f) % 10 == 0
+            out = ds.read(1)
+            source = _array("red")[0]
+            col0, row0 = int((ds.transform.c - ORIGIN[0]) / 10), int((ORIGIN[1] - ds.transform.f) / 10)
+            inside = out[max(0, -row0) : source.shape[0] - row0, max(0, -col0) : source.shape[1] - col0]
+            expected = source[max(0, row0) : max(0, row0) + inside.shape[0], max(0, col0) : max(0, col0) + inside.shape[1]]
+            np.testing.assert_array_equal(inside[: expected.shape[0], : expected.shape[1]], expected)
+
+    def test_a_20_m_band_keeps_its_own_pixel_size_in_utm(self) -> None:
+        with _zip(["rededge1", "coastal"]) as archive:
+            for name, size in (("exports/B05_rededge1_20m.tif", 20.0), ("exports/B01_coastal_60m.tif", 60.0)):
+                with _open(archive, name) as mem, mem.open() as ds:
+                    assert ds.crs.to_epsg() == 32632 and (ds.transform.a, -ds.transform.e) == (size, size)
+
+    def test_a_common_resolution_is_a_coarser_lattice_from_the_same_origin(self) -> None:
+        with _zip(["blue", "scl"], form="multi_band", common=60) as archive, _open(archive, "exports/bands_60m.tif") as mem, mem.open() as ds:
+            assert ds.crs.to_epsg() == 32632 and (ds.transform.a, -ds.transform.e) == (60.0, 60.0)
+            assert (ds.transform.c - ORIGIN[0]) % 60 == 0 and (ORIGIN[1] - ds.transform.f) % 60 == 0
+
+    def test_the_mask_lies_on_the_same_grid_as_the_data(self) -> None:
+        with _zip(["red"]) as archive, _open(archive, "exports/B04_red_10m.tif") as a, a.open() as data, _open(
+            archive, "exports/B04_red_10m_mask.tif"
+        ) as b, b.open() as mask:
+            assert (mask.crs, mask.transform, mask.shape) == (data.crs, data.transform, data.shape)
+            assert set(np.unique(mask.read(1))) == {0, 1}

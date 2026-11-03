@@ -57,6 +57,7 @@ from earthx.access.band_export import (
     ExportPlanError,
     FilePlan,
     StackReader,
+    aoi_on_grid,
     apply_band_tags,
     bands_text,
     file_profile,
@@ -80,6 +81,7 @@ from earthx.access.crop_rules import (
     merge_first_valid,
     native_crop_grid,
     rasterize_aoi,
+    source_crop_grid,
 )
 from earthx.access.resolve import open_asset_ref
 from earthx.processing.errors import AoiOutsideInputs, ProcessingError, UnsupportedRecipe
@@ -279,6 +281,7 @@ class _LayoutOutput:
     plan: FilePlan
     members: tuple[BandMeta, ...]
     entries: tuple[tuple[ResolvedInput, ...], ...]
+    crs: Any
     transform: Any
     width: int
     height: int
@@ -442,11 +445,14 @@ class _Export:
                     scale = plan.resolution_m / members[finest].resolution_m  # type: ignore[operator]
                 with ExitStack() as stack:
                     first = resolved[(group[0], plan.assets[finest])]
-                    transform, width, height = native_crop_grid(
-                        self.open_dataset(first, stack), region, pixel_scale=scale
-                    )
+                    try:
+                        crs, transform, width, height = source_crop_grid(
+                            self.open_dataset(first, stack), region, pixel_scale=scale
+                        )
+                    except ValueError as error:
+                        raise UnsupportedRecipe(str(error)) from None
                 entries = tuple(tuple(resolved[(item_id, asset)] for item_id in group) for asset in plan.assets)
-                outputs.append(_LayoutOutput(index, plan, members, entries, transform, width, height))
+                outputs.append(_LayoutOutput(index, plan, members, entries, crs, transform, width, height))
         return outputs
 
     def write_layout(self, index: int, output: _LayoutOutput, form: str) -> tuple[str, str, str]:
@@ -459,17 +465,22 @@ class _Export:
             count = max(len(entries) for entries in output.entries)
             with rasterio.Env(VSI_CACHE_SIZE=str(cache_per_item(count * len(output.entries)))):
                 datasets = [[self.open_dataset(entry, stack) for entry in entries] for entries in output.entries]
-            reader = StackReader(datasets, methods, output.transform, output.width, output.height, stack)
-            profile = file_profile(reader, output.members, block_size=BLOCK_SIZE)
-            masks = mask_profile(height=output.height, width=output.width, crs=WGS84_CRS, transform=output.transform)
+            if form != "per_band" and any(dataset.count != 1 for group in datasets for dataset in group):
+                raise UnsupportedRecipe("a band of a stacked file has exactly one band in its source")
+            reader = StackReader(datasets, methods, output.crs, output.transform, output.width, output.height, stack)
+            profile = file_profile(reader, block_size=BLOCK_SIZE)
+            masks = mask_profile(height=output.height, width=output.width, crs=output.crs, transform=output.transform)
             self.new_file(plain_name)
             self.new_file(mask_name)
             with (
                 open_workfile(self.workdir, plain_name, "w", **profile) as dst,
                 open_workfile(self.workdir, mask_name, "w", **masks) as mask_dst,
             ):
-                apply_band_tags(dst, output.members)
-                any_valid = write_blocks(reader, dst, mask_dst, self.aoi, block_size=BLOCK_SIZE, on_block=self.tick)
+                if reader.count == len(output.members):
+                    apply_band_tags(dst, output.members)
+                any_valid = write_blocks(
+                    reader, dst, mask_dst, aoi_on_grid(self.aoi, output.crs), block_size=BLOCK_SIZE, on_block=self.tick
+                )
         if not any_valid:
             raise AoiOutsideInputs("the AOI does not cover any valid pixel of a group")
         data_path = self.new_file(data_name)
@@ -555,19 +566,6 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                     folder = group_dirname(output.group, group_count)
                     files.append((folder + crop_filename(output.asset), data_name))
                     files.append((folder + mask_filename(output.asset), mask_name))
-            elif layout.form == "per_band":
-                by_asset, plans = state.layout_plans(attachments.bands)
-                outputs = state.plan()
-                state.total = sum(output.blocks for output in outputs) + 1
-                for index, output in enumerate(outputs):
-                    plan = plans[output.asset]
-                    data_name, mask_name = state.write(index, output, by_asset[output.asset])
-                    folder = EXPORTS_DIR + group_dirname(output.group, group_count)
-                    files.append((folder + plan.name, data_name))
-                    files.append((folder + plan.mask_name, mask_name))
-                    listed.append(
-                        BandsFile(folder + plan.name, [by_asset[output.asset]], ["none"], [plan.resolution_m])
-                    )
             else:
                 laid = state.plan_layout(attachments.bands)
                 state.total = sum(output.blocks for output in laid) + 1

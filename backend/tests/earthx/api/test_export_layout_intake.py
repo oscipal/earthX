@@ -66,6 +66,7 @@ class TestTheOrderTheJobIsGiven:
         accepted = await accept(layout_order({"form": "per_band"}, groups=(("S2_A", "S2_B"),)), source)
         assert accepted.attachments is not None and len(accepted.attachments.notes) == 1
         assert "EPSG:32632, EPSG:32633" in accepted.attachments.notes[0]
+        assert "not in EPSG:32632 were reprojected to it" in accepted.attachments.notes[0]  # the zone most scenes lie in
         same = await accept(layout_order({"form": "per_band"}, groups=(("S2_A", "S2_B"),)), scenes("S2_A", "S2_B"))
         assert same.attachments is not None and same.attachments.notes == ()  # Gegenprobe
 
@@ -123,7 +124,7 @@ class TestWhatTheEstimateSays:
     async def test_the_bands_of_another_pixel_size_than_the_common_one_are_named(self, rig: Any) -> None:
         put(rig, sentinel())
         found = await resampling(rig, layout_order({"form": "multi_band", "resolution_m": 20.0}))
-        assert found["grid"] == {"resolution": 20.0, "crs": "EPSG:4326"}
+        assert found["grid"] == {"resolution": 20.0, "crs": "EPSG:32632"}
         assert [(b["band"], b["resolution"]) for b in found["bands"]] == [("red", 10.0), ("coastal", 60.0)]
         assert found["method"] == "mixed"  # red becomes coarser (averaged), coastal finer (repeated)
 

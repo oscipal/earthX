@@ -1,7 +1,11 @@
-# ADR 0023 — Bandauswahl und Form beim Download eines Bildes
+# ADR 0028 — Bandauswahl und Form beim Download eines Bildes
 
-- **Status:** **Entwurf** (Claude, 2026-11-03, Aufgabe NM4-75, Stufe A). Die
-  Auslegungen unter §3 gelten, bis Otto widerspricht.
+- **Status:** **Entwurf** (Claude, 2026-11-03, Aufgabe NM4-75, Stufe A).
+  Otto hat am 2026-11-03 zu [#284](https://github.com/oscipal/earthX/pull/284)
+  geantwortet: Form-Frage nur bei gemischten Auflösungen (§1), Ausgabe in der
+  Projektion der Quelle (§2, ändert das Verhalten des bisherigen Zuschnitts),
+  Masken wie umgesetzt, die übrigen Auslegungen in §3 ok. Die Nummer 0023 bis
+  0027 ist für M5 reserviert; dieser ADR trägt deshalb 0028.
 - **Aufgabe:** NM4-75 (Otto, 2026-11-03): „Download eines Bildes mit Wahl der
   Bänder und der Form“. Kein Plan-Dokument, der Auftragstext steht im
   Draft-PR.
@@ -13,7 +17,11 @@
 ## 1. Entscheidung
 
 Der Download einer Szene oder eines Zuschnitts nimmt eine Bandauswahl und eine
-Form entgegen. Drei Formen:
+Form entgegen. **Die Form wird nur gefragt, wenn die gewählten Bänder
+verschiedene Auflösungen haben** (Otto, 03.11.2026): Haben alle dieselbe
+Auflösung (auch ein einzelnes Band), kommen sie als ein mehrbandiges GeoTIFF
+(`per_resolution`, `bands_<res>m.tif`, Bandbeschreibungen gesetzt). Bei gemischten
+Auflösungen gibt es drei Formen:
 
 | Form | Dateien | Umrechnung |
 |---|---|---|
@@ -43,10 +51,22 @@ Export), Umrechnung, Datentyp, Skalierung, Offset, nodata und Einheit.
   (`resampling_for`), den Blockleser (`StackReader`) und `BANDS.txt`. Der
   synchrone Zuschnitt (im Speicher) und der Export-Job (auf Platte) rufen
   dasselbe auf; ein Test hält ihre Dateien bitgleich.
-- **Gitter:** wie bisher das des Zuschnitts (EPSG:4326 in der nativen Pixelgröße,
-  `native_crop_grid`). Die Dateien einer Auflösung liegen damit auf genau dem
-  Gitter der `per_band`-Dateien dieser Auflösung; eine gemeinsame Auflösung ist
-  dasselbe Gitter mit größeren oder kleineren Pixeln (`pixel_scale`).
+- **Gitter (Otto, 03.11.2026): die Projektion der Quelle, nicht EPSG:4326.**
+  `crop_rules.source_crop_grid` legt das Gitter in das CRS der Szenen (UTM), in
+  deren Pixelgröße und auf deren Pixelraster; die Ausdehnung ist die Hüllbox
+  von AOI ∩ Footprints in diesem CRS, nach außen auf das Raster gerundet. Ein
+  Band in der Auflösung der Quelle ist damit eine reine Kopie ihrer Pixel
+  (getestet). Die Dateien einer Auflösung liegen auf genau dem Gitter der
+  `per_band`-Dateien dieser Auflösung; eine gemeinsame Auflösung ist dasselbe
+  Raster mit größeren oder kleineren Pixeln (`pixel_scale`, vom Ursprung der
+  Quelle aus). Nur Szenen in einem anderen CRS als dem der Gruppe (dem, in dem
+  die meisten liegen; `mosaic_order` legt diese zuerst) werden mit `nearest`
+  auf das Gitter umgerechnet; die Warnung wie in NM4-65 Teil 7 und ein Vermerk
+  in `BANDS.txt` nennen das. **Das ändert das bisherige Verhalten des
+  Zuschnitts** (bisher EPSG:4326 in der nativen Pixelgröße, `native_crop_grid`):
+  Dateien, Masken und `recipe.json` liegen jetzt im CRS der Quelle. Unverändert
+  in EPSG:4326 bleiben der Export-Job ohne `layout` (gespeicherte Rezepte, Hash
+  und Bytes bleiben) und Quellen ohne Raster-Datensatz (Zarr).
 - **Rezept:** `CropOutput.layout` (`form`, `resolution_m`), bei `None` nicht im
   Dump, der Hash bisheriger Rezepte bleibt. Ein Export ohne Fläche ist erlaubt,
   wenn er ein `layout` trägt: `api` nimmt die Vereinigung der Footprints
@@ -71,10 +91,10 @@ Export), Umrechnung, Datentyp, Skalierung, Offset, nodata und Einheit.
    Registry. Hat ein Datensatz kein solches Band (DEM), ist alles vorgewählt.
    Nicht vorgewählt, aber wählbar: Bänder ohne Wellenlänge (aot, wvp, cloud,
    snow). Die Hilfsbilder (`visual`, `preview`) bleiben draußen.
-2. **Ausgabe-CRS bleibt EPSG:4326** in allen Formen (das Gitter des bisherigen
-   Zuschnitts); „keine Umrechnung“ meint die Auflösung und die Werte.
-3. **Masken:** zu jeder Datendatei gehört wie bisher eine Maskendatei
-   (`<Name>_mask.tif`), auch bei der ganzen Szene (Maske = Footprint).
+2. **Ausgabe-CRS:** entschieden (Otto, 03.11.2026), siehe §2 „Gitter“; hier
+   stand zuerst die Auslegung EPSG:4326.
+3. **Masken** (Otto: so lassen): zu jeder Datendatei gehört wie bisher eine
+   Maskendatei (`<Name>_mask.tif`), auch bei der ganzen Szene (Maske = Footprint).
 4. **Auflösungsfaktor (1/2/4/10):** bleibt, gilt aber nur bei `per_band`; bei
    den anderen Formen ersetzt ihn die Wahl der Auflösung (422 sonst).
 5. **Mehrbandige Dateien:** Datentyp ist der weiteste der Bänder (z. B. uint16
@@ -93,13 +113,13 @@ Export), Umrechnung, Datentyp, Skalierung, Offset, nodata und Einheit.
   `BANDS.txt`“.
 - **Eigener Jobtyp:** mehr Rezept-Fläche (Version, Hash, Schema) ohne Gewinn
   gegenüber `CropOutput.layout`.
-- **Native UTM-Ausgabe:** würde das Gitter von dem des Zuschnitts trennen; nicht
-  Teil dieser Aufgabe.
+- **EPSG:4326 als Ausgabe** (die erste Auslegung): verworfen von Otto am
+  03.11.2026; eine Umprojektion von UTM nach 4326 ändert die Pixel auch dort,
+  wo „keine Umrechnung“ versprochen ist.
 
-## 5. Offene Punkte für Otto
+## 5. Grenzen
 
-1. Soll die ganze Szene bei `per_resolution` und `multi_band` im Gitter der
-   Quelle (UTM) statt in EPSG:4326 geschrieben werden? Das wäre ein eigener
-   Schreibweg (Empfehlung: erst nach Nutzung entscheiden).
-2. Dateien einer Szene größer als 5 GB (`MAX_JOB_BYTES`) werden vom Job
-   abgelehnt, auch wenn der Browser sie bei `per_band` streamen kann.
+- Dateien einer Szene größer als 5 GB (`MAX_JOB_BYTES`) lehnt der Job ab, auch
+  wo der Browser sie bei `per_band` streamen könnte (Otto: ok).
+- Ein Zuschnitt über die Datumsgrenze oder mit einer Quelle, die gedreht
+  (nicht nach Norden ausgerichtet) ist, wird abgelehnt (`source_crop_grid`).

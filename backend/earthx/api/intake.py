@@ -63,7 +63,7 @@ from shapely.geometry import shape as shapely_shape
 from shapely.ops import unary_union
 
 from earthx.access.band_export import EXPORTS_DIR, BandMeta, ExportPlanError, band_count, band_meta_of_items, plan_files
-from earthx.access.crop_rules import mosaic_order
+from earthx.access.crop_rules import mosaic_order, target_crs
 from earthx.access.download import (
     AOI_FILENAME,
     CITATION_FILENAME,
@@ -538,9 +538,12 @@ def layout_notes(recipe: Recipe) -> list[str]:
             }
         )
         if len(crs) > 1:
+            target = target_crs(
+                {item.asset.item_id: item.asset.crs for item in entry.resolved if item.asset.asset == entry.assets[0] and item.asset.item_id in group}
+            )
             return [
                 "Note: the scenes of a mosaic of this export lie in more than one coordinate reference system "
-                f"({', '.join(crs)}); they were reprojected to EPSG:4326 and merged."
+                f"({', '.join(crs)}); those not in {target} were reprojected to it and merged."
             ]
     return []
 

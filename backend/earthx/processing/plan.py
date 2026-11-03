@@ -828,9 +828,12 @@ def _describe_crop_resampling(recipe: Recipe) -> ResamplingFacts | None:
     for resolved in entry.resolved:
         known = [item.gsd for item in entry.resolved if item.asset.asset == resolved.asset.asset and item.gsd is not None]
         sizes[resolved.asset.asset] = min(known) if known else None
+    first = entry.assets[0]
+    crs_by_scene = {e.asset.item_id: e.asset.crs for e in entry.resolved if e.asset.asset == first}
+    target = target_crs(crs_by_scene)
     if layout.form == "multi_band":
         assert layout.resolution_m is not None
-        grid = GridFacts(layout.resolution_m, "EPSG:4326")
+        grid = GridFacts(layout.resolution_m, target)
         bands = tuple(
             BandOnOtherGrid(asset, size, None)
             for asset, size in sizes.items()
@@ -841,12 +844,10 @@ def _describe_crop_resampling(recipe: Recipe) -> ResamplingFacts | None:
         method = "mixed" if coarser and finer else "average" if coarser else "nearest"
     else:
         known = [size for size in sizes.values() if size is not None]
-        grid = GridFacts(min(known) if known else 0.0, "EPSG:4326")
+        grid = GridFacts(min(known) if known else 0.0, target)
         bands, method = (), RESAMPLING_METHOD
-    first = entry.assets[0]
-    crs_by_scene = {e.asset.item_id: e.asset.crs for e in entry.resolved if e.asset.asset == first}
     scenes = None
-    if len(crs_by_scene) > 1 and (target := target_crs(crs_by_scene)) is not None:
+    if len(crs_by_scene) > 1 and target is not None:
         apart = sum(1 for crs in crs_by_scene.values() if crs is not None and crs != target)
         scenes = ScenesInOtherZone(apart, len(crs_by_scene), target) if apart else None
     return ResamplingFacts(grid, method, bands, scenes) if bands or scenes else None

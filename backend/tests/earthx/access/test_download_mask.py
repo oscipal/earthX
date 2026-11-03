@@ -256,17 +256,10 @@ class TestWindowedReadMatchesTheWholeArrayRead:
 
     def test_a_rectangle_aoi_is_pixel_identical(self, served: list[str]) -> None:
         aoi_geometry = _rectangle_aoi()
-        windowed_bytes = dl.build_download_zip(
-            config=SENTINEL_2_L2A,
-            years=YEARS,
-            open_reader=open_asset,
-            crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
-            aoi_geometry=aoi_geometry,
-            item_ids=[ITEM],
-        )
+        windowed_bytes = dl.crop_asset_to_cog_bytes(open_asset, (_asset(),), aoi_geometry).data
         naive_bytes = self._naive_cog_bytes(served, aoi_geometry)
         with (
-            _open_zip_member(windowed_bytes, "exports/visual.tif") as windowed,
+            _open_bytes(windowed_bytes) as windowed,
             _open_bytes(naive_bytes) as naive,
         ):
             assert windowed.shape == naive.shape
@@ -278,17 +271,10 @@ class TestWindowedReadMatchesTheWholeArrayRead:
         import numpy as np
 
         aoi_geometry = _diamond_aoi()
-        windowed_bytes = dl.build_download_zip(
-            config=SENTINEL_2_L2A,
-            years=YEARS,
-            open_reader=open_asset,
-            crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
-            aoi_geometry=aoi_geometry,
-            item_ids=[ITEM],
-        )
+        windowed_bytes = dl.crop_asset_to_cog_bytes(open_asset, (_asset(),), aoi_geometry).data
         naive_bytes = self._naive_cog_bytes(served, aoi_geometry)
         with (
-            _open_zip_member(windowed_bytes, "exports/visual.tif") as windowed,
+            _open_bytes(windowed_bytes) as windowed,
             _open_bytes(naive_bytes) as naive,
         ):
             assert windowed.shape == naive.shape

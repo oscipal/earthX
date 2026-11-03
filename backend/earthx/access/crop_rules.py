@@ -31,7 +31,7 @@ from rasterio.crs import CRS
 from rasterio.errors import CRSError
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds as transform_from_bounds
-from rasterio.warp import calculate_default_transform
+from rasterio.warp import calculate_default_transform, transform_geom
 from rio_cogeo.profiles import cog_profiles
 from rio_tiler.constants import WGS84_CRS
 from shapely.errors import ShapelyError
@@ -67,6 +67,7 @@ __all__ = [
     "mosaic_order",
     "native_crop_grid",
     "rasterize_aoi",
+    "source_crop_grid",
     "target_crs",
 ]
 
@@ -367,6 +368,39 @@ def native_crop_grid(
     return crop_transform, width, height
 
 
+
+def source_crop_grid(
+    dataset: rasterio.DatasetReader, region: BaseGeometry, *, pixel_scale: float = 1.0
+) -> tuple[CRS, rasterio.Affine, int, int]:
+    """The grid of a band export (NM4-75): the CRS of the source, its pixel size, its pixel lattice.
+
+    ``(crs, transform, width, height)`` of the bounding box of ``region`` (WGS84, AOI ∩ the footprints of a group)
+    in the CRS of ``dataset``, snapped outward to the dataset's own pixel lattice, so that a band read on it from a
+    dataset of that CRS is a plain copy of source pixels and nothing is resampled. ``pixel_scale`` makes the pixels
+    that many times larger (a common resolution coarser than the dataset's own, or smaller for a finer one); the
+    lattice is then the coarser one from the same origin. A source in another CRS than the grid's is warped onto it
+    (the scenes of a mosaic in another UTM zone).
+    """
+    if dataset.crs is None:
+        raise ValueError("the source has no coordinate reference system")
+    transform = dataset.transform
+    if transform.b or transform.d or transform.e >= 0:
+        raise ValueError("only north-up sources are cropped without a warp of the grid")
+    projected = transform_geom(WGS84_CRS, dataset.crs, shapely_mapping(region))
+    left, bottom, right, top = shapely_shape(projected).bounds
+    size_x, size_y = abs(transform.a) * pixel_scale, abs(transform.e) * pixel_scale
+    origin_x, origin_y = transform.c, transform.f
+    first_column = math.floor((left - origin_x) / size_x + _LATTICE_SLACK)
+    last_column = math.ceil((right - origin_x) / size_x - _LATTICE_SLACK)
+    first_row = math.floor((origin_y - top) / size_y + _LATTICE_SLACK)
+    last_row = math.ceil((origin_y - bottom) / size_y - _LATTICE_SLACK)
+    width, height = max(1, last_column - first_column), max(1, last_row - first_row)
+    grid = rasterio.Affine(size_x, 0.0, origin_x + first_column * size_x, 0.0, -size_y, origin_y - first_row * size_y)
+    return dataset.crs, grid, width, height
+
+
+#: A bound this close (in pixels) to a pixel edge belongs to the pixel inside, not the next one.
+_LATTICE_SLACK = 1e-6
 
 # GeoTIFF mask-file profile shared by both the windowed and the naive path
 # (M3-18 §3): plain, not a COG — a same-grid, single-band 0/1 raster has no
