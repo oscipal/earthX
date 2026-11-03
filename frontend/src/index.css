@@ -579,12 +579,13 @@ body.dragging * {
   height: 100%;
   background: none;
 }
+/* The sliders are thin lines (Otto, 3.11.2026); what takes the pointer or a finger is wider than the line and clear around it. */
 .inspector .range-hist input[type='range']::-webkit-slider-thumb {
   width: var(--space-3);
   height: 100%;
-  border: var(--line-width) solid var(--text);
-  border-radius: var(--radius-sm);
-  background: var(--panel-bg);
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(to right, transparent calc(50% - var(--line-width)), var(--text) calc(50% - var(--line-width)), var(--text) calc(50% + var(--line-width)), transparent calc(50% + var(--line-width)));
   pointer-events: auto;
   cursor: ew-resize;
   appearance: none;
@@ -592,14 +593,20 @@ body.dragging * {
 .inspector .range-hist input[type='range']::-moz-range-thumb {
   width: var(--space-3);
   height: 100%;
-  border: var(--line-width) solid var(--text);
-  border-radius: var(--radius-sm);
-  background: var(--panel-bg);
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(to right, transparent calc(50% - var(--line-width)), var(--text) calc(50% - var(--line-width)), var(--text) calc(50% + var(--line-width)), transparent calc(50% + var(--line-width)));
   pointer-events: auto;
   cursor: ew-resize;
 }
 .inspector .range-hist input[type='range']:focus-visible::-webkit-slider-thumb {
-  outline: 2px solid var(--focus);
+  background: linear-gradient(to right, transparent calc(50% - 2 * var(--line-width)), var(--focus) calc(50% - 2 * var(--line-width)), var(--focus) calc(50% + 2 * var(--line-width)), transparent calc(50% + 2 * var(--line-width)));
+}
+.inspector .range-hist input[type='range']:focus-visible::-moz-range-thumb {
+  background: linear-gradient(to right, transparent calc(50% - 2 * var(--line-width)), var(--focus) calc(50% - 2 * var(--line-width)), var(--focus) calc(50% + 2 * var(--line-width)), transparent calc(50% + 2 * var(--line-width)));
+}
+.inspector .range-hist input[type='range']:focus-visible {
+  outline: none;
 }
 /* The name of a layer in the head is renamed in place (Otto, 2.11.2026): the title is a button that looks like the title, the pencil
    beside it is small and quiet. */

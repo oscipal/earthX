@@ -6,7 +6,9 @@
 //      nothing scrolls sideways.
 //   3. "More…" opens the list of all colormaps in the place of the bar, with previews; a click chooses and goes back, the choice stands in
 //      the dropdown; "‹" goes back; Esc closes nothing.
-//   4. A pinned layer: no arrows beside its date, "Process", "Download", "Add current view to layers" and the bin; it is renamed in the head.
+//   4. A pinned layer: no arrows beside its date, "Process", "Download", "Add current view to layers" (in full, two lines) and the bin as
+//      wide as the others; it is renamed in the head; the row of the layer manager has a bin and a pencil (Otto, 3.11.2026).
+//   "Enhance contrast" is there for RGB only, not beside an index (Otto, 3.11.2026).
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
 //   node e2e/quick-processing.cjs           # BASE=http://localhost:5173 OUT=<directory for the screenshots>, ONLY=1 for one theme and one window,
@@ -156,6 +158,8 @@ async function runCase(browser, theme, viewport, results) {
     if ((await store(page, (s) => s.appliedRender.index)) !== 'NDVI') fail('NDVI not drawn');
     if ((await page.$$('.inspector .range-hist')).length !== 1) fail('index has not one histogram');
     if ((await page.getAttribute('.inspector .vc-quick button:has-text("NDVI")', 'aria-pressed')) !== 'true') fail('NDVI not on');
+    // "Enhance contrast" is for RGB only (Otto, 3.11.2026).
+    if ((await page.locator('.inspector .vc-quick button', { hasText: 'Enhance contrast' }).count()) !== 0) fail('"Enhance contrast" beside an index');
     b = await bounds(page, 'aside.inspector:not(.colormap-picker)');
     if (b.sideways || b.outside.length) fail(`index: ${JSON.stringify(b)}`);
     await shot('index');
@@ -194,6 +198,16 @@ async function runCase(browser, theme, viewport, results) {
     if ((await page.$$('.inspector .vc-step')).length !== 0) fail('arrows beside the date of a layer');
     const actions = await page.$$eval('.inspector .vc-actions > *', (as) => as.map((a) => a.textContent || a.getAttribute('aria-label')));
     if (actions.join('|') !== '⚙ Process|⇩ Download|＋ Add current view to layers|Remove layer') fail(`layer actions: ${actions}`);
+    // Otto, 3.11.2026: the bin as wide as the others, the copy read in full (two lines).
+    const sizes = await page.$$eval('.inspector .vc-actions > *', (as) => as.map((a) => ({ w: Math.round(a.getBoundingClientRect().width), cut: a.scrollWidth > a.clientWidth + 1 || a.scrollHeight > a.clientHeight + 1 })));
+    if (sizes[3].w !== sizes[0].w) fail(`the bin is ${sizes[3].w} px wide, "Process" ${sizes[0].w}`);
+    if (sizes[2].cut) fail('"Add current view to layers" is cut');
+    // The row of the layer manager: a bin and a pencil.
+    await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: 'layers' }));
+    await page.waitForSelector('.layer-row [data-col="rename"]');
+    if ((await page.getAttribute('.layer-row [data-col="remove"]', 'aria-label')) !== 'Remove layer' || (await page.locator('.layer-row [data-col="remove"] svg').count()) !== 1) fail('no bin in the row of the layer manager');
+    await shot('manager');
+    await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: null }));
     b = await bounds(page, 'aside.inspector:not(.colormap-picker)');
     if (b.sideways || b.outside.length) fail(`layer: ${JSON.stringify(b)}`);
     await page.locator('.inspector .vc-pencil').click();
