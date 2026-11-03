@@ -2760,7 +2760,7 @@ input[type='date']:focus-visible {
 }
 .pm-list {
   --pm-lead: var(--control-height-sm);
-  --pm-status: 7em;
+  --pm-status: 5.5em;
   --pm-date: 8em;
   flex: 1;
   min-height: 0;
@@ -3049,7 +3049,7 @@ a.pm-icon:hover {
   font-size: var(--text-sm);
 }
 /* A narrow window (or a sheet on a phone): the status and the date go under the title, so that the title keeps its words. */
-@container (max-width: 440px) {
+@container (max-width: 400px) {
   .pm-open {
     grid-template-columns: auto minmax(0, 1fr);
     row-gap: 0;
