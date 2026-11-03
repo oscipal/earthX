@@ -116,7 +116,7 @@ class TestPolygonOverhangsTheAssetsEdge:
             item_ids=["ITEM1"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as ds:
                 assert ds.nodata == 0
                 mask = ds.dataset_mask()
                 # Some of the crop is real data (the half still over the asset)...
@@ -240,7 +240,7 @@ class TestMosaicAcrossUtmZones:
             item_ids=["ITEM32", "ITEM33"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as ds:
                 assert (ds.dataset_mask() == 255).any()
 
 
@@ -270,13 +270,13 @@ class TestMaskMatchesEachAssetsOwnResolution:
             item_ids=["ITEM1"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as visual_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as visual_ds:
                 visual_shape = visual_ds.shape
-            with rasterio.io.MemoryFile(archive.read("visual_mask.tif")) as mf, mf.open() as visual_mask_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual_mask.tif")) as mf, mf.open() as visual_mask_ds:
                 assert visual_mask_ds.shape == visual_shape
-            with rasterio.io.MemoryFile(archive.read("scl.tif")) as mf, mf.open() as scl_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/scl.tif")) as mf, mf.open() as scl_ds:
                 scl_shape = scl_ds.shape
-            with rasterio.io.MemoryFile(archive.read("scl_mask.tif")) as mf, mf.open() as scl_mask_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/scl_mask.tif")) as mf, mf.open() as scl_mask_ds:
                 assert scl_mask_ds.shape == scl_shape
             # The two assets really do have different native resolutions here —
             # otherwise this test would not distinguish "each asset gets its own
@@ -314,9 +314,9 @@ class TestCropExtentIsTheGroupsOwnFootprintNotTheWholeAoi:
             item_ids=["ITEM1"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as ds:
                 out_west, out_south, out_east, out_north = transform_bounds(ds.crs, "EPSG:4326", *ds.bounds)
-            with rasterio.io.MemoryFile(archive.read("visual_mask.tif")) as mf, mf.open() as mask_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual_mask.tif")) as mf, mf.open() as mask_ds:
                 mask_west, mask_south, mask_east, mask_north = transform_bounds(
                     mask_ds.crs, "EPSG:4326", *mask_ds.bounds
                 )
@@ -370,7 +370,7 @@ class TestCropExtentIsTheGroupsOwnFootprintNotTheWholeAoi:
             item_ids=["ITEM1", "ITEM2"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as ds:
                 out_bounds = transform_bounds(ds.crs, "EPSG:4326", *ds.bounds)
 
             # The extent is the union of both scenes' own footprints, well

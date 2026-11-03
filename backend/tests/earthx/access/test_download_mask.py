@@ -142,7 +142,7 @@ class TestTheAoiMaskOnARealCog:
             aoi_geometry=_diamond_aoi(),
             item_ids=[ITEM],
         )
-        with _open_zip_member(zip_bytes, "visual.tif") as raster:
+        with _open_zip_member(zip_bytes, "exports/visual.tif") as raster:
             # No alpha band (plan §2 "Maske, >= 2 Items") — still a GDAL-internal
             # mask band, but reflecting only the source's own validity now.
             assert raster.count == 3
@@ -184,8 +184,8 @@ class TestTheAoiMaskOnARealCog:
             aoi_geometry=_diamond_aoi(),
             item_ids=[ITEM],
         )
-        with _open_zip_member(zip_bytes, "visual.tif") as raster, _open_zip_member(
-            zip_bytes, "visual_mask.tif"
+        with _open_zip_member(zip_bytes, "exports/visual.tif") as raster, _open_zip_member(
+            zip_bytes, "exports/visual_mask.tif"
         ) as mask_raster:
             assert mask_raster.count == 1
             assert mask_raster.dtypes[0] == "uint8"
@@ -214,14 +214,14 @@ class TestTheAoiMaskOnARealCog:
             aoi_geometry=_rectangle_aoi(),
             item_ids=[ITEM],
         )
-        with _open_zip_member(zip_bytes, "visual.tif") as raster:
+        with _open_zip_member(zip_bytes, "exports/visual.tif") as raster:
             assert raster.count == 3
             # The data file is never cropped to the polygon (M3-18 §3) — every
             # pixel of the bounding box stays valid, rectangle or not.
             assert (raster.dataset_mask() == 255).all()
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            assert "visual_mask.tif" in archive.namelist()
-        with _open_zip_member(zip_bytes, "visual_mask.tif") as mask_raster:
+            assert "exports/visual_mask.tif" in archive.namelist()
+        with _open_zip_member(zip_bytes, "exports/visual_mask.tif") as mask_raster:
             mask = mask_raster.read(1)
             assert set(mask.flatten().tolist()) <= {0, 1}
             assert (mask == 1).any()
@@ -266,7 +266,7 @@ class TestWindowedReadMatchesTheWholeArrayRead:
         )
         naive_bytes = self._naive_cog_bytes(served, aoi_geometry)
         with (
-            _open_zip_member(windowed_bytes, "visual.tif") as windowed,
+            _open_zip_member(windowed_bytes, "exports/visual.tif") as windowed,
             _open_bytes(naive_bytes) as naive,
         ):
             assert windowed.shape == naive.shape
@@ -288,7 +288,7 @@ class TestWindowedReadMatchesTheWholeArrayRead:
         )
         naive_bytes = self._naive_cog_bytes(served, aoi_geometry)
         with (
-            _open_zip_member(windowed_bytes, "visual.tif") as windowed,
+            _open_zip_member(windowed_bytes, "exports/visual.tif") as windowed,
             _open_bytes(naive_bytes) as naive,
         ):
             assert windowed.shape == naive.shape

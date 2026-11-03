@@ -45,13 +45,13 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.dependencies.utils import solve_dependencies
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from rasterio.errors import RasterioError, RasterioIOError
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from rio_tiler.models import ImageData
@@ -59,6 +59,7 @@ from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
+from earthx.access.band_export import ExportPlanError, band_meta, plan_files
 from earthx.access.colormaps import catalog as colormap_catalog
 from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order
 from earthx.access.download import (
@@ -1100,9 +1101,32 @@ class DownloadRequest(BaseModel):
         description=(
             "how many times coarser than native resolution to read, one of "
             f"{RESOLUTION_FACTORS} — 1 is native, the default (Otto, 23.09.2026, M3-18 §10). "
-            "Never chosen automatically; the caller (the download dialog) picks it explicitly."
+            "Never chosen automatically; the caller (the download dialog) picks it explicitly. "
+            "Only the form `per_band` reads at a coarser resolution."
         ),
     )
+    form: Literal["per_band", "per_resolution", "multi_band"] = Field(
+        default="per_band",
+        description=(
+            "`per_band`: one GeoTIFF per band in its own resolution; `per_resolution`: one multi-band GeoTIFF per "
+            "resolution that occurs; `multi_band`: one GeoTIFF at `common_resolution`. Nothing is converted except "
+            "for `multi_band` (NM4-75)."
+        ),
+    )
+    common_resolution: float | None = Field(
+        default=None,
+        gt=0,
+        le=1000,
+        description="the pixel size in metres of the one file of `multi_band`; with no other form",
+    )
+
+    @model_validator(mode="after")
+    def _form_and_resolution_agree(self) -> DownloadRequest:
+        if (self.form == "multi_band") != (self.common_resolution is not None):
+            raise ValueError("common_resolution goes with the form multi_band, and with no other")
+        if self.form != "per_band" and self.resolution != 1:
+            raise ValueError("only the form per_band reads at a coarser resolution")
+        return self
 
     @field_validator("groups")
     @classmethod
@@ -1217,6 +1241,24 @@ async def download_crop(
     # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
     wanted = list(dict.fromkeys(body.assets))
 
+    # What the items say about each band, for the names of the files and BANDS.txt (NM4-75), and the plan of the
+    # files: refused here, before anything is read, when the bands and the form do not make one.
+    if config.zarr is not None and body.form != "per_band":
+        raise HTTPException(status_code=422, detail="this dataset is a Zarr store; only one file per band is offered")
+    band_metas = {
+        asset: band_meta(
+            next((item for matched, _ in surviving_groups for item in matched if asset in item.get("assets", {})), {}),
+            asset,
+            unit=config.band_unit(asset),
+            categorical=config.mask is not None and config.mask.asset == asset,
+        )
+        for asset in wanted
+    }
+    try:
+        plan_files(body.form, [band_metas[asset] for asset in wanted], body.common_resolution)
+    except ExportPlanError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+
     # Native is always planned too (F10c, M3-18 §10): even when the caller
     # already chose a coarser resolution, a rejection still needs the smallest
     # *native-relative* factor to suggest, not one relative to what was
@@ -1225,7 +1267,9 @@ async def download_crop(
         plan_outputs(matched, wanted, region) for matched, region in surviving_groups
     ]
     planned_by_group: list[list[PlannedOutput]] = (
-        native_planned_by_group
+        [plan_outputs(matched, wanted, region, pixel_size=body.common_resolution) for matched, region in surviving_groups]
+        if body.form == "multi_band"
+        else native_planned_by_group
         if body.resolution == 1
         else [
             plan_outputs(matched, wanted, region, resolution_factor=body.resolution)
@@ -1276,6 +1320,24 @@ async def download_crop(
             )
             for asset in wanted
         ]
+
+    # Scenes of one mosaic in more than one coordinate system are reprojected onto the one grid; BANDS.txt says so.
+    crs_names = sorted(
+        {
+            ref.crs
+            for matched, _ in surviving_groups
+            for stac_item in matched
+            if (ref := _resolve_ref(stac_item, config=config, item=str(stac_item.get("id")), asset=wanted[0])).crs
+        }
+    )
+    bands_notes = (
+        [
+            "Note: the scenes of this download lie in more than one coordinate reference system "
+            f"({', '.join(crs_names)}); they were reprojected to EPSG:4326 and merged."
+        ]
+        if len(crs_names) > 1
+        else []
+    )
 
     first_matched, first_region = surviving_groups[0]
     first_crops = _crops_for(first_matched, planned_by_group[0])
@@ -1348,6 +1410,10 @@ async def download_crop(
             citation_bib=bib,
             recipe_omitted_cause=recipe_omitted_cause,
             years=years,
+            form=body.form,
+            common_resolution=body.common_resolution,
+            band_metas=band_metas,
+            bands_notes=bands_notes,
             # The GDAL/VSI settings `gateway` also uses for the tile path
             # (timeouts, the read cache, no directory listings on open) —
             # missing here until M3-18 (F7 Nebenbefund), so a crop's reads
@@ -1369,6 +1435,8 @@ async def download_crop(
         # The bbox prefilter passed but the geometry itself misses every item's
         # actual footprint (a bbox is not the data — MGRS tiles are rotated).
         raise HTTPException(status_code=400, detail=str(error)) from None
+    except ExportPlanError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
     except RioTilerError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
     except (RasterioIOError, GatewayError):

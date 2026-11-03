@@ -67,8 +67,8 @@ def _one_round(aoi_geometry: dict) -> None:
     with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
         assert archive.testzip() is None
     with (
-        _open_zip_member(zip_bytes, "visual.tif") as windowed,
-        _open_zip_member(zip_bytes, "visual_mask.tif") as mask,
+        _open_zip_member(zip_bytes, "exports/visual.tif") as windowed,
+        _open_zip_member(zip_bytes, "exports/visual_mask.tif") as mask,
         _open_bytes(naive_bytes) as naive,
     ):
         assert windowed.shape == naive.shape == mask.shape

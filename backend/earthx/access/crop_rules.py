@@ -54,6 +54,7 @@ __all__ = [
     "TEXT_FILES",
     "AoiOutsideItems",
     "PlannedOutput",
+    "asset_gsd",
     "bytes_per_pixel",
     "compute_crop_region",
     "crop_filename",
@@ -202,6 +203,47 @@ def compute_crop_region(items: Sequence[Mapping[str, Any]], aoi: BaseGeometry) -
 
 
 
+def _finite_positive(value: Any) -> float | None:
+    """``value`` as a finite, positive float, or ``None`` for anything that is not one.
+
+    Used on values that come straight off a STAC item — a ``gsd`` of ``0``,
+    negative, ``NaN`` or a string is a malformed item, not something to divide
+    by (found in the plan step's "zweckfremde Nutzung" pass, M3-18).
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number <= 0:
+        return None
+    return number
+
+
+def asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
+    """Ground sample distance of ``asset`` on ``item``, in metres/pixel, or ``None`` if unusable (F1).
+
+    Tried in the order both real sources are measured to carry it (plan §3):
+    the asset's own ``gsd``, then the first band's ``raster:bands``
+    ``spatial_resolution``, then the item's own ``properties.gsd``.
+    """
+    item_asset = item.get("assets", {})
+    item_asset = item_asset.get(asset, {}) if isinstance(item_asset, Mapping) else {}
+    if not isinstance(item_asset, Mapping):
+        item_asset = {}
+    candidates: list[Any] = [item_asset.get("gsd")]
+    bands = item_asset.get("raster:bands")
+    if isinstance(bands, list) and bands and isinstance(bands[0], Mapping):
+        candidates.append(bands[0].get("spatial_resolution"))
+    properties = item.get("properties")
+    if isinstance(properties, Mapping):
+        candidates.append(properties.get("gsd"))
+    for candidate in candidates:
+        gsd = _finite_positive(candidate)
+        if gsd is not None:
+            return gsd
+    return None
+
+
 def dtype_bytes(data_type: Any) -> int:
     """Bytes per pixel for one band's dtype name, or the conservative fallback."""
     if isinstance(data_type, str):
@@ -288,7 +330,11 @@ class PlannedOutput:
 
 
 def native_crop_grid(
-    dataset: rasterio.DatasetReader, region: BaseGeometry, *, dst_crs: rasterio.crs.CRS = WGS84_CRS
+    dataset: rasterio.DatasetReader,
+    region: BaseGeometry,
+    *,
+    dst_crs: rasterio.crs.CRS = WGS84_CRS,
+    pixel_scale: float = 1.0,
 ) -> tuple[rasterio.Affine, int, int]:
     """The exact native-resolution output grid ``.feature()`` would produce for ``region``.
 
@@ -306,11 +352,14 @@ def native_crop_grid(
     footprints (:func:`compute_crop_region`), not the AOI's own full bounding
     box — so a scene that only partly covers the AOI produces a grid no
     bigger than what that scene actually reaches.
+
+    ``pixel_scale`` (NM4-75) makes the pixels that many times larger than the native ones: the grid of a
+    common resolution coarser (or finer) than the dataset's own. ``1.0`` is the native grid, unchanged.
     """
     res_transform, _, _ = calculate_default_transform(
         dataset.crs, dst_crs, dataset.width, dataset.height, *dataset.bounds
     )
-    w_res, h_res = res_transform.a, abs(res_transform.e)
+    w_res, h_res = res_transform.a * pixel_scale, abs(res_transform.e) * pixel_scale
     minx, miny, maxx, maxy = region.bounds
     width = max(1, round((maxx - minx) / w_res))
     height = max(1, round((maxy - miny) / h_res))

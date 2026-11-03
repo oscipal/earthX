@@ -555,10 +555,11 @@ class TestBuildDownloadZip:
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
             names = set(archive.namelist())
             assert names == {
-                "visual.tif",
-                "visual_mask.tif",
-                "red.tif",
-                "red_mask.tif",
+                "exports/visual.tif",
+                "exports/visual_mask.tif",
+                "exports/red.tif",
+                "exports/red_mask.tif",
+                "exports/BANDS.txt",
                 dl.NOTICE_FILENAME,
                 dl.AOI_FILENAME,
             }
@@ -568,13 +569,13 @@ class TestBuildDownloadZip:
             # No alpha band regardless of the source having no nodata (F3, M3-18):
             # the AOI mask travels as its own file now (M3-18 §3), never the data
             # file's band count.
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as memfile, memfile.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as memfile, memfile.open() as ds:
                 assert ds.count == 3
                 assert ds.profile["driver"] == "GTiff"
                 # FakeReader.part never masks anything, so every pixel is valid.
                 assert (ds.dataset_mask() == 255).all()
             # The companion mask file: same grid, uint8, 1 inside the AOI polygon.
-            with rasterio.io.MemoryFile(archive.read("visual_mask.tif")) as memfile, memfile.open() as mask_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual_mask.tif")) as memfile, memfile.open() as mask_ds:
                 assert mask_ds.count == 1
                 assert mask_ds.dtypes[0] == "uint8"
                 assert mask_ds.width == 16

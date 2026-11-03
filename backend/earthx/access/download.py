@@ -115,7 +115,8 @@ import re
 import zipfile
 import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from contextlib import ExitStack
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any
@@ -140,8 +141,27 @@ from shapely.geometry import box
 from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
 
+from earthx.access.band_export import (
+    BANDS_FILENAME,
+    EXPORTS_DIR,
+    FORM_MULTI_BAND,
+    FORM_PER_BAND,
+    BandMeta,
+    BandsFile,
+    ExportPlanError,
+    FilePlan,
+    StackReader,
+    apply_band_tags,
+    band_meta,
+    bands_text,
+    file_profile,
+    plan_files,
+    resampling_for,
+    write_blocks,
+)
 from earthx.access.crop_rules import (
     AOI_FILENAME,
+    BLOCK_SIZE,
     CITATION_FILENAME,
     COG_PROFILE,
     FALLBACK_BYTES_PER_PIXEL,
@@ -151,6 +171,7 @@ from earthx.access.crop_rules import (
     RESOLUTION_FACTORS,
     AoiOutsideItems,
     PlannedOutput,
+    asset_gsd,
     bytes_per_pixel,
     compute_crop_region,
     crop_filename,
@@ -309,47 +330,6 @@ def check_item_count_cap(item_count: int, *, max_items: int = MAX_DOWNLOAD_ITEMS
         )
 
 
-def _finite_positive(value: Any) -> float | None:
-    """``value`` as a finite, positive float, or ``None`` for anything that is not one.
-
-    Used on values that come straight off a STAC item — a ``gsd`` of ``0``,
-    negative, ``NaN`` or a string is a malformed item, not something to divide
-    by (found in the plan step's "zweckfremde Nutzung" pass, M3-18).
-    """
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(number) or number <= 0:
-        return None
-    return number
-
-
-def asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
-    """Ground sample distance of ``asset`` on ``item``, in metres/pixel, or ``None`` if unusable (F1).
-
-    Tried in the order both real sources are measured to carry it (plan §3):
-    the asset's own ``gsd``, then the first band's ``raster:bands``
-    ``spatial_resolution``, then the item's own ``properties.gsd``.
-    """
-    item_asset = item.get("assets", {})
-    item_asset = item_asset.get(asset, {}) if isinstance(item_asset, Mapping) else {}
-    if not isinstance(item_asset, Mapping):
-        item_asset = {}
-    candidates: list[Any] = [item_asset.get("gsd")]
-    bands = item_asset.get("raster:bands")
-    if isinstance(bands, list) and bands and isinstance(bands[0], Mapping):
-        candidates.append(bands[0].get("spatial_resolution"))
-    properties = item.get("properties")
-    if isinstance(properties, Mapping):
-        candidates.append(properties.get("gsd"))
-    for candidate in candidates:
-        gsd = _finite_positive(candidate)
-        if gsd is not None:
-            return gsd
-    return None
-
-
 def _asset_bytes_per_pixel(item: Mapping[str, Any], asset: str) -> int:
     """Bytes one pixel of ``asset`` costs in the output, summed over its bands (F2).
 
@@ -376,8 +356,12 @@ def plan_outputs(
     region: BaseGeometry,
     *,
     resolution_factor: int = 1,
+    pixel_size: float | None = None,
 ) -> list[PlannedOutput]:
     """The worst-case size of every file :func:`build_download_zip` will write, one per asset.
+
+    ``pixel_size`` (NM4-75): the common resolution in metres of one multi-band file; every asset is then
+    planned at that pixel size instead of its own.
 
     A mosaic across ``items`` is still one file per asset (M2-06; M3-17 keeps
     that shape, one call per group), so the size that matters is the single
@@ -394,7 +378,9 @@ def plan_outputs(
     planned = []
     for asset in assets:
         gsds = [gsd for gsd in (asset_gsd(item, asset) for item in items) if gsd is not None]
-        if gsds:
+        if pixel_size is not None:
+            height, width = estimate_output_dims(region, pixel_size)
+        elif gsds:
             height, width = estimate_output_dims(region, min(gsds), resolution_factor=resolution_factor)
         else:
             # Nothing on any item says how fine this asset is — the same
@@ -552,6 +538,7 @@ def _write_native_windowed_cog(
     *,
     dst_crs: rasterio.crs.CRS = WGS84_CRS,
     block_size: int = 1024,
+    meta: BandMeta | None = None,
 ) -> AssetCropBytes:
     """The data COG plus its mask, read and written one block at a time (F10a/F10b, M3-18 §10/§3).
 
@@ -616,6 +603,8 @@ def _write_native_windowed_cog(
         aoi_mask_profile = mask_profile(height=height, width=width, crs=dst_crs, transform=crop_transform)
         with MemoryFile() as plain_mem, MemoryFile() as aoi_mask_mem:
             with plain_mem.open(**profile) as dst, aoi_mask_mem.open(**aoi_mask_profile) as mask_dst:
+                if meta is not None and vrt.count == 1:
+                    apply_band_tags(dst, [meta])
                 for row0 in range(0, height, block_size):
                     block_height = min(block_size, height - row0)
                     for col0 in range(0, width, block_size):
@@ -660,7 +649,9 @@ def _write_mask_tif_bytes(inside: numpy.ndarray, *, transform: rasterio.Affine, 
         return mem.read()
 
 
-def _image_to_asset_crop_bytes(image: ImageData, mask_geometry: BaseGeometry) -> AssetCropBytes:
+def _image_to_asset_crop_bytes(
+    image: ImageData, mask_geometry: BaseGeometry, meta: BandMeta | None = None
+) -> AssetCropBytes:
     """The data COG plus its companion mask, from an already-read ``ImageData`` (M3-18 §3).
 
     ``image.nodata`` (bug B, 23.09.2026, PR #86 review) is rio-tiler's own
@@ -690,7 +681,7 @@ def _image_to_asset_crop_bytes(image: ImageData, mask_geometry: BaseGeometry) ->
     any_band_valid = ~numpy.ma.getmaskarray(image.array).all(axis=0)
     if not (inside.astype(bool) & any_band_valid).any():
         raise AoiOutsideItems("the AOI does not cover any valid pixel of this item")
-    data_bytes = _masked_array_to_cog_bytes(image.array, image.transform, image.crs, image.nodata)
+    data_bytes = _masked_array_to_cog_bytes(image.array, image.transform, image.crs, image.nodata, meta)
     mask_bytes = _write_mask_tif_bytes(inside, transform=image.transform, crs=image.crs)
     return AssetCropBytes(data=data_bytes, mask=mask_bytes)
 
@@ -703,6 +694,7 @@ def crop_asset_to_cog_bytes(
     width: int | None = None,
     height: int | None = None,
     mask_geometry: Mapping[str, Any] | None = None,
+    meta: BandMeta | None = None,
 ) -> AssetCropBytes:
     """The finished data COG and mask for one asset's crop — the windowed path where it applies, else the naive one.
 
@@ -735,14 +727,14 @@ def crop_asset_to_cog_bytes(
                 # windowed optimisation — correctness never depends on it.
                 dataset = getattr(reader, "dataset", None)
                 if dataset is not None:
-                    return _write_native_windowed_cog(dataset, region, mask_shape)
+                    return _write_native_windowed_cog(dataset, region, mask_shape, meta=meta)
                 image = reader.part(region.bounds, width=None, height=None)
         except _AOI_MISSES_THE_DATA as error:
             raise AoiOutsideItems(str(error)) from None
-        return _image_to_asset_crop_bytes(image, mask_shape)
+        return _image_to_asset_crop_bytes(image, mask_shape, meta)
 
     image = crop_asset(open_reader, asset_paths, region_geometry, width=width, height=height)
-    return _image_to_asset_crop_bytes(image, mask_shape)
+    return _image_to_asset_crop_bytes(image, mask_shape, meta)
 
 
 def _masked_array_to_cog_bytes(
@@ -750,6 +742,7 @@ def _masked_array_to_cog_bytes(
     transform: rasterio.Affine,
     crs: rasterio.crs.CRS | None,
     nodata: float | None = None,
+    meta: BandMeta | None = None,
 ) -> bytes:
     """A real COG (internal tiling and overviews), built without touching disk.
 
@@ -793,6 +786,8 @@ def _masked_array_to_cog_bytes(
     with MemoryFile() as plain_mem:
         with plain_mem.open(**profile) as dst:
             dst.write(filled)
+            if meta is not None and count == 1:
+                apply_band_tags(dst, [meta])
         with plain_mem.open() as plain_ds, MemoryFile() as cog_mem:
             cog_translate(
                 plain_ds,
@@ -853,6 +848,24 @@ def _verify_asset_crop(crop: AssetCropBytes) -> None:
         raise CorruptOutput(f"a generated file does not read back: {error}") from error
 
 
+def _checked(write: Callable[[], AssetCropBytes], label: str) -> AssetCropBytes:
+    """``write()``, checked, and written once more if the check fails (M3-22, F1).
+
+    The retry repeats the whole write, reads included: the windowed path interleaves reading and
+    writing, and a failure here is not expected to happen at all (plan m3-22 §3). A second failure
+    raises :class:`CorruptOutput` — never a file nobody could open.
+    """
+    crop = write()
+    try:
+        _verify_asset_crop(crop)
+        return crop
+    except CorruptOutput as error:
+        LOGGER.warning("the crop of asset %r did not read back, writing it once more: %s", label, error)
+    crop = write()
+    _verify_asset_crop(crop)
+    return crop
+
+
 def _verified_crop(
     open_reader: Callable[..., BaseReader],
     asset_paths: Sequence[AssetPath | ZarrAsset],
@@ -862,29 +875,63 @@ def _verified_crop(
     width: int | None,
     height: int | None,
     mask_geometry: Mapping[str, Any],
+    meta: BandMeta | None = None,
 ) -> AssetCropBytes:
-    """:func:`crop_asset_to_cog_bytes`, checked, and written once more if the check fails (M3-22, F1).
-
-    The retry repeats the whole crop, reads included: the windowed path
-    interleaves reading and writing, and a failure here is not expected to
-    happen at all (plan m3-22 §3). A second failure raises
-    :class:`CorruptOutput` — never a file nobody could open.
-    """
-    def write() -> AssetCropBytes:
-        return crop_asset_to_cog_bytes(
+    """:func:`crop_asset_to_cog_bytes`, checked (:func:`_checked`)."""
+    return _checked(
+        lambda: crop_asset_to_cog_bytes(
             open_reader, asset_paths, region_geometry,
-            width=width, height=height, mask_geometry=mask_geometry,
-        )
+            width=width, height=height, mask_geometry=mask_geometry, meta=meta,
+        ),
+        asset,
+    )
 
-    crop = write()
-    try:
-        _verify_asset_crop(crop)
-        return crop
-    except CorruptOutput as error:
-        LOGGER.warning("the crop of asset %r did not read back, writing it once more: %s", asset, error)
-    crop = write()
-    _verify_asset_crop(crop)
-    return crop
+
+def _stacked_crop_bytes(
+    open_reader: Callable[..., BaseReader],
+    plan: FilePlan,
+    metas: Sequence[BandMeta],
+    crops: Sequence[AssetCrop],
+    region_geometry: Mapping[str, Any],
+    mask_geometry: Mapping[str, Any],
+    *,
+    form: str,
+) -> AssetCropBytes:
+    """One stacked file (several bands, one grid) and its mask, written block by block in memory (NM4-75)."""
+    region = shapely_shape(region_geometry)
+    aoi = shapely_shape(mask_geometry)
+    methods = [resampling_for(meta, plan.resolution_m if form == FORM_MULTI_BAND else None) for meta in metas]
+    # The grid is laid from the finest band of the file; a common resolution scales its pixels.
+    finest = min(range(len(metas)), key=lambda index: metas[index].resolution_m or math.inf)
+    scale = 1.0
+    if form == FORM_MULTI_BAND:
+        assert plan.resolution_m is not None and metas[finest].resolution_m is not None
+        scale = plan.resolution_m / metas[finest].resolution_m
+
+    def write() -> AssetCropBytes:
+        with ExitStack() as stack:
+            datasets = []
+            for crop in crops:
+                opened = [stack.enter_context(open_reader(path)) for path in crop.paths]
+                if any(getattr(reader, "dataset", None) is None for reader in opened):
+                    raise ExportPlanError("these bands cannot be stacked: the source has no raster to read")
+                datasets.append([reader.dataset for reader in opened])
+            transform, width, height = native_crop_grid(datasets[finest][0], region, pixel_scale=scale)
+            reader = StackReader(datasets, methods, transform, width, height, stack)
+            profile = file_profile(reader, metas, block_size=BLOCK_SIZE)
+            with MemoryFile() as plain_mem, MemoryFile() as mask_mem, MemoryFile() as cog_mem:
+                with (
+                    plain_mem.open(**profile) as dst,
+                    mask_mem.open(**mask_profile(height=height, width=width, crs=profile["crs"], transform=transform)) as mask_dst,
+                ):
+                    apply_band_tags(dst, metas)
+                    if not write_blocks(reader, dst, mask_dst, aoi, block_size=BLOCK_SIZE):
+                        raise AoiOutsideItems("the AOI does not cover any valid pixel of these bands")
+                with plain_mem.open() as plain_ds:
+                    cog_translate(plain_ds, cog_mem.name, COG_PROFILE, in_memory=True, quiet=True)
+                return AssetCropBytes(data=cog_mem.read(), mask=mask_mem.read())
+
+    return _checked(write, plan.name)
 
 
 def _verify_zip(buffer: BytesIO) -> None:
@@ -985,6 +1032,9 @@ def build_notice_text(
     years: AcquisitionYears | None = None,
     at: datetime | None = None,
     raster_result: bool = False,
+    file_names: Mapping[str, tuple[str, str]] | None = None,
+    common_resolution: float | None = None,
+    group_prefix: str = "",
 ) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
@@ -1032,6 +1082,10 @@ def build_notice_text(
     are ``result.tif`` and ``mask.tif``. The lines that describe a crop's own files (its
     assets, the native resolution, the mask beside each data file) are left out, as they
     would describe files that are not in it; a job's steps can change the resolution.
+
+    ``file_names`` (NM4-75): the data file and the mask file each asset ended up in, where the names are not the
+    cleaned asset keys (a stacked file holds several assets). ``common_resolution``: the pixel size, in metres, of
+    a file made at one resolution. ``group_prefix``: the folder the ``group-NN/`` folders lie in (``exports/``).
     """
     if recipe_omitted_cause is not None and not _CAUSE_CODE.fullmatch(recipe_omitted_cause):
         raise ValueError("recipe_omitted_cause is a short lower-case code")
@@ -1053,7 +1107,7 @@ def build_notice_text(
 
     if group_item_ids is not None and len(group_item_ids) > 1:
         for index, ids in enumerate(group_item_ids, start=1):
-            lines.append(f"Group {index} ({group_dirname(index - 1, len(group_item_ids))}): " + ", ".join(ids))
+            lines.append(f"Group {index} ({group_prefix}{group_dirname(index - 1, len(group_item_ids))}): " + ", ".join(ids))
     else:
         lines.append("Items: " + ", ".join(item_ids))
     if skipped_item_ids:
@@ -1065,19 +1119,28 @@ def build_notice_text(
         lines.append(
             "Assets: "
             + ", ".join(
-                f"{asset} ({crop_filename(asset, resolution_factor=resolution_factor)}, "
-                f"mask: {mask_filename(asset, resolution_factor=resolution_factor)})"
+                f"{asset} ({names[0]}, mask: {names[1]})"
                 for asset in assets
+                for names in [
+                    (file_names or {}).get(asset)
+                    or (
+                        crop_filename(asset, resolution_factor=resolution_factor),
+                        mask_filename(asset, resolution_factor=resolution_factor),
+                    )
+                ]
             )
         )
     if raster_result:
         lines.append(f"Mask: {AOI_FILENAME} carries the area; mask.tif is 1 inside it, 0 outside.")
     else:
-        lines.append(
-            "Resolution: native"
-            if resolution_factor == 1
-            else f"Resolution: {resolution_factor}x coarser than native (chosen explicitly)"
-        )
+        if common_resolution is not None:
+            lines.append(f"Resolution: {common_resolution:g} m for all bands (chosen explicitly); see exports/BANDS.txt")
+        else:
+            lines.append(
+                "Resolution: native"
+                if resolution_factor == 1
+                else f"Resolution: {resolution_factor}x coarser than native (chosen explicitly)"
+            )
         # Mask instead of nodata (Otto, 23.09.2026, M3-18 §3): every pixel in a data
         # file keeps its bounding-box value regardless of the AOI polygon's shape;
         # each asset's own mask file (above) is where the polygon actually lives —
@@ -1149,12 +1212,22 @@ def build_download_zip(
     citation_bib: bytes | None = None,
     recipe_omitted_cause: str | None = None,
     years: AcquisitionYears | None = None,
+    form: str = FORM_PER_BAND,
+    common_resolution: float | None = None,
+    band_metas: Mapping[str, BandMeta] | None = None,
+    bands_notes: Sequence[str] = (),
 ) -> bytes:
-    """The finished ZIP: a data COG and a mask file per requested asset, the AOI
-    as GeoJSON, plus :data:`NOTICE_FILENAME`.
+    """The finished ZIP: the data files of the chosen form and their masks in ``exports/``, ``exports/BANDS.txt``,
+    the AOI as GeoJSON, plus :data:`NOTICE_FILENAME`.
 
     Built entirely in memory (a ``BytesIO`` buffer, never a temp file) so the
     caller can stream the result without anything having touched disk.
+
+    ``form`` and ``common_resolution`` (NM4-75): one file per band (the default), one per resolution, or one
+    multi-band file at ``common_resolution`` (:mod:`earthx.access.band_export`). ``band_metas`` describes the
+    assets as the items do, by asset key; an asset without an entry is described by its key alone. Only
+    ``per_band`` reads at a coarser ``resolution_factor``; the stacked forms are native or at the common
+    resolution. ``bands_notes`` are lines for the head of ``BANDS.txt``.
 
     ``aoi_geometry`` is always the *original* AOI, exactly as drawn or
     uploaded (Otto, 23.09.2026, M3-18 §13): it is what ``aoi.geojson`` carries
@@ -1183,11 +1256,10 @@ def build_download_zip(
     ``additional_groups`` (M3-17, P19: "verschiedene Gruppen als getrennte
     Dateien im selben ZIP"): ``crops``/``region_geometry``/``item_ids`` above
     describe this call's *first* group, exactly as before M3-17 — a caller
-    with only one group (every caller before M3-17, and most calls after it)
-    passes nothing here and gets the same flat archive layout as always. A
+    with only one group passes nothing here and gets the files directly in ``exports/``. A
     caller with more than one group also fills this in, one entry per further
     group; every group, first or additional, then writes into its own
-    ``group-NN/`` folder (:func:`group_dirname`) instead of the archive root.
+    ``exports/group-NN/`` folder (:func:`group_dirname`).
     ``skipped_item_ids`` names items whose whole group was dropped upstream
     (`api.tiler`) for not touching the AOI at all — recorded in the notice
     only, never given a folder.
@@ -1203,29 +1275,54 @@ def build_download_zip(
     region_geometry = region_geometry if region_geometry is not None else aoi_geometry
     groups = [GroupCrop(item_ids=item_ids, crops=crops, region_geometry=region_geometry), *additional_groups]
     group_count = len(groups)
+    if form != FORM_PER_BAND and resolution_factor != 1:
+        raise ExportPlanError("only one file per band can be read at a coarser resolution")
+    given = band_metas or {}
+    metas = {crop.asset: given.get(crop.asset) or band_meta({}, crop.asset) for crop in groups[0].crops}
+    # What the person sees in a file's name is the pixel size of the file, so a coarser read names the coarser one.
+    named = {
+        asset: replace(meta, resolution_m=None if meta.resolution_m is None else meta.resolution_m * resolution_factor)
+        for asset, meta in metas.items()
+    }
+    plans = plan_files(form, [named[crop.asset] for crop in groups[0].crops], common_resolution)
     with rasterio.Env(**(gdal_env or {})):
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-            all_assets: list[str] = []
+            listed: list[BandsFile] = []
             for index, group in enumerate(groups):
-                folder = group_dirname(index, group_count)
-                for crop in group.crops:
-                    crop_bytes = _verified_crop(
-                        open_reader,
-                        crop.paths,
-                        group.region_geometry,
-                        asset=crop.asset,
-                        width=crop.width,
-                        height=crop.height,
-                        mask_geometry=aoi_geometry,
-                    )
-                    archive.writestr(
-                        folder + crop_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.data
-                    )
-                    archive.writestr(
-                        folder + mask_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.mask
-                    )
-                    all_assets.append(crop.asset)
+                folder = EXPORTS_DIR + group_dirname(index, group_count)
+                crops_by_asset = {crop.asset: crop for crop in group.crops}
+                for plan in plans:
+                    members = [metas[asset] for asset in plan.assets]
+                    if form == FORM_PER_BAND:
+                        crop = crops_by_asset[plan.assets[0]]
+                        crop_bytes = _verified_crop(
+                            open_reader, crop.paths, group.region_geometry,
+                            asset=crop.asset, width=crop.width, height=crop.height, mask_geometry=aoi_geometry,
+                            meta=metas[crop.asset],
+                        )  # fmt: skip
+                        methods = ["none" if resolution_factor == 1 else "nearest"]
+                        exports = [plan.resolution_m]
+                        written = None
+                    else:
+                        crop_bytes = _stacked_crop_bytes(
+                            open_reader, plan, members, [crops_by_asset[asset] for asset in plan.assets],
+                            group.region_geometry, aoi_geometry, form=form,
+                        )  # fmt: skip
+                        target = plan.resolution_m if form == FORM_MULTI_BAND else None
+                        methods = [resampling_for(meta, target) for meta in members]
+                        exports = [plan.resolution_m if form == FORM_MULTI_BAND else meta.resolution_m for meta in members]
+                        with MemoryFile(crop_bytes.data) as written_mem, written_mem.open() as written_ds:
+                            written = written_ds.dtypes[0]
+                    archive.writestr(folder + plan.name, crop_bytes.data)
+                    archive.writestr(folder + plan.mask_name, crop_bytes.mask)
+                    listed.append(BandsFile(folder + plan.name, members, methods, exports, written))
+            archive.writestr(
+                EXPORTS_DIR + BANDS_FILENAME,
+                bands_text(
+                    title=config.title, form=form, files=listed, common_resolution=common_resolution, notes=bands_notes
+                ),
+            )
             # The original AOI, unclipped (Otto, 23.09.2026, M3-18 §13) — never
             # a group's own region, whatever its items actually cover. Once per
             # ZIP regardless of the group count, at the root.
@@ -1239,14 +1336,20 @@ def build_download_zip(
                 build_notice_text(
                     config,
                     item_ids=[item_id for group in groups for item_id in group.item_ids],
-                    assets=list(dict.fromkeys(all_assets)),
+                    assets=list(metas),
                     resolution_factor=resolution_factor,
                     group_item_ids=[list(group.item_ids) for group in groups] if group_count > 1 else None,
                     skipped_item_ids=skipped_item_ids,
                     aoi_geometry=aoi_geometry,
                     recipe_omitted_cause=recipe_omitted_cause,
                     years=years,
+                    file_names={
+                        asset: (plan.name, plan.mask_name) for plan in plans for asset in plan.assets
+                    },
+                    common_resolution=common_resolution,
+                    group_prefix=EXPORTS_DIR,
                 ),
             )
         _verify_zip(buffer)
         return buffer.getvalue()
+

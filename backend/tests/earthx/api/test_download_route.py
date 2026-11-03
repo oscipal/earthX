@@ -213,8 +213,9 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             names = set(archive.namelist())
             assert names == {
-                "visual_2x.tif",
-                "visual_2x_mask.tif",
+                "exports/visual_20m.tif",
+                "exports/visual_20m_mask.tif",
+                "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
                 "recipe.json",
@@ -227,7 +228,7 @@ class TestAcceptanceCriteria:
         response = _download(client)
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            assert "visual.tif" in archive.namelist()
+            assert "exports/visual_10m.tif" in archive.namelist()
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "Resolution: native" in notice
 
@@ -281,8 +282,9 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             names = set(archive.namelist())
             assert names == {
-                "visual.tif",
-                "visual_mask.tif",
+                "exports/visual_10m.tif",
+                "exports/visual_10m_mask.tif",
+                "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
                 "recipe.json",
@@ -383,26 +385,28 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             names = set(archive.namelist())
             assert names == {
-                "group-01/visual.tif",
-                "group-01/visual_mask.tif",
-                "group-02/visual.tif",
-                "group-02/visual_mask.tif",
+                "exports/group-01/visual_10m.tif",
+                "exports/group-01/visual_10m_mask.tif",
+                "exports/group-02/visual_10m.tif",
+                "exports/group-02/visual_10m_mask.tif",
+                "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
-            assert f"Group 1 (group-01/): {ITEM_ID}" in notice
-            assert f"Group 2 (group-02/): {ITEM_ID}#2" in notice
+            assert f"Group 1 (exports/group-01/): {ITEM_ID}" in notice
+            assert f"Group 2 (exports/group-02/): {ITEM_ID}#2" in notice
 
     def test_a_single_group_stays_the_flat_layout_from_before_m3_17(self, client: TestClient) -> None:
         response = _download(client, groups=[[ITEM_ID]])
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             assert set(archive.namelist()) == {
-                "visual.tif",
-                "visual_mask.tif",
+                "exports/visual_10m.tif",
+                "exports/visual_10m_mask.tif",
+                "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
                 "recipe.json",
@@ -418,8 +422,9 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             # One surviving group: the flat layout, not a `group-01/` folder.
             assert set(archive.namelist()) == {
-                "visual.tif",
-                "visual_mask.tif",
+                "exports/visual_10m.tif",
+                "exports/visual_10m_mask.tif",
+                "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
                 "recipe.json",
@@ -469,8 +474,8 @@ class TestAcceptanceCriteria:
 
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            assert archive.namelist().count("visual.tif") == 1
-            assert archive.namelist().count("visual_mask.tif") == 1
+            assert archive.namelist().count("exports/visual_10m.tif") == 1
+            assert archive.namelist().count("exports/visual_10m_mask.tif") == 1
 
     def test_an_empty_group_list_group_or_asset_list_is_a_validation_error(self, client: TestClient) -> None:
         assert _download(client, groups=[]).status_code == 422
@@ -616,7 +621,7 @@ class TestAFileThatDoesNotReadBack:
         assert len(calls) == 2
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             assert archive.testzip() is None
-            assert "visual.tif" in archive.namelist()
+            assert "exports/visual_10m.tif" in archive.namelist()
         warnings_logged = [record for record in caplog.records if record.levelno == logging.WARNING]
         assert len(warnings_logged) == 1
         assert "once more" in warnings_logged[0].getMessage()
@@ -771,7 +776,7 @@ class TestRecipeAndCitation:
             names = set(archive.namelist())
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
         assert "recipe.json" not in names
-        assert {"visual.tif", "visual_mask.tif", "aoi.geojson", "citation.bib"} <= names
+        assert {"exports/visual_10m.tif", "exports/visual_10m_mask.tif", "aoi.geojson", "citation.bib"} <= names
         assert f"recipe.json is not included: the recipe could not be built from the source's item metadata (cause: {stage})." in notice
         # Not in the "Generated:" line: its timestamp holds "7.1" by chance (…14:25:17.100083Z).
         assert "7.1" not in _without_generated(notice)
