@@ -51,7 +51,7 @@ Nach UI-03b, in diesem Plan zu klären und zu schneiden:
 
 ## 7. Bestandsaufnahme, Begriffe, Symbole und Schnitt (Vorschlag Claude, 03.11.2026)
 
-**Status:** Vorschlag im Draft-PR, kein Produktivcode. Otto gibt frei, dann folgt Teil 1 in dieser Session.
+**Status:** angenommen (Otto, 03.11.2026, Antworten in §7.9). Teil 1 folgt in dieser Session, die Teile 2–6 je in einer neuen.
 
 ### 7.0 Vorgaben Otto seit dem Plan (03.11.2026)
 
@@ -289,3 +289,19 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 7. **Schnitt:**
    (1) wie §7.7, Teil 1 in dieser Session — **Empfehlung**.
    (2) Teil 4 (Einstellungsmenü, Relief, Zoom) zuerst, weil sichtbar und klein.
+
+### 7.9 Antworten Otto (03.11.2026)
+
+1. **„Process“ behält das Zahnrad** (Lucide `cog`). **Settings bekommt „Settings 6 Line“ von MingCute**, nicht Lucide `settings`. Es ist die **einzige Ausnahme** von „alle Symbole aus Lucide“ und steht so im Leitfaden. Ersetzt Frage 1 und die Zeile „Einstellungen“ in §7.3. Umsetzung in Teil 4 (Einstellungsmenü):
+   - **Übernahme:** nur das eine SVG, nicht die Bibliothek.
+   - **Quelle geprüft (03.11.2026):** npm-Paket `mingcute_icon` 2.9.72, Datei `svg/system/settings_6_line.svg`, Repository `github.com/Richard9394/MingCute`, Lizenz Apache-2.0 (LICENSE im Paket und im Repository).
+   - **Angleichung:** Das Original ist eine gefüllte Fläche mit 2 px breiten Linien auf 24 px. Damit Strich und Größe zu Lucide passen (1.5 px absolut, 16/14 px), wird es mit derselben Geometrie als Strich nachgezeichnet. Das ist eine Änderung im Sinn von Apache-2.0 §4(b) und steht als solche im Kopf der Datei.
+   - **Herkunft im Repo:** Lizenztext und Herkunft kommen nach `frontend/THIRD_PARTY_NOTICES.md` (§4(a)).
+2. Klick neben einen Dialog schließt nicht; Ausnahme ist die Rückfrage „Values are resampled“ (Klick daneben = Cancel). Option 1.
+3. Ein Tooltip-Weg: `TipLayer` (`data-tip`) für alles, in Teil 3a. Option 1.
+4. Overlays und Projektion kommen ins Einstellungsmenü, mit den Abschnitten „Basemap“, „Overlays“, „Projection“, „Appearance“. Option 1.
+5. „Zoom to selection“ zoomt über AOI, offene Ansicht und sichtbare Layer; ausgeblendete Layer zählen nicht. Über die Datumsgrenze gilt der kürzere Weg. Option 1.
+6. Ein Feld wird mit grauem `circle-x` geleert. Option 1.
+7. Schnitt wie §7.7, Teil 1 in dieser Session. Option 1.
+8. Die Auslegung zu Zusatz 7a ist angenommen: Auch „The result covers the area it has.“ fällt weg.
+
