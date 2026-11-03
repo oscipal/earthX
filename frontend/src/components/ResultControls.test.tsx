@@ -12,7 +12,7 @@ import App from '../App';
 import { finished, jobId, NOW } from '../fixtures/jobEntries';
 import { loadShelf } from '../jobShelf';
 import type { MapLayer } from '../layers';
-import { resultUrl } from '../processing';
+import { resultUrl, type Order } from '../processing';
 import { resetJobs, useProcessingStore, type JobEntry } from '../processingStore';
 import { resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
@@ -530,5 +530,47 @@ describe('on the page', () => {
     click(closeX());
     expect(container.querySelector('.results-list')).not.toBeNull();
     expect(container.querySelector('.result-controls')).toBeNull();
+  });
+});
+
+// Otto, 3.11.2026 (zu #282): under the title the small line "Copy original scene name", from the scenes of the job's copy of the order.
+describe('"Copy original scene name" of a result layer', () => {
+  const ordered = (groups: string[][]): Order => ({ recipe_version: 2, inputs: [{ name: 'input', dataset: 'd', groups }], steps: [], output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red'] } }) as unknown as Order;
+  const copyLine = () => container.querySelector<HTMLButtonElement>('.result-controls .vc-scene-names');
+
+  it('copies the scenes of the order, one to a line, from the copy of the order the job keeps', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: ordered([['S2A_1', 'S2A_2'], ['S2B_1']]) })] });
+    await openView();
+    expect(copyLine()!.title).toBe('3 scenes');
+    const write = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText: write } });
+    await act(async () => {
+      copyLine()!.click();
+    });
+    expect(write).toHaveBeenCalledWith('S2A_1\nS2A_2\nS2B_1');
+    expect(copyLine()!.textContent).toBe('Copied');
+  });
+
+  it('is in the row of the date, at its end', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: ordered([['S2A_1']]) })] });
+    await openView();
+    const head = container.querySelector('.result-controls .vc-head')!;
+    expect(head.children).toHaveLength(2);
+    expect(copyLine()!.parentElement).toBe(head.children[1]);
+    expect(head.children[1].classList.contains('insp-row2')).toBe(true);
+    expect(copyLine()!.title).toBe('Copy the name of the original scene');
+  });
+
+  it('is not there where the copy of the order is gone', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: null })] });
+    await openView();
+    expect(container.querySelector('.result-controls')).not.toBeNull();
+    expect(copyLine()).toBeNull();
+  });
+
+  it('is not there for an order without scenes', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: ordered([]) })] });
+    await openView();
+    expect(copyLine()).toBeNull();
   });
 });

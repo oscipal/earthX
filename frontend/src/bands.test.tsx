@@ -64,6 +64,7 @@ const GAP = 10;
 const STACK_WIDTH = 760;
 const HEAD = 22; // the head of the block with its "x"
 const BAR_ALONE = HEAD + 66;
+const BAR_AND_TIMELINE = BAR_ALONE + 72; // the block with a view open: the buttons and the timeline (Otto, 3.11.2026)
 const HINT = 52; // "Select a scene" in the place of the buttons
 const TIMELINE_ALONE = HEAD + HINT + 72;
 const STACK_LEFT = 284; // `left: calc((100% + var(--rail-width)) / 2)` less half the width, the dock open or not
@@ -254,7 +255,8 @@ describe('a band that was moved stays where it was put (Otto, 27.10.2026)', () =
 describe('the block that was not moved stands on the bottom edge as before', () => {
   it('with a view open it stands on the bottom edge: the view is in the settings bar and takes no room of the stack', async () => {
     await cropWithBarBeside();
-    expect(placeOf(selectionBar as () => HTMLElement).top).toBe(WINDOW.height - BOTTOM_EDGE - BAR_ALONE);
+    // The buttons of the scene beside the view and the timeline under them, as in browsing.
+    expect(placeOf(selectionBar as () => HTMLElement).top).toBe(WINDOW.height - BOTTOM_EDGE - BAR_AND_TIMELINE);
   });
 });
 

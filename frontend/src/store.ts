@@ -52,9 +52,9 @@ import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
-import { channelsAtPercent, channelsOf, CHANNEL_COUNT, type ChannelRange } from './channels';
+import { channelsAtOwnPercent, samePercents, CHANNEL_COUNT, CHANNEL_NAMES, type ChannelRange } from './channels';
 import { trueColorOf } from './processingOrder';
-import { appliedRenderFrom, autoRescale, lookChanged, lookOfPendingFields, pendingFieldsOf, pendingPercentOf } from './render';
+import { appliedRenderFrom, autoRescale, colourChannelsOf, colourInPercent, lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
   buildSections,
@@ -84,6 +84,8 @@ import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
+import { canonicalJson } from './processing';
+import { areaQuestionOf, measureView, type ViewMeasure } from './viewMeasure';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -666,16 +668,45 @@ export function colourView(s: AppState): boolean {
   return trueColorOf(s.datasets.find((d) => d.id === info?.datasetId)?.collection) !== null;
 }
 
-// Whether "Enhance contrast" is on: the fields still ask for the look it drew.
-export const enhanceOn = (s: AppState): boolean => s.enhance !== null && !lookChanged(s.enhance.look, s);
+// Whether "Enhance contrast" is on: the fields still ask for what it put in them, the usual pair in percentiles (in every channel of a
+// colour picture) for the picture it was pressed for. The values those percentiles give do not count: they come with "Apply".
+export function enhanceOn(s: AppState): boolean {
+  if (!s.enhance) return false;
+  const asked = lookOfPendingFields(s);
+  const kept = s.enhance.look;
+  if ((kept.colormapName || undefined) !== asked.colormapName || (kept.index || undefined) !== asked.index || (kept.band || undefined) !== asked.band) return false;
+  return asked.percentChannels ? asked.percentChannels.length === CHANNEL_COUNT && asked.percentChannels.every((pair) => samePercent(pair, DEFAULT_PERCENT)) : samePercent(asked.percent, DEFAULT_PERCENT);
+}
 
-// The statistics the fields of the view are measured with (`autoStretch`, the histograms of "Scale"): the first scene of the image
-// shown, the index of the fields as the tile route computes it, else the asset of the band in the fields. `null` before a scene is open.
-export function viewStatisticsUrl(s: AppState): string | null {
+// What the fields of the view are measured with (`autoStretch`, "Enhance contrast", the histograms of "Scale"): the area of the crop where
+// the view is cropped to the AOI and the tiler takes it (UI-03e), else the first scene of the image shown, the index of the fields as the
+// tile route computes it, else the asset of the band in the fields. `null` before a scene is open. One object for one state of its inputs,
+// so that a component can select it.
+let measureKept: { inputs: unknown[]; value: ViewMeasure | null } | null = null;
+
+export function viewMeasure(s: AppState): ViewMeasure | null {
+  const inputs = [s.shownImage, s.downloaded, s.sections, s.openSectionId, s.datasetId, s.items, s.groups, s.datasets, s.pendingBand, s.pendingIndex, s.cropToAoi, s.viewAoi];
+  if (measureKept && measureKept.inputs.every((input, i) => Object.is(input, inputs[i]))) return measureKept.value;
+  const value = measureOfView(s);
+  measureKept = { inputs, value };
+  return value;
+}
+
+function measureOfView(s: AppState): ViewMeasure | null {
   const { itemId, info } = firstSceneOfView(s);
   if (!info || itemId === undefined) return null;
-  const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
-  return index ? indexStatisticsUrl(info.datasetId, itemId, index) : api.buildStatisticsUrl(info.datasetId, itemId, assetOfLook(info, { band: s.pendingBand || undefined }));
+  const collection = s.datasets.find((d) => d.id === info.datasetId)?.collection;
+  const index = viewIndexOf({ index: s.pendingIndex }, collection);
+  const asset = assetOfLook(info, { band: s.pendingBand || undefined });
+  const sceneUrl = index ? indexStatisticsUrl(info.datasetId, itemId, index) : api.buildStatisticsUrl(info.datasetId, itemId, asset);
+  const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+  const ids = shown?.ids ?? [itemId];
+  const known = new Map(sectionsForView(s).flatMap((section) => section.items).map((item) => [item.id, item]));
+  const items = ids.flatMap((id) => known.get(id) ?? []);
+  const asked = areaQuestionOf({ datasetId: info.datasetId, collection, items: items.length === ids.length ? items : [], aoi: s.cropToAoi ? s.viewAoi : null, index, asset });
+  const area = asked && 'order' in asked ? asked : null;
+  const skipped = asked && 'reason' in asked ? asked.reason : null;
+  return { sceneUrl, area, skipped, key: area ? `${sceneUrl}\n${canonicalJson(area.order)}` : sceneUrl };
 }
 
 function firstSceneOfView(s: AppState): { itemId: string | undefined; info: DownloadedInfo | undefined } {
@@ -726,28 +757,39 @@ async function layerDrawnWith(set: SetState, get: GetState, layer: MapLayer, ren
 // the look keeps the percentiles for the fields to show "%" again.
 async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
   const s = get();
-  const checked = checkPercent({ low: s.pendingPercentLow, high: s.pendingPercentHigh });
-  if ('problem' in checked) {
-    set({ notice: checked.problem });
-    return;
-  }
-  const { itemId, info } = firstSceneOfView(s);
-  if (!info || itemId === undefined) return;
-  const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
-  const asked = [checked.low, checked.high].filter((n) => n !== 0 && n !== 100);
-  set({ focusLoading: true });
-  try {
-    const stats = index
-      ? await api.fetchStatisticsAt(api.withPercentiles(indexStatisticsUrl(info.datasetId, itemId, index), asked))
-      : await api.fetchStatistics(info.datasetId, itemId, assetOfLook(info, { band: s.pendingBand || undefined }), asked);
-    // A colour picture takes each channel at the percentiles of its own values (UI-03d).
-    const channels = colourView(s) ? channelsAtPercent(Object.values(stats), checked) : null;
-    const range = rescaleAtPercent(Object.values(stats), checked);
-    if (!range) {
-      set({ notice: NO_RANGE_AT_PERCENT });
+  // A colour picture keeps a unit for each channel (UI-03e): each channel typed in percentiles is taken at its own pair and its own values.
+  const own = colourView(s) ? colourChannelsOf(s) : null;
+  const pairs: { low: number; high: number }[] = [];
+  for (const [index, channel] of (own ?? [{ percent: { low: s.pendingPercentLow, high: s.pendingPercentHigh } }]).entries()) {
+    if (!channel.percent) continue;
+    const checked = checkPercent(channel.percent);
+    if ('problem' in checked) {
+      set({ notice: own ? `${CHANNEL_NAMES[index]}: ${checked.problem}` : checked.problem });
       return;
     }
-    set(channels ? { pendingVmin: channels[0].vmin, pendingVmax: channels[0].vmax, pendingChannels: channels } : { pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
+    pairs.push(checked);
+  }
+  const measure = viewMeasure(s);
+  if (!measure) return;
+  const asked = [...new Set(pairs.flatMap(({ low, high }) => [low, high]))].filter((n) => n !== 0 && n !== 100);
+  set({ focusLoading: true });
+  try {
+    const { statistics: stats } = await measureView(measure, { percentiles: asked });
+    if (own) {
+      const made = channelsAtOwnPercent(Object.values(stats), own);
+      if (!made) {
+        set({ notice: NO_RANGE_AT_PERCENT });
+        return;
+      }
+      set({ pendingVmin: made[0].vmin, pendingVmax: made[0].vmax, pendingChannels: made, pendingUnit: 'value' });
+    } else {
+      const range = rescaleAtPercent(Object.values(stats), pairs[0]);
+      if (!range) {
+        set({ notice: NO_RANGE_AT_PERCENT });
+        return;
+      }
+      set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
+    }
     const now = get();
     set({ appliedRender: { ...now.appliedRender, ...lookOfPendingFields(now) } });
   } catch (e) {
@@ -756,6 +798,9 @@ async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
     set({ focusLoading: false });
   }
 }
+
+// Whether the fields ask for a range in percentiles, in the shared pair or in any channel of a colour picture.
+const inPercent = (s: AppState): boolean => (colourView(s) ? colourInPercent(s) : s.pendingUnit === 'percent');
 
 // "Add to layers" and "Add all to layers" in the view: the image that is shown, or every image, one layer each, all in one
 // step with the first on the bottom of the new ones, so that the last image of the list lies on top (NM4-53). A layer
@@ -1602,7 +1647,8 @@ export interface AppState {
   // What the dialog of a layer that shows an index downloads (Otto, 1.11.2026): its raw bands, or the index as a job would give it.
   downloadAs: 'raw' | 'index';
   setDownloadAs: (what: 'raw' | 'index') => void;
-  enterFocus: (cropToAoi: boolean) => Promise<void>;
+  // `merge` (the default): with a view open, the scenes picked are added to it, as if its scenes and the new ones were ticked together (UI-03e).
+  enterFocus: (cropToAoi: boolean, merge?: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
   addAllToLayers: () => void;
   exitFocus: () => void;
@@ -1623,6 +1669,8 @@ export interface AppState {
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
   setPendingChannel: (channel: number, end: 'vmin' | 'vmax', text: string) => void;
+  setPendingChannelUnit: (channel: number, unit: RangeUnit) => void;
+  setPendingChannelPercent: (channel: number, end: 'low' | 'high', text: string) => void;
   // "Quick processing" (UI-03d): an index into the fields, drawn without a job once "Apply" is pressed (Otto, 3.11.2026); a second click
   // puts the picture of the dataset back into the fields.
   quickIndex: (name: string) => Promise<void>;
@@ -1848,7 +1896,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     const dataset = s.datasets.find((d) => d.id === id);
     if (section.origin === 'name' && section.items.length > 0 && dataset?.viewable && dataset.browse === 'full_resolution') {
-      void get().enterFocus(false);
+      void get().enterFocus(false, false);
     }
     void runFallback(set, get, id, false);
   },
@@ -2560,8 +2608,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // (`ViewBar.tsx`) was pressed — "Crop to AOI" or "View full selection"
   // (M3-09); the AOI clip itself happens later, on the map
   // (`mapLayers.ts::syncFocusRaster`), never here.
-  enterFocus: async (cropToAoi) => {
+  // "Crop to AOI" and "View whole scene" with a view open (Otto, 3.11.2026, zu #282): no second view. The scenes picked join the open one, exactly
+  // as if its scenes and the new ones were ticked together and the button pressed (NM4-53): the same pass is merged into the same image,
+  // another day is a new step, another dataset an entry of the dataset dropdown. The look of the view stays; the layer that held the
+  // view no longer holds it as it is, so the image is "Temporary".
+  enterFocus: async (cropToAoi, merge = true) => {
     const s = get();
+    const open = merge && s.focusMode && s.resultViewLayerId === null && Object.keys(s.downloaded).length > 0;
     const picked = viewSelectionFrom(s);
     if (picked.length === 0) {
       set({ error: 'Nothing to view — pick a time step or select scenes first.' });
@@ -2591,6 +2644,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       looks[dataset.id] = appliedRenderFrom(render);
       for (const it of items) {
         if (!it.bbox) continue;
+        // A scene the open view has already is not added again.
+        if (open && it.id in s.downloaded) continue;
         if (it.id in downloaded) {
           problem ??= `Scene ${it.id} is in two datasets; the view shows it once.`;
           continue;
@@ -2605,16 +2660,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
       }
     }
-    if (Object.keys(downloaded).length === 0) {
+    if (Object.keys(downloaded).length === 0 && !open) {
       set({ error: problem ?? 'None of the selected scenes carry a bounding box to render.' });
       return;
     }
-    const images = viewImagesOf({ ...s, downloaded });
-    const first = firstImageOf(images, s);
+    if (open && Object.keys(downloaded).length === 0 && problem) {
+      set({ error: problem });
+      return;
+    }
+    const added = downloaded;
+    const all = open ? { ...s.downloaded, ...added } : added;
+    const images = viewImagesOf({ ...s, downloaded: all });
+    // With a view open the image shown stays, unless a scene made an image of its own (another day, another dataset): that one is shown.
+    const shownBefore = open ? shownImageOf(viewImagesOf(s), s.shownImage) : null;
+    const newImage = open ? images.find((image) => image.ids.some((id) => id in added) && !viewImagesOf(s).some((old) => old.key === image.key)) : undefined;
+    const first = open ? (newImage ?? images.find((image) => image.key === shownBefore?.key) ?? firstImageOf(images, s)) : firstImageOf(images, s);
     const applied = (first && looks[first.datasetId]) || {};
     // Scenes of a time step too big for one mosaic are drawn one by one, and only so many of those.
     const groups = sectionsForView(s).flatMap((section) => section.groups);
-    const passes = passesOf(Object.entries(downloaded), groups);
+    const passes = passesOf(Object.entries(all), groups);
     const oneByOne = passes.filter((pass) => !isMosaicPass(pass)).reduce((sum, pass) => sum + pass.length, 0);
     const oversize = oversizeNote(passes, Math.max(0, oneByOne - MAX_MOSAIC_LAYERS));
     const note = oversize ?? problem;
@@ -2630,19 +2694,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       // A crop takes the results off the map and drops the tick of the scenes it was made of, so that their quicklooks
       // do not lie beside the crop; the view does not hang on the choice any more, and a scene ticked again shows like any
       // other (Otto, 27.10.2026). The whole scene keeps the tick and the switch.
-      ...(cropToAoi ? { selectedIds: s.selectedIds.filter((id) => !(id in downloaded)), ...setResultsOnMap(false) } : {}),
+      ...(cropToAoi ? { selectedIds: s.selectedIds.filter((id) => !(id in all)), ...setResultsOnMap(false) } : {}),
       showDownloaded: true,
-      downloaded,
-      shownImage: first?.key ?? null,
-      viewLooks: {},
-      savedLooks: {},
-      appliedRender: applied,
-      ...pendingFieldsOf(applied),
+      downloaded: all,
+      ...(open
+        ? first && shownBefore && first.key !== shownBefore.key
+          ? moveToImage(s, first, shownBefore)
+          : {}
+        : { shownImage: first?.key ?? null, viewLooks: {}, savedLooks: {}, appliedRender: applied, ...pendingFieldsOf(applied) }),
     });
     // The stretch and the mosaics are asked for together; the view says "Loading…" until both are here,
     // because a time step draws nothing until its mosaic has answered.
     const mosaics = get().loadMosaics();
-    await get().autoStretch();
+    // A view that stays keeps the fields it has: the range measured at the start is the new view's.
+    if (!open) await get().autoStretch();
     set({ focusLoading: true });
     await mosaics;
     set({ focusLoading: false });
@@ -2727,29 +2792,40 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPendingVmax: (pendingVmax) => set({ pendingVmax }),
   // One end of one channel: the first change splits the shared range into three.
   setPendingChannel: (channel, end, text) =>
-    set((s) => {
-      const channels = s.pendingChannels.length === CHANNEL_COUNT ? s.pendingChannels : channelsOf(s.pendingVmin, s.pendingVmax);
-      return { pendingChannels: channels.map((range, index) => (index === channel ? { ...range, [end]: text } : range)) };
-    }),
+    set((s) => ({ pendingChannels: colourChannelsOf(s).map((range, index) => (index === channel ? { ...range, [end]: text } : range)), pendingUnit: 'value' })),
+  // The unit of one channel of a colour picture, and the pair typed in it (UI-03e); the others keep theirs.
+  setPendingChannelUnit: (channel, unit) =>
+    set((s) => ({
+      pendingChannels: colourChannelsOf(s).map((range, index) => {
+        if (index !== channel) return range;
+        const { percent, ...values } = range;
+        return unit === 'percent' ? { ...values, percent: percent ?? { ...DEFAULT_PERCENT } } : values;
+      }),
+      pendingUnit: 'value',
+    })),
+  setPendingChannelPercent: (channel, end, text) =>
+    set((s) => ({
+      pendingChannels: colourChannelsOf(s).map((range, index) => (index === channel ? { ...range, percent: { ...(range.percent ?? DEFAULT_PERCENT), [end]: text } } : range)),
+      pendingUnit: 'value',
+    })),
   // Into the fields, drawn with "Apply" like a band (Otto, 3.11.2026), in the view and in the settings of a layer.
   quickIndex: async (name) => {
     const s = get();
     s.chooseViewIndex(s.pendingIndex === name ? null : name);
     set({ enhance: null });
   },
+  // Into the fields, drawn with "Apply" like an index (Otto, 3.11.2026, zu #282): every channel of a colour picture at the usual pair, each in
+  // percentiles on its own (UI-03e); one band as the shared pair. A second click puts the fields back as they were, also without "Apply".
   enhanceContrast: async () => {
     const s = get();
     if (enhanceOn(s)) {
       set({ ...pendingFieldsOf(s.enhance!.before), enhance: null });
-      await get().applyRender();
       return;
     }
-    const before = { ...s.appliedRender };
-    set({ pendingUnit: 'percent', pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
-    await get().applyRender();
-    const now = get();
-    // Only where the percentiles could be measured: else the fields say why and nothing is on.
-    if (samePercent(now.appliedRender.percent, DEFAULT_PERCENT)) set({ enhance: { look: lookOfPendingFields(now), before } });
+    const before = lookOfPendingFields(s);
+    if (colourView(s)) set({ pendingChannels: colourChannelsOf(s).map(({ vmin, vmax }) => ({ vmin, vmax, percent: { ...DEFAULT_PERCENT } })), pendingUnit: 'value' });
+    else set({ pendingUnit: 'percent', pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
+    set({ enhance: { look: lookOfPendingFields(get()), before } });
   },
   // Commits the pending fields (F18) — nothing renders differently until this
   // runs, which is the point of an explicit "Apply".
@@ -2757,7 +2833,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   applyRender: async () => {
     const s = get();
     // Typed in percentiles, the values come from the statistics first (NM4-65 part 4).
-    if (s.pendingUnit === 'percent') {
+    if (inPercent(s)) {
       await applyPercentRender(set, get);
     } else {
       set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
@@ -2798,9 +2874,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveViewLook: async () => {
     // Percentiles that are not applied yet give their values first, so that what is kept is what is drawn; only then is it
     // asynchronous, any other "Save" is done when the call returns.
-    if (get().pendingUnit === 'percent' && !samePercent(get().appliedRender.percent, pendingPercentOf(get()))) {
+    const percentsApplied = () => {
+      const asked = lookOfPendingFields(get());
+      const applied = get().appliedRender;
+      return samePercent(applied.percent, asked.percent) && samePercents(applied.percentChannels, asked.percentChannels);
+    };
+    if (inPercent(get()) && !percentsApplied()) {
       return applyPercentRender(set, get).then(() => {
-        if (samePercent(get().appliedRender.percent, pendingPercentOf(get()))) return get().saveViewLook();
+        if (percentsApplied()) return get().saveViewLook();
       });
     }
     let s = get();
@@ -2832,20 +2913,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   // the pending fields only — still needs "Apply" to take effect on the map.
   autoStretch: async () => {
     const s = get();
-    // In percentiles the usual stretch is the 2nd to the 98th (NM4-65 part 4): nothing to measure, "Apply" takes the values.
-    if (s.pendingUnit === 'percent') {
+    // In percentiles the usual stretch is the 2nd to the 98th (NM4-65 part 4): nothing to measure, "Apply" takes the values. A colour
+    // picture does that for each channel typed in percentiles and measures the others (UI-03e).
+    const channels = colourView(s) ? colourChannelsOf(s) : null;
+    const usual = (channel: ChannelRange): ChannelRange => (channel.percent ? { ...channel, percent: { ...DEFAULT_PERCENT } } : channel);
+    if (channels?.length && channels.every((channel) => channel.percent)) {
+      set({ pendingChannels: channels.map(usual), pendingUnit: 'value' });
+      return;
+    }
+    if (!channels && s.pendingUnit === 'percent') {
       set({ pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
       return;
     }
-    // The first scene of the image that is shown (the first of the view where nothing is shown yet); the index in the fields is
-    // measured as it will be drawn: the tile route with the same step, not the asset of the scene.
-    const url = viewStatisticsUrl(s);
-    if (!url) return;
+    // The area of the crop, else the first scene of the image that is shown (the first of the view where nothing is shown yet); the
+    // index in the fields is measured as it will be drawn: the tile route with the same step, not the asset of the scene.
+    const measure = viewMeasure(s);
+    if (!measure) return;
     set({ focusLoading: true });
     try {
-      const stats = await api.fetchStatisticsAt(url);
+      const { statistics: stats } = await measureView(measure);
       const range = autoRescale(stats);
-      if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
+      if (range && channels?.some((channel) => channel.percent)) {
+        const measured = { vmin: String(range[0]), vmax: String(range[1]) };
+        set({ pendingVmin: measured.vmin, pendingVmax: measured.vmax, pendingChannels: channels.map((channel) => (channel.percent ? usual(channel) : measured)), pendingUnit: 'value' });
+      } else if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
     } catch (e) {
       set({ notice: `Could not measure a stretch automatically: ${(e as Error).message}` });
     } finally {
@@ -3281,7 +3372,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // meaningful coarse-tile preview shows the found scene in full
     // resolution directly — a scene lookup carries no AOI, so this is
     // always "View full selection", never a crop.
-    if (dataset?.browse === 'full_resolution') await get().enterFocus(false);
+    if (dataset?.browse === 'full_resolution') await get().enterFocus(false, false);
   },
 }));
 
