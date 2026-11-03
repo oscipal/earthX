@@ -120,8 +120,8 @@ export default function DownloadDialog() {
     const waiting = bandsLoading || (!inBrowser && (jobNote === null || jobNote.state === 'estimating'));
     return (
       <>
-        <div className="dialog-backdrop" onClick={close}>
-          <div className="panel dialog-panel dialog-download" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-backdrop">
+          <div className="panel dialog-panel dialog-download">
             <div className="results-head">
               <h2>{sceneTotal === 1 ? 'Download full scene' : 'Download full scenes'}</h2>
               <CloseButton title="Close. This stops a download that is still running." onClick={close} />
@@ -181,8 +181,8 @@ export default function DownloadDialog() {
     // the confirmation UI rather than adding to it, so there is nothing left
     // here to confirm a second time — just the one thing still worth saying.
     return (
-      <div className="dialog-backdrop" onClick={close}>
-        <div className="panel dialog-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="dialog-backdrop">
+        <div className="panel dialog-panel">
           <div className="results-head">
             <h2>Download crop</h2>
             <CloseButton onClick={close} />
@@ -226,8 +226,8 @@ export default function DownloadDialog() {
 
   return (
     <>
-      <div className="dialog-backdrop" onClick={close}>
-        <div className="panel dialog-panel dialog-download" onClick={(e) => e.stopPropagation()}>
+      <div className="dialog-backdrop">
+        <div className="panel dialog-panel dialog-download">
           <div className="results-head">
             <h2>Download crop</h2>
             <CloseButton onClick={close} />

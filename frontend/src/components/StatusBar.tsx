@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { zoomFloorHint } from '../datasets';
 import { hasResultsPanel } from '../sections';
 import { useAppStore } from '../store';
+import CloseButton from './CloseButton';
 
 export default function StatusBar() {
   const error = useAppStore((s) => s.error);
@@ -69,17 +70,13 @@ export default function StatusBar() {
       {error && (
         <div className="toast error" role="alert">
           <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} aria-label="Dismiss">
-            ✕
-          </button>
+          <CloseButton onClick={() => setError(null)} />
         </div>
       )}
       {notice && (
         <div className="toast notice fade" key={notice}>
           <span>{notice}</span>
-          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss">
-            ✕
-          </button>
+          <CloseButton onClick={() => setNotice(null)} />
         </div>
       )}
       {/* A state, not an event: it stands as long as the zoom does, so it carries

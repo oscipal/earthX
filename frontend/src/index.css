@@ -3452,7 +3452,7 @@ a.pm-icon:hover {
   border: 1px solid var(--panel-border);
   background: var(--panel-bg);
 }
-.toast button {
+.toast button:not(.close-x) {
   background: none;
   border: none;
   color: inherit;
