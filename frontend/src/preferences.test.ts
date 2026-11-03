@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BASEMAP_IDS } from './basemaps';
-import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
+import { forgetJobsWindow, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 
 // No jsdom in this project (Vitest runs plain Node) — a minimal
 // localStorage stand-in is enough to exercise the module under test.
@@ -240,5 +240,37 @@ describe('loadResultsOnMap (Otto, 27.10.2026)', () => {
     expect(loadBasemap()).toBe('satellite');
     expect(loadTheme()).toBe('tech');
     expect(loadProjection()).toBe('mercator');
+  });
+});
+
+describe('the old place of the window of the jobs (UI-03c, gone with #283)', () => {
+  it('is deleted once, and nothing else with it', () => {
+    storage.setItem('earthx.jobsWindow', '{"x":10,"y":10,"width":480,"height":400}');
+    saveTheme('normal');
+    forgetJobsWindow();
+    expect(storage.getItem('earthx.jobsWindow')).toBeNull();
+    expect(loadTheme()).toBe('normal');
+  });
+
+  it('does nothing for a storage that holds no entry', () => {
+    expect(() => forgetJobsWindow()).not.toThrow();
+    expect(storage.length).toBe(0);
+  });
+
+  it('does not throw when the storage is locked or throws', () => {
+    vi.stubGlobal('window', {
+      localStorage: {
+        removeItem: () => {
+          throw new Error('blocked');
+        },
+      },
+    });
+    expect(() => forgetJobsWindow()).not.toThrow();
+    vi.stubGlobal('window', {
+      get localStorage(): Storage {
+        throw new DOMException('denied', 'SecurityError');
+      },
+    });
+    expect(() => forgetJobsWindow()).not.toThrow();
   });
 });

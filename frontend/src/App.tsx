@@ -18,6 +18,7 @@ import TipLayer from './components/TipLayer';
 import { dockPanelId } from './dock';
 import { inspectorKindOf } from './inspectorKind';
 import { openPermalinkInAddress } from './permalink';
+import { forgetJobsWindow } from './preferences';
 import { useProcessingStore } from './processingStore';
 import { ticksOfSearch, useAppStore } from './store';
 
@@ -45,6 +46,11 @@ export default function App() {
   useEffect(() => {
     void loadDatasets().then(openPermalinkInAddress);
   }, [loadDatasets]);
+
+  // The old place of the floating window of the jobs is of no use any more.
+  useEffect(() => {
+    forgetJobsWindow();
+  }, []);
 
   // The jobs of this tab, kept across a reload (M4-13 F5 (1)).
   useEffect(() => {

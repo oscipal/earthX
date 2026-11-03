@@ -664,6 +664,12 @@ describe('the sheet under 900 px', () => {
 });
 
 describe('in the page', () => {
+  it('deletes the stored place of the old floating window of the jobs when it starts', () => {
+    localStorage.setItem('earthx.jobsWindow', '{"x":1,"y":1,"width":480,"height":400}');
+    act(() => root.render(<App />));
+    expect(localStorage.getItem('earthx.jobsWindow')).toBeNull();
+  });
+
   it('marks the app while the bar shows, so that the bands and the map controls make room, and not while the processing panel has the column', () => {
     act(() => root.render(<App />));
     const app = () => container.querySelector('.app')!;
