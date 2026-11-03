@@ -18,12 +18,12 @@ import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
 import { appliedRenderFrom, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { channelsOf } from '../channels';
-import { fetchStatisticsAt, withHistogram } from '../api';
 import { histogramOf, type Histogram } from '../histogram';
-import { colourView, datasetSavable, enhanceOn, shownImageOf, useAppStore, viewStatisticsUrl } from '../store';
+import { colourView, datasetSavable, enhanceOn, shownImageOf, useAppStore, viewMeasure } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
+import { measureView, type ViewMeasure } from '../viewMeasure';
 import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Eye from './Eye';
@@ -40,8 +40,8 @@ const INDEX_ONLY_TIP = 'This layer holds the index only';
 const ENHANCE_RGB_TIP = 'Stretch red, green and blue each from its 2nd to its 98th percentile and draw them. Only the look: Add to layers pins the whole view.';
 
 // The histograms of the bands the statistics name, in their order; none where one band has none.
-async function loadHistograms(url: string): Promise<Histogram[] | null> {
-  const read = Object.values(await fetchStatisticsAt(url)).map((band) => histogramOf(band));
+async function loadHistograms(measure: ViewMeasure): Promise<Histogram[] | null> {
+  const read = Object.values((await measureView(measure, { histogram: true })).statistics).map((band) => histogramOf(band));
   return read.length > 0 && read.every((h) => h !== null) ? (read as Histogram[]) : null;
 }
 
@@ -118,8 +118,8 @@ export default function ViewerControls() {
   const enhanced = useAppStore(enhanceOn);
   // The colour picture in the fields: a range for each channel (UI-03d).
   const colour = useAppStore(colourView);
-  const statisticsUrl = useAppStore(viewStatisticsUrl);
-  const histograms = useHistograms(statisticsUrl && withHistogram(statisticsUrl), () => loadHistograms(withHistogram(statisticsUrl!)));
+  const measure = useAppStore(viewMeasure);
+  const histograms = useHistograms(measure && measure.key, () => loadHistograms(measure!));
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const images = useMemo(

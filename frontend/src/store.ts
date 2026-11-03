@@ -84,6 +84,8 @@ import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
+import { canonicalJson } from './processing';
+import { areaQuestionOf, measureView, SCENE_MEASURE_NOTICE, type ViewMeasure } from './viewMeasure';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -669,13 +671,33 @@ export function colourView(s: AppState): boolean {
 // Whether "Enhance contrast" is on: the fields still ask for the look it drew.
 export const enhanceOn = (s: AppState): boolean => s.enhance !== null && !lookChanged(s.enhance.look, s);
 
-// The statistics the fields of the view are measured with (`autoStretch`, the histograms of "Scale"): the first scene of the image
-// shown, the index of the fields as the tile route computes it, else the asset of the band in the fields. `null` before a scene is open.
-export function viewStatisticsUrl(s: AppState): string | null {
+// What the fields of the view are measured with (`autoStretch`, "Enhance contrast", the histograms of "Scale"): the area of the crop where
+// the view is cropped to the AOI and the tiler takes it (UI-03e), else the first scene of the image shown, the index of the fields as the
+// tile route computes it, else the asset of the band in the fields. `null` before a scene is open. One object for one state of its inputs,
+// so that a component can select it.
+let measureKept: { inputs: unknown[]; value: ViewMeasure | null } | null = null;
+
+export function viewMeasure(s: AppState): ViewMeasure | null {
+  const inputs = [s.shownImage, s.downloaded, s.sections, s.openSectionId, s.datasetId, s.items, s.groups, s.datasets, s.pendingBand, s.pendingIndex, s.cropToAoi, s.viewAoi];
+  if (measureKept && measureKept.inputs.every((input, i) => Object.is(input, inputs[i]))) return measureKept.value;
+  const value = measureOfView(s);
+  measureKept = { inputs, value };
+  return value;
+}
+
+function measureOfView(s: AppState): ViewMeasure | null {
   const { itemId, info } = firstSceneOfView(s);
   if (!info || itemId === undefined) return null;
-  const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
-  return index ? indexStatisticsUrl(info.datasetId, itemId, index) : api.buildStatisticsUrl(info.datasetId, itemId, assetOfLook(info, { band: s.pendingBand || undefined }));
+  const collection = s.datasets.find((d) => d.id === info.datasetId)?.collection;
+  const index = viewIndexOf({ index: s.pendingIndex }, collection);
+  const asset = assetOfLook(info, { band: s.pendingBand || undefined });
+  const sceneUrl = index ? indexStatisticsUrl(info.datasetId, itemId, index) : api.buildStatisticsUrl(info.datasetId, itemId, asset);
+  const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+  const ids = shown?.ids ?? [itemId];
+  const known = new Map(sectionsForView(s).flatMap((section) => section.items).map((item) => [item.id, item]));
+  const items = ids.flatMap((id) => known.get(id) ?? []);
+  const area = areaQuestionOf({ datasetId: info.datasetId, collection, items: items.length === ids.length ? items : [], aoi: s.cropToAoi ? s.viewAoi : null, index, asset });
+  return { sceneUrl, area, key: area ? `${sceneUrl}\n${canonicalJson(area.order)}` : sceneUrl };
 }
 
 function firstSceneOfView(s: AppState): { itemId: string | undefined; info: DownloadedInfo | undefined } {
@@ -731,15 +753,13 @@ async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
     set({ notice: checked.problem });
     return;
   }
-  const { itemId, info } = firstSceneOfView(s);
-  if (!info || itemId === undefined) return;
-  const index = viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection);
+  const measure = viewMeasure(s);
+  if (!measure) return;
   const asked = [checked.low, checked.high].filter((n) => n !== 0 && n !== 100);
   set({ focusLoading: true });
   try {
-    const stats = index
-      ? await api.fetchStatisticsAt(api.withPercentiles(indexStatisticsUrl(info.datasetId, itemId, index), asked))
-      : await api.fetchStatistics(info.datasetId, itemId, assetOfLook(info, { band: s.pendingBand || undefined }), asked);
+    const { statistics: stats, fellBack } = await measureView(measure, { percentiles: asked });
+    if (fellBack) set({ notice: SCENE_MEASURE_NOTICE });
     // A colour picture takes each channel at the percentiles of its own values (UI-03d).
     const channels = colourView(s) ? channelsAtPercent(Object.values(stats), checked) : null;
     const range = rescaleAtPercent(Object.values(stats), checked);
@@ -2837,13 +2857,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
       return;
     }
-    // The first scene of the image that is shown (the first of the view where nothing is shown yet); the index in the fields is
-    // measured as it will be drawn: the tile route with the same step, not the asset of the scene.
-    const url = viewStatisticsUrl(s);
-    if (!url) return;
+    // The area of the crop, else the first scene of the image that is shown (the first of the view where nothing is shown yet); the
+    // index in the fields is measured as it will be drawn: the tile route with the same step, not the asset of the scene.
+    const measure = viewMeasure(s);
+    if (!measure) return;
     set({ focusLoading: true });
     try {
-      const stats = await api.fetchStatisticsAt(url);
+      const { statistics: stats, fellBack } = await measureView(measure);
+      if (fellBack) set({ notice: SCENE_MEASURE_NOTICE });
       const range = autoRescale(stats);
       if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
     } catch (e) {
