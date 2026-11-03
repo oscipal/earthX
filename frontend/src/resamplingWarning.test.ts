@@ -95,6 +95,20 @@ describe('describeResampling', () => {
     expect(scenes.scenes).toBe('2 of 5 scenes lie in another UTM zone and are warped to the zone of most scenes.');
   });
 
+  it('says what averaging and the mix of both do for a common resolution (NM4-75), on the grid in degrees', () => {
+    const facts = { ...FACTS, grid: { resolution: 20, crs: 'EPSG:4326' }, bands: [{ band: 'a_blue', resolution: 10, crs: null }], scenes: null };
+    const average = describeResampling({ label: null, resampling: { ...facts, method: 'average' } });
+    expect(average.grid).toBe('The values are brought to one grid of 20 m in EPSG:4326, by averaging.');
+    expect(average.meaning).toContain('averaged');
+    expect(average.meaning).toContain('most frequent class');
+    const mixed = describeResampling({ label: null, resampling: { ...facts, method: 'mixed' } });
+    expect(mixed.grid).toContain('by nearest neighbour and averaging');
+    expect(mixed.meaning).toContain('repeated');
+    expect(mixed.meaning).toContain('most frequent class');
+    expect(mixed.bands).toBe('Resampled: a_blue (10 m).');
+    expect(doc({ ...facts, method: 'mixed' }).resampling?.method).toBe('mixed');
+  });
+
   it('names a method it does not know as the server does, with a meaning that holds for every method', () => {
     const odd = describeResampling({ label: null, resampling: { ...FACTS, method: 'cubic' } });
     expect(odd.grid).toContain('by cubic.');

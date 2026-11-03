@@ -1079,14 +1079,19 @@ describe('download outcome (M3-17 plan §4)', () => {
       };
     }
 
-    it('a cropped layer: the crop outcome, known without any fetch', async () => {
+    it('a cropped layer: the crop outcome, known before any fetch; the bands are read from its first scene only (NM4-75)', async () => {
       useAppStore.setState({
         datasets: datasetsFrom([COG_DATASET]),
         layers: [layerFixture({ cropToAoi: true, aoi: AOI })],
       });
-      await useAppStore.getState().openDownloadDialog('L1');
+      vi.mocked(fetch).mockImplementation(async (url) => jsonResponse(200, cogScene(String(url).split('/').pop() ?? '')));
+      const opening = useAppStore.getState().openDownloadDialog('L1');
       expect(useAppStore.getState().downloadOutcome).toBe('crop');
-      expect(fetch).not.toHaveBeenCalled();
+      expect(useAppStore.getState().downloadBandsLoading).toBe(true);
+      await opening;
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().downloadItem?.id).toBe('S1');
+      expect(useAppStore.getState().downloadBandsLoading).toBe(false);
     });
 
     it('a "View full selection" Zarr layer without an AOI: disabled, known without any fetch', async () => {

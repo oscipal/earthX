@@ -223,6 +223,42 @@ describe('the offer', () => {
     });
   });
 
+  it('names the layout of the files in the order, for every form (NM4-75)', async () => {
+    const withLayout = offer();
+    withLayout.request = { ...withLayout.request, assets: ['b1', 'b2'], layout: { form: 'multi_band', resolution_m: 20 } };
+    open(withLayout);
+    await show();
+    const body = JSON.parse(calls('/processing/processes/recipe/estimate')[0][1].body as string);
+    expect(body.inputs.recipe.inputs[0].assets).toEqual(['b1', 'b2']);
+    expect(body.inputs.recipe.output).toEqual({
+      kind: 'crop',
+      format: 'cog',
+      resolution_factor: 1,
+      extent: 'bbox(aoi ∩ footprints)',
+      mask: 'file',
+      layout: { form: 'multi_band', resolution_m: 20 },
+    });
+    await click(EXPORT);
+    const placed = calls('/processing/processes/recipe/execution');
+    expect(JSON.parse(placed[0][1].body as string).inputs.recipe.output.layout).toEqual({ form: 'multi_band', resolution_m: 20 });
+  });
+
+  it('asks before the job where the bands are resampled: "Cancel" places nothing, "Continue" places the job', async () => {
+    routes['POST /processing/processes/recipe/estimate'] = () =>
+      json({ ...ESTIMATE, resampling: { grid: { resolution: 10, crs: null }, method: 'nearest', bands: [{ band: 'B05', resolution: 20, crs: null }], scenes: null } });
+    open();
+    await show();
+    await click(EXPORT);
+    expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain('Values are resampled');
+    expect(calls('/processing/processes/recipe/execution')).toHaveLength(0);
+    await click('Cancel');
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(calls('/processing/processes/recipe/execution')).toHaveLength(0);
+    await click(EXPORT);
+    await click('Continue');
+    expect(calls('/processing/processes/recipe/execution')).toHaveLength(1);
+  });
+
   it('waits for the estimate before the button can start a job', async () => {
     let answer!: (r: Response) => void;
     routes['POST /processing/processes/recipe/estimate'] = () =>

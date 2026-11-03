@@ -9,7 +9,7 @@ import type { ExportJobHint, ResolutionFactor } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
-import { isJobId } from './processing';
+import { isJobId, type ExportLayout } from './processing';
 import type { LicenseFlags, StacItem } from './types';
 
 // `groups` (M3-17, replacing the flat `items` list): item ids per group, in
@@ -22,6 +22,8 @@ export interface DownloadRequestInfo {
   groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
+  // How the chosen bands are laid out in files (NM4-75); left out for a dataset whose items list no bands to choose from.
+  layout?: ExportLayout;
 }
 
 // Which of the three P19 outcomes a download follows (M3-17 plan §4): the AOI
@@ -332,16 +334,17 @@ export function termsNoticeText(flags: LicenseFlags | null | undefined, language
   return flags?.terms_url ? text.replaceAll('{terms_url}', flags.terms_url) : text;
 }
 
-// The asset's own ground sample distance, in metres/pixel, the same order
-// `access/download.py::_asset_gsd` tries on the backend: the asset's own
-// `gsd`, then its pixel size read off `proj:transform` (a plain STAC item
-// carries no `raster:bands` the frontend already parses). `null` when
-// neither is present — the resolution dialog then shows the factor alone,
-// never a guessed number (F10c, M3-18 §10).
-function assetGsdMeters(item: StacItem, asset: string): number | null {
+// The asset's own ground sample distance, in metres/pixel: the asset's own
+// `gsd`, then the pixel size of its first band (`raster:bands`
+// `spatial_resolution`, NM4-75), then its pixel size read off
+// `proj:transform`. `null` when none is present — the resolution dialog then
+// shows the factor alone, never a guessed number (F10c, M3-18 §10).
+export function assetGsdMeters(item: StacItem, asset: string): number | null {
   const stacAsset = item.assets[asset];
   if (!stacAsset) return null;
   if (typeof stacAsset.gsd === 'number' && stacAsset.gsd > 0) return stacAsset.gsd;
+  const described = stacAsset['raster:bands']?.[0]?.spatial_resolution;
+  if (typeof described === 'number' && Number.isFinite(described) && described > 0) return described;
   const transform = stacAsset['proj:transform'];
   if (Array.isArray(transform) && typeof transform[0] === 'number' && transform[0] > 0) {
     return transform[0];

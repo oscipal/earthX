@@ -1,7 +1,10 @@
 import { create } from 'zustand';
 
 import * as api from './api';
-import type { CoverageResponse, PagesSoFar, ResolutionFactor } from './api';
+import type { CoverageResponse, DownloadForm, PagesSoFar, ResolutionFactor } from './api';
+import { bandTableOf, chosenBands, commonResolutionOf, defaultBandKeys, DEFAULT_FORM, layoutBlock, layoutOf, withBandChoice } from './bandChoice';
+import { downloadSceneJob, estimateSceneJob, resamplingOfOrder, sceneJobOrder, type JobNote } from './downloadJob';
+import type { ResamplingPart } from './resamplingWarning';
 import {
   anyMeasuresAoi,
   limitNote,
@@ -53,7 +56,7 @@ import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme,
 import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
 import { channelsAtOwnPercent, samePercents, CHANNEL_COUNT, CHANNEL_NAMES, type ChannelRange } from './channels';
-import { trueColorOf } from './processingOrder';
+import { buildExportOrder, isArea, trueColorOf } from './processingOrder';
 import { appliedRenderFrom, autoRescale, colourChannelsOf, colourInPercent, lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
@@ -594,6 +597,44 @@ function overlaysOfEntries(
 
 // The computing of the index of a download, which closing the dialog stops (`indexDownload.ts`).
 let indexDownloadAbort: AbortController | null = null;
+
+// The estimate and the run of the job of whole scenes (NM4-75, `downloadJob.ts`), which closing the dialog stops, and the wait before
+// an estimate is asked for after a change of the choice.
+let downloadJobAbort: AbortController | null = null;
+let downloadEstimateAbort: AbortController | null = null;
+let downloadJobTimer: ReturnType<typeof setTimeout> | undefined;
+const DOWNLOAD_ESTIMATE_DELAY_MS = 300;
+// What goes on once the person has confirmed the resampling warning of a download.
+let afterResampling: (() => void) | null = null;
+
+// The fields of the choice of bands for a dialog that opens with `item` as the scene the table is read from.
+function bandChoiceFor(dataset: DatasetOption | undefined, item: StacItem | null) {
+  return {
+    downloadItem: item,
+    downloadBandsLoading: false,
+    downloadBands: defaultBandKeys(bandTableOf(dataset?.collection, item)),
+    downloadForm: DEFAULT_FORM,
+    downloadCommonResolution: null,
+    downloadJobNote: null,
+    downloadResampling: null,
+    downloadStarted: false,
+  };
+}
+
+function stopDownloadJob(): void {
+  clearTimeout(downloadJobTimer);
+  downloadEstimateAbort?.abort();
+  downloadEstimateAbort = null;
+  downloadJobAbort?.abort();
+  downloadJobAbort = null;
+}
+
+// The dataset the open download dialog is about.
+function downloadDatasetOf(s: AppState): DatasetOption | undefined {
+  const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
+  const id = s.downloadSelection ? (s.downloadView?.datasetId ?? s.datasetId) : layer?.restore.datasetId;
+  return s.datasets.find((d) => d.id === id);
+}
 
 // What a pin is made from, to tell on arrival whether the view is still the one it was asked in.
 const pinKey = (s: AppState) =>
@@ -1472,6 +1513,21 @@ export interface AppState {
   // export job (M4-11b-2); the dialog shows the offer instead of an error.
   // Dropped with the dialog and with any change of the resolution.
   downloadExportOffer: ExportOffer | null;
+  // The choice of bands and files (NM4-75). The table of bands is read from one scene (`downloadItem`) and the collection; `null`
+  // where the scenes list no bands to choose from. `downloadBandsLoading`: the scene of a pinned layer is still being fetched.
+  downloadItem: StacItem | null;
+  downloadBandsLoading: boolean;
+  // The asset keys ticked.
+  downloadBands: string[];
+  downloadForm: DownloadForm;
+  // The common resolution picked, in metres; `null`: the finest of the ticked bands.
+  downloadCommonResolution: number | null;
+  // Whole scenes in a form that is a job: what the server expects it to cost, or why it refuses.
+  downloadJobNote: JobNote | null;
+  // The resampling a download will do, asked of the person before it starts (`ResamplingDialog`); `null` when nothing is asked.
+  downloadResampling: ResamplingPart[] | null;
+  // Whole scenes, one file per band: "Download" was pressed and the scenes are being loaded in the browser.
+  downloadStarted: boolean;
 
   // --- render params for a full-res raster, committed via "Apply" (F18) ---
   appliedRender: AppliedRender;
@@ -1639,6 +1695,12 @@ export interface AppState {
   openDownloadForView: (kind: 'crop' | 'originals') => void;
   closeDownloadDialog: () => void;
   setDownloadResolution: (factor: ResolutionFactor) => void;
+  setDownloadBands: (keys: string[]) => void;
+  setDownloadForm: (form: DownloadForm) => void;
+  setDownloadCommonResolution: (metres: number | null) => void;
+  // "Continue" and "Cancel" of the resampling warning that comes before a download.
+  confirmResampling: () => void;
+  declineResampling: () => void;
   confirmDownload: () => Promise<void>;
   // How far the download of an index is (NM4-14b): `null` for any other download.
   downloadStatus: string | null;
@@ -1773,6 +1835,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadPasses: null,
   downloadSkippedGroupsNotice: null,
   downloadExportOffer: null,
+  downloadItem: null,
+  downloadBandsLoading: false,
+  downloadBands: [],
+  downloadForm: DEFAULT_FORM,
+  downloadCommonResolution: null,
+  downloadJobNote: null,
+  downloadResampling: null,
+  downloadStarted: false,
 
   appliedRender: {},
   pendingColormapName: '',
@@ -2317,6 +2387,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadPasses: null,
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
+      ...bandChoiceFor(undefined, null),
       error: null,
     });
     const s = get();
@@ -2326,6 +2397,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ downloadOutcome: outcome, downloadAs: 'raw', downloadIndexNote: null });
     // A layer of an index alone is downloaded as that index (UI-03d, as in NM4-14b): there are no raw bands to choose.
     if (layer.restore.indexOnly && indexOfferedFor(layer, s.datasets)) void get().setDownloadAs('index');
+    if (outcome === 'crop') {
+      // The bands to choose from are those of the layer's scenes: one of them tells (NM4-75).
+      const datasetId = layer.restore.datasetId;
+      const dataset = s.datasets.find((d) => d.id === datasetId);
+      const first = layer.restore.itemIds[0];
+      if (!datasetId || !dataset || first === undefined) return;
+      set({ downloadBandsLoading: true });
+      try {
+        const item = await api.fetchItem(datasetId, first);
+        if (get().downloadDialogLayerId === id) set(bandChoiceFor(dataset, item ?? null));
+      } catch (e) {
+        if (get().downloadDialogLayerId === id) {
+          set({ error: `Could not load the bands: ${(e as Error).message}`, downloadBandsLoading: false });
+        }
+      }
+      return;
+    }
     if (outcome !== 'originals') return;
     const datasetId = layer.restore.datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
@@ -2334,6 +2422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ downloadOriginalLinks: [] });
       return;
     }
+    set({ downloadBandsLoading: true });
     const hosts = assetHostsOf(dataset);
     try {
       const fetched = await Promise.all(layer.restore.itemIds.map((itemId) => api.fetchItem(datasetId, itemId)));
@@ -2346,11 +2435,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Still the dialog open for this same layer? The user may have closed
       // it, or opened another one, while the fetch was in flight.
       if (get().downloadDialogLayerId === id) {
-        set({ downloadOriginalLinks: originalFileLinks(groups, [asset], hosts), downloadPasses: groups });
+        set({ downloadOriginalLinks: originalFileLinks(groups, [asset], hosts), downloadPasses: groups, ...bandChoiceFor(dataset, items[0] ?? null) });
       }
     } catch (e) {
       if (get().downloadDialogLayerId === id) {
-        set({ error: `Could not load the original files: ${(e as Error).message}`, downloadOriginalLinks: [] });
+        set({ error: `Could not load the original files: ${(e as Error).message}`, downloadOriginalLinks: [], downloadBandsLoading: false });
       }
     }
   },
@@ -2389,6 +2478,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloadPasses: null,
         downloadSkippedGroupsNotice: null,
         downloadExportOffer: null,
+        ...bandChoiceFor(dataset, items[0]),
         error: null,
       });
       return;
@@ -2414,6 +2504,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadPasses: groups,
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
+      ...bandChoiceFor(dataset, items[0]),
       error: null,
     });
   },
@@ -2450,6 +2541,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadResolution: 1 as const,
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
+      ...bandChoiceFor(dataset, items[0]),
       error: null,
     };
     if (kind === 'crop') {
@@ -2461,8 +2553,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ ...open, downloadOutcome: 'originals', downloadOriginalLinks: asset ? originalFileLinks(groups, [asset], assetHostsOf(dataset)) : [], downloadPasses: groups });
   },
   closeDownloadDialog: () => {
-    // Closing the dialog stops the computing of an index (what it placed is dismissed).
+    // Closing the dialog stops the computing of an index or of the files of whole scenes (what it placed is dismissed).
     indexDownloadAbort?.abort();
+    stopDownloadJob();
+    afterResampling = null;
     set({
       downloadDialogLayerId: null,
       downloadSelection: false,
@@ -2475,6 +2569,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadIndexNote: null,
       downloadAs: 'raw',
       downloadStatus: null,
+      ...bandChoiceFor(undefined, null),
     });
   },
   // The dialog of a layer that shows an index offers its raw bands and the index; the index asks what its job will cost when it is chosen.
@@ -2498,26 +2593,52 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!controller.signal.aborted && get().downloadDialogLayerId === layer.id) set({ downloadIndexNote: note });
   },
   setDownloadResolution: (factor) => set({ downloadResolution: factor, downloadExportOffer: null }),
+  // The bands ticked, the form of the files and the common resolution (NM4-75). Any of them asks the job of whole scenes anew what it costs.
+  setDownloadBands: (keys) => {
+    set({ downloadBands: keys, downloadExportOffer: null });
+    refreshJobEstimate();
+  },
+  setDownloadForm: (form) => {
+    // A coarser factor goes with one file per band only.
+    set((s) => ({ downloadForm: form, downloadResolution: form === 'per_band' ? s.downloadResolution : 1, downloadExportOffer: null }));
+    refreshJobEstimate();
+  },
+  setDownloadCommonResolution: (metres) => {
+    set({ downloadCommonResolution: metres, downloadExportOffer: null });
+    refreshJobEstimate();
+  },
+  confirmResampling: () => {
+    const go = afterResampling;
+    afterResampling = null;
+    set({ downloadResampling: null });
+    go?.();
+  },
+  declineResampling: () => {
+    afterResampling = null;
+    set({ downloadResampling: null, downloading: false, downloadStatus: null });
+  },
 
-  // Download the AOI crop for whatever the dialog is open for (M2-06's
-  // `POST /collections/{dataset}/download`, M2-07d; V-4 added the selection
-  // case). Only ever called for the 'crop' outcome — the 'originals' outcome
-  // has no single request to confirm, just the links the dialog already
-  // shows (M3-17 plan §6, F2 option 1). `downloadRequestFor`/
-  // `downloadRequestForSelection` already refused anything incomplete, so a
-  // missing request here only means the layer was removed, or the
-  // selection/AOI changed, while the dialog was open.
+  // Download what the dialog is open for. The AOI crop (M2-06's `POST /collections/{dataset}/download`, M2-07d; V-4 added the
+  // selection case) is one request. For whole scenes (the 'originals' outcome) it starts what the choice says (NM4-75): one file per
+  // band is loaded in the browser from the source (`OriginalFiles` runs once `downloadStarted` is set), the other forms are a job on
+  // the platform, placed, waited for and downloaded here with no job in the list. `downloadRequestFor`/`downloadRequestForSelection`
+  // already refused anything incomplete, so a missing request here only means the layer was removed, or the selection/AOI changed,
+  // while the dialog was open.
   confirmDownload: async () => {
     const s = get();
+    if (s.downloadOutcome === 'originals') {
+      await startWholeScenes(s);
+      return;
+    }
     const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
     const view = s.downloadSelection ? s.downloadView : null;
     const dataset = s.datasets.find((d) => d.id === (view?.datasetId ?? s.datasetId));
     const sceneIds = view ? [view.items.map((it) => it.id)] : groupItemIdsFor(selectionItemsFrom(s).map((it) => it.id), s.groups);
-    const req = s.downloadSelection ? downloadRequestForSelection(dataset, sceneIds, s.aoi) : layer && downloadRequestFor(layer, s.datasets);
+    const asked = s.downloadSelection ? downloadRequestForSelection(dataset, sceneIds, s.aoi) : layer && downloadRequestFor(layer, s.datasets);
     const name = s.downloadSelection
       ? `${dataset?.title ?? s.datasetId ?? '?'} · ${view?.label ?? s.groups[s.activeGroupIndex]?.label ?? ''}`
       : (layer?.name ?? '');
-    if (!req) {
+    if (!asked) {
       set({ downloadDialogLayerId: null, downloadSelection: false, downloadView: null, downloadOutcome: null });
       return;
     }
@@ -2546,57 +2667,91 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return;
     }
-    set({ downloading: true, error: null, downloadExportOffer: null });
-    try {
-      const result = await api.downloadCrop({
-        datasetId: req.datasetId,
-        groups: req.groups,
-        assets: req.assets,
-        aoi: req.aoi,
-        resolution: s.downloadResolution,
-      });
-      const url = URL.createObjectURL(result.blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${req.datasetId}-crop.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-      if (result.skippedGroups > 0) {
-        // A group never touched the AOI at all and was left out of the ZIP
-        // (`api/tiler.py::download_crop`) — the user has to see that now, not
-        // only by counting files inside the archive, so the dialog stays
-        // open with this instead of closing on success (review finding).
-        set({
-          downloadSkippedGroupsNotice:
-            `${result.skippedGroups} of ${result.totalGroups} group${result.totalGroups === 1 ? '' : 's'} ` +
-            `did not overlap the AOI and ${result.skippedGroups === 1 ? 'was' : 'were'} skipped.`,
-        });
-      } else {
-        set({
-          downloadDialogLayerId: null,
-          downloadSelection: false,
-          downloadView: null,
-          downloadOutcome: null,
-          notice: `Downloaded "${name}".`,
-        });
+    // The bands, the form and the common resolution of the dialog (NM4-75).
+    const table = bandTableOf(downloadDatasetOf(s)?.collection, s.downloadItem);
+    const bands = chosenBands(table, s.downloadBands);
+    const picked = commonResolutionOf(bands, s.downloadCommonResolution);
+    if (table.length > 0) {
+      const block = layoutBlock(s.downloadForm, bands, picked);
+      if (block) {
+        set({ error: block });
+        return;
       }
-    } catch (e) {
-      const { aoi } = req;
-      if (
-        e instanceof api.HttpError &&
-        e.exportJob &&
-        s.downloadResolution === 1 &&
-        (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon')
-      ) {
-        set({
-          downloadExportOffer: { id: ++exportOffers, request: { ...req, aoi }, message: e.message, exportJob: e.exportJob },
-        });
-      } else {
-        set({ error: `Download failed: ${(e as Error).message}` });
-      }
-    } finally {
-      set({ downloading: false });
     }
+    const req = withBandChoice(asked, table, s.downloadBands, s.downloadForm, s.downloadCommonResolution);
+    const resolution = table.length > 0 && s.downloadForm !== 'per_band' ? 1 : s.downloadResolution;
+    const send = async () => {
+      set({ downloading: true, error: null, downloadExportOffer: null });
+      try {
+        const result = await api.downloadCrop({
+          datasetId: req.datasetId,
+          groups: req.groups,
+          assets: req.assets,
+          aoi: req.aoi,
+          resolution,
+          ...(req.layout ? { form: req.layout.form, commonResolution: req.layout.resolution_m } : {}),
+        });
+        const url = URL.createObjectURL(result.blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${req.datasetId}-crop.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+        if (result.skippedGroups > 0) {
+          // A group never touched the AOI at all and was left out of the ZIP
+          // (`api/tiler.py::download_crop`) — the user has to see that now, not
+          // only by counting files inside the archive, so the dialog stays
+          // open with this instead of closing on success (review finding).
+          set({
+            downloadSkippedGroupsNotice:
+              `${result.skippedGroups} of ${result.totalGroups} group${result.totalGroups === 1 ? '' : 's'} ` +
+              `did not overlap the AOI and ${result.skippedGroups === 1 ? 'was' : 'were'} skipped.`,
+          });
+        } else {
+          set({
+            downloadDialogLayerId: null,
+            downloadSelection: false,
+            downloadView: null,
+            downloadOutcome: null,
+            notice: `Downloaded "${name}".`,
+          });
+        }
+      } catch (e) {
+        const { aoi } = req;
+        if (
+          e instanceof api.HttpError &&
+          e.exportJob &&
+          resolution === 1 &&
+          (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon')
+        ) {
+          set({
+            downloadExportOffer: { id: ++exportOffers, request: { ...req, aoi }, message: e.message, exportJob: e.exportJob },
+          });
+        } else {
+          set({ error: `Download failed: ${(e as Error).message}` });
+        }
+      } finally {
+        set({ downloading: false });
+      }
+    };
+    // Scenes of a mosaic may lie in different UTM zones, and a form other than one file per band may bring bands to one grid: the
+    // platform says whether anything is resampled, and the person confirms before the download (NM4-65 part 7).
+    const mayResample = req.layout !== undefined && (req.layout.form !== 'per_band' || req.groups.some((group) => group.length > 1));
+    if (mayResample && isArea(req.aoi)) {
+      set({ downloading: true, error: null, downloadExportOffer: null });
+      const controller = new AbortController();
+      downloadJobAbort = controller;
+      const order = buildExportOrder({ datasetId: req.datasetId, groups: req.groups, assets: req.assets, aoi: req.aoi, layout: req.layout });
+      const parts = await resamplingOfOrder(order, controller.signal);
+      if (downloadJobAbort === controller) downloadJobAbort = null;
+      if (controller.signal.aborted) return;
+      if (parts.length > 0) {
+        afterResampling = () => void send();
+        set({ downloadResampling: parts });
+        return;
+      }
+    }
+    await send();
   },
 
   // Enter full-resolution viewing (F10, M2-07b): build a tile URL per selected
@@ -3416,3 +3571,81 @@ useAppStore.subscribe((s, prev) => {
 useAppStore.subscribe((s, prev) => {
   if (prev.viewOfLayer && prev.viewLayerId !== null && (!s.viewOfLayer || s.viewLayerId !== prev.viewLayerId)) s.revertViewLayer(prev.viewLayerId);
 });
+
+// What the job of whole scenes will cost, asked of the platform after the choice has rested a moment; only for a form that is a job.
+function refreshJobEstimate(): void {
+  clearTimeout(downloadJobTimer);
+  downloadEstimateAbort?.abort();
+  downloadEstimateAbort = null;
+  const s = useAppStore.getState();
+  const dataset = downloadDatasetOf(s);
+  const bands = chosenBands(bandTableOf(dataset?.collection, s.downloadItem), s.downloadBands);
+  const common = commonResolutionOf(bands, s.downloadCommonResolution);
+  const order =
+    s.downloadOutcome === 'originals' && s.downloadForm !== 'per_band' && dataset && layoutBlock(s.downloadForm, bands, common) === null
+      ? sceneJobOrder({ datasetId: dataset.id, passes: s.downloadPasses ?? [], assets: bands.map((band) => band.asset), layout: layoutOf(s.downloadForm, common) })
+      : null;
+  if (!order) {
+    useAppStore.setState({ downloadJobNote: null });
+    return;
+  }
+  useAppStore.setState({ downloadJobNote: { state: 'estimating' } });
+  const controller = new AbortController();
+  downloadEstimateAbort = controller;
+  downloadJobTimer = setTimeout(() => {
+    void estimateSceneJob(order, controller.signal).then((note) => {
+      if (!controller.signal.aborted) useAppStore.setState({ downloadJobNote: note });
+    });
+  }, DOWNLOAD_ESTIMATE_DELAY_MS);
+}
+
+// "Download" of whole scenes. One file per band (and a dataset whose items list no bands) is loaded in the browser from the source:
+// `OriginalFiles` starts once `downloadStarted` is set. One file per resolution and one multi-band file are a job on the platform, placed,
+// waited for and downloaded here; the person never sees it in the list of jobs.
+async function startWholeScenes(s: AppState): Promise<void> {
+  const dataset = downloadDatasetOf(s);
+  const table = bandTableOf(dataset?.collection, s.downloadItem);
+  const bands = chosenBands(table, s.downloadBands);
+  if (table.length > 0 && bands.length === 0) return;
+  if (table.length === 0 || s.downloadForm === 'per_band') {
+    useAppStore.setState({ downloadStarted: true, error: null });
+    return;
+  }
+  const common = commonResolutionOf(bands, s.downloadCommonResolution);
+  const block = layoutBlock(s.downloadForm, bands, common);
+  const order = dataset
+    ? sceneJobOrder({ datasetId: dataset.id, passes: s.downloadPasses ?? [], assets: bands.map((band) => band.asset), layout: layoutOf(s.downloadForm, common) })
+    : null;
+  const note = s.downloadJobNote;
+  // Only what the estimate let through (or a try that failed, which may be tried again).
+  if (block || !order || (note?.state !== 'ready' && note?.state !== 'failed')) return;
+  const run = async () => {
+    const controller = new AbortController();
+    downloadJobAbort = controller;
+    useAppStore.setState({ downloading: true, error: null, downloadStatus: 'Preparing…' });
+    const problem = await downloadSceneJob({ order, signal: controller.signal, onStatus: (text) => useAppStore.setState({ downloadStatus: text }) });
+    if (downloadJobAbort === controller) downloadJobAbort = null;
+    if (controller.signal.aborted) {
+      useAppStore.setState({ downloading: false, downloadStatus: null });
+    } else if (problem) {
+      // The reason stays in the dialog, which may try again.
+      useAppStore.setState({ downloading: false, downloadStatus: null, downloadJobNote: { state: 'failed', ...problem, parts: note.parts } });
+    } else {
+      useAppStore.setState({
+        downloading: false,
+        downloadStatus: null,
+        downloadDialogLayerId: null,
+        downloadSelection: false,
+        downloadView: null,
+        downloadOutcome: null,
+        notice: `Downloaded "${dataset?.title ?? ''}".`,
+      });
+    }
+  };
+  if (note.parts.length > 0) {
+    afterResampling = () => void run();
+    useAppStore.setState({ downloadResampling: note.parts });
+    return;
+  }
+  await run();
+}

@@ -189,10 +189,13 @@ const placed = () => fetchMock.mock.calls.filter(([u, init]) => String(u).endsWi
 const linksShown = () => [...container.querySelectorAll('.dialog-original-links a')].map((a) => a.textContent).sort();
 
 describe('beside the download (Zusatz 1a, NM4-33)', () => {
-  it('starts the download without a question, and offers the merge next to it without starting a job', async () => {
+  it('starts the download with "Download", and offers the merge beside it without starting a job', async () => {
     open();
     await show();
     expect(container.querySelector('[role="group"]')).toBeNull();
+    expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(0);
+    expect(buttons(MERGED)).toHaveLength(1);
+    await press('Download');
     expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
     expect(buttons(MERGED)).toHaveLength(1);
     expect(container.querySelector('.dialog-mosaics')).toBeNull();
@@ -285,7 +288,9 @@ describe('beside the download (Zusatz 1a, NM4-33)', () => {
 
   it('opening the merge does not stop the download', async () => {
     open();
-    await showMerged();
+    await show();
+    await press('Download');
+    await press(MERGED);
     expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
     expect(container.textContent).not.toContain('Cancelled');
   });
@@ -312,6 +317,7 @@ describe('beside the download (Zusatz 1a, NM4-33)', () => {
     expect(buttons(MERGED)[0].disabled).toBe(true);
     expect(buttons(MERGED)[0].title).toContain('licence does not permit processing');
     expect(container.textContent).not.toContain('Contains modified');
+    await press('Download');
     expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
     expect(linksShown()).toHaveLength(4);
     expect(placed()).toHaveLength(0);

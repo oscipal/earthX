@@ -5,7 +5,7 @@
 //
 // Nothing here logs or stores an order: it carries the AOI (Q8).
 
-import { jsonOrThrow } from './api';
+import { jsonOrThrow, type DownloadForm } from './api';
 import type { Bbox } from './types';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
@@ -56,13 +56,21 @@ export interface RasterOutput {
   bands: string[];
 }
 
-// An export (M4-11 §3.1): the crop of the download dialog, computed as a job.
+// How the bands of an export lie in files (NM4-75): one file per band, one per resolution, or one at a common resolution
+// (`resolution_m`, that form only).
+export interface ExportLayout {
+  form: DownloadForm;
+  resolution_m?: number;
+}
+
+// An export (M4-11 §3.1): the crop of the download dialog, computed as a job. Without `layout` every band is a file of its own.
 export interface CropOutput {
   kind: 'crop';
   format: 'cog';
   resolution_factor: 1;
   extent: 'bbox(aoi ∩ footprints)';
   mask: 'file';
+  layout?: ExportLayout;
 }
 
 // Where a place-search AOI came from (M4-11 F4, M4-30): sent next to the order
@@ -85,6 +93,8 @@ export interface Estimate {
 
 // Which bands the job brings to one grid, and how (`resampling` of the estimate, NM4-65 part 7): the grid, the method, the value
 // bands whose source lies on another grid, and the scenes of another UTM zone. The server writes it from the recipe alone.
+// `method`: `nearest`, `bilinear`, and for the layouts of NM4-75 `average` (a common resolution coarser than a band) and `mixed` (both ways
+// in one file); for a layout `grid.crs` is EPSG:4326 and `bands[].band` is the asset key.
 export interface Resampling {
   grid: { resolution: number; crs: string | null };
   method: string;

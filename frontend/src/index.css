@@ -3272,6 +3272,81 @@ a.pm-icon:hover {
   padding: 10px 14px;
   border-top: 1px solid var(--panel-border);
 }
+/* The download dialog (NM4-75): the choice of bands and files. Controls are as high as the others (a finger on a touch screen). */
+.dialog-download {
+  width: 420px;
+}
+.dialog-download .dialog-actions .lm-btn {
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border-color: var(--panel-border);
+}
+.dialog-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+.dialog-choice-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dialog-choice-label {
+  font-weight: var(--weight-semibold);
+}
+.dialog-choice-head .hint-text {
+  margin: 0 auto 0 0;
+}
+.dialog-choice-btn {
+  min-height: var(--control-height);
+  min-width: var(--control-height);
+  padding: 0 var(--space-2);
+  border-color: var(--panel-border);
+}
+.dialog-bands {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
+}
+.dialog-band {
+  display: grid;
+  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: 0 var(--space-2);
+  cursor: pointer;
+}
+.dialog-band input {
+  margin: 0;
+}
+.dialog-band-detail,
+.dialog-band-res {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.dialog-band-res {
+  text-align: right;
+  white-space: nowrap;
+}
+.dialog-forms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.dialog-common {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dialog-common select {
+  min-height: var(--control-height);
+}
 .lm-btn.primary {
   border-color: var(--accent);
   color: var(--accent);

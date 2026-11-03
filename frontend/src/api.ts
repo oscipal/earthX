@@ -813,6 +813,9 @@ export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse
 export const RESOLUTION_FACTORS = [1, 2, 4, 10] as const;
 export type ResolutionFactor = (typeof RESOLUTION_FACTORS)[number];
 
+// The three forms of the files of a download (NM4-75), named as the server names them.
+export type DownloadForm = 'per_band' | 'per_resolution' | 'multi_band';
+
 // `groups` (M3-17, replacing the flat `items` list): item ids per group,
 // mirroring `DownloadRequest.groups` in `api/tiler.py` — one merged file per
 // group, separate groups as separate files in the same ZIP (P19). A single
@@ -823,6 +826,10 @@ export interface DownloadCropRequest {
   assets: string[];
   aoi: GeoJSON.Geometry;
   resolution?: ResolutionFactor;
+  // NM4-75: how the chosen bands lie in files. `resolution` is `1` for every form but `per_band`; `commonResolution` (metres)
+  // goes with `multi_band` and with no other. Left out, the server writes one file per band, as before.
+  form?: DownloadForm;
+  commonResolution?: number;
 }
 
 // `totalGroups`/`skippedGroups` (M3-17, review finding 1): `X-Total-Groups`/
@@ -854,6 +861,8 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCr
       assets: req.assets,
       aoi: req.aoi,
       resolution: req.resolution ?? 1,
+      ...(req.form ? { form: req.form } : {}),
+      ...(req.form === 'multi_band' && req.commonResolution !== undefined ? { common_resolution: req.commonResolution } : {}),
     }),
   });
   if (!res.ok) throw await httpErrorOf(res, { exportJob: res.status === 413 ? exportJobHint(res) : undefined });

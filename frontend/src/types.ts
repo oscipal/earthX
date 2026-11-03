@@ -30,6 +30,14 @@ export interface StacAsset {
   // frontend reads no extension prefix of one source (M3-12).
   'raster:bands'?: StacBand[] | null;
   bands?: StacBand[] | null;
+  // STAC electro-optical extension: the name, common name and centre wavelength (micrometres) of the band an asset holds (NM4-75).
+  'eo:bands'?: EoBand[] | null;
+}
+
+export interface EoBand {
+  name?: string | null;
+  common_name?: string | null;
+  center_wavelength?: number | null;
 }
 
 export interface StacBand {

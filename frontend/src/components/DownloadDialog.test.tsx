@@ -210,7 +210,7 @@ describe('the crop dialog (NM4-01)', () => {
 });
 
 // Last: the store is global, and the crop dialog above reads what the first describe left in it.
-describe('the originals dialog starts by itself (NM4-33)', () => {
+describe('the originals dialog starts with "Download" (NM4-33, NM4-75)', () => {
   beforeEach(() => {
     useAppStore.setState({
       datasets: [
@@ -256,18 +256,34 @@ describe('the originals dialog starts by itself (NM4-33)', () => {
       downloadSkippedGroupsNotice: null,
       downloadOriginalLinks: [],
       downloadPasses: [{ label: 'A', items: [scene('S1', { datetime: '2025-07-29T10:15:00Z' })] }],
+      downloadItem: null,
+      downloadBands: [],
+      downloadForm: 'per_band',
+      downloadStarted: false,
       downloading: false,
       error: null,
       notice: null,
     });
   });
 
-  it('opens without a question and hands every file to the download, with ATTRIBUTION.txt first', async () => {
+  async function pressDownload(el: HTMLElement) {
+    const button = [...el.querySelectorAll('button')].find((b) => b.textContent === 'Download')!;
+    await act(async () => {
+      button.click();
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    });
+  }
+
+  it('opens without loading anything, and hands every file to the download once "Download" is pressed, with ATTRIBUTION.txt first', async () => {
     const el = show();
     await act(async () => {
       for (let i = 0; i < 10; i++) await Promise.resolve();
     });
     expect(el.textContent).not.toContain('How do you want');
+    expect(page.saved).toEqual([]);
+    expect(page.navigated).toEqual([]);
+    expect(el.querySelector('.dialog-original-row')).toBeNull();
+    await pressDownload(el);
     expect(page.saved).toEqual(['sentinel-2-c1-l2a_ATTRIBUTION.txt']);
     expect(page.navigated).toEqual(['https://data.test/S1.tif']);
     expect(el.querySelector('.dialog-original-row')?.textContent).toContain('Started in your browser');
@@ -292,8 +308,8 @@ describe('the originals dialog starts by itself (NM4-33)', () => {
     expect(useAppStore.getState().downloadPasses).toBeNull();
   });
 
-  it('closing the dialog frees what the page put into itself for the downloads', () => {
-    show();
+  it('closing the dialog frees what the page put into itself for the downloads', async () => {
+    await pressDownload(show());
     act(() => useAppStore.getState().closeDownloadDialog());
     expect(page.disposed).toBeGreaterThanOrEqual(1);
   });
@@ -301,9 +317,7 @@ describe('the originals dialog starts by itself (NM4-33)', () => {
   it('a scene without a date: nothing is downloaded, and the row says why (NM4-01)', async () => {
     useAppStore.setState({ downloadPasses: [{ label: 'A', items: [scene('S1', {})] }] });
     const el = show();
-    await act(async () => {
-      for (let i = 0; i < 10; i++) await Promise.resolve();
-    });
+    await pressDownload(el);
     expect(page.saved).toEqual([]);
     expect(page.navigated).toEqual([]);
     expect(el.querySelector('.dialog-original-row')?.textContent).toContain('no acquisition date');

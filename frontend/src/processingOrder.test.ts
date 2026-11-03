@@ -876,6 +876,27 @@ describe('buildExportOrder (M4-11 §3.1)', () => {
     const order = buildExportOrder({ datasetId: 'd', groups: [['A']], assets: ['visual'], aoi: place });
     expect(order.aoi).toEqual({ type: 'Polygon', coordinates: aoi.coordinates });
   });
+
+  it('carries the layout of the files in the output when one is given (NM4-75), and not a key for none', () => {
+    const base = { datasetId: 'd', groups: [['A']], assets: ['b1', 'b2'], aoi };
+    expect(buildExportOrder({ ...base, layout: { form: 'multi_band', resolution_m: 20 } }).output).toEqual({
+      kind: 'crop',
+      format: 'cog',
+      resolution_factor: 1,
+      extent: 'bbox(aoi ∩ footprints)',
+      mask: 'file',
+      layout: { form: 'multi_band', resolution_m: 20 },
+    });
+    expect(buildExportOrder({ ...base, layout: { form: 'per_band' } }).output).toMatchObject({ layout: { form: 'per_band' } });
+    expect(buildExportOrder(base).output).not.toHaveProperty('layout');
+  });
+
+  it('is an order of whole scenes without an AOI: the key is not there, so the server takes the footprints', () => {
+    const order = buildExportOrder({ datasetId: 'd', groups: [['A', 'B']], assets: ['b1'], layout: { form: 'per_resolution' } });
+    expect(order).not.toHaveProperty('aoi');
+    expect(order.output).toMatchObject({ kind: 'crop', extent: 'bbox(aoi ∩ footprints)', layout: { form: 'per_resolution' } });
+    expect(buildExportOrder({ datasetId: 'd', groups: [['A']], assets: ['b1'], aoi: null })).not.toHaveProperty('aoi');
+  });
 });
 
 describe('aoiProvenanceFor (M4-30)', () => {
