@@ -105,8 +105,8 @@ export function refineNormalize(params: Record<string, unknown>, errors: Record<
     errors.out_max = 'The two ends of the target range differ.';
   }
   if (method === 'percentile') {
-    if (typeof low === 'number' && !RANGES.some((r) => r.low === low) && !errors.low) errors.low = 'Pick one of the ranges.';
-    if (typeof high === 'number' && !RANGES.some((r) => r.high === high) && !errors.high) errors.high = 'Pick one of the ranges.';
+    if (typeof low === 'number' && !RANGES.some((r) => r.low === low) && !errors.low) errors.low = 'Choose one of the ranges.';
+    if (typeof high === 'number' && !RANGES.some((r) => r.high === high) && !errors.high) errors.high = 'Choose one of the ranges.';
   }
 }
 

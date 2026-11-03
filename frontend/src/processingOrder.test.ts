@@ -584,7 +584,7 @@ describe('buildOrder', () => {
       ['too large', { band: 'NDVI', condition: 'lt', values: '1e39' }, { values: 'Too large or too small.' }],
       ['not finite', { band: 'NDVI', condition: 'lt', values: '1e999' }, { values: 'Enter numbers separated by commas.' }],
       ['no condition', { band: 'NDVI', condition: '', values: '1' }, { condition: 'Required.' }],
-      ['an unknown condition', { band: 'NDVI', condition: 'near', values: '1' }, { condition: 'Pick one of the options.' }],
+      ['an unknown condition', { band: 'NDVI', condition: 'near', values: '1' }, { condition: 'Choose one of the options.' }],
       ['no band', { band: '', condition: 'lt', values: '1' }, { band: 'Required.' }],
     ])('refuses %s at its field and sends nothing', (_, values, errors) => {
       const result = built([ndvi(), mask(values)]);

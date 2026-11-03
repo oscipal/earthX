@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { datasetsFrom } from '../datasets';
 import { useAppStore } from '../store';
 import type { Collection } from '../types';
+import { lockedWithoutReason } from '../fixtures/lockedControls';
 import ControlPanel from './ControlPanel';
 
 declare global {
@@ -921,3 +922,17 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     });
   });
 });
+
+// UI-04 §7.5 no. 8: what is locked says why in its tooltip.
+describe('locked controls of the menu', () => {
+  it('name their reason: Find without a name, Last AOI without one, Search without a dataset or an AOI', () => {
+    useAppStore.setState({ datasets: [], datasetId: null, selectedDatasetIds: [], searching: false, sceneLookupLoading: false });
+    act(() => root.render(<ControlPanel />));
+    expect(lockedWithoutReason(container)).toEqual([]);
+    const button = (text: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim().endsWith(text));
+    expect(button('Find')?.getAttribute('title')).toBe('Type a place name first');
+    expect(button('Last AOI')?.getAttribute('title')).toBe('No earlier AOI in this browser');
+    expect(button('Search')?.getAttribute('title')).toBe('Choose a dataset to search');
+  });
+});
+

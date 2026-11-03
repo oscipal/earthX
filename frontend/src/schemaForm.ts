@@ -290,7 +290,7 @@ function valueOf(field: Field, raw: FieldValue | undefined): { value?: unknown; 
   if (text === '') return field.required ? { error: field.kind === 'names' ? 'Choose at least one band.' : 'Required.' } : {};
   switch (field.kind) {
     case 'enum':
-      return field.options?.includes(text) ? { value: text } : { error: 'Pick one of the options.' };
+      return field.options?.includes(text) ? { value: text } : { error: 'Choose one of the options.' };
     case 'number':
     case 'integer': {
       const value = parseNumber(field, text);

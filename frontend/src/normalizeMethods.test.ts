@@ -139,8 +139,8 @@ describe('the parameters a method writes', () => {
     // A target that runs backwards is allowed (`out_max` below `out_min`).
     expect(errors({ out_min: '1', out_max: '0' })).toEqual({});
     const percentile = (low: string, high: string) => paramsFrom(FIELDS, { ...values, method: 'percentile', low, high }, 'normalize').errors;
-    expect(percentile('3', '98')).toEqual({ low: 'Pick one of the ranges.' });
-    expect(percentile('2', '97')).toEqual({ high: 'Pick one of the ranges.' });
+    expect(percentile('3', '98')).toEqual({ low: 'Choose one of the ranges.' });
+    expect(percentile('2', '97')).toEqual({ high: 'Choose one of the ranges.' });
     expect(percentile('', '98')).toEqual({ low: 'Required.' });
   });
 

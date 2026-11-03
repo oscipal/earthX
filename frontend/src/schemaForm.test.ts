@@ -62,7 +62,7 @@ describe('paramsForm', () => {
     expect(f[0]).toMatchObject({ kind: 'enum', options: ['near', 'far'], optionHelp: { near: 'Nearest pixel.' } });
     expect(f[0].description).toBe('No default.');
     expect(paramsFrom(f, { how: 'far' })).toEqual({ params: { how: 'far' }, errors: {} });
-    expect(paramsFrom(f, { how: 'other' }).errors).toEqual({ how: 'Pick one of the options.' });
+    expect(paramsFrom(f, { how: 'other' }).errors).toEqual({ how: 'Choose one of the options.' });
     const bare = fields({ type: 'object', properties: { how: { oneOf: [{ const: 'a' }, { const: 'b' }] } } });
     expect(bare[0]).toMatchObject({ kind: 'enum', options: ['a', 'b'] });
     expect(bare[0].optionHelp).toBeUndefined();
@@ -119,7 +119,7 @@ describe('paramsFrom', () => {
     ['no number at all', { size: 'ten' }, 'size', 'Enter a number.'],
     ['the exclusive minimum itself', { size: '0' }, 'size', 'More than 0.'],
     ['the exclusive maximum itself', { size: '10' }, 'size', 'Less than 10.'],
-    ['an option the enum does not list', { pick: 'c' }, 'pick', 'Pick one of the options.'],
+    ['an option the enum does not list', { pick: 'c' }, 'pick', 'Choose one of the options.'],
     ['infinity', { size: 'Infinity' }, 'size', 'Enter a number.'],
   ])('reports %s', (_, change, name, message) => {
     expect(paramsFrom(f, { ...good, ...change }).errors).toEqual({ [name]: message });

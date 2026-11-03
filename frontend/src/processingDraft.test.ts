@@ -303,7 +303,7 @@ describe('draftFromOrder', () => {
       expect(draftFromOrder(withStep(4, { method: 'zscore', bands: ['data'], measured }), info, keys()).problems).toEqual(['Step 1 (normalize): unknown parameter measured.']);
       expect(draftFromOrder(withStep(4, { bands: ['data'] }), info, keys()).problems).toEqual(['Step 1 (normalize): method: Required.']);
       expect(draftFromOrder(withStep(4, { method: 'median', bands: ['data'] }), info, keys()).problems).toEqual([
-        'Step 1 (normalize): method: Pick one of the options.',
+        'Step 1 (normalize): method: Choose one of the options.',
       ]);
       expect(draftFromOrder(withStep(4, { method: 'zscore', bands: ['data'], threshold: 1 }), info, keys()).problems).toEqual([
         'Step 1 (normalize): unknown parameter threshold.',
