@@ -30,6 +30,7 @@ from earthx.api.area_statistics import AREA_STATISTICS_ROUTE
 from earthx.api.dependencies import policy_from_registry
 from earthx.api.result_tiles import ROUTER_PREFIX as RESULT_ROUTER_PREFIX
 from earthx.api.tiler import (
+    BANDS_ROUTE,
     DOWNLOAD_ROUTE,
     MOSAIC_ROUTER_PREFIX,
     ROUTER_PREFIX,
@@ -153,7 +154,7 @@ class TestNoFreeAddress:
         rendering = [
             path
             for path in client.app.openapi()["paths"]
-            if path not in ("/health", "/colormaps", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE)
+            if path not in ("/health", "/colormaps", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE, BANDS_ROUTE)
             and not path.startswith((RESULT_ROUTER_PREFIX, MOSAIC_ROUTER_PREFIX))
         ]
         assert rendering
