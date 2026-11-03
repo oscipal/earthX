@@ -31,6 +31,7 @@ from shapely.geometry import mapping as shapely_mapping
 from shapely.geometry import shape as shapely_shape
 
 from earthx.access import download
+from earthx.access.band_export import band_meta
 from earthx.access.crop_rules import TEXT_FILES, compute_crop_region
 from earthx.access.tiles import open_asset
 from earthx.catalog.datasets import SENTINEL_2_L2A
@@ -162,10 +163,11 @@ def _crop_zip(groups: list[list[str]], notice_aoi: dict[str, Any]) -> bytes:
         ],
         recipe_json=b"{}",
         citation_bib=b"@misc{x}\n",
+        band_metas={"visual": band_meta({}, "visual")},
     )
 
 
-def _recipe(groups: list[list[str]]) -> Any:
+def _recipe(groups: list[list[str]], layout: dict[str, Any] | None = None) -> Any:
     items = [item for group in groups for item in group]
     entries = []
     for item in items:
@@ -190,17 +192,18 @@ def _recipe(groups: list[list[str]]) -> Any:
         ],
         "aoi": AOI,
         "steps": [],
-        "output": dict(CROP),
+        "output": {**CROP, **({"layout": layout} if layout else {})},
         "recipe_id": "R" * 22,
     }  # fmt: skip
     return recipe_of_data(json.loads(json.dumps(data)), OPERATORS)
 
 
-def _attachments(crop: zipfile.ZipFile) -> Attachments:
+def _attachments(crop: zipfile.ZipFile, *, bands: tuple = (), dataset: DatasetFacts = FACTS) -> Attachments:
     return Attachments(
         files={name: crop.read(name).decode("utf-8") for name in ("ATTRIBUTION.txt", "citation.bib", "aoi.geojson")},
         attribution=("Contains modified synthetic data",),
-        dataset=FACTS,
+        dataset=dataset,
+        bands=bands,
     )
 
 
@@ -217,23 +220,36 @@ CASES = {
 
 @pytest.mark.usefixtures("served")
 @pytest.mark.parametrize("groups", list(CASES.values()), ids=list(CASES))
-def test_the_export_writes_the_crops_files_bit_for_bit(groups: list[list[str]], tmp_path: Path) -> None:
+def test_the_export_with_a_layout_writes_the_crops_files_bit_for_bit(groups: list[list[str]], tmp_path: Path) -> None:
     crop = zipfile.ZipFile(io.BytesIO(_crop_zip(groups, AOI)))
-    result = _export(groups, tmp_path, crop)
+    # The crop's title is the registry's; the job's comes with its attachments, so they are made the same.
+    attachments = _attachments(
+        crop, bands=(band_meta({}, "visual"),), dataset=DatasetFacts(SENTINEL_2_L2A.title, None)
+    )
+    result = run(
+        _recipe(groups, {"form": "per_band"}), workdir=tmp_path, progress=lambda done, total: None,
+        operators=OPERATORS, attachments=attachments,
+    )  # fmt: skip
     with zipfile.ZipFile(result.path) as exported:
         rasters = [name for name in crop.namelist() if name.endswith(".tif")]
-        assert rasters, "the crop wrote no raster"
+        assert rasters and all(name.startswith("exports/") for name in rasters)
         assert [name for name in exported.namelist() if name.endswith(".tif")] == rasters
         for name in rasters:
             assert exported.read(name) == crop.read(name), name
             assert exported.getinfo(name).compress_type == zipfile.ZIP_STORED
-        for name in ("aoi.geojson", "ATTRIBUTION.txt", "citation.bib"):
-            assert exported.read(name) == crop.read(name)
+        for name in ("aoi.geojson", "ATTRIBUTION.txt", "citation.bib", "exports/BANDS.txt"):
+            assert exported.read(name) == crop.read(name), name
             assert exported.getinfo(name).compress_type == zipfile.ZIP_DEFLATED
         assert sorted(exported.namelist()) == sorted(crop.namelist())
-        # The text files, by the one definition of the downloads and in its order.
         assert [name for name in exported.namelist() if name in TEXT_FILES] == list(TEXT_FILES)
-        assert [name for name in crop.namelist() if name in TEXT_FILES] == list(TEXT_FILES)
+
+
+@pytest.mark.usefixtures("served")
+def test_an_export_without_a_layout_keeps_the_flat_files_of_before(tmp_path: Path) -> None:
+    crop = zipfile.ZipFile(io.BytesIO(_crop_zip([["ITEM_A"]], AOI)))
+    with zipfile.ZipFile(_export([["ITEM_A"]], tmp_path, crop).path) as exported:
+        assert {"visual.tif", "visual_mask.tif"} <= set(exported.namelist())
+        assert not any(name.startswith("exports/") for name in exported.namelist())
 
 
 @pytest.mark.usefixtures("served")

@@ -31,7 +31,7 @@ from rasterio.crs import CRS
 from rasterio.errors import CRSError
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds as transform_from_bounds
-from rasterio.warp import calculate_default_transform
+from rasterio.warp import calculate_default_transform, transform_geom
 from rio_cogeo.profiles import cog_profiles
 from rio_tiler.constants import WGS84_CRS
 from shapely.errors import ShapelyError
@@ -54,6 +54,7 @@ __all__ = [
     "TEXT_FILES",
     "AoiOutsideItems",
     "PlannedOutput",
+    "asset_gsd",
     "bytes_per_pixel",
     "compute_crop_region",
     "crop_filename",
@@ -66,6 +67,7 @@ __all__ = [
     "mosaic_order",
     "native_crop_grid",
     "rasterize_aoi",
+    "source_crop_grid",
     "target_crs",
 ]
 
@@ -202,6 +204,47 @@ def compute_crop_region(items: Sequence[Mapping[str, Any]], aoi: BaseGeometry) -
 
 
 
+def _finite_positive(value: Any) -> float | None:
+    """``value`` as a finite, positive float, or ``None`` for anything that is not one.
+
+    Used on values that come straight off a STAC item — a ``gsd`` of ``0``,
+    negative, ``NaN`` or a string is a malformed item, not something to divide
+    by (found in the plan step's "zweckfremde Nutzung" pass, M3-18).
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number <= 0:
+        return None
+    return number
+
+
+def asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
+    """Ground sample distance of ``asset`` on ``item``, in metres/pixel, or ``None`` if unusable (F1).
+
+    Tried in the order both real sources are measured to carry it (plan §3):
+    the asset's own ``gsd``, then the first band's ``raster:bands``
+    ``spatial_resolution``, then the item's own ``properties.gsd``.
+    """
+    item_asset = item.get("assets", {})
+    item_asset = item_asset.get(asset, {}) if isinstance(item_asset, Mapping) else {}
+    if not isinstance(item_asset, Mapping):
+        item_asset = {}
+    candidates: list[Any] = [item_asset.get("gsd")]
+    bands = item_asset.get("raster:bands")
+    if isinstance(bands, list) and bands and isinstance(bands[0], Mapping):
+        candidates.append(bands[0].get("spatial_resolution"))
+    properties = item.get("properties")
+    if isinstance(properties, Mapping):
+        candidates.append(properties.get("gsd"))
+    for candidate in candidates:
+        gsd = _finite_positive(candidate)
+        if gsd is not None:
+            return gsd
+    return None
+
+
 def dtype_bytes(data_type: Any) -> int:
     """Bytes per pixel for one band's dtype name, or the conservative fallback."""
     if isinstance(data_type, str):
@@ -237,9 +280,7 @@ _DEG_TO_M_LAT = 111_700.0
 _DEG_TO_M_LON_AT_EQUATOR = 111_320.0
 
 
-def estimate_output_dims(
-    aoi: BaseGeometry, gsd: float, *, resolution_factor: int = 1
-) -> tuple[int, int]:
+def estimate_output_dims(aoi: BaseGeometry, gsd: float) -> tuple[int, int]:
     """Conservative ``(height, width)`` in pixels for a crop of ``aoi`` at ``gsd`` m/pixel.
 
     Computed from the AOI geometry alone, before any reader opens a dataset
@@ -248,19 +289,15 @@ def estimate_output_dims(
     (largest possible) metres a degree of longitude is worth here, and a
     straddled equator is the largest case of all.
 
-    A download is native resolution unless the caller explicitly chose a
-    coarser one (Otto, 23.09.2026, M3-18 §10): there is no clamp to a maximum
-    side any more, only ``resolution_factor`` (one of :data:`RESOLUTION_FACTORS`)
-    dividing both dimensions down from native.
+    A download is always at the resolution of the source, or at the common resolution of one multi-band
+    file (Otto, 03.11.2026, NM4-75; the choice of a coarser factor of M3-18 §10 is gone): there is no clamp to a
+    maximum side and no factor.
     """
     minx, miny, maxx, maxy = aoi.bounds
     least_poleward_lat = min(abs(miny), abs(maxy)) if miny * maxy > 0 else 0.0
     lon_m_per_degree = _DEG_TO_M_LON_AT_EQUATOR * math.cos(math.radians(least_poleward_lat))
     width_px = max(1, math.ceil((maxx - minx) * lon_m_per_degree / gsd))
     height_px = max(1, math.ceil((maxy - miny) * _DEG_TO_M_LAT / gsd))
-    if resolution_factor != 1:
-        width_px = max(1, math.ceil(width_px / resolution_factor))
-        height_px = max(1, math.ceil(height_px / resolution_factor))
     return height_px, width_px
 
 
@@ -288,7 +325,11 @@ class PlannedOutput:
 
 
 def native_crop_grid(
-    dataset: rasterio.DatasetReader, region: BaseGeometry, *, dst_crs: rasterio.crs.CRS = WGS84_CRS
+    dataset: rasterio.DatasetReader,
+    region: BaseGeometry,
+    *,
+    dst_crs: rasterio.crs.CRS = WGS84_CRS,
+    pixel_scale: float = 1.0,
 ) -> tuple[rasterio.Affine, int, int]:
     """The exact native-resolution output grid ``.feature()`` would produce for ``region``.
 
@@ -306,11 +347,14 @@ def native_crop_grid(
     footprints (:func:`compute_crop_region`), not the AOI's own full bounding
     box — so a scene that only partly covers the AOI produces a grid no
     bigger than what that scene actually reaches.
+
+    ``pixel_scale`` (NM4-75) makes the pixels that many times larger than the native ones: the grid of a
+    common resolution coarser (or finer) than the dataset's own. ``1.0`` is the native grid, unchanged.
     """
     res_transform, _, _ = calculate_default_transform(
         dataset.crs, dst_crs, dataset.width, dataset.height, *dataset.bounds
     )
-    w_res, h_res = res_transform.a, abs(res_transform.e)
+    w_res, h_res = res_transform.a * pixel_scale, abs(res_transform.e) * pixel_scale
     minx, miny, maxx, maxy = region.bounds
     width = max(1, round((maxx - minx) / w_res))
     height = max(1, round((maxy - miny) / h_res))
@@ -318,6 +362,39 @@ def native_crop_grid(
     return crop_transform, width, height
 
 
+
+def source_crop_grid(
+    dataset: rasterio.DatasetReader, region: BaseGeometry, *, pixel_scale: float = 1.0
+) -> tuple[CRS, rasterio.Affine, int, int]:
+    """The grid of a band export (NM4-75): the CRS of the source, its pixel size, its pixel lattice.
+
+    ``(crs, transform, width, height)`` of the bounding box of ``region`` (WGS84, AOI ∩ the footprints of a group)
+    in the CRS of ``dataset``, snapped outward to the dataset's own pixel lattice, so that a band read on it from a
+    dataset of that CRS is a plain copy of source pixels and nothing is resampled. ``pixel_scale`` makes the pixels
+    that many times larger (a common resolution coarser than the dataset's own, or smaller for a finer one); the
+    lattice is then the coarser one from the same origin. A source in another CRS than the grid's is warped onto it
+    (the scenes of a mosaic in another UTM zone).
+    """
+    if dataset.crs is None:
+        raise ValueError("the source has no coordinate reference system")
+    transform = dataset.transform
+    if transform.b or transform.d or transform.e >= 0:
+        raise ValueError("only north-up sources are cropped without a warp of the grid")
+    projected = transform_geom(WGS84_CRS, dataset.crs, shapely_mapping(region))
+    left, bottom, right, top = shapely_shape(projected).bounds
+    size_x, size_y = abs(transform.a) * pixel_scale, abs(transform.e) * pixel_scale
+    origin_x, origin_y = transform.c, transform.f
+    first_column = math.floor((left - origin_x) / size_x + _LATTICE_SLACK)
+    last_column = math.ceil((right - origin_x) / size_x - _LATTICE_SLACK)
+    first_row = math.floor((origin_y - top) / size_y + _LATTICE_SLACK)
+    last_row = math.ceil((origin_y - bottom) / size_y - _LATTICE_SLACK)
+    width, height = max(1, last_column - first_column), max(1, last_row - first_row)
+    grid = rasterio.Affine(size_x, 0.0, origin_x + first_column * size_x, 0.0, -size_y, origin_y - first_row * size_y)
+    return dataset.crs, grid, width, height
+
+
+#: A bound this close (in pixels) to a pixel edge belongs to the pixel inside, not the next one.
+_LATTICE_SLACK = 1e-6
 
 # GeoTIFF mask-file profile shared by both the windowed and the naive path
 # (M3-18 §3): plain, not a COG — a same-grid, single-band 0/1 raster has no
@@ -363,8 +440,8 @@ def rasterize_aoi(aoi: BaseGeometry, *, height: int, width: int, transform: rast
 _SAFE_IN_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
-def crop_filename(asset: str, *, resolution_factor: int = 1) -> str:
-    """The name the crop of ``asset`` gets inside the ZIP.
+def crop_filename(asset: str) -> str:
+    """The name the crop of ``asset`` gets inside the ZIP of a crop without a layout, and in a Zarr crop.
 
     The asset key travels into the archive, and for a Zarr dataset it is not a
     plain word: ``SR_10m:b04,b03,b02`` names the group the item advertises plus
@@ -373,10 +450,6 @@ def crop_filename(asset: str, *, resolution_factor: int = 1) -> str:
     silently renamed — so every run of anything outside ``[A-Za-z0-9._-]``
     becomes a single ``_``. ``visual`` stays ``visual``; the original key is
     named in the notice file, so nothing about the archive becomes a guess.
-
-    ``resolution_factor`` (F10c, M3-18 §10): an explicitly chosen coarser
-    resolution is named in the filename itself (``visual_2x.tif``), not only
-    in the notice — native (``1``) adds no suffix, unchanged from before.
     """
     # Stripped at both ends, dots included: `..` survives the allowlist on its own
     # (a dot is a legal filename character) and a member called `..` or `.._x` is a
@@ -384,19 +457,16 @@ def crop_filename(asset: str, *, resolution_factor: int = 1) -> str:
     cleaned = _SAFE_IN_FILENAME.sub("_", asset).strip("._")
     # A key made only of separators would otherwise leave an empty name, and a
     # ZIP entry called ".tif" is not something a user can tell apart from another.
-    suffix = f"_{resolution_factor}x" if resolution_factor != 1 else ""
-    return f"{cleaned or 'asset'}{suffix}.tif"
+    return f"{cleaned or 'asset'}.tif"
 
 
-def mask_filename(asset: str, *, resolution_factor: int = 1) -> str:
+def mask_filename(asset: str) -> str:
     """The name ``asset``'s companion AOI mask file gets inside the ZIP (M3-18 §3).
 
-    Always ``<crop_filename>_mask.tif`` — same cleaning, same resolution
-    suffix, so the two files for one asset sort next to each other and the
-    pairing is obvious without reading the notice file.
+    Always ``<crop_filename>_mask.tif`` — same cleaning, so the two files for
+    one asset sort next to each other and the pairing is obvious without reading the notice file.
     """
-    return f"{crop_filename(asset, resolution_factor=resolution_factor)[:-4]}_mask.tif"
-
+    return f"{crop_filename(asset)[:-4]}_mask.tif"
 
 
 def group_dirname(index: int, group_count: int) -> str:

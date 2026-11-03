@@ -5,11 +5,11 @@
 // text shown before either one starts (adr/0003 §11.2: the notice belongs on
 // the download, not only in a footer).
 
-import type { ExportJobHint, ResolutionFactor } from './api';
+import type { ExportJobHint } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
-import { isJobId } from './processing';
+import { isJobId, type ExportLayout } from './processing';
 import type { LicenseFlags, StacItem } from './types';
 
 // `groups` (M3-17, replacing the flat `items` list): item ids per group, in
@@ -22,6 +22,8 @@ export interface DownloadRequestInfo {
   groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
+  // How the chosen bands are laid out in files (NM4-75); left out for a dataset whose items list no bands to choose from.
+  layout?: ExportLayout;
 }
 
 // Which of the three P19 outcomes a download follows (M3-17 plan §4): the AOI
@@ -330,37 +332,6 @@ export function termsNoticeText(flags: LicenseFlags | null | undefined, language
   const text = notice[language] ?? notice.en ?? Object.values(notice)[0] ?? null;
   if (!text) return null;
   return flags?.terms_url ? text.replaceAll('{terms_url}', flags.terms_url) : text;
-}
-
-// The asset's own ground sample distance, in metres/pixel, the same order
-// `access/download.py::_asset_gsd` tries on the backend: the asset's own
-// `gsd`, then its pixel size read off `proj:transform` (a plain STAC item
-// carries no `raster:bands` the frontend already parses). `null` when
-// neither is present — the resolution dialog then shows the factor alone,
-// never a guessed number (F10c, M3-18 §10).
-function assetGsdMeters(item: StacItem, asset: string): number | null {
-  const stacAsset = item.assets[asset];
-  if (!stacAsset) return null;
-  if (typeof stacAsset.gsd === 'number' && stacAsset.gsd > 0) return stacAsset.gsd;
-  const transform = stacAsset['proj:transform'];
-  if (Array.isArray(transform) && typeof transform[0] === 'number' && transform[0] > 0) {
-    return transform[0];
-  }
-  return null;
-}
-
-// The label the download dialog shows for one resolution choice (F10c,
-// M3-18 §10) — "Native (10 m)"/"2× (20 m)" where a metre figure can be read
-// off any of the given items, "Native"/"2×" otherwise. The finest (smallest)
-// gsd among the items is used, matching the backend's own worst-case pixel
-// estimate (`plan_outputs`) — never a number that could understate the result.
-export function resolutionOptionLabel(items: StacItem[], asset: string, factor: ResolutionFactor): string {
-  const label = factor === 1 ? 'Native' : `${factor}×`;
-  const gsds = items.map((item) => assetGsdMeters(item, asset)).filter((gsd): gsd is number => gsd !== null);
-  if (gsds.length === 0) return label;
-  const meters = Math.min(...gsds) * factor;
-  const rounded = meters >= 10 ? Math.round(meters) : Math.round(meters * 10) / 10;
-  return `${label} (${rounded} m)`;
 }
 
 // Download tier follows the onboarding checklist (KLAERUNGEN B11): a crop

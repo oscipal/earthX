@@ -114,7 +114,7 @@ describe('the rows', () => {
   it('start by themselves and go to Done, one ZIP name per row', async () => {
     const ch = channel(() => false);
     page.zip = ch.zip;
-    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} />);
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} started />);
     expect(rows()).toEqual(['Done', 'Done']);
     expect([...container.querySelectorAll('.dialog-original-name')].map((e) => e.textContent)).toEqual(['A.zip', 'B.zip']);
     expect(ch.jobs).toEqual(['A.zip', 'B.zip']);
@@ -124,14 +124,14 @@ describe('the rows', () => {
 
   it('names the scenes and the size above the rows, as the tooltip of the button did', async () => {
     page.zip = channel(() => false).zip;
-    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} />);
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} started />);
     expect(container.querySelector('.dialog-originals > .hint-text')?.textContent).toBe('2 scenes · 5 kB');
   });
 
   it('React starting and stopping the run at once (StrictMode) does no download twice', async () => {
     await show(
       <StrictMode>
-        <OriginalFiles dataset={dataset(makeCollection({ 'earthx:access': { cors: false } }))} links={[]} passes={passes('A', 'B')} />
+        <OriginalFiles dataset={dataset(makeCollection({ 'earthx:access': { cors: false } }))} links={[]} passes={passes('A', 'B')} started />
       </StrictMode>,
     );
     expect(page.saved).toEqual(['made-up-scenes_ATTRIBUTION.txt']);
@@ -142,7 +142,7 @@ describe('the rows', () => {
   it('Cancel stops the scene that runs and the ones that wait; Retry failed loads only those, once', async () => {
     const ch = channel((job) => job.zipName === 'B.zip' && ch.jobs.filter((name) => name === 'B.zip').length === 1);
     page.zip = ch.zip;
-    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B', 'C')} />);
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B', 'C')} started />);
     expect(rows()).toEqual(['Done', 'Loading 40 %', 'Waiting']);
     expect(button('Retry failed')).toBeUndefined();
     await press('Cancel');
@@ -157,7 +157,7 @@ describe('the rows', () => {
   it('a failed scene shows its reason and the others go on', async () => {
     const zip: ZipChannel = { run: async (job) => (job.zipName === 'A.zip' ? Promise.reject(new ZipError('http', 503)) : undefined) };
     page.zip = zip;
-    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} />);
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} started />);
     expect(rows()).toEqual(['Failed: The source answered 503.', 'Done']);
     expect(button('Retry failed')).toBeDefined();
   });
@@ -165,7 +165,7 @@ describe('the rows', () => {
   it('closing the dialog stops what runs and frees what the page put into itself', async () => {
     const ch = channel(() => true);
     page.zip = ch.zip;
-    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} />);
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} started />);
     expect(ch.signals[0].aborted).toBe(false);
     act(() => root.unmount());
     expect(ch.signals[0].aborted).toBe(true);
@@ -176,9 +176,9 @@ describe('the rows', () => {
   it('the same scenes in new objects (the datasets loaded again) start no second run', async () => {
     const ch = channel(() => false);
     page.zip = ch.zip;
-    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} />);
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} started />);
     expect(page.created).toBe(1);
-    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} />);
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} started />);
     expect(page.created).toBe(1);
     expect(ch.jobs).toEqual(['A.zip', 'B.zip']);
   });
@@ -186,13 +186,13 @@ describe('the rows', () => {
   it('another selection starts a run of its own', async () => {
     const ch = channel(() => false);
     page.zip = ch.zip;
-    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A')} />);
-    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('C')} />);
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A')} started />);
+    await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('C')} started />);
     expect(ch.jobs).toEqual(['A.zip', 'C.zip']);
   });
 
   it('a note names the way where it is not the ZIP', async () => {
-    await show(<OriginalFiles dataset={dataset(makeCollection({ 'earthx:access': { cors: false } }))} links={[]} passes={passes('A')} />);
+    await show(<OriginalFiles dataset={dataset(makeCollection({ 'earthx:access': { cors: false } }))} links={[]} passes={passes('A')} started />);
     expect(container.textContent).toContain('Your browser downloads each file.');
     expect(container.querySelector('.hint-text[title]')?.getAttribute('title')).toContain('under the name the source gives it');
   });

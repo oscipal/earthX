@@ -2,6 +2,7 @@
 // by default (the Vite dev server proxies /stac to the backend). Override
 // with VITE_API_BASE. Never talks to the prototype's `/api/…` routes.
 
+import type { DownloadBand } from './bandChoice';
 import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
 import { AOI_BODY_KEY, aoiCountsOf, type AoiCounts } from './aoiFilter';
 import { MOSAIC_TILE_SIZE } from './tileSize';
@@ -807,11 +808,55 @@ export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse
 // POST /collections/{dataset}/download (M2-06): the AOI crop as a ZIP, streamed
 // synchronously and never cached (D3, D11). The body mirrors `DownloadRequest`
 // in `api/tiler.py`.
-// One of `RESOLUTION_FACTORS` in `access/download.py` (F10c, M3-18 §10):
-// how many times coarser than native to read. Native (`1`) is the default and
-// is never chosen automatically — the dialog always shows the choice.
-export const RESOLUTION_FACTORS = [1, 2, 4, 10] as const;
-export type ResolutionFactor = (typeof RESOLUTION_FACTORS)[number];
+// An export is always in the resolution of the source (one multi-band file: in the common resolution chosen); there is no factor to send.
+
+// The three forms of the files of a download (NM4-75), named as the server names them.
+export type DownloadForm = 'per_band' | 'per_resolution' | 'multi_band';
+
+// How many scenes of the selection are named to the platform for the table of bands (it asks for 1 to 25; the first few tell as much).
+export const BANDS_SCENES = 5;
+
+const textOf = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null);
+const numberOf = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+// The answer of `POST /collections/{dataset}/bands` as the dialog holds it; a row that does not read (no asset key) is left out.
+export function parseBands(value: unknown): DownloadBand[] {
+  const rows = value && typeof value === 'object' ? (value as { bands?: unknown }).bands : undefined;
+  if (!Array.isArray(rows)) throw new Error('the server answered with a list of bands the dialog cannot read');
+  return rows.flatMap((row: unknown) => {
+    const r = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+    const asset = textOf(r.asset);
+    if (asset === null) return [];
+    return [
+      {
+        asset,
+        name: textOf(r.name) ?? asset,
+        commonName: textOf(r.common_name),
+        wavelength: numberOf(r.wavelength_um),
+        resolution: numberOf(r.resolution_m),
+        categorical: r.categorical === true,
+        dataType: textOf(r.data_type),
+        scale: numberOf(r.scale),
+        offset: numberOf(r.offset),
+        nodata: numberOf(r.nodata),
+        unit: textOf(r.unit),
+        preselected: r.preselected === true,
+      },
+    ];
+  });
+}
+
+// The bands of the scenes named (the first `BANDS_SCENES` of a selection): in the order of the item, without the pictures made from the
+// bands; empty for a dataset with no file per band. The scene ids go in the body.
+export async function fetchBands(datasetId: string, itemIds: readonly string[], signal?: AbortSignal): Promise<DownloadBand[]> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(datasetId)}/bands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: itemIds.slice(0, BANDS_SCENES) }),
+    signal,
+  });
+  return parseBands(await jsonOrThrow<unknown>(res));
+}
 
 // `groups` (M3-17, replacing the flat `items` list): item ids per group,
 // mirroring `DownloadRequest.groups` in `api/tiler.py` — one merged file per
@@ -822,7 +867,10 @@ export interface DownloadCropRequest {
   groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
-  resolution?: ResolutionFactor;
+  // NM4-75: how the chosen bands lie in files; `commonResolution` (metres) goes with `multi_band` and with no other. Left out, the
+  // server writes one file per band, as before.
+  form?: DownloadForm;
+  commonResolution?: number;
 }
 
 // `totalGroups`/`skippedGroups` (M3-17, review finding 1): `X-Total-Groups`/
@@ -853,7 +901,8 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCr
       groups: req.groups,
       assets: req.assets,
       aoi: req.aoi,
-      resolution: req.resolution ?? 1,
+      ...(req.form ? { form: req.form } : {}),
+      ...(req.form === 'multi_band' && req.commonResolution !== undefined ? { common_resolution: req.commonResolution } : {}),
     }),
   });
   if (!res.ok) throw await httpErrorOf(res, { exportJob: res.status === 413 ? exportJobHint(res) : undefined });

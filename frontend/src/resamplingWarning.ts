@@ -21,6 +21,14 @@ const METHODS: Record<string, { name: string; meaning: string }> = {
     name: 'nearest neighbour',
     meaning: 'Pixels are repeated, so no new values appear; but at the pixel edges the values change, and the pixel counts differ from the source.',
   },
+  average: {
+    name: 'averaging',
+    meaning: 'Pixels are averaged where many become one, so the values are new and smoothed; classification layers take the most frequent class instead. Where pixels are repeated, no new values appear.',
+  },
+  mixed: {
+    name: 'nearest neighbour and averaging',
+    meaning: 'Pixels are repeated where the grid gets finer, so no new values appear. Where many pixels become one they are averaged, so the values are new and smoothed; classification layers take the most frequent class.',
+  },
   bilinear: {
     name: 'bilinear interpolation',
     meaning: 'Each new pixel is a weighted mean of its neighbours, so the values are new and smoothed, and the extremes of the source flatten.',

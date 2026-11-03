@@ -309,10 +309,11 @@ describe('the dialog of the download', () => {
       return json({ detail: 'not found' }, 404);
     });
 
-  it('starts with the raw bands, as for any layer: the resolution, the assets of the scenes, no estimate asked for', async () => {
+  it('starts with the raw bands, as for any layer: the assets of the scenes, no factor to choose, no estimate asked for', async () => {
     await open('raw');
     expect(container.textContent).toContain('asset visual');
-    expect(container.querySelector('.dialog-resolution input[name="download-resolution"]')).not.toBeNull();
+    expect(container.querySelector('.dialog-resolution')).toBeNull();
+    expect(container.querySelector('input[name="download-resolution"]')).toBeNull();
     expect([...container.querySelectorAll<HTMLInputElement>('input[name="download-as"]')].map((i) => [i.closest('label')?.textContent?.trim(), i.checked])).toEqual([['Raw bands', true], ['NDVI', false]]);
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     expect(primary().disabled).toBe(false);

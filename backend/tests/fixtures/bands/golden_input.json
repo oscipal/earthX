@@ -1,0 +1,172 @@
+{
+ "title": "Synthetic dataset",
+ "collection": {
+  "id": "synthetic",
+  "earthx:band_units": {
+   "blue": "1",
+   "red": "1",
+   "rededge1": "1",
+   "coastal": "1",
+   "aot": "1",
+   "scl": null,
+   "visual": null
+  },
+  "earthx:auxiliary_assets": [
+   "visual"
+  ],
+  "earthx:mask": {
+   "asset": "scl",
+   "band": "scl",
+   "classes": [
+    {
+     "value": 0,
+     "label": "No data"
+    },
+    {
+     "value": 4,
+     "label": "Vegetation"
+    }
+   ],
+   "suggested": [],
+   "reference": "https://example.invalid/scl",
+   "note": "synthetic"
+  }
+ },
+ "item": {
+  "id": "SYNTH_A",
+  "assets": {
+   "blue": {
+    "href": "https://assets.example.invalid/x.tif",
+    "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "gsd": 10,
+    "eo:bands": [
+     {
+      "name": "B02",
+      "common_name": "blue",
+      "center_wavelength": 0.49
+     }
+    ],
+    "raster:bands": [
+     {
+      "data_type": "uint16",
+      "nodata": 0,
+      "scale": 0.0001,
+      "offset": -0.1
+     }
+    ]
+   },
+   "red": {
+    "href": "https://assets.example.invalid/x.tif",
+    "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "gsd": 10,
+    "eo:bands": [
+     {
+      "name": "B04",
+      "common_name": "red",
+      "center_wavelength": 0.665
+     }
+    ],
+    "raster:bands": [
+     {
+      "data_type": "uint16",
+      "nodata": 0,
+      "scale": 0.0001,
+      "offset": -0.1
+     }
+    ]
+   },
+   "rededge1": {
+    "href": "https://assets.example.invalid/x.tif",
+    "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "gsd": 20,
+    "eo:bands": [
+     {
+      "name": "B05",
+      "common_name": "rededge1",
+      "center_wavelength": 0.705
+     }
+    ],
+    "raster:bands": [
+     {
+      "data_type": "uint16",
+      "nodata": 0,
+      "scale": 0.0001,
+      "offset": -0.1
+     }
+    ]
+   },
+   "coastal": {
+    "href": "https://assets.example.invalid/x.tif",
+    "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "gsd": 60,
+    "eo:bands": [
+     {
+      "name": "B01",
+      "common_name": "coastal",
+      "center_wavelength": 0.443
+     }
+    ],
+    "raster:bands": [
+     {
+      "data_type": "uint16",
+      "nodata": 0,
+      "scale": 0.0001,
+      "offset": -0.1
+     }
+    ]
+   },
+   "aot": {
+    "href": "https://assets.example.invalid/x.tif",
+    "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "gsd": 10,
+    "eo:bands": [
+     {
+      "name": "AOT"
+     }
+    ],
+    "raster:bands": [
+     {
+      "data_type": "uint16",
+      "nodata": 0,
+      "scale": 0.001
+     }
+    ]
+   },
+   "scl": {
+    "href": "https://assets.example.invalid/x.tif",
+    "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "gsd": 20,
+    "eo:bands": [
+     {
+      "name": "SCL"
+     }
+    ],
+    "raster:bands": [
+     {
+      "data_type": "uint8",
+      "nodata": 0
+     }
+    ]
+   },
+   "visual": {
+    "href": "https://assets.example.invalid/tci.tif",
+    "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "gsd": 10,
+    "raster:bands": [
+     {
+      "data_type": "uint8",
+      "nodata": 0
+     },
+     {
+      "data_type": "uint8",
+      "nodata": 0
+     },
+     {
+      "data_type": "uint8",
+      "nodata": 0
+     }
+    ]
+   }
+  }
+ }
+}

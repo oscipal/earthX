@@ -103,7 +103,7 @@ export const TOO_LARGE_TIP = 'An export job may write at most 5 GB. Choose a sma
 const COUNTS_TIP = 'The job this download runs on the platform; it counts against the same limits as a job of Processing.';
 
 // A refusal as one short line and its explanation: the text before the first colon, the whole message as the tooltip.
-function explain(error: unknown): { text: string; tip: string } {
+export function explain(error: unknown): { text: string; tip: string } {
   if (error instanceof HttpError && error.status === 413) return { text: 'Too large for one job', tip: TOO_LARGE_TIP };
   // As the panel words a refusal of the server: its `detail`, else the status line (503: try again).
   const message =
@@ -137,9 +137,9 @@ export async function estimateIndexDownload(args: { layer: MapLayer; datasets: r
   }
 }
 
-const done = (status: StatusInfo) => status.status === 'successful' || status.status === 'failed' || status.status === 'dismissed';
+export const done = (status: StatusInfo) => status.status === 'successful' || status.status === 'failed' || status.status === 'dismissed';
 
-const sleep = (ms: number, signal: AbortSignal) =>
+export const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, ms);
     signal.addEventListener('abort', () => (clearTimeout(timer), resolve()), { once: true });
@@ -152,6 +152,47 @@ export function saveFrom(url: string): void {
   a.download = '';
   a.rel = 'noopener noreferrer';
   a.click();
+}
+
+// Places the orders as jobs, waits for them and starts the download of their file (one result ZIP, or one bundle of several). Resolves
+// with `null` on success, else with what to tell. `running` is the caller's: the ids of the jobs not yet over, which the caller dismisses
+// when this ends (a cancel, a failure of another part). `working` ("Computing NDVI") is what `onStatus` says with the progress.
+export async function placeAndFollow(args: {
+  orders: readonly Order[];
+  aoi: GeoJSON.Geometry | null;
+  working: string;
+  failed: string;
+  signal: AbortSignal;
+  running: Set<string>;
+  onStatus: (text: string) => void;
+  save: (url: string) => void;
+  pollMs: number;
+}): Promise<{ text: string; tip: string } | null> {
+  const { orders, aoi, working, failed, signal, running, onStatus, save, pollMs } = args;
+  const say = (reason: string) => ({ text: reason.split(': ')[0].split('. ')[0], tip: reason });
+  const placed: string[] = [];
+  for (const order of orders) {
+    const provenance: AoiProvenance | undefined = aoiProvenanceFor(order, aoi);
+    const status = await placeJob(order, { aoiProvenance: provenance });
+    placed.push(status.jobID);
+    running.add(status.jobID);
+  }
+  // Each job is asked for until it is over.
+  while (running.size > 0) {
+    if (signal.aborted) return say('Cancelled.');
+    const statuses = await Promise.all([...running].map((id) => fetchJob(id, signal)));
+    for (const status of statuses) {
+      if (!done(status)) continue;
+      running.delete(status.jobID);
+      if (status.status !== 'successful') return say(status.message || failed);
+    }
+    const progress = statuses.reduce((sum, s) => sum + (done(s) ? 1 : s.progress / 100), 0) / Math.max(1, statuses.length);
+    onStatus(`${working}… ${Math.round(progress * 100)} %`);
+    if (running.size > 0) await sleep(pollMs, signal);
+  }
+  if (signal.aborted) return say('Cancelled.');
+  save(placed.length === 1 ? resultUrl(placed[0], RESULT_ZIP) : (await createBundle(placed)).href);
+  return null;
 }
 
 // Places the jobs, waits for them and starts the download of their file (one result ZIP, or one bundle of several). Resolves with
@@ -172,35 +213,23 @@ export async function downloadIndexCrop(args: {
   if (!preset || !dataset) return say('This layer shows no index.');
   const block = indexDownloadBlock(layer, datasets);
   if (block) return say(block);
-  const placed: string[] = [];
   const running = new Set<string>();
   try {
     onStatus(`Computing ${preset.name}…`);
     const info = processInfo(await fetchProcess(dataset.id, signal));
     const made = indexOrdersOf({ layer, preset, dataset, info });
     if ('problem' in made) return say(made.problem);
-    for (const order of made.orders) {
-      const provenance: AoiProvenance | undefined = aoiProvenanceFor(order, layer.restore.aoi);
-      const status = await placeJob(order, { aoiProvenance: provenance });
-      placed.push(status.jobID);
-      running.add(status.jobID);
-    }
-    // Each job is asked for until it is over.
-    while (running.size > 0) {
-      if (signal.aborted) return say('Cancelled.');
-      const statuses = await Promise.all([...running].map((id) => fetchJob(id, signal)));
-      for (const status of statuses) {
-        if (!done(status)) continue;
-        running.delete(status.jobID);
-        if (status.status !== 'successful') return say(status.message || `${preset.name} could not be computed.`);
-      }
-      const progress = statuses.reduce((sum, s) => sum + (done(s) ? 1 : s.progress / 100), 0) / Math.max(1, statuses.length);
-      onStatus(`Computing ${preset.name}… ${Math.round(progress * 100)} %`);
-      if (running.size > 0) await sleep(pollMs, signal);
-    }
-    if (signal.aborted) return say('Cancelled.');
-    save(placed.length === 1 ? resultUrl(placed[0], RESULT_ZIP) : (await createBundle(placed)).href);
-    return null;
+    return await placeAndFollow({
+      orders: made.orders,
+      aoi: layer.restore.aoi,
+      working: `Computing ${preset.name}`,
+      failed: `${preset.name} could not be computed.`,
+      signal,
+      running,
+      onStatus,
+      save,
+      pollMs,
+    });
   } catch (error) {
     if (signal.aborted) return say('Cancelled.');
     return explain(error);

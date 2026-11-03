@@ -77,8 +77,11 @@ describe('openDownloadForView', () => {
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() }));
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     state().openDownloadForView('crop');
+    // The table of bands (here: none that reads) is asked for first.
+    await vi.waitFor(() => expect(state().downloadBandsLoading).toBe(false));
     await state().confirmDownload();
-    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    const sent = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/download'));
+    const body = JSON.parse(String(sent?.[1]?.body));
     expect(body.groups).toEqual([['A1', 'A2']]);
     expect(state().downloadView).toBeNull();
     expect(state().downloadSelection).toBe(false);

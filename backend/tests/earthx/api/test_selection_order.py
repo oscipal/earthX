@@ -180,7 +180,7 @@ def test_the_crop_keeps_a_in_the_overlap(scenes: Scenes, client, selection: list
         json={"groups": [selection], "assets": [ASSET], "aoi": _aoi(scenes)},
     )
     assert response.status_code == 200, response.text
-    assert _in_the_overlap(_member(response.content, "visual.tif")) == FIRST
+    assert _in_the_overlap(_member(response.content, "exports/visual_10m.tif")) == FIRST
     recipe = json.loads(_member(response.content, "recipe.json"))
     assert recipe["inputs"][0]["groups"] == [["A", "B"]]
 

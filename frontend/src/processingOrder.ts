@@ -8,7 +8,7 @@ import type { Geom } from 'polyclip-ts';
 import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
-import { canonicalJson, type AoiProvenance, type JsonSchema, type Order, type OrderStep, type ProcessDescription } from './processing';
+import { canonicalJson, type AoiProvenance, type ExportLayout, type JsonSchema, type Order, type OrderStep, type ProcessDescription } from './processing';
 import type { AreaStatistics } from './api';
 import { bandNamesOf, isBandMath, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
 import {
@@ -892,20 +892,31 @@ export function buildMosaicOrder(args: {
 
 // The crop of the download dialog as an export job (M4-11 §3.1): the same
 // groups, assets and AOI as the refused request, no steps, factor 1 (only that
-// factor is offered as a job, M4-11 K5).
+// factor is offered as a job, M4-11 K5). `layout` (NM4-75) says how the bands lie
+// in files. Without `aoi` the order covers the whole scenes: the server takes the
+// union of their footprints (a download of whole scenes in one file per
+// resolution or one multi-band file).
 export function buildExportOrder(args: {
   datasetId: string;
   groups: readonly (readonly string[])[];
   assets: readonly string[];
-  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  aoi?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  layout?: ExportLayout;
 }): Order {
-  const { datasetId, groups, assets, aoi } = args;
+  const { datasetId, groups, assets, aoi, layout } = args;
   return {
     recipe_version: 2,
     inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: groups.map((g) => [...g]), assets: [...assets] }],
-    aoi: orderAoi(aoi),
+    ...(aoi ? { aoi: orderAoi(aoi) } : {}),
     steps: [],
-    output: { kind: 'crop', format: 'cog', resolution_factor: 1, extent: 'bbox(aoi ∩ footprints)', mask: 'file' },
+    output: {
+      kind: 'crop',
+      format: 'cog',
+      resolution_factor: 1,
+      extent: 'bbox(aoi ∩ footprints)',
+      mask: 'file',
+      ...(layout ? { layout: { ...layout } } : {}),
+    },
   };
 }
 

@@ -19,6 +19,7 @@ from shapely.geometry import shape
 from shapely.ops import unary_union
 
 from earthx.access import download as dl
+from earthx.access.band_export import EXPORTS_DIR
 from earthx.access.crop_rules import TEXT_FILES
 from earthx.api.citation import citation_bib
 from earthx.api.intake import SCENE_AOI_PROPERTIES
@@ -90,8 +91,8 @@ def crop_files() -> list[str]:
             )
         )
     )
-    own = {dl.crop_filename("visual"), dl.mask_filename("visual")}
-    return [name for name in archive.namelist() if name not in own]
+    # The data, the masks and their description lie in `exports/` (NM4-75); a job's result keeps its own two rasters instead.
+    return [name for name in archive.namelist() if not name.startswith(EXPORTS_DIR)]
 
 
 async def zip_of(rig: Rig, job_id: str) -> zipfile.ZipFile:
