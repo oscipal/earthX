@@ -2836,13 +2836,13 @@ input[type='date']:focus-visible {
   color: var(--muted);
   text-decoration: line-through;
 }
-/* One line for a job, in the places of a grid: title (the one that grows), date, then the symbols "＋", "↻"/"↺"/"⇩" and "⋯". The pencil
-   lies over the end of the title, in the place of the title, and hides what is under it; the arrow of a batch lies over its start. The
+/* One line for a job, in the places of a grid: title (the one that grows), pencil, date, then the symbols "＋", "↻"/"↺"/"⇩" and "⋯". The
+   arrow of a batch lies over the start of its title. The
    state is no column of its own: it stands in the place of the date while the job runs, waits or is cancelled, and for a screen reader
    always. Every group has the same columns: the title and the date are as wide in each. A place a row lacks stays empty. */
 .pm-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--pm-date) repeat(3, var(--pm-icon));
+  grid-template-columns: minmax(0, 1fr) var(--pm-icon) var(--pm-date) repeat(3, var(--pm-icon));
   align-items: center;
   column-gap: var(--space-1);
   border-radius: var(--radius-sm);
@@ -2895,7 +2895,7 @@ button.pm-open:hover {
 /* The titles of the columns, under the head of each open group, in the places of the row: small and quiet, with no background of their own. */
 .pm-columns {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--pm-date) repeat(3, var(--pm-icon));
+  grid-template-columns: minmax(0, 1fr) var(--pm-icon) var(--pm-date) repeat(3, var(--pm-icon));
   column-gap: var(--space-1);
   padding: 0 0 var(--space-1);
   color: var(--muted);
@@ -2908,8 +2908,7 @@ button.pm-open:hover {
   padding: 0 var(--space-1);
 }
 .pm-col-until {
-  grid-column: 2;
-  text-align: right;
+  grid-column: 3;
 }
 .pm-meta {
   display: contents;
@@ -2935,12 +2934,17 @@ button.pm-open:hover {
   width: auto;
   height: auto;
   clip-path: none;
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
-  text-align: right;
 }
 .pm-meta:is(.running, .waiting, .checking) .pm-until {
   display: none;
+}
+/* "No longer available" is longer than a date: it takes two short lines inside the column and goes no further. */
+.pm-meta.unavailable .pm-state {
+  min-width: 0;
+  white-space: normal;
+  line-height: var(--leading-tight);
 }
 .pm-title {
   min-width: 0;
@@ -2948,22 +2952,15 @@ button.pm-open:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Over the end of the title, with a background of its own that no title shows through: opaque, in the tint of the row under the pointer. */
+/* The pencil beside the title, quiet like the one of a layer. */
 .pm-edit {
-  grid-column: 1;
-  grid-row: 1;
-  justify-self: end;
-  z-index: 1;
-  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
-}
-.pm-line:hover .pm-edit,
-.pm-line:focus-within .pm-edit {
-  background: linear-gradient(var(--row-hover), var(--row-hover)), linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
-}
-.pm-until {
   grid-column: 2;
   grid-row: 1;
-  text-align: right;
+  color: var(--muted);
+}
+.pm-until {
+  grid-column: 3;
+  grid-row: 1;
 }
 .pm-tag {
   grid-column: 1;
@@ -2972,15 +2969,15 @@ button.pm-open:hover {
   color: var(--accent-2);
 }
 .pm-row:not(.refused) > .pm-line > :nth-last-child(3) {
-  grid-column: 3;
-  grid-row: 1;
-}
-.pm-row:not(.refused) > .pm-line > :nth-last-child(2) {
   grid-column: 4;
   grid-row: 1;
 }
-.pm-row:not(.refused) > .pm-line > :last-child {
+.pm-row:not(.refused) > .pm-line > :nth-last-child(2) {
   grid-column: 5;
+  grid-row: 1;
+}
+.pm-row:not(.refused) > .pm-line > :last-child {
+  grid-column: 6;
   grid-row: 1;
 }
 .pm-meta.failed .pm-state {
@@ -3152,12 +3149,6 @@ a.pm-icon:hover {
   /* The pencil has a column of its own here; the state and the date stand under the title. */
   .pm-edit {
     grid-column: 2;
-    justify-self: auto;
-    background: none;
-  }
-  .pm-line:hover .pm-edit,
-  .pm-line:focus-within .pm-edit {
-    background: none;
   }
   .pm-line .pm-state,
   .pm-meta:is(.running, .waiting, .checking, .cancelled, .unavailable) .pm-state {

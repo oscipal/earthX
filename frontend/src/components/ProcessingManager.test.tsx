@@ -1818,30 +1818,35 @@ describe('the line of a job', () => {
     expect(container.querySelector('.pm-columns')).toBeNull();
   });
 
-  it('has the pencil over the end of the title, in the place of the title, with a background of its own', () => {
+  it('has the pencil beside the title, in a place of its own and not over it, quiet like the one of a layer', () => {
     const edit = css.slice(css.indexOf('\n.pm-edit {') + 1);
     const rule = edit.slice(0, edit.indexOf('}'));
-    expect(rule).toMatch(/grid-column: 1;\s*grid-row: 1;\s*justify-self: end;/u);
-    expect(rule).toMatch(/background: linear-gradient\(var\(--panel-bg\), var\(--panel-bg\)\), var\(--map-bg\)/u);
+    expect(rule).toMatch(/grid-column: 2;\s*grid-row: 1;/u);
+    expect(rule).not.toMatch(/justify-self|background|z-index/u);
+    expect(rule).toContain('color: var(--muted)');
   });
 
   it('hides the titles where the status and the date stand under the title', () => {
     const media = css.slice(css.indexOf('@media (pointer: coarse), (max-width: 899px) {\n  .pm-list'));
     expect(media).toMatch(/\.pm-columns \{\s*display: none;/u);
-    expect(css).toMatch(/\.pm-columns \{[^}]*grid-template-columns: minmax\(0, 1fr\) var\(--pm-date\) repeat\(3, var\(--pm-icon\)\)/u);
+    expect(css).toMatch(/\.pm-columns \{[^}]*grid-template-columns: minmax\(0, 1fr\) var\(--pm-icon\) var\(--pm-date\) repeat\(3, var\(--pm-icon\)\)/u);
   });
 
   it('puts the pencil after the title and "＋", "⇩", "⋯" at the end, in that order', () => {
     put({ jobs: [finished(1, { tiles })] });
     mount();
-    expect(places(rows()[0])).toEqual(['pm-open', 'pm-meta', 'Rename Band math · Sentinel-2 L2A · 1 Oct'.split(':')[0], 'Add to layers', 'Download (ZIP)', 'pm-menu']);
+    expect(places(rows()[0])).toEqual(['pm-open', 'pm-meta', 'Rename job', 'Add to layers', 'Download (ZIP)', 'pm-menu']);
   });
 
   it('renames in place with the pencil, drops an empty name and an Escape, and keeps a new one', () => {
     put({ jobs: [finished(1, { title: 'Mine' })] });
     mount();
     const pencil = () => rows()[0].querySelector<HTMLButtonElement>('.pm-edit')!;
-    expect(pencil().title).toBe('Rename');
+    // As in the layer manager: the symbol of a pencil, the tooltip and the name for a screen reader the same.
+    expect(pencil().title).toBe('Rename job');
+    expect(pencil().getAttribute('aria-label')).toBe('Rename job');
+    expect(pencil().querySelector('svg')).not.toBeNull();
+    expect(pencil().textContent).toBe('');
     click(pencil());
     type(field(), '');
     key(field(), 'Enter');
@@ -1924,19 +1929,29 @@ describe('the line of a job', () => {
       return css.slice(start, css.indexOf('}', start));
     };
 
-    it('lays a job out as one line of five places in the dock, which is as wide as the other panels (340 px)', () => {
+    it('lays a job out as one line of six places in the dock, which is as wide as the other panels (340 px)', () => {
       expect(Number(/--dock-width: (\d+)px/u.exec(tokens)?.[1])).toBe(340);
       const line = block('.pm-line');
       expect(line).toContain('display: grid');
-      expect(line).toContain('grid-template-columns: minmax(0, 1fr) var(--pm-date) repeat(3, var(--pm-icon))');
+      expect(line).toContain('grid-template-columns: minmax(0, 1fr) var(--pm-icon) var(--pm-date) repeat(3, var(--pm-icon))');
       // No second line from a container query, whatever the width of the list.
       expect(css).not.toMatch(/@container \(max-width: \d+px\) \{\s*\.pm-open/u);
       expect(block('.pm-until')).toContain('grid-row: 1');
     });
 
+    it('aligns the dates and the title "Expires" to the left, in one column, and keeps "No longer available" inside it on two short lines', () => {
+      expect(block('.pm-until')).not.toContain('text-align');
+      expect(block('.pm-col-until')).not.toContain('text-align');
+      expect(block('.pm-col-until')).toContain('grid-column: 3');
+      expect(block('.pm-until')).toContain('grid-column: 3');
+      const unavailable = block('.pm-meta.unavailable .pm-state');
+      expect(unavailable).toContain('white-space: normal');
+      expect(unavailable).toContain('min-width: 0');
+    });
+
     it('has no column for the state: it is for a screen reader, and stands in the place of the date while a job runs, waits or is cancelled', () => {
       expect(block('.pm-line .pm-state')).toMatch(/position: absolute;[^}]*clip-path: inset\(50%\)/u);
-      expect(block('.pm-meta:is(.running, .waiting, .checking, .cancelled, .unavailable) .pm-state')).toContain('grid-column: 2');
+      expect(block('.pm-meta:is(.running, .waiting, .checking, .cancelled, .unavailable) .pm-state')).toContain('grid-column: 3');
       expect(block('.pm-meta:is(.running, .waiting, .checking) .pm-until')).toContain('display: none');
     });
 

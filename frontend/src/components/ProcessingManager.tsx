@@ -14,6 +14,7 @@ import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
 import { useAppStore } from '../store';
 import DownloadAll from './DownloadAll';
+import { PencilIcon } from './Icons';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
 import Popover from './Popover';
@@ -306,12 +307,16 @@ export function RetryButton({ offered, name, tip, busy, onRetry }: { offered: bo
   );
 }
 
-// The date in the column "Expires": when a job goes (a deleted one: the day a day after its deletion, which is also the end of the time
-// to restore it; one that expired: when it did). A job that is cancelled or forgotten by the server has no time to name; its state stands in the place of the date.
+// The date in the column "Expires": when a job goes (a deleted one: a day after its deletion, which is also the end of the time to
+// restore it, unless it expired before: then the day it expired; one that expired: when it did). A job that is cancelled or forgotten by the server has no time to name; its state stands in the place of the date.
+// The day a deleted job goes: a day after its deletion (`deletedUntil`), or the day it expired when that came first (it had expired
+// already, or it would have within the day). Otto, 3.11.2026.
+const goneDay = (job: Pick<JobEntry, 'expires' | 'deletedUntil'>): string =>
+  job.deletedUntil && Date.parse(job.deletedUntil) < Date.parse(job.expires) ? job.deletedUntil : job.expires;
+
 function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
   if (state.key === 'deleted') {
-    // A deleted job expires a day after it was deleted: that is the day in the column, whether it can still be restored or not.
-    const day = job.deletedUntil ?? job.expires;
+    const day = goneDay(job);
     return (
       <span className="pm-until" title={day}>
         {formatShortDate(day)}
@@ -326,11 +331,12 @@ function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
   );
 }
 
-// "✎" at the title of a row: the title is edited in place. An empty name is not taken.
-function RenameButton({ name, onRename }: { name: string; onRename: () => void }) {
+// The pencil beside the title, as in the layer manager (`PencilIcon`, the same tooltip in the same wording): the title is edited in place. An
+// empty name is not taken.
+function RenameButton({ what, name, onRename }: { what: 'job' | 'batch'; name: string; onRename: () => void }) {
   return (
-    <button type="button" className="pm-icon pm-edit" title="Rename" aria-label={`Rename ${name}`} onClick={onRename}>
-      ✎
+    <button type="button" className="pm-icon pm-edit" data-name={name} title={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
+      <PencilIcon size={11} />
     </button>
   );
 }
@@ -434,7 +440,7 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
           {job.archived && <span className="pm-tag">Archived</span>}
           {job.superseded && <span className="pm-tag">Superseded</span>}
         </span>
-        {!part && !renaming && <RenameButton name={title} onRename={() => setRenaming(true)} />}
+        {!part && !renaming && <RenameButton what="job" name={title} onRename={() => setRenaming(true)} />}
         {state.key === 'finished' && job.tiles ? <AddToLayers job={job} name={title} /> : <span className="pm-icon" aria-hidden="true" />}
         {restorable && job.deletedUntil ? (
           <RestoreButton name={title} until={job.deletedUntil} busy={job.deleting} onRestore={() => void restoreTarget(target)} />
@@ -511,9 +517,9 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
   const retryable = retryableParts(parts, now, (part) => orderRetired(part, descriptions));
   const restorable = parts.filter((p) => canRestore(p, now));
   // The soonest end of the days in which a part can still be restored: after it not every part can.
-  const restoreUntil = restorable.map((p) => p.deletedUntil ?? '').sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+  const restoreUntil = restorable.map(goneDay).sort((a, b) => Date.parse(a) - Date.parse(b))[0];
   // Once every part is deleted for good the column still names the day: the latest of theirs.
-  const deletedDay = parts.map((p) => p.deletedUntil ?? '').filter(Boolean).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+  const deletedDay = parts.filter((p) => p.deletedUntil).map(goneDay).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   return (
     <li
       ref={row}
@@ -579,7 +585,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
           )}
           {batch.archived && <span className="pm-tag">Archived</span>}
         </span>
-        {!renaming && <RenameButton name={batch.title} onRename={() => setRenaming(true)} />}
+        {!renaming && <RenameButton what="batch" name={batch.title} onRename={() => setRenaming(true)} />}
         <RetryButton
           offered={retryable.length > 0}
           name={batch.title}
