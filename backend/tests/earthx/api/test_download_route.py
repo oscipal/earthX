@@ -140,6 +140,36 @@ def _download(client: TestClient, dataset: str = DATASET, **body: Any) -> Any:
     return client.post(f"/collections/{dataset}/download", json=payload)
 
 
+class TestTheFormOfTheFiles:
+    """NM4-75: the request names how the bands are laid into files; what does not fit is refused before any read."""
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"form": "zip"},
+            {"form": "multi_band"},
+            {"form": "per_band", "common_resolution": 20},
+            {"form": "per_resolution", "common_resolution": 20},
+            {"form": "multi_band", "common_resolution": 0},
+            {"form": "multi_band", "common_resolution": 5000},
+            {"form": "per_resolution", "resolution": 2},
+            {"form": "multi_band", "common_resolution": 20, "resolution": 4},
+        ],
+    )
+    def test_a_form_that_does_not_fit_its_resolution_is_422(self, client: TestClient, body: dict[str, Any]) -> None:
+        assert _download(client, **body).status_code == 422
+
+    def test_the_default_is_one_file_per_band_and_the_recipe_says_so(self, client: TestClient) -> None:
+        explicit = _download(client, form="per_band")
+        with _zip_of(_download(client)) as default, _zip_of(explicit) as named:
+            assert default.namelist() == named.namelist()
+            assert json.loads(default.read("recipe.json"))["output"]["layout"] == {"form": "per_band"}
+
+    def test_a_source_that_offers_no_raster_to_stack_is_422(self, client: TestClient) -> None:
+        response = _download(client, form="per_resolution")
+        assert response.status_code == 422
+
+
 class TestAcceptanceCriteria:
     def test_an_unknown_dataset_is_404(self, client: TestClient) -> None:
         response = _download(client, dataset="no-such-dataset")
@@ -669,6 +699,7 @@ class TestRecipeAndCitation:
             "resolution_factor": 1,
             "extent": "bbox(aoi ∩ footprints)",
             "mask": "file",
+            "layout": {"form": "per_band"},
         }
         assert recipe["aoi"] == GOOD_AOI
         assert recipe["inputs"][0]["dataset"] == DATASET

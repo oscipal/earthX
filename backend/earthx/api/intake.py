@@ -52,7 +52,7 @@ import math
 import re
 import secrets
 from collections.abc import Awaitable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -62,6 +62,7 @@ from shapely.geometry import box, mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import unary_union
 
+from earthx.access.band_export import EXPORTS_DIR, BandMeta, ExportPlanError, band_meta, plan_files
 from earthx.access.crop_rules import mosaic_order
 from earthx.access.download import (
     AOI_FILENAME,
@@ -406,6 +407,8 @@ async def _accept(
     attachments = export_attachments(
         prepared.config,
         recipe,
+        bands=layout_bands(prepared, recipe) if recipe.output.layout is not None else (),
+        scene_aoi=prepared.scene_aoi,
         dropped=[item_id for group in prepared.entry.groups if kept.isdisjoint(group) for item_id in group],
         aoi_provenance=aoi_provenance,
         accepted_at=datetime.now(UTC),
@@ -483,7 +486,49 @@ def _recipe_of(
         check_bands(recipe, operators)
     except RecipeInvalid as error:
         raise OrderRefused(422, str(error), "applicable") from None
+    if isinstance(recipe.output, CropOutput) and recipe.output.layout is not None:
+        layout_bands(prepared, recipe)
     return recipe
+
+
+def layout_bands(prepared: _Prepared, recipe: Recipe) -> list[BandMeta]:
+    """The assets of an export with a layout as the items describe them; 422 where they make no plan (NM4-75).
+
+    The pixel size of an asset is the finest of its items, as the estimate takes it.
+    """
+    assert isinstance(recipe.output, CropOutput) and recipe.output.layout is not None
+    layout = recipe.output.layout
+    bands = []
+    for asset in recipe.inputs[0].assets:
+        metas = [
+            band_meta(
+                target.item,
+                asset,
+                unit=prepared.config.band_unit(asset),
+                categorical=prepared.config.mask is not None and prepared.config.mask.asset == asset,
+            )
+            for target in prepared.targets
+            if target.item_asset == asset
+        ]
+        sizes = [meta.resolution_m for meta in metas if meta.resolution_m is not None]
+        bands.append(replace(metas[0], resolution_m=min(sizes) if sizes else None))
+    try:
+        plan_files(layout.form, bands, layout.resolution_m)
+    except ExportPlanError as error:
+        raise OrderRefused(422, str(error), "scope") from None
+    return bands
+
+
+def layout_notes(recipe: Recipe) -> list[str]:
+    """The line for the head of ``BANDS.txt`` where the scenes of the export lie in more than one CRS."""
+    entry = recipe.inputs[0]
+    crs = sorted({item.asset.crs for item in entry.resolved if item.asset.asset == entry.assets[0] and item.asset.crs})
+    if len(crs) < 2:
+        return []
+    return [
+        "Note: the scenes of this export lie in more than one coordinate reference system "
+        f"({', '.join(crs)}); they were reprojected to EPSG:4326 and merged."
+    ]
 
 
 def side_files(
@@ -497,6 +542,7 @@ def side_files(
     years: AcquisitionYears | None,
     at: datetime | None = None,
     raster_result: bool = False,
+    layout: tuple[Mapping[str, tuple[str, str]], float | None] | None = None,
 ) -> dict[str, str]:
     """``ATTRIBUTION.txt``, ``citation.bib`` and ``aoi.geojson`` as the synchronous crop writes them.
 
@@ -504,8 +550,10 @@ def side_files(
     the raster job's (:func:`job_side_files`); the crop itself has them from ``build_download_zip``
     with the same functions. ``aoi`` is the geometry with the ``properties`` that go into the file.
     ``years`` are those the scenes were acquired in, which both attributions name (NM4-01); ``at`` and
-    ``raster_result`` are those of :func:`~earthx.access.download.build_notice_text`.
+    ``raster_result`` are those of :func:`~earthx.access.download.build_notice_text`. ``layout`` (NM4-75) is the
+    files of an export with a layout, ``(file names by asset, common resolution)``.
     """
+    names, common = layout if layout is not None else (None, None)
     notice = build_notice_text(
         config,
         item_ids=[item_id for group in groups for item_id in group],
@@ -516,6 +564,9 @@ def side_files(
         years=years,
         at=at,
         raster_result=raster_result,
+        file_names=names,
+        common_resolution=common,
+        group_prefix=EXPORTS_DIR if layout is not None else "",
     )
     return {
         NOTICE_FILENAME: notice,
@@ -533,8 +584,12 @@ def export_attachments(
     accepted_at: datetime,
     years: AcquisitionYears | None,
     acquired_on: date | None = None,
+    bands: Sequence[BandMeta] = (),
+    scene_aoi: bool = False,
 ) -> Attachments:
     """The side files of an export's ZIP, as the synchronous crop writes them (M4-11 F3, F4, K3).
+
+    ``bands`` (NM4-75): the assets as the items describe them, for the files of an output with a layout.
 
     ``ATTRIBUTION.txt`` with the groups the recipe reads, the items of groups the AOI did
     not touch at all (the crop names only those, not single items left out of a group) and
@@ -544,9 +599,16 @@ def export_attachments(
     """
     entry = recipe.inputs[0]
     aoi = recipe.aoi.model_dump(mode="json")
-    if aoi_provenance:
+    if scene_aoi:
+        aoi = {**aoi, "properties": dict(SCENE_AOI_PROPERTIES)}
+    elif aoi_provenance:
         aoi = {**aoi, "properties": dict(aoi_provenance)}
     attribution = attribution_text(config, years=years)
+    layout = recipe.output.layout if isinstance(recipe.output, CropOutput) else None
+    names = None
+    if layout is not None:
+        plans = plan_files(layout.form, bands, layout.resolution_m)
+        names = ({asset: (plan.name, plan.mask_name) for plan in plans for asset in plan.assets}, layout.resolution_m)
     return Attachments(
         files=side_files(
             config,
@@ -556,10 +618,13 @@ def export_attachments(
             dropped=dropped,
             accepted_at=accepted_at,
             years=years,
+            layout=names,
         ),
         attribution=(attribution,) if attribution else (),
         dataset=DatasetFacts.of(config),
         acquired_on=acquired_on,
+        bands=tuple(bands),
+        notes=tuple(layout_notes(recipe)) if bands else (),
     )
 
 
@@ -639,7 +704,7 @@ def _check_scope(request: RecipeRequest) -> InputRequest:
         raise OrderRefused(422, "an order has exactly one input", "order")
     if isinstance(request.output, CropOutput):
         # An export (M4-11a): the source's own values at native resolution (K1).
-        if request.aoi is None:
+        if request.aoi is None and request.output.layout is None:
             raise OrderRefused(422, "an export needs an AOI: it is the area that is cut out", "order")
         if request.steps:
             raise OrderRefused(422, "an export has no steps; it delivers the source's own values", "order")
@@ -1331,8 +1396,12 @@ def crop_recipe_json(
     resolution_factor: int,
     accepted_at: datetime,
     years: AcquisitionYears | None,
+    layout: Mapping[str, Any] | None = None,
 ) -> bytes:
     """``recipe.json`` for the ZIP of a crop, as bytes (M4-14 puts it in).
+
+    ``layout`` (NM4-75) is the form of the files, ``{"form": ..., "resolution_m": ...}``, so that the recipe
+    names the files the ZIP holds.
 
     The same schema as a job's recipe, ``steps: []``, the output described as the
     crop it is (§10.1). ``groups`` are the items the crop actually reads, already
@@ -1376,6 +1445,7 @@ def crop_recipe_json(
             "resolution_factor": resolution_factor,
             "extent": "bbox(aoi ∩ footprints)",
             "mask": "file",
+            **({"layout": dict(layout)} if layout is not None else {}),
         },
     }
     try:

@@ -1365,6 +1365,10 @@ async def download_crop(
             resolution_factor=body.resolution,
             accepted_at=accepted_at,
             years=years,
+            layout={
+                "form": body.form,
+                **({"resolution_m": body.common_resolution} if body.common_resolution is not None else {}),
+            },
         )
     except OrderRefused as refused:
         # By cause (Otto, 07.10.2026): an address its dataset does not declare, or an

@@ -288,6 +288,17 @@ class TestGroupsAndRefusals:
         with pytest.raises(ExportPlanError, match=message):
             _zip(["blue"], form=form, common=common)
 
+    def test_a_source_asset_of_several_bands_cannot_be_stacked(self) -> None:
+        mems, metas = _sources()
+        three = _memcog(np.ones((3, 120, 120), dtype="uint16"), crs=UTM32, transform=from_origin(*ORIGIN, 10, 10))
+        aoi = _polygon(_bbox_to_wgs84(UTM32, (ORIGIN[0], ORIGIN[1] - SIZE_M, ORIGIN[0] + SIZE_M, ORIGIN[1])))
+        with pytest.raises(ExportPlanError, match="exactly one band"):
+            dl.build_download_zip(
+                config=SENTINEL_2_L2A, years=YEARS, open_reader=open_reader,
+                crops=[dl.AssetCrop(asset="visual", paths=(_asset_path(three, asset="visual"),))],
+                aoi_geometry=aoi, item_ids=["ITEM1"], form="per_resolution", band_metas=metas,
+            )  # fmt: skip
+
     def test_a_coarser_read_is_only_for_one_file_per_band(self) -> None:
         with pytest.raises(ExportPlanError, match="coarser"):
             _zip(["blue"], form="per_resolution", resolution_factor=2)

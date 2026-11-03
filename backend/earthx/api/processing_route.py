@@ -400,12 +400,15 @@ class ResamplingScenes(BaseModel):
 class Resampling(BaseModel):
     """What the job converts onto a common grid without being asked to; the estimate shows it, the job does the same.
 
-    Not given (``null`` in the answer) where nothing is converted, for an export, and for an order with a ``reproject``
-    step: there the person chose the target and the method, and the step says so.
+    Not given (``null`` in the answer) where nothing is converted, for an export without a layout, and for an order with
+    a ``reproject`` step: there the person chose the target and the method, and the step says so.
+
+    ``method`` of an export with a layout (NM4-75): ``nearest`` where its bands become finer, ``average`` where they become
+    coarser (a classification layer then takes ``mode``), ``mixed`` where both happen.
     """
 
     grid: ResamplingGrid
-    method: Literal["nearest"]
+    method: Literal["nearest", "average", "mixed"]
     #: Bands of the result whose source has another pixel size or CRS than ``grid``; a layer that only masks is no band here.
     bands: list[ResamplingBand]
     #: Set where scenes of another CRS (UTM zone) are warped onto the CRS most scenes share.

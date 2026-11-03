@@ -781,6 +781,8 @@ def describe_resampling(recipe: Recipe, operators: OperatorRegistry) -> Resampli
     the target and the method, that step describes it) and where an asset has no ``gsd`` (the estimate refuses that
     before). A CRS the item does not name is ``None`` in the facts: it is neither compared nor guessed.
     """
+    if isinstance(recipe.output, CropOutput):
+        return _describe_crop_resampling(recipe)
     if not isinstance(recipe.output, RasterOutput):
         return None
     live = live_steps(plan_steps(recipe.steps, operators), recipe.output.bands)
@@ -813,15 +815,60 @@ def describe_resampling(recipe: Recipe, operators: OperatorRegistry) -> Resampli
     return ResamplingFacts(grid, RESAMPLING_METHOD, bands, scenes) if bands or scenes else None
 
 
+def _describe_crop_resampling(recipe: Recipe) -> ResamplingFacts | None:
+    """What an export with a layout converts (NM4-75): the bands of one multi-band file that are not at its resolution,
+    and the scenes that lie in another coordinate system and are reprojected. ``None`` for an export without a layout
+    (the crop of before), and for a layout that converts nothing.
+    """
+    layout = recipe.output.layout  # type: ignore[union-attr]
+    entry = recipe.inputs[0]
+    if layout is None:
+        return None
+    sizes: dict[str, float | None] = {}
+    for resolved in entry.resolved:
+        known = [item.gsd for item in entry.resolved if item.asset.asset == resolved.asset.asset and item.gsd is not None]
+        sizes[resolved.asset.asset] = min(known) if known else None
+    if layout.form == "multi_band":
+        assert layout.resolution_m is not None
+        grid = GridFacts(layout.resolution_m, "EPSG:4326")
+        bands = tuple(
+            BandOnOtherGrid(asset, size, None)
+            for asset, size in sizes.items()
+            if size is not None and not math.isclose(size, layout.resolution_m, rel_tol=_SAME_SIZE)
+        )
+        coarser = any(band.resolution < layout.resolution_m for band in bands)  # the band's pixels are smaller
+        finer = any(band.resolution > layout.resolution_m for band in bands)
+        method = "mixed" if coarser and finer else "average" if coarser else "nearest"
+    else:
+        known = [size for size in sizes.values() if size is not None]
+        grid = GridFacts(min(known) if known else 0.0, "EPSG:4326")
+        bands, method = (), RESAMPLING_METHOD
+    first = entry.assets[0]
+    crs_by_scene = {e.asset.item_id: e.asset.crs for e in entry.resolved if e.asset.asset == first}
+    scenes = None
+    if len(crs_by_scene) > 1 and (target := target_crs(crs_by_scene)) is not None:
+        apart = sum(1 for crs in crs_by_scene.values() if crs is not None and crs != target)
+        scenes = ScenesInOtherZone(apart, len(crs_by_scene), target) if apart else None
+    return ResamplingFacts(grid, method, bands, scenes) if bands or scenes else None
+
+
 def export_outputs(recipe: Recipe) -> list[PlannedOutput]:
-    """The files an export writes, per group and asset, as ``access.download.plan_outputs`` plans a crop.
+    """The files an export writes, per group and file, as ``access.download.plan_outputs`` plans a crop.
 
     The region of a group is AOI ∩ its footprints (``compute_crop_region``); per asset the
     finest ``gsd`` and the largest bytes per pixel of the group's items, both read off the
-    item at acceptance. Reads nothing.
+    item at acceptance. With a layout (NM4-75) a file stacks the bands of one resolution or all of
+    them at the common one: its pixels are those of its resolution and its bytes per pixel the sum
+    of its bands (each at the widest type, since the file has one). Reads nothing.
     """
+    return [output for output, _ in _export_plan(recipe)]
+
+
+def _export_plan(recipe: Recipe) -> list[tuple[PlannedOutput, int]]:
+    """:func:`export_outputs`, each with the number of items of its group (the reads that make it)."""
     aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
-    planned = []
+    layout = getattr(recipe.output, "layout", None)
+    planned: list[tuple[PlannedOutput, int]] = []
     for entry in recipe.inputs:
         footprints = entry.footprints or {}
         resolved = {(item.asset.item_id, item.asset.asset): item for item in entry.resolved}
@@ -832,23 +879,41 @@ def export_outputs(recipe: Recipe) -> list[PlannedOutput]:
                 region = compute_crop_region(items, aoi)
             except AoiOutsideItems:
                 raise AoiOutsideInputs("the AOI does not touch the footprint of a group") from None
+            per_asset: dict[str, tuple[float | None, int]] = {}
             for asset in entry.assets:
                 entries = [resolved[(item_id, asset)] for item_id in group]
                 gsds = [item.gsd for item in entries if item.gsd is not None]
-                if gsds:
-                    height, width = estimate_output_dims(region, min(gsds))
-                else:
-                    height = width = MAX_OUTPUT_SIDE_PX
                 per_pixel = max(
                     (bytes_per_pixel([band.data_type for band in item.bands], asset) for item in entries),
                     default=FALLBACK_BYTES_PER_PIXEL,
                 )
-                planned.append(PlannedOutput(label=asset, width=width, height=height, bytes_per_pixel=per_pixel))
+                per_asset[asset] = (min(gsds) if gsds else None, per_pixel)
+            files: list[tuple[str, float | None, list[str]]]
+            if layout is None or layout.form == "per_band":
+                files = [(asset, per_asset[asset][0], [asset]) for asset in entry.assets]
+            elif layout.form == "multi_band":
+                files = [("bands", layout.resolution_m, list(entry.assets))]
+            else:
+                by_size: dict[float | None, list[str]] = {}
+                for asset in entry.assets:
+                    by_size.setdefault(per_asset[asset][0], []).append(asset)
+                files = [(f"bands_{size}", size, assets) for size, assets in by_size.items()]
+            for label, size, assets in files:
+                if size:
+                    height, width = estimate_output_dims(region, size)
+                else:
+                    height = width = MAX_OUTPUT_SIDE_PX
+                if len(assets) == 1:
+                    per_pixel = per_asset[assets[0]][1]
+                else:
+                    per_pixel = len(assets) * max(per_asset[asset][1] for asset in assets)
+                planned.append((PlannedOutput(label=label, width=width, height=height, bytes_per_pixel=per_pixel), len(group)))
     return planned
 
 
 def _export_estimate(recipe: Recipe) -> CostEstimate:
-    planned = export_outputs(recipe)
+    plan = _export_plan(recipe)
+    planned = [output for output, _ in plan]
     pixels = sum(output.width * output.height for output in planned)
     raw = sum(output.width * output.height * output.bytes_per_pixel for output in planned)
     total = sum(output.total_bytes for output in planned)
@@ -859,10 +924,9 @@ def _export_estimate(recipe: Recipe) -> CostEstimate:
             "Draw a smaller area or choose fewer assets."
         )
     assets = sum(len(entry.resolved) for entry in recipe.inputs)
-    items = [len(group) for entry in recipe.inputs for group in entry.groups for _ in entry.assets]
     seconds = sum(
         output.total_bytes / 1_000_000 * (SECONDS_PER_EXPORT_MB + SECONDS_PER_EXPORT_MB_PER_ITEM * count)
-        for output, count in zip(planned, items, strict=True)
+        for output, count in plan
     )
     return CostEstimate(
         input_pixels=pixels,
