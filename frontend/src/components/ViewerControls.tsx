@@ -23,9 +23,10 @@ import { colourView, datasetSavable, enhanceOn, shownImageOf, useAppStore, viewM
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
-import { measureView, type ViewMeasure } from '../viewMeasure';
+import { fallbackReasonOf, MEASURED_ON_SCENE, measureView, type ViewMeasure } from '../viewMeasure';
 import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
+import Tip from './Tip';
 import Eye from './Eye';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
 import LayerActions from './LayerActions';
@@ -120,6 +121,8 @@ export default function ViewerControls() {
   const colour = useAppStore(colourView);
   const measure = useAppStore(viewMeasure);
   const histograms = useHistograms(measure && measure.key, () => loadHistograms(measure!));
+  // Read after the histograms: their measure is the first of a picture, and a refusal of the tiler is known once it is in.
+  const measuredOnScene = measure ? fallbackReasonOf(measure) : null;
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const images = useMemo(
@@ -364,6 +367,11 @@ export default function ViewerControls() {
               </button>
             </div>
           </div>
+          {measuredOnScene && (
+            <p className="vc-note hint-text" role="status">
+              {MEASURED_ON_SCENE} <Tip text={measuredOnScene} />
+            </p>
+          )}
           {/* Without "Quick processing" (a layer of an index) the note of the index stands under the fields. */}
           {!quick && note}
         </InspectorSection>

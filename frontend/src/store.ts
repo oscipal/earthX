@@ -85,7 +85,7 @@ import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
 import { canonicalJson } from './processing';
-import { areaQuestionOf, measureView, SCENE_MEASURE_NOTICE, type ViewMeasure } from './viewMeasure';
+import { areaQuestionOf, measureView, type ViewMeasure } from './viewMeasure';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -696,8 +696,10 @@ function measureOfView(s: AppState): ViewMeasure | null {
   const ids = shown?.ids ?? [itemId];
   const known = new Map(sectionsForView(s).flatMap((section) => section.items).map((item) => [item.id, item]));
   const items = ids.flatMap((id) => known.get(id) ?? []);
-  const area = areaQuestionOf({ datasetId: info.datasetId, collection, items: items.length === ids.length ? items : [], aoi: s.cropToAoi ? s.viewAoi : null, index, asset });
-  return { sceneUrl, area, key: area ? `${sceneUrl}\n${canonicalJson(area.order)}` : sceneUrl };
+  const asked = areaQuestionOf({ datasetId: info.datasetId, collection, items: items.length === ids.length ? items : [], aoi: s.cropToAoi ? s.viewAoi : null, index, asset });
+  const area = asked && 'order' in asked ? asked : null;
+  const skipped = asked && 'reason' in asked ? asked.reason : null;
+  return { sceneUrl, area, skipped, key: area ? `${sceneUrl}\n${canonicalJson(area.order)}` : sceneUrl };
 }
 
 function firstSceneOfView(s: AppState): { itemId: string | undefined; info: DownloadedInfo | undefined } {
@@ -758,8 +760,7 @@ async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
   const asked = [checked.low, checked.high].filter((n) => n !== 0 && n !== 100);
   set({ focusLoading: true });
   try {
-    const { statistics: stats, fellBack } = await measureView(measure, { percentiles: asked });
-    if (fellBack) set({ notice: SCENE_MEASURE_NOTICE });
+    const { statistics: stats } = await measureView(measure, { percentiles: asked });
     // A colour picture takes each channel at the percentiles of its own values (UI-03d).
     const channels = colourView(s) ? channelsAtPercent(Object.values(stats), checked) : null;
     const range = rescaleAtPercent(Object.values(stats), checked);
@@ -2863,8 +2864,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!measure) return;
     set({ focusLoading: true });
     try {
-      const { statistics: stats, fellBack } = await measureView(measure);
-      if (fellBack) set({ notice: SCENE_MEASURE_NOTICE });
+      const { statistics: stats } = await measureView(measure);
       const range = autoRescale(stats);
       if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
     } catch (e) {

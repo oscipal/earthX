@@ -9,7 +9,7 @@ import { datasetsFrom } from './datasets';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
 import { useAppStore, viewMeasure } from './store';
 import type { Collection, DownloadedInfo, StacItem } from './types';
-import { forgetAreaAnswers, SCENE_MEASURE_NOTICE } from './viewMeasure';
+import { fallbackReasonOf, forgetAreaAnswers } from './viewMeasure';
 
 const TIFF = 'image/tiff; application=geotiff; profile=cloud-optimized';
 const collection = {
@@ -109,9 +109,10 @@ describe('what the view is measured with', () => {
     expect(viewMeasure(state())?.area?.order.output).toMatchObject({ bands: ['red'] });
   });
 
-  it('asks the area of the crop only', () => {
+  it('asks the area of the crop only, and has no hint where there is none', () => {
     openView(false);
     expect(viewMeasure(state())?.area).toBeNull();
+    expect(fallbackReasonOf(viewMeasure(state())!)).toBeNull();
     openView(true);
     expect(viewMeasure(state())?.area?.order.aoi).toEqual(AOI);
   });
@@ -158,7 +159,23 @@ describe('"auto-scale" over the area', () => {
     await state().autoStretch();
     expect(calls().map((c) => new URL(c.url, 'http://x').pathname)).toEqual(['/collections/s2/statistics', '/collections/s2/items/a1/statistics']);
     expect([state().pendingVmin, state().pendingVmax]).toEqual(['7', '211']);
-    expect(state().notice).toBe(SCENE_MEASURE_NOTICE);
+    // The hint stands beside the fields (`ViewerControls`), not in the notice at the top.
+    expect(fallbackReasonOf(viewMeasure(state())!)).toMatch(/at most 16 files/u);
+    expect(state().notice).toBeNull();
+  });
+
+  it('measures the first scene, and has the reason for it, where the scenes are scaled differently', async () => {
+    openView(true);
+    const second = scene('a2');
+    (second.assets.red['raster:bands'] as { offset: number }[])[0].offset = 0;
+    const both = [scene('a1'), second];
+    useAppStore.setState({ pendingBand: 'red', items: both, groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: both }], downloaded: { a1: info, a2: { ...info, tileUrl: info.tileUrl.replace('a1', 'a2') } }, selectedIds: ['a1', 'a2'] });
+    answer(() => json({ red: { min: 1000, max: 3000, percentile_2: 1100, percentile_98: 2900, count: 5 } }));
+    await state().autoStretch();
+    expect(calls().map((c) => c.init?.method ?? 'GET')).toEqual(['GET']);
+    expect(viewMeasure(state())?.skipped).toMatch(/scaled differently/u);
+    expect(fallbackReasonOf(viewMeasure(state())!)).toMatch(/scaled differently/u);
+    expect([state().pendingVmin, state().pendingVmax]).toEqual(['1100', '2900']);
   });
 
   it('says what went wrong, and changes nothing, on another failure', async () => {

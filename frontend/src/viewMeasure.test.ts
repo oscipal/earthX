@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AreaStatistics } from './api';
 import type { IndexPreset } from './indexPresets';
 import type { Collection, StacItem } from './types';
-import { areaQuestionOf, forgetAreaAnswers, inRawValues, measureView, statisticsOfArea, type ViewMeasure } from './viewMeasure';
+import { areaQuestionOf, fallbackReasonOf, forgetAreaAnswers, inRawValues, measureView, statisticsOfArea, type ViewMeasure } from './viewMeasure';
 
 const TIFF = 'image/tiff; application=geotiff; profile=cloud-optimized';
 const SCALED = { data_type: 'uint16', nodata: 0, scale: 0.0001, offset: -0.1 };
@@ -24,8 +24,13 @@ const item = (id: string, red: Record<string, unknown> = SCALED): StacItem => ({
 
 const AOI: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[10, 47], [10.1, 47], [10.1, 47.1], [10, 47]]] };
 const NDVI: IndexPreset = { name: 'NDVI', title: 'NDVI', expression: '(nir - red) / (nir + red)', rescale: [-1, 1], colormapName: 'rdylgn', formula: '', reference: '' };
-const ask = (over: Partial<Parameters<typeof areaQuestionOf>[0]> = {}) =>
-  areaQuestionOf({ datasetId: 's2', collection: collection(), items: [item('b'), item('a')], aoi: AOI, index: null, asset: 'red', ...over });
+type Over = Partial<Parameters<typeof areaQuestionOf>[0]>;
+const asked = (over: Over = {}) => areaQuestionOf({ datasetId: 's2', collection: collection(), items: [item('b'), item('a')], aoi: AOI, index: null, asset: 'red', ...over });
+// The question itself, `null` where none is asked.
+const ask = (over: Over = {}) => {
+  const one = asked(over);
+  return one && 'order' in one ? one : null;
+};
 
 describe('the order for what the view draws', () => {
   it('has no step for a band, and that band as the output in float32', () => {
@@ -62,13 +67,18 @@ describe('the order for what the view draws', () => {
   it.each([
     ['no area is cropped', { aoi: null }],
     ['a point is no area', { aoi: { type: 'Point', coordinates: [10, 47] } as GeoJSON.Point }],
-    ['the scenes are not known', { items: [] }],
-    ['the dataset is not a COG', { collection: collection('zarr') }],
-    ['there is no dataset', { collection: undefined }],
-    ['the asset is not one of the item', { asset: 'nothing' }],
-    ['the item does not say how many bands the asset has', { asset: 'bare' }],
-  ])('is none where %s', (_, over) => {
-    expect(ask(over as Partial<Parameters<typeof areaQuestionOf>[0]>)).toBeNull();
+  ])('says nothing where %s: there is nothing to fall back from', (_, over) => {
+    expect(asked(over as Over)).toBeNull();
+  });
+
+  it.each([
+    ['the scenes are not known', { items: [] }, /not all known/u],
+    ['the dataset is not a COG', { collection: collection('zarr') }, /no cloud-optimized GeoTIFF/u],
+    ['there is no dataset', { collection: undefined }, /no cloud-optimized GeoTIFF/u],
+    ['the asset is not one of the item', { asset: 'nothing' }, /do not describe the bands/u],
+    ['the item does not say how many bands the asset has', { asset: 'bare' }, /do not describe the bands/u],
+  ])('gives the reason for the first scene where %s', (_, over, reason) => {
+    expect(asked(over as Over)).toEqual({ reason: expect.stringMatching(reason) });
   });
 
   it.each([
@@ -76,12 +86,12 @@ describe('the order for what the view draws', () => {
     ['a falling scale', { ...SCALED, scale: -0.0001 }],
     ['a scale that is no number', { ...SCALED, scale: Number.NaN }],
     ['an offset that is no number', { ...SCALED, offset: Number.POSITIVE_INFINITY }],
-  ])('is none for %s, which cannot be turned back', (_, red) => {
-    expect(ask({ items: [item('a', red)] })).toBeNull();
+  ])('gives the reason for %s, which cannot be turned back', (_, red) => {
+    expect(asked({ items: [item('a', red)] })).toEqual({ reason: expect.stringMatching(/cannot be turned back/u) });
   });
 
-  it('is none for scenes whose bands are scaled differently: one raw range would be right for none of them', () => {
-    expect(ask({ items: [item('a'), item('b', { ...SCALED, offset: 0 })] })).toBeNull();
+  it('gives the reason for scenes whose bands are scaled differently: one raw range would be right for none of them', () => {
+    expect(asked({ items: [item('a'), item('b', { ...SCALED, offset: 0 })] })).toEqual({ reason: expect.stringMatching(/scaled differently/u) });
     expect(ask({ items: [item('a'), item('b', SCALED)] })).not.toBeNull();
   });
 });
@@ -125,7 +135,7 @@ describe('the answer in the values the tiles draw', () => {
 
 describe('the measure', () => {
   const area = ask()!;
-  const measure: ViewMeasure = { sceneUrl: '/collections/s2/items/a/statistics?asset=red', area, key: 'k' };
+  const measure: ViewMeasure = { sceneUrl: '/collections/s2/items/a/statistics?asset=red', area, skipped: null, key: 'k' };
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   const physical = { bands: [{ name: 'red', unit: null, statistics: { minimum: 0.1, maximum: 0.3, count: 4, percentile_2: 0.12, percentile_98: 0.28 } }], exact: true, factor: 1 };
   const scene = { red: { min: 2000, max: 4000, percentile_2: 2200, percentile_98: 3800, count: 4 } };
@@ -148,7 +158,7 @@ describe('the measure', () => {
   it('asks the route for the area, with the AOI in the body and in no address', async () => {
     answers(() => json(physical));
     const { statistics, fellBack } = await measureView(measure);
-    expect(fellBack).toBe(false);
+    expect(fellBack).toBeNull();
     expect(statistics.red.min).toBeCloseTo(2000, 6);
     expect(statistics.red.percentile_98).toBeCloseTo(3800, 6);
     expect(urls()).toEqual(['/collections/s2/statistics']);
@@ -166,7 +176,7 @@ describe('the measure', () => {
   it('asks the first scene where the view is not cropped, with the percentiles and the histogram it is asked for', async () => {
     answers(() => json(scene));
     const { statistics, fellBack } = await measureView({ ...measure, area: null }, { percentiles: [5, 95], histogram: true });
-    expect(fellBack).toBe(false);
+    expect(fellBack).toBeNull();
     expect(statistics.red.max).toBe(4000);
     const url = new URL(urls()[0], 'http://x');
     expect(url.pathname).toBe('/collections/s2/items/a/statistics');
@@ -177,7 +187,8 @@ describe('the measure', () => {
   it.each([413, 422])('falls back to the first whole scene on %i, and says so', async (status) => {
     answers(() => json({ detail: 'refused' }, status), () => json(scene));
     const { statistics, fellBack } = await measureView(measure, { percentiles: [5] });
-    expect(fellBack).toBe(true);
+    expect(fellBack).toBe(fallbackReasonOf(measure));
+    expect(fellBack).toMatch(status === 413 ? /at most 16 files/u : /does not take the area/u);
     expect(statistics.red.max).toBe(4000);
     expect(urls()).toHaveLength(2);
     expect(new URL(urls()[1], 'http://x').searchParams.getAll('p')).toEqual(['5']);
@@ -191,13 +202,40 @@ describe('the measure', () => {
 
   it('does not keep a refusal: the same order is asked again next time', async () => {
     answers(() => json({ detail: 'refused' }, 422), () => json(scene), () => json(physical));
-    expect((await measureView(measure)).fellBack).toBe(true);
-    expect((await measureView(measure)).fellBack).toBe(false);
+    expect((await measureView(measure)).fellBack).not.toBeNull();
+    expect(fallbackReasonOf(measure)).not.toBeNull();
+    expect((await measureView(measure)).fellBack).toBeNull();
+    // A measure that works again takes the hint with it.
+    expect(fallbackReasonOf(measure)).toBeNull();
   });
 
   it('names no area in what it writes to the console', async () => {
     answers(() => json({ detail: 'the area 10.0,47.0 is outside' }, 422), () => json(scene));
     await measureView(measure);
     expect(String(vi.mocked(console.warn).mock.calls)).not.toMatch(/47|outside|coordinates/u);
+  });
+
+  it('says why the first scene stands in where the area was never asked, for the range and for the histograms alike', async () => {
+    const skipped: ViewMeasure = { ...measure, area: null, skipped: 'The scenes of this image are scaled differently, so one range would not fit them all.' };
+    answers(() => json(scene), () => json(scene));
+    expect((await measureView(skipped, { percentiles: [5] })).fellBack).toBe(skipped.skipped);
+    expect((await measureView(skipped, { histogram: true })).fellBack).toBe(skipped.skipped);
+    expect(fallbackReasonOf(skipped)).toBe(skipped.skipped);
+    expect(urls().every((url) => url.startsWith('/collections/s2/items/a/statistics'))).toBe(true);
+  });
+
+  it('says nothing where the view is not cropped, the first scene being the question there', async () => {
+    const plain: ViewMeasure = { ...measure, area: null, skipped: null };
+    answers(() => json(scene));
+    expect((await measureView(plain)).fellBack).toBeNull();
+    expect(fallbackReasonOf(plain)).toBeNull();
+  });
+
+  it('keeps the hint of one picture to that picture', async () => {
+    answers(() => json({ detail: 'refused' }, 413), () => json(scene), () => json(physical));
+    await measureView(measure);
+    const other: ViewMeasure = { ...measure, key: 'other' };
+    expect(fallbackReasonOf(other)).toBeNull();
+    expect(fallbackReasonOf(measure)).not.toBeNull();
   });
 });
