@@ -37,7 +37,6 @@ import ScaleHistograms from './ScaleHistograms';
 import { useHistograms } from './useHistograms';
 
 const INDEX_ONLY_TIP = 'This layer holds the index only';
-const ENHANCE_TIP = 'Stretch the band from its 2nd to its 98th percentile, as auto-scale does, and draw it. Only the look: Add to layers pins the whole view.';
 const ENHANCE_RGB_TIP = 'Stretch red, green and blue each from its 2nd to its 98th percentile and draw them. Only the look: Add to layers pins the whole view.';
 
 // The histograms of the bands the statistics name, in their order; none where one band has none.
@@ -179,6 +178,9 @@ export default function ViewerControls() {
     else if (value.startsWith('band:')) chooseViewBand(value.slice('band:'.length));
     else chooseViewIndex(null);
   };
+  // "Quick processing" offers the indices of a dataset that has presets, not at a layer of an index, and "Enhance contrast" for RGB.
+  const quickIndices = presets.length > 0 && !indexOnly;
+  const quick = quickIndices || colour;
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -190,6 +192,11 @@ export default function ViewerControls() {
           mapZoom,
         })
       : null;
+  const note = index && indexBlock && (
+    <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>
+      {indexNote(indexBlock, index.name)}
+    </p>
+  );
   // An index is drawn with a colormap whatever the dataset's own picture is.
   const colormap = chosen || pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   const at = shown ? here.indexOf(shown) : -1;
@@ -357,45 +364,49 @@ export default function ViewerControls() {
               </button>
             </div>
           </div>
+          {/* Without "Quick processing" (a layer of an index) the note of the index stands under the fields. */}
+          {!quick && note}
         </InspectorSection>
 
-        <InspectorSection title="Quick processing">
-          {/* Three in a row (Otto, 2.11.2026): the indices of the dataset, drawn at once without a job, and "Enhance contrast". Each says
-              whether it is on; a second click, or a band picked, puts it away. */}
-          <div className="vc-quick">
-            {presets.map((preset) => {
-              const on = chosen?.name === preset.name;
-              return (
+        {/* Only what applies (Otto, 3.11.2026): the indices of a dataset that has presets, and "Enhance contrast" for RGB; a layer of an
+            index has none of it. Three in a row (Otto, 2.11.2026), each says whether it is on; a second click, or a band picked, puts it
+            away. */}
+        {quick ? (
+          <InspectorSection title="Quick processing">
+            <div className="vc-quick">
+              {quickIndices &&
+                presets.map((preset) => {
+                  const on = chosen?.name === preset.name;
+                  return (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      className={`ghost-btn${on ? ' on' : ''}`}
+                      aria-pressed={on}
+                      disabled={pinLoading}
+                      title={`${presetTip(preset)} ${on ? 'Click again for the picture of the dataset.' : 'Drawn at once, no job.'}`}
+                      onClick={() => void quickIndex(preset.name)}
+                    >
+                      {preset.name}
+                    </button>
+                  );
+                })}
+              {colour && (
                 <button
-                  key={preset.name}
                   type="button"
-                  className={`ghost-btn${on ? ' on' : ''}`}
-                  aria-pressed={on}
-                  disabled={indexOnly || pinLoading}
-                  title={indexOnly ? `${INDEX_ONLY_TIP}. ${presetTip(preset)}` : `${presetTip(preset)} ${on ? 'Click again for the picture of the dataset.' : 'Drawn at once, no job.'}`}
-                  onClick={() => void quickIndex(preset.name)}
+                  className={`ghost-btn${enhanced ? ' on' : ''}`}
+                  aria-pressed={enhanced}
+                  disabled={focusLoading}
+                  title={enhanced ? 'Click again for the picture before' : ENHANCE_RGB_TIP}
+                  onClick={() => void enhanceContrast()}
                 >
-                  {preset.name}
+                  Enhance contrast
                 </button>
-              );
-            })}
-            <button
-              type="button"
-              className={`ghost-btn${enhanced ? ' on' : ''}`}
-              aria-pressed={enhanced}
-              disabled={focusLoading}
-              title={enhanced ? 'Click again for the picture before' : colour ? ENHANCE_RGB_TIP : ENHANCE_TIP}
-              onClick={() => void enhanceContrast()}
-            >
-              Enhance contrast
-            </button>
-          </div>
-          {index && indexBlock && (
-            <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>
-              {indexNote(indexBlock, index.name)}
-            </p>
-          )}
-        </InspectorSection>
+              )}
+            </div>
+            {note}
+          </InspectorSection>
+        ) : null}
 
         {compact ? (
           <InspectorSection title="Actions">

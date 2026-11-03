@@ -154,13 +154,16 @@ describe('"Enhance contrast"', () => {
     expect(on('Enhance contrast')).toBe(false);
   });
 
-  it('is what "auto-scale" measures for a band of its own: the 2nd to the 98th percentile of an index', async () => {
+  // Otto, 3.11.2026: "Enhance contrast" is for RGB only.
+  it('is there for RGB only: not for an index, nor for a band of its own', async () => {
     mount();
+    expect(quickButton('Enhance contrast')).toBeDefined();
     await press('NDVI');
-    await press('Enhance contrast');
-    expect(state().appliedRender).toMatchObject({ index: 'NDVI', rescale: '-0.2,0.8' });
-    expect(on('Enhance contrast')).toBe(true);
-    expect(on('NDVI')).toBe(true);
+    expect(quickButton('Enhance contrast')).toBeUndefined();
+    await press('NDVI');
+    expect(quickButton('Enhance contrast')).toBeDefined();
+    act(() => useAppStore.setState({ pendingBand: 'B04' }));
+    expect(quickButton('Enhance contrast')).toBeUndefined();
   });
 
   it('is off once the fields ask for something else, or a band or an index is picked', async () => {
@@ -170,6 +173,8 @@ describe('"Enhance contrast"', () => {
     expect(on('Enhance contrast')).toBe(false);
     act(() => state().setPendingPercent('low', '2'));
     expect(on('Enhance contrast')).toBe(true);
+    await press('NDWI');
+    expect(quickButton('Enhance contrast')).toBeUndefined();
     await press('NDWI');
     expect(on('Enhance contrast')).toBe(false);
   });
@@ -222,17 +227,17 @@ describe('the histograms of "Scale"', () => {
     expect(state().pendingChannels[1].vmin).toBe('3000');
   });
 
-  it('is one for an index, and "Enhance contrast" moves its sliders to the range it draws', async () => {
+  it('is one for an index; "Enhance contrast" moves the sliders of the three channels to the range it draws', async () => {
     mount();
     await press('NDVI');
     await vi.waitFor(() => expect(hists()).toHaveLength(1));
+    await press('NDVI');
+    await vi.waitFor(() => expect(hists()).toHaveLength(3));
     await press('Enhance contrast');
-    // In percentiles: the sliders stand where the 2nd and the 98th percentile of the histogram lie.
+    // In percentiles: each slider stands where the 2nd and the 98th percentile of its channel's histogram lie.
     expect(state().pendingUnit).toBe('percent');
-    const low = Number(slider('vmin').value);
-    const high = Number(slider('vmax').value);
-    expect(low).toBeCloseTo(-0.3 + 0.02 * 1.2, 5);
-    expect(high).toBeCloseTo(-0.3 + 0.98 * 1.2, 5);
+    expect(Number(slider('red vmin').value)).toBeCloseTo(20 + 0.02 * 960, 5);
+    expect(Number(slider('blue vmax').value)).toBeCloseTo(150 + 0.98 * 1800, 5);
   });
 
   it('write whole percents in percentiles', async () => {

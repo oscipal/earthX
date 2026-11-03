@@ -141,6 +141,17 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     expect(quick().map((b) => b.textContent)).toEqual(['Enhance contrast']);
   });
 
+  // Otto, 3.11.2026: only what applies; the elevation model has no index and no colour picture.
+  it('is not there for a dataset without presets and without a colour picture', () => {
+    mount([], { datasets: datasetsFrom([collection([], false)]) });
+    expect(container.querySelector('.insp-heading')).not.toBeNull();
+    expect(quick()).toEqual([]);
+    expect([...container.querySelectorAll('.insp-heading')].map((h) => h.textContent)).toEqual(['Display', 'Actions']);
+    // Counter-check: with a colour picture "Enhance contrast" is there.
+    mount([]);
+    expect(quick().map((b) => b.textContent)).toEqual(['Enhance contrast']);
+  });
+
   it('says what an index is in the tooltip: title and formula', () => {
     mount();
     expect(quickButton('NDVI').title).toContain('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');

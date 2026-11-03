@@ -6,7 +6,7 @@
 //      `op=band_math`, the band named like the index, the range and colormap of the preset, and no raw asset; the button is on.
 //   3. Zoomed out the choice stays and a short note says "Zoom in to compute NDWI", with the explanation in its tooltip; no tile is
 //      asked for; zoomed in the note is gone and the tiles come.
-//   4. "Add to layers" pins the index alone as a layer whose tiles compute it: its dropdown and the other indices are locked. Its ⇩
+//   4. "Add to layers" pins the index alone as a layer whose tiles compute it: its dropdown is locked, it has no "Quick processing". Its ⇩
 //      downloads the index as a Processing job would give it (the job API is made up here): the dialog shows the estimate, a file comes,
 //      and no Processing panel opens and no job stands in the list of jobs. Its ⚙ opens the panel with the index as the one band.
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
@@ -255,7 +255,8 @@ async function checkDraw(browser, theme, viewport) {
   if ((await field(page).locator('select').isDisabled()) !== true) problems.push('the dropdown "Band" of a layer of an index is free');
   if ((await field(page).getAttribute('title')) !== 'This layer holds the index only') problems.push(`the dropdown of the layer says ${await field(page).getAttribute('title')}`);
   if ((await field(page).locator('select').inputValue()) !== 'index:NDWI') problems.push('the layer does not show its index in the dropdown');
-  if ((await page.locator('.scene-view .vc-quick button', { hasText: 'NDVI' }).isDisabled()) !== true) problems.push('another index is free at a layer of an index');
+  // A layer of an index has no "Quick processing" (Otto, 3.11.2026).
+  if ((await page.locator('.scene-view .vc-quick').count()) !== 0) problems.push('a layer of an index has "Quick processing"');
   if ((await page.locator('.scene-view .vc-render > .vc-field > span').allTextContents()).join('|') !== 'Band|Scale|Colormap') problems.push('the settings of the layer are not the fields of every layer');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_layer.png`) });
 

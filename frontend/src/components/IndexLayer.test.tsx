@@ -167,16 +167,18 @@ describe('the view of a layer of the layer manager', () => {
     expect(quick().every((b) => !b.disabled)).toBe(true);
   });
 
-  it('locks the dropdown and the other indices of a layer that holds an index alone, and says why; "Enhance contrast" stays', () => {
+  it('locks the dropdown of a layer that holds an index alone, says why, and has no "Quick processing" (Otto, 3.11.2026)', () => {
     setState({ viewOfLayer: true, layers: [layer(NDVI, { indexOnly: true })], viewLayerId: 'L1', pendingIndex: 'NDVI' });
     act(() => root.render(<ViewerControls />));
     const select = indexField()!.querySelector('select')!;
     expect(select.disabled).toBe(true);
     expect([...select.options].map((o) => o.textContent)).toEqual(['NDVI']);
     expect(indexField()!.title).toBe('This layer holds the index only');
-    expect(quick().filter((b) => b.disabled).map((b) => b.textContent)).toEqual(['NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
-    expect(quick().find((b) => b.textContent === 'NDWI')!.title).toContain('This layer holds the index only');
-    expect(quick().find((b) => b.textContent === 'Enhance contrast')!.disabled).toBe(false);
+    expect(quick()).toEqual([]);
+    expect([...container.querySelectorAll('.insp-heading')].map((h) => h.textContent)).toEqual(['Display', 'Actions']);
+    // Counter-check: a layer of the whole view keeps the indices.
+    setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1', pendingIndex: 'NDVI' });
+    expect(quick().map((b) => b.textContent)).toEqual(['NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
   });
 
   it('changes the picture of the layer with "Apply", as the same layer: another index, then the standard picture again', async () => {
