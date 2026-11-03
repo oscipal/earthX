@@ -360,6 +360,8 @@ Schätzung 180–220 Zeilen Code ohne Tests, über dem Richtwert 150. In diesem 
 
 **Browsertest Otto (03.11.2026, zu #280), umgesetzt.** (1) Der Mülleimer „Remove layer“ ist so breit wie die anderen Aktionen. (2) Im Layer-Manager entfernt ein Mülleimer statt ✕, und ein Stift am Ende der Titelzeile benennt um (wie im Kopf der Seitenleiste: leer behält den alten Namen, Esc bricht ab). (3) „Add current view to layers“ steht in zwei Zeilen und ist ganz lesbar. (4) „Quick processing“ zeigt nur, was gilt: „Enhance contrast“ nur bei RGB, die Indizes nur bei einem Datensatz mit Presets (Sentinel-2), an einem Index-Layer nichts; gilt nichts, fehlt der Abschnitt, und der Hinweis eines Index steht unter den Feldern. Ersetzt Auslegung (g) „Quick processing auch am Layer“ für Index-Layer und die Regel „gesperrt statt weg“ für diesen Abschnitt. (5) Die Schieber des Histogramms sind dünne Linien; die Greiffläche bleibt breiter.
 
+**Nachtrag Otto (03.11.2026, zu #280), umgesetzt.** (1) Ein Index aus „Quick processing“ kommt in die Felder und wird erst mit „Apply“ gezeichnet, in der Ansicht wie in den Einstellungen eines Layers (ersetzt „sofort“ aus Punkt 2 des Auftrags; ohne Job bleibt). „Enhance contrast“ wirkt weiter sofort (Auslegung, Otto nannte nur den Index). (2) „Add current view to layers“ an einem Layer, der einen Index zeigt, legt den Index allein an (`restore.indexOnly`), wie „Add to layers“ aus der Ansicht; ohne Index die ganze Ansicht.
+
 **Prüfanleitung für Otto (Browser und PowerShell 5.1).**
 
 ```powershell
@@ -374,7 +376,7 @@ Im Browser (`http://localhost:5173`, hell und dunkel, breit und schmal):
 1. Sentinel-2 suchen, Szene wählen, „Crop to AOI“. In der Seitenleiste: „Band“ hat RGB und die Einzelbänder, keine Indizes; darunter „Scale“ mit drei Zeilen R/G/B und drei farbigen Histogrammen; „Quick processing“ mit NDVI, NDWI, NDSI / NBR, EVI, Enhance contrast.
 2. Einen roten Schieber ziehen: nur die Zeile R ändert sich; eine Zahl tippen: der Schieber folgt. „Apply“ zeichnet; DevTools → Network: die Kachel trägt drei `rescale`.
 3. „Enhance contrast“: der Knopf ist hervorgehoben, die Felder zeigen „percentile“ 2/98, die Karte wird kräftiger; zweiter Klick: das Bild davor.
-4. „NDVI“: sofort gezeichnet, ein Histogramm, „Band“ zeigt NDVI (nicht wählbar); zweiter Klick: RGB. Zoom unter 8: „Zoom in to compute NDVI“.
+4. „NDVI“: der Knopf ist an, die Felder zeigen NDVI, gezeichnet wird mit „Apply“; ein Histogramm, „Band“ zeigt NDVI (nicht wählbar); zweiter Klick und „Apply“: RGB. Zoom unter 8: „Zoom in to compute NDVI“. Am Layer ebenso; „Add current view to layers“ an einem Layer mit NDVI legt einen Layer nur mit NDVI an.
 5. NDVI wählen, „Add to layers“; im Layer-Manager den Layer öffnen: „Band“ gesperrt („This layer holds the index only“), andere Indizes gesperrt; ⇩: der Dialog lädt NDVI ohne Wahl „Raw bands“.
 6. Am Layer: keine Pfeile neben dem Datum; Stift → neuer Name → Enter (auch im Layer-Manager); leerer Name → alter Name bleibt; „Add current view to layers“ legt „… (copy)“ an; Mülleimer entfernt den Layer.
 7. Colormap → „More…“: Liste mit Vorschau und Gruppen, Suche „rd“, „Reverse“; Klick auf `rocket` → zurück, `rocket` steht im Dropdown; „⇄“ daneben kehrt um (Kachel `colormap_name=rocket_r`); „‹“ geht ohne Wahl zurück; Esc schließt nichts. Dasselbe im Processing-Panel (Vorschau) und am Ergebnis-Layer.
