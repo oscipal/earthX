@@ -384,6 +384,19 @@ Im Browser (`http://localhost:5173`, hell und dunkel, breit und schmal):
 
 Browser-Skripte der Sitzung: `e2e/quick-processing.cjs` (neu; mit `REAL_COLORMAPS=1` gegen den laufenden tiler), nachgezogen `view-index`, `settings-box`, `rgb`, `nm4-65`, `view-steps`, `colormap-apply`.
 
+### 7.13 Nachtrag UI-03b: Processing-Panel (Draft-PR [#283](https://github.com/oscipal/earthX/pull/283), Stufe B nach Plan §7.6)
+
+Umgesetzt wie §7.6 Punkt 2, mit den Regeln seit #277/#280: Esc schließt nichts, Steuerhöhe über `--control-height` (28 px, auf Touch und unter 900 px 44 px), alle Werte aus `tokens.css`, die Colormap-Wahl ist das gemeinsame `ColormapField` aus #280. Auslegungen (Vorschlag, gelten bis Otto widerspricht):
+
+- (a) Breite `--sheet-wide-width` (520 px bei 1280, 640 px bei 1920), bündig von oben bis unten wie die Seitenleiste; Zoomknöpfe, Attribution und Statuszeile rücken links davon (`.app.has-sheet`, ab 900 px).
+- (b) Reihenfolge fest: Selection (Zusammenfassung, Area, Run as/Passes, Pass, Rezept laden), Bands, Processing steps, Output, Preview on the map; Review und Start im Fuß. Der Kopf trägt nur Titel und rotes x. Die Überschriften bleiben, wie sie waren; neu ist „Selection“.
+- (c) Alle Felder im Raster der Seitenleiste: Name in einer Spalte (112 px, unter 900 px 96 px), Steuerelement daneben. Die Vorschau zeigt Band, Scale (vmin, vmax, absolute/percentile) und Colormap wie die Seitenleiste; die Einheit des Bereichs steht klein unter den Feldern. Unter 900 px steht der Name von „Scale“ über den Feldern, damit Werte wie −10000 passen.
+- (d) Schritt als Karte: Kopf mit Name, Stift „Rename“ (nur Band math; setzt den Cursor ins Feld „Name“, das seine Regeln behält), ↑ ↓ ✕ als Symbole mit Tooltip und `aria-label`; unter 900 px steht der Name über den Symbolen. „Add step“ als Knöpfe gleicher Breite.
+- (e) Token-Test: alle `.pp-…`-Klassen des Blatts (außer `.pp-badge`, geteilt mit der Marke auf der Karte), `.processing-…` und die Details eines Jobs (`.pm-detail-title`, `.pm-facts`, …) sind geprüft; Gegenprobe: ein eingefügtes `padding: 5px` macht ihn rot.
+- (f) Nicht angefasst, Vorschlag für UI-04: der Zweig von `RenderFields` ohne `scale` (`VmaxField`, `.pp-bound`, `.vc-num`-Regeln) hat keinen Aufrufer mehr; `.hint-text` hat außerhalb des Panels weiter 10 px.
+
+Browser: `frontend/e2e/processing-panel.cjs` (neu; hell/dunkel, 1280, 1920, 360 und 1280 mit Touch: Breite, Reihenfolge, gleiche Spalten, Höhen, Kopf der Karte, Esc); nachgezogen waren keine Skripte nötig, gelaufen und grün sind `process-crop`, `mosaic-preview`, `range-layout`, `area-range`, `band-dropdowns`, `rgb`, `band-select`, `mask-values`, `normalize-methods`, `tile-size`, `colormap-apply`. `process-result` ist auch auf `main` rot („the row lost a place without ⚙“), unabhängig von dieser Änderung.
+
 ### 7.14 Nachtrag Otto (03.11.2026, zu UI-03b): Processing-Manager wieder angedockt (ersetzt UI-03c Fenster)
 
 Der Manager („Jobs“) öffnet wieder als Panel links neben der Leiste, wie vor #279, in der Breite der übrigen Panels (`--dock-width`, 340 px); der Knopf „Jobs“ der Leiste ist wieder einer der vier Panelknöpfe (`aria-expanded`). Entfallen: das schwebende Fenster (`JobsWindow`), Verschieben und Größe, die gemerkte Lage (`earthx.jobsWindow`, `jobsWindow.ts`), das Blatt unter 900 px und die Reihenfolge „zuletzt geöffnet oben“. Die Ordnung innen bleibt: Spalten Status · Titel · Datum · Aktionen, Gruppenköpfe mit Anzahl und „n running“, Seltenes im „⋯“.
