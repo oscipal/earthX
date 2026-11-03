@@ -12,7 +12,8 @@ import CSS from '../index.css?raw';
 import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
-import SelectionBlock, { selectionBlockModeOf } from './SelectionBlock';
+import { selectionBlockModeOf } from '../selectionBlockMode';
+import SelectionBlock from './SelectionBlock';
 
 declare global {
   // eslint-disable-next-line no-var

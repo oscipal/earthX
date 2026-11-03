@@ -1372,7 +1372,7 @@ input[type='date']:focus-visible {
   border: 0;
   background: none;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--muted);
   cursor: pointer;
   text-decoration: underline dotted;
