@@ -29,3 +29,4 @@ data/
 
 # Output of scripts/try-job.ps1 (downloaded rasters)
 try-job-output/
+try-band-download-output/

@@ -59,7 +59,7 @@ from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
-from earthx.access.band_export import ExportPlanError, band_meta, plan_files
+from earthx.access.band_export import ExportPlanError, band_meta_of_items, band_table, plan_files
 from earthx.access.colormaps import catalog as colormap_catalog
 from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order
 from earthx.access.download import (
@@ -150,6 +150,7 @@ DOWNLOAD_ROUTE = "/collections/{dataset}/download"
 # The order of the scenes of a pass, without a mosaic (NM4-24): a POST with the ids in the body, as a pass the mosaic
 # tile refuses can have more scenes than a URL takes. Apart from the mosaic router, whose routes are the tile and its TileJSON.
 SCENE_ORDER_ROUTE = "/collections/{dataset}/scene-order"
+BANDS_ROUTE = "/collections/{dataset}/bands"
 # Scenes one such request may name: the largest overpasses of a continental AOI over a season stay far below it.
 MAX_ORDER_ITEMS = 500
 
@@ -1245,15 +1246,14 @@ async def download_crop(
     # files: refused here, before anything is read, when the bands and the form do not make one.
     if config.zarr is not None and body.form != "per_band":
         raise HTTPException(status_code=422, detail="this dataset is a Zarr store; only one file per band is offered")
+    all_matched = [item for matched, _ in surviving_groups for item in matched]
     band_metas = {
-        asset: band_meta(
-            next((item for matched, _ in surviving_groups for item in matched if asset in item.get("assets", {})), {}),
-            asset,
-            unit=config.band_unit(asset),
+        asset: band_meta_of_items(
+            all_matched, asset, unit=config.band_unit(asset),
             categorical=config.mask is not None and config.mask.asset == asset,
         )
         for asset in wanted
-    }
+    }  # fmt: skip
     try:
         plan_files(body.form, [band_metas[asset] for asset in wanted], body.common_resolution)
     except ExportPlanError as error:
@@ -1284,14 +1284,18 @@ async def download_crop(
     try:
         check_output_size_cap(
             [output for planned in planned_by_group for output in planned],
-            native_planned=[output for planned in native_planned_by_group for output in planned],
+            native_planned=(
+                [output for planned in native_planned_by_group for output in planned] if body.form == "per_band" else None
+            ),
         )
     except AoiTooLarge as error:
         # Over the synchronous cap, the same selection may still run as an export job (M4-11 K5):
         # native resolution only (K1), COG only (F6), under the job's own cap (F5). A word, no
         # number and no geometry, like `X-Skipped-Groups` below.
         if body.resolution == 1 and config.zarr is None:
-            fits = native_total <= MAX_JOB_BYTES
+            fits = (
+                native_total if body.form != "multi_band" else sum(o.total_bytes for p in planned_by_group for o in p)
+            ) <= MAX_JOB_BYTES
             headers = {EXPORT_JOB_HEADER: EXPORT_JOB_AVAILABLE if fits else EXPORT_JOB_TOO_LARGE}
         else:
             headers = None
@@ -1322,22 +1326,21 @@ async def download_crop(
         ]
 
     # Scenes of one mosaic in more than one coordinate system are reprojected onto the one grid; BANDS.txt says so.
-    crs_names = sorted(
-        {
-            ref.crs
-            for matched, _ in surviving_groups
-            for stac_item in matched
-            if (ref := _resolve_ref(stac_item, config=config, item=str(stac_item.get("id")), asset=wanted[0])).crs
-        }
-    )
-    bands_notes = (
-        [
-            "Note: the scenes of this download lie in more than one coordinate reference system "
-            f"({', '.join(crs_names)}); they were reprojected to EPSG:4326 and merged."
-        ]
-        if len(crs_names) > 1
-        else []
-    )
+    bands_notes: list[str] = []
+    for matched, _ in surviving_groups:
+        crs_names = sorted(
+            {
+                ref.crs
+                for stac_item in matched
+                if (ref := _resolve_ref(stac_item, config=config, item=str(stac_item.get("id")), asset=wanted[0])).crs
+            }
+        )
+        if len(crs_names) > 1:
+            bands_notes = [
+                "Note: the scenes of a mosaic of this download lie in more than one coordinate reference system "
+                f"({', '.join(crs_names)}); they were reprojected to EPSG:4326 and merged."
+            ]
+            break
 
     first_matched, first_region = surviving_groups[0]
     first_crops = _crops_for(first_matched, planned_by_group[0])
@@ -1501,6 +1504,45 @@ async def download_crop(
     )
 
 
+class BandsRequest(BaseModel):
+    """Body of ``POST /collections/{dataset}/bands`` (NM4-75): the scenes the download dialog is opened for."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[str] = Field(min_length=1, max_length=25, description="item ids, each once")
+
+    @field_validator("items")
+    @classmethod
+    def _once(cls, items: list[str]) -> list[str]:
+        if len(set(items)) != len(items):
+            raise ValueError("name each item once")
+        return items
+
+
+async def bands_of_items(
+    request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")], body: BandsRequest
+) -> dict[str, list[dict[str, Any]]]:
+    """The bands the download dialog offers for these scenes (NM4-75), from the items and the registry alone.
+
+    The GeoTIFF assets of the first scene without the pictures the registry calls auxiliary, each with the name, common name
+    and wavelength the item gives it, its pixel size (the finest over the scenes), type, scale, offset, nodata and unit,
+    whether it is the classification layer, and whether it starts ticked. A dataset with no file per band (a Zarr store) has
+    none. No pixel is read; the ids travel in the body.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in body.items))
+    if config.zarr is not None:
+        return {"bands": []}
+    table = band_table(
+        items,
+        auxiliary=config.auxiliary_assets,
+        mask_asset=config.mask.asset if config.mask is not None else None,
+        unit_of=config.band_unit,
+    )
+    return {"bands": [{**meta.to_json(), "preselected": ticked} for meta, ticked in table]}
+
+
 def gdal_environment(request: Request) -> dict[str, str]:
     """The central GDAL configuration (M1-03) of the tile routes, built once per process."""
     return request.app.state.earthx_gdal_options
@@ -1639,6 +1681,13 @@ def build_app(
         summary="The order a mosaic reads the scenes of a pass in",
     )
     app.add_api_route(
+        BANDS_ROUTE,
+        bands_of_items,
+        methods=["POST"],
+        tags=["Download"],
+        summary="The bands the download dialog offers for some scenes",
+    )
+    app.add_api_route(
         DOWNLOAD_ROUTE,
         download_crop,
         methods=["POST"],
@@ -1740,6 +1789,7 @@ app = build_app()
 
 
 __all__ = [
+    "BANDS_ROUTE",
     "DOWNLOAD_ROUTE",
     "MOSAIC_ROUTER_PREFIX",
     "ROUTER_PREFIX",

@@ -52,6 +52,10 @@ Export), Umrechnung, Datentyp, Skalierung, Offset, nodata und Einheit.
   wenn er ein `layout` trägt: `api` nimmt die Vereinigung der Footprints
   („ganze Szene“). Ohne `layout` bleibt das Verhalten (flache Dateien) wie
   zuvor.
+- **Bandtabelle des Dialogs:** `POST /collections/{dataset}/bands` (Szenen im Body)
+  liefert Bänder, Vorwahl, Auflösung und Metadaten aus Items und Registry. Das
+  Frontend liest keine Quelleigenschaft (`eo:…`, P10, `test_frontend_no_dataset_literals`)
+  und hält keine Namensliste.
 - **Bandmetadaten:** aus den Items (`eo:bands`, `raster:bands`, `gsd`) und der
   Registry (Einheit, Klassenschicht = `mask.asset`). Der Job bekommt sie als
   Teil der `Attachments` von `api`, weil der Kern keine Items kennt.

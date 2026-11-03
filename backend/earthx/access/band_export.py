@@ -26,7 +26,7 @@ import math
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy
@@ -52,6 +52,10 @@ __all__ = [
     "FilePlan",
     "StackReader",
     "apply_band_tags",
+    "band_count",
+    "band_meta_of_items",
+    "band_table",
+    "is_geotiff",
     "band_meta",
     "bands_text",
     "file_profile",
@@ -111,7 +115,21 @@ class BandMeta:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> BandMeta:
-        return cls(**{name: data[name] for name in cls.__slots__})
+        """The band from the JSON of :meth:`to_json`; a field of the wrong type is a :class:`ValueError`, not a crash later."""
+        meta = cls(**{name: data[name] for name in cls.__slots__})
+        for name in ("asset", "name"):
+            if not isinstance(getattr(meta, name), str):
+                raise ValueError(f"{name} is text")
+        for name in ("common_name", "data_type", "unit"):
+            if getattr(meta, name) is not None and not isinstance(getattr(meta, name), str):
+                raise ValueError(f"{name} is text or null")
+        for name in ("wavelength_um", "resolution_m", "scale", "offset", "nodata"):
+            value = getattr(meta, name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)):
+                raise ValueError(f"{name} is a number or null")
+        if not isinstance(meta.categorical, bool):
+            raise ValueError("categorical is true or false")
+        return meta
 
 
 def _number(value: Any) -> float | None:
@@ -146,6 +164,66 @@ def band_meta(item: Mapping[str, Any], asset: str, *, unit: str | None = None, c
         unit=_text(first.get("unit")) or unit,
         categorical=categorical,
     )
+
+
+def band_meta_of_items(
+    items: Sequence[Mapping[str, Any]], asset: str, *, unit: str | None = None, categorical: bool = False
+) -> BandMeta:
+    """:class:`BandMeta` of ``asset`` over the items of an export: the first item's description, the finest pixel size of them all.
+
+    The one place the crop and the job learn the pixel size of a band, so that they name the same file and lay the same grid.
+    """
+    holding = [item for item in items if asset in (item.get("assets") or {})]
+    if not holding:
+        return band_meta({}, asset, unit=unit, categorical=categorical)
+    meta = band_meta(holding[0], asset, unit=unit, categorical=categorical)
+    sizes = [size for item in holding if (size := asset_gsd(item, asset)) is not None]
+    return replace(meta, resolution_m=min(sizes) if sizes else None)
+
+
+def is_geotiff(entry: Any) -> bool:
+    """Whether an asset entry of an item is a GeoTIFF that holds data (not a thumbnail)."""
+    if not isinstance(entry, Mapping):
+        return False
+    kind = entry.get("type")
+    roles = entry.get("roles")
+    return isinstance(kind, str) and kind.lower().startswith("image/tiff") and not (isinstance(roles, list) and "thumbnail" in roles)
+
+
+def band_table(
+    items: Sequence[Mapping[str, Any]],
+    *,
+    auxiliary: Iterable[str],
+    mask_asset: str | None,
+    unit_of: Callable[[str], str | None],
+) -> list[tuple[BandMeta, bool]]:
+    """The bands the download dialog offers for ``items``, in the first item's order, each with whether it starts ticked.
+
+    The GeoTIFF assets of the first item without the pictures the registry calls auxiliary; the layer of the mask is one of
+    them. Ticked from the start: the spectral bands (the item names a centre wavelength) and the mask layer; where a dataset has
+    neither (an elevation model) every band.
+    """
+    if not items:
+        return []
+    skip = set(auxiliary)
+    assets = items[0].get("assets") or {}
+    metas = [
+        band_meta_of_items(items, key, unit=unit_of(key), categorical=key == mask_asset)
+        for key, entry in assets.items()
+        if key not in skip and is_geotiff(entry)
+    ]
+    ticked = [meta.wavelength_um is not None or meta.categorical for meta in metas]
+    if not any(ticked):
+        ticked = [True] * len(metas)
+    return list(zip(metas, ticked, strict=True))
+
+
+def band_count(item: Mapping[str, Any], asset: str) -> int | None:
+    """How many bands the item says ``asset`` has (``raster:bands`` or ``bands``); ``None`` where it says nothing."""
+    assets = item.get("assets")
+    entry = assets.get(asset) if isinstance(assets, Mapping) else None
+    bands = (entry.get("raster:bands") or entry.get("bands")) if isinstance(entry, Mapping) else None
+    return len(bands) if isinstance(bands, list) and bands else None
 
 
 def format_resolution(resolution: float | None) -> str | None:

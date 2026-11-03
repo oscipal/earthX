@@ -1,5 +1,7 @@
-// A synthetic multispectral collection and item for the tests of the choice of bands (NM4-75): the field names are the STAC and registry
-// ones, the band names, wavelengths and addresses are made up.
+// A synthetic multispectral collection, item and answer of the platform for the tests of the choice of bands (NM4-75): the band names,
+// wavelengths and addresses are made up.
+import { parseBands } from '../api';
+import type { DownloadBand } from '../bandChoice';
 import type { Collection, StacAsset, StacItem } from '../types';
 
 export const HOST = 'data.test';
@@ -15,7 +17,6 @@ interface Spec {
   scale?: number;
   offset?: number;
   nodata?: number;
-  unit?: string;
 }
 
 // Four spectral bands of two resolutions, a layer of classes, a layer that is no spectral band, and a picture made from the bands.
@@ -29,20 +30,31 @@ export const SPECS: Spec[] = [
 ];
 
 function asset(spec: Spec, id: string): StacAsset {
+  return { href: `https://${HOST}/${id}/${spec.key}.tif`, type: COG, roles: ['data'], gsd: spec.gsd, 'file:size': 1000 };
+}
+
+// What the platform answers to `POST /collections/{dataset}/bands` for the item below (`fetchBands`): the same rows, in the same order,
+// with the spectral bands and the layer of the mask preselected.
+export function bandsResponse(): { bands: Record<string, unknown>[] } {
   return {
-    href: `https://${HOST}/${id}/${spec.key}.tif`,
-    type: COG,
-    roles: ['data'],
-    gsd: spec.gsd,
-    'file:size': 1000,
-    ...(spec.wavelength === undefined
-      ? {}
-      : { 'eo:bands': [{ name: spec.name, common_name: spec.common ?? null, center_wavelength: spec.wavelength }] }),
-    'raster:bands': [
-      { data_type: spec.dataType ?? null, nodata: spec.nodata ?? null, scale: spec.scale ?? null, offset: spec.offset ?? null },
-    ],
+    bands: SPECS.map((spec) => ({
+      asset: spec.key,
+      name: spec.name,
+      common_name: spec.common ?? null,
+      wavelength_um: spec.wavelength ?? null,
+      resolution_m: spec.gsd,
+      data_type: spec.dataType ?? null,
+      scale: spec.scale ?? null,
+      offset: spec.offset ?? null,
+      nodata: spec.nodata ?? null,
+      unit: spec.key === 'scl' ? null : '1',
+      categorical: spec.key === 'scl',
+      preselected: spec.wavelength !== undefined || spec.key === 'scl',
+    })),
   };
 }
+
+export const bandsTable = (): DownloadBand[] => parseBands(bandsResponse());
 
 export function bandsCollection(overrides: Partial<Collection> = {}): Collection {
   return {

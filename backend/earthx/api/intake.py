@@ -52,7 +52,7 @@ import math
 import re
 import secrets
 from collections.abc import Awaitable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -62,7 +62,7 @@ from shapely.geometry import box, mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import unary_union
 
-from earthx.access.band_export import EXPORTS_DIR, BandMeta, ExportPlanError, band_meta, plan_files
+from earthx.access.band_export import EXPORTS_DIR, BandMeta, ExportPlanError, band_count, band_meta_of_items, plan_files
 from earthx.access.crop_rules import mosaic_order
 from earthx.access.download import (
     AOI_FILENAME,
@@ -415,7 +415,9 @@ async def _accept(
         acquired_on=acquired_on,
         years=prepared.years,
     )
-    return AcceptedOrder(recipe, False, prepared.skipped, attachments, acquired_on, prepared.years)
+    return AcceptedOrder(
+        recipe, False, prepared.skipped, attachments, acquired_on, prepared.years, scene_aoi=prepared.scene_aoi
+    )
 
 
 def _acquired_on(prepared: _Prepared) -> date | None:
@@ -498,20 +500,25 @@ def layout_bands(prepared: _Prepared, recipe: Recipe) -> list[BandMeta]:
     """
     assert isinstance(recipe.output, CropOutput) and recipe.output.layout is not None
     layout = recipe.output.layout
-    bands = []
-    for asset in recipe.inputs[0].assets:
-        metas = [
-            band_meta(
-                target.item,
-                asset,
-                unit=prepared.config.band_unit(asset),
-                categorical=prepared.config.mask is not None and prepared.config.mask.asset == asset,
-            )
-            for target in prepared.targets
-            if target.item_asset == asset
+    if layout.form != "per_band":
+        several = [
+            asset
+            for asset in recipe.inputs[0].assets
+            if any((band_count(target.item, asset) or 1) > 1 for target in prepared.targets if target.item_asset == asset)
         ]
-        sizes = [meta.resolution_m for meta in metas if meta.resolution_m is not None]
-        bands.append(replace(metas[0], resolution_m=min(sizes) if sizes else None))
+        if several:
+            raise OrderRefused(
+                422, f"{', '.join(several)} has several bands in one file; only one file per band can hold it", "scope"
+            )
+    bands = [
+        band_meta_of_items(
+            [target.item for target in prepared.targets if target.item_asset == asset],
+            asset,
+            unit=prepared.config.band_unit(asset),
+            categorical=prepared.config.mask is not None and prepared.config.mask.asset == asset,
+        )
+        for asset in recipe.inputs[0].assets
+    ]
     try:
         plan_files(layout.form, bands, layout.resolution_m)
     except ExportPlanError as error:
@@ -522,13 +529,20 @@ def layout_bands(prepared: _Prepared, recipe: Recipe) -> list[BandMeta]:
 def layout_notes(recipe: Recipe) -> list[str]:
     """The line for the head of ``BANDS.txt`` where the scenes of the export lie in more than one CRS."""
     entry = recipe.inputs[0]
-    crs = sorted({item.asset.crs for item in entry.resolved if item.asset.asset == entry.assets[0] and item.asset.crs})
-    if len(crs) < 2:
-        return []
-    return [
-        "Note: the scenes of this export lie in more than one coordinate reference system "
-        f"({', '.join(crs)}); they were reprojected to EPSG:4326 and merged."
-    ]
+    for group in entry.groups:
+        crs = sorted(
+            {
+                item.asset.crs
+                for item in entry.resolved
+                if item.asset.asset == entry.assets[0] and item.asset.item_id in group and item.asset.crs
+            }
+        )
+        if len(crs) > 1:
+            return [
+                "Note: the scenes of a mosaic of this export lie in more than one coordinate reference system "
+                f"({', '.join(crs)}); they were reprojected to EPSG:4326 and merged."
+            ]
+    return []
 
 
 def side_files(

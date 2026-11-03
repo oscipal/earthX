@@ -894,10 +894,18 @@ def _export_plan(recipe: Recipe) -> list[tuple[PlannedOutput, int]]:
             elif layout.form == "multi_band":
                 files = [("bands", layout.resolution_m, list(entry.assets))]
             else:
-                by_size: dict[float | None, list[str]] = {}
+                by_size: list[tuple[float | None, list[str]]] = []
                 for asset in entry.assets:
-                    by_size.setdefault(per_asset[asset][0], []).append(asset)
-                files = [(f"bands_{size}", size, assets) for size, assets in by_size.items()]
+                    size = per_asset[asset][0]
+                    for known, assets in by_size:
+                        if known is None and size is None or (
+                            known is not None and size is not None and math.isclose(known, size, rel_tol=_SAME_SIZE)
+                        ):
+                            assets.append(asset)
+                            break
+                    else:
+                        by_size.append((size, [asset]))
+                files = [(f"bands_{size}", size, assets) for size, assets in by_size]
             for label, size, assets in files:
                 if size:
                     height, width = estimate_output_dims(region, size)

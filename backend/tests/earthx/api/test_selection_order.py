@@ -180,7 +180,7 @@ def test_the_crop_keeps_a_in_the_overlap(scenes: Scenes, client, selection: list
         json={"groups": [selection], "assets": [ASSET], "aoi": _aoi(scenes)},
     )
     assert response.status_code == 200, response.text
-    assert _in_the_overlap(_member(response.content, "visual.tif")) == FIRST
+    assert _in_the_overlap(_member(response.content, "exports/visual.tif")) == FIRST
     recipe = json.loads(_member(response.content, "recipe.json"))
     assert recipe["inputs"][0]["groups"] == [["A", "B"]]
 
@@ -195,7 +195,7 @@ async def test_the_export_keeps_a_in_the_overlap(
     result = export(
         accepted.recipe, workdir=tmp_path, progress=lambda done, total: None, attachments=accepted.attachments
     )
-    assert _in_the_overlap(_member(result.path.read_bytes(), "visual.tif")) == FIRST
+    assert _in_the_overlap(_member(result.path.read_bytes(), "exports/visual.tif")) == FIRST
 
 
 async def test_the_export_of_either_selection_is_the_same_recipe(scenes: Scenes, monkeypatch) -> None:

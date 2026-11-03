@@ -102,6 +102,23 @@ class TestWhatIsRefused:
         assert error.status_code == 422
 
 
+class TestAssetsOfSeveralBands:
+    async def test_they_cannot_be_stacked_and_the_order_is_refused_before_a_job_is_placed(self) -> None:
+        source = overpass(scene("S2_A"))
+        source.items[next(iter(source.items))]["assets"]["visual"] = {
+            "href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/x/TCI.tif",
+            "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+            "gsd": 10,
+            "raster:bands": [{"data_type": "uint8", "nodata": 0}] * 3,
+        }
+        for form in ("per_resolution", "multi_band"):
+            layout = {"form": form, **({"resolution_m": 10.0} if form == "multi_band" else {})}
+            error = await refused(layout_order(layout, assets=("visual",)), source)
+            assert error.status_code == 422 and "several bands" in str(error), form
+        accepted = await accept(layout_order({"form": "per_band"}, assets=("visual",)), source)  # Gegenprobe
+        assert accepted.recipe.output.layout.form == "per_band"
+
+
 class TestWhatTheEstimateSays:
     async def test_the_bands_of_another_pixel_size_than_the_common_one_are_named(self, rig: Any) -> None:
         put(rig, sentinel())

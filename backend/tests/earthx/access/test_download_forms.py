@@ -7,7 +7,9 @@ the checks: a file of another form, a conversion that must not happen, a value t
 
 from __future__ import annotations
 
+import contextlib
 import zipfile
+from collections.abc import Iterator
 from io import BytesIO
 from typing import Any
 
@@ -107,8 +109,10 @@ def _zip(assets: list[str], *, form: str = "per_band", common: float | None = No
     return zipfile.ZipFile(BytesIO(data))
 
 
-def _open(archive: zipfile.ZipFile, name: str) -> MemoryFile:
-    return MemoryFile(archive.read(name))
+@contextlib.contextmanager
+def _open(archive: zipfile.ZipFile, name: str) -> Iterator[MemoryFile]:
+    with MemoryFile(archive.read(name)) as mem:
+        yield mem
 
 
 def _table(archive: zipfile.ZipFile) -> dict[str, list[list[str]]]:

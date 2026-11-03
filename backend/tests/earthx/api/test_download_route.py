@@ -140,6 +140,34 @@ def _download(client: TestClient, dataset: str = DATASET, **body: Any) -> Any:
     return client.post(f"/collections/{dataset}/download", json=payload)
 
 
+class TestTheBandsOfSomeScenes:
+    """NM4-75: the bands the dialog offers come from the items and the registry, not from a list in the frontend."""
+
+    def _bands(self, client: TestClient, items: list[str], dataset: str = DATASET) -> Any:
+        return client.post(f"/collections/{dataset}/bands", json={"items": items})
+
+    def test_the_bands_are_the_geotiffs_without_the_pictures_and_the_thumbnail(self, client: TestClient) -> None:
+        response = self._bands(client, [ITEM_ID])
+        assert response.status_code == 200
+        bands = response.json()["bands"]
+        # `visual` is auxiliary, the thumbnail is no GeoTIFF; `elsewhere` is a GeoTIFF the item lists like any other.
+        assert [band["asset"] for band in bands] == ["red", "elsewhere"]
+        assert (bands[0]["name"], bands[0]["common_name"], bands[0]["wavelength_um"]) == ("B04", "red", 0.665)
+        assert [band["preselected"] for band in bands] == [True, False]  # a centre wavelength ticks a band, none does not
+
+    def test_several_scenes_give_one_table(self, client: TestClient) -> None:
+        response = self._bands(client, [ITEM_ID, f"{ITEM_ID}#2"])
+        assert response.status_code == 200 and len(response.json()["bands"]) == 2
+
+    @pytest.mark.parametrize("body", [{"items": []}, {"items": [ITEM_ID, ITEM_ID]}, {"items": ["a"] * 26}, {"items": [ITEM_ID], "aoi": {}}, {}])
+    def test_a_body_that_is_not_a_list_of_scenes_is_422(self, client: TestClient, body: dict[str, Any]) -> None:
+        assert client.post(f"/collections/{DATASET}/bands", json=body).status_code == 422
+
+    def test_an_unknown_dataset_or_scene_is_404(self, client: TestClient) -> None:
+        assert self._bands(client, [ITEM_ID], dataset="no-such-dataset").status_code == 404
+        assert self._bands(client, ["NOPE"]).status_code == 404
+
+
 class TestTheFormOfTheFiles:
     """NM4-75: the request names how the bands are laid into files; what does not fit is refused before any read."""
 
