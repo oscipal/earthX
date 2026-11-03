@@ -1812,6 +1812,21 @@ describe('the line of a job', () => {
     }
   });
 
+  it('puts the marks "Archived" and "Superseded" side by side in one place under the title, not one over the other', () => {
+    put({ jobs: [finished(1, { archived: true, superseded: true }), finished(2, { archived: true })] });
+    mount();
+    click(button('All'));
+    const [both, one] = rows();
+    const tags = both.querySelector('.pm-tags')!;
+    expect([...tags.children].map((t) => t.textContent)).toEqual(['Archived', 'Superseded']);
+    expect(tags.parentElement!.classList.contains('pm-meta')).toBe(true);
+    expect([...one.querySelector('.pm-tags')!.children].map((t) => t.textContent)).toEqual(['Archived']);
+    expect(css).toMatch(/\.pm-tags \{\s*display: flex;/u);
+    // A job with no mark has no place for it.
+    put({ jobs: [finished(3)] });
+    expect(container.querySelector('.pm-tags')).toBeNull();
+  });
+
   it('has no titles of columns over an empty list', () => {
     put({ jobs: [] });
     mount();

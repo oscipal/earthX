@@ -437,8 +437,12 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
             {state.text}
           </span>
           <UntilText job={job} state={state} />
-          {job.archived && <span className="pm-tag">Archived</span>}
-          {job.superseded && <span className="pm-tag">Superseded</span>}
+          {(job.archived || job.superseded) && (
+            <span className="pm-tags">
+              {job.archived && <span className="pm-tag">Archived</span>}
+              {job.superseded && <span className="pm-tag">Superseded</span>}
+            </span>
+          )}
         </span>
         {!part && !renaming && <RenameButton what="job" name={title} onRename={() => setRenaming(true)} />}
         {state.key === 'finished' && job.tiles ? <AddToLayers job={job} name={title} /> : <span className="pm-icon" aria-hidden="true" />}

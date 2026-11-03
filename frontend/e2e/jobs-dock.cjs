@@ -63,6 +63,7 @@ async function check(browser, theme, viewport) {
       base(4, { phase: 'successful', archive: 'result.zip', tiles: { href: '/results/r4/WebMercatorQuad/tilejson.json', width: 1000, gsd: 10 } }),
       base(5, {}),
       base(6, { phase: 'gone', lost: true }),
+      base(7, { phase: 'successful', archived: true, superseded: true, archive: 'result.zip' }),
     ].map((j) => ({ ...j, status: j.status ? { jobID: j.jobID, message: '', expires: j.expires, ...j.status } : { jobID: j.jobID, status: j.phase === 'successful' ? 'successful' : 'failed', message: '', progress: 100, expires: j.expires } }));
     useProcessingStore.setState({ groups: [{ id: group, name: 'Field 7' }], jobs });
   });
@@ -83,6 +84,7 @@ async function check(browser, theme, viewport) {
       return {
         state: box(row.querySelector('.pm-state')), stateText: row.querySelector('.pm-state').textContent, stateShown: getComputedStyle(row.querySelector('.pm-state')).position !== 'absolute',
         title: box(open.querySelector('.pm-title')), until: row.querySelector('.pm-until') ? box(row.querySelector('.pm-until')) : { x: 0, y: 0, width: 0, height: 0, right: 0, bottom: 0 }, untilShown: !!row.querySelector('.pm-until') && getComputedStyle(row.querySelector('.pm-until')).display !== 'none',
+        tags: [...row.querySelectorAll('.pm-tags > .pm-tag')].map(box),
         bar: row.querySelector(':scope > .pm-progress') ? box(row.querySelector(':scope > .pm-progress')) : null, rowBox: box(row),
         tooltip: open.title, shown: open.querySelector('.pm-title').textContent,
         edit: row.querySelector('.pm-edit') ? box(row.querySelector('.pm-edit')) : null, open: box(open), group: row.closest('.pm-group').getAttribute('aria-label'),
@@ -107,7 +109,7 @@ async function check(browser, theme, viewport) {
     problems.push(`the panel is not 340 px wide and flush beside the rail: ${JSON.stringify(report.dock)}`);
   }
   if (report.scrolls) problems.push('the panel or the page scrolls sideways');
-  if (report.rows.length !== 6) problems.push(`${report.rows.length} rows, not 6`);
+  if (report.rows.length !== 7) problems.push(`${report.rows.length} rows, not 7`);
   for (const row of report.rows) {
     if (narrow) {
       if ((row.until.width > 0 && row.until.y < row.title.bottom - 0.5) || row.state.y < row.title.bottom - 0.5 || !row.stateShown) problems.push('status and date are not under the title in the narrow form');
@@ -122,7 +124,7 @@ async function check(browser, theme, viewport) {
     }
   }
   // "＋" before "⇩" before "⋯" in the rows of the finished jobs (Job 4 and Job 2).
-  for (const index of [1, 5]) {
+  for (const index of [1, 6]) {
     const tail = report.rows[index]?.tail.map((t) => (t.label.startsWith('Add to layers') ? '+' : t.label === 'Download (ZIP)' ? 'dl' : t.label === '⋯' ? 'menu' : t.label));
     if (JSON.stringify(tail) !== JSON.stringify(['+', 'dl', 'menu'])) problems.push(`the symbols of row ${index + 1} are ${JSON.stringify(tail)}, not ＋ ⇩ ⋯`);
   }
@@ -132,7 +134,7 @@ async function check(browser, theme, viewport) {
       if (xs.size !== 1) problems.push(`the ${key} stands in several columns: ${[...xs]}`);
     }
   }
-  if (JSON.stringify(report.heads.map((h) => [h.count, h.running])) !== JSON.stringify([['4', '1 running'], ['2', '1 running']])) problems.push(`the heads say ${JSON.stringify(report.heads)}`);
+  if (JSON.stringify(report.heads.map((h) => [h.count, h.running])) !== JSON.stringify([['5', '1 running'], ['2', '1 running']])) problems.push(`the heads say ${JSON.stringify(report.heads)}`);
   if (report.columns.some((c) => !c)) problems.push('a group has no titles of the columns');
   else if (narrow) {
     if (report.columns.some((c) => c.shown)) problems.push('the titles of the columns show in the narrow form');
@@ -150,13 +152,13 @@ async function check(browser, theme, viewport) {
     for (const row of report.rows.filter((r) => r.untilShown)) if (Math.abs(row.until.x - report.columns[0].until.x) > 1) problems.push(`the date of the row in "${row.group}" is not under "Expires"`);
   }
   // Running jobs (Job 3 and Job 1): a line of two pixels at the top edge of the row, and the state where the date would stand; nothing like it on the others.
-  for (const index of [0, 4]) {
+  for (const index of [0, 5]) {
     const row = report.rows[index];
     if (!row.bar) problems.push(`row ${index + 1} has no line of progress`);
     else if (row.bar.height > 3 || Math.abs(row.bar.bottom - row.rowBox.bottom) > 1 || Math.abs(row.bar.width - row.rowBox.width) > 1) problems.push(`the line of progress of row ${index + 1} is ${JSON.stringify(row.bar)} in ${JSON.stringify(row.rowBox)}`);
     if (!narrow && (!row.stateShown || !/^\d+%$/.test(row.stateText) || row.untilShown || Math.abs(row.state.x - report.columns[0].until.x) > 1)) problems.push(`row ${index + 1} does not show its state in the place of the date: ${row.stateText}`);
   }
-  for (const index of [1, 2, 3, 5]) if (report.rows[index].bar) problems.push(`row ${index + 1} has a line of progress without running`);
+  for (const index of [1, 2, 3, 4, 6]) if (report.rows[index].bar) problems.push(`row ${index + 1} has a line of progress without running`);
   // "Run again" (Job 5) stands where the finished job has its download.
   {
     const failed = report.rows[2].tail[1];
@@ -168,6 +170,12 @@ async function check(browser, theme, viewport) {
     const gone = report.rows[3];
     if (gone.stateText !== 'No longer available') problems.push(`row 4 says "${gone.stateText}"`);
     else if (!narrow && (!gone.stateShown || gone.state.x < report.columns[0].until.x - 1 || gone.state.right > report.columns[0].until.right + 1)) problems.push(`"No longer available" is not inside the column of the dates: ${JSON.stringify(gone.state)}`);
+  }
+  // "Archived" and "Superseded" (Job 7): side by side under the title, none over the other (in the narrow form the cell is small, they wrap).
+  {
+    const [a, b] = report.rows[4].tags;
+    if (!a || !b) problems.push('the job with two marks has fewer');
+    else if (overlap(a, b) || (!narrow && (Math.abs(a.y - b.y) > 2 || b.x < a.right - 0.5)) || a.y < report.rows[4].title.bottom - 1) problems.push(`the marks "Archived" and "Superseded" are not side by side under the title: ${JSON.stringify([a, b])}`);
   }
   for (const date of report.dates) if (!/^\d{2}[A-Z]{3}-\d{2}:\d{2}$/.test(date)) problems.push(`the date reads "${date}", not 08OCT-12:34`);
   if (!report.heads[1].menu) problems.push('the head of a group has no menu');

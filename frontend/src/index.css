@@ -2962,9 +2962,18 @@ button.pm-open:hover {
   grid-column: 3;
   grid-row: 1;
 }
-.pm-tag {
+.pm-tags,
+.pm-meta > .pm-tag {
   grid-column: 1;
   grid-row: 2;
+}
+/* The marks of a job ("Archived", "Superseded") stand side by side under the title, never one over the other. */
+.pm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+}
+.pm-tag {
   padding: 0 var(--space-1);
   color: var(--accent-2);
 }
@@ -3170,7 +3179,8 @@ a.pm-icon:hover {
     justify-self: end;
     padding: 0 var(--space-1);
   }
-  .pm-tag {
+  .pm-tags,
+  .pm-meta > .pm-tag {
     grid-column: 1;
     grid-row: 3;
   }
