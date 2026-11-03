@@ -373,7 +373,8 @@ describe('downloadCrop', () => {
 
   it('sends no form unless one is given: the server then writes one file per band, as before', async () => {
     const body = await bodyOf({});
-    expect(body).toEqual({ groups: [['ITEM1']], assets: ['visual'], aoi: { type: 'Polygon', coordinates: [] }, resolution: 1 });
+    expect(body).toEqual({ groups: [['ITEM1']], assets: ['visual'], aoi: { type: 'Polygon', coordinates: [] } });
+    expect(body).not.toHaveProperty('resolution');
   });
 
   it.each(['per_band', 'per_resolution'] as const)('the form %s sends no common resolution, even if one is held', async (form) => {
@@ -383,8 +384,9 @@ describe('downloadCrop', () => {
   });
 
   it('one multi-band file sends the common resolution in metres', async () => {
-    const body = await bodyOf({ form: 'multi_band', commonResolution: 20, resolution: 1 });
-    expect(body).toMatchObject({ form: 'multi_band', common_resolution: 20, resolution: 1 });
+    const body = await bodyOf({ form: 'multi_band', commonResolution: 20 });
+    expect(body).toMatchObject({ form: 'multi_band', common_resolution: 20 });
+    expect(body).not.toHaveProperty('resolution');
   });
 
   it('a 413 over the output size cap surfaces the backend detail unchanged', async () => {

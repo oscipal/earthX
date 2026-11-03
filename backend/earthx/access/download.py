@@ -122,7 +122,7 @@ import zipfile
 import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import ExitStack
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any
@@ -175,7 +175,6 @@ from earthx.access.crop_rules import (
     MAX_OUTPUT_SIDE_PX,
     NOTICE_FILENAME,
     RECIPE_FILENAME,
-    RESOLUTION_FACTORS,
     AoiOutsideItems,
     PlannedOutput,
     asset_gsd,
@@ -203,7 +202,6 @@ __all__ = [
     "MAX_DOWNLOAD_ITEMS",
     "MAX_OUTPUT_SIDE_PX",
     "MAX_TOTAL_OUTPUT_BYTES",
-    "RESOLUTION_FACTORS",
     "AoiOutsideItems",
     "AoiTooLarge",
     "AssetCropBytes",
@@ -363,7 +361,6 @@ def plan_outputs(
     assets: Sequence[str],
     region: BaseGeometry,
     *,
-    resolution_factor: int = 1,
     pixel_size: float | None = None,
 ) -> list[PlannedOutput]:
     """The worst-case size of every file :func:`build_download_zip` will write, one per asset.
@@ -374,8 +371,7 @@ def plan_outputs(
     A mosaic across ``items`` is still one file per asset (M2-06; M3-17 keeps
     that shape, one call per group), so the size that matters is the single
     worst-case output, not a sum over items: the finest (smallest) resolution
-    any item advertises for the asset — native unless ``resolution_factor``
-    chooses a coarser one (F10c, M3-18 §10) — and the largest bytes-per-pixel
+    any item advertises for the asset and the largest bytes-per-pixel
     any item advertises, in case sources ever disagree with each other.
 
     ``region`` (M3-18 §13) should be the crop's own extent — AOI ∩ this
@@ -389,12 +385,12 @@ def plan_outputs(
         if pixel_size is not None:
             height, width = estimate_output_dims(region, pixel_size)
         elif gsds:
-            height, width = estimate_output_dims(region, min(gsds), resolution_factor=resolution_factor)
+            height, width = estimate_output_dims(region, min(gsds))
         else:
             # Nothing on any item says how fine this asset is — the same
             # conservative upper bound M2-06 used for the whole request
-            # (F1 option 1), scaled down the same way a known gsd would be.
-            height = width = max(1, math.ceil(MAX_OUTPUT_SIDE_PX / resolution_factor))
+            # (F1 option 1).
+            height = width = MAX_OUTPUT_SIDE_PX
         bytes_per_pixel = max(
             (_asset_bytes_per_pixel(item, asset) for item in items),
             default=FALLBACK_BYTES_PER_PIXEL,
@@ -403,28 +399,7 @@ def plan_outputs(
     return planned
 
 
-def _smallest_fitting_factor(native_total_bytes: float, max_bytes: int) -> int | None:
-    """The smallest value in :data:`RESOLUTION_FACTORS` that brings ``native_total_bytes`` under ``max_bytes``.
-
-    A resolution factor divides both pixel dimensions, so it shrinks bytes by
-    its square — ``None`` if even the coarsest offered factor still would not
-    fit (F10c, M3-18 §10: never suggest a choice that would be refused too).
-    """
-    if native_total_bytes <= 0:
-        return None
-    needed = math.ceil(math.sqrt(native_total_bytes / max_bytes))
-    for factor in RESOLUTION_FACTORS:
-        if factor >= needed:
-            return factor
-    return None
-
-
-def check_output_size_cap(
-    planned: Sequence[PlannedOutput],
-    *,
-    max_bytes: int = MAX_TOTAL_OUTPUT_BYTES,
-    native_planned: Sequence[PlannedOutput] | None = None,
-) -> None:
+def check_output_size_cap(planned: Sequence[PlannedOutput], *, max_bytes: int = MAX_TOTAL_OUTPUT_BYTES) -> None:
     """Refuse a request whose planned output cannot fit, before any reader opens anything (M3-18).
 
     Replaces M2-06's item-count x asset-count worst case, which rejected any
@@ -434,28 +409,20 @@ def check_output_size_cap(
     how many items or assets were asked for.
 
     **Never shrinks the request (Otto, 23.09.2026, M3-18 §10).** Over the cap,
-    this always raises rather than silently choosing a coarser resolution.
-    When ``native_planned`` is given (the same request planned at native
-    resolution, F10c), the message names the smallest resolution factor from
-    :data:`RESOLUTION_FACTORS` that would bring the request under the cap, as
-    a suggestion the caller must still choose explicitly.
+    this always raises rather than silently choosing a coarser resolution; there is no coarser
+    factor to offer any more (Otto, 03.11.2026, NM4-75), only a smaller area, fewer bands or a coarser
+    common resolution of one multi-band file.
     """
     if not planned:
         raise AoiTooLarge("no output was planned for this request")
     total = sum(output.total_bytes for output in planned)
     if total <= max_bytes:
         return
-    message = (
+    raise AoiTooLarge(
         f"This download would be about {total / 1_000_000:.0f} MB, more than the "
-        f"{max_bytes / 1_000_000:.0f} MB limit. Draw a smaller area, or choose an "
-        "explicitly coarser resolution in the download dialog"
+        f"{max_bytes / 1_000_000:.0f} MB limit. Draw a smaller area, choose fewer bands, or a coarser "
+        "common resolution for one multi-band file."
     )
-    if native_planned is not None:
-        native_total = sum(output.total_bytes for output in native_planned)
-        factor = _smallest_fitting_factor(native_total, max_bytes)
-        if factor is not None and factor != 1:
-            message += f" (at least {factor}x would fit)"
-    raise AoiTooLarge(message + ".")
 
 
 def crop_asset(
@@ -880,16 +847,13 @@ def _verified_crop(
     region_geometry: Mapping[str, Any],
     *,
     asset: str,
-    width: int | None,
-    height: int | None,
     mask_geometry: Mapping[str, Any],
     meta: BandMeta | None = None,
 ) -> AssetCropBytes:
     """:func:`crop_asset_to_cog_bytes`, checked (:func:`_checked`)."""
     return _checked(
         lambda: crop_asset_to_cog_bytes(
-            open_reader, asset_paths, region_geometry,
-            width=width, height=height, mask_geometry=mask_geometry, meta=meta,
+            open_reader, asset_paths, region_geometry, mask_geometry=mask_geometry, meta=meta,
         ),
         asset,
     )
@@ -908,7 +872,6 @@ def _laid_out_crop_bytes(
     mask_geometry: Mapping[str, Any],
     *,
     form: str,
-    resolution_factor: int = 1,
 ) -> AssetCropBytes:
     """One file of a layout (one band, several bands of a resolution, or all) and its mask, written block by block in memory.
 
@@ -919,10 +882,10 @@ def _laid_out_crop_bytes(
     if form == FORM_MULTI_BAND:
         methods = [resampling_for(meta, plan.resolution_m) for meta in metas]
     else:
-        methods = ["nearest" if resolution_factor != 1 else "none"] * len(metas)
+        methods = ["none"] * len(metas)
     # The grid is laid from the finest band of the file; a common resolution scales its pixels.
     finest = min(range(len(metas)), key=lambda index: metas[index].resolution_m or math.inf)
-    scale = float(resolution_factor)
+    scale = 1.0
     if form == FORM_MULTI_BAND:
         assert plan.resolution_m is not None and metas[finest].resolution_m is not None
         scale = plan.resolution_m / metas[finest].resolution_m
@@ -1047,7 +1010,6 @@ def build_notice_text(
     *,
     item_ids: Sequence[str],
     assets: Sequence[str] = (),
-    resolution_factor: int = 1,
     group_item_ids: Sequence[Sequence[str]] | None = None,
     skipped_item_ids: Sequence[str] = (),
     aoi_geometry: Mapping[str, Any] | None = None,
@@ -1146,10 +1108,7 @@ def build_notice_text(
                 for asset in assets
                 for names in [
                     (file_names or {}).get(asset)
-                    or (
-                        crop_filename(asset, resolution_factor=resolution_factor),
-                        mask_filename(asset, resolution_factor=resolution_factor),
-                    )
+                    or (crop_filename(asset), mask_filename(asset))
                 ]
             )
         )
@@ -1159,11 +1118,7 @@ def build_notice_text(
         if common_resolution is not None:
             lines.append(f"Resolution: {common_resolution:g} m for all bands (chosen explicitly); see exports/BANDS.txt")
         else:
-            lines.append(
-                "Resolution: native"
-                if resolution_factor == 1
-                else f"Resolution: {resolution_factor}x coarser than native (chosen explicitly)"
-            )
+            lines.append("Resolution: native")
         # Mask instead of nodata (Otto, 23.09.2026, M3-18 §3): every pixel in a data
         # file keeps its bounding-box value regardless of the AOI polygon's shape;
         # each asset's own mask file (above) is where the polygon actually lives —
@@ -1188,17 +1143,10 @@ def build_notice_text(
 
 @dataclass(frozen=True)
 class AssetCrop:
-    """One asset's already-resolved read candidates — one path per surviving item.
-
-    ``width``/``height`` (F10c, M3-18 §10): ``None`` for both means native
-    resolution; a caller that resolved an explicitly coarser factor (against
-    this asset's own ``gsd``) passes both, already computed down from native.
-    """
+    """One asset's already-resolved read candidates — one path per surviving item."""
 
     asset: str
     paths: tuple[AssetPath | ZarrAsset, ...]
-    width: int | None = None
-    height: int | None = None
 
 
 @dataclass(frozen=True)
@@ -1229,7 +1177,6 @@ def build_download_zip(
     region_geometry: Mapping[str, Any] | None = None,
     additional_groups: Sequence[GroupCrop] = (),
     skipped_item_ids: Sequence[str] = (),
-    resolution_factor: int = 1,
     gdal_env: Mapping[str, str] | None = None,
     recipe_json: bytes | None = None,
     citation_bib: bytes | None = None,
@@ -1248,9 +1195,9 @@ def build_download_zip(
 
     ``form`` and ``common_resolution`` (NM4-75): one file per band (the default), one per resolution, or one
     multi-band file at ``common_resolution`` (:mod:`earthx.access.band_export`). ``band_metas`` describes the
-    assets as the items do, by asset key; an asset without an entry is described by its key alone. Only
-    ``per_band`` reads at a coarser ``resolution_factor``; the stacked forms are native or at the common
-    resolution. ``bands_notes`` are lines for the head of ``BANDS.txt``.
+    assets as the items do, by asset key; an asset without an entry is described by its key alone. A band is
+    always in the resolution of its source, or in ``common_resolution`` (no coarser factor is offered any more,
+    Otto, 03.11.2026). ``bands_notes`` are lines for the head of ``BANDS.txt``.
 
     ``aoi_geometry`` is always the *original* AOI, exactly as drawn or
     uploaded (Otto, 23.09.2026, M3-18 §13): it is what ``aoi.geojson`` carries
@@ -1261,11 +1208,6 @@ def build_download_zip(
     mask files' grid: a scene that only partly covers the AOI crops (and
     masks) only as far as that scene reaches, never padded out to the AOI's
     own full bounding box.
-
-    ``resolution_factor`` (F10c, M3-18 §10) only names the resolution the
-    caller already resolved into each ``crop``'s ``width``/``height`` — it is
-    never used to compute pixels here, only to label the filenames and the
-    notice file with the value the caller chose.
 
     ``gdal_env`` (F7, M3-18): the GDAL/VSI settings `gateway` builds for
     the crop (``earthx.gateway.gdal.crop_gdal_options``, NM4-26) — those of the
@@ -1298,16 +1240,9 @@ def build_download_zip(
     region_geometry = region_geometry if region_geometry is not None else aoi_geometry
     groups = [GroupCrop(item_ids=item_ids, crops=crops, region_geometry=region_geometry), *additional_groups]
     group_count = len(groups)
-    if form != FORM_PER_BAND and resolution_factor != 1:
-        raise ExportPlanError("only one file per band can be read at a coarser resolution")
     given = band_metas or {}
     metas = {crop.asset: given.get(crop.asset) or band_meta({}, crop.asset) for crop in groups[0].crops}
-    # What the person sees in a file's name is the pixel size of the file, so a coarser read names the coarser one.
-    named = {
-        asset: replace(meta, resolution_m=None if meta.resolution_m is None else meta.resolution_m * resolution_factor)
-        for asset, meta in metas.items()
-    }
-    plans = plan_files(form, [named[crop.asset] for crop in groups[0].crops], common_resolution)
+    plans = plan_files(form, [metas[crop.asset] for crop in groups[0].crops], common_resolution)
     with rasterio.Env(**(gdal_env or {})):
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -1324,17 +1259,17 @@ def build_download_zip(
                             try:
                                 crop_bytes = _laid_out_crop_bytes(
                                     open_reader, plan, members, [crop], group.region_geometry, aoi_geometry,
-                                    form=form, resolution_factor=resolution_factor,
+                                    form=form,
                                 )  # fmt: skip
                             except NoRasterToRead:
                                 crop_bytes = None
                         if crop_bytes is None:  # a store with no raster dataset: the read of the reader itself, in WGS84
                             crop_bytes = _verified_crop(
                                 open_reader, crop.paths, group.region_geometry,
-                                asset=crop.asset, width=crop.width, height=crop.height, mask_geometry=aoi_geometry,
+                                asset=crop.asset, mask_geometry=aoi_geometry,
                                 meta=metas[crop.asset],
                             )  # fmt: skip
-                        methods = ["none" if resolution_factor == 1 else "nearest"]
+                        methods = ["none"]
                         exports = [plan.resolution_m]
                         written = None
                     else:
@@ -1370,7 +1305,6 @@ def build_download_zip(
                     config,
                     item_ids=[item_id for group in groups for item_id in group.item_ids],
                     assets=list(metas),
-                    resolution_factor=resolution_factor,
                     group_item_ids=[list(group.item_ids) for group in groups] if group_count > 1 else None,
                     skipped_item_ids=skipped_item_ids,
                     aoi_geometry=aoi_geometry,

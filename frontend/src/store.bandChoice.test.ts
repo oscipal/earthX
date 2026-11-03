@@ -133,7 +133,7 @@ describe('opening the dialog', () => {
     expect(s.downloadTable).toEqual([]);
     expect(s.downloadBandsLoading).toBe(false);
     await s.confirmDownload();
-    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: ['visual'], aoi: AOI, resolution: 1 });
+    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: ['visual'], aoi: AOI });
   });
 
   it('an answer that arrives after the dialog was closed, or after another was opened, is not taken', async () => {
@@ -166,35 +166,22 @@ describe('opening the dialog', () => {
     expect(useAppStore.getState().downloadBands).toEqual(DEFAULT_BANDS);
     expect(useAppStore.getState().downloadForm).toBe('per_band');
   });
-
-  it('a switch to another form puts the coarser factor back to native: only one file per band has it', async () => {
-    await open('crop');
-    useAppStore.getState().setDownloadResolution(4);
-    useAppStore.getState().setDownloadForm('per_resolution');
-    expect(useAppStore.getState().downloadResolution).toBe(1);
-    useAppStore.getState().setDownloadForm('per_band');
-    useAppStore.getState().setDownloadResolution(4);
-    useAppStore.getState().setDownloadForm('per_band');
-    expect(useAppStore.getState().downloadResolution).toBe(4);
-  });
 });
 
 describe('the crop request', () => {
-  it('one file per band: the form, the ticked assets in the order of the item, the factor; no common resolution', async () => {
+  it('one file per band: the form and the ticked assets in the order of the item; no factor, no common resolution', async () => {
     await open('crop');
     useAppStore.getState().setDownloadBands(['scl', 'a_red']);
-    useAppStore.getState().setDownloadResolution(2);
     await useAppStore.getState().confirmDownload();
     expect(downloads()).toHaveLength(1);
-    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: ['a_red', 'scl'], aoi: AOI, resolution: 2, form: 'per_band' });
+    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: ['a_red', 'scl'], aoi: AOI, form: 'per_band' });
   });
 
-  it('one file per resolution: the form and a factor of 1, no common resolution', async () => {
+  it('one file per resolution: the form, no factor, no common resolution', async () => {
     await open('crop');
-    useAppStore.getState().setDownloadResolution(4);
     useAppStore.getState().setDownloadForm('per_resolution');
     await useAppStore.getState().confirmDownload();
-    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: DEFAULT_BANDS, aoi: AOI, resolution: 1, form: 'per_resolution' });
+    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: DEFAULT_BANDS, aoi: AOI, form: 'per_resolution' });
     expect(downloads()[0].body).not.toHaveProperty('common_resolution');
   });
 
@@ -202,7 +189,7 @@ describe('the crop request', () => {
     await open('crop');
     useAppStore.getState().setDownloadForm('multi_band');
     await useAppStore.getState().confirmDownload();
-    expect(downloads()[0].body).toMatchObject({ form: 'multi_band', common_resolution: 10, resolution: 1, assets: DEFAULT_BANDS });
+    expect(downloads()[0].body).toMatchObject({ form: 'multi_band', common_resolution: 10, assets: DEFAULT_BANDS });
   });
 
   it('the default follows the ticks, and a resolution that was picked stays picked', async () => {
@@ -243,7 +230,7 @@ describe('the crop request', () => {
     expect(useAppStore.getState().downloadBands).toEqual([]);
     expect(useAppStore.getState().error).toBeNull();
     await useAppStore.getState().confirmDownload();
-    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: ['visual'], aoi: AOI, resolution: 1 });
+    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: ['visual'], aoi: AOI });
   });
 
   it('the layout goes with the offer of an export job when the crop is too large, for every form', async () => {
@@ -427,15 +414,14 @@ describe('whole scenes', () => {
 describe('the question of the form is there only for bands of different resolutions (Otto, 3.11.2026)', () => {
   const ticks = (...keys: string[]) => useAppStore.getState().setDownloadBands(keys);
 
-  it('bands of one resolution, or one band, are sent as one file per resolution, whatever form is held, with no factor and no common resolution', async () => {
+  it('bands of one resolution, or one band, are sent as one file per resolution, whatever form is held, with no common resolution', async () => {
     await open('crop');
-    useAppStore.getState().setDownloadResolution(4);
     ticks('a_blue', 'a_red');
     await useAppStore.getState().confirmDownload();
-    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: ['a_blue', 'a_red'], aoi: AOI, resolution: 1, form: 'per_resolution' });
+    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: ['a_blue', 'a_red'], aoi: AOI, form: 'per_resolution' });
     ticks('a_coast');
     await useAppStore.getState().confirmDownload();
-    expect(downloads()[1].body).toMatchObject({ assets: ['a_coast'], form: 'per_resolution', resolution: 1 });
+    expect(downloads()[1].body).toMatchObject({ assets: ['a_coast'], form: 'per_resolution' });
     expect(downloads()[1].body).not.toHaveProperty('common_resolution');
   });
 
@@ -455,12 +441,24 @@ describe('the question of the form is there only for bands of different resoluti
     expect(downloads()[2].body).toMatchObject({ form: 'multi_band', common_resolution: 10 });
   });
 
-  it('one file per band is sent only where mixed resolutions were chosen so, and then keeps the factor', async () => {
+  it('one file per band is the form sent for mixed resolutions, as it starts', async () => {
     await open('crop');
-    useAppStore.getState().setDownloadResolution(2);
     await useAppStore.getState().confirmDownload();
-    expect(downloads()[0].body).toMatchObject({ form: 'per_band', resolution: 2 });
+    expect(downloads()[0].body).toMatchObject({ form: 'per_band' });
     expect(downloads()[0].body).not.toHaveProperty('common_resolution');
+  });
+
+  it('no request of a crop ever carries a factor, whatever the form and the bands', async () => {
+    await open('crop');
+    for (const form of ['per_band', 'per_resolution', 'multi_band'] as const) {
+      for (const keys of [DEFAULT_BANDS, ['a_red'], ['a_red', 'a_coast']]) {
+        useAppStore.getState().setDownloadForm(form);
+        ticks(...keys);
+        await useAppStore.getState().confirmDownload();
+      }
+    }
+    expect(downloads()).toHaveLength(9);
+    for (const call of downloads()) expect(call.body).not.toHaveProperty('resolution');
   });
 
   it('a band of no known pixel size is a resolution of its own', async () => {

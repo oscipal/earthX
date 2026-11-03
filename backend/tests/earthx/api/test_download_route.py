@@ -180,8 +180,6 @@ class TestTheFormOfTheFiles:
             {"form": "per_resolution", "common_resolution": 20},
             {"form": "multi_band", "common_resolution": 0},
             {"form": "multi_band", "common_resolution": 5000},
-            {"form": "per_resolution", "resolution": 2},
-            {"form": "multi_band", "common_resolution": 20, "resolution": 4},
         ],
     )
     def test_a_form_that_does_not_fit_its_resolution_is_422(self, client: TestClient, body: dict[str, Any]) -> None:
@@ -247,40 +245,24 @@ class TestAcceptanceCriteria:
         assert response.status_code == 413
         assert response.headers["content-type"] != "application/zip"
 
-    def test_over_the_cap_names_the_smallest_fitting_resolution_factor(
-        self, client: TestClient
-    ) -> None:
-        """F10c (M3-18 §10): the rejection suggests a factor from
-        `RESOLUTION_FACTORS` that would bring this same request under the cap,
-        not just "smaller area or fewer layers"."""
+    def test_over_the_cap_suggests_no_factor_because_none_is_offered_any_more(self, client: TestClient) -> None:
+        """Otto, 03.11.2026 (NM4-75): the refusal names what can be changed, and no resolution factor."""
         response = _download(client, assets=["thumbnail"])
         assert response.status_code == 413
-        assert "x would fit" in response.json()["detail"]
+        detail = response.json()["detail"]
+        assert "x would fit" not in detail and "coarser resolution in the download dialog" not in detail
+        assert "smaller area" in detail and "fewer bands" in detail
 
-    def test_an_unknown_resolution_factor_is_a_validation_error(self, client: TestClient) -> None:
-        response = _download(client, resolution=3)
-        assert response.status_code == 422
+    @pytest.mark.parametrize("factor", [2, 3, 4, 10, 0, -1, "2"])
+    def test_a_resolution_factor_is_refused_not_ignored(self, client: TestClient, factor: Any) -> None:
+        """Gegenprobe: a client that still sends a coarser factor must not get native files without being told."""
+        assert _download(client, resolution=factor).status_code == 422
 
-    def test_an_explicit_resolution_factor_is_honored_in_the_filename_and_notice(
-        self, client: TestClient
-    ) -> None:
-        """F10c (M3-18 §10): an explicitly coarser resolution travels into the
-        archive — the filename and the notice both name it, never silently."""
-        response = _download(client, resolution=2)
+    def test_resolution_one_is_still_accepted_for_clients_that_send_it(self, client: TestClient) -> None:
+        response = _download(client, resolution=1)
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            names = set(archive.namelist())
-            assert names == {
-                "exports/visual_20m.tif",
-                "exports/visual_20m_mask.tif",
-                "exports/BANDS.txt",
-                "ATTRIBUTION.txt",
-                "aoi.geojson",
-                "recipe.json",
-                "citation.bib",
-            }
-            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
-            assert "2x coarser than native" in notice
+            assert "exports/visual_10m.tif" in archive.namelist()
 
     def test_native_resolution_names_no_factor_in_filename_or_notice(self, client: TestClient) -> None:
         response = _download(client)
@@ -420,21 +402,6 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
         assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0" in notice
-
-    def test_an_explicit_resolution_factor_with_a_place_search_aoi_still_names_it(
-        self, client: TestClient
-    ) -> None:
-        """M3-18's windowed/coarser-resolution path (F10c, `resolution != 1`)
-        plans different `width`/`height` per crop but calls the same
-        `build_download_zip` — checked so a resolution-factor request is not a
-        silent second way to lose the provenance line."""
-        place_search_aoi = {**GOOD_AOI, "properties": {"attribution": "© OpenStreetMap contributors"}}
-        response = _download(client, resolution=2, aoi=place_search_aoi)
-        assert response.status_code == 200
-        with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
-        assert "AOI geometry: © OpenStreetMap contributors" in notice
-        assert "2x coarser than native" in notice
 
     def test_two_groups_land_in_separate_folders_of_the_same_zip(self, client: TestClient) -> None:
         """P19: separate groups as separate files, together in one ZIP (M3-17)."""
@@ -743,10 +710,10 @@ class TestRecipeAndCitation:
         assert "recipe_id" not in text
         assert "c1:" not in text
 
-    def test_recipe_json_names_the_resolution_factor_the_caller_chose(self, client: TestClient) -> None:
-        with _zip_of(_download(client, resolution=2)) as archive:
+    def test_recipe_json_has_the_native_factor_the_field_stays_for_old_recipes(self, client: TestClient) -> None:
+        with _zip_of(_download(client)) as archive:
             recipe = json.loads(archive.read("recipe.json"))
-        assert recipe["output"]["resolution_factor"] == 2
+        assert recipe["output"]["resolution_factor"] == 1
 
     def test_recipe_json_holds_the_aoi_without_a_place_search_provenance(self, client: TestClient) -> None:
         """The recipe model forbids ``properties``; the notice and ``aoi.geojson`` keep them."""
@@ -874,9 +841,7 @@ class TestOverTheCapAnExportJob:
     def _caps(monkeypatch: pytest.MonkeyPatch, crop: int, job: int) -> None:
         monkeypatch.setattr(
             "earthx.api.tiler.check_output_size_cap",
-            lambda planned, native_planned=None: download_module.check_output_size_cap(
-                planned, max_bytes=crop, native_planned=native_planned
-            ),
+            lambda planned: download_module.check_output_size_cap(planned, max_bytes=crop),
         )
         monkeypatch.setattr("earthx.api.tiler.MAX_JOB_BYTES", job)
 
@@ -916,14 +881,6 @@ class TestOverTheCapAnExportJob:
             self._caps(monkeypatch, crop=total - 1, job=job)
             value = _download(client).headers["X-Export-Job"]
             assert value in {"available", "too-large"}
-
-    def test_a_coarser_factor_over_the_cap_is_offered_no_job(
-        self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        self._caps(monkeypatch, crop=1, job=10 * self._native_total(item))
-        response = _download(client, resolution=2)
-        assert response.status_code == 413
-        assert "X-Export-Job" not in response.headers
 
     def test_too_many_scenes_is_offered_no_job(self, client: TestClient) -> None:
         response = _download(client, groups=[[f"{ITEM_ID}#{i}"] for i in range(26)])

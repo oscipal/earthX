@@ -808,11 +808,7 @@ export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse
 // POST /collections/{dataset}/download (M2-06): the AOI crop as a ZIP, streamed
 // synchronously and never cached (D3, D11). The body mirrors `DownloadRequest`
 // in `api/tiler.py`.
-// One of `RESOLUTION_FACTORS` in `access/download.py` (F10c, M3-18 §10):
-// how many times coarser than native to read. Native (`1`) is the default and
-// is never chosen automatically — the dialog always shows the choice.
-export const RESOLUTION_FACTORS = [1, 2, 4, 10] as const;
-export type ResolutionFactor = (typeof RESOLUTION_FACTORS)[number];
+// An export is always in the resolution of the source (one multi-band file: in the common resolution chosen); there is no factor to send.
 
 // The three forms of the files of a download (NM4-75), named as the server names them.
 export type DownloadForm = 'per_band' | 'per_resolution' | 'multi_band';
@@ -871,9 +867,8 @@ export interface DownloadCropRequest {
   groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
-  resolution?: ResolutionFactor;
-  // NM4-75: how the chosen bands lie in files. `resolution` is `1` for every form but `per_band`; `commonResolution` (metres)
-  // goes with `multi_band` and with no other. Left out, the server writes one file per band, as before.
+  // NM4-75: how the chosen bands lie in files; `commonResolution` (metres) goes with `multi_band` and with no other. Left out, the
+  // server writes one file per band, as before.
   form?: DownloadForm;
   commonResolution?: number;
 }
@@ -906,7 +901,6 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCr
       groups: req.groups,
       assets: req.assets,
       aoi: req.aoi,
-      resolution: req.resolution ?? 1,
       ...(req.form ? { form: req.form } : {}),
       ...(req.form === 'multi_band' && req.commonResolution !== undefined ? { common_resolution: req.commonResolution } : {}),
     }),

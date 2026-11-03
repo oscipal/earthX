@@ -1410,7 +1410,6 @@ def crop_recipe_json(
     groups: Sequence[Sequence[Mapping[str, Any]]],
     assets: Sequence[str],
     aoi: Mapping[str, Any],
-    resolution_factor: int,
     accepted_at: datetime,
     years: AcquisitionYears | None,
     layout: Mapping[str, Any] | None = None,
@@ -1459,7 +1458,7 @@ def crop_recipe_json(
         "output": {
             "kind": "crop",
             "format": "cog",
-            "resolution_factor": resolution_factor,
+            "resolution_factor": 1,
             "extent": "bbox(aoi ∩ footprints)",
             "mask": "file",
             **({"layout": dict(layout)} if layout is not None else {}),

@@ -17,7 +17,6 @@ import {
   linkListText,
   noOriginalsReason,
   originalFileLinks,
-  resolutionOptionLabel,
   termsNoticeText,
 } from './download';
 import type { LayerRestore, MapLayer } from './layers';
@@ -506,33 +505,6 @@ function item(overrides: Partial<StacItem> = {}): StacItem {
     ...overrides,
   };
 }
-
-describe('resolutionOptionLabel', () => {
-  it('names the factor alone, native without a suffix', () => {
-    expect(resolutionOptionLabel([], 'visual', 1)).toBe('Native');
-    expect(resolutionOptionLabel([], 'visual', 4)).toBe('4×');
-  });
-
-  it('adds the metre figure once a gsd is known', () => {
-    expect(resolutionOptionLabel([item()], 'visual', 1)).toBe('Native (10 m)');
-    expect(resolutionOptionLabel([item()], 'visual', 2)).toBe('2× (20 m)');
-  });
-
-  it('reads the gsd off proj:transform when the asset has none of its own', () => {
-    const withTransform = item({ assets: { visual: { href: 'h', 'proj:transform': [20, 0, 0, 0, -20, 0] } } });
-    expect(resolutionOptionLabel([withTransform], 'visual', 1)).toBe('Native (20 m)');
-  });
-
-  it('uses the finest gsd among several items, matching the backend worst case', () => {
-    const fine = item({ id: 'A', assets: { visual: { href: 'h', gsd: 10 } } });
-    const coarse = item({ id: 'B', assets: { visual: { href: 'h', gsd: 60 } } });
-    expect(resolutionOptionLabel([coarse, fine], 'visual', 1)).toBe('Native (10 m)');
-  });
-
-  it('falls back to the factor alone when no item names this asset', () => {
-    expect(resolutionOptionLabel([item()], 'thumbnail', 1)).toBe('Native');
-  });
-});
 
 describe('linkListText (Save link list)', () => {
   const link = (itemId: string, href: string) => ({ itemId, groupLabel: 'g', asset: 'visual', href });

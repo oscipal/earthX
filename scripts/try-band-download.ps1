@@ -34,7 +34,12 @@
     Period to search, 2025-07-01/2025-07-31 by default.
 
 .PARAMETER BaseUrl
-    Where the platform's api runs. Default http://localhost:8000.
+    Where the platform's api runs (the search). Default http://localhost:8000.
+
+.PARAMETER TilerUrl
+    Where the platform's tiler runs. The download of a crop (POST /collections/{dataset}/download) is a route of the
+    tiler, not of the api: the viewer reaches it through its proxy at /collections, the script goes to the tiler itself.
+    Default http://localhost:8001 (docker compose publishes the tiler there).
 
 .EXAMPLE
     .\scripts\try-band-download.ps1
@@ -53,6 +58,7 @@ param(
     [string]$Bbox = '10.50,49.50,10.51,49.51',
     [string]$Datetime = '2025-07-01/2025-07-31',
     [string]$BaseUrl = 'http://localhost:8000',
+    [string]$TilerUrl = 'http://localhost:8001',
     [string]$OutputDir = '.\try-band-download-output'
 )
 
@@ -61,6 +67,7 @@ $ProgressPreference    = 'SilentlyContinue'
 $Invariant             = [System.Globalization.CultureInfo]::InvariantCulture
 $failed                = 0
 $BaseUrl               = $BaseUrl.TrimEnd('/')
+$TilerUrl              = $TilerUrl.TrimEnd('/')
 
 function Write-Result {
     param([bool]$Good, [string]$Text)
@@ -70,6 +77,7 @@ function Write-Result {
 
 function Read-Answer {
     # One request; never throws. Returns Status (0: no answer), Text, and the file when -OutFile is given.
+    # The text of an answer is for the checks of the script; it is not printed (it can name a scene), see Show-Failure.
     param([string]$Uri, [string]$Body, [string]$OutFile)
     $request = @{ Uri = $Uri; Method = 'Post'; UseBasicParsing = $true; TimeoutSec = 300; ContentType = 'application/json; charset=utf-8'; Body = $Body }
     if ($OutFile) { $request.OutFile = $OutFile; $request.PassThru = $true }
@@ -92,6 +100,21 @@ function Read-Answer {
         } catch { }
         return [pscustomobject]@{ Status = [int]$failure.StatusCode; Text = $text }
     }
+}
+
+function Show-Failure {
+    # What went wrong, with the route as a pattern only (method, service, path with its placeholders): no scene
+    # identifier, no area and no body of the answer. -Verbose adds the first line of the answer.
+    param([string]$What, $Answer, [string]$Service, [string]$Pattern)
+    $route = "POST $Service $Pattern"
+    if ($Answer.Status -eq 0) {
+        Write-Result $false "${What}: keine Antwort von $route - läuft der Dienst unter der angegebenen Adresse?"
+    } elseif ($Answer.Status -eq 404) {
+        Write-Result $false "${What}: HTTP 404 von $route - der Dienst kennt die Route nicht; die Adresse (-BaseUrl api, -TilerUrl tiler) prüfen"
+    } else {
+        Write-Result $false "${What}: HTTP $($Answer.Status) von $route"
+    }
+    if ($Answer.Text) { Write-Verbose ($Answer.Text.Split("`n")[0]) }
 }
 
 function ConvertTo-Number {
@@ -125,13 +148,13 @@ $parts = $Datetime.Split('/')
 if ($parts.Count -ne 2) { Write-Result $false '-Datetime: "Start/Ende" als Datum erwartet'; exit 1 }
 $search = '{"collections": ["' + $Dataset + '"], "bbox": [' + "$west,$south,$east,$north" + '], "datetime": "' + $parts[0] + 'T00:00:00Z/' + $parts[1] + 'T23:59:59Z", "limit": 1}'
 $found = Read-Answer -Uri "$BaseUrl/stac/search" -Body $search
-if ($found.Status -ne 200) { Write-Result $false "Item suchen: HTTP $($found.Status) - läuft die Plattform (docker compose up)?"; exit 1 }
+if ($found.Status -ne 200) { Show-Failure 'Item suchen' $found 'api' '/stac/search'; exit 1 }
 $items = @((ConvertFrom-Json $found.Text).features)
 if ($items.Count -lt 1) { Write-Result $false 'Item suchen: für Gebiet und Zeitraum gibt es keine Szene'; exit 1 }
 $itemId = [string]$items[0].id
 Write-Result $true 'Item gefunden (die Kennung wird nicht ausgegeben)'
 
-# ---- 2. download ----------------------------------------------------------------------------------
+# ---- 2. download (a route of the tiler, not of the api) ----------------------------------------------------------------------------------
 $assetList = ($Assets | ForEach-Object { '"' + $_ + '"' }) -join ', '
 $aoi = '{"type": "Polygon", "coordinates": [[[' + "$west, $south], [$east, $south], [$east, $north], [$west, $north], [$west, $south" + ']]]}'
 $body = '{"groups": [["' + $itemId + '"]], "assets": [' + $assetList + '], "aoi": ' + $aoi + ', "form": "' + $Form + '"'
@@ -139,11 +162,9 @@ if ($Form -eq 'multi_band') { $body += ', "common_resolution": ' + $CommonResolu
 $body += '}'
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $zipPath = Join-Path (Resolve-Path $OutputDir).Path "$Dataset-$Form.zip"
-$answer = Read-Answer -Uri "$BaseUrl/collections/$Dataset/download" -Body $body -OutFile $zipPath
+$answer = Read-Answer -Uri "$TilerUrl/collections/$Dataset/download" -Body $body -OutFile $zipPath
 if ($answer.Status -ne 200) {
-    $detail = ''
-    if ($answer.Text) { $detail = " - $($answer.Text)" }
-    Write-Result $false "Download: HTTP $($answer.Status)$detail"
+    Show-Failure 'Download' $answer 'tiler' '/collections/{dataset}/download'
     exit 1
 }
 Write-Result $true ("Download: {0} KB gespeichert unter {1}" -f [math]::Round((Get-Item -LiteralPath $zipPath).Length / 1024), $zipPath)

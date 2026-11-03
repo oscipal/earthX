@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // The choice of bands and files in the download dialog (NM4-75), mounted through the real dialog: the list comes from the scene and
-// the collection, "None" locks "Download", the factor is for one file per band only, the common resolution for one multi-band file
+// the collection, "None" locks "Download", there is no row of resolution factors, the common resolution for one multi-band file
 // only, and whole scenes start with "Download" and load only what is ticked.
 
 import { act } from 'react';
@@ -196,11 +196,11 @@ describe('the list of bands', () => {
 describe('the form of the files', () => {
   const pressed = () => [...container.querySelectorAll('.dialog-forms button')].filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent);
 
-  it('starts with one file per band, which shows the factor and no common resolution', async () => {
+  it('starts with one file per band, which has no common resolution and no factor', async () => {
     await open('crop');
     expect([...container.querySelectorAll('.dialog-forms button')].map((b) => b.textContent)).toEqual(['One file per band', 'One file per resolution', 'One multi-band file']);
     expect(pressed()).toEqual(['One file per band']);
-    expect(resolutionRow()).not.toBeNull();
+    expect(resolutionRow()).toBeNull();
     expect(container.querySelector('.dialog-common')).toBeNull();
   });
 
@@ -241,20 +241,26 @@ describe('the form of the files', () => {
     expect(tip()).toContain('most frequent class: scl (20 m)');
   });
 
-  it('a factor chosen for one file per band is not kept for another form', async () => {
+  it('has no row of resolution factors in any form, and none of the requests carries one', async () => {
     await open('crop');
-    await click(container.querySelectorAll<HTMLInputElement>('input[name="download-resolution"]')[1]);
-    await click(button('One file per resolution'));
-    await click(button('Download'));
-    expect(downloadCalls()[0].body).toMatchObject({ form: 'per_resolution', resolution: 1 });
-    expect(downloadCalls()[0].body).not.toHaveProperty('common_resolution');
+    for (const form of ['One file per band', 'One file per resolution', 'One multi-band file']) {
+      await click(button(form));
+      expect(resolutionRow()).toBeNull();
+      expect(container.querySelector('input[name="download-resolution"]')).toBeNull();
+      expect(container.textContent).not.toMatch(/Native|2×|4×|10×/);
+      await click(button('Download'));
+    }
+    expect(downloadCalls()).toHaveLength(3);
+    for (const call of downloadCalls()) expect(call.body).not.toHaveProperty('resolution');
+    expect(downloadCalls().map((c) => c.body?.form)).toEqual(['per_band', 'per_resolution', 'multi_band']);
+    expect(downloadCalls().map((c) => 'common_resolution' in (c.body ?? {}))).toEqual([false, false, true]);
   });
 
   it('"Download" of one multi-band file sends the common resolution', async () => {
     await open('crop');
     await click(button('One multi-band file'));
     await click(button('Download'));
-    expect(downloadCalls()[0].body).toMatchObject({ form: 'multi_band', common_resolution: 10, resolution: 1 });
+    expect(downloadCalls()[0].body).toMatchObject({ form: 'multi_band', common_resolution: 10 });
   });
 });
 
@@ -262,10 +268,10 @@ describe('the form is asked only for bands of different resolutions', () => {
   const forms = () => container.querySelector('.dialog-forms');
   const pressed = () => [...container.querySelectorAll('.dialog-forms button[aria-pressed="true"]')].map((b) => b.textContent);
 
-  it('shows the form, the factor and (for one multi-band file) the common resolution while the ticked bands differ, and hides them at one resolution', async () => {
+  it('shows the form (and for one multi-band file the common resolution) while the ticked bands differ, and hides them at one resolution', async () => {
     await open('crop');
     expect(forms()).not.toBeNull();
-    expect(resolutionRow()).not.toBeNull();
+    expect(resolutionRow()).toBeNull();
     // B02 and B04: both 10 m.
     await click(button('None'));
     await click(boxes()[0]);
@@ -276,7 +282,7 @@ describe('the form is asked only for bands of different resolutions', () => {
     expect(button('Download')!.disabled).toBe(false);
     await click(boxes()[2]);
     expect(forms()).not.toBeNull();
-    expect(resolutionRow()).not.toBeNull();
+    expect(resolutionRow()).toBeNull();
   });
 
   it('a single band has no form either, and ticking a band of another resolution brings it back at once', async () => {
@@ -287,7 +293,7 @@ describe('the form is asked only for bands of different resolutions', () => {
     await click(boxes()[3]);
     expect(forms()).not.toBeNull();
     expect(pressed()).toEqual(['One file per band']);
-    expect(resolutionRow()).not.toBeNull();
+    expect(resolutionRow()).toBeNull();
   });
 
   it('keeps the form that was chosen while it is hidden, and shows it again with its resolution', async () => {
@@ -308,7 +314,7 @@ describe('the form is asked only for bands of different resolutions', () => {
     await click(button('None'));
     await click(boxes()[0]);
     await click(button('Download'));
-    expect(downloadCalls()[0].body).toMatchObject({ form: 'per_resolution', resolution: 1, assets: ['a_blue'] });
+    expect(downloadCalls()[0].body).toMatchObject({ form: 'per_resolution', assets: ['a_blue'] });
     expect(downloadCalls()[0].body).not.toHaveProperty('common_resolution');
   });
 
@@ -381,7 +387,6 @@ describe('whole scenes', () => {
     expect(container.querySelector('.dialog-original-row')).toBeNull();
     expect(page.jobs).toEqual([]);
     expect(container.querySelector('.dialog-originals > .hint-text')?.textContent).toBe('1 scene · 6 kB');
-    // The factor is for a crop only.
     expect(resolutionRow()).toBeNull();
   });
 
@@ -490,7 +495,7 @@ describe('a layer of the layer manager', () => {
     expect(bandNames()).toEqual(['B02', 'B04', 'B05', 'B01', 'scl', 'AOT']);
     expect(button('Download')!.disabled).toBe(false);
     await click(button('Download'));
-    expect(downloadCalls()[0].body).toMatchObject({ groups: [['S1', 'S2']], assets: ['a_blue', 'a_red', 'a_edge', 'a_coast', 'scl'], form: 'per_band', resolution: 1 });
+    expect(downloadCalls()[0].body).toMatchObject({ groups: [['S1', 'S2']], assets: ['a_blue', 'a_red', 'a_edge', 'a_coast', 'scl'], form: 'per_band' });
     const asked = calls.filter((c) => c.url.endsWith('/bands'));
     expect(asked).toHaveLength(1);
     expect(asked[0].body).toEqual({ items: ['S1', 'S2'] });

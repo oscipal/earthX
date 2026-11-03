@@ -3358,11 +3358,6 @@ a.pm-icon:hover {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
-.dialog-resolution label {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--control-height);
-}
 .lm-btn.primary {
   border-color: var(--accent);
   color: var(--accent);

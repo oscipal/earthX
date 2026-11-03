@@ -95,8 +95,18 @@ Export), Umrechnung, Datentyp, Skalierung, Offset, nodata und Einheit.
    stand zuerst die Auslegung EPSG:4326.
 3. **Masken** (Otto: so lassen): zu jeder Datendatei gehört wie bisher eine
    Maskendatei (`<Name>_mask.tif`), auch bei der ganzen Szene (Maske = Footprint).
-4. **Auflösungsfaktor (1/2/4/10):** bleibt, gilt aber nur bei `per_band`; bei
-   den anderen Formen ersetzt ihn die Wahl der Auflösung (422 sonst).
+4. **Kein Auflösungsfaktor mehr** (Otto, Review 03.11.2026; ersetzt die Auslegung,
+   der Faktor 1/2/4/10 bleibe bei „per band“): Der Dialog fragt nie nach einer
+   gröberen Auflösung. Ein Export ist immer in der Auflösung der Quelle, bei
+   „One multi-band file“ in der gewählten gemeinsamen Auflösung. Der Auftrag
+   `POST …/download` trägt kein `resolution` mehr als Wahl: das Feld nimmt nur
+   noch `1` an und lehnt jeden anderen Wert mit 422 ab (statt ihn still zu
+   ignorieren). Die Größenprüfung rät bei einem zu großen Zuschnitt nicht mehr zu
+   einem Faktor, sondern zu kleinerer Fläche, weniger Bändern oder einer
+   gröberen gemeinsamen Auflösung. Entfallen sind der Dateiname mit `_2x` und die
+   Zeile „Nx coarser than native“ in `ATTRIBUTION.txt`. Das Rezeptfeld
+   `CropOutput.resolution_factor` bleibt (immer 1 in neuen Rezepten), alte Rezepte
+   mit Faktor bleiben lesbar; der Export-Job lehnt einen Faktor ≠ 1 wie zuvor ab.
 5. **Mehrbandige Dateien:** Datentyp ist der weiteste der Bänder (z. B. uint16
    neben uint8); nodata nur, wenn alle Bänder denselben Wert haben (sonst steht
    er je Band in `BANDS.txt`); Skalierung und Offset je Band.

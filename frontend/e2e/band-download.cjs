@@ -1,7 +1,7 @@
 // Browser check of the choice of bands and files in the download dialog (NM4-75): the real dialog of the real app, with made-up
 // scenes and made-up answers of the platform. Checked in the light and the dark theme, at a wide and a narrow window:
-//   crop       the list of bands from the scene, "None" locks "Download", the form, the common resolution with its (i), the factor
-//              for one file per band only, the request that "Download" sends (form, assets, common_resolution), Esc closes nothing
+//   crop       the list of bands from the scene, "None" locks "Download", the form, the common resolution with its (i), no row of
+//              resolution factors in any form, the request that "Download" sends (form, assets, common_resolution), Esc closes nothing
 //   whole      "Download full scene" waits for "Download"; one file per resolution shows the estimate and places a job with the
 //              layout and without an AOI; the resampling warning comes first where the platform resamples
 //   layout     nothing overlaps or leaves the dialog, the list scrolls inside it, controls are as high as the others (28 px, 44 px
@@ -150,19 +150,18 @@ async function caseCrop(browser, { theme, viewport }) {
   // None locks Download.
   await page.getByRole('button', { name: 'None', exact: true }).click();
   if (!(await page.getByRole('button', { name: 'Download', exact: true }).isDisabled())) problems.push(`${label}: Download is open with no band`);
-  // The form is asked only for bands of different resolutions: two bands of 10 m hide it (and the factor), a band of 20 m brings it back.
+  // The form is asked only for bands of different resolutions: two bands of 10 m hide it, a band of 20 m brings it back.
   const boxesAt = page.locator('.dialog-band input');
   await boxesAt.nth(0).check();
   await boxesAt.nth(1).check();
   if (await page.locator('.dialog-forms').count()) problems.push(`${label}: the form is asked for bands of one resolution`);
-  if (await page.locator('.dialog-resolution').count()) problems.push(`${label}: the factor is shown for bands of one resolution`);
   await boxesAt.nth(4).check();
   if (!(await page.locator('.dialog-forms').count())) problems.push(`${label}: no form for bands of different resolutions`);
   await page.getByRole('button', { name: 'All', exact: true }).click();
-  // The factor is for one file per band only.
-  if (!(await page.locator('.dialog-resolution').count())) problems.push(`${label}: no factor for one file per band`);
+  // There is no row of resolution factors, in no form.
+  if (await page.locator('.dialog-resolution, input[name="download-resolution"]').count()) problems.push(`${label}: a row of resolution factors with one file per band`);
   await page.getByRole('button', { name: 'One file per resolution' }).click();
-  if (await page.locator('.dialog-resolution').count()) problems.push(`${label}: a factor with one file per resolution`);
+  if (await page.locator('.dialog-resolution, input[name="download-resolution"]').count()) problems.push(`${label}: a row of resolution factors with one file per resolution`);
   await page.getByRole('button', { name: 'One multi-band file' }).click();
   expectEq(problems, `${label}: resolutions`, await page.$$eval('.dialog-common option', (e) => e.map((x) => x.textContent)), ['10 m', '20 m', '60 m']);
   const tip = await page.getAttribute('.dialog-common .tip', 'data-tip');
@@ -179,7 +178,7 @@ async function caseCrop(browser, { theme, viewport }) {
   await page.waitForFunction(() => !document.querySelector('.dialog-panel'), null, { timeout: 5000 }).catch(() => problems.push(`${label}: the dialog stays after the download`));
   expectEq(problems, `${label}: requests`, seen.download.length, 1);
   const body = seen.download[0] ?? {};
-  expectEq(problems, `${label}: form`, [body.form, body.common_resolution, body.resolution], ['multi_band', 20, 1]);
+  expectEq(problems, `${label}: form`, [body.form, body.common_resolution, 'resolution' in body], ['multi_band', 20, false]);
   // "All" was pressed above: every band of the scene.
   expectEq(problems, `${label}: assets`, body.assets, SPECS.map(([key]) => key));
   await context.close();

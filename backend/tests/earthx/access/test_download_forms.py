@@ -154,19 +154,6 @@ class TestOneFilePerBand:
             assert set(np.unique(ds.read(1))) <= {0, 1, 2, 3, 4}  # 0: nodata beyond the footprint edge, never a new class
             assert ds.dtypes[0] == "uint8"
 
-    def test_a_factor_other_than_one_is_named_by_the_coarser_pixel_size(self) -> None:
-        # Counter-check: the file does not claim the native size while it is not.
-        mems, metas = _sources()
-        aoi = _polygon(_bbox_to_wgs84(UTM32, (ORIGIN[0], ORIGIN[1] - SIZE_M, ORIGIN[0] + SIZE_M, ORIGIN[1])))
-        data = dl.build_download_zip(
-            config=SENTINEL_2_L2A, years=YEARS, open_reader=open_reader,
-            crops=[dl.AssetCrop(asset="blue", paths=(_asset_path(mems["blue"], asset="blue"),), width=60, height=60)],
-            aoi_geometry=aoi, item_ids=["ITEM1"], resolution_factor=2, band_metas=metas,
-        )  # fmt: skip
-        with zipfile.ZipFile(BytesIO(data)) as archive:
-            assert "exports/B02_blue_20m.tif" in archive.namelist()
-            assert "exports/B02_blue_10m.tif" not in archive.namelist()
-
 
 class TestOneFilePerResolution:
     def test_one_stacked_file_per_resolution_with_the_grid_of_the_per_band_files(self) -> None:
@@ -302,10 +289,6 @@ class TestGroupsAndRefusals:
                 crops=[dl.AssetCrop(asset="visual", paths=(_asset_path(three, asset="visual"),))],
                 aoi_geometry=aoi, item_ids=["ITEM1"], form="per_resolution", band_metas=metas,
             )  # fmt: skip
-
-    def test_a_coarser_read_is_only_for_one_file_per_band(self) -> None:
-        with pytest.raises(ExportPlanError, match="coarser"):
-            _zip(["blue"], form="per_resolution", resolution_factor=2)
 
     def test_an_aoi_that_misses_every_band_is_refused_not_an_empty_zip(self) -> None:
         mems, metas = _sources()

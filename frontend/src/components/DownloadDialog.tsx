@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 
-import { RESOLUTION_FACTORS } from '../api';
 import { chosenBands, commonResolutionOf, effectiveForm, layoutBlock, withBandChoice } from '../bandChoice';
 import {
   acquisitionYears,
@@ -8,7 +7,6 @@ import {
   canExportLicense,
   downloadRequestFor,
   downloadRequestForSelection,
-  resolutionOptionLabel,
   termsNoticeText,
 } from '../download';
 import { groupItemIdsFor } from '../grouping';
@@ -75,8 +73,6 @@ export default function DownloadDialog() {
   const downloading = useAppStore((s) => s.downloading);
   const close = useAppStore((s) => s.closeDownloadDialog);
   const confirm = useAppStore((s) => s.confirmDownload);
-  const resolution = useAppStore((s) => s.downloadResolution);
-  const setResolution = useAppStore((s) => s.setDownloadResolution);
   const outcome = useAppStore((s) => s.downloadOutcome);
   const originalLinks = useAppStore((s) => s.downloadOriginalLinks);
   const passes = useAppStore((s) => s.downloadPasses);
@@ -227,8 +223,6 @@ export default function DownloadDialog() {
   // with no job to see. The raw bands are what the dialog starts with, as for any layer.
   const offered = !selectionMode && layer ? indexOfferedFor(layer, datasets) : null;
   const index = offered && downloadAs === 'index' ? offered : null;
-  // A coarser factor goes with one file per band only.
-  const factorShown = table.length === 0 || sent === 'per_band';
 
   return (
     <>
@@ -268,30 +262,6 @@ export default function DownloadDialog() {
 
             {req && !index && bandsLoading && <p className="hint-text">Loading the bands…</p>}
             {req && !index && table.length > 0 && <BandChoice table={table} disabled={downloading} />}
-
-            {req && !index && factorShown && (
-              <div className="dialog-resolution">
-                <span>Resolution: </span>
-                {RESOLUTION_FACTORS.map((factor) => {
-                  // One label per distinct resolution; with several (many bands) the factor alone is the label and they are its tooltip.
-                  const labels = [
-                    ...new Set(req.assets.map((asset) => resolutionOptionLabel(selectionMode ? selectionItems : [], asset, factor))),
-                  ];
-                  return (
-                    <label key={factor} style={{ marginRight: '1em' }} title={labels.length > 1 ? labels.join(', ') : undefined}>
-                      <input
-                        type="radio"
-                        name="download-resolution"
-                        checked={resolution === factor}
-                        onChange={() => setResolution(factor)}
-                        disabled={downloading}
-                      />{' '}
-                      {labels.length > 1 ? (factor === 1 ? 'Native' : `${factor}×`) : labels.join('')}
-                    </label>
-                  );
-                })}
-              </div>
-            )}
 
             {!exportAllowed && (
               <p className="hint-text">

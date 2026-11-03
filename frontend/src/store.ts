@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import * as api from './api';
-import type { CoverageResponse, DownloadForm, PagesSoFar, ResolutionFactor } from './api';
+import type { CoverageResponse, DownloadForm, PagesSoFar } from './api';
 import { chosenBands, commonResolutionOf, defaultBandKeys, DEFAULT_FORM, effectiveForm, layoutBlock, layoutOf, withBandChoice, type DownloadBand } from './bandChoice';
 import { downloadSceneJob, estimateSceneJob, resamplingOfOrder, sceneJobOrder, type JobNote } from './downloadJob';
 import type { ResamplingPart } from './resamplingWarning';
@@ -1506,10 +1506,6 @@ export interface AppState {
   downloadSelection: boolean;
   // With `downloadSelection`: the dialog is for the image the view shows (`openDownloadForView`), not for the ticks of the list.
   downloadView: DownloadView | null;
-  // The resolution choice in the open download dialog (F10c, M3-18 §10).
-  // Native (`1`) every time the dialog opens — never chosen automatically,
-  // and never remembered from a previous download.
-  downloadResolution: ResolutionFactor;
   // The outcome the open dialog follows (M3-17 plan §4) — `null` while
   // nothing is open, or while `openDownloadDialog` is still fetching a
   // layer's items to decide it (the crop and disabled outcomes never need
@@ -1533,7 +1529,7 @@ export interface AppState {
   downloadSkippedGroupsNotice: string | null;
   // The crop was too large for a direct download and its `413` offers an
   // export job (M4-11b-2); the dialog shows the offer instead of an error.
-  // Dropped with the dialog and with any change of the resolution.
+  // Dropped with the dialog and with any change of the choice.
   downloadExportOffer: ExportOffer | null;
   // The choice of bands and files (NM4-75). The table of bands is the platform's answer for the scenes of the dialog; empty where the
   // scenes have no file per band to choose from. `downloadBandsLoading`: the answer is still on its way.
@@ -1716,7 +1712,6 @@ export interface AppState {
   openDownloadForSelection: (kind: 'crop' | 'originals') => void;
   openDownloadForView: (kind: 'crop' | 'originals') => void;
   closeDownloadDialog: () => void;
-  setDownloadResolution: (factor: ResolutionFactor) => void;
   setDownloadBands: (keys: string[]) => void;
   setDownloadForm: (form: DownloadForm) => void;
   setDownloadCommonResolution: (metres: number | null) => void;
@@ -1851,7 +1846,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadDialogLayerId: null,
   downloadSelection: false,
   downloadView: null,
-  downloadResolution: 1,
   downloadOutcome: null,
   downloadOriginalLinks: null,
   downloadPasses: null,
@@ -2403,8 +2397,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadDialogLayerId: id,
       downloadSelection: false,
       downloadView: null,
-      downloadResolution: 1,
-      downloadOutcome: null,
+          downloadOutcome: null,
       downloadOriginalLinks: null,
       downloadPasses: null,
       downloadSkippedGroupsNotice: null,
@@ -2483,8 +2476,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         downloadDialogLayerId: null,
         downloadSelection: true,
-        downloadResolution: 1,
-        downloadOutcome: 'crop',
+              downloadOutcome: 'crop',
         downloadOriginalLinks: null,
         downloadPasses: null,
         downloadSkippedGroupsNotice: null,
@@ -2510,8 +2502,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       downloadDialogLayerId: null,
       downloadSelection: true,
-      downloadResolution: 1,
-      downloadOutcome: 'originals',
+          downloadOutcome: 'originals',
       downloadOriginalLinks: links,
       downloadPasses: groups,
       downloadSkippedGroupsNotice: null,
@@ -2551,7 +2542,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadDialogLayerId: null,
       downloadSelection: true,
       downloadView: { datasetId: image.datasetId, items, label: image.groupLabel },
-      downloadResolution: 1 as const,
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
       ...bandChoiceFor(true),
@@ -2607,15 +2597,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const note = await estimateIndexDownload({ layer, datasets: s.datasets, signal: controller.signal });
     if (!controller.signal.aborted && get().downloadDialogLayerId === layer.id) set({ downloadIndexNote: note });
   },
-  setDownloadResolution: (factor) => set({ downloadResolution: factor, downloadExportOffer: null }),
   // The bands ticked, the form of the files and the common resolution (NM4-75). Any of them asks the job of whole scenes anew what it costs.
   setDownloadBands: (keys) => {
     set({ downloadBands: keys, downloadExportOffer: null });
     refreshJobEstimate();
   },
   setDownloadForm: (form) => {
-    // A coarser factor goes with one file per band only.
-    set((s) => ({ downloadForm: form, downloadResolution: form === 'per_band' ? s.downloadResolution : 1, downloadExportOffer: null }));
+    set({ downloadForm: form, downloadExportOffer: null });
     refreshJobEstimate();
   },
   setDownloadCommonResolution: (metres) => {
@@ -2696,8 +2684,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
     const req = withBandChoice(asked, table, s.downloadBands, s.downloadForm, s.downloadCommonResolution);
-    // The factor goes with one file per band only.
-    const resolution = table.length > 0 && effectiveForm(bands, s.downloadForm) !== 'per_band' ? 1 : s.downloadResolution;
     const send = async () => {
       set({ downloading: true, error: null, downloadExportOffer: null });
       try {
@@ -2706,7 +2692,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           groups: req.groups,
           assets: req.assets,
           aoi: req.aoi,
-          resolution,
           ...(req.layout ? { form: req.layout.form, commonResolution: req.layout.resolution_m } : {}),
         });
         const url = URL.createObjectURL(result.blob);
@@ -2739,7 +2724,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (
           e instanceof api.HttpError &&
           e.exportJob &&
-          resolution === 1 &&
           (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon')
         ) {
           set({

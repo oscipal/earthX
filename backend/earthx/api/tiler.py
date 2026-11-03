@@ -64,7 +64,6 @@ from earthx.access.colormaps import catalog as colormap_catalog
 from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order, target_crs
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
-    RESOLUTION_FACTORS,
     AoiOutsideItems,
     AoiTooLarge,
     AssetCrop,
@@ -1097,13 +1096,12 @@ class DownloadRequest(BaseModel):
     )
     assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, e.g. `visual`")
     aoi: dict[str, Any] = Field(description="a GeoJSON Polygon or MultiPolygon, in WGS84")
-    resolution: int = Field(
+    resolution: Literal[1] = Field(
         default=1,
         description=(
-            "how many times coarser than native resolution to read, one of "
-            f"{RESOLUTION_FACTORS} — 1 is native, the default (Otto, 23.09.2026, M3-18 §10). "
-            "Never chosen automatically; the caller (the download dialog) picks it explicitly. "
-            "Only the form `per_band` reads at a coarser resolution."
+            "Always 1, the resolution of the source: a coarser factor is no longer offered (Otto, 03.11.2026, NM4-75). "
+            "A file is in the resolution of its source, or in `common_resolution` for one multi-band file. "
+            "Any other value is refused."
         ),
     )
     form: Literal["per_band", "per_resolution", "multi_band"] = Field(
@@ -1125,8 +1123,6 @@ class DownloadRequest(BaseModel):
     def _form_and_resolution_agree(self) -> DownloadRequest:
         if (self.form == "multi_band") != (self.common_resolution is not None):
             raise ValueError("common_resolution goes with the form multi_band, and with no other")
-        if self.form != "per_band" and self.resolution != 1:
-            raise ValueError("only the form per_band reads at a coarser resolution")
         return self
 
     @field_validator("groups")
@@ -1190,12 +1186,6 @@ async def download_crop(
         aoi = parse_aoi_geometry(body.aoi)
     except InvalidAoi as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
-
-    if body.resolution not in RESOLUTION_FACTORS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"resolution must be one of {RESOLUTION_FACTORS}, not {body.resolution!r}",
-        )
 
     # One fetch per item id, even where two groups would otherwise ask for it
     # twice — the request validator already refuses that, so this dict never
@@ -1269,43 +1259,23 @@ async def download_crop(
     except ExportPlanError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
 
-    # Native is always planned too (F10c, M3-18 §10): even when the caller
-    # already chose a coarser resolution, a rejection still needs the smallest
-    # *native-relative* factor to suggest, not one relative to what was
-    # already asked for.
-    native_planned_by_group: list[list[PlannedOutput]] = [
-        plan_outputs(matched, wanted, region) for matched, region in surviving_groups
+    # Each file at the resolution of its source, or all at the common one (NM4-75).
+    planned_by_group: list[list[PlannedOutput]] = [
+        plan_outputs(matched, wanted, region, pixel_size=body.common_resolution) for matched, region in surviving_groups
     ]
-    planned_by_group: list[list[PlannedOutput]] = (
-        [plan_outputs(matched, wanted, region, pixel_size=body.common_resolution) for matched, region in surviving_groups]
-        if body.form == "multi_band"
-        else native_planned_by_group
-        if body.resolution == 1
-        else [
-            plan_outputs(matched, wanted, region, resolution_factor=body.resolution)
-            for matched, region in surviving_groups
-        ]
-    )
     try:
         check_item_count_cap(sum(len(matched) for matched, _ in surviving_groups))
     except AoiTooLarge as error:
         raise HTTPException(status_code=413, detail=str(error)) from None
-    native_total = sum(output.total_bytes for planned in native_planned_by_group for output in planned)
+    planned_total = sum(output.total_bytes for planned in planned_by_group for output in planned)
     try:
-        check_output_size_cap(
-            [output for planned in planned_by_group for output in planned],
-            native_planned=(
-                [output for planned in native_planned_by_group for output in planned] if body.form == "per_band" else None
-            ),
-        )
+        check_output_size_cap([output for planned in planned_by_group for output in planned])
     except AoiTooLarge as error:
         # Over the synchronous cap, the same selection may still run as an export job (M4-11 K5):
-        # native resolution only (K1), COG only (F6), under the job's own cap (F5). A word, no
-        # number and no geometry, like `X-Skipped-Groups` below.
-        if body.resolution == 1 and config.zarr is None:
-            fits = (
-                native_total if body.form != "multi_band" else sum(o.total_bytes for p in planned_by_group for o in p)
-            ) <= MAX_JOB_BYTES
+        # COG only (F6), under the job's own cap (F5). A word, no number and no geometry, like
+        # `X-Skipped-Groups` below.
+        if config.zarr is None:
+            fits = planned_total <= MAX_JOB_BYTES
             headers = {EXPORT_JOB_HEADER: EXPORT_JOB_AVAILABLE if fits else EXPORT_JOB_TOO_LARGE}
         else:
             headers = None
@@ -1318,8 +1288,7 @@ async def download_crop(
         (_in_mosaic_order(matched, config=config, asset=wanted[0]), region) for matched, region in surviving_groups
     ]
 
-    def _crops_for(matched_items: list[dict[str, Any]], planned: list[PlannedOutput]) -> list[AssetCrop]:
-        planned_by_asset = {output.label: output for output in planned}
+    def _crops_for(matched_items: list[dict[str, Any]]) -> list[AssetCrop]:
         return [
             AssetCrop(
                 asset=asset,
@@ -1329,8 +1298,6 @@ async def download_crop(
                     )
                     for matched_item in matched_items
                 ),
-                width=None if body.resolution == 1 else planned_by_asset[asset].width,
-                height=None if body.resolution == 1 else planned_by_asset[asset].height,
             )
             for asset in wanted
         ]
@@ -1354,14 +1321,14 @@ async def download_crop(
             break
 
     first_matched, first_region = surviving_groups[0]
-    first_crops = _crops_for(first_matched, planned_by_group[0])
+    first_crops = _crops_for(first_matched)
     additional_groups = [
         GroupCrop(
             item_ids=[matched_item["id"] for matched_item in matched],
-            crops=_crops_for(matched, planned),
+            crops=_crops_for(matched),
             region_geometry=shapely_mapping(region),
         )
-        for (matched, region), planned in zip(surviving_groups[1:], planned_by_group[1:], strict=True)
+        for matched, region in surviving_groups[1:]
     ]
 
     # The worker core stays out of the tiler's start (the intake imports it), so it is
@@ -1376,7 +1343,6 @@ async def download_crop(
             groups=[matched for matched, _ in surviving_groups],
             assets=wanted,
             aoi=body.aoi,
-            resolution_factor=body.resolution,
             accepted_at=accepted_at,
             years=years,
             layout={
@@ -1423,7 +1389,6 @@ async def download_crop(
             item_ids=[matched_item["id"] for matched_item in first_matched],
             additional_groups=additional_groups,
             skipped_item_ids=skipped_item_ids,
-            resolution_factor=body.resolution,
             recipe_json=recipe_json,
             citation_bib=bib,
             recipe_omitted_cause=recipe_omitted_cause,
@@ -1493,7 +1458,6 @@ async def download_crop(
             "items": sum(len(matched) for matched, _ in surviving_groups),
             "assets": len(wanted),
             "bytes": len(zip_bytes),
-            "resolution": body.resolution,
         },
     )
     return StreamingResponse(

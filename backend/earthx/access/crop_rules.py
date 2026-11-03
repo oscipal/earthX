@@ -280,9 +280,7 @@ _DEG_TO_M_LAT = 111_700.0
 _DEG_TO_M_LON_AT_EQUATOR = 111_320.0
 
 
-def estimate_output_dims(
-    aoi: BaseGeometry, gsd: float, *, resolution_factor: int = 1
-) -> tuple[int, int]:
+def estimate_output_dims(aoi: BaseGeometry, gsd: float) -> tuple[int, int]:
     """Conservative ``(height, width)`` in pixels for a crop of ``aoi`` at ``gsd`` m/pixel.
 
     Computed from the AOI geometry alone, before any reader opens a dataset
@@ -291,19 +289,15 @@ def estimate_output_dims(
     (largest possible) metres a degree of longitude is worth here, and a
     straddled equator is the largest case of all.
 
-    A download is native resolution unless the caller explicitly chose a
-    coarser one (Otto, 23.09.2026, M3-18 §10): there is no clamp to a maximum
-    side any more, only ``resolution_factor`` (one of :data:`RESOLUTION_FACTORS`)
-    dividing both dimensions down from native.
+    A download is always at the resolution of the source, or at the common resolution of one multi-band
+    file (Otto, 03.11.2026, NM4-75; the choice of a coarser factor of M3-18 §10 is gone): there is no clamp to a
+    maximum side and no factor.
     """
     minx, miny, maxx, maxy = aoi.bounds
     least_poleward_lat = min(abs(miny), abs(maxy)) if miny * maxy > 0 else 0.0
     lon_m_per_degree = _DEG_TO_M_LON_AT_EQUATOR * math.cos(math.radians(least_poleward_lat))
     width_px = max(1, math.ceil((maxx - minx) * lon_m_per_degree / gsd))
     height_px = max(1, math.ceil((maxy - miny) * _DEG_TO_M_LAT / gsd))
-    if resolution_factor != 1:
-        width_px = max(1, math.ceil(width_px / resolution_factor))
-        height_px = max(1, math.ceil(height_px / resolution_factor))
     return height_px, width_px
 
 
@@ -446,8 +440,8 @@ def rasterize_aoi(aoi: BaseGeometry, *, height: int, width: int, transform: rast
 _SAFE_IN_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
-def crop_filename(asset: str, *, resolution_factor: int = 1) -> str:
-    """The name the crop of ``asset`` gets inside the ZIP.
+def crop_filename(asset: str) -> str:
+    """The name the crop of ``asset`` gets inside the ZIP of a crop without a layout, and in a Zarr crop.
 
     The asset key travels into the archive, and for a Zarr dataset it is not a
     plain word: ``SR_10m:b04,b03,b02`` names the group the item advertises plus
@@ -456,10 +450,6 @@ def crop_filename(asset: str, *, resolution_factor: int = 1) -> str:
     silently renamed — so every run of anything outside ``[A-Za-z0-9._-]``
     becomes a single ``_``. ``visual`` stays ``visual``; the original key is
     named in the notice file, so nothing about the archive becomes a guess.
-
-    ``resolution_factor`` (F10c, M3-18 §10): an explicitly chosen coarser
-    resolution is named in the filename itself (``visual_2x.tif``), not only
-    in the notice — native (``1``) adds no suffix, unchanged from before.
     """
     # Stripped at both ends, dots included: `..` survives the allowlist on its own
     # (a dot is a legal filename character) and a member called `..` or `.._x` is a
@@ -467,19 +457,16 @@ def crop_filename(asset: str, *, resolution_factor: int = 1) -> str:
     cleaned = _SAFE_IN_FILENAME.sub("_", asset).strip("._")
     # A key made only of separators would otherwise leave an empty name, and a
     # ZIP entry called ".tif" is not something a user can tell apart from another.
-    suffix = f"_{resolution_factor}x" if resolution_factor != 1 else ""
-    return f"{cleaned or 'asset'}{suffix}.tif"
+    return f"{cleaned or 'asset'}.tif"
 
 
-def mask_filename(asset: str, *, resolution_factor: int = 1) -> str:
+def mask_filename(asset: str) -> str:
     """The name ``asset``'s companion AOI mask file gets inside the ZIP (M3-18 §3).
 
-    Always ``<crop_filename>_mask.tif`` — same cleaning, same resolution
-    suffix, so the two files for one asset sort next to each other and the
-    pairing is obvious without reading the notice file.
+    Always ``<crop_filename>_mask.tif`` — same cleaning, so the two files for
+    one asset sort next to each other and the pairing is obvious without reading the notice file.
     """
-    return f"{crop_filename(asset, resolution_factor=resolution_factor)[:-4]}_mask.tif"
-
+    return f"{crop_filename(asset)[:-4]}_mask.tif"
 
 
 def group_dirname(index: int, group_count: int) -> str:
