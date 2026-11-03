@@ -65,7 +65,13 @@ export function resultsOnMapOf(s: ResultsState): ResultsOnMap {
   const overlay = s.focusMode ? [...itemsOverView(s.groups, s.expandedGroupIndex, s.selectedIds, s.resultsOnMap), ...elsewhere] : [];
   // The view's own scenes are drawn as well in a view, and can be picked or dropped like the others.
   const ofView = s.focusMode ? s.groups.flatMap((group) => group.items).filter((item) => viewed.includes(item.id)) : [];
-  const clickable = s.resultsOnMap && s.expandedGroupIndex !== null ? [...new Map([...quicklooks, ...overlay, ...ofView].map((item) => [item.id, item])).values()] : [];
+  // A click takes the first scene whose outline holds the point: the scenes of the results come before the scenes the view is made of,
+  // which lie under them (Otto, 3.11.2026): the view's own scene is in the open group too, and first in it, so it would take every click
+  // on a neighbour it overlaps.
+  const drawn = [...quicklooks, ...overlay];
+  const inView = (item: StacItem) => viewed.includes(item.id);
+  const ordered = [...drawn.filter((item) => !inView(item)), ...drawn.filter(inView), ...ofView];
+  const clickable = s.resultsOnMap && s.expandedGroupIndex !== null ? [...new Map(ordered.map((item) => [item.id, item])).values()] : [];
   return {
     quicklooks,
     overlay,

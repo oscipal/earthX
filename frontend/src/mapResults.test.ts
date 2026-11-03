@@ -91,6 +91,15 @@ describe('resultsOnMapOf, over a full-resolution view', () => {
     expect(ids(resultsOnMapOf(view({ selectedIds: ['b1'] })).clickable).sort()).toEqual(['a1', 'a2', 'b1']);
   });
 
+  it('offers the scenes of the results before the scenes of the view, which lie under them: the view\'s own scene must not take the click on its neighbour', () => {
+    // a1 is the view; a2 lies beside it in the open group and comes after it in the list.
+    const order = ids(resultsOnMapOf(view({})).clickable);
+    expect(order.indexOf('a2')).toBeLessThan(order.indexOf('a1'));
+    expect(order[order.length - 1]).toBe('a1');
+    // Where only the view's scene is under the point, it is still the one that answers: it can be dropped like any other.
+    expect(order).toContain('a1');
+  });
+
   it('lets a click pick nothing while the results are hidden, the scenes of the view and the ticked ones included (Otto, 3.11.2026)', () => {
     expect(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['b1'] })).clickable).toEqual([]);
     expect(resultsOnMapOf(view({ resultsOnMap: false })).clickable).toEqual([]);
