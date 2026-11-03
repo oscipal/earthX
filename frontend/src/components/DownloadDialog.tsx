@@ -271,24 +271,24 @@ export default function DownloadDialog() {
             {req && !index && factorShown && (
               <div className="dialog-resolution">
                 <span>Resolution: </span>
-                {RESOLUTION_FACTORS.map((factor) => (
-                  <label key={factor} style={{ marginRight: '1em' }}>
-                    <input
-                      type="radio"
-                      name="download-resolution"
-                      checked={resolution === factor}
-                      onChange={() => setResolution(factor)}
-                      disabled={downloading}
-                    />{' '}
-                    {[
-                      ...new Set(
-                        req.assets.map((asset) =>
-                          resolutionOptionLabel(selectionMode ? selectionItems : [], asset, factor),
-                        ),
-                      ),
-                    ].join(', ')}
-                  </label>
-                ))}
+                {RESOLUTION_FACTORS.map((factor) => {
+                  // One label per distinct resolution; with several (many bands) the factor alone is the label and they are its tooltip.
+                  const labels = [
+                    ...new Set(req.assets.map((asset) => resolutionOptionLabel(selectionMode ? selectionItems : [], asset, factor))),
+                  ];
+                  return (
+                    <label key={factor} style={{ marginRight: '1em' }} title={labels.length > 1 ? labels.join(', ') : undefined}>
+                      <input
+                        type="radio"
+                        name="download-resolution"
+                        checked={resolution === factor}
+                        onChange={() => setResolution(factor)}
+                        disabled={downloading}
+                      />{' '}
+                      {labels.length > 1 ? (factor === 1 ? 'Native' : `${factor}×`) : labels.join('')}
+                    </label>
+                  );
+                })}
               </div>
             )}
 

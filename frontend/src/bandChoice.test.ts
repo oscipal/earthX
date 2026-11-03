@@ -20,7 +20,9 @@ import {
   type DownloadBand,
 } from './bandChoice';
 import { bandsCollection, bandsItem } from './fixtures/bandsScene';
-import type { StacItem } from './types';
+import goldenInput from '../../backend/tests/fixtures/bands/golden_input.json?raw';
+import golden from '../../backend/tests/fixtures/bands/golden_per_band.txt?raw';
+import type { Collection, StacItem } from './types';
 
 const table = () => bandTableOf(bandsCollection(), bandsItem());
 const band = (over: Partial<DownloadBand> = {}): DownloadBand => ({
@@ -278,16 +280,21 @@ describe('BANDS.txt', () => {
     expect(text).toMatch(/\n1 \| B04 .*\n2 \| B04 /);
   });
 
-  // The server writes the same text (`backend/tests/fixtures/bands/golden_per_band.txt`, made by the backend); where the file is
-  // there, its head and its columns are those written here.
-  const goldens = import.meta.glob('../../backend/tests/fixtures/bands/golden_per_band.txt', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
-  const golden = Object.values(goldens)[0];
-  it.skipIf(golden === undefined)('has the head and the columns of the text the server writes', () => {
-    const lines = golden.split('\n');
-    expect(lines[0]).toBe('EarthX band list');
-    expect(lines[1]).toMatch(/^Dataset: ./);
-    expect(lines[2]).toBe('Layout: one file per band');
-    expect(lines.filter((line) => line.startsWith('Band | ')).every((line) => line === BANDS_COLUMNS)).toBe(true);
-    expect(lines.some((line) => /^File: exports\/.+\.tif$/.test(line))).toBe(true);
+  // The server writes the same text (`backend/tests/earthx/access/test_bands_golden.py`): both read one synthetic item and give the
+  // golden file byte for byte.
+  it('writes the text the server writes for the same item', () => {
+    const given = JSON.parse(goldenInput) as { title: string; collection: Collection; item: StacItem };
+    const bands = bandTableOf(given.collection, given.item);
+    const names = perBandFileNames(bands);
+    const text = bandsFileText({
+      title: given.title,
+      form: 'per_band',
+      files: bands.map((band) => ({
+        path: `exports/${names.get(band.asset)}`,
+        bands: [{ band, resampling: 'none' as const, exportResolution: band.resolution }],
+      })),
+    });
+    expect(text).toBe(golden);
+    expect(text).not.toContain('visual');
   });
 });
