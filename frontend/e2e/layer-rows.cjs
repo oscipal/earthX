@@ -15,7 +15,7 @@ const BASE = process.env.BASE ?? 'http://localhost:5173';
 const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-layer-rows');
 const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, middle: { width: 1000, height: 760 }, narrow: { width: 360, height: 740 } };
-const COLUMNS = ['grip', 'eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove'];
+const COLUMNS = ['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove'];
 
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 

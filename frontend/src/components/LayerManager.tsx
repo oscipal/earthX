@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
 import { flipIdOf } from '../layerFlip';
 import { layerShownName } from '../layerName';
@@ -11,6 +11,10 @@ import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
 import BandSelect from './BandSelect';
 import Eye from './Eye';
+import { BinIcon, PencilIcon } from './Icons';
+import InlineRename from './InlineRename';
+import { RENAME_TIP } from './InspectorParts';
+import { REMOVE_TIP } from './LayerActions';
 import LayerDownload from './LayerDownload';
 import ResultsEye from './ResultsEye';
 import Tip from './Tip';
@@ -92,9 +96,11 @@ function Grip({ dnd }: { dnd: RowDnd }) {
   );
 }
 
-// One row, ten places in a fixed order: grip, eye, name, opacity, up, down, process, download, note, remove.
+// One row, eleven places in a fixed order: grip, name and its pencil, then eye, opacity, up, down, process, download, note, remove.
 function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: MapLayer; index: number; last: boolean; dnd: RowDnd; flipped: boolean; flipping: boolean }) {
   const remove = useAppStore((s) => s.removeLayer);
+  const rename = useAppStore((s) => s.renameLayer);
+  const [renaming, setRenaming] = useState(false);
   const toggleVis = useAppStore((s) => s.toggleLayerVisible);
   const setOpacity = useAppStore((s) => s.setLayerOpacity);
   const move = useAppStore((s) => s.moveLayer);
@@ -131,17 +137,36 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       >
         <Eye off={!shown} />
       </button>
-      <button
-        type="button"
-        className="lm-name"
-        data-col="name"
-        title={
-          (locked ? `${layerShownName(l)} — ${DELETED_LAYER_TIP}` : `${layerShownName(l)} — ${flipping ? FLIP_ROW_TIP : 'view this layer / continue working on it'}`) +
-          (l.note ? `\n${l.note}` : '')
-        }
-        onClick={() => (flipping ? flipTo(l.id) : select(l.id))}
-      >
-        {layerShownName(l)}
+      {renaming ? (
+        <span className="lm-name lm-renaming" data-col="name" title="A layer needs a name: an empty one keeps the name it had">
+          <InlineRename
+            value={l.name}
+            label="Layer name"
+            maxLength={120}
+            onSave={(name) => {
+              rename(l.id, name);
+              setRenaming(false);
+            }}
+            onCancel={() => setRenaming(false)}
+          />
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="lm-name"
+          data-col="name"
+          title={
+            (locked ? `${layerShownName(l)} — ${DELETED_LAYER_TIP}` : `${layerShownName(l)} — ${flipping ? FLIP_ROW_TIP : 'view this layer / continue working on it'}`) +
+            (l.note ? `\n${l.note}` : '')
+          }
+          onClick={() => (flipping ? flipTo(l.id) : select(l.id))}
+        >
+          {layerShownName(l)}
+        </button>
+      )}
+      {/* The name is renamed here as in the head of the settings (Otto, 3.11.2026). */}
+      <button type="button" className="lm-btn lm-pencil" data-col="rename" title={RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>
+        <PencilIcon size={11} />
       </button>
       <input
         type="range"
@@ -186,8 +211,8 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       ) : (
         <Slot col="note" />
       )}
-      <button type="button" className="lm-btn danger" data-col="remove" title="Remove layer" onClick={() => remove(l.id)}>
-        ✕
+      <button type="button" className="lm-btn danger" data-col="remove" title={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(l.id)}>
+        <BinIcon size={12} />
       </button>
       {bands && bands.length > 1 && (
         <BandSelect
@@ -223,6 +248,7 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
       <span className="lm-name results-name" data-col="name" title={RESULTS_ENTRY_TIP}>
         Search results
       </span>
+      <Slot col="rename" />
       <Slot col="opacity" />
       <button type="button" className="lm-btn" data-col="up" title="Move up" disabled={first} onClick={() => move('up')}>
         ▲

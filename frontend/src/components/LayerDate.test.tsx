@@ -59,7 +59,7 @@ describe('the date in the name of a layer (Otto, 1.11.2026: "das datum gehört i
     useAppStore.setState({ layers: [layer('a', '2026-07-01')], dock: 'layers' });
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.lm-date')).toBeNull();
-    expect(container.querySelector('.layer-row')!.children).toHaveLength(10);
+    expect(container.querySelector('.layer-row')!.children).toHaveLength(11);
   });
 
   it('is in the name of results and previews too, and the name is its tooltip in full', () => {
@@ -100,7 +100,9 @@ describe('the buttons of a row stand under its title (Otto, 1.11.2026)', () => {
   };
 
   it('puts the title on the first line over every column but the grip, and the other places on the second', () => {
-    expect(rule(".layer-row > [data-col='name']")).toContain('grid-column: 2 / -1');
+    // The pencil that renames the layer ends the line (Otto, 3.11.2026).
+    expect(rule(".layer-row > [data-col='name']")).toContain('grid-column: 2 / -2');
+    expect(rule(".layer-row > [data-col='rename']")).toContain('grid-row: 1');
     expect(rule(".layer-row > [data-col='name']")).toContain('grid-row: 1');
     for (const col of ['eye', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']) expect(rule(`.layer-row > [data-col='${col}']`), col).toContain('grid-row: 2');
     expect(rule(".layer-row > [data-col='grip']")).toContain('grid-row: 1 / span 2');

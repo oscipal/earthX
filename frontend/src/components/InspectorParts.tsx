@@ -6,6 +6,7 @@ import { useState, type KeyboardEventHandler, type ReactNode } from 'react';
 
 import Chevron from './Chevron';
 import CloseButton from './CloseButton';
+import { PencilIcon } from './Icons';
 import InlineRename from './InlineRename';
 
 export const ONE_IMAGE_TIP = 'A layer holds one image';
@@ -54,9 +55,7 @@ export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, chil
               {title}
             </button>
             <button type="button" className="vc-pencil" title={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
-              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-                <path d="M11.5 1.5l3 3-9 9H2.5v-3z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-              </svg>
+              <PencilIcon />
             </button>
           </>
         ) : (

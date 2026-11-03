@@ -634,14 +634,16 @@ body.dragging * {
   border-radius: var(--radius-sm);
   font-size: var(--text-md);
 }
-/* "Remove layer": a small bin at the end of the last row of the actions. */
+/* "Remove layer": the bin, as wide as the other actions (Otto, 3.11.2026). */
 .inspector .vc-actions > .vc-remove {
-  justify-self: end;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--control-height);
-  padding: 0;
+}
+/* "Add current view to layers" in two lines, so that it is read in full (Otto, 3.11.2026). */
+.inspector .vc-actions > .vc-copy {
+  white-space: normal;
+  line-height: var(--leading-tight);
 }
 /* The field "Colormap" (UI-03d): the dropdown and "Reverse" beside it, as high as it. */
 .inspector .vc-colormap-row,
@@ -2332,8 +2334,23 @@ input[type='date']:focus-visible {
   grid-row: 1 / span 2;
 }
 .layer-row > [data-col='name'] {
-  grid-column: 2 / -1;
+  grid-column: 2 / -2;
   grid-row: 1;
+}
+/* The pencil that renames the layer, at the end of the line of its name (Otto, 3.11.2026). */
+.layer-row > [data-col='rename'] {
+  grid-column: -2;
+  grid-row: 1;
+}
+.lm-pencil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.lm-renaming .pm-rename {
+  width: 100%;
+  box-sizing: border-box;
 }
 .layer-row > [data-col='eye'] {
   grid-column: 2;
@@ -2366,6 +2383,10 @@ input[type='date']:focus-visible {
 .layer-row > [data-col='remove'] {
   grid-column: 9;
   grid-row: 2;
+  /* The bin of "Remove layer", as in the settings bar (Otto, 3.11.2026). */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .lm-slot {
   display: block;

@@ -6,6 +6,7 @@ import { layerDownloadKind } from '../download';
 import type { MapLayer } from '../layers';
 import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_RESULT_TEXT, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
+import { BinIcon } from './Icons';
 import LayerDownload from './LayerDownload';
 
 export const REMOVE_TIP = 'Remove layer';
@@ -41,7 +42,7 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
       {layerDownloadKind(layer) !== null ? <LayerDownload layer={layer} className="ghost-btn" label="Download" /> : <span />}
       <button
         type="button"
-        className="ghost-btn"
+        className="ghost-btn vc-copy"
         disabled={locked}
         title={COPY_TIP}
         onClick={() => {
@@ -51,9 +52,7 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
         {COPY_LABEL}
       </button>
       <button type="button" className="ghost-btn danger vc-remove" title={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(layer.id)}>
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-          <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.8 9.5h6.4L12 4M6.8 6.5v5M9.2 6.5v5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <BinIcon />
       </button>
     </div>
   );
