@@ -221,6 +221,7 @@ describe('the form of the files', () => {
     expect(select.value).toBe('10');
     await click(button('None'));
     await click(boxes()[2]);
+    await click(boxes()[3]);
     expect(container.querySelector<HTMLSelectElement>('.dialog-common select')!.value).toBe('20');
   });
 
@@ -254,6 +255,80 @@ describe('the form of the files', () => {
     await click(button('One multi-band file'));
     await click(button('Download'));
     expect(downloadCalls()[0].body).toMatchObject({ form: 'multi_band', common_resolution: 10, resolution: 1 });
+  });
+});
+
+describe('the form is asked only for bands of different resolutions', () => {
+  const forms = () => container.querySelector('.dialog-forms');
+  const pressed = () => [...container.querySelectorAll('.dialog-forms button[aria-pressed="true"]')].map((b) => b.textContent);
+
+  it('shows the form, the factor and (for one multi-band file) the common resolution while the ticked bands differ, and hides them at one resolution', async () => {
+    await open('crop');
+    expect(forms()).not.toBeNull();
+    expect(resolutionRow()).not.toBeNull();
+    // B02 and B04: both 10 m.
+    await click(button('None'));
+    await click(boxes()[0]);
+    await click(boxes()[1]);
+    expect(forms()).toBeNull();
+    expect(resolutionRow()).toBeNull();
+    expect(container.querySelector('.dialog-common')).toBeNull();
+    expect(button('Download')!.disabled).toBe(false);
+    await click(boxes()[2]);
+    expect(forms()).not.toBeNull();
+    expect(resolutionRow()).not.toBeNull();
+  });
+
+  it('a single band has no form either, and ticking a band of another resolution brings it back at once', async () => {
+    await open('crop');
+    await click(button('None'));
+    await click(boxes()[2]);
+    expect(forms()).toBeNull();
+    await click(boxes()[3]);
+    expect(forms()).not.toBeNull();
+    expect(pressed()).toEqual(['One file per band']);
+    expect(resolutionRow()).not.toBeNull();
+  });
+
+  it('keeps the form that was chosen while it is hidden, and shows it again with its resolution', async () => {
+    await open('crop');
+    await click(button('One multi-band file'));
+    await click(button('None'));
+    await click(boxes()[0]);
+    expect(forms()).toBeNull();
+    expect(container.querySelector('.dialog-common')).toBeNull();
+    await click(boxes()[4]);
+    expect(pressed()).toEqual(['One multi-band file']);
+    expect(container.querySelector('.dialog-common select')).not.toBeNull();
+  });
+
+  it('sends one file per resolution, no factor and no common resolution, for the bands of one resolution', async () => {
+    await open('crop');
+    await click(button('One multi-band file'));
+    await click(button('None'));
+    await click(boxes()[0]);
+    await click(button('Download'));
+    expect(downloadCalls()[0].body).toMatchObject({ form: 'per_resolution', resolution: 1, assets: ['a_blue'] });
+    expect(downloadCalls()[0].body).not.toHaveProperty('common_resolution');
+  });
+
+  it('whole scenes of one resolution show the estimate of the job and no choice; mixed ones list the bands for the browser', async () => {
+    await open('originals');
+    expect(forms()).not.toBeNull();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    await click(button('None'));
+    await click(boxes()[1]);
+    expect(forms()).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    vi.useRealTimers();
+    await flush();
+    expect(container.textContent).toContain('About 2.0 MB · about 5 s');
+    expect(container.querySelector('.dialog-originals')).toBeNull();
+    await click(button('Download'));
+    const recipe = (calls.find((c) => c.url.endsWith('/execution'))!.body as { inputs: { recipe: { output: object } } }).inputs.recipe;
+    expect(recipe.output).toMatchObject({ layout: { form: 'per_resolution' } });
   });
 });
 

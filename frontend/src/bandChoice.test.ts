@@ -8,11 +8,13 @@ import {
   conversionTip,
   conversionsOf,
   defaultBandKeys,
+  effectiveForm,
   finestResolution,
   formatG,
   formatResolution,
   layoutBlock,
   layoutOf,
+  mixedResolutions,
   perBandFileNames,
   resamplingFor,
   resolutionsOf,
@@ -143,6 +145,35 @@ describe('how a band is brought to the common resolution', () => {
 
   it('says that nothing is converted when every band has the resolution already', () => {
     expect(conversionTip(chosenBands(table(), ['a_blue', 'a_red']), 10)).toBe('No band is converted: all are 10 m already.');
+  });
+});
+
+describe('whether the form is asked', () => {
+  const at = (...resolutions: (number | null)[]) => resolutions.map((resolution, i) => band({ asset: `b${i}`, resolution }));
+
+  it('only for bands of different resolutions', () => {
+    expect(mixedResolutions(at(10, 20))).toBe(true);
+    expect(mixedResolutions(at(10, 10, 10))).toBe(false);
+    expect(mixedResolutions(at(10))).toBe(false);
+    expect(mixedResolutions([])).toBe(false);
+  });
+
+  it('with the tolerance of the server: two sizes within a millionth are one', () => {
+    expect(mixedResolutions(at(10, 10.000001))).toBe(false);
+    expect(mixedResolutions(at(10, 10.001))).toBe(true);
+  });
+
+  it('a band of no known pixel size is a resolution of its own, and several of them are one', () => {
+    expect(mixedResolutions(at(10, null))).toBe(true);
+    expect(mixedResolutions(at(null, null))).toBe(false);
+  });
+
+  it('sends the form chosen for mixed resolutions, and one file per resolution for the rest', () => {
+    expect(effectiveForm(at(10, 20), 'per_band')).toBe('per_band');
+    expect(effectiveForm(at(10, 20), 'multi_band')).toBe('multi_band');
+    expect(effectiveForm(at(10, 10), 'per_band')).toBe('per_resolution');
+    expect(effectiveForm(at(10, 10), 'multi_band')).toBe('per_resolution');
+    expect(effectiveForm(at(10), 'per_band')).toBe('per_resolution');
   });
 });
 

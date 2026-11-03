@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { RESOLUTION_FACTORS } from '../api';
-import { chosenBands, commonResolutionOf, layoutBlock, withBandChoice } from '../bandChoice';
+import { chosenBands, commonResolutionOf, effectiveForm, layoutBlock, withBandChoice } from '../bandChoice';
 import {
   acquisitionYears,
   attributionText,
@@ -107,7 +107,9 @@ export default function DownloadDialog() {
 
   const bands = chosenBands(table, bandKeys);
   const common = commonResolutionOf(bands, commonPicked);
-  const block = table.length > 0 ? layoutBlock(form, bands, common) : null;
+  // Only bands of different resolutions raise the question of the form; otherwise it is one file per resolution (`effectiveForm`).
+  const sent = effectiveForm(bands, form);
+  const block = table.length > 0 ? layoutBlock(sent, bands, common) : null;
   const asking = resampling && <ResamplingDialog parts={resampling} onContinue={confirmResampling} onCancel={declineResampling} />;
 
   if (outcome === 'originals') {
@@ -118,7 +120,7 @@ export default function DownloadDialog() {
     const terms = termsNoticeText(flags, 'en');
     const sceneTotal = new Set((passes ?? []).flatMap((pass) => pass.items.map((item) => item.id))).size;
     // One file per band is loaded in the browser (where the scenes list no bands there is no other way); the other forms are a job.
-    const inBrowser = table.length === 0 || form === 'per_band';
+    const inBrowser = table.length === 0 || sent === 'per_band';
     const waiting = bandsLoading || (!inBrowser && (jobNote === null || jobNote.state === 'estimating'));
     return (
       <>
@@ -226,7 +228,7 @@ export default function DownloadDialog() {
   const offered = !selectionMode && layer ? indexOfferedFor(layer, datasets) : null;
   const index = offered && downloadAs === 'index' ? offered : null;
   // A coarser factor goes with one file per band only.
-  const factorShown = table.length === 0 || form === 'per_band';
+  const factorShown = table.length === 0 || sent === 'per_band';
 
   return (
     <>

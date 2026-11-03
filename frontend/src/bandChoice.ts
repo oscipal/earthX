@@ -68,6 +68,24 @@ export function resolutionsOf(table: readonly DownloadBand[]): number[] {
   return found.sort((a, b) => a - b);
 }
 
+// Whether the bands lie in more than one resolution (the same tolerance as the server); a band with no known pixel size is a resolution
+// of its own. Only then is there a question how they go into files.
+export function mixedResolutions(bands: readonly DownloadBand[]): boolean {
+  const known: number[] = [];
+  let unknown = false;
+  for (const { resolution } of bands) {
+    if (resolution === null) unknown = true;
+    else if (!known.some((r) => same(r, resolution))) known.push(resolution);
+  }
+  return known.length + (unknown ? 1 : 0) > 1;
+}
+
+// The form that goes into the request: the one chosen where the bands have different resolutions, else one file per resolution (which
+// is one multi-band file of the one resolution there is, and is also what one single band gives).
+export function effectiveForm(bands: readonly DownloadBand[], chosen: DownloadForm): DownloadForm {
+  return mixedResolutions(bands) ? chosen : 'per_resolution';
+}
+
 export function finestResolution(bands: readonly DownloadBand[]): number | null {
   const known = bands.flatMap((band) => (band.resolution === null ? [] : [band.resolution]));
   return known.length > 0 ? Math.min(...known) : null;
@@ -137,12 +155,13 @@ export function withBandChoice(
   req: DownloadRequestInfo,
   table: readonly DownloadBand[],
   keys: readonly string[],
+  // The form chosen in the dialog; the one that is sent is `effectiveForm` of it.
   form: DownloadForm,
   picked: number | null,
 ): DownloadRequestInfo {
   if (table.length === 0) return req;
   const bands = chosenBands(table, keys);
-  return { ...req, assets: bands.map((band) => band.asset), layout: layoutOf(form, commonResolutionOf(bands, picked)) };
+  return { ...req, assets: bands.map((band) => band.asset), layout: layoutOf(effectiveForm(bands, form), commonResolutionOf(bands, picked)) };
 }
 
 // --- numbers and names -----------------------------------------------------------

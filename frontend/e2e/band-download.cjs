@@ -150,6 +150,14 @@ async function caseCrop(browser, { theme, viewport }) {
   // None locks Download.
   await page.getByRole('button', { name: 'None', exact: true }).click();
   if (!(await page.getByRole('button', { name: 'Download', exact: true }).isDisabled())) problems.push(`${label}: Download is open with no band`);
+  // The form is asked only for bands of different resolutions: two bands of 10 m hide it (and the factor), a band of 20 m brings it back.
+  const boxesAt = page.locator('.dialog-band input');
+  await boxesAt.nth(0).check();
+  await boxesAt.nth(1).check();
+  if (await page.locator('.dialog-forms').count()) problems.push(`${label}: the form is asked for bands of one resolution`);
+  if (await page.locator('.dialog-resolution').count()) problems.push(`${label}: the factor is shown for bands of one resolution`);
+  await boxesAt.nth(4).check();
+  if (!(await page.locator('.dialog-forms').count())) problems.push(`${label}: no form for bands of different resolutions`);
   await page.getByRole('button', { name: 'All', exact: true }).click();
   // The factor is for one file per band only.
   if (!(await page.locator('.dialog-resolution').count())) problems.push(`${label}: no factor for one file per band`);

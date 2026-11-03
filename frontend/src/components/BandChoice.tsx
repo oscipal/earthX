@@ -6,7 +6,9 @@ import {
   commonResolutionOf,
   conversionTip,
   formatG,
+  effectiveForm,
   layoutBlock,
+  mixedResolutions,
   metresText,
   resolutionsOf,
   type DownloadBand,
@@ -33,7 +35,9 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
   const bands = chosenBands(table, keys);
   const common = commonResolutionOf(bands, picked);
   const options = resolutionsOf(table);
-  const block = layoutBlock(form, bands, common);
+  // The question of the form is there only for bands of different resolutions; one resolution is one file per resolution.
+  const mixed = mixedResolutions(bands);
+  const block = layoutBlock(effectiveForm(bands, form), bands, common);
 
   const toggle = (asset: string, on: boolean) => setBands(on ? [...keys, asset] : keys.filter((key) => key !== asset));
 
@@ -65,22 +69,24 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
           </li>
         ))}
       </ul>
-      <div className="dialog-forms" role="group" aria-label="Files">
-        {FORM_CHOICES.map((choice) => (
-          <button
-            key={choice.value}
-            type="button"
-            className={`pp-seg${form === choice.value ? ' on' : ''}`}
-            aria-pressed={form === choice.value}
-            title={choice.tip}
-            disabled={disabled}
-            onClick={() => setForm(choice.value)}
-          >
-            {choice.label}
-          </button>
-        ))}
-      </div>
-      {form === 'multi_band' && (
+      {mixed && (
+        <div className="dialog-forms" role="group" aria-label="Files">
+          {FORM_CHOICES.map((choice) => (
+            <button
+              key={choice.value}
+              type="button"
+              className={`pp-seg${form === choice.value ? ' on' : ''}`}
+              aria-pressed={form === choice.value}
+              title={choice.tip}
+              disabled={disabled}
+              onClick={() => setForm(choice.value)}
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {mixed && form === 'multi_band' && (
         <div className="dialog-common">
           <label htmlFor={`${id}-common`}>Resolution</label>
           <select

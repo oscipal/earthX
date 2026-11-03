@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import * as api from './api';
 import type { CoverageResponse, DownloadForm, PagesSoFar, ResolutionFactor } from './api';
-import { chosenBands, commonResolutionOf, defaultBandKeys, DEFAULT_FORM, layoutBlock, layoutOf, withBandChoice, type DownloadBand } from './bandChoice';
+import { chosenBands, commonResolutionOf, defaultBandKeys, DEFAULT_FORM, effectiveForm, layoutBlock, layoutOf, withBandChoice, type DownloadBand } from './bandChoice';
 import { downloadSceneJob, estimateSceneJob, resamplingOfOrder, sceneJobOrder, type JobNote } from './downloadJob';
 import type { ResamplingPart } from './resamplingWarning';
 import {
@@ -633,7 +633,11 @@ async function loadDownloadBands(datasetId: string, itemIds: readonly string[]):
   const request = ++bandsRequest;
   try {
     const table = await api.fetchBands(datasetId, itemIds);
-    if (request === bandsRequest) useAppStore.setState({ downloadTable: table, downloadBands: defaultBandKeys(table), downloadBandsLoading: false });
+    if (request === bandsRequest) {
+      useAppStore.setState({ downloadTable: table, downloadBands: defaultBandKeys(table), downloadBandsLoading: false });
+      // Bands of one resolution are a job from the start: what it costs is asked for at once.
+      refreshJobEstimate();
+    }
   } catch (e) {
     if (request === bandsRequest) useAppStore.setState({ downloadBandsLoading: false, error: `Could not load the bands: ${(e as Error).message}` });
   }
@@ -2685,14 +2689,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const bands = chosenBands(table, s.downloadBands);
     const picked = commonResolutionOf(bands, s.downloadCommonResolution);
     if (table.length > 0) {
-      const block = layoutBlock(s.downloadForm, bands, picked);
+      const block = layoutBlock(effectiveForm(bands, s.downloadForm), bands, picked);
       if (block) {
         set({ error: block });
         return;
       }
     }
     const req = withBandChoice(asked, table, s.downloadBands, s.downloadForm, s.downloadCommonResolution);
-    const resolution = table.length > 0 && s.downloadForm !== 'per_band' ? 1 : s.downloadResolution;
+    // The factor goes with one file per band only.
+    const resolution = table.length > 0 && effectiveForm(bands, s.downloadForm) !== 'per_band' ? 1 : s.downloadResolution;
     const send = async () => {
       set({ downloading: true, error: null, downloadExportOffer: null });
       try {
@@ -3597,9 +3602,10 @@ function refreshJobEstimate(): void {
   const dataset = downloadDatasetOf(s);
   const bands = chosenBands(s.downloadTable, s.downloadBands);
   const common = commonResolutionOf(bands, s.downloadCommonResolution);
+  const form = effectiveForm(bands, s.downloadForm);
   const order =
-    s.downloadOutcome === 'originals' && s.downloadForm !== 'per_band' && dataset && layoutBlock(s.downloadForm, bands, common) === null
-      ? sceneJobOrder({ datasetId: dataset.id, passes: s.downloadPasses ?? [], assets: bands.map((band) => band.asset), layout: layoutOf(s.downloadForm, common) })
+    s.downloadOutcome === 'originals' && bands.length > 0 && form !== 'per_band' && dataset && layoutBlock(form, bands, common) === null
+      ? sceneJobOrder({ datasetId: dataset.id, passes: s.downloadPasses ?? [], assets: bands.map((band) => band.asset), layout: layoutOf(form, common) })
       : null;
   if (!order) {
     useAppStore.setState({ downloadJobNote: null });
@@ -3623,14 +3629,15 @@ async function startWholeScenes(s: AppState): Promise<void> {
   const table = s.downloadTable;
   const bands = chosenBands(table, s.downloadBands);
   if (table.length > 0 && bands.length === 0) return;
-  if (table.length === 0 || s.downloadForm === 'per_band') {
+  const form = effectiveForm(bands, s.downloadForm);
+  if (table.length === 0 || form === 'per_band') {
     useAppStore.setState({ downloadStarted: true, error: null });
     return;
   }
   const common = commonResolutionOf(bands, s.downloadCommonResolution);
-  const block = layoutBlock(s.downloadForm, bands, common);
+  const block = layoutBlock(form, bands, common);
   const order = dataset
-    ? sceneJobOrder({ datasetId: dataset.id, passes: s.downloadPasses ?? [], assets: bands.map((band) => band.asset), layout: layoutOf(s.downloadForm, common) })
+    ? sceneJobOrder({ datasetId: dataset.id, passes: s.downloadPasses ?? [], assets: bands.map((band) => band.asset), layout: layoutOf(form, common) })
     : null;
   const note = s.downloadJobNote;
   // Only what the estimate let through (or a try that failed, which may be tried again).

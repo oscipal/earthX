@@ -345,7 +345,7 @@ describe('whole scenes', () => {
     await open('originals');
     useAppStore.getState().setDownloadForm('per_resolution');
     expect(useAppStore.getState().downloadJobNote).toEqual({ state: 'estimating' });
-    useAppStore.getState().setDownloadBands(['a_red', 'a_blue']);
+    useAppStore.getState().setDownloadBands(['a_red', 'a_edge']);
     await vi.advanceTimersByTimeAsync(400);
     expect(estimates()).toHaveLength(1);
     expect(useAppStore.getState().downloadJobNote).toMatchObject({ state: 'ready', text: 'About 2.0 MB · about 5 s' });
@@ -423,3 +423,77 @@ describe('whole scenes', () => {
     expect(useAppStore.getState().downloadJobNote).toBeNull();
   });
 });
+
+describe('the question of the form is there only for bands of different resolutions (Otto, 3.11.2026)', () => {
+  const ticks = (...keys: string[]) => useAppStore.getState().setDownloadBands(keys);
+
+  it('bands of one resolution, or one band, are sent as one file per resolution, whatever form is held, with no factor and no common resolution', async () => {
+    await open('crop');
+    useAppStore.getState().setDownloadResolution(4);
+    ticks('a_blue', 'a_red');
+    await useAppStore.getState().confirmDownload();
+    expect(downloads()[0].body).toEqual({ groups: [['S1']], assets: ['a_blue', 'a_red'], aoi: AOI, resolution: 1, form: 'per_resolution' });
+    ticks('a_coast');
+    await useAppStore.getState().confirmDownload();
+    expect(downloads()[1].body).toMatchObject({ assets: ['a_coast'], form: 'per_resolution', resolution: 1 });
+    expect(downloads()[1].body).not.toHaveProperty('common_resolution');
+  });
+
+  it('mixed resolutions send the form that was chosen, and the choice is kept while the bands go to one resolution and back', async () => {
+    await open('crop');
+    useAppStore.getState().setDownloadForm('multi_band');
+    ticks('a_red', 'a_edge');
+    await useAppStore.getState().confirmDownload();
+    expect(downloads()[0].body).toMatchObject({ form: 'multi_band', common_resolution: 10 });
+    ticks('a_red');
+    await useAppStore.getState().confirmDownload();
+    expect(downloads()[1].body).toMatchObject({ form: 'per_resolution' });
+    expect(downloads()[1].body).not.toHaveProperty('common_resolution');
+    expect(useAppStore.getState().downloadForm).toBe('multi_band');
+    ticks('a_red', 'a_coast');
+    await useAppStore.getState().confirmDownload();
+    expect(downloads()[2].body).toMatchObject({ form: 'multi_band', common_resolution: 10 });
+  });
+
+  it('one file per band is sent only where mixed resolutions were chosen so, and then keeps the factor', async () => {
+    await open('crop');
+    useAppStore.getState().setDownloadResolution(2);
+    await useAppStore.getState().confirmDownload();
+    expect(downloads()[0].body).toMatchObject({ form: 'per_band', resolution: 2 });
+    expect(downloads()[0].body).not.toHaveProperty('common_resolution');
+  });
+
+  it('a band of no known pixel size is a resolution of its own', async () => {
+    routes.bands = () => json({ bands: bandsResponse().bands.map((row) => (row.asset === 'aerosol' ? { ...row, resolution_m: null } : row)) });
+    await open('crop');
+    ticks('a_red', 'aerosol');
+    await useAppStore.getState().confirmDownload();
+    expect(downloads()[0].body).toMatchObject({ form: 'per_band' });
+    ticks('aerosol');
+    await useAppStore.getState().confirmDownload();
+    expect(downloads()[1].body).toMatchObject({ form: 'per_resolution' });
+  });
+
+  it('whole scenes of one resolution are a job at once, with no form to choose; mixed ones load in the browser as one file per band', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    await open('originals');
+    ticks('a_red', 'a_blue');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(useAppStore.getState().downloadJobNote).toMatchObject({ state: 'ready' });
+    await useAppStore.getState().confirmDownload();
+    const recipe = (placed()[0].body as { inputs: { recipe: { output: object } } }).inputs.recipe;
+    expect(recipe.output).toMatchObject({ layout: { form: 'per_resolution' } });
+    expect(useAppStore.getState().downloadStarted).toBe(false);
+  });
+
+  it('a dataset whose bands all have one resolution asks what the job costs as soon as the table is in', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    routes.bands = () => json({ bands: bandsResponse().bands.filter((row) => row.resolution_m === 10) });
+    await open('originals');
+    expect(useAppStore.getState().downloadJobNote).toEqual({ state: 'estimating' });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(estimates()).toHaveLength(1);
+    expect(useAppStore.getState().downloadJobNote).toMatchObject({ state: 'ready' });
+  });
+});
+
