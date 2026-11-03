@@ -260,14 +260,14 @@ function scheduleCoverageRefresh(set: SetState, get: GetState): void {
 // it with.
 //
 // M3-19 (Otto, 23.09.2026, replacing adr/0010 answer 6a): with an AOI,
-// `bbox` is that AOI (`aoi`, drawn/uploaded) and the level follows the map's
-// floored zoom, unchanged from before. Since NM4-57 the AOI's box goes in the
+// `bbox` is that AOI (`aoi`, drawn/uploaded). Since NM4-57 the AOI's box goes in the
 // body of a POST (`aoiBbox`), never in a URL (M4 Q8). Without an AOI, `bbox` is the
 // *visible map extent* instead — banded across the antimeridian and rounded
 // outward to a coarser block (`coverage.ts`) so nearby viewports ask the
-// same question — and the level is derived from the viewport's own size so
+// same question. Either way the level is derived from the viewport's own size so
 // roughly the same number of cells always covers the screen
-// (`levelForViewport`). Either way `bbox` is a real spatial filter as far as
+// (`levelForViewport`); with an AOI it was the floored zoom alone until 03.11.2026,
+// which at the first zoom of the page is level 1, a quarter of the world in one cell. Either way `bbox` is a real spatial filter as far as
 // the route is concerned, so its `WORLD_LEVEL_CAP` no longer applies to the
 // no-AOI case; see the plan for why that is intended, not a leftover.
 //
@@ -305,7 +305,9 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
       return;
     }
     bbox = clampBboxLongitude(rawBbox);
-    level = Math.floor(s.mapZoom);
+    // The map fills the window; before it has told its size, the window's stands in for it.
+    const size = s.viewportSize ?? { width: window.innerWidth, height: window.innerHeight };
+    level = levelForViewport(s.mapZoom, size.width, size.height);
   } else {
     if (s.viewportBbox === null || s.viewportSize === null) return; // map not ready yet
     level = levelForViewport(s.mapZoom, s.viewportSize.width, s.viewportSize.height);
