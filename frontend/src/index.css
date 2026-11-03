@@ -1364,6 +1364,24 @@ input[type='date']:focus-visible {
 .hint-text.error {
   color: #ff6b6b;
 }
+/* "Copy original scene name" under the title of a view or a layer (Otto, 3.11.2026): small, quiet, a link in all but name. */
+.inspector .vc-scene-names {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.inspector .vc-scene-names:hover,
+.inspector .vc-scene-names:focus-visible {
+  color: var(--text);
+}
 
 /* --- coverage heatmap (M2-07c) --- */
 .coverage-controls {

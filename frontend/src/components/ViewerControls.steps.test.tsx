@@ -135,7 +135,7 @@ describe('what is not possible is not there', () => {
 
   it('puts them in the second row of the head, the dataset and then the date with the arrows, under the title and the eye', () => {
     mount({ ...THREE, D: info('dem') });
-    const [first, second] = [...container.querySelector('.vc-head')!.children].map((row) => [...row.children].map((el) => el.className));
+    const [first, second] = [...container.querySelector('.vc-head')!.children].filter((row) => row.classList.contains('insp-row')).map((row) => [...row.children].map((el) => el.className));
     expect(first).toEqual(['vc-title', 'pp-badge vc-temporary', 'vc-eye', 'close-x']);
     expect(second).toEqual(['vc-dataset', 'vc-stepper']);
   });

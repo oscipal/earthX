@@ -100,7 +100,8 @@ describe('the head', () => {
 
   it('has the dataset and the date with the arrows in a second row, under the title', () => {
     mount();
-    const rows = head().children;
+    // The small line "Copy original scene name" is no row of the head (Otto, 3.11.2026).
+    const rows = [...head().children].filter((el) => el.classList.contains('insp-row'));
     expect(rows).toHaveLength(2);
     expect(rows[0].contains(title())).toBe(true);
     expect(rows[1].querySelector('.vc-stepper')).not.toBeNull();

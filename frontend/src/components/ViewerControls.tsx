@@ -22,6 +22,7 @@ import { colourView, datasetSavable, enhanceOn, shownImageOf, useAppStore, viewM
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
+import CopySceneNames from './CopySceneNames';
 import { fallbackReasonOf, MEASURED_ON_SCENE, measureView, type ViewMeasure } from '../viewMeasure';
 import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
@@ -239,6 +240,8 @@ export default function ViewerControls() {
       <InspectorHead
         title={compact ? layerShownName(layer) : [datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
         tip={compact ? layerShownName(layer) : title}
+        // The scenes of the image shown, which is the layer's own where the settings of a layer are open.
+        copy={<CopySceneNames names={shown?.ids ?? []} />}
         mark={
           !compact &&
           temporary && (

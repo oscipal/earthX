@@ -21,6 +21,8 @@ interface HeadProps {
   onClose: () => void;
   // The tooltip of the x, where closing does more than close.
   closeTitle?: string;
+  // Small under the title, before row 2: "Copy original scene name" (Otto, 3.11.2026); no row without it.
+  copy?: ReactNode;
   // Row 2; the row keeps its height when it is empty.
   children?: ReactNode;
   // A layer is renamed here (Otto, 2.11.2026): a click on the title or on the pencil; `name` is the name as kept, without the date
@@ -31,7 +33,7 @@ interface HeadProps {
 export const RENAME_TIP = 'Rename layer';
 const EMPTY_NAME_TIP = 'A layer needs a name: an empty one keeps the name it had';
 
-export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, children, rename }: HeadProps) {
+export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy, children, rename }: HeadProps) {
   const [editing, setEditing] = useState(false);
   return (
     <div className="vc-head">
@@ -67,6 +69,7 @@ export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, chil
         {eye}
         <CloseButton onClick={onClose} title={closeTitle} />
       </div>
+      {copy}
       <div className="insp-row insp-row2">{children}</div>
     </div>
   );

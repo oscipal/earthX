@@ -167,10 +167,13 @@ describe('the places', () => {
     expect(aside()!.classList.contains('panel')).toBe(true);
     // Row 1 of the head holds the title and the red x; row 2 is there whatever it holds.
     const head = aside()!.querySelector('.vc-head')!;
-    expect(head.children).toHaveLength(2);
-    expect(head.children[0].querySelector('.vc-title')).not.toBeNull();
-    expect(head.children[0].querySelector('.close-x')).not.toBeNull();
-    expect(head.children[1].classList.contains('insp-row2')).toBe(true);
+    // The small line "Copy original scene name" stands between them where there are scenes to copy (Otto, 3.11.2026).
+    const rows = [...head.children].filter((el) => el.classList.contains('insp-row'));
+    expect(rows).toHaveLength(2);
+    expect([...head.children].filter((el) => !el.classList.contains('insp-row')).every((el) => el.classList.contains('vc-scene-names'))).toBe(true);
+    expect(rows[0].querySelector('.vc-title')).not.toBeNull();
+    expect(rows[0].querySelector('.close-x')).not.toBeNull();
+    expect(rows[1].classList.contains('insp-row2')).toBe(true);
     // The dataset here has neither presets nor a colour picture: "Quick processing" has nothing to offer and is not there (Otto,
     // 3.11.2026); a result never has it. With them it stands between the two (`ViewIndex.test.tsx`).
     expect(headings()).toEqual(['Display', 'Actions']);
@@ -201,7 +204,7 @@ describe('the places', () => {
   it('puts the title, the mark, the eye and the x of the view of the search in row 1, and the dataset and the time step in row 2', () => {
     act(() => root.render(<Inspector />));
     openView();
-    const [one, two] = [...aside()!.querySelector('.vc-head')!.children].map((row) => [...row.children].map((el) => el.className));
+    const [one, two] = [...aside()!.querySelector('.vc-head')!.children].filter((row) => row.classList.contains('insp-row')).map((row) => [...row.children].map((el) => el.className));
     expect(one).toEqual(['vc-title', 'pp-badge vc-temporary', 'vc-eye', 'close-x']);
     expect(two).toEqual(['vc-stepper']);
   });
