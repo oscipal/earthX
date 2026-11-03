@@ -27,6 +27,7 @@ import rasterio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pyproj import Transformer
+from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 from rasterio.warp import transform_bounds
 from rio_cogeo.cogeo import cog_translate
@@ -883,3 +884,30 @@ class TestTheOrderWithoutAMosaic:
 
     def test_get_is_not_the_way_to_ask(self, scenes: Scenes, client) -> None:
         assert client().get(self.ROUTE, params=_query(["A", "B"])).status_code in (404, 405, 422)
+
+
+class TestAColourPictureTakesARangeForEachChannel:
+    """UI-03d: the mosaic of the view's true-colour asset, ``rescale`` once per channel in the order of its bands."""
+
+    def test_each_channel_is_stretched_by_its_own_range(self, scenes: Scenes, client) -> None:
+        scenes.add("A", ZONE_32, SEAM_X - 4000.0, 5000.0, 100, bands=3)
+        scenes.add("B", ZONE_32, SEAM_X - 1000.0, 5000.0, 100, bands=3)
+        params = _query(["A", "B"]) + [("rescale", "0,200"), ("rescale", "100,300"), ("rescale", "0,100")]
+        response = client().get(_tile_path(extension="png"), params=params)
+        assert response.status_code == 200, response.text
+        with MemoryFile(response.content) as memory, memory.open() as picture:
+            red, green, blue, alpha = picture.read()
+        inside = alpha > 0
+        assert inside.any()
+        assert set(numpy.unique(red[inside])) <= {127, 128}
+        assert set(numpy.unique(green[inside])) == {0}
+        assert set(numpy.unique(blue[inside])) == {255}
+
+    def test_one_range_still_stretches_all_three_alike(self, scenes: Scenes, client) -> None:
+        scenes.add("A", ZONE_32, SEAM_X - 4000.0, 5000.0, 100, bands=3)
+        scenes.add("B", ZONE_32, SEAM_X - 1000.0, 5000.0, 100, bands=3)
+        response = client().get(_tile_path(extension="png"), params=_query(["A", "B"]) + [("rescale", "0,200")])
+        with MemoryFile(response.content) as memory, memory.open() as picture:
+            red, green, blue, alpha = picture.read()
+        inside = alpha > 0
+        assert numpy.array_equal(red[inside], green[inside]) and numpy.array_equal(red[inside], blue[inside])

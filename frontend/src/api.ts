@@ -5,9 +5,10 @@
 import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
 import { AOI_BODY_KEY, aoiCountsOf, type AoiCounts } from './aoiFilter';
 import { MOSAIC_TILE_SIZE } from './tileSize';
+import { HISTOGRAM_BINS } from './histogram';
 import type { Bbox, Collection, StacItem } from './types';
 
-const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+export const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
 interface StacLink {
   rel: string;
@@ -540,6 +541,9 @@ function operatorQuery(assets: readonly string[], steps: readonly TileStep[], ba
 // "vmin"/"vmax" typed in percentiles (NM4-65 part 4).
 export const withPercentiles = (url: string, percentiles: readonly number[]): string =>
   percentiles.length === 0 ? url : `${url}${url.includes('?') ? '&' : '?'}${percentiles.map((n) => `p=${n}`).join('&')}`;
+
+// The same statistics with the histogram of each band in `HISTOGRAM_BINS` bins, for the sliders of "Scale" (UI-03d).
+export const withHistogram = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}histogram_bins=${HISTOGRAM_BINS}`;
 
 export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string, percentiles: readonly number[] = []): string {
   const params = new URLSearchParams({ asset });

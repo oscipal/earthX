@@ -171,6 +171,8 @@ describe('the places', () => {
     expect(head.children[0].querySelector('.vc-title')).not.toBeNull();
     expect(head.children[0].querySelector('.close-x')).not.toBeNull();
     expect(head.children[1].classList.contains('insp-row2')).toBe(true);
+    // The dataset here has neither presets nor a colour picture: "Quick processing" has nothing to offer and is not there (Otto,
+    // 3.11.2026); a result never has it. With them it stands between the two (`ViewIndex.test.tsx`).
     expect(headings()).toEqual(['Display', 'Actions']);
   });
 
@@ -204,23 +206,24 @@ describe('the places', () => {
     expect(two).toEqual(['vc-stepper']);
   });
 
-  it('puts the date of a layer in the place of the time step, with the arrows locked, and no eye', () => {
+  // Otto, 2.11.2026: no arrows beside the date where there is only one.
+  it('puts the date of a layer in the place of the time step, without arrows, and no eye', () => {
     act(() => root.render(<Inspector />));
     openPinnedView();
     const row = aside()!.querySelector('.insp-row2')!;
     expect(row.querySelector('.vc-step-text')!.textContent).toBe('2026-07-01');
-    expect([...row.querySelectorAll('.vc-step')].map((b) => b.getAttribute('aria-disabled'))).toEqual(['true', 'true']);
+    expect(row.querySelectorAll('.vc-step')).toHaveLength(0);
     expect(aside()!.querySelector('.vc-eye, .vc-temporary')).toBeNull();
     openResult([result('R1', {}), result('R2')]);
     act(() => useAppStore.setState({ layers: [{ ...result('R1'), date: '2026-08-09' }, result('R2')] }));
     expect(aside()!.querySelector('.insp-row2 .vc-step-text')!.textContent).toBe('2026-08-09');
   });
 
-  it('leaves the date empty for a layer without one, the arrows locked', () => {
+  it('leaves the date empty for a layer without one, without arrows', () => {
     act(() => root.render(<Inspector />));
     openResult();
     expect(aside()!.querySelector('.insp-row2 .vc-step-text')!.textContent).toBe('');
-    expect(aside()!.querySelectorAll('.insp-row2 .vc-step[aria-disabled="true"]')).toHaveLength(2);
+    expect(aside()!.querySelectorAll('.insp-row2 .vc-step')).toHaveLength(0);
   });
 
   it('has "Display" with no capital letters of its own: the title is as written', () => {
@@ -239,18 +242,22 @@ describe('the places', () => {
     expect(aside()!.querySelector('.vc-head .close-x')!.getAttribute('title')).toBe('Close and drop this view');
   });
 
-  it('has the download of the row of the layer manager as the action of a layer', () => {
+  // Otto, 2.11.2026: "Process", the download of the row of the layer manager, a copy as drawn now, and the bin.
+  it('has the actions of a layer: process, download, a copy as it is drawn now, remove', () => {
     act(() => root.render(<Inspector />));
     openPinnedView();
-    expect([...aside()!.querySelectorAll('.vc-actions > *')].map((b) => b.textContent)).toEqual(['⇩ Download']);
+    const actions = () => [...aside()!.querySelectorAll('.vc-actions > *')];
+    expect(actions().map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['⚙ Process', '⇩ Download', '＋ Add current view to layers', 'Remove layer']);
+    expect(actions()[3].getAttribute('title')).toBe('Remove layer');
     openResult();
-    expect([...aside()!.querySelectorAll('.vc-actions > *')].map((b) => b.textContent)).toEqual(['⇩ Download']);
+    expect(actions().map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['⚙ Process', '⇩ Download', '＋ Add current view to layers', 'Remove layer']);
   });
 
-  it('has no "Actions" for a layer that offers no download', () => {
+  it('keeps the place of the download empty for a layer that offers none, and the other actions', () => {
     act(() => root.render(<Inspector />));
     openResult([result('R1', { expired: true })]);
-    expect(headings()).toEqual(['Display']);
+    expect(headings()).toEqual(['Display', 'Actions']);
+    expect([...aside()!.querySelectorAll('.vc-actions > *')].map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['⚙ Process', null, '＋ Add current view to layers', 'Remove layer']);
   });
 });
 
@@ -445,11 +452,12 @@ describe('what does not apply is locked, with its reason', () => {
     expect(field('Colormap').title).toBe('True colour: three bands, no colormap');
   });
 
-  it('locks the arrows of a layer: "A layer holds one image"', () => {
+  it('has no arrows at a layer, which holds one image (Otto, 2.11.2026)', () => {
     act(() => root.render(<Inspector />));
     for (const open of [openPinnedView, () => openResult()]) {
       open();
-      expect([...aside()!.querySelectorAll('.vc-step')].map((b) => b.getAttribute('title'))).toEqual(['A layer holds one image', 'A layer holds one image']);
+      expect(aside()!.querySelectorAll('.vc-step')).toHaveLength(0);
+      expect(aside()!.querySelector('.vc-stepper')).not.toBeNull();
     }
   });
 
@@ -679,5 +687,108 @@ describe('in the page', () => {
     openView();
     expect(container.querySelector('.overlay.bottom .inspector')).toBeNull();
     expect(aside()!.closest('.draggable')).toBeNull();
+  });
+});
+
+// Otto, 2.11.2026: the actions of a layer in the settings bar, and its name renamed in the head.
+describe('the actions of a layer', () => {
+  const actionButton = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('.inspector .vc-actions button')].find((b) => (b.textContent || b.getAttribute('aria-label')) === label)!;
+  const nameField = () => container.querySelector<HTMLInputElement>('.inspector .vc-head input[aria-label="Layer name"]');
+  const rename = (text: string) => {
+    type(nameField()!, text);
+    key(nameField()!, 'Enter');
+  };
+
+  it('renames the layer from the head, by its title or by the pencil, and the layer manager says the new name', () => {
+    act(() => root.render(<><LayerManager /><Inspector /></>));
+    openPinnedView();
+    expect(nameField()).toBeNull();
+    click(container.querySelector('.inspector .vc-title-btn'));
+    expect(nameField()!.value).toBe('Optical · crop');
+    rename('River bend');
+    expect(state().layers[0].name).toBe('River bend');
+    expect(container.querySelector('.inspector .vc-title')!.textContent).toBe('River bend · 2026-07-01');
+    expect(container.querySelector('.layer-row .lm-name')!.textContent).toBe('River bend · 2026-07-01');
+    click(container.querySelector('.inspector .vc-pencil'));
+    expect(nameField()).not.toBeNull();
+  });
+
+  it('refuses an empty name: the layer keeps the one it had', () => {
+    act(() => root.render(<Inspector />));
+    openResult();
+    click(container.querySelector('.inspector .vc-pencil'));
+    rename('   ');
+    expect(state().layers[0].name).toBe('Result R1');
+    expect(state().renameLayer('R1', '')).toBe(false);
+    // Counter-check: a name with text is taken, trimmed.
+    expect(state().renameLayer('R1', '  Floods  ')).toBe(true);
+    expect(state().layers[0].name).toBe('Floods');
+  });
+
+  it('has no rename in the view of the search, which is no layer', () => {
+    act(() => root.render(<Inspector />));
+    openView();
+    expect(container.querySelector('.inspector .vc-pencil, .inspector .vc-title-btn')).toBeNull();
+  });
+
+  it('removes the layer by the bin, as the layer manager does: the view of a pinned layer stays as a temporary picture', () => {
+    act(() => root.render(<Inspector />));
+    openPinnedView();
+    click(actionButton('Remove layer'));
+    expect(state().layers).toEqual([]);
+    expect(aside()!.querySelector('.vc-temporary')).not.toBeNull();
+  });
+
+  it('removes a result layer by the bin, and its settings close with it', () => {
+    act(() => root.render(<Inspector />));
+    openResult();
+    click(actionButton('Remove layer'));
+    expect(state().layers.map((l) => l.id)).toEqual(['R2']);
+    expect(state().resultViewLayerId).toBeNull();
+    expect(aside()).toBeNull();
+  });
+
+  it('adds a copy as it is drawn now, above the layer, which goes back to what it was saved with; the settings are the copy\'s', async () => {
+    act(() => root.render(<Inspector />));
+    openPinnedView();
+    act(() => state().setPendingVmax('1000'));
+    await act(async () => {
+      actionButton('＋ Add current view to layers').click();
+      await vi.waitFor(() => expect(state().layers).toHaveLength(2));
+    });
+    const [copy, original] = state().layers;
+    expect(copy.name).toBe('Optical · crop (copy)');
+    expect(copy.restore.appliedRender.rescale).toBe('0,1000');
+    expect(copy.saved).toBeUndefined();
+    // Counter-check: the layer it was made from is as it was saved.
+    expect(original.id).toBe('L1');
+    expect(original.restore.appliedRender.rescale).toBe('0,3000');
+    expect(state().viewLayerId).toBe(copy.id);
+  });
+
+  it('adds a copy of a result layer drawn as it is now, and leaves the result layer as saved', async () => {
+    act(() => root.render(<Inspector />));
+    openResult([{ ...result('R1', { savedTileUrl: '/results/AbCdEfGhIjKlMnOpQrSt_-/tiles/{z}/{x}/{y}?colormap_name=viridis&rescale=0%2C5' }) }]);
+    await act(async () => {
+      actionButton('＋ Add current view to layers').click();
+      await vi.waitFor(() => expect(state().layers).toHaveLength(2));
+    });
+    const [copy, original] = state().layers;
+    expect(copy.result!.savedTileUrl).toBeUndefined();
+    expect((copy.overlays[0] as { tileUrl: string }).tileUrl).toContain('rescale=0%2C1');
+    expect((original.overlays[0] as { tileUrl: string }).tileUrl).toContain('rescale=0%2C5');
+    expect(state().resultViewLayerId).toBe(copy.id);
+  });
+
+  it('has "Process" as the row of the layer manager has it: free or locked alike, with the same reason', () => {
+    act(() => root.render(<><LayerManager /><Inspector /></>));
+    const row = () => container.querySelector<HTMLButtonElement>('.layer-row [data-col="process"]')!;
+    openPinnedView();
+    expect([actionButton('⚙ Process').disabled, actionButton('⚙ Process').title]).toEqual([row().disabled, row().title]);
+    expect(actionButton('⚙ Process').disabled).toBe(true);
+    // A dataset that allows processing: both free.
+    act(() => useAppStore.setState({ datasets: datasetsFrom([{ ...collection, 'earthx:license_flags': { tier: 'processing' } } as unknown as Collection]) }));
+    expect([actionButton('⚙ Process').disabled, actionButton('⚙ Process').title]).toEqual([false, 'Process this layer']);
+    expect([row().disabled, row().title]).toEqual([false, 'Process this layer']);
   });
 });

@@ -69,6 +69,10 @@
   --surface-2: rgba(255, 255, 255, 0.06);
   --danger: #ff5a6e;
   --focus: #19e0ff;
+  /* The channels of a colour picture (UI-03d): the bars of their histograms and their marks. */
+  --channel-red: #ff6b6b;
+  --channel-green: #5ee08a;
+  --channel-blue: #5aa9ff;
 }
 
 .app[data-theme='normal'] {
@@ -87,4 +91,7 @@
   --surface-2: rgba(20, 40, 60, 0.05);
   --danger: #c62840;
   --focus: #0a7ea4;
+  --channel-red: #c62828;
+  --channel-green: #1f8a3a;
+  --channel-blue: #1f5fbf;
 }

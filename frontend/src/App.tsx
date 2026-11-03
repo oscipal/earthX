@@ -4,6 +4,7 @@ import AppRail from './components/AppRail';
 import BasemapMenu from './components/BasemapMenu';
 import ControlPanel from './components/ControlPanel';
 import DownloadDialog from './components/DownloadDialog';
+import ColormapPicker from './components/ColormapPicker';
 import Inspector from './components/Inspector';
 import JobsWindow from './components/JobsWindow';
 import LayerManager from './components/LayerManager';
@@ -120,6 +121,7 @@ export default function App() {
       </div>
 
       <Inspector />
+      <ColormapPicker />
 
       {managerOpen && <JobsWindow />}
 

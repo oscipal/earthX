@@ -112,10 +112,10 @@ describe('RenderFields', () => {
     const [vmin, vmax] = [...container.querySelectorAll('input')];
     type(vmin, '2');
     type(vmax, '9');
-    type(colormap, 'turbo');
+    type(colormap, 'magma');
     type(index, 'NDVI');
     type(index, '');
-    expect(calls).toEqual(['vmin=2', 'vmax=9', 'colormap=turbo', 'index=NDVI', 'index=null']);
+    expect(calls).toEqual(['vmin=2', 'vmax=9', 'colormap=magma', 'index=NDVI', 'index=null']);
   });
 });
 
@@ -156,7 +156,8 @@ describe('the settings of a result layer', () => {
   it('keep the colormap in its place for "RGB", locked, and the band dropdown offers it first (NM4-54 part 5)', () => {
     useAppStore.setState({ layers: [layer(RGB)], resultViewLayerId: 'R1' });
     act(() => root.render(<ResultControls />));
-    expect(names()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
+    // A range for each channel (UI-03d).
+    expect(names()).toEqual(['Band', 'Scale', 'red vmin', 'red vmax', 'green vmin', 'green vmax', 'blue vmin', 'blue vmax', 'Colormap', 'Opacity']);
     const colormap = [...container.querySelectorAll<HTMLLabelElement>('label.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!;
     expect(colormap.querySelector('select')!.disabled).toBe(true);
     expect(colormap.querySelector('select')!.selectedOptions[0].textContent).toBe('— none —');

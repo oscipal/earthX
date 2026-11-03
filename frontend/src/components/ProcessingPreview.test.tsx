@@ -629,10 +629,10 @@ describe('the preview section', () => {
           Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(element, value);
           element.dispatchEvent(new Event('change', { bubbles: true }));
         });
-      choose(colormapSelect(), 'plasma');
+      choose(colormapSelect(), 'terrain');
       expect(apply().disabled).toBe(false);
       click(apply());
-      expect(store().range.colormap).toBe('plasma');
+      expect(store().range.colormap).toBe('terrain');
       // In percentiles: applied, nothing left to apply ...
       choose(unitSelect(), 'percent');
       click(apply());

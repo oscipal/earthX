@@ -189,10 +189,10 @@ describe('LayerManager', () => {
       act(() => root.render(<LayerManager />));
     });
 
-    it('have the ten places in the same order, whatever the kind of layer', () => {
+    it('have the eleven places in the same order, whatever the kind of layer', () => {
       expect(rows()).toHaveLength(kinds.length);
       for (const row of rows()) {
-        expect(places(row)).toEqual(['grip', 'eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+        expect(places(row)).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
       }
     });
 
@@ -332,9 +332,9 @@ describe('the result layer of a deleted job', () => {
     expect(useAppStore.getState().layers[1].result?.deleted).toBeFalsy();
   });
 
-  it('keeps its ten places', () => {
+  it('keeps its eleven places', () => {
     deleteJobAt(1, NOW + DAY);
-    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
   });
 
   it('cannot be switched on with the eye while it is locked, and can still be removed', () => {
@@ -387,5 +387,57 @@ describe('the result layer of a deleted job', () => {
     act(() => useAppStore.setState({ layers: [resultLayer('a', jobId(1)), scene] }));
     deleteJobAt(2, NOW + DAY);
     expect(useAppStore.getState().layers.map((l) => [l.id, l.result?.deleted])).toEqual([['a', undefined], ['scene', undefined]]);
+  });
+});
+
+// Otto, 3.11.2026: the row removes with a bin and renames with a pencil, as the settings bar does.
+describe('the bin and the pencil of a row', () => {
+  const plain = (id: string, name: string): MapLayer => ({
+    id,
+    name,
+    visible: true,
+    opacity: 1,
+    overlays: [],
+    restore: { focusMode: false, downloaded: {}, appliedRender: {}, activeGroupIndex: 0, selectedIds: [], itemIds: [], groupItemIds: [], aoi: null, cropToAoi: false, datasetId: null },
+  });
+  const row = () => container.querySelector('.layer-row')!;
+  const nameField = () => row().querySelector<HTMLInputElement>('input[aria-label="Layer name"]');
+  const typeName = (text: string, key: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(nameField(), text);
+      nameField()!.dispatchEvent(new Event('input', { bubbles: true }));
+      nameField()!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    });
+
+  beforeEach(() => {
+    useAppStore.setState({ datasets: [], layers: [plain('A', 'Optical · day')], dock: 'layers' });
+    act(() => root.render(<LayerManager />));
+  });
+
+  it('removes the layer with a bin named "Remove layer", no ✕ any more', () => {
+    const bin = row().querySelector<HTMLButtonElement>('[data-col="remove"]')!;
+    expect(bin.getAttribute('aria-label')).toBe('Remove layer');
+    expect(bin.querySelector('svg')).not.toBeNull();
+    expect(bin.textContent).not.toContain('✕');
+    act(() => bin.click());
+    expect(useAppStore.getState().layers).toEqual([]);
+  });
+
+  it('renames the layer with its pencil; Enter keeps the name, the settings bar shows it too', () => {
+    act(() => row().querySelector<HTMLButtonElement>('[data-col="rename"]')!.click());
+    expect(nameField()!.value).toBe('Optical · day');
+    typeName('Lake', 'Enter');
+    expect(useAppStore.getState().layers[0].name).toBe('Lake');
+    expect(row().querySelector('.lm-name')!.textContent).toBe('Lake');
+  });
+
+  it('keeps the name it had for an empty one, and Esc ends the renaming without a change', () => {
+    act(() => row().querySelector<HTMLButtonElement>('[data-col="rename"]')!.click());
+    typeName('  ', 'Enter');
+    expect(useAppStore.getState().layers[0].name).toBe('Optical · day');
+    act(() => row().querySelector<HTMLButtonElement>('[data-col="rename"]')!.click());
+    typeName('Other', 'Escape');
+    expect(useAppStore.getState().layers[0].name).toBe('Optical · day');
+    expect(nameField()).toBeNull();
   });
 });

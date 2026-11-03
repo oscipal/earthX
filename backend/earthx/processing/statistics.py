@@ -37,6 +37,7 @@ import numpy
 __all__ = [
     "BandStatistics",
     "BlockSummary",
+    "DISPLAY_BINS",
     "MEASURE_PERCENTILES",
     "PERCENTILES",
     "PercentileRefinement",
@@ -50,6 +51,9 @@ PERCENTILES = (2, 98)
 #: ``normalize`` (NM4-11) and for the range a person enters as percentiles. A result's document carries the two of
 #: :data:`PERCENTILES` only.
 MEASURE_PERCENTILES = tuple(percent for percent in range(1, 100) if percent not in PERCENTILES)
+
+#: Bins of :meth:`BandStatistics.histogram`, the one drawn under the range of a band (UI-03d).
+DISPLAY_BINS = 64
 
 #: Bins of the float histogram: the upper 16 bits of the order-preserving float32 pattern.
 _KEY_BITS = 16
@@ -234,6 +238,13 @@ def _unkey(key: int) -> numpy.float32:
     return numpy.array([bits], dtype=numpy.uint32).view(numpy.float32)[0]
 
 
+def _unkey_all(keys: numpy.ndarray) -> numpy.ndarray:
+    """:func:`_unkey` of many order-preserving patterns (32 bits) at once, as float64."""
+    keys = keys.astype(numpy.uint32)
+    bits = numpy.where(keys & _SIGN32, keys & numpy.uint32(0x7FFFFFFF), ~keys)
+    return bits.astype(numpy.uint32).view(numpy.float32).astype(numpy.float64)
+
+
 #: The bins of the most negative and the most positive finite float32.
 _LOWEST_BIN = int(_float_keys(numpy.array([-_FLOAT32_MAX], dtype=numpy.float32))[0])
 _HIGHEST_BIN = int(_float_keys(numpy.array([_FLOAT32_MAX], dtype=numpy.float32))[0])
@@ -343,6 +354,38 @@ class BandStatistics:
         for percent in sorted({*PERCENTILES, *extra_percentiles}):
             result[f"percentile_{percent}"] = self._percentile(percent, minimum, maximum)
         return result
+
+
+    def histogram(self, bins: int = DISPLAY_BINS) -> list[list[float]]:
+        """A histogram of ``bins`` equal bins from the minimum to the maximum, for drawing (UI-03d), as rio-tiler writes
+        one: ``[counts, edges]``, ``bins + 1`` edges.
+
+        Taken from the fixed histogram, nothing is read again. Integers of up to 16 bits count exactly; a float bin
+        spreads its count over the drawn bins it overlaps, evenly, so the counts are whole only where it lies in one.
+        A band of one value has one bin from it to one above it; one without valid values ``[[], []]``.
+        """
+        if bins < 1:
+            raise ValueError("a histogram has at least one bin")
+        if self.count == 0:
+            return [[], []]
+        low, high = (float(value) for value in self._range())
+        edges = numpy.linspace(low, high, bins + 1) if high > low else numpy.array([low, low + 1.0])
+        keys = numpy.flatnonzero(self._histogram)
+        counts = self._histogram[keys].astype(numpy.float64)
+        if self._kind == "small":
+            values = (keys + int(numpy.iinfo(self.dtype).min)).astype(numpy.float64)
+            places = numpy.clip(numpy.searchsorted(edges, values, side="right") - 1, 0, len(edges) - 2)
+            drawn = numpy.bincount(places, weights=counts, minlength=len(edges) - 1)
+        else:
+            lower = numpy.clip(_unkey_all(keys << _KEY_SHIFT_BITS), low, high)
+            upper = numpy.clip(_unkey_all(((keys + 1) << _KEY_SHIFT_BITS) - 1), low, high)
+            width = numpy.where(upper > lower, upper - lower, 1.0)
+            # The share of each bin at or below each edge; a bin of no width lies all at its lower edge.
+            below = numpy.clip((edges[None, :] - lower[:, None]) / width[:, None], 0.0, 1.0)
+            below = numpy.where((upper == lower)[:, None], (edges[None, :] >= lower[:, None]).astype(float), below)
+            below[:, 0], below[:, -1] = 0.0, 1.0  # the range holds every value, the minimum too
+            drawn = numpy.diff(counts @ below)
+        return [[round(float(count), 3) for count in drawn], [float(edge) for edge in edges]]
 
 
 @dataclass(slots=True)

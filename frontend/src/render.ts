@@ -5,26 +5,9 @@
 // single pair to every output band when only one is given.
 
 import type { BandStatistics } from './api';
+import { channelsOfRescale, rescaleOfChannels, type ChannelRange } from './channels';
 import { DEFAULT_PERCENT, percentOf, samePercent, type RangeUnit } from './percentRange';
 import type { AppliedRender, EarthxDefaultRender } from './types';
-
-// Named colormaps rio-tiler/matplotlib ship — generic, not tied to any dataset.
-export const COLORMAPS = [
-  'viridis',
-  'plasma',
-  'inferno',
-  'magma',
-  'cividis',
-  'turbo',
-  'greens',
-  'ylgn',
-  'rdylgn',
-  'rdbu',
-  'spectral',
-  'terrain',
-  'gist_earth',
-  'greys',
-];
 
 export function autoRescale(stats: Record<string, BandStatistics>): [number, number] | null {
   const bands = Object.values(stats);
@@ -62,17 +45,21 @@ export function pendingFieldsOf(render: AppliedRender): {
   pendingColormapName: string;
   pendingVmin: string;
   pendingVmax: string;
+  pendingChannels: ChannelRange[];
   pendingIndex: string;
   pendingBand: string;
   pendingUnit: RangeUnit;
   pendingPercentLow: string;
   pendingPercentHigh: string;
 } {
-  const [vmin = '', vmax = ''] = (render.rescale ?? '').split(',');
+  // A colour picture with a range for each channel (UI-03d): the fields of the three, and the first in the shared ones.
+  const channels = channelsOfRescale(render.rescale);
+  const [vmin = '', vmax = ''] = channels ? [channels[0].vmin, channels[0].vmax] : (render.rescale ?? '').split(',');
   return {
     pendingColormapName: render.colormapName ?? '',
     pendingVmin: vmin,
     pendingVmax: vmax,
+    pendingChannels: channels ?? [],
     pendingIndex: render.index ?? '',
     pendingBand: render.band ?? '',
     // A look typed in percentiles shows "%" again (NM4-65 part 4).
@@ -94,6 +81,8 @@ type PendingFields = {
   pendingColormapName: string;
   pendingVmin: string;
   pendingVmax: string;
+  // The three ranges of a colour picture set channel by channel; empty while one range holds for all (UI-03d).
+  pendingChannels?: readonly ChannelRange[];
   pendingIndex?: string;
   pendingBand?: string;
   pendingUnit?: RangeUnit;
@@ -105,13 +94,15 @@ type PendingFields = {
 export const pendingPercentOf = (p: PendingFields) =>
   p.pendingUnit === 'percent' ? percentOf({ low: p.pendingPercentLow ?? '', high: p.pendingPercentHigh ?? '' }) : null;
 
-// What the fields of the controls ask for: the colormap, and a range once both ends are typed.
+// What the fields of the controls ask for: the colormap, and a range once both ends are typed (each channel's, where they are set
+// one by one).
 export function lookOfPendingFields(p: PendingFields): AppliedRender {
   const vmin = p.pendingVmin.trim();
   const vmax = p.pendingVmax.trim();
+  const channels = p.pendingChannels?.length ? p.pendingChannels : null;
   return {
     colormapName: p.pendingColormapName || undefined,
-    rescale: vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
+    rescale: channels ? rescaleOfChannels(channels) : vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
     index: p.pendingIndex || undefined,
     band: p.pendingBand || undefined,
     percent: pendingPercentOf(p) ?? undefined,

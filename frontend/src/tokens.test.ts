@@ -28,7 +28,7 @@ const ROOT_TOKENS = [
 ];
 const THEME_TOKENS = [
   '--panel-bg', '--panel-border', '--accent', '--accent-2', '--text', '--muted', '--input-bg', '--glow', '--row-hover', '--map-bg',
-  '--line', '--line-soft', '--surface-2', '--danger', '--focus',
+  '--line', '--line-soft', '--surface-2', '--danger', '--focus', '--channel-red', '--channel-green', '--channel-blue',
 ];
 
 // The declarations of the first block that opens with `selector {`.

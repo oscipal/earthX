@@ -301,3 +301,85 @@ Ersetzt die betroffenen Stellen von §7.2 (Skizze), §7.3 (Felder, Opacity, Acti
 ### 7.11 Nachtrag UI-03c (02.11.2026): Stand der Umsetzung
 
 Umgesetzt wie §7.9. Abweichungen und Auslegungen (Vorschlag, bis Otto widerspricht): Ein teils links hinausgeschobenes Fenster wird mit negativem `x` gemerkt, solange 120 px sichtbar sind; Retry und Download/Restore behalten je einen festen Platz vor „⋯“, statt eines gemeinsamen Hauptknopfs (bei einem Stapel können beide gelten); Gruppen: Umbenennen und Entfernen im Menü „⋯“ des Kopfes, Anzahl und „n running“ im Kopf. Browserprüfung: `frontend/e2e/jobs-window.cjs` (neu); `job-retry.cjs` an das Fenster angepasst.
+
+### 7.12 Nachtrag UI-03d: Quick processing, Histogramm, Layer-Aktionen, Colormaps (Otto, 02.11.2026, Stufe A)
+
+**Auftrag (Kurzfassung, drei Nachrichten von Otto vom 02.11.2026).** (1) Abschnitt „Quick processing“ über „Actions“: kleine Knöpfe, drei je Reihe, die Index-Presets und „Enhance contrast“, Formel im Tooltip; „Band“ nur noch Original und RGB. (2) Index sofort ohne Job; „Add to layers“ mit Index heftet nur den Index an; Download wie #264. (3) „Enhance contrast“: Kontrast je Kanal (p2–p98), nur Darstellung; bei Einzelbändern wie „auto-scale“. (4) Knöpfe zeigen ihren Zustand, zweiter Klick oder Bandwahl hebt auf. (5) Histogramm in „Scale“ mit zwei Schiebern, synchron mit Feldern und Umschalter; bei RGB drei, je Kanal ein Bereich (Kachel-Route, Ergebnis-Layer, „Save“, bitgleich). Nachgereicht: am Layer „Process“, „Remove layer“ (Mülleimer), Umbenennen im Kopf (nicht leer), keine Pfeile bei nur einem Datum, „Add current view to layers“ als Kopie; Colormap-Dropdown mit kleiner Auswahl und „More…“, eigene Seitenleiste mit allen Colormaps (Vorschau, Gruppen, Suche, „Reverse“, Zurück „‹“, Esc schließt nichts), „Reverse“ neben der Colormap, Liste und Farben vom tiler, ein Bauteil überall, mindestens die Standard-Farbverläufe von QGIS.
+
+**Umgesetzt (Draft-PR, Branch `claude/tender-bell-l3340r`).**
+
+- Backend: Operator-Kachel (Item, Mosaik) nimmt bei drei `band=` ein oder drei `rescale`, sonst `400`; Ergebnis-Statistik mit `histogram` (64 Klassen aus dem festen Histogramm, `BandStatistics.histogram`); Route `GET /colormaps` mit Gruppen, Vorschau und `_r`; `rocket` und `mako` ergänzt (seaborn, BSD-3-Clause); jede Colormap hat eine umgekehrte. Nachtrag in `adr/0006`.
+- Frontend: Bereich je Kanal im Look (`a,b;c,d;e,f`, drei gleiche als ein Paar) für Ansicht, Layer, „Apply to all“/„Save“ und Ergebnis-Layer; Histogramme mit zwei Schiebern je Band bzw. Kanal; „Quick processing“; Layer nur mit Index (`restore.indexOnly`); Layer-Aktionen und Umbenennen; Colormap-Feld (`ColormapField`) und -Liste (`ColormapPicker`) für Seitenleiste, Ergebnis-Layer und Processing-Vorschau; `/colormaps` im Vite-Proxy.
+
+**Auslegungen (Vorschlag, gelten bis Otto widerspricht).**
+
+- (a) „Enhance contrast“ und die Histogramme der Ansicht messen wie „auto-scale“: erste Szene des gezeigten Bildes, ganze Szene (GET-Statistik). Über die AOI misst nur der Ergebnis-Layer (Statistik über seine Maske); für die Ansicht siehe Frage 1.
+- (b) „Enhance contrast“ setzt die Felder auf „percentile“ 2/98 und zeichnet sofort; bei RGB nimmt jeder Kanal seine eigenen Perzentile, bei einem Band ist es dasselbe wie „auto-scale“ mit „Apply“. Zweiter Klick zeichnet, was vorher gezeichnet war. „Ein“ ist der Knopf, solange die Felder das gezeichnete Ergebnis verlangen.
+- (c) RGB in „percentile“: ein Paar Perzentile für alle drei Kanäle, jeder Kanal bei seinen eigenen Werten (das ist zugleich „Enhance contrast“); in „absolute“ drei Zeilen vmin/vmax. Ein Schieber in „percentile“ schreibt das gemeinsame Paar.
+- (d) „auto-scale“ setzt bei RGB weiter einen gemeinsamen Bereich (wie bisher).
+- (e) Index-Knöpfe: Zustand nach den Feldern; die Wahl eines Bandes hebt ihn sofort auf, gezeichnet wird das Band wie bisher erst mit „Apply“. Das gezeichnete Index steht nicht wählbar im Dropdown „Band“, damit es sagt, was die Karte zeigt.
+- (f) Ein mit Index angehefteter Layer ist nur der Index: „Band“ und die anderen Indizes gesperrt („This layer holds the index only“), „Enhance contrast“ frei; ⇩ lädt den Index als Job wie #264, ohne Rohbänder; ein solcher Layer aus ganzen Szenen hat ⇩ gesperrt mit Grund. Layer, die vor UI-03d mit Index angeheftet wurden, bleiben die ganze Ansicht.
+- (g) „Quick processing“ auch in den Einstellungen eines angehefteten Layers (die Presets waren dort im Dropdown); nicht am Ergebnis-Layer.
+- (h) „Remove layer“ in der Seitenleiste tut, was der Layer-Manager tut: Ergebnis-Einstellungen schließen, die Ansicht eines angehefteten Layers bleibt als „Temporary“ stehen.
+- (i) „Add current view to layers“: zeichnet nicht angewendete Felder zuerst, legt die Kopie „<Name> (copy)“ direkt über dem Layer an und öffnet deren Einstellungen; der ursprüngliche Layer geht auf seinen gespeicherten Stand zurück.
+- (j) Umbenennen: Klick auf Titel oder Stift, Enter oder Verlassen speichert, leer behält den alten Namen; das Datum hängt weiter am Namen. Esc im Namensfeld verwirft nur die Eingabe (vorhandenes Bauteil der Jobliste), schließt nichts.
+- (k) Kurzliste der Colormaps: gray, viridis, magma, rdylgn, rdbu, terrain (Vorschlag Otto); eine aus „More…“ gewählte steht dazu, solange sie gewählt ist.
+- (l) „Reverse“ für alle Colormaps; rio-tiler hat für `cfastie`, `rplumbo`, `schwarzwald` kein `_r`, der tiler kehrt deren Tabelle um.
+- (m) Die Colormap-Liste blendet die Einstellungen aus wie Processing; aus dem Processing-Panel geöffnet liegt sie über dessen rechtem Teil (320 px). Unter 900 px Blatt mit Griff.
+- (n) Balkenhöhe im Histogramm als Wurzel der Anzahl, damit flache Ausläufer sichtbar bleiben.
+- (o) Nebenbei behoben: die Meldung oben („Added … to layers“) war bei 360 px 6 px zu breit und ließ die Seite seitlich scrollen.
+
+**Abgleich mit QGIS.** Quelle: `resources/symbology-style.xml` von QGIS, `release-3_40` (4178dfd8) und `master` (19a6ceae), je 35 `<colorramp>` vom Typ `gradient`, gleiche Namen. ColorBrewer, cpt-city, Preset und Random sind dort nur Dialoge zum Anlegen, keine mitgelieferten Verläufe.
+
+| QGIS | tiler | Herkunft, Lizenz | Hinweis |
+|---|---|---|---|
+| Blues, Greens, Greys, Oranges, Purples, Reds, BuGn, BuPu, GnBu, OrRd, PuBu, PuBuGn, PuRd, RdPu, YlGn, YlGnBu, YlOrBr, YlOrRd | gleichnamig (klein) | ColorBrewer, Apache-2.0 | QGIS interpoliert teils aus 5 Klassen, rio-tiler aus 9 |
+| BrBG, PiYG, PRGn, PuOr, RdBu, RdGy, RdYlBu, RdYlGn, Spectral | gleichnamig | ColorBrewer, Apache-2.0 | QGIS 5 Klassen, rio-tiler 11: Farbwirkung merklich anders |
+| Viridis, Magma, Inferno, Plasma, Cividis, Turbo | gleichnamig | matplotlib (Viridis-Familie CC0), Turbo Google Apache-2.0 | gleiche Verläufe |
+| Rocket, Mako | **ergänzt** (`rocket`, `mako`) | seaborn `cm.py`, BSD-3-Clause, Copyright Michael L. Waskom; Lizenz in `backend/earthx/access/colormap_data/` | Endfarben gleich denen von QGIS (3,5,26 → 250,235,221; 11,4,5 → 222,245,229) |
+
+cpt-city liefert QGIS nur als Katalog für den Browser (`resources/cpt-city-qgis-min`), mit Lizenz je Verlauf; nicht übernommen. Lohnend wären höchstens einzelne Höhen- oder Bathymetrie-Verläufe nach Einzelprüfung. Die Gruppen folgen matplotlib (`colormap_reference.py`) und cmocean (`docs/source/index.rst`); `cfastie`, `rplumbo`, `schwarzwald` (rio-tiler) unter „other“.
+
+**Antworten Otto (03.11.2026, zu #280).** (1) „Enhance contrast“ und Histogramm der Ansicht sollen über die AOI bzw. den Zuschnitt messen, mit der vorhandenen POST-Statistik-Route aus NM4-19 (AOI nur im Body), keine neue Route; ist das klein (Richtwert unter 150 Zeilen Code), in diesem PR, sonst als Folgeaufgabe beschreiben und hier so lassen. (2) Ein PR: ok. (3) ColorBrewer: gleiche Namen genügen. (4) Esc im Namensfeld bricht das Umbenennen ab: ok.
+
+**Zu (1): nicht klein, deshalb Folgeaufgabe (Vorschlag „UI-03e“).** Befund am Code und mit dem Testaufbau der Route (`test_tiler_area_statistics`):
+
+- Die Route nimmt einen Auftrag ohne Schritt an, der Bänder der Daten ausgibt (Ausgabe `float32`), und misst sie über die AOI.
+- Sie misst wie der Job **in physikalischen Werten** (`raster:scale`/`raster:offset` angewandt, z. B. Reflektanz 0,06–0,21). Die Kacheln der Ansicht für ein Band und für RGB (`visual`) zeichnen **Rohwerte** (Item- und Mosaik-Kachel ohne Umrechnung). Ein so gemessener Bereich passte nicht zu den Kacheln; nur beim Index (Operator-Kachel, physikalisch) stimmen die Einheiten.
+- Mit der Ausgabe `uint16` zählt die Route keinen Pixel (die Werte werden in den Ausgabetyp gewandelt), ein Band zweimal in der Ausgabe ist `422`.
+
+Umsetzung der Folgeaufgabe, ohne neue Route:
+
+1. Auftrag je Darstellung: Index wie `indexOrdersOfScenes` (ein `band_math`-Schritt), Band ohne Schritt mit dem Band als Ausgabe (`float32`), RGB mit den drei Bändern des `visual`-Assets (zu prüfen, wie die Ausgabe sie nennt); die AOI des Zuschnitts im Body; ohne Zuschnitt wie heute die erste Szene.
+2. Die Antwort im Frontend in Rohwerte zurückrechnen, mit `scale`/`offset` des Items je Band (linear und steigend, gilt also auch für Perzentile und Kanten des Histogramms); Index unverändert.
+3. `histogram` auch in der Antwort der Route (`BandStatistics.histogram`, wie bei der Ergebnis-Statistik; Cache-Schlüssel `area-statistics/v4`).
+4. „auto-scale“, „Enhance contrast“ und Histogramm messen dieselbe Frage; bei `413`/`422` Rückfall auf die erste Szene mit Hinweis wie in der Processing-Vorschau.
+5. Tests mit Gegenprobe: dieselben Zahlen wie der Job über die AOI (Index) bzw. in Rohwerten umgerechnet (Band, RGB); ohne Zuschnitt unverändert.
+
+Schätzung 180–220 Zeilen Code ohne Tests, über dem Richtwert 150. In diesem PR bleibt die Messung wie „auto-scale“ (erste Szene, ganze Szene); Auslegung (a) gilt weiter bis zur Folgeaufgabe.
+
+**Browsertest Otto (03.11.2026, zu #280), umgesetzt.** (1) Der Mülleimer „Remove layer“ ist so breit wie die anderen Aktionen. (2) Im Layer-Manager entfernt ein Mülleimer statt ✕, und ein Stift am Ende der Titelzeile benennt um (wie im Kopf der Seitenleiste: leer behält den alten Namen, Esc bricht ab). (3) „Add current view to layers“ steht in zwei Zeilen und ist ganz lesbar. (4) „Quick processing“ zeigt nur, was gilt: „Enhance contrast“ nur bei RGB, die Indizes nur bei einem Datensatz mit Presets (Sentinel-2), an einem Index-Layer nichts; gilt nichts, fehlt der Abschnitt, und der Hinweis eines Index steht unter den Feldern. Ersetzt Auslegung (g) „Quick processing auch am Layer“ für Index-Layer und die Regel „gesperrt statt weg“ für diesen Abschnitt. (5) Die Schieber des Histogramms sind dünne Linien; die Greiffläche bleibt breiter.
+
+**Nachtrag Otto (03.11.2026, zu #280), umgesetzt.** (1) Ein Index aus „Quick processing“ kommt in die Felder und wird erst mit „Apply“ gezeichnet, in der Ansicht wie in den Einstellungen eines Layers (ersetzt „sofort“ aus Punkt 2 des Auftrags; ohne Job bleibt). „Enhance contrast“ wirkt weiter sofort (Auslegung, Otto nannte nur den Index). (2) „Add current view to layers“ an einem Layer, der einen Index zeigt, legt den Index allein an (`restore.indexOnly`), wie „Add to layers“ aus der Ansicht; ohne Index die ganze Ansicht.
+
+**Prüfanleitung für Otto (Browser und PowerShell 5.1).**
+
+```powershell
+docker compose up -d --build api tiler
+Invoke-RestMethod http://localhost:8001/colormaps | Select-Object -ExpandProperty groups | ForEach-Object { "$($_.name): $($_.colormaps.Count)" }
+# sequential: 55, diverging: 17, cyclic: 4, qualitative: 12, other: 21
+cd frontend; npm run dev
+```
+
+Im Browser (`http://localhost:5173`, hell und dunkel, breit und schmal):
+
+1. Sentinel-2 suchen, Szene wählen, „Crop to AOI“. In der Seitenleiste: „Band“ hat RGB und die Einzelbänder, keine Indizes; darunter „Scale“ mit drei Zeilen R/G/B und drei farbigen Histogrammen; „Quick processing“ mit NDVI, NDWI, NDSI / NBR, EVI, Enhance contrast.
+2. Einen roten Schieber ziehen: nur die Zeile R ändert sich; eine Zahl tippen: der Schieber folgt. „Apply“ zeichnet; DevTools → Network: die Kachel trägt drei `rescale`.
+3. „Enhance contrast“: der Knopf ist hervorgehoben, die Felder zeigen „percentile“ 2/98, die Karte wird kräftiger; zweiter Klick: das Bild davor.
+4. „NDVI“: der Knopf ist an, die Felder zeigen NDVI, gezeichnet wird mit „Apply“; ein Histogramm, „Band“ zeigt NDVI (nicht wählbar); zweiter Klick und „Apply“: RGB. Zoom unter 8: „Zoom in to compute NDVI“. Am Layer ebenso; „Add current view to layers“ an einem Layer mit NDVI legt einen Layer nur mit NDVI an.
+5. NDVI wählen, „Add to layers“; im Layer-Manager den Layer öffnen: „Band“ gesperrt („This layer holds the index only“), andere Indizes gesperrt; ⇩: der Dialog lädt NDVI ohne Wahl „Raw bands“.
+6. Am Layer: keine Pfeile neben dem Datum; Stift → neuer Name → Enter (auch im Layer-Manager); leerer Name → alter Name bleibt; „Add current view to layers“ legt „… (copy)“ an; Mülleimer entfernt den Layer.
+7. Colormap → „More…“: Liste mit Vorschau und Gruppen, Suche „rd“, „Reverse“; Klick auf `rocket` → zurück, `rocket` steht im Dropdown; „⇄“ daneben kehrt um (Kachel `colormap_name=rocket_r`); „‹“ geht ohne Wahl zurück; Esc schließt nichts. Dasselbe im Processing-Panel (Vorschau) und am Ergebnis-Layer.
+8. Ergebnis-Layer mit RGB: drei Zeilen und Histogramme; „Save“ und erneutes Öffnen behalten die drei Bereiche.
+
+Browser-Skripte der Sitzung: `e2e/quick-processing.cjs` (neu; mit `REAL_COLORMAPS=1` gegen den laufenden tiler), nachgezogen `view-index`, `settings-box`, `rgb`, `nm4-65`, `view-steps`, `colormap-apply`.

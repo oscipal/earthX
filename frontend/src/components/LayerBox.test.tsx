@@ -111,23 +111,21 @@ const buttons = () => [...container.querySelectorAll('.vc-buttons button')].map(
 describe('a layer opened from the layer manager', () => {
   beforeEach(() => mount(true));
 
-  it('has none of the actions of the search: no pinning, no processing, no "Change image", no "Clear"', () => {
-    expect(actions()).toEqual(['⇩ Download']);
+  // Otto, 2.11.2026: the actions of a layer, not those of the search.
+  it('has the actions of a layer and none of the search: no pinning of the view, no "Change image", no "Clear"', () => {
+    expect(actions()).toEqual(['⚙ Process', '⇩ Download', '＋ Add current view to layers', '']);
     const text = container.textContent!;
-    for (const gone of ['Add to layers', 'Add all to layers', 'Process', 'Change image', 'Clear']) expect(text, gone).not.toContain(gone);
+    for (const gone of ['＋ Add to layers', 'Add all to layers', 'Change image', 'Clear', 'Download crop']) expect(text, gone).not.toContain(gone);
   });
 
-  it('has the head of every layer: its name with the date, in the style of a title, the date with locked arrows, and the red x', () => {
+  it('has the head of every layer: its name with the date, in the style of a title, the date without arrows, and the red x', () => {
     expect(container.querySelector('.vc-title')!.textContent).toBe('Optical · crop · 2026-07-01');
     expect(container.querySelector('.vc-title')!.getAttribute('title')).toBe('Optical · crop · 2026-07-01');
     expect(container.querySelectorAll('.vc-head .close-x')).toHaveLength(1);
     expect(container.querySelector('.vc-head .close-x')!.getAttribute('title')).toBe('Close');
-    // The place of the time step of the view holds the date of the layer and two locked arrows; no dataset box, no eye of the view: the layer has its own eye in the manager.
+    // The place of the time step of the view holds the date of the layer and no arrows; no dataset box, no eye of the view: the layer has its own eye in the manager.
     expect(container.querySelector('.vc-step-text')!.textContent).toBe('2026-07-01');
-    expect([...container.querySelectorAll('.vc-step')].map((b) => [b.getAttribute('aria-disabled'), b.getAttribute('title')])).toEqual([
-      ['true', 'A layer holds one image'],
-      ['true', 'A layer holds one image'],
-    ]);
+    expect(container.querySelectorAll('.vc-step')).toHaveLength(0);
     expect(container.querySelector('.vc-dataset, .vc-eye')).toBeNull();
   });
 
@@ -160,7 +158,7 @@ describe('a layer opened from the layer manager', () => {
     const crop = layer();
     crop.restore = { ...crop.restore, cropToAoi: true, aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } };
     act(() => useAppStore.setState({ cropToAoi: true, viewAoi: crop.restore.aoi, layers: [crop] }));
-    expect(actions()).toEqual(['⇩ Download']);
+    expect(actions()).toEqual(['⚙ Process', '⇩ Download', '＋ Add current view to layers', '']);
     expect(labels()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     expect(buttons()).toEqual(['auto-scale', 'Apply', 'Save']);
   });

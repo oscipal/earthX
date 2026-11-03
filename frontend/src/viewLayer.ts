@@ -85,8 +85,13 @@ function drawnLook(look: AppliedRender, base: AppliedRender): string {
   const standard = !look.band && !look.index && !look.bidx;
   const field = (key: 'expression' | 'colormapName' | 'rescale') => look[key] || (standard ? base[key] : undefined) || '';
   const rescale = field('rescale')
-    .split(',')
-    .map((end) => (end.trim() === '' || !Number.isFinite(Number(end)) ? end.trim() : String(Number(end))))
-    .join(',');
+    .split(';')
+    .map((pair) =>
+      pair
+        .split(',')
+        .map((end) => (end.trim() === '' || !Number.isFinite(Number(end)) ? end.trim() : String(Number(end))))
+        .join(','),
+    )
+    .join(';');
   return JSON.stringify([look.band || '', look.index || '', look.bidx || '', field('expression'), field('colormapName'), rescale]);
 }

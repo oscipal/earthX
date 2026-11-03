@@ -81,7 +81,8 @@ async function check(browser, { theme, viewport }) {
   if (eyeBox.y < nameBox.y + nameBox.height - 1) problems.push('the buttons are not under the title');
   if (Math.abs(removeBox0.y - eyeBox.y) > 3) problems.push('the buttons are not in one line');
   if (sliderBox0.width < 60) problems.push(`the slider is only ${sliderBox0.width} px wide`);
-  if (nameBox.width < panelBox.width - 60) problems.push(`the title is only ${nameBox.width} px of ${panelBox.width} px`);
+  // The title has the line to itself but the pencil at its end (Otto, 3.11.2026).
+  if (nameBox.width < panelBox.width - 90) problems.push(`the title is only ${nameBox.width} px of ${panelBox.width} px`);
   await shot('1-rows');
 
   // --- part 1: the grip, with the real mouse
@@ -244,9 +245,9 @@ async function check(browser, { theme, viewport }) {
     });
   });
   await page.waitForSelector('.inspector .vc-apply');
-  // A layer has the download in its actions and none of the actions of the search.
-  const actions = (await page.locator('.inspector .vc-actions > *').allTextContents()).map((t) => t.trim());
-  if (actions.join() !== '⇩ Download') problems.push(`a layer opened from the manager has the actions ${actions}`);
+  // A layer has the actions of a layer (Otto, 2.11.2026) and none of the actions of the search.
+  const actions = (await page.locator('.inspector .vc-actions > *').evaluateAll((els) => els.map((e) => (e.textContent || e.getAttribute('aria-label') || '').trim())));
+  if (actions.join() !== '⚙ Process,⇩ Download,＋ Add current view to layers,Remove layer') problems.push(`a layer opened from the manager has the actions ${actions}`);
   if ((await page.locator('.scene-view .vc-head .close-x').count()) !== 1) problems.push('no red x in the box of the layer');
   // The box of every layer (NM4-54 part 5): the opacity of the layer is a row under the fields.
   if ((await page.locator('.scene-view .vc-opacity input[type="range"]').count()) !== 1) problems.push('the box of the layer has no row for its opacity');

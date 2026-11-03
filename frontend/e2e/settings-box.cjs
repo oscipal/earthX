@@ -3,8 +3,9 @@
 //   1. Place and size: from 1280 px the bar is flush at the right edge, 320 px wide, from the top to the foot with no gap, the buttons
 //      at the top left of it (Otto, 2.11.2026); under 900 px it is a sheet from the
 //      bottom, from the rail to the right edge, at most 55 % high.
-//   2. The three kinds are one bar: Band, vmin, vmax, Colormap, Opacity, the row of buttons and "Actions" stand at the same height (counted
-//      from the top of the bar) for every kind and every picture; the colormap of RGB stays, locked, with its reason in the tooltip.
+//   2. The three kinds are one bar: Band, vmin and vmax stand at the same height (counted from the top of the bar) for every kind and every
+//      picture; Colormap, Opacity and the row of buttons for every kind of one picture (a colour picture has a row of fields for each
+//      channel, UI-03d); "Actions" of a view and a pinned view alike; the colormap of RGB stays, locked, with its reason in the tooltip.
 //   3. Nothing lies outside the bar, and nothing scrolls sideways.
 //   4. The bar of the selection and the timeline stands in the middle of the free map, not under the bar (under 900 px above the sheet); the
 //      zoom buttons are visible and left of the bar (above the sheet).
@@ -99,7 +100,15 @@ const settle = (page) => page.waitForTimeout(600);
 // The look of the view of the search: RGB, a band, an index (chosen and applied).
 async function look(page, what) {
   if (what === 'rgb') return;
-  await pick(page, what === 'band' ? 'band:B04' : 'index:NDVI');
+  // An index is a button of "Quick processing" (UI-03d), a band a choice of the dropdown; either is drawn with "Apply".
+  if (what === 'index') {
+    await page.locator('.inspector .vc-quick button', { hasText: 'NDVI' }).click();
+    await settle(page);
+    await page.locator('.inspector .vc-apply').click();
+    await settle(page);
+    return;
+  }
+  await pick(page, 'band:B04');
   await settle(page);
   await page.locator('.inspector .vc-apply').click();
   await settle(page);
@@ -164,8 +173,9 @@ async function measure(page) {
       row1: at(bar.querySelector('.insp-row')),
       row2: at(bar.querySelector('.insp-row2')),
       band: at(field('Band')),
-      vmin: at(field('vmin')),
-      vmax: at(field('vmax')),
+      // A colour picture has a row for each channel (UI-03d): its first row.
+      vmin: at(field('vmin') ?? bar.querySelector('.vc-channels .vc-num')),
+      vmax: at(field('vmax') ?? bar.querySelectorAll('.vc-channels .vc-num')[1]),
       colormap: at(field('Colormap')),
       opacity: at(field('Opacity')),
       buttons: at(bar.querySelector('.vc-buttons')),
@@ -192,7 +202,11 @@ async function measure(page) {
 }
 
 const KINDS = { job: async (page, what) => resultLayers(page, what), pinned: pinnedBox, search: async (page, what) => look(page, what) };
-const PLACES = ['row1', 'row2', 'band', 'vmin', 'vmax', 'colormap', 'opacity', 'buttons', 'display', 'actions'];
+// The same places for every kind and every picture down to the first row of "Scale"; below it a colour picture is three rows longer and
+// has three histograms (UI-03d), so the places below are the same for one picture across the kinds; "Actions" of a result stands
+// higher, which has no "Quick processing".
+const PLACES = ['row1', 'row2', 'band', 'vmin', 'vmax', 'display'];
+const PLACES_OF_A_PICTURE = ['colormap', 'opacity', 'buttons'];
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // What one case has to show, whatever the picture and the kind.
@@ -294,7 +308,16 @@ async function behaviour(browser, theme, viewport, problems) {
       const reference = found['job/rgb'];
       const tag = `${theme} ${viewport}`;
       for (const [name, m] of Object.entries(found)) {
-        for (const place of PLACES) if (!same(reference[place], m[place])) problems.push(`${tag}: "${place}" of ${name} is at ${JSON.stringify(m[place])}, of job/rgb at ${JSON.stringify(reference[place])}`);
+        for (const place of PLACES) {
+          // The rows of a colour picture have the letter of the channel in front (UI-03d): vmin and vmax keep their height, not their x.
+          const height = (r) => (r && (place === 'vmin' || place === 'vmax') ? { y: r.y, h: r.h } : r);
+          if (!same(height(reference[place]), height(m[place]))) problems.push(`${tag}: "${place}" of ${name} is at ${JSON.stringify(m[place])}, of job/rgb at ${JSON.stringify(reference[place])}`);
+        }
+        const what = name.split('/')[1];
+        const own = found[`job/${what}`];
+        for (const place of PLACES_OF_A_PICTURE) if (!same(own[place], m[place])) problems.push(`${tag}: "${place}" of ${name} is at ${JSON.stringify(m[place])}, of job/${what} at ${JSON.stringify(own[place])}`);
+        // A pinned index is the index alone and has no "Quick processing" (Otto, 3.11.2026): its "Actions" stand higher.
+        if (name.startsWith('search/') && what !== 'index' && !same(found[`pinned/${what}`].actions, m.actions)) problems.push(`${tag}: "Actions" of ${name} is at ${JSON.stringify(m.actions)}, of pinned/${what} at ${JSON.stringify(found[`pinned/${what}`].actions)}`);
       }
       for (const kind of Object.keys(KINDS)) {
         const [rgb, band] = ['rgb', 'band'].map((what) => found[`${kind}/${what}`]);

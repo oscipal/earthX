@@ -3,11 +3,13 @@
 // Band · Index · vmin · vmax · colormap. A field a place does not offer is left out, the others keep their order. The
 // block is a fragment, so that each place keeps its own layout around it.
 
-import { useId, type ReactNode } from 'react';
+import { Fragment, useId, type ReactNode } from 'react';
+
+import { CHANNEL_NAMES, type ChannelRange } from '../channels';
 
 import { UNIT_LABELS, UNIT_TIP, type RangeUnit } from '../percentRange';
-import { COLORMAPS } from '../render';
 import BandSelect, { type BandOption } from './BandSelect';
+import ColormapField from './ColormapField';
 
 // What the box of the colormap says where a picture of three bands has none: it stays in its place, locked, and says "none" (Otto, 1.11.2026).
 export const NO_COLORMAP = '— none —';
@@ -33,13 +35,17 @@ interface Props {
   unit?: { value: RangeUnit; onChange: (unit: RangeUnit) => void };
   // The settings bar (Otto, 2.11.2026): vmin and vmax side by side in one row "Scale", the switch of the range after them.
   scale?: boolean;
+  // A colour picture in values (UI-03d): a row of vmin and vmax for each channel in place of the one.
+  channels?: { values: readonly ChannelRange[]; onChange: (channel: number, end: 'vmin' | 'vmax', text: string) => void };
+  // What stands under the fields of "Scale": the histograms with their sliders.
+  histograms?: ReactNode;
 }
 
-export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder, unit, scale = false }: Props) {
+export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder, unit, scale = false, channels, histograms }: Props) {
   const percent = unit?.value === 'percent';
   const hint = percent ? undefined : placeholder;
   const range = scale ? (
-    <ScaleRow vmin={vmin} vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
+    <ScaleRow vmin={vmin} vmax={vmax} placeholder={hint} percent={percent} unit={unit} channels={percent ? undefined : channels} below={histograms} />
   ) : (
     <>
       <label className="vc-field vc-num">
@@ -73,26 +79,19 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
         </label>
       )}
       {range}
-      {colormap && (
-        <label className="vc-field" title={'fixed' in colormap ? colormap.title : undefined}>
-          <span>Colormap</span>
-          {'fixed' in colormap ? (
-            // Not left out: the field keeps its place whatever band is drawn, locked, and its tooltip says why (NM4-54 part 5).
+      {colormap &&
+        ('fixed' in colormap ? (
+          // Not left out: the field keeps its place whatever band is drawn, locked, and its tooltip says why (NM4-54 part 5).
+          <label className="vc-field" title={colormap.title}>
+            <span>Colormap</span>
             <select value="" disabled aria-label="Colormap" title={colormap.title} onChange={() => undefined}>
               <option value="">{colormap.fixed}</option>
             </select>
-          ) : (
-            <select value={colormap.value} onChange={(e) => colormap.onChange(e.target.value)}>
-              <option value="">— none —</option>
-              {COLORMAPS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          )}
-        </label>
-      )}
+          </label>
+        ) : (
+          // One field wherever a colormap is chosen, with "More…" and "Reverse" (UI-03d).
+          <ColormapField value={colormap.value} onChange={colormap.onChange} />
+        ))}
     </>
   );
 }
@@ -119,29 +118,55 @@ function VmaxField({ vmax, placeholder, percent, unit }: { vmax: Props['vmax']; 
   );
 }
 
+function UnitSelect({ unit }: { unit: NonNullable<Props['unit']> }) {
+  return (
+    <select className="vc-unit" aria-label="Range unit" title={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
+      <option value="value">{UNIT_LABELS.value}</option>
+      <option value="percent">{UNIT_LABELS.percent}</option>
+    </select>
+  );
+}
+
+function NumberField({ name, value, placeholder, percent, onChange }: { name: string; value: string; placeholder?: string; percent: boolean; onChange: (value: string) => void }) {
+  const short = name.split(' ').pop() ?? name;
+  return (
+    <label className="vc-field vc-num" title={placeholder ? `${name}; empty: ${placeholder}` : name}>
+      <span className="sr-only">{name}</span>
+      <input type="number" value={value} placeholder={short} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => onChange(e.target.value)} />
+    </label>
+  );
+}
+
 // One row "Scale": vmin and vmax side by side, each with its name as placeholder and as a label for a screen reader, and the switch of
-// the range after them, not over a field (Otto, 2.11.2026). An empty field is measured; its tooltip says so.
-function ScaleRow({ vmin, vmax, placeholder, percent, unit }: { vmin: Props['vmin']; vmax: Props['vmax']; placeholder?: string; percent: boolean; unit: Props['unit'] }) {
+// the range after them, not over a field (Otto, 2.11.2026). An empty field is measured; its tooltip says so. A colour picture in
+// values has a row for each channel, the switch in the first (UI-03d); the histograms stand under the fields.
+function ScaleRow({ vmin, vmax, placeholder, percent, unit, channels, below }: { vmin: Props['vmin']; vmax: Props['vmax']; placeholder?: string; percent: boolean; unit: Props['unit']; channels?: Props['channels']; below?: ReactNode }) {
   const nameId = useId();
-  const tip = (name: string) => (placeholder ? `${name}; empty: ${placeholder}` : name);
   return (
     <div className="vc-field vc-scale" role="group" aria-labelledby={nameId}>
       <span id={nameId}>Scale</span>
-      <div className="vc-scale-fields">
-        <label className="vc-field vc-num" title={tip('vmin')}>
-          <span className="sr-only">vmin</span>
-          <input type="number" value={vmin.value} placeholder="vmin" {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
-        </label>
-        <label className="vc-field vc-num" title={tip('vmax')}>
-          <span className="sr-only">vmax</span>
-          <input type="number" value={vmax.value} placeholder="vmax" {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmax.onChange(e.target.value)} />
-        </label>
-        {unit && (
-          <select className="vc-unit" aria-label="Range unit" title={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
-            <option value="value">{UNIT_LABELS.value}</option>
-            <option value="percent">{UNIT_LABELS.percent}</option>
-          </select>
+      <div className="vc-scale-body">
+        {channels ? (
+          <div className="vc-scale-fields vc-channels">
+            {CHANNEL_NAMES.map((channel, index) => (
+              <Fragment key={channel}>
+                <span className={`vc-chip vc-chip-${channel}`} title={channel}>
+                  {channel[0].toUpperCase()}
+                </span>
+                <NumberField name={`${channel} vmin`} value={channels.values[index]?.vmin ?? vmin.value} placeholder={placeholder} percent={false} onChange={(text) => channels.onChange(index, 'vmin', text)} />
+                <NumberField name={`${channel} vmax`} value={channels.values[index]?.vmax ?? vmax.value} placeholder={placeholder} percent={false} onChange={(text) => channels.onChange(index, 'vmax', text)} />
+                {index === 0 && unit ? <UnitSelect unit={unit} /> : <span />}
+              </Fragment>
+            ))}
+          </div>
+        ) : (
+          <div className="vc-scale-fields">
+            <NumberField name="vmin" value={vmin.value} placeholder={placeholder} percent={percent} onChange={vmin.onChange} />
+            <NumberField name="vmax" value={vmax.value} placeholder={placeholder} percent={percent} onChange={vmax.onChange} />
+            {unit && <UnitSelect unit={unit} />}
+          </div>
         )}
+        {below}
       </div>
     </div>
   );

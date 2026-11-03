@@ -8,7 +8,7 @@
 
 import { useMemo } from 'react';
 
-import { DRAW_AOI_TO_CROP, isCogFormat, layerDownloadKind, noOriginalsReason } from '../download';
+import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
@@ -17,7 +17,10 @@ import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
 import { appliedRenderFrom, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
-import { datasetSavable, shownImageOf, useAppStore } from '../store';
+import { channelsOf } from '../channels';
+import { fetchStatisticsAt, withHistogram } from '../api';
+import { histogramOf, type Histogram } from '../histogram';
+import { colourView, datasetSavable, enhanceOn, shownImageOf, useAppStore, viewStatisticsUrl } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
@@ -25,11 +28,22 @@ import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Eye from './Eye';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
-import LayerDownload from './LayerDownload';
+import LayerActions from './LayerActions';
 import OpacityRow from './OpacityRow';
 import type { BandOption } from './BandSelect';
 import { viewKind } from '../viewKind';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
+import ScaleHistograms from './ScaleHistograms';
+import { useHistograms } from './useHistograms';
+
+const INDEX_ONLY_TIP = 'This layer holds the index only';
+const ENHANCE_RGB_TIP = 'Stretch red, green and blue each from its 2nd to its 98th percentile and draw them. Only the look: Add to layers pins the whole view.';
+
+// The histograms of the bands the statistics name, in their order; none where one band has none.
+async function loadHistograms(url: string): Promise<Histogram[] | null> {
+  const read = Object.values(await fetchStatisticsAt(url)).map((band) => histogramOf(band));
+  return read.length > 0 && read.every((h) => h !== null) ? (read as Histogram[]) : null;
+}
 
 export default function ViewerControls() {
   const pendingColormapName = useAppStore((s) => s.pendingColormapName);
@@ -96,6 +110,16 @@ export default function ViewerControls() {
   const appliedRender = useAppStore((s) => s.appliedRender);
   const viewOfLayer = useAppStore((s) => s.viewOfLayer);
   const pendingIndex = useAppStore((s) => s.pendingIndex);
+  const pendingChannels = useAppStore((s) => s.pendingChannels);
+  const renameLayer = useAppStore((s) => s.renameLayer);
+  const setPendingChannel = useAppStore((s) => s.setPendingChannel);
+  const quickIndex = useAppStore((s) => s.quickIndex);
+  const enhanceContrast = useAppStore((s) => s.enhanceContrast);
+  const enhanced = useAppStore(enhanceOn);
+  // The colour picture in the fields: a range for each channel (UI-03d).
+  const colour = useAppStore(colourView);
+  const statisticsUrl = useAppStore(viewStatisticsUrl);
+  const histograms = useHistograms(statisticsUrl && withHistogram(statisticsUrl), () => loadHistograms(withHistogram(statisticsUrl!)));
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const images = useMemo(
@@ -126,28 +150,37 @@ export default function ViewerControls() {
   // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
   const chosen = viewIndexOf({ index: pendingIndex }, shownDataset?.collection);
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
-  // One dropdown "Band" (NM4-45, Otto, 31.10.2026): the standard picture first ("RGB" where the dataset has a true-colour one), the
-  // single bands of the data, and after a line the index presets of the dataset (the quick calculation of NM4-14b).
+  // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
+  // is still open from the search keeps all of it, also once its image is pinned.
+  const compact = viewOfLayer && layer !== null;
+  // A layer pinned with an index of "Quick processing" is that index alone (UI-03d).
+  const indexOnly = compact && layer.restore.indexOnly === true;
+  // One dropdown "Band" (NM4-45, Otto, 31.10.2026): the standard picture first ("RGB" where the dataset has a true-colour one) and the
+  // single bands of the data; the indices are in "Quick processing" (UI-03d, Otto, 2.11.2026). The index drawn stands in it, not to
+  // be picked, so that the field says what the map shows; a band picked puts it away.
   const standardAsset = shownDataset?.collection['earthx:default_render']?.assets[0] ?? null;
   const bandAssets = shownDataset && shown ? bandAssetsOf(sectionsForView({ sections, openSectionId, datasetId, items, groups }).flatMap((section) => section.items).find((it) => it.id === shown.ids[0]), shownDataset.collection) : [];
   const trueColour = shownDataset ? trueColorOf(shownDataset.collection) !== null : false;
-  const bandOptions: BandOption[] = [
-    { value: '', label: trueColour ? 'RGB' : (standardAsset ?? 'Standard') },
-    ...bandAssets.filter((asset) => asset !== standardAsset).map((asset) => ({ value: `band:${asset}`, label: asset })),
-    ...(presets.length > 0 ? [{ value: '|', label: '', separator: true }, ...presets.map((preset) => ({ value: `index:${preset.name}`, label: preset.name, title: presetTip(preset) }))] : []),
-  ];
+  const chosenOption: BandOption[] = chosen ? [{ value: `index:${chosen.name}`, label: chosen.name, title: presetTip(chosen), disabled: true }] : [];
+  const bandOptions: BandOption[] = indexOnly
+    ? chosenOption
+    : [
+        { value: '', label: trueColour ? 'RGB' : (standardAsset ?? 'Standard') },
+        ...bandAssets.filter((asset) => asset !== standardAsset).map((asset) => ({ value: `band:${asset}`, label: asset })),
+        ...chosenOption,
+      ];
   // A dropdown with one entry offers no choice: it stays, locked, and says so. The view of a layer of the layer manager has it free, as
   // the view the layer came from (Otto, 1.11.2026).
-  const showBand = bandOptions.filter((option) => !option.separator).length > 1;
+  const showBand = bandOptions.filter((option) => !option.disabled).length > 1;
   const bandValue = chosen ? `index:${chosen.name}` : pendingBand ? `band:${pendingBand}` : '';
   const chooseView = (value: string) => {
     if (value.startsWith('index:')) chooseViewIndex(value.slice('index:'.length));
     else if (value.startsWith('band:')) chooseViewBand(value.slice('band:'.length));
     else chooseViewIndex(null);
   };
-  // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
-  // is still open from the search keeps all of it, also once its image is pinned.
-  const compact = viewOfLayer && layer !== null;
+  // "Quick processing" offers the indices of a dataset that has presets, not at a layer of an index, and "Enhance contrast" for RGB.
+  const quickIndices = presets.length > 0 && !indexOnly;
+  const quick = quickIndices || colour;
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -159,6 +192,11 @@ export default function ViewerControls() {
           mapZoom,
         })
       : null;
+  const note = index && indexBlock && (
+    <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>
+      {indexNote(indexBlock, index.name)}
+    </p>
+  );
   // An index is drawn with a colormap whatever the dataset's own picture is.
   const colormap = chosen || pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   const at = shown ? here.indexOf(shown) : -1;
@@ -211,6 +249,7 @@ export default function ViewerControls() {
         }
         onClose={() => exitFocus()}
         closeTitle={compact ? undefined : 'Close and drop this view'}
+        rename={compact ? { name: layer.name, onRename: (name) => renameLayer(layer.id, name) } : undefined}
       >
         {compact ? (
           <LayerStepper date={layer.date} />
@@ -235,6 +274,7 @@ export default function ViewerControls() {
               <Stepper
                 text={stepText}
                 tip={stepTitle}
+                single={here.length <= 1}
                 onKeyDown={onKeys}
                 previous={{ disabled: at <= 0, title: here.length <= 1 ? 'There is only one image' : at <= 0 ? 'This is the first image' : 'Previous image', onClick: () => stepImage(-1) }}
                 next={{ disabled: at >= here.length - 1, title: here.length <= 1 ? 'There is only one image' : at >= here.length - 1 ? 'This is the last image' : 'Next image', onClick: () => stepImage(1) }}
@@ -253,9 +293,23 @@ export default function ViewerControls() {
                 value: bandValue,
                 options: bandOptions,
                 onChange: chooseView,
-                title: !showBand ? ONE_BAND_TIP : chosen ? presetTip(chosen) : BAND_TIP,
+                title: indexOnly ? INDEX_ONLY_TIP : !showBand ? ONE_BAND_TIP : chosen ? presetTip(chosen) : BAND_TIP,
                 disabled: !showBand,
               }}
+              channels={colour ? { values: pendingChannels.length > 0 ? pendingChannels : channelsOf(pendingVmin, pendingVmax), onChange: setPendingChannel } : undefined}
+              histograms={
+                histograms && (
+                  <ScaleHistograms
+                    histograms={histograms}
+                    unit={pendingUnit}
+                    vmin={pendingUnit === 'percent' ? pendingPercentLow : pendingVmin}
+                    vmax={pendingUnit === 'percent' ? pendingPercentHigh : pendingVmax}
+                    onVmin={pendingUnit === 'percent' ? (text) => setPendingPercent('low', text) : setPendingVmin}
+                    onVmax={pendingUnit === 'percent' ? (text) => setPendingPercent('high', text) : setPendingVmax}
+                    channels={colour ? { values: pendingChannels.length > 0 ? pendingChannels : channelsOf(pendingVmin, pendingVmax), onChange: setPendingChannel } : undefined}
+                  />
+                )
+              }
               vmin={pendingUnit === 'percent' ? { value: pendingPercentLow, onChange: (text) => setPendingPercent('low', text) } : { value: pendingVmin, onChange: setPendingVmin }}
               vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
               unit={{ value: pendingUnit, onChange: setPendingUnit }}
@@ -310,21 +364,60 @@ export default function ViewerControls() {
               </button>
             </div>
           </div>
-          {index && indexBlock && (
-            <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>
-              {indexNote(indexBlock, index.name)}
-            </p>
-          )}
+          {/* Without "Quick processing" (a layer of an index) the note of the index stands under the fields. */}
+          {!quick && note}
         </InspectorSection>
 
+        {/* Only what applies (Otto, 3.11.2026): the indices of a dataset that has presets, and "Enhance contrast" for RGB; a layer of an
+            index has none of it. Three in a row (Otto, 2.11.2026), each says whether it is on; a second click, or a band picked, puts it
+            away. */}
+        {quick ? (
+          <InspectorSection title="Quick processing">
+            <div className="vc-quick">
+              {quickIndices &&
+                presets.map((preset) => {
+                  const on = chosen?.name === preset.name;
+                  return (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      className={`ghost-btn${on ? ' on' : ''}`}
+                      aria-pressed={on}
+                      disabled={pinLoading}
+                      title={`${presetTip(preset)} ${on ? 'Click again for the picture of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
+                      onClick={() => void quickIndex(preset.name)}
+                    >
+                      {preset.name}
+                    </button>
+                  );
+                })}
+              {colour && (
+                <button
+                  type="button"
+                  className={`ghost-btn${enhanced ? ' on' : ''}`}
+                  aria-pressed={enhanced}
+                  disabled={focusLoading}
+                  title={enhanced ? 'Click again for the picture before' : ENHANCE_RGB_TIP}
+                  onClick={() => void enhanceContrast()}
+                >
+                  Enhance contrast
+                </button>
+              )}
+            </div>
+            {note}
+          </InspectorSection>
+        ) : null}
+
         {compact ? (
-          layerDownloadKind(layer) !== null && (
-            <InspectorSection title="Actions">
-              <div className="vc-actions">
-                <LayerDownload layer={layer} className="ghost-btn" label="Download" />
-              </div>
-            </InspectorSection>
-          )
+          <InspectorSection title="Actions">
+            <LayerActions
+              layer={layer}
+              beforeCopy={async () => {
+                if (changed) await applyRender();
+                return true;
+              }}
+            />
+          </InspectorSection>
         ) : (
           <InspectorSection title="Actions">
             {/* In pairs (Otto, 2.11.2026): what to look at next, what to keep, what to download. */}

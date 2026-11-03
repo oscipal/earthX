@@ -4,7 +4,7 @@
 import type { ReactNode } from 'react';
 
 import { canDownloadLayer, decideDownloadOutcomeForLayer, layerDownloadKind } from '../download';
-import { indexOfferedFor } from '../indexDownload';
+import { indexDownloadBlock, indexOfferedFor } from '../indexDownload';
 import type { MapLayer } from '../layers';
 import { resultUrl } from '../processing';
 import { ZIP_LABEL } from '../processingStore';
@@ -37,20 +37,26 @@ export default function LayerDownload({ layer, className = 'lm-btn', label, col,
   if (kind !== 'dialog') return <>{empty}</>;
   const outcome = decideDownloadOutcomeForLayer(layer, datasets);
   const index = indexOfferedFor(layer, datasets);
+  // A layer of an index alone downloads the index and nothing else (UI-03d): where it cannot, the button says why.
+  const indexBlock = layer.restore.indexOnly ? indexDownloadBlock(layer, datasets) : null;
   return (
     <button
       type="button"
       className={className}
       data-col={col}
-      disabled={outcome === 'disabled' || !canDownloadLayer(layer, datasets)}
+      disabled={outcome === 'disabled' || indexBlock !== null || !canDownloadLayer(layer, datasets)}
       title={
         outcome === 'disabled'
           ? 'Draw an AOI to download this layer'
-          : index
-            ? `Download the AOI crop, one file per group; the ${index.name} too, computed as a Processing job would`
-            : outcome === 'originals'
-              ? 'Download the original files, straight from the source'
-              : 'Download the AOI crop, one file per group'
+          : indexBlock
+            ? indexBlock
+            : index && layer.restore.indexOnly
+              ? `Download the ${index.name} of the AOI crop, computed as a Processing job would`
+              : index
+                ? `Download the AOI crop, one file per group; the ${index.name} too, computed as a Processing job would`
+                : outcome === 'originals'
+                  ? 'Download the original files, straight from the source'
+                  : 'Download the AOI crop, one file per group'
       }
       onClick={() => void openDownload(layer.id)}
     >

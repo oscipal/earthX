@@ -195,7 +195,7 @@ export default function DownloadDialog() {
             )}
           </p>
 
-          {offered && (
+          {offered && !layer?.restore.indexOnly && (
             <div className="dialog-as" role="radiogroup" aria-label="What to download">
               {(['raw', 'index'] as const).map((what) => (
                 <label key={what} style={{ marginRight: '1em' }} title={what === 'raw' ? 'The bands of the scenes, cut to the AOI' : `The ${offered.name}, computed as a Processing job would give it`}>

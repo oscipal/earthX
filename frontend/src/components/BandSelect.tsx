@@ -8,6 +8,8 @@ export interface BandOption {
   separator?: boolean;
   // What the entry is, as the tooltip of the entry (the formula of an index).
   title?: string;
+  // Shown, not to be picked: the index of "Quick processing" while it is drawn (UI-03d).
+  disabled?: boolean;
 }
 
 interface Props {
@@ -31,7 +33,7 @@ export default function BandSelect({ label, value, options, onChange, className 
               ──────────
             </option>
           ) : (
-            <option key={option.value} value={option.value} title={option.title}>
+            <option key={option.value} value={option.value} title={option.title} disabled={option.disabled}>
               {option.label}
             </option>
           ),

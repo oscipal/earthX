@@ -25,6 +25,7 @@ from earthx.api import result_tiles
 from earthx.api.result_tiles import STATISTICS_MAX_AGE, ResultSources
 from earthx.api.tiler import build_app
 from earthx.objectstore.results import MIN_REMAINING, RESULT_TTL, Store, new_result_id, upload_result
+from earthx.processing.statistics import DISPLAY_BINS
 from tests.earthx.api.test_result_tiles import Clock
 from tests.earthx.processing import sources
 
@@ -35,7 +36,7 @@ HEIGHT, WIDTH = 120, 160
 BAND_NAMES = ("red", "nir", "empty")
 PERCENTILES = tuple(range(1, 100))
 SUMMARY = {"minimum", "maximum", "mean", "stddev", "count", "valid_percent"}
-EVERY_KEY = SUMMARY | {f"percentile_{percent}" for percent in PERCENTILES}
+EVERY_KEY = SUMMARY | {f"percentile_{percent}" for percent in PERCENTILES} | {"histogram"}
 
 
 def _write(path: Path, data: numpy.ndarray, *, nodata: float | None, names: tuple[str, ...] = ()) -> Path:
@@ -195,7 +196,7 @@ class TestTheNumbers:
         values = counts[index][inside & (counts[index] != 0)]
         got = rig.get(rig.put(files["counts"], files["inside"])).json()["bands"][index]["statistics"]
         expected = _expected(values, int(inside.sum()))
-        assert set(got) == set(expected)
+        assert set(got) == set(expected) | {"histogram"}
         for name, value in expected.items():
             assert got[name] == pytest.approx(value, rel=1e-9), name
         for percent in PERCENTILES:  # a whole number of 16 bits has a bin of its own: the nearest rank, exact
@@ -235,6 +236,29 @@ class TestTheNumbers:
         area = int(_inside().sum())
         assert got["count"] == int((_inside() & (counts[1] != 0)).sum())
         assert 70 < got["valid_percent"] < 80 and got["valid_percent"] == pytest.approx(100 * got["count"] / area)
+
+    @pytest.mark.parametrize("index", [0, 1])
+    def test_the_histogram_of_integers_is_numpys_over_the_marked_pixels(
+        self, rig: Rig, files: dict[str, Path], counts: numpy.ndarray, index: int
+    ) -> None:
+        values = counts[index][_inside() & (counts[index] != 0)]
+        got = rig.get(rig.put(files["counts"], files["inside"])).json()["bands"][index]["statistics"]
+        drawn, edges = got["histogram"]
+        assert len(drawn) == DISPLAY_BINS and len(edges) == DISPLAY_BINS + 1
+        assert edges[0] == got["minimum"] and edges[-1] == got["maximum"]
+        expected, _ = numpy.histogram(values, bins=numpy.array(edges))
+        assert drawn == expected.tolist()
+
+    def test_the_histogram_of_floats_holds_every_value_and_follows_numpy(self, rig: Rig, files: dict[str, Path]) -> None:
+        with rasterio.open(files["reflectance"]) as raster:
+            data = raster.read(1)
+        values = data[_inside() & (data != -9999.0)]
+        got = rig.get(rig.put(files["reflectance"], files["inside"])).json()["bands"][0]["statistics"]
+        drawn, edges = got["histogram"]
+        assert sum(drawn) == pytest.approx(got["count"])
+        expected, _ = numpy.histogram(values, bins=numpy.array(edges))
+        # A bin of the fixed histogram is 2^-7 wide: at most a small share moves to a neighbour.
+        assert numpy.abs(numpy.array(drawn) - expected).sum() < 0.05 * got["count"]
 
     def test_the_same_answer_every_time(self, rig: Rig, files: dict[str, Path]) -> None:
         first = rig.get(rig.put(files["reflectance"], files["inside"])).text

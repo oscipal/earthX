@@ -7,6 +7,7 @@ import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 import { clipTileUrl } from './aoiClip';
 import { buildTileTemplate } from './api';
 import type { CoverageCell } from './api';
+import { rescaleParams } from './channels';
 import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
 import { preferredGeoreferencedAsset, quicklookPlan } from './datasets';
 import type { DatasetOption } from './datasets';
@@ -298,7 +299,8 @@ export function buildTileUrl(template: string, render: AppliedRender): string {
   for (const place of render.bidx ? render.bidx.split(',') : []) params.append('bidx', place);
   if (render.expression) params.set('expression', render.expression);
   if (render.colormapName) params.set('colormap_name', render.colormapName);
-  if (render.rescale) params.set('rescale', render.rescale);
+  // A colour picture with a range for each channel has three, in the order of its bands (`channels.ts`).
+  for (const pair of render.rescale ? rescaleParams(render.rescale) : []) params.append('rescale', pair);
   const q = params.toString();
   return q ? `${template}&${q}` : template;
 }

@@ -115,26 +115,22 @@ const title = () => container.querySelector('.vc-title')?.textContent;
 const THREE = { A: info('s2'), B: info('s2'), C: info('s2') };
 
 describe('what is not possible is not there', () => {
-  // Otto, 1.11.2026: the date is there for a single image too, with the arrows greyed out.
-  it('has the date for a view of one image, with both arrows greyed out and the reason, and no dataset to choose', () => {
+  // Otto, 1.11.2026: the date is there for a single image too; Otto, 2.11.2026: without arrows where there is only one date.
+  it('has the date for a view of one image, without arrows, and no dataset to choose', () => {
     mount({ A: info('s2') });
     expect(dataset()).toBeNull();
     expect(stepText()).toBe('2025-07-29');
-    for (const arrow of [prev()!, next()!]) {
-      expect(arrow.getAttribute('aria-disabled')).toBe('true');
-      expect(arrow.title).toBe('There is only one image');
-    }
-    act(() => next()!.click());
-    expect(stepText()).toBe('2025-07-29');
+    expect(prev()).toBeNull();
+    expect(next()).toBeNull();
     expect(container.querySelector('.vc-steps')).toBeNull();
   });
 
-  it('has the date and greyed out arrows for several scenes of one time step', () => {
+  it('has the date without arrows for several scenes of one time step: one image, one date', () => {
     mount({ A: info('s2'), B: info('s2') }, [section('s2', [A, B], [group('same', [A, B])]), DEM_SECTION]);
     expect(steps()).not.toBeNull();
     expect(dataset()).toBeNull();
-    expect(prev()!.getAttribute('aria-disabled')).toBe('true');
-    expect(next()!.getAttribute('aria-disabled')).toBe('true');
+    expect(prev()).toBeNull();
+    expect(next()).toBeNull();
   });
 
   it('puts them in the second row of the head, the dataset and then the date with the arrows, under the title and the eye', () => {
@@ -152,20 +148,22 @@ describe('what is not possible is not there', () => {
     expect(next()).not.toBeNull();
   });
 
-  it('has the dataset to choose and the date with greyed out arrows where each dataset has one image', () => {
+  it('has the dataset to choose and the date without arrows where each dataset has one image', () => {
     mount({ A: info('s2'), D: info('dem') });
     expect(dataset()).not.toBeNull();
     expect(stepText()).toBe('2025-07-29');
-    expect(prev()!.getAttribute('aria-disabled')).toBe('true');
-    expect(next()!.getAttribute('aria-disabled')).toBe('true');
+    expect(prev()).toBeNull();
+    expect(next()).toBeNull();
   });
 
-  it('has live arrows for a dataset with several images and greyed out ones for one with a single image', () => {
+  it('has arrows for a dataset with several images, the first locked, and none for one with a single image', () => {
     mount({ ...THREE, D: info('dem') });
-    expect(next()).not.toBeNull();
-    act(() => useAppStore.getState().chooseViewDataset('dem'));
     expect(prev()!.getAttribute('aria-disabled')).toBe('true');
-    expect(next()!.getAttribute('aria-disabled')).toBe('true');
+    expect(prev()!.title).toBe('This is the first image');
+    expect(next()!.getAttribute('aria-disabled')).toBeNull();
+    act(() => useAppStore.getState().chooseViewDataset('dem'));
+    expect(prev()).toBeNull();
+    expect(next()).toBeNull();
     expect(stepText()).toBe('dem');
   });
 });
@@ -324,7 +322,8 @@ describe('an image of three bands', () => {
     mount(THREE);
     expect(colormapField()).toBeDefined();
     expect(colormapOptions()).toEqual(['— none —']);
-    expect(container.querySelectorAll('.vc-num input')).toHaveLength(2);
+    // A range for each channel (UI-03d): vmin and vmax of red, green and blue.
+    expect(container.querySelectorAll('.vc-num input')).toHaveLength(6);
     expect(button('Apply')).toBeDefined();
     expect([...container.querySelector('.vc-render')!.children].map((el) => el.className)).toEqual(['vc-field band-select', 'vc-field vc-scale', 'vc-field', 'vc-opacity', 'vc-buttons']);
   });

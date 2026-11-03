@@ -113,7 +113,8 @@ const type = (input: HTMLInputElement, value: string) =>
 const settle = async () => act(async () => {
   for (let i = 0; i < 6; i++) await Promise.resolve();
 });
-const asked = () => fetchMock.mock.calls.map(([url]) => String(url));
+// The questions of the range; the histograms of "Scale" (UI-03d) are asked on their own.
+const asked = () => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => !url.includes('histogram_bins') && !url.endsWith('/colormaps'));
 
 describe('the switch "value / %"', () => {
   // Otto, 2.11.2026: in the row "Scale", after vmin and vmax, not over a field.
@@ -155,7 +156,7 @@ describe('the switch "value / %"', () => {
     type(inputs()[1], '90');
     click(button('auto-scale'));
     expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(asked()).toEqual([]);
   });
 });
 
@@ -232,7 +233,7 @@ describe('"Apply" with percentiles', () => {
       await settle();
       expect(state().notice, `${low}/${high}`).toBe(problem);
     }
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(asked()).toEqual([]);
     expect(state().appliedRender).toEqual({ rescale: '0,3000' });
   });
 

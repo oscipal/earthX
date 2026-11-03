@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // One band of the data in the view (NM4-45, Otto, 27.10.2026): the dropdown "Band" offers the standard picture ("RGB"), the single
-// bands of the dataset from its item and the registry, and after a line the presets. A band is drawn from its own asset with
+// bands of the dataset from its item and the registry; the presets are in "Quick processing" (UI-03d). A band is drawn from its own asset with
 // its own colormap and range; "Add to layers" keeps it; the show/hide, the choice of scenes and the places of the bars are not
 // touched by it.
 
@@ -128,11 +128,22 @@ const choose = (value: string) =>
 const apply = () => act(() => (container.querySelector('.vc-apply') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const settle = () => act(async () => { await vi.waitFor(() => expect(useAppStore.getState().focusLoading).toBe(false)); await new Promise((r) => setTimeout(r, 10)); });
 const store = () => useAppStore.getState();
+// An index of "Quick processing" (UI-03d), into the fields and drawn with "Apply" (Otto, 3.11.2026).
+const quick = async (name: string) => {
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>('.vc-quick button')].find((b) => b.textContent === name)!.click();
+  });
+  await settle();
+  await act(async () => {
+    await useAppStore.getState().applyRender();
+  });
+  await settle();
+};
 
 describe('the dropdown "Band" of the view', () => {
-  it('lists the standard picture as "RGB", the bands of the item, a line and the presets; the standard picture is chosen to begin with', () => {
+  it('lists the standard picture as "RGB" and the bands of the item, no presets (UI-03d); the standard picture is chosen to begin with', () => {
     mount();
-    expect([...select().options].map((o) => o.textContent)).toEqual(['RGB', 'B04', 'B08', '──────────', 'NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
+    expect([...select().options].map((o) => o.textContent)).toEqual(['RGB', 'B04', 'B08']);
     expect(select().value).toBe('');
   });
 
@@ -223,7 +234,7 @@ describe('choosing a band', () => {
     mount();
     choose('band:B04');
     await settle();
-    choose('index:NDVI');
+    await quick('NDVI');
     expect(select().value).toBe('index:NDVI');
     expect(store().pendingBand).toBe('');
     choose('band:B08');
@@ -332,7 +343,7 @@ describe('a layer pinned with a band', () => {
     expect(store().viewOfLayer).toBe(true);
     expect(select().disabled).toBe(false);
     expect(select().value).toBe('band:B04');
-    expect([...select().options].map((o) => o.textContent)).toEqual(['RGB', 'B04', 'B08', '──────────', 'NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
+    expect([...select().options].map((o) => o.textContent)).toEqual(['RGB', 'B04', 'B08']);
     expect(store().layers[0].restore.appliedRender).toMatchObject({ band: 'B04' });
     // The scenes remember the asset the standard picture comes from.
     expect(Object.values(store().layers[0].restore.downloaded).every((d) => d.baseAsset === 'visual')).toBe(true);
@@ -386,10 +397,7 @@ describe('a layer pinned with a band', () => {
     // The red x of the settings bar (Esc closes nothing, Otto, 2.11.2026).
     act(() => store().selectLayer(store().layers[0].id));
     act(() => root.render(<Inspector />));
-    choose('index:NDVI');
-    await settle();
-    apply();
-    await settle();
+    await quick('NDVI');
     expect(store().layers[0].restore.appliedRender).toMatchObject({ index: 'NDVI' });
     act(() => document.querySelector<HTMLButtonElement>('aside.inspector .close-x')!.click());
     expect(store().viewOfLayer).toBe(false);
@@ -441,10 +449,7 @@ describe('a layer pinned with a band', () => {
 
   it('is drawn with an index from a band, and back, with no quicklook under the index', async () => {
     await pinWithBand();
-    choose('index:NDVI');
-    await settle();
-    apply();
-    await settle();
+    await quick('NDVI');
     expect(store().layers[0].restore.appliedRender).toMatchObject({ index: 'NDVI' });
     expect(store().layers[0].restore.appliedRender.band).toBeUndefined();
     expect(layerAssets()).toEqual(['visual']);

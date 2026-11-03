@@ -81,7 +81,8 @@ body {
   top: 16px;
   left: calc((100% + var(--rail-width)) / 2);
   transform: translateX(-50%);
-  width: min(560px, 90vw);
+  /* Centred on the map right of the rail: no wider than that, or a phone scrolls sideways (UI-03d, seen at 360 px). */
+  width: min(560px, calc(100vw - var(--rail-width) - 16px));
 }
 
 /* --- draggable panels --- */
@@ -499,6 +500,259 @@ body.dragging * {
   background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%23889'/%3E%3C/svg%3E") no-repeat right var(--space-2) center;
   color: var(--muted);
   font-size: var(--text-xs);
+}
+/* A colour picture in values (UI-03d): a row of vmin and vmax for each channel, its letter in front, the switch in the first row. */
+.inspector .vc-scale-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.inspector .vc-channels {
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+}
+.inspector .vc-chip {
+  min-width: var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+}
+.inspector .vc-chip-red {
+  color: var(--channel-red);
+}
+.inspector .vc-chip-green {
+  color: var(--channel-green);
+}
+.inspector .vc-chip-blue {
+  color: var(--channel-blue);
+}
+/* The histogram of a band under its range, with the two sliders over it; the bars between them full, the rest faint. Only the knobs
+   take the pointer, so either can be taken where they overlap the bars of the other. */
+.inspector .range-hists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.inspector .range-hist {
+  position: relative;
+  height: var(--control-height);
+  border-bottom: var(--line-width) solid var(--line);
+  color: var(--accent);
+}
+.inspector .range-hist-red {
+  color: var(--channel-red);
+}
+.inspector .range-hist-green {
+  color: var(--channel-green);
+}
+.inspector .range-hist-blue {
+  color: var(--channel-blue);
+}
+.inspector .range-hist-bars {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.inspector .range-hist-bars rect {
+  fill: currentColor;
+}
+.inspector .range-hist-bars rect.out {
+  opacity: 0.25;
+}
+.inspector .range-hist input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  appearance: none;
+}
+.inspector .range-hist input[type='range']::-webkit-slider-runnable-track {
+  height: 100%;
+  background: none;
+}
+.inspector .range-hist input[type='range']::-moz-range-track {
+  height: 100%;
+  background: none;
+}
+/* The sliders are thin lines (Otto, 3.11.2026); what takes the pointer or a finger is wider than the line and clear around it. */
+.inspector .range-hist input[type='range']::-webkit-slider-thumb {
+  width: var(--space-3);
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(to right, transparent calc(50% - var(--line-width)), var(--text) calc(50% - var(--line-width)), var(--text) calc(50% + var(--line-width)), transparent calc(50% + var(--line-width)));
+  pointer-events: auto;
+  cursor: ew-resize;
+  appearance: none;
+}
+.inspector .range-hist input[type='range']::-moz-range-thumb {
+  width: var(--space-3);
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(to right, transparent calc(50% - var(--line-width)), var(--text) calc(50% - var(--line-width)), var(--text) calc(50% + var(--line-width)), transparent calc(50% + var(--line-width)));
+  pointer-events: auto;
+  cursor: ew-resize;
+}
+.inspector .range-hist input[type='range']:focus-visible::-webkit-slider-thumb {
+  background: linear-gradient(to right, transparent calc(50% - 2 * var(--line-width)), var(--focus) calc(50% - 2 * var(--line-width)), var(--focus) calc(50% + 2 * var(--line-width)), transparent calc(50% + 2 * var(--line-width)));
+}
+.inspector .range-hist input[type='range']:focus-visible::-moz-range-thumb {
+  background: linear-gradient(to right, transparent calc(50% - 2 * var(--line-width)), var(--focus) calc(50% - 2 * var(--line-width)), var(--focus) calc(50% + 2 * var(--line-width)), transparent calc(50% + 2 * var(--line-width)));
+}
+.inspector .range-hist input[type='range']:focus-visible {
+  outline: none;
+}
+/* The name of a layer in the head is renamed in place (Otto, 2.11.2026): the title is a button that looks like the title, the pencil
+   beside it is small and quiet. */
+.inspector .vc-title-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: text;
+}
+.inspector .vc-pencil {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.inspector .vc-pencil:hover {
+  color: var(--text);
+}
+.inspector .vc-rename .pm-rename {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+}
+/* "Remove layer": the bin, as wide as the other actions (Otto, 3.11.2026). */
+.inspector .vc-actions > .vc-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* "Add current view to layers" in two lines, so that it is read in full (Otto, 3.11.2026). */
+.inspector .vc-actions > .vc-copy {
+  white-space: normal;
+  line-height: var(--leading-tight);
+}
+/* The field "Colormap" (UI-03d): the dropdown and "Reverse" beside it, as high as it. */
+.inspector .vc-colormap-row,
+.pp-range .vc-colormap-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.vc-reverse {
+  min-width: var(--control-height);
+  padding: 0 var(--space-2);
+}
+.vc-reverse.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--panel-bg);
+}
+/* All colormaps: a bar over the settings or the processing panel, at the same place; under 900 px the sheet of the settings. */
+.inspector.panel.colormap-picker {
+  z-index: 14;
+  /* Opaque: the processing panel under it does not show through the tint of the panels. */
+  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
+}
+.inspector .vc-back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.inspector .cm-search {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--control-height);
+  box-sizing: border-box;
+  padding: 0 var(--space-2);
+}
+.inspector .cm-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inspector .cm-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2);
+  border: var(--line-width) solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.inspector .cm-item:hover {
+  background: var(--row-hover);
+}
+.inspector .cm-item.on {
+  border-color: var(--accent);
+}
+.inspector .cm-strip {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+}
+.inspector .cm-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* "Quick processing" (Otto, 2.11.2026): small buttons, three in a row; the one that is on is filled. */
+.inspector .vc-quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.inspector .vc-quick > button {
+  min-width: 0;
+  padding: 0 var(--space-1);
+  overflow: hidden;
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+  overflow-wrap: normal;
+}
+.inspector .vc-quick > button.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--panel-bg);
 }
 .inspector .vc-opacity .lm-opacity {
   width: 100%;
@@ -2087,8 +2341,23 @@ input[type='date']:focus-visible {
   grid-row: 1 / span 2;
 }
 .layer-row > [data-col='name'] {
-  grid-column: 2 / -1;
+  grid-column: 2 / -2;
   grid-row: 1;
+}
+/* The pencil that renames the layer, at the end of the line of its name (Otto, 3.11.2026). */
+.layer-row > [data-col='rename'] {
+  grid-column: -2;
+  grid-row: 1;
+}
+.lm-pencil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.lm-renaming .pm-rename {
+  width: 100%;
+  box-sizing: border-box;
 }
 .layer-row > [data-col='eye'] {
   grid-column: 2;
@@ -2121,6 +2390,10 @@ input[type='date']:focus-visible {
 .layer-row > [data-col='remove'] {
   grid-column: 9;
   grid-row: 2;
+  /* The bin of "Remove layer", as in the settings bar (Otto, 3.11.2026). */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .lm-slot {
   display: block;

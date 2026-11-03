@@ -26,6 +26,8 @@ export default defineConfig({
       '/collections': { target: tilerTarget, changeOrigin: true },
       // The tiles of a finished job (M4-13c-5): read by the tiler from the object store.
       '/results': { target: tilerTarget, changeOrigin: true },
+      // The colormaps the tiles take, for the field "Colormap" and its list (UI-03d).
+      '/colormaps': { target: tilerTarget, changeOrigin: true },
     },
   },
   test: {

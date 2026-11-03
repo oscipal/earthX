@@ -72,10 +72,19 @@ class TestARefusedPicture:
         assert response.status_code == 400 and "colormap" in response.json()["detail"], response.text
         assert source.fetched == []
 
-    def test_a_range_for_each_channel_is_a_400_before_the_first_item(self, client, source: Source) -> None:
-        response = client().get(_url(_tiles()[0]) + _bands(*SHOWN) + "&rescale=0,1&rescale=0,2&rescale=0,3")
+    def test_two_ranges_are_a_400_before_the_first_item(self, client, source: Source) -> None:
+        response = client().get(_url(_tiles()[0]) + _bands(*SHOWN) + "&rescale=0,1&rescale=0,2")
         assert response.status_code == 400, response.text
         assert source.fetched == []
+
+    def test_a_range_for_each_channel_draws(self, client) -> None:
+        tile = _tiles()[len(_tiles()) // 2]
+        url = _url(tile).replace(".tif?", ".png?")
+        one = client().get(url + _bands(*SHOWN) + "&rescale=-1,1")
+        three = client().get(url + _bands(*SHOWN) + "&rescale=-1,1&rescale=0,0.2&rescale=-1,1")
+        assert one.status_code == 200 and three.status_code == 200, three.text
+        # Counter-check: the second channel has a range of its own, so the picture is another.
+        assert one.content != three.content
 
     @pytest.mark.parametrize("names", [("red", "nir"), ("red", "red", "nir"), ("red", "nir", "NDVI", "Ratio")])
     def test_two_four_or_a_repeated_band_is_a_400_before_the_first_item(
