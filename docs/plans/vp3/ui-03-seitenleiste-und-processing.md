@@ -270,7 +270,7 @@ Abgerufen am 02.11.2026. Erreichbar waren aus der Sitzung `developer.apple.com` 
 
 ### 7.9 Processing-Manager als schwebendes Fenster (Teil 3, Antwort Otto zu Frage 8)
 
-Gilt für UI-03c; Teil 1 ändert den Manager nicht. Werte [A], mit der Umsetzung im Browser zu bestätigen.
+**Ersetzt am 03.11.2026 (§7.14): Der Manager ist wieder angedockt links; das Fenster, seine gemerkte Lage und die Punkte unten zu Öffnen, Maßen, Verschieben, Gemerkt, Überlagerung und Blatt entfallen. Die Ordnung innen gilt weiter.** Gilt für UI-03c; Teil 1 ändert den Manager nicht. Werte [A], mit der Umsetzung im Browser zu bestätigen.
 
 - **Öffnen:** Der Knopf „Jobs“ der Leiste links öffnet und schließt das Fenster (`aria-pressed`); er öffnet kein Panel links mehr. Zählzahl der laufenden Jobs bleibt am Knopf. Die übrigen Panels links bleiben, wie sie sind, und können gleichzeitig offen sein.
 - **Maße:** Vorgabe 480 × höchstens 640 px (nie höher als das Fenster minus 80 px), Mindestgröße 420 × 320 px, höchstens das Fenster. Erster Platz: oben links in der Karte, rechts neben Leiste und offenem Panel, `top: 64px` (unter der Knopfzeile, wie die Seitenleiste), nicht über der Spalte rechts.
@@ -383,3 +383,11 @@ Im Browser (`http://localhost:5173`, hell und dunkel, breit und schmal):
 8. Ergebnis-Layer mit RGB: drei Zeilen und Histogramme; „Save“ und erneutes Öffnen behalten die drei Bereiche.
 
 Browser-Skripte der Sitzung: `e2e/quick-processing.cjs` (neu; mit `REAL_COLORMAPS=1` gegen den laufenden tiler), nachgezogen `view-index`, `settings-box`, `rgb`, `nm4-65`, `view-steps`, `colormap-apply`.
+
+### 7.14 Nachtrag Otto (03.11.2026, zu UI-03b): Processing-Manager wieder angedockt (ersetzt UI-03c Fenster)
+
+Der Manager („Jobs“) öffnet wieder als Panel links neben der Leiste, wie vor #279, in der Breite der übrigen Panels (`--dock-width`, 340 px); der Knopf „Jobs“ der Leiste ist wieder einer der vier Panelknöpfe (`aria-expanded`). Entfallen: das schwebende Fenster (`JobsWindow`), Verschieben und Größe, die gemerkte Lage (`earthx.jobsWindow`, `jobsWindow.ts`), das Blatt unter 900 px und die Reihenfolge „zuletzt geöffnet oben“. Die Ordnung innen bleibt: Spalten Status · Titel · Datum · Aktionen, Gruppenköpfe mit Anzahl und „n running“, Seltenes im „⋯“.
+
+- **Zeilenform bei 340 px (Auslegung, Frage an Otto):** In 324 px Listenbreite passen vier Spalten nicht in eine Zeile, ohne den Titel auf rund 30 px zu kürzen. Die vorhandene schmale Form (`@container (max-width: 440px)`: Status und Datum unter dem Titel, Aktionen rechts) greift deshalb im Dock; die Plätze bleiben je Zeile fest. Die vier Spalten in einer Zeile gelten erst ab 440 px Breite. Alternative: Status und Datum kürzen („10 Nov“, nur ein Symbol), dann passt eine Zeile mit rund 100 px Titel.
+- Der alte Eintrag `earthx.jobsWindow` bleibt unbenutzt im Browser liegen; er wird nicht gelöscht.
+

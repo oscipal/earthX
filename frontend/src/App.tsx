@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 
 import AppRail from './components/AppRail';
 import BasemapMenu from './components/BasemapMenu';
@@ -6,10 +6,10 @@ import ControlPanel from './components/ControlPanel';
 import DownloadDialog from './components/DownloadDialog';
 import ColormapPicker from './components/ColormapPicker';
 import Inspector from './components/Inspector';
-import JobsWindow from './components/JobsWindow';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
 import PreviewBadge from './components/PreviewBadge';
+import ProcessingManager from './components/ProcessingManager';
 import ProcessingPanel from './components/ProcessingPanel';
 import ResultsPanel from './components/ResultsPanel';
 import SelectionBlock from './components/SelectionBlock';
@@ -20,19 +20,6 @@ import { inspectorKindOf } from './inspectorKind';
 import { openPermalinkInAddress } from './permalink';
 import { useProcessingStore } from './processingStore';
 import { ticksOfSearch, useAppStore } from './store';
-
-// Under 900 px the settings bar, the processing panel and the jobs are sheets from the bottom and cover each other: the one opened last is on top.
-function useJobsInFront(managerOpen: boolean, inspectorOpen: boolean, processingOpen: boolean): boolean {
-  const [jobsFront, setJobsFront] = useState(true);
-  const was = useRef({ managerOpen, inspectorOpen, processingOpen });
-  useEffect(() => {
-    const before = was.current;
-    if (managerOpen && !before.managerOpen) setJobsFront(true);
-    else if ((inspectorOpen && !before.inspectorOpen) || (processingOpen && !before.processingOpen)) setJobsFront(false);
-    was.current = { managerOpen, inspectorOpen, processingOpen };
-  }, [managerOpen, inspectorOpen, processingOpen]);
-  return jobsFront;
-}
 
 export default function App() {
   const loadDatasets = useAppStore((s) => s.loadDatasets);
@@ -52,8 +39,6 @@ export default function App() {
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const processingOpen = useProcessingStore((s) => s.open);
-  const managerOpen = useProcessingStore((s) => s.managerOpen);
-  const jobsFront = useJobsInFront(managerOpen, inspectorOpen, processingOpen);
   const resumeJobs = useProcessingStore((s) => s.resumeJobs);
 
   // `?permalink=` is opened once the datasets are there: loading them resets the selection.
@@ -67,14 +52,14 @@ export default function App() {
   }, [resumeJobs]);
 
   return (
-    <div className={`app${inspectorOpen && !processingOpen ? ' has-inspector' : ''}${processingOpen ? ' has-sheet' : ''}${managerOpen && jobsFront ? ' jobs-front' : ''}`} data-theme={theme}>
+    <div className={`app${inspectorOpen && !processingOpen ? ' has-inspector' : ''}${processingOpen ? ' has-sheet' : ''}`} data-theme={theme}>
       <MapView />
 
       <AppRail />
       <TipLayer />
 
       {/* The control menu, the layer manager and the results stay mounted (what they hold survives a change
-          of panel). The jobs are a floating window of their own, below. */}
+          of panel); the job manager follows jobs, so it exists only while it is open. */}
       <div className="overlay dock" hidden={!dock}>
         <div className="dock-slot" id={dockPanelId('controls')} hidden={dock !== 'controls'}>
           <ControlPanel />
@@ -85,6 +70,11 @@ export default function App() {
         <div className="dock-slot" id={dockPanelId('results')} hidden={dock !== 'results'}>
           <ResultsPanel />
         </div>
+        {dock === 'jobs' && (
+          <div className="dock-slot" id={dockPanelId('jobs')}>
+            <ProcessingManager />
+          </div>
+        )}
       </div>
 
       <div className={`overlay top-right${processingOpen ? ' beside-sheet' : ''}`}>
@@ -122,8 +112,6 @@ export default function App() {
 
       <Inspector />
       <ColormapPicker />
-
-      {managerOpen && <JobsWindow />}
 
       {processingOpen && (
         <div className="overlay processing-sheet">

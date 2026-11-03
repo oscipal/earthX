@@ -2724,23 +2724,9 @@ input[type='date']:focus-visible {
   border-left: none;
 }
 
-/* --- the processing manager, a window of its own (UI-01 §6.10, UI-03c) ---
-   A floating window over the map (`JobsWindow.tsx`): the head drags it, a handle at the right edge, the bottom edge and the corner pulls it to
-   size. Inside, every row has the same places: status, title, date, actions; a group is a head row with a count and what runs. Under 900 px it
-   is a sheet from the bottom like the settings bar. Spacing, type and radii come from `tokens.css` (`tokens.test.ts` checks them). */
-.jobs-window {
-  position: absolute;
-  z-index: 13;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-.jobs-window .processing-manager {
-  flex: 1 1 auto;
-  min-height: 0;
-  border-radius: var(--radius-md);
-}
+/* --- the processing manager (UI-01 §6.10, UI-03c) ---
+   Docked at the left beside the rail, as wide as the other panels. Every row has the same places: status, title, date, actions; a
+   group is a head row with a count and what runs. Spacing, type and radii come from `tokens.css` (`tokens.test.ts` checks them). */
 .processing-manager {
   display: flex;
   flex-direction: column;
@@ -2750,61 +2736,6 @@ input[type='date']:focus-visible {
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   min-height: var(--control-height);
-}
-.windowed .pm-head {
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-.windowed .pm-head:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: calc(var(--space-1) * -1);
-}
-body.dragging .windowed .pm-head {
-  cursor: grabbing;
-}
-.pm-head h2 {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-/* The grip of a window: two columns of three dots, as in the layer manager. */
-.pm-grip {
-  flex: none;
-  width: var(--space-2);
-  height: var(--space-3);
-  background: radial-gradient(circle, var(--muted) 1px, transparent 1.5px) 0 0 / var(--space-2) var(--space-1);
-  opacity: 0.8;
-}
-.windowed .results-head-right {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.jw-handle {
-  position: absolute;
-  touch-action: none;
-}
-.jw-handle.e {
-  top: var(--space-4);
-  right: 0;
-  bottom: var(--space-4);
-  width: var(--space-2);
-  cursor: ew-resize;
-}
-.jw-handle.s {
-  right: var(--space-4);
-  bottom: 0;
-  left: var(--space-4);
-  height: var(--space-2);
-  cursor: ns-resize;
-}
-.jw-handle.se {
-  right: 0;
-  bottom: 0;
-  width: var(--space-4);
-  height: var(--space-4);
-  cursor: nwse-resize;
 }
 .pm-tools {
   display: flex;
@@ -3137,42 +3068,6 @@ a.pm-icon:hover {
   .pm-tag {
     grid-column: 1;
     grid-row: 3;
-  }
-}
-/* Under 900 px: a sheet from the bottom, from the rail to the right edge, at most 55 % high, with the grip of the settings bar. The one opened
-   last lies on top (`.jobs-front`). */
-@media (max-width: 899px) {
-  .jobs-window.sheet {
-    right: 0;
-    bottom: 0;
-    left: var(--rail-width);
-    z-index: 11;
-    max-height: 55vh;
-  }
-  .jobs-front .jobs-window.sheet {
-    z-index: 13;
-  }
-  .jobs-window.sheet .processing-manager {
-    border-width: var(--line-width) 0 0;
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
-  }
-  .jobs-window.sheet .pm-grip {
-    display: none;
-  }
-  .jobs-window.sheet .pp-grip {
-    display: block;
-    flex: none;
-  }
-  .jobs-window.sheet.folded .pm-tools,
-  .jobs-window.sheet.folded .pm-list,
-  .jobs-window.sheet.folded .pm-note {
-    display: none;
-  }
-  .jobs-window.sheet.folded .pm-head {
-    border-bottom: 0;
-  }
-  .pm-icon[aria-hidden='true'] {
-    display: none;
   }
 }
 /* Job details in the processing panel (UI-03b). */

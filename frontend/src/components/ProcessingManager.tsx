@@ -5,14 +5,13 @@
 // the focus or else the one under the pointer, with no click first (never while a field has the keys); the arrow
 // keys go from row to row.
 
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type HTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, type ShelfGroup } from '../jobShelf';
 import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter, type JobFilter } from '../preferences';
 import { isJobId } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
-import CloseButton from './CloseButton';
 import DownloadAll from './DownloadAll';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
@@ -824,13 +823,7 @@ const emptyText = (filter: JobFilter, total: number): string =>
         ? 'No deleted jobs.'
         : 'No active jobs.';
 
-// In its window (`JobsWindow.tsx`) the head is the handle to drag by and carries the red x.
-export interface WindowChrome {
-  headProps: HTMLAttributes<HTMLDivElement>;
-  onClose: () => void;
-}
-
-export default function ProcessingManager({ chrome }: { chrome?: WindowChrome }) {
+export default function ProcessingManager() {
   // A focus still due when the manager closes is not wanted any more.
   useEffect(() => () => clearTimeout(refocusTimer), []);
   useEffect(() => {
@@ -884,16 +877,12 @@ export default function ProcessingManager({ chrome }: { chrome?: WindowChrome })
   ].filter((section) => section.group !== null || section.entries.length > 0 || groups.length > 0);
 
   return (
-    <div className={`panel processing-manager${chrome ? ' windowed' : ' dock-panel'}`} role="region" aria-label="Processing jobs">
-      <div className="results-head pm-head" {...chrome?.headProps}>
-        <h2>
-          {chrome && <span className="pm-grip" aria-hidden="true" />}
-          Jobs
-        </h2>
+    <div className="panel dock-panel processing-manager" role="region" aria-label="Processing jobs">
+      <div className="results-head pm-head">
+        <h2>Jobs</h2>
         <div className="results-head-right">
           <Tip text={KEPT_HERE_TIP} />
           {shelf === 'trimmed' && <Tip text={STORAGE_FULL_TIP} symbol="⚠" tone="warn" />}
-          {chrome && <CloseButton onClick={chrome.onClose} />}
         </div>
       </div>
       <div className="pm-tools">

@@ -71,10 +71,10 @@ async function check(browser, { theme, viewport }) {
       ].map((j) => ({ ...j, status: { jobID: j.jobID, status: j.phase === 'dismissed' ? 'dismissed' : j.phase === 'successful' ? 'successful' : 'failed', message: '', progress: 100, expires: j.expires } })),
     });
   });
-  // Through the rail, as a user does: the symbol of the jobs opens the floating window (UI-03c).
+  // Through the rail, as a user does; the page sets its own panel at the start, so this waits for that to settle.
   await page.waitForTimeout(1500);
   const rail = page.locator('nav[aria-label="Main"] button[aria-label^="Processing jobs"]');
-  if ((await rail.getAttribute('aria-pressed')) !== 'true') await rail.click();
+  if ((await rail.getAttribute('aria-expanded')) !== 'true') await rail.click();
   await page.waitForSelector('.processing-manager .pm-row');
 
   // The row, the symbols and the layout.
@@ -84,7 +84,7 @@ async function check(browser, { theme, viewport }) {
   if (JSON.stringify(found) !== JSON.stringify(want)) problems.push(`the symbols under "Active": ${JSON.stringify(found)}, not ${JSON.stringify(want)}`);
   const layout = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
-    return [...document.querySelectorAll('.pm-rows > .pm-row > .pm-line')].map((line) => ({ line: box(line), leaves: [...line.children].map((e) => ({ what: e.getAttribute('aria-label') ?? e.textContent?.slice(0, 12), ...box(e) })).filter((e) => e.width > 0), scrolls: line.scrollWidth > line.clientWidth + 1 }));
+    return [...document.querySelectorAll('.pm-rows > .pm-row > .pm-line')].map((line) => ({ line: box(line), leaves: [...line.children].map((e) => ({ what: e.getAttribute('aria-label') ?? e.textContent?.slice(0, 12), ...box(e) })), scrolls: line.scrollWidth > line.clientWidth + 1 }));
   });
   for (const row of layout) {
     for (let i = 0; i < row.leaves.length; i++) {
