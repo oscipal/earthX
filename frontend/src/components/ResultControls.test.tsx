@@ -551,11 +551,13 @@ describe('"Copy original scene name" of a result layer', () => {
     expect(copyLine()!.textContent).toBe('Copied');
   });
 
-  it('is under the title, before the row of the date', async () => {
+  it('is in the row of the date, at its end', async () => {
     useProcessingStore.setState({ jobs: [entry({ order: ordered([['S2A_1']]) })] });
     await openView();
     const head = container.querySelector('.result-controls .vc-head')!;
-    expect([...head.children].map((el) => (el.classList.contains('vc-scene-names') ? 'copy' : el.classList.contains('insp-row2') ? 'row2' : 'row1'))).toEqual(['row1', 'copy', 'row2']);
+    expect(head.children).toHaveLength(2);
+    expect(copyLine()!.parentElement).toBe(head.children[1]);
+    expect(head.children[1].classList.contains('insp-row2')).toBe(true);
     expect(copyLine()!.title).toBe('Copy the name of the original scene');
   });
 

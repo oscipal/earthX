@@ -69,13 +69,15 @@ const press = async () => {
 };
 
 describe('the view', () => {
-  it('has the line under the title, and copies the name of its one scene', async () => {
+  it('has the line in the row of the date, and copies the name of its one scene', async () => {
     mount(['S2A_1']);
     expect(line()!.textContent).toBe('Copy original scene name');
     expect(line()!.title).toBe('Copy the name of the original scene');
-    // Under the title: after the row of the title, before the row of the date.
-    const head = container.querySelector('.vc-head')!;
-    expect([...head.children].indexOf(line()!)).toBe(1);
+    // In the row of the date, after the arrows (Otto, 3.11.2026).
+    const row = line()!.parentElement!;
+    expect(row.classList.contains('insp-row2')).toBe(true);
+    expect(row.querySelector('.vc-stepper')).not.toBeNull();
+    expect(row.lastElementChild).toBe(line());
     await press();
     expect(write).toHaveBeenCalledWith('S2A_1');
     expect(line()!.textContent).toBe('Copied');

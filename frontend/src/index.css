@@ -1364,10 +1364,15 @@ input[type='date']:focus-visible {
 .hint-text.error {
   color: #ff6b6b;
 }
-/* "Copy original scene name" under the title of a view or a layer (Otto, 3.11.2026): small, quiet, a link in all but name. */
+/* "Copy original scene name" at the end of the row of the date (Otto, 3.11.2026): small, quiet, a link in all but name; where the row is
+   too narrow it is cut with "…". */
 .inspector .vc-scene-names {
-  align-self: flex-start;
-  margin: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 0 0 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0;
   border: 0;
   background: none;

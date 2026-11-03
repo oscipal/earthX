@@ -167,10 +167,8 @@ describe('the places', () => {
     expect(aside()!.classList.contains('panel')).toBe(true);
     // Row 1 of the head holds the title and the red x; row 2 is there whatever it holds.
     const head = aside()!.querySelector('.vc-head')!;
-    // The small line "Copy original scene name" stands between them where there are scenes to copy (Otto, 3.11.2026).
-    const rows = [...head.children].filter((el) => el.classList.contains('insp-row'));
-    expect(rows).toHaveLength(2);
-    expect([...head.children].filter((el) => !el.classList.contains('insp-row')).every((el) => el.classList.contains('vc-scene-names'))).toBe(true);
+    expect(head.children).toHaveLength(2);
+    const rows = [...head.children];
     expect(rows[0].querySelector('.vc-title')).not.toBeNull();
     expect(rows[0].querySelector('.close-x')).not.toBeNull();
     expect(rows[1].classList.contains('insp-row2')).toBe(true);
@@ -204,9 +202,10 @@ describe('the places', () => {
   it('puts the title, the mark, the eye and the x of the view of the search in row 1, and the dataset and the time step in row 2', () => {
     act(() => root.render(<Inspector />));
     openView();
-    const [one, two] = [...aside()!.querySelector('.vc-head')!.children].filter((row) => row.classList.contains('insp-row')).map((row) => [...row.children].map((el) => el.className));
+    const [one, two] = [...aside()!.querySelector('.vc-head')!.children].map((row) => [...row.children].map((el) => el.className));
     expect(one).toEqual(['vc-title', 'pp-badge vc-temporary', 'vc-eye', 'close-x']);
-    expect(two).toEqual(['vc-stepper']);
+    // "Copy original scene name" ends the row of the date (Otto, 3.11.2026).
+    expect(two).toEqual(['vc-stepper', 'vc-scene-names']);
   });
 
   // Otto, 2.11.2026: no arrows beside the date where there is only one.

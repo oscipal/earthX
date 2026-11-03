@@ -21,7 +21,7 @@ interface HeadProps {
   onClose: () => void;
   // The tooltip of the x, where closing does more than close.
   closeTitle?: string;
-  // Small under the title, before row 2: "Copy original scene name" (Otto, 3.11.2026); no row without it.
+  // "Copy original scene name" (Otto, 3.11.2026): small, at the end of row 2, in the row of the date.
   copy?: ReactNode;
   // Row 2; the row keeps its height when it is empty.
   children?: ReactNode;
@@ -69,8 +69,10 @@ export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy
         {eye}
         <CloseButton onClick={onClose} title={closeTitle} />
       </div>
-      {copy}
-      <div className="insp-row insp-row2">{children}</div>
+      <div className="insp-row insp-row2">
+        {children}
+        {copy}
+      </div>
     </div>
   );
 }
