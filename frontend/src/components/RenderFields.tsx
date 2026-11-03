@@ -195,6 +195,7 @@ function ScaleRow({ vmin, vmax, placeholder, percent, unit, channels, below }: {
             {unit && <UnitSelect unit={unit} />}
           </div>
         )}
+        {vmax.after}
         {below}
       </div>
     </div>

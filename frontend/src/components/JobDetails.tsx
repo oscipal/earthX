@@ -12,7 +12,7 @@ import { orderRetired, useProcessingStore, type JobEntry } from '../processingSt
 import { useAppStore } from '../store';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
-import { canRestore, canRetry, failsAgain, formatUntil, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
+import { canRestore, canRetry, formatUntil, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
 import CloseButton from './CloseButton';
 
 export const NO_COPY_TIP = 'No copy of this order is kept: it was too large, or the browser ran out of room.';
@@ -172,7 +172,7 @@ export default function JobDetails() {
         >
           {folded ? '▴' : '▾'}
         </button>
-        <div className="vc-head">
+        <div className="pp-title-row">
           <button type="button" className="link-btn" title="Back to the order" onClick={back}>
             ‹ Order
           </button>
@@ -235,7 +235,7 @@ export default function JobDetails() {
                   title="Draw the result on the map, cut to the area of the job, as a layer"
                   onClick={() => void showOnMap(job.jobID)}
                 >
-                  Show on map
+                  ＋ Add to layers
                 </button>
               )}
               {active && (
@@ -261,7 +261,7 @@ export default function JobDetails() {
                   ↻
                 </button>
               )}
-              {(state.key === 'expired' || state.key === 'unavailable' || (state.key === 'failed' && (failsAgain(job.failureKind) || job.retryRefused || !job.order))) && <OpenInPanel job={job} />}
+              <OpenInPanel job={job} />
             </div>
           </>
         )}

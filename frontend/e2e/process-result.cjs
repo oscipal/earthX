@@ -63,6 +63,8 @@ async function open(browser, theme, viewport) {
 
 // A scene, a finished job with the order it was started with, and its result as a layer.
 async function setUp(page, withOrder) {
+  // The page restores the jobs of its tab at the start; what is set before that is lost.
+  await page.waitForTimeout(1500);
   await page.evaluate(
     async ({ collection, job, result, withOrder }) => {
       const { useAppStore } = await import('/src/store.ts');
@@ -104,7 +106,7 @@ async function setUp(page, withOrder) {
     },
     { collection: COLLECTION, job: JOB, result: RESULT, withOrder },
   );
-  await page.waitForSelector('.layer-row [data-col="process"]', { timeout: 10000 });
+  await page.waitForSelector('.layer-row [data-col="process"]', { timeout: 10000, state: 'attached' });
 }
 
 const gear = (page) => page.locator('.layer-row [data-col="process"]');
@@ -119,7 +121,9 @@ async function check(browser, theme, viewport) {
     const { context, page } = await open(browser, theme, viewport);
     await setUp(page, false);
     if ((await gear(page).evaluate((e) => e.tagName)) !== 'SPAN') problems.push('there is a ⚙ without the order of the job');
-    if ((await page.locator('.layer-row').first().locator(':scope > *').count()) !== 10) problems.push('the row lost a place without ⚙');
+    const places = await page.locator('.layer-row').first().locator(':scope > *').count();
+    // grip, eye, name, pencil (UI-03d), opacity, up, down, ⚙, note, trash: ten places and the gap of the ⚙, which stays
+    if (places !== 11) problems.push(`the row has ${places} places, not 11 (the one of ⚙ stays empty)`);
     await context.close();
   }
 

@@ -3,7 +3,6 @@
 // sent to the backend — the tile URLs are unaffected by any of them (D27).
 
 import { BASEMAP_IDS, DEFAULT_BASEMAP, type BasemapId } from './basemaps';
-import { parseBox, type Box } from './jobsWindow';
 import { NO_OVERLAYS, OVERLAY_IDS, type Overlays } from './overlays';
 
 export type Theme = 'tech' | 'normal';
@@ -24,7 +23,6 @@ const THEMES: readonly Theme[] = ['tech', 'normal'];
 export const PROJECTIONS: readonly Projection[] = ['mercator', 'globe'];
 const JOB_FILTERS: readonly JobFilter[] = ['active', 'expired', 'deleted', 'all'];
 const COLLAPSED_GROUPS_KEY = 'earthx.jobgroups.collapsed';
-const JOBS_WINDOW_KEY = 'earthx.jobsWindow';
 
 function readStored<T extends string>(key: string, valid: readonly T[], fallback: T): T {
   let raw: string | null;
@@ -104,18 +102,15 @@ export function saveJobFilter(filter: JobFilter): void {
   writeStored(JOB_FILTER_KEY, filter);
 }
 
-// Where the floating window of the jobs stood and how large it was (UI-03c): `{x, y, width, height}` in pixels. A storage
-// that is empty, cannot be read, or holds anything else than four fitting numbers gives `null`: the first place.
-export function loadJobsWindow(): Box | null {
+// The place and size the floating window of the jobs kept (UI-03c, gone again with #283): the old entry is deleted once at the start. A
+// storage that is locked or throws leaves it where it is, without a message.
+const JOBS_WINDOW_KEY = 'earthx.jobsWindow';
+export function forgetJobsWindow(): void {
   try {
-    return parseBox(JSON.parse(window.localStorage.getItem(JOBS_WINDOW_KEY) ?? 'null'));
+    window.localStorage.removeItem(JOBS_WINDOW_KEY);
   } catch {
-    return null;
+    /* storage disabled or locked: the entry stays, nothing reads it */
   }
-}
-
-export function saveJobsWindow(box: Box): void {
-  writeStored(JOBS_WINDOW_KEY, JSON.stringify({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height) }));
 }
 
 // The groups of the job manager that are folded up: their ids, and `ungrouped` for the jobs without a group.

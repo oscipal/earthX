@@ -227,7 +227,7 @@ async function flush() {
 
 const store = () => useProcessingStore.getState();
 const button = (label: string | RegExp, within: Element = container) =>
-  [...within.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? '')));
+  [...within.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.textContent ?? '')));
 const click = (element: HTMLElement | undefined) => {
   if (!element) throw new Error(`nothing to click in ${container.textContent}`);
   act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
@@ -595,7 +595,7 @@ describe('the panel from a result', () => {
     // The first step shown has nothing to move up to, and the steps of the job are not among them.
     const forms = [...container.querySelectorAll('.pp-step')];
     expect(forms).toHaveLength(2);
-    expect((button(/Up/u, forms[0]) as HTMLButtonElement).disabled).toBe(true);
+    expect((button('Move up', forms[0]) as HTMLButtonElement).disabled).toBe(true);
     expect(forms[0].getAttribute('aria-label')).toBe('Step 1: Band math');
   });
 

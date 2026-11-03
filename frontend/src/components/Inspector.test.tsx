@@ -666,6 +666,12 @@ describe('the sheet under 900 px', () => {
 });
 
 describe('in the page', () => {
+  it('deletes the stored place of the old floating window of the jobs when it starts', () => {
+    localStorage.setItem('earthx.jobsWindow', '{"x":1,"y":1,"width":480,"height":400}');
+    act(() => root.render(<App />));
+    expect(localStorage.getItem('earthx.jobsWindow')).toBeNull();
+  });
+
   it('marks the app while the bar shows, so that the bands and the map controls make room, and not while the processing panel has the column', () => {
     act(() => root.render(<App />));
     const app = () => container.querySelector('.app')!;
@@ -674,12 +680,15 @@ describe('in the page', () => {
     expect(app().classList.contains('has-inspector')).toBe(true);
     act(() => useProcessingStore.setState({ open: true }));
     expect(app().classList.contains('has-inspector')).toBe(false);
+    // The wide sheet has its own mark, for the map controls and the status line (UI-03b).
+    expect(app().classList.contains('has-sheet')).toBe(true);
     expect(container.querySelector('.processing-sheet')).not.toBeNull();
     expect(container.querySelector('.overlay.bottom')!.classList.contains('beside-sheet')).toBe(true);
     // The buttons at the top stand left of the panel, which reaches the top (Otto, 2.11.2026).
     expect(container.querySelector('.overlay.top-right')!.classList.contains('beside-sheet')).toBe(true);
     act(() => useProcessingStore.setState({ open: false }));
     expect(app().classList.contains('has-inspector')).toBe(true);
+    expect(app().classList.contains('has-sheet')).toBe(false);
     act(() => state().exitFocus());
     expect(app().classList.contains('has-inspector')).toBe(false);
   });
