@@ -1,7 +1,8 @@
 // UI-03d in a real browser (Otto, 2.11.2026): "Quick processing", the histograms of "Scale", the list of colormaps and the actions of a
 // layer in the settings bar. In the light and the dark theme, at 1280 x 800 and 360 x 740; a screenshot per case.
 //   1. "Quick processing" stands between "Display" and "Actions", three buttons in a row, two rows, all of one width; an index goes into
-//      the fields, the button is on, and "Apply" draws it (Otto, 3.11.2026); "Enhance contrast" stretches each channel on its own (three ranges in the look) and is on.
+//      the fields, the button is on, and "Apply" draws it (Otto, 3.11.2026); "Enhance contrast" puts a range for each channel into the fields, is on,
+//      and "Apply" draws the three ranges (UI-03e). The view measures over the AOI (`POST …/statistics`), as since UI-03e.
 //   2. RGB has three histograms (red, green, blue) with a row of vmin and vmax each; an index has one. Nothing lies outside the bar and
 //      nothing scrolls sideways.
 //   3. "More…" opens the list of all colormaps in the place of the bar, with previews; a click chooses and goes back, the choice stands in
@@ -44,6 +45,13 @@ const bell = (low, high, centre) => {
 const band = (low, high, centre) => ({ min: low, max: high, percentile_2: low + (high - low) * 0.1, percentile_98: low + (high - low) * 0.8, histogram: bell(low, high, centre) });
 const VISUAL = { b1: band(0, 2000, 20), b2: band(0, 2500, 28), b3: band(0, 3000, 36) };
 const INDEX = { NDVI: band(-0.4, 0.9, 40) };
+// The answer of `POST /collections/{dataset}/statistics`, by which the view measures over the AOI since UI-03e: the same bands, by name,
+// with `minimum`/`maximum` in the place of `min`/`max`. The order of a band math step asks for the index, any other for the bands.
+const areaAnswer = (byBand) => ({
+  bands: Object.entries(byBand).map(([name, { min, max, ...rest }]) => ({ name, unit: null, statistics: { minimum: min, maximum: max, mean: (min + max) / 2, valid_percent: 100, ...rest } })),
+  exact: true,
+  factor: 1,
+});
 const strip = (from, to) => Array.from({ length: 16 }, (_, i) => `#${[0, 1, 2].map((c) => Math.round(from[c] + ((to[c] - from[c]) * i) / 15).toString(16).padStart(2, '0')).join('')}`);
 const entry = (name, from, to) => ({ name, reversed: `${name}_r`, colors: strip(from, to) });
 const COLORMAPS = {
@@ -68,6 +76,10 @@ async function open(browser, theme, viewport) {
     // REAL_COLORMAPS=1: the list of a tiler that runs behind the dev server (`/colormaps` is proxied to it).
     if (url.pathname === '/colormaps') return process.env.REAL_COLORMAPS ? route.continue() : json(COLORMAPS);
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0', bounds: FOOTPRINT, minzoom: 8, maxzoom: 14, 'earthx:order': SCENES });
+    if (route.request().method() === 'POST' && url.pathname.endsWith('/statistics')) {
+      const order = JSON.parse(route.request().postData() ?? '{}');
+      return json(areaAnswer(order.steps?.some((step) => step.op === 'band_math') ? INDEX : VISUAL));
+    }
     if (url.pathname.includes('/statistics')) return json(url.search.includes('op=band_math') ? INDEX : VISUAL);
     if (url.pathname.includes('/tiles/')) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     return json({ detail: 'not made up' }, 404);
@@ -146,7 +158,11 @@ async function runCase(browser, theme, viewport, results) {
     let b = await bounds(page, 'aside.inspector:not(.colormap-picker)');
     if (b.sideways || b.outside.length) fail(`rgb: ${JSON.stringify(b)}`);
     await shot('rgb');
+    // "Enhance contrast" fills the fields like an index; "Apply" draws them (Otto, UI-03e, 3.11.2026).
     await page.locator('.inspector .vc-quick button', { hasText: 'Enhance contrast' }).click();
+    await settle(page);
+    if ((await store(page, (s) => s.appliedRender.rescale)) !== '0,3000') fail('"Enhance contrast" drew before "Apply"');
+    await page.locator('.inspector .vc-apply').click();
     await settle(page);
     const enhanced = await store(page, (s) => s.appliedRender.rescale);
     if (!enhanced || enhanced.split(';').length !== 3) fail(`enhance: ${enhanced}`);
