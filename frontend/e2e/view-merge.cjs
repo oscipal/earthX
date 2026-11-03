@@ -148,6 +148,8 @@ async function run(browser, theme, viewport, results) {
     const both = await page.evaluate(() => navigator.clipboard.readText());
     if (both !== 'SCENE_A1\nSCENE_A2') problems.push(`the clipboard holds ${JSON.stringify(both)} for the merged image`);
     if (page.url() !== url) problems.push('the address changed');
+    const [lineBox, dateBox] = [await line.boundingBox(), await page.locator('.inspector .vc-head .vc-stepper').boundingBox()];
+    if (!(lineBox.x + lineBox.width <= dateBox.x + 1) || Math.abs(lineBox.y + lineBox.height / 2 - (dateBox.y + dateBox.height / 2)) > 12) problems.push('the line is not left of the date in its row');
     await shot('copied');
   } else {
     // The narrow window: the line stands under the title and nothing lies outside the bar.
@@ -155,6 +157,9 @@ async function run(browser, theme, viewport, results) {
     if ((await line.count()) !== 1) problems.push('no line "Copy original scene name"');
     const box = await line.boundingBox();
     const bar = await page.locator('.inspector').boundingBox();
+    // The date keeps the right end of the row, the line stands left of it, in the same row.
+    const stepper = await page.locator('.inspector .vc-head .vc-stepper').boundingBox().catch(() => null);
+    if (stepper && (!(box.x + box.width <= stepper.x + 1) || Math.abs(box.y + box.height / 2 - (stepper.y + stepper.height / 2)) > 12)) problems.push('the line is not left of the date in its row');
     if (box && (box.x + box.width > bar.x + bar.width + 1 || box.x < bar.x - 1)) problems.push('the line lies outside the bar');
     await shot('narrow');
   }

@@ -8,6 +8,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from '../datasets';
+import CSS from '../index.css?raw';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import ViewerControls from './ViewerControls';
@@ -73,11 +74,16 @@ describe('the view', () => {
     mount(['S2A_1']);
     expect(line()!.textContent).toBe('Copy original scene name');
     expect(line()!.title).toBe('Copy the name of the original scene');
-    // In the row of the date, after the arrows (Otto, 3.11.2026).
+    // In the row of the date, left of it: the date keeps the right end (Otto, 3.11.2026). The order is the style's.
     const row = line()!.parentElement!;
     expect(row.classList.contains('insp-row2')).toBe(true);
     expect(row.querySelector('.vc-stepper')).not.toBeNull();
-    expect(row.lastElementChild).toBe(line());
+    const rule = (selector: string) => CSS.slice(CSS.indexOf(`\n${selector} {`), CSS.indexOf('}', CSS.indexOf(`\n${selector} {`)));
+    expect(rule('.inspector .vc-scene-names')).toContain('order: -1');
+    expect(rule('.inspector .vc-scene-names')).not.toMatch(/margin:[^;]*auto/u);
+    expect(rule('.inspector .vc-stepper')).toContain('margin-left: auto');
+    // And the dataset, where there is one, stays first of the three.
+    expect(rule('.inspector .insp-row2 .vc-dataset')).toContain('order: -2');
     await press();
     expect(write).toHaveBeenCalledWith('S2A_1');
     expect(line()!.textContent).toBe('Copied');

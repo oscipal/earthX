@@ -1364,12 +1364,17 @@ input[type='date']:focus-visible {
 .hint-text.error {
   color: #ff6b6b;
 }
-/* "Copy original scene name" at the end of the row of the date (Otto, 3.11.2026): small, quiet, a link in all but name; where the row is
+/* "Copy original scene name" in the row of the date, left of it (Otto, 3.11.2026): small, quiet, a link in all but name; where the row is
    too narrow it is cut with "…". */
+.inspector .insp-row2 .vc-dataset {
+  order: -2;
+}
 .inspector .vc-scene-names {
+  /* Left of the date, which keeps the right end of the row (Otto, 3.11.2026): after the dataset, before the stepper. */
+  order: -1;
   flex: 0 1 auto;
   min-width: 0;
-  margin: 0 0 0 auto;
+  margin: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
