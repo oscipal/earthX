@@ -3,10 +3,8 @@
 // from here. The rules of the file names and of BANDS.txt are those of `backend/earthx/access/band_export.py`.
 
 import type { DownloadForm } from './api';
-import { assetGsdMeters, type DownloadRequestInfo } from './download';
+import type { DownloadRequestInfo } from './download';
 import type { ExportLayout } from './processing';
-import { auxiliaryAssetsOf, bandSources, bandsOf, maskLayerOf, registryUnit } from './processingOrder';
-import type { Collection, StacAsset, StacItem } from './types';
 
 export const DEFAULT_FORM: DownloadForm = 'per_band';
 
@@ -20,14 +18,15 @@ export function formText(form: DownloadForm): string {
   return { per_band: 'one file per band', per_resolution: 'one file per resolution', multi_band: 'one multi-band file' }[form];
 }
 
-// One asset of the item as a band of the data: what the item says of it, and what the registry says of its kind.
+// One asset of the scenes as a band of the data, as the platform describes it (`POST /collections/{dataset}/bands`, `fetchBands` in
+// `api.ts`): the table is the platform's, the frontend reads no property of an item for it.
 export interface DownloadBand {
   asset: string;
   name: string;
   commonName: string | null;
   // Micrometres, as the item gives it.
   wavelength: number | null;
-  // Metres per pixel; `null` where the item does not say.
+  // Metres per pixel, the finest over the scenes; `null` where the item does not say.
   resolution: number | null;
   // A classification layer (the registry's mask layer): converted by its most frequent class, never averaged.
   categorical: boolean;
@@ -36,46 +35,20 @@ export interface DownloadBand {
   offset: number | null;
   nodata: number | null;
   unit: string | null;
+  // Ticked when the dialog opens: the platform's choice (the spectral bands and the layer of the mask, every band where the dataset
+  // has neither).
+  preselected: boolean;
 }
 
-const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
-const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-
-function bandOf(collection: Collection, item: StacItem, asset: string, categorical: boolean): DownloadBand {
-  const entry: StacAsset = item.assets[asset];
-  const eo = Array.isArray(entry['eo:bands']) ? entry['eo:bands'][0] : undefined;
-  const raster = bandsOf(entry)?.[0];
-  return {
-    asset,
-    name: text(eo?.name) ?? asset,
-    commonName: text(eo?.common_name),
-    wavelength: finite(eo?.center_wavelength),
-    resolution: assetGsdMeters(item, asset),
-    categorical,
-    dataType: text(raster?.data_type),
-    scale: finite(raster?.scale),
-    offset: finite(raster?.offset),
-    nodata: finite(raster?.nodata),
-    unit: text(raster?.unit) ?? registryUnit(collection, asset),
-  };
-}
-
-// The bands of an item in its own order: its GeoTIFF assets without the pictures the registry calls auxiliary. The layer of the
-// mask (`earthx:mask`) is one of them. Empty where the item has none (a store with no file per band): the dialog then offers no choice.
-export function bandTableOf(collection: Collection | undefined, item: StacItem | null | undefined): DownloadBand[] {
-  if (!collection || !item) return [];
-  const auxiliary = new Set(auxiliaryAssetsOf(collection));
-  const mask = maskLayerOf(collection)?.asset ?? null;
-  return bandSources(item, 'cog', null, collection)
-    .filter((source) => !auxiliary.has(source.asset))
-    .map((source) => bandOf(collection, item, source.asset, source.asset === mask));
-}
-
-// What is ticked when the dialog opens: the spectral bands (those with a centre wavelength) and the layer of the mask; every band
-// where the dataset has neither (an elevation model).
+// What is ticked when the dialog opens.
 export function defaultBandKeys(table: readonly DownloadBand[]): string[] {
-  const picked = table.filter((band) => band.wavelength !== null || band.categorical);
-  return (picked.length > 0 ? picked : table).map((band) => band.asset);
+  return table.filter((band) => band.preselected).map((band) => band.asset);
+}
+
+// The ticked bands by asset key and the table they are read from: what the download of whole scenes in the browser takes.
+export interface BandPick {
+  keys: readonly string[];
+  table: readonly DownloadBand[];
 }
 
 // The ticked bands in the order of the item, whatever order they were ticked in.

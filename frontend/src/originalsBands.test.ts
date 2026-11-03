@@ -6,12 +6,14 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { bandsCollection, bandsItem, HOST } from './fixtures/bandsScene';
+import type { BandPick } from './bandChoice';
+import { bandsCollection, bandsItem, bandsTable, HOST } from './fixtures/bandsScene';
 import { sceneBandsText, sceneOriginals, scenesOf, zipJobOf, zipPathOf } from './originals';
 import { runOriginals, type RunDeps, type ZipChannel } from './originalsRun';
 import type { ZipJob } from './originalsZip';
 
-const PICK = ['a_red', 'scl'];
+const pick = (...keys: string[]): BandPick => ({ keys, table: bandsTable() });
+const PICK = pick('a_red', 'scl');
 
 describe('the entries of a scene with a choice of bands', () => {
   it('are the ticked bands, named by content, and the files about the scene', () => {
@@ -27,14 +29,14 @@ describe('the entries of a scene with a choice of bands', () => {
   });
 
   it('are in the order of the item, not of the ticking', () => {
-    const scene = sceneOriginals(bandsCollection(), bandsItem('S'), 'P', ['scl', 'a_blue', 'a_red']);
+    const scene = sceneOriginals(bandsCollection(), bandsItem('S'), 'P', pick('scl', 'a_blue', 'a_red'));
     expect(scene.entries.filter((e) => e.kind === 'data').map((e) => e.asset)).toEqual(['a_blue', 'a_red', 'scl']);
   });
 
   it('leave out what was not ticked, the auxiliary picture too, and name a ticked key the scene lacks as missing', () => {
     const item = bandsItem('S');
     delete item.assets.a_edge;
-    const scene = sceneOriginals(bandsCollection(), item, 'P', ['a_edge', 'a_red', 'visual']);
+    const scene = sceneOriginals(bandsCollection(), item, 'P', pick('a_edge', 'a_red', 'visual'));
     expect(scene.entries.filter((e) => e.kind === 'data').map((e) => e.asset)).toEqual(['a_red']);
     expect(scene.missing).toEqual(['a_edge', 'visual']);
   });

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BANDS_COLUMNS,
-  bandTableOf,
   bandsFileText,
   chosenBands,
   commonResolutionOf,
@@ -19,12 +18,12 @@ import {
   resolutionsOf,
   type DownloadBand,
 } from './bandChoice';
-import { bandsCollection, bandsItem } from './fixtures/bandsScene';
+import { parseBands } from './api';
+import { bandsResponse, bandsTable } from './fixtures/bandsScene';
 import goldenInput from '../../backend/tests/fixtures/bands/golden_input.json?raw';
 import golden from '../../backend/tests/fixtures/bands/golden_per_band.txt?raw';
-import type { Collection, StacItem } from './types';
 
-const table = () => bandTableOf(bandsCollection(), bandsItem());
+const table = bandsTable;
 const band = (over: Partial<DownloadBand> = {}): DownloadBand => ({
   asset: 'x',
   name: 'x',
@@ -37,64 +36,53 @@ const band = (over: Partial<DownloadBand> = {}): DownloadBand => ({
   offset: null,
   nodata: null,
   unit: null,
+  preselected: false,
   ...over,
 });
 
-describe('the table of bands comes from the item and the collection', () => {
-  it('lists the GeoTIFF assets in the order of the item, without the auxiliary picture, the thumbnail and the metadata', () => {
+describe('the table of bands is the answer of the platform', () => {
+  it('keeps the rows in the order of the answer, with name, common name, wavelength, resolution and what the item says of the values', () => {
     expect(table().map((b) => b.asset)).toEqual(['a_blue', 'a_red', 'a_edge', 'a_coast', 'scl', 'aerosol']);
+    expect(table().find((b) => b.asset === 'a_red')).toEqual({
+      asset: 'a_red', name: 'B04', commonName: 'red', wavelength: 0.665, resolution: 10, categorical: false,
+      dataType: 'uint16', scale: 0.0001, offset: -0.1, nodata: 0, unit: '1', preselected: true,
+    });
   });
 
-  it('reads name, common name, wavelength and resolution from the asset; the asset key where the item names no band', () => {
-    const red = table().find((b) => b.asset === 'a_red')!;
-    expect(red).toMatchObject({ name: 'B04', commonName: 'red', wavelength: 0.665, resolution: 10, dataType: 'uint16', scale: 0.0001, offset: -0.1, nodata: 0 });
-    const aerosol = table().find((b) => b.asset === 'aerosol')!;
-    expect(aerosol).toMatchObject({ name: 'aerosol', commonName: null, wavelength: null, resolution: 20 });
-  });
-
-  it('marks the layer of the mask of the registry as the one class layer, and nothing else', () => {
+  it('marks the class layer the platform names, and nothing else', () => {
     expect(table().filter((b) => b.categorical).map((b) => b.asset)).toEqual(['scl']);
-    expect(bandTableOf(bandsCollection({ 'earthx:mask': null }), bandsItem()).some((b) => b.categorical)).toBe(false);
   });
 
-  it('takes the unit of the item, else the registry', () => {
-    const item = bandsItem();
-    item.assets.a_red['raster:bands'] = [{ data_type: 'uint16', unit: 'reflectance' }];
-    const found = bandTableOf(bandsCollection(), item);
-    expect(found.find((b) => b.asset === 'a_red')?.unit).toBe('reflectance');
-    expect(found.find((b) => b.asset === 'a_blue')?.unit).toBe('1');
-    expect(found.find((b) => b.asset === 'scl')?.unit).toBeNull();
+  it('reads what is not there as unknown, a name that is not there as the asset key, and leaves out a row with no asset', () => {
+    const found = parseBands({ bands: [{ asset: 'x' }, { name: 'no asset' }, 'text', null, { asset: 'y', name: 'Y', resolution_m: 'ten', scale: Number.NaN }] });
+    expect(found.map((b) => b.asset)).toEqual(['x', 'y']);
+    expect(found[0]).toEqual({ asset: 'x', name: 'x', commonName: null, wavelength: null, resolution: null, categorical: false, dataType: null, scale: null, offset: null, nodata: null, unit: null, preselected: false });
+    expect(found[1]).toMatchObject({ name: 'Y', resolution: null, scale: null });
   });
 
-  it('is empty without an item, without a collection, and for a store of no GeoTIFF', () => {
-    expect(bandTableOf(bandsCollection(), null)).toEqual([]);
-    expect(bandTableOf(undefined, bandsItem())).toEqual([]);
-    const zarr: StacItem = { id: 'z', properties: {}, assets: { data: { href: 'https://data.test/z.zarr', type: 'application/vnd+zarr' } } };
-    expect(bandTableOf(bandsCollection(), zarr)).toEqual([]);
+  it('is empty for a dataset with no file per band, and an error for an answer that is no list', () => {
+    expect(parseBands({ bands: [] })).toEqual([]);
+    expect(() => parseBands({})).toThrow(/cannot read/);
+    expect(() => parseBands(null)).toThrow(/cannot read/);
+    expect(() => parseBands({ bands: 'x' })).toThrow(/cannot read/);
   });
 
-  it('reads the resolution of an asset from its band when the asset has no gsd, and from its transform last', () => {
-    const item = bandsItem();
-    delete item.assets.a_red.gsd;
-    item.assets.a_red['raster:bands'] = [{ spatial_resolution: 12.5 }];
-    delete item.assets.a_blue.gsd;
-    item.assets.a_blue['proj:transform'] = [10, 0, 0, 0, -10, 0];
-    delete item.assets.a_edge.gsd;
-    const found = bandTableOf(bandsCollection(), item);
-    expect(found.find((b) => b.asset === 'a_red')?.resolution).toBe(12.5);
-    expect(found.find((b) => b.asset === 'a_blue')?.resolution).toBe(10);
-    expect(found.find((b) => b.asset === 'a_edge')?.resolution).toBeNull();
+  it('takes "true" for a class layer or a preselected band and nothing else', () => {
+    const [row] = parseBands({ bands: [{ asset: 'a', categorical: 1, preselected: 'true' }] });
+    expect(row.categorical).toBe(false);
+    expect(row.preselected).toBe(false);
   });
 });
 
 describe('what is ticked when the dialog opens', () => {
-  it('the bands with a wavelength and the layer of the mask', () => {
+  it('is what the platform preselects: the spectral bands and the layer of the mask', () => {
     expect(defaultBandKeys(table())).toEqual(['a_blue', 'a_red', 'a_edge', 'a_coast', 'scl']);
+    expect(bandsResponse().bands.find((row) => row.asset === 'aerosol')?.preselected).toBe(false);
   });
 
-  it('every band where the dataset has neither (an elevation model)', () => {
-    const dem = [band({ asset: 'elevation' }), band({ asset: 'slope' })];
-    expect(defaultBandKeys(dem)).toEqual(['elevation', 'slope']);
+  it('is nothing the frontend adds to or takes from: a table with no preselected band ticks none', () => {
+    expect(defaultBandKeys([band({ asset: 'elevation' })])).toEqual([]);
+    expect(defaultBandKeys([band({ asset: 'elevation', preselected: true }), band({ asset: 'slope' })])).toEqual(['elevation']);
   });
 
   it('the ticked bands come in the order of the item, whatever order they were ticked in', () => {
@@ -145,10 +133,10 @@ describe('how a band is brought to the common resolution', () => {
     expect(found.mode).toEqual([]);
     const finer = conversionTip(table(), 10);
     expect(finer).toContain('Converted to 10 m');
-    expect(finer).toContain('To a finer grid, nearest neighbour (values stay): B05 (20 m), B01 (60 m), scl (20 m), aerosol (20 m)');
+    expect(finer).toContain('To a finer grid, nearest neighbour (values stay): B05 (20 m), B01 (60 m), scl (20 m), AOT (20 m)');
     expect(finer).not.toContain('average');
     const coarser = conversionTip(table(), 60);
-    expect(coarser).toContain('To a coarser grid, average: B02 (10 m), B04 (10 m), B05 (20 m), aerosol (20 m)');
+    expect(coarser).toContain('To a coarser grid, average: B02 (10 m), B04 (10 m), B05 (20 m), AOT (20 m)');
     expect(coarser).toContain('To a coarser grid, most frequent class: scl (20 m)');
     expect(coarser).not.toContain('nearest');
   });
@@ -204,7 +192,7 @@ describe('the names of the files', () => {
 
   it('name, common name and resolution: B04_red_10m.tif, scl_20m.tif', () => {
     const all = chosenBands(table(), ['a_blue', 'a_red', 'a_edge', 'a_coast', 'scl', 'aerosol']);
-    expect(names(...all)).toEqual(['B02_blue_10m.tif', 'B04_red_10m.tif', 'B05_rededge_20m.tif', 'B01_coastal_60m.tif', 'scl_20m.tif', 'aerosol_20m.tif']);
+    expect(names(...all)).toEqual(['B02_blue_10m.tif', 'B04_red_10m.tif', 'B05_rededge_20m.tif', 'B01_coastal_60m.tif', 'scl_20m.tif', 'AOT_20m.tif']);
   });
 
   it('leaves out a common name that only repeats the name, whatever the case', () => {
@@ -280,18 +268,20 @@ describe('BANDS.txt', () => {
     expect(text).toMatch(/\n1 \| B04 .*\n2 \| B04 /);
   });
 
-  // The server writes the same text (`backend/tests/earthx/access/test_bands_golden.py`): both read one synthetic item and give the
-  // golden file byte for byte.
-  it('writes the text the server writes for the same item', () => {
-    const given = JSON.parse(goldenInput) as { title: string; collection: Collection; item: StacItem };
-    const bands = bandTableOf(given.collection, given.item);
+  // The server writes the same text (`backend/tests/earthx/access/test_bands_golden.py`): it reads one synthetic item and gives the
+  // golden file byte for byte. The browser reads the same bands from the answer of the platform for that item.
+  const responses = import.meta.glob('../../backend/tests/fixtures/bands/golden_bands_response.json', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
+  const response = Object.values(responses)[0];
+  it.skipIf(response === undefined)('writes the text the server writes for the same bands', () => {
+    const answer = JSON.parse(response) as unknown;
+    const bands = parseBands(Array.isArray(answer) ? { bands: answer } : answer);
     const names = perBandFileNames(bands);
     const text = bandsFileText({
-      title: given.title,
+      title: (JSON.parse(goldenInput) as { title: string }).title,
       form: 'per_band',
-      files: bands.map((band) => ({
-        path: `exports/${names.get(band.asset)}`,
-        bands: [{ band, resampling: 'none' as const, exportResolution: band.resolution }],
+      files: bands.map((one) => ({
+        path: `exports/${names.get(one.asset)}`,
+        bands: [{ band: one, resampling: 'none' as const, exportResolution: one.resolution }],
       })),
     });
     expect(text).toBe(golden);

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { RESOLUTION_FACTORS } from '../api';
-import { bandTableOf, chosenBands, commonResolutionOf, layoutBlock, withBandChoice } from '../bandChoice';
+import { chosenBands, commonResolutionOf, layoutBlock, withBandChoice } from '../bandChoice';
 import {
   acquisitionYears,
   attributionText,
@@ -86,7 +86,7 @@ export default function DownloadDialog() {
   const indexNote = useAppStore((s) => s.downloadIndexNote);
   const downloadAs = useAppStore((s) => s.downloadAs);
   const setDownloadAs = useAppStore((s) => s.setDownloadAs);
-  const bandItem = useAppStore((s) => s.downloadItem);
+  const table = useAppStore((s) => s.downloadTable);
   const bandsLoading = useAppStore((s) => s.downloadBandsLoading);
   const bandKeys = useAppStore((s) => s.downloadBands);
   const form = useAppStore((s) => s.downloadForm);
@@ -105,7 +105,6 @@ export default function DownloadDialog() {
     : (layer?.name ?? '');
   const flags = dataset?.collection['earthx:license_flags'];
 
-  const table = bandTableOf(dataset?.collection, bandItem);
   const bands = chosenBands(table, bandKeys);
   const common = commonResolutionOf(bands, commonPicked);
   const block = table.length > 0 ? layoutBlock(form, bands, common) : null;
@@ -154,7 +153,7 @@ export default function DownloadDialog() {
                 </p>
               )}
               {inBrowser && !bandsLoading && (
-                <OriginalFiles dataset={dataset} links={originalLinks} passes={passes} pick={table.length > 0 ? bandKeys : undefined} started={started} />
+                <OriginalFiles dataset={dataset} links={originalLinks} passes={passes} pick={table.length > 0 ? bandKeys : undefined} table={table} started={started} />
               )}
             </div>
             <div className="dialog-actions">

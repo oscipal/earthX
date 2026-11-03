@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import * as api from './api';
 import type { CoverageResponse, DownloadForm, PagesSoFar, ResolutionFactor } from './api';
-import { bandTableOf, chosenBands, commonResolutionOf, defaultBandKeys, DEFAULT_FORM, layoutBlock, layoutOf, withBandChoice } from './bandChoice';
+import { chosenBands, commonResolutionOf, defaultBandKeys, DEFAULT_FORM, layoutBlock, layoutOf, withBandChoice, type DownloadBand } from './bandChoice';
 import { downloadSceneJob, estimateSceneJob, resamplingOfOrder, sceneJobOrder, type JobNote } from './downloadJob';
 import type { ResamplingPart } from './resamplingWarning';
 import {
@@ -607,18 +607,36 @@ const DOWNLOAD_ESTIMATE_DELAY_MS = 300;
 // What goes on once the person has confirmed the resampling warning of a download.
 let afterResampling: (() => void) | null = null;
 
-// The fields of the choice of bands for a dialog that opens with `item` as the scene the table is read from.
-function bandChoiceFor(dataset: DatasetOption | undefined, item: StacItem | null) {
+// Numbers the requests for a table of bands: only the answer to the last one is taken, and none after the dialog is closed.
+let bandsRequest = 0;
+
+// The fields of the choice of bands for a dialog that opens: no table yet, `loading` while the platform is asked for it
+// (`loadDownloadBands`).
+function bandChoiceFor(loading: boolean) {
+  // An answer still on its way is for a dialog that is no more.
+  bandsRequest += 1;
   return {
-    downloadItem: item,
-    downloadBandsLoading: false,
-    downloadBands: defaultBandKeys(bandTableOf(dataset?.collection, item)),
+    downloadTable: [] as DownloadBand[],
+    downloadBandsLoading: loading,
+    downloadBands: [] as string[],
     downloadForm: DEFAULT_FORM,
     downloadCommonResolution: null,
     downloadJobNote: null,
     downloadResampling: null,
     downloadStarted: false,
   };
+}
+
+// Asks the platform for the bands of the scenes the dialog is about (the first few of them). "Download" stays locked until the table is
+// in; where it cannot be had the dialog says so and offers no list, as for a dataset with no file per band.
+async function loadDownloadBands(datasetId: string, itemIds: readonly string[]): Promise<void> {
+  const request = ++bandsRequest;
+  try {
+    const table = await api.fetchBands(datasetId, itemIds);
+    if (request === bandsRequest) useAppStore.setState({ downloadTable: table, downloadBands: defaultBandKeys(table), downloadBandsLoading: false });
+  } catch (e) {
+    if (request === bandsRequest) useAppStore.setState({ downloadBandsLoading: false, error: `Could not load the bands: ${(e as Error).message}` });
+  }
 }
 
 function stopDownloadJob(): void {
@@ -1513,9 +1531,9 @@ export interface AppState {
   // export job (M4-11b-2); the dialog shows the offer instead of an error.
   // Dropped with the dialog and with any change of the resolution.
   downloadExportOffer: ExportOffer | null;
-  // The choice of bands and files (NM4-75). The table of bands is read from one scene (`downloadItem`) and the collection; `null`
-  // where the scenes list no bands to choose from. `downloadBandsLoading`: the scene of a pinned layer is still being fetched.
-  downloadItem: StacItem | null;
+  // The choice of bands and files (NM4-75). The table of bands is the platform's answer for the scenes of the dialog; empty where the
+  // scenes have no file per band to choose from. `downloadBandsLoading`: the answer is still on its way.
+  downloadTable: DownloadBand[];
   downloadBandsLoading: boolean;
   // The asset keys ticked.
   downloadBands: string[];
@@ -1835,7 +1853,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadPasses: null,
   downloadSkippedGroupsNotice: null,
   downloadExportOffer: null,
-  downloadItem: null,
+  downloadTable: [],
   downloadBandsLoading: false,
   downloadBands: [],
   downloadForm: DEFAULT_FORM,
@@ -2387,7 +2405,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadPasses: null,
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
-      ...bandChoiceFor(undefined, null),
+      ...bandChoiceFor(false),
       error: null,
     });
     const s = get();
@@ -2397,23 +2415,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ downloadOutcome: outcome, downloadAs: 'raw', downloadIndexNote: null });
     // A layer of an index alone is downloaded as that index (UI-03d, as in NM4-14b): there are no raw bands to choose.
     if (layer.restore.indexOnly && indexOfferedFor(layer, s.datasets)) void get().setDownloadAs('index');
-    if (outcome === 'crop') {
-      // The bands to choose from are those of the layer's scenes: one of them tells (NM4-75).
-      const datasetId = layer.restore.datasetId;
-      const dataset = s.datasets.find((d) => d.id === datasetId);
-      const first = layer.restore.itemIds[0];
-      if (!datasetId || !dataset || first === undefined) return;
+    // The bands to choose from are those of the layer's scenes (NM4-75); the layer of an index alone has none to choose.
+    const bandsOf = layer.restore.datasetId;
+    if ((outcome === 'crop' || outcome === 'originals') && !layer.restore.indexOnly && bandsOf && layer.restore.itemIds.length > 0) {
       set({ downloadBandsLoading: true });
-      try {
-        const item = await api.fetchItem(datasetId, first);
-        if (get().downloadDialogLayerId === id) set(bandChoiceFor(dataset, item ?? null));
-      } catch (e) {
-        if (get().downloadDialogLayerId === id) {
-          set({ error: `Could not load the bands: ${(e as Error).message}`, downloadBandsLoading: false });
-        }
-      }
-      return;
+      void loadDownloadBands(bandsOf, layer.restore.itemIds);
     }
+    if (outcome === 'crop') return;
     if (outcome !== 'originals') return;
     const datasetId = layer.restore.datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
@@ -2422,7 +2430,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ downloadOriginalLinks: [] });
       return;
     }
-    set({ downloadBandsLoading: true });
     const hosts = assetHostsOf(dataset);
     try {
       const fetched = await Promise.all(layer.restore.itemIds.map((itemId) => api.fetchItem(datasetId, itemId)));
@@ -2435,11 +2442,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Still the dialog open for this same layer? The user may have closed
       // it, or opened another one, while the fetch was in flight.
       if (get().downloadDialogLayerId === id) {
-        set({ downloadOriginalLinks: originalFileLinks(groups, [asset], hosts), downloadPasses: groups, ...bandChoiceFor(dataset, items[0] ?? null) });
+        set({ downloadOriginalLinks: originalFileLinks(groups, [asset], hosts), downloadPasses: groups });
       }
     } catch (e) {
       if (get().downloadDialogLayerId === id) {
-        set({ error: `Could not load the original files: ${(e as Error).message}`, downloadOriginalLinks: [], downloadBandsLoading: false });
+        set({ error: `Could not load the original files: ${(e as Error).message}`, downloadOriginalLinks: [] });
       }
     }
   },
@@ -2478,9 +2485,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloadPasses: null,
         downloadSkippedGroupsNotice: null,
         downloadExportOffer: null,
-        ...bandChoiceFor(dataset, items[0]),
+        ...bandChoiceFor(true),
         error: null,
       });
+      if (dataset) void loadDownloadBands(dataset.id, items.map((it) => it.id));
       return;
     }
     // Originals: the dataset's default asset, straight from the source — also
@@ -2504,9 +2512,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadPasses: groups,
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
-      ...bandChoiceFor(dataset, items[0]),
+      ...bandChoiceFor(true),
       error: null,
     });
+    if (dataset) void loadDownloadBands(dataset.id, items.map((it) => it.id));
   },
   // The same dialog for the image the view shows (the settings bar, Otto, 2.11.2026): its scenes, not the ticks of the list, with
   // the same refusals as `openDownloadForSelection`.
@@ -2541,16 +2550,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadResolution: 1 as const,
       downloadSkippedGroupsNotice: null,
       downloadExportOffer: null,
-      ...bandChoiceFor(dataset, items[0]),
+      ...bandChoiceFor(true),
       error: null,
     };
     if (kind === 'crop') {
       set({ ...open, downloadOutcome: 'crop', downloadOriginalLinks: null, downloadPasses: null });
+      void loadDownloadBands(image.datasetId, items.map((it) => it.id));
       return;
     }
     const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
     const groups = [{ label: image.groupLabel || 'Group 1', items }];
     set({ ...open, downloadOutcome: 'originals', downloadOriginalLinks: asset ? originalFileLinks(groups, [asset], assetHostsOf(dataset)) : [], downloadPasses: groups });
+    void loadDownloadBands(image.datasetId, items.map((it) => it.id));
   },
   closeDownloadDialog: () => {
     // Closing the dialog stops the computing of an index or of the files of whole scenes (what it placed is dismissed).
@@ -2569,7 +2580,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadIndexNote: null,
       downloadAs: 'raw',
       downloadStatus: null,
-      ...bandChoiceFor(undefined, null),
+      ...bandChoiceFor(false),
     });
   },
   // The dialog of a layer that shows an index offers its raw bands and the index; the index asks what its job will cost when it is chosen.
@@ -2626,6 +2637,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // while the dialog was open.
   confirmDownload: async () => {
     const s = get();
+    // The table of bands is not in yet: what is asked for is not known.
+    if (s.downloadBandsLoading) return;
     if (s.downloadOutcome === 'originals') {
       await startWholeScenes(s);
       return;
@@ -2668,7 +2681,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     // The bands, the form and the common resolution of the dialog (NM4-75).
-    const table = bandTableOf(downloadDatasetOf(s)?.collection, s.downloadItem);
+    const table = s.downloadTable;
     const bands = chosenBands(table, s.downloadBands);
     const picked = commonResolutionOf(bands, s.downloadCommonResolution);
     if (table.length > 0) {
@@ -2744,7 +2757,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const order = buildExportOrder({ datasetId: req.datasetId, groups: req.groups, assets: req.assets, aoi: req.aoi, layout: req.layout });
       const parts = await resamplingOfOrder(order, controller.signal);
       if (downloadJobAbort === controller) downloadJobAbort = null;
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        set({ downloading: false });
+        return;
+      }
       if (parts.length > 0) {
         afterResampling = () => void send();
         set({ downloadResampling: parts });
@@ -3579,7 +3595,7 @@ function refreshJobEstimate(): void {
   downloadEstimateAbort = null;
   const s = useAppStore.getState();
   const dataset = downloadDatasetOf(s);
-  const bands = chosenBands(bandTableOf(dataset?.collection, s.downloadItem), s.downloadBands);
+  const bands = chosenBands(s.downloadTable, s.downloadBands);
   const common = commonResolutionOf(bands, s.downloadCommonResolution);
   const order =
     s.downloadOutcome === 'originals' && s.downloadForm !== 'per_band' && dataset && layoutBlock(s.downloadForm, bands, common) === null
@@ -3604,7 +3620,7 @@ function refreshJobEstimate(): void {
 // waited for and downloaded here; the person never sees it in the list of jobs.
 async function startWholeScenes(s: AppState): Promise<void> {
   const dataset = downloadDatasetOf(s);
-  const table = bandTableOf(dataset?.collection, s.downloadItem);
+  const table = s.downloadTable;
   const bands = chosenBands(table, s.downloadBands);
   if (table.length > 0 && bands.length === 0) return;
   if (table.length === 0 || s.downloadForm === 'per_band') {

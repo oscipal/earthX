@@ -5,9 +5,9 @@
 import {
   BANDS_FILENAME,
   EXPORTS_DIR,
-  bandTableOf,
   bandsFileText,
   perBandFileNames,
+  type BandPick,
   type DownloadBand,
 } from './bandChoice';
 import type { DownloadPass, OriginalFileLink } from './download';
@@ -95,14 +95,15 @@ export function originalAssetKeys(collection: Collection, item: StacItem): { key
   return keys;
 }
 
-// `pick` (NM4-75) is the asset keys ticked in the dialog: of the data files only those, named by content for the ZIP; the files
-// about the scene stay. Without it, every original file as before.
-export function sceneOriginals(collection: Collection, item: StacItem, groupLabel: string, pick?: readonly string[]): OriginalScene {
+// `pick` (NM4-75) is the asset keys ticked in the dialog and the table of bands of the platform they are read from: of the data files
+// only those, named by content for the ZIP; the files about the scene stay. Without it, every original file as before.
+export function sceneOriginals(collection: Collection, item: StacItem, groupLabel: string, pick?: BandPick): OriginalScene {
   const hosts = collection['earthx:source']?.asset_hosts ?? [];
   const used = new Set<string>();
   const entries: OriginalEntry[] = [];
   const missing: string[] = [];
-  const bands = pick ? bandTableOf(collection, item).filter((band) => pick.includes(band.asset)) : [];
+  // The ticked bands the scene has (in the order of the table, the item's own); a ticked band it lacks is missing.
+  const bands = pick ? pick.table.filter((band) => pick.keys.includes(band.asset) && item.assets[band.asset] !== undefined) : [];
   const exportNames = perBandFileNames(bands);
   const keys = pick
     ? [
@@ -110,7 +111,7 @@ export function sceneOriginals(collection: Collection, item: StacItem, groupLabe
         ...originalAssetKeys(collection, item).filter((entry) => entry.kind === 'metadata'),
       ]
     : originalAssetKeys(collection, item);
-  if (pick) missing.push(...pick.filter((key) => !bands.some((band) => band.asset === key)));
+  if (pick) missing.push(...pick.keys.filter((key) => !bands.some((band) => band.asset === key)));
   for (const { key, kind } of keys) {
     const asset = item.assets[key];
     if (!asset || !isDirectDownloadHref(asset.href, hosts)) {
@@ -136,7 +137,7 @@ export function sceneOriginals(collection: Collection, item: StacItem, groupLabe
 }
 
 // The scenes of a selection, in the order of its passes; a scene in two passes comes once.
-export function scenesOf(collection: Collection, passes: readonly DownloadPass[], pick?: readonly string[]): OriginalScene[] {
+export function scenesOf(collection: Collection, passes: readonly DownloadPass[], pick?: BandPick): OriginalScene[] {
   const seen = new Set<string>();
   const scenes: OriginalScene[] = [];
   for (const pass of passes) {

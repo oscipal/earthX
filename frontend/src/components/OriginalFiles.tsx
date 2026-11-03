@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import type { DownloadBand } from '../bandChoice';
 import type { DatasetOption } from '../datasets';
 import {
   acquisitionYears,
@@ -25,8 +26,10 @@ interface Props {
   // `null` while the layer's scenes are still being fetched.
   links: OriginalFileLink[] | null;
   passes: DownloadPass[] | null;
-  // The asset keys ticked in the dialog; `undefined` for a dataset whose scenes list no bands, which loads every original file.
+  // The asset keys ticked in the dialog and the table of bands they are read from; `undefined` for a dataset whose scenes list no
+  // bands, which loads every original file.
   pick?: readonly string[];
+  table?: readonly DownloadBand[];
   // "Download" was pressed: until then the dialog lists what it would load and loads nothing.
   started: boolean;
 }
@@ -179,12 +182,12 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
   );
 }
 
-export default function OriginalFiles({ dataset, links, passes, pick, started: go }: Props) {
+export default function OriginalFiles({ dataset, links, passes, pick, table, started: go }: Props) {
   const [merged, setMerged] = useState(false);
   const [started, setStarted] = useState<Record<number, Started>>({});
   const scenes = useMemo(
-    () => (dataset && passes ? scenesOf(dataset.collection, passes, pick) : []),
-    [dataset, passes, pick],
+    () => (dataset && passes ? scenesOf(dataset.collection, passes, pick && table ? { keys: pick, table } : undefined) : []),
+    [dataset, passes, pick, table],
   );
 
   if (links === null) return <p className="hint-text">Loading the original files…</p>;

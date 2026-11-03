@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from '../datasets';
-import { bandsCollection, bandsItem } from '../fixtures/bandsScene';
+import { bandsCollection, bandsItem, bandsResponse } from '../fixtures/bandsScene';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import DownloadDialog from './DownloadDialog';
@@ -48,16 +48,19 @@ let container: HTMLDivElement;
 let root: Root;
 let calls: { method: string; url: string; body?: Record<string, unknown> }[];
 let estimate: () => Response;
+let bands: () => Response;
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   page.jobs.length = 0;
   calls = [];
   estimate = () => json(ESTIMATE);
+  bands = () => json(bandsResponse());
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ method: init?.method ?? 'GET', url, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+      if (url.endsWith('/bands')) return bands();
       if (url.endsWith('/download')) return new Response(new Blob(['x']), { status: 200 });
       if (url.endsWith('/estimate')) return estimate();
       if (url.endsWith('/execution')) return json({ jobID: JOB, status: 'accepted', message: '', progress: 0, expires: '2026-12-01T00:00:00Z' });
@@ -105,6 +108,7 @@ async function open(kind: 'crop' | 'originals', items: StacItem[] = [bandsItem('
   act(() => useAppStore.getState().openDownloadForSelection(kind));
   act(() => root.render(<DownloadDialog />));
   await flush();
+  await flush();
 }
 
 const button = (label: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
@@ -123,7 +127,7 @@ const downloadCalls = () => calls.filter((c) => c.url.endsWith('/download'));
 describe('the list of bands', () => {
   it('is the bands of the scene as it describes them, with common name, wavelength and resolution', async () => {
     await open('crop');
-    expect(bandNames()).toEqual(['B02', 'B04', 'B05', 'B01', 'scl', 'aerosol']);
+    expect(bandNames()).toEqual(['B02', 'B04', 'B05', 'B01', 'scl', 'AOT']);
     const red = container.querySelectorAll('.dialog-band')[1];
     expect(red.textContent).toContain('red · 0.665 µm');
     expect(red.querySelector('.dialog-band-res')?.textContent).toBe('10 m');
@@ -153,8 +157,35 @@ describe('the list of bands', () => {
     expect(button('Download')!.disabled).toBe(false);
   });
 
+  it('shows no list, says why, and still downloads as before where the platform cannot give the table', async () => {
+    bands = () => json({ detail: 'down' }, 503);
+    await open('crop');
+    expect(container.querySelector('.dialog-bands')).toBeNull();
+    expect(useAppStore.getState().error).toMatch(/Could not load the bands/);
+    expect(button('Download')!.disabled).toBe(false);
+  });
+
+  it('locks "Download" while the table is on its way, and says so', async () => {
+    let answer!: (r: Response) => void;
+    bands = () => new Promise<Response>((resolve) => (answer = resolve)) as never;
+    vi.mocked(fetch).mockImplementation(async (url) => {
+      if (String(url).endsWith('/bands')) return new Promise<Response>((resolve) => (answer = resolve));
+      return new Response(new Blob(['x']), { status: 200, headers: { 'x-total-groups': '1' } });
+    });
+    await open('crop');
+    expect(container.textContent).toContain('Loading the bands');
+    expect(button('Download')!.disabled).toBe(true);
+    await act(async () => {
+      answer(json(bandsResponse()));
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    });
+    expect(container.textContent).not.toContain('Loading the bands');
+    expect(button('Download')!.disabled).toBe(false);
+  });
+
   it('shows no list for a dataset whose scenes list no band, and "Download" still works as before', async () => {
-    await open('crop', [{ id: 'P', properties: {}, assets: { visual: { href: 'https://data.test/P.tif' } } }]);
+    bands = () => json({ bands: [] });
+    await open('crop');
     expect(container.querySelector('.dialog-bands')).toBeNull();
     expect(container.querySelector('.dialog-forms')).toBeNull();
     expect(container.textContent).toContain('asset visual');
@@ -356,8 +387,8 @@ describe('a layer of the layer manager', () => {
 
   async function openLayer(answer: Promise<Response>) {
     vi.mocked(fetch).mockImplementation(async (url, init) => {
-      if (String(url).startsWith('/stac/collections/')) return answer;
       calls.push({ method: init?.method ?? 'GET', url: String(url), ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+      if (String(url).endsWith('/bands')) return answer;
       return new Response(new Blob(['x']), { status: 200 });
     });
     useAppStore.setState({ datasets: datasetsFrom([bandsCollection()]), layers: [layer(['S1', 'S2'])] as never });
@@ -370,27 +401,33 @@ describe('a layer of the layer manager', () => {
     return { opening };
   }
 
-  it('reads the list from the first scene of the layer; "Download" waits until it is there', async () => {
+  it('asks the platform for the bands of the layer\'s scenes; "Download" waits until the table is there', async () => {
     let answer!: (r: Response) => void;
     const { opening } = await openLayer(new Promise<Response>((resolve) => (answer = resolve)));
     expect(container.textContent).toContain('Loading the bands');
     expect(button('Download')!.disabled).toBe(true);
     await act(async () => {
-      answer(json(bandsItem('S1')));
+      answer(json(bandsResponse()));
       await opening;
+      for (let i = 0; i < 10; i++) await Promise.resolve();
     });
     expect(container.textContent).not.toContain('Loading the bands');
-    expect(bandNames()).toEqual(['B02', 'B04', 'B05', 'B01', 'scl', 'aerosol']);
+    expect(bandNames()).toEqual(['B02', 'B04', 'B05', 'B01', 'scl', 'AOT']);
     expect(button('Download')!.disabled).toBe(false);
     await click(button('Download'));
     expect(downloadCalls()[0].body).toMatchObject({ groups: [['S1', 'S2']], assets: ['a_blue', 'a_red', 'a_edge', 'a_coast', 'scl'], form: 'per_band', resolution: 1 });
-    expect(vi.mocked(fetch).mock.calls.filter(([u]) => String(u).startsWith('/stac/')).map(([u]) => String(u).split('/').pop())).toEqual(['S1']);
+    const asked = calls.filter((c) => c.url.endsWith('/bands'));
+    expect(asked).toHaveLength(1);
+    expect(asked[0].body).toEqual({ items: ['S1', 'S2'] });
+    // No scene is fetched for it: the platform tells.
+    expect(calls.some((c) => c.url.startsWith('/stac/'))).toBe(false);
   });
 
-  it('says so when the scene cannot be read, and keeps the error out of the request', async () => {
+  it('says so when the table cannot be had, and offers no list', async () => {
     const { opening } = await openLayer(Promise.resolve(json({ detail: 'down' }, 503)));
     await act(async () => {
       await opening;
+      for (let i = 0; i < 10; i++) await Promise.resolve();
     });
     expect(useAppStore.getState().error).toMatch(/Could not load the bands/);
     expect(container.querySelector('.dialog-bands')).toBeNull();

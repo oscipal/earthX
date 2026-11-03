@@ -256,7 +256,7 @@ describe('the originals dialog starts with "Download" (NM4-33, NM4-75)', () => {
       downloadSkippedGroupsNotice: null,
       downloadOriginalLinks: [],
       downloadPasses: [{ label: 'A', items: [scene('S1', { datetime: '2025-07-29T10:15:00Z' })] }],
-      downloadItem: null,
+      downloadTable: [],
       downloadBands: [],
       downloadForm: 'per_band',
       downloadStarted: false,

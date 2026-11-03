@@ -2,6 +2,7 @@
 // by default (the Vite dev server proxies /stac to the backend). Override
 // with VITE_API_BASE. Never talks to the prototype's `/api/…` routes.
 
+import type { DownloadBand } from './bandChoice';
 import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
 import { AOI_BODY_KEY, aoiCountsOf, type AoiCounts } from './aoiFilter';
 import { MOSAIC_TILE_SIZE } from './tileSize';
@@ -815,6 +816,51 @@ export type ResolutionFactor = (typeof RESOLUTION_FACTORS)[number];
 
 // The three forms of the files of a download (NM4-75), named as the server names them.
 export type DownloadForm = 'per_band' | 'per_resolution' | 'multi_band';
+
+// How many scenes of the selection are named to the platform for the table of bands (it asks for 1 to 25; the first few tell as much).
+export const BANDS_SCENES = 5;
+
+const textOf = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null);
+const numberOf = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+// The answer of `POST /collections/{dataset}/bands` as the dialog holds it; a row that does not read (no asset key) is left out.
+export function parseBands(value: unknown): DownloadBand[] {
+  const rows = value && typeof value === 'object' ? (value as { bands?: unknown }).bands : undefined;
+  if (!Array.isArray(rows)) throw new Error('the server answered with a list of bands the dialog cannot read');
+  return rows.flatMap((row: unknown) => {
+    const r = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+    const asset = textOf(r.asset);
+    if (asset === null) return [];
+    return [
+      {
+        asset,
+        name: textOf(r.name) ?? asset,
+        commonName: textOf(r.common_name),
+        wavelength: numberOf(r.wavelength_um),
+        resolution: numberOf(r.resolution_m),
+        categorical: r.categorical === true,
+        dataType: textOf(r.data_type),
+        scale: numberOf(r.scale),
+        offset: numberOf(r.offset),
+        nodata: numberOf(r.nodata),
+        unit: textOf(r.unit),
+        preselected: r.preselected === true,
+      },
+    ];
+  });
+}
+
+// The bands of the scenes named (the first `BANDS_SCENES` of a selection): in the order of the item, without the pictures made from the
+// bands; empty for a dataset with no file per band. The scene ids go in the body.
+export async function fetchBands(datasetId: string, itemIds: readonly string[], signal?: AbortSignal): Promise<DownloadBand[]> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(datasetId)}/bands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: itemIds.slice(0, BANDS_SCENES) }),
+    signal,
+  });
+  return parseBands(await jsonOrThrow<unknown>(res));
+}
 
 // `groups` (M3-17, replacing the flat `items` list): item ids per group,
 // mirroring `DownloadRequest.groups` in `api/tiler.py` — one merged file per

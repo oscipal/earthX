@@ -1079,19 +1079,20 @@ describe('download outcome (M3-17 plan §4)', () => {
       };
     }
 
-    it('a cropped layer: the crop outcome, known before any fetch; the bands are read from its first scene only (NM4-75)', async () => {
+    it('a cropped layer: the crop outcome, known before any fetch; the bands are asked of the platform for its scenes (NM4-75)', async () => {
       useAppStore.setState({
         datasets: datasetsFrom([COG_DATASET]),
         layers: [layerFixture({ cropToAoi: true, aoi: AOI })],
       });
-      vi.mocked(fetch).mockImplementation(async (url) => jsonResponse(200, cogScene(String(url).split('/').pop() ?? '')));
+      vi.mocked(fetch).mockImplementation(async () => jsonResponse(200, { bands: [] }));
       const opening = useAppStore.getState().openDownloadDialog('L1');
       expect(useAppStore.getState().downloadOutcome).toBe('crop');
       expect(useAppStore.getState().downloadBandsLoading).toBe(true);
       await opening;
+      await vi.waitFor(() => expect(useAppStore.getState().downloadBandsLoading).toBe(false));
       expect(fetch).toHaveBeenCalledTimes(1);
-      expect(useAppStore.getState().downloadItem?.id).toBe('S1');
-      expect(useAppStore.getState().downloadBandsLoading).toBe(false);
+      expect(vi.mocked(fetch).mock.calls[0][0]).toBe(`/collections/${COG_DATASET.id}/bands`);
+      expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toEqual({ items: ['S1', 'S2'] });
     });
 
     it('a "View full selection" Zarr layer without an AOI: disabled, known without any fetch', async () => {
