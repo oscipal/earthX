@@ -12,6 +12,9 @@
 //     layer manager and in the head of the results list), and four things: "Search" shows, a crop hides, ticking a scene
 //     while the results are hidden shows them (unticking changes nothing), and "Play" shows them (NM4-18).
 //  4. The ticked scenes lie over each other in the order they were ticked: the last one on top (`mapLayers.ts`).
+//  6. While the results are hidden a click on the map picks and drops nothing (Otto, 3.11.2026, zu #282): not the outline of a
+//     result, not its quicklook, not the scenes a view is made of. A click would tick a scene, and ticking shows the results
+//     again (rule 3), which is the switch's to do alone; the tick in the list keeps doing so.
 //  5. The ticks stay over a change of the time step and of the dataset (NM4-50): the ticked scenes of the other datasets
 //     of the search are on the map like the ticked ones of the open dataset, whichever dataset the list shows.
 
@@ -39,7 +42,7 @@ export interface ResultsOnMap {
   overlay: StacItem[];
   // The scenes outlined as ticked, in the order they were ticked: the last one lies on top.
   highlight: StacItem[];
-  // The scenes a click on the map can pick or drop: those that are drawn.
+  // The scenes a click on the map can pick or drop: those that are drawn, and none while the results are hidden.
   clickable: StacItem[];
 }
 
@@ -60,7 +63,7 @@ export function resultsOnMapOf(s: ResultsState): ResultsOnMap {
   const overlay = s.focusMode ? [...itemsOverView(s.groups, s.expandedGroupIndex, s.selectedIds, s.resultsOnMap), ...elsewhere] : [];
   // The view's own scenes are drawn as well in a view, and can be picked or dropped like the others.
   const ofView = s.focusMode ? s.groups.flatMap((group) => group.items).filter((item) => viewed.includes(item.id)) : [];
-  const clickable = [...new Map([...quicklooks, ...overlay, ...ofView].map((item) => [item.id, item])).values()];
+  const clickable = s.resultsOnMap ? [...new Map([...quicklooks, ...overlay, ...ofView].map((item) => [item.id, item])).values()] : [];
   return {
     quicklooks,
     overlay,

@@ -87,9 +87,15 @@ describe('resultsOnMapOf, over a full-resolution view', () => {
     expect(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1', 'b1'] })).highlight).toEqual([]);
   });
 
-  it('lets a click pick the scenes that are drawn: those of the view, and while the results are shown what lies over it', () => {
-    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['b1'] })).clickable)).toEqual(['a1']);
+  it('lets a click pick the scenes that are drawn while the results are shown: those of the view and what lies over it', () => {
     expect(ids(resultsOnMapOf(view({ selectedIds: ['b1'] })).clickable).sort()).toEqual(['a1', 'a2', 'b1']);
+  });
+
+  it('lets a click pick nothing while the results are hidden, the scenes of the view and the ticked ones included (Otto, 3.11.2026)', () => {
+    expect(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['b1'] })).clickable).toEqual([]);
+    expect(resultsOnMapOf(view({ resultsOnMap: false })).clickable).toEqual([]);
+    // Shown again, they answer again.
+    expect(ids(resultsOnMapOf(view({ resultsOnMap: true })).clickable).length).toBeGreaterThan(0);
   });
 
   it('outlines the ticked scenes only', () => {
