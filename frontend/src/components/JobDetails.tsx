@@ -235,7 +235,7 @@ export default function JobDetails() {
                   title="Draw the result on the map, cut to the area of the job, as a layer"
                   onClick={() => void showOnMap(job.jobID)}
                 >
-                  Show on map
+                  ＋ Add to layers
                 </button>
               )}
               {active && (

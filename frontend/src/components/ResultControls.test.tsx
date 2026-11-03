@@ -50,7 +50,7 @@ beforeEach(() => {
   localStorage.clear();
   tileJsonBody = TILE_JSON;
   vi.stubGlobal('fetch', vi.fn(async (url: string) => (url === HREF ? json(tileJsonBody) : new Response('{}', { status: 404 }))));
-  // The job of the fixture expires 7 days after `NOW`; "Show on map" refuses an expired job by the clock.
+  // The job of the fixture expires 7 days after `NOW`; "＋ Add to layers" refuses an expired job by the clock.
   vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   resetJobs();
   useProcessingStore.getState().resetDraft();

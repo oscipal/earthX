@@ -354,9 +354,9 @@ describe('the steps', () => {
 });
 
 describe('the actions', () => {
-  it('of a finished job are "Download (ZIP)" and "Show on map", and no other file, no "Methods", no "Copy"', () => {
+  it('of a finished job are "Download (ZIP)" and "＋ Add to layers", and no other file, no "Methods", no "Copy"', () => {
     show(finished(1, { tiles: { href: '/results/x/WebMercatorQuad/tilejson.json', width: 10, gsd: 10 }, order: ORDER }));
-    expect(actions()).toEqual(['Download (ZIP)', 'Show on map']);
+    expect(actions()).toEqual(['Download (ZIP)', '＋ Add to layers']);
     const link = container.querySelector<HTMLAnchorElement>('.vc-actions a')!;
     expect(link.getAttribute('href')).toBe(`/processing/jobs/${jobId(1)}/results/result.zip`);
     expect(link.hasAttribute('download')).toBe(true);
@@ -435,11 +435,11 @@ describe('the actions', () => {
     expect(actions()).toEqual(['Open in panel']);
   });
 
-  it('draws the result on the map from "Show on map"', () => {
+  it('draws the result on the map from "＋ Add to layers"', () => {
     const showOnMap = vi.fn(async () => undefined);
     act(() => useProcessingStore.setState({ showResultOnMap: showOnMap }));
     show(finished(1, { tiles: { href: '/results/x/WebMercatorQuad/tilejson.json', width: 10, gsd: 10 } }));
-    click(button('Show on map'));
+    click(button('＋ Add to layers'));
     expect(showOnMap).toHaveBeenCalledWith(jobId(1));
   });
 });
