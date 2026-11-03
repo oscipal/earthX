@@ -192,7 +192,7 @@ async function openPanel() {
 
 function button(label: string | RegExp, within: Element = container): HTMLButtonElement {
   const found = [...within.querySelectorAll('button')].find((b) =>
-    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+    typeof label === 'string' ? (b.textContent?.trim() === label || b.getAttribute('aria-label') === label) : label.test(b.textContent ?? ''),
   );
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found as HTMLButtonElement;
@@ -1432,22 +1432,22 @@ describe('starting and following a job', () => {
     await waitFor(() => downloads().length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: 1000, gsd: 10 });
     // The result goes on the map from the details, not from the list.
-    expect([...container.querySelectorAll('.processing-manager button')].map((b) => b.textContent)).not.toContain('Show on map');
+    expect([...container.querySelectorAll('.processing-manager button')].map((b) => b.textContent)).not.toContain('＋ Add to layers');
     showDetails();
     expect(downloads().length).toBeGreaterThan(0);
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Show on map');
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('＋ Add to layers');
   });
 
   it.each([
     ['an export', { export: link('export.zip'), recipe: link('recipe.json') }],
     ['a link of another shape', { result: link('result.tif'), bundle: link('result.zip'), tiles: { href: 'https://example.org/results/x/tilejson.json' } }],
     ['a link to a file of the job API', { result: link('result.tif'), bundle: link('result.zip'), tiles: link('result.tif') }],
-  ])('offers no "Show on map" for %s', async (_, doc) => {
+  ])('offers no "＋ Add to layers" for %s', async (_, doc) => {
     await resume(() => json(doc));
     await waitFor(() => downloads().length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toBeNull();
     showDetails();
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Show on map');
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('＋ Add to layers');
   });
 
   it.each([
@@ -2017,7 +2017,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
 
     it('does not hold back a step that is not a reproject', async () => {
       await refused();
-      click(button(/Remove/, container.querySelector('.pp-step')!));
+      click(button('Remove', container.querySelector('.pp-step')!));
       click(button('＋ Band math'));
       typeInto(container.querySelector('textarea[id$="-expression"]')!, 'data * 2');
       expect(button('Review').disabled).toBe(false);

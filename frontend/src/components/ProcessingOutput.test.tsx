@@ -156,7 +156,7 @@ async function openPanel() {
 
 function button(label: string | RegExp, within: ParentNode = container): HTMLButtonElement {
   const found = [...within.querySelectorAll('button')].find((b) =>
-    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+    typeof label === 'string' ? (b.textContent?.trim() === label || b.getAttribute('aria-label') === label) : label.test(b.textContent ?? ''),
   );
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found as HTMLButtonElement;
@@ -335,7 +335,7 @@ describe('the results of band math steps', () => {
     await addBandMath();
     await addBandMath('green - nir');
     expect(checked()).toEqual(['result', 'result_1']);
-    click(button('✕ Remove'));
+    click(button('Remove'));
     expect(checked()).toEqual(['result_1']);
     expect(store().output).toEqual(['result_1']);
   });
@@ -592,7 +592,7 @@ describe('the name of a result', () => {
     act(() => nameField(1).focus());
     typeInto(nameField(1), 'scl');
     expect(store().nameProblems).not.toEqual({});
-    click(button('✕ Remove', container.querySelectorAll('.pp-step')[1]));
+    click(button('Remove', container.querySelectorAll('.pp-step')[1]));
     expect(store().nameProblems).toEqual({});
     expect(button('Review').disabled).toBe(false);
   });

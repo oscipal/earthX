@@ -5,20 +5,21 @@
 // the focus or else the one under the pointer, with no click first (never while a field has the keys); the arrow
 // keys go from row to row.
 
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type HTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, type ShelfGroup } from '../jobShelf';
 import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter, type JobFilter } from '../preferences';
 import { isJobId } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
-import CloseButton from './CloseButton';
+import { useAppStore } from '../store';
 import DownloadAll from './DownloadAll';
+import { PencilIcon } from './Icons';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
 import Popover from './Popover';
 import { focusFirstItem } from '../popover';
-import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, formatUntil, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
+import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, formatShortDate, formatUntil, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
 import Tip from './Tip';
 import { useBundleDownload } from './useBundleDownload';
 
@@ -306,21 +307,59 @@ export function RetryButton({ offered, name, tip, busy, onRetry }: { offered: bo
   );
 }
 
-// When a job goes: "until" for one that stands, "restore until" for a deleted one whose day is not over. A job that is
-// cancelled, deleted for good or forgotten by the server has no time to name.
-function UntilText({ job, state, now }: { job: JobEntry; state: JobState; now: number }) {
+// The date in the column "Expires": when a job goes (a deleted one: a day after its deletion, which is also the end of the time to
+// restore it, unless it expired before: then the day it expired; one that expired: when it did). A job that is cancelled or forgotten by the server has no time to name; its state stands in the place of the date.
+// The day a deleted job goes: a day after its deletion (`deletedUntil`), or the day it expired when that came first (it had expired
+// already, or it would have within the day). Otto, 3.11.2026.
+const goneDay = (job: Pick<JobEntry, 'expires' | 'deletedUntil'>): string =>
+  job.deletedUntil && Date.parse(job.deletedUntil) < Date.parse(job.expires) ? job.deletedUntil : job.expires;
+
+function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
   if (state.key === 'deleted') {
-    return canRestore(job, now) && job.deletedUntil ? (
-      <span className="pm-until" title={job.deletedUntil}>
-        restore until {formatUntil(job.deletedUntil, now)}
+    const day = goneDay(job);
+    return (
+      <span className="pm-until" title={day}>
+        {formatShortDate(day)}
       </span>
-    ) : null;
+    );
   }
   if (state.key === 'cancelled' || state.key === 'unavailable') return null;
   return (
     <span className="pm-until" title={job.expires}>
-      until {formatUntil(job.expires, now)}
+      {formatShortDate(job.expires)}
     </span>
+  );
+}
+
+// The pencil beside the title, as in the layer manager (`PencilIcon`, the same tooltip in the same wording): the title is edited in place. An
+// empty name is not taken.
+function RenameButton({ what, name, onRename }: { what: 'job' | 'batch'; name: string; onRename: () => void }) {
+  return (
+    <button type="button" className="pm-icon pm-edit" data-name={name} title={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
+      <PencilIcon size={11} />
+    </button>
+  );
+}
+
+export const ADD_TO_LAYERS_TIP = 'Add to layers';
+export const ALREADY_A_LAYER_TIP = 'This result is already a layer';
+
+// "＋" of a finished job: its result as a layer on the map. Where the result is one already, the symbol stays and says why it is locked.
+function AddToLayers({ job, name }: { job: JobEntry; name: string }) {
+  const showOnMap = useProcessingStore((s) => s.showResultOnMap);
+  const isLayer = useAppStore((s) => s.layers.some((l) => l.result?.jobID === job.jobID));
+  if (isLayer) {
+    // `aria-disabled`, not `disabled`: the symbol stays reachable by keyboard, and so does the reason.
+    return (
+      <button type="button" className="pm-icon has-tip" aria-disabled="true" data-tip={ALREADY_A_LAYER_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`}>
+        ＋
+      </button>
+    );
+  }
+  return (
+    <button type="button" className="pm-icon" title={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
+      ＋
+    </button>
   );
 }
 
@@ -374,7 +413,8 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
             label="Job title"
             maxLength={MAX_TITLE_LENGTH}
             onSave={(name) => {
-              rename(job.jobID, name);
+              // An empty name is no name: the old one stays.
+              if (name.trim()) rename(job.jobID, name);
               setRenaming(false);
             }}
             onCancel={() => setRenaming(false)}
@@ -390,19 +430,26 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
             }}
           >
             <span className="pm-title">{title}</span>
-            <span className={`pm-meta ${state.key}`}>
-              <span className="pm-state" title={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
-                {state.text}
-              </span>
-              <UntilText job={job} state={state} now={now} />
+          </button>
+        )}
+        <span className={`pm-meta ${state.key}`}>
+          <span className="pm-state" title={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
+            {state.text}
+          </span>
+          <UntilText job={job} state={state} />
+          {(job.archived || job.superseded) && (
+            <span className="pm-tags">
               {job.archived && <span className="pm-tag">Archived</span>}
               {job.superseded && <span className="pm-tag">Superseded</span>}
             </span>
-          </button>
-        )}
-        <RetryButton offered={canRetry(job, now, retired)} name={title} tip={RETRY_TIP} busy={job.retrying} onRetry={() => void retryJob(job.jobID)} />
+          )}
+        </span>
+        {!part && !renaming && <RenameButton what="job" name={title} onRename={() => setRenaming(true)} />}
+        {state.key === 'finished' && job.tiles ? <AddToLayers job={job} name={title} /> : <span className="pm-icon" aria-hidden="true" />}
         {restorable && job.deletedUntil ? (
           <RestoreButton name={title} until={job.deletedUntil} busy={job.deleting} onRestore={() => void restoreTarget(target)} />
+        ) : canRetry(job, now, retired) ? (
+          <RetryButton offered name={title} tip={RETRY_TIP} busy={job.retrying} onRetry={() => void retryJob(job.jobID)} />
         ) : (
           <DownloadZip job={job} now={now} />
         )}
@@ -474,7 +521,9 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
   const retryable = retryableParts(parts, now, (part) => orderRetired(part, descriptions));
   const restorable = parts.filter((p) => canRestore(p, now));
   // The soonest end of the days in which a part can still be restored: after it not every part can.
-  const restoreUntil = restorable.map((p) => p.deletedUntil ?? '').sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+  const restoreUntil = restorable.map(goneDay).sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+  // Once every part is deleted for good the column still names the day: the latest of theirs.
+  const deletedDay = parts.filter((p) => p.deletedUntil).map(goneDay).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   return (
     <li
       ref={row}
@@ -502,7 +551,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             label="Batch title"
             maxLength={MAX_TITLE_LENGTH}
             onSave={(name) => {
-              renameBatch(batch.id, name);
+              if (name.trim()) renameBatch(batch.id, name);
               setRenaming(false);
             }}
             onCancel={() => setRenaming(false)}
@@ -518,24 +567,29 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             }}
           >
             <span className="pm-title">{batch.title}</span>
-            <span className="pm-meta">
-              <span className="pm-state">{batchSummary(count)}</span>
-              {restoreUntil ? (
-                <span className="pm-until" title={restoreUntil}>
-                  restore until {formatUntil(restoreUntil, now)}
-                </span>
-              ) : (
-                count.expires &&
-                count.deleted < parts.length && (
-                  <span className="pm-until" title={count.expires}>
-                    until {formatUntil(count.expires, now)}
-                  </span>
-                )
-              )}
-              {batch.archived && <span className="pm-tag">Archived</span>}
-            </span>
           </button>
         )}
+        <span className={`pm-meta${running ? ' running' : ''}`}>
+          <span className="pm-state">{batchSummary(count)}</span>
+          {restoreUntil ? (
+            <span className="pm-until" title={restoreUntil}>
+              {formatShortDate(restoreUntil)}
+            </span>
+          ) : count.deleted === parts.length && deletedDay ? (
+            <span className="pm-until" title={deletedDay}>
+              {formatShortDate(deletedDay)}
+            </span>
+          ) : (
+            count.expires &&
+            count.deleted < parts.length && (
+              <span className="pm-until" title={count.expires}>
+                {formatShortDate(count.expires)}
+              </span>
+            )
+          )}
+          {batch.archived && <span className="pm-tag">Archived</span>}
+        </span>
+        {!renaming && <RenameButton what="batch" name={batch.title} onRename={() => setRenaming(true)} />}
         <RetryButton
           offered={retryable.length > 0}
           name={batch.title}
@@ -589,9 +643,9 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
               <div className="pm-line">
                 <span className="pm-open">
                   <span className="pm-title">{refused.label}</span>
-                  <span className="pm-meta">
-                    <span className="pm-state">Refused</span>
-                  </span>
+                </span>
+                <span className="pm-meta">
+                  <span className="pm-state">Refused</span>
                 </span>
                 <Tip text={refused.message} />
               </div>
@@ -824,13 +878,7 @@ const emptyText = (filter: JobFilter, total: number): string =>
         ? 'No deleted jobs.'
         : 'No active jobs.';
 
-// In its window (`JobsWindow.tsx`) the head is the handle to drag by and carries the red x.
-export interface WindowChrome {
-  headProps: HTMLAttributes<HTMLDivElement>;
-  onClose: () => void;
-}
-
-export default function ProcessingManager({ chrome }: { chrome?: WindowChrome }) {
+export default function ProcessingManager() {
   // A focus still due when the manager closes is not wanted any more.
   useEffect(() => () => clearTimeout(refocusTimer), []);
   useEffect(() => {
@@ -884,16 +932,12 @@ export default function ProcessingManager({ chrome }: { chrome?: WindowChrome })
   ].filter((section) => section.group !== null || section.entries.length > 0 || groups.length > 0);
 
   return (
-    <div className={`panel processing-manager${chrome ? ' windowed' : ' dock-panel'}`} role="region" aria-label="Processing jobs">
-      <div className="results-head pm-head" {...chrome?.headProps}>
-        <h2>
-          {chrome && <span className="pm-grip" aria-hidden="true" />}
-          Jobs
-        </h2>
+    <div className="panel dock-panel processing-manager" role="region" aria-label="Processing jobs">
+      <div className="results-head pm-head">
+        <h2>Jobs</h2>
         <div className="results-head-right">
           <Tip text={KEPT_HERE_TIP} />
           {shelf === 'trimmed' && <Tip text={STORAGE_FULL_TIP} symbol="⚠" tone="warn" />}
-          {chrome && <CloseButton onClick={chrome.onClose} />}
         </div>
       </div>
       <div className="pm-tools">
@@ -972,6 +1016,13 @@ export default function ProcessingManager({ chrome }: { chrome?: WindowChrome })
                 )
               )}
               {/* With no group there is no heading to fold under: the jobs are all there is. */}
+              {/* Under the head of every open group (and over the jobs, where there is no group) stand the titles of the columns. */}
+              {(!folded || (!group && groups.length === 0)) && entries.length > 0 && (
+                <div className="pm-columns" aria-hidden="true">
+                  <span className="pm-col-title">Title</span>
+                  <span className="pm-col-until">Expires</span>
+                </div>
+              )}
               {(!folded || (!group && groups.length === 0)) && (
                 <ul className="pm-rows" id={listId}>
                   {entries.map((entry) =>

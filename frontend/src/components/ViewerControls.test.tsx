@@ -368,8 +368,9 @@ describe('the layout contract in index.css', () => {
   it('puts the bar at the right edge from the top to the foot, 320 px wide, with a line on the left and no corners', () => {
     const bar = rule('.inspector.panel');
     expect(rule('  .app.has-inspector .overlay.top-right')).toContain('right: calc(var(--inspector-width) + var(--space-4))');
-    expect(rule('  .overlay.top-right.beside-sheet')).toContain('right: calc(var(--pp-sheet-width) + var(--space-4))');
+    expect(rule('  .overlay.top-right.beside-sheet')).toContain('right: calc(var(--sheet-wide-width) + var(--space-4))');
     expect(rule('.processing-sheet')).toContain('top: 0');
+    expect(rule('.processing-sheet')).toContain('width: var(--sheet-wide-width)');
     for (const declaration of ['top: 0;', 'right: 0', 'bottom: 0', 'width: var(--inspector-width)', 'border-radius: 0', 'border-width: 0 0 0 var(--line-width)']) expect(bar).toContain(declaration);
     expect(Number(/--inspector-width: (\d+)px/u.exec(TOKENS)?.[1])).toBe(320);
   });
@@ -398,7 +399,11 @@ describe('the layout contract in index.css', () => {
 
   it('lays the fields out as a form: a label column of 72 px, the control filling the rest, a row as high as a control', () => {
     const field = rule('.inspector .vc-field');
-    expect(field).toContain('grid-template-columns: 72px minmax(0, 1fr)');
+    expect(field).toContain('grid-template-columns: var(--form-label-width) minmax(0, 1fr)');
+    expect(Number(/--form-label-width: (\d+)px/u.exec(TOKENS)?.[1])).toBe(72);
+    // The processing panel takes the same rules with a column of its own width (UI-03b).
+    expect(CSS).toContain('.processing-panel .vc-field,\n.inspector .vc-field {');
+    expect(rule('.processing-panel')).toContain('--form-label-width: 112px');
     expect(field).toContain('min-height: var(--control-height)');
     expect(rule('.inspector .vc-field select,\n.inspector .vc-field input:not([type=\'range\'])')).toContain('height: var(--control-height)');
     expect(rule('.inspector .vc-render')).toContain('gap: var(--space-2)');

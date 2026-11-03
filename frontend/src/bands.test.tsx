@@ -263,7 +263,7 @@ describe('the block that was not moved stands on the bottom edge as before', () 
 // Otto, 31.10.2026 (NM4-66): the boxes do not give way to a panel any more. They stand where they are anchored or put,
 // whether a panel is open or not; the rail is all that is left of the map.
 describe('the bands and the panels beside the rail (NM4-66)', () => {
-  const PANELS = ['controls', 'layers', 'results'] as const;
+  const PANELS = ['controls', 'layers', 'results', 'jobs'] as const;
 
   it('stay where they are when a panel opens, changes or closes: put by hand and not moved', async () => {
     await cropWithBarBeside();
@@ -274,12 +274,6 @@ describe('the bands and the panels beside the rail (NM4-66)', () => {
       act(() => useAppStore.setState({ dock }));
       expect(placeOf(selectionBar as () => HTMLElement), `moved band, dock ${dock}`).toEqual(put);
       expect(view(), `settings bar, dock ${dock}`).toBe(bar);
-    }
-    // The window of the jobs floats over them and moves nothing.
-    for (const managerOpen of [true, false]) {
-      act(() => useProcessingStore.setState({ managerOpen }));
-      expect(placeOf(selectionBar as () => HTMLElement), `moved band, jobs window ${managerOpen}`).toEqual(put);
-      expect(view(), `settings bar, jobs window ${managerOpen}`).toBe(bar);
     }
   });
 

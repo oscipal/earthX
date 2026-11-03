@@ -4,7 +4,9 @@
 // with an estimate before it starts as a job. The same steps can make one job per
 // pass or per scene (M4-13c-4). Built from the schema of
 // `/processing/processes/recipe?dataset=…`, nothing per dataset here. A side
-// bar at the right edge, a sheet from below on narrow screens (M4-13c §3.1);
+// bar at the right edge, in the column of the settings bar but wider, a sheet from
+// below on narrow screens (M4-13c §3.1, UI-03b). Its sections stand in one order:
+// Selection, Bands, Processing steps, Output, Preview on the map, then Review and Start;
 // the jobs are listed in the processing manager beside the rail, and a click
 // on one shows its details here (`JobDetails.tsx`, UI-01). The first step shows
 // on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
@@ -459,6 +461,7 @@ function PreviewSection({ view }: { view: OrderView }) {
         <>
           <div className="pp-range" role="group" aria-label="Range and colormap">
             <RenderFields
+              scale
               band={
                 read && read.choices.length > 1 && read.band !== null
                   ? {
@@ -491,26 +494,28 @@ function PreviewSection({ view }: { view: OrderView }) {
               }}
               colormap={read?.band === RGB ? null : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
             />
-            <button
-              type="button"
-              className="primary-btn vc-apply"
-              disabled={percentMode ? percentApplied : 'problem' in valueRange}
-              onClick={() => (percentMode ? void applyRangePercent(typed).then(setPercentProblem) : applyRange())}
-            >
-              Apply
-            </button>
-            <button
-              type="button"
-              className="link-btn"
-              disabled={percentMode ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
-              title="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
-              onClick={() => {
-                if (percentMode) setTyped(DEFAULT_PERCENT);
-                else autoStretch();
-              }}
-            >
-              Auto stretch
-            </button>
+            <div className="pp-buttons">
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={percentMode ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
+                title="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
+                onClick={() => {
+                  if (percentMode) setTyped(DEFAULT_PERCENT);
+                  else autoStretch();
+                }}
+              >
+                Auto stretch
+              </button>
+              <button
+                type="button"
+                className="primary-btn vc-apply"
+                disabled={percentMode ? percentApplied : 'problem' in valueRange}
+                onClick={() => (percentMode ? void applyRangePercent(typed).then(setPercentProblem) : applyRange())}
+              >
+                Apply
+              </button>
+            </div>
           </div>
           {!percentMode && 'problem' in valueRange && <p className="hint-text error">{valueRange.problem}</p>}
           {percentMode && percentProblem && <p className="hint-text error">{percentProblem}</p>}
@@ -664,27 +669,10 @@ export default function ProcessingPanel() {
         >
           {folded ? '▴' : '▾'}
         </button>
-        <div className="vc-head">
-          <span className="vc-title">PROCESSING</span>
+        <div className="pp-title-row">
+          <h2 className="pp-title">Processing</h2>
           <CloseButton onClick={close} />
         </div>
-        {!reason && (
-          <section className="pp-section" aria-label="Selection">
-            <p className="pp-summary">
-              {[
-                dataset?.title ?? app.datasetId,
-                view.pass?.label,
-                view.pass && (sceneCount === 1 ? view.pass.items[0].id : `${sceneCount} scenes`),
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
-            {/* A crop has its own AOI to take, the map's AOI or none is no matter (NM4-06). */}
-            <AreaChoice view={view} hasAoi={hasAoi || (view.fixed != null && view.fixed.result === null)} />
-            <RunAsChoice view={view} />
-            <RecipeLoader />
-          </section>
-        )}
       </div>
 
       <div className="pp-body">
@@ -692,7 +680,20 @@ export default function ProcessingPanel() {
           <p className="hint-text">{reason}</p>
         ) : (
           <>
-            <section className="pp-section" aria-label="Scenes">
+            <section className="pp-section" aria-label="Selection">
+              <h3 className="pp-heading">Selection</h3>
+              <p className="pp-summary">
+                {[
+                  dataset?.title ?? app.datasetId,
+                  view.pass?.label,
+                  view.pass && (sceneCount === 1 ? view.pass.items[0].id : `${sceneCount} scenes`),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+              {/* A crop has its own AOI to take, the map's AOI or none is no matter (NM4-06). */}
+              <AreaChoice view={view} hasAoi={hasAoi || (view.fixed != null && view.fixed.result === null)} />
+              <RunAsChoice view={view} />
               {view.area === 'aoi' && view.aoi !== null && view.candidates.length === 0 && (
                 <p className="hint-text error">No selected scene meets the AOI.</p>
               )}
@@ -724,6 +725,7 @@ export default function ProcessingPanel() {
                   <p className="hint-text warn">{PASS_NOTE}</p>
                 </>
               )}
+              <RecipeLoader />
             </section>
 
             {description?.state === 'loading' && <p className="hint-text">Loading the operators…</p>}

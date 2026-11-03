@@ -183,9 +183,9 @@ describe('the selection bar', () => {
   });
 });
 
-// M4-13c §3.1: the panel that builds an order is a side bar; the jobs are listed in the manager, a floating
-// window (UI-03c).
-describe('the processing side bar and the window of the jobs', () => {
+// M4-13c §3.1: the panel that builds an order is a side bar; the jobs are listed in the manager beside the
+// rail (UI-01 §6.9).
+describe('the processing side bar and the manager of the jobs', () => {
   const JOB: JobEntry = {
     jobID: 'AbCdEfGhIjKlMnOpQrSt_-',
     expires: new Date(Date.now() + 86_400_000).toISOString(),
@@ -231,32 +231,24 @@ describe('the processing side bar and the window of the jobs', () => {
     document.body.append(container);
     root = createRoot(container);
     useAppStore.setState({ groups: [], items: [], selectedIds: [], focusMode: false });
-    useProcessingStore.setState({ open: false, managerOpen: false, jobs: [JOB] });
+    useProcessingStore.setState({ open: false, jobs: [JOB] });
     useAppStore.setState({ dock: 'controls' });
   });
 
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    useProcessingStore.setState({ open: false, managerOpen: false, jobs: [] });
+    useProcessingStore.setState({ open: false, jobs: [] });
     useAppStore.setState({ sections: [] });
     vi.unstubAllGlobals();
   });
 
-  it('opens the manager as a window, not the panel, from the symbol of the jobs in the rail, and closes it with the same symbol', () => {
+  it('opens the manager, not the panel, from the symbol of the jobs in the rail', () => {
     const view = mount();
-    const symbol = view.querySelector<HTMLButtonElement>('#rail-jobs')!;
-    expect(symbol.getAttribute('aria-pressed')).toBe('false');
-    act(() => symbol.click());
-    // The panel beside the rail stays as it was: the jobs are no panel of the dock.
-    expect(useAppStore.getState().dock).toBe('controls');
+    act(() => view.querySelector<HTMLButtonElement>('#rail-jobs')!.click());
+    expect(useAppStore.getState().dock).toBe('jobs');
     expect(useProcessingStore.getState().open).toBe(false);
-    expect(view.querySelector('#jobs-window .processing-manager')).not.toBeNull();
-    expect(view.querySelector('.dock .processing-manager')).toBeNull();
-    expect(symbol.getAttribute('aria-pressed')).toBe('true');
-    act(() => symbol.click());
-    expect(view.querySelector('#jobs-window')).toBeNull();
-    expect(symbol.getAttribute('aria-pressed')).toBe('false');
+    expect(view.querySelector('.dock .processing-manager')).not.toBeNull();
   });
 
   it('leaves the results in their panel beside the rail when the side bar opens, and centres the bottom bar beside it', () => {
@@ -280,9 +272,10 @@ describe('the processing side bar and the window of the jobs', () => {
   });
 
   it('puts the panel in the side bar and the manager beside the rail', () => {
-    useProcessingStore.setState({ open: true, managerOpen: true });
+    useProcessingStore.setState({ open: true });
+    useAppStore.setState({ dock: 'jobs' });
     const view = mount();
     expect(view.querySelector('.processing-sheet [aria-label="Processing"]')).not.toBeNull();
-    expect(view.querySelector('#jobs-window .processing-manager')).not.toBeNull();
+    expect(view.querySelector('.dock .processing-manager')).not.toBeNull();
   });
 });
