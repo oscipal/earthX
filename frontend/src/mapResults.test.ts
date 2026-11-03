@@ -98,6 +98,15 @@ describe('resultsOnMapOf, over a full-resolution view', () => {
     expect(ids(resultsOnMapOf(view({ resultsOnMap: true })).clickable).length).toBeGreaterThan(0);
   });
 
+  it('lets a click pick nothing while no group is open, whatever is drawn: the ticked scenes and those of the view included (Otto, 3.11.2026)', () => {
+    expect(resultsOnMapOf(view({ expandedGroupIndex: null, selectedIds: ['b1'] })).clickable).toEqual([]);
+    expect(resultsOnMapOf(state({ expandedGroupIndex: null, selectedIds: ['b1'] })).clickable).toEqual([]);
+    // What is drawn is not what is clickable: the ticked scene is still outlined.
+    expect(ids(resultsOnMapOf(state({ expandedGroupIndex: null, selectedIds: ['b1'] })).highlight)).toEqual(['b1']);
+    // With a group open the scenes answer again.
+    expect(ids(resultsOnMapOf(state({ expandedGroupIndex: 0 })).clickable)).toEqual(['a1', 'a2']);
+  });
+
   it('outlines the ticked scenes only', () => {
     expect(ids(resultsOnMapOf(view({ selectedIds: ['a2', 'b2'] })).highlight).sort()).toEqual(['a2', 'b2']);
   });
