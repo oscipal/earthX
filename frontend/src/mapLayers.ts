@@ -341,8 +341,9 @@ export function ensureBaseLayers(map: MapLibreMap): void {
       layout: { visibility: 'none' },
       paint: {
         // maplibre-gl doesn't export the expression-spec type this needs, so
-        // `coverage.ts` returns a plain array and the cast happens once,
-        // here — `setPaintProperty` below takes `value: any` and needs none.
+        // `coverage.ts` returns a plain array and the cast happens at the two
+        // places that hand it to MapLibre (here and in `setCoverageDisplay`;
+        // maplibre-gl 6 types `setPaintProperty` as well).
         'fill-color': coverageFillColorExpression(1) as never,
         'fill-opacity': 0.5,
         'fill-outline-color': 'rgba(0,0,0,0)',
@@ -421,7 +422,7 @@ export function setCoverageDisplay(map: MapLibreMap, display: CoverageDisplay): 
   const area = display.mode === 'area';
   setData(map, COVERAGE_SRC, density ? cellsToFeatureCollection(display.cells) : EMPTY_FC);
   if (density && map.getLayer('coverage-heat')) {
-    map.setPaintProperty('coverage-heat', 'fill-color', coverageFillColorExpression(display.maxCount));
+    map.setPaintProperty('coverage-heat', 'fill-color', coverageFillColorExpression(display.maxCount) as never);
   }
   setVisibility(map, 'coverage-heat', density);
   setData(map, COVERAGE_FOOTPRINTS_SRC, footprints ? (display.footprints ?? EMPTY_FC) : EMPTY_FC);
