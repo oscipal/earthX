@@ -81,7 +81,8 @@ async function check(browser, { theme, viewport }) {
   if (eyeBox.y < nameBox.y + nameBox.height - 1) problems.push('the buttons are not under the title');
   if (Math.abs(removeBox0.y - eyeBox.y) > 3) problems.push('the buttons are not in one line');
   if (sliderBox0.width < 60) problems.push(`the slider is only ${sliderBox0.width} px wide`);
-  if (nameBox.width < panelBox.width - 60) problems.push(`the title is only ${nameBox.width} px of ${panelBox.width} px`);
+  // The title has the line to itself but the pencil at its end (Otto, 3.11.2026).
+  if (nameBox.width < panelBox.width - 90) problems.push(`the title is only ${nameBox.width} px of ${panelBox.width} px`);
   await shot('1-rows');
 
   // --- part 1: the grip, with the real mouse
