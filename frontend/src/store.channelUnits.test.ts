@@ -133,16 +133,20 @@ describe('"auto-scale" and "Enhance contrast" with channels in percentiles', () 
     expect(state().pendingChannels).toEqual([{ vmin: '0', vmax: '255', percent: USUAL }, { vmin: '7', vmax: '211' }, { vmin: '7', vmax: '211' }]);
   });
 
-  it('"Enhance contrast" puts every channel in percentiles at the usual pair; a second click draws what was before', async () => {
+  it('"Enhance contrast" puts every channel in percentiles at the usual pair and draws nothing; "Apply" draws; a second click puts the fields back', async () => {
     state().setPendingChannelUnit(1, 'percent');
     state().setPendingChannelPercent(1, 'low', '10');
     await state().applyRender();
-    const before = { ...state().appliedRender };
+    const drawn = { ...state().appliedRender };
     await state().enhanceContrast();
-    expect(state().appliedRender.percentChannels).toEqual([USUAL, USUAL, USUAL]);
+    expect(state().pendingChannels.map((channel) => channel.percent)).toEqual([USUAL, USUAL, USUAL]);
+    expect(state().appliedRender).toEqual(drawn);
     expect(state().enhance).not.toBeNull();
+    await state().applyRender();
+    expect(state().appliedRender.percentChannels).toEqual([USUAL, USUAL, USUAL]);
     await state().enhanceContrast();
-    expect(state().appliedRender).toMatchObject({ rescale: before.rescale, percentChannels: before.percentChannels });
+    expect(state().pendingChannels.map((channel) => channel.percent)).toEqual([undefined, { low: '10', high: '98' }, undefined]);
+    expect(state().enhance).toBeNull();
   });
 });
 

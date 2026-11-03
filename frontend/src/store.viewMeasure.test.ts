@@ -200,6 +200,10 @@ describe('"Enhance contrast" over the area', () => {
     openView(true);
     answer(() => json({ exact: true, factor: 1, bands: [band('visual_1', 3, 250, 10, 200), band('visual_2', 4, 240, 20, 190), band('visual_3', 5, 230, 30, 180)] }));
     await state().enhanceContrast();
+    // Nothing is asked of the tiler, nothing drawn, until "Apply".
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(state().appliedRender).toEqual({ rescale: '0,255' });
+    await state().applyRender();
     const usual = { low: '2', high: '98' };
     expect(state().pendingChannels).toEqual([
       { vmin: '10', vmax: '200', percent: usual },

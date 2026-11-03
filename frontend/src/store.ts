@@ -668,8 +668,15 @@ export function colourView(s: AppState): boolean {
   return trueColorOf(s.datasets.find((d) => d.id === info?.datasetId)?.collection) !== null;
 }
 
-// Whether "Enhance contrast" is on: the fields still ask for the look it drew.
-export const enhanceOn = (s: AppState): boolean => s.enhance !== null && !lookChanged(s.enhance.look, s);
+// Whether "Enhance contrast" is on: the fields still ask for what it put in them, the usual pair in percentiles (in every channel of a
+// colour picture) for the picture it was pressed for. The values those percentiles give do not count: they come with "Apply".
+export function enhanceOn(s: AppState): boolean {
+  if (!s.enhance) return false;
+  const asked = lookOfPendingFields(s);
+  const kept = s.enhance.look;
+  if ((kept.colormapName || undefined) !== asked.colormapName || (kept.index || undefined) !== asked.index || (kept.band || undefined) !== asked.band) return false;
+  return asked.percentChannels ? asked.percentChannels.length === CHANNEL_COUNT && asked.percentChannels.every((pair) => samePercent(pair, DEFAULT_PERCENT)) : samePercent(asked.percent, DEFAULT_PERCENT);
+}
 
 // What the fields of the view are measured with (`autoStretch`, "Enhance contrast", the histograms of "Scale"): the area of the crop where
 // the view is cropped to the AOI and the tiler takes it (UI-03e), else the first scene of the image shown, the index of the fields as the
@@ -2789,23 +2796,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     s.chooseViewIndex(s.pendingIndex === name ? null : name);
     set({ enhance: null });
   },
+  // Into the fields, drawn with "Apply" like an index (Otto, 3.11.2026, zu #282): every channel of a colour picture at the usual pair, each in
+  // percentiles on its own (UI-03e); one band as the shared pair. A second click puts the fields back as they were, also without "Apply".
   enhanceContrast: async () => {
     const s = get();
     if (enhanceOn(s)) {
       set({ ...pendingFieldsOf(s.enhance!.before), enhance: null });
-      await get().applyRender();
       return;
     }
-    const before = { ...s.appliedRender };
-    // Every channel of a colour picture at the usual pair, each in percentiles on its own (UI-03e); one band as the shared pair.
+    const before = lookOfPendingFields(s);
     if (colourView(s)) set({ pendingChannels: colourChannelsOf(s).map(({ vmin, vmax }) => ({ vmin, vmax, percent: { ...DEFAULT_PERCENT } })), pendingUnit: 'value' });
     else set({ pendingUnit: 'percent', pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
-    await get().applyRender();
-    const now = get();
-    const applied = now.appliedRender;
-    // Only where the percentiles could be measured: else the fields say why and nothing is on.
-    const done = applied.percentChannels ? applied.percentChannels.length === CHANNEL_COUNT && applied.percentChannels.every((pair) => samePercent(pair, DEFAULT_PERCENT)) : samePercent(applied.percent, DEFAULT_PERCENT);
-    if (done) set({ enhance: { look: lookOfPendingFields(now), before } });
+    set({ enhance: { look: lookOfPendingFields(get()), before } });
   },
   // Commits the pending fields (F18) — nothing renders differently until this
   // runs, which is the point of an explicit "Apply".

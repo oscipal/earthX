@@ -135,22 +135,45 @@ const slide = (input: HTMLInputElement, value: number) =>
   });
 
 describe('"Enhance contrast"', () => {
-  it('stretches each channel of the colour picture from its own 2nd to its 98th percentile, at once, and is on', async () => {
+  // Otto, 3.11.2026 (zu #282): like an index, it goes into the fields and is drawn with "Apply".
+  const applyButton = () => container.querySelector('.vc-apply') as HTMLButtonElement;
+
+  it('puts the 2nd to the 98th percentile of each channel in the fields and is on, and draws nothing until "Apply"', async () => {
     mount();
     expect(on('Enhance contrast')).toBe(false);
     await press('Enhance contrast');
-    expect(state().appliedRender.rescale).toBe('100,900;200,1200;300,1800');
+    expect(state().pendingChannels.map((channel) => channel.percent)).toEqual(Array.from({ length: 3 }, () => ({ low: '2', high: '98' })));
     expect(on('Enhance contrast')).toBe(true);
-    // Counter-check: not the one shared range "auto-scale" puts in the fields.
+    expect(state().appliedRender).toEqual({ rescale: '0,3000' });
+    expect(applyButton().getAttribute('aria-disabled')).toBeNull();
+    await act(async () => {
+      applyButton().click();
+    });
+    await settle();
+    // Each channel at its own percentiles: not the one shared range "auto-scale" puts in the fields.
+    expect(state().appliedRender.rescale).toBe('100,900;200,1200;300,1800');
     expect(state().appliedRender.rescale).not.toBe('100,1800');
+    // Still on: the fields still ask for it, whatever values the percentiles gave.
+    expect(on('Enhance contrast')).toBe(true);
   });
 
-  it('puts back what was drawn before with a second click', async () => {
+  it('puts the fields back as they were with a second click, drawn or not', async () => {
     mount();
     await press('Enhance contrast');
     await press('Enhance contrast');
     expect(state().appliedRender).toEqual({ rescale: '0,3000' });
-    expect(state().pendingUnit).toBe('value');
+    expect(state().pendingChannels).toEqual([]);
+    expect(state().pendingVmin).toBe('0');
+    expect(on('Enhance contrast')).toBe(false);
+    // And after "Apply": the second click puts the fields back, the map keeps what "Apply" drew until the next "Apply".
+    await press('Enhance contrast');
+    await act(async () => {
+      applyButton().click();
+    });
+    await settle();
+    await press('Enhance contrast');
+    expect(state().appliedRender.rescale).toBe('100,900;200,1200;300,1800');
+    expect(state().pendingChannels.some((channel) => channel.percent)).toBe(false);
     expect(on('Enhance contrast')).toBe(false);
   });
 
@@ -182,6 +205,9 @@ describe('"Enhance contrast"', () => {
   it('is only the look: "Add to layers" pins the whole view', async () => {
     mount();
     await press('Enhance contrast');
+    await act(async () => {
+      await state().applyRender();
+    });
     act(() => state().addCurrentToLayers());
     expect(state().layers).toHaveLength(1);
     expect(state().layers[0].restore.indexOnly).toBeUndefined();

@@ -37,7 +37,7 @@ import ScaleHistograms from './ScaleHistograms';
 import { useHistograms } from './useHistograms';
 
 const INDEX_ONLY_TIP = 'This layer holds the index only';
-const ENHANCE_RGB_TIP = 'Stretch red, green and blue each from its 2nd to its 98th percentile and draw them. Only the look: Add to layers pins the whole view.';
+const ENHANCE_RGB_TIP = 'Put the 2nd to the 98th percentile of red, green and blue in the fields, each channel on its own; Apply draws them. Only the look: Add to layers pins the whole view.';
 
 // The histograms of the bands the statistics name, in their order; none where one band has none.
 async function loadHistograms(measure: ViewMeasure): Promise<Histogram[] | null> {
@@ -415,7 +415,7 @@ export default function ViewerControls() {
                   className={`ghost-btn${enhanced ? ' on' : ''}`}
                   aria-pressed={enhanced}
                   disabled={focusLoading}
-                  title={enhanced ? 'Click again for the picture before' : ENHANCE_RGB_TIP}
+                  title={enhanced ? 'Click again for the fields as they were before' : ENHANCE_RGB_TIP}
                   onClick={() => void enhanceContrast()}
                 >
                   Enhance contrast

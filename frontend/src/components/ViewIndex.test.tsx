@@ -158,7 +158,7 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     mount();
     expect(quickButton('NDVI').title).toContain('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');
     expect(quickButton('NDWI').title).toContain('(McFeeters 1996)');
-    expect(quickButton('Enhance contrast').title).toContain('2nd to its 98th percentile');
+    expect(quickButton('Enhance contrast').title).toContain('2nd to the 98th percentile');
   });
 
   // Otto, 3.11.2026: an index goes into the fields and is drawn with "Apply", as a band is.
