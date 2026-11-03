@@ -181,6 +181,21 @@ describe('the view of a layer of the layer manager', () => {
     expect(quick().map((b) => b.textContent)).toEqual(['NDVI', 'NDWI', 'NDSI', 'NBR', 'EVI']);
   });
 
+  // Otto, 3.11.2026: "Add current view to layers" of a layer that shows an index adds the index alone.
+  it('copies a layer that shows an index as the index alone, and one without an index as the whole view', async () => {
+    setState({ viewOfLayer: true, layers: [layer({ rescale: '0,3000' })], viewLayerId: 'L1', appliedRender: { rescale: '0,3000' } });
+    useAppStore.getState().chooseViewIndex('NDVI');
+    await act(async () => { await useAppStore.getState().applyRender(); });
+    act(() => useAppStore.getState().copyLayerAsShown('L1'));
+    const [copy, original] = useAppStore.getState().layers;
+    expect(copy.restore).toMatchObject({ indexOnly: true, appliedRender: { index: 'NDVI' } });
+    // Counter-check: the layer it came from is the whole view as it was saved, and a copy of it is too.
+    expect(original.restore.indexOnly).toBeUndefined();
+    expect(original.restore.appliedRender.index).toBeUndefined();
+    act(() => useAppStore.getState().copyLayerAsShown('L1'));
+    expect(useAppStore.getState().layers.find((l) => l.id !== copy.id && l.id !== 'L1')!.restore.indexOnly).toBeUndefined();
+  });
+
   it('changes the picture of the layer with "Apply", as the same layer: another index, then the standard picture again', async () => {
     setState({ viewOfLayer: true, layers: [layer(NDVI)], viewLayerId: 'L1' });
     useAppStore.getState().chooseViewIndex('NDWI');

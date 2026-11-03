@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 //
 // The presets of the view of scenes (NM4-14b, review of Otto 31.10.2026), since UI-03d buttons in "Quick processing" (Otto, 2.11.2026):
-// drawn at once, on or off, the tooltip with the formula, the short note where the index cannot be drawn (and its explanation).
+// into the fields and drawn with "Apply" (Otto, 3.11.2026), on or off, the tooltip with the formula, the short note where the index
+// cannot be drawn (and its explanation).
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -95,6 +96,7 @@ const field = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render
 const select = () => field()?.querySelector('select') as HTMLSelectElement;
 const colormapSelect = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!.querySelector('select')!;
 const note = () => container.querySelector<HTMLElement>('.vc-note');
+const apply = () => act(() => (container.querySelector('.vc-apply') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const choose = (value: string) =>
   act(() => {
     Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(select(), value);
@@ -159,12 +161,18 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     expect(quickButton('Enhance contrast').title).toContain('2nd to its 98th percentile');
   });
 
-  it('draws an index at once, with no "Apply" and no job, and shows it on; a second click goes back to the picture of the dataset', async () => {
+  // Otto, 3.11.2026: an index goes into the fields and is drawn with "Apply", as a band is.
+  it('puts an index into the fields and on, and "Apply" draws it with no job; a second click and "Apply" give the picture of the dataset', async () => {
     mount();
+    const applyButton = () => container.querySelector('.vc-apply') as HTMLButtonElement;
     await press('NDWI');
-    expect(useAppStore.getState().appliedRender).toEqual({ index: 'NDWI', colormapName: 'rdbu', rescale: '-1,1' });
     expect(pressed()).toEqual(['NDWI']);
-    expect((container.querySelector('.vc-apply') as HTMLButtonElement).getAttribute('aria-disabled')).toBe('true');
+    // Counter-check: nothing is drawn before "Apply", which is open.
+    expect(useAppStore.getState().appliedRender).toEqual({ rescale: '0,3000' });
+    expect(applyButton().getAttribute('aria-disabled')).toBeNull();
+    apply();
+    expect(useAppStore.getState().appliedRender).toEqual({ index: 'NDWI', colormapName: 'rdbu', rescale: '-1,1' });
+    expect(applyButton().getAttribute('aria-disabled')).toBe('true');
     // The field "Band" says what is drawn, and the index is no band to pick there.
     expect(select().value).toBe('index:NDWI');
     expect([...select().options].find((o) => o.value === 'index:NDWI')!.disabled).toBe(true);
@@ -172,8 +180,10 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
     expect(calls.every((url) => url.includes('/statistics') || url.endsWith('/colormaps'))).toBe(true);
     await press('NDWI');
-    expect(useAppStore.getState().appliedRender).toEqual({ rescale: '0,3000' });
     expect(pressed()).toEqual([]);
+    expect(useAppStore.getState().appliedRender.index).toBe('NDWI');
+    apply();
+    expect(useAppStore.getState().appliedRender).toEqual({ rescale: '0,3000' });
     expect(select().value).toBe('');
   });
 
@@ -182,6 +192,7 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     await press('NDVI');
     await press('EVI');
     expect(pressed()).toEqual(['EVI']);
+    apply();
     expect(useAppStore.getState().appliedRender.index).toBe('EVI');
   });
 
@@ -267,6 +278,8 @@ describe('the note under the settings', () => {
     mount(SENTINEL_2_PRESETS, { mapZoom: 5 });
     none();
     await press('NDWI');
+    none(); // in the fields, not drawn yet
+    apply();
     expect(note()!.textContent).toBe('Zoom in to compute NDWI');
     expect(note()!.closest('.insp-section')!.querySelector('.insp-heading')!.textContent).toBe('Quick processing');
   });

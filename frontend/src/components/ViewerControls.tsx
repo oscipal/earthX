@@ -384,7 +384,7 @@ export default function ViewerControls() {
                       className={`ghost-btn${on ? ' on' : ''}`}
                       aria-pressed={on}
                       disabled={pinLoading}
-                      title={`${presetTip(preset)} ${on ? 'Click again for the picture of the dataset.' : 'Drawn at once, no job.'}`}
+                      title={`${presetTip(preset)} ${on ? 'Click again for the picture of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
                       onClick={() => void quickIndex(preset.name)}
                     >
                       {preset.name}

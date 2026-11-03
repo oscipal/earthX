@@ -196,9 +196,15 @@ describe('"Add to layers" with an index of "Quick processing"', () => {
   it('pins the index alone, and the whole view without one', async () => {
     mount();
     await press('NDVI');
+    await act(async () => {
+      await state().applyRender();
+    });
     act(() => state().addCurrentToLayers());
     expect(state().layers[0].restore).toMatchObject({ indexOnly: true, appliedRender: { index: 'NDVI' } });
     await press('NDVI');
+    await act(async () => {
+      await state().applyRender();
+    });
     act(() => state().addCurrentToLayers());
     expect(state().layers[0].restore.indexOnly).toBeUndefined();
   });

@@ -1623,8 +1623,8 @@ export interface AppState {
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
   setPendingChannel: (channel: number, end: 'vmin' | 'vmax', text: string) => void;
-  // "Quick processing" (UI-03d): an index drawn at once, without a job and without "Apply"; a second click goes back to the picture of
-  // the dataset.
+  // "Quick processing" (UI-03d): an index into the fields, drawn without a job once "Apply" is pressed (Otto, 3.11.2026); a second click
+  // puts the picture of the dataset back into the fields.
   quickIndex: (name: string) => Promise<void>;
   // "Enhance contrast": each band (each channel of a colour picture) stretched from its 2nd to its 98th percentile and drawn at once;
   // a second click puts back what was drawn before.
@@ -2133,10 +2133,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const at = s.layers.findIndex((l) => l.id === id);
     if (at < 0) return;
     const { saved: _saved, ...source } = s.layers[at];
+    // A copy that shows an index is the index alone, as "Add to layers" of the view pins it (Otto, 3.11.2026).
+    const { indexOnly: _whole, ...restore } = source.restore;
+    const shows = !source.derived && viewIndexOf(restore.appliedRender ?? {}, s.datasets.find((d) => d.id === restore.datasetId)?.collection);
     const copy: MapLayer = {
       ...source,
       id: `C${nextBatchId()}0`,
       name: `${source.name} (copy)`,
+      restore: shows ? { ...restore, indexOnly: true } : restore,
       ...(source.result ? { result: { ...source.result, savedTileUrl: undefined, savedPercent: undefined } } : {}),
     };
     // Just above the layer it is copied from, as a layer made from a band; then its settings are the ones open, and the layer it
@@ -2727,11 +2731,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const channels = s.pendingChannels.length === CHANNEL_COUNT ? s.pendingChannels : channelsOf(s.pendingVmin, s.pendingVmax);
       return { pendingChannels: channels.map((range, index) => (index === channel ? { ...range, [end]: text } : range)) };
     }),
+  // Into the fields, drawn with "Apply" like a band (Otto, 3.11.2026), in the view and in the settings of a layer.
   quickIndex: async (name) => {
     const s = get();
     s.chooseViewIndex(s.pendingIndex === name ? null : name);
     set({ enhance: null });
-    await get().applyRender();
   },
   enhanceContrast: async () => {
     const s = get();

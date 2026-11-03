@@ -128,10 +128,14 @@ const choose = (value: string) =>
 const apply = () => act(() => (container.querySelector('.vc-apply') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const settle = () => act(async () => { await vi.waitFor(() => expect(useAppStore.getState().focusLoading).toBe(false)); await new Promise((r) => setTimeout(r, 10)); });
 const store = () => useAppStore.getState();
-// An index of "Quick processing" (UI-03d): drawn at once, without "Apply".
+// An index of "Quick processing" (UI-03d), into the fields and drawn with "Apply" (Otto, 3.11.2026).
 const quick = async (name: string) => {
   await act(async () => {
     [...container.querySelectorAll<HTMLButtonElement>('.vc-quick button')].find((b) => b.textContent === name)!.click();
+  });
+  await settle();
+  await act(async () => {
+    await useAppStore.getState().applyRender();
   });
   await settle();
 };
