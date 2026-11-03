@@ -169,9 +169,9 @@ describe('"Enhance contrast"', () => {
   it('is off once the fields ask for something else, or a band or an index is picked', async () => {
     mount();
     await press('Enhance contrast');
-    act(() => state().setPendingPercent('low', '5'));
+    act(() => state().setPendingChannelPercent(0, 'low', '5'));
     expect(on('Enhance contrast')).toBe(false);
-    act(() => state().setPendingPercent('low', '2'));
+    act(() => state().setPendingChannelPercent(0, 'low', '2'));
     expect(on('Enhance contrast')).toBe(true);
     await press('NDWI');
     expect(quickButton('Enhance contrast')).toBeUndefined();
@@ -233,6 +233,61 @@ describe('the histograms of "Scale"', () => {
     expect(state().pendingChannels[1].vmin).toBe('3000');
   });
 
+  // UI-03e (Otto, 3.11.2026): in a colour picture each of the three rows has its own switch "absolute / percentile".
+  describe('with a unit for each channel', () => {
+    const switches = () => [...container.querySelectorAll<HTMLSelectElement>('.vc-channels .vc-unit')];
+    const choose = (label: string, unit: string) =>
+      act(() => {
+        const select = container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+        Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(select, unit);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+    it('has a switch in every row, and not the one of the range', async () => {
+      mount();
+      await vi.waitFor(() => expect(hists()).toHaveLength(3));
+      expect(switches().map((s) => s.getAttribute('aria-label'))).toEqual(['red range unit', 'green range unit', 'blue range unit']);
+      expect(container.querySelectorAll('select[aria-label="Range unit"]')).toHaveLength(0);
+    });
+
+    it('turns one row to percentiles and leaves the other two in values, fields and sliders alike', async () => {
+      mount();
+      await vi.waitFor(() => expect(hists()).toHaveLength(3));
+      choose('green range unit', 'percent');
+      expect(switches().map((s) => s.value)).toEqual(['value', 'percent', 'value']);
+      expect([field('green low percentile').value, field('green high percentile').value]).toEqual(['2', '98']);
+      expect(field('red vmin').value).toBe('0');
+      expect(field('blue vmax').value).toBe('3000');
+      // The slider of green stands where the 2nd percentile of green's histogram lies; it writes a whole percent into green only.
+      const [low, high] = [Number(slider('green vmin').min), Number(slider('green vmin').max)];
+      slide(slider('green vmin'), low + (high - low) * 0.25);
+      expect(state().pendingChannels[1].percent?.low).toBe('25');
+      expect(state().pendingChannels[0].percent).toBeUndefined();
+      expect(state().pendingChannels[2].percent).toBeUndefined();
+      // The slider of red still writes a value.
+      slide(slider('red vmin'), 500);
+      expect(state().pendingChannels[0].vmin).toBe('500');
+    });
+
+    it('draws the percentiles of that row alone with "Apply": each at its own values', async () => {
+      mount();
+      await vi.waitFor(() => expect(hists()).toHaveLength(3));
+      choose('blue range unit', 'percent');
+      await act(async () => {
+        await state().applyRender();
+      });
+      expect(state().appliedRender.rescale).toBe('0,3000;0,3000;300,1800');
+      expect(state().appliedRender.percentChannels).toEqual([null, null, { low: '2', high: '98' }]);
+    });
+
+    it('is not there for one band: the one switch of the range stays', async () => {
+      mount({ pendingBand: 'B04' });
+      await settle();
+      expect(container.querySelectorAll('.vc-channels')).toHaveLength(0);
+      expect(container.querySelectorAll('select[aria-label="Range unit"]')).toHaveLength(1);
+    });
+  });
+
   it('is one for an index; "Enhance contrast" moves the sliders of the three channels to the range it draws', async () => {
     mount();
     await press('NDVI');
@@ -241,7 +296,7 @@ describe('the histograms of "Scale"', () => {
     await vi.waitFor(() => expect(hists()).toHaveLength(3));
     await press('Enhance contrast');
     // In percentiles: each slider stands where the 2nd and the 98th percentile of its channel's histogram lie.
-    expect(state().pendingUnit).toBe('percent');
+    expect(state().pendingChannels.map((channel) => channel.percent)).toEqual(Array.from({ length: 3 }, () => ({ low: '2', high: '98' })));
     expect(Number(slider('red vmin').value)).toBeCloseTo(20 + 0.02 * 960, 5);
     expect(Number(slider('blue vmax').value)).toBeCloseTo(150 + 0.98 * 1800, 5);
   });

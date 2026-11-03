@@ -52,9 +52,9 @@ import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
-import { channelsAtPercent, channelsOf, CHANNEL_COUNT, type ChannelRange } from './channels';
+import { channelsAtOwnPercent, samePercents, CHANNEL_COUNT, CHANNEL_NAMES, type ChannelRange } from './channels';
 import { trueColorOf } from './processingOrder';
-import { appliedRenderFrom, autoRescale, lookChanged, lookOfPendingFields, pendingFieldsOf, pendingPercentOf } from './render';
+import { appliedRenderFrom, autoRescale, colourChannelsOf, colourInPercent, lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
   buildSections,
@@ -750,25 +750,39 @@ async function layerDrawnWith(set: SetState, get: GetState, layer: MapLayer, ren
 // the look keeps the percentiles for the fields to show "%" again.
 async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
   const s = get();
-  const checked = checkPercent({ low: s.pendingPercentLow, high: s.pendingPercentHigh });
-  if ('problem' in checked) {
-    set({ notice: checked.problem });
-    return;
+  // A colour picture keeps a unit for each channel (UI-03e): each channel typed in percentiles is taken at its own pair and its own values.
+  const own = colourView(s) ? colourChannelsOf(s) : null;
+  const pairs: { low: number; high: number }[] = [];
+  for (const [index, channel] of (own ?? [{ percent: { low: s.pendingPercentLow, high: s.pendingPercentHigh } }]).entries()) {
+    if (!channel.percent) continue;
+    const checked = checkPercent(channel.percent);
+    if ('problem' in checked) {
+      set({ notice: own ? `${CHANNEL_NAMES[index]}: ${checked.problem}` : checked.problem });
+      return;
+    }
+    pairs.push(checked);
   }
   const measure = viewMeasure(s);
   if (!measure) return;
-  const asked = [checked.low, checked.high].filter((n) => n !== 0 && n !== 100);
+  const asked = [...new Set(pairs.flatMap(({ low, high }) => [low, high]))].filter((n) => n !== 0 && n !== 100);
   set({ focusLoading: true });
   try {
     const { statistics: stats } = await measureView(measure, { percentiles: asked });
-    // A colour picture takes each channel at the percentiles of its own values (UI-03d).
-    const channels = colourView(s) ? channelsAtPercent(Object.values(stats), checked) : null;
-    const range = rescaleAtPercent(Object.values(stats), checked);
-    if (!range) {
-      set({ notice: NO_RANGE_AT_PERCENT });
-      return;
+    if (own) {
+      const made = channelsAtOwnPercent(Object.values(stats), own);
+      if (!made) {
+        set({ notice: NO_RANGE_AT_PERCENT });
+        return;
+      }
+      set({ pendingVmin: made[0].vmin, pendingVmax: made[0].vmax, pendingChannels: made, pendingUnit: 'value' });
+    } else {
+      const range = rescaleAtPercent(Object.values(stats), pairs[0]);
+      if (!range) {
+        set({ notice: NO_RANGE_AT_PERCENT });
+        return;
+      }
+      set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
     }
-    set(channels ? { pendingVmin: channels[0].vmin, pendingVmax: channels[0].vmax, pendingChannels: channels } : { pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
     const now = get();
     set({ appliedRender: { ...now.appliedRender, ...lookOfPendingFields(now) } });
   } catch (e) {
@@ -777,6 +791,9 @@ async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
     set({ focusLoading: false });
   }
 }
+
+// Whether the fields ask for a range in percentiles, in the shared pair or in any channel of a colour picture.
+const inPercent = (s: AppState): boolean => (colourView(s) ? colourInPercent(s) : s.pendingUnit === 'percent');
 
 // "Add to layers" and "Add all to layers" in the view: the image that is shown, or every image, one layer each, all in one
 // step with the first on the bottom of the new ones, so that the last image of the list lies on top (NM4-53). A layer
@@ -1644,6 +1661,8 @@ export interface AppState {
   setPendingVmin: (v: string) => void;
   setPendingVmax: (v: string) => void;
   setPendingChannel: (channel: number, end: 'vmin' | 'vmax', text: string) => void;
+  setPendingChannelUnit: (channel: number, unit: RangeUnit) => void;
+  setPendingChannelPercent: (channel: number, end: 'low' | 'high', text: string) => void;
   // "Quick processing" (UI-03d): an index into the fields, drawn without a job once "Apply" is pressed (Otto, 3.11.2026); a second click
   // puts the picture of the dataset back into the fields.
   quickIndex: (name: string) => Promise<void>;
@@ -2748,10 +2767,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPendingVmax: (pendingVmax) => set({ pendingVmax }),
   // One end of one channel: the first change splits the shared range into three.
   setPendingChannel: (channel, end, text) =>
-    set((s) => {
-      const channels = s.pendingChannels.length === CHANNEL_COUNT ? s.pendingChannels : channelsOf(s.pendingVmin, s.pendingVmax);
-      return { pendingChannels: channels.map((range, index) => (index === channel ? { ...range, [end]: text } : range)) };
-    }),
+    set((s) => ({ pendingChannels: colourChannelsOf(s).map((range, index) => (index === channel ? { ...range, [end]: text } : range)), pendingUnit: 'value' })),
+  // The unit of one channel of a colour picture, and the pair typed in it (UI-03e); the others keep theirs.
+  setPendingChannelUnit: (channel, unit) =>
+    set((s) => ({
+      pendingChannels: colourChannelsOf(s).map((range, index) => {
+        if (index !== channel) return range;
+        const { percent, ...values } = range;
+        return unit === 'percent' ? { ...values, percent: percent ?? { ...DEFAULT_PERCENT } } : values;
+      }),
+      pendingUnit: 'value',
+    })),
+  setPendingChannelPercent: (channel, end, text) =>
+    set((s) => ({
+      pendingChannels: colourChannelsOf(s).map((range, index) => (index === channel ? { ...range, percent: { ...(range.percent ?? DEFAULT_PERCENT), [end]: text } } : range)),
+      pendingUnit: 'value',
+    })),
   // Into the fields, drawn with "Apply" like a band (Otto, 3.11.2026), in the view and in the settings of a layer.
   quickIndex: async (name) => {
     const s = get();
@@ -2766,11 +2797,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     const before = { ...s.appliedRender };
-    set({ pendingUnit: 'percent', pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
+    // Every channel of a colour picture at the usual pair, each in percentiles on its own (UI-03e); one band as the shared pair.
+    if (colourView(s)) set({ pendingChannels: colourChannelsOf(s).map(({ vmin, vmax }) => ({ vmin, vmax, percent: { ...DEFAULT_PERCENT } })), pendingUnit: 'value' });
+    else set({ pendingUnit: 'percent', pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
     await get().applyRender();
     const now = get();
+    const applied = now.appliedRender;
     // Only where the percentiles could be measured: else the fields say why and nothing is on.
-    if (samePercent(now.appliedRender.percent, DEFAULT_PERCENT)) set({ enhance: { look: lookOfPendingFields(now), before } });
+    const done = applied.percentChannels ? applied.percentChannels.length === CHANNEL_COUNT && applied.percentChannels.every((pair) => samePercent(pair, DEFAULT_PERCENT)) : samePercent(applied.percent, DEFAULT_PERCENT);
+    if (done) set({ enhance: { look: lookOfPendingFields(now), before } });
   },
   // Commits the pending fields (F18) — nothing renders differently until this
   // runs, which is the point of an explicit "Apply".
@@ -2778,7 +2813,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   applyRender: async () => {
     const s = get();
     // Typed in percentiles, the values come from the statistics first (NM4-65 part 4).
-    if (s.pendingUnit === 'percent') {
+    if (inPercent(s)) {
       await applyPercentRender(set, get);
     } else {
       set({ appliedRender: { ...s.appliedRender, ...lookOfPendingFields(s) } });
@@ -2819,9 +2854,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveViewLook: async () => {
     // Percentiles that are not applied yet give their values first, so that what is kept is what is drawn; only then is it
     // asynchronous, any other "Save" is done when the call returns.
-    if (get().pendingUnit === 'percent' && !samePercent(get().appliedRender.percent, pendingPercentOf(get()))) {
+    const percentsApplied = () => {
+      const asked = lookOfPendingFields(get());
+      const applied = get().appliedRender;
+      return samePercent(applied.percent, asked.percent) && samePercents(applied.percentChannels, asked.percentChannels);
+    };
+    if (inPercent(get()) && !percentsApplied()) {
       return applyPercentRender(set, get).then(() => {
-        if (samePercent(get().appliedRender.percent, pendingPercentOf(get()))) return get().saveViewLook();
+        if (percentsApplied()) return get().saveViewLook();
       });
     }
     let s = get();
@@ -2853,8 +2893,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   // the pending fields only — still needs "Apply" to take effect on the map.
   autoStretch: async () => {
     const s = get();
-    // In percentiles the usual stretch is the 2nd to the 98th (NM4-65 part 4): nothing to measure, "Apply" takes the values.
-    if (s.pendingUnit === 'percent') {
+    // In percentiles the usual stretch is the 2nd to the 98th (NM4-65 part 4): nothing to measure, "Apply" takes the values. A colour
+    // picture does that for each channel typed in percentiles and measures the others (UI-03e).
+    const channels = colourView(s) ? colourChannelsOf(s) : null;
+    const usual = (channel: ChannelRange): ChannelRange => (channel.percent ? { ...channel, percent: { ...DEFAULT_PERCENT } } : channel);
+    if (channels?.length && channels.every((channel) => channel.percent)) {
+      set({ pendingChannels: channels.map(usual), pendingUnit: 'value' });
+      return;
+    }
+    if (!channels && s.pendingUnit === 'percent') {
       set({ pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
       return;
     }
@@ -2866,7 +2913,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const { statistics: stats } = await measureView(measure);
       const range = autoRescale(stats);
-      if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
+      if (range && channels?.some((channel) => channel.percent)) {
+        const measured = { vmin: String(range[0]), vmax: String(range[1]) };
+        set({ pendingVmin: measured.vmin, pendingVmax: measured.vmax, pendingChannels: channels.map((channel) => (channel.percent ? usual(channel) : measured)), pendingUnit: 'value' });
+      } else if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
     } catch (e) {
       set({ notice: `Could not measure a stretch automatically: ${(e as Error).message}` });
     } finally {

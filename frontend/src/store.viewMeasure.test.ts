@@ -200,10 +200,11 @@ describe('"Enhance contrast" over the area', () => {
     openView(true);
     answer(() => json({ exact: true, factor: 1, bands: [band('visual_1', 3, 250, 10, 200), band('visual_2', 4, 240, 20, 190), band('visual_3', 5, 230, 30, 180)] }));
     await state().enhanceContrast();
+    const usual = { low: '2', high: '98' };
     expect(state().pendingChannels).toEqual([
-      { vmin: '10', vmax: '200' },
-      { vmin: '20', vmax: '190' },
-      { vmin: '30', vmax: '180' },
+      { vmin: '10', vmax: '200', percent: usual },
+      { vmin: '20', vmax: '190', percent: usual },
+      { vmin: '30', vmax: '180', percent: usual },
     ]);
     expect(state().appliedRender.rescale).toBe('10,200;20,190;30,180');
     expect(calls()).toHaveLength(1);

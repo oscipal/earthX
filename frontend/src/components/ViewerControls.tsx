@@ -16,8 +16,7 @@ import { defaultRenderOf, showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
-import { appliedRenderFrom, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
-import { channelsOf } from '../channels';
+import { appliedRenderFrom, colourChannelsOf, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { histogramOf, type Histogram } from '../histogram';
 import { colourView, datasetSavable, enhanceOn, shownImageOf, useAppStore, viewMeasure } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
@@ -114,11 +113,22 @@ export default function ViewerControls() {
   const pendingChannels = useAppStore((s) => s.pendingChannels);
   const renameLayer = useAppStore((s) => s.renameLayer);
   const setPendingChannel = useAppStore((s) => s.setPendingChannel);
+  const setPendingChannelUnit = useAppStore((s) => s.setPendingChannelUnit);
+  const setPendingChannelPercent = useAppStore((s) => s.setPendingChannelPercent);
   const quickIndex = useAppStore((s) => s.quickIndex);
   const enhanceContrast = useAppStore((s) => s.enhanceContrast);
   const enhanced = useAppStore(enhanceOn);
   // The colour picture in the fields: a range for each channel (UI-03d).
   const colour = useAppStore(colourView);
+  // A unit for each channel (UI-03e): the rows of the three channels, each in values or in percentiles.
+  const colourChannels = colour
+    ? {
+        values: colourChannelsOf({ pendingColormapName, pendingVmin, pendingVmax, pendingChannels, pendingUnit, pendingPercentLow, pendingPercentHigh }),
+        onChange: setPendingChannel,
+        onPercent: setPendingChannelPercent,
+        onUnit: setPendingChannelUnit,
+      }
+    : undefined;
   const measure = useAppStore(viewMeasure);
   const histograms = useHistograms(measure && measure.key, () => loadHistograms(measure!));
   // Read after the histograms: their measure is the first of a picture, and a refusal of the tiler is known once it is in.
@@ -299,23 +309,23 @@ export default function ViewerControls() {
                 title: indexOnly ? INDEX_ONLY_TIP : !showBand ? ONE_BAND_TIP : chosen ? presetTip(chosen) : BAND_TIP,
                 disabled: !showBand,
               }}
-              channels={colour ? { values: pendingChannels.length > 0 ? pendingChannels : channelsOf(pendingVmin, pendingVmax), onChange: setPendingChannel } : undefined}
+              channels={colourChannels}
               histograms={
                 histograms && (
                   <ScaleHistograms
                     histograms={histograms}
-                    unit={pendingUnit}
+                    unit={colour ? 'value' : pendingUnit}
                     vmin={pendingUnit === 'percent' ? pendingPercentLow : pendingVmin}
                     vmax={pendingUnit === 'percent' ? pendingPercentHigh : pendingVmax}
                     onVmin={pendingUnit === 'percent' ? (text) => setPendingPercent('low', text) : setPendingVmin}
                     onVmax={pendingUnit === 'percent' ? (text) => setPendingPercent('high', text) : setPendingVmax}
-                    channels={colour ? { values: pendingChannels.length > 0 ? pendingChannels : channelsOf(pendingVmin, pendingVmax), onChange: setPendingChannel } : undefined}
+                    channels={colourChannels}
                   />
                 )
               }
               vmin={pendingUnit === 'percent' ? { value: pendingPercentLow, onChange: (text) => setPendingPercent('low', text) } : { value: pendingVmin, onChange: setPendingVmin }}
               vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
-              unit={{ value: pendingUnit, onChange: setPendingUnit }}
+              unit={colour ? undefined : { value: pendingUnit, onChange: setPendingUnit }}
               // The bar stays as it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
               colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' }}
               placeholder="auto"
