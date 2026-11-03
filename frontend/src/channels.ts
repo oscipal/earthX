@@ -2,7 +2,7 @@
 // tile URL carries one `rescale` per channel, in this order; the look keeps them as one text, the pairs joined by `;`. Three equal
 // pairs are written as one, as before, so that a picture drawn alike is the same look and the same URL.
 
-import { valueAtPercent } from './percentRange';
+import { percentOf, samePercent, valueAtPercent, type Percent } from './percentRange';
 
 export const CHANNEL_NAMES = ['red', 'green', 'blue'] as const;
 export const CHANNEL_COUNT = CHANNEL_NAMES.length;
@@ -10,6 +10,9 @@ export const CHANNEL_COUNT = CHANNEL_NAMES.length;
 export interface ChannelRange {
   vmin: string;
   vmax: string;
+  // Set where this channel is typed in percentiles (UI-03e): the pair as typed; `vmin`/`vmax` then hold the values it gave when it was
+  // applied. A channel without it is typed in values.
+  percent?: Percent;
 }
 
 const SEPARATOR = ';';
@@ -59,4 +62,39 @@ export function channelsAtPercent(bands: readonly Record<string, unknown>[], per
   const ranges = bands.map((band) => [valueAtPercent(band, percent.low), valueAtPercent(band, percent.high)] as const);
   if (ranges.some(([low, high]) => low === null || high === null || !(low < high))) return null;
   return ranges.map(([low, high]) => ({ vmin: String(low), vmax: String(high) }));
+}
+
+// The pair of each channel typed in percentiles, `null` for the others; `undefined` where none is. A pair that is none counts as a
+// channel in values here (`badChannelPercent` says it is still to be corrected).
+export function percentsOfChannels(channels: readonly ChannelRange[]): (Percent | null)[] | undefined {
+  if (!channels.some((channel) => channel.percent)) return undefined;
+  const pairs = channels.map((channel) => (channel.percent ? percentOf(channel.percent) : null));
+  return pairs.some((pair) => pair !== null) ? pairs : undefined;
+}
+
+// Whether a channel is typed in percentiles with a pair that is none.
+export const badChannelPercent = (channels: readonly ChannelRange[]): boolean => channels.some((channel) => channel.percent !== undefined && percentOf(channel.percent) === null);
+
+export function samePercents(a: readonly (Percent | null)[] | undefined, b: readonly (Percent | null)[] | undefined): boolean {
+  if (!a || !b) return !a && !b;
+  return a.length === b.length && a.every((pair, index) => (pair === null || b[index] === null ? pair === b[index] : samePercent(pair, b[index])));
+}
+
+// Each channel typed in percentiles at its own pair and its own values; the others as they are. `null` where the statistics do not have
+// three bands or a channel has no range at its percentiles.
+export function channelsAtOwnPercent(bands: readonly Record<string, unknown>[], channels: readonly ChannelRange[]): ChannelRange[] | null {
+  if (bands.length !== CHANNEL_COUNT || channels.length !== CHANNEL_COUNT) return null;
+  const made: ChannelRange[] = [];
+  for (const [index, channel] of channels.entries()) {
+    const pair = channel.percent ? percentOf(channel.percent) : null;
+    if (!channel.percent) {
+      made.push(channel);
+      continue;
+    }
+    if (!pair) return null;
+    const [low, high] = [valueAtPercent(bands[index], Number(pair.low)), valueAtPercent(bands[index], Number(pair.high))];
+    if (low === null || high === null || !(low < high)) return null;
+    made.push({ vmin: String(low), vmax: String(high), percent: pair });
+  }
+  return made;
 }

@@ -6,6 +6,9 @@
 // timeline (Otto, 1.11.2026, replaces the timeline that stayed). The ticks and the time step stay as they are; the block is back with the
 // eye, also when a scene is ticked (zu #221).
 //
+// With a view open the block is there as well, as long as the results are shown (Otto, 3.11.2026, zu #282): "Select a scene" with nothing ticked
+// beside the view, else the buttons; "Crop to AOI" then adds the scenes to the view.
+//
 // The "x" only hides the block: the ticks, the results on the map and the layers stay as they are. A click on a scene,
 // an opened group or new results bring it back (`store.ts::selectionBlockClosed`).
 

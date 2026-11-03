@@ -5,7 +5,7 @@
 // single pair to every output band when only one is given.
 
 import type { BandStatistics } from './api';
-import { channelsOfRescale, rescaleOfChannels, type ChannelRange } from './channels';
+import { badChannelPercent, CHANNEL_COUNT, channelsOf, channelsOfRescale, percentsOfChannels, rescaleOfChannels, samePercents, type ChannelRange } from './channels';
 import { DEFAULT_PERCENT, percentOf, samePercent, type RangeUnit } from './percentRange';
 import type { AppliedRender, EarthxDefaultRender } from './types';
 
@@ -55,11 +55,14 @@ export function pendingFieldsOf(render: AppliedRender): {
   // A colour picture with a range for each channel (UI-03d): the fields of the three, and the first in the shared ones.
   const channels = channelsOfRescale(render.rescale);
   const [vmin = '', vmax = ''] = channels ? [channels[0].vmin, channels[0].vmax] : (render.rescale ?? '').split(',');
+  // Channels typed each in their own unit (UI-03e): the pairs go onto the three ranges.
+  const pairs = render.percentChannels?.length === CHANNEL_COUNT ? render.percentChannels : null;
+  const typed = pairs ? (channels ?? channelsOf(vmin, vmax)).map((channel, index) => (pairs[index] ? { ...channel, percent: pairs[index] } : channel)) : null;
   return {
     pendingColormapName: render.colormapName ?? '',
     pendingVmin: vmin,
     pendingVmax: vmax,
-    pendingChannels: channels ?? [],
+    pendingChannels: typed ?? channels ?? [],
     pendingIndex: render.index ?? '',
     pendingBand: render.band ?? '',
     // A look typed in percentiles shows "%" again (NM4-65 part 4).
@@ -90,6 +93,18 @@ type PendingFields = {
   pendingPercentHigh?: string;
 };
 
+// The three ranges of a colour picture as the fields show them (UI-03e): each with its own unit. A look made before the units were
+// kept per channel (one pair for the three, `percent`) shows that pair on every channel until a channel is changed.
+export function colourChannelsOf(p: PendingFields): ChannelRange[] {
+  const base = p.pendingChannels?.length ? [...p.pendingChannels] : channelsOf(p.pendingVmin, p.pendingVmax);
+  if (p.pendingUnit !== 'percent' || base.some((channel) => channel.percent)) return base;
+  const shared = { low: p.pendingPercentLow ?? '', high: p.pendingPercentHigh ?? '' };
+  return base.map((channel) => ({ ...channel, percent: shared }));
+}
+
+// Whether the fields of a colour picture hold a range typed in percentiles in any channel: "Apply" has to measure them first.
+export const colourInPercent = (p: PendingFields): boolean => colourChannelsOf(p).some((channel) => channel.percent !== undefined);
+
 // The percentiles the fields stand for, where "%" is on and they are a valid pair.
 export const pendingPercentOf = (p: PendingFields) =>
   p.pendingUnit === 'percent' ? percentOf({ low: p.pendingPercentLow ?? '', high: p.pendingPercentHigh ?? '' }) : null;
@@ -100,12 +115,15 @@ export function lookOfPendingFields(p: PendingFields): AppliedRender {
   const vmin = p.pendingVmin.trim();
   const vmax = p.pendingVmax.trim();
   const channels = p.pendingChannels?.length ? p.pendingChannels : null;
+  // Units kept for each channel (UI-03e) take the place of the one pair; a pair for all (a look of before) stays as it was.
+  const percentChannels = channels ? percentsOfChannels(channels) : undefined;
   return {
     colormapName: p.pendingColormapName || undefined,
     rescale: channels ? rescaleOfChannels(channels) : vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
     index: p.pendingIndex || undefined,
     band: p.pendingBand || undefined,
-    percent: pendingPercentOf(p) ?? undefined,
+    percent: (channels?.some((channel) => channel.percent) ? undefined : pendingPercentOf(p)) ?? undefined,
+    percentChannels,
   };
 }
 
@@ -120,7 +138,9 @@ export function lookChanged(applied: AppliedRender, p: PendingFields): boolean {
     (applied.band || undefined) !== asked.band ||
     // Typed in percentiles and not applied yet: the values still hold the ones of the percentiles before.
     !samePercent(applied.percent, asked.percent) ||
-    (p.pendingUnit === 'percent' && asked.percent === undefined)
+    !samePercents(applied.percentChannels, asked.percentChannels) ||
+    (p.pendingUnit === 'percent' && asked.percent === undefined && !asked.percentChannels) ||
+    badChannelPercent(p.pendingChannels ?? [])
   );
 }
 

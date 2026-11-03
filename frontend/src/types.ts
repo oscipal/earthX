@@ -256,6 +256,10 @@ export interface AppliedRender {
   // What the range was typed as where it was typed in percentiles (NM4-65 part 4): `rescale` holds the values they gave when
   // they were applied, so the picture is always drawn from values; this is only for the fields to show "%" again.
   percent?: Percent;
+  // The same for a colour picture whose channels are each typed in their own unit (UI-03e, Otto, 3.11.2026): a pair for a channel typed
+  // in percentiles, `null` for one typed in values, in the order red, green, blue. `rescale` holds the values they gave. Where it is
+  // set, `percent` is not.
+  percentChannels?: (Percent | null)[];
 }
 
 // Full-resolution tile info for one item, keyed by item id in the store's

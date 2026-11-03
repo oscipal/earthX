@@ -87,9 +87,33 @@ describe('resultsOnMapOf, over a full-resolution view', () => {
     expect(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['a1', 'b1'] })).highlight).toEqual([]);
   });
 
-  it('lets a click pick the scenes that are drawn: those of the view, and while the results are shown what lies over it', () => {
-    expect(ids(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['b1'] })).clickable)).toEqual(['a1']);
+  it('lets a click pick the scenes that are drawn while the results are shown: those of the view and what lies over it', () => {
     expect(ids(resultsOnMapOf(view({ selectedIds: ['b1'] })).clickable).sort()).toEqual(['a1', 'a2', 'b1']);
+  });
+
+  it('offers the scenes of the results before the scenes of the view, which lie under them: the view\'s own scene must not take the click on its neighbour', () => {
+    // a1 is the view; a2 lies beside it in the open group and comes after it in the list.
+    const order = ids(resultsOnMapOf(view({})).clickable);
+    expect(order.indexOf('a2')).toBeLessThan(order.indexOf('a1'));
+    expect(order[order.length - 1]).toBe('a1');
+    // Where only the view's scene is under the point, it is still the one that answers: it can be dropped like any other.
+    expect(order).toContain('a1');
+  });
+
+  it('lets a click pick nothing while the results are hidden, the scenes of the view and the ticked ones included (Otto, 3.11.2026)', () => {
+    expect(resultsOnMapOf(view({ resultsOnMap: false, selectedIds: ['b1'] })).clickable).toEqual([]);
+    expect(resultsOnMapOf(view({ resultsOnMap: false })).clickable).toEqual([]);
+    // Shown again, they answer again.
+    expect(ids(resultsOnMapOf(view({ resultsOnMap: true })).clickable).length).toBeGreaterThan(0);
+  });
+
+  it('lets a click pick nothing while no group is open, whatever is drawn: the ticked scenes and those of the view included (Otto, 3.11.2026)', () => {
+    expect(resultsOnMapOf(view({ expandedGroupIndex: null, selectedIds: ['b1'] })).clickable).toEqual([]);
+    expect(resultsOnMapOf(state({ expandedGroupIndex: null, selectedIds: ['b1'] })).clickable).toEqual([]);
+    // What is drawn is not what is clickable: the ticked scene is still outlined.
+    expect(ids(resultsOnMapOf(state({ expandedGroupIndex: null, selectedIds: ['b1'] })).highlight)).toEqual(['b1']);
+    // With a group open the scenes answer again.
+    expect(ids(resultsOnMapOf(state({ expandedGroupIndex: 0 })).clickable)).toEqual(['a1', 'a2']);
   });
 
   it('outlines the ticked scenes only', () => {

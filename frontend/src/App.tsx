@@ -13,6 +13,7 @@ import ProcessingManager from './components/ProcessingManager';
 import ProcessingPanel from './components/ProcessingPanel';
 import ResultsPanel from './components/ResultsPanel';
 import SelectionBlock from './components/SelectionBlock';
+import { selectionBlockModeOf } from './selectionBlockMode';
 import StatusBar from './components/StatusBar';
 import TipLayer from './components/TipLayer';
 import { dockPanelId } from './dock';
@@ -107,13 +108,7 @@ export default function App() {
 
       {/* Beside the processing side bar, not under it: the time slider picks the pass of an order. */}
       <div className={`overlay bottom${processingOpen ? ' beside-sheet' : ''}`}>
-        {focusMode ? (
-          <SelectionBlock bar={tickedBesideView} timeline={false} />
-        ) : resultView ? (
-          <SelectionBlock bar={hasSelection} timeline={false} />
-        ) : (
-          <SelectionBlock bar={hasSelection} timeline={hasGroups} />
-        )}
+        <SelectionBlock {...selectionBlockModeOf({ focusMode, resultView, hasSelection, tickedBesideView, hasGroups })} />
       </div>
 
       <Inspector />

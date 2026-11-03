@@ -685,6 +685,7 @@ def area_statistics(
     operators: OperatorRegistry = REGISTRY,
     max_pixels: int = MAX_AREA_PIXELS,
     extra_percentiles: Sequence[int] = (),
+    histogram: bool = False,
 ) -> AreaStatistics:
     """The statistics of the AOI the result of ``recipe`` would carry, read and counted as :func:`run` does (NM4-19).
 
@@ -697,6 +698,9 @@ def area_statistics(
     so ``count`` and ``valid_percent`` there are a little higher than the job's. Only ``pixel`` steps: a
     ``grid`` step changes the grid the job counts on, and a step that measures in the run (``Operator.measures``, NM4-71) has
     no place in the start of the chain this measures: the numbers of such a step are the result of this very count.
+
+    ``histogram`` puts the drawn histogram of a band (:meth:`BandStatistics.histogram`, 64 bins) beside its statistics
+    as the statistics of a result's tiles carry it (UI-03e); a band without a valid value has none.
 
     The GDAL options are the caller's (:func:`run` enters those of `readers`).
     """
@@ -739,7 +743,8 @@ def area_statistics(
         {
             "name": band.name,
             **({} if band.unit is None else {"unit": band.unit}),
-            "statistics": statistics.summary(max(inside_pixels, 1), extra_percentiles),
+            "statistics": statistics.summary(max(inside_pixels, 1), extra_percentiles)
+            | ({"histogram": statistics.histogram()} if histogram and statistics.count else {}),
         }
         for band, statistics in zip(meta.bands, area, strict=True)
     ]

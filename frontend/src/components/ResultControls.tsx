@@ -4,13 +4,14 @@
 // fields. What is applied and not saved goes when the settings are closed (Otto, 29.10.2026, zu #234). No unit shows
 // here (Otto, 24.10.2026).
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { fetchResultStatistics } from '../api';
 import { channelsAtPercent, channelsOf, rescaleOfChannels } from '../channels';
 import { histogramOf, type Histogram } from '../histogram';
 
 import { layerShownName } from '../layerName';
+import CopySceneNames from './CopySceneNames';
 import type { MapLayer } from '../layers';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, percentOf, rescaleAtPercent, samePercent, type Percent, type RangeUnit } from '../percentRange';
 import { rescaleOf, type PreviewRange } from '../processingPreview';
@@ -19,6 +20,7 @@ import { NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
 import { RGB, RGB_LABEL } from '../processingBands';
 import { bandPlacesOfTileUrl, defaultRange, rangeOfTileUrl, renderOfRange, resultPathOfTileUrl } from '../resultLayer';
 import { useAppStore } from '../store';
+import { sceneNamesOfOrder } from '../sceneNames';
 import { ONE_BAND_TIP } from '../viewBand';
 import AutoScaleButton from './AutoScaleButton';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
@@ -57,6 +59,9 @@ function Controls({ layer }: { layer: MapLayer }) {
   const close = useAppStore((s) => s.closeResultView);
   const renameLayer = useAppStore((s) => s.renameLayer);
   const setJobRange = useProcessingStore((s) => s.setJobRange);
+  // A string, so that a job list that is rebuilt without this order does not change what the selector returns.
+  const orderedScenes = useProcessingStore((s) => JSON.stringify(sceneNamesOfOrder(s.jobs.find((j) => j.jobID === layer.result?.jobID)?.order)));
+  const sceneNames = useMemo(() => JSON.parse(orderedScenes) as string[], [orderedScenes]);
   const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   // What the typed fields hold, from what the layer draws now; a layer drawn another way starts over.
   const [draft, setDraft] = useState<PreviewRange>(() => ({ ...rangeOfTileUrl(tileUrl), ...(layer.result?.percent ? { percent: layer.result.percent } : {}) }));
@@ -197,6 +202,8 @@ function Controls({ layer }: { layer: MapLayer }) {
         mark={!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
         onClose={() => close()}
         rename={{ name: layer.name, onRename: (name) => renameLayer(layer.id, name) }}
+        // The scenes of the job the layer was made by, from its copy of the order; none where that is gone, and then no line.
+        copy={<CopySceneNames names={sceneNames} />}
       >
         <LayerStepper date={layer.date} />
       </InspectorHead>

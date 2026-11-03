@@ -45,9 +45,13 @@ def asked(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """The recipes the route would have read: the read itself is a stand-in with a plausible answer."""
     recipes: list[Any] = []
 
-    def area_statistics(recipe: Any, *, max_pixels: int, extra_percentiles: Any = ()) -> core.AreaStatistics:
+    def area_statistics(
+        recipe: Any, *, max_pixels: int, extra_percentiles: Any = (), histogram: bool = False
+    ) -> core.AreaStatistics:
         recipes.append(recipe)
-        statistics = {"minimum": 0.0, "maximum": 1.0, "mean": 0.5, "count": 4, "valid_percent": 100.0}
+        statistics: dict[str, Any] = {"minimum": 0.0, "maximum": 1.0, "mean": 0.5, "count": 4, "valid_percent": 100.0}
+        if histogram:
+            statistics["histogram"] = [[4.0], [0.0, 1.0]]
         return core.AreaStatistics(bands=[{"name": "b1", "statistics": statistics}], factor=1, pixels_read=4)
 
     monkeypatch.setattr(core, "area_statistics", area_statistics)

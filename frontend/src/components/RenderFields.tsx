@@ -35,8 +35,15 @@ interface Props {
   unit?: { value: RangeUnit; onChange: (unit: RangeUnit) => void };
   // The settings bar (Otto, 2.11.2026): vmin and vmax side by side in one row "Scale", the switch of the range after them.
   scale?: boolean;
-  // A colour picture in values (UI-03d): a row of vmin and vmax for each channel in place of the one.
-  channels?: { values: readonly ChannelRange[]; onChange: (channel: number, end: 'vmin' | 'vmax', text: string) => void };
+  // A colour picture (UI-03d): a row of vmin and vmax for each channel in place of the one. With `onUnit` every row has its own switch
+  // "absolute / percentile" and shows the pair of its channel where that one is in percentiles (UI-03e); without it the one switch of
+  // the range stands in the first row, and the rows are those of values.
+  channels?: {
+    values: readonly ChannelRange[];
+    onChange: (channel: number, end: 'vmin' | 'vmax', text: string) => void;
+    onPercent?: (channel: number, end: 'low' | 'high', text: string) => void;
+    onUnit?: (channel: number, unit: RangeUnit) => void;
+  };
   // What stands under the fields of "Scale": the histograms with their sliders.
   histograms?: ReactNode;
 }
@@ -45,7 +52,7 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
   const percent = unit?.value === 'percent';
   const hint = percent ? undefined : placeholder;
   const range = scale ? (
-    <ScaleRow vmin={vmin} vmax={vmax} placeholder={hint} percent={percent} unit={unit} channels={percent ? undefined : channels} below={histograms} />
+    <ScaleRow vmin={vmin} vmax={vmax} placeholder={hint} percent={percent} unit={unit} channels={channels?.onUnit || !percent ? channels : undefined} below={histograms} />
   ) : (
     <>
       <label className="vc-field vc-num">
@@ -118,9 +125,9 @@ function VmaxField({ vmax, placeholder, percent, unit }: { vmax: Props['vmax']; 
   );
 }
 
-function UnitSelect({ unit }: { unit: NonNullable<Props['unit']> }) {
+function UnitSelect({ unit, label = 'Range unit' }: { unit: NonNullable<Props['unit']>; label?: string }) {
   return (
-    <select className="vc-unit" aria-label="Range unit" title={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
+    <select className="vc-unit" aria-label={label} title={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
       <option value="value">{UNIT_LABELS.value}</option>
       <option value="percent">{UNIT_LABELS.percent}</option>
     </select>
@@ -148,16 +155,38 @@ function ScaleRow({ vmin, vmax, placeholder, percent, unit, channels, below }: {
       <div className="vc-scale-body">
         {channels ? (
           <div className="vc-scale-fields vc-channels">
-            {CHANNEL_NAMES.map((channel, index) => (
-              <Fragment key={channel}>
-                <span className={`vc-chip vc-chip-${channel}`} title={channel}>
-                  {channel[0].toUpperCase()}
-                </span>
-                <NumberField name={`${channel} vmin`} value={channels.values[index]?.vmin ?? vmin.value} placeholder={placeholder} percent={false} onChange={(text) => channels.onChange(index, 'vmin', text)} />
-                <NumberField name={`${channel} vmax`} value={channels.values[index]?.vmax ?? vmax.value} placeholder={placeholder} percent={false} onChange={(text) => channels.onChange(index, 'vmax', text)} />
-                {index === 0 && unit ? <UnitSelect unit={unit} /> : <span />}
-              </Fragment>
-            ))}
+            {CHANNEL_NAMES.map((channel, index) => {
+              const own = channels.values[index];
+              const typed = channels.onUnit && own?.percent ? own.percent : null;
+              return (
+                <Fragment key={channel}>
+                  <span className={`vc-chip vc-chip-${channel}`} title={channel}>
+                    {channel[0].toUpperCase()}
+                  </span>
+                  <NumberField
+                    name={`${channel} ${typed ? 'low percentile' : 'vmin'}`}
+                    value={typed ? typed.low : (own?.vmin ?? vmin.value)}
+                    placeholder={typed ? undefined : placeholder}
+                    percent={typed !== null}
+                    onChange={(text) => (typed ? channels.onPercent?.(index, 'low', text) : channels.onChange(index, 'vmin', text))}
+                  />
+                  <NumberField
+                    name={`${channel} ${typed ? 'high percentile' : 'vmax'}`}
+                    value={typed ? typed.high : (own?.vmax ?? vmax.value)}
+                    placeholder={typed ? undefined : placeholder}
+                    percent={typed !== null}
+                    onChange={(text) => (typed ? channels.onPercent?.(index, 'high', text) : channels.onChange(index, 'vmax', text))}
+                  />
+                  {channels.onUnit ? (
+                    <UnitSelect label={`${channel} range unit`} unit={{ value: typed ? 'percent' : 'value', onChange: (next) => channels.onUnit?.(index, next) }} />
+                  ) : index === 0 && unit ? (
+                    <UnitSelect unit={unit} />
+                  ) : (
+                    <span />
+                  )}
+                </Fragment>
+              );
+            })}
           </div>
         ) : (
           <div className="vc-scale-fields">

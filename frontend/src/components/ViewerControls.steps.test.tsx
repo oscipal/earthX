@@ -137,7 +137,8 @@ describe('what is not possible is not there', () => {
     mount({ ...THREE, D: info('dem') });
     const [first, second] = [...container.querySelector('.vc-head')!.children].map((row) => [...row.children].map((el) => el.className));
     expect(first).toEqual(['vc-title', 'pp-badge vc-temporary', 'vc-eye', 'close-x']);
-    expect(second).toEqual(['vc-dataset', 'vc-stepper']);
+    // "Copy original scene name" ends the row (Otto, 3.11.2026).
+    expect(second).toEqual(['vc-dataset', 'vc-stepper', 'vc-scene-names']);
   });
 
   it('has the arrows but no dataset to choose where the view holds one dataset', () => {

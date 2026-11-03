@@ -16,16 +16,17 @@ import { defaultRenderOf, showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
-import { appliedRenderFrom, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
-import { channelsOf } from '../channels';
-import { fetchStatisticsAt, withHistogram } from '../api';
+import { appliedRenderFrom, colourChannelsOf, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import { histogramOf, type Histogram } from '../histogram';
-import { colourView, datasetSavable, enhanceOn, shownImageOf, useAppStore, viewStatisticsUrl } from '../store';
+import { colourView, datasetSavable, enhanceOn, shownImageOf, useAppStore, viewMeasure } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
+import CopySceneNames from './CopySceneNames';
+import { fallbackReasonOf, MEASURED_ON_SCENE, measureView, type ViewMeasure } from '../viewMeasure';
 import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
+import Tip from './Tip';
 import Eye from './Eye';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
 import LayerActions from './LayerActions';
@@ -37,11 +38,11 @@ import ScaleHistograms from './ScaleHistograms';
 import { useHistograms } from './useHistograms';
 
 const INDEX_ONLY_TIP = 'This layer holds the index only';
-const ENHANCE_RGB_TIP = 'Stretch red, green and blue each from its 2nd to its 98th percentile and draw them. Only the look: Add to layers pins the whole view.';
+const ENHANCE_RGB_TIP = 'Put the 2nd to the 98th percentile of red, green and blue in the fields, each channel on its own; Apply draws them. Only the look: Add to layers pins the whole view.';
 
 // The histograms of the bands the statistics name, in their order; none where one band has none.
-async function loadHistograms(url: string): Promise<Histogram[] | null> {
-  const read = Object.values(await fetchStatisticsAt(url)).map((band) => histogramOf(band));
+async function loadHistograms(measure: ViewMeasure): Promise<Histogram[] | null> {
+  const read = Object.values((await measureView(measure, { histogram: true })).statistics).map((band) => histogramOf(band));
   return read.length > 0 && read.every((h) => h !== null) ? (read as Histogram[]) : null;
 }
 
@@ -113,13 +114,26 @@ export default function ViewerControls() {
   const pendingChannels = useAppStore((s) => s.pendingChannels);
   const renameLayer = useAppStore((s) => s.renameLayer);
   const setPendingChannel = useAppStore((s) => s.setPendingChannel);
+  const setPendingChannelUnit = useAppStore((s) => s.setPendingChannelUnit);
+  const setPendingChannelPercent = useAppStore((s) => s.setPendingChannelPercent);
   const quickIndex = useAppStore((s) => s.quickIndex);
   const enhanceContrast = useAppStore((s) => s.enhanceContrast);
   const enhanced = useAppStore(enhanceOn);
   // The colour picture in the fields: a range for each channel (UI-03d).
   const colour = useAppStore(colourView);
-  const statisticsUrl = useAppStore(viewStatisticsUrl);
-  const histograms = useHistograms(statisticsUrl && withHistogram(statisticsUrl), () => loadHistograms(withHistogram(statisticsUrl!)));
+  // A unit for each channel (UI-03e): the rows of the three channels, each in values or in percentiles.
+  const colourChannels = colour
+    ? {
+        values: colourChannelsOf({ pendingColormapName, pendingVmin, pendingVmax, pendingChannels, pendingUnit, pendingPercentLow, pendingPercentHigh }),
+        onChange: setPendingChannel,
+        onPercent: setPendingChannelPercent,
+        onUnit: setPendingChannelUnit,
+      }
+    : undefined;
+  const measure = useAppStore(viewMeasure);
+  const histograms = useHistograms(measure && measure.key, () => loadHistograms(measure!));
+  // Read after the histograms: their measure is the first of a picture, and a refusal of the tiler is known once it is in.
+  const measuredOnScene = measure ? fallbackReasonOf(measure) : null;
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const images = useMemo(
@@ -226,6 +240,8 @@ export default function ViewerControls() {
       <InspectorHead
         title={compact ? layerShownName(layer) : [datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
         tip={compact ? layerShownName(layer) : title}
+        // The scenes of the image shown, which is the layer's own where the settings of a layer are open.
+        copy={<CopySceneNames names={shown?.ids ?? []} />}
         mark={
           !compact &&
           temporary && (
@@ -296,23 +312,23 @@ export default function ViewerControls() {
                 title: indexOnly ? INDEX_ONLY_TIP : !showBand ? ONE_BAND_TIP : chosen ? presetTip(chosen) : BAND_TIP,
                 disabled: !showBand,
               }}
-              channels={colour ? { values: pendingChannels.length > 0 ? pendingChannels : channelsOf(pendingVmin, pendingVmax), onChange: setPendingChannel } : undefined}
+              channels={colourChannels}
               histograms={
                 histograms && (
                   <ScaleHistograms
                     histograms={histograms}
-                    unit={pendingUnit}
+                    unit={colour ? 'value' : pendingUnit}
                     vmin={pendingUnit === 'percent' ? pendingPercentLow : pendingVmin}
                     vmax={pendingUnit === 'percent' ? pendingPercentHigh : pendingVmax}
                     onVmin={pendingUnit === 'percent' ? (text) => setPendingPercent('low', text) : setPendingVmin}
                     onVmax={pendingUnit === 'percent' ? (text) => setPendingPercent('high', text) : setPendingVmax}
-                    channels={colour ? { values: pendingChannels.length > 0 ? pendingChannels : channelsOf(pendingVmin, pendingVmax), onChange: setPendingChannel } : undefined}
+                    channels={colourChannels}
                   />
                 )
               }
               vmin={pendingUnit === 'percent' ? { value: pendingPercentLow, onChange: (text) => setPendingPercent('low', text) } : { value: pendingVmin, onChange: setPendingVmin }}
               vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
-              unit={{ value: pendingUnit, onChange: setPendingUnit }}
+              unit={colour ? undefined : { value: pendingUnit, onChange: setPendingUnit }}
               // The bar stays as it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
               colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' }}
               placeholder="auto"
@@ -364,6 +380,11 @@ export default function ViewerControls() {
               </button>
             </div>
           </div>
+          {measuredOnScene && (
+            <p className="vc-note hint-text" role="status">
+              {MEASURED_ON_SCENE} <Tip text={measuredOnScene} />
+            </p>
+          )}
           {/* Without "Quick processing" (a layer of an index) the note of the index stands under the fields. */}
           {!quick && note}
         </InspectorSection>
@@ -397,7 +418,7 @@ export default function ViewerControls() {
                   className={`ghost-btn${enhanced ? ' on' : ''}`}
                   aria-pressed={enhanced}
                   disabled={focusLoading}
-                  title={enhanced ? 'Click again for the picture before' : ENHANCE_RGB_TIP}
+                  title={enhanced ? 'Click again for the fields as they were before' : ENHANCE_RGB_TIP}
                   onClick={() => void enhanceContrast()}
                 >
                   Enhance contrast

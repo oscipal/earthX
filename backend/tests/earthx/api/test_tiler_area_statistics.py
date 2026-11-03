@@ -20,9 +20,12 @@ from typing import Any
 import numpy
 import pytest
 import rasterio
+import rasterio.transform
 from fastapi.testclient import TestClient
 from rasterio.errors import RasterioIOError, WarpOperationError
 from rasterio.warp import transform_bounds
+from rio_cogeo.cogeo import cog_translate
+from rio_cogeo.profiles import cog_profiles
 from shapely.geometry import box, mapping
 
 import earthx
@@ -78,6 +81,7 @@ SCENE = _item(
         "red": {"href": sources.url("red"), "raster:bands": [_BAND]},
         "nir": {"href": sources.url("nir"), "raster:bands": [_BAND]},
         "scl": {"href": sources.url("scl"), "raster:bands": [{"data_type": "uint8", "nodata": 0}]},
+        "visual": {"href": sources.url("visual"), "raster:bands": [{"data_type": "uint8", "nodata": 0}] * 3},
     },
     _footprint(sources.CRS, sources.ORIGIN_X, sources.ORIGIN_Y, WIDTH, HEIGHT),
 )
@@ -156,6 +160,23 @@ class FakeCache:
         self.stored[key] = (value, ttl_s)
 
 
+def _picture(path: Path) -> Path:
+    """The colour picture of the scene: three ``uint8`` bands of one COG, as Sentinel-2's ``visual`` is, with no scaling."""
+    rows, cols = numpy.indices((HEIGHT, WIDTH))
+    data = numpy.stack([((rows + cols) % 50 + 50 * k + 1).astype("uint8") for k in (0, 1, 2)])
+    plain = path.with_suffix(".plain.tif")
+    profile = {
+        "driver": "GTiff", "dtype": "uint8", "count": 3, "height": HEIGHT, "width": WIDTH, "crs": sources.CRS,
+        "transform": rasterio.transform.from_origin(sources.ORIGIN_X, sources.ORIGIN_Y, sources.RESOLUTION, sources.RESOLUTION),
+        "nodata": 0,
+    }  # fmt: skip
+    with rasterio.open(plain, "w", **profile) as destination:
+        destination.write(data)
+    cog_translate(plain, path, cog_profiles.get("deflate"), overview_resampling="nearest", quiet=True)
+    plain.unlink()
+    return path
+
+
 @pytest.fixture(scope="module")
 def files(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     root = tmp_path_factory.mktemp("area-bands")
@@ -165,6 +186,7 @@ def files(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
         "scl": sources.build_band_cog(
             root / "scl.tif", scl_layer(WIDTH // 2, HEIGHT // 2), scale=None, offset=None, resolution=20.0
         ),
+        "visual": _picture(root / "visual.tif"),
     }
     for name in ("A", "B"):
         built[f"{name}_red"] = mosaic._cog(root / f"{name}.tif", name)
@@ -216,11 +238,11 @@ def _job_statistics(document: dict[str, Any], workdir: Path) -> list[dict[str, A
     return [band["statistics"] for band in result.properties["bands"]]
 
 
-EXTRA = {f"percentile_{percent}" for percent in MEASURE_PERCENTILES}
+EXTRA = {f"percentile_{percent}" for percent in MEASURE_PERCENTILES} | {"histogram"}
 
 
 def _statistics(response) -> list[dict[str, Any]]:
-    """The statistics of the answer as the result carries them: without the percentiles a measure adds (NM4-11)."""
+    """The statistics of the answer as the result carries them: without the percentiles and the histogram a measure adds."""
     assert response.status_code == 200, response.text
     return [
         {name: value for name, value in band["statistics"].items() if name not in EXTRA}
@@ -281,7 +303,7 @@ class TestThePercentilesOfNormalize:
                 f"percentile_{percent}" for percent in range(1, 100)
             }
 
-    @pytest.mark.parametrize("version", ["v1", "v2"])
+    @pytest.mark.parametrize("version", ["v1", "v2", "v3"])
     def test_an_answer_stored_before_the_percentiles_is_not_served(self, version: str) -> None:
         """The key carries the version of the answer's form, so a cache of an older form is measured anew."""
         recipe = asyncio.run(
@@ -294,6 +316,76 @@ class TestThePercentilesOfNormalize:
                 sort_keys=True,
             ).encode()
         ).hexdigest()
+
+
+class TestTheHistogram:
+    """UI-03e: the view measures its sliders over the area, so each band carries the histogram a result's tiles carry."""
+
+    def test_a_band_carries_the_histogram_of_its_values(self, client: TestClient) -> None:
+        response = _post(client, _order())
+        assert response.status_code == 200, response.text
+        statistics = response.json()["bands"][0]["statistics"]
+        counts, edges = statistics["histogram"]
+        assert len(counts) == 64 and len(edges) == 65
+        assert sum(counts) == pytest.approx(statistics["count"])
+        assert edges[0] == statistics["minimum"] and edges[-1] == statistics["maximum"]
+
+    def test_a_band_without_a_valid_value_has_none(self, client: TestClient) -> None:
+        """Reflectance below 0.5 cast to whole numbers falls onto nodata: nothing is counted, so nothing is drawn."""
+        steps = [{"op": "mask", "op_version": 1, "params": MASK}]
+        response = _post(client, _order(assets=("red", "scl"), steps=steps, dtype="uint16"))
+        assert response.status_code == 200, response.text
+        assert response.json()["bands"][0]["statistics"] == {"count": 0, "valid_percent": 0.0}
+
+    def test_it_counts_what_the_job_counts(self, client: TestClient, tmp_path: Path) -> None:
+        counts = _post(client, _order()).json()["bands"][0]["statistics"]["histogram"][0]
+        assert sum(counts) == pytest.approx(_job_statistics(_order(), tmp_path / "work")[0]["count"])
+
+
+class TestTheValuesOfABandAndOfTheIndex:
+    """UI-03e: the order the view sends for a band has no step, and measures what the tiles show, in physical values.
+
+    The tiles of a band draw the raw numbers of the file; the route counts ``raw · scale + offset``, as the job writes
+    them. The page turns the answer back with the item's own ``raster:scale`` and ``raster:offset``.
+    """
+
+    def test_a_band_without_a_step_is_the_jobs_numbers(self, client: TestClient, tmp_path: Path) -> None:
+        document = _order(assets=("red",), steps=[])
+        assert _statistics(_post(client, document)) == _job_statistics(document, tmp_path / "work")
+
+    def test_a_band_is_its_raw_values_scaled(self, client: TestClient) -> None:
+        """The AOI covers the columns 100 to 500 and the rows 100 to 480 of the ramp; its pixels are the raw numbers."""
+        statistics = _post(client, _order(assets=("red",), steps=[])).json()["bands"][0]["statistics"]
+        raw = sources.ramp(WIDTH, HEIGHT, 1200)[100:480, 100:500]
+        assert statistics["minimum"] == pytest.approx(float(raw.min()) * sources.SCALE + sources.OFFSET, abs=1e-3)
+        assert statistics["maximum"] == pytest.approx(float(raw.max()) * sources.SCALE + sources.OFFSET, abs=1e-3)
+
+    def test_the_index_of_the_view_is_the_jobs_over_the_area(self, client: TestClient, tmp_path: Path) -> None:
+        """The order of an index is a ``band_math`` step of version 2 and that band as the output."""
+        steps = [{"op": "band_math", "op_version": 2, "params": {"expression": NDVI, "name": "NDVI"}}]
+        document = _order_v2(steps, ["NDVI"])
+        assert _statistics(_post(client, document)) == [
+            {k: v for k, v in band["statistics"].items() if k != "histogram"}
+            for band in _job_result(document, tmp_path / "work").properties["bands"]
+        ]
+
+    def test_the_colour_picture_is_its_three_bands_as_they_are_drawn(self, client: TestClient, tmp_path: Path) -> None:
+        """``visual`` has no scaling, so the values of the area are the numbers of the tiles; every band carries its own."""
+        names = ["visual_1", "visual_2", "visual_3"]
+        document = _order_v2([], names)
+        response = _post(client, document)
+        assert _statistics(response) == [
+            {k: v for k, v in band["statistics"].items() if k != "histogram"}
+            for band in _job_result(document, tmp_path / "work").properties["bands"]
+        ]
+        bands = response.json()["bands"]
+        assert [band["name"] for band in bands] == names
+        # Band k holds 50k + 1 … 50k + 50 over any area wider than 50 pixels.
+        for k, band in enumerate(bands):
+            assert (band["statistics"]["minimum"], band["statistics"]["maximum"]) == (50 * k + 1, 50 * k + 50)
+
+    def test_a_band_that_is_no_band_of_the_item_is_a_422(self, client: TestClient) -> None:
+        assert _post(client, _order_v2([], ["nothing"])).status_code == 422
 
 
 def _order_v2(steps: list[dict], bands: list[str], *, dtype: str = "float32", aoi: dict | None = AOI) -> dict[str, Any]:
