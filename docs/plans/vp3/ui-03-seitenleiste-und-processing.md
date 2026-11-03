@@ -399,8 +399,20 @@ Browser: `frontend/e2e/processing-panel.cjs` (neu; hell/dunkel, 1280, 1920, 360 
 
 ### 7.14 Nachtrag Otto (03.11.2026, zu UI-03b): Processing-Manager wieder angedockt (ersetzt UI-03c Fenster)
 
-Der Manager („Jobs“) öffnet wieder als Panel links neben der Leiste, wie vor #279, in der Breite der übrigen Panels (`--dock-width`, 340 px); der Knopf „Jobs“ der Leiste ist wieder einer der vier Panelknöpfe (`aria-expanded`). Entfallen: das schwebende Fenster (`JobsWindow`), Verschieben und Größe, die gemerkte Lage (`earthx.jobsWindow`, `jobsWindow.ts`), das Blatt unter 900 px und die Reihenfolge „zuletzt geöffnet oben“. Die Ordnung innen bleibt: Spalten Status · Titel · Datum · Aktionen, Gruppenköpfe mit Anzahl und „n running“, Seltenes im „⋯“.
+Der Manager („Jobs“) öffnet wieder als Panel links neben der Leiste, wie vor #279, in der Breite der übrigen Panels; der Knopf „Jobs“ der Leiste ist wieder einer der vier Panelknöpfe (`aria-expanded`). Entfallen: das schwebende Fenster (`JobsWindow`), Verschieben und Größe, die gemerkte Lage (`earthx.jobsWindow`, `jobsWindow.ts`), das Blatt unter 900 px und die Reihenfolge „zuletzt geöffnet oben“. Die Ordnung innen bleibt: Spalten Status · Titel · Datum · Aktionen, Gruppenköpfe mit Anzahl und „n running“, Seltenes im „⋯“.
 
-- **Zeilenform bei 340 px (Auslegung, Frage an Otto):** In 324 px Listenbreite passen vier Spalten nicht in eine Zeile, ohne den Titel auf rund 30 px zu kürzen. Die vorhandene schmale Form (`@container (max-width: 440px)`: Status und Datum unter dem Titel, Aktionen rechts) greift deshalb im Dock; die Plätze bleiben je Zeile fest. Die vier Spalten in einer Zeile gelten erst ab 440 px Breite. Alternative: Status und Datum kürzen („10 Nov“, nur ein Symbol), dann passt eine Zeile mit rund 100 px Titel.
-- Der alte Eintrag `earthx.jobsWindow` bleibt unbenutzt im Browser liegen; er wird nicht gelöscht.
+**Antworten Otto (03.11.2026, zu #283), umgesetzt:**
 
+1. **Panels links 440 px statt 340** (`--dock-width`; Otto: „generell zu schmal“): Suche, Layer-Manager, Ergebnisse und Jobs, damit die Zeilen des Managers einzeilig mit vier Spalten passen. Die schmale Zeilenform (Status und Datum unter dem Titel) gilt erst unter 400 px Listenbreite (vorher 440 px); die Spalte „Status“ ist 5,5 em breit (vorher 7 em). Der Titel hat dann rund 100 px. Ersetzt „340 px“ in §7.0, §7.1, §7.2 und §7.4 (Originaltexte bleiben stehen).
+2. **`earthx.jobsWindow` wird einmal beim Start gelöscht** (`forgetJobsWindow`, in `App`); ein gesperrter oder werfender Speicher lässt den Eintrag liegen, ohne Meldung.
+3. **`e2e/process-result.cjs` angepasst:** die Zeile des Layers hat elf Plätze (mit Stift aus UI-03d), die Prüfung wartet auf das leere Feld statt auf ein sichtbares ⚙, und die Seite stellt ihre Jobs zuerst wieder her.
+
+**Maße mit 440 px (Breite der freien Karte = Fenster − Leiste − Panel links − rechte Spalte):**
+
+| Fenster | Leiste | Panel links | Karte frei, Seitenleiste 320 | Karte frei, Processing (`--sheet-wide-width`) | Jobs |
+|---|---|---|---|---|---|
+| 1920 | 48 | 440 | 1112 (ohne Panel 1552) | 832 bei 640 px (ohne Panel 1232) | eine Zeile, vier Spalten |
+| 1280 | 48 | 440 | 472 (ohne Panel 912) | 272 bei 520 px (ohne Panel 712) | eine Zeile, vier Spalten |
+| 360 | 48 | 312 (von der Leiste bis zum rechten Rand, über der Karte, wie bisher unter 900 px) | Blatt von unten | Blatt von unten | schmale Zeilenform |
+
+Bei 1280 px bleiben mit Panel links und Processing 272 px Karte: das Panel links lässt sich mit seinem Knopf schließen. Browser: `frontend/e2e/jobs-dock.cjs` (neu; hell/dunkel, 1280, 1920, 360: Breite, eine Zeile mit vier Spalten an gleichen Plätzen, Gruppenköpfe, schmale Form unter 900 px, kein Überlauf) und `job-retry.cjs`.
