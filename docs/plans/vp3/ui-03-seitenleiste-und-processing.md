@@ -435,5 +435,5 @@ Der Manager („Jobs“) öffnet wieder als Panel links neben der Leiste, wie vo
   - **Linksbündig:** Die Daten und der Spaltentitel „Expires“ stehen linksbündig in einer Spalte (im Dock; in der zweizeiligen Form bleibt das Datum rechts unter dem Titel).
   - **„No longer available“** steht in der Spalte der Daten und geht nicht darüber hinaus: In zwei kurzen Zeilen („No longer / available“); die Zeile des Jobs ist dann etwas höher.
   - Browser: `jobs-dock.cjs` hat dafür einen Job, den der Server vergessen hat, und prüft Spalte und Ausrichtung.
-- **Marken (Otto, 03.11.2026):** „Archived“ und „Superseded“ eines Jobs (ein archivierter Job, der neu gestartet wurde, trägt beide) lagen im Raster auf demselben Platz und überdeckten sich. Sie stehen jetzt nebeneinander in einer Zeile unter dem Titel (`pm-tags`); in der zweizeiligen Form umbrechen sie, wenn der Platz fehlt, und überdecken sich nie.
+- **Marken (Otto, 03.11.2026):** „Archived“ und „Superseded“ eines Jobs (ein archivierter Job, der neu gestartet wurde, trägt beide) lagen im Raster auf demselben Platz und überdeckten sich. Sie stehen jetzt nebeneinander in einer Zeile unter dem Titel (`pm-tags`); auch in der zweizeiligen Form (über die Breite von Titel und ✎), sie umbrechen nie und überdecken sich nie.
 

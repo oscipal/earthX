@@ -171,11 +171,11 @@ async function check(browser, theme, viewport) {
     if (gone.stateText !== 'No longer available') problems.push(`row 4 says "${gone.stateText}"`);
     else if (!narrow && (!gone.stateShown || gone.state.x < report.columns[0].until.x - 1 || gone.state.right > report.columns[0].until.right + 1)) problems.push(`"No longer available" is not inside the column of the dates: ${JSON.stringify(gone.state)}`);
   }
-  // "Archived" and "Superseded" (Job 7): side by side under the title, none over the other (in the narrow form the cell is small, they wrap).
+  // "Archived" and "Superseded" (Job 7): side by side under the title, none over the other (in the narrow form too: they never wrap).
   {
     const [a, b] = report.rows[4].tags;
     if (!a || !b) problems.push('the job with two marks has fewer');
-    else if (overlap(a, b) || (!narrow && (Math.abs(a.y - b.y) > 2 || b.x < a.right - 0.5)) || a.y < report.rows[4].title.bottom - 1) problems.push(`the marks "Archived" and "Superseded" are not side by side under the title: ${JSON.stringify([a, b])}`);
+    else if (overlap(a, b) || (Math.abs(a.y - b.y) > 2 || b.x < a.right - 0.5) || a.y < report.rows[4].title.bottom - 1) problems.push(`the marks "Archived" and "Superseded" are not side by side under the title: ${JSON.stringify([a, b])}`);
   }
   for (const date of report.dates) if (!/^\d{2}[A-Z]{3}-\d{2}:\d{2}$/.test(date)) problems.push(`the date reads "${date}", not 08OCT-12:34`);
   if (!report.heads[1].menu) problems.push('the head of a group has no menu');
