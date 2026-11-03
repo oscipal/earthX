@@ -48,7 +48,7 @@ export function JobRow({ job }: { job: JobEntry }) {
             type="button"
             className="link-btn"
             disabled={job.cancelling || !job.status}
-            title="Cancel this job"
+            title={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
             onClick={() => void cancelJob(job.jobID)}
           >
             {job.cancelling ? 'Cancelling…' : 'Cancel'}

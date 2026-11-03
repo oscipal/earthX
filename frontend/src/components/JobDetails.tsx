@@ -243,7 +243,7 @@ export default function JobDetails() {
                   type="button"
                   className="ghost-btn"
                   disabled={job.cancelling || !job.status}
-                  title="Cancel this job"
+                  title={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
                   onClick={() => void cancelJob(job.jobID)}
                 >
                   {job.cancelling ? 'Cancelling…' : 'Cancel'}
@@ -254,7 +254,7 @@ export default function JobDetails() {
                   type="button"
                   className="ghost-btn"
                   disabled={job.retrying}
-                  title={RETRY_TIP}
+                  title={job.retrying ? 'Starting it again…' : RETRY_TIP}
                   aria-label={RETRY_TIP}
                   onClick={() => void retryJob(job.jobID)}
                 >
