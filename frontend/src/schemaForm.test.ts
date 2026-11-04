@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { initialValues, integersIn, namesIn, numbersIn, paramsForm, paramsFrom, type Field } from './schemaForm';
+import { fieldTitle, initialValues, integersIn, namesIn, numbersIn, paramsForm, paramsFrom, type Field } from './schemaForm';
 
 function fields(schema: unknown, defs = {}): Field[] {
   const form = paramsForm(schema, defs);
@@ -62,7 +62,7 @@ describe('paramsForm', () => {
     expect(f[0]).toMatchObject({ kind: 'enum', options: ['near', 'far'], optionHelp: { near: 'Nearest pixel.' } });
     expect(f[0].description).toBe('No default.');
     expect(paramsFrom(f, { how: 'far' })).toEqual({ params: { how: 'far' }, errors: {} });
-    expect(paramsFrom(f, { how: 'other' }).errors).toEqual({ how: 'Pick one of the options.' });
+    expect(paramsFrom(f, { how: 'other' }).errors).toEqual({ how: 'Choose one of the options.' });
     const bare = fields({ type: 'object', properties: { how: { oneOf: [{ const: 'a' }, { const: 'b' }] } } });
     expect(bare[0]).toMatchObject({ kind: 'enum', options: ['a', 'b'] });
     expect(bare[0].optionHelp).toBeUndefined();
@@ -119,7 +119,7 @@ describe('paramsFrom', () => {
     ['no number at all', { size: 'ten' }, 'size', 'Enter a number.'],
     ['the exclusive minimum itself', { size: '0' }, 'size', 'More than 0.'],
     ['the exclusive maximum itself', { size: '10' }, 'size', 'Less than 10.'],
-    ['an option the enum does not list', { pick: 'c' }, 'pick', 'Pick one of the options.'],
+    ['an option the enum does not list', { pick: 'c' }, 'pick', 'Choose one of the options.'],
     ['infinity', { size: 'Infinity' }, 'size', 'Enter a number.'],
   ])('reports %s', (_, change, name, message) => {
     expect(paramsFrom(f, { ...good, ...change }).errors).toEqual({ [name]: message });
@@ -283,8 +283,8 @@ describe('a list of texts', () => {
   });
 
   it('asks for the list when it is required and empty', () => {
-    expect(read('').errors.bands).toBe('Pick at least one band.');
-    expect(read(' , ').errors.bands).toBe('Pick at least one band.');
+    expect(read('').errors.bands).toBe('Choose at least one band.');
+    expect(read(' , ').errors.bands).toBe('Choose at least one band.');
   });
 
   it('leaves an optional list empty out of the params', () => {
@@ -306,5 +306,16 @@ describe('a list of texts', () => {
   it('stays "not supported by this panel" for items with a keyword it does not know', () => {
     const form = paramsForm({ type: 'object', properties: { x: { type: 'array', items: { type: 'string', minLength: 2 } } } });
     expect(form.supported).toBe(false);
+  });
+});
+
+describe('fieldTitle: the names of the fields as the interface writes them (UI-04)', () => {
+  it('writes an acronym in capitals, and leaves every other word as it is', () => {
+    expect(fieldTitle('Crs')).toBe('CRS');
+    expect(fieldTitle('Target Crs')).toBe('Target CRS');
+    expect(fieldTitle('Aoi only')).toBe('AOI only');
+    expect(fieldTitle('Resolution')).toBe('Resolution');
+    expect(fieldTitle('Crsx')).toBe('Crsx');
+    expect(fieldTitle('')).toBe('');
   });
 });

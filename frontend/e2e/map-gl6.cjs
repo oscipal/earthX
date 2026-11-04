@@ -184,7 +184,7 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     await menu('Projection', /Mercator/);
     expect('"Mercator" gives Mercator back', (await page.evaluate((m) => m.getProjection()?.type, map)) === 'mercator');
     const dismiss = async () => {
-      const button = page.getByRole('alert').getByRole('button', { name: 'Dismiss' });
+      const button = page.getByRole('alert').getByRole('button', { name: 'Close' });
       while (await button.count()) await button.first().click();
     };
     await page.evaluate(async () => {
@@ -257,6 +257,9 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     const input = page.locator('.aoi-extras input[type=file]');
     await input.setInputFiles({ name: 'area.geojson', mimeType: 'application/geo+json', buffer: Buffer.from(JSON.stringify({ type: 'Feature', properties: {}, geometry: UPLOAD })) });
     await page.waitForFunction(async () => (await import('/src/store.ts')).useAppStore.getState().aoi !== null);
+    // The flight starts with the next render, after the AOI is set: wait for the camera to come to rest near the area, not only
+    // for an idle map (an idle map before the flight let this case fail now and then).
+    await page.waitForFunction((m) => !m.isMoving() && m.getZoom() > 7, map, { timeout: 6000 }).catch(() => {});
     await idle();
     const uploaded = await aoi();
     expect('the upload sets the AOI of the file', uploaded?.type === 'Polygon' && Math.abs(uploaded.coordinates[0][0][0] - 10.0) < 1e-6, JSON.stringify(uploaded)?.slice(0, 80));

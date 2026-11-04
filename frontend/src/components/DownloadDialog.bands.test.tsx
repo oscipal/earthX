@@ -350,6 +350,14 @@ describe('closing', () => {
     await click(container.querySelector('.results-head .close-x')!);
     expect(useAppStore.getState().downloadSelection).toBe(false);
   });
+
+  // Otto, 03.11.2026 (UI-04 answer 2): a click beside a dialog closes nothing; it used to close it and stop a download in flight.
+  it.each(['crop', 'originals'] as const)('a click beside the dialog of the %s closes nothing', async (kind) => {
+    await open(kind);
+    const panel = container.querySelector('.dialog-panel')!;
+    await click(container.querySelector('.dialog-backdrop')!);
+    expect(container.querySelector('.dialog-panel')).toBe(panel);
+  });
 });
 
 describe('the resampling warning', () => {

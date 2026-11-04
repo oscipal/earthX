@@ -91,6 +91,7 @@ import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf }
 import { canonicalJson } from './processing';
 import { areaQuestionOf, measureView, type ViewMeasure } from './viewMeasure';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
+import { counted } from './plural';
 
 const PAGE_LIMIT = 100;
 
@@ -380,7 +381,7 @@ function foundNotice(
   numberMatched: number | null,
   canLoadMore: boolean,
 ): string {
-  const base = `${features.length} scene(s) in ${groups.length} time step(s).`;
+  const base = `${counted(features.length, 'scene')} in ${counted(groups.length, 'time step')}.`;
   if (numberMatched !== null && numberMatched > features.length) {
     return canLoadMore
       ? `${base} ${numberMatched} matched in total.`
@@ -1065,7 +1066,7 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
   const own = sections.filter((section) => section.origin === 'search');
   const steps = own.reduce((sum, section) => sum + section.groups.length, 0);
   const found = own.reduce((sum, section) => sum + section.items.length, 0);
-  return `${found} scene(s) in ${steps} time step(s) across ${datasets.length} datasets.`;
+  return `${counted(found, 'scene')} in ${counted(steps, 'time step')} across ${datasets.length} datasets.`;
 }
 
 // What the search notice adds when the one dataset searched was asked for the cloud share in the AOI and found nothing
@@ -1143,7 +1144,7 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
         ...aoiHints(ctx, datasets),
         ctx.truncatedNotice,
         timeNote && `${timeNote}.`,
-        stray > 0 ? `${stray} scene(s) of other datasets were left out.` : null,
+        stray > 0 ? `${counted(stray, 'scene')} of other datasets ${stray === 1 ? 'was' : 'were'} left out.` : null,
       ]
         .filter(Boolean)
         .join(' ');

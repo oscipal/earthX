@@ -305,7 +305,7 @@ describe('the offer', () => {
       'the catalogue is not reachable Try again in a moment.',
     );
     expect(button(EXPORT)?.disabled).toBe(true);
-    await click('Try again');
+    await click('Retry');
     expect(calls('/processing/processes/recipe/estimate')).toHaveLength(2);
     expect(section()?.textContent).toContain('About 1.8 GB');
     expect(button(EXPORT)?.disabled).toBe(false);

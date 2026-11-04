@@ -1211,7 +1211,7 @@ describe('a batch', () => {
     withBatch(jobs, { refused: [{ label: 'S5', message: 'no good' }] });
     mount();
     const row = rows()[0];
-    expect(row.querySelector('.pm-state')?.textContent).toBe('2 done · 1 running · 1 refused · 1 failed');
+    expect(row.querySelector('.pm-state')?.textContent).toBe('2 finished · 1 running · 1 refused · 1 failed');
     expect(row.querySelector('.pm-until')?.getAttribute('title')).toBe(early);
     // 100 + 100 + 50 + 100 + 100 (refused) over five parts
     expect(row.querySelector('.pm-line + progress')?.getAttribute('value')).toBe('90');
@@ -1521,7 +1521,7 @@ describe('a batch', () => {
         await vi.waitFor(() => expect(deleted).toEqual([jobId(2), jobId(3)]));
       });
       expect(useProcessingStore.getState().jobs.map((j) => j.phase)).toEqual(['successful', 'dismissed', 'dismissed']);
-      expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('1 done · 2 cancelled');
+      expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('1 finished · 2 cancelled');
     });
 
     it('is offered only while a part runs', () => {

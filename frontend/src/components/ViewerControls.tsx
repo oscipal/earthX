@@ -245,7 +245,7 @@ export default function ViewerControls() {
         mark={
           !compact &&
           temporary && (
-            <span className="pp-badge vc-temporary" title="This picture is not a layer: add it to the layers to keep it">
+            <span className="pp-badge vc-temporary" title="This image is not a layer: add it to the layers to keep it">
               Temporary
             </span>
           )
@@ -360,7 +360,7 @@ export default function ViewerControls() {
                 title={
                   savable
                     ? compact
-                      ? 'Keep this picture, these values and this opacity for the layer; closing the settings without it puts the saved layer back'
+                      ? 'Keep this image, these values and this opacity for the layer; closing the settings without it puts the saved layer back'
                       : layer
                         ? 'Draw every image of this dataset with these values and keep them for this layer'
                         : 'Draw every image of this dataset with these values'
@@ -405,7 +405,7 @@ export default function ViewerControls() {
                       className={`ghost-btn${on ? ' on' : ''}`}
                       aria-pressed={on}
                       disabled={pinLoading}
-                      title={`${presetTip(preset)} ${on ? 'Click again for the picture of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
+                      title={`${presetTip(preset)} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
                       onClick={() => void quickIndex(preset.name)}
                     >
                       {preset.name}
@@ -458,7 +458,7 @@ export default function ViewerControls() {
               <button
                 type="button"
                 className="ghost-btn"
-                title={images.length > 1 ? 'Pin the image that is shown into the layer manager' : 'Pin this image into the layer manager'}
+                title={images.length > 1 ? 'Add the image that is shown to the layers' : 'Add this image to the layers'}
                 disabled={pinLoading}
                 onClick={() => addCurrentToLayers()}
               >
@@ -467,7 +467,7 @@ export default function ViewerControls() {
               <button
                 type="button"
                 className="ghost-btn"
-                title={images.length > 1 ? `Pin all ${images.length} images of the view into the layer manager, one layer each` : 'There is only one image'}
+                title={images.length > 1 ? `Add all ${images.length} images of the view to the layers, one layer each` : 'There is only one image'}
                 disabled={pinLoading || images.length <= 1}
                 onClick={() => addAllToLayers()}
               >

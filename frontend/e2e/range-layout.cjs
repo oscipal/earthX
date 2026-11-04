@@ -1,6 +1,6 @@
 // Layout check of the range row of the preview (M4-19c, with "Show" since NM4-43e PR 2): in a real browser, with DEM-like
 // and NDVI-like values, with and without the dropdown "Show" left of the range, in the light and the dark theme, at a wide
-// and a narrow panel. Fails when a field, the unit, the colormap or a
+// and a narrow panel. Fails when a unit stands at the range (none since UI-04), or when a field, the colormap or a
 // button overlaps another, leaves the panel, or cuts a value off; writes a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -110,8 +110,8 @@ async function check(browser, { measure, theme, viewport, values, show }) {
   } else if (named('show')) problems.push('"Show" is there with one band in the output');
   if (report.theme !== THEMES[theme]) problems.push(`the app shows the theme ${report.theme}, not ${THEMES[theme]}`);
   if (report.scrolls) problems.push('the panel scrolls sideways');
-  if (measure === 'DEM-like' && report.unit !== 'm') problems.push(`the unit is ${JSON.stringify(report.unit)}, not "m"`);
-  if (measure === 'NDVI-like' && values === 'measured' && report.unit !== null) problems.push('a unit is shown beside an index');
+  // No unit at "Scale", also where the data have one (Otto, UI-04, 3.11.2026).
+  if (report.unit !== null) problems.push(`a unit is shown beside the range: ${JSON.stringify(report.unit)}`);
   fs.mkdirSync(OUT, { recursive: true });
   await page.locator('.pp-range').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}.png`) });
   await context.close();

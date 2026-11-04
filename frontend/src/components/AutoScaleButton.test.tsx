@@ -57,7 +57,7 @@ const collection = {
   'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
 };
 
-const autoScale = () => [...container.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'auto-scale');
+const autoScale = () => [...container.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Auto-scale');
 
 describe('"auto-scale"', () => {
   it('is one button in the view of scenes and in the settings of a result: the same name, the same classes', () => {

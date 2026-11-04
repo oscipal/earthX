@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The output of the processing panel (NM4-43e, adr/0020 §6, §9, §14): "Select Bands that are processed", the names of the
+// The output of the processing panel (NM4-43e, adr/0020 §6, §9, §14): "Select bands to process", the names of the
 // bands a band math step adds, and the bands of the data above as information. No backend: `fetch` answers the process
 // description, the estimate and, where a test says so, a refusal.
 
@@ -26,7 +26,7 @@ const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
 const AOI = bboxToPolygon([10.4, 50.4, 10.6, 50.6]);
 const DESCRIPTION = '/processing/processes/recipe?dataset=sentinel-2-c1-l2a';
 const ESTIMATE_URL = '/processing/processes/recipe/estimate';
-const HEADING = 'Select Bands that are processed';
+const HEADING = 'Select bands to process';
 
 const SCL: EarthxMask = {
   asset: 'scl',
@@ -245,7 +245,7 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
     click(button('＋ Mask by class'));
     expect(startButton().disabled).toBe(true);
     expect(startButton().title).toBe(EMPTY_OUTPUT);
-    expect(EMPTY_OUTPUT).toBe('Pick at least one band for the output.');
+    expect(EMPTY_OUTPUT).toBe('Choose at least one band for the output.');
     click(outChip('red'));
     expect(startButton().title).not.toBe(EMPTY_OUTPUT);
   });
@@ -749,7 +749,7 @@ describe('the bands a normalize step converts', () => {
     await openPanel();
     click(button('＋ Normalize'));
     await review();
-    expect(container.textContent).toContain('Pick at least one band.');
+    expect(container.textContent).toContain('Choose at least one band.');
   });
 });
 

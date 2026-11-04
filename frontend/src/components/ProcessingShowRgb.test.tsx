@@ -162,6 +162,11 @@ const show = () => section().querySelector<HTMLSelectElement>('.pp-show select')
 const options = () => [...(show()?.options ?? [])].map((o) => o.value);
 const labels = () => [...(show()?.options ?? [])].map((o) => o.textContent);
 const colormapField = () => [...section().querySelectorAll('.pp-range .vc-field')].find((f) => f.textContent?.startsWith('Colormap'));
+// At RGB the field keeps its place, locked on "— none —", as in the settings bar (UI-04 §7.2 row 27).
+const lockedColormap = () => {
+  const select = colormapField()?.querySelector('select');
+  return !!select && select.disabled && select.textContent === '— none —';
+};
 const fields = () => [...section().querySelectorAll<HTMLInputElement>('input[type="number"]')];
 const button = (label: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label)!;
 const expression = (index: number) => container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]')[index]!;
@@ -268,10 +273,10 @@ describe('the picture of RGB', () => {
     expect(tiles().getAll('asset')).toEqual(['red', 'green', 'blue']);
   });
 
-  it('has no colormap in the tiles and no field for one', async () => {
+  it('has no colormap in the tiles and a locked field "— none —"', async () => {
     await ndvi(COLOUR);
     expect(tiles().has('colormap_name')).toBe(false);
-    expect(colormapField()).toBeUndefined();
+    expect(lockedColormap()).toBe(true);
     expect(fields()).toHaveLength(2);
   });
 
@@ -331,16 +336,17 @@ describe('from RGB to a band and back', () => {
     choose(show()!, RGB);
     await afterDebounce();
     expect(tiles().getAll('band')).toEqual(COLOUR);
-    expect(colormapField()).toBeUndefined();
+    expect(lockedColormap()).toBe(true);
     choose(show()!, 'red');
     await afterDebounce();
     expect(tiles().getAll('band')).toEqual(['red']);
     expect(tiles().get('colormap_name')).toBe('viridis');
     expect(colormapField()).toBeDefined();
+    expect(lockedColormap()).toBe(false);
     choose(show()!, RGB);
     await afterDebounce();
     expect(tiles().has('colormap_name')).toBe(false);
-    expect(colormapField()).toBeUndefined();
+    expect(lockedColormap()).toBe(true);
   });
 
   it('gives up the range set by hand for RGB when the band changes', async () => {

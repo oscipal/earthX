@@ -416,7 +416,7 @@ describe('a batch', () => {
       ['S5', 'Failed'],
     ]);
     expect(useProcessingStore.getState().jobs.filter((j) => j.batchId === BATCH && !j.superseded).map((j) => j.part)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
-    expect(topRows()[0].querySelector('.pm-state')?.textContent).toBe('1 done · 2 running · 1 failed · 1 expired');
+    expect(topRows()[0].querySelector('.pm-state')?.textContent).toBe('1 finished · 2 running · 1 failed · 1 expired');
     // The symbol is gone with nothing left to start: the part that would fail again is not one of them.
     expect(retryIn(topRows()[0])).toBeNull();
   });

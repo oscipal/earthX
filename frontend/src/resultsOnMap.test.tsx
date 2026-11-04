@@ -2,7 +2,7 @@
 //
 // Otto, 27.10.2026 (zu #211): "Hide results" holds. Whatever happens next, no outline, quicklook or crop of a search
 // result is on the map; and only the switch changes show/hide, with exceptions: a new search ("Search") shows the
-// results, a crop ("Crop to AOI", "Crop & merge to AOI") hides them and unticks the scenes it was made of.
+// results, a crop ("Crop to AOI", "Crop and merge to AOI") hides them and unticks the scenes it was made of.
 // Changed on 28.10.2026 (zu #221): the ticked scene is no exception any more, "Hide results" hides it too (its tick
 // stays), and ticking a scene while the results are hidden shows them (the third exception; unticking changes nothing).
 // `mapResults.ts` is the one function that says what is on the map, so the matrix

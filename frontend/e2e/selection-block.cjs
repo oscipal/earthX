@@ -82,7 +82,7 @@ async function run(browser, theme, viewport) {
   // --- the timeline alone: nothing is ticked ------------------------------------------------------------------------
   await page.waitForSelector('.time-slider');
   if ((await page.locator('.download-bar').count()) !== 0) problems.push('the bar shows with nothing ticked');
-  if ((await page.locator('.close-x').count()) !== 1) problems.push('no "x" on the timeline alone');
+  if ((await page.locator('.selection-block .close-x').count()) !== 1) problems.push('no "x" on the timeline alone');
   // "Select a scene" in the place of the buttons, and the block as wide as with a ticked scene (Otto, 2.11.2026).
   if ((await page.locator('.selection-block .select-hint').textContent()) !== 'Select a scene') problems.push('no "Select a scene" with nothing ticked');
   const aloneBox = await box('.selection-block');
@@ -109,9 +109,9 @@ async function run(browser, theme, viewport) {
   for (const b of buttons) {
     if (x.x < b.right && x.x + x.width > b.left && x.y < b.bottom && x.y + x.height > b.top) problems.push('the "x" lies over a button of the bar');
   }
-  const colour = await page.locator('.close-x').evaluate((e) => getComputedStyle(e).color);
+  const colour = await page.locator('.selection-block .close-x').evaluate((e) => getComputedStyle(e).color);
   if (!/^rgb\((255, 90, 110|198, 40, 64)\)$/.test(colour)) problems.push(`the "x" is ${colour}, not red`);
-  if ((await page.locator('.close-x').getAttribute('title')) !== 'Close') problems.push('the "x" has no tooltip "Close"');
+  if ((await page.locator('.selection-block .close-x').getAttribute('title')) !== 'Close') problems.push('the "x" has no tooltip "Close"');
 
   // --- the row of dates ---------------------------------------------------------------------------------------------
   // activeGroupIndex 3 of 7 (newest first): shown 2026-07-04.
@@ -131,16 +131,16 @@ async function run(browser, theme, viewport) {
   if (viewport === 'wide' && hiddenNow.some(Boolean)) problems.push('a date is hidden in the wide window');
   if (viewport === 'narrow') console.log(`  ${name}: hidden dates at ${Math.round(blockBox.width)} px:`, hiddenNow.map((h, i) => (h ? row[i] : null)).filter(Boolean).join(' '));
 
-  await page.getByRole('button', { name: 'Previous step' }).click();
+  await page.getByRole('button', { name: 'Previous time step' }).click();
   if ((await page.locator('.time-dates strong').innerText()) !== '2026-07-03') problems.push('"<" did not go to the step before');
   if ((await state('s.activeGroupIndex')) !== 4) problems.push('the step is not 4 of 7 in the store');
-  await page.getByRole('button', { name: 'Next step' }).click();
-  await page.getByRole('button', { name: 'Next step' }).click();
+  await page.getByRole('button', { name: 'Next time step' }).click();
+  await page.getByRole('button', { name: 'Next time step' }).click();
   if ((await page.locator('.time-dates strong').innerText()) !== '2026-07-05') problems.push('">" did not go to the step after');
   // At the ends the arrow is not there, and the other elements keep their place.
   const before = await page.locator('.time-dates strong').evaluate((e) => e.getBoundingClientRect().x);
-  for (let i = 0; i < 6; i++) if (await page.getByRole('button', { name: 'Next step' }).count()) await page.getByRole('button', { name: 'Next step' }).click();
-  if ((await page.getByRole('button', { name: 'Next step' }).count()) !== 0) problems.push('">" at the newest step');
+  for (let i = 0; i < 6; i++) if (await page.getByRole('button', { name: 'Next time step' }).count()) await page.getByRole('button', { name: 'Next time step' }).click();
+  if ((await page.getByRole('button', { name: 'Next time step' }).count()) !== 0) problems.push('">" at the newest step');
   if ((await page.locator('.time-dates strong').innerText()) !== '2026-07-07') problems.push('not at the newest step');
   const after = await page.locator('.time-dates strong').evaluate((e) => e.getBoundingClientRect().x);
   if (!near(before, after, 80) && viewport === 'wide') problems.push(`the date shown moved from ${before} to ${after}`);

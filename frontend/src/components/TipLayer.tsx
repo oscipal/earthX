@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { placeTip, type Side } from '../tipPlacement';
 
 // The one tooltip of the app (UI-01 §4). Every element with `data-tip` gets it on hover and on keyboard focus;
-// it is drawn in `.app` (where the theme tokens are) beside the panels, not in one, so no panel can cover or cut it off, and `Esc` closes it. It is hidden from screen
+// it is drawn in `.app` (where the theme tokens are) beside the panels, not in one, so no panel can cover or cut it off. It goes with the pointer
+// or the focus; `Esc` closes nothing (Otto, 2.11.2026). It is hidden from screen
 // readers: the element carries the same text as its `aria-label`.
 
 const TIP = '[data-tip]';

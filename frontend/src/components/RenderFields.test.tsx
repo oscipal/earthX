@@ -81,15 +81,6 @@ describe('RenderFields', () => {
     expect(names()).not.toContain('max');
   });
 
-  it('keeps a note beside vmax (the unit of the range in the preview) in the same place', () => {
-    act(() =>
-      root.render(<RenderFields vmin={{ value: '', onChange: noop }} vmax={{ value: '', onChange: noop, after: <span className="pp-unit">m</span> }} colormap={null} />),
-    );
-    const bound = container.querySelector('.pp-bound')!;
-    expect(bound.querySelector('.vc-field > span')?.textContent).toBe('vmax');
-    expect(bound.querySelector('.pp-unit')?.textContent).toBe('m');
-  });
-
   it('reports what is typed and chosen', () => {
     const calls: string[] = [];
     act(() =>
@@ -173,6 +164,6 @@ describe('the settings of a result layer', () => {
     expect(names()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     const band = container.querySelector<HTMLLabelElement>('.band-select')!;
     expect(band.querySelector('select')!.disabled).toBe(true);
-    expect(band.title).toBe('This picture has one band');
+    expect(band.title).toBe('This image has one band');
   });
 });

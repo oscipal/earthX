@@ -202,7 +202,7 @@ describe('the fields and the buttons', () => {
     expect(first.slice(0, 3).map((el) => el.querySelector(':scope > span')!.textContent)).toEqual(['Band', 'Scale', 'Colormap']);
     expect([...first[1].querySelectorAll('input')].map((el) => el.placeholder)).toEqual(['vmin', 'vmax']);
     expect(first[3].classList.contains('vc-opacity')).toBe(true);
-    expect([...first[4].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+    expect([...first[4].children].map((el) => el.textContent)).toEqual(['Auto-scale', 'Apply', 'Apply to all']);
     expect(actions().map((el) => el.textContent)).toEqual(ACTIONS);
   });
 
@@ -238,7 +238,7 @@ describe('the fields and the buttons', () => {
     mount();
     const cluster = row('vc-render').children[4];
     expect(cluster.classList.contains('vc-buttons')).toBe(true);
-    expect([...cluster.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+    expect([...cluster.children].map((el) => el.textContent)).toEqual(['Auto-scale', 'Apply', 'Apply to all']);
     expect(container.textContent).not.toContain('Save');
   });
 });
@@ -324,7 +324,7 @@ describe('"Save" of the view of a pinned layer', () => {
 
   it('stands beside "Apply", after "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
     mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
-    expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Apply to all']);
+    expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['Auto-scale', 'Apply', 'Apply to all']);
     expect(save()!.getAttribute('aria-disabled')).toBe('true');
     expect(save()!.title).toBe(NOTHING_TO_APPLY_TO_ALL_LAYER);
   });

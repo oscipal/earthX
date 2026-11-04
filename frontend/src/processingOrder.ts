@@ -500,7 +500,7 @@ export function processBlockReason(
   dataset: { viewable: boolean; collection: Collection } | undefined,
   sceneCount: number,
 ): string | null {
-  if (!dataset?.viewable) return 'Pick a dataset first.';
+  if (!dataset?.viewable) return 'Choose a dataset first.';
   if (!processingAllowed(dataset.collection)) {
     const tier = dataset.collection['earthx:license_flags']?.tier ?? 'unknown';
     return `The licence of this dataset does not allow processing (tier: ${tier}).`;
@@ -562,7 +562,7 @@ export interface BuiltOrder {
 }
 
 // Why the job cannot start while the output holds no band (adr/0020 §9).
-export const EMPTY_OUTPUT = 'Pick at least one band for the output.';
+export const EMPTY_OUTPUT = 'Choose at least one band for the output.';
 
 // The scenes of a group in one fixed order, so that the same selection is the
 // same order text (an estimate belongs to exactly one order, K4). The server
@@ -665,12 +665,12 @@ export function buildOrder(args: {
     return { errors: { ...errors, ...bandProblems(step, index, steps, data, index < locked ? [] : hidden) } };
   });
   const { needs, tiles } = measureSteps({ ...args, built, stepProblems });
-  if (itemIds.length === 0) problems.push('Pick a pass.');
+  if (itemIds.length === 0) problems.push('Choose a pass.');
   if (area === 'aoi' && !isArea(aoi)) problems.push('Draw an area as AOI.');
   if (steps.length === 0) problems.push('Add a step.');
   if (steps.length > info.maxSteps) problems.push(`At most ${info.maxSteps} steps.`);
   if (bands.length === 0) problems.push(EMPTY_OUTPUT);
-  if (!dtype) problems.push('Pick an output data type.');
+  if (!dtype) problems.push('Choose an output data type.');
   const stepsOk = stepProblems.every((p) => !p.unsupported && Object.keys(p.errors).length === 0);
   if (problems.length > 0 || !stepsOk) return { order: null, previewOrder: null, stepProblems, problems, needs };
   const order: Order = {

@@ -125,7 +125,7 @@ describe('addCurrentToLayers while browsing', () => {
   });
 });
 
-// M3-09 §10 (Otto): "Crop & merge to AOI" pins one layer per group instead
+// M3-09 §10 (Otto): "Crop and merge to AOI" pins one layer per group instead
 // of one for the whole selection.
 describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
   const AOI: GeoJSON.Polygon = {

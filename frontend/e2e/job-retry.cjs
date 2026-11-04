@@ -75,7 +75,7 @@ async function check(browser, { theme, viewport }) {
   });
   // Through the rail, as a user does; the page sets its own panel at the start, so this waits for that to settle.
   await page.waitForTimeout(1500);
-  const rail = page.locator('nav[aria-label="Main"] button[aria-label^="Processing jobs"]');
+  const rail = page.locator('nav[aria-label="Main"] button[aria-label^="Jobs"]');
   if ((await rail.getAttribute('aria-expanded')) !== 'true') await rail.click();
   await page.waitForSelector('.processing-manager .pm-row');
 

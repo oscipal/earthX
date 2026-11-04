@@ -132,7 +132,7 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     mount();
     expect([...select().options].map((o) => o.textContent)).toEqual(['RGB']);
     expect(select().value).toBe('');
-    expect(field()!.title).toBe('This picture has one band');
+    expect(field()!.title).toBe('This image has one band');
   });
 
   it.each([

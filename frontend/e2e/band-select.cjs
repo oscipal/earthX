@@ -1,5 +1,5 @@
 // Browser check of the band choice of the processing panel (adr/0020, NM4-43e): the section "Bands" at the top only
-// informs, and the output is chosen at the end of the panel ("Select Bands that are processed"). A dataset with one band
+// informs, and the output is chosen at the end of the panel ("Select bands to process"). A dataset with one band
 // has it checked on opening; "All" and "None" put every band in and take every band out; the auxiliary assets stay out,
 // and the layer of the mask is listed but not part of "All". There is no upper limit: a dataset with 40 bands is as open
 // as one with 12. Runs in the light and the dark theme at three widths; fails when a button overlaps another or leaves

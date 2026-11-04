@@ -215,7 +215,7 @@ describe('canDownloadLayer', () => {
 });
 
 describe('decideDownloadOutcome (M3-17 plan §4)', () => {
-  it('a cropped view ("Crop & merge to AOI") always crops, whatever the format', () => {
+  it('a cropped view ("Crop and merge to AOI") always crops, whatever the format', () => {
     expect(decideDownloadOutcome({ cropToAoi: true, hasAoi: true, isCog: true })).toBe('crop');
     expect(decideDownloadOutcome({ cropToAoi: true, hasAoi: true, isCog: false })).toBe('crop');
   });

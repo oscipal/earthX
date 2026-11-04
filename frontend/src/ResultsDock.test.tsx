@@ -160,7 +160,7 @@ describe('the symbol', () => {
   it('counts the scenes the search found, in the badge and in the name', async () => {
     await search();
     expect(symbol('results').getAttribute('aria-disabled')).toBeNull();
-    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 2');
+    expect(symbol('results').getAttribute('aria-label')).toBe('Search results, 2');
     expect(symbol('results').querySelector('.rail-badge')?.textContent).toBe('2');
   });
 });
@@ -261,7 +261,7 @@ describe('everything the list could do is in the panel', () => {
   it('lists the scenes in groups by pass, with their counts', () => {
     const heads = [...slot('results').querySelectorAll('.result-group-head')];
     expect(heads.map((h) => h.querySelector('.rg-count')?.textContent)).toEqual(['100', '100', '100']);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (0/300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (0/300)');
   });
 
   it('opens and closes a group', () => {
@@ -289,7 +289,7 @@ describe('everything the list could do is in the panel', () => {
   it('loads more, and the new scenes arrive in the panel', async () => {
     const button = [...slot('results').querySelectorAll('button')].find((b) => b.textContent === 'Load more')!;
     await act(async () => button.click());
-    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 340');
+    expect(symbol('results').getAttribute('aria-label')).toBe('Search results, 340');
     expect([...slot('results').querySelectorAll('button')].some((b) => b.textContent === 'Load more')).toBe(false);
   });
 
@@ -303,7 +303,7 @@ describe('everything the list could do is in the panel', () => {
     const bar = container.querySelector('.download-bar')!;
     expect(bar).not.toBeNull();
     expect(bar.closest('.dock')).toBeNull();
-    expect(bar.textContent).toContain('Crop & merge to AOI');
+    expect(bar.textContent).toContain('Crop and merge to AOI');
     expect(bar.textContent).toContain('Download merged crop');
   });
 
@@ -334,10 +334,10 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     act(() => useAppStore.setState({ focusMode: true, cropToAoi: true }));
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (1/300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (1/300)');
     expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
     expect(useAppStore.getState().sections).toHaveLength(1);
-    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 300');
+    expect(symbol('results').getAttribute('aria-label')).toBe('Search results, 300');
     act(() => useAppStore.setState({ focusMode: false, cropToAoi: false }));
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
   });
@@ -377,7 +377,7 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     await search();
     click(slot('results').querySelector('.select-all-box input')!);
     const before = useAppStore.getState().sections;
-    const crop = [...container.querySelectorAll('.download-bar button')].find((b) => b.textContent === 'Crop & merge to AOI')!;
+    const crop = [...container.querySelectorAll('.download-bar button')].find((b) => b.textContent === 'Crop and merge to AOI')!;
     await act(async () => crop.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(useAppStore.getState().sections).toBe(before);
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
@@ -404,7 +404,7 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     expect(useAppStore.getState().resultsOnMap).toBe(false);
     expect(toggle().title).toBe(SHOW_RESULTS_TIP);
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (0/300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (0/300)');
     click(toggle());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
     expect(toggle().title).toBe(HIDE_RESULTS_TIP);

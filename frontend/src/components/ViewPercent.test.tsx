@@ -154,7 +154,7 @@ describe('the switch "value / %"', () => {
     toggleUnit();
     type(inputs()[0], '10');
     type(inputs()[1], '90');
-    click(button('auto-scale'));
+    click(button('Auto-scale'));
     expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
     expect(asked()).toEqual([]);
   });
