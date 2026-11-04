@@ -149,19 +149,26 @@ body.dragging * {
 .draggable input[type='text'] {
   cursor: text;
 }
-/* grabber pill hint at the top edge of each movable panel */
+/* grabber hint at the top edge of each movable panel */
 .drag-grip {
   position: absolute;
-  top: 5px;
+  top: 1px;
   left: 50%;
   transform: translateX(-50%);
-  width: 34px;
-  height: 4px;
-  border-radius: 3px;
-  background: var(--panel-border);
+  display: inline-flex;
+  color: var(--muted);
   z-index: 5;
   pointer-events: none;
 }
+/* An icon (`components/icons.ts`): on the line of the text beside it, and never squeezed by a row of flex items. */
+svg.lucide {
+  flex: none;
+  vertical-align: -0.2em;
+}
+svg.lucide.icon-lead {
+  margin-inline-end: 0.4em;
+}
+
 /* --- persistent zoom button (top-right) --- */
 .zoom-btn {
   padding: 9px 14px;
@@ -192,16 +199,16 @@ body.dragging * {
   padding-top: 4px;
   border-top: 1px solid var(--panel-border);
 }
-/* A tick takes the place in front of the name, the same width for every entry (`.pm-menu-list` puts it in front of
-   a checked one only, which would shift the name). */
+/* The tick of a chosen entry (`MenuTick.tsx`) takes the place in front of the name, the same width for every entry. */
+.menu-tick {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
 .pm-menu-list.basemap-menu button {
   justify-content: flex-start;
   gap: calc(var(--space-1) * 1.5);
-}
-.pm-menu-list.basemap-menu button::before {
-  content: '';
-  display: inline-block;
-  width: 10px;
 }
 .menu-group-label {
   padding: 2px 10px;
@@ -1506,8 +1513,7 @@ input[type='date']:focus-visible {
   outline: none;
 }
 .clear-results-x {
-  color: #ff5a6e;
-  font-size: 10px;
+  color: var(--danger);
 }
 /* The eye of the results on the map (NM4-59), the same as in the entry "Results" of the layer manager, and left of it
    "Results" on top of the layers, greyed out while "Results" is on top. */
@@ -2709,8 +2715,6 @@ input[type='date']:focus-visible {
   pointer-events: none;
 }
 .tip {
-  /* The labels of the panel are in capitals, and the capital of ⓘ is another sign. */
-  text-transform: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2864,7 +2868,7 @@ input[type='date']:focus-visible {
   color: var(--muted);
   text-decoration: line-through;
 }
-/* One line for a job, in the places of a grid: title (the one that grows), pencil, date, then the symbols "＋", "↻"/"↺"/"⇩" and "⋯". The
+/* One line for a job, in the places of a grid: title (the one that grows), pencil, date, then the icons add, retry or restore, download and more. The
    arrow of a batch lies over the start of its title. The
    state is no column of its own: it stands in the place of the date while the job runs, waits or is cancelled, and for a screen reader
    always. Every group has the same columns: the title and the date are as wide in each. A place a row lacks stays empty. */
@@ -3143,12 +3147,6 @@ a.pm-icon:hover {
 .pm-menu-list button[aria-disabled='true'] {
   opacity: 0.4;
   cursor: not-allowed;
-}
-.pm-menu-list button[aria-checked='true']::before {
-  content: '✓ ';
-}
-.pm-menu-list.basemap-menu button[aria-checked='true']::before {
-  content: '✓';
 }
 .pm-fold {
   flex: 0 0 var(--pm-chevron);
@@ -3549,7 +3547,6 @@ a.pm-icon:hover {
   border: none;
   border-radius: 50%;
   color: var(--muted);
-  font-size: 15px;
   line-height: 1;
   cursor: pointer;
 }
@@ -3902,7 +3899,7 @@ a.pm-icon:hover {
 .pp-step-op {
   color: var(--muted);
 }
-/* The label of a field with the ⓘ beside it, and the unit small under the resolution (NM4-43e, review of #250). */
+/* The label of a field with the (i) beside it, and the unit small under the resolution (NM4-43e, review of #250). */
 .pp-label {
   display: inline-flex;
   align-items: baseline;
