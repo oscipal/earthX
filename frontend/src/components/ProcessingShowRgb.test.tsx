@@ -321,11 +321,15 @@ describe('the picture of RGB', () => {
     click(button('Apply'));
     await afterDebounce();
     expect(tiles().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
-    // Counter-check: one end typed wrong draws nothing new, and the panel says which channel.
+    // Counter-check: one end typed wrong locks "Apply" with the channel and the reason, and marks the fields of that channel.
     typeInto(fields()[3], '0.01');
     expect(button('Apply').disabled).toBe(true);
-    expect(section().textContent).toContain('The lower end of green must be below the upper end.');
+    expect(button('Apply').title).toBe('G: vmin must be below vmax');
+    expect(fields().map((f) => f.getAttribute('aria-invalid'))).toEqual([null, null, 'true', 'true', null, null]);
     expect(tiles().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
+    typeInto(fields()[3], '0.6');
+    expect(button('Apply').disabled).toBe(false);
+    expect(fields().some((f) => f.hasAttribute('aria-invalid'))).toBe(false);
   });
 
   const unitOf = (channel: string) => section().querySelector<HTMLSelectElement>(`select[aria-label="${channel} range unit"]`)!;
@@ -348,15 +352,20 @@ describe('the picture of RGB', () => {
     expect(COLOUR.map((c) => unitOf(c).value)).toEqual(['percent', 'value', 'percent']);
   });
 
-  it('says which channel has a pair that is none, and applies nothing', async () => {
+  it('locks "Apply" for a channel with a pair that is none, names the channel, and applies nothing', async () => {
     await ndvi(COLOUR);
     choose(unitOf('green'), 'percent');
     typeInto(fields()[2], '98');
     typeInto(fields()[3], '2');
+    expect(button('Apply').disabled).toBe(true);
+    expect(button('Apply').title).toBe('G: the lower percentile must be below the upper one');
     click(button('Apply'));
     await afterDebounce();
-    expect(section().textContent).toContain('green: The lower percentile must be below the upper one.');
     expect(store().rangeByHand).toBe(false);
+    // Counter-check: a pair that is one opens it again.
+    typeInto(fields()[2], '2');
+    typeInto(fields()[3], '98');
+    expect(button('Apply').disabled).toBe(false);
   });
 
   it('puts the usual pair on a channel in percentiles with "Auto-scale"', async () => {

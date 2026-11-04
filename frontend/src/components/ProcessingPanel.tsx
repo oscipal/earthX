@@ -17,7 +17,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
 import { resamplingParts } from '../resamplingWarning';
-import { channelsAutoScaled, channelsOfRange, percentsOfChannels, samePercents, withoutChannels, type ChannelRange } from '../channels';
+import { channelProblems, channelsAutoScaled, channelsOfRange, percentsOfChannels, samePercents, withoutChannels, type ChannelRange } from '../channels';
 import { DEFAULT_PERCENT, percentOf, samePercent, type Percent, type RangeUnit } from '../percentRange';
 import { totalOf } from '../processingBatch';
 import {
@@ -441,6 +441,9 @@ function PreviewSection({ view }: { view: OrderView }) {
   const singlePercent = percentMode && !colour;
   const channelValues = channelsOfRange(rangeDraft);
   const colourPercent = colour && channelValues.some((channel) => channel.percent);
+  // A channel that cannot be drawn locks "Apply" with its reason, and its fields are marked.
+  const problems = colour ? channelProblems(channelValues) : [];
+  const blocked = problems.find((reason) => reason !== null) ?? null;
   const valueRange = rescaleOf(colour ? { ...rangeDraft, channels: channelValues } : withoutChannels(rangeDraft));
   const editChannels = (channels: ChannelRange[]) => {
     setRangeDraft({ channels, vmin: channels[0].vmin, vmax: channels[0].vmax, percent: undefined });
@@ -452,6 +455,7 @@ function PreviewSection({ view }: { view: OrderView }) {
         onChange: (channel: number, end: 'vmin' | 'vmax', text: string) => editChannels(channelValues.map((range, index) => (index === channel ? { ...range, [end]: text } : range))),
         onPercent: (channel: number, end: 'low' | 'high', text: string) =>
           editChannels(channelValues.map((range, index) => (index === channel ? { ...range, percent: { ...(range.percent ?? DEFAULT_PERCENT), [end]: text } } : range))),
+        problems,
         onUnit: (channel: number, next: RangeUnit) =>
           editChannels(
             channelValues.map((range, index) => {
@@ -530,14 +534,15 @@ function PreviewSection({ view }: { view: OrderView }) {
               <button
                 type="button"
                 className="primary-btn vc-apply"
-                disabled={colourPercent ? appliedChannels : singlePercent ? percentApplied : 'problem' in valueRange}
+                disabled={blocked !== null || (colourPercent ? appliedChannels : singlePercent ? percentApplied : 'problem' in valueRange)}
+                title={blocked ?? undefined}
                 onClick={() => (colourPercent ? void applyRangeChannels(channelValues).then(setPercentProblem) : singlePercent ? void applyRangePercent(typed).then(setPercentProblem) : applyRange())}
               >
                 Apply
               </button>
             </div>
           </div>
-          {!singlePercent && !colourPercent && 'problem' in valueRange && <p className="hint-text error">{valueRange.problem}</p>}
+          {!singlePercent && !colour && 'problem' in valueRange && <p className="hint-text error">{valueRange.problem}</p>}
           {(singlePercent || colourPercent) && percentProblem && <p className="hint-text error">{percentProblem}</p>}
           {rangeNote && <p className="hint-text">{rangeNote}</p>}
           {read?.assets.length === 0 && <p className="hint-text">Choose a band for the output to see the preview.</p>}

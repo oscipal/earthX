@@ -346,7 +346,7 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 **Auslegungen (Vorschlag, gelten bis Otto widerspricht):**
 1. `percent` und `channels` am selben Bereich sind ein `422` (§7.6 „Kanäle bei einem Band: Vorschlag 422“): Das Backend kennt das Band nicht, es prüft die Form; ein Bereich nennt seine Einheit nur einmal.
 2. „Auto-scale“ bei RGB: Jeder Kanal in Perzentilen bekommt 2/98, die anderen den gemessenen Bereich (wie in der Ansicht); in der Vorschau ohne Kanal in Perzentilen bleibt es der alte Weg (`autoStretch`).
-3. Ein Kanal mit unzulässigem Paar zählt als anderer Look, „Apply“ und „Save“ bleiben offen und nennen den Kanal („green: The lower percentile must be below the upper one.“).
+3. ~~Ein Kanal mit unzulässigem Paar lässt „Apply“ und „Save“ offen~~ — **Antwort Otto (04.11.2026): gesperrt.** Ein Kanal mit unzulässigem Bereich oder Paar sperrt „Apply“ und „Save“ (Ergebnis-Layer) bzw. „Apply“ (Vorschau); der Tooltip nennt Kanal und Grund („G: vmin must be below vmax“, „B: the lower percentile must be below the upper one“), die Felder des Kanals sind markiert (`aria-invalid`, Rand `--invalid`). Die Meldung unter den Feldern entfällt für Kanäle (`channelProblems` in `channels.ts`).
 4. Prozente im Permalink sind ganze Zahlen (`int`, 0–100, `low` < `high`), wie sie die Felder zulassen.
 5. Das Schema schreibt nur, was da ist: ein alter Link kommt ohne `percent: null` zurück (`_Sparse`), damit sich nichts an ihm ändert.
 

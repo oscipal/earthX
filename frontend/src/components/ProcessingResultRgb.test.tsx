@@ -288,11 +288,20 @@ describe('"Apply" and "Save" of RGB, a range for each channel (UI-03d)', () => {
     typeAll([['0.05', '0.7'], ['0.04', '0.5'], ['0.02', '0.4']]);
     act(() => button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
-    // Counter-check: one channel typed wrong draws nothing new and says which.
+    // Counter-check: one channel typed wrong locks "Apply" and "Save" with the channel and the reason, and marks its fields.
     type('green vmax', '0.01');
+    expect(button('Apply').getAttribute('aria-disabled')).toBe('true');
+    expect(button('Save').getAttribute('aria-disabled')).toBe('true');
+    expect([button('Apply').title, button('Save').title]).toEqual(['G: vmin must be below vmax', 'G: vmin must be below vmax']);
+    expect(['red', 'green', 'blue'].map((c) => input(`${c} vmax`).getAttribute('aria-invalid'))).toEqual([null, 'true', null]);
     act(() => button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    act(() => button('Save').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
-    expect(container.textContent).toContain('The lower end of green must be below the upper end.');
+    expect(useProcessingStore.getState().jobs[0].bandRanges[RGB]).toBeUndefined();
+    // Mended, both are open again.
+    type('green vmax', '0.6');
+    expect(button('Apply').getAttribute('aria-disabled')).toBeNull();
+    expect(input('green vmax').getAttribute('aria-invalid')).toBeNull();
   });
 
   it('keeps the ranges for RGB with "Save", as for a band, and for no other band', async () => {
@@ -365,19 +374,27 @@ describe('"Apply" and "Save" of RGB, a range for each channel (UI-03d)', () => {
     expect(button('Apply').getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('says which channel has a pair that is none, and draws nothing', async () => {
+  it('locks "Apply" and "Save" for a channel with a pair that is none, names the channel and the reason, and draws nothing', async () => {
     answerStatistics();
     await openControls();
     const before = urlOf();
     setUnit('blue', 'percent');
     type('blue low percentile', '98');
     type('blue high percentile', '2');
+    for (const label of ['Apply', 'Save']) {
+      expect(button(label).getAttribute('aria-disabled')).toBe('true');
+      expect(button(label).title).toBe('B: the lower percentile must be below the upper one');
+    }
+    expect(input('blue low percentile').getAttribute('aria-invalid')).toBe('true');
+    expect(input('red vmin').getAttribute('aria-invalid')).toBeNull();
     await click('Apply');
+    await click('Save');
     expect(urlOf()).toBe(before);
-    expect(container.textContent).toContain('blue: The lower percentile must be below the upper one.');
+    expect(useProcessingStore.getState().jobs[0].bandRanges[RGB]).toBeUndefined();
     // Counter-check: a pair that is one draws.
     type('blue low percentile', '2');
     type('blue high percentile', '98');
+    expect(button('Apply').getAttribute('aria-disabled')).toBeNull();
     await act(async () => {
       button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await vi.waitFor(() => expect(urlOf()).not.toBe(before));

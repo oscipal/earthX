@@ -44,6 +44,8 @@ interface Props {
     onChange: (channel: number, end: 'vmin' | 'vmax', text: string) => void;
     onPercent?: (channel: number, end: 'low' | 'high', text: string) => void;
     onUnit?: (channel: number, unit: RangeUnit) => void;
+    // Why a channel cannot be drawn, `null` where it can: the fields of that channel are marked.
+    problems?: readonly (string | null)[];
   };
   // What stands under the fields of "Scale": the histograms with their sliders.
   histograms?: ReactNode;
@@ -128,12 +130,12 @@ function UnitSelect({ unit, label = 'Range unit' }: { unit: NonNullable<Props['u
   );
 }
 
-function NumberField({ name, value, placeholder, percent, onChange }: { name: string; value: string; placeholder?: string; percent: boolean; onChange: (value: string) => void }) {
+function NumberField({ name, value, placeholder, percent, invalid = false, onChange }: { name: string; value: string; placeholder?: string; percent: boolean; invalid?: boolean; onChange: (value: string) => void }) {
   const short = name.split(' ').pop() ?? name;
   return (
     <label className="vc-field vc-num" title={placeholder ? `${name}; empty: ${placeholder}` : name}>
       <span className="sr-only">{name}</span>
-      <input type="number" value={value} placeholder={short} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => onChange(e.target.value)} />
+      <input type="number" value={value} placeholder={short} aria-invalid={invalid || undefined} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }
@@ -162,6 +164,7 @@ function ScaleRow({ vmin, vmax, placeholder, percent, unit, channels, below }: {
                     value={typed ? typed.low : (own?.vmin ?? vmin.value)}
                     placeholder={typed ? undefined : placeholder}
                     percent={typed !== null}
+                    invalid={!!channels.problems?.[index]}
                     onChange={(text) => (typed ? channels.onPercent?.(index, 'low', text) : channels.onChange(index, 'vmin', text))}
                   />
                   <NumberField
@@ -169,6 +172,7 @@ function ScaleRow({ vmin, vmax, placeholder, percent, unit, channels, below }: {
                     value={typed ? typed.high : (own?.vmax ?? vmax.value)}
                     placeholder={typed ? undefined : placeholder}
                     percent={typed !== null}
+                    invalid={!!channels.problems?.[index]}
                     onChange={(text) => (typed ? channels.onPercent?.(index, 'high', text) : channels.onChange(index, 'vmax', text))}
                   />
                   {channels.onUnit ? (

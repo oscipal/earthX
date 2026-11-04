@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react';
 
 import { fetchResultStatistics } from '../api';
-import { badChannelPercent, channelsAtOwnPercent, channelsAutoScaled, channelsOf, channelsOfRange, CHANNEL_COUNT, CHANNEL_NAMES, percentsOfChannels, rescaleOfChannels, samePercents, type ChannelRange } from '../channels';
+import { channelProblems, channelsAtOwnPercent, channelsAutoScaled, channelsOf, channelsOfRange, CHANNEL_COUNT, CHANNEL_NAMES, percentsOfChannels, rescaleOfChannels, samePercents, type ChannelRange } from '../channels';
 import { histogramOf, type Histogram } from '../histogram';
 
 import { layerShownName } from '../layerName';
@@ -94,6 +94,9 @@ function Controls({ layer }: { layer: MapLayer }) {
   const same = (a: PreviewRange, b: PreviewRange) => sameRange(a, b, colour);
   // A colour picture: the range of each channel, each in values or in percentiles; the one range three times until one is changed.
   const channelValues = channelsOfRange(draft);
+  // A channel that cannot be drawn locks "Apply" and "Save" with its reason, and its fields are marked.
+  const problems = colour ? channelProblems(channelValues) : [];
+  const blocked = problems.find((reason) => reason !== null) ?? null;
   const colourPercent = colour && channelValues.some((channel) => channel.percent);
   const editChannels = (channels: ChannelRange[]) => edit({ channels, vmin: channels[0].vmin, vmax: channels[0].vmax, percent: undefined });
   const editChannel = (channel: number, end: 'vmin' | 'vmax', text: string) =>
@@ -136,10 +139,9 @@ function Controls({ layer }: { layer: MapLayer }) {
   const asked = colour
     ? { colormap: draft.colormap, vmin: channelValues[0].vmin, vmax: channelValues[0].vmax, channels: channelValues }
     : withPercent(draft, unit === 'percent' ? (typedPair ?? { low: typed.low, high: typed.high }) : undefined);
-  const badPair = colour && badChannelPercent(channelValues);
-  const canApply = !same(asked, drawn) || badPair;
+  const canApply = !same(asked, drawn);
   // Also where only the opacity was changed: it is kept with "Save" too (NM4-54, Otto, 1.11.2026).
-  const canSave = !same(asked, saved) || layer.saved !== undefined || badPair;
+  const canSave = !same(asked, saved) || layer.saved !== undefined;
   const render = (range: PreviewRange) => {
     const made = renderOfRange(range);
     if (!made) {
@@ -215,7 +217,7 @@ function Controls({ layer }: { layer: MapLayer }) {
     return made !== null;
   };
   const apply = () => {
-    if (!canApply) return;
+    if (!canApply || blocked) return;
     const range = known();
     if (range) draw(range);
     else void resolve().then((read) => read && draw(read));
@@ -235,7 +237,7 @@ function Controls({ layer }: { layer: MapLayer }) {
     setJobRange(info.jobID, fallback && same(range, fallback) ? null : range, named);
   };
   const keep = () => {
-    if (!canSave) return;
+    if (!canSave || blocked) return;
     const range = known();
     if (range) keepRange(range);
     else void resolve().then((read) => read && keepRange(read));
@@ -285,7 +287,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                 vmin={unit === 'percent' ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } } : { value: draft.vmin, onChange: (vmin) => edit({ vmin }) }}
                 vmax={unit === 'percent' ? { value: typed.high, onChange: (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } } : { value: draft.vmax, onChange: (vmax) => edit({ vmax }) }}
                 unit={colour ? undefined : { value: unit, onChange: setUnit }}
-                channels={colour ? { values: channelValues, onChange: editChannel, onPercent: editChannelPercent, onUnit: editChannelUnit } : undefined}
+                channels={colour ? { values: channelValues, onChange: editChannel, onPercent: editChannelPercent, onUnit: editChannelUnit, problems } : undefined}
                 histograms={
                   histograms && (
                     <ScaleHistograms
@@ -310,8 +312,8 @@ function Controls({ layer }: { layer: MapLayer }) {
                 <button
                   type="button"
                   className="ghost-btn vc-apply"
-                  aria-disabled={!canApply || undefined}
-                  title={canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY}
+                  aria-disabled={!canApply || blocked !== null || undefined}
+                  title={blocked ?? (canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY)}
                   onClick={apply}
                 >
                   Apply
@@ -319,8 +321,8 @@ function Controls({ layer }: { layer: MapLayer }) {
                 <button
                   type="button"
                   className="primary-btn vc-save"
-                  aria-disabled={!canSave || undefined}
-                  title={canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE}
+                  aria-disabled={!canSave || blocked !== null || undefined}
+                  title={blocked ?? (canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE)}
                   onClick={keep}
                 >
                   Save

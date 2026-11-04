@@ -2,7 +2,7 @@
 // tile URL carries one `rescale` per channel, in this order; the look keeps them as one text, the pairs joined by `;`. Three equal
 // pairs are written as one, as before, so that a picture drawn alike is the same look and the same URL.
 
-import { DEFAULT_PERCENT, percentOf, samePercent, valueAtPercent, type Percent } from './percentRange';
+import { checkPercent, DEFAULT_PERCENT, percentOf, samePercent, valueAtPercent, type Percent } from './percentRange';
 
 export const CHANNEL_NAMES = ['red', 'green', 'blue'] as const;
 export const CHANNEL_COUNT = CHANNEL_NAMES.length;
@@ -54,6 +54,23 @@ export function checkChannels(channels: readonly ChannelRange[]): { rescale: str
 
 // Three copies of one range: where a picture drawn with one range for all is set channel by channel.
 export const channelsOf = (vmin: string, vmax: string): ChannelRange[] => CHANNEL_NAMES.map(() => ({ vmin, vmax }));
+
+// Why a channel cannot be drawn, by its letter, or `null` where it can (UI-04 part 5, Otto, 4.11.2026): "Apply" and "Save" are locked
+// with this as the tooltip, and the fields of the channel are marked.
+const LETTERS = ['R', 'G', 'B'];
+const asReason = (text: string) => text[0].toLowerCase() + text.slice(1).replace(/\.$/u, '');
+export function channelProblems(channels: readonly ChannelRange[]): (string | null)[] {
+  return channels.map((channel, index) => {
+    const letter = LETTERS[index];
+    if (channel.percent) {
+      const checked = checkPercent(channel.percent);
+      return 'problem' in checked ? `${letter}: ${asReason(checked.problem)}` : null;
+    }
+    const [low, high] = [channel.vmin, channel.vmax].map((text) => (text.trim() === '' ? NaN : Number(text)));
+    if (!Number.isFinite(low) || !Number.isFinite(high)) return `${letter}: enter a number for vmin and vmax`;
+    return low < high ? null : `${letter}: vmin must be below vmax`;
+  });
+}
 
 // A range without the ranges of single channels: where it is drawn on one band, only the first of them was ever meant for it.
 export function withoutChannels<T extends { channels?: unknown }>(range: T): Omit<T, 'channels'> {

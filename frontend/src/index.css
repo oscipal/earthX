@@ -501,6 +501,10 @@ svg.lucide.icon-lead {
   height: var(--control-height);
   box-sizing: border-box;
 }
+.processing-panel .vc-scale-fields input[aria-invalid='true'],
+.inspector .vc-scale-fields input[aria-invalid='true'] {
+  border-color: var(--invalid);
+}
 .processing-panel .vc-scale-fields input[type='number'],
 .inspector .vc-scale-fields input[type='number'] {
   padding-right: var(--space-2);
