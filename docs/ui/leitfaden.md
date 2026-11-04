@@ -40,7 +40,7 @@
 | Retry / Run again / Retry failed parts | dieselbe Anfrage noch einmal / Job neu starten / nur die gescheiterten Teile eines Stapels | „Try again“ als Knopf (im Satz einer Meldung erlaubt) |
 | Auto-scale | 2. bis 98. Perzentil in die Felder | „auto-scale“, „Auto stretch“ |
 | Quick processing, Enhance contrast | Abschnitt der Seitenleiste mit Indizes und Kontrast (UI-03d/e) | |
-| Scale, vmin / vmax, absolute / percentile | der Bereich einer Darstellung und seine Art (NM4-65, UI-03e); RGB hat einen Bereich und eine Art je Kanal | „min/max“ |
+| Scale, vmin / vmax, absolute / percentile | der Bereich einer Darstellung und seine Art (NM4-65, UI-03e); RGB hat einen Bereich und eine Art je Kanal, in Ansicht, Layer, Ergebnis-Layer und Processing-Vorschau, und der Permalink hält beides | „min/max“ |
 | Temporary | Abzeichen neben dem Titel der Ansicht, solange kein Layer das Bild so hält, wie es gezeichnet ist | |
 | Filter within AOI only | der Schalter in „Advanced search“ | |
 | Copy original scene name | kopiert die Kennungen der Szenen in die Zwischenablage | |

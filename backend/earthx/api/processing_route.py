@@ -51,6 +51,8 @@ a malformed and an expired identifier are one ``404``. The jobs and their ids ar
 from its creation. Creating answers ``201`` with the identifier, the expiry and a key that deletes it, once;
 reading answers ``404`` for an identifier that is malformed, unknown or expired, and deleting answers the same
 ``404`` for a wrong key, so nobody can tell the cases apart. The order carries the area and is never logged.
+The range of the view may carry the unit it was typed in and, for a colour picture, a range and unit for each channel
+(UI-04 part 5); a link made before has neither and is read as it was.
 
 Every answer under ``/jobs/``, ``/bundles`` and ``/permalinks`` and the placing of a job carry ``Cache-Control: no-store``.
 """

@@ -1502,6 +1502,23 @@ Originaltext bleibt stehen; maßgeblich ist dieser Nachtrag, ausführlich in `ad
 - **Keine neue Stelle für den Objektspeicher:** `jobs` ruft weiter nur `earthx.objectstore.results.delete_result`; `api`
   liest und löscht nichts, `.importlinter` und der Importvertrag sind unverändert.
 
+## 14h. Nachtrag vom 2026-11-04: Permalink mit Bereich und Einheit je Kanal (zu §13, 14d; Nachtrag UI-04)
+
+Otto hat am 2026-11-03 verlangt, dass der Bereich der Processing-Vorschau bei RGB je Kanal gilt und der Permalink ihn hält
+(`plans/vp3/ui-04-einheitlichkeit.md` §7.0 Nr. 1, §7.6). Das Schema des Permalinks bekommt dafür eine kleine Ausnahme; der
+Rest von §14d bleibt, die Frist, der Schlüssel und der Inhalt (Auftrag und Ansicht, nie ein Job oder ein Ergebnis) ändern sich nicht.
+
+- **`view.range`** (`PermalinkRange` in `api/processing_route.py`, `extra="forbid"`, streng) nimmt zwei Glieder an, beide
+  freiwillig: `percent` (`{low, high}`, ganze Zahlen 0 bis 100, `low` unter `high`) für die Perzentile, als die ein Bereich getippt wurde;
+  `channels` (genau drei, in der Reihenfolge Rot, Grün, Blau, je `vmin`, `vmax` und freiwillig `percent`) für ein Farbbild.
+  `vmin` und `vmax` des Bereichs sind dann die des ersten Kanals.
+- **Auslegung:** `percent` und `channels` zusammen sind ein `422`: Der Bereich nennt seine Einheit sonst zweimal. Das Backend
+  weiß nicht, ob die Vorschau ein Band oder drei zeigt; die Prüfung gilt darum der Form, nicht dem Band.
+- **Alte Links** haben beides nicht und bleiben gültig. Sie werden so gespeichert und gelesen, wie sie kamen: ein fehlendes Glied
+  steht nicht als `null` im Dokument (`_Sparse` schreibt nur, was da ist).
+- Das Frontend liest einen Bereich mit nur einem Perzentil-Paar als dasselbe Paar auf jedem Kanal, wie es die Ansicht seit UI-03e
+  mit einem Look von vorher tut.
+
 ## 15. Quellen
 
 **Primär, in der Sitzung gelesen [P]:**

@@ -261,7 +261,7 @@ Kein Symbol mehr als Textzeichen. Erlaubt bleiben typografische Zeichen im Text:
 | **5** | RGB je Kanal im Ergebnis-Layer und in der Processing-Vorschau, Permalink mit Kanälen (Backend-Ausnahme, §7.6) | 300–350 | neu |
 | **6** | NM4-56: Zahlenformat (NM4-21), weniger Text mit (i) (NM4-22, Zeilen 8, 31), Datums- und Prozentformat (Zeilen 33, 41, 49), schmale Fenster (Punkt 58: Toolbar 320 px, Statusleiste bei 360 px, Statusmeldung über den Kopfknöpfen) | 350–400 | neu |
 
-**Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen.
+**Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen. Teil 5 ist umgesetzt (§8.5).
 
 Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Teile quer durch dieselben Dateien gehen. Teil 4 kann vor Teil 3 kommen, wenn Otto es zuerst sehen will. Die Teile 2 bis 6 bekommen je einen eigenen Plan-Abschnitt in dieser Datei („§8 Teil n“), damit eine neue Session ohne dieses Gespräch auskommt.
 
@@ -331,3 +331,23 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 8. **Download überall `download`**, auch „Download all (ZIP)“ (vorher ⇊) und die Zeile eines Jobs.
 9. **Nicht berührt:** `.vc-eye` (28 px), `.lm-eye` (22 px) und andere feste Knopfgrößen; sie gehören zu Teil 3a (Knopfformen).
 10. **Antworten Otto (04.11.2026):** Die Leiste links bekommt in Teil 3 eine dritte Größe 20 px als Token (hier 16 px, unverändert). Der Knopf „Clear“ der AOI im Control-Menü heißt „Clear AOI“ (Beschriftung, Tooltip, `aria-label`); gesperrt ohne AOI mit dem Grund „No AOI to clear“.
+
+### 8.5 Teil 5 — RGB je Kanal (umgesetzt, 04.11.2026)
+
+**Umfang:** §7.6, Vorgabe 1 (§7.0): Bereich und Art (absolute/percentile) je Kanal im Ergebnis-Layer und in der Processing-Vorschau, der Permalink hält beides. Löst §6 auf.
+
+**Umgesetzt:**
+- **Ergebnis-Layer** (`ResultControls`): drei Kanalzeilen, jede mit eigener Einheit wie in der Ansicht (`RenderFields` mit `onUnit`/`onPercent`). „Apply“ misst die Kanäle in Perzentilen an ihren eigenen Werten (`channelsAtOwnPercent`), die anderen bleiben wie getippt. Der Layer hält die Paare in `ResultLayerInfo.percentChannels` (und `savedPercentChannels`, solange ein Look angewendet und nicht gespeichert ist), „Save“ schreibt `channels[i].percent` in `jobShelf` (`rangeJson`/`rangeOf`, ohne neue `SHELF_VERSION`: alte Einträge lesen sich wie vorher).
+- **Processing-Vorschau:** bei RGB drei Kanalzeilen; „Apply“ misst über `applyRangeChannels` (die Messung teilt sich `bandsAtPercent` mit `applyRangePercent`). `rangeDraft.channels` und `range.channels` tragen die Paare; ein Wert in den gemeinsamen Feldern gilt für alle und löscht `channels`.
+- **Permalink:** `view.range` bekommt `percent?` und `channels?` (§7.6; Backend `PermalinkRange`, `adr/0015` §14h). Das Frontend schreibt und liest sie in `permalinkRange.ts`; ein Link ohne beides öffnet wie vorher, ein ungültiger macht den Link unlesbar (wie jedes andere Glied der Ansicht).
+- **Nur für RGB:** `channels` gilt nur, solange die Vorschau das Farbbild zeigt (`handRangeOnShownBand`, `previewSpec`, `resultRender`); bei einem Band gilt nur der erste Kanal. So kann ein Rest aus RGB keine drei `rescale` an eine Einzelband-Kachel hängen.
+- **Alt:** Ein Paar für alle drei Kanäle (Look aus der Zeit vor UI-03e, auch in `jobShelf`) steht auf jedem Kanal, bis einer geändert wird (`channelsOfRange`).
+
+**Auslegungen (Vorschlag, gelten bis Otto widerspricht):**
+1. `percent` und `channels` am selben Bereich sind ein `422` (§7.6 „Kanäle bei einem Band: Vorschlag 422“): Das Backend kennt das Band nicht, es prüft die Form; ein Bereich nennt seine Einheit nur einmal.
+2. „Auto-scale“ bei RGB: Jeder Kanal in Perzentilen bekommt 2/98, die anderen den gemessenen Bereich (wie in der Ansicht); in der Vorschau ohne Kanal in Perzentilen bleibt es der alte Weg (`autoStretch`).
+3. Ein Kanal mit unzulässigem Paar zählt als anderer Look, „Apply“ und „Save“ bleiben offen und nennen den Kanal („green: The lower percentile must be below the upper one.“).
+4. Prozente im Permalink sind ganze Zahlen (`int`, 0–100, `low` < `high`), wie sie die Felder zulassen.
+5. Das Schema schreibt nur, was da ist: ein alter Link kommt ohne `percent: null` zurück (`_Sparse`), damit sich nichts an ihm ändert.
+
+**Prüfungen:** Backend `test_permalink_route.py` (alt, neu, Prozent je Kanal, zwei Kanäle, vier Kanäle, Prozent außerhalb 0–100, falsche Reihenfolge, Text, beides zusammen; Gegenprobe ohne die Prüfungen schlägt fünf Fälle fehl), Frontend `permalink.test.ts`, `ProcessingResultRgb.test.tsx`, `ProcessingShowRgb.test.tsx`, `ProcessingShare.test.tsx`, `jobShelf.test.ts`; Browser `e2e/rgb.cjs` (Hell/Dunkel, 1280 und 360 px, Einheiten je Kanal, Überlappung und Überstand).
