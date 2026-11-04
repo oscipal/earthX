@@ -261,7 +261,7 @@ Kein Symbol mehr als Textzeichen. Erlaubt bleiben typografische Zeichen im Text:
 | **5** | RGB je Kanal im Ergebnis-Layer und in der Processing-Vorschau, Permalink mit Kanälen (Backend-Ausnahme, §7.6) | 300–350 | neu |
 | **6** | NM4-56: Zahlenformat (NM4-21), weniger Text mit (i) (NM4-22, Zeilen 8, 31), Datums- und Prozentformat (Zeilen 33, 41, 49), schmale Fenster (Punkt 58: Toolbar 320 px, Statusleiste bei 360 px, Statusmeldung über den Kopfknöpfen) | 350–400 | neu |
 
-**Stand 03.11.2026:** Teil 1 ist umgesetzt (#285, Log-Zeile „UI-04 Teil 1 umgesetzt“). In Teil 2 entfällt die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts`.
+**Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen.
 
 Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Teile quer durch dieselben Dateien gehen. Teil 4 kann vor Teil 3 kommen, wenn Otto es zuerst sehen will. Die Teile 2 bis 6 bekommen je einen eigenen Plan-Abschnitt in dieser Datei („§8 Teil n“), damit eine neue Session ohne dieses Gespräch auskommt.
 
@@ -307,3 +307,26 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 7. Schnitt wie §7.7, Teil 1 in dieser Session. Option 1.
 8. Die Auslegung zu Zusatz 7a ist angenommen: Auch „The result covers the area it has.“ fällt weg.
 
+## 8. Teile 2 bis 6, je ein Abschnitt
+
+### 8.2 Teil 2 — Lucide (umgesetzt, 04.11.2026)
+
+**Umfang:** `lucide-react` (ISC, von Otto freigegeben, §7.0 Nr. 3) als einzige Symbolquelle; alle Symbole nach §7.3 mit Ausnahme von Settings (MingCute, Teil 4) und den Symbolen des Einstellungsmenüs.
+
+**Umgesetzt:**
+- `frontend/src/components/icons.ts`: einzige Datei, die `lucide-react` importiert; jedes Symbol unter eigenem Namen (`DownloadIcon`), Strich 1.5 px an jeder Größe (`absoluteStrokeWidth`), Größen 16 px (Standard) und 14 px (Listenzeilen), `lead` für den Abstand vor einem Text (`.icon-lead`).
+- Weg: `Eye`, `Chevron`, `Icons` (Bin, Stift) und alle `<svg>` mit eigenen Zeichnungen (Leiste, AOI-Werkzeuge, Coverage, Kopieren, „nach oben“, Ziehgriff, Flip, Haken). Alle Textzeichen als Symbole (⇩ ✎ ✕ × ⚙ ＋ ⋯ ▾ ▴ ▸ ▲ ▼ ↑ ↓ ↻ ↺ ⤒ ⬆ ⇄ ⓘ ⚠ ✓ ▶ ❚ ⤢ ☀ ☾ ‹) in Code und CSS.
+- `CloseButton` zeichnet das Lucide-`x` (14 px, rot über `--danger`).
+- `frontend/THIRD_PARTY_NOTICES.md`: Lizenztexte von Lucide (ISC) und Feather (MIT).
+- Prüfungen (§7.5 Nr. 3): `uiRules.test.ts` (kein Symbol-Textzeichen in Code und CSS, `lucide-react` nur in `icons.ts`, kein eigenes `<svg>` außer dem Histogramm, kein x-Zeichen als Knopfinhalt) und `icons.test.tsx` (Strich, Größen, jedes Symbol benutzt), je mit Gegenprobe.
+
+**Auslegungen (Vorschlag, gelten bis Otto widerspricht):**
+1. **Leiste links** zeigt die vier Symbole mit 16 px statt der 22 px der alten Zeichnungen: es gibt nur zwei Größen (§7.3). Sieht es zu klein aus, ist das eine Entscheidung für Teil 3 (dritte Größe für die Leiste).
+2. **Haken in Menüs** (Basemap, „Move to group…“): ein Symbol in einem Platz fester Breite (`MenuTick`) statt `content: '✓'` im CSS.
+3. **Knöpfe nur mit Symbol** in der Layer-Zeile (Process, Download) bekommen einen Namen für Screenreader (`aria-label`: „Process layer“, „Download“); ihr Tooltip bleibt der Grund bzw. die Beschreibung. Vorher hatten sie nur den Tooltip.
+4. **`Tip`** zeigt `info`, mit `tone="warn"` `triangle-alert`; die Eigenschaft `symbol` entfällt.
+5. **Tastennamen** stehen in Worten, nicht als Pfeilzeichen: „Flip through layers (Up and Down or the mouse wheel …)“.
+6. **Theme-Knopf** oben rechts zeigt `sun`/`moon` bis Teil 4 (Einstellungsmenü) ihn ablöst.
+7. **„Clear“ der AOI** und **„Clear search results“** zeigen `trash-2`, **Teilen** „Delete link“ ebenfalls; das graue `circle-x` leert nur ein Feld (`ClearIcon`).
+8. **Download überall `download`**, auch „Download all (ZIP)“ (vorher ⇊) und die Zeile eines Jobs.
+9. **Nicht berührt:** `.vc-eye` (28 px), `.lm-eye` (22 px) und andere feste Knopfgrößen; sie gehören zu Teil 3a (Knopfformen).

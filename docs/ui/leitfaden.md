@@ -1,6 +1,6 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 03.11.2026, UI-04 Teil 1 (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 04.11.2026, UI-04 Teil 2 (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
@@ -62,8 +62,12 @@
 
 ## 3. Symbole
 
-- **Eine Quelle:** Lucide (`lucide-react`, ISC; die Symbole aus Feather unter MIT). Importiert werden nur die benutzten Symbole, alle über eine Datei `frontend/src/components/icons.ts` *(folgt in Teil 2)*.
-- **Ein Strich:** 1.5 px mit `absoluteStrokeWidth`. Zwei Größen: 16 px als Standard, 14 px in Listenzeilen. Farbe `currentColor`.
+- **Eine Quelle:** Lucide (`lucide-react`, ISC; die Symbole aus Feather unter MIT, Hinweise in `frontend/THIRD_PARTY_NOTICES.md`). Importiert werden nur die benutzten Symbole, alle in einer Datei: `frontend/src/components/icons.ts`. Sie gibt jedes unter eigenem Namen weiter (`DownloadIcon`); nur sie importiert `lucide-react`, und jeder Eintrag muss benutzt sein.
+- **Ein Strich:** 1.5 px, an jeder Größe gleich dick (`absoluteStrokeWidth`). Zwei Größen: 16 px als Standard (`<DownloadIcon />`), 14 px in Listenzeilen (`<DownloadIcon size={14} />`). Farbe `currentColor`.
+- **Neben einem Text** steht das Symbol davor und bekommt `lead`: `<CogIcon lead />Process`. Der Abstand kommt aus dem CSS (`.icon-lead`), kein Leerzeichen im Text.
+- **Ein Knopf nur mit Symbol** hat einen Namen für Screenreader (`aria-label`) und einen Tooltip. Gleiche Aktion, gleiches Symbol, auch wenn Text dabeisteht oder nicht.
+- **Eigene Zeichnungen gibt es nicht.** Das einzige `<svg>` im Code ist das Balkendiagramm des Histogramms (`RangeHistogram`), kein Symbol.
+- **Der Haken** vor dem gewählten Eintrag eines Menüs ist ein Symbol in einem Platz fester Breite (`MenuTick`), kein Zeichen im CSS.
 - **Einzige Ausnahme:** Settings ist „Settings 6 Line“ von MingCute (Apache-2.0, `mingcute_icon` 2.9.72, `svg/system/settings_6_line.svg`). Es wird als einzelnes SVG übernommen, als Strich nachgezeichnet und an Lucide angeglichen; die Änderung ist vermerkt. Herkunft und Lizenz stehen in `frontend/THIRD_PARTY_NOTICES.md` *(folgt in Teil 4)*.
 - **Keine Textzeichen als Symbole** (⇩ ✎ ✕ ⚙ ＋ ⋯ ▾ ↻ …). Im Text erlaubt bleiben „…“, „—“ in „— none —“, „·“, „–“, „→“ zwischen zwei Datumsfeldern, „×“ in Maßen („10 m × 10 m“), „µm“.
 
@@ -71,7 +75,7 @@
 |---|---|
 | Download (überall, auch „Download all“) | `download` |
 | Zeigen / Verbergen | `eye` / `eye-off` |
-| Entfernen / Löschen / Leeren einer Liste | `trash-2` |
+| Entfernen / Löschen / Leeren einer Liste (auch AOI „Clear“, „Clear search results“) | `trash-2` |
 | Umbenennen | `pencil` |
 | Process | `cog` (das Zahnrad bleibt, Otto) |
 | Settings | MingCute „Settings 6 Line“ |
@@ -83,13 +87,13 @@
 | Nach oben / unten schieben | `arrow-up` / `arrow-down` |
 | Hinzufügen | `plus` |
 | Schließen | `x`, rot, nur in `CloseButton` |
-| Feld leeren | `circle-x`, grau |
+| Feld leeren | `circle-x`, grau (`ClearIcon`) |
 | Retry, Run again | `rotate-cw` |
 | Wiederherstellen eines Jobs | `archive-restore` |
 | Letzte AOI | `history` |
 | Hochladen | `upload` |
 | Colormap umkehren | `arrow-left-right` |
-| (i) / Warnung | `info` / `triangle-alert` |
+| (i) / Warnung | `info` / `triangle-alert` (`Tip`: `tone="warn"` zeigt die Warnung) |
 | Erledigt, kopiert | `check` |
 | Kopieren | `copy` |
 | Abspielen | `play` / `pause` |
@@ -143,7 +147,8 @@
 | `Inspector` / `InspectorParts` | die Seitenleiste rechts (320 px, unter 900 px Blatt bis 55 %), Kopf, „Display“, „Actions“ |
 | `RenderFields`, `ColormapField`, `ScaleHistograms` | Band, „Scale“, Colormap; überall, wo eine Darstellung eingestellt wird |
 | `BandSelect`, `OpacityRow`, `LayerActions`, `LayerDownload`, `CopySceneNames` | gemeinsame Felder und Aktionen von Ansicht und Layer |
-| `Tip` / `TipLayer` | (i) und Tooltips |
+| `icons.ts`, `MenuTick` | alle Symbole; der Haken in Menüs |
+| `Tip` / `TipLayer` | (i), Warnung und Tooltips |
 | `Popover` | Menüs, Listen und das Formular „Advanced search“ |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
 | `PreviewBadge`, `pp-badge` | Abzeichen „Preview“, „Temporary“, „Overview“, „Zoom in“ *(ein Bauteil `Badge` folgt in Teil 3b)* |
@@ -174,14 +179,14 @@ Knopfformen: `.btn` (Standard), `.btn.primary`, `.btn.danger`, `.icon-btn`, dazu
 
 | Regel | Test |
 |---|---|
-| rotes x und „Close“ nur in `CloseButton`, kein „Dismiss“, x-Zeichen nur, wo etwas entfernt wird (bis Teil 2) | `frontend/src/uiRules.test.ts` |
+| rotes x und „Close“ nur in `CloseButton`, kein „Dismiss“, kein x-Zeichen als Inhalt eines Knopfs | `frontend/src/uiRules.test.ts` |
 | Esc nur in den Ausnahmen | `frontend/src/uiRules.test.ts`, dazu Esc-Tests je Panel und Dialog |
 | keine Einheit an „Scale“ | `frontend/src/uiRules.test.ts`, `ProcessingPreview.test.tsx` |
 | Begriffe (§2) gegen alle Texte der Oberfläche | `frontend/src/uiRules.test.ts` |
 | Sperrgrund im Tooltip | `frontend/src/fixtures/lockedControls.ts`, benutzt in `ControlPanel.test.tsx` und `LayerManager.test.tsx` |
 | Klick neben einen Dialog schließt nicht | `DownloadDialog.bands.test.tsx` |
 | Tokens statt fester Werte | `frontend/src/tokens.test.ts` (alle Klassen ab Teil 3) |
-| Symbole nur aus `icons.ts`, keine Textzeichen | *(folgt in Teil 2)* |
+| Symbole nur aus `icons.ts`, keine Textzeichen als Symbol (Code und CSS), kein eigenes `<svg>`, Strich und Größen, jedes Symbol benutzt | `frontend/src/uiRules.test.ts`, `frontend/src/components/icons.test.tsx` |
 | Schrift | *(folgt in Teil 3b)* |
 
 Ein neuer Begriff, der ein altes Wort ersetzt, bekommt eine Zeile in der Liste `FORBIDDEN` von `uiRules.test.ts` mit Gegenprobe.
