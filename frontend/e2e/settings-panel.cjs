@@ -1,7 +1,7 @@
 // The panel "Settings" at the bottom of the rail (UI-04 part 4, Otto, 4.11.2026), in a real browser:
 //   1. The symbol is the last one of the rail, at its bottom edge, 20 px, with three rings; its tooltip "Settings" shows in the simple step.
-//   2. It opens a panel beside the rail like the other panels: the same width, from the top to the foot, a head with the title and the red x
-//      (and nothing else closes it: not Esc); under 900 px it covers the map from the rail to the right edge, as they do. Sections Basemap,
+//   2. It opens a panel beside the rail like the other panels: the same width, from the top to the foot, a head with the title and no x (a panel
+//      of the rail is opened and closed with its symbol, not with Esc); under 900 px it covers the map from the rail to the right edge, as they do. Sections Basemap,
 //      Overlays, Projection, Appearance and Tooltips; "Relief" is an overlay and no basemap.
 //   3. Every choice is a segment button (the chosen one filled), an overlay is a button that is pressed while it is on, the tooltips are a switch
 //      with "Simple" at the left and "Advanced" at the right; no list of ticks.
@@ -64,7 +64,8 @@ const settings = (page) => page.locator('nav[aria-label="Main"] button[aria-labe
 const panel = (page) => page.locator('.settings-panel');
 const seg = (page, group, name) => panel(page).getByRole('group', { name: group }).getByRole('button', { name, exact: true });
 const tipSwitch = (page) => panel(page).getByRole('switch', { name: 'Advanced tooltips' });
-const closeX = (page) => panel(page).getByRole('button', { name: 'Close' });
+// A panel of the rail is closed with its symbol (Otto, 4.11.2026).
+const closePanel = async (page) => { if ((await settings(page).getAttribute('aria-expanded')) === 'true') await settings(page).click(); };
 // The panel is open: the symbol opens it, and the panel that was open before gives way.
 const openPanel = async (page) => {
   if ((await settings(page).getAttribute('aria-expanded')) !== 'true') await settings(page).click();
@@ -110,8 +111,15 @@ async function layout(browser, theme, viewport) {
   expect(`${name}: it is as wide as the other panels`, Math.abs(p.width - layers.width) < 1 && Math.abs(dock.width - layers.width) < 1, JSON.stringify({ p: p.width, layers: layers.width }));
   if (win.width < 900) expect(`${name}: under 900 px it covers the map to the right edge, as the others do`, Math.abs(p.right - win.width) < 1, JSON.stringify(p));
   else expect(`${name}: from 900 px it is 340 px wide`, Math.abs(p.width - 340) < 1, String(p.width));
-  const head = await panel(page).locator('.results-head').evaluate((e) => ({ title: e.querySelector('h2')?.textContent, x: !!e.querySelector('button.close-x'), color: getComputedStyle(e.querySelector('button.close-x svg')).color }));
-  expect(`${name}: the head has the title and the red x`, head.title === 'Settings' && head.x, JSON.stringify(head));
+  const head = await panel(page).locator('.results-head').evaluate((e) => ({ title: e.querySelector('h2')?.textContent, buttons: e.querySelectorAll('button').length }));
+  expect(`${name}: the head has the title and no x`, head.title === 'Settings' && head.buttons === 0 && (await panel(page).locator('.close-x').count()) === 0, JSON.stringify(head));
+  const others = [];
+  for (const index of [0, 1, 2]) {
+    await buttons.nth(index).click();
+    others.push(await page.locator('.dock .close-x').count());
+  }
+  expect(`${name}: no panel of the rail has an x in its head`, others.every((n) => n === 0), JSON.stringify(others));
+  await openPanel(page);
   const sections = await panel(page).locator('.settings-heading').allTextContents();
   expect(`${name}: the five sections`, JSON.stringify(sections) === JSON.stringify(['Basemap', 'Overlays', 'Projection', 'Appearance', 'Tooltips']), JSON.stringify(sections));
   const basemaps = await panel(page).getByRole('group', { name: 'Basemap' }).getByRole('button').allTextContents();
@@ -139,15 +147,13 @@ async function layout(browser, theme, viewport) {
   expect(`${name}: the chosen one is filled with the accent, the others are not`, fills.on.bg === fills.accentRgb && fills.off.bg !== fills.accentRgb, JSON.stringify(fills));
   await page.screenshot({ path: path.join(OUT, `panel ${name}.png`) });
 
-  // Esc closes nothing; the red x closes; the symbol opens it again; a second click on the symbol closes it.
+  // Esc closes nothing; the symbol closes it, and opens it again.
   await page.keyboard.press('Escape');
   expect(`${name}: Esc leaves the panel open`, (await panel(page).count()) === 1 && (await panel(page).isVisible()));
-  await closeX(page).click();
-  expect(`${name}: the red x closes the panel`, !(await panel(page).isVisible()));
+  await settings(page).click();
+  expect(`${name}: a second click on the symbol closes the panel`, !(await panel(page).isVisible()));
   await settings(page).click();
   expect(`${name}: the symbol opens it`, await panel(page).isVisible());
-  await settings(page).click();
-  expect(`${name}: a second click on the symbol closes it`, !(await panel(page).isVisible()));
   await openPanel(page);
 
   // 4. The appearance. The panel stays open while a choice is made.
@@ -190,7 +196,7 @@ async function layout(browser, theme, viewport) {
   expect(`${name}: the switch is left while simple`, simple.left < simple.right && (await tipSwitch(page).getAttribute('aria-checked')) === 'false', JSON.stringify(simple));
 
   // 5. The steps of the tooltips. The panel is closed to reach the map.
-  await closeX(page).click();
+  await closePanel(page);
   const message = page.locator('.status .close-x');
   if (await message.count()) await message.first().click();
   await page.waitForTimeout(200);
@@ -213,7 +219,7 @@ async function layout(browser, theme, viewport) {
   const advanced = await thumb();
   expect(`${name}: the thumb moved to the right`, advanced.right < advanced.left, JSON.stringify(advanced));
   await page.screenshot({ path: path.join(OUT, `panel advanced ${name}.png`) });
-  await closeX(page).click();
+  await closePanel(page);
   await zoom.hover();
   // On a narrow window the red x of the panel lay where the button is now: the pointer is moved off, as a browser tells of a hover only on a move.
   await page.mouse.move(win.width / 2, win.height / 2);
@@ -224,7 +230,7 @@ async function layout(browser, theme, viewport) {
   await openPanel(page);
   await tipSwitch(page).click();
   expect(`${name}: the switch back to the left keeps Simple`, (await page.evaluate(() => localStorage.getItem('earthx.tooltips'))) === 'simple');
-  await closeX(page).click();
+  await closePanel(page);
 
   // 8. The full text of a cut-off text.
   await page.evaluate(() => {
