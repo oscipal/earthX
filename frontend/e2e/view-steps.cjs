@@ -208,7 +208,7 @@ async function run(browser, { theme, viewport }) {
     if ((await page.getByRole('button', { name }).count()) !== 0) problems.push(`"${name}" is there for a dataset of one image`);
   }
   if ((await page.getByRole('button', { name: 'Apply to all' }).getAttribute('aria-disabled')) !== 'true') problems.push('"Apply to all" is not locked for a dataset of one image');
-  if (!(await page.getByRole('button', { name: 'Apply to all' }).getAttribute('title')).includes('only one image')) problems.push('"Apply to all" does not say why it is locked');
+  if (!(await page.getByRole('button', { name: 'Apply to all' }).getAttribute('data-tip')).includes('only one image')) problems.push('"Apply to all" does not say why it is locked');
   await page.screenshot({ path: path.join(OUT, `dem ${name}.png`) });
   await page.selectOption('select[aria-label="Dataset"]', 's2');
   await expectColour('back to the first overpass of the dataset', 'S2_A');

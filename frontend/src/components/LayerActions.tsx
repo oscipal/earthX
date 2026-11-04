@@ -34,7 +34,7 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
         type="button"
         className="btn"
         disabled={processBlock !== null}
-        title={processBlock === NO_COPY_TEXT ? NO_COPY_TEXT : (processBlock ?? (layer.result ? (layer.result.expired ? EXPIRED_PROCESS_TEXT : PROCESS_RESULT_TEXT) : 'Process this layer'))}
+        data-tip={processBlock === NO_COPY_TEXT ? NO_COPY_TEXT : (processBlock ?? (layer.result ? (layer.result.expired ? EXPIRED_PROCESS_TEXT : PROCESS_RESULT_TEXT) : 'Process this layer'))}
         onClick={() => void processLayer(layer.id)}
       >
         <CogIcon lead />Process
@@ -44,14 +44,14 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
         type="button"
         className="btn vc-copy"
         disabled={locked}
-        title={COPY_TIP}
+        data-tip={COPY_TIP}
         onClick={() => {
           void (beforeCopy ? beforeCopy() : Promise.resolve(true)).then((drawn) => drawn && copy(layer.id));
         }}
       >
         <PlusIcon lead />{COPY_LABEL}
       </button>
-      <button type="button" className="btn danger vc-remove" title={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(layer.id)}>
+      <button type="button" className="btn danger vc-remove" data-tip={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(layer.id)}>
         <TrashIcon />
       </button>
     </div>

@@ -137,7 +137,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
           const state = states[index] ?? { status: 'waiting' };
           return (
             <li key={scene.item.id} className={`dialog-original-row ${state.status}`}>
-              <span className="dialog-original-name" title={scene.groupLabel}>
+              <span className="dialog-original-name" data-tip={scene.groupLabel}>
                 {way.way === 'zip' ? scene.zipName : scene.item.id}
               </span>
               <span className="dialog-original-state">{rowText(state)}</span>
@@ -149,7 +149,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
         })}
       </ul>
       {note && (
-        <p className="hint-text" title={way.reason ? `${note.why} ${way.reason}` : note.why}>
+        <p className="hint-text" data-tip={way.reason ? `${note.why} ${way.reason}` : note.why}>
           {note.text}
         </p>
       )}
@@ -158,7 +158,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
           <button
             type="button"
             className="btn"
-            title="Stop the download. Files already saved stay."
+            data-tip="Stop the download. Files already saved stay."
             onClick={() => control.current?.abort()}
           >
             Stop
@@ -168,7 +168,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
           <button
             type="button"
             className="btn"
-            title="Load the scenes that did not finish again, each from the start."
+            data-tip="Load the scenes that did not finish again, each from the start."
             onClick={() => {
               retry.current = latest.current.flatMap((state, index) => (isRetryable(state) ? [index] : []));
               setAttempt((n) => n + 1);
@@ -213,7 +213,7 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
             className="btn"
             disabled={!mergeAllowed}
             aria-pressed={merged}
-            title={mergeAllowed ? 'One merged file per pass, made as a job on the platform' : noMerge}
+            data-tip={mergeAllowed ? 'One merged file per pass, made as a job on the platform' : noMerge}
             onClick={() => setMerged((on) => !on)}
           >
             Merged per pass (job)
@@ -223,7 +223,7 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
           <button
             type="button"
             className="btn"
-            title="A text file with one address per line, for a download manager."
+            data-tip="A text file with one address per line, for a download manager."
             onClick={() => saveLinkList(dataset.id, all)}
           >
             Save link list

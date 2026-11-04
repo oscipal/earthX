@@ -14,6 +14,7 @@ import { SHELF_KEY } from '../jobShelf';
 import type { Order } from '../processing';
 import { resetJobs, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import ProcessingManager from './ProcessingManager';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -148,7 +149,7 @@ describe('the symbol', () => {
     tab('All');
     const symbol = retryIn(rows()[0])!;
     expect(symbol.querySelector('svg.lucide-rotate-cw')).not.toBeNull();
-    expect(symbol.title).toBe('Run again');
+    expect(tipOf(symbol)).toBe('Run again');
   });
 
   it.each([
@@ -394,7 +395,7 @@ describe('a batch', () => {
   it('has one symbol, "Retry failed parts", and it starts only the parts that failed or were cancelled', async () => {
     batch();
     const symbol = retryIn(topRows()[0])!;
-    expect(symbol.title).toBe('Retry failed parts');
+    expect(tipOf(symbol)).toBe('Retry failed parts');
     click(symbol);
     await settle();
     // The failed part and the cancelled one; not the finished, the expired, nor the one that would fail again.

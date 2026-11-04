@@ -17,6 +17,7 @@ import type { Collection, EarthxMask, StacAsset, StacItem } from '../types';
 import css from '../index.css?raw';
 import tokens from '../tokens.css?raw';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -242,7 +243,7 @@ describe('the card of a step', () => {
     click(button('Mask by class'));
     const head = card(0).querySelector('.pp-step-head')!;
     expect(head.querySelector('.pp-step-title')!.textContent).toContain('1. Normalize');
-    expect([...head.querySelectorAll('button')].map((b) => [b.getAttribute('aria-label'), b.title, b.querySelector('svg')?.getAttribute('class')?.split(' ').at(-1), b.textContent])).toEqual([
+    expect([...head.querySelectorAll('button')].map((b) => [b.getAttribute('aria-label'), tipOf(b), b.querySelector('svg')?.getAttribute('class')?.split(' ').at(-1), b.textContent])).toEqual([
       ['Move up', 'Move this step up', 'lucide-arrow-up', ''],
       ['Move down', 'Move this step down', 'lucide-arrow-down', ''],
       ['Remove', 'Remove this step', 'lucide-trash-2', ''],
@@ -273,7 +274,7 @@ describe('the card of a step', () => {
     expect([...card(0).querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Rename')).toBe(false);
     await addBandMath('nir - red');
     const rename = button('Rename', card(1));
-    expect(rename.title).toBe('Rename the band this step adds');
+    expect(tipOf(rename)).toBe('Rename the band this step adds');
     click(rename);
     expect(document.activeElement).toBe(nameField(0));
     // Typing a name that breaks a rule is told at once, as before: the head only moves the cursor.

@@ -12,6 +12,7 @@ import CSS from '../index.css?raw';
 import TOKENS from '../tokens.css?raw';
 import { focusFirstItem } from '../popover';
 import CloseButton from './CloseButton';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -40,7 +41,7 @@ describe('CloseButton', () => {
     const button = container.querySelector('button')!;
     expect(button.type).toBe('button');
     expect(button.className).toBe('close-x');
-    expect(button.title).toBe('Close');
+    expect(tipOf(button)).toBe('Close');
     expect(button.getAttribute('aria-label')).toBe('Close');
     expect(button.textContent).toBe('');
     act(() => button.dispatchEvent(new MouseEvent('click', { bubbles: true })));
@@ -50,7 +51,7 @@ describe('CloseButton', () => {
   it('may say more in its tooltip where closing has a consequence, and keeps its name', () => {
     act(() => root.render(<CloseButton title="Close. This stops a download that is still running." onClick={() => undefined} />));
     const button = container.querySelector('button')!;
-    expect(button.title).toContain('stops a download');
+    expect(tipOf(button)).toContain('stops a download');
     expect(button.getAttribute('aria-label')).toBe('Close');
   });
 

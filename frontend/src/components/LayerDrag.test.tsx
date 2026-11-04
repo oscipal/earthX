@@ -100,7 +100,7 @@ describe('the grip of a row', () => {
 
   it('keeps ▲ and ▼ working', () => {
     mount(['A', 'B', 'C']);
-    act(() => rows()[2].querySelector<HTMLButtonElement>('button[title="Move up"]')!.click());
+    act(() => rows()[2].querySelector<HTMLButtonElement>('button[data-tip="Move up"]')!.click());
     expect(order()).toBe('ACB');
   });
 });

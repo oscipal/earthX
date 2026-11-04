@@ -221,7 +221,7 @@ async function caseZip(browser, { theme, viewport }) {
   control.slowMs = 25;
   // Before the click the tooltip says what it will load: the scenes and the sum of the sizes (4 data files and the
   // metadata file of each scene; the preview is not one of them).
-  const tip = await downloadButton(page).getAttribute('title');
+  const tip = await downloadButton(page).getAttribute('data-tip');
   const expectedMB = ((ASSETS.red + ASSETS.nir + ASSETS.scl + ASSETS.visual + ASSETS.granule_metadata) * 2) / 1e6;
   if (!tip?.startsWith(`2 scenes · ${expectedMB.toFixed(1)} MB. `)) problems.push(`${label}: the tooltip does not name scenes and size: ${JSON.stringify(tip?.slice(0, 60))}`);
   await startDownload(page);

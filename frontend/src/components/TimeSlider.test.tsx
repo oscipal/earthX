@@ -12,6 +12,7 @@ import CSS from '../index.css?raw';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import TimeSlider from './TimeSlider';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -116,7 +117,7 @@ describe('the labels of the time slider', () => {
     expect(count()?.textContent).toBe('2 / 3');
     act(() => vi.advanceTimersByTime(1));
     expect(count()?.textContent).toBe('Loading…');
-    expect(count()?.getAttribute('title')).toMatch(/stays/);
+    expect(count()?.getAttribute('data-tip')).toMatch(/stays/);
     // On the map, and the one after it is asked for: not late yet.
     act(() => useAppStore.setState({ shownGroupIndex: 1 }));
     expect(count()?.textContent).toBe('1 / 3');
@@ -166,8 +167,8 @@ describe('the row of dates', () => {
 
   it('names the neighbour in the tooltip of its arrow, where a narrow block has no room to print it', () => {
     at(3);
-    expect(arrow('Previous time step')!.title).toBe('Previous time step: 2026-07-03');
-    expect(arrow('Next time step')!.title).toBe('Next time step: 2026-07-05');
+    expect(tipOf(arrow('Previous time step')!)).toBe('Previous time step: 2026-07-03');
+    expect(tipOf(arrow('Next time step')!)).toBe('Next time step: 2026-07-05');
   });
 
   it('has no arrow where there is no step, and keeps the place so that nothing moves', () => {

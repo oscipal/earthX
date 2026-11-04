@@ -54,7 +54,31 @@ describe('TipLayer', () => {
     expect(layer()?.textContent).toBe('Resampled to a common grid');
     expect(layer()?.parentElement).toBe(app());
     expect(container.querySelector('.panel')?.contains(layer())).toBe(false);
-    expect(layer()?.getAttribute('aria-hidden')).toBe('true');
+    expect(layer()?.getAttribute('role')).toBe('tooltip');
+  });
+
+  // UI-04 part 3a (Otto, 3.11.2026): no `title` any more; a screen reader hears the text as the description of the element.
+  it('describes the element with its text while it shows, and no longer afterwards', () => {
+    const button = container.querySelector('button') as HTMLButtonElement;
+    act(() => button.focus());
+    expect(button.getAttribute('aria-describedby')).toBe(layer()?.id);
+    act(() => button.blur());
+    expect(button.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('keeps a description the element had, and puts it back', () => {
+    const button = container.querySelector('button') as HTMLButtonElement;
+    button.setAttribute('aria-describedby', 'own');
+    act(() => button.focus());
+    expect(button.getAttribute('aria-describedby')).toBe(`own ${layer()?.id}`);
+    act(() => button.blur());
+    expect(button.getAttribute('aria-describedby')).toBe('own');
+  });
+
+  it('does not describe an element that its own text already names (the (i) says it once)', () => {
+    act(() => tip().focus());
+    expect(layer()?.textContent).toBe('Resampled to a common grid');
+    expect(tip().hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('hides when the pointer leaves', () => {
@@ -106,5 +130,42 @@ describe('TipLayer without an app around it', () => {
     expect(layer()?.parentElement).toBe(document.body);
     act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     bare.remove();
+  });
+
+  // A locked button takes no pointer events (`index.css`) and has no focus: the pointer is looked for among the locked ones.
+  describe('a locked control', () => {
+    let locked: HTMLButtonElement;
+    beforeEach(() => {
+      locked = document.createElement('button');
+      locked.disabled = true;
+      locked.setAttribute('data-tip', 'Type a place name first');
+      locked.getBoundingClientRect = () => ({ left: 10, top: 10, right: 60, bottom: 40, width: 50, height: 30, x: 10, y: 10, toJSON: () => ({}) });
+      container.querySelector('.panel')!.append(locked);
+    });
+    const move = (x: number, y: number) => act(() => document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y })));
+
+    it('shows its reason where the pointer is over it, and no longer where it leaves', () => {
+      move(30, 20);
+      expect(layer()?.textContent).toBe('Type a place name first');
+      move(300, 300);
+      expect(layer()).toBeNull();
+    });
+
+    it('shows nothing where the pointer is beside it', () => {
+      move(70, 20);
+      expect(layer()).toBeNull();
+    });
+
+    it('leaves the tip of an enabled control alone', () => {
+      act(() => tip().dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+      move(300, 300);
+      expect(layer()?.textContent).toBe('Resampled to a common grid');
+    });
+
+    it('is not found when it is no longer locked', () => {
+      locked.disabled = false;
+      move(30, 20);
+      expect(layer()).toBeNull();
+    });
   });
 });

@@ -368,17 +368,17 @@ export default function StepForm({
         </span>
         <span className="pp-step-actions">
           {bandMath && (
-            <button type="button" className="icon-btn" aria-label="Rename" title="Rename the band this step adds" onClick={rename}>
+            <button type="button" className="icon-btn" aria-label="Rename" data-tip="Rename the band this step adds" onClick={rename}>
               <PencilIcon />
             </button>
           )}
-          <button type="button" className="icon-btn" aria-label="Move up" title="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
+          <button type="button" className="icon-btn" aria-label="Move up" data-tip="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
             <ArrowUpIcon />
           </button>
-          <button type="button" className="icon-btn" aria-label="Move down" title="Move this step down" disabled={index === count - 1} onClick={() => onMove(1)}>
+          <button type="button" className="icon-btn" aria-label="Move down" data-tip="Move this step down" disabled={index === count - 1} onClick={() => onMove(1)}>
             <ArrowDownIcon />
           </button>
-          <button type="button" className="icon-btn danger" aria-label="Remove" title="Remove this step" onClick={onRemove}>
+          <button type="button" className="icon-btn danger" aria-label="Remove" data-tip="Remove this step" onClick={onRemove}>
             <TrashIcon />
           </button>
         </span>

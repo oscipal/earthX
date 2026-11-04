@@ -86,7 +86,7 @@ async function check(browser, theme, viewport) {
         title: box(open.querySelector('.pm-title')), until: row.querySelector('.pm-until') ? box(row.querySelector('.pm-until')) : { x: 0, y: 0, width: 0, height: 0, right: 0, bottom: 0 }, untilShown: !!row.querySelector('.pm-until') && getComputedStyle(row.querySelector('.pm-until')).display !== 'none',
         tags: [...row.querySelectorAll('.pm-tags > .pm-tag')].map(box),
         bar: row.querySelector(':scope > .pm-progress') ? box(row.querySelector(':scope > .pm-progress')) : null, rowBox: box(row),
-        tooltip: open.title, shown: open.querySelector('.pm-title').textContent,
+        tooltip: open.getAttribute('data-tip'), shown: open.querySelector('.pm-title').textContent,
         edit: row.querySelector('.pm-edit') ? box(row.querySelector('.pm-edit')) : null, open: box(open), group: row.closest('.pm-group').getAttribute('aria-label'),
         icons: [...line.querySelectorAll(':scope > .pm-icon')].map(box), line: box(line),
         tail: [...line.children].slice(-3).map(symbol),

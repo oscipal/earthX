@@ -16,7 +16,7 @@ export default function ResultsToTop() {
     <button
       type="button"
       className="icon-btn sm"
-      title={tip}
+      data-tip={tip}
       aria-label={RESULTS_TO_TOP_TIP}
       aria-disabled={onTop || undefined}
       onClick={() => {

@@ -22,7 +22,7 @@ export default function CopyButton({ text, title, label }: { text: string; title
   };
 
   return (
-    <button type="button" className="icon-btn sm quiet" title={title} aria-label={label} onClick={copy}>
+    <button type="button" className="icon-btn sm quiet" data-tip={title} aria-label={label} onClick={copy}>
       {copied ? <CheckIcon /> : <CopyIcon />}
     </button>
   );

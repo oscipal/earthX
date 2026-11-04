@@ -158,3 +158,120 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     expect(faults("/* Pin this */ const b = 'x';")).toEqual([]);
   });
 });
+
+// UI-04 part 3a: the tooltip, the shapes of a button, one dimming and one focus ring.
+// The opening tags of the elements (`<button …>`) of a source, with their name: the attributes are what a rule looks at.
+export function openingTags(text: string): { tag: string; attributes: string }[] {
+  const code = withoutComments(text);
+  const found: { tag: string; attributes: string }[] = [];
+  for (const start of code.matchAll(/<([a-z][a-z0-9]*)(?=[\s/>])/gu)) {
+    let depth = 0;
+    let quote = '';
+    let at = start.index + start[0].length;
+    for (; at < code.length; at += 1) {
+      const c = code[at];
+      if (quote) {
+        if (c === '\\') at += 1;
+        else if (c === quote) quote = '';
+      } else if ((depth === 0 && (c === '"' || c === "'")) || (depth > 0 && (c === '"' || c === "'" || c === '`'))) quote = c;
+      else if (c === '{') depth += 1;
+      else if (c === '}') depth -= 1;
+      else if (c === '>' && depth === 0 && code[at - 1] !== '=') break;
+    }
+    found.push({ tag: start[1], attributes: code.slice(start.index + start[0].length, at) });
+  }
+  return found;
+}
+
+// The attributes of an element at its own level, not those inside a `{…}`.
+const topLevel = (attributes: string): string => {
+  let depth = 0;
+  let quote = '';
+  let out = '';
+  for (const c of attributes) {
+    if (quote) {
+      if (c === quote) quote = '';
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '{') depth += 1;
+    else if (c === '}') depth -= 1;
+    else if (depth === 0) out += c;
+  }
+  return out;
+};
+
+describe('the one tooltip (UI-04 part 3a, Otto, 3.11.2026): data-tip, drawn by TipLayer, no title', () => {
+  // `<option>` is the one place: a native list shows no tooltip of ours, so its own `title` is what the browser can draw.
+  const withTitle = (text: string) => openingTags(text).filter(({ tag, attributes }) => tag !== 'option' && /(?:^|\s)title=/u.test(topLevel(attributes))).map(({ tag }) => tag);
+
+  it('has no element with a title but an option', () => {
+    expect(sources.flatMap(([path, text]) => withTitle(text).map((tag) => `${path} <${tag}>`))).toEqual([]);
+    expect(withTitle('<button type="button" title="Close">x</button>')).toEqual(['button']);
+    expect(withTitle('<span\n  className="a"\n  title={tip}\n>')).toEqual(['span']);
+    expect(withTitle('<option value="a" title="Why">A</option>')).toEqual([]);
+    expect(withTitle('<InspectorSection title="Display">')).toEqual([]);
+    expect(withTitle('<button data-tip="a title=b">x</button>')).toEqual([]);
+  });
+});
+
+describe('the shapes of a button (UI-04 part 3a): .btn, .btn.primary, .btn.danger, .icon-btn and .link-btn', () => {
+  // The families that the four shapes replace: each had its own padding, colours, focus and dimming.
+  const OLD = /(?<![\w-])(?:ghost-btn|primary-btn|lm-btn|lm-eye|vc-eye|vc-step|zoom-btn|coverage-btn|play-btn|pp-icon-btn|delete-btn|copy-btn|vc-pencil|vc-back|lm-pencil)(?![\w-])/u;
+
+  it('has none of the old classes in the code or the styles', () => {
+    expect(where((code) => OLD.test(code))).toEqual([]);
+    expect(OLD.test(withoutCssComments(CSS))).toBe(false);
+    expect(OLD.test('<button className="ghost-btn danger">')).toBe(true);
+    expect(OLD.test('.lm-btn:hover { }')).toBe(true);
+    expect(OLD.test('<span className="vc-step-text">')).toBe(false);
+  });
+});
+
+describe('one dimming for a locked control (UI-04 part 3a): --disabled-opacity', () => {
+  // The rules of a locked control, or of a locked row: whatever dimming they use must be the token.
+  const lockedRules = (css: string) =>
+    [...withoutCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+      .filter(([, selector]) => /:disabled|\[aria-disabled|\.locked|\.disabled/u.test(selector))
+      // A rule may take the dimming away (`opacity: 1`, the box of the one dataset) or use the token; no other number.
+      .filter(([, , body]) => /(?:^|;|\s)opacity:/u.test(body) && !/opacity:\s*(?:var\(--disabled-opacity\)|1)\s*(?:;|$)/u.test(body))
+      .map(([, selector]) => selector.trim());
+
+  it('has no hard opacity in a rule of a locked control', () => {
+    expect(lockedRules(CSS)).toEqual([]);
+    expect(lockedRules('.x:disabled { opacity: 0.45; }')).toEqual(['.x:disabled']);
+    expect(lockedRules(".y[aria-disabled='true'] { cursor: x; opacity: 0.3 }")).toHaveLength(1);
+    expect(lockedRules('.x:disabled { opacity: var(--disabled-opacity); }')).toEqual([]);
+    expect(lockedRules('.z { opacity: 0.45; }')).toEqual([]);
+    expect(lockedRules('.x:disabled { opacity: 1; }')).toEqual([]);
+  });
+
+  it('dims locked controls in one rule, for the disabled attribute and aria-disabled', () => {
+    expect(withoutCssComments(CSS)).toMatch(/:disabled,\s*:is\([^)]*\)\[aria-disabled='true'\] \{\s*opacity: var\(--disabled-opacity\);/u);
+  });
+});
+
+describe('one focus ring (UI-04 part 3a): the token --focus, for everything that can be operated', () => {
+  // The rules that set an outline: the ring for all, and what draws a ring of its own on purpose.
+  const outlines = (css: string) =>
+    [...withoutCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter(([, , body]) => /(?:^|;|\s)outline(?:-[a-z]+)?:/u.test(body)).map(([, selector]) => selector.trim().replace(/\s+/gu, ' '));
+  const ALLOWED = [
+    // The ring for all controls.
+    ":is(a[href], button, input, select, textarea, summary, [role='button'], [role='menuitem'], [role='menuitemradio'], [tabindex]):focus-visible",
+    // A slider that draws its ring on its thumb, and the container of a pop-up that is not an operated control.
+    ".inspector .range-hist input[type='range']:focus-visible",
+    '.popover:focus-within',
+    // The dashed line where a row is dropped.
+    '.pm-group.drop',
+  ];
+
+  it('has no ring of its own for a button, a link or a field', () => {
+    const found = outlines(CSS).filter((selector) => !ALLOWED.some((allowed) => selector.startsWith(allowed)));
+    expect(found).toEqual([]);
+    expect(outlines('.x:focus-visible { outline: 1px solid red; }')).toEqual(['.x:focus-visible']);
+    expect(outlines('.y:hover { outline: none; }')).toEqual(['.y:hover']);
+    expect(outlines('.z { color: red; }')).toEqual([]);
+  });
+
+  it('draws the one ring with the token', () => {
+    expect(withoutCssComments(CSS)).toMatch(/\[tabindex\]\):focus-visible \{\s*outline: 2px solid var\(--focus\);/u);
+  });
+});

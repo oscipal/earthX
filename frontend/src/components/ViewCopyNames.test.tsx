@@ -12,6 +12,7 @@ import CSS from '../index.css?raw';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import ViewerControls from './ViewerControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -73,7 +74,7 @@ describe('the view', () => {
   it('has the line in the row of the date, and copies the name of its one scene', async () => {
     mount(['S2A_1']);
     expect(line()!.textContent).toBe('Copy original scene name');
-    expect(line()!.title).toBe('Copy the name of the original scene');
+    expect(tipOf(line()!)).toBe('Copy the name of the original scene');
     // In the row of the date, left of it: the date keeps the right end (Otto, 3.11.2026). The order is the style's.
     const row = line()!.parentElement!;
     expect(row.classList.contains('insp-row2')).toBe(true);
@@ -91,7 +92,7 @@ describe('the view', () => {
 
   it('copies every scene of a merged image, one to a line, with "n scenes" as the tooltip', async () => {
     mount(['S2A_1', 'S2A_2', 'S2A_3']);
-    expect(line()!.title).toBe('3 scenes');
+    expect(tipOf(line()!)).toBe('3 scenes');
     await press();
     expect(write).toHaveBeenCalledWith('S2A_1\nS2A_2\nS2A_3');
   });

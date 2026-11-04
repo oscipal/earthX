@@ -161,7 +161,7 @@ async function check(browser, theme, viewport, scenario) {
       const dock = await page.locator('.preview-badge-dock').boundingBox();
       if (box.width > 120 || box.height > 32) problems.push(`the badge takes ${Math.round(box.width)} x ${Math.round(box.height)} px`);
       if (box.x < 0 || box.x + box.width > VIEWPORTS[viewport].width || dock.y + dock.height > VIEWPORTS[viewport].height) problems.push('the badge is not within the window');
-      if ((await loading.getAttribute('title')) !== 'Reading the scenes. The first tile of a mosaic can take several seconds.') problems.push('the badge has no explanation in its tooltip');
+      if ((await loading.getAttribute('data-tip')) !== 'Reading the scenes. The first tile of a mosaic can take several seconds.') problems.push('the badge has no explanation in its tooltip');
       await shot('loading');
     }
     // The panel's heading says it too, in a badge: a narrow window hides the map behind the panel.
@@ -189,14 +189,14 @@ async function check(browser, theme, viewport, scenario) {
     for (const key of first.keys()) if (!['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name', 'band', 'tilesize'].includes(key)) problems.push(`the mosaic tile carries ${key}`);
     // NM4-29b: the tiles of a mosaic are 512 px; those of a scene are not asked in a size (the tiler's 256).
     if (seen.mosaicTiles.some((search) => new URLSearchParams(search).get('tilesize') !== '512')) problems.push('a mosaic tile does not ask for tilesize=512');
-    if ((await badges().first().getAttribute('title')) !== null) problems.push('"Preview" carries a hint though the mosaic is drawn');
+    if ((await badges().first().getAttribute('data-tip')) !== null) problems.push('"Preview" carries a hint though the mosaic is drawn');
   } else {
     await page.waitForTimeout(2500);
     const badge = badges().first();
     if ((await badge.textContent()) !== 'Preview') problems.push('no "Preview" badge');
-    if ((await badge.getAttribute('title')) !== HINT) problems.push('"Preview" over the map has no hint in its tooltip');
+    if ((await badge.getAttribute('data-tip')) !== HINT) problems.push('"Preview" over the map has no hint in its tooltip');
     const inPanel = page.locator('.processing-panel .pp-badge:not(.loading)');
-    if ((await inPanel.getAttribute('title')) !== HINT) problems.push('"Preview" in the panel has no hint in its tooltip');
+    if ((await inPanel.getAttribute('data-tip')) !== HINT) problems.push('"Preview" in the panel has no hint in its tooltip');
     const panel = await page.evaluate(() => document.querySelector('.processing-panel')?.textContent ?? '');
     if (/Preview per scene|may differ from the job/.test(panel)) problems.push('the panel carries the hint as text');
     if (seen.mosaicTiles.length !== 0) problems.push('a refused mosaic asked for tiles');

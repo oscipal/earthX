@@ -116,7 +116,7 @@ async function check(browser, { name, theme, viewport }) {
       unit: row.querySelector('.pp-unit')?.textContent ?? null,
       fields: [...row.querySelectorAll('input')].map((e) => e.value),
       colormap: [...row.querySelectorAll('.vc-field')].find((field) => field.querySelector('span')?.textContent === 'Colormap')?.querySelector('select')?.value,
-      hint: badge?.getAttribute('title') ?? null,
+      hint: badge?.getAttribute('data-tip') ?? null,
       badge: badge ? box(badge) : null,
       heading: box(document.querySelector('section[aria-label="Preview on the map"] .pp-heading')),
     };

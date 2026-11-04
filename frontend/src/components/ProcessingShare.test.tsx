@@ -18,6 +18,7 @@ import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
 import css from '../index.css?raw';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -491,7 +492,7 @@ describe('Share', () => {
     expect(button('Copy link')).toBeUndefined();
     const copy = icon('Copy link')!;
     expect(copy.className).toBe('icon-btn sm quiet');
-    expect(copy.title).toBe('Copy link');
+    expect(tipOf(copy)).toBe('Copy link');
     const glyph = copy.innerHTML;
     await clickIcon('Copy link');
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining(`?permalink=${ID}`));
@@ -503,7 +504,7 @@ describe('Share', () => {
     const confirm = vi.spyOn(window, 'confirm');
     await click('Share');
     const cross = icon('Delete link')!;
-    expect([cross.className, cross.title, cross.textContent, cross.querySelector('svg.lucide-trash-2') !== null]).toEqual(['icon-btn sm danger', 'Delete link', '', true]);
+    expect([cross.className, tipOf(cross), cross.textContent, cross.querySelector('svg.lucide-trash-2') !== null]).toEqual(['icon-btn sm danger', 'Delete link', '', true]);
     expect(button('Delete link')).toBeUndefined();
     await clickIcon('Delete link');
     expect(confirm).not.toHaveBeenCalled();
@@ -539,7 +540,7 @@ describe('Share', () => {
     expect(button('Share')!.disabled).toBe(false);
     act(() => draft().setRunAs('scene'));
     expect(button('Share')!.disabled).toBe(true);
-    expect(button('Share')!.title).toBe('A link holds one order: choose “One job”.');
+    expect(tipOf(button('Share')!)).toBe('A link holds one order: choose “One job”.');
     // The reason is the tooltip; no text stands under the button.
     expect(container.textContent).not.toContain('A link holds one order');
   });

@@ -60,7 +60,7 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
       <ul className="dialog-bands" aria-labelledby={`${id}-bands`}>
         {table.map((band) => (
           <li key={band.asset}>
-            <label className="dialog-band" title={band.asset}>
+            <label className="dialog-band" data-tip={band.asset}>
               <input type="checkbox" checked={keys.includes(band.asset)} disabled={disabled} onChange={(e) => toggle(band.asset, e.target.checked)} />
               <span className="dialog-band-name">{band.name}</span>
               <span className="dialog-band-detail">{detail(band)}</span>
@@ -77,7 +77,7 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
               type="button"
               className={`pp-seg${form === choice.value ? ' on' : ''}`}
               aria-pressed={form === choice.value}
-              title={choice.tip}
+              data-tip={choice.tip}
               disabled={disabled}
               onClick={() => setForm(choice.value)}
             >

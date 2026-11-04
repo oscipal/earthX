@@ -15,6 +15,7 @@ import css from '../index.css?raw';
 import { useAppStore } from '../store';
 import tokens from '../tokens.css?raw';
 import ProcessingManager, { ADD_TO_LAYERS_TIP, ALREADY_A_LAYER_TIP, GROUP_NOT_EMPTY_TIP, NOT_KEPT_TEXT, STORAGE_FULL_TIP } from './ProcessingManager';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -174,7 +175,7 @@ describe('the rows', () => {
     put({ jobs: [jobEntry(1, { title: null, titleDefault: null }), jobEntry(2, { title: long })] });
     mount();
     expect(titles()[0]).toBe('Untitled job');
-    expect(rows()[1].querySelector('.pm-open')?.getAttribute('title')).toBe(long);
+    expect(rows()[1].querySelector('.pm-open')?.getAttribute('data-tip')).toBe(long);
   });
 
   it('opens the details of a job in the processing window with a click on the row', () => {
@@ -197,7 +198,7 @@ describe('the rows', () => {
     expect(deletable).toEqual([true, false, true, true]);
     const text = container.textContent ?? '';
     for (const word of ['Methods', 'Copy', 'Remove']) expect(text).not.toContain(word);
-    expect(container.querySelector('[title*="Remove"], [aria-label*="Remove"]')).toBeNull();
+    expect(container.querySelector('[data-tip*="Remove"], [aria-label*="Remove"]')).toBeNull();
   });
 });
 
@@ -466,7 +467,7 @@ describe('groups', () => {
     mount();
     const full = groupItem('Field 7', 'Remove Field 7: ' + GROUP_NOT_EMPTY_TIP);
     expect(full.getAttribute('aria-disabled')).toBe('true');
-    expect(full.title).toBe(GROUP_NOT_EMPTY_TIP);
+    expect(tipOf(full)).toBe(GROUP_NOT_EMPTY_TIP);
     click(full);
     expect(useProcessingStore.getState().groups).toHaveLength(2);
     expect(useProcessingStore.getState().removeGroup(GROUP)).toBe(false);
@@ -1212,7 +1213,7 @@ describe('a batch', () => {
     mount();
     const row = rows()[0];
     expect(row.querySelector('.pm-state')?.textContent).toBe('2 finished · 1 running · 1 refused · 1 failed');
-    expect(row.querySelector('.pm-until')?.getAttribute('title')).toBe(early);
+    expect(row.querySelector('.pm-until')?.getAttribute('data-tip')).toBe(early);
     // 100 + 100 + 50 + 100 + 100 (refused) over five parts
     expect(row.querySelector('.pm-line + progress')?.getAttribute('value')).toBe('90');
   });
@@ -1742,7 +1743,7 @@ describe('the line of a job', () => {
     mount();
     const row = rows()[0];
     const open = row.querySelector<HTMLButtonElement>('.pm-open')!;
-    expect(open.title).toBe(long);
+    expect(tipOf(open)).toBe(long);
     expect([...open.children].map((c) => c.className)).toEqual(['pm-title']);
     expect(row.querySelector('.pm-meta')!.parentElement).toBe(row.querySelector('.pm-line'));
     expect(row.querySelector('.pm-state')!.textContent).toBe('Finished');
@@ -1862,7 +1863,7 @@ describe('the line of a job', () => {
     mount();
     const pencil = () => rows()[0].querySelector<HTMLButtonElement>('.pm-edit')!;
     // As in the layer manager: the symbol of a pencil, the tooltip and the name for a screen reader the same.
-    expect(pencil().title).toBe('Rename job');
+    expect(tipOf(pencil())).toBe('Rename job');
     expect(pencil().getAttribute('aria-label')).toBe('Rename job');
     expect(pencil().querySelector('svg')).not.toBeNull();
     expect(pencil().textContent).toBe('');
@@ -1898,7 +1899,7 @@ describe('the line of a job', () => {
       useAppStore.setState({ layers: [] });
       mount();
       const add = addButton(rows()[0])!;
-      expect(add.title).toBe(ADD_TO_LAYERS_TIP);
+      expect(tipOf(add)).toBe(ADD_TO_LAYERS_TIP);
       expect(add.getAttribute('aria-disabled')).toBeNull();
       click(add);
       expect(show).toHaveBeenCalledWith(jobId(1));

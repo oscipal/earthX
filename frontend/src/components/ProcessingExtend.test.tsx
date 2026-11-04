@@ -31,6 +31,7 @@ import { useAppStore } from '../store';
 import type { Collection, EarthxMask, StacItem } from '../types';
 import LayerManager from './LayerManager';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -303,7 +304,7 @@ describe('the ⚙ of a result layer', () => {
     act(() => root.render(<LayerManager />));
     expect(gear().tagName).toBe('BUTTON');
     expect(gear().disabled).toBe(false);
-    expect(gear().title).toBe(PROCESS_RESULT_TEXT);
+    expect(tipOf(gear())).toBe(PROCESS_RESULT_TEXT);
     expect(container.querySelector('.layer-row')?.children).toHaveLength(11);
   });
 
@@ -311,7 +312,7 @@ describe('the ⚙ of a result layer', () => {
     useAppStore.setState({ layers: [resultLayer({ expired: true })] });
     act(() => root.render(<LayerManager />));
     expect(gear().disabled).toBe(false);
-    expect(gear().title).toBe(EXPIRED_PROCESS_TEXT);
+    expect(tipOf(gear())).toBe(EXPIRED_PROCESS_TEXT);
   });
 
   it('is not there without the order of its job: the place stays empty, and nothing brings the order back', async () => {
@@ -336,7 +337,7 @@ describe('the ⚙ of a result layer', () => {
     useAppStore.setState({ datasets: [dataset('view')] });
     act(() => root.render(<LayerManager />));
     expect(gear().disabled).toBe(true);
-    expect(gear().title).toMatch(/does not allow processing/u);
+    expect(tipOf(gear())).toMatch(/does not allow processing/u);
     // A call that bypasses the button does nothing either, and says why.
     await store().extendResult('R1');
     expect(store().open).toBe(false);
@@ -388,7 +389,7 @@ describe('the panel from a result', () => {
     expect(pressed()).toEqual([]);
     expect(output()).toEqual([]);
     expect((button('Start job') as HTMLButtonElement).disabled).toBe(true);
-    expect((button('Start job') as HTMLButtonElement).title).toBe('Choose at least one band for the output.');
+    expect(tipOf((button('Start job') as HTMLButtonElement))).toBe('Choose at least one band for the output.');
     click(button('NDVI', dataGroup()));
     expect(pressed()).toEqual(['NDVI']);
     expect(orderView(selectionState(useAppStore.getState()), store()).built?.order).not.toBeNull();
@@ -418,7 +419,7 @@ describe('the panel from a result', () => {
     expect(button('Whole scene', selection)?.getAttribute('aria-pressed')).toBe('true');
     expect(button('AOI only', selection)?.getAttribute('aria-pressed')).toBe('false');
     expect(button('AOI only', selection)?.disabled).toBe(false);
-    expect(button('Whole scene', selection)?.title).toBe('Process the area of the result');
+    expect(tipOf(button('Whole scene', selection))).toBe('Process the area of the result');
     expect(selection.querySelector('[aria-label="Run as"]')).toBeNull();
     expect(selection.querySelector('.pp-fixed')).toBeNull();
     expect(selection.textContent).toContain('Load recipe');
@@ -428,7 +429,7 @@ describe('the panel from a result', () => {
     await process();
     act(() => useAppStore.getState().clearAoi());
     expect(button('AOI only')?.disabled).toBe(true);
-    expect(button('AOI only')?.title).toBe('Draw an AOI first');
+    expect(tipOf(button('AOI only'))).toBe('Draw an AOI first');
   });
 
   it('sends the area of the result for "Whole scene", whatever AOI the map holds', async () => {

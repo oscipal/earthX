@@ -16,6 +16,7 @@ import { useAppStore } from '../store';
 import { ADD_BAND_TIP } from './LayerManager';
 import LayerManager from './LayerManager';
 import ResultControls from './ResultControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -121,7 +122,7 @@ const rowNames = () => [...container.querySelectorAll('.layer-row .lm-name')].ma
 describe('"Add band as layer"', () => {
   it('is a button at the end of the line of the band, with a tooltip, for a result of several bands only', async () => {
     await show();
-    expect(addButton()!.title).toBe(ADD_BAND_TIP);
+    expect(tipOf(addButton()!)).toBe(ADD_BAND_TIP);
     expect(addButton()!.getAttribute('aria-label')).toBe(ADD_BAND_TIP);
     await act(async () => {
       useAppStore.setState({ layers: [] });
@@ -249,9 +250,9 @@ describe('the settings and "Save" of a layer made from a band', () => {
     open(0);
     expect([...container.querySelectorAll('.result-controls .vc-field > span')].map((s) => s.textContent)).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     expect(container.querySelector<HTMLSelectElement>('.result-controls .band-select select')!.disabled).toBe(true);
-    expect(button('Save').title).toBe('Nothing to save: the layer is saved as it is drawn');
+    expect(tipOf(button('Save'))).toBe('Nothing to save: the layer is saved as it is drawn');
     typeInto(vmax(), '0.5');
-    expect(button('Save').title).toBe('Keep these values for this layer only');
+    expect(tipOf(button('Save'))).toBe('Keep these values for this layer only');
   });
 
   it('are independent: "Apply" draws the new layer and not the one it comes from', async () => {

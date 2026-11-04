@@ -16,6 +16,7 @@ import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../typ
 import { viewDates, viewKind } from '../viewKind';
 import { NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import ViewerControls from './ViewerControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -122,14 +123,14 @@ describe('the head', () => {
   ])('has no date, neither in the line nor in the tooltip: scenes of %j', (days, count) => {
     mount({ downloaded: scenes(count), groups: withDays(days) });
     expect(title().textContent).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
-    expect(title().title).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
+    expect(tipOf(title())).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
   });
 
   it('has no empty separator for a product without an instant, and the scenes merged in the tooltip', () => {
     mount({ groups: withDays([undefined]) });
     expect(title().textContent).toBe('Sentinel-2 L2A · AOI crop');
     mount({ downloaded: scenes(2), groups: withDays(['2025-07-29T10:00:00Z', '2025-08-03T10:00:00Z']) });
-    expect(title().title).toBe('Sentinel-2 L2A · cropped to the AOI · 2 scenes merged');
+    expect(tipOf(title())).toBe('Sentinel-2 L2A · cropped to the AOI · 2 scenes merged');
   });
 
   it('has no "Full-resolution view" and no count of one image', () => {
@@ -140,7 +141,7 @@ describe('the head', () => {
 
   it('gives the whole text as the tooltip, for the cut-off one', () => {
     mount({ cropToAoi: true, downloaded: scenes(3) }, 'Copernicus DEM GLO-30, global 30 m digital surface model');
-    expect(title().title).toBe('Copernicus DEM GLO-30, global 30 m digital surface model · cropped to the AOI · 3 scenes merged');
+    expect(tipOf(title())).toBe('Copernicus DEM GLO-30, global 30 m digital surface model · cropped to the AOI · 3 scenes merged');
     expect(title().textContent).toContain('Copernicus DEM GLO-30, global 30 m digital surface model');
   });
 
@@ -166,7 +167,7 @@ describe('the eye', () => {
     mount({ showDownloaded: true });
     expect(eye().nextElementSibling).toBe(container.querySelector('.vc-head .close-x'));
     expect(head().firstElementChild!.contains(eye())).toBe(true);
-    expect(eye().title).toBe('Hide image');
+    expect(tipOf(eye())).toBe('Hide image');
     expect(eye().getAttribute('aria-label')).toBe('Hide image');
     expect(eye().textContent).toBe('');
   });
@@ -175,11 +176,11 @@ describe('the eye', () => {
     mount({ showDownloaded: true });
     act(() => eye().click());
     expect(useAppStore.getState().showDownloaded).toBe(false);
-    expect(eye().title).toBe('Show image');
+    expect(tipOf(eye())).toBe('Show image');
     expect(eye().classList.contains('off')).toBe(true);
     act(() => eye().click());
     expect(useAppStore.getState().showDownloaded).toBe(true);
-    expect(eye().title).toBe('Hide image');
+    expect(tipOf(eye())).toBe('Hide image');
   });
 
   it('is not the results switch: it leaves "Hide results" alone', () => {
@@ -208,8 +209,8 @@ describe('the fields and the buttons', () => {
 
   it('has the tooltips of what "Change image" and the red x do', () => {
     mount();
-    expect(actionNamed('Change image').title).toBe('Remove this view, show the search results and choose another scene');
-    expect(container.querySelector('.vc-head .close-x')!.getAttribute('title')).toBe('Close and drop this view');
+    expect(tipOf(actionNamed('Change image'))).toBe('Remove this view, show the search results and choose another scene');
+    expect(container.querySelector('.vc-head .close-x')!.getAttribute('data-tip')).toBe('Close and drop this view');
   });
 
   it('the red x takes the view off the map and nothing else, as "Clear" did: the tick, the results panel and the switch stay', () => {
@@ -257,14 +258,14 @@ describe('"Apply" of the view', () => {
   it('is locked while the fields hold what the map shows, with the reason as its tooltip', () => {
     mount({ appliedRender: { rescale: '0,3000' } });
     expect(apply().getAttribute('aria-disabled')).toBe('true');
-    expect(apply().title).toBe(NOTHING_TO_APPLY);
+    expect(tipOf(apply())).toBe(NOTHING_TO_APPLY);
   });
 
   it('is open once a field is changed, draws the view and is locked again', () => {
     mount({ appliedRender: { rescale: '0,3000' } });
     type(field('vmin'), '5');
     expect(apply().hasAttribute('aria-disabled')).toBe(false);
-    expect(apply().title).not.toBe(NOTHING_TO_APPLY);
+    expect(tipOf(apply())).not.toBe(NOTHING_TO_APPLY);
     act(() => apply().click());
     expect(useAppStore.getState().appliedRender.rescale).toBe('5,3000');
     expect(apply().getAttribute('aria-disabled')).toBe('true');
@@ -304,7 +305,7 @@ describe('"Save" of the view of a pinned layer', () => {
     expect(save()).not.toBeNull();
     expect(save()!.textContent).toBe('Apply to all');
     expect(save()!.getAttribute('aria-disabled')).toBe('true');
-    expect(save()!.title).toBe(NOTHING_TO_SAVE_ONE_IMAGE);
+    expect(tipOf(save()!)).toBe(NOTHING_TO_SAVE_ONE_IMAGE);
   });
 
   // Otto, 1.11.2026 (zu #272): "Temporary" goes when the image is a layer, and comes back with a change.
@@ -326,7 +327,7 @@ describe('"Save" of the view of a pinned layer', () => {
     mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
     expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['Auto-scale', 'Apply', 'Apply to all']);
     expect(save()!.getAttribute('aria-disabled')).toBe('true');
-    expect(save()!.title).toBe(NOTHING_TO_APPLY_TO_ALL_LAYER);
+    expect(tipOf(save()!)).toBe(NOTHING_TO_APPLY_TO_ALL_LAYER);
   });
 
   it('is the one blue button: "Apply" has the format of "auto-scale"', () => {

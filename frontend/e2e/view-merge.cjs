@@ -143,7 +143,7 @@ async function run(browser, theme, viewport, results) {
     const merged = await st('s.shownImage');
     if (!merged) problems.push('no image shown after the merge');
     await page.waitForTimeout(400);
-    if ((await line.getAttribute('title')) !== '2 scenes') problems.push(`the tooltip says ${await line.getAttribute('title')}`);
+    if ((await line.getAttribute('data-tip')) !== '2 scenes') problems.push(`the tooltip says ${await line.getAttribute('data-tip')}`);
     await line.click();
     const both = await page.evaluate(() => navigator.clipboard.readText());
     if (both !== 'SCENE_A1\nSCENE_A2') problems.push(`the clipboard holds ${JSON.stringify(both)} for the merged image`);

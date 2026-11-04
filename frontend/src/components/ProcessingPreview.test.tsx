@@ -24,6 +24,7 @@ import PreviewBadge from './PreviewBadge';
 import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
 import ViewerControls from './ViewerControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -993,7 +994,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
   const sceneAsked = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/statistics?'));
   const rescale = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale');
   const colormap = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('colormap_name');
-  const title = () => section().querySelector('.pp-badge:not(.loading)')?.getAttribute('title') ?? null;
+  const title = () => section().querySelector('.pp-badge:not(.loading)')?.getAttribute('data-tip') ?? null;
   const unit = () => section().querySelector('.pp-unit')?.textContent ?? null;
   const DEM = { count: 900, min: 100, max: 2500, percentile_2: 120, percentile_98: 2400, unit: 'm' };
   const OUTLIERS = { count: 900, min: -1.3, max: 1.5, percentile_2: 0, percentile_98: 0.91, unit: null };
@@ -1122,7 +1123,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       expect(store().measure).toMatchObject({ source: 'area', exact: true });
       both();
       expect(title()).toBeNull();
-      expect(container.querySelector('.preview-badge')!.getAttribute('title')).toBeNull();
+      expect(container.querySelector('.preview-badge')!.getAttribute('data-tip')).toBeNull();
     });
 
     it('says the tiler read a coarser raster, on the panel and on the map', async () => {
@@ -1131,7 +1132,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       expect(store().measure).toMatchObject({ source: 'area', exact: false });
       both();
       expect(title()).toBe(COARSE_HINT);
-      expect(container.querySelector('.preview-badge')!.getAttribute('title')).toBe(COARSE_HINT);
+      expect(container.querySelector('.preview-badge')!.getAttribute('data-tip')).toBe(COARSE_HINT);
       // The range of a coarse read is drawn all the same: it is better than the first whole scene's.
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
     });
@@ -1496,7 +1497,7 @@ describe('the ways into the panel (§3.5)', () => {
     mount(<LayerManager />);
     const gear = button('Process layer');
     expect(gear.disabled).toBe(true);
-    expect(gear.title).toBe('A result cannot be processed further yet.');
+    expect(tipOf(gear)).toBe('A result cannot be processed further yet.');
     click(gear);
     expect(store().open).toBe(false);
   });
@@ -1506,7 +1507,7 @@ describe('the ways into the panel (§3.5)', () => {
     useAppStore.setState({ layers: [pinned('L1')] });
     mount(<LayerManager />);
     expect(button('Process layer').disabled).toBe(true);
-    expect(button('Process layer').title).toContain('does not allow processing');
+    expect(tipOf(button('Process layer'))).toContain('does not allow processing');
   });
 
   it('does not offer to download a preview, which is no scene file', () => {
@@ -1842,8 +1843,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(asks('/items/')).toHaveLength(asks('/statistics?').length);
     expect(asks('/statistics?').map((u) => query(u).pathname)).toEqual(['/collections/sentinel-2-c1-l2a/items/S2B_B/statistics']);
     expect(asks('/mosaic/').some((u) => u.includes('/statistics'))).toBe(false);
-    expect(panelBadge()?.getAttribute('title')).toBeNull();
-    expect(dockBadge()?.getAttribute('title')).toBeNull();
+    expect(panelBadge()?.getAttribute('data-tip')).toBeNull();
+    expect(dockBadge()?.getAttribute('data-tip')).toBeNull();
   });
 
   it('keeps the TileJSON of the mosaic and the measure when only the range changes', async () => {
@@ -1868,8 +1869,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(preview.mosaics).toEqual([]);
     expect(preview.scenes.map((s) => [s.id, s.below])).toEqual([['S2B_A', undefined], ['S2B_B', undefined], ['S2B_C', undefined]]);
     expect(preview.perScene).toBe(true);
-    expect(panelBadge()?.getAttribute('title')).toBe(HINT);
-    expect(dockBadge()?.getAttribute('title')).toBe(HINT);
+    expect(panelBadge()?.getAttribute('data-tip')).toBe(HINT);
+    expect(dockBadge()?.getAttribute('data-tip')).toBe(HINT);
     expect(section().textContent).not.toContain('per scene');
     expect(section().textContent).not.toContain('may differ');
     expect(store().previewNote).toBeNull();
@@ -1888,7 +1889,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     selectWide([scene('S2B_A'), scene('S2B_B')]);
     await typeNdvi();
     expect(store().preview).toMatchObject({ mosaics: [], perScene: true });
-    expect(panelBadge()?.getAttribute('title')).toBe(HINT);
+    expect(panelBadge()?.getAttribute('data-tip')).toBe(HINT);
   });
 
   it('draws the scenes one by one when the network fails for the mosaic', async () => {
@@ -2037,7 +2038,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     selectWide([scene('S2B_A')]);
     await typeNdvi();
     expect(store().preview).toMatchObject({ mosaics: [], perScene: false });
-    expect(panelBadge()?.getAttribute('title')).toBeNull();
+    expect(panelBadge()?.getAttribute('data-tip')).toBeNull();
     expect(asks('/mosaic/')).toHaveLength(0);
 
     act(() => store().closeProcessing());
@@ -2049,7 +2050,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     await flush();
     expect(store().preview).toMatchObject({ mosaics: [], perScene: false });
     expect(store().preview!.scenes).toHaveLength(3);
-    expect(panelBadge()?.getAttribute('title')).toBeNull();
+    expect(panelBadge()?.getAttribute('data-tip')).toBeNull();
     expect(asks('/mosaic/')).toHaveLength(0);
   });
 
@@ -2081,8 +2082,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       const layer = useAppStore.getState().layers[0];
       expect(layer.note).toBe(HINT);
       mount(<LayerManager />);
-      expect(nameButton().getAttribute('title')).toContain(HINT);
-      expect(nameButton().getAttribute('title')).toContain(`${layerShownName(layer)} — `);
+      expect(nameButton().getAttribute('data-tip')).toContain(HINT);
+      expect(nameButton().getAttribute('data-tip')).toContain(`${layerShownName(layer)} — `);
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('per scene');
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('may differ');
     });
@@ -2094,8 +2095,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       click(button(/Add preview to layers/));
       expect(useAppStore.getState().layers[0].note).toBeUndefined();
       mount(<LayerManager />);
-      expect(nameButton().getAttribute('title')).not.toContain('per scene');
-      expect(nameButton().getAttribute('title')).toBe(`${layerShownName(useAppStore.getState().layers[0])} — view this layer / continue working on it`);
+      expect(nameButton().getAttribute('data-tip')).not.toContain('per scene');
+      expect(nameButton().getAttribute('data-tip')).toBe(`${layerShownName(useAppStore.getState().layers[0])} — view this layer / continue working on it`);
     });
   });
 
@@ -2124,12 +2125,12 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
         vi.advanceTimersByTime(1);
       });
       expect(loading()?.textContent).toBe('Loading…');
-      expect(loading()?.getAttribute('title')).toBe('Reading the scenes. The first tile of a mosaic can take several seconds.');
+      expect(loading()?.getAttribute('data-tip')).toBe('Reading the scenes. The first tile of a mosaic can take several seconds.');
       expect(loading()?.getAttribute('role')).toBe('status');
       // The heading of the preview says it too, for a window in which the panel hides the map: a badge, no line of text.
       const inHeading = section().querySelector('.pp-heading .pp-badge.loading');
       expect(inHeading?.textContent).toBe('Loading…');
-      expect(inHeading?.getAttribute('title')).toBe(loading()?.getAttribute('title'));
+      expect(inHeading?.getAttribute('data-tip')).toBe(loading()?.getAttribute('data-tip'));
       expect(section().querySelector('p')?.textContent ?? '').not.toContain('Loading');
       release(json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] }));
       await flush();

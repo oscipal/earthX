@@ -18,6 +18,7 @@ import type { Collection, StacItem } from '../types';
 import ResultsPanel from './ResultsPanel';
 import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './ResultsEye';
 import { RESULTS_ON_TOP_TIP } from './ResultsToTop';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -279,7 +280,7 @@ describe('ResultsPanel dataset dropdown', () => {
 
   it('has no "Clear all" in its head, only "Results" on top of the layers and the eye of the results on the map', () => {
     load(MIXED);
-    expect([...container.querySelectorAll<HTMLButtonElement>('.results-head button')].map((b) => b.title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
+    expect([...container.querySelectorAll<HTMLButtonElement>('.results-head button')].map((b) => tipOf(b))).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
   });
 
   // NM4-59: the eye replaces "Hide results" / "Show results"; it is the eye of the entry "Results" in the layer manager.
@@ -290,14 +291,14 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(toggle().getAttribute('aria-pressed')).toBe('true');
     act(() => toggle().click());
     expect(useAppStore.getState().resultsOnMap).toBe(false);
-    expect(toggle().title).toBe(SHOW_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(SHOW_RESULTS_TIP);
     expect(toggle().getAttribute('aria-pressed')).toBe('false');
     expect(toggle().classList.contains('off')).toBe(true);
     expect(container.querySelectorAll('.result-group')).toHaveLength(2);
     expect(container.querySelector('h2')?.textContent).toBe('Search results (0/3)');
     act(() => toggle().click());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(HIDE_RESULTS_TIP);
   });
 });
 

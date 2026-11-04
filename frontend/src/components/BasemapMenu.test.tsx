@@ -11,6 +11,7 @@ import { BASEMAP_IDS, BASEMAPS } from '../basemaps';
 import { NO_OVERLAYS, OVERLAYS } from '../overlays';
 import { useAppStore } from '../store';
 import BasemapMenu from './BasemapMenu';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -84,7 +85,7 @@ describe('the Basemap button', () => {
   });
 
   it('is called "Basemap, overlays and projection" in its tooltip', () => {
-    expect(trigger().title).toBe('Basemap, overlays and projection');
+    expect(tipOf(trigger())).toBe('Basemap, overlays and projection');
   });
 });
 
@@ -107,7 +108,7 @@ describe('choosing a basemap', () => {
 
   it.each(BASEMAP_IDS)('%s: the tooltip says where its tiles come from', (id) => {
     open();
-    expect(entry(BASEMAPS[id].name).title).toBe(BASEMAPS[id].tip);
+    expect(tipOf(entry(BASEMAPS[id].name))).toBe(BASEMAPS[id].tip);
   });
 
   it('leaves the projection alone, and the menu open for the next choice', () => {
@@ -149,7 +150,7 @@ describe('switching an overlay on and off', () => {
 
   it.each(['labels', 'graticule', 'relief'] as const)('%s: the tooltip says what it shows', (id) => {
     open();
-    expect(overlayEntry(OVERLAYS[id].name).title).toBe(OVERLAYS[id].tip);
+    expect(tipOf(overlayEntry(OVERLAYS[id].name))).toBe(OVERLAYS[id].tip);
   });
 
   it('switches one overlay without the other, and leaves basemap and projection alone', () => {

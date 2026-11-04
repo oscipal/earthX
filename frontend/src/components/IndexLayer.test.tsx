@@ -18,6 +18,7 @@ import type { Collection, DownloadedInfo, StacItem } from '../types';
 import DownloadDialog from './DownloadDialog';
 import LayerManager from './LayerManager';
 import ViewerControls from './ViewerControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -173,7 +174,7 @@ describe('the view of a layer of the layer manager', () => {
     const select = indexField()!.querySelector('select')!;
     expect(select.disabled).toBe(true);
     expect([...select.options].map((o) => o.textContent)).toEqual(['NDVI']);
-    expect(indexField()!.title).toBe('This layer holds the index only');
+    expect(tipOf(indexField()!)).toBe('This layer holds the index only');
     expect(quick()).toEqual([]);
     expect([...container.querySelectorAll('.insp-heading')].map((h) => h.textContent)).toEqual(['Display', 'Actions']);
     // Counter-check: a layer of the whole view keeps the indices.
@@ -242,14 +243,14 @@ describe('the ⇩ of a layer that shows an index', () => {
     setState({ layers: [layer(NDVI, { indexOnly: true })] });
     act(() => root.render(<LayerManager />));
     expect(button().disabled).toBe(false);
-    expect(button().title).toBe('Download the NDVI of the AOI crop, computed as a Processing job would');
+    expect(tipOf(button())).toBe('Download the NDVI of the AOI crop, computed as a Processing job would');
   });
 
   it('is locked with the reason for such a layer of whole scenes: a job of Processing computes those', () => {
     setState({ layers: [layer(NDVI, { indexOnly: true, cropToAoi: false })] });
     act(() => root.render(<LayerManager />));
     expect(button().disabled).toBe(true);
-    expect(button().title).toBe('The index of whole scenes is computed by a job: start one in Processing.');
+    expect(tipOf(button())).toBe('The index of whole scenes is computed by a job: start one in Processing.');
   });
 
   it('opens the dialog on the index, with no raw bands to choose', async () => {
@@ -264,16 +265,16 @@ describe('the ⇩ of a layer that shows an index', () => {
     setState({ layers: [layer(NDVI)] });
     act(() => root.render(<LayerManager />));
     expect(button().disabled).toBe(false);
-    expect(button().title).toBe('Download the AOI crop, one file per group; the NDVI too, computed as a Processing job would');
+    expect(tipOf(button())).toBe('Download the AOI crop, one file per group; the NDVI too, computed as a Processing job would');
   });
 
   it('offers no index for whole scenes (a job of Processing does that), only the crop, and keeps its old words for a layer without an index', () => {
     setState({ layers: [layer(NDVI, { cropToAoi: false })] });
     act(() => root.render(<LayerManager />));
     expect(button().disabled).toBe(false);
-    expect(button().title).toBe('Download the AOI crop, one file per group');
+    expect(tipOf(button())).toBe('Download the AOI crop, one file per group');
     setState({ layers: [layer({ rescale: '0,3000' })] });
-    expect(button().title).toBe('Download the AOI crop, one file per group');
+    expect(tipOf(button())).toBe('Download the AOI crop, one file per group');
   });
 });
 
@@ -356,7 +357,7 @@ describe('the dialog of the download', () => {
     expect(container.textContent).toContain('NDVI ((N - R)/(N + R))');
     expect(container.querySelector('.dialog-resolution')).toBeNull();
     expect(line().textContent).toBe('About 12.4 MB · about 9 s');
-    expect(line().title).toContain('same limits as a job of Processing');
+    expect(tipOf(line())).toContain('same limits as a job of Processing');
     expect(container.textContent).not.toContain('asset');
     expect(primary().disabled).toBe(false);
   });
@@ -386,7 +387,7 @@ describe('the dialog of the download', () => {
     answers((url, init) => (init?.method === 'POST' && url.endsWith('/estimate') ? json({ detail: 'the order would write more than 5 GB' }, 413) : undefined));
     await open();
     expect(line().textContent).toBe('Too large for one job');
-    expect(line().title).toBe('An export job may write at most 5 GB. Choose a smaller area or fewer scenes.');
+    expect(tipOf(line())).toBe('An export job may write at most 5 GB. Choose a smaller area or fewer scenes.');
     expect(line().classList.contains('warn')).toBe(true);
     expect(primary().disabled).toBe(true);
     await press();
@@ -412,7 +413,7 @@ describe('the dialog of the download', () => {
     await press();
     expect(clicked).toEqual([]);
     expect(line().textContent).toBe('at most 4 jobs may run at a time');
-    expect(line().title).toBe('at most 4 jobs may run at a time');
+    expect(tipOf(line())).toBe('at most 4 jobs may run at a time');
     expect(useAppStore.getState()).toMatchObject({ downloading: false, downloadDialogLayerId: 'L1', error: null });
     expect(primary().disabled).toBe(false);
     refused = false;

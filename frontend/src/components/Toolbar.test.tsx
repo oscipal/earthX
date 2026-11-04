@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { lockedWithoutReason } from '../fixtures/lockedControls';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
+import { tipOf } from '../fixtures/tips';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -33,13 +34,13 @@ describe('"Clear AOI"', () => {
   it('has the same words as label, tooltip and name, and no button is called just "Clear"', () => {
     act(() => useAppStore.setState({ aoi: { type: 'Point', coordinates: [1, 2] } }));
     expect(clear()!.textContent).toBe('Clear AOI');
-    expect(clear()!.title).toBe('Clear the AOI');
+    expect(tipOf(clear()!)).toBe('Clear the AOI');
     expect([...container.querySelectorAll('button')].some((b) => b.textContent === 'Clear')).toBe(false);
   });
 
   it('is locked without an AOI and says why', () => {
     expect(clear()!.disabled).toBe(true);
-    expect(clear()!.title).toBe('No AOI to clear');
+    expect(tipOf(clear()!)).toBe('No AOI to clear');
     expect(lockedWithoutReason(container)).toEqual([]);
   });
 

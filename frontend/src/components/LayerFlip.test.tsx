@@ -13,6 +13,7 @@ import { flipIdOf } from '../layerFlip';
 import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
 import LayerManager, { FLIP_ROW_TIP, FLIP_TIP } from './LayerManager';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -74,8 +75,8 @@ describe('the toggle in the head', () => {
   it('is there with two layers or more, with a tooltip that says what it does and how it ends', () => {
     mount([layer('a'), layer('b')]);
     expect(toggle()).not.toBeNull();
-    expect(toggle()!.title).toBe(FLIP_TIP);
-    expect(toggle()!.title).toContain('Flip through layers');
+    expect(tipOf(toggle()!)).toBe(FLIP_TIP);
+    expect(tipOf(toggle()!)).toContain('Flip through layers');
     expect(toggle()!.getAttribute('aria-pressed')).toBe('false');
   });
 
@@ -126,7 +127,7 @@ describe('the layer that is drawn on top', () => {
     const select = vi.fn();
     act(() => useAppStore.setState({ selectLayer: select }));
     click(toggle());
-    expect(rows()[2].querySelector('.lm-name')!.getAttribute('title')).toContain(FLIP_ROW_TIP);
+    expect(rows()[2].querySelector('.lm-name')!.getAttribute('data-tip')).toContain(FLIP_ROW_TIP);
     click(rows()[2].querySelector('.lm-name'));
     expect(state().flipLayerId).toBe('c');
     expect(flippedRows()).toEqual([2]);

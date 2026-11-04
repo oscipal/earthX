@@ -30,7 +30,7 @@ export default function RangeHistogram({ histogram, low, high, onLow, onHigh, ch
   const name = channel ? `${channel} ` : '';
   const step = span > 0 ? span / STEPS : 'any';
   return (
-    <div className={`range-hist${channel ? ` range-hist-${channel}` : ''}`} title={title}>
+    <div className={`range-hist${channel ? ` range-hist-${channel}` : ''}`} data-tip={title}>
       <svg className="range-hist-bars" viewBox="0 0 100 1" preserveAspectRatio="none" aria-hidden="true">
         {histogram.counts.map((count, index) => {
           const x = at(histogram.edges[index]);

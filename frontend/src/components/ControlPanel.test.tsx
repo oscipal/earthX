@@ -15,6 +15,7 @@ import { useAppStore } from '../store';
 import type { Collection } from '../types';
 import { lockedWithoutReason } from '../fixtures/lockedControls';
 import ControlPanel from './ControlPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -685,14 +686,14 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     setUp(['optical']);
     const broken = buttons()[2];
     expect(broken.disabled).toBe(true);
-    expect(broken.title).toContain('not viewable');
-    expect(broken.title).toContain('group_by');
+    expect(tipOf(broken)).toContain('not viewable');
+    expect(tipOf(broken)).toContain('group_by');
   });
 
   it('shows the maturity chip and puts the description into the tooltip', () => {
     setUp(['optical']);
     expect(buttons()[0].querySelector('.maturity-chip')?.textContent).toBe('staging');
-    expect(buttons()[0].title).toContain('Multispectral optical imagery.');
+    expect(tipOf(buttons()[0])).toContain('Multispectral optical imagery.');
   });
 
   it('shows every dataset of the catalogue in one grid, however many — the grid itself scrolls (CSS shows 2 x 2)', () => {
@@ -929,9 +930,9 @@ describe('locked controls of the menu', () => {
     act(() => root.render(<ControlPanel />));
     expect(lockedWithoutReason(container)).toEqual([]);
     const button = (text: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim().endsWith(text));
-    expect(button('Find')?.getAttribute('title')).toBe('Type a place name first');
-    expect(button('Last AOI')?.getAttribute('title')).toBe('No earlier AOI in this browser');
-    expect(button('Search')?.getAttribute('title')).toBe('Choose a dataset to search');
+    expect(button('Find')?.getAttribute('data-tip')).toBe('Type a place name first');
+    expect(button('Last AOI')?.getAttribute('data-tip')).toBe('No earlier AOI in this browser');
+    expect(button('Search')?.getAttribute('data-tip')).toBe('Choose a dataset to search');
   });
 });
 

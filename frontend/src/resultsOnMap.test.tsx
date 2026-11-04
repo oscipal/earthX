@@ -21,6 +21,7 @@ import { resultsOnMapOf } from './mapResults';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
+import { tipOf } from './fixtures/tips';
 
 vi.mock('./components/MapView', () => ({ default: () => null }));
 
@@ -72,7 +73,8 @@ const state = () => useAppStore.getState();
 const click = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 // By its text, or by its tooltip for a button without text (the eye of the results, NM4-59).
 const buttonWith = (text: string): HTMLButtonElement => {
-  const found = [...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes(text) || b.title.includes(text));
+  const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')];
+  const found = buttons.find((b) => b.textContent?.includes(text)) ?? buttons.find((b) => tipOf(b).includes(text));
   if (!found) throw new Error(`no button "${text}" in ${container.textContent?.slice(0, 200)}`);
   return found;
 };
@@ -261,10 +263,10 @@ describe('"Hide results" hides a ticked scene too, and ticking while hidden show
 
     it('opens the eye, in the button too and in the browser', () => {
       act(() => useAppStore.setState({ dock: 'results' }));
-      expect(buttonWith('Show search results').title).toBe('Show search results on the map');
+      expect(tipOf(buttonWith('Show search results'))).toBe('Show search results on the map');
       act(() => state().toggleSelected('a0'));
       expect(state().resultsOnMap).toBe(true);
-      expect(buttonWith('Hide search results').title).toBe('Hide search results on the map');
+      expect(tipOf(buttonWith('Hide search results'))).toBe('Hide search results on the map');
       expect(window.localStorage.getItem('earthx.results')).toBe('show');
       expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['a1', 'a0']);
     });
@@ -327,7 +329,7 @@ describe('Otto\'s click path (27.10.2026)', () => {
     await flush();
     expect(state().focusMode).toBe(true);
     expect(state().resultsOnMap).toBe(false);
-    expect(buttonWith('Show search results').title).toBe('Show search results on the map');
+    expect(tipOf(buttonWith('Show search results'))).toBe('Show search results on the map');
     expect(state().selectedIds).toEqual([]);
     const shown = resultsOnMapOf(state());
     expect(shown.quicklooks).toEqual([]);
@@ -379,10 +381,10 @@ describe('Otto\'s click path (27.10.2026)', () => {
 
   it('the eye says what a click does, and hiding takes everything off the map, a ticked scene included', async () => {
     act(() => useAppStore.setState({ dock: 'results' }));
-    expect(buttonWith('Hide search results').title).toBe('Hide search results on the map');
+    expect(tipOf(buttonWith('Hide search results'))).toBe('Hide search results on the map');
     act(() => state().toggleSelected('a0'));
     click(buttonWith('Hide search results'));
-    expect(buttonWith('Show search results').title).toBe('Show search results on the map');
+    expect(tipOf(buttonWith('Show search results'))).toBe('Show search results on the map');
     expectNothingOnMap();
     // Leaving a view with its x brings nothing back, and the tick stays.
     await openView();
@@ -436,8 +438,8 @@ describe('the red x and "Change image" in the view', () => {
 
   it('have the tooltips of what they do', async () => {
     await openView();
-    expect(viewClose().title).toBe('Close and drop this view');
-    expect(viewButton('Change image').title).toBe('Remove this view, show the search results and choose another scene');
+    expect(tipOf(viewClose())).toBe('Close and drop this view');
+    expect(tipOf(viewButton('Change image'))).toBe('Remove this view, show the search results and choose another scene');
     expect([...container.querySelectorAll('.scene-view button')].some((b) => b.textContent?.includes('Clear'))).toBe(false);
   });
 });

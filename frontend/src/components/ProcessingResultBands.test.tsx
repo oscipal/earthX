@@ -15,6 +15,7 @@ import { resultBands } from '../resultLayer';
 import { useAppStore } from '../store';
 import LayerManager from './LayerManager';
 import ResultControls from './ResultControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -304,7 +305,7 @@ describe('the range saved for a band', () => {
       });
     }
     const save = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Save')!;
-    expect(save.title).toContain('this band');
+    expect(tipOf(save)).toContain('this band');
     act(() => save.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(useProcessingStore.getState().jobs[0].bandRanges.height).toMatchObject({ vmin: '10', vmax: '20' });
     expect(useProcessingStore.getState().jobs[0].range).toBeNull();

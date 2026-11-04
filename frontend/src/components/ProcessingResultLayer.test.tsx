@@ -435,7 +435,7 @@ describe('the layer a result becomes', () => {
     // This job keeps no copy of its order (NM4-05b, Otto 31.10.2026): there is nothing to process, and nothing brings it back.
     expect(layerProcessBlock(layers()[0], [])).toBe(NO_COPY_TEXT);
     act(() => root.render(<LayerManager />));
-    expect(container.querySelector('.icon-btn[title="Process this layer"]')).toBeNull();
+    expect(container.querySelector('.icon-btn[data-tip="Process this layer"]')).toBeNull();
     expect(button('Process layer')).toBeUndefined();
     const empty = container.querySelector('.layer-row [data-col="process"]');
     expect(empty?.tagName).toBe('SPAN');
@@ -618,7 +618,7 @@ describe('"Overview" over the map', () => {
     result();
     act(() => root.render(<PreviewBadge />));
     expect(badge()).toBe('Overview');
-    expect(container.querySelector('.preview-badge')?.getAttribute('title')).toBe(OVERVIEW_TITLE);
+    expect(container.querySelector('.preview-badge')?.getAttribute('data-tip')).toBe(OVERVIEW_TITLE);
     act(() => useAppStore.setState({ mapZoom: 15 }));
     expect(container.querySelector('.preview-badge-dock')).toBeNull();
     act(() => useAppStore.setState({ mapZoom: 3 }));
@@ -634,7 +634,7 @@ describe('"Overview" over the map', () => {
       act(() => useAppStore.setState({ mapZoom: 3 }));
       act(() => root.render(<PreviewBadge />));
       expect(chips()).toEqual(['Zoom in']);
-      expect(container.querySelector('.preview-badge')?.getAttribute('title')).toContain('is drawn from zoom 7.');
+      expect(container.querySelector('.preview-badge')?.getAttribute('data-tip')).toContain('is drawn from zoom 7.');
       act(() => useAppStore.setState({ mapZoom: 7 }));
       expect(container.querySelector('.preview-badge-dock')).toBeNull();
     });

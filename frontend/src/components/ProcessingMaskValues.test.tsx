@@ -16,6 +16,7 @@ import { orderView, selectionState, useProcessingStore } from '../processingStor
 import { useAppStore } from '../store';
 import type { Collection, EarthxMask, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -431,7 +432,7 @@ describe('what the form tells', () => {
     const why = "Step 1: 'result' is added by a later step";
     expect(container.querySelector('li.pp-step select[id$="-band"]')!.closest('li')!.textContent).toContain("'result' is added by a later step");
     expect(button('Review').disabled).toBe(true);
-    expect(button('Review').title).toBe(why);
+    expect(tipOf(button('Review'))).toBe(why);
     expect(button('Mask by class').disabled).toBe(true);
     act(() => store().moveStep(store().steps[0].key, 1));
     expect(button('Review').disabled).toBe(false);

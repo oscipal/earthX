@@ -131,7 +131,7 @@ async function check(browser, theme, viewport) {
   const { context, page, posted } = await open(browser, theme, viewport);
   await setUp(page, true);
   if (await gear(page).isDisabled()) problems.push('the ⚙ is locked with the order of the job');
-  if ((await gear(page).getAttribute('title')) !== 'Process further') problems.push(`the ⚙ says ${await gear(page).getAttribute('title')}`);
+  if ((await gear(page).getAttribute('data-tip')) !== 'Process further') problems.push(`the ⚙ says ${await gear(page).getAttribute('data-tip')}`);
   await gear(page).click();
   await page.waitForSelector('.processing-panel section[aria-label="Selection"] [aria-label="Area"]', { timeout: 10000 });
 

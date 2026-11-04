@@ -38,7 +38,7 @@ export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy
     <div className="vc-head">
       <div className="insp-row">
         {rename && editing ? (
-          <span className="vc-title vc-rename" title={EMPTY_NAME_TIP}>
+          <span className="vc-title vc-rename" data-tip={EMPTY_NAME_TIP}>
             <InlineRename
               value={rename.name}
               label="Layer name"
@@ -52,15 +52,15 @@ export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy
           </span>
         ) : rename ? (
           <>
-            <button type="button" className="vc-title vc-title-btn" title={tip} onClick={() => setEditing(true)}>
+            <button type="button" className="vc-title vc-title-btn" data-tip={tip} onClick={() => setEditing(true)}>
               {title}
             </button>
-            <button type="button" className="icon-btn sm quiet" title={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
+            <button type="button" className="icon-btn sm quiet" data-tip={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
               <PencilIcon />
             </button>
           </>
         ) : (
-          <span className="vc-title" title={tip}>
+          <span className="vc-title" data-tip={tip}>
             {title}
           </span>
         )}
@@ -97,7 +97,7 @@ export function Stepper({ text, tip, previous, next, onKeyDown, single = false }
   if (single) {
     return (
       <div className="vc-stepper" role="group" aria-label="Time step">
-        <span className="vc-step-text" title={tip}>
+        <span className="vc-step-text" data-tip={tip}>
           {text}
         </span>
       </div>
@@ -105,13 +105,13 @@ export function Stepper({ text, tip, previous, next, onKeyDown, single = false }
   }
   return (
     <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeyDown}>
-      <button type="button" className="icon-btn" aria-label="Previous image" aria-disabled={previous.disabled || undefined} title={previous.title} onClick={previous.onClick}>
+      <button type="button" className="icon-btn" aria-label="Previous image" aria-disabled={previous.disabled || undefined} data-tip={previous.title} onClick={previous.onClick}>
         <ChevronLeftIcon />
       </button>
-      <span className="vc-step-text" title={tip}>
+      <span className="vc-step-text" data-tip={tip}>
         {text}
       </span>
-      <button type="button" className="icon-btn" aria-label="Next image" aria-disabled={next.disabled || undefined} title={next.title} onClick={next.onClick}>
+      <button type="button" className="icon-btn" aria-label="Next image" aria-disabled={next.disabled || undefined} data-tip={next.title} onClick={next.onClick}>
         <ChevronRightIcon />
       </button>
     </div>

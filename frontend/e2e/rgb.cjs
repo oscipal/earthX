@@ -237,7 +237,7 @@ async function checkLayer(browser, theme, viewport) {
   // A field that does not apply to the choice keeps its place and is locked with its reason (NM4-54 part 5); RGB has no colormap.
   const colormaps = await page.$$eval('.result-controls .vc-field', (fields) => fields
     .filter((f) => f.querySelector('span')?.textContent === 'Colormap')
-    .map((f) => ({ locked: f.querySelector('select')?.disabled ?? null, title: f.title, shown: f.querySelector('select')?.selectedOptions[0]?.textContent ?? null })));
+    .map((f) => ({ locked: f.querySelector('select')?.disabled ?? null, title: f.getAttribute('data-tip'), shown: f.querySelector('select')?.selectedOptions[0]?.textContent ?? null })));
   if (colormaps.length !== 1 || colormaps[0].locked !== true || !colormaps[0].title || colormaps[0].shown !== '— none —') problems.push(`the colormap of RGB is not one locked field "— none —" with its reason (${JSON.stringify(colormaps)})`);
   const view = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };

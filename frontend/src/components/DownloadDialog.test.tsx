@@ -298,7 +298,7 @@ describe('the originals dialog starts with "Download" (NM4-33, NM4-75)', () => {
   });
 
   it('says in a tooltip that closing stops a download that is running', () => {
-    expect(show().querySelector('.results-head button')?.getAttribute('title')).toContain('stops a download');
+    expect(show().querySelector('.results-head button')?.getAttribute('data-tip')).toContain('stops a download');
   });
 
   it('closes with the red "x" of every closing (NM4-65 part 8)', () => {

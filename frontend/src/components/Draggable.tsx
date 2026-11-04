@@ -113,7 +113,7 @@ export default function Draggable({ id, children, className }: { id: BandId; chi
       className={`draggable${className ? ` ${className}` : ''}`}
       onPointerDown={onPointerDown}
     >
-      <span className="drag-grip" title="Drag to move" aria-hidden="true">
+      <span className="drag-grip" data-tip="Drag to move" aria-hidden="true">
         <GripHorizontalIcon />
       </span>
       {children}

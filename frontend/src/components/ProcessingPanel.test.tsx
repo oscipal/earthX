@@ -23,6 +23,7 @@ import { EXPIRED_TIP } from './jobView';
 import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -531,7 +532,7 @@ describe('review before start (K4)', () => {
       await review();
       const alert = container.querySelector('[role="alert"]')!;
       expect(alert.textContent).toBe('Dataset retired');
-      expect(alert.getAttribute('title')).toBe(REASON);
+      expect(alert.getAttribute('data-tip')).toBe(REASON);
       expect(button('Start job').disabled).toBe(true);
     });
 
@@ -543,7 +544,7 @@ describe('review before start (K4)', () => {
       await review();
       const alert = container.querySelector('[role="alert"]')!;
       expect(alert.textContent).not.toContain('Dataset retired');
-      expect(alert.hasAttribute('title')).toBe(false);
+      expect(alert.hasAttribute('data-tip')).toBe(false);
     });
   });
 
@@ -552,7 +553,7 @@ describe('review before start (K4)', () => {
     await openPanel();
     for (let i = 0; i < 16; i++) click(button('Band math'));
     expect(button('Band math').disabled).toBe(true);
-    expect(button('Band math').title).toBe('At most 16 steps');
+    expect(tipOf(button('Band math'))).toBe('At most 16 steps');
     expect(container.querySelectorAll('.pp-step')).toHaveLength(16);
   });
 
@@ -1170,7 +1171,7 @@ describe('starting and following a job', () => {
     await flush();
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toBe('Dataset retired');
-    expect(alert.getAttribute('title')).toBe(reason);
+    expect(alert.getAttribute('data-tip')).toBe(reason);
     expect(useProcessingStore.getState().jobs).toEqual([]);
   });
 
@@ -1534,7 +1535,7 @@ describe('a finished job row (K6)', () => {
 
   it('has no button to remove the row: a job is cancelled while it runs and kept after (UI-01 §6.7)', () => {
     act(() => root.render(<ul><JobRow job={entry(MIN_REMAINING_MS + 5000, false)} /></ul>));
-    expect(container.querySelector('[title="Remove this row"]')).toBeNull();
+    expect(container.querySelector('[data-tip="Remove this row"]')).toBeNull();
     expect(container.querySelectorAll('button')).toHaveLength(0);
   });
 
@@ -1555,7 +1556,7 @@ describe('the Process button (B11, K12)', () => {
     showBar();
     const process = button(/Process/);
     expect(process.disabled).toBe(true);
-    expect(process.title).toContain('tier: display');
+    expect(tipOf(process)).toContain('tier: display');
   });
 
   it('needs no AOI: "Whole scene" sends none (M4-13c K1)', () => {
@@ -1678,7 +1679,7 @@ describe('the area of the order (M4-13c §3.2)', () => {
     useAppStore.setState({ aoi: null });
     await openPanel();
     expect(button('AOI only').disabled).toBe(true);
-    expect(button('AOI only').title).toBe('Draw an AOI first');
+    expect(tipOf(button('AOI only'))).toBe('Draw an AOI first');
     await ndvi();
     await review();
     expect(button('Start job').disabled).toBe(false);
@@ -1997,7 +1998,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
       expect(cellSize()).toBeNull();
       expect(unit()).toBeNull();
       expect(button('Review').disabled).toBe(true);
-      expect(button('Review').title).toBe(UNKNOWN);
+      expect(tipOf(button('Review'))).toBe(UNKNOWN);
       expect(button('Start job').disabled).toBe(true);
     });
 

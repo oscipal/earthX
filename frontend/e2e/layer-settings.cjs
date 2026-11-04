@@ -85,7 +85,7 @@ async function check(browser, { kind, theme, viewport }) {
   const shot = (step) => page.screenshot({ path: path.join(OUT, `${label.replace(/ /g, '_')}_${step}.png`) });
   const box = (selector) => page.locator(`${root} ${selector}`).first().boundingBox();
   const disabled = (selector) => page.locator(`${root} ${selector}`).first().getAttribute('aria-disabled');
-  const tip = (selector) => page.locator(`${root} ${selector}`).first().getAttribute('title');
+  const tip = (selector) => page.locator(`${root} ${selector}`).first().getAttribute('data-tip');
 
   // Layout (the settings bar, UI-03a): the fields one under the other, then the buttons in one row of one size and the height of a field,
   // "Save" set off by its colour, nothing over the edge.

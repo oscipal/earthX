@@ -16,6 +16,7 @@ import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, EarthxMask, StacAsset, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -244,10 +245,10 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
     await openPanel();
     click(button('Mask by class'));
     expect(startButton().disabled).toBe(true);
-    expect(startButton().title).toBe(EMPTY_OUTPUT);
+    expect(tipOf(startButton())).toBe(EMPTY_OUTPUT);
     expect(EMPTY_OUTPUT).toBe('Choose at least one band for the output.');
     click(outChip('red'));
-    expect(startButton().title).not.toBe(EMPTY_OUTPUT);
+    expect(tipOf(startButton())).not.toBe(EMPTY_OUTPUT);
   });
 
   it('checks the one band of a dataset that has one, once: a later "None" stays, until the panel is opened again', async () => {
@@ -408,8 +409,8 @@ describe('what an expression names', () => {
     typeInto(expression(0), 'red red');
     const why = 'Step 1: Enter a valid expression';
     expect(button('Review').disabled).toBe(true);
-    expect(button('Review').title).toBe(why);
-    expect(startButton().title).toBe(why);
+    expect(tipOf(button('Review'))).toBe(why);
+    expect(tipOf(startButton())).toBe(why);
     expect(button('Mask by class').disabled).toBe(true);
     await review();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
@@ -423,11 +424,11 @@ describe('what an expression names', () => {
     await addBandMath('red - re');
     const why = "Step 1: 're' is not a band name";
     expect(button('Mask by class').disabled).toBe(true);
-    expect(button('Mask by class').title).toBe(why);
+    expect(tipOf(button('Mask by class'))).toBe(why);
     expect(button('Review').disabled).toBe(true);
-    expect(button('Review').title).toBe(why);
+    expect(tipOf(button('Review'))).toBe(why);
     expect(startButton().disabled).toBe(true);
-    expect(startButton().title).toBe(why);
+    expect(tipOf(startButton())).toBe(why);
     await review();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     typeInto(expression(0), 'red - nir');
@@ -570,12 +571,12 @@ describe('the name of a result', () => {
     expect(store().nameProblems).toEqual({ [store().steps[0].key]: "'red' is already a band name" });
     for (const label of ['Band math', 'Mask by class', 'Normalize', 'Reproject and resample']) {
       expect(button(label).disabled, label).toBe(true);
-      expect(button(label).title, label).toBe(why);
+      expect(tipOf(button(label)), label).toBe(why);
     }
     expect(button('Review').disabled).toBe(true);
-    expect(button('Review').title).toBe(why);
+    expect(tipOf(button('Review'))).toBe(why);
     expect(startButton().disabled).toBe(true);
-    expect(startButton().title).toBe(why);
+    expect(tipOf(startButton())).toBe(why);
     await review();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     // Put right, everything is open again.
@@ -713,7 +714,7 @@ describe('the memory limit of a job (adr/0020 §7)', () => {
     await addBandMath();
     await review();
     expect(startButton().disabled).toBe(true);
-    expect(startButton().title).toBe(REASON);
+    expect(tipOf(startButton())).toBe(REASON);
     expect(container.textContent).not.toContain(REASON);
     expect(container.textContent).not.toContain('The whole scene is too large');
   });

@@ -16,6 +16,7 @@ import { SHORT_COLORMAPS } from '../colormaps';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import ViewerControls from './ViewerControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -132,7 +133,7 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     mount();
     expect([...select().options].map((o) => o.textContent)).toEqual(['RGB']);
     expect(select().value).toBe('');
-    expect(field()!.title).toBe('This image has one band');
+    expect(tipOf(field()!)).toBe('This image has one band');
   });
 
   it.each([
@@ -156,9 +157,9 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
 
   it('says what an index is in the tooltip: title and formula', () => {
     mount();
-    expect(quickButton('NDVI').title).toContain('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');
-    expect(quickButton('NDWI').title).toContain('(McFeeters 1996)');
-    expect(quickButton('Enhance contrast').title).toContain('2nd to the 98th percentile');
+    expect(tipOf(quickButton('NDVI'))).toContain('Normalized Difference Vegetation Index: (N - R)/(N + R). Formula: Awesome Spectral Indices.');
+    expect(tipOf(quickButton('NDWI'))).toContain('(McFeeters 1996)');
+    expect(tipOf(quickButton('Enhance contrast'))).toContain('2nd to the 98th percentile');
   });
 
   // Otto, 3.11.2026: an index goes into the fields and is drawn with "Apply", as a band is.
@@ -244,7 +245,7 @@ describe('"Apply to all" with indices of one range (Otto, 1.11.2026)', () => {
     // Chosen but not applied: "Apply to all" takes what the fields hold, so it has something to do.
     act(() => useAppStore.getState().chooseViewIndex('NBR'));
     expect(locked()).toBe(false);
-    expect(applyAll().title).toContain('Draw every image of this dataset with these values');
+    expect(tipOf(applyAll())).toContain('Draw every image of this dataset with these values');
   });
 });
 
@@ -261,7 +262,7 @@ describe('the note under the settings', () => {
   it('asks to zoom in where the map is too far out, and says why in its tooltip', () => {
     mount(SENTINEL_2_PRESETS, { mapZoom: 5, appliedRender: { index: 'NDVI', colormapName: 'rdylgn', rescale: '-1,1' } });
     expect(note()!.textContent).toBe('Zoom in to compute NDVI');
-    expect(note()!.title).toBe('The quick calculation works from zoom 8. For whole scenes start a job in Processing.');
+    expect(tipOf(note()!)).toBe('The quick calculation works from zoom 8. For whole scenes start a job in Processing.');
     expect(select().value).toBe('index:NDVI'); // the choice stays
   });
 
@@ -298,7 +299,7 @@ describe('the note under the settings', () => {
       appliedRender: { index: 'EVI', colormapName: 'rdylgn', rescale: '-1,1' },
     });
     expect(note()!.textContent).toBe('EVI cannot be computed here');
-    expect(note()!.title).toContain('start a job in Processing');
+    expect(tipOf(note()!)).toContain('start a job in Processing');
     expect(select().value).toBe('index:EVI');
   });
 

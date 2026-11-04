@@ -15,6 +15,7 @@ import { orderView, selectionState, useProcessingStore } from '../processingStor
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -386,8 +387,8 @@ describe('the measure (for the preview alone)', () => {
     await setMethod('zscore');
     expect(step().textContent).toContain('Measuring…');
     expect(button('Review').disabled).toBe(false);
-    expect(button('Review').title).not.toContain('measuring');
-    expect(button('Start job').title).not.toContain('measuring');
+    expect(tipOf(button('Review'))).not.toContain('measuring');
+    expect(tipOf(button('Start job'))).not.toContain('measuring');
     click(button('Review'));
     await flush();
     expect(estimates()).toHaveLength(1);
@@ -681,7 +682,7 @@ describe('several jobs (Run as)', () => {
     await withScenes();
     expect(questions()).toHaveLength(1);
     expect(button('Review').disabled).toBe(false);
-    expect(button('Start 3 jobs').title).not.toContain('measurement');
+    expect(tipOf(button('Start 3 jobs'))).not.toContain('measurement');
     expect(step().textContent).toContain('Not measured.');
     expect(tipsOf(step())).toContain('The measurement failed');
     statistics = (body) => json({ bands: bandsOf(body as never, sceneOf(body as never)), exact: true, factor: 1 });

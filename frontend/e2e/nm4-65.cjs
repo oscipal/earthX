@@ -123,7 +123,7 @@ async function check(browser, { theme, viewport }) {
   await page.mouse.up();
   if ((await order()) !== 'two,dem,one,res') problems.push(`Escape did not drop nothing: ${await order()}`);
   // ▲/▼ stay for the keyboard.
-  await page.locator('.layer-row').nth(1).locator('button[title="Move up"]').click();
+  await page.locator('.layer-row').nth(1).locator('button[data-tip="Move up"]').click();
   if ((await order()) !== 'dem,two,one,res') problems.push(`▲ after the drag: ${await order()}`);
   // The map follows the list: the stacking order is the list's (NM4-59).
   const stacked = await state(page, "s.layers.map((l) => l.id).join()");
@@ -182,7 +182,7 @@ async function check(browser, { theme, viewport }) {
   const close = page.locator('.result-controls .close-x');
   if ((await close.count()) !== 1) problems.push('no close x in the settings of the layer');
   else {
-    if ((await close.getAttribute('title')) !== 'Close') problems.push(`tooltip of the x: ${await close.getAttribute('title')}`);
+    if ((await close.getAttribute('data-tip')) !== 'Close') problems.push(`tooltip of the x: ${await close.getAttribute('data-tip')}`);
     const colour = await close.evaluate((el) => getComputedStyle(el).color);
     const [r, g, b] = colour.match(/\d+/g).map(Number);
     if (!(r > g + 60 && r > b + 40)) problems.push(`the x is not red: ${colour}`);
@@ -215,7 +215,7 @@ async function check(browser, { theme, viewport }) {
   if (Math.abs(addBox.y + addBox.height / 2 - (select.y + select.height / 2)) > 3) problems.push('"Add band as layer" is not in the line of the band');
   if (Math.abs(addBox.x - removeBox.x) > 1.5) problems.push(`"Add band as layer" is not under the remove button: x=${addBox.x}, remove x=${removeBox.x}`);
   if (select.x + select.width > addBox.x + 0.5) problems.push('the band dropdown runs into the button');
-  if ((await add.getAttribute('title')) !== 'Add this band as a layer of its own') problems.push(`tooltip: ${await add.getAttribute('title')}`);
+  if ((await add.getAttribute('data-tip')) !== 'Add this band as a layer of its own') problems.push(`tooltip: ${await add.getAttribute('data-tip')}`);
   await shot('5-band-line');
   await add.click();
   const names = await page.$$eval('.layer-row .lm-name', (n) => n.map((x) => x.textContent));

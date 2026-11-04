@@ -51,7 +51,7 @@ export default function ColormapField({ value, onChange }: Props) {
           className={`btn vc-reverse${reversed ? ' on' : ''}`}
           aria-pressed={reversed}
           aria-label={REVERSE_TIP}
-          title={base === '' ? NO_REVERSE_TIP : REVERSE_TIP}
+          data-tip={base === '' ? NO_REVERSE_TIP : REVERSE_TIP}
           disabled={base === ''}
           onClick={() => onChange(withReverse(value, !reversed))}
         >

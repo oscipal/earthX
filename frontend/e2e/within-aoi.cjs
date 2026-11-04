@@ -186,7 +186,7 @@ async function check(browser, { theme, viewport }) {
   expect('the switch is not named "Filter within AOI only"', (await text(within)) === 'Filter within AOI only', await text(within));
   expect('a second switch', (await popup.locator('.within-aoi').count()) === 1);
   expect('the switch is not locked without AOI and dates', await locked());
-  expect('the tooltip of the locked switch', (await within.getAttribute('title')) === 'Draw an AOI and set a date range first', await within.getAttribute('title'));
+  expect('the tooltip of the locked switch', (await within.getAttribute('data-tip')) === 'Draw an AOI and set a date range first', await within.getAttribute('data-tip'));
   await within.locator('input').click({ force: true });
   expect('the locked switch went on', !(await within.locator('input').isChecked()));
   await shot('1-locked');
@@ -204,7 +204,7 @@ async function check(browser, { theme, viewport }) {
   await store((s) => s.getState().setDateTo('2026-07-31'));
   await button.click();
   expect('the switch is locked with an AOI and both dates', !(await locked()));
-  const tip = await within.getAttribute('title');
+  const tip = await within.getAttribute('data-tip');
   expect('the tooltip names the filters it changes', tip.includes('Cloud cover (classes 8, 9, 10; cloud shadows do not count), No data. Others are unchanged.'), tip);
   expect('the tooltip names a filter that does not depend on the area', !tip.includes('Satellite'), tip);
   expect('the tooltip names the limit', tip.includes('checks up to 500 scenes'), tip);
@@ -214,7 +214,7 @@ async function check(browser, { theme, viewport }) {
   await popup.locator('.advanced-top .close-x').click();
   await store((s) => s.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } }));
   await button.click();
-  expect('the tooltip for a point', (await within.getAttribute('title')) === 'Draw an area to use this filter', await within.getAttribute('title'));
+  expect('the tooltip for a point', (await within.getAttribute('data-tip')) === 'Draw an area to use this filter', await within.getAttribute('data-tip'));
   await popup.locator('.advanced-top .close-x').click();
   await store((s) => s.setState({ aoiPoint: null }));
 
@@ -350,7 +350,7 @@ async function check(browser, { theme, viewport }) {
   });
   await button.click();
   expect('the switch is not locked for too many points', await locked());
-  expect('the tooltip for too many points', (await within.getAttribute('title')) === 'The area has too many points for this filter', await within.getAttribute('title'));
+  expect('the tooltip for too many points', (await within.getAttribute('data-tip')) === 'The area has too many points for this filter', await within.getAttribute('data-tip'));
   await shot('10-too-many');
   await context.close();
   return { label, problems, requests, observed };

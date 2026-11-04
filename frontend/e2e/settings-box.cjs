@@ -182,7 +182,7 @@ async function measure(page) {
       display: at(heading('Display')),
       actions: at(heading('Actions')),
       colormapLocked: colormap ? colormap.disabled : null,
-      colormapTitle: field('Colormap')?.title ?? null,
+      colormapTitle: field('Colormap')?.getAttribute('data-tip') ?? null,
       outside: [...bar.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.right > base.right + 1 || r.left < base.x - 1); }).map((e) => e.className || e.tagName).slice(0, 4),
       bands: bottom ? rect(document.querySelector('.overlay.bottom')) : null,
       block: rect(bottom),

@@ -30,7 +30,7 @@ export default function LayerDownload({ layer, className = 'icon-btn sm', label,
   const text = label ? (<><DownloadIcon lead />{label}</>) : <DownloadIcon size={14} />;
   if (kind === 'zip' && layer.result) {
     return (
-      <a className={className} data-col={col} href={resultUrl(layer.result.jobID, RESULT_ZIP)} download rel="noopener noreferrer" title={ZIP_LABEL} aria-label={ZIP_LABEL}>
+      <a className={className} data-col={col} href={resultUrl(layer.result.jobID, RESULT_ZIP)} download rel="noopener noreferrer" data-tip={ZIP_LABEL} aria-label={ZIP_LABEL}>
         {text}
       </a>
     );
@@ -46,7 +46,7 @@ export default function LayerDownload({ layer, className = 'icon-btn sm', label,
       className={className}
       data-col={col}
       disabled={outcome === 'disabled' || indexBlock !== null || !canDownloadLayer(layer, datasets)}
-      title={
+      data-tip={
         outcome === 'disabled'
           ? 'Draw an AOI to download this layer'
           : indexBlock

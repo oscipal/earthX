@@ -17,6 +17,7 @@ import { useAppStore } from '../store';
 import type { Collection } from '../types';
 import LayerManager from './LayerManager';
 import ResultControls from './ResultControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -297,7 +298,7 @@ describe('"Apply" and "Save" of RGB, a range for each channel (UI-03d)', () => {
   it('keeps the ranges for RGB with "Save", as for a band, and for no other band', async () => {
     await openControls();
     typeAll([['0.05', '0.7'], ['0.04', '0.5'], ['0.02', '0.4']]);
-    expect(button('Save').title).toContain('this band');
+    expect(tipOf(button('Save'))).toContain('this band');
     act(() => button('Save').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     const job = useProcessingStore.getState().jobs[0];
     expect(job.bandRanges[RGB]).toMatchObject({ colormap: '', channels: [{ vmin: '0.05', vmax: '0.7' }, { vmin: '0.04', vmax: '0.5' }, { vmin: '0.02', vmax: '0.4' }] });
@@ -326,7 +327,7 @@ describe('"Apply" and "Save" of RGB, a range for each channel (UI-03d)', () => {
   it('puts the one range of the three bands back with the auto button', async () => {
     await openControls();
     typeAll([['5', '6'], ['1', '2'], ['3', '4']]);
-    const auto = [...container.querySelectorAll('button')].find((b) => /auto/i.test(b.textContent ?? '') || /auto/i.test(b.title))!;
+    const auto = [...container.querySelectorAll('button')].find((b) => /auto/i.test(b.textContent ?? '') || /auto/i.test(tipOf(b)))!;
     act(() => auto.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(values()).toEqual(['0.02', '0.7', '0.02', '0.7', '0.02', '0.7']);
   });

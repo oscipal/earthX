@@ -197,6 +197,11 @@ svg.lucide.icon-lead {
   cursor: not-allowed;
 }
 
+/* A locked control takes no pointer events, so that its reason shows in every browser (`TipLayer` finds it by the place of the pointer). */
+:is(button, input, select, textarea):disabled[data-tip] {
+  pointer-events: none;
+}
+
 .btn,
 .icon-btn {
   box-sizing: border-box;
@@ -3249,10 +3254,6 @@ button.pm-open:hover {
   grid-auto-flow: column;
   align-items: center;
   column-gap: var(--space-2);
-}
-.pp-seg:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 .pp-field textarea {
   width: 100%;

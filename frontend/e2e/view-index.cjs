@@ -183,7 +183,7 @@ async function checkDraw(browser, theme, viewport) {
   if (query.getAll('asset').join() !== 'green,nir') problems.push(`the tile reads the assets ${query.getAll('asset')}`);
   if (query.get('rescale') !== '-1,1' || query.get('colormap_name') !== 'rdbu') problems.push(`the tile asks for ${query.get('rescale')} in ${query.get('colormap_name')}`);
   if (query.getAll('item').join() !== SCENES.join()) problems.push(`the tile names the scenes ${query.getAll('item')}`);
-  if ((await field(page).getAttribute('title')) !== TIP_NDWI) problems.push(`the tooltip is ${await field(page).getAttribute('title')}`);
+  if ((await field(page).getAttribute('data-tip')) !== TIP_NDWI) problems.push(`the tooltip is ${await field(page).getAttribute('data-tip')}`);
   if ((await page.locator('.scene-view .vc-note').count()) !== 0) problems.push('a note at zoom 9');
   if ((await page.locator('.scene-view .vc-colormap select').inputValue()) !== 'rdbu') problems.push('the colormap field does not show rdbu');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_drawn.png`) });
@@ -205,7 +205,7 @@ async function checkDraw(browser, theme, viewport) {
   if ((await note.count()) !== 1) problems.push('no note when the map is zoomed out');
   else {
     if ((await note.textContent()) !== 'Zoom in to compute NDWI') problems.push(`the note says ${await note.textContent()}`);
-    if ((await note.getAttribute('title')) !== NOTE_TIP) problems.push(`the note's tooltip is ${await note.getAttribute('title')}`);
+    if ((await note.getAttribute('data-tip')) !== NOTE_TIP) problems.push(`the note's tooltip is ${await note.getAttribute('data-tip')}`);
   }
   if ((await field(page).locator('select').inputValue()) !== 'index:NDWI') problems.push('the choice did not stay');
   if (tiles.some((t) => t.includes('/tiles/') && !t.includes('op=band_math'))) problems.push('a raw band is drawn while the index waits for the zoom');
@@ -258,7 +258,7 @@ async function checkDraw(browser, theme, viewport) {
   // The dock of the layers lies over the left of the box at 1280 px: it is closed for the clicks on the box.
   await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: null }));
   if ((await field(page).locator('select').isDisabled()) !== true) problems.push('the dropdown "Band" of a layer of an index is free');
-  if ((await field(page).getAttribute('title')) !== 'This layer holds the index only') problems.push(`the dropdown of the layer says ${await field(page).getAttribute('title')}`);
+  if ((await field(page).getAttribute('data-tip')) !== 'This layer holds the index only') problems.push(`the dropdown of the layer says ${await field(page).getAttribute('data-tip')}`);
   if ((await field(page).locator('select').inputValue()) !== 'index:NDWI') problems.push('the layer does not show its index in the dropdown');
   // A layer of an index has no "Quick processing" (Otto, 3.11.2026).
   if ((await page.locator('.scene-view .vc-quick').count()) !== 0) problems.push('a layer of an index has "Quick processing"');
@@ -272,7 +272,7 @@ async function checkDraw(browser, theme, viewport) {
     useAppStore.setState({ dock: 'layers' });
   });
   const download = page.locator('.layer-row [data-col="download"]').first();
-  if ((await download.getAttribute('title')) !== 'Download the NDWI of the AOI crop, computed as a Processing job would') problems.push(`the ⇩ says ${await download.getAttribute('title')}`);
+  if ((await download.getAttribute('data-tip')) !== 'Download the NDWI of the AOI crop, computed as a Processing job would') problems.push(`the ⇩ says ${await download.getAttribute('data-tip')}`);
   await download.click({ force: true });
   const dialog = page.locator('.dialog-panel');
   await dialog.waitFor();

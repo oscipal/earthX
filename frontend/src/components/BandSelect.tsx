@@ -24,7 +24,7 @@ interface Props {
 
 export default function BandSelect({ label, value, options, onChange, className = '', title, disabled }: Props) {
   return (
-    <label className={`vc-field band-select ${className}`.trim()} title={title}>
+    <label className={`vc-field band-select ${className}`.trim()} data-tip={title}>
       <span>{label}</span>
       <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
         {options.map((option) =>

@@ -19,6 +19,7 @@ import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './components/ResultsEye';
 import { RESULTS_ON_TOP_TIP } from './components/ResultsToTop';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
+import { tipOf } from './fixtures/tips';
 
 vi.mock('./components/MapView', () => ({ default: () => null }));
 
@@ -308,7 +309,7 @@ describe('everything the list could do is in the panel', () => {
   });
 
   it('has no "Clear all" in its head', () => {
-    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => tipOf((b as HTMLButtonElement)))).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
   });
 
   it('goes back to the control menu when the search is cleared', () => {
@@ -335,7 +336,7 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
     expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (1/300)');
-    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => tipOf((b as HTMLButtonElement)))).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
     expect(useAppStore.getState().sections).toHaveLength(1);
     expect(symbol('results').getAttribute('aria-label')).toBe('Search results, 300');
     act(() => useAppStore.setState({ focusMode: false, cropToAoi: false }));
@@ -396,18 +397,18 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
 
   it('are on after a search, and the eye offers to hide them', () => {
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(HIDE_RESULTS_TIP);
   });
 
   it('go off and on with the eye, whose tooltip names the next step; the list does not change', () => {
     click(toggle());
     expect(useAppStore.getState().resultsOnMap).toBe(false);
-    expect(toggle().title).toBe(SHOW_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(SHOW_RESULTS_TIP);
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
     expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (0/300)');
     click(toggle());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(HIDE_RESULTS_TIP);
   });
 
   it('a scene ticked while they are off is ticked as usual, with the bar of the selection, and shows them (Otto, 28.10.2026)', () => {
@@ -415,7 +416,7 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     click(slot('results').querySelector('.result-row input')!);
     expect(useAppStore.getState().selectedIds).toHaveLength(1);
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(HIDE_RESULTS_TIP);
     expect(container.querySelector('.download-count strong')?.textContent).toBe('1');
     expect(container.querySelector('.download-count span')?.textContent).toBe('scene selected');
   });
