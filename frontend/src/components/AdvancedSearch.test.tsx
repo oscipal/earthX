@@ -380,7 +380,7 @@ describe('one dataset at a time, each with its own values', () => {
     pick('optical', 'radar');
     open();
     switchTo(1);
-    expect(text(box())).toBe('Radar imagery▾');
+    expect(text(box())).toBe('Radar imagery');
     expect(titles()).toEqual(['Relative orbit']);
     expect(headings()).toEqual([]);
     expect(options()).toHaveLength(0);

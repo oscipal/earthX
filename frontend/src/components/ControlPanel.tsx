@@ -11,6 +11,7 @@ import { totalItems } from '../sections';
 import { searchFiltersInvalid, useAppStore } from '../store';
 import AdvancedSearch from './AdvancedSearch';
 import ClearableInput from './ClearableInput';
+import { CoverageIcon, HistoryIcon, UploadIcon } from './icons';
 import Popover from './Popover';
 import Toolbar from './Toolbar';
 import { counted } from '../plural';
@@ -283,7 +284,9 @@ function AoiExtras() {
           disabled={uploading}
           hidden
         />
-        <span>⤒ {uploading ? 'Reading…' : 'Upload AOI'}</span>
+        <span>
+          <UploadIcon size={14} lead />{uploading ? 'Reading…' : 'Upload AOI'}
+        </span>
       </label>
       <button
         type="button"
@@ -292,7 +295,9 @@ function AoiExtras() {
         title={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
         onClick={() => applyLastAoi()}
       >
-        <span>↺ Last AOI</span>
+        <span>
+          <HistoryIcon size={14} lead />Last AOI
+        </span>
       </button>
     </div>
   );
@@ -545,12 +550,7 @@ function CoverageButton() {
           }
         }}
       >
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
-          <rect x="2" y="2" width="5" height="5" />
-          <rect x="9" y="2" width="5" height="5" fill="currentColor" fillOpacity="0.45" />
-          <rect x="2" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.2" />
-          <rect x="9" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.75" />
-        </svg>
+        <CoverageIcon size={14} />
         <span>Coverage</span>
       </button>
       <button

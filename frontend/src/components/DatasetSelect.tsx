@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 
+import { ChevronDownIcon, ChevronUpIcon } from './icons';
 import Popover from './Popover';
 
 export interface DatasetChoice {
@@ -61,7 +62,7 @@ export default function DatasetSelect({
         }}
       >
         {shown.content}
-        {several && <span className="rg-caret">{listOpen ? '▴' : '▾'}</span>}
+        {several && <span className="rg-caret">{listOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}</span>}
       </button>
       <Popover
         anchorRef={boxRef}

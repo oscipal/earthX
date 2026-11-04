@@ -168,7 +168,7 @@ describe('the panels', () => {
 
   it('leave the buttons "Zoom to selection", "Basemap" and "Light" at the top right', () => {
     const top = container.querySelector('.top-right')!;
-    expect([...top.querySelectorAll('button')].map((b) => b.textContent?.replace(/^\S+\s/u, ''))).toEqual(['Zoom to selection', 'Basemap', 'Light']);
+    expect([...top.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Zoom to selection', 'Basemap', 'Light']);
   });
 });
 

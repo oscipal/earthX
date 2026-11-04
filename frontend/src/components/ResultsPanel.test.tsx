@@ -310,7 +310,9 @@ describe('the dataset dropdown lies over the scenes (Otto, 30.09.2026)', () => {
     const list = container.querySelector('.dataset-select-list') as HTMLElement;
     expect(panel.contains(list)).toBe(false);
     expect(list.style.position).toBe('fixed');
-    expect(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"').replace('▴', '▾')).toBe(before);
+    // The caret of the box turns from down to up while the list is open; the rest stays.
+    const withoutCaret = (html: string) => html.replace(/<span class="rg-caret">.*?<\/span>/u, '');
+    expect(withoutCaret(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"'))).toBe(withoutCaret(before));
   });
 
   it('is worked with the keyboard: arrow down opens it at the chosen dataset, Escape closes nothing', () => {

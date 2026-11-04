@@ -5,6 +5,7 @@ import BasemapMenu from './components/BasemapMenu';
 import ControlPanel from './components/ControlPanel';
 import DownloadDialog from './components/DownloadDialog';
 import ColormapPicker from './components/ColormapPicker';
+import { MoonIcon, SunIcon, ZoomToSelectionIcon } from './components/icons';
 import Inspector from './components/Inspector';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
@@ -92,7 +93,7 @@ export default function App() {
           disabled={!canZoom}
           title="Zoom the map to fit the AOI, or the pinned layer images"
         >
-          ⤢ Zoom to selection
+          <ZoomToSelectionIcon lead />Zoom to selection
         </button>
         <BasemapMenu />
         <button
@@ -102,7 +103,7 @@ export default function App() {
           title={theme === 'tech' ? 'Switch to the light theme' : 'Switch to the dark theme'}
           aria-pressed={theme === 'normal'}
         >
-          {theme === 'tech' ? '☀ Light' : '☾ Dark'}
+          {theme === 'tech' ? <><SunIcon lead />Light</> : <><MoonIcon lead />Dark</>}
         </button>
       </div>
 

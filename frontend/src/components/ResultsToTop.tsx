@@ -1,5 +1,6 @@
 import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
+import { ArrowUpToLineIcon } from './icons';
 
 export const RESULTS_TO_TOP_TIP = 'Put search results on top of the layers';
 export const RESULTS_ON_TOP_TIP = 'Search results are on top of the layers already';
@@ -22,11 +23,7 @@ export default function ResultsToTop() {
         if (!onTop) toTop();
       }}
     >
-      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M5 4h14" />
-        <path d="M12 20V8" />
-        <path d="M7 13l5-5 5 5" />
-      </svg>
+      <ArrowUpToLineIcon size={14} />
     </button>
   );
 }

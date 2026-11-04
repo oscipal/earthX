@@ -158,7 +158,7 @@ describe('the row of dates', () => {
     for (const [label, direction] of [['Previous time step', 'left'], ['Next time step', 'right']] as const) {
       const button = arrow(label)!;
       expect(button.className).toBe('vc-step');
-      expect(button.querySelector('svg path')!.getAttribute('d')).toBe(direction === 'left' ? 'M9 2.5 4.5 7 9 11.5' : 'M5 2.5 9.5 7 5 11.5');
+      expect(button.querySelector(`svg.lucide-chevron-${direction}`)).not.toBeNull();
       expect(button.textContent).toBe('');
     }
     expect(CSS).not.toContain('.time-step');
