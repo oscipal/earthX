@@ -98,6 +98,21 @@ async function selectScene(page) {
   }, COLLECTION);
 }
 
+// Nothing in `root` overlaps another control or leaves it, and it does not scroll sideways.
+async function checkFit(page, root, what, problems) {
+  const layout = await page.evaluate((selector) => {
+    const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+    const el = document.querySelector(selector);
+    return { panel: box(el), scrolls: el.scrollWidth > el.clientWidth + 1, leaves: [...el.querySelectorAll('input, select, button')].map((e) => ({ what: e.tagName.toLowerCase() + ':' + (e.getAttribute('aria-label') || e.type), ...box(e) })).filter((c) => c.width > 0) };
+  }, root);
+  for (let i = 0; i < layout.leaves.length; i++) {
+    for (let j = i + 1; j < layout.leaves.length; j++) if (overlap(layout.leaves[i], layout.leaves[j])) problems.push(`${what}: ${layout.leaves[i].what} overlaps ${layout.leaves[j].what}`);
+    const leaf = layout.leaves[i];
+    if (leaf.x < layout.panel.x - 0.5 || leaf.x + leaf.width > layout.panel.x + layout.panel.width + 0.5) problems.push(`${what}: ${leaf.what} leaves its box`);
+  }
+  if (layout.scrolls) problems.push(`${what}: scrolls sideways`);
+}
+
 // 1. "Show" in the preview.
 async function checkShow(browser, theme, viewport) {
   const name = `show ${theme} ${viewport}`;
@@ -142,7 +157,10 @@ async function checkShow(browser, theme, viewport) {
     .find((q) => q.getAll('band').join() === 'red,green,blue');
   if (!colourStatistics) problems.push('no statistics asked for red,green,blue');
   else if (colourStatistics.getAll('asset').join() !== 'red,green,blue') problems.push(`the picture reads ${colourStatistics.getAll('asset')}, not red,green,blue`);
-  if ((await fields()).join() !== '0.02,0.7') problems.push(`the fields of RGB say ${await fields()}, not 0.02,0.7`);
+  // A range and a unit for each channel (UI-04 part 5), each with the one range of the three bands to begin with.
+  if ((await fields()).join() !== '0.02,0.7,0.02,0.7,0.02,0.7') problems.push(`the fields of RGB say ${await fields()}, not 0.02,0.7 for each channel`);
+  const units = () => page.$$eval('.pp-range select.vc-unit', (s) => s.map((x) => `${x.getAttribute('aria-label')}=${x.value}`).join());
+  if ((await units()) !== 'red range unit=value,green range unit=value,blue range unit=value') problems.push(`the units of RGB say ${await units()}`);
   if ((await colormapField()) !== 0) problems.push('RGB shows a colormap to choose');
   if ((await lockedColormap()) !== '— none —') problems.push(`the colormap of RGB is not a locked "— none —": ${await lockedColormap()}`);
   const rgb = await tileBands();
@@ -162,6 +180,15 @@ async function checkShow(browser, theme, viewport) {
   if (layout.scrolls) problems.push('the panel scrolls sideways');
   fs.mkdirSync(OUT, { recursive: true });
   await page.locator('section[aria-label="Preview on the map"]').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_rgb.png`) });
+
+  // A unit for each channel (UI-04 part 5): red and blue in percentiles fit as well, and the fields keep their pairs.
+  await page.selectOption('.pp-range select[aria-label="red range unit"]', 'percent');
+  await page.selectOption('.pp-range select[aria-label="blue range unit"]', 'percent');
+  if ((await fields()).join() !== '2,98,0.02,0.7,2,98') problems.push(`red and blue in percentiles say ${await fields()}`);
+  await checkFit(page, '.pp-range', 'the preview with percentiles', problems);
+  await page.locator('section[aria-label="Preview on the map"]').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_rgb_percent.png`) });
+  await page.selectOption('.pp-range select[aria-label="red range unit"]', 'value');
+  await page.selectOption('.pp-range select[aria-label="blue range unit"]', 'value');
 
   // A single band has its colormap again.
   await page.selectOption('.pp-show select', 'red');
@@ -251,6 +278,13 @@ async function checkLayer(browser, theme, viewport) {
   }
   if (view.theme !== THEMES[theme]) problems.push(`the app shows the theme ${view.theme}`);
   if (view.scrolls) problems.push('the view scrolls sideways');
+  // A unit for each channel (UI-04 part 5): green in percentiles shows its pair, the others keep their values, and all of it fits.
+  await page.selectOption('.result-controls select[aria-label="green range unit"]', 'percent');
+  const mixed = await page.$$eval('.result-controls input[type=number]', (i) => i.map((x) => x.value));
+  if (mixed.join() !== '0.02,0.7,2,98,0.02,0.7') problems.push(`green in percentiles says ${mixed}`);
+  await checkFit(page, '.result-controls', 'the view with percentiles', problems);
+  await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_view_percent.png`) });
+  await page.selectOption('.result-controls select[aria-label="green range unit"]', 'value');
   fs.mkdirSync(OUT, { recursive: true });
   await page.waitForTimeout(700);
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_view.png`) });

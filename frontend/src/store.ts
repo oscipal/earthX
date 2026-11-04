@@ -1685,7 +1685,7 @@ export interface AppState {
   // when it is over, as before once the job is restored (NM4-27).
   syncDeletedResults: (until: ReadonlyMap<string, number>, now: number) => void;
   // Draws a result layer another way: the tile URL is rebuilt, so the map makes a new source of it.
-  restyleResultLayer: (id: string, render: AppliedRender, percent?: Percent | null) => void;
+  restyleResultLayer: (id: string, render: AppliedRender, percent?: Percent | null, percentChannels?: (Percent | null)[]) => void;
   // "Save" of a result's settings: what "Apply" draws is the layer's own look from now on.
   saveResultLayer: (id: string) => void;
   // The settings are closed: a look that was applied and not saved goes, the layer is drawn as saved again.
@@ -2216,7 +2216,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     }),
   // "Apply": draws the result with this look. The look it was saved with is kept until "Save" or until the settings close.
-  restyleResultLayer: (id, render, percent) =>
+  restyleResultLayer: (id, render, percent, percentChannels) =>
     set((s) => ({
       layers: s.layers.map((l) => {
         if (l.id !== id || l.derived !== 'result' || !l.result) return l;
@@ -2226,17 +2226,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         const saved = l.result.savedTileUrl ?? was;
         // What the saved look was typed as, kept while another is applied (NM4-65 part 4).
         const savedPercent = l.result.savedTileUrl !== undefined ? l.result.savedPercent : (l.result.percent ?? null);
+        const savedChannels = l.result.savedTileUrl !== undefined ? l.result.savedPercentChannels : (l.result.percentChannels ?? null);
         // Back at the saved look: nothing is unsaved.
-        const { savedTileUrl: _kept, savedPercent: _keptPercent, percent: _percent, ...info } = l.result;
-        const typed = percent ? { percent } : {};
-        return { ...l, overlays, result: saved === undefined || saved === now ? { ...info, ...typed } : { ...info, ...typed, savedTileUrl: saved, savedPercent: savedPercent ?? null } };
+        const { savedTileUrl: _kept, savedPercent: _keptPercent, savedPercentChannels: _keptChannels, percent: _percent, percentChannels: _channels, ...info } = l.result;
+        const typed = { ...(percent ? { percent } : {}), ...(percentChannels ? { percentChannels } : {}) };
+        return {
+          ...l,
+          overlays,
+          result:
+            saved === undefined || saved === now
+              ? { ...info, ...typed }
+              : { ...info, ...typed, savedTileUrl: saved, savedPercent: savedPercent ?? null, savedPercentChannels: savedChannels ?? null },
+        };
       }),
     })),
   saveResultLayer: (id) =>
     set((s) => ({
       layers: s.layers.map((l) => {
         if (l.id !== id || !l.result) return l;
-        const { savedTileUrl: _saved, savedPercent: _savedPercent, ...info } = l.result;
+        const { savedTileUrl: _saved, savedPercent: _savedPercent, savedPercentChannels: _savedChannels, ...info } = l.result;
         return { ...l, result: info, saved: undefined };
       }),
     })),
@@ -2247,7 +2255,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const withOpacity = l.id === id && l.saved ? { ...l, opacity: l.saved.opacity, saved: undefined } : l;
         const saved = withOpacity.id === id ? withOpacity.result?.savedTileUrl : undefined;
         if (!withOpacity.result || saved === undefined) return withOpacity;
-        const { savedTileUrl: _saved, savedPercent, percent: _percent, ...info } = withOpacity.result;
+        const { savedTileUrl: _saved, savedPercent, savedPercentChannels, percent: _percent, percentChannels: _channels, ...info } = withOpacity.result;
         l = withOpacity;
         let first = true;
         const overlays = l.overlays.map((o) => {
@@ -2255,7 +2263,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           first = false;
           return { ...o, tileUrl: saved };
         });
-        return { ...l, overlays, result: { ...info, ...(savedPercent ? { percent: savedPercent } : {}) } };
+        return { ...l, overlays, result: { ...info, ...(savedPercent ? { percent: savedPercent } : {}), ...(savedPercentChannels ? { percentChannels: savedPercentChannels } : {}) } };
       }),
     })),
   closeResultView: () => set({ resultViewLayerId: null }),
@@ -2286,7 +2294,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       id: `C${nextBatchId()}0`,
       name: `${source.name} (copy)`,
       restore: shows ? { ...restore, indexOnly: true } : restore,
-      ...(source.result ? { result: { ...source.result, savedTileUrl: undefined, savedPercent: undefined } } : {}),
+      ...(source.result ? { result: { ...source.result, savedTileUrl: undefined, savedPercent: undefined, savedPercentChannels: undefined } } : {}),
     };
     // Just above the layer it is copied from, as a layer made from a band; then its settings are the ones open, and the layer it
     // comes from goes back to what it was saved with (closing its settings without "Save").

@@ -2,7 +2,7 @@
 // tile URL carries one `rescale` per channel, in this order; the look keeps them as one text, the pairs joined by `;`. Three equal
 // pairs are written as one, as before, so that a picture drawn alike is the same look and the same URL.
 
-import { percentOf, samePercent, valueAtPercent, type Percent } from './percentRange';
+import { DEFAULT_PERCENT, percentOf, samePercent, valueAtPercent, type Percent } from './percentRange';
 
 export const CHANNEL_NAMES = ['red', 'green', 'blue'] as const;
 export const CHANNEL_COUNT = CHANNEL_NAMES.length;
@@ -54,6 +54,23 @@ export function checkChannels(channels: readonly ChannelRange[]): { rescale: str
 
 // Three copies of one range: where a picture drawn with one range for all is set channel by channel.
 export const channelsOf = (vmin: string, vmax: string): ChannelRange[] => CHANNEL_NAMES.map(() => ({ vmin, vmax }));
+
+// A range without the ranges of single channels: where it is drawn on one band, only the first of them was ever meant for it.
+export function withoutChannels<T extends { channels?: unknown }>(range: T): Omit<T, 'channels'> {
+  const { channels: _channels, ...rest } = range;
+  return rest;
+}
+
+// The three ranges a colour picture shows for a range: its own where it has them, else the one range three times. A pair typed in
+// percentiles for all of them (a look of before UI-03e) stands on every channel until one is changed.
+export function channelsOfRange(range: { vmin: string; vmax: string; percent?: Percent; channels?: readonly ChannelRange[] }): ChannelRange[] {
+  const base = range.channels?.length === CHANNEL_COUNT ? [...range.channels] : channelsOf(range.vmin, range.vmax);
+  return range.percent && !base.some((channel) => channel.percent) ? base.map((channel) => ({ ...channel, percent: range.percent })) : base;
+}
+
+// "Auto-scale" of a colour picture: each channel typed in percentiles takes the usual pair, the others the measured range where there is one.
+export const channelsAutoScaled = (channels: readonly ChannelRange[], measured: { vmin: string; vmax: string } | null): ChannelRange[] =>
+  channels.map((channel) => (channel.percent ? { ...channel, percent: { ...DEFAULT_PERCENT } } : measured ? { vmin: measured.vmin, vmax: measured.vmax } : channel));
 
 // Each channel at the same two percentiles of its own values ("Enhance contrast": the 2nd and the 98th). `null` where the statistics
 // do not have three bands or one of them has no range there.

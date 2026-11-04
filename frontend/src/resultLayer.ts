@@ -4,7 +4,8 @@
 // state lives in `processingStore.ts` and `store.ts`.
 
 import type { MapLayer, ResultLayerInfo } from './layers';
-import { channelsOfRescale } from './channels';
+import { channelsOfRescale, percentsOfChannels, withoutChannels } from './channels';
+import type { Percent } from './percentRange';
 import { buildTileUrl } from './mapLayers';
 import { RGB, RGB_LABEL, startBand } from './processingBands';
 import { presetFor, presetRange, type IndexPreset } from './indexPresets';
@@ -148,8 +149,15 @@ export function ownRangeOf(
   return job.bandRanges[place === RGB ? RGB : (bands[place]?.name ?? '')] ?? null;
 }
 
-function drawnWith(range: PreviewRange): AppliedRender {
-  const rescale = rescaleOf(range);
+// What a layer keeps of the units a range was typed in: its one pair, or for a colour picture the pair of each channel typed in
+// percentiles (UI-04 part 5).
+export function typedOf(range: PreviewRange | null | undefined): { percent?: Percent; percentChannels?: (Percent | null)[] } {
+  const pairs = range?.channels ? percentsOfChannels(range.channels) : undefined;
+  return pairs ? { percentChannels: pairs } : range?.percent ? { percent: range.percent } : {};
+}
+
+function drawnWith(range: PreviewRange, colour: boolean): AppliedRender {
+  const rescale = rescaleOf(colour ? range : withoutChannels(range));
   return {
     ...('rescale' in rescale ? { rescale: rescale.rescale } : {}),
     ...(range.colormap ? { colormapName: range.colormap } : {}),
@@ -177,7 +185,7 @@ export function resultRender(
 ): AppliedRender {
   if (dataType === null || !FLOAT.test(dataType)) return {};
   const scale = scaleOf(stats);
-  const render = own ? drawnWith(own) : preset ? drawnWith(preset) : scale ? { rescale: `${scale.low},${scale.high}`, colormapName: scale.colormap } : drawnWith(panel);
+  const render = own ? drawnWith(own, colour) : preset ? drawnWith(preset, colour) : scale ? { rescale: `${scale.low},${scale.high}`, colormapName: scale.colormap } : drawnWith(panel, colour);
   if (!colour) return render;
   const { colormapName: _none, ...plain } = render;
   return plain;
@@ -201,7 +209,7 @@ export function rangeOfTileUrl(tileUrl: string): PreviewRange {
 // The same range and colormap in the shape of a request.
 export function renderOfRange(range: PreviewRange): AppliedRender | null {
   const rescale = rescaleOf(range);
-  return 'rescale' in rescale ? drawnWith(range) : null;
+  return 'rescale' in rescale ? drawnWith(range, true) : null;
 }
 
 // The tile URL of a result drawn another way: its style is the part after the first `&`
@@ -302,7 +310,7 @@ export function bandLayerOf(layer: MapLayer, id: string): MapLayer | null {
   const colour = band === RGB;
   const named = colour ? (info.colour ? RGB_LABEL : null) : (info.bands[band]?.name || `Band ${band + 1}`);
   if (named === null || (!colour && !info.bands[band])) return null;
-  const { bands: _bands, band: _band, colour: _colour, savedTileUrl: _unsaved, savedPercent: _unsavedPercent, ...rest } = info;
+  const { bands: _bands, band: _band, colour: _colour, savedTileUrl: _unsaved, savedPercent: _unsavedPercent, savedPercentChannels: _unsavedChannels, ...rest } = info;
   return {
     ...layer,
     id,

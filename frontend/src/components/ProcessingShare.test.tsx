@@ -160,6 +160,24 @@ describe('opening a link', () => {
     expect(window.location.search).toBe('?other=1');
   });
 
+  it('brings back a range and a unit for each channel of a colour picture, and one pair of percentiles', async () => {
+    const channels = [{ vmin: 0.05, vmax: 0.7, percent: { low: 2, high: 98 } }, { vmin: 0.04, vmax: 0.5 }, { vmin: 0.02, vmax: 0.4 }];
+    link = () => json({ order: ORDER, view: { ...VIEW, range: { vmin: 0.05, vmax: 0.7, colormap: '', channels } }, expires_at: EXPIRES });
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(draft().range).toEqual({
+      vmin: '0.05',
+      vmax: '0.7',
+      colormap: '',
+      channels: [{ vmin: '0.05', vmax: '0.7', percent: { low: '2', high: '98' } }, { vmin: '0.04', vmax: '0.5' }, { vmin: '0.02', vmax: '0.4' }],
+    });
+    expect(draft().rangeByHand).toBe(true);
+    link = () => json({ order: ORDER, view: { ...VIEW, range: { vmin: 1, vmax: 9, colormap: 'viridis', percent: { low: 2, high: 98 } } }, expires_at: EXPIRES });
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(draft().range).toEqual({ vmin: '1', vmax: '9', colormap: 'viridis', percent: { low: '2', high: '98' } });
+  });
+
   it('brings back the order without a job or a result, ready to be reviewed and started again', async () => {
     onAddress(`?permalink=${ID}`);
     await open();
@@ -453,6 +471,19 @@ describe('Share', () => {
     act(() => useProcessingStore.setState({ range: { vmin: '-1', vmax: '1', colormap: 'rdylgn' }, rangeByHand: true }));
     await click('Share');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toEqual({ vmin: -1, vmax: 1, colormap: 'rdylgn' });
+  });
+
+  it('keeps the percentiles a range was typed as', async () => {
+    act(() => useProcessingStore.setState({ range: { vmin: '1', vmax: '9', colormap: 'viridis', percent: { low: '2', high: '98' } }, rangeByHand: true }));
+    await click('Share');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toEqual({ vmin: 1, vmax: 9, colormap: 'viridis', percent: { low: 2, high: 98 } });
+  });
+
+  it('keeps no range of single channels where the map shows one band: only the first is meant for it', async () => {
+    const channels = [{ vmin: '0.05', vmax: '0.7', percent: { low: '2', high: '98' } }, { vmin: '0.04', vmax: '0.5' }, { vmin: '0.02', vmax: '0.4' }];
+    act(() => useProcessingStore.setState({ range: { vmin: '0.05', vmax: '0.7', colormap: 'viridis', channels }, rangeByHand: true }));
+    await click('Share');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toEqual({ vmin: 0.05, vmax: 0.7, colormap: 'viridis' });
   });
 
   it('is a button like "Review", close below it, and has no text under it', async () => {
