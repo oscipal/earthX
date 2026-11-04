@@ -105,9 +105,9 @@ describe('LayerManager', () => {
     });
 
     it('switches the layer of that row and no other', () => {
-      click(rows()[2].querySelector('.lm-eye'));
+      click(rows()[2].querySelector('[data-col="eye"]'));
       expect(flags()).toEqual(['one:1', 'two:1', 'three:0', 'four:1', 'five:1']);
-      click(rows()[2].querySelector('.lm-eye'));
+      click(rows()[2].querySelector('[data-col="eye"]'));
       expect(flags()).toEqual(['one:1', 'two:1', 'three:1', 'four:1', 'five:1']);
     });
 
@@ -115,15 +115,15 @@ describe('LayerManager', () => {
       click(rows()[3].querySelector('button[title="Move up"]'));
       click(rows()[2].querySelector('button[title="Move up"]'));
       expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['one', 'four', 'two', 'three', 'five']);
-      click(rows()[1].querySelector('.lm-eye')); // "four", now second
+      click(rows()[1].querySelector('[data-col="eye"]')); // "four", now second
       expect(flags()).toEqual(['one:1', 'four:0', 'two:1', 'three:1', 'five:1']);
       click(rows()[4].querySelector('button[title="Remove layer"]')); // "five"
-      click(rows()[3].querySelector('.lm-eye')); // "three"
+      click(rows()[3].querySelector('[data-col="eye"]')); // "three"
       expect(flags()).toEqual(['one:1', 'four:0', 'two:1', 'three:0']);
     });
 
     it('lands on the layers clicked in quick succession, each once', () => {
-      for (const i of [0, 4, 2, 0, 3, 4]) click(rows()[i].querySelector('.lm-eye'));
+      for (const i of [0, 4, 2, 0, 3, 4]) click(rows()[i].querySelector('[data-col="eye"]'));
       expect(flags()).toEqual(['one:1', 'two:1', 'three:0', 'four:0', 'five:1']);
     });
 

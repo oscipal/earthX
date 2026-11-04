@@ -61,7 +61,9 @@ describe('CloseButton', () => {
     expect(rule('.close-x')).toMatch(/width: 20px/u);
     expect(theme('tech')).toContain('--danger: #ff5a6e');
     expect(theme('normal')).toContain('--danger: #c62840');
-    expect(CSS).toMatch(/\.close-x:focus-visible[^{]*\{[^}]*outline: 2px solid var\(--focus\)/u);
+    // The one ring of every control (UI-04 part 3a): a button gets it from the rule for all of them, not from a rule of its own.
+    expect(CSS).toMatch(/:is\([^)]*\bbutton\b[^)]*\):focus-visible \{[^}]*outline: 2px solid var\(--focus\)/u);
+    expect(CSS).not.toMatch(/\.close-x:focus-visible/u);
   });
 });
 

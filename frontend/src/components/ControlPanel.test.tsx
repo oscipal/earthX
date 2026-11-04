@@ -601,14 +601,13 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     return buttons().map((b) => b.querySelector('.dataset-toggle-title')!.textContent ?? '');
   }
   function searchButton(): HTMLButtonElement {
-    return container.querySelector('.control-footer .primary-btn') as HTMLButtonElement;
+    return container.querySelector('.control-footer .btn.primary') as HTMLButtonElement;
   }
 
   it('lists every dataset as a toggle button, the picked ones pressed', () => {
     setUp(['optical']);
     expect(titles()).toEqual(['Optical imagery', 'Elevation model', 'Broken data']);
     expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
-    expect(buttons()[0].classList.contains('active')).toBe(true);
     expect(container.textContent).not.toContain('selected');
   });
 
@@ -774,14 +773,14 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     const panel = container.querySelector('.control-panel')!;
     const scroll = panel.querySelector('.control-scroll')!;
     const footer = panel.querySelector('.control-footer')!;
-    expect(footer.querySelector('.primary-btn')).not.toBeNull();
-    expect(scroll.querySelector('.primary-btn')).toBeNull();
+    expect(footer.querySelector('.btn.primary')).not.toBeNull();
+    expect(scroll.querySelector('.btn.primary')).toBeNull();
     expect(scroll.querySelector('.dataset-list')).not.toBeNull();
   });
 
   describe('the "Coverage" button (M3-10, Otto 30.09.2026)', () => {
     function button(): HTMLButtonElement {
-      return container.querySelector('.coverage-btn') as HTMLButtonElement;
+      return container.querySelector('.coverage-button-wrap > .btn:first-child') as HTMLButtonElement;
     }
     function choices(): HTMLButtonElement[] {
       return [...container.querySelectorAll('.coverage-choice-item')] as HTMLButtonElement[];
@@ -792,8 +791,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(button()).not.toBeNull();
       const grid = container.querySelector('.dataset-list')!;
       expect(grid.nextElementSibling?.classList.contains('coverage-button-wrap')).toBe(true);
-      expect(grid.querySelector('.coverage-btn')).toBeNull();
-      expect(container.querySelector('.control-footer .coverage-btn')).toBeNull();
+      expect(grid.querySelector('.coverage-button-wrap')).toBeNull();
+      expect(container.querySelector('.control-footer .coverage-button-wrap')).toBeNull();
       expect(button().textContent).toBe('Coverage');
     });
 
@@ -825,7 +824,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     });
 
     it('"Hide coverage" is on only while a coverage map is shown, and hides it', () => {
-      const clear = () => container.querySelector('.coverage-clear-btn') as HTMLButtonElement;
+      const clear = () => container.querySelector('.coverage-button-wrap > .btn:nth-child(2)') as HTMLButtonElement;
       setUp(['optical']);
       expect(clear().textContent).toBe('Hide coverage');
       expect(clear().disabled).toBe(true);

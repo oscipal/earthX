@@ -272,7 +272,7 @@ describe('the labels of the bar (UI-01g)', () => {
     show();
     for (const b of container.querySelectorAll('button')) {
       expect(b.getAttribute('style')).toBeNull();
-      expect(['primary-btn', 'ghost-btn']).toContain(b.className);
+      expect(['btn primary', 'btn']).toContain(b.className);
     }
   });
 });

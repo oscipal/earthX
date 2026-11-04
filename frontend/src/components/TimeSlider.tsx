@@ -65,12 +65,12 @@ export default function TimeSlider() {
       {index === null ? '' : name(index)}
     </span>
   );
-  // The buttons of the stepper in the view of an image (`ViewerControls`): the same round button with the same chevron.
+  // The buttons of the stepper in the view of an image (`ViewerControls`): the same icon button with the same chevron.
   const arrow = (index: number | null, label: string, direction: 'left' | 'right') =>
     index === null ? (
-      <span className="vc-step gone" aria-hidden="true" />
+      <span className="icon-btn gone" aria-hidden="true" />
     ) : (
-      <button type="button" className="vc-step" title={`${label}: ${name(index)}`} aria-label={label} onClick={() => go(index)}>
+      <button type="button" className="icon-btn" title={`${label}: ${name(index)}`} aria-label={label} onClick={() => go(index)}>
         {direction === 'left' ? <ChevronLeftIcon /> : <ChevronRightIcon />}
       </button>
     );
@@ -93,7 +93,7 @@ export default function TimeSlider() {
       <div className="time-controls">
         <button
           type="button"
-          className="play-btn"
+          className="icon-btn"
           onClick={() => {
             // Playing shows the steps on the map: with the results hidden, "Play" shows them again (Otto, 30.10.2026).
             if (!playing && !resultsOnMap) toggleResultsOnMap();

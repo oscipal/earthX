@@ -490,7 +490,7 @@ describe('Share', () => {
     await click('Share');
     expect(button('Copy link')).toBeUndefined();
     const copy = icon('Copy link')!;
-    expect(copy.className).toBe('copy-btn');
+    expect(copy.className).toBe('icon-btn sm quiet');
     expect(copy.title).toBe('Copy link');
     const glyph = copy.innerHTML;
     await clickIcon('Copy link');
@@ -503,7 +503,7 @@ describe('Share', () => {
     const confirm = vi.spyOn(window, 'confirm');
     await click('Share');
     const cross = icon('Delete link')!;
-    expect([cross.className, cross.title, cross.textContent, cross.querySelector('svg.lucide-trash-2') !== null]).toEqual(['delete-btn', 'Delete link', '', true]);
+    expect([cross.className, cross.title, cross.textContent, cross.querySelector('svg.lucide-trash-2') !== null]).toEqual(['icon-btn sm danger', 'Delete link', '', true]);
     expect(button('Delete link')).toBeUndefined();
     await clickIcon('Delete link');
     expect(confirm).not.toHaveBeenCalled();

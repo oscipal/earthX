@@ -90,7 +90,7 @@ describe('the opacity slider in the settings of a layer', () => {
   });
 
   it('keeps a visible focus ring now that the frame is gone', () => {
-    expect(CSS).toMatch(/\.vc-field input:focus-visible[^{]*\{[^}]*outline: 2px solid var\(--focus\)/u);
+    expect(CSS).toMatch(/:is\([^)]*\binput\b[^)]*\):focus-visible \{[^}]*outline: 2px solid var\(--focus\)/u);
   });
 });
 

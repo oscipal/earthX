@@ -88,7 +88,7 @@ export default function App() {
       <div className={`overlay top-right${processingOpen ? ' beside-sheet' : ''}`}>
         <button
           type="button"
-          className="panel zoom-btn"
+          className="panel btn"
           onClick={() => zoomToView()}
           disabled={!canZoom}
           title="Zoom the map to fit the AOI, or the pinned layer images"
@@ -98,10 +98,9 @@ export default function App() {
         <BasemapMenu />
         <button
           type="button"
-          className="panel zoom-btn"
+          className="panel btn"
           onClick={() => toggleTheme()}
           title={theme === 'tech' ? 'Switch to the light theme' : 'Switch to the dark theme'}
-          aria-pressed={theme === 'normal'}
         >
           {theme === 'tech' ? <><SunIcon lead />Light</> : <><MoonIcon lead />Dark</>}
         </button>

@@ -140,7 +140,7 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
               </span>{' '}
               <button
                 type="button"
-                className="lm-btn"
+                className="btn"
                 disabled={!!blocked || run?.state === 'starting' || orderStands(job)}
                 title={blocked ?? 'Merge the scenes of this pass into one file, as a job'}
                 onClick={() => void start(index, pass)}

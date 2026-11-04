@@ -42,7 +42,7 @@ function hardLengths(value: string): string[] {
 }
 
 // Walks the sheet by braces: the rules in a `@media` block are read like the others, comments are dropped.
-// `hardValues('.ghost-btn { padding: 5px }', ['.ghost-btn'])` is `['.ghost-btn { padding: 5px }']`.
+// `hardValues('.btn { padding: 5px }', ['.btn'])` is `['.btn { padding: 5px }']`.
 export function hardValues(css: string, selectors: readonly string[]): string[] {
   const text = css.replace(/\/\*[\s\S]*?\*\//gu, '');
   const found: string[] = [];

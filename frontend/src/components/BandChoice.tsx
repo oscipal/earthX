@@ -50,10 +50,10 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
         <span className="hint-text">
           {bands.length} of {table.length}
         </span>
-        <button type="button" className="lm-btn dialog-choice-btn" disabled={disabled} onClick={() => setBands(table.map((band) => band.asset))}>
+        <button type="button" className="btn" disabled={disabled} onClick={() => setBands(table.map((band) => band.asset))}>
           All
         </button>
-        <button type="button" className="lm-btn dialog-choice-btn" disabled={disabled} onClick={() => setBands([])}>
+        <button type="button" className="btn" disabled={disabled} onClick={() => setBands([])}>
           None
         </button>
       </div>

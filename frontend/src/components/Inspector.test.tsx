@@ -203,7 +203,7 @@ describe('the places', () => {
     act(() => root.render(<Inspector />));
     openView();
     const [one, two] = [...aside()!.querySelector('.vc-head')!.children].map((row) => [...row.children].map((el) => el.className));
-    expect(one).toEqual(['vc-title', 'pp-badge vc-temporary', 'vc-eye', 'close-x']);
+    expect(one).toEqual(['vc-title', 'pp-badge vc-temporary', 'icon-btn', 'close-x']);
     // "Copy original scene name" ends the row of the date (Otto, 3.11.2026).
     expect(two).toEqual(['vc-stepper', 'vc-scene-names']);
   });
@@ -214,8 +214,8 @@ describe('the places', () => {
     openPinnedView();
     const row = aside()!.querySelector('.insp-row2')!;
     expect(row.querySelector('.vc-step-text')!.textContent).toBe('2026-07-01');
-    expect(row.querySelectorAll('.vc-step')).toHaveLength(0);
-    expect(aside()!.querySelector('.vc-eye, .vc-temporary')).toBeNull();
+    expect(row.querySelectorAll('button[aria-label$=" image"]')).toHaveLength(0);
+    expect(aside()!.querySelector('.vc-head button[aria-label$=" image"], .vc-temporary')).toBeNull();
     openResult([result('R1', {}), result('R2')]);
     act(() => useAppStore.setState({ layers: [{ ...result('R1'), date: '2026-08-09' }, result('R2')] }));
     expect(aside()!.querySelector('.insp-row2 .vc-step-text')!.textContent).toBe('2026-08-09');
@@ -408,7 +408,7 @@ describe('what does not apply is locked, with its reason', () => {
     expect(state().viewOpacity).toBe(0.4);
     expect(slider().title).toBe('Opacity 40%');
     // The eye of the view is there and works too.
-    click(aside()!.querySelector('.vc-eye'));
+    click(aside()!.querySelector('.vc-head button[aria-label$=" image"]'));
     expect(state().showDownloaded).toBe(false);
     click(aside()!.querySelector('.vc-head .close-x'));
     expect(state().viewOpacity).toBe(1);
@@ -536,10 +536,10 @@ describe('the download of a layer', () => {
     expect(own.getAttribute('href')).toBe(row.getAttribute('href'));
     expect(own.title).toBe(row.title);
     expect(own.getAttribute('aria-label')).toBe(row.getAttribute('aria-label'));
-    expect(row.className).toBe('lm-btn');
+    expect(row.className).toBe('icon-btn sm');
     expect(row.querySelector('svg.lucide-download')).not.toBeNull();
     expect(row.textContent).toBe('');
-    expect(own.className).toBe('ghost-btn');
+    expect(own.className).toBe('btn');
   });
 
   it('answers like its row: the originals of a COG layer, and locked where a source with no file needs an AOI', () => {
@@ -721,14 +721,14 @@ describe('the actions of a layer', () => {
     expect(state().layers[0].name).toBe('River bend');
     expect(container.querySelector('.inspector .vc-title')!.textContent).toBe('River bend · 2026-07-01');
     expect(container.querySelector('.layer-row .lm-name')!.textContent).toBe('River bend · 2026-07-01');
-    click(container.querySelector('.inspector .vc-pencil'));
+    click(container.querySelector('.inspector button[aria-label="Rename layer"]'));
     expect(nameField()).not.toBeNull();
   });
 
   it('refuses an empty name: the layer keeps the one it had', () => {
     act(() => root.render(<Inspector />));
     openResult();
-    click(container.querySelector('.inspector .vc-pencil'));
+    click(container.querySelector('.inspector button[aria-label="Rename layer"]'));
     rename('   ');
     expect(state().layers[0].name).toBe('Result R1');
     expect(state().renameLayer('R1', '')).toBe(false);
@@ -740,7 +740,7 @@ describe('the actions of a layer', () => {
   it('has no rename in the view of the search, which is no layer', () => {
     act(() => root.render(<Inspector />));
     openView();
-    expect(container.querySelector('.inspector .vc-pencil, .inspector .vc-title-btn')).toBeNull();
+    expect(container.querySelector('.inspector button[aria-label="Rename layer"], .inspector .vc-title-btn')).toBeNull();
   });
 
   it('removes the layer by the bin, as the layer manager does: the view of a pinned layer stays as a temporary picture', () => {

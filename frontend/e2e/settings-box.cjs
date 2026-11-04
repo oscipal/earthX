@@ -192,7 +192,7 @@ async function measure(page) {
       window: { w: window.innerWidth, h: window.innerHeight },
       // The fields and the buttons with words, in the bar and in the bar of the selection (not the switch of the range, an icon or the grip).
       controls: [...document.querySelectorAll('aside.inspector, .overlay.bottom')]
-        .flatMap((root) => [...root.querySelectorAll('select:not(.vc-unit), input[type="number"], input[type="text"], .ghost-btn, .primary-btn, .pp-seg')])
+        .flatMap((root) => [...root.querySelectorAll('select:not(.vc-unit), input[type="number"], input[type="text"], .btn, .btn.primary, .pp-seg')])
         .filter((e) => e.getBoundingClientRect().height > 0)
         .map((e) => ({ name: (e.textContent || e.getAttribute('aria-label') || e.tagName).trim().slice(0, 24), h: round(e.getBoundingClientRect().height) })),
       // The fields of the bar, one line each: exactly as high as the token.

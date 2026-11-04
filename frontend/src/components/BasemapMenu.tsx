@@ -40,7 +40,7 @@ export default function BasemapMenu() {
       <button
         ref={button}
         type="button"
-        className="panel zoom-btn basemap-btn"
+        className="panel btn basemap-btn"
         aria-haspopup="menu"
         aria-expanded={open}
         title="Basemap, overlays and projection"

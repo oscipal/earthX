@@ -93,7 +93,7 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
       <button
         type="button"
         ref={button}
-        className="pm-icon"
+        className="icon-btn pm-icon"
         aria-haspopup="menu"
         aria-expanded={mode !== 'closed'}
         aria-label={`Actions for ${name}`}
@@ -293,7 +293,7 @@ function Meter({ state, progress }: { state: JobState; progress?: number }) {
 // The restore icon at the place of the download: the deleted job comes back. Its tooltip says until when that works.
 function RestoreButton({ name, until, busy, onRestore }: { name: string; until: string; busy: boolean; onRestore: () => void }) {
   return (
-    <button type="button" className="pm-icon" disabled={busy} aria-label={`Restore ${name}`} title={`Restore (possible until ${formatUntil(until)})`} onClick={onRestore}>
+    <button type="button" className="icon-btn pm-icon" disabled={busy} aria-label={`Restore ${name}`} title={`Restore (possible until ${formatUntil(until)})`} onClick={onRestore}>
       <ArchiveRestoreIcon />
     </button>
   );
@@ -304,7 +304,7 @@ function RestoreButton({ name, until, busy, onRestore }: { name: string; until: 
 export function RetryButton({ offered, name, tip, busy, onRetry }: { offered: boolean; name: string; tip: string; busy: boolean; onRetry: () => void }) {
   if (!offered) return <span className="pm-icon" aria-hidden="true" />;
   return (
-    <button type="button" className="pm-icon" disabled={busy} aria-label={`${tip}: ${name}`} title={tip} onClick={onRetry}>
+    <button type="button" className="icon-btn pm-icon" disabled={busy} aria-label={`${tip}: ${name}`} title={tip} onClick={onRetry}>
       <RetryIcon />
     </button>
   );
@@ -338,7 +338,7 @@ function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
 // empty name is not taken.
 function RenameButton({ what, name, onRename }: { what: 'job' | 'batch'; name: string; onRename: () => void }) {
   return (
-    <button type="button" className="pm-icon pm-edit" data-name={name} title={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
+    <button type="button" className="icon-btn quiet pm-icon pm-edit" data-name={name} title={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
       <PencilIcon size={14} />
     </button>
   );
@@ -354,13 +354,13 @@ function AddToLayers({ job, name }: { job: JobEntry; name: string }) {
   if (isLayer) {
     // `aria-disabled`, not `disabled`: the symbol stays reachable by keyboard, and so does the reason.
     return (
-      <button type="button" className="pm-icon has-tip" aria-disabled="true" data-tip={ALREADY_A_LAYER_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`}>
+      <button type="button" className="icon-btn pm-icon has-tip" aria-disabled="true" data-tip={ALREADY_A_LAYER_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`}>
         <PlusIcon />
       </button>
     );
   }
   return (
-    <button type="button" className="pm-icon" title={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
+    <button type="button" className="icon-btn pm-icon" title={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
       <PlusIcon />
     </button>
   );
@@ -539,7 +539,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
       <div className="pm-line" ref={line}>
         <button
           type="button"
-          className="pm-icon pm-chevron"
+          className="icon-btn pm-icon pm-chevron"
           aria-expanded={expanded}
           aria-controls={listId}
           aria-label={expanded ? `Fold up ${batch.title}` : `Show the parts of ${batch.title}`}
@@ -688,7 +688,7 @@ function FoldButton({ name, listId, collapsed, onToggle, count }: { name: string
   return (
     <button
       type="button"
-      className="pm-icon pm-fold"
+      className="icon-btn pm-icon pm-fold"
       aria-expanded={!collapsed}
       aria-controls={listId}
       aria-label={collapsed ? `Show ${name}, ${count}` : `Fold up ${name}`}
@@ -709,7 +709,7 @@ function GroupMenu({ group, empty, onRename, anchor }: { group: ShelfGroup; empt
     <div className="pm-menu">
       <button
         type="button"
-        className="pm-icon"
+        className="icon-btn pm-icon"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Actions for ${group.name}`}
@@ -951,7 +951,7 @@ export default function ProcessingManager() {
             </button>
           ))}
         </div>
-        <button type="button" className="ghost-btn" title="Make a group to put jobs in" onClick={() => setNaming(true)}>
+        <button type="button" className="btn" title="Make a group to put jobs in" onClick={() => setNaming(true)}>
           <PlusIcon lead />New group
         </button>
       </div>

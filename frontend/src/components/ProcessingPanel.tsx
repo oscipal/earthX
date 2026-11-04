@@ -121,7 +121,7 @@ function RecipeLoader() {
 
   return (
     <div className="pp-recipe">
-      <label className={`ghost-btn pp-recipe-btn${busy ? ' disabled' : ''}`} title="Take the steps, the output bands and the data type from a recipe.json, onto the current selection">
+      <label className="btn" aria-disabled={busy || undefined} title="Take the steps, the output bands and the data type from a recipe.json, onto the current selection">
         <UploadIcon lead />Load recipe…
         <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => void pick(e)} />
       </label>
@@ -486,7 +486,7 @@ function PreviewSection({ view }: { view: OrderView }) {
             <div className="pp-buttons">
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 disabled={percentMode ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
                 title="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
                 onClick={() => {
@@ -498,7 +498,7 @@ function PreviewSection({ view }: { view: OrderView }) {
               </button>
               <button
                 type="button"
-                className="primary-btn vc-apply"
+                className="btn primary vc-apply"
                 disabled={percentMode ? percentApplied : 'problem' in valueRange}
                 onClick={() => (percentMode ? void applyRangePercent(typed).then(setPercentProblem) : applyRange())}
               >
@@ -525,7 +525,7 @@ function PreviewSection({ view }: { view: OrderView }) {
           <div className="vc-actions">
             <button
               type="button"
-              className="ghost-btn"
+              className="btn"
               disabled={!preview}
               title="Add this preview to the layers"
               onClick={() => pinPreview()}
@@ -805,7 +805,7 @@ export default function ProcessingPanel() {
                         <button
                           key={`${operator.op}/${operator.opVersion}`}
                           type="button"
-                          className="ghost-btn pp-add-btn"
+                          className="btn pp-add-btn"
                           disabled={!operator.form.supported || full || !!view.nameBlock}
                           title={why}
                           onClick={() => p.addStep(operator.op, operator.opVersion)}
@@ -842,7 +842,7 @@ export default function ProcessingPanel() {
           <div className="vc-actions">
             <button
               type="button"
-              className="ghost-btn"
+              className="btn"
               disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock}
               title={crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost'}
               onClick={() => void p.reviewOrder()}
@@ -851,7 +851,7 @@ export default function ProcessingPanel() {
             </button>
             <button
               type="button"
-              className="primary-btn"
+              className="btn primary"
               disabled={!startReady || p.starting || !!crsBlock || !!view.nameBlock}
               title={crsBlock ?? view.nameBlock ?? startTitle}
               onClick={() => void p.startJob()}

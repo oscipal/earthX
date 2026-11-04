@@ -100,7 +100,7 @@ async function check(browser, theme, viewport) {
   await panel.getByRole('button', { name: /Band math/ }).first().click();
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
   const review = () => panel.getByRole('button', { name: 'Review', exact: true }).click();
-  const start = () => panel.locator('button.primary-btn', { hasText: 'Start job' });
+  const start = () => panel.locator('button.btn.primary', { hasText: 'Start job' });
   const dialog = page.locator('[role="alertdialog"]');
   await review();
   await dialog.waitFor({ timeout: 10000 });
@@ -133,7 +133,7 @@ async function check(browser, theme, viewport) {
   await review();
   await dialog.waitFor();
   await dialog.getByRole('button', { name: 'Continue' }).click();
-  await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
+  await page.waitForSelector('.processing-panel button.btn.primary:not([disabled])', { timeout: 10000 });
   await start().click();
   await page.waitForTimeout(800);
   if ((await dialog.count()) !== 0) problems.push('the warning came again at "Start job"');

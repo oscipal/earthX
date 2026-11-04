@@ -199,8 +199,8 @@ async function runCase(browser, theme, viewport, results) {
     await page.locator('.inspector .vc-colormap .vc-reverse').click();
     if ((await store(page, (s) => s.pendingColormapName)) !== 'rocket_r') fail('reverse did not give rocket_r');
     await page.locator('.inspector .vc-colormap select').selectOption({ label: 'More…' });
-    await page.waitForSelector('aside.colormap-picker .vc-back');
-    await page.locator('aside.colormap-picker .vc-back').click();
+    await page.waitForSelector('aside.colormap-picker .icon-btn[aria-label="Back"]');
+    await page.locator('aside.colormap-picker .icon-btn[aria-label="Back"]').click();
     if (await page.$('aside.colormap-picker')) fail('"‹" did not go back');
     // 4: a pinned layer.
     await page.evaluate(async () => {
@@ -213,8 +213,8 @@ async function runCase(browser, theme, viewport, results) {
       useAppStore.getState().exitFocus();
       useAppStore.getState().selectLayer(layer.id);
     });
-    await page.waitForSelector('.inspector .vc-pencil');
-    if ((await page.$$('.inspector .vc-step')).length !== 0) fail('arrows beside the date of a layer');
+    await page.waitForSelector('.inspector button[aria-label="Rename layer"]');
+    if ((await page.$$('.inspector .insp-row2 button[aria-label$=" image"]')).length !== 0) fail('arrows beside the date of a layer');
     const actions = await page.$$eval('.inspector .vc-actions > *', (as) => as.map((a) => a.textContent || a.getAttribute('aria-label')));
     if (actions.join('|') !== 'Process|Download|Add current view to layers|Remove layer') fail(`layer actions: ${actions}`);
     // Otto, 3.11.2026: the bin as wide as the others, the copy read in full (two lines).
@@ -229,7 +229,7 @@ async function runCase(browser, theme, viewport, results) {
     await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: null }));
     b = await bounds(page, 'aside.inspector:not(.colormap-picker)');
     if (b.sideways || b.outside.length) fail(`layer: ${JSON.stringify(b)}`);
-    await page.locator('.inspector .vc-pencil').click();
+    await page.locator('.inspector button[aria-label="Rename layer"]').click();
     await page.fill('.inspector input[aria-label="Layer name"]', 'River bend');
     await page.keyboard.press('Enter');
     if ((await store(page, (s) => s.layers[0].name)) !== 'River bend') fail('rename');

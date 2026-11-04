@@ -14,7 +14,7 @@ import { DownloadIcon } from './icons';
 
 interface Props {
   layer: MapLayer;
-  // The class of the button or link; the manager's `lm-btn` by default.
+  // The class of the button or link; the manager's `icon-btn sm` by default.
   className?: string;
   // A word after the icon (the manager shows the icon only).
   label?: string;
@@ -23,7 +23,7 @@ interface Props {
   empty?: ReactNode;
 }
 
-export default function LayerDownload({ layer, className = 'lm-btn', label, col, empty = null }: Props) {
+export default function LayerDownload({ layer, className = 'icon-btn sm', label, col, empty = null }: Props) {
   const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasets = useAppStore((s) => s.datasets);
   const kind = layerDownloadKind(layer);

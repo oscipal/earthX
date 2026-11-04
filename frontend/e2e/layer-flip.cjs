@@ -182,11 +182,11 @@ async function check(browser, { theme, viewport }) {
 
   stage = 'eye';
   // A layer that is switched off is passed by.
-  await page.locator('.layer-row .lm-eye').nth(2).click();
+  await page.locator('.layer-row [data-col="eye"]').nth(2).click();
   await page.locator('.layer-row .lm-name').nth(1).click();
   await press('ArrowDown');
   if ((await store(page, 's.flipLayerId')) !== 'green') problems.push(`↓ went to the layer that is switched off: ${await store(page, 's.flipLayerId')}`);
-  await page.locator('.layer-row .lm-eye').nth(2).click();
+  await page.locator('.layer-row [data-col="eye"]').nth(2).click();
 
   stage = 'esc';
   // Esc ends it.

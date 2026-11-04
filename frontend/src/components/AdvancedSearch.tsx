@@ -223,7 +223,7 @@ export default function AdvancedSearch() {
       <button
         ref={buttonRef}
         type="button"
-        className={`ghost-btn advanced-btn${wrong ? ' wrong' : ''}`}
+        className={`btn advanced-btn${wrong ? ' wrong' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? dialogId : undefined}
@@ -290,7 +290,7 @@ export default function AdvancedSearch() {
             {(setOf(shown).length > 0 || searchWithin[shown.dataset.id] === true) && (
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 onClick={() => {
                   resetSearchFilters(shown.dataset.id);
                   // The button goes with the filters; the keyboard user stays in the pop-up.
@@ -302,7 +302,7 @@ export default function AdvancedSearch() {
             )}
             <button
               type="button"
-              className="primary-btn"
+              className="btn primary"
               onClick={() => {
                 close();
                 buttonRef.current?.focus();

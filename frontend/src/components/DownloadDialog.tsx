@@ -155,13 +155,13 @@ export default function DownloadDialog() {
               )}
             </div>
             <div className="dialog-actions">
-              <button type="button" className="lm-btn" onClick={close}>
+              <button type="button" className="btn" onClick={close}>
                 Close
               </button>
               {!started && (
                 <button
                   type="button"
-                  className="lm-btn primary"
+                  className="btn primary"
                   onClick={() => void confirm()}
                   disabled={downloading || waiting || block !== null || (inBrowser && originalLinks === null) || (!inBrowser && jobNote?.state !== 'ready' && jobNote?.state !== 'failed')}
                 >
@@ -194,7 +194,7 @@ export default function DownloadDialog() {
             <p className="hint-text">{skippedGroupsNotice}</p>
           </div>
           <div className="dialog-actions">
-            <button type="button" className="lm-btn primary" onClick={close}>
+            <button type="button" className="btn primary" onClick={close}>
               Close
             </button>
           </div>
@@ -301,12 +301,12 @@ export default function DownloadDialog() {
             {exportOffer && <ExportJobOffer key={exportOffer.id} offer={exportOffer} />}
           </div>
           <div className="dialog-actions">
-            <button type="button" className="lm-btn" onClick={close} disabled={downloading}>
+            <button type="button" className="btn" onClick={close} disabled={downloading}>
               Cancel
             </button>
             <button
               type="button"
-              className="lm-btn primary"
+              className="btn primary"
               onClick={() => void confirm()}
               disabled={
                 !req ||

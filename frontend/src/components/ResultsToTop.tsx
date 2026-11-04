@@ -15,7 +15,7 @@ export default function ResultsToTop() {
   return (
     <button
       type="button"
-      className="lm-eye results-to-top"
+      className="icon-btn sm"
       title={tip}
       aria-label={RESULTS_TO_TOP_TIP}
       aria-disabled={onTop || undefined}

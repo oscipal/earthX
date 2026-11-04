@@ -12,7 +12,7 @@ import { EXPIRED_TIP, formatUntil, jobState, useNowUntil } from './jobView';
 
 
 // The archive of a finished job as a link; once it expired, the link is gone and the reason is the tooltip.
-export function DownloadZip({ job, now, label, className = 'pm-icon' }: { job: JobEntry; now: number; label?: string; className?: string }) {
+export function DownloadZip({ job, now, label, className = 'icon-btn pm-icon' }: { job: JobEntry; now: number; label?: string; className?: string }) {
   const state = jobState(job, now);
   if (state.key === 'expired' && job.phase === 'successful') {
     return (

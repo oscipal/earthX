@@ -153,7 +153,7 @@ async function run(browser, { theme, viewport, name: caseName, delays, seconds, 
   }
   if (first === null) problems.push('the first step never came on the map');
 
-  await page.locator('.play-btn').dispatchEvent('click'); // in a narrow window the rail lies over the button, as it does in the app
+  await page.locator('.time-controls > button').dispatchEvent('click'); // in a narrow window the rail lies over the button, as it does in the app
   const t0 = Date.now();
   const samples = [];
   const labels = new Set();

@@ -254,7 +254,7 @@ export default function ViewerControls() {
           !compact && (
             <button
               type="button"
-              className={`vc-eye${showDownloaded ? '' : ' off'}`}
+              className={`icon-btn${showDownloaded ? '' : ' off'}`}
               title={showDownloaded ? 'Hide image' : 'Show image'}
               aria-label={showDownloaded ? 'Hide image' : 'Show image'}
               onClick={() => toggleDownloaded()}
@@ -344,7 +344,7 @@ export default function ViewerControls() {
               />
               <button
                 type="button"
-                className="ghost-btn vc-apply"
+                className="btn vc-apply"
                 aria-disabled={!changed || undefined}
                 title={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
                 onClick={() => {
@@ -355,7 +355,7 @@ export default function ViewerControls() {
               </button>
               <button
                 type="button"
-                className="primary-btn vc-save"
+                className="btn primary vc-save"
                 aria-disabled={!savable || undefined}
                 title={
                   savable
@@ -402,7 +402,7 @@ export default function ViewerControls() {
                     <button
                       key={preset.name}
                       type="button"
-                      className={`ghost-btn${on ? ' on' : ''}`}
+                      className={`btn${on ? ' on' : ''}`}
                       aria-pressed={on}
                       disabled={pinLoading}
                       title={`${presetTip(preset)} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
@@ -415,7 +415,7 @@ export default function ViewerControls() {
               {colour && (
                 <button
                   type="button"
-                  className={`ghost-btn${enhanced ? ' on' : ''}`}
+                  className={`btn${enhanced ? ' on' : ''}`}
                   aria-pressed={enhanced}
                   disabled={focusLoading}
                   title={enhanced ? 'Click again for the fields as they were before' : ENHANCE_RGB_TIP}
@@ -443,12 +443,12 @@ export default function ViewerControls() {
           <InspectorSection title="Actions">
             {/* In pairs (Otto, 2.11.2026): what to look at next, what to keep, what to download. */}
             <div className="vc-actions">
-              <button type="button" className="ghost-btn" title="Remove this view, show the search results and choose another scene" onClick={() => changeImage()}>
+              <button type="button" className="btn" title="Remove this view, show the search results and choose another scene" onClick={() => changeImage()}>
                 <ArrowLeftIcon lead />Change image
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 disabled={processBlock !== null}
                 title={processBlock ?? 'Build a processing job for the scenes of this view'}
                 onClick={() => void processFocusView()}
@@ -457,7 +457,7 @@ export default function ViewerControls() {
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 title={images.length > 1 ? 'Add the image that is shown to the layers' : 'Add this image to the layers'}
                 disabled={pinLoading}
                 onClick={() => addCurrentToLayers()}
@@ -466,7 +466,7 @@ export default function ViewerControls() {
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 title={images.length > 1 ? `Add all ${images.length} images of the view to the layers, one layer each` : 'There is only one image'}
                 disabled={pinLoading || images.length <= 1}
                 onClick={() => addAllToLayers()}
@@ -475,7 +475,7 @@ export default function ViewerControls() {
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 disabled={!aoi}
                 title={aoi ? 'Download the image shown at full resolution as the AOI crop, one file per group' : DRAW_AOI_TO_CROP}
                 onClick={() => openDownloadForView('crop')}
@@ -484,7 +484,7 @@ export default function ViewerControls() {
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 disabled={!originalsAllowed}
                 title={originalsAllowed ? originalsTitle(count > 1, shownDataset?.collection['earthx:access']?.cors === true, originalsSummary) : noOriginalsReason(shownDataset)}
                 onClick={() => openDownloadForView('originals')}

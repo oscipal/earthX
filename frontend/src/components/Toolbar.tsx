@@ -22,7 +22,7 @@ export default function Toolbar() {
         <button
           key={t.mode}
           type="button"
-          className={`tool-btn${toolMode === t.mode ? ' active' : ''}`}
+          className="btn tool-btn"
           title={t.hint}
           aria-pressed={toolMode === t.mode}
           onClick={() => setToolMode(toolMode === t.mode ? 'none' : t.mode)}
@@ -33,7 +33,7 @@ export default function Toolbar() {
       ))}
       <button
         type="button"
-        className="tool-btn ghost"
+        className="btn tool-wide"
         title={aoi ? 'Clear the AOI' : 'No AOI to clear'}
         aria-label="Clear AOI"
         disabled={!aoi}

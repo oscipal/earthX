@@ -127,7 +127,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       <Grip dnd={dnd} />
       <button
         type="button"
-        className={`lm-eye${shown ? '' : ' off'}`}
+        className={`icon-btn sm${shown ? '' : ' off'}`}
         data-col="eye"
         title={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP}
         aria-label={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP}
@@ -167,7 +167,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         </button>
       )}
       {/* The name is renamed here as in the head of the settings (Otto, 3.11.2026). */}
-      <button type="button" className="lm-btn lm-pencil" data-col="rename" title={locked ? LOCKED_LAYER_TIP : RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>
+      <button type="button" className="icon-btn sm quiet" data-col="rename" title={locked ? LOCKED_LAYER_TIP : RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>
         <PencilIcon size={14} />
       </button>
       <input
@@ -183,10 +183,10 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         disabled={locked}
         onChange={(e) => setOpacity(l.id, Number(e.target.value))}
       />
-      <button type="button" className="lm-btn" data-col="up" title={moveTip('up', index === 0)} aria-label="Move up" disabled={index === 0} onClick={() => move(l.id, 'up')}>
+      <button type="button" className="icon-btn sm" data-col="up" title={moveTip('up', index === 0)} aria-label="Move up" disabled={index === 0} onClick={() => move(l.id, 'up')}>
         <ArrowUpIcon size={14} />
       </button>
-      <button type="button" className="lm-btn" data-col="down" title={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move(l.id, 'down')}>
+      <button type="button" className="icon-btn sm" data-col="down" title={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move(l.id, 'down')}>
         <ArrowDownIcon size={14} />
       </button>
       {l.result && processBlock === NO_COPY_TEXT ? (
@@ -196,7 +196,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       ) : (
         <button
           type="button"
-          className="lm-btn"
+          className="icon-btn sm"
           data-col="process"
           disabled={processBlock !== null}
           title={processBlock ?? (l.result ? (l.result.expired ? EXPIRED_PROCESS_TEXT : PROCESS_RESULT_TEXT) : 'Process this layer')}
@@ -214,7 +214,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       ) : (
         <Slot col="note" />
       )}
-      <button type="button" className="lm-btn danger" data-col="remove" title={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(l.id)}>
+      <button type="button" className="icon-btn sm danger" data-col="remove" title={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(l.id)}>
         <TrashIcon size={14} />
       </button>
       {bands && bands.length > 1 && (
@@ -232,7 +232,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         />
       )}
       {bands && bands.length > 1 && !locked && l.result?.expired !== true && (
-        <button type="button" className="lm-btn lm-add-band" title={ADD_BAND_TIP} aria-label={ADD_BAND_TIP} onClick={() => addBand(l.id)}>
+        <button type="button" className="icon-btn sm lm-add-band" title={ADD_BAND_TIP} aria-label={ADD_BAND_TIP} onClick={() => addBand(l.id)}>
           <PlusIcon size={14} />
         </button>
       )}
@@ -253,10 +253,10 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
       </span>
       <Slot col="rename" />
       <Slot col="opacity" />
-      <button type="button" className="lm-btn" data-col="up" title={moveTip('up', first)} aria-label="Move up" disabled={first} onClick={() => move('up')}>
+      <button type="button" className="icon-btn sm" data-col="up" title={moveTip('up', first)} aria-label="Move up" disabled={first} onClick={() => move('up')}>
         <ArrowUpIcon size={14} />
       </button>
-      <button type="button" className="lm-btn" data-col="down" title={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move('down')}>
+      <button type="button" className="icon-btn sm" data-col="down" title={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move('down')}>
         <ArrowDownIcon size={14} />
       </button>
       <Slot col="process" />
@@ -272,7 +272,7 @@ function FlipToggle() {
   const on = useAppStore((s) => s.flipThrough);
   const set = useAppStore((s) => s.setFlipThrough);
   return (
-    <button type="button" className="lm-btn lm-flip" aria-pressed={on} title={FLIP_TIP} aria-label="Flip through layers" onClick={() => set(!on)}>
+    <button type="button" className="icon-btn sm lm-flip" aria-pressed={on} title={FLIP_TIP} aria-label="Flip through layers" onClick={() => set(!on)}>
       <ArrowUpDownIcon size={14} />
     </button>
   );

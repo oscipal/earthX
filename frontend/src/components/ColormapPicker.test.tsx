@@ -172,7 +172,7 @@ describe('"More…" and the list of all colormaps', () => {
     act(() => void picker()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(picker()).not.toBeNull();
-    const back = picker()!.querySelector<HTMLButtonElement>('.vc-back')!;
+    const back = picker()!.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!;
     expect(back.title).toBe('Back');
     expect(picker()!.querySelector('.close-x')).toBeNull();
     act(() => back.click());

@@ -1316,7 +1316,7 @@ describe('a batch', () => {
       withBatch([gone(1), failed(2), jobEntry(3, { batchId: BATCH, part: 'S3', phase: 'dismissed', status: null })]);
       mount();
       expect(all()).toBeNull();
-      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.split(' ')[0]);
+      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.replace(/^icon-btn /u, '').split(' ')[0]);
       const without = line();
       put({ jobs: [part(1), part(2)] });
       expect(all()).not.toBeNull();
@@ -1345,7 +1345,7 @@ describe('a batch', () => {
     it('is hidden above 25 GB where the sizes are known, with the reason as a ⚠ in its place, and shown at that size', () => {
       withBatch([part(1, { bytes: 13e9 }), part(2, { bytes: 12e9 + 1 })]);
       mount();
-      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.split(' ')[0]);
+      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.replace(/^icon-btn /u, '').split(' ')[0]);
       expect(all()).toBeNull();
       const warning = container.querySelector('.pm-row.batch .pm-line .pm-icon .tip.warn')!;
       expect(warning.getAttribute('data-tip')).toBe('Too large for one ZIP (over 25 GB); download parts separately.');
@@ -1840,8 +1840,9 @@ describe('the line of a job', () => {
     const edit = css.slice(css.indexOf('\n.pm-edit {') + 1);
     const rule = edit.slice(0, edit.indexOf('}'));
     expect(rule).toMatch(/grid-column: 2;\s*grid-row: 1;/u);
-    expect(rule).not.toMatch(/justify-self|background|z-index/u);
-    expect(rule).toContain('color: var(--muted)');
+    expect(rule).not.toMatch(/justify-self|background|z-index|color/u);
+    // The same quiet icon button as the pencil of a layer (UI-04 part 3a): its colour is the one of `.icon-btn.quiet`.
+    expect(css).toMatch(/\.icon-btn\.quiet,\s*\.icon-btn\.off \{\s*color: var\(--muted\)/u);
   });
 
   it('hides the titles where the status and the date stand under the title', () => {

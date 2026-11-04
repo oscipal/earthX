@@ -32,17 +32,17 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
     <div className="vc-actions">
       <button
         type="button"
-        className="ghost-btn"
+        className="btn"
         disabled={processBlock !== null}
         title={processBlock === NO_COPY_TEXT ? NO_COPY_TEXT : (processBlock ?? (layer.result ? (layer.result.expired ? EXPIRED_PROCESS_TEXT : PROCESS_RESULT_TEXT) : 'Process this layer'))}
         onClick={() => void processLayer(layer.id)}
       >
         <CogIcon lead />Process
       </button>
-      {layerDownloadKind(layer) !== null ? <LayerDownload layer={layer} className="ghost-btn" label="Download" /> : <span />}
+      {layerDownloadKind(layer) !== null ? <LayerDownload layer={layer} className="btn" label="Download" /> : <span />}
       <button
         type="button"
-        className="ghost-btn vc-copy"
+        className="btn vc-copy"
         disabled={locked}
         title={COPY_TIP}
         onClick={() => {
@@ -51,7 +51,7 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
       >
         <PlusIcon lead />{COPY_LABEL}
       </button>
-      <button type="button" className="ghost-btn danger vc-remove" title={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(layer.id)}>
+      <button type="button" className="btn danger vc-remove" title={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(layer.id)}>
         <TrashIcon />
       </button>
     </div>

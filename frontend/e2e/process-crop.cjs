@@ -118,8 +118,8 @@ async function check(browser, theme, viewport) {
     await panel.getByRole('button', { name: /Band math/ }).first().click();
     await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
     await panel.getByRole('button', { name: 'Review', exact: true }).click();
-    await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
-    await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+    await page.waitForSelector('.processing-panel button.btn.primary:not([disabled])', { timeout: 10000 });
+    await panel.locator('button.btn.primary', { hasText: 'Start job' }).click();
     await page.waitForTimeout(800);
     if (posted.length !== 1) problems.push(`${posted.length} orders were sent`);
     else {
@@ -130,8 +130,8 @@ async function check(browser, theme, viewport) {
     await panel.getByRole('button', { name: 'Whole scene' }).click();
     await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_crop_whole.png`) });
     await panel.getByRole('button', { name: 'Review', exact: true }).click();
-    await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
-    await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+    await page.waitForSelector('.processing-panel button.btn.primary:not([disabled])', { timeout: 10000 });
+    await panel.locator('button.btn.primary', { hasText: 'Start job' }).click();
     await page.waitForTimeout(800);
     if (posted.length !== 2) problems.push(`${posted.length} orders were sent after "Whole scene"`);
     else {
@@ -161,15 +161,15 @@ async function check(browser, theme, viewport) {
     await panel.getByRole('button', { name: /Band math/ }).first().click();
     await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
     await panel.getByRole('button', { name: 'Review', exact: true }).click();
-    await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
-    await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+    await page.waitForSelector('.processing-panel button.btn.primary:not([disabled])', { timeout: 10000 });
+    await panel.locator('button.btn.primary', { hasText: 'Start job' }).click();
     await page.waitForTimeout(800);
     if (posted.length !== 1 || JSON.stringify(posted[0].inputs[0].groups) !== '[["S2B_C"]]') problems.push(`"This pass only" sent ${JSON.stringify(posted.map((o) => o.inputs[0].groups))}`);
     await panel.getByRole('button', { name: 'All passes (2 jobs)' }).click();
     await panel.getByRole('button', { name: 'Review', exact: true }).click();
-    await page.waitForSelector('.processing-panel button.primary-btn:has-text("Start 2 jobs"):not([disabled])', { timeout: 10000 });
+    await page.waitForSelector('.processing-panel button.btn.primary:has-text("Start 2 jobs"):not([disabled])', { timeout: 10000 });
     await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_all.png`) });
-    await panel.locator('button.primary-btn', { hasText: 'Start 2 jobs' }).click();
+    await panel.locator('button.btn.primary', { hasText: 'Start 2 jobs' }).click();
     await page.waitForTimeout(1500);
     const groups = posted.slice(1).map((o) => JSON.stringify(o.inputs[0].groups)).sort();
     if (groups.join() !== '[["S2B_A","S2B_B"]],[["S2B_C"]]' || posted.slice(1).some((o) => !o.aoi)) problems.push(`"All passes" sent ${groups}`);
@@ -177,8 +177,8 @@ async function check(browser, theme, viewport) {
     const before = posted.length;
     await panel.getByRole('button', { name: 'Whole scene' }).click();
     await panel.getByRole('button', { name: 'Review', exact: true }).click();
-    await page.waitForSelector('.processing-panel button.primary-btn:has-text("Start 2 jobs"):not([disabled])', { timeout: 10000 });
-    await panel.locator('button.primary-btn', { hasText: 'Start 2 jobs' }).click();
+    await page.waitForSelector('.processing-panel button.btn.primary:has-text("Start 2 jobs"):not([disabled])', { timeout: 10000 });
+    await panel.locator('button.btn.primary', { hasText: 'Start 2 jobs' }).click();
     await page.waitForTimeout(1500);
     const whole = posted.slice(before);
     if (whole.length !== 2 || whole.some((o) => o.aoi) || whole.map((o) => JSON.stringify(o.inputs[0].groups)).sort().join() !== '[["S2B_A","S2B_B"]],[["S2B_C"]]') problems.push(`"Whole scene" with "All passes" sent ${JSON.stringify(whole.map((o) => [o.inputs[0].groups, !!o.aoi]))}`);

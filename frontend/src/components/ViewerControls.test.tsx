@@ -73,7 +73,7 @@ afterEach(() => {
 
 const head = () => container.querySelector('.vc-head')!;
 const title = () => container.querySelector('.vc-title') as HTMLElement;
-const eye = () => container.querySelector('.vc-eye') as HTMLButtonElement;
+const eye = () => container.querySelector('.vc-head button[aria-label$=" image"]') as HTMLButtonElement;
 const row = (name: 'vc-render' | 'vc-actions') => container.querySelector(`.${name}`)!;
 
 describe('the head', () => {
@@ -334,9 +334,9 @@ describe('"Save" of the view of a pinned layer', () => {
     const [auto, apply, saveButton] = [...container.querySelector('.vc-buttons')!.children] as HTMLButtonElement[];
     const format = (el: HTMLElement) => [...el.classList].filter((c) => !c.startsWith('vc-')).sort();
     expect(format(apply)).toEqual(format(auto));
-    expect(format(apply)).toEqual(['ghost-btn']);
-    expect(format(saveButton)).toEqual(['primary-btn']);
-    expect(container.querySelectorAll('.vc-buttons .primary-btn')).toHaveLength(1);
+    expect(format(apply)).toEqual(['btn']);
+    expect(format(saveButton)).toEqual(['btn', 'primary']);
+    expect(container.querySelectorAll('.vc-buttons .btn.primary')).toHaveLength(1);
   });
 
   it('opens with a change, keeps the look for the layer and is locked again', () => {

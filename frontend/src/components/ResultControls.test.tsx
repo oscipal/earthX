@@ -394,8 +394,8 @@ describe('"Apply" and "Save" of a result layer', () => {
     const [auto, apply, save] = [...container.querySelector('.result-controls .vc-buttons')!.children] as HTMLElement[];
     const format = (el: HTMLElement) => [...el.classList].filter((c) => !c.startsWith('vc-')).sort();
     expect(format(apply)).toEqual(format(auto));
-    expect(format(apply)).toEqual(['ghost-btn']);
-    expect(format(save)).toEqual(['primary-btn']);
+    expect(format(apply)).toEqual(['btn']);
+    expect(format(save)).toEqual(['btn', 'primary']);
   });
 
   it('are both locked while the fields hold what the layer draws and is saved with, with the reason as the tooltip', async () => {

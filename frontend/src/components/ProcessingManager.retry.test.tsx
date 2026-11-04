@@ -131,8 +131,8 @@ describe('the place of the symbol (Otto, 3.11.2026)', () => {
     const [first, second] = topRows().map(tail);
     expect(first[1].getAttribute('aria-label')).toMatch(/^Run again/u);
     expect(second[1].getAttribute('aria-label')).toBe('Download (ZIP)');
-    expect(first.map((e) => e.className.split(' ')[0])).toEqual(['pm-icon', 'pm-icon', 'pm-menu']);
-    expect(second.map((e) => e.className.split(' ')[0])).toEqual(['pm-icon', 'pm-icon', 'pm-menu']);
+    expect(first.map((e) => e.className.replace(/^icon-btn /u, '').split(' ')[0])).toEqual(['pm-icon', 'pm-icon', 'pm-menu']);
+    expect(second.map((e) => e.className.replace(/^icon-btn /u, '').split(' ')[0])).toEqual(['pm-icon', 'pm-icon', 'pm-menu']);
   });
 });
 

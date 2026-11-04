@@ -332,10 +332,8 @@ describe('the layout contract in index.css (UI-03b)', () => {
   });
 
   it('makes every control of the panel at least as high as a control, which is a finger high on touch and under 900 px', () => {
-    for (const selector of ['.pp-icon-btn']) {
-      expect(rule(selector)).toContain('height: var(--control-height)');
-      expect(rule(selector)).toContain('width: var(--control-height)');
-    }
+    // A button with only an icon is square and a control high (UI-04 part 3a: the one `.icon-btn`, no `.pp-icon-btn` of its own).
+    expect(css).toMatch(/(?<!,)\n\.icon-btn \{[^}]*\n  width: var\(--control-height\);\n  height: var\(--control-height\);/u);
     expect(rule('.pp-chip,\n.pp-seg')).toContain('min-height: var(--control-height)');
     expect(rule('.pp-details summary')).toContain('min-height: var(--control-height)');
     expect(rule('.pp-check')).toContain('min-height: var(--control-height)');

@@ -225,7 +225,7 @@ function LoadMore({ openId }: { openId: string | null }) {
   return (
     <div className="load-more">
       <span className="hint-text">More scenes may be available.</span>
-      <button type="button" className="ghost-btn" disabled={loading} onClick={() => void loadMore()}>
+      <button type="button" className="btn" disabled={loading} onClick={() => void loadMore()}>
         {loading ? 'Loading…' : 'Load more'}
       </button>
     </div>
@@ -245,7 +245,7 @@ export function AoiProgress({ datasetId }: { datasetId: string | null }) {
         {counts?.found ?? 0} found / {counts?.checked ?? 0} checked
       </span>
       {walking && (
-        <button type="button" className="ghost-btn aoi-stop" title="Stop checking. What is found stays." onClick={stop}>
+        <button type="button" className="btn aoi-stop" title="Stop checking. What is found stays." onClick={stop}>
           Stop
         </button>
       )}
@@ -314,7 +314,7 @@ function ClearResults() {
   return (
     <button
       type="button"
-      className="clear-results"
+      className="btn clear-results"
       title="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
       onClick={() => clearSearchResults()}
     >

@@ -126,7 +126,7 @@ describe('a layer opened from the layer manager', () => {
     // The place of the time step of the view holds the date of the layer and no arrows; no dataset box, no eye of the view: the layer has its own eye in the manager.
     expect(container.querySelector('.vc-step-text')!.textContent).toBe('2026-07-01');
     expect(container.querySelectorAll('.vc-step')).toHaveLength(0);
-    expect(container.querySelector('.vc-dataset, .vc-eye')).toBeNull();
+    expect(container.querySelector('.vc-dataset, .vc-head button[aria-label$=" image"]')).toBeNull();
   });
 
   // Otto, 1.11.2026 (NM4-54 part 5): the box of a layer of scenes is the box of a result: the fields, the opacity and the buttons in one place.

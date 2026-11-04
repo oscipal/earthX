@@ -55,7 +55,7 @@ export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy
             <button type="button" className="vc-title vc-title-btn" title={tip} onClick={() => setEditing(true)}>
               {title}
             </button>
-            <button type="button" className="vc-pencil" title={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
+            <button type="button" className="icon-btn sm quiet" title={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
               <PencilIcon />
             </button>
           </>
@@ -105,13 +105,13 @@ export function Stepper({ text, tip, previous, next, onKeyDown, single = false }
   }
   return (
     <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeyDown}>
-      <button type="button" className="vc-step" aria-label="Previous image" aria-disabled={previous.disabled || undefined} title={previous.title} onClick={previous.onClick}>
+      <button type="button" className="icon-btn" aria-label="Previous image" aria-disabled={previous.disabled || undefined} title={previous.title} onClick={previous.onClick}>
         <ChevronLeftIcon />
       </button>
       <span className="vc-step-text" title={tip}>
         {text}
       </span>
-      <button type="button" className="vc-step" aria-label="Next image" aria-disabled={next.disabled || undefined} title={next.title} onClick={next.onClick}>
+      <button type="button" className="icon-btn" aria-label="Next image" aria-disabled={next.disabled || undefined} title={next.title} onClick={next.onClick}>
         <ChevronRightIcon />
       </button>
     </div>

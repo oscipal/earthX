@@ -79,7 +79,7 @@ export default function ViewBar() {
       </span>
       <button
         type="button"
-        className="primary-btn"
+        className="btn primary"
         disabled={focusLoading || !aoi}
         title={
           aoi
@@ -92,7 +92,7 @@ export default function ViewBar() {
       </button>
       <button
         type="button"
-        className="ghost-btn"
+        className="btn"
         disabled={focusLoading}
         title={`View the whole selected scene${plural ? 's, merged,' : ''} at full resolution, tiled straight from the source`}
         onClick={() => enterFocus(false)}
@@ -101,7 +101,7 @@ export default function ViewBar() {
       </button>
       <button
         type="button"
-        className="ghost-btn"
+        className="btn"
         disabled={!aoi || openCount === 0}
         title={
           !aoi
@@ -114,7 +114,7 @@ export default function ViewBar() {
       </button>
       <button
         type="button"
-        className="ghost-btn"
+        className="btn"
         disabled={!originalsAllowed || openCount === 0}
         title={
           originalsAllowed
@@ -127,7 +127,7 @@ export default function ViewBar() {
       </button>
       <button
         type="button"
-        className="ghost-btn"
+        className="btn"
         disabled={processBlocked !== null || openCount === 0}
         title={processBlocked ?? (openCount === 0 ? onlyOpen ?? '' : `Build a processing job for the selected scene${openCount > 1 ? 's' : ''}${onlyOpen ? `. ${onlyOpen}` : ''}`)}
         onClick={() => openProcessing()}

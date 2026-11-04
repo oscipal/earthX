@@ -183,7 +183,7 @@ function PlaceSearchField() {
         />
         <button
           type="button"
-          className="tool-btn ghost"
+          className="btn"
           aria-busy={searching}
           disabled={searching || !query.trim()}
           title={searching ? 'Looking for the place…' : !query.trim() ? 'Type a place name first' : 'Find the place on the map'}
@@ -273,7 +273,7 @@ function AoiExtras() {
   return (
     <div className="aoi-extras">
       <label
-        className="tool-btn ghost"
+        className="btn"
         aria-busy={uploading}
         title="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
       >
@@ -290,7 +290,7 @@ function AoiExtras() {
       </label>
       <button
         type="button"
-        className="tool-btn ghost"
+        className="btn"
         disabled={!lastAoi}
         title={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
         onClick={() => applyLastAoi()}
@@ -396,7 +396,7 @@ function DatasetPicker() {
             <button
               key={d.id}
               type="button"
-              className={`dataset-toggle${picked ? ' active' : ''}`}
+              className="btn dataset-toggle"
               title={
                 d.viewable
                   ? [d.title, maturity, d.collection.description].filter(Boolean).join(' — ')
@@ -530,7 +530,7 @@ function CoverageButton() {
       <button
         ref={buttonRef}
         type="button"
-        className={`coverage-btn${showCoverage ? ' active' : ''}`}
+        className="btn"
         aria-pressed={showCoverage}
         aria-haspopup={picked.length > 1 ? 'menu' : undefined}
         aria-expanded={picked.length > 1 ? choosing : undefined}
@@ -555,7 +555,7 @@ function CoverageButton() {
       </button>
       <button
         type="button"
-        className="coverage-btn coverage-clear-btn"
+        className="btn"
         disabled={!showCoverage}
         title={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
         onClick={() => hideCoverage()}
@@ -667,7 +667,7 @@ export default function ControlPanel() {
       {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
       <div className="control-footer">
         <AdvancedSearch />
-        <button type="button" className="primary-btn" disabled={!canSearch} title={canSearch ? undefined : (searchBlock ?? undefined)} onClick={search}>
+        <button type="button" className="btn primary" disabled={!canSearch} title={canSearch ? undefined : (searchBlock ?? undefined)} onClick={search}>
           {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
         </button>
 

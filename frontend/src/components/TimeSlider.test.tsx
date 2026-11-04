@@ -125,7 +125,7 @@ describe('the labels of the time slider', () => {
   it('has the date only, and no "Loading…", when it is paused', () => {
     act(() => root.render(<TimeSlider />));
     act(() => useAppStore.setState({ playing: true }));
-    act(() => container.querySelector<HTMLButtonElement>('.play-btn')!.click());
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Pause"], button[aria-label="Play"]')!.click());
     expect(useAppStore.getState().playing).toBe(false);
     expect(shown()).toBe('2026-07-24');
     expect(container.querySelector('.time-count')?.textContent).toBe('2 / 3');
@@ -153,11 +153,11 @@ describe('the row of dates', () => {
     expect(cells()).toEqual(['2026-07-01', '2026-07-05', '', '2026-07-06', '', '2026-07-07', '']);
   });
 
-  it('has the round button and the chevron of the stepper in the view of an image, not a button of its own', () => {
+  it('has the icon button and the chevron of the stepper in the view of an image, not a button of its own', () => {
     at(3);
     for (const [label, direction] of [['Previous time step', 'left'], ['Next time step', 'right']] as const) {
       const button = arrow(label)!;
-      expect(button.className).toBe('vc-step');
+      expect(button.className).toBe('icon-btn');
       expect(button.querySelector(`svg.lucide-chevron-${direction}`)).not.toBeNull();
       expect(button.textContent).toBe('');
     }
@@ -186,7 +186,8 @@ describe('the row of dates', () => {
   it('shows the one date of a single step and no arrows', () => {
     act(() => useAppStore.setState({ groups: [SEVEN[0]], activeGroupIndex: 0, expandedGroupIndex: 0 }));
     expect(cells().filter(Boolean)).toEqual(['2026-07-07']);
-    expect(container.querySelectorAll('.vc-step:not(.gone)')).toHaveLength(0);
+    expect(arrow('Previous time step')).toBeNull();
+    expect(arrow('Next time step')).toBeNull();
   });
 
   it('goes one step to the older with "<" and one to the newer with ">", and the list follows', () => {
@@ -224,7 +225,7 @@ describe('the row of dates', () => {
     expect(CSS).toContain('container-type: inline-size');
     expect(rule('@container (max-width: 459px)')).toMatch(/\.time-end \{\s*visibility: hidden/u);
     expect(rule('@container (max-width: 319px)')).toMatch(/\.time-near \{\s*visibility: hidden/u);
-    expect(rule('@container (max-width: 319px)')).not.toMatch(/strong|\.vc-step/u);
+    expect(rule('@container (max-width: 319px)')).not.toMatch(/strong|\.icon-btn/u);
   });
 });
 
@@ -258,7 +259,7 @@ describe('playing and the results on the map', () => {
     act(() => useAppStore.setState({ playing: false, resultsOnMap: true }));
     vi.useRealTimers();
   });
-  const play = () => container.querySelector<HTMLButtonElement>('.play-btn')!;
+  const play = () => container.querySelector<HTMLButtonElement>('button[aria-label="Pause"], button[aria-label="Play"]')!;
 
   it('shows the results that are hidden when "Play" is pressed, and plays', () => {
     act(() => play().click());

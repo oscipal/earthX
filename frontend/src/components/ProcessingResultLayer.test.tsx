@@ -435,7 +435,7 @@ describe('the layer a result becomes', () => {
     // This job keeps no copy of its order (NM4-05b, Otto 31.10.2026): there is nothing to process, and nothing brings it back.
     expect(layerProcessBlock(layers()[0], [])).toBe(NO_COPY_TEXT);
     act(() => root.render(<LayerManager />));
-    expect(container.querySelector('.lm-btn[title="Process this layer"]')).toBeNull();
+    expect(container.querySelector('.icon-btn[title="Process this layer"]')).toBeNull();
     expect(button('Process layer')).toBeUndefined();
     const empty = container.querySelector('.layer-row [data-col="process"]');
     expect(empty?.tagName).toBe('SPAN');

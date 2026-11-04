@@ -63,7 +63,7 @@ const text = (el: Element | null) => el?.textContent ?? '';
 const field = (label: string) => container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
 const titles = () => [...container.querySelectorAll('.filter-title')].map((el) => text(el));
 const headings = () => [...container.querySelectorAll('.filter-group-title')].map((el) => text(el));
-const searchButton = () => container.querySelector<HTMLButtonElement>('.control-footer .primary-btn')!;
+const searchButton = () => container.querySelector<HTMLButtonElement>('.control-footer .btn.primary')!;
 const open = () => act(() => button()!.click());
 const key = (target: Element | Document, name: string) =>
   act(() => {

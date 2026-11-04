@@ -22,7 +22,7 @@ export default function ClearableInput({ value, onChange, onClear, clearLabel, c
       {value !== '' && !input.disabled && (
         <button
           type="button"
-          className="clear-btn"
+          className="icon-btn sm quiet clear-btn"
           aria-label={clearLabel}
           title={clearLabel}
           onClick={() => {

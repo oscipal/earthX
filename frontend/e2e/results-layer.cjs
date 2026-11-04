@@ -190,7 +190,7 @@ async function run(browser, { theme, viewport }) {
   // The eye of the layer manager, then the one of the results list.
   const eyes = [
     ['layers', resultsRow.locator('[data-col="eye"]')],
-    ['results', page.locator('.results-head .lm-eye[aria-pressed]')],
+    ['results', page.locator('.results-head [data-col="eye"][aria-pressed]')],
   ];
   for (let round = 0; round < 4; round++) {
     if (round === 3) slow = 400;

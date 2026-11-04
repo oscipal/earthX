@@ -157,7 +157,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
         {running && (
           <button
             type="button"
-            className="lm-btn"
+            className="btn"
             title="Stop the download. Files already saved stay."
             onClick={() => control.current?.abort()}
           >
@@ -167,7 +167,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
         {!running && failed && (
           <button
             type="button"
-            className="lm-btn"
+            className="btn"
             title="Load the scenes that did not finish again, each from the start."
             onClick={() => {
               retry.current = latest.current.flatMap((state, index) => (isRetryable(state) ? [index] : []));
@@ -210,7 +210,7 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
         {asks && (
           <button
             type="button"
-            className="lm-btn"
+            className="btn"
             disabled={!mergeAllowed}
             aria-pressed={merged}
             title={mergeAllowed ? 'One merged file per pass, made as a job on the platform' : noMerge}
@@ -222,7 +222,7 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
         {all.length > 1 && (
           <button
             type="button"
-            className="lm-btn"
+            className="btn"
             title="A text file with one address per line, for a download manager."
             onClick={() => saveLinkList(dataset.id, all)}
           >

@@ -22,7 +22,7 @@ const PANEL = [
   '.pm-detail-title', '.pm-title-text', '.pm-title-edit', '.pm-facts', '.pm-steps', '.pm-step-values',
   ...new Set(index.match(/\.pp-[a-z-]+/gu) ?? []),
 ].filter((selector) => selector !== '.pp-badge');
-const CHECKED_AREAS = ['.ghost-btn', '.primary-btn', '.close-x', '.inspector', ...PANEL, ...MANAGER] as const;
+const CHECKED_AREAS = ['.btn', '.icon-btn', '.close-x', '.inspector', ...PANEL, ...MANAGER] as const;
 
 const ROOT_TOKENS = [
   '--space-1', '--space-2', '--space-3', '--space-4', '--space-5', '--space-6',
@@ -36,7 +36,7 @@ const ROOT_TOKENS = [
 ];
 const THEME_TOKENS = [
   '--panel-bg', '--panel-border', '--accent', '--accent-2', '--text', '--muted', '--input-bg', '--glow', '--row-hover', '--map-bg',
-  '--line', '--line-soft', '--surface-2', '--danger', '--focus', '--channel-red', '--channel-green', '--channel-blue',
+  '--line', '--line-soft', '--surface-2', '--danger', '--focus', '--on-accent', '--channel-red', '--channel-green', '--channel-blue',
 ];
 
 // The declarations of the first block that opens with `selector {`.
@@ -102,60 +102,60 @@ describe('hard values in the checked areas of index.css', () => {
 });
 
 describe('hardValues', () => {
-  const areas = ['.ghost-btn'];
+  const areas = ['.btn'];
 
   it('reports one hard padding and nothing else', () => {
-    expect(hardValues('.ghost-btn { padding: 5px }', areas)).toEqual(['.ghost-btn { padding: 5px }']);
+    expect(hardValues('.btn { padding: 5px }', areas)).toEqual(['.btn { padding: 5px }']);
   });
 
   it('ignores tokens, zero and other units', () => {
-    const css = '.ghost-btn { padding: var(--space-2); margin: 0; gap: 0px; font-size: 1em; border-radius: 50%; width: 20px; }';
+    const css = '.btn { padding: var(--space-2); margin: 0; gap: 0px; font-size: 1em; border-radius: 50%; width: 20px; }';
     expect(hardValues(css, areas)).toEqual([]);
   });
 
   it('reports a hard length next to a token', () => {
-    expect(hardValues('.ghost-btn { padding: 4px var(--space-2) }', areas)).toHaveLength(1);
-    expect(hardValues('.ghost-btn { margin: -2px }', areas)).toHaveLength(1);
-    expect(hardValues('.ghost-btn { font-size: 0.75rem }', areas)).toHaveLength(1);
-    expect(hardValues('.ghost-btn { padding-left: 3px !important }', areas)).toHaveLength(1);
+    expect(hardValues('.btn { padding: 4px var(--space-2) }', areas)).toHaveLength(1);
+    expect(hardValues('.btn { margin: -2px }', areas)).toHaveLength(1);
+    expect(hardValues('.btn { font-size: 0.75rem }', areas)).toHaveLength(1);
+    expect(hardValues('.btn { padding-left: 3px !important }', areas)).toHaveLength(1);
   });
 
   it('lets a calculation with a token pass, not one without', () => {
-    expect(hardValues('.ghost-btn { padding: calc(var(--space-2) + 2px) }', areas)).toEqual([]);
-    expect(hardValues('.ghost-btn { padding: calc(4px + 2px) }', areas)).toHaveLength(1);
+    expect(hardValues('.btn { padding: calc(var(--space-2) + 2px) }', areas)).toEqual([]);
+    expect(hardValues('.btn { padding: calc(4px + 2px) }', areas)).toHaveLength(1);
   });
 
   it('reads every checked property and its longhands', () => {
-    const css = '.ghost-btn { margin-top: 1px; row-gap: 2px; border-top-left-radius: 3px; border-radius: 4px; }';
+    const css = '.btn { margin-top: 1px; row-gap: 2px; border-top-left-radius: 3px; border-radius: 4px; }';
     expect(hardValues(css, areas)).toHaveLength(4);
   });
 
   it('ignores a hard value in a comment', () => {
-    expect(hardValues('/* .ghost-btn { padding: 5px } */ .ghost-btn { /* padding: 6px; */ color: red }', areas)).toEqual([]);
+    expect(hardValues('/* .btn { padding: 5px } */ .btn { /* padding: 6px; */ color: red }', areas)).toEqual([]);
   });
 
   it('reads each selector of a list and the rules in a media query', () => {
-    expect(hardValues('.a, .ghost-btn:hover, .b { gap: 3px }', areas)).toEqual(['.ghost-btn:hover { gap: 3px }']);
+    expect(hardValues('.a, .btn:hover, .b { gap: 3px }', areas)).toEqual(['.btn:hover { gap: 3px }']);
     expect(hardValues('.a, .b { gap: 3px }', areas)).toEqual([]);
-    expect(hardValues('@media (max-width: 900px) { .ghost-btn { padding: 5px } .other { padding: 5px } }', areas)).toHaveLength(1);
-    expect(hardValues('@media (max-width: 900px) { .ghost-btn { padding: var(--space-1) } }', areas)).toEqual([]);
+    expect(hardValues('@media (max-width: 900px) { .btn { padding: 5px } .other { padding: 5px } }', areas)).toHaveLength(1);
+    expect(hardValues('@media (max-width: 900px) { .btn { padding: var(--space-1) } }', areas)).toEqual([]);
   });
 
   it('matches a whole class name at the start of a selector', () => {
     expect(hardValues('.ghost-btnx { padding: 5px }', areas)).toEqual([]);
-    expect(hardValues('.load-more .ghost-btn { padding: 5px }', areas)).toEqual([]);
-    expect(hardValues('.ghost-btn.danger { padding: 5px }', areas)).toHaveLength(1);
-    expect(hardValues('.ghost-btn[aria-disabled="true"] { padding: 5px }', areas)).toHaveLength(1);
+    expect(hardValues('.load-more .btn { padding: 5px }', areas)).toEqual([]);
+    expect(hardValues('.btn.danger { padding: 5px }', areas)).toHaveLength(1);
+    expect(hardValues('.btn[aria-disabled="true"] { padding: 5px }', areas)).toHaveLength(1);
   });
 
   it('survives a comma or a semicolon inside a string or a URL, and a missing last semicolon', () => {
-    const css = ".a[data-x='1,2'], .ghost-btn { background: url(\"data:image/svg+xml;utf8,<svg/>\"); padding: 2px }";
+    const css = ".a[data-x='1,2'], .btn { background: url(\"data:image/svg+xml;utf8,<svg/>\"); padding: 2px }";
     expect(hardValues(css, areas)).toHaveLength(1);
   });
 
   it('copes with empty and broken input', () => {
     expect(hardValues('', areas)).toEqual([]);
-    expect(hardValues('} } .ghost-btn { padding: 2px', areas)).toHaveLength(1);
-    expect(hardValues('.ghost-btn { padding: 2px }', [])).toEqual([]);
+    expect(hardValues('} } .btn { padding: 2px', areas)).toHaveLength(1);
+    expect(hardValues('.btn { padding: 2px }', [])).toEqual([]);
   });
 });

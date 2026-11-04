@@ -251,7 +251,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                 <AutoScaleButton title={unit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Put the range of the statistics of this result in the fields'} busy={measuring} onClick={auto} />
                 <button
                   type="button"
-                  className="ghost-btn vc-apply"
+                  className="btn vc-apply"
                   aria-disabled={!canApply || undefined}
                   title={canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY}
                   onClick={apply}
@@ -260,7 +260,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                 </button>
                 <button
                   type="button"
-                  className="primary-btn vc-save"
+                  className="btn primary vc-save"
                   aria-disabled={!canSave || undefined}
                   title={canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE}
                   onClick={keep}

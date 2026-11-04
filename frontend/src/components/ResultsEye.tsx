@@ -12,7 +12,7 @@ export default function ResultsEye() {
   const toggle = useAppStore((s) => s.toggleResultsOnMap);
   const tip = on ? HIDE_RESULTS_TIP : SHOW_RESULTS_TIP;
   return (
-    <button type="button" className={`lm-eye${on ? '' : ' off'}`} data-col="eye" title={tip} aria-label={tip} aria-pressed={on} onClick={() => toggle()}>
+    <button type="button" className={`icon-btn sm${on ? '' : ' off'}`} data-col="eye" title={tip} aria-label={tip} aria-pressed={on} onClick={() => toggle()}>
       {on ? <EyeIcon size={14} /> : <EyeOffIcon size={14} />}
     </button>
   );
