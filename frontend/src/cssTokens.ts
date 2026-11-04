@@ -1,4 +1,7 @@
-// UI-03 §7.4: finds hard values for spacing, type size and radius in the rules of the areas that already use the tokens.
+// UI-03 §7.4, UI-04 part 6: finds hard values for spacing, type size and radius in the rules of the areas that use the tokens; the area
+// `ALL_RULES` stands for every rule of the sheet.
+
+export const ALL_RULES = '*';
 
 // What a token stands for; a "px"/"rem" number in these is a hard value.
 const CHECKED = /^(?:padding|margin)(?:-[a-z]+)*$|^(?:row-|column-)?gap$|^font-size$|^border(?:-[a-z]+)*-radius$/u;
@@ -70,7 +73,7 @@ export function hardValues(css: string, selectors: readonly string[]): string[] 
         else {
           const hit = splitTop(head, ',')
             .map((selector) => selector.trim())
-            .filter((selector) => selectors.some((prefix) => startsWithSelector(selector, prefix)));
+            .filter((selector) => selectors.some((prefix) => prefix === ALL_RULES || startsWithSelector(selector, prefix)));
           walk(hit);
         }
       } else {

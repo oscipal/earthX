@@ -2,33 +2,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { hardValues } from './cssTokens';
+import { ALL_RULES, hardValues } from './cssTokens';
 import index from './index.css?raw';
 import tokens from './tokens.css?raw';
 
-// The areas already moved onto the tokens; UI-04 adds the other panels here. The processing manager (UI-03c) is every `.pm-…` class of
-// its rows, heads and menu; the details of a job (`.pm-detail-title`, `.pm-facts`, …) are checked with the processing panel below (UI-03b).
-const MANAGER = [
-  '.processing-manager',
-  '.pm-head', '.pm-tools', '.pm-filter', '.pm-note', '.pm-new-group', '.pm-empty', '.pm-list',
-  '.pm-group', '.pm-group-head', '.pm-group-name', '.pm-rows', '.pm-parts', '.pm-row', '.pm-line', '.pm-open', '.pm-meta',
-  '.pm-state', '.pm-until', '.pm-tag', '.pm-title', '.pm-icon', '.pm-progress', '.pm-fault', '.pm-menu', '.pm-menu-list',
-  '.pm-menu-items', '.pm-key', '.pm-fold', '.pm-chevron', '.pm-count', '.pm-rename',
-] as const;
-// The processing panel (UI-03b) is the `.processing-…` classes, every `.pp-…` class of the sheet and the details of a job in it;
-// `.badge` is shared with the mark of the preview on the map and waits for UI-04.
-const PANEL = [
-  '.processing-sheet', '.processing-panel',
-  '.pm-detail-title', '.pm-title-text', '.pm-title-edit', '.pm-facts', '.pm-steps', '.pm-step-values',
-  ...new Set(index.match(/\.pp-[a-z-]+/gu) ?? []),
-].filter((selector) => selector !== '.badge');
-const CHECKED_AREAS = ['.btn', '.icon-btn', '.close-x', '.inspector', ...PANEL, ...MANAGER] as const;
-
 const ROOT_TOKENS = [
-  '--space-1', '--space-2', '--space-3', '--space-4', '--space-5', '--space-6',
-  '--text-xs', '--text-sm', '--text-md', '--text-lg', '--text-xl',
+  '--space-0', '--space-1', '--space-1-5', '--space-2', '--space-3', '--space-4', '--space-5', '--space-6',
+  '--text-2xs', '--text-xs', '--text-sm', '--text-md', '--text-lg', '--text-xl',
   '--leading-tight', '--leading', '--weight-regular', '--weight-semibold',
-  '--radius-sm', '--radius-md', '--radius-full', '--line-width',
+  '--radius-xs', '--radius-sm', '--radius-md', '--radius-full', '--line-width',
   '--control-height', '--control-height-sm', '--control-height-touch',
   '--icon-size', '--icon-size-sm', '--icon-size-rail', '--disabled-opacity', '--scrim',
   '--rail-width', '--dock-width', '--inspector-width', '--sheet-wide-width',
@@ -91,8 +73,9 @@ describe('tokens.css', () => {
 });
 
 describe('hard values in the checked areas of index.css', () => {
-  it('finds none in the shared controls, the settings bar, the processing panel and the processing manager', () => {
-    expect(hardValues(index, CHECKED_AREAS)).toEqual([]);
+  // UI-04 part 6 (Otto, 4.11.2026): every rule of the sheet, not only the areas that moved first.
+  it('finds none in any rule of the sheet', () => {
+    expect(hardValues(index, [ALL_RULES])).toEqual([]);
   });
 
   it('has one token for a wrong field and an error: --danger, no --invalid of its own', () => {
@@ -145,6 +128,11 @@ describe('hardValues', () => {
     expect(hardValues('.a, .b { gap: 3px }', areas)).toEqual([]);
     expect(hardValues('@media (max-width: 900px) { .btn { padding: 5px } .other { padding: 5px } }', areas)).toHaveLength(1);
     expect(hardValues('@media (max-width: 900px) { .btn { padding: var(--space-1) } }', areas)).toEqual([]);
+  });
+
+  it('reads every rule of the sheet for the area ALL_RULES', () => {
+    expect(hardValues('.a { padding: 5px } .b:hover { font-size: 9px } @media (max-width: 9px) { .c { gap: 3px } }', [ALL_RULES])).toHaveLength(3);
+    expect(hardValues('.a { padding: var(--space-1); margin: 0 } .b { width: 20px }', [ALL_RULES])).toEqual([]);
   });
 
   it('matches a whole class name at the start of a selector', () => {

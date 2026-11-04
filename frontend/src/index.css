@@ -85,7 +85,7 @@ textarea {
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   align-items: center;
   /* Between the rail or the panel and the right edge, a margin of 16 px each side: never over an edge. */
   width: min(760px, calc(100vw - var(--rail-width) - 32px));
@@ -127,11 +127,11 @@ body.dragging * {
   display: flex;
   justify-content: flex-end;
   height: 24px;
-  padding: 3px 6px 0;
+  padding: var(--space-1) var(--space-1-5) 0;
   box-sizing: border-box;
 }
 .selection-block > .download-bar {
-  padding-top: 2px;
+  padding-top: var(--space-0);
 }
 /* With no scene ticked: what to do, in the place of the buttons (Otto, 2.11.2026): plain text, centred in the upper area of the block; it
    rises into the row of the "x", which keeps to the right edge. */
@@ -148,7 +148,7 @@ body.dragging * {
 .selection-block > .select-hint + .time-slider,
 .selection-block > .download-bar + .time-slider {
   border-top: 1px solid var(--panel-border);
-  padding-top: 8px;
+  padding-top: var(--space-2);
 }
 /* controls inside a draggable keep their own affordance */
 .draggable button,
@@ -313,7 +313,7 @@ svg.lucide.icon-lead {
   align-items: baseline;
 }
 .vc-title {
-  font-size: 12px;
+  font-size: var(--text-sm);
   letter-spacing: 2px;
   color: var(--accent);
 }
@@ -367,7 +367,7 @@ svg.lucide.icon-lead {
   /* Below the one height of the fields of a panel (`min-height` above), which would push it into the field. */
   min-height: 0;
   height: 16px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--muted);
   font-size: var(--text-xs);
   letter-spacing: 0;
@@ -376,7 +376,7 @@ svg.lucide.icon-lead {
   text-align: right;
   /* No native arrow, which would take as much room as a letter or two: a small one of its own. */
   appearance: none;
-  padding: 0 10px 0 3px;
+  padding: 0 var(--space-3) 0 var(--space-1);
   line-height: 14px;
   background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%23889'/%3E%3C/svg%3E") no-repeat right 2px center;
 }
@@ -399,7 +399,7 @@ svg.lucide.icon-lead {
 }
 .vc-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 /* --- the settings bar (UI-03a, `Inspector.tsx`) ---
    One column at the right edge, from the top to the foot of the window with no gap (Otto, 2.11.2026; the top buttons move left of it), for the view of the search, the pinned view and
@@ -909,7 +909,7 @@ svg.lucide.icon-lead {
   flex: 0 1 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   min-width: 0;
 }
 .vc-step-text {
@@ -918,7 +918,7 @@ svg.lucide.icon-lead {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
@@ -949,7 +949,7 @@ svg.lucide.icon-lead {
 .panel {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   backdrop-filter: blur(10px);
   box-shadow: var(--glow);
 }
@@ -968,8 +968,8 @@ svg.lucide.icon-lead {
 .control-scroll {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 14px 10px;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-3);
   min-height: 0;
   overflow-y: auto;
 }
@@ -980,15 +980,15 @@ svg.lucide.icon-lead {
 .control-footer {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 14px 14px;
+  gap: var(--space-1-5);
+  padding: var(--space-3) var(--space-4) var(--space-4);
   border-top: 1px solid var(--panel-border);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
 }
 .brand-mark {
   width: 26px;
@@ -1008,24 +1008,24 @@ svg.lucide.icon-lead {
   opacity: 0.7;
 }
 .brand h1 {
-  font-size: 15px;
+  font-size: var(--text-lg);
   letter-spacing: 2px;
   margin: 0;
   font-weight: 700;
 }
 .brand p {
-  margin: 2px 0 0;
-  font-size: 10px;
+  margin: var(--space-0) 0 0;
+  font-size: var(--text-2xs);
   color: var(--muted);
   letter-spacing: 1px;
 }
 
 .field-label {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   text-transform: uppercase;
   letter-spacing: 1.5px;
   color: var(--muted);
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 input[type='text'],
@@ -1074,7 +1074,7 @@ textarea:autofill {
   background-repeat: no-repeat;
   background-position: right 8px center;
   background-size: 16px 16px;
-  padding-right: 32px;
+  padding-right: var(--space-6);
 }
 .app[data-theme='tech'] input[type='date']::-webkit-calendar-picker-indicator {
   opacity: 0;
@@ -1126,19 +1126,19 @@ textarea:autofill {
 .date-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 6px;
+  gap: var(--space-1-5);
   align-items: center;
 }
 .date-row span {
   color: var(--muted);
-  padding: 0 2px;
+  padding: 0 var(--space-0);
 }
 
 /* --- search box + autocomplete --- */
 .searchbox-results {
   list-style: none;
-  margin: 4px 0 0;
-  padding: 4px;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1);
   position: absolute;
   z-index: 20;
   width: 100%;
@@ -1146,7 +1146,7 @@ textarea:autofill {
   overflow-y: auto;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   backdrop-filter: blur(10px);
 }
 .searchbox-results button {
@@ -1155,9 +1155,9 @@ textarea:autofill {
   background: none;
   border: none;
   color: var(--text);
-  font-size: 11px;
-  padding: 6px 8px;
-  border-radius: 4px;
+  font-size: var(--text-xs);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -1171,7 +1171,7 @@ textarea:autofill {
 .toolbar {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 /* The AOI tools: three in a row, "Clear AOI" under them over the full width. */
 .tool-btn {
@@ -1188,11 +1188,11 @@ textarea:autofill {
 .place-search {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .place-search-row {
   display: flex;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 .place-search-row .btn {
   flex: 0 0 auto;
@@ -1202,19 +1202,19 @@ textarea:autofill {
 .place-results > div {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0);
 }
 .place-result {
   display: grid;
   grid-template-columns: 1fr auto;
-  column-gap: 6px;
+  column-gap: var(--space-1-5);
   text-align: left;
   background: none;
   border: none;
   color: var(--text);
-  font-size: 11px;
-  padding: 6px 8px;
-  border-radius: 4px;
+  font-size: var(--text-xs);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-xs);
   cursor: pointer;
 }
 .place-result:hover {
@@ -1227,18 +1227,18 @@ textarea:autofill {
 .place-result-kind {
   grid-column: 2;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   align-self: start;
 }
 .place-result-display {
   grid-column: 1 / -1;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   white-space: normal;
   overflow-wrap: anywhere;
 }
 .place-attribution {
-  padding: 2px 8px;
+  padding: var(--space-0) var(--space-2);
 }
 .place-attribution a {
   color: var(--muted);
@@ -1247,7 +1247,7 @@ textarea:autofill {
 /* --- AOI upload / last row --- */
 .aoi-extras {
   display: flex;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 .aoi-extras .btn {
   flex: 1;
@@ -1256,7 +1256,7 @@ textarea:autofill {
 
 .result-count {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--accent);
 }
 /* A hint, a warning and an error (UI-04 part 3b): the three small lines under a field or a button. A hint is quiet, a warning is
@@ -1307,28 +1307,28 @@ textarea:autofill {
 .coverage-controls {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .coverage-legend {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 .legend-scale {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0);
 }
 .legend-gradient {
   display: block;
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: linear-gradient(to right, #2c7bb6, #00a6ca, #a6d96a, #fdae61, #d7191c);
 }
 .legend-scale-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--muted);
 }
 .coverage-note {
@@ -1337,14 +1337,14 @@ textarea:autofill {
 .coverage-histogram {
   display: flex;
   align-items: flex-end;
-  gap: 1px;
+  gap: var(--space-0);
   height: 32px;
 }
 .histogram-bar {
   flex: 1 1 auto;
   min-width: 1px;
   background: var(--panel-border);
-  border-radius: 1px;
+  border-radius: var(--radius-xs);
 }
 .histogram-bar.in-range {
   background: var(--accent);
@@ -1360,12 +1360,12 @@ textarea:autofill {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--panel-border);
 }
 .results-head h2 {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
   letter-spacing: 2px;
   text-transform: uppercase;
 }
@@ -1383,7 +1383,7 @@ textarea:autofill {
 .results-head-switches {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0);
 }
 .results-list {
   --group-head-h: 34px;
@@ -1392,7 +1392,7 @@ textarea:autofill {
   list-style: none;
   margin: 0;
   /* No padding at the top: a sticky head would stop that far below the edge, with rows passing above it. */
-  padding: 0 6px 6px;
+  padding: 0 var(--space-1-5) var(--space-1-5);
   overflow-y: auto;
   overflow-x: hidden;
   /* A row focused by keyboard scrolls into view below the pinned group head, not under it. */
@@ -1401,9 +1401,9 @@ textarea:autofill {
 .result-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px;
-  border-radius: 6px;
+  gap: var(--space-2);
+  padding: var(--space-1-5);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   border: 1px solid transparent;
 }
@@ -1420,7 +1420,7 @@ textarea:autofill {
   width: 40px;
   height: 40px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--surface-2);
   flex: 0 0 auto;
 }
@@ -1434,17 +1434,17 @@ textarea:autofill {
   flex: 1;
 }
 .result-date {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 700;
 }
 .result-id-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
 }
 .result-id {
-  font-size: 9px;
+  font-size: var(--text-2xs);
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1463,12 +1463,12 @@ textarea:autofill {
   max-height: calc(2 * var(--dataset-row) + var(--dataset-gap) + 2px);
   overflow-y: auto;
   /* room for the glow and the scrollbar without shifting the buttons */
-  padding: 1px 3px 1px 1px;
+  padding: var(--space-0) var(--space-1) var(--space-0) var(--space-0);
 }
 .dataset-toggle {
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
+  gap: var(--space-0);
   min-width: 0;
   padding: 0 var(--space-2);
   text-align: left;
@@ -1497,7 +1497,7 @@ textarea:autofill {
 .coverage-button-wrap {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 /* --- dropdowns (`components/Popover.tsx`, Otto 30.09.2026) ---
    Over what is below them, never pushing it down; placed and sized by the
@@ -1507,12 +1507,12 @@ textarea:autofill {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
+  gap: var(--space-1);
+  padding: var(--space-1-5);
   overflow-y: auto;
   background: var(--panel-bg);
   border: 1px solid var(--accent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: var(--glow);
   backdrop-filter: blur(10px);
 }
@@ -1520,12 +1520,12 @@ textarea:autofill {
   outline: none;
 }
 .coverage-choice-item {
-  padding: 7px 10px;
+  padding: var(--space-2) var(--space-3);
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -1547,7 +1547,7 @@ textarea:autofill {
    to, not as one of the scenes. */
 .eyebrow {
   display: block;
-  font-size: 9px;
+  font-size: var(--text-2xs);
   letter-spacing: 1.6px;
   text-transform: uppercase;
   color: var(--muted);
@@ -1555,21 +1555,21 @@ textarea:autofill {
 .dataset-select {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 10px 10px 12px;
+  gap: var(--space-1-5);
+  padding: var(--space-3) var(--space-3) var(--space-3);
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   border-bottom: 2px solid var(--accent);
 }
 .results-list-eyebrow {
-  padding: 10px 14px 0;
+  padding: var(--space-3) var(--space-4) 0;
 }
 .load-more {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0;
-  padding: 6px 14px 12px;
+  padding: var(--space-1-5) var(--space-4) var(--space-3);
 }
 .dataset-select-box,
 .dataset-select-option {
@@ -1578,19 +1578,19 @@ textarea:autofill {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 3px;
-  padding: 7px 10px;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
   position: relative;
 }
 .dataset-select-box {
-  padding-right: 28px;
+  padding-right: calc(var(--space-5) + var(--space-1));
   border-color: var(--accent);
   box-shadow: var(--glow);
 }
@@ -1603,12 +1603,12 @@ textarea:autofill {
   top: 8px;
   right: 9px;
   color: var(--accent);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .dataset-select-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .dataset-select-option:hover {
   border-color: var(--accent);
@@ -1621,7 +1621,7 @@ textarea:autofill {
 .dataset-select-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .dataset-select-title {
   flex: 1;
@@ -1635,7 +1635,7 @@ textarea:autofill {
   margin-top: 0;
 }
 .dataset-select-note {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--muted);
   white-space: normal;
 }
@@ -1663,12 +1663,12 @@ textarea:autofill {
    in view, the fields between them scroll. */
 .popover.advanced-popup {
   overflow: hidden;
-  padding: 10px;
+  padding: var(--space-3);
 }
 .advanced-popup-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -1676,7 +1676,7 @@ textarea:autofill {
 .advanced-top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 .advanced-top > :first-child {
@@ -1686,23 +1686,23 @@ textarea:autofill {
 .advanced-fields {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: var(--space-1);
 }
 .filter-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
 }
 .filter-group-title {
   margin: 0;
-  padding-bottom: 3px;
+  padding-bottom: var(--space-1);
   border-bottom: 1px solid var(--panel-border);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 400;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -1711,7 +1711,7 @@ textarea:autofill {
 .advanced-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .filter-dot {
   flex: none;
@@ -1723,7 +1723,7 @@ textarea:autofill {
 .filter-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -1731,7 +1731,7 @@ textarea:autofill {
 }
 .filter-title {
   padding: 0;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text);
   cursor: help;
 }
@@ -1740,20 +1740,20 @@ textarea:autofill {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  font-size: 10px;
+  gap: var(--space-1-5);
+  font-size: var(--text-2xs);
   color: var(--muted);
 }
 .filter-range input[type='text'] {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  padding: 6px 8px;
+  padding: var(--space-1-5) var(--space-2);
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .filter-range input[aria-invalid='true'] {
   border-color: var(--danger);
@@ -1765,13 +1765,13 @@ textarea:autofill {
 .filter-values {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-1);
 }
 .filter-check {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
   color: var(--text);
   cursor: pointer;
 }
@@ -1782,9 +1782,9 @@ textarea:autofill {
 .within-aoi {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   width: fit-content;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text);
   cursor: pointer;
 }
@@ -1808,17 +1808,17 @@ textarea:autofill {
 .multi-select-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   text-transform: none;
   letter-spacing: 0;
-  font-size: 11px;
+  font-size: var(--text-xs);
   cursor: pointer;
 }
 .multi-select-toggle input {
   margin: 0;
 }
 .results-list > .result-group:first-child {
-  margin-top: 6px;
+  margin-top: var(--space-1-5);
 }
 /* The head of the group in view stays at the top of the list until the next group's head pushes it out (NM4-09): it
    sticks inside its own group. Opaque, as rows scroll under it: the panel colour over the map's, which is what the
@@ -1837,14 +1837,14 @@ textarea:autofill {
   flex: none;
   width: 12px;
   height: 12px;
-  margin: 0 0 0 6px;
+  margin: 0 0 0 var(--space-1-5);
   cursor: pointer;
 }
 .select-all-box {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
   color: var(--text);
   cursor: pointer;
 }
@@ -1854,28 +1854,28 @@ textarea:autofill {
   margin: 0;
 }
 .results-list-head {
-  padding: 10px 14px 4px;
+  padding: var(--space-3) var(--space-4) var(--space-1);
 }
 .results-list-head .results-list-eyebrow {
-  padding: 0 0 4px;
+  padding: 0 0 var(--space-1);
 }
 .selection-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .result-group-head {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   background: none;
   border: none;
   color: var(--text);
-  font-size: 12px;
-  padding: 8px 6px;
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-1-5);
   cursor: pointer;
   text-align: left;
 }
@@ -1896,17 +1896,17 @@ textarea:autofill {
   white-space: nowrap;
 }
 .rg-count {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--muted);
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  padding: 1px 7px;
+  border-radius: var(--radius-md);
+  padding: var(--space-0) var(--space-2);
 }
 .rg-items {
   list-style: none;
   margin: 0;
-  padding: 0 4px 6px;
+  padding: 0 var(--space-1) var(--space-1-5);
 }
 .result-row.disabled {
   opacity: var(--disabled-opacity);
@@ -1948,8 +1948,8 @@ textarea:autofill {
 .time-slider {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 4px 16px 10px;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-4) var(--space-3);
   width: 100%;
   box-sizing: border-box;
 }
@@ -1959,13 +1959,13 @@ textarea:autofill {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto auto auto minmax(0, auto) minmax(0, 1fr);
   align-items: center;
-  column-gap: 6px;
-  font-size: 10px;
+  column-gap: var(--space-1-5);
+  font-size: var(--text-2xs);
   color: var(--muted);
 }
 .time-dates strong {
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 .time-end,
@@ -2002,7 +2002,7 @@ textarea:autofill {
 .time-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .time-controls input[type='range'] {
   flex: 1;
@@ -2010,7 +2010,7 @@ textarea:autofill {
   accent-color: var(--accent);
 }
 .time-count {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted);
   flex: 0 0 auto;
   /* Room for "Loading…" (NM4-18), so that the slider does not move when it comes and goes. */
@@ -2025,8 +2025,8 @@ textarea:autofill {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
   align-items: stretch;
-  gap: 8px 10px;
-  padding: 10px 16px;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   box-sizing: border-box;
 }
 .download-count {
@@ -2040,10 +2040,10 @@ textarea:autofill {
   text-align: center;
 }
 .download-count strong {
-  font-size: 16px;
+  font-size: var(--text-xl);
 }
 .download-count span {
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 .download-bar .btn {
   min-width: 0;
@@ -2058,12 +2058,12 @@ textarea:autofill {
   overflow: hidden;
 }
 .lm-empty {
-  padding: 10px 14px;
+  padding: var(--space-3) var(--space-4);
 }
 .layer-list {
   list-style: none;
   margin: 0;
-  padding: 6px;
+  padding: var(--space-1-5);
   overflow-y: auto;
 }
 .layer-row {
@@ -2074,9 +2074,9 @@ textarea:autofill {
      (`LayerManager.tsx::Slot`) instead of moving the others (UI-01 §1 point 8). */
   grid-template-columns: 14px var(--lm-button) minmax(0, 1fr) repeat(4, var(--lm-button)) 18px var(--lm-button);
   align-items: center;
-  column-gap: 3px;
-  row-gap: 3px;
-  padding: 5px 4px;
+  column-gap: var(--space-1);
+  row-gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-1);
   border-bottom: 1px solid var(--panel-border);
   position: relative;
 }
@@ -2198,13 +2198,13 @@ textarea:autofill {
   background: none;
   border: none;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--text-xs);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 2px 4px;
-  border-radius: 4px;
+  padding: var(--space-0) var(--space-1);
+  border-radius: var(--radius-xs);
 }
 .lm-name:hover {
   background: var(--row-hover);
@@ -2212,7 +2212,7 @@ textarea:autofill {
 }
 /* "Flip through layers" (NM4-65 part 9): the toggle in the head, and the row that is drawn on top. */
 .lm-flip {
-  margin-right: 6px;
+  margin-right: var(--space-1-5);
 }
 .layer-row.flip {
   background: var(--row-hover);
@@ -2236,14 +2236,14 @@ textarea:autofill {
   grid-column: 2 / -2;
   flex-direction: row;
   align-items: center;
-  gap: 6px;
-  padding-top: 3px;
+  gap: var(--space-1-5);
+  padding-top: var(--space-1);
 }
 .lm-band select {
   flex: 1;
   min-width: 0;
-  padding: 2px 6px;
-  font-size: 11px;
+  padding: var(--space-0) var(--space-1-5);
+  font-size: var(--text-xs);
 }
 /* "Add this band as a layer of its own" (NM4-65 part 2): at the end of the line of the band, under the remove button. */
 .lm-add-band {
@@ -2259,11 +2259,11 @@ textarea:autofill {
   bottom: 0;
   left: 0;
   width: var(--rail-width);
-  padding: 12px 0;
+  padding: var(--space-3) 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   background: var(--panel-bg);
   border-right: 1px solid var(--panel-border);
   backdrop-filter: blur(10px);
@@ -2273,7 +2273,7 @@ textarea:autofill {
   position: relative;
   width: 38px;
   height: 38px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 /* "Settings" is the last symbol of the rail and stands at its bottom edge (`SettingsPanel.tsx`). */
 .rail-settings {
@@ -2290,11 +2290,11 @@ textarea:autofill {
   top: -3px;
   right: -3px;
   min-width: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--map-bg);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 16px;
   text-align: center;
 }
@@ -2305,12 +2305,12 @@ textarea:autofill {
   z-index: 1000;
   width: max-content;
   max-width: min(260px, calc(100vw - 16px));
-  padding: 5px 8px;
+  padding: var(--space-1-5) var(--space-2);
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 400;
   line-height: 1.4;
   /* A line break in the text stays one: the methods of a resampling choice stand one below the other. */
@@ -2325,7 +2325,7 @@ textarea:autofill {
   min-width: 18px;
   color: var(--muted);
   cursor: help;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .tip.warn {
   color: var(--accent-2);
@@ -2868,27 +2868,27 @@ button.pm-open:hover {
   overflow: hidden;
 }
 .dialog-body {
-  padding: 4px 14px 12px;
+  padding: var(--space-1) var(--space-4) var(--space-3);
   overflow-y: auto;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 .dialog-body p {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
 }
 .dialog-attribution {
   color: var(--accent-2);
 }
 .dialog-terms {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--panel-border);
 }
 /* The download dialog (NM4-75): the choice of bands and files. Controls are as high as the others (a finger on a touch screen). */
@@ -2972,7 +2972,7 @@ button.pm-open:hover {
 .status-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   pointer-events: none;
 }
 .status-stack > .toast {
@@ -2985,10 +2985,10 @@ button.pm-open:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 12px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
   backdrop-filter: blur(10px);
   border: 1px solid var(--panel-border);
   background: var(--panel-bg);
@@ -3045,15 +3045,15 @@ button.pm-open:hover {
 .dataset-notes {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-top: 4px;
+  gap: var(--space-0);
+  margin-top: var(--space-1);
 }
 /* The maturity chip sits inside the dataset button, so it has to stay small
    enough not to push the title out of a three-across row. */
 .maturity-chip {
   display: block;
-  margin-top: 2px;
-  font-size: 9px;
+  margin-top: var(--space-0);
+  font-size: var(--text-2xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--accent-2);
@@ -3068,7 +3068,7 @@ button.pm-open:hover {
 }
 .clearable input[type='text'] {
   width: 100%;
-  padding-right: 28px;
+  padding-right: calc(var(--control-height-sm) + var(--space-2));
 }
 .clear-btn {
   position: absolute;
@@ -3531,13 +3531,13 @@ button.pm-open:hover {
 .dialog-original-links {
   max-height: 40vh;
   overflow-y: auto;
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
 }
 
 /* "Download full scenes" (NM4-33): a row for each scene with how far it is; many scenes scroll in their own area. */
 .dialog-original-rows {
   list-style: none;
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
   padding: 0;
   max-height: 40vh;
   overflow-y: auto;
@@ -3546,16 +3546,16 @@ button.pm-open:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  gap: 2px 12px;
-  padding: 5px 0;
+  gap: var(--space-0) var(--space-3);
+  padding: var(--space-1-5) 0;
   border-bottom: 1px solid var(--panel-border);
 }
 .dialog-original-name {
-  font-size: 11px;
+  font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
 .dialog-original-state {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted);
   text-align: right;
 }
@@ -3577,15 +3577,15 @@ button.pm-open:hover {
 .dialog-original-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .dialog-originals details {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted);
 }
 .dialog-originals summary {
   cursor: pointer;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
 }
 
 /* "Preview" (M4-13c-2): over the map at the bottom left, and beside the heading
@@ -3654,10 +3654,10 @@ button.pm-open:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 6px 14px;
-  font-size: 11px;
+  padding: var(--space-1-5) var(--space-4);
+  font-size: var(--text-xs);
   color: var(--accent);
 }
 .aoi-stop {
