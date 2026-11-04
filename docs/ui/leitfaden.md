@@ -34,7 +34,7 @@
 | Stop | hält einen laufenden Vorgang an; was fertig ist, bleibt („Stop checking. What is found stays.“, laufender Download) | „Cancel“ für einen Download |
 | Remove | nimmt etwas aus einer Liste der Oberfläche (Layer, Schritt, Gruppe) | |
 | Delete | löscht dauerhaft auf der Plattform (Job, Link) | |
-| Clear | leert ein Feld, die AOI oder die Suchergebnisse („Clear search results“) | |
+| Clear | leert ein Feld, die AOI oder die Suchergebnisse; der Knopf der AOI im Control-Menü heißt „Clear AOI“ (Beschriftung, Tooltip, `aria-label`), der der Ergebnisse „Clear search results“ | „Clear“ allein als Knopftext |
 | Hide / Show | das Auge; bei der Coverage „Hide coverage“ | „Clear coverage“ |
 | Apply / Apply to all / Save | §6 | |
 | Retry / Run again / Retry failed parts | dieselbe Anfrage noch einmal / Job neu starten / nur die gescheiterten Teile eines Stapels | „Try again“ als Knopf (im Satz einer Meldung erlaubt) |
@@ -75,7 +75,7 @@
 |---|---|
 | Download (überall, auch „Download all“) | `download` |
 | Zeigen / Verbergen | `eye` / `eye-off` |
-| Entfernen / Löschen / Leeren einer Liste (auch AOI „Clear“, „Clear search results“) | `trash-2` |
+| Entfernen / Löschen / Leeren einer Liste (auch „Clear AOI“, „Clear search results“) | `trash-2` |
 | Umbenennen | `pencil` |
 | Process | `cog` (das Zahnrad bleibt, Otto) |
 | Settings | MingCute „Settings 6 Line“ |

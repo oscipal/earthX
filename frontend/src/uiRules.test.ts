@@ -126,6 +126,7 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     [/ & /u, 'and'],
     [/\.\.\./u, '…'],
     [/\bPick (?:a|an|one|at|several|the)\b/u, 'Choose'],
+    [/^Clear$/u, 'Clear AOI'],
     [/^Results \(/u, 'Search results'],
     [/^Processing jobs$/u, 'Jobs'],
     [/\b(?:Previous|Next|First|Last) step\b/u, 'time step'],
@@ -145,6 +146,7 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     ['`${n} scene(s) found`', 'the singular or the plural, after the count'],
     ["'Crop & merge to AOI'", 'and'],
     ["'Load recipe...'", '…'],
+    ['<span>Clear</span>', 'Clear AOI'],
     ['<h2>Results (0/1)</h2>', 'Search results'],
     ["title=\"Previous step\"", 'time step'],
   ])('finds the old word in %j', (line, instead) => {

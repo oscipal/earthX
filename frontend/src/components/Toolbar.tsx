@@ -34,7 +34,8 @@ export default function Toolbar() {
       <button
         type="button"
         className="tool-btn ghost"
-        title="Clear the current area of interest"
+        title={aoi ? 'Clear the AOI' : 'No AOI to clear'}
+        aria-label="Clear AOI"
         disabled={!aoi}
         onClick={() => {
           clearAoi();
@@ -42,7 +43,7 @@ export default function Toolbar() {
         }}
       >
         <TrashIcon />
-        <span>Clear</span>
+        <span>Clear AOI</span>
       </button>
     </div>
   );

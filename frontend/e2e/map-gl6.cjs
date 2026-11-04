@@ -216,7 +216,7 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
       if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click();
     };
     const tool = (name) => page.getByRole('group', { name: 'Area of interest tools' }).getByRole('button', { name, exact: true });
-    const clear = async () => { await dock(true); await tool('Clear').click(); };
+    const clear = async () => { await dock(true); await tool('Clear AOI').click(); };
     await dock(true);
     await pick('Point');
     await dock(false);
@@ -251,7 +251,7 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     expect('the Polygon tool sets a polygon', polygon?.type === 'Polygon' && polygon.coordinates[0].length >= 4, JSON.stringify(polygon)?.slice(0, 80));
     await shot('polygon');
     await clear();
-    expect('"Clear" takes the AOI away', (await aoi()) === null);
+    expect('"Clear AOI" takes the AOI away', (await aoi()) === null);
 
     await dock(true);
     const input = page.locator('.aoi-extras input[type=file]');
