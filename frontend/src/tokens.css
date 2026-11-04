@@ -1,0 +1,99 @@
+/* ===========================================================================
+   Design tokens (UI-03 §7.4): spacing, type, radii, heights, widths and the
+   colours of the two themes. Loaded before index.css; components use var(--…)
+   and no hard value for spacing, type size or radius in the areas the token
+   test (`tokens.test.ts`) lists.
+   =========================================================================== */
+
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 17px;
+  --leading-tight: 1.2;
+  --leading: 1.4;
+  --weight-regular: 400;
+  --weight-semibold: 600;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-full: 999px;
+  --line-width: 1px;
+
+  --control-height: 28px;
+  --control-height-sm: 22px;
+  /* For a finger (Otto, 2.11.2026): what `--control-height` becomes on a touch screen and in a window under 900 px. */
+  --control-height-touch: 44px;
+
+  /* The rail, the panel beside it, the side bar and the wide sheet (UI-01 §6.9, UI-03 §7.2). */
+  --rail-width: 48px;
+  --dock-width: 340px;
+  --inspector-width: 320px;
+  /* The column of the names in a form: the settings bar's, and the processing panel sets its own wider one. */
+  --form-label-width: 72px;
+  --sheet-wide-width: clamp(520px, 34vw, 640px);
+
+  /* One family; the monospace one is for code, formulas and expressions only. */
+  --font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
+}
+
+/* A touch screen, or a window as narrow as a phone's: every control as high as a finger needs. */
+@media (pointer: coarse), (max-width: 899px) {
+  :root {
+    --control-height: var(--control-height-touch);
+  }
+}
+
+/* --- theme tokens --- */
+.app[data-theme='tech'] {
+  --panel-bg: rgba(6, 12, 16, 0.82);
+  --panel-border: rgba(120, 220, 255, 0.32);
+  --accent: #19e0ff;
+  --accent-2: #ffd166;
+  --text: #d7f2ff;
+  --muted: #7fa8b8;
+  --input-bg: rgba(10, 20, 26, 0.9);
+  --glow: 0 0 18px rgba(25, 224, 255, 0.18);
+  --row-hover: rgba(25, 224, 255, 0.08);
+  /* Behind the map and the globe: what shows where no imagery is drawn. */
+  --map-bg: #04070a;
+  --line: rgba(120, 220, 255, 0.32);
+  --line-soft: rgba(120, 220, 255, 0.16);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --danger: #ff5a6e;
+  --focus: #19e0ff;
+  /* The channels of a colour picture (UI-03d): the bars of their histograms and their marks. */
+  --channel-red: #ff6b6b;
+  --channel-green: #5ee08a;
+  --channel-blue: #5aa9ff;
+}
+
+.app[data-theme='normal'] {
+  --panel-bg: rgba(255, 255, 255, 0.94);
+  --panel-border: rgba(20, 40, 60, 0.16);
+  --accent: #0a7ea4;
+  --accent-2: #c76b00;
+  --text: #10222c;
+  --muted: #5a6b74;
+  --input-bg: rgba(255, 255, 255, 0.96);
+  --glow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  --row-hover: rgba(10, 126, 164, 0.08);
+  --map-bg: #ffffff;
+  --line: rgba(20, 40, 60, 0.16);
+  --line-soft: rgba(20, 40, 60, 0.08);
+  --surface-2: rgba(20, 40, 60, 0.05);
+  --danger: #c62840;
+  --focus: #0a7ea4;
+  --channel-red: #c62828;
+  --channel-green: #1f8a3a;
+  --channel-blue: #1f5fbf;
+}

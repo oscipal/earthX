@@ -1,39 +1,40 @@
-import { useEffect, type KeyboardEvent } from 'react';
+import { useEffect } from 'react';
 
 import AppRail from './components/AppRail';
 import BasemapMenu from './components/BasemapMenu';
 import ControlPanel from './components/ControlPanel';
-import Draggable from './components/Draggable';
 import DownloadDialog from './components/DownloadDialog';
+import ColormapPicker from './components/ColormapPicker';
+import Inspector from './components/Inspector';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
 import PreviewBadge from './components/PreviewBadge';
 import ProcessingManager from './components/ProcessingManager';
 import ProcessingPanel from './components/ProcessingPanel';
-import ResultControls from './components/ResultControls';
 import ResultsPanel from './components/ResultsPanel';
+import SelectionBlock from './components/SelectionBlock';
+import { selectionBlockModeOf } from './selectionBlockMode';
 import StatusBar from './components/StatusBar';
-import TimeSlider from './components/TimeSlider';
 import TipLayer from './components/TipLayer';
-import ViewBar from './components/ViewBar';
-import ViewerControls from './components/ViewerControls';
-import { dockPanelId, railButtonId } from './dock';
+import { dockPanelId } from './dock';
+import { inspectorKindOf } from './inspectorKind';
 import { openPermalinkInAddress } from './permalink';
+import { forgetJobsWindow } from './preferences';
 import { useProcessingStore } from './processingStore';
-import { ticksOfOpen, useAppStore } from './store';
+import { ticksOfSearch, useAppStore } from './store';
 
 export default function App() {
   const loadDatasets = useAppStore((s) => s.loadDatasets);
   const dock = useAppStore((s) => s.dock);
-  const closeDock = useAppStore((s) => s.closeDock);
   const focusMode = useAppStore((s) => s.focusMode);
   const resultView = useAppStore((s) => s.resultViewLayerId !== null);
+  const inspectorOpen = useAppStore((s) => inspectorKindOf(s) !== null);
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
-  const hasSelection = useAppStore((s) => ticksOfOpen(s).length > 0);
+  const hasSelection = useAppStore((s) => ticksOfSearch(s).length > 0);
   // A scene ticked in the list while a view is open that the view does not draw: the bar of the selection shows
   // above the controls of the view, as it does after any click on a result.
-  const tickedBesideView = useAppStore((s) => ticksOfOpen(s).some((id) => !(id in s.downloaded)));
+  const tickedBesideView = useAppStore((s) => ticksOfSearch(s).some((id) => !(id in s.downloaded)));
   // "Zoom to selection" zooms to the AOI, else the pinned layer images;
   // with neither, it stays visibly disabled (store.ts::zoomToView).
   const canZoom = useAppStore((s) => !!s.aoi || s.layers.length > 0);
@@ -47,23 +48,18 @@ export default function App() {
     void loadDatasets().then(openPermalinkInAddress);
   }, [loadDatasets]);
 
+  // The old place of the floating window of the jobs is of no use any more.
+  useEffect(() => {
+    forgetJobsWindow();
+  }, []);
+
   // The jobs of this tab, kept across a reload (M4-13 F5 (1)).
   useEffect(() => {
     resumeJobs();
   }, [resumeJobs]);
 
-  // Esc closes the open panel and hands the focus back to its symbol. Not while a field, a menu or a pop-over
-  // has its own use for the key.
-  const onDockKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Escape' || event.defaultPrevented || !dock) return;
-    const target = event.target as HTMLElement;
-    if (target.closest('input, textarea, select, .popover, [role="menu"]')) return;
-    closeDock();
-    document.getElementById(railButtonId(dock))?.focus();
-  };
-
   return (
-    <div className={`app${dock ? ' dock-open' : ''}`} data-theme={theme}>
+    <div className={`app${inspectorOpen && !processingOpen ? ' has-inspector' : ''}${processingOpen ? ' has-sheet' : ''}`} data-theme={theme}>
       <MapView />
 
       <AppRail />
@@ -71,7 +67,7 @@ export default function App() {
 
       {/* The control menu, the layer manager and the results stay mounted (what they hold survives a change
           of panel); the job manager follows jobs, so it exists only while it is open. */}
-      <div className="overlay dock" hidden={!dock} onKeyDown={onDockKeyDown}>
+      <div className="overlay dock" hidden={!dock}>
         <div className="dock-slot" id={dockPanelId('controls')} hidden={dock !== 'controls'}>
           <ControlPanel />
         </div>
@@ -88,7 +84,7 @@ export default function App() {
         )}
       </div>
 
-      <div className="overlay top-right">
+      <div className={`overlay top-right${processingOpen ? ' beside-sheet' : ''}`}>
         <button
           type="button"
           className="panel zoom-btn"
@@ -112,43 +108,11 @@ export default function App() {
 
       {/* Beside the processing side bar, not under it: the time slider picks the pass of an order. */}
       <div className={`overlay bottom${processingOpen ? ' beside-sheet' : ''}`}>
-        {focusMode ? (
-          <>
-            {tickedBesideView && (
-              <Draggable id="selection" key="selection" className="fill">
-                <ViewBar />
-              </Draggable>
-            )}
-            <Draggable id="view" key="view">
-              <ViewerControls />
-            </Draggable>
-          </>
-        ) : resultView ? (
-          <>
-            {hasSelection && (
-              <Draggable id="selection" key="selection" className="fill">
-                <ViewBar />
-              </Draggable>
-            )}
-            <Draggable id="result" key="result">
-              <ResultControls />
-            </Draggable>
-          </>
-        ) : (
-          <>
-            {hasSelection && (
-              <Draggable id="selection" key="selection" className="fill">
-                <ViewBar />
-              </Draggable>
-            )}
-            {hasGroups && (
-              <Draggable id="timeline" key="timeline">
-                <TimeSlider />
-              </Draggable>
-            )}
-          </>
-        )}
+        <SelectionBlock {...selectionBlockModeOf({ focusMode, resultView, hasSelection, tickedBesideView, hasGroups })} />
       </div>
+
+      <Inspector />
+      <ColormapPicker />
 
       {processingOpen && (
         <div className="overlay processing-sheet">

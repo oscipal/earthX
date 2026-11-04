@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import type { DownloadBand } from '../bandChoice';
 import type { DatasetOption } from '../datasets';
 import {
   acquisitionYears,
@@ -14,10 +15,10 @@ import { browserDeps } from '../originalsClient';
 import { runOriginals, type SceneState } from '../originalsRun';
 import MosaicJobs, { type Started } from './MosaicJobs';
 
-// The original files of a selection (NM4-33, plan section 6.14): one click starts the download of every scene, one
+// The original files of a selection (NM4-33, plan section 6.14): "Download" of the dialog starts the download of every scene, one
 // after the other, as one ZIP per scene built in the browser from the files of the source (no byte passes through
-// the platform), or, where the browser or the source does not allow that, as single files. The rows tell how far each
-// scene is. Where a pass holds two or more scenes there is also "Merged per pass (job)", which makes one merged file
+// the platform), or, where the browser or the source does not allow that, as single files. With a choice of bands
+// (NM4-75, `pick`) only those are loaded, in the folder `exports/` of the ZIP. The rows tell how far each scene is. Where a pass holds two or more scenes there is also "Merged per pass (job)", which makes one merged file
 // per pass on the platform (M4-12b, Zusatz 1a) and does not stop the download. Closing the dialog stops the run.
 
 interface Props {
@@ -25,6 +26,12 @@ interface Props {
   // `null` while the layer's scenes are still being fetched.
   links: OriginalFileLink[] | null;
   passes: DownloadPass[] | null;
+  // The asset keys ticked in the dialog and the table of bands they are read from; `undefined` for a dataset whose scenes list no
+  // bands, which loads every original file.
+  pick?: readonly string[];
+  table?: readonly DownloadBand[];
+  // "Download" was pressed: until then the dialog lists what it would load and loads nothing.
+  started: boolean;
 }
 
 function saveLinkList(datasetId: string, links: readonly OriginalFileLink[]): void {
@@ -175,12 +182,12 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
   );
 }
 
-export default function OriginalFiles({ dataset, links, passes }: Props) {
+export default function OriginalFiles({ dataset, links, passes, pick, table, started: go }: Props) {
   const [merged, setMerged] = useState(false);
   const [started, setStarted] = useState<Record<number, Started>>({});
   const scenes = useMemo(
-    () => (dataset && passes ? scenesOf(dataset.collection, passes) : []),
-    [dataset, passes],
+    () => (dataset && passes ? scenesOf(dataset.collection, passes, pick && table ? { keys: pick, table } : undefined) : []),
+    [dataset, passes, pick, table],
   );
 
   if (links === null) return <p className="hint-text">Loading the original files…</p>;
@@ -198,7 +205,7 @@ export default function OriginalFiles({ dataset, links, passes }: Props) {
   return (
     <div className="dialog-originals">
       <p className="hint-text">{summaryText(summaryOf(dataset.collection, scenes))}</p>
-      <SceneRows dataset={dataset} scenes={scenes} />
+      {go && <SceneRows dataset={dataset} scenes={scenes} />}
       <p className="dialog-original-buttons">
         {asks && (
           <button

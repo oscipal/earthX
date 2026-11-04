@@ -136,7 +136,7 @@ class TestOneRetry:
     def _call(self) -> dl.AssetCropBytes:
         return dl._verified_crop(
             lambda path: None, (), {"type": "Point", "coordinates": [0, 0]},
-            asset="visual", width=None, height=None, mask_geometry={"type": "Point", "coordinates": [0, 0]},
+            asset="visual", mask_geometry={"type": "Point", "coordinates": [0, 0]},
         )
 
     def test_a_broken_first_write_is_replaced_by_a_good_second_one(

@@ -310,7 +310,7 @@ export const MAX_INTERSECTS_POINTS = 1000;
 // Counts the positions in a geometry, the same way the backend's own
 // `_check_positions` does: walks the (possibly nested) coordinates array down to
 // its leaves, one leaf per position.
-function countPositions(coords: unknown): number {
+export function countPositions(coords: unknown): number {
   if (Array.isArray(coords) && typeof coords[0] === 'number') return 1;
   if (!Array.isArray(coords)) return 0;
   return coords.reduce((total: number, item) => total + countPositions(item), 0);

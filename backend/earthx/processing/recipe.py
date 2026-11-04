@@ -196,14 +196,51 @@ class RasterOutput(_Model):
         return self
 
 
+class CropLayout(_Model):
+    """How the bands of a crop are laid into files (NM4-75): the three forms of ``earthx.access.band_export``.
+
+    ``per_band``: one file per band, ``per_resolution``: one per resolution that occurs, ``multi_band``: one file at
+    ``resolution_m`` metres, the one form that converts a band (finer: ``nearest``; coarser: ``average``, for a
+    classification layer ``mode``).
+    """
+
+    form: Literal["per_band", "per_resolution", "multi_band"]
+    resolution_m: float | None = Field(default=None, gt=0, le=1000)
+
+    @model_validator(mode="after")
+    def _resolution_goes_with_multi_band(self) -> CropLayout:
+        if (self.form == "multi_band") != (self.resolution_m is not None):
+            raise ValueError("resolution_m goes with the form multi_band, and with no other")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _without_unset_resolution(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        if data.get("resolution_m") is None:
+            data.pop("resolution_m", None)
+        return data
+
+
 class CropOutput(_Model):
-    """The crop (§10.1): described by the synchronous download, computed by the export job (M4-11a)."""
+    """The crop (§10.1): described by the synchronous download, computed by the export job (M4-11a).
+
+    ``layout`` (NM4-75) is the form of the files; without it the files lie flat in the ZIP, one COG per asset
+    (the crop of before). Left out of the dump when unset, so that the hash of a recipe of before is unchanged.
+    """
 
     kind: Literal["crop"]
     format: Literal["cog"]
     resolution_factor: int
     extent: Literal["bbox(aoi ∩ footprints)"]
     mask: Literal["file"]
+    layout: CropLayout | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_unset_layout(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        if data.get("layout") is None:
+            data.pop("layout", None)
+        return data
 
     @model_validator(mode="after")
     def _known_factor(self) -> CropOutput:

@@ -2,10 +2,14 @@
 // by default (the Vite dev server proxies /stac to the backend). Override
 // with VITE_API_BASE. Never talks to the prototype's `/api/…` routes.
 
+import type { DownloadBand } from './bandChoice';
 import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
+import { AOI_BODY_KEY, aoiCountsOf, type AoiCounts } from './aoiFilter';
+import { MOSAIC_TILE_SIZE } from './tileSize';
+import { HISTOGRAM_BINS } from './histogram';
 import type { Bbox, Collection, StacItem } from './types';
 
-const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+export const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
 interface StacLink {
   rel: string;
@@ -199,8 +203,13 @@ export interface SearchQuery {
   // gets only what its registry entry offers, so nothing is dropped on the way. Only datasets with a filter set
   // are named; every key must be one of `collections`.
   queryByCollection?: FilterQueryByCollection;
+  // DS-03b: the AOI itself, sent beside the `bbox` that stands for it when it is too long to search by its shape, so that
+  // the cloud share in the AOI is measured in the AOI and not in its box (plan §6.5). Only ever in the body.
+  aoi?: GeoJSON.Geometry;
   limit?: number;
   token?: string;
+  // Ends the request ("Stop", or a change of the search the request belongs to).
+  signal?: AbortSignal;
 }
 
 // One collection a mixed search could not reach on a given page (M3-13,
@@ -234,6 +243,9 @@ export interface ItemPage {
   // (collections sharing a source are open together). `null` where the answer
   // does not say — the caller then cannot rule out more for any of them.
   openCollections: string[] | null;
+  // DS-03b: how far the server has got with the cloud share in the AOI, by dataset, over the whole search up to this
+  // page. Empty without that filter, and for a source that is done and is not named any more.
+  aoiFilter: Record<string, AoiCounts>;
 }
 
 function openCollectionsFrom(value: unknown): string[] | null {
@@ -278,6 +290,7 @@ export function buildSearchBody(q: SearchQuery): Record<string, unknown> {
   if (q.intersects) body.intersects = q.intersects;
   if (q.datetime) body.datetime = q.datetime;
   if (q.queryByCollection && Object.keys(q.queryByCollection).length > 0) body.query_by_collection = q.queryByCollection;
+  if (q.aoi) body[AOI_BODY_KEY] = q.aoi;
   if (q.limit) body.limit = q.limit;
   if (q.token) body.token = q.token;
   return body;
@@ -298,6 +311,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildSearchBody(q)),
+      signal: q.signal,
     }),
   );
   return {
@@ -309,6 +323,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     ignoredFiltersByCollection: ignoredByCollectionFrom(body.ignored_filters_by_collection),
     incompleteCollections: body.incomplete_collections ?? [],
     openCollections: openCollectionsFrom(body.open_collections),
+    aoiFilter: aoiCountsOf(body as Record<string, unknown>, q.queryByCollection),
   };
 }
 
@@ -354,8 +369,9 @@ function mosaicQuery(itemIds: readonly string[], asset: string): string {
 
 const mosaicBase = (datasetId: string) => `${BASE}/collections/${encodeURIComponent(datasetId)}/mosaic`;
 
+// A mosaic tile is 512 px (`tileSize.ts`); the TileJSON of the same pass names no size, the tiler gives its own.
 export function buildMosaicTileTemplate(datasetId: string, itemIds: readonly string[], asset: string): string {
-  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicQuery(itemIds, asset)}`;
+  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicQuery(itemIds, asset)}&tilesize=${MOSAIC_TILE_SIZE}`;
 }
 
 // What the client reads of a mosaic's TileJSON: the surface (`bounds`), the levels it
@@ -400,6 +416,24 @@ export async function fetchMosaicTileJson(
     throw new Error('The tile server sent a mosaic description this page cannot read.');
   }
   return { bounds: bounds as Bbox, minzoom, maxzoom, order };
+}
+
+// The order the tiler reads the scenes of a pass in (the one of the mosaic, the crop and the export), for a pass that is drawn
+// scene by scene: no mosaic is built, nothing is read of a scene (NM4-24). The ids travel in the body, as there can be more
+// of them than a URL takes.
+export async function fetchSceneOrder(datasetId: string, itemIds: readonly string[], asset: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(datasetId)}/scene-order`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: [...itemIds].sort(), asset }),
+    signal: AbortSignal.timeout(MOSAIC_TILEJSON_TIMEOUT_MS),
+  });
+  const body = await jsonOrThrow<{ order?: unknown }>(res);
+  const { order } = body;
+  if (!Array.isArray(order) || !order.every((id) => typeof id === 'string')) {
+    throw new Error('The tile server sent a scene order this page cannot read.');
+  }
+  return order;
 }
 
 // The band an operator tile shows: one, or three in the order red, green, blue for a colour picture (NM4-64); `null`: the
@@ -466,7 +500,7 @@ export function buildMosaicOperatorTileTemplate(
   steps: readonly TileStep[],
   band: ShownBands = null,
 ): string {
-  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicOperatorQuery(itemIds, assets, steps, band)}`;
+  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicOperatorQuery(itemIds, assets, steps, band)}&tilesize=${MOSAIC_TILE_SIZE}`;
 }
 
 // Its TileJSON: the cheap question, with the refusals of the tiles and `earthx:order`, the scenes in the order a
@@ -504,9 +538,25 @@ function operatorQuery(assets: readonly string[], steps: readonly TileStep[], ba
   return params.toString();
 }
 
-export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string): string {
+// `percentiles`: whole percents the tiler adds to its answer as `percentile_N` (at most 20, `p` of the route); the two of
+// "vmin"/"vmax" typed in percentiles (NM4-65 part 4).
+export const withPercentiles = (url: string, percentiles: readonly number[]): string =>
+  percentiles.length === 0 ? url : `${url}${url.includes('?') ? '&' : '?'}${percentiles.map((n) => `p=${n}`).join('&')}`;
+
+// The same statistics with the histogram of each band in `HISTOGRAM_BINS` bins, for the sliders of "Scale" (UI-03d).
+export const withHistogram = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}histogram_bins=${HISTOGRAM_BINS}`;
+
+export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string, percentiles: readonly number[] = []): string {
   const params = new URLSearchParams({ asset });
-  return `${itemBase(datasetId, itemId)}/statistics?${params.toString()}`;
+  return withPercentiles(`${itemBase(datasetId, itemId)}/statistics?${params.toString()}`, percentiles);
+}
+
+// The statistics of a result over the pixels its mask marks (`GET /results/{id}/statistics`, NM4-65 part 4): the bands as the
+// results document has them, each with its `statistics` and every whole percent as `percentile_N`. `410` once the result is gone.
+export async function fetchResultStatistics(resultPath: string, signal?: AbortSignal): Promise<{ statistics?: Record<string, unknown> }[]> {
+  const body = await jsonOrThrow<{ bands?: { statistics?: Record<string, unknown> }[] }>(await fetch(`${BASE}${resultPath}/statistics`, { signal }));
+  if (!Array.isArray(body.bands)) throw new Error('the tiler answered with statistics the page cannot read');
+  return body.bands;
 }
 
 // rio-tiler's `BandStatistics`, plain JSON (backend/earthx/access/tiles.py) —
@@ -526,8 +576,9 @@ export async function fetchStatistics(
   datasetId: string,
   itemId: string,
   asset: string,
+  percentiles: readonly number[] = [],
 ): Promise<Record<string, BandStatistics>> {
-  return jsonOrThrow(await fetch(buildStatisticsUrl(datasetId, itemId, asset)));
+  return jsonOrThrow(await fetch(buildStatisticsUrl(datasetId, itemId, asset, percentiles)));
 }
 
 // The statistics at an address the panel built (`buildOperatorStatisticsUrl`).
@@ -574,17 +625,8 @@ export async function postAreaStatistics(datasetId: string, order: unknown): Pro
   return parseAreaStatistics(await jsonOrThrow<unknown>(res));
 }
 
-// Pages through `nextToken` until the result is complete or `maxItems` is
-// reached — the API never sorts (D8, `earthx.api.main`), so both "the nearest
-// date" (runSearch) and "the footprints for a coverage cell" (M2-07c) have to
-// walk every page rather than trust the first one. `startToken` continues an
-// earlier walk ("Load more", M3-10b); `nextToken` is what is left once
-// `maxItems` stopped it, `null` when the result is complete.
-export async function searchAllPages(
-  q: Omit<SearchQuery, 'limit' | 'token'>,
-  maxItems: number,
-  startToken?: string,
-): Promise<{
+// What a walk through the pages has up to a page, or all of it once it is done.
+export interface PagesSoFar {
   features: StacItem[];
   numberMatched: number | null;
   ignoredFilters: string[];
@@ -592,7 +634,32 @@ export async function searchAllPages(
   incompleteCollections: IncompleteCollection[];
   nextToken: string | null;
   openCollections: string[] | null;
-}> {
+  // By dataset, the last the walk was told (a source that is done is not named on later pages).
+  aoiFilter: Record<string, AoiCounts>;
+}
+
+export interface WalkOptions {
+  // Called after every page with what the walk has so far (DS-03b: the cloud share in the AOI answers in short steps,
+  // and the list shows each step). Not called for a page that arrives after `signal` ended the walk.
+  onPage?: (soFar: PagesSoFar) => void;
+  // Ends the walk: the request in flight is dropped, and `nextToken` of the last `onPage` is where it can go on.
+  signal?: AbortSignal;
+}
+
+// Pages through `nextToken` until the result is complete or `maxItems` is
+// reached — the API never sorts (D8, `earthx.api.main`), so both "the nearest
+// date" (runSearch) and "the footprints for a coverage cell" (M2-07c) have to
+// walk every page rather than trust the first one. `startToken` continues an
+// earlier walk ("Load more", M3-10b); `nextToken` is what is left once
+// `maxItems` stopped it, `null` when the result is complete. A page may hold
+// no scene at all (the cloud share in the AOI is measured scene by scene and an
+// answer ends after a few seconds), and the walk goes on while the token does.
+export async function searchAllPages(
+  q: Omit<SearchQuery, 'limit' | 'token'>,
+  maxItems: number,
+  startToken?: string,
+  options: WalkOptions = {},
+): Promise<PagesSoFar> {
   let token = startToken;
   // The last page's: it says where the walk stopped.
   let openCollections: string[] | null = null;
@@ -607,8 +674,20 @@ export async function searchAllPages(
   // *different* source could still fail later) — collected across every page,
   // deduplicated by collection so a repeated notice does not pile up.
   const incompleteByCollection = new Map<string, IncompleteCollection>();
+  const aoiFilter: Record<string, AoiCounts> = {};
+  const soFar = (): PagesSoFar => ({
+    features: [...features],
+    numberMatched,
+    ignoredFilters,
+    ignoredFiltersByCollection: { ...ignoredFiltersByCollection },
+    incompleteCollections: [...incompleteByCollection.values()],
+    nextToken: token ?? null,
+    openCollections,
+    aoiFilter: { ...aoiFilter },
+  });
   do {
-    const page: ItemPage = await searchItems({ ...q, limit: 100, token });
+    const page: ItemPage = await searchItems({ ...q, limit: 100, token, signal: options.signal });
+    if (options.signal?.aborted) throw new DOMException('The search was stopped.', 'AbortError');
     features.push(...page.features);
     if (numberMatched === null) numberMatched = page.numberMatched;
     if (ignoredFilters.length === 0) ignoredFilters = page.ignoredFilters;
@@ -620,18 +699,12 @@ export async function searchAllPages(
     for (const entry of page.incompleteCollections) {
       if (!incompleteByCollection.has(entry.collection)) incompleteByCollection.set(entry.collection, entry);
     }
+    Object.assign(aoiFilter, page.aoiFilter);
     token = page.nextToken ?? undefined;
     openCollections = page.openCollections;
+    options.onPage?.(soFar());
   } while (token && features.length < maxItems);
-  return {
-    features,
-    numberMatched,
-    ignoredFilters,
-    ignoredFiltersByCollection,
-    incompleteCollections: [...incompleteByCollection.values()],
-    nextToken: token ?? null,
-    openCollections,
-  };
+  return soFar();
 }
 
 // The coverage route (`/coverage/{dataset_id}`, M2-05b: GET for the map extent, POST for an AOI since NM4-57)
@@ -735,11 +808,55 @@ export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse
 // POST /collections/{dataset}/download (M2-06): the AOI crop as a ZIP, streamed
 // synchronously and never cached (D3, D11). The body mirrors `DownloadRequest`
 // in `api/tiler.py`.
-// One of `RESOLUTION_FACTORS` in `access/download.py` (F10c, M3-18 §10):
-// how many times coarser than native to read. Native (`1`) is the default and
-// is never chosen automatically — the dialog always shows the choice.
-export const RESOLUTION_FACTORS = [1, 2, 4, 10] as const;
-export type ResolutionFactor = (typeof RESOLUTION_FACTORS)[number];
+// An export is always in the resolution of the source (one multi-band file: in the common resolution chosen); there is no factor to send.
+
+// The three forms of the files of a download (NM4-75), named as the server names them.
+export type DownloadForm = 'per_band' | 'per_resolution' | 'multi_band';
+
+// How many scenes of the selection are named to the platform for the table of bands (it asks for 1 to 25; the first few tell as much).
+export const BANDS_SCENES = 5;
+
+const textOf = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null);
+const numberOf = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+// The answer of `POST /collections/{dataset}/bands` as the dialog holds it; a row that does not read (no asset key) is left out.
+export function parseBands(value: unknown): DownloadBand[] {
+  const rows = value && typeof value === 'object' ? (value as { bands?: unknown }).bands : undefined;
+  if (!Array.isArray(rows)) throw new Error('the server answered with a list of bands the dialog cannot read');
+  return rows.flatMap((row: unknown) => {
+    const r = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+    const asset = textOf(r.asset);
+    if (asset === null) return [];
+    return [
+      {
+        asset,
+        name: textOf(r.name) ?? asset,
+        commonName: textOf(r.common_name),
+        wavelength: numberOf(r.wavelength_um),
+        resolution: numberOf(r.resolution_m),
+        categorical: r.categorical === true,
+        dataType: textOf(r.data_type),
+        scale: numberOf(r.scale),
+        offset: numberOf(r.offset),
+        nodata: numberOf(r.nodata),
+        unit: textOf(r.unit),
+        preselected: r.preselected === true,
+      },
+    ];
+  });
+}
+
+// The bands of the scenes named (the first `BANDS_SCENES` of a selection): in the order of the item, without the pictures made from the
+// bands; empty for a dataset with no file per band. The scene ids go in the body.
+export async function fetchBands(datasetId: string, itemIds: readonly string[], signal?: AbortSignal): Promise<DownloadBand[]> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(datasetId)}/bands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: itemIds.slice(0, BANDS_SCENES) }),
+    signal,
+  });
+  return parseBands(await jsonOrThrow<unknown>(res));
+}
 
 // `groups` (M3-17, replacing the flat `items` list): item ids per group,
 // mirroring `DownloadRequest.groups` in `api/tiler.py` — one merged file per
@@ -750,7 +867,10 @@ export interface DownloadCropRequest {
   groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
-  resolution?: ResolutionFactor;
+  // NM4-75: how the chosen bands lie in files; `commonResolution` (metres) goes with `multi_band` and with no other. Left out, the
+  // server writes one file per band, as before.
+  form?: DownloadForm;
+  commonResolution?: number;
 }
 
 // `totalGroups`/`skippedGroups` (M3-17, review finding 1): `X-Total-Groups`/
@@ -781,7 +901,8 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCr
       groups: req.groups,
       assets: req.assets,
       aoi: req.aoi,
-      resolution: req.resolution ?? 1,
+      ...(req.form ? { form: req.form } : {}),
+      ...(req.form === 'multi_band' && req.commonResolution !== undefined ? { common_resolution: req.commonResolution } : {}),
     }),
   });
   if (!res.ok) throw await httpErrorOf(res, { exportJob: res.status === 413 ? exportJobHint(res) : undefined });

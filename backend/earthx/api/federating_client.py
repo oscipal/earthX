@@ -80,8 +80,8 @@ from earthx.api.mixed_search import (
     is_mixed_token,
     mixed_fingerprint,
 )
-from earthx.api.search_filters import AOI_KEY, BODY_KEYS, read_search_conditions
-from earthx.catalog.registry import DatasetRegistry, ItemHolding, SearchFilter, UnknownDatasetError
+from earthx.api.search_filters import AOI_FILTERS_TEXT, AOI_KEY, BODY_KEYS, aoi_filters_text, read_search_conditions
+from earthx.catalog.registry import AoiMeasure, DatasetRegistry, ItemHolding, SearchFilter, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.search_filters import FilterConditions, InvalidFilter, RangeCondition
 from earthx.catalog.stats_cache import PooledStatsCache
@@ -274,7 +274,7 @@ class _NativeGroup:
 @dataclass(frozen=True, slots=True)
 class _FederatedSource:
     """One federated collection — always its own source (M3-13 §4.2) — with the
-    conditions on its own search filters (DS-02), ``None`` where it has none, and the cloud-share filter
+    conditions on its own search filters (DS-02), ``None`` where it has none, and the filter within the AOI
     that ``api`` measures itself (DS-03), ``None`` where it has none."""
 
     collection_id: str
@@ -293,7 +293,7 @@ _Source = _NativeGroup | _FederatedSource
 
 async def _aoi_requests(
     request: Request,
-    ranges: Mapping[str, RangeCondition],
+    ranges: Mapping[str, Mapping[AoiMeasure, RangeCondition]],
     infos: Mapping[str, tuple[ItemHolding, bool]],
     body: Mapping[str, Any],
     *,
@@ -301,7 +301,8 @@ async def _aoi_requests(
     bbox: tuple[float, ...] | None,
     intersects: Mapping[str, Any] | None,
 ) -> dict[str, AoiFilterRequest]:
-    """The cloud-share filter of each collection that has one, with the AOI it is measured in (DS-03 plan §6.5).
+    """The filter within the AOI of each collection that has one (all its ranges), with the AOI it is measured in
+    (DS-03 plan §6.5).
 
     A request that cannot be measured is a ``400`` with a text that names no value: no date range with both ends, no
     area, ``earthx:aoi`` without the filter, a body over the cap, or a collection whose items this platform holds
@@ -310,22 +311,19 @@ async def _aoi_requests(
     earthx_aoi = body.get(AOI_KEY)
     if not ranges:
         if earthx_aoi is not None:
-            raise HTTPException(status_code=400, detail=f"{AOI_KEY} goes with the cloud share in the AOI only")
+            raise HTTPException(status_code=400, detail=f"{AOI_KEY} goes with {AOI_FILTERS_TEXT} only")
         return {}
+    asked = aoi_filters_text(measure for conditions in ranges.values() for measure in conditions)
     if any(infos[cid][0] is not ItemHolding.FEDERATED for cid in ranges):
-        raise HTTPException(
-            status_code=400, detail="the cloud share in the AOI is measured on a federated collection only"
-        )
+        raise HTTPException(status_code=400, detail=f"{asked} is measured on a federated collection only")
     if len(await request.body()) > MAX_BODY_BYTES:
-        raise HTTPException(
-            status_code=400, detail=f"a search with the cloud share in the AOI is at most {MAX_BODY_BYTES} bytes"
-        )
+        raise HTTPException(status_code=400, detail=f"a search with {asked} is at most {MAX_BODY_BYTES} bytes")
     try:
         return {
             cid: read_aoi_request(
-                cid, condition, datetime_value=datetime_value, bbox=bbox, intersects=intersects, earthx_aoi=earthx_aoi
+                cid, conditions, datetime_value=datetime_value, bbox=bbox, intersects=intersects, earthx_aoi=earthx_aoi
             )
-            for cid, condition in ranges.items()
+            for cid, conditions in ranges.items()
         }
     except InvalidFilter as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
@@ -413,7 +411,7 @@ class DispatchOutcome:
     # while it links a next page — `searched` are that source's collections.
     open_collections: tuple[str, ...] | None = None
     searched: tuple[str, ...] = ()
-    # The counts of the cloud-share filter per collection (DS-03); `aoi_filter_mixed` says which key they go under.
+    # The counts of the filter within the AOI per collection (DS-03); `aoi_filter_mixed` says which key they go under.
     aoi_filter: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     aoi_filter_mixed: bool = False
 
@@ -862,7 +860,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             raise HTTPException(status_code=400, detail=str(error)) from None
         aoi_filters = await _aoi_requests(
             request,
-            conditions.aoi_cloud_cover,
+            conditions.aoi,
             infos,
             search_filters or {},
             datetime_value=datetime_value,
@@ -974,7 +972,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         limit: int | None,
         token: str | None,
     ) -> tuple[ItemCollection, dict[str, Any]]:
-        """A response of a lone federated search with the cloud-share filter, and the counts it reports."""
+        """A response of a lone federated search with the filter within the AOI, and the counts it reports."""
         try:
             page, counts = await self._filtered_search_raw(
                 source, request, bbox=bbox, intersects=intersects, ids=ids, limit=limit, token=token
@@ -994,7 +992,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         limit: int | None,
         token: str | None,
     ) -> tuple[ItemPage, dict[str, Any]]:
-        """One response of the cloud-share filter (DS-03 plan §6.5), none of the source's exceptions caught.
+        """One response of the filter within the AOI (DS-03 plan §6.5), none of the source's exceptions caught.
 
         Pages of the source come through :meth:`_federated_search_raw` with the other filters of the source and
         its own page cache; the scenes of a page are measured by ``api.aoi_cloud_filter``. The page it returns holds
@@ -1183,7 +1181,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         shares = dict(zip((source.key for source in to_query), compute_shares(page_limit, len(to_query)), strict=True))
 
         async def run(source: _Source) -> tuple[list[dict[str, Any]], str | None, str | None, dict[str, Any] | None]:
-            """``(features, next inner marker, failure reason, counts of the cloud-share filter)``."""
+            """``(features, next inner marker, failure reason, counts of the filter within the AOI)``."""
             share = shares[source.key]
             marker = pending[source.key]
             if share <= 0:

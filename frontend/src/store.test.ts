@@ -145,8 +145,8 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     { key: ['b'], label: 'Overpass B', items: [scene({ id: 'S3' })] },
   ];
 
-  function focusedDownload(id: string): { tileUrl: string; bounds: [number, number, number, number]; asset: string; minZoom: number; maxZoom: number } {
-    return { tileUrl: `/tiles/${id}/{z}/{x}/{y}`, bounds: [1, 47, 2, 48], asset: 'visual', minZoom: 0, maxZoom: 19 };
+  function focusedDownload(id: string): { datasetId: string; tileUrl: string; bounds: [number, number, number, number]; asset: string; minZoom: number; maxZoom: number } {
+    return { datasetId: COG_LIKE.id, tileUrl: `/tiles/${id}/{z}/{x}/{y}`, bounds: [1, 47, 2, 48], asset: 'visual', minZoom: 0, maxZoom: 19 };
   }
 
   beforeEach(() => {
@@ -171,8 +171,9 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     });
   });
 
-  it('pins one layer per group, not one for the whole selection', () => {
-    useAppStore.getState().addCurrentToLayers();
+  // NM4-53: "Add to layers" pins the image that is shown, "Add all to layers" every image, one layer each.
+  it('pins one layer per group with "Add all to layers", not one for the whole selection', () => {
+    useAppStore.getState().addAllToLayers();
     const { layers } = useAppStore.getState();
     expect(layers).toHaveLength(2);
     const itemIdSets = layers.map((l) => [...l.restore.itemIds].sort());
@@ -180,20 +181,28 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     expect(itemIdSets).toContainEqual(['S3']);
   });
 
-  it('each per-group layer carries its own itemIds as its one groupItemIds group (M3-17)', () => {
+  it('pins only the image that is shown with "Add to layers"', () => {
     useAppStore.getState().addCurrentToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers).toHaveLength(1);
+    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2']);
+  });
+
+  it('each per-group layer carries its own itemIds as its one groupItemIds group (M3-17)', () => {
+    useAppStore.getState().addAllToLayers();
     for (const layer of useAppStore.getState().layers) {
       expect(layer.restore.groupItemIds).toEqual([layer.restore.itemIds]);
     }
   });
 
-  it('an uncropped "View full selection" layer still splits groupItemIds by group (M3-17)', () => {
+  it('an uncropped "View full selection" layer is one group of its image (M3-17, NM4-53)', () => {
     useAppStore.setState({ cropToAoi: false });
-    useAppStore.getState().addCurrentToLayers();
-    const [layer] = useAppStore.getState().layers;
-    expect(layer.restore.groupItemIds.map((g) => [...g].sort())).toEqual(
+    useAppStore.getState().addAllToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers.flatMap((l) => l.restore.groupItemIds.map((g) => [...g].sort()))).toEqual(
       expect.arrayContaining([['S1', 'S2'], ['S3']]),
     );
+    expect(layers.every((l) => l.restore.groupItemIds.length === 1)).toBe(true);
   });
 
   it('clips each group layer\'s tile URLs to the AOI and marks it cropped', () => {
@@ -215,12 +224,12 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     expect(layers[0].restore.itemIds).toEqual(['S1']);
   });
 
-  it('still pins one layer for the whole selection when the view is uncropped', () => {
+  it('pins the shown image of an uncropped view as one layer, not cut to the AOI', () => {
     useAppStore.setState({ cropToAoi: false });
     useAppStore.getState().addCurrentToLayers();
     const { layers } = useAppStore.getState();
     expect(layers).toHaveLength(1);
-    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2', 'S3']);
+    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2']);
     expect(layers[0].restore.cropToAoi).toBe(false);
     for (const overlay of layers[0].overlays) {
       if (overlay.kind === 'raster') expect(overlay.tileUrl.startsWith('earthx-clip://')).toBe(false);
@@ -909,7 +918,8 @@ describe('download outcome (M3-17 plan §4)', () => {
       expect(s.downloadSelection).toBe(true);
       expect(s.downloadOutcome).toBe('crop');
       expect(s.error).toBeNull();
-      expect(fetch).not.toHaveBeenCalled();
+      // Only the bands of the scenes are asked of the platform (NM4-75), no scene is fetched.
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([`/collections/${COG_DATASET.id}/bands`]);
     });
 
     it('no AOI, a COG dataset: the originals outcome, links built straight from store.items', () => {
@@ -928,7 +938,7 @@ describe('download outcome (M3-17 plan §4)', () => {
       expect(s.downloadOriginalLinks).toEqual([
         { itemId: 'S1', groupLabel: 'Overpass A', asset: 'visual', href: 'https://data.test/S1.tif' },
       ]);
-      expect(fetch).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([`/collections/${COG_DATASET.id}/bands`]);
     });
 
     it('no AOI, a COG dataset: keeps the scenes of each group for a mosaic job (M4-12b)', () => {
@@ -1070,14 +1080,20 @@ describe('download outcome (M3-17 plan §4)', () => {
       };
     }
 
-    it('a cropped layer: the crop outcome, known without any fetch', async () => {
+    it('a cropped layer: the crop outcome, known before any fetch; the bands are asked of the platform for its scenes (NM4-75)', async () => {
       useAppStore.setState({
         datasets: datasetsFrom([COG_DATASET]),
         layers: [layerFixture({ cropToAoi: true, aoi: AOI })],
       });
-      await useAppStore.getState().openDownloadDialog('L1');
+      vi.mocked(fetch).mockImplementation(async () => jsonResponse(200, { bands: [] }));
+      const opening = useAppStore.getState().openDownloadDialog('L1');
       expect(useAppStore.getState().downloadOutcome).toBe('crop');
-      expect(fetch).not.toHaveBeenCalled();
+      expect(useAppStore.getState().downloadBandsLoading).toBe(true);
+      await opening;
+      await vi.waitFor(() => expect(useAppStore.getState().downloadBandsLoading).toBe(false));
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fetch).mock.calls[0][0]).toBe(`/collections/${COG_DATASET.id}/bands`);
+      expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toEqual({ items: ['S1', 'S2'] });
     });
 
     it('a "View full selection" Zarr layer without an AOI: disabled, known without any fetch', async () => {
@@ -1104,7 +1120,8 @@ describe('download outcome (M3-17 plan §4)', () => {
 
       const s = useAppStore.getState();
       expect(s.downloadOutcome).toBe('originals');
-      expect(fetch).toHaveBeenCalledTimes(2);
+      // The two scenes, and the bands of them asked of the platform.
+      expect(vi.mocked(fetch).mock.calls.filter(([url]) => !String(url).endsWith('/bands'))).toHaveLength(2);
       expect(s.downloadOriginalLinks).toEqual([
         { itemId: 'S1', groupLabel: 'Group 1', asset: 'visual', href: 'https://data.test/S1.tif' },
         { itemId: 'S2', groupLabel: 'Group 2', asset: 'visual', href: 'https://data.test/S2.tif' },

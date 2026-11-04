@@ -200,14 +200,13 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(useAppStore.getState().openSectionId).toBe('optical');
   });
 
-  it('Escape and a click outside close the list', () => {
+  it('a click outside closes the list; Escape does not (Otto, 2.11.2026)', () => {
     load(MIXED);
     openList();
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
-    expect(options()).toHaveLength(0);
-    openList();
+    expect(options().length).toBeGreaterThan(0);
     act(() => {
       document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
     });
@@ -314,7 +313,7 @@ describe('the dataset dropdown lies over the scenes (Otto, 30.09.2026)', () => {
     expect(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"').replace('▴', '▾')).toBe(before);
   });
 
-  it('is worked with the keyboard: arrow down opens it at the chosen dataset, Escape returns to the box', () => {
+  it('is worked with the keyboard: arrow down opens it at the chosen dataset, Escape closes nothing', () => {
     load(MIXED);
     box().focus();
     act(() => box().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
@@ -323,8 +322,8 @@ describe('the dataset dropdown lies over the scenes (Otto, 30.09.2026)', () => {
     act(() => options()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })));
     expect(document.activeElement).toBe(options()[2]);
     act(() => options()[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-    expect(options()).toEqual([]);
-    expect(document.activeElement).toBe(box());
+    expect(options()).toHaveLength(3);
+    expect(document.activeElement).toBe(options()[2]);
   });
 
   it('closes on a click beside it, and on Tab', () => {

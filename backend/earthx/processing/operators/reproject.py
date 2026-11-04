@@ -53,7 +53,7 @@ from rasterio.windows import Window
 
 from earthx.catalog.registry import LicenseTier
 from earthx.processing.errors import UnsupportedRecipe
-from earthx.processing.operators.base import BandMeta, Operator, RasterMeta, Requirement, Tier
+from earthx.processing.operators.base import BandMeta, Grid, Operator, RasterMeta, Requirement, Tier
 from earthx.processing.workfile import open_workfile_band
 
 __all__ = [
@@ -149,7 +149,7 @@ def _extra_requirements(params: BaseModel) -> frozenset[str]:
     return frozenset() if params.resampling in _PICKING else frozenset({"interpolation"})
 
 
-def _target_grid(meta: RasterMeta, params: ReprojectParams) -> tuple[Affine, int, int]:
+def _target_grid(meta: RasterMeta, params: ReprojectParams) -> Grid:
     left, bottom, right, top = transform_bounds(CRS.from_user_input(meta.crs), params.crs, *meta.bounds, densify_pts=21)
     size = params.resolution
     if not all(math.isfinite(value) for value in (left, bottom, right, top)):
@@ -164,9 +164,18 @@ def _target_grid(meta: RasterMeta, params: ReprojectParams) -> tuple[Affine, int
     return Affine(size, 0, left, 0, -size, top), width, height
 
 
-def _transform(meta: RasterMeta, params: BaseModel) -> RasterMeta:
+def _place(meta: RasterMeta, params: BaseModel) -> Grid:
     assert isinstance(params, ReprojectParams)
-    transform, width, height = _target_grid(meta, params)
+    return _target_grid(meta, params)
+
+
+def _transform(meta: RasterMeta, params: BaseModel) -> RasterMeta:
+    return _transform_on(meta, params, _place(meta, params))
+
+
+def _transform_on(meta: RasterMeta, params: BaseModel, grid: Grid) -> RasterMeta:
+    assert isinstance(params, ReprojectParams)
+    transform, width, height = grid
     bands = tuple(
         BandMeta(b.name, b.data_type, b.nodata, b.unit, b.scale, b.offset, resampled=True) for b in meta.bands
     )
@@ -241,6 +250,8 @@ REPROJECT = Operator(
     kind="grid",
     cost_factor=lambda params: _METHODS[params.resampling][1],
     transform=_transform,
+    place=_place,
+    transform_on=_transform_on,
     run=_run,
     lineage=_lineage,
     method=_method,

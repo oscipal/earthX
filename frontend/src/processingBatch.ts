@@ -51,6 +51,16 @@ export function runChoices(passes: readonly Pass[], scenes: readonly StacItem[])
   return choices;
 }
 
+// The choices for a crop of several passes, which is one object (NM4-06): the pass in view, or every pass as a job of its own,
+// all of them with the same steps on the AOI of the crop. There is no "Run as" and no job per scene.
+export function passChoices(passes: readonly Pass[]): RunChoice[] {
+  if (passes.length < 2) return [];
+  return [
+    { value: 'one', label: 'This pass only', count: 1, disabled: null },
+    { value: 'pass', label: `All passes (${passes.length} jobs)`, count: passes.length, disabled: passes.length > MAX_BATCH_JOBS ? TOO_MANY_JOBS : null },
+  ];
+}
+
 // The choice in force: the wanted one if it is still offered and allowed, else one job.
 export function effectiveRunAs(wanted: RunAs, choices: readonly RunChoice[]): RunAs {
   return choices.some((c) => c.value === wanted && c.disabled === null) ? wanted : 'one';

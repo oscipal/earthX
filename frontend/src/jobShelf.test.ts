@@ -46,6 +46,7 @@ function job(jobID: string, over: Partial<ShelfJob> = {}): ShelfJob {
     range: null,
     bandRanges: {},
     shownBand: null,
+    dates: null,
     order: null,
     deletedUntil: null,
     serverDeleted: false,
@@ -370,6 +371,47 @@ describe('what the shelf reads', () => {
       ],
     });
     expect(readShelf().shelf.jobs.map((j) => j.bandRanges)).toEqual([{ ndvi: hand }, {}, {}]);
+  });
+
+  // NM4-65 part 4: a range typed in percentiles keeps them, so that the settings show "%" again.
+  it('keeps the percentiles a range was typed as, and drops a pair that is none', () => {
+    const hand = { vmin: '3', vmax: '97', colormap: 'viridis' };
+    write({
+      v: 1,
+      jobs: [
+        entry({ range: { ...hand, percent: { low: '3', high: '97' } } }),
+        entry({ jobID: OTHER, range: { ...hand, percent: { low: '97', high: '3' } } }),
+        entry({ jobID: 'C'.repeat(22), range: { ...hand, percent: { low: 3, high: '97' } } }),
+        entry({ jobID: 'D'.repeat(22), bandRanges: { ndvi: { ...hand, percent: { low: '1', high: '99' } } } }),
+      ],
+    });
+    const jobs = readShelf().shelf.jobs;
+    expect(jobs[0].range).toEqual({ ...hand, percent: { low: '3', high: '97' } });
+    expect(jobs[1].range).toEqual(hand);
+    expect(jobs[2].range).toEqual(hand);
+    expect(jobs[3].bandRanges).toEqual({ ndvi: { ...hand, percent: { low: '1', high: '99' } } });
+    saveShelf(shelfOf([job('A'.repeat(22), { range: { ...hand, percent: { low: '3', high: '97' } } }), job('B'.repeat(22), { range: hand })]));
+    const written = Object.fromEntries(stored().jobs.map((j: { jobID: string; range?: object }) => [j.jobID, j.range]));
+    expect(written['A'.repeat(22)]).toEqual({ ...hand, percent: { low: '3', high: '97' } });
+    expect(written['B'.repeat(22)]).toEqual(hand);
+  });
+
+  // NM4-65 part 3: the layer of a result shows the day of the scenes of its job.
+  it('keeps the day of the scenes as text of that shape, and nothing else', () => {
+    write({
+      v: 1,
+      jobs: [
+        entry({ dates: '2026-07-01' }),
+        entry({ jobID: OTHER, dates: '2026-07-01 – 2026-07-06' }),
+        entry({ jobID: 'C'.repeat(22), dates: 'yesterday' }),
+        entry({ jobID: 'D'.repeat(22), dates: 20260701 }),
+        entry({ jobID: 'E'.repeat(22), dates: '2026-07-01<script>' }),
+      ],
+    });
+    expect(readShelf().shelf.jobs.map((j) => j.dates)).toEqual(['2026-07-01', '2026-07-01 – 2026-07-06', null, null, null]);
+    saveShelf(shelfOf([job('A'.repeat(22), { dates: '2026-07-01' }), job('B'.repeat(22))]));
+    const written = Object.fromEntries(stored().jobs.map((j: { jobID: string; dates?: string }) => [j.jobID, j.dates]));
+    expect([written['A'.repeat(22)], written['B'.repeat(22)]]).toEqual(['2026-07-01', undefined]);
   });
 
   it('keeps the band the preview showed as text, and nothing else', () => {

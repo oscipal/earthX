@@ -71,12 +71,14 @@ describe('TipLayer', () => {
     expect(layer()).toBeNull();
   });
 
-  it('closes on Esc', () => {
+  it('stays on Esc and goes when the focus leaves (Otto, 2.11.2026: Esc closes nothing)', () => {
     act(() => tip().focus());
     expect(layer()).not.toBeNull();
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
+    expect(layer()).not.toBeNull();
+    act(() => tip().blur());
     expect(layer()).toBeNull();
   });
 

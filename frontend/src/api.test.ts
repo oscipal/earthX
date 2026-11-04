@@ -9,9 +9,11 @@ import {
   buildTileTemplate,
   downloadCrop,
   errorDetail,
+  fetchBands,
   fetchCoverage,
   fetchItem,
   fetchMosaicTileJson,
+  fetchSceneOrder,
   HttpError,
   nextTokenFrom,
   parseAreaStatistics,
@@ -20,6 +22,7 @@ import {
   searchItems,
   uploadAoi,
 } from './api';
+import { tileSizeOf } from './tileSize';
 
 describe('buildSearchBody', () => {
   it('carries the collections, bbox, datetime range, limit and token', () => {
@@ -359,6 +362,32 @@ describe('downloadCrop', () => {
     assets: ['visual'],
     aoi: { type: 'Polygon' as const, coordinates: [] },
   };
+
+  // NM4-75: the form of the files and the common resolution go in the body, the latter for one multi-band file only.
+  const bodyOf = async (extra: object) => {
+    const fetchMock = vi.fn().mockResolvedValue(blobResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    await downloadCrop({ ...request, ...extra });
+    return JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>;
+  };
+
+  it('sends no form unless one is given: the server then writes one file per band, as before', async () => {
+    const body = await bodyOf({});
+    expect(body).toEqual({ groups: [['ITEM1']], assets: ['visual'], aoi: { type: 'Polygon', coordinates: [] } });
+    expect(body).not.toHaveProperty('resolution');
+  });
+
+  it.each(['per_band', 'per_resolution'] as const)('the form %s sends no common resolution, even if one is held', async (form) => {
+    const body = await bodyOf({ form, commonResolution: 20 });
+    expect(body.form).toBe(form);
+    expect(body).not.toHaveProperty('common_resolution');
+  });
+
+  it('one multi-band file sends the common resolution in metres', async () => {
+    const body = await bodyOf({ form: 'multi_band', commonResolution: 20 });
+    expect(body).toMatchObject({ form: 'multi_band', common_resolution: 20 });
+    expect(body).not.toHaveProperty('resolution');
+  });
 
   it('a 413 over the output size cap surfaces the backend detail unchanged', async () => {
     vi.stubGlobal(
@@ -742,7 +771,23 @@ describe('the mosaic of a time step (M4-17)', () => {
     expect(template).toContain('/collections/a%20b/mosaic/');
     const params = new URL(template, 'http://localhost').searchParams;
     expect(params.getAll('item')).toEqual(['x&y=1', 'z/../w']);
-    expect([...params.keys()].sort()).toEqual(['asset', 'item', 'item']);
+    expect([...params.keys()].sort()).toEqual(['asset', 'item', 'item', 'tilesize']);
+  });
+
+  it('asks for 512-px tiles, which the tiler takes as 256 or 512 (NM4-29b)', () => {
+    expect(new URL(buildMosaicTileTemplate('d', ['a', 'b'], 'x'), 'http://localhost').searchParams.get('tilesize')).toBe('512');
+    expect(tileSizeOf(buildMosaicTileTemplate('d', ['a', 'b'], 'x'))).toBe(512);
+  });
+
+  it('leaves the TileJSON of the same pass without a size', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      return { ok: true, status: 200, statusText: '', json: async () => ({ bounds: [0, 0, 1, 1], minzoom: 8, maxzoom: 19, 'earthx:order': ['a'] }) } as Response;
+    });
+    await fetchMosaicTileJson('d', ['a', 'b'], 'x');
+    vi.unstubAllGlobals();
+    expect(urls[0]).not.toContain('tilesize');
   });
 });
 
@@ -854,5 +899,64 @@ describe('postAreaStatistics', () => {
       exact: true,
       factor: 1,
     });
+  });
+});
+
+describe('fetchSceneOrder (NM4-24)', () => {
+  const answer = (status: number, body: unknown) =>
+    vi.fn().mockResolvedValue({ ok: status < 300, status, statusText: '', json: async () => body } as Response);
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('posts the ids and the asset in the body, sorted, to a route of its own, and reads the order', async () => {
+    vi.stubGlobal('fetch', answer(200, { order: ['A', 'B', 'C'] }));
+    expect(await fetchSceneOrder('sentinel-2-c1-l2a', ['C', 'A', 'B'], 'visual')).toEqual(['A', 'B', 'C']);
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/collections/sentinel-2-c1-l2a/scene-order');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ items: ['A', 'B', 'C'], asset: 'visual' });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('throws the reason of the tiler', async () => {
+    vi.stubGlobal('fetch', answer(503, { detail: 'scene orders need the item cache' }));
+    await expect(fetchSceneOrder('d', ['A', 'B'], 'visual')).rejects.toMatchObject({ status: 503, message: 'scene orders need the item cache' });
+  });
+
+  it.each([['no order', {}], ['numbers', { order: [1, 2] }], ['a text', { order: 'AB' }]])('refuses an answer with %s', async (_name, body) => {
+    vi.stubGlobal('fetch', answer(200, body));
+    await expect(fetchSceneOrder('d', ['A', 'B'], 'visual')).rejects.toThrow('cannot read');
+  });
+});
+
+// NM4-75: the table of bands of the download dialog is the platform's answer for the scenes named.
+describe('fetchBands', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const answer = { bands: [{ asset: 'a', name: 'A', common_name: null, wavelength_um: 0.5, resolution_m: 10, categorical: false, preselected: true }] };
+
+  it('posts the scene ids in the body, never in the address, and reads the rows', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(answer), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const found = await fetchBands('some/dataset', ['S1', 'S2']);
+    expect(fetchMock.mock.calls[0][0]).toBe('/collections/some%2Fdataset/bands');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ items: ['S1', 'S2'] });
+    expect(found).toEqual([expect.objectContaining({ asset: 'a', name: 'A', wavelength: 0.5, resolution: 10, preselected: true })]);
+  });
+
+  it('names at most the first five scenes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ bands: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await fetchBands('d', ['1', '2', '3', '4', '5', '6', '7']);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).items).toEqual(['1', '2', '3', '4', '5']);
+  });
+
+  it('throws the refusal of the platform, and an answer that is no list of bands', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: 'unknown scene' }), { status: 404, headers: { 'Content-Type': 'application/json' } })));
+    await expect(fetchBands('d', ['x'])).rejects.toThrow('unknown scene');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ nothing: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    await expect(fetchBands('d', ['x'])).rejects.toThrow(/cannot read/);
   });
 });

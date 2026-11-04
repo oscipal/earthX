@@ -2,8 +2,8 @@
 // `band_math` steps add, and the choice of those that go into the result. Pure functions; the state lives in
 // `processingStore.ts`, the order is built in `processingOrder.ts`.
 
-import type { BandSource, DraftStep } from './processingOrder';
-import { namesIn } from './schemaForm';
+import type { BandSource, DraftStep, Operator } from './processingOrder';
+import { namesIn, type FieldValue } from './schemaForm';
 
 // The longest name of a band a step adds (`band_math.MAX_NAME_CHARS`): it fits on a chip.
 export const MAX_NAME_LENGTH = 32;
@@ -74,6 +74,14 @@ export function defaultName(taken: readonly string[]): string {
   return `result_${n}`;
 }
 
+// The name of a step in its title: a band math step is named after the band it adds, a step that adds none "Mask_1" and the
+// like (adr/0020 §14).
+export function stepName(operator: Operator | undefined, values: Record<string, FieldValue>, index: number): string {
+  if (operator?.op === 'band_math') return typeof values.name === 'string' && values.name !== '' ? values.name : '…';
+  const own = operator ? operator.op.charAt(0).toUpperCase() + operator.op.slice(1) : 'Unknown operator';
+  return `${own}_${index + 1}`;
+}
+
 export const isBandMath = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math';
 
 // The name a `band_math` step adds, as typed.
@@ -95,7 +103,7 @@ export function renameInExpression(expression: string, from: string, to: string)
 }
 
 // `steps` after the band `from`, which the step `key` adds, has been renamed `to`: the later expressions and the
-// `bands` of later `normalize` steps name it anew. Earlier steps cannot see the band and stay as they are.
+// `bands` of later `normalize` steps and the `band` of later `mask_values` steps name it anew. Earlier steps cannot see the band and stay as they are.
 export function renameResult(steps: readonly DraftStep[], key: number, from: string, to: string): DraftStep[] {
   const at = steps.findIndex((step) => step.key === key);
   return steps.map((step, index) => {
@@ -103,6 +111,9 @@ export function renameResult(steps: readonly DraftStep[], key: number, from: str
     if (isBandMath(step) && typeof step.values.expression === 'string') {
       const expression = renameInExpression(step.values.expression, from, to);
       return expression === step.values.expression ? step : { ...step, values: { ...step.values, expression } };
+    }
+    if (step.op === 'mask_values') {
+      return step.values.band === from ? { ...step, values: { ...step.values, band: to } } : step;
     }
     if (step.op === 'normalize' && typeof step.values.bands === 'string') {
       const names = namesIn(step.values.bands);
@@ -175,6 +186,11 @@ function tokens(text: string): Token[] | null {
     found.push(match[1] !== undefined ? { kind: 'number', text: match[1] } : match[2] !== undefined ? { kind: 'name', text: match[2] } : { kind: 'op', text: match[3] });
   }
   return found;
+}
+
+// The tokens of an expression as text, whitespace left out; `null` where the text has something that is no token.
+export function expressionTokens(text: string): string[] | null {
+  return tokens(text)?.map((token) => token.text) ?? null;
 }
 
 const BINARY = new Set(['+', '-', '*', '/', '**', '<', '<=', '>', '>=', '==', '!=', '&', '|']);

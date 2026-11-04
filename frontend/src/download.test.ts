@@ -13,10 +13,10 @@ import {
   downloadRequestForSelection,
   isCogFormat,
   isDirectDownloadHref,
+  layerDownloadKind,
   linkListText,
   noOriginalsReason,
   originalFileLinks,
-  resolutionOptionLabel,
   termsNoticeText,
 } from './download';
 import type { LayerRestore, MapLayer } from './layers';
@@ -38,7 +38,7 @@ const AOI: GeoJSON.Geometry = {
 function restore(overrides: Partial<LayerRestore> = {}): LayerRestore {
   return {
     focusMode: true,
-    downloaded: { S2A_1: { tileUrl: 't', bounds: [10, 47, 11, 48], asset: 'visual', minZoom: 0, maxZoom: 19 } },
+    downloaded: { S2A_1: { datasetId: 'sentinel-2-c1-l2a', tileUrl: 't', bounds: [10, 47, 11, 48], asset: 'visual', minZoom: 0, maxZoom: 19 } },
     appliedRender: {},
     activeGroupIndex: 0,
     selectedIds: ['S2A_1'],
@@ -109,13 +109,25 @@ describe('downloadRequestFor', () => {
         itemIds: ['S2A_1', 'S2A_2'],
         groupItemIds: [['S2A_1', 'S2A_2']],
         downloaded: {
-          S2A_1: { tileUrl: 't1', bounds: [10, 47, 11, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
-          S2A_2: { tileUrl: 't2', bounds: [11, 47, 12, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
+          S2A_1: { datasetId: 'sentinel-2-c1-l2a', tileUrl: 't1', bounds: [10, 47, 11, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
+          S2A_2: { datasetId: 'sentinel-2-c1-l2a', tileUrl: 't2', bounds: [11, 47, 12, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
         },
       }),
       DATASETS,
     );
     expect(req?.groups).toEqual([['S2A_1', 'S2A_2']]);
+    expect(req?.assets).toEqual(['visual']);
+  });
+
+  // Otto, 1.11.2026 (zu #272): a layer pinned with a band downloads the raw bands of its scenes, not the one band it draws now.
+  it('asks for the asset the scenes were opened with, not the band the layer draws', () => {
+    const req = downloadRequestFor(
+      layer({
+        downloaded: { S2A_1: { datasetId: 'sentinel-2-c1-l2a', tileUrl: 't1', bounds: [10, 47, 11, 48], asset: 'B04', baseAsset: 'visual', minZoom: 0, maxZoom: 19 } },
+        appliedRender: { band: 'B04' },
+      }),
+      DATASETS,
+    );
     expect(req?.assets).toEqual(['visual']);
   });
 
@@ -494,33 +506,6 @@ function item(overrides: Partial<StacItem> = {}): StacItem {
   };
 }
 
-describe('resolutionOptionLabel', () => {
-  it('names the factor alone, native without a suffix', () => {
-    expect(resolutionOptionLabel([], 'visual', 1)).toBe('Native');
-    expect(resolutionOptionLabel([], 'visual', 4)).toBe('4×');
-  });
-
-  it('adds the metre figure once a gsd is known', () => {
-    expect(resolutionOptionLabel([item()], 'visual', 1)).toBe('Native (10 m)');
-    expect(resolutionOptionLabel([item()], 'visual', 2)).toBe('2× (20 m)');
-  });
-
-  it('reads the gsd off proj:transform when the asset has none of its own', () => {
-    const withTransform = item({ assets: { visual: { href: 'h', 'proj:transform': [20, 0, 0, 0, -20, 0] } } });
-    expect(resolutionOptionLabel([withTransform], 'visual', 1)).toBe('Native (20 m)');
-  });
-
-  it('uses the finest gsd among several items, matching the backend worst case', () => {
-    const fine = item({ id: 'A', assets: { visual: { href: 'h', gsd: 10 } } });
-    const coarse = item({ id: 'B', assets: { visual: { href: 'h', gsd: 60 } } });
-    expect(resolutionOptionLabel([coarse, fine], 'visual', 1)).toBe('Native (10 m)');
-  });
-
-  it('falls back to the factor alone when no item names this asset', () => {
-    expect(resolutionOptionLabel([item()], 'thumbnail', 1)).toBe('Native');
-  });
-});
-
 describe('linkListText (Save link list)', () => {
   const link = (itemId: string, href: string) => ({ itemId, groupLabel: 'g', asset: 'visual', href });
 
@@ -542,5 +527,26 @@ describe('noOriginalsReason', () => {
       'Some Zarr store has no single original file per scene. Use Download crop.',
     );
     expect(noOriginalsReason(undefined)).toMatch(/^This dataset has no single original file/);
+  });
+});
+
+describe('layerDownloadKind', () => {
+  const result = (patch: Partial<NonNullable<MapLayer['result']>> = {}): MapLayer => ({
+    ...layer(),
+    derived: 'result',
+    result: { jobID: 'abcdefghij0123456789_-', expires: '2099-01-01T00:00:00Z', gsd: null, resampled: null, expired: false, dataType: null, stats: null, ...patch },
+  });
+
+  it('is the dialog for a layer of scenes and the archive for a result', () => {
+    expect(layerDownloadKind(layer())).toBe('dialog');
+    expect(layerDownloadKind(result())).toBe('zip');
+  });
+
+  it('offers nothing once the results are gone, for a job that was deleted or an id that is none, and for a layer without scenes', () => {
+    expect(layerDownloadKind(result({ expired: true }))).toBeNull();
+    expect(layerDownloadKind(result({ deleted: true }))).toBeNull();
+    expect(layerDownloadKind(result({ jobID: '../x' }))).toBeNull();
+    expect(layerDownloadKind(layer({ itemIds: [] }))).toBeNull();
+    expect(layerDownloadKind({ ...layer(), derived: 'preview' })).toBeNull();
   });
 });

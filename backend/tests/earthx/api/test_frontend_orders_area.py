@@ -45,9 +45,13 @@ def asked(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """The recipes the route would have read: the read itself is a stand-in with a plausible answer."""
     recipes: list[Any] = []
 
-    def area_statistics(recipe: Any, *, max_pixels: int, extra_percentiles: Any = ()) -> core.AreaStatistics:
+    def area_statistics(
+        recipe: Any, *, max_pixels: int, extra_percentiles: Any = (), histogram: bool = False
+    ) -> core.AreaStatistics:
         recipes.append(recipe)
-        statistics = {"minimum": 0.0, "maximum": 1.0, "mean": 0.5, "count": 4, "valid_percent": 100.0}
+        statistics: dict[str, Any] = {"minimum": 0.0, "maximum": 1.0, "mean": 0.5, "count": 4, "valid_percent": 100.0}
+        if histogram:
+            statistics["histogram"] = [[4.0], [0.0, 1.0]]
         return core.AreaStatistics(bands=[{"name": "b1", "statistics": statistics}], factor=1, pixels_read=4)
 
     monkeypatch.setattr(core, "area_statistics", area_statistics)
@@ -101,11 +105,13 @@ def test_the_route_takes_the_order_the_panel_builds(path: Path, asked: list[Any]
 
 
 @pytest.mark.parametrize("path", WITHOUT_AREA, ids=lambda p: p.stem)
-def test_an_order_without_an_area_is_refused_before_any_item_is_asked(path: Path, asked: list[Any]) -> None:
-    """ "Whole scene" measures the first scene as it did: the panel does not post such an order."""
-    for client in client_for({}):  # an item asked for would be a KeyError
+def test_an_order_without_an_area_is_measured_over_the_union_of_the_footprints(path: Path, asked: list[Any]) -> None:
+    """NM4-71: "whole scene" is measured like a job takes it, the route no longer turns such an order away (KE6)."""
+    recipe = recipe_of(path)
+    for client in client_for(items_of(recipe)):
         response = post(client, path)
-    assert response.status_code == 422 and asked == []
+    assert response.status_code == 200, response.text
+    assert len(asked) == 1 and asked[0].aoi is not None, "the intake put the union of the footprints in the recipe"
 
 
 def test_the_check_would_have_found_an_order_built_wrongly(asked: list[Any]) -> None:

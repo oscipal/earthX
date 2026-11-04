@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    DS-03a2: checks the filter "Within AOI" of the search (earthx:aoi_cloud_cover) against the real source (plan section 6.18).
+    DS-03a2: checks the filters within the AOI of the search (earthx:aoi_cloud_cover, earthx:aoi_nodata) against the real source (plan section 6.18).
 
 .DESCRIPTION
     Voraussetzung: der Stack laeuft (docker compose up -d --build) und das Netz erreicht die Quelle
@@ -168,15 +168,16 @@ function New-Square {
 }
 
 function New-Body {
-    # The search as the panel will send it. $Upper: the upper bound of the share in the AOI, $null for no filter.
+    # The search as the panel will send it. $Upper: the upper bound of the filter within the AOI, $null for no filter;
+    # $Property: which one (the share of clouds, or the share of no data).
     param([string]$Collection = $Dataset, [string]$Datetime = $Period, [string]$Area = (New-Square), $Upper = 100,
-          [int]$Limit = 100, [string]$Token, [string]$Extra)
+          [int]$Limit = 100, [string]$Token, [string]$Extra, [string]$Property = 'earthx:aoi_cloud_cover')
     $text = '{"collections": ["' + $Collection + '"]'
     if ($Datetime) { $text += ', "datetime": "' + $Datetime + '"' }
     if ($Area) { $text += ', "intersects": ' + $Area }
     $text += ', "limit": ' + $Limit
     if ($null -ne $Upper) {
-        $text += ', "query_by_collection": {"' + $Collection + '": {"earthx:aoi_cloud_cover": {"lte": ' + (Format-Number $Upper) + '}}}'
+        $text += ', "query_by_collection": {"' + $Collection + '": {"' + $Property + '": {"lte": ' + (Format-Number $Upper) + '}}}'
     }
     if ($Token) { $text += ', "token": "' + $Token + '"' }
     if ($Extra) { $text += ', ' + $Extra }
@@ -286,10 +287,12 @@ function Test-Refusal {
 }
 
 $point = '{"type": "Point", "coordinates": [' + (Format-Number $CentreLon) + ', ' + (Format-Number $CentreLat) + ']}'
-Test-Refusal 'Ohne Zeitraum' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Datetime '')) 'date range'
-Test-Refusal 'Zeitraum mit offenem Ende' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Datetime '2025-06-15T00:00:00Z/..')) 'date range'
-Test-Refusal 'Punkt als Flaeche' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Area $point)) 'needs an area'
-Test-Refusal 'earthx:aoi ohne den Filter' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Upper $null -Extra ('"earthx:aoi": ' + (New-Square)))) 'cloud share'
+Test-Refusal 'Ohne Zeitraum' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Datetime '')) 'earthx:aoi_cloud_cover needs a date range'
+Test-Refusal 'Zeitraum mit offenem Ende' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Datetime '2025-06-15T00:00:00Z/..')) 'earthx:aoi_cloud_cover needs a date range'
+Test-Refusal 'Punkt als Flaeche' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Area $point)) 'earthx:aoi_cloud_cover needs an area'
+Test-Refusal 'Ohne Zeitraum, nur No data' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Datetime '' -Property 'earthx:aoi_nodata')) 'earthx:aoi_nodata needs a date range'
+Test-Refusal 'Punkt als Flaeche, nur No data' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Area $point -Property 'earthx:aoi_nodata')) 'earthx:aoi_nodata needs an area'
+Test-Refusal 'earthx:aoi ohne den Filter' (Invoke-Http -Method Post -Uri $Search -Body (New-Body -Upper $null -Extra ('"earthx:aoi": ' + (New-Square)))) 'goes with a filter measured in the AOI'
 $elevation = Invoke-Http -Method Post -Uri $Search -Body (New-Body -Collection $Elevation)
 Test-Step ($elevation.Status -eq 400) 'Der Filter beim Hoehenmodell' 'HTTP 400' (Get-Detail $elevation)
 $get = Invoke-Http -Uri ("$Search" + '?collections=' + $Dataset + '&query=%7B%7D')
@@ -301,7 +304,10 @@ Write-Host '5. Die Coverage-Karte nimmt den Filter nicht' -ForegroundColor Cyan
 
 $query = [uri]::EscapeDataString('{"earthx:aoi_cloud_cover": {"lte": 20}}')
 $coverage = Invoke-Http -Uri "$ApiUrl/coverage/${Dataset}?zoom=4&query=$query"
-Test-Refusal 'Coverage mit dem Filter' $coverage 'coverage map'
+Test-Refusal 'Coverage mit dem Filter' $coverage 'the coverage map cannot apply earthx:aoi_cloud_cover'
+$queryNoData = [uri]::EscapeDataString('{"earthx:aoi_nodata": {"lte": 20}}')
+$coverageNoData = Invoke-Http -Uri "$ApiUrl/coverage/${Dataset}?zoom=4&query=$queryNoData"
+Test-Refusal 'Coverage mit No data' $coverageNoData 'the coverage map cannot apply earthx:aoi_nodata'
 
 # ---- 6. the log of the api --------------------------------------------------------------------------
 Write-Host ''

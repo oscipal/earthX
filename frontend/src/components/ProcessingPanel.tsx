@@ -4,7 +4,9 @@
 // with an estimate before it starts as a job. The same steps can make one job per
 // pass or per scene (M4-13c-4). Built from the schema of
 // `/processing/processes/recipe?dataset=…`, nothing per dataset here. A side
-// bar at the right edge, a sheet from below on narrow screens (M4-13c §3.1);
+// bar at the right edge, in the column of the settings bar but wider, a sheet from
+// below on narrow screens (M4-13c §3.1, UI-03b). Its sections stand in one order:
+// Selection, Bands, Processing steps, Output, Preview on the map, then Review and Start;
 // the jobs are listed in the processing manager beside the rail, and a click
 // on one shows its details here (`JobDetails.tsx`, UI-01). The first step shows
 // on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
@@ -14,6 +16,8 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
+import { resamplingParts } from '../resamplingWarning';
+import { DEFAULT_PERCENT, percentOf, samePercent, type Percent, type RangeUnit } from '../percentRange';
 import { totalOf } from '../processingBatch';
 import {
   EMPTY_OUTPUT,
@@ -36,21 +40,33 @@ import {
   rescaleOf,
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
-import { orderView, type PartOutcome, selectionState, useProcessingStore, type OrderView } from '../processingStore';
+import { AFTER_REPROJECT } from '../normalizeMethods';
+import { measuredNumbers, type MeasureNeed } from '../processingOrder';
+import {
+  OUTSIDE_TEXT,
+  orderView,
+  type PartOutcome,
+  sceneCountOf,
+  selectionState,
+  useProcessingStore,
+  type OrderView,
+} from '../processingStore';
 import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
-import { COLORMAPS } from '../render';
-import { ticksOfOpen, useAppStore } from '../store';
+import { useAppStore } from '../store';
 import type { StacItem } from '../types';
-import BandSelect from './BandSelect';
+import RenderFields from './RenderFields';
+import ResamplingDialog from './ResamplingDialog';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
 import Tip from './Tip';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
+import CloseButton from './CloseButton';
 
 // What the server says when the output needs more memory than a job may use (`plan.py`, 413).
 const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
+
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
 
@@ -135,7 +151,7 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
     <section className="pp-section" aria-label="Bands">
       <div className="pp-bands-head">
         <h3 className="pp-heading">Bands</h3>
-        <Tip text="Bands of the data. Click one to put its name into an expression." />
+        <Tip text={view.fixed?.result ? 'Bands of the result. Click one to put its name into an expression.' : 'Bands of the data. Click one to put its name into an expression.'} />
       </div>
       <div className="pp-chips">
         {view.dataBands
@@ -174,7 +190,7 @@ function OutputBands({ view }: { view: OrderView }) {
   const checkedOnOpening = useRef<string | null>(null);
   const checked = lonely !== null && view.output.includes(lonely);
   // Not where the steps already add a band: the results are what is in the output then.
-  const results = view.results.length;
+  const results = view.fresh.length;
   useEffect(() => {
     if (lonely === null || checkedOnOpening.current === lonely) return;
     checkedOnOpening.current = lonely;
@@ -184,7 +200,7 @@ function OutputBands({ view }: { view: OrderView }) {
   const on = new Set(view.output);
   const data = view.dataBands.filter((band) => !band.auxiliary || on.has(band.name));
   // What "All" takes: every result and every band of the data that is no layer and no auxiliary asset.
-  const everything = [...view.results.map((result) => result.name), ...view.selectable];
+  const everything = [...view.fresh.map((result) => result.name), ...view.selectable];
   const chip = (name: string, band?: DataBand) => (
     <button key={name} type="button" className={`pp-chip${on.has(name) ? ' on' : ''}`} aria-pressed={on.has(name)} onClick={() => toggle(name)}>
       {name}
@@ -201,10 +217,10 @@ function OutputBands({ view }: { view: OrderView }) {
           {count} band{count === 1 ? '' : 's'} · {view.dtype}
         </span>
       </div>
-      {view.results.length > 0 && (
+      {view.fresh.length > 0 && (
         <div className="pp-chip-row" role="group" aria-label="New bands">
           <span className="pp-help">New</span>
-          <div className="pp-chips">{view.results.map((result) => chip(result.name))}</div>
+          <div className="pp-chips">{view.fresh.map((result) => chip(result.name))}</div>
         </div>
       )}
       {data.length > 0 && (
@@ -274,6 +290,8 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
   const area = useProcessingStore((s) => s.area);
   const setArea = useProcessingStore((s) => s.setArea);
   const scenes = (view.pass?.items.length ?? 0) > 1 ? 'scenes' : 'scene';
+  // On a result "Whole scene" is the result's own area, and "AOI only" another AOI inside it (NM4-05b).
+  const result = view.fixed?.result != null;
   return (
     <div className="pp-area">
       <div className="pp-toggle" role="group" aria-label="Area">
@@ -282,7 +300,7 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           type="button"
           className={`pp-seg${area === 'scene' ? ' on' : ''}`}
           aria-pressed={area === 'scene'}
-          title="Process the whole scenes; no AOI is sent"
+          title={result ? 'Process the area of the result' : 'Process the whole scenes; no AOI is sent'}
           onClick={() => setArea('scene')}
         >
           Whole scene
@@ -292,16 +310,20 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           className={`pp-seg${area === 'aoi' ? ' on' : ''}`}
           aria-pressed={area === 'aoi'}
           disabled={!hasAoi}
-          title={hasAoi ? 'Process only the AOI' : 'Draw an AOI first'}
+          title={hasAoi ? (result ? 'Process only the AOI, cut to the area of the result' : 'Process only the AOI') : 'Draw an AOI first'}
           onClick={() => setArea('aoi')}
         >
           AOI only
         </button>
       </div>
       {area === 'scene' ? (
-        <p className="pp-help">The result covers the whole {scenes}; the mask marks where they have data.</p>
+        <p className="pp-help">
+          {result ? 'The result covers the area it has.' : `The result covers the whole ${scenes}; the mask marks where they have data.`}
+        </p>
+      ) : !hasAoi ? (
+        <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
       ) : (
-        !hasAoi && <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
+        view.outside && <p className="hint-text error">{OUTSIDE_TEXT}</p>
       )}
     </div>
   );
@@ -310,13 +332,15 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
 // "Run as": one job, or one per pass or scene (M4-13c-4). Only offered where it
 // makes a choice; a choice over the limit is greyed out with the reason.
 function RunAsChoice({ view }: { view: OrderView }) {
+  // A crop that is one object has no "Run as", only its passes (NM4-06).
+  const label = view.fixed ? 'Passes' : 'Run as';
   const setRunAs = useProcessingStore((s) => s.setRunAs);
   if (view.runChoices.length < 2) return null;
   const limits = [...new Set(view.runChoices.flatMap((choice) => (choice.disabled ? [choice.disabled] : [])))];
   return (
     <>
-      <div className="pp-toggle" role="group" aria-label="Run as">
-        <span className="pp-help">Run as:</span>
+      <div className="pp-toggle" role="group" aria-label={label}>
+        <span className="pp-help">{label}:</span>
         {view.runChoices.map((choice) => (
           <button
             key={choice.value}
@@ -387,9 +411,20 @@ function PreviewSection({ view }: { view: OrderView }) {
   const shown = useProcessingStore((s) => s.shown);
   const setShown = useProcessingStore((s) => s.setShown);
   const unit = previewUnit(preview, measure);
+  // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4): in percentiles the fields hold what was typed.
+  const range = useProcessingStore((s) => s.range);
+  const applyRangePercent = useProcessingStore((s) => s.applyRangePercent);
+  const [rangeUnit, setRangeUnit] = useState<RangeUnit>(() => (rangeByHand && range.percent ? 'percent' : 'value'));
+  const [typed, setTyped] = useState<Percent>(() => range.percent ?? DEFAULT_PERCENT);
+  const [percentProblem, setPercentProblem] = useState<string | null>(null);
+  const percentMode = rangeUnit === 'percent';
+  const typedPair = percentMode ? percentOf(typed) : null;
+  // Applied already: the percentiles typed are the ones of the range in force, and the colormap chosen is the one drawn. A change of
+  // the colormap alone is something to apply (Otto, 01.11.2026).
+  const percentApplied = percentMode && typedPair !== null && rangeByHand && samePercent(typedPair, range.percent) && rangeDraft.colormap === range.colormap;
   const loading = usePreviewLoading();
-  const plan = planPreview(steps, view.info);
-  const range = rescaleOf(rangeDraft);
+  const plan = planPreview(steps, view.info, measuredNumbers(steps, view.built));
+  const valueRange = rescaleOf(rangeDraft);
   // The band the map shows, and what it reads for it (adr/0020 §10): the limit of the tile is that of these assets.
   const read =
     plan.state === 'ready'
@@ -425,58 +460,65 @@ function PreviewSection({ view }: { view: OrderView }) {
       ) : (
         <>
           <div className="pp-range" role="group" aria-label="Range and colormap">
-            {read && read.choices.length > 1 && read.band !== null && (
-              <BandSelect
-                label="Show"
-                className="pp-show"
-                title="The band the map shows"
-                value={read.band}
-                options={read.choices.map((name) => ({ value: name, label: bandLabel(name) }))}
-                onChange={setShown}
-              />
-            )}
-            <label className="vc-field vc-num">
-              <span>min</span>
-              <input type="number" value={rangeDraft.vmin} onChange={(e) => setRangeDraft({ vmin: e.target.value })} />
-            </label>
-            <div className="pp-bound">
-              <label className="vc-field vc-num">
-                <span>max</span>
-                <input type="number" value={rangeDraft.vmax} onChange={(e) => setRangeDraft({ vmax: e.target.value })} />
-              </label>
-              {unit && (
-                <span className="pp-unit" aria-label="Unit of the range">
-                  {unit}
-                </span>
-              )}
+            <RenderFields
+              scale
+              band={
+                read && read.choices.length > 1 && read.band !== null
+                  ? {
+                      className: 'pp-show',
+                      title: 'The band the map shows',
+                      value: read.band,
+                      options: read.choices.map((name) => ({ value: name, label: bandLabel(name) })),
+                      onChange: setShown,
+                    }
+                  : undefined
+              }
+              vmin={percentMode ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setPercentProblem(null); } } : { value: rangeDraft.vmin, onChange: (vmin) => setRangeDraft({ vmin }) }}
+              unit={{
+                value: rangeUnit,
+                onChange: (next) => {
+                  setRangeUnit(next);
+                  setPercentProblem(null);
+                  // Back in values the draft is no percentiles any more: it keeps the values they gave.
+                  if (next === 'value' && rangeDraft.percent) setRangeDraft({ percent: undefined });
+                },
+              }}
+              vmax={{
+                value: percentMode ? typed.high : rangeDraft.vmax,
+                onChange: (vmax) => (percentMode ? (setTyped((t) => ({ ...t, high: vmax })), setPercentProblem(null)) : setRangeDraft({ vmax })),
+                after: unit ? (
+                  <span className="pp-unit" aria-label="Unit of the range">
+                    {unit}
+                  </span>
+                ) : undefined,
+              }}
+              colormap={read?.band === RGB ? null : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
+            />
+            <div className="pp-buttons">
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={percentMode ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
+                title="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
+                onClick={() => {
+                  if (percentMode) setTyped(DEFAULT_PERCENT);
+                  else autoStretch();
+                }}
+              >
+                Auto stretch
+              </button>
+              <button
+                type="button"
+                className="primary-btn vc-apply"
+                disabled={percentMode ? percentApplied : 'problem' in valueRange}
+                onClick={() => (percentMode ? void applyRangePercent(typed).then(setPercentProblem) : applyRange())}
+              >
+                Apply
+              </button>
             </div>
-            {read?.band !== RGB && (
-              <label className="vc-field">
-                <span>Colormap</span>
-                <select value={rangeDraft.colormap} onChange={(e) => setRangeDraft({ colormap: e.target.value })}>
-                  <option value="">— none —</option>
-                  {COLORMAPS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <button type="button" className="primary-btn vc-apply" disabled={'problem' in range} onClick={() => applyRange()}>
-              Apply
-            </button>
-            <button
-              type="button"
-              className="link-btn"
-              disabled={!rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
-              title="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
-              onClick={() => autoStretch()}
-            >
-              Auto stretch
-            </button>
           </div>
-          {'problem' in range && <p className="hint-text error">{range.problem}</p>}
+          {!percentMode && 'problem' in valueRange && <p className="hint-text error">{valueRange.problem}</p>}
+          {percentMode && percentProblem && <p className="hint-text error">{percentProblem}</p>}
           {rangeNote && <p className="hint-text">{rangeNote}</p>}
           {read?.assets.length === 0 && <p className="hint-text">Pick a band for the output to see the preview.</p>}
           {read && read.assets.length > MAX_PREVIEW_ASSETS && (
@@ -540,6 +582,17 @@ function TooLarge({ hasAoi }: { hasAoi: boolean }) {
   );
 }
 
+// Asks the questions the preview of the statistical Normalize steps needs answered (NM4-11b, NM4-71): when the method is chosen and
+// whenever the steps before, the AOI, the scenes or the bands change. The answers come into the store, which holds each once.
+function AskMeasures({ needs }: { needs: readonly MeasureNeed[] }) {
+  const ensure = useProcessingStore((s) => s.ensureMeasures);
+  const measures = useProcessingStore((s) => s.measures);
+  useEffect(() => {
+    ensure(needs);
+  }, [needs, measures, ensure]);
+  return null;
+}
+
 export default function ProcessingPanel() {
   const open = useProcessingStore((s) => s.open);
   const close = useProcessingStore((s) => s.closeProcessing);
@@ -553,7 +606,7 @@ export default function ProcessingPanel() {
 
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   // The same rule as the button in the ViewBar: scenes picked by hand.
-  const reason = processBlockReason(dataset, ticksOfOpen(app).length);
+  const reason = processBlockReason(dataset, sceneCountOf(app, p));
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const view = orderView(app, p);
   const info = view.info;
@@ -569,6 +622,10 @@ export default function ProcessingPanel() {
       ? 'Start job'
       : `Start ${batch && taken < view.parts.length ? `${taken} of ${view.parts.length}` : view.parts.length} jobs`;
   const startReady = view.runAs === 'one' ? !!estimate : taken > 0;
+  // Bands that are brought to a common grid ask for a confirmation when the review is there (NM4-65 part 7, Otto, 1.11.2026:
+  // "wenn ich auf review drücke"): "Continue" keeps the review, "Cancel" drops it.
+  const resampling = resamplingParts(estimate, batch);
+  const askResampling = resampling.length > 0 && view.key !== null && p.resamplingAsking === view.key;
   const showErrors = p.reviewAsked;
   const sceneCount = view.pass?.items.length ?? 0;
   // A refusal belongs to the order it refused; a changed draft hides it.
@@ -579,7 +636,7 @@ export default function ProcessingPanel() {
   const memory = refusals.find((r) => r!.step === null && r!.status === 413 && isMemoryRefusal(r!.message))?.message ?? null;
   const orderRefusals = refusals.filter((r) => r!.step === null && r!.message !== memory);
   const tooLarge =
-    p.area === 'scene' &&
+    view.area === 'scene' &&
     (refusals.some((r) => r!.status === 413 && r!.message !== memory) ||
       (batch?.some((part) => part.refusal?.status === 413 && !isMemoryRefusal(part.refusal.message)) ?? false));
   const startTitle =
@@ -596,10 +653,11 @@ export default function ProcessingPanel() {
             : 'Review the order first';
   // A target CRS the server turned away holds the review back (M4-13c-3).
   const crsBlock = crsBlockReason(p.steps, p.crs);
-  const latitude = areaLatitude(p.area, hasAoi ? app.aoi : null, view.pass?.items ?? []);
+  const latitude = areaLatitude(view.area, view.aoi, view.pass?.items ?? []);
 
   return (
     <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Processing">
+      {!reason && info && <AskMeasures needs={view.needs} />}
       <div className="pp-head">
         <button
           type="button"
@@ -611,28 +669,10 @@ export default function ProcessingPanel() {
         >
           {folded ? '▴' : '▾'}
         </button>
-        <div className="vc-head">
-          <span className="vc-title">PROCESSING</span>
-          <button type="button" className="link-btn" title="Close the panel" onClick={close}>
-            ✕
-          </button>
+        <div className="pp-title-row">
+          <h2 className="pp-title">Processing</h2>
+          <CloseButton onClick={close} />
         </div>
-        {!reason && (
-          <section className="pp-section" aria-label="Selection">
-            <p className="pp-summary">
-              {[
-                dataset?.title ?? app.datasetId,
-                view.pass?.label,
-                view.pass && (sceneCount === 1 ? view.pass.items[0].id : `${sceneCount} scenes`),
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
-            <AreaChoice view={view} hasAoi={hasAoi} />
-            <RunAsChoice view={view} />
-            <RecipeLoader />
-          </section>
-        )}
       </div>
 
       <div className="pp-body">
@@ -640,8 +680,21 @@ export default function ProcessingPanel() {
           <p className="hint-text">{reason}</p>
         ) : (
           <>
-            <section className="pp-section" aria-label="Scenes">
-              {p.area === 'aoi' && hasAoi && view.candidates.length === 0 && (
+            <section className="pp-section" aria-label="Selection">
+              <h3 className="pp-heading">Selection</h3>
+              <p className="pp-summary">
+                {[
+                  dataset?.title ?? app.datasetId,
+                  view.pass?.label,
+                  view.pass && (sceneCount === 1 ? view.pass.items[0].id : `${sceneCount} scenes`),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+              {/* A crop has its own AOI to take, the map's AOI or none is no matter (NM4-06). */}
+              <AreaChoice view={view} hasAoi={hasAoi || (view.fixed != null && view.fixed.result === null)} />
+              <RunAsChoice view={view} />
+              {view.area === 'aoi' && view.aoi !== null && view.candidates.length === 0 && (
                 <p className="hint-text error">No selected scene meets the AOI.</p>
               )}
               {view.runAs !== 'one' && (
@@ -672,6 +725,7 @@ export default function ProcessingPanel() {
                   <p className="hint-text warn">{PASS_NOTE}</p>
                 </>
               )}
+              <RecipeLoader />
             </section>
 
             {description?.state === 'loading' && <p className="hint-text">Loading the operators…</p>}
@@ -694,18 +748,23 @@ export default function ProcessingPanel() {
 
                 <section className="pp-section" aria-label="Processing steps">
                   <h3 className="pp-heading">Processing steps</h3>
-                  {p.steps.length > 0 && (
+                  {p.steps.length > view.locked && (
                     <ol className="pp-steps">
                       {p.steps.map((step, index) => {
+                        // The steps of a result stand first in the order and are not shown (adr/0019, Nachtrag NM4-05b).
+                        if (index < view.locked) return null;
                         const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
                         const problem = built?.stepProblems[index];
                         // The results of the steps before this one: the bands this step may name besides those of the data.
-                        const earlier = view.results.slice(0, p.steps.slice(0, index).filter(isBandMath).length).map((r) => r.name);
+                        const earlier = view.results
+                          .slice(0, p.steps.slice(0, index).filter(isBandMath).length)
+                          .map((r) => r.name)
+                          .filter((name) => !view.hidden.includes(name));
                         return (
                           <StepForm
                             key={step.key}
-                            index={index}
-                            count={p.steps.length}
+                            index={index - view.locked}
+                            count={p.steps.length - view.locked}
                             stepKey={step.key}
                             operator={operator}
                             values={step.values}
@@ -717,6 +776,10 @@ export default function ProcessingPanel() {
                             maskLayer={view.maskLayer}
                             earlier={earlier}
                             dataBands={view.selectable}
+                            units={Object.fromEntries(view.dataBands.flatMap((b) => (b.unit ? [[b.name, b.unit]] : [])))}
+                            measure={view.measures[index]}
+                            statisticsLock={p.steps.slice(0, index).some((earlier) => earlier.op === 'reproject') ? AFTER_REPROJECT : null}
+                            onRetryMeasure={p.retryMeasures}
                             checkName={(name) =>
                               nameProblem(
                                 name,
@@ -742,7 +805,7 @@ export default function ProcessingPanel() {
                   <div className="pp-add" role="group" aria-label="Add step">
                     <span className="pp-help">Add step:</span>
                     {info.operators.length === 0 && <span className="hint-text">No operator runs on this dataset.</span>}
-                    {info.operators.map((operator) => {
+                    {info.operators.filter((operator) => !(operator.op === 'mask' && view.maskHidden)).map((operator) => {
                       const full = p.steps.length >= info.maxSteps;
                       const why = !operator.form.supported
                         ? operator.form.reason
@@ -763,9 +826,6 @@ export default function ProcessingPanel() {
                       );
                     })}
                   </div>
-                  {!view.maskLayer && !info.operators.some((o) => o.op === 'mask') && (
-                    <p className="hint-text">Mask: this dataset has no classification layer to read.</p>
-                  )}
                   {info.operators.map((o) =>
                     o.form.supported ? null : (
                       <p key={`${o.op}/${o.opVersion}`} className="hint-text">
@@ -835,6 +895,7 @@ export default function ProcessingPanel() {
           ))}
           {tooLarge && <TooLarge hasAoi={hasAoi} />}
           <ShareLink view={view} />
+          {askResampling && <ResamplingDialog parts={resampling} onCancel={p.declineResampling} onContinue={p.confirmResampling} />}
         </section>
       )}
     </div>

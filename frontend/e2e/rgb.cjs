@@ -3,7 +3,8 @@
 //      only where the output has no Band math result; the preview asks the tiler for `band=red&band=green&band=blue`, measures
 //      the three together, draws them with one range and shows no colormap field; a single band has its colormap again.
 //   2. "Band" in the row of a result layer: "RGB" stands on top, the layer starts with it where the result has no Band math
-//      result, draws three `bidx` with one range and no colormap, and the view of the layer shows no colormap field.
+//      result, draws three `bidx` with one range and no colormap, and the view of the layer has a row of fields for each channel
+//      (UI-03d) and keeps its field "Colormap" in its place, locked, "— none —", with the reason in its tooltip (NM4-54 part 5, UI-03a).
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -108,7 +109,7 @@ async function checkShow(browser, theme, viewport) {
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
   await page.waitForSelector('.pp-range input[type=number]', { timeout: 15000 });
   const fields = () => page.$$eval('.pp-range input[type=number]', (i) => i.map((x) => x.value));
-  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select', (s) => s.length);
+  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select:not(.vc-unit)', (s) => s.length);
   const options = () => page.$$eval('.pp-show select option', (o) => o.map((x) => `${x.value}=${x.textContent}`));
   const tileBands = () =>
     page.evaluate(async () => {
@@ -221,16 +222,20 @@ async function checkLayer(browser, theme, viewport) {
   if (rgb.getAll('bidx').join() !== '4,3,2') problems.push(`RGB is drawn with bidx ${rgb.getAll('bidx')}, not 4,3,2`);
   if (rgb.getAll('rescale').join() !== '0.02,0.7' || rgb.has('colormap_name')) problems.push(`RGB is drawn with ${rgb.getAll('rescale')}, ${rgb.get('colormap_name')}`);
 
-  // The view of the layer: no colormap, the range of the three bands.
+  // The view of the layer: the colormap field stays in its place, locked, the range of the three bands.
   await page.evaluate(async () => {
     const { useAppStore } = await import('/src/store.ts');
     useAppStore.setState({ resultViewLayerId: useAppStore.getState().layers[0].id });
   });
   await page.waitForSelector('.result-controls', { timeout: 5000 });
+  // A row of vmin and vmax for each channel (UI-03d), each with the one range of the three bands to begin with.
   const fields = await page.$$eval('.result-controls input[type=number]', (i) => i.map((x) => x.value));
-  if (fields.join() !== '0.02,0.7') problems.push(`the view of RGB says ${fields}, not 0.02,0.7`);
-  const colormaps = await page.$$eval('.result-controls select', (s) => s.length);
-  if (colormaps !== 0) problems.push('the view of RGB shows a colormap field');
+  if (fields.join() !== '0.02,0.7,0.02,0.7,0.02,0.7') problems.push(`the view of RGB says ${fields}, not 0.02,0.7 for each channel`);
+  // A field that does not apply to the choice keeps its place and is locked with its reason (NM4-54 part 5); RGB has no colormap.
+  const colormaps = await page.$$eval('.result-controls .vc-field', (fields) => fields
+    .filter((f) => f.querySelector('span')?.textContent === 'Colormap')
+    .map((f) => ({ locked: f.querySelector('select')?.disabled ?? null, title: f.title, shown: f.querySelector('select')?.selectedOptions[0]?.textContent ?? null })));
+  if (colormaps.length !== 1 || colormaps[0].locked !== true || !colormaps[0].title || colormaps[0].shown !== '— none —') problems.push(`the colormap of RGB is not one locked field "— none —" with its reason (${JSON.stringify(colormaps)})`);
   const view = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
     const root = document.querySelector('.result-controls');

@@ -221,13 +221,6 @@ class TestEstimateOutputDims:
         assert width > 2000
         assert height < width
 
-    def test_a_resolution_factor_divides_both_dimensions(self) -> None:
-        aoi = dl.parse_aoi_geometry(SQUARE_AOI_10KM)
-        native = dl.estimate_output_dims(aoi, gsd=10.0)
-        coarser = dl.estimate_output_dims(aoi, gsd=10.0, resolution_factor=4)
-        assert coarser[0] == pytest.approx(native[0] / 4, abs=1)
-        assert coarser[1] == pytest.approx(native[1] / 4, abs=1)
-
     def test_a_finer_gsd_never_produces_fewer_pixels_up_to_the_cap(self) -> None:
         aoi = dl.parse_aoi_geometry(SQUARE_AOI_10KM)
         coarse = dl.estimate_output_dims(aoi, gsd=100.0)
@@ -555,10 +548,11 @@ class TestBuildDownloadZip:
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
             names = set(archive.namelist())
             assert names == {
-                "visual.tif",
-                "visual_mask.tif",
-                "red.tif",
-                "red_mask.tif",
+                "exports/visual.tif",
+                "exports/visual_mask.tif",
+                "exports/red.tif",
+                "exports/red_mask.tif",
+                "exports/BANDS.txt",
                 dl.NOTICE_FILENAME,
                 dl.AOI_FILENAME,
             }
@@ -568,13 +562,13 @@ class TestBuildDownloadZip:
             # No alpha band regardless of the source having no nodata (F3, M3-18):
             # the AOI mask travels as its own file now (M3-18 §3), never the data
             # file's band count.
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as memfile, memfile.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as memfile, memfile.open() as ds:
                 assert ds.count == 3
                 assert ds.profile["driver"] == "GTiff"
                 # FakeReader.part never masks anything, so every pixel is valid.
                 assert (ds.dataset_mask() == 255).all()
             # The companion mask file: same grid, uint8, 1 inside the AOI polygon.
-            with rasterio.io.MemoryFile(archive.read("visual_mask.tif")) as memfile, memfile.open() as mask_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual_mask.tif")) as memfile, memfile.open() as mask_ds:
                 assert mask_ds.count == 1
                 assert mask_ds.dtypes[0] == "uint8"
                 assert mask_ds.width == 16
@@ -698,7 +692,6 @@ class TestTheNameACropGetsInsideTheZip:
 
     def test_mask_filename_is_the_crop_filename_with_a_mask_suffix(self) -> None:
         assert dl.mask_filename("visual") == "visual_mask.tif"
-        assert dl.mask_filename("visual", resolution_factor=2) == "visual_2x_mask.tif"
         assert dl.mask_filename("SR_10m:b04,b03,b02") == "SR_10m_b04_b03_b02_mask.tif"
 
     def test_two_different_keys_can_clean_to_the_same_name(self) -> None:

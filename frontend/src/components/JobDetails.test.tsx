@@ -119,7 +119,7 @@ describe('the window', () => {
 
   it('closes the whole window with the cross', () => {
     show(jobEntry(1));
-    click(button('✕'));
+    click(container.querySelector('.close-x'));
     expect(useProcessingStore.getState()).toMatchObject({ open: false, detailJobID: null });
   });
 
@@ -189,9 +189,12 @@ describe('what it says of the job', () => {
     expect([...container.querySelectorAll('[role="alert"]')].map((a) => a.textContent)).toEqual(['The source failed', 'The result could not be shown on the map.']);
   });
 
-  it('marks a finished result that was resampled, as a symbol with the text as its tooltip', () => {
+  // NM4-65 part 7 (Otto, 31.10.2026): no exclamation mark any more; a warning to confirm comes before the job instead.
+  it('marks a finished result that was resampled by no symbol and no tooltip', () => {
     show(finished(1, { resampled: true }));
-    expect(container.querySelector('.tip.warn')?.getAttribute('data-tip')).toBe('Resampled to a common grid');
+    expect(container.querySelector('.tip.warn')).toBeNull();
+    expect(container.querySelector('.tip')).toBeNull();
+    expect(container.textContent).not.toContain('Resampled');
     show(finished(1, { resampled: false }));
     expect(container.querySelector('.tip')).toBeNull();
   });
@@ -256,7 +259,7 @@ describe('"Run again"', () => {
   it('marks the old job as superseded', () => {
     show(failedJob({ superseded: true, archived: true }));
     expect(fact('State')).toBe('Failed · Superseded');
-    expect(actions()).toEqual([]);
+    expect(actions()).toEqual(['Open in panel']);
   });
 });
 
@@ -351,29 +354,41 @@ describe('the steps', () => {
 });
 
 describe('the actions', () => {
-  it('of a finished job are "Download (ZIP)" and "Show on map", and no other file, no "Methods", no "Copy"', () => {
+  it('of a finished job are "Download (ZIP)" and "＋ Add to layers", and no other file, no "Methods", no "Copy"', () => {
     show(finished(1, { tiles: { href: '/results/x/WebMercatorQuad/tilejson.json', width: 10, gsd: 10 }, order: ORDER }));
-    expect(actions()).toEqual(['Download (ZIP)', 'Show on map']);
+    expect(actions()).toEqual(['Download (ZIP)', '＋ Add to layers', 'Open in panel']);
     const link = container.querySelector<HTMLAnchorElement>('.vc-actions a')!;
     expect(link.getAttribute('href')).toBe(`/processing/jobs/${jobId(1)}/results/result.zip`);
     expect(link.hasAttribute('download')).toBe(true);
-    for (const word of ['Methods', 'Copy', 'Remove', 'Delete', 'Open in panel']) expect(container.textContent).not.toContain(word);
+    for (const word of ['Methods', 'Copy', 'Remove', 'Delete']) expect(container.textContent).not.toContain(word);
+  });
+
+  it.each([
+    ['a finished job', () => finished(1, { order: ORDER })],
+    ['a running job', () => jobEntry(1, { phase: 'active', status: status({ jobID: jobId(1), status: 'running', progress: 40 }), order: ORDER })],
+    ['a failed job', () => jobEntry(1, { phase: 'failed', status: status({ jobID: jobId(1), status: 'failed', progress: 100 }), failure: 'The source failed', failureKind: 'source_5xx', order: ORDER })],
+    ['a cancelled job', () => jobEntry(1, { phase: 'dismissed', status: status({ jobID: jobId(1), status: 'dismissed' }), order: ORDER })],
+    ['a deleted job', () => finished(1, { phase: 'dismissed', deletedUntil: new Date(NOW + 3_600_000).toISOString(), serverDeleted: true, order: ORDER })],
+    ['a job without a copy of its order', () => finished(1, { order: null })],
+  ])('has "Open in panel" for %s (Otto, 3.11.2026)', (_, make) => {
+    show(make());
+    expect(actions()).toContain('Open in panel');
   });
 
   it('of a finished job without tiles (an export) is "Download (ZIP)"', () => {
     show(finished(1, { archive: 'export.zip' }));
-    expect(actions()).toEqual(['Download (ZIP)']);
+    expect(actions()).toEqual(['Download (ZIP)', 'Open in panel']);
     expect(container.querySelector('a')?.getAttribute('href')).toBe(`/processing/jobs/${jobId(1)}/results/export.zip`);
   });
 
   it('of a finished job whose results are not read yet are none: there is no file to take', () => {
     show(finished(1, { archive: null }));
-    expect(actions()).toEqual([]);
+    expect(actions()).toEqual(['Open in panel']);
   });
 
   it('of a running job is "Cancel", off until its state is known, and "Cancelling…" while it goes', () => {
     show(jobEntry(1));
-    expect(actions()).toEqual(['Cancel']);
+    expect(actions()).toEqual(['Cancel', 'Open in panel']);
     expect(button('Cancel')!.disabled).toBe(false);
     show(jobEntry(1, { status: null }));
     expect(button('Cancel')!.disabled).toBe(true);
@@ -399,11 +414,11 @@ describe('the actions', () => {
     expect(fact('State')).toBe('Cancelled');
   });
 
-  it('of a failed or cancelled job is "Run again" and nothing else', () => {
+  it('of a failed or cancelled job is "Run again" and "Open in panel"', () => {
     show(jobEntry(1, { phase: 'failed', failure: 'x', order: ORDER }));
-    expect(actions()).toEqual(['↻']);
+    expect(actions()).toEqual(['↻', 'Open in panel']);
     show(jobEntry(1, { phase: 'dismissed', order: ORDER }));
-    expect(actions()).toEqual(['↻']);
+    expect(actions()).toEqual(['↻', 'Open in panel']);
   });
 
   it('of an expired job is "Run again" and "Open in panel", and nothing to download', () => {
@@ -432,11 +447,11 @@ describe('the actions', () => {
     expect(actions()).toEqual(['Open in panel']);
   });
 
-  it('draws the result on the map from "Show on map"', () => {
+  it('draws the result on the map from "＋ Add to layers"', () => {
     const showOnMap = vi.fn(async () => undefined);
     act(() => useProcessingStore.setState({ showResultOnMap: showOnMap }));
     show(finished(1, { tiles: { href: '/results/x/WebMercatorQuad/tilejson.json', width: 10, gsd: 10 } }));
-    click(button('Show on map'));
+    click(button('＋ Add to layers'));
     expect(showOnMap).toHaveBeenCalledWith(jobId(1));
   });
 });

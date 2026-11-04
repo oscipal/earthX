@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { initialValues, integersIn, namesIn, paramsForm, paramsFrom, type Field } from './schemaForm';
+import { initialValues, integersIn, namesIn, numbersIn, paramsForm, paramsFrom, type Field } from './schemaForm';
 
 function fields(schema: unknown, defs = {}): Field[] {
   const form = paramsForm(schema, defs);
@@ -77,7 +77,7 @@ describe('paramsForm', () => {
     ['a oneOf next to an enum', { type: 'object', properties: { x: { enum: ['a'], oneOf: [{ const: 'a' }] } } }],
     ['a oneOf of type number', { type: 'object', properties: { x: { type: 'number', oneOf: [{ const: 'a' }] } } }],
     ['a nested object', { type: 'object', properties: { x: { type: 'object', properties: {} } } }],
-    ['an array', { type: 'object', properties: { x: { type: 'array', items: { type: 'number' } } } }],
+    ['an array of objects', { type: 'object', properties: { x: { type: 'array', items: { type: 'object' } } } }],
     ['a keyword on the object', { type: 'object', properties: {}, if: {} }],
     ['an enum of numbers', { type: 'object', properties: { x: { enum: [1, 2] } } }],
     ['a $ref outside the document', { type: 'object', properties: { x: { $ref: 'https://example.org/s.json' } } }],
@@ -200,7 +200,7 @@ describe('a list of whole numbers', () => {
   });
 
   it.each([
-    ['items that are neither whole numbers nor texts', { type: 'array', items: { type: 'number' } }],
+    ['items that are neither numbers nor texts', { type: 'array', items: { type: 'object' } }],
     ['items that are booleans', { type: 'array', items: { type: 'boolean' } }],
     ['items with a keyword it does not know', { type: 'array', items: { type: 'integer', multipleOf: 2 } }],
     ['no items', { type: 'array' }],
@@ -208,6 +208,55 @@ describe('a list of whole numbers', () => {
   ])('stays "not supported by this panel" for %s', (_, property) => {
     const form = paramsForm({ type: 'object', properties: { x: property } });
     expect(form.supported).toBe(false);
+  });
+});
+
+// A list of numbers, as `mask_values` takes its values (DS-06b).
+describe('a list of numbers', () => {
+  const LIST = {
+    type: 'object',
+    properties: {
+      values: { type: 'array', items: { type: 'number', minimum: -100, maximum: 100 }, minItems: 1, maxItems: 3, title: 'Values' },
+    },
+    required: ['values'],
+  };
+  const fields = () => {
+    const form = paramsForm(LIST);
+    if (!form.supported) throw new Error(form.reason);
+    return form.fields;
+  };
+
+  it('is a field of its own kind, with the bounds of the list and of each number', () => {
+    expect(fields()[0]).toMatchObject({ kind: 'numbers', minItems: 1, maxItems: 3, itemMinimum: -100, itemMaximum: 100 });
+  });
+
+  it('reads the numbers as typed, with a point for the decimal mark', () => {
+    expect(numbersIn('0.2, -3;  .5 1e2 +4.')).toEqual([0.2, -3, 0.5, 100, 4]);
+    expect(numbersIn('')).toEqual([]);
+  });
+
+  it.each(['0,2x', 'abc', '1 2e', 'Infinity', '0x10', '--1', '1e999', 'NaN', '1_0'])('rejects %s as a number', (text) => {
+    expect(numbersIn(text)).toBeNull();
+  });
+
+  it('builds the list in the order typed', () => {
+    expect(paramsFrom(fields(), { values: '2, 1.5' })).toEqual({ params: { values: [2, 1.5] }, errors: {} });
+  });
+
+  it.each([
+    ['', 'Required.'],
+    ['abc', 'Enter numbers separated by commas.'],
+    [',', 'Enter numbers separated by commas.'],
+    ['1, x', 'Enter numbers separated by commas.'],
+    ['101', 'Too large or too small.'],
+    ['-100.5', 'Too large or too small.'],
+    ['1, 2, 3, 4', 'At most 3 values.'],
+  ])('refuses %j with a reason', (text, reason) => {
+    expect(paramsFrom(fields(), { values: text }).errors).toEqual({ values: reason });
+  });
+
+  it('is initialised empty, or from a default', () => {
+    expect(initialValues(fields())).toEqual({ values: '' });
   });
 });
 

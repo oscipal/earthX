@@ -1,8 +1,9 @@
-"""The filter "Within AOI" of the search: scenes kept by the cloud share inside the AOI (DS-03 plan §6.5, §6.18).
+"""The filter "Within AOI" of the search: scenes kept by what the AOI shows of them (DS-03 plan §6.5, §6.18).
 
-``earthx:aoi_cloud_cover`` is no property of the source, so the source never hears of it. ``api`` asks the source
-for pages of 100 with every other filter, measures each scene in the order the source gives them
-(:class:`AoiMeasurer`, on ``access.aoi_clouds``) and keeps those whose share lies in the range (:func:`run_filter`).
+The properties ``earthx:aoi_cloud_cover`` and ``earthx:aoi_nodata`` (:class:`AoiMeasure`) are no properties of the
+source, so the source never hears of them. ``api`` asks the source for pages of 100 with every other filter, measures
+each scene in the order the source gives them (:class:`AoiMeasurer`, on ``access.aoi_clouds``: one reading of the
+classification gives every measure) and keeps those whose values lie in all the ranges asked (:func:`run_filter`).
 A response stops at the first of: ``limit`` scenes kept, :data:`RESPONSE_SCENES` checked, :data:`RESPONSE_SECONDS` of
 the clock, :data:`SEARCH_SCENES` checked in the whole search, or the end of the source. It may therefore carry fewer
 than ``limit`` scenes, or none; the page marker (:class:`Cursor`) says where the next response goes on and carries
@@ -42,7 +43,8 @@ from earthx.access.aoi_upload import MAX_AOI_POINTS
 from earthx.access.resolve import AssetResolutionError, ResolvedAsset, open_asset_ref, resolve_asset
 from earthx.access.tiles import StatsCache
 from earthx.adapters import MAX_LIMIT, InvalidQuery, ItemPage
-from earthx.catalog.registry import DatasetConfig
+from earthx.api.search_filters import AOI_FILTERS_TEXT, aoi_filters_text
+from earthx.catalog.registry import AoiMeasure, DatasetConfig
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition
 from earthx.gateway import GatewayError, Policy, ReadSlots, Resolver, host_of
 from earthx.readers import AssetRejected
@@ -79,18 +81,18 @@ _BBOX_TOLERANCE = 1e-7
 
 @dataclass(frozen=True, slots=True)
 class AoiFilterRequest:
-    """The filter of one collection as the search asks it: the range of the share, the AOI to measure, and the
-    ``key`` that binds a page marker to both (a hash, never the AOI itself)."""
+    """The filter of one collection as the search asks it: the range on each measure, the AOI to measure, and the
+    ``key`` that binds a page marker to all of them (a hash, never the AOI itself)."""
 
     dataset_id: str
-    condition: RangeCondition
+    conditions: Mapping[AoiMeasure, RangeCondition]
     aoi: Mapping[str, Any]
     key: str
 
 
 def read_aoi_request(
     dataset_id: str,
-    condition: RangeCondition,
+    conditions: Mapping[AoiMeasure, RangeCondition],
     *,
     datetime_value: str | None,
     bbox: Sequence[float] | None,
@@ -98,39 +100,45 @@ def read_aoi_request(
     earthx_aoi: Any,
 ) -> AoiFilterRequest:
     """The filter of ``dataset_id`` with its AOI, or the :class:`InvalidFilter` of a request a caller has to change.
+    ``conditions`` holds at least one measure.
 
     Two conditions (§6.5): a date range with both ends, and an area. The area is ``intersects`` as a ``Polygon`` or
     ``MultiPolygon``, or the ``bbox``; when the search sends the bounding box because the AOI has too many
     positions, ``earthx:aoi`` is the AOI itself and lies inside that box. No message names a value.
     """
-    _require_period(datetime_value)
-    aoi = _area(bbox, intersects, earthx_aoi)
+    if not conditions:
+        raise ValueError("a filter within the AOI has at least one condition")
+    label = aoi_filters_text(conditions)
+    _require_period(datetime_value, label)
+    aoi = _area(bbox, intersects, earthx_aoi, label)
     return AoiFilterRequest(
-        dataset_id=dataset_id, condition=condition, aoi=aoi, key=_filter_key(dataset_id, condition, aoi)
+        dataset_id=dataset_id, conditions=dict(conditions), aoi=aoi, key=_filter_key(dataset_id, conditions, aoi)
     )
 
 
-def _require_period(datetime_value: str | None) -> None:
+def _require_period(datetime_value: str | None, label: str) -> None:
     interval = str_to_interval(datetime_value) if datetime_value else None
     if not isinstance(interval, tuple) or None in interval:
-        raise InvalidFilter("the cloud share in the AOI needs a date range with a start and an end")
+        raise InvalidFilter(f"{label} needs a date range with a start and an end")
 
 
-def _area(bbox: Sequence[float] | None, intersects: Mapping[str, Any] | None, earthx_aoi: Any) -> dict[str, Any]:
+def _area(
+    bbox: Sequence[float] | None, intersects: Mapping[str, Any] | None, earthx_aoi: Any, label: str
+) -> dict[str, Any]:
     if earthx_aoi is not None:
         if intersects is not None:
             raise InvalidFilter("earthx:aoi goes with the bbox that holds it, not with intersects")
         if bbox is None:
             raise InvalidFilter("earthx:aoi goes with the bbox that holds it")
-        polygon = _polygonal(earthx_aoi, "earthx:aoi")
+        polygon = _polygonal(earthx_aoi, "earthx:aoi", label)
         if not _bbox_polygon(bbox).buffer(_BBOX_TOLERANCE).covers(polygon):
             raise InvalidFilter("earthx:aoi lies outside the bbox")
         return json.loads(shapely.to_geojson(polygon))
     if intersects is not None:
-        return json.loads(shapely.to_geojson(_polygonal(intersects, "intersects")))
+        return json.loads(shapely.to_geojson(_polygonal(intersects, "intersects", label)))
     if bbox is not None:
         return json.loads(shapely.to_geojson(_bbox_polygon(bbox)))
-    raise InvalidFilter("the cloud share in the AOI needs an area")
+    raise InvalidFilter(f"{label} needs an area")
 
 
 def _bbox_polygon(bbox: Sequence[float]) -> Any:
@@ -146,16 +154,16 @@ def _bbox_polygon(bbox: Sequence[float]) -> Any:
     return box(west, south, east, north)
 
 
-def _polygonal(geometry: Any, label: str) -> Any:
+def _polygonal(geometry: Any, name: str, label: str) -> Any:
     """``geometry`` as a valid shapely Polygon or MultiPolygon, within the limits of an uploaded AOI."""
     if (
         not isinstance(geometry, Mapping)
         or geometry.get("type") not in ("Polygon", "MultiPolygon")
         or not isinstance(geometry.get("coordinates"), list)
     ):
-        raise InvalidFilter("the cloud share in the AOI needs an area")
+        raise InvalidFilter(f"{label} needs an area")
     if _positions(geometry["coordinates"]) > MAX_AOI_POINTS:
-        raise InvalidFilter(f"{label} has more than {MAX_AOI_POINTS} positions")
+        raise InvalidFilter(f"{name} has more than {MAX_AOI_POINTS} positions")
     try:
         polygon = shape(dict(geometry))
         bounds = polygon.bounds
@@ -169,7 +177,7 @@ def _polygonal(geometry: Any, label: str) -> Any:
     except (ShapelyError, ValueError, TypeError, KeyError, AttributeError, IndexError):
         usable = False
     if not usable:
-        raise InvalidFilter(f"{label} is not a valid polygon on the globe")
+        raise InvalidFilter(f"{name} is not a valid polygon on the globe")
     return polygon
 
 
@@ -187,8 +195,10 @@ def _positions(coordinates: Any) -> int:
     return count
 
 
-def _filter_key(dataset_id: str, condition: RangeCondition, aoi: Mapping[str, Any]) -> str:
-    payload = {"dataset": dataset_id, "range": [condition.minimum, condition.maximum], "aoi": canonical_aoi(aoi)}
+def _filter_key(dataset_id: str, conditions: Mapping[AoiMeasure, RangeCondition], aoi: Mapping[str, Any]) -> str:
+    """A hash over every range and the AOI: a marker belongs to the whole filter, and a second range makes another one."""
+    ranges = {measure.value: [c.minimum, c.maximum] for measure, c in conditions.items()}
+    payload = {"dataset": dataset_id, "ranges": ranges, "aoi": canonical_aoi(aoi)}
     return hashlib.sha256(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
 
 
@@ -236,7 +246,7 @@ def decode_cursor(token: str, key: str) -> Cursor:
     except (ValueError, binascii.Error) as error:
         raise InvalidQuery("page token is not readable") from error
     if not isinstance(payload, dict) or payload.get("k") != "aoi" or payload.get("v") != TOKEN_VERSION:
-        raise InvalidQuery("page token is not one of a search with the cloud share in the AOI")
+        raise InvalidQuery(f"page token is not one of a search with {AOI_FILTERS_TEXT}")
     if payload.get("h") != key:
         raise InvalidQuery("page token belongs to a different search")
     page = payload.get("p")
@@ -271,6 +281,22 @@ class SceneMeasure:
             return None
         return round(100 * self.cloud_pixels / self.data_pixels, 1)
 
+    @property
+    def nodata_percent(self) -> float:
+        """The part of the AOI without a valid pixel in percent, one decimal: 100 less ``data_percent`` (§6.7).
+
+        The part past the edge of the tile counts as without data; a scene without a valid pixel is measurable, with 100.
+        """
+        if self.data_pixels == 0:
+            return 100.0
+        return round(100 - self.data_percent, 1)
+
+    def value_of(self, measure: AoiMeasure) -> float | None:
+        """The value of ``measure`` in the AOI as the answer shows it, ``None`` where the scene has none."""
+        if measure is AoiMeasure.CLOUD_SHARE:
+            return self.cloud_percent
+        return self.nodata_percent
+
     def as_measure(self) -> dict[str, Any]:
         return {
             "data_percent": self.data_percent,
@@ -294,6 +320,8 @@ class SceneMeasure:
             return None
         numbers = (percent, resolution)
         if not all(isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n) for n in numbers):
+            return None
+        if not 0 <= percent <= 100:  # the no-data value is derived from it
             return None
         return cls(cloud, data, float(percent), float(resolution), cached=True)
 
@@ -425,7 +453,9 @@ class _Tally:
         """The response has what it may take: ``limit`` scenes kept, or all the scenes it may check."""
         return len(self.kept) >= limit or self.scenes >= RESPONSE_SCENES or self.checked >= SEARCH_SCENES
 
-    def take(self, item: Mapping[str, Any], measure: SceneMeasure | None, condition: RangeCondition) -> None:
+    def take(
+        self, item: Mapping[str, Any], measure: SceneMeasure | None, conditions: Mapping[AoiMeasure, RangeCondition]
+    ) -> None:
         self.checked += 1
         self.scenes += 1
         if measure is None:
@@ -433,24 +463,28 @@ class _Tally:
             return
         self.cached += measure.cached
         self.levels[str(measure.resolution)] += 1
-        percent = measure.cloud_percent
-        # The value as the answer shows it, so what the list shows and what the filter kept agree.
-        if percent is None or not _within(percent, condition):
-            return
+        # The values as the answer shows them, so what the list shows and what the filter kept agree. A scene meets the
+        # filter if it meets every range; a value it does not have meets none.
+        for kind, condition in conditions.items():
+            value = measure.value_of(kind)
+            if value is None or not _within(value, condition):
+                return
         self.found += 1
-        self.kept.append(_with_measure(item, percent, measure))
+        self.kept.append(_with_measure(item, measure))
 
 
-def _within(percent: float, condition: RangeCondition) -> bool:
-    return (condition.minimum is None or percent >= condition.minimum) and (
-        condition.maximum is None or percent <= condition.maximum
+def _within(value: float, condition: RangeCondition) -> bool:
+    return (condition.minimum is None or value >= condition.minimum) and (
+        condition.maximum is None or value <= condition.maximum
     )
 
 
-def _with_measure(item: Mapping[str, Any], percent: float, measure: SceneMeasure) -> dict[str, Any]:
+def _with_measure(item: Mapping[str, Any], measure: SceneMeasure) -> dict[str, Any]:
+    """The scene with its numbers in the AOI. ``earthx:aoi_cloud_cover`` is ``None`` for a scene without a valid pixel,
+    which only a range on the no-data share keeps."""
     properties = {
         **(item.get("properties") or {}),
-        "earthx:aoi_cloud_cover": percent,
+        "earthx:aoi_cloud_cover": measure.cloud_percent,
         "earthx:aoi_measure": measure.as_measure(),
     }
     return {**item, "properties": properties}
@@ -489,7 +523,7 @@ async def run_filter(
             break
         page = await fetch_page(position[0])
         fetched = True
-        taken = await _take_page(page.items[position[1] :], tally, request.condition, measure, limit, clock, deadline)
+        taken = await _take_page(page.items[position[1] :], tally, request.conditions, measure, limit, clock, deadline)
         if position[1] + taken < len(page.items):
             position = (position[0], position[1] + taken)
             break
@@ -520,7 +554,7 @@ async def run_filter(
 async def _take_page(
     items: Sequence[dict[str, Any]],
     tally: _Tally,
-    condition: RangeCondition,
+    conditions: Mapping[AoiMeasure, RangeCondition],
     measure: Measure,
     limit: int,
     clock: Callable[[], float],
@@ -544,7 +578,7 @@ async def _take_page(
             done, _ = await asyncio.wait({tasks[index]}, timeout=max(deadline - clock(), 0))
             if not done:
                 break
-            tally.take(item, tasks[index].result(), condition)
+            tally.take(item, tasks[index].result(), conditions)
             taken += 1
     finally:
         for task in tasks[taken:]:

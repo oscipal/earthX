@@ -12,7 +12,7 @@ import App from '../App';
 import { finished, jobId, NOW } from '../fixtures/jobEntries';
 import { loadShelf } from '../jobShelf';
 import type { MapLayer } from '../layers';
-import { resultUrl } from '../processing';
+import { resultUrl, type Order } from '../processing';
 import { resetJobs, useProcessingStore, type JobEntry } from '../processingStore';
 import { resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
@@ -50,7 +50,7 @@ beforeEach(() => {
   localStorage.clear();
   tileJsonBody = TILE_JSON;
   vi.stubGlobal('fetch', vi.fn(async (url: string) => (url === HREF ? json(tileJsonBody) : new Response('{}', { status: 404 }))));
-  // The job of the fixture expires 7 days after `NOW`; "Show on map" refuses an expired job by the clock.
+  // The job of the fixture expires 7 days after `NOW`; "＋ Add to layers" refuses an expired job by the clock.
   vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   resetJobs();
   useProcessingStore.getState().resetDraft();
@@ -77,6 +77,8 @@ const click = (el: Element | null | undefined) => {
   act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
 const button = (label: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
+// The small red x of the settings (NM4-65 part 8), what "‹ Close" was.
+const closeX = () => container.querySelector('.result-controls .close-x');
 const field = (label: string) =>
   [...container.querySelectorAll<HTMLElement>('.result-controls label')].find((l) => l.textContent?.startsWith(label))!.querySelector<HTMLInputElement | HTMLSelectElement>('input, select')!;
 
@@ -132,7 +134,7 @@ describe('"Download (ZIP)" in the row of a result layer', () => {
     expect(empty.getAttribute('aria-hidden')).toBe('true');
     expect(row.querySelector('a')).toBeNull();
     expect(row.querySelector('.lm-note .tip')?.getAttribute('data-tip')).toContain('Expired: results are kept for 7 days.');
-    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(9);
+    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(11);
   });
 
   it('is not made of a job id that is none', () => {
@@ -163,7 +165,7 @@ describe('a click on a result layer', () => {
     expect(useAppStore.getState().downloaded).toEqual({});
     expect(useAppStore.getState().selectedIds).toEqual(['scene']);
     expect(container.querySelector('.result-controls')).not.toBeNull();
-    expect(container.querySelector('.vc-title')?.textContent).toBe('RESULT · BAND MATH');
+    expect(container.querySelector('.vc-title')?.textContent).toBe('Result · Band math');
     expect(layers().map((l) => l.id)).toEqual([layers()[0].id]);
   });
 
@@ -185,7 +187,7 @@ describe('a click on a result layer', () => {
 
   it('puts the search results back when the view is closed, the layer removed or a search made', async () => {
     await openView();
-    click(button('‹ Close'));
+    click(closeX());
     expect(useAppStore.getState().resultViewLayerId).toBeNull();
     expect(container.querySelector('.result-controls')).toBeNull();
 
@@ -439,7 +441,7 @@ describe('"Apply" and "Save" of a result layer', () => {
   const unsavedUrl = () => layers()[0].result?.savedTileUrl;
 
   it.each([
-    ['"‹ Close" is pressed', () => click(button('‹ Close'))],
+    ['the close x is pressed', () => click(closeX())],
     ['the view of scenes is left', () => useAppStore.getState().exitFocus()],
     ['the layer is chosen away from', () => useAppStore.getState().selectLayer('other')],
   ])('lose what was applied and not saved, without asking, when %s', async (_when, close) => {
@@ -471,7 +473,7 @@ describe('"Apply" and "Save" of a result layer', () => {
     type(field('vmax'), '2000');
     click(button('Apply'));
     click(button('Save'));
-    click(button('‹ Close'));
+    click(closeX());
     expect(urlOf()).toContain('rescale=180%2C2000');
   });
 
@@ -482,7 +484,7 @@ describe('"Apply" and "Save" of a result layer', () => {
     click(button('Save'));
     type(field('vmax'), '2500');
     click(button('Apply'));
-    click(button('‹ Close'));
+    click(closeX());
     expect(urlOf()).toContain('rescale=180%2C2000');
   });
 });
@@ -499,7 +501,7 @@ describe('a result drawn as it is, or gone', () => {
     expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toMatch(/whole numbers/u);
     // The opacity stays, and the way out.
     expect(field('Opacity').disabled).toBe(false);
-    expect(button('‹ Close')).toBeDefined();
+    expect(closeX()).not.toBeNull();
   });
 
   it('shows no range, colormap or "Apply" once it expired', async () => {
@@ -525,8 +527,50 @@ describe('on the page', () => {
     act(() => useAppStore.getState().selectLayer(layers()[0].id));
     expect(container.querySelector('.results-list')).not.toBeNull();
     expect(container.querySelector('.result-controls')).not.toBeNull();
-    click(button('‹ Close'));
+    click(closeX());
     expect(container.querySelector('.results-list')).not.toBeNull();
     expect(container.querySelector('.result-controls')).toBeNull();
+  });
+});
+
+// Otto, 3.11.2026 (zu #282): under the title the small line "Copy original scene name", from the scenes of the job's copy of the order.
+describe('"Copy original scene name" of a result layer', () => {
+  const ordered = (groups: string[][]): Order => ({ recipe_version: 2, inputs: [{ name: 'input', dataset: 'd', groups }], steps: [], output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red'] } }) as unknown as Order;
+  const copyLine = () => container.querySelector<HTMLButtonElement>('.result-controls .vc-scene-names');
+
+  it('copies the scenes of the order, one to a line, from the copy of the order the job keeps', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: ordered([['S2A_1', 'S2A_2'], ['S2B_1']]) })] });
+    await openView();
+    expect(copyLine()!.title).toBe('3 scenes');
+    const write = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText: write } });
+    await act(async () => {
+      copyLine()!.click();
+    });
+    expect(write).toHaveBeenCalledWith('S2A_1\nS2A_2\nS2B_1');
+    expect(copyLine()!.textContent).toBe('Copied');
+  });
+
+  it('is in the row of the date, at its end', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: ordered([['S2A_1']]) })] });
+    await openView();
+    const head = container.querySelector('.result-controls .vc-head')!;
+    expect(head.children).toHaveLength(2);
+    expect(copyLine()!.parentElement).toBe(head.children[1]);
+    expect(head.children[1].classList.contains('insp-row2')).toBe(true);
+    expect(copyLine()!.title).toBe('Copy the name of the original scene');
+  });
+
+  it('is not there where the copy of the order is gone', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: null })] });
+    await openView();
+    expect(container.querySelector('.result-controls')).not.toBeNull();
+    expect(copyLine()).toBeNull();
+  });
+
+  it('is not there for an order without scenes', async () => {
+    useProcessingStore.setState({ jobs: [entry({ order: ordered([]) })] });
+    await openView();
+    expect(copyLine()).toBeNull();
   });
 });

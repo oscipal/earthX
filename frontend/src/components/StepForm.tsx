@@ -4,10 +4,14 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import type { Operator } from '../processingOrder';
+import { BAND_TIP } from '../normalizeMethods';
+import { stepName } from '../processingBands';
+import type { MeasureStatus, Operator } from '../processingOrder';
 import { integersIn, namesIn, type Field, type FieldValue } from '../schemaForm';
 import type { EarthxMask } from '../types';
 import { CellSize, CellSizeError, CrsRefusal } from './CellSize';
+import MaskValuesFields from './MaskValuesFields';
+import NormalizeFields from './NormalizeFields';
 import Tip from './Tip';
 import { useCellSizeTip } from './useCellSizeTip';
 import { useCrsLookup } from './useCrsLookup';
@@ -283,6 +287,10 @@ export default function StepForm({
   maskLayer,
   earlier,
   dataBands,
+  units,
+  measure,
+  statisticsLock,
+  onRetryMeasure,
   onInsert,
   checkName,
   onRename,
@@ -309,6 +317,13 @@ export default function StepForm({
   // The names of the bands the steps before this one add, and the bands of the data a step may name (adr/0020 §14).
   earlier: readonly string[];
   dataBands: readonly string[];
+  // The unit of each band of the data that has one (the "in m" beside "Hide where").
+  units: Readonly<Record<string, string>>;
+  // A statistical `normalize` step: where the preview's measure stands, and why the methods that measure cannot be chosen here
+  // (after a reprojection), if so (NM4-11b).
+  measure?: MeasureStatus;
+  statisticsLock?: string | null;
+  onRetryMeasure?: () => void;
   // A name put into this step's expression.
   onInsert: (name: string) => void;
   // The name of a band math step: what is wrong with a name, taking it over, and telling what is wrong with the one typed.
@@ -329,10 +344,20 @@ export default function StepForm({
   useCrsLookup(reprojects ? values.crs : undefined);
   const cellTip = useCellSizeTip(values.crs, values.resolution, latitude);
   const bandMath = operator?.op === 'band_math';
-  // The title is the number and the name of the step: the band a band math step adds, or "Mask_1" and the like for a
-  // step that adds none (adr/0020 §14).
-  const own = operator ? operator.op.charAt(0).toUpperCase() + operator.op.slice(1) : 'Unknown operator';
-  const name = bandMath ? (typeof values.name === 'string' && values.name !== '' ? values.name : '…') : `${own}_${index + 1}`;
+  const maskValues = operator?.op === 'mask_values' && operator.form.supported;
+  // `normalize` of version 4 lays its fields out by method (`NormalizeFields`); the bands are the chips every version has.
+  const normalizes = operator?.op === 'normalize' && operator.form.supported && fields.some((f) => f.name === 'method');
+  const bandsField = fields.find((f) => f.name === 'bands');
+  // The title is the number and the name of the step.
+  const name = stepName(operator, values, index);
+  // "Rename" in the head takes the person to the field of the name, which keeps the rules about a name.
+  const rename = () => {
+    const field = document.getElementById(`pp-step-${stepKey}-name`);
+    if (field instanceof HTMLInputElement) {
+      field.focus();
+      field.select();
+    }
+  };
   return (
     <li className="pp-step" aria-label={`Step ${index + 1}: ${operator?.title ?? 'unknown operator'}`}>
       <div className="pp-step-head">
@@ -341,25 +366,57 @@ export default function StepForm({
           {operator && <span className="pp-step-op"> {operator.title.toLowerCase()}</span>}
         </span>
         <span className="pp-step-actions">
-          <button type="button" className="link-btn" title="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
-            ↑ Up
+          {bandMath && (
+            <button type="button" className="pp-icon-btn" aria-label="Rename" title="Rename the band this step adds" onClick={rename}>
+              ✎
+            </button>
+          )}
+          <button type="button" className="pp-icon-btn" aria-label="Move up" title="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
+            ↑
           </button>
-          <button
-            type="button"
-            className="link-btn"
-            title="Move this step down"
-            disabled={index === count - 1}
-            onClick={() => onMove(1)}
-          >
-            ↓ Down
+          <button type="button" className="pp-icon-btn" aria-label="Move down" title="Move this step down" disabled={index === count - 1} onClick={() => onMove(1)}>
+            ↓
           </button>
-          <button type="button" className="link-btn" title="Remove this step" onClick={onRemove}>
-            ✕ Remove
+          <button type="button" className="pp-icon-btn danger" aria-label="Remove" title="Remove this step" onClick={onRemove}>
+            ✕
           </button>
         </span>
       </div>
       {unsupported && <p className="hint-text error">{unsupported}</p>}
-      {fields.map((field) => {
+      {maskValues && (
+        <MaskValuesFields
+          stepKey={stepKey}
+          values={values}
+          errors={errors}
+          showErrors={showErrors}
+          earlier={earlier}
+          dataBands={dataBands}
+          units={units}
+          onChange={onChange}
+        />
+      )}
+      {normalizes && bandsField && (
+        <NormalizeFields
+          stepKey={stepKey}
+          values={values}
+          errors={errors}
+          showErrors={showErrors}
+          locked={statisticsLock ?? null}
+          measure={measure}
+          onRetry={() => onRetryMeasure?.()}
+          onChange={onChange}
+          bands={
+            <BandChoice
+              field={{ ...bandsField, title: 'Band', description: BAND_TIP }}
+              names={[...earlier, ...dataBands.filter((band) => !earlier.includes(band))]}
+              value={values.bands}
+              error={showErrors || (typeof values.bands === 'string' && values.bands !== '') ? errors.bands : undefined}
+              onChange={(v) => onChange('bands', v)}
+            />
+          }
+        />
+      )}
+      {(maskValues || normalizes ? [] : fields).map((field) => {
         const value = values[field.name];
         const touched = typeof value === 'string' && value !== '';
         if (masks && field.name === 'classes') {

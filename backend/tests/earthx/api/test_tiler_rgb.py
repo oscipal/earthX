@@ -2,7 +2,7 @@
 
 ``band=`` three times names the channels in the order red, green, blue. The tile reads the assets the three need and
 nothing else, its values are those of a job that asks for the three bands, and the picture takes one scale for all of
-them and no colormap. The synthetic item is that of `test_tiler_band`: three 10 m bands (``red``, ``nir``, ``green``)
+them, or one for each (UI-03d), and no colormap. The synthetic item is that of `test_tiler_band`: three 10 m bands (``red``, ``nir``, ``green``)
 and a 20 m classification layer.
 """
 
@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 import numpy
 import pytest
+from rio_tiler.io import Reader
 
 from tests.earthx.api.test_tiler_band import (  # noqa: F401 - fixtures
     MASK,
@@ -37,6 +38,12 @@ from tests.earthx.api.test_tiler_operator import NATIVE, _tiles
 CHAIN_NDVI = [("band_math", NDVI)]
 ASSETS = ("red", "nir", "green", "scl")
 RGB = ("nir", "red", "green")  # not the order of the item, so that the order of the URL is what counts
+
+
+def _spread(values: numpy.ma.MaskedArray) -> tuple[float, float]:
+    """A range that cuts into the values of one channel at both ends."""
+    low, high = numpy.percentile(values.compressed(), [10, 90])
+    return float(low), float(high)
 
 
 def _bands(*names: str) -> str:
@@ -89,14 +96,17 @@ class TestWhatTheTileReads:
 
 
 class TestTheRenderedPicture:
-    """One scale for the three channels; the PNG is what the raw values say through that scale."""
+    """One scale for the three channels or one for each; the PNG is what the raw values say through it."""
 
     RANGE = (0.05, 0.45)
 
-    def _png(self, rig: Rig, tile: tuple[int, int, int], *, extra: str = "") -> numpy.ndarray:
+    def _png(
+        self, rig: Rig, tile: tuple[int, int, int], *, extra: str = "", ranges: list[tuple[float, float]] | None = None
+    ) -> numpy.ndarray:
         z, x, y = tile
         url = _url(CHAIN_NDVI, tile=tile).replace(f"{x}/{y}.tif", f"{x}/{y}.png")
-        response = rig.get(url + _bands(*RGB) + f"&rescale={self.RANGE[0]},{self.RANGE[1]}" + extra)
+        scale = "".join(f"&rescale={low},{high}" for low, high in (ranges or [self.RANGE]))
+        response = rig.get(url + _bands(*RGB) + scale + extra)
         assert response.status_code == 200, response.text
         return _decode(response.content)
 
@@ -116,6 +126,47 @@ class TestTheRenderedPicture:
         # Three different bands under one range: the channels differ, so none was stretched by a range of its own.
         assert not numpy.array_equal(picture[0].data, picture[1].data)
 
+    def test_a_range_for_each_channel_stretches_each_by_its_own(self, rig: Rig) -> None:
+        """UI-03d: ``rescale`` three times, in the order of the ``band``."""
+        tile = _tiles()[len(_tiles()) // 2]
+        raw = _decode(rig.get(_url(CHAIN_NDVI, tile=tile) + _bands(*RGB)).content)
+        ranges = [_spread(raw[channel]) for channel in range(3)]
+        picture = self._png(rig, tile, ranges=ranges)
+        checked = 0
+        for channel, (low, high) in enumerate(ranges):
+            valid = ~numpy.ma.getmaskarray(raw[channel]) & ~numpy.ma.getmaskarray(picture[channel])
+            expected = numpy.clip((raw[channel].data[valid] - low) / (high - low) * 255, 0, 255)
+            assert numpy.abs(picture[channel].data[valid].astype(float) - expected).max() <= 1.0
+            checked += int(valid.sum())
+        assert checked > 10_000
+        # Counter-check: the shared range of the first channel draws the others otherwise.
+        shared = self._png(rig, tile, ranges=[ranges[0]])
+        assert numpy.array_equal(shared[0].data, picture[0].data)
+        assert not numpy.array_equal(shared[1].data, picture[1].data)
+
+    def test_the_picture_with_a_range_for_each_channel_is_the_job_result_drawn_alike(
+        self, rig: Rig, tmp_path: Path
+    ) -> None:
+        """Bit for bit the picture the result layer draws from the job's file with the same three ranges."""
+        chain = [("mask", MASK)]
+        job = _job(tmp_path, chain, list(RGB), ASSETS)
+        compared = 0
+        for tile in _tiles(NATIVE[256]):
+            raw = _decode(rig.get(_url(chain, tile=tile, size=256) + _bands(*RGB)).content)
+            if raw.count() == 0:
+                continue
+            ranges = [_spread(raw[channel]) for channel in range(3)]
+            z, x, y = tile
+            url = _url(chain, tile=tile, size=256).replace(f"{x}/{y}.tif", f"{x}/{y}.png")
+            response = rig.get(url + _bands(*RGB) + "".join(f"&rescale={low},{high}" for low, high in ranges))
+            assert response.status_code == 200, response.text
+            with Reader(str(job)) as reader:
+                image = reader.tile(x, y, z, resampling_method="nearest", tilesize=256)
+            image.rescale(in_range=ranges)
+            assert response.content == image.render(img_format="PNG"), tile
+            compared += 1
+        assert compared > 0
+
     def test_a_colormap_is_a_400_before_the_item_is_fetched(self, rig: Rig) -> None:
         response = rig.get(_url(CHAIN_NDVI) + _bands(*RGB) + "&rescale=0,1&colormap_name=viridis")
         assert response.status_code == 400, response.text
@@ -133,9 +184,12 @@ class TestTheRenderedPicture:
         response = rig.get(url + _bands("NDVI") + "&rescale=-1,1&colormap_name=viridis")
         assert response.status_code == 200, response.text
 
-    def test_a_range_of_its_own_for_each_channel_is_a_400(self, rig: Rig) -> None:
-        response = rig.get(_url(CHAIN_NDVI) + _bands(*RGB) + "&rescale=0,1&rescale=0,2&rescale=0,3")
-        assert response.status_code == 400 and "one rescale" in response.json()["detail"]
+    @pytest.mark.parametrize("count", [2, 4])
+    def test_a_number_of_ranges_other_than_one_or_three_is_a_400(self, rig: Rig, count: int) -> None:
+        ranges = "".join(f"&rescale=0,{n + 1}" for n in range(count))
+        response = rig.get(_url(CHAIN_NDVI) + _bands(*RGB) + ranges)
+        assert response.status_code == 400 and "one for each" in response.json()["detail"]
+        assert rig.fetched == []
         assert rig.fetched == []
 
 

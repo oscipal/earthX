@@ -2,6 +2,14 @@
 // they are called, which way the browser takes them, and the text of `ATTRIBUTION.txt`. Nothing here fetches or
 // touches the page; `originalsRun.ts` does, and takes everything it decides from this module.
 
+import {
+  BANDS_FILENAME,
+  EXPORTS_DIR,
+  bandsFileText,
+  perBandFileNames,
+  type BandPick,
+  type DownloadBand,
+} from './bandChoice';
 import type { DownloadPass, OriginalFileLink } from './download';
 import { attributionText, isDirectDownloadHref, termsNoticeText } from './download';
 import type { ZipJob } from './originalsZip';
@@ -23,6 +31,10 @@ export interface OriginalEntry {
   size: number | null;
   // `metadata`: a file about the scene (XML, JSON), which a browser shows instead of saving it when it is only linked.
   kind: 'data' | 'metadata';
+  // With a choice of bands (NM4-75): the band the file holds and its name by content (`B04_red_10m.tif`), which is the name in the
+  // folder `exports/` of the ZIP. Where the files are saved one by one, `name` is the one used, as before.
+  band?: DownloadBand;
+  exportName?: string;
 }
 
 export interface OriginalScene {
@@ -83,12 +95,24 @@ export function originalAssetKeys(collection: Collection, item: StacItem): { key
   return keys;
 }
 
-export function sceneOriginals(collection: Collection, item: StacItem, groupLabel: string): OriginalScene {
+// `pick` (NM4-75) is the asset keys ticked in the dialog and the table of bands of the platform they are read from: of the data files
+// only those, named by content for the ZIP; the files about the scene stay. Without it, every original file as before.
+export function sceneOriginals(collection: Collection, item: StacItem, groupLabel: string, pick?: BandPick): OriginalScene {
   const hosts = collection['earthx:source']?.asset_hosts ?? [];
   const used = new Set<string>();
   const entries: OriginalEntry[] = [];
   const missing: string[] = [];
-  for (const { key, kind } of originalAssetKeys(collection, item)) {
+  // The ticked bands the scene has (in the order of the table, the item's own); a ticked band it lacks is missing.
+  const bands = pick ? pick.table.filter((band) => pick.keys.includes(band.asset) && item.assets[band.asset] !== undefined) : [];
+  const exportNames = perBandFileNames(bands);
+  const keys = pick
+    ? [
+        ...bands.map((band) => ({ key: band.asset, kind: 'data' as const })),
+        ...originalAssetKeys(collection, item).filter((entry) => entry.kind === 'metadata'),
+      ]
+    : originalAssetKeys(collection, item);
+  if (pick) missing.push(...pick.keys.filter((key) => !bands.some((band) => band.asset === key)));
+  for (const { key, kind } of keys) {
     const asset = item.assets[key];
     if (!asset || !isDirectDownloadHref(asset.href, hosts)) {
       missing.push(key);
@@ -99,20 +123,28 @@ export function sceneOriginals(collection: Collection, item: StacItem, groupLabe
     for (let n = 2; used.has(name); n += 1) name = `${base}-${n}${fileExtension(asset.href)}`;
     used.add(name);
     const size = asset['file:size'];
-    entries.push({ asset: key, name, href: asset.href, size: typeof size === 'number' && size > 0 ? size : null, kind });
+    const band = bands.find((b) => b.asset === key);
+    entries.push({
+      asset: key,
+      name,
+      href: asset.href,
+      size: typeof size === 'number' && size > 0 ? size : null,
+      kind,
+      ...(band ? { band, exportName: exportNames.get(key) } : {}),
+    });
   }
   return { item, groupLabel, zipName: `${safeName(item.id)}.zip`, entries, missing };
 }
 
 // The scenes of a selection, in the order of its passes; a scene in two passes comes once.
-export function scenesOf(collection: Collection, passes: readonly DownloadPass[]): OriginalScene[] {
+export function scenesOf(collection: Collection, passes: readonly DownloadPass[], pick?: BandPick): OriginalScene[] {
   const seen = new Set<string>();
   const scenes: OriginalScene[] = [];
   for (const pass of passes) {
     for (const item of pass.items) {
       if (seen.has(item.id)) continue;
       seen.add(item.id);
-      scenes.push(sceneOriginals(collection, item, pass.label));
+      scenes.push(sceneOriginals(collection, item, pass.label, pick));
     }
   }
   return scenes;
@@ -164,6 +196,17 @@ export function summaryText({ scenes, bytes, unknown }: Summary): string {
   const count = `${scenes} scene${scenes === 1 ? '' : 's'}`;
   if (bytes === 0) return `${count} · size unknown`;
   return unknown ? `${count} · ${formatBytes(bytes)} and more, some sizes unknown` : `${count} · ${formatBytes(bytes)}`;
+}
+
+// What a click on "Download full scenes" does (NM4-33): a ZIP of the original files of each scene where the source
+// lets the page read them, else the files themselves; either way straight from the source.
+// It starts with what the click will load: the scenes and the size of their files, or that the size is not known
+// (Otto, 31.10.2026: no limit and no question, so this is where it is told).
+export function originalsTitle(plural: boolean, zip: boolean, summary: string): string {
+  if (!zip) return `${summary}. Download the original file${plural ? 's' : ''} of the selected scene${plural ? 's' : ''}, straight from the source.`;
+  return plural
+    ? `${summary}. Download each selected scene as one ZIP of its original files, straight from the source. Your browser may ask once to allow several downloads.`
+    : `${summary}. Download the selected scene as one ZIP of its original files, straight from the source.`;
 }
 
 export function sceneItemJson(item: StacItem): string {
@@ -228,15 +271,35 @@ export function attributionFileText(args: {
   return `${lines.join('\n\n')}\n`;
 }
 
-// The job for the service worker: one ZIP for one scene. Every entry needs its size by now (`file:size` or a `HEAD`).
-export function zipJobOf(scene: OriginalScene, attribution: string, sizes: ReadonlyMap<string, number>): ZipJob {
+// Where an entry lies in the ZIP: a band of a choice in the folder `exports/` under its name by content, anything else at the root.
+export function zipPathOf(entry: OriginalEntry): string {
+  return entry.exportName ? `${EXPORTS_DIR}${entry.exportName}` : entry.name;
+}
+
+// `exports/BANDS.txt` of the ZIP of one scene: its bands as the item describes them, each in its own file and nothing converted.
+export function sceneBandsText(collection: Collection, scene: OriginalScene): string {
+  return bandsFileText({
+    title: collection.title ?? collection.id,
+    form: 'per_band',
+    files: scene.entries.flatMap((entry) =>
+      entry.band && entry.exportName
+        ? [{ path: zipPathOf(entry), bands: [{ band: entry.band, resampling: 'none' as const, exportResolution: entry.band.resolution }] }]
+        : [],
+    ),
+  });
+}
+
+// The job for the service worker: one ZIP for one scene. Every entry needs its size by now (`file:size` or a `HEAD`). `bands` is the
+// text of `exports/BANDS.txt`, given where the files are bands of a choice.
+export function zipJobOf(scene: OriginalScene, attribution: string, sizes: ReadonlyMap<string, number>, bands?: string): ZipJob {
   return {
     zipName: scene.zipName,
     texts: [
       { name: ATTRIBUTION_FILENAME, content: attribution },
       { name: ITEM_FILENAME, content: sceneItemJson(scene.item) },
+      ...(bands === undefined ? [] : [{ name: `${EXPORTS_DIR}${BANDS_FILENAME}`, content: bands }]),
     ],
-    files: scene.entries.map((entry) => ({ name: entry.name, url: entry.href, size: sizes.get(entry.href) ?? 0 })),
+    files: scene.entries.map((entry) => ({ name: zipPathOf(entry), url: entry.href, size: sizes.get(entry.href) ?? 0 })),
   };
 }
 

@@ -12,6 +12,7 @@
 // out — and every difference between two datasets comes from here, never from
 // a branch on a dataset id somewhere in a component (M2-10).
 
+import { trueColorOf } from './processingOrder';
 import { appliedRenderFrom } from './render';
 import type { AppliedRender, BrowseMode, Collection, EarthxDefaultRender, StacAsset, StacItem } from './types';
 
@@ -126,6 +127,13 @@ export function acquisitionNote(collection: Collection): string | null {
 // controls. `null` when the dataset has not set one yet.
 export function defaultRenderOf(collection: Collection): EarthxDefaultRender | null {
   return collection['earthx:default_render'] ?? null;
+}
+
+// Whether a colormap can colour the standard picture of the dataset. It cannot where the dataset has a true-colour picture
+// (`earthx:true_color`, NM4-64): the box of the colormap then offers "RGB" and nothing else (Otto, 1.11.2026, replacing the
+// field that was not shown on 31.10.2026).
+export function showsColormap(collection: Collection): boolean {
+  return trueColorOf(collection) === null;
 }
 
 // The asset georeferencing (`quicklookCoords`/`quicklookAoiPixelRings`,

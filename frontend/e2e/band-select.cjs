@@ -1,7 +1,9 @@
-// Browser check of the band choice of the processing panel (NM4-07): a single band is picked on opening, "Select all
-// bands" and "Clear", the auxiliary assets and the mask layer stay out, and a dataset with more bands than an order
-// takes gets the button locked with the reason. Runs in the light and the dark theme at three widths; fails when a button
-// overlaps another or leaves the panel; writes a screenshot per case.
+// Browser check of the band choice of the processing panel (adr/0020, NM4-43e): the section "Bands" at the top only
+// informs, and the output is chosen at the end of the panel ("Select Bands that are processed"). A dataset with one band
+// has it checked on opening; "All" and "None" put every band in and take every band out; the auxiliary assets stay out,
+// and the layer of the mask is listed but not part of "All". There is no upper limit: a dataset with 40 bands is as open
+// as one with 12. Runs in the light and the dark theme at three widths; fails when a button overlaps another or leaves
+// the panel; writes a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
 //   node e2e/band-select.cjs                # BASE=http://localhost:5173 OUT=<directory for the screenshots>
@@ -22,11 +24,12 @@ const S2 = ['coastal', 'blue', 'green', 'red', 'rededge1', 'rededge2', 'rededge3
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 
 // What each case offers and what the check expects after each click.
+const numbered = (count) => Array.from({ length: count }, (_, i) => `b${i + 1}`);
 const CASES = {
   'sentinel-2': { assets: [...S2, 'visual', 'preview', 'scl'], auxiliary: ['visual', 'preview'], mask: true, opening: [], all: S2 },
   'one band': { assets: ['data'], auxiliary: [], mask: false, opening: ['data'], all: ['data'] },
-  '18 bands': { assets: Array.from({ length: 18 }, (_, i) => `b${i + 1}`), auxiliary: [], mask: false, opening: [], all: [] },
-  '16 bands': { assets: Array.from({ length: 16 }, (_, i) => `b${i + 1}`), auxiliary: [], mask: false, opening: [], all: Array.from({ length: 16 }, (_, i) => `b${i + 1}`) },
+  '18 bands': { assets: numbered(18), auxiliary: [], mask: false, opening: [], all: numbered(18) },
+  '40 bands': { assets: numbered(40), auxiliary: [], mask: false, opening: [], all: numbered(40) },
 };
 
 async function check(browser, { name, theme, viewport }) {
@@ -62,30 +65,38 @@ async function check(browser, { name, theme, viewport }) {
     });
     useProcessingStore.getState().openProcessing();
   }, { spec });
-  await page.waitForSelector('section[aria-label="Bands"] .pp-chip');
-  const pressed = () => page.evaluate(() => [...document.querySelectorAll('section[aria-label="Bands"] .pp-chip[aria-pressed="true"]')].map((c) => c.textContent));
+  const output = page.locator('section[aria-label="Output"]');
+  await output.locator('.pp-chip').first().waitFor();
+  const pressed = () => page.evaluate(() => [...document.querySelectorAll('section[aria-label="Output"] .pp-chip[aria-pressed="true"]')].map((c) => c.firstChild?.textContent));
+  const offered = () => page.evaluate(() => [...document.querySelectorAll('section[aria-label="Output"] .pp-chip')].map((c) => c.firstChild?.textContent));
+  const summary = () => output.locator('[aria-label="Output summary"]').textContent();
   const problems = [];
   const expect = (what, got, want) => { if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`${what}: ${JSON.stringify(got)}, not ${JSON.stringify(want)}`); };
 
+  // The section at the top only informs: none of its chips is a switch.
+  expect('switches in the section "Bands"', await page.locator('section[aria-label="Bands"] [aria-pressed]').count(), 0);
   expect('on opening', await pressed(), spec.opening);
-  const selectAll = page.locator('section[aria-label="Bands"]').getByRole('button', { name: 'Select all bands' });
-  if (await selectAll.isEnabled()) await selectAll.click();
-  expect('after "Select all bands"', await pressed(), spec.all);
-  const locked = await selectAll.isDisabled();
-  if (locked !== (name === '18 bands')) problems.push(`"Select all bands" is ${locked ? 'locked' : 'open'}`);
-  if (locked && (await selectAll.getAttribute('title')) !== '18 bands – an order takes at most 16') problems.push('no reason in the tooltip');
-  if (name === 'sentinel-2') {
-    const chips = await page.locator('section[aria-label="Bands"] .pp-chip').allTextContents();
-    if (chips.includes('visual') || chips.includes('preview')) problems.push('an auxiliary asset is offered');
-  }
+  expect('the summary on opening', await summary(), `${spec.opening.length} band${spec.opening.length === 1 ? '' : 's'} · float32`);
+
+  const all = output.getByRole('button', { name: 'All', exact: true });
+  if (spec.opening.length < spec.all.length) {
+    if (!(await all.isEnabled())) problems.push('"All" is locked, but there is no limit');
+    else await all.click();
+  } else if ((await all.count()) > 0) problems.push('"All" is offered with every band in the output');
+  expect('after "All"', await pressed(), spec.all);
+  expect('the summary after "All"', await summary(), `${spec.all.length} band${spec.all.length === 1 ? '' : 's'} · float32`);
+  const chips = await offered();
+  // The layer of the mask is listed, but "All" leaves it out; the auxiliary assets are not listed at all.
+  expect('the bands offered', chips, spec.mask ? [...spec.all, 'scl'] : spec.all);
+  if ((await page.locator('section[aria-label="Bands"] .pp-chip').allTextContents()).some((text) => text.startsWith('visual') || text.startsWith('preview'))) problems.push('an auxiliary asset is listed in "Bands"');
   fs.mkdirSync(OUT, { recursive: true });
-  await page.locator('section[aria-label="Bands"]').screenshot({ path: path.join(OUT, `${label.replace(/ /g, '_')}.png`) });
+  await output.screenshot({ path: path.join(OUT, `${label.replace(/ /g, '_')}.png`) });
 
   const layout = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
-    const head = document.querySelector('.pp-bands-head');
-    const leaves = [...head.children].map((e) => ({ what: e.textContent, ...box(e) }));
-    const body = head.closest('.pp-body') ?? document.querySelector('.processing-panel');
+    const section = document.querySelector('section[aria-label="Output"]');
+    const leaves = [...section.querySelectorAll('.pp-bands-head > *')].map((e) => ({ what: e.textContent, ...box(e) }));
+    const body = section.closest('.pp-body') ?? document.querySelector('.processing-panel');
     return { theme: document.querySelector('.app')?.dataset.theme, leaves, panel: box(body), scrolls: body.scrollWidth > body.clientWidth + 1 };
   });
   for (let i = 0; i < layout.leaves.length; i++) {
@@ -95,10 +106,10 @@ async function check(browser, { name, theme, viewport }) {
   if (layout.theme !== THEMES[theme]) problems.push(`the app shows the theme ${layout.theme}, not ${THEMES[theme]}`);
   if (layout.scrolls) problems.push('the panel scrolls sideways');
 
-  const clear = page.locator('section[aria-label="Bands"]').getByRole('button', { name: 'Clear', exact: true });
-  if ((await pressed()).length > 0) await clear.click();
-  else if (!(await clear.isDisabled())) problems.push('"Clear" is active with nothing to clear');
-  expect('after "Clear"', await pressed(), []);
+  const none = output.getByRole('button', { name: 'None', exact: true });
+  if ((await pressed()).length > 0) await none.click();
+  else if ((await none.count()) > 0) problems.push('"None" is offered with nothing to take out');
+  expect('after "None"', await pressed(), []);
   await context.close();
   return { label, problems };
 }

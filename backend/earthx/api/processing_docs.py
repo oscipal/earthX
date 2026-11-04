@@ -283,7 +283,7 @@ def order_schema(operators: OperatorRegistry, config: DatasetConfig | None = Non
     defs: dict[str, Any] = schema.setdefault("$defs", {})
     # What only the order's own models use: the step with free parameters, and the crop, which
     # is described for the synchronous download and never run as a job (api/intake.py, 422).
-    for unused in ("Step", "JsonValue", "CropOutput"):
+    for unused in ("Step", "JsonValue", "CropOutput", "CropLayout"):
         defs.pop(unused, None)
     schema["properties"]["output"] = {"$ref": "#/$defs/RasterOutput"}
     step_defs, names = _step_schemas(operators, _jobs_of(operators, config))

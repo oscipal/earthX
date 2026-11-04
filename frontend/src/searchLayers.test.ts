@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildTileTemplate } from './api';
-import { mosaicTemplateOf } from './mosaic';
+import { mosaicTemplateOf, orderKeyOf } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import { overlaysOfPass } from './searchLayers';
 import type { AppliedRender } from './types';
@@ -11,7 +11,7 @@ const RENDER: AppliedRender = { colormapName: 'terrain', rescale: '0,4000' };
 
 const entry = (id: string): SceneEntry => [
   id,
-  { tileUrl: buildTileTemplate('dem', id, 'data'), bounds: [10, 47, 11, 48], asset: 'data', minZoom: 0, maxZoom: 15 },
+  { datasetId: 'sentinel-2-c1-l2a', tileUrl: buildTileTemplate('dem', id, 'data'), bounds: [10, 47, 11, 48], asset: 'data', minZoom: 0, maxZoom: 15 },
 ];
 
 // The overlays a pinned layer draws for a pass of scenes: its mosaic under the scenes that step aside, else the scenes.
@@ -31,7 +31,7 @@ describe('overlaysOfPass', () => {
     const overlays = rasters(overlaysOfPass('dem', entries, mosaicOf(), RENDER, AOI));
     expect(overlays).toHaveLength(3);
     expect(overlays.every((o) => o.tileUrl.startsWith('earthx-clip://'))).toBe(true);
-    expect(overlays.slice(0, 2).map((o) => [o.maxZoom, o.hideFrom])).toEqual([[7, 6.5], [7, 6.5]]);
+    expect(overlays.slice(0, 2).map((o) => [o.maxZoom, o.hideFrom])).toEqual([[7, 7.5], [7, 7.5]]);
     expect(overlays[2].tileUrl).toContain('/collections/dem/mosaic/tiles/');
     expect(overlays[2].tileUrl).toContain('colormap_name=terrain');
     expect([overlays[2].minZoom, overlays[2].maxZoom, overlays[2].hideFrom]).toEqual([8, 15, undefined]);
@@ -41,6 +41,16 @@ describe('overlaysOfPass', () => {
     const [bottom, top] = rasters(overlaysOfPass('dem', entries, mosaicOf(['b', 'a']), RENDER, AOI));
     expect(bottom.tileUrl).toContain('/items/a/');
     expect(top.tileUrl).toContain('/items/b/');
+  });
+
+  it('stacks the scenes drawn one by one in the order the tiler gave, not in the order they were ticked (NM4-24)', () => {
+    const refused = { [mosaicTemplateOf('dem', entries) as string]: null, [orderKeyOf('dem', entries) as string]: { order: ['b', 'a'] } };
+    const [bottom, top] = rasters(overlaysOfPass('dem', entries, refused, RENDER, AOI));
+    expect(bottom.tileUrl).toContain('/items/a/');
+    expect(top.tileUrl).toContain('/items/b/');
+    // The other way round: ticked b, then a.
+    const [low, high] = rasters(overlaysOfPass('dem', [...entries].reverse(), refused, RENDER, AOI));
+    expect([low.tileUrl, high.tileUrl].map((u) => /items\/(\w)\//.exec(u)![1])).toEqual(['a', 'b']);
   });
 
   it('is drawn scene by scene when the mosaic was refused, or there is none', () => {

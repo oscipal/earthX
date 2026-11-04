@@ -7,7 +7,8 @@
 //   - the filters do not stand under the headings of the registry, in its order;
 //   - the search, "Load more"-style repeat or the coverage map do not carry the filters of their own dataset
 //     (and only those), or carry a filter whose field is wrong;
-//   - Escape, "Done" or a click beside the pop-up lose a value, or Escape in the list of datasets closes the pop-up too;
+//   - Escape closes the pop-up or the list of datasets in it (Otto, 2.11.2026: Esc closes nothing; the x, "Done" or a click beside
+//     do), or one of those loses a value;
 //   - a wrong field (also half-typed text such as "20-") is not marked, or "Search" is not held back, also after "Done";
 //   - "Clear search results" drops the filters, or "Reset filters" does not;
 //   - a field, the unit or the box overlaps another or leaves the pop-up; the page scrolls sideways;
@@ -227,7 +228,7 @@ async function check(browser, { theme, viewport }) {
   expect('the page scrolls sideways', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 
   // 5. The coverage map of Sentinel-2 asks without filters; a filter changes it at once, and only the filters of its dataset.
-  await key('Escape');
+  await popup.locator('.advanced-top .close-x').click();
   await page.getByRole('button', { name: 'Coverage', exact: true }).click();
   await settle();
   const first = requests.coverage.at(-1);
@@ -279,13 +280,16 @@ async function check(browser, { theme, viewport }) {
   await fields('Cloud cover, to').fill('40');
   expect('"Search" is still held back once the fields are right', !(await searchButton.isDisabled()));
 
-  // 8. Escape and a click beside the pop-up close it; the values stay; the focus goes back to the button.
+  // 8. Escape leaves the pop-up open (Otto, 2.11.2026); its x and a click beside close it; the values stay; the focus goes back
+  //    to the button.
   await key('Escape');
-  expect('Escape did not close the pop-up', (await popup.count()) === 0);
-  expect('the focus is not on the button after Escape', await button.evaluate((el) => el === document.activeElement));
+  expect('Escape closed the pop-up', (await popup.count()) === 1);
+  await popup.locator('.advanced-top .close-x').click();
+  expect('the x did not close the pop-up', (await popup.count()) === 0);
+  expect('the focus is not on the button after the x', await button.evaluate((el) => el === document.activeElement));
   await button.press('Enter');
   await popup.waitFor();
-  expect('the value was lost with Escape', (await fields('Cloud cover, to').inputValue()) === '40');
+  expect('the value was lost with the x', (await fields('Cloud cover, to').inputValue()) === '40');
   await fields('Cloud cover, to').press('Tab');
   expect('Tab closed the pop-up', (await popup.count()) === 1);
   const q = await rect(popup);
@@ -323,8 +327,7 @@ async function check(browser, { theme, viewport }) {
   expect('the dot of the dataset with filters', (await page.locator('.dataset-select-list [role="option"] .filter-dot').count()) === 1);
   await shot('7-box');
   await key('Escape');
-  expect('Escape in the list closed the pop-up too', (await popup.count()) === 1 && (await page.locator('.dataset-select-list').count()) === 0);
-  await dataset.click();
+  expect('Escape closed the list or the pop-up', (await popup.count()) === 1 && (await page.locator('.dataset-select-list').count()) === 1);
   await page.locator('.dataset-select-list [role="option"]', { hasText: 'Radar' }).click();
   expect('a click in the list closed the pop-up', (await popup.count()) === 1);
   expect('the values of Sentinel-2 show up in the radar', (await popup.locator('.filter-title').allTextContents()).join() === 'Relative orbit');

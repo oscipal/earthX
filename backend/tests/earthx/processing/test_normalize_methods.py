@@ -39,7 +39,6 @@ from earthx.processing.operators import (
     BandMeta,
     NormalizeParamsV2,
     NormalizeParamsV3,
-    OperatorRegistry,
     RasterMeta,
     Tier,
     applicable,
@@ -412,24 +411,22 @@ class TestNumbersFromTheStatisticsOfTheArea:
 
 
 class TestTheOperator:
-    def test_it_runs_as_a_tile_and_as_a_job_and_is_not_listed_until_the_panel_sends_it(self) -> None:
+    def test_it_runs_as_a_tile_and_as_a_job_and_is_accepted_but_no_longer_listed(self) -> None:
+        """NM4-71: the panel sends version 4 for a job; version 3 is the form of the tile, of old recipes and of "⚙"."""
         assert NORMALIZE_V3.tiers == frozenset({Tier.T1, Tier.T2})
         assert NORMALIZE_V3.kind == "pixel" and NORMALIZE_V3.stock is True and NORMALIZE_V3.listed is False
+        assert NORMALIZE_V2.listed is False
         assert REGISTRY.operator("normalize", 3) is NORMALIZE_V3
         # Version 2 stays accepted, version 1 too.
         assert REGISTRY.operator("normalize", 2) is NORMALIZE_V2
 
-    def test_the_process_description_offers_it_once_it_is_listed(self) -> None:
+    def test_the_process_description_offers_version_4_and_neither_version_3_nor_2(self) -> None:
         steps = order_schema(REGISTRY)["$defs"]
-        assert "step_normalize_v2" in steps and "step_normalize_v3" not in steps
-        listed = OperatorRegistry(
-            replace(operator, listed=True) if operator.op == "normalize" and operator.op_version == 3 else operator
-            for operator in REGISTRY.values()
-        )
-        steps = order_schema(listed)["$defs"]
-        assert "step_normalize_v3" in steps and "step_normalize_v2" not in steps
-        assert {"method", "bands", "measured"} <= set(steps["step_normalize_v3"]["properties"]["params"]["properties"])
-        assert {"step_normalize_v3__Measured", "step_normalize_v3__BandValues"} <= set(steps)
+        assert "step_normalize_v4" in steps
+        assert not {"step_normalize_v3", "step_normalize_v2", "step_normalize_v3__Measured"} & set(steps)
+        assert set(steps["step_normalize_v4"]["properties"]["params"]["properties"]) >= {"method", "bands"}
+        assert "measured" not in steps["step_normalize_v4"]["properties"]["params"]["properties"]
+        assert steps["step_normalize_v4"]["x-earthx-tiers"] == ["T2"]
 
     def test_the_parameters_are_a_schema_the_panel_can_read_the_methods_from(self) -> None:
         schema = REGISTRY.params_schema("normalize", 3)

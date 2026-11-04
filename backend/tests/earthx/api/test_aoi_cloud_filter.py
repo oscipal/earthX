@@ -35,6 +35,7 @@ from earthx.api.aoi_cloud_filter import (
     run_filter,
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.registry import AoiMeasure
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition
 from earthx.gateway import Policy, ReadSlots
 
@@ -52,10 +53,18 @@ TWO_SQUARES = {
 BBOX = (9.0, 46.0, 11.0, 48.0)
 
 
-def request_for(condition: RangeCondition | None = None, aoi: Mapping[str, Any] = SQUARE) -> AoiFilterRequest:
+CLOUD_5 = {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 5.0)}
+
+
+def request_for(
+    condition: RangeCondition | None = None,
+    aoi: Mapping[str, Any] = SQUARE,
+    *,
+    conditions: Mapping[AoiMeasure, RangeCondition] | None = None,
+) -> AoiFilterRequest:
     return read_aoi_request(
         "s2",
-        condition or RangeCondition(None, 20.0),
+        conditions or {AoiMeasure.CLOUD_SHARE: condition or RangeCondition(None, 20.0)},
         datetime_value=PERIOD,
         bbox=None,
         intersects=aoi,
@@ -72,7 +81,7 @@ class TestReadingTheRequest:
 
     def test_a_bbox_is_the_area_as_a_polygon(self) -> None:
         read = read_aoi_request(
-            "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=None
+            "s2", CLOUD_5, datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=None
         )
         assert read.aoi["type"] == "Polygon"
         assert {tuple(position) for position in read.aoi["coordinates"][0]} == {
@@ -81,14 +90,14 @@ class TestReadingTheRequest:
 
     def test_a_bbox_across_the_antimeridian_is_two_parts(self) -> None:
         read = read_aoi_request(
-            "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=(179.0, 10.0, -179.0, 11.0),
+            "s2", CLOUD_5, datetime_value=PERIOD, bbox=(179.0, 10.0, -179.0, 11.0),
             intersects=None, earthx_aoi=None,
         )
         assert read.aoi["type"] == "MultiPolygon"
 
     def test_earthx_aoi_inside_the_bbox_is_what_is_measured(self) -> None:
         read = read_aoi_request(
-            "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=SQUARE
+            "s2", CLOUD_5, datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=SQUARE
         )
         assert read.aoi == SQUARE
 
@@ -98,7 +107,7 @@ class TestReadingTheRequest:
         polygon = {"type": "Polygon", "coordinates": [[[10.0, 47.0], *arc, [10.2, 47.2], [10.0, 47.0]]]}
         assert sum(len(ring) for ring in polygon["coordinates"]) == 20_000
         read = read_aoi_request(
-            "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=polygon
+            "s2", CLOUD_5, datetime_value=PERIOD, bbox=BBOX, intersects=None, earthx_aoi=polygon
         )
         assert read.aoi["type"] == "Polygon"
 
@@ -124,7 +133,7 @@ class TestReadingTheRequest:
     def test_a_request_that_cannot_be_measured(self, changes: dict[str, Any], message: str) -> None:
         arguments: dict[str, Any] = {"datetime_value": PERIOD, "bbox": None, "intersects": SQUARE, "earthx_aoi": None}
         with pytest.raises(InvalidFilter, match=message) as caught:
-            read_aoi_request("s2", RangeCondition(None, 5.0), **{**arguments, **changes})
+            read_aoi_request("s2", CLOUD_5, **{**arguments, **changes})
         for value in ("10.0", "47.0", "190"):
             assert value not in str(caught.value)
 
@@ -143,14 +152,14 @@ class TestReadingTheRequest:
     def test_earthx_aoi_and_the_bbox(self, bbox: Any, earthx_aoi: Any, message: str) -> None:
         with pytest.raises(InvalidFilter, match=message):
             read_aoi_request(
-                "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=bbox, intersects=None, earthx_aoi=earthx_aoi
+                "s2", CLOUD_5, datetime_value=PERIOD, bbox=bbox, intersects=None, earthx_aoi=earthx_aoi
             )
 
     def test_more_than_twenty_thousand_positions(self) -> None:
         ring = [[10.0 + i * 1e-6, 47.0] for i in range(20_001)]
         with pytest.raises(InvalidFilter, match="more than 20000 positions"):
             read_aoi_request(
-                "s2", RangeCondition(None, 5.0), datetime_value=PERIOD, bbox=BBOX, intersects=None,
+                "s2", CLOUD_5, datetime_value=PERIOD, bbox=BBOX, intersects=None,
                 earthx_aoi={"type": "Polygon", "coordinates": [[*ring, [10.0, 47.0]]]},
             )
 
@@ -160,10 +169,53 @@ class TestReadingTheRequest:
         assert request_for(RangeCondition(None, 21.0)).key != base.key
         assert request_for(aoi=TWO_SQUARES).key != base.key
         other = read_aoi_request(
-            "other", RangeCondition(None, 20.0), datetime_value=PERIOD, bbox=None, intersects=SQUARE, earthx_aoi=None
+            "other", {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 20.0)}, datetime_value=PERIOD, bbox=None, intersects=SQUARE, earthx_aoi=None
         )
         assert other.key != base.key
         assert "10.2" not in base.key and "47" not in base.key
+
+
+    def test_a_second_range_makes_another_key(self) -> None:
+        cloud = {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 20.0)}
+        nodata = {AoiMeasure.NODATA_SHARE: RangeCondition(None, 20.0)}
+        both = {**cloud, AoiMeasure.NODATA_SHARE: RangeCondition(None, 20.0)}
+        keys = {name: request_for(conditions=conditions).key for name, conditions in
+                {"cloud": cloud, "nodata": nodata, "both": both}.items()}
+        assert len(set(keys.values())) == 3, "the same range on the other measure is another filter"
+        wider = {**cloud, AoiMeasure.NODATA_SHARE: RangeCondition(None, 21.0)}
+        assert request_for(conditions=wider).key not in keys.values()
+        lower = {**cloud, AoiMeasure.NODATA_SHARE: RangeCondition(1.0, 20.0)}
+        assert request_for(conditions=lower).key not in keys.values()
+
+    def test_the_key_does_not_depend_on_the_order_of_the_ranges_nor_on_the_caller_s_mapping(self) -> None:
+        one = {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 20.0), AoiMeasure.NODATA_SHARE: RangeCondition(5.0, None)}
+        other = dict(reversed(list(one.items())))
+        assert request_for(conditions=one).key == request_for(conditions=other).key
+        request = request_for(conditions=one)
+        one[AoiMeasure.NODATA_SHARE] = RangeCondition(9.0, None)
+        assert request.conditions[AoiMeasure.NODATA_SHARE] == RangeCondition(5.0, None)
+
+    def test_the_key_with_two_ranges_holds_no_coordinate(self) -> None:
+        both = {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 20.0), AoiMeasure.NODATA_SHARE: RangeCondition(None, 20.0)}
+        key = request_for(conditions=both).key
+        assert len(key) == 64 and set(key) <= set("0123456789abcdef")
+        assert request_for(conditions=both, aoi=TWO_SQUARES).key != key
+
+    def test_a_filter_without_a_range_is_a_programming_error(self) -> None:
+        with pytest.raises(ValueError, match="at least one condition"):
+            read_aoi_request("s2", {}, datetime_value=PERIOD, bbox=None, intersects=SQUARE, earthx_aoi=None)
+
+    @pytest.mark.parametrize("measure", list(AoiMeasure), ids=lambda measure: measure.name)
+    def test_a_request_that_cannot_be_measured_is_refused_for_every_measure_with_the_same_words(self, measure) -> None:
+        for changes, message in (
+            ({"datetime_value": None}, "date range with a start and an end"),
+            ({"intersects": None}, "needs an area"),
+            ({"intersects": {"type": "Point", "coordinates": [10.0, 47.0]}}, "needs an area"),
+        ):
+            arguments: dict[str, Any] = {"datetime_value": PERIOD, "bbox": None, "intersects": SQUARE, "earthx_aoi": None}
+            with pytest.raises(InvalidFilter, match=message) as caught:
+                read_aoi_request("s2", {measure: RangeCondition(10.0, 30.0)}, **{**arguments, **changes})
+            assert "10.0" not in str(caught.value) and "30.0" not in str(caught.value)
 
 
 class TestThePageMarker:
@@ -228,6 +280,27 @@ class TestSceneMeasure:
     def test_no_valid_pixel_is_no_value(self) -> None:
         assert SceneMeasure(0, 0, 0.0, 20.0).cloud_percent is None
 
+    def test_no_data_is_100_less_the_share_of_the_aoi_with_data_in_one_decimal(self) -> None:
+        assert SceneMeasure(0, 800, 80.0, 20.0).nodata_percent == 20.0
+        assert SceneMeasure(1, 3, 42.9, 20.0).nodata_percent == 57.1
+        assert SceneMeasure(0, 1, 0.0, 20.0).nodata_percent == 100.0
+        assert SceneMeasure(0, 5, 100.0, 20.0).nodata_percent == 0.0
+
+    def test_a_scene_without_a_valid_pixel_has_100_where_the_clouds_have_no_value(self) -> None:
+        measure = SceneMeasure(0, 0, 0.0, 20.0)
+        assert measure.value_of(AoiMeasure.NODATA_SHARE) == 100.0
+        assert measure.value_of(AoiMeasure.CLOUD_SHARE) is None
+
+    def test_a_cached_entry_without_a_valid_pixel_is_100_whatever_its_percentage_says(self) -> None:
+        stored = SceneMeasure.stored({"data_percent": 40.0, "cloud_pixels": 0, "data_pixels": 0, "resolution": 80.0})
+        assert stored is not None and stored.nodata_percent == 100.0
+
+    def test_the_value_of_each_measure(self) -> None:
+        measure = SceneMeasure(25, 50, 50.0, 80.0)
+        assert measure.value_of(AoiMeasure.CLOUD_SHARE) == 50.0
+        assert measure.value_of(AoiMeasure.NODATA_SHARE) == 50.0
+        assert SceneMeasure(10, 80, 80.0, 80.0).value_of(AoiMeasure.CLOUD_SHARE) == 12.5
+
     def test_the_counts_of_a_reading(self) -> None:
         measure = SceneMeasure.of(AoiClouds(cloud_pixels=25, data_pixels=50, aoi_pixels=100, resolution=80.0))
         assert measure.as_measure() == {"data_percent": 50.0, "cloud_pixels": 25, "data_pixels": 50, "resolution": 80.0}
@@ -248,6 +321,8 @@ class TestSceneMeasure:
             {"data_percent": 50.0, "cloud_pixels": "5", "data_pixels": 50, "resolution": 80.0},
             {"data_percent": float("nan"), "cloud_pixels": 5, "data_pixels": 50, "resolution": 80.0},
             {"data_percent": 50.0, "cloud_pixels": 5, "data_pixels": 50, "resolution": None},
+            {"data_percent": 100.1, "cloud_pixels": 5, "data_pixels": 50, "resolution": 80.0},
+            {"data_percent": -0.1, "cloud_pixels": 5, "data_pixels": 50, "resolution": 80.0},
         ],
     )
     def test_an_entry_that_is_none_counts_as_a_miss(self, value: Any) -> None:
@@ -561,6 +636,130 @@ class TestTheLoop:
         assert "S2_00" not in str(caplog.records) and "47.0" not in str(caplog.records)
 
 
+class Table(Measures):
+    """Scenes with a given (cloud pixels, data pixels, AOI pixels): the values are worked out here, plainly."""
+
+    def __init__(self, counts: Mapping[int, tuple[int, int, int] | None]) -> None:
+        super().__init__(lambda number: 0.0)
+        self.counts = counts
+
+    async def __call__(self, item: Mapping[str, Any]) -> SceneMeasure | None:
+        number = number_of(item)
+        self.measured.append(number)
+        row = self.counts[number]
+        return None if row is None else SceneMeasure.of(AoiClouds(row[0], row[1], row[2], 80.0))
+
+
+#: scene -> (cloud pixels, data pixels, AOI pixels): cloud share and no-data share worked out by hand below.
+COUNTS: dict[int, tuple[int, int, int] | None] = {
+    0: (100, 800, 1000),  # clouds 12.5, no data 20.0
+    1: (0, 0, 1000),  # no valid pixel: clouds none, no data 100.0
+    2: (0, 1000, 1000),  # clouds 0.0, no data 0.0
+    3: (500, 500, 1000),  # clouds 100.0, no data 50.0
+    4: (250, 500, 1000),  # clouds 50.0, no data 50.0
+    5: None,  # cannot be read
+}
+
+
+async def respond_with(measures: Measures, conditions: Mapping[AoiMeasure, RangeCondition]) -> Any:
+    try:
+        return await run_filter(
+            request_for(conditions=conditions), fetch_page=Source(6).fetch, measure=measures, limit=100, token=None
+        )
+    finally:
+        await module.settle()
+
+
+class TestSeveralRanges:
+    async def keep(self, **ranges: RangeCondition) -> tuple[list[int], Any, Table]:
+        conditions = {AoiMeasure[name.upper() + "_SHARE"]: condition for name, condition in ranges.items()}
+        table = Table(COUNTS)
+        outcome = await respond_with(table, conditions)
+        return numbers(outcome), outcome, table
+
+    async def test_the_no_data_range_alone(self) -> None:
+        kept, outcome, table = await self.keep(nodata=RangeCondition(None, 20.0))
+        assert kept == [0, 2]
+        assert outcome.summary() == {"checked": 6, "found": 2, "unreadable": 1, "limit_reached": False}
+        assert sorted(table.measured) == [0, 1, 2, 3, 4, 5], "each scene once"
+
+    async def test_a_scene_without_a_valid_pixel_has_100(self) -> None:
+        kept, _, _ = await self.keep(nodata=RangeCondition(100.0, None))
+        assert kept == [1]
+
+    async def test_a_scene_valid_everywhere_has_0(self) -> None:
+        kept, _, _ = await self.keep(nodata=RangeCondition(None, 0.0))
+        assert kept == [2]
+
+    async def test_the_cloud_range_alone_is_unchanged_and_drops_the_scene_without_a_valid_pixel(self) -> None:
+        kept, outcome, table = await self.keep(cloud=RangeCondition(None, 100.0))
+        assert kept == [0, 2, 3, 4]
+        assert outcome.summary()["unreadable"] == 1
+        assert sorted(table.measured) == [0, 1, 2, 3, 4, 5]
+
+    async def test_both_ranges_must_be_met_and_the_scenes_are_read_once(self) -> None:
+        kept, _, table = await self.keep(cloud=RangeCondition(None, 60.0), nodata=RangeCondition(10.0, 60.0))
+        assert kept == [0, 4]
+        assert sorted(table.measured) == [0, 1, 2, 3, 4, 5]
+        kept, _, _ = await self.keep(cloud=RangeCondition(50.0, None), nodata=RangeCondition(None, 50.0))
+        assert kept == [3, 4]
+        kept, _, _ = await self.keep(cloud=RangeCondition(None, 0.0), nodata=RangeCondition(100.0, None))
+        assert kept == [], "clouds have no value on the scene that is all no data"
+
+    async def test_a_range_nothing_meets_keeps_nothing_though_the_other_would(self) -> None:
+        kept, _, _ = await self.keep(cloud=RangeCondition(None, 100.0), nodata=RangeCondition(60.0, 99.0))
+        assert kept == []
+
+    async def test_the_items_carry_the_same_properties_whatever_the_ranges(self) -> None:
+        _, outcome, _ = await self.keep(nodata=RangeCondition(100.0, None))
+        (item,) = outcome.items
+        assert item["properties"]["earthx:aoi_cloud_cover"] is None, "no value for the clouds on this scene"
+        assert item["properties"]["earthx:aoi_measure"] == {
+            "data_percent": 0.0, "cloud_pixels": 0, "data_pixels": 0, "resolution": 80.0
+        }
+        _, outcome, _ = await self.keep(nodata=RangeCondition(None, 20.0))
+        assert [i["properties"]["earthx:aoi_cloud_cover"] for i in outcome.items] == [12.5, 0.0]
+        assert outcome.items[0]["properties"]["earthx:aoi_measure"]["data_percent"] == 80.0
+        assert all(set(i["properties"]) >= {"earthx:aoi_cloud_cover", "earthx:aoi_measure"} for i in outcome.items)
+
+    async def test_the_marker_goes_on_for_both_ranges_and_is_refused_for_another_set(self) -> None:
+        both = {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 60.0), AoiMeasure.NODATA_SHARE: RangeCondition(None, 60.0)}
+        source = Source(300)
+        first = await run_filter(
+            request_for(conditions=both), fetch_page=source.fetch, measure=Measures(every_fourth), limit=3, token=None
+        )
+        await module.settle()
+        assert numbers(first) == [0, 1, 2] and first.next_token is not None
+        for other in (
+            {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 60.0)},
+            {AoiMeasure.NODATA_SHARE: RangeCondition(None, 60.0)},
+            {**both, AoiMeasure.NODATA_SHARE: RangeCondition(None, 61.0)},
+        ):
+            with pytest.raises(InvalidQuery, match="different search"):
+                await run_filter(
+                    request_for(conditions=other), fetch_page=source.fetch, measure=Measures(every_fourth), limit=3,
+                    token=first.next_token,
+                )
+        again = await run_filter(
+            request_for(conditions=both), fetch_page=source.fetch, measure=Measures(every_fourth), limit=3,
+            token=first.next_token,
+        )
+        await module.settle()
+        assert numbers(again) == [3, 4, 5]
+
+    async def test_the_log_line_is_the_same_one_and_names_no_range(self, caplog: pytest.LogCaptureFixture) -> None:
+        both = {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 61.5), AoiMeasure.NODATA_SHARE: RangeCondition(None, 62.5)}
+        with caplog.at_level(logging.DEBUG):
+            await run_filter(
+                request_for(conditions=both), fetch_page=Source(12).fetch, measure=Measures(every_fourth), limit=100, token=None
+            )
+        lines = [record for record in caplog.records if record.getMessage() == "aoi cloud filter"]
+        assert len(lines) == 1
+        extras = {key for key in lines[0].__dict__ if key not in _STANDARD_ATTRIBUTES}
+        assert extras == {"dataset", "checked", "found", "from_cache", "unreadable", "limit_reached", "levels", "seconds"}
+        assert "61.5" not in str(caplog.records) and "62.5" not in str(caplog.records)
+
+
 # -- measuring a scene --------------------------------------------------------------------------------------------
 
 HOST = SENTINEL_2_L2A.source.asset_hosts[0]
@@ -764,6 +963,67 @@ class TestMeasuringAScene:
         assert peak == 2
 
 
+class SceneSource(Source):
+    """The scenes of a source with an ``scl`` asset each, as the measurer reads them."""
+
+    def item(self, number: int) -> dict[str, Any]:
+        return scene(number)
+
+
+class TestOneReadingPerSceneWhateverTheRanges:
+    @pytest.fixture
+    def table_reads(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        seen: list[str] = []
+
+        def fake(path: Any, aoi: Any, classes: frozenset[int]) -> AoiClouds:
+            seen.append(path.item_id)
+            number = int(path.item_id.removeprefix("S2_"))
+            return AoiClouds(cloud_pixels=40, data_pixels=160 + number, aoi_pixels=200, resolution=80.0)
+
+        monkeypatch.setattr(module, "measure_aoi_clouds", fake)
+        return seen
+
+    async def search(self, conditions: Mapping[AoiMeasure, RangeCondition], cache: Any = None) -> Any:
+        outcome = await run_filter(
+            request_for(conditions=conditions), fetch_page=SceneSource(12).fetch, measure=measurer(cache), limit=100,
+            token=None,
+        )
+        await module.settle()
+        return outcome
+
+    @pytest.mark.parametrize(
+        "conditions",
+        [
+            {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 100.0)},
+            {AoiMeasure.NODATA_SHARE: RangeCondition(None, 100.0)},
+            {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 100.0), AoiMeasure.NODATA_SHARE: RangeCondition(None, 100.0)},
+        ],
+        ids=["cloud", "nodata", "both"],
+    )
+    async def test_each_scene_is_read_once(self, table_reads: list[str], conditions) -> None:
+        outcome = await self.search(conditions)
+        assert outcome.checked == 12 and outcome.found == 12
+        assert sorted(table_reads) == [f"S2_{n:04d}" for n in range(12)]
+
+    async def test_the_no_data_values_come_from_the_numbers_of_the_one_reading(self, table_reads: list[str]) -> None:
+        # Scene n has 160 + n valid pixels of 200: 100 - 100 * (160 + n) / 200, to one decimal, worked out here.
+        outcome = await self.search({AoiMeasure.NODATA_SHARE: RangeCondition(None, 100.0)})
+        for item in outcome.items:
+            number = int(item["id"].removeprefix("S2_"))
+            assert item["properties"]["earthx:aoi_measure"]["data_percent"] == pytest.approx(100 * (160 + number) / 200, abs=0.05)
+        narrow = await self.search({AoiMeasure.NODATA_SHARE: RangeCondition(None, 15.0)})  # 160 + n >= 170: n = 10 has exactly 15.0
+        assert [int(i["id"].removeprefix("S2_")) for i in narrow.items] == [10, 11]
+        assert len(table_reads) == 24
+
+    async def test_what_a_cloud_search_stored_answers_a_no_data_search_without_a_reading(self, table_reads: list[str]) -> None:
+        cache = DictCache()
+        await self.search({AoiMeasure.CLOUD_SHARE: RangeCondition(None, 100.0)}, cache)
+        assert len(table_reads) == 12
+        outcome = await self.search({AoiMeasure.NODATA_SHARE: RangeCondition(None, 100.0)}, cache)
+        assert outcome.found == 12 and len(table_reads) == 12, "same key, same numbers: no further reading"
+        assert len(cache.rows) == 12
+
+
 class TestTheRequestOfAnotherSource:
     async def test_the_filter_on_a_collection_with_its_own_items_is_a_400(self) -> None:
         from fastapi import HTTPException
@@ -778,7 +1038,25 @@ class TestTheRequestOfAnotherSource:
         infos = {"native": (ItemHolding.MATERIALIZED, True)}
         with pytest.raises(HTTPException) as caught:
             await _aoi_requests(
-                Stub(), {"native": RangeCondition(None, 5.0)}, infos, {}, datetime_value=PERIOD, bbox=None,
+                Stub(), {"native": CLOUD_5}, infos, {}, datetime_value=PERIOD, bbox=None,
                 intersects=SQUARE,
             )
         assert caught.value.status_code == 400 and "federated collection only" in caught.value.detail
+        assert caught.value.detail.startswith("earthx:aoi_cloud_cover "), "names the filter that was asked"
+
+    async def test_the_share_of_no_data_is_named_as_such(self) -> None:
+        from fastapi import HTTPException
+
+        from earthx.api.federating_client import _aoi_requests
+        from earthx.catalog.registry import ItemHolding
+
+        class Stub:
+            async def body(self) -> bytes:
+                return b"{}"
+
+        with pytest.raises(HTTPException) as caught:
+            await _aoi_requests(
+                Stub(), {"native": {AoiMeasure.NODATA_SHARE: RangeCondition(None, 5.0)}},
+                {"native": (ItemHolding.MATERIALIZED, True)}, {}, datetime_value=PERIOD, bbox=None, intersects=SQUARE,
+            )
+        assert caught.value.detail == "earthx:aoi_nodata is measured on a federated collection only"

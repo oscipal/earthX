@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { addProtocol, Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
+import { addProtocol, Map as MapLibreMap, NavigationControl, setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import {
   TerraDraw,
   TerraDrawPointMode,
@@ -21,6 +22,7 @@ import {
   overlayBudgetNote,
   setAoiData,
   setCoverageDisplay,
+  setViewOpacity,
   syncBrowseMosaic,
   syncFocusRaster,
   syncHighlight,
@@ -33,9 +35,10 @@ import {
 import { DEFAULT_BASEMAP } from '../basemaps';
 import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
 import { previewOverlays } from '../processingPreview';
-import { useProcessingStore } from '../processingStore';
+import { clipAoiOf, useProcessingStore } from '../processingStore';
+import { flipIdOf } from '../layerFlip';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
-import { useAppStore } from '../store';
+import { shownViewOf, useAppStore } from '../store';
 import type { StacItem, ToolMode } from '../types';
 
 // Only one of density/footprints/area is ever drawn (mapLayers.ts): a one-off
@@ -83,6 +86,9 @@ function reportViewport(map: MapLibreMap): void {
 // nothing from repeating it (and `addProtocol` is idempotent either way).
 addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
 
+// maplibre-gl 6 ships ES modules only; under a bundler its worker has to be named once (migration guide v5 to v6).
+setWorkerUrl(workerUrl);
+
 // The same list while its scenes are the same ones: an effect that draws them runs again only for another list.
 function useSameScenes(items: StacItem[]): StacItem[] {
   const ref = useRef(items);
@@ -129,6 +135,8 @@ export default function MapView() {
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
   const resultsAt = useAppStore((s) => s.resultsAt);
+  // The layer "Flip through layers" draws over the others (NM4-65 part 9).
+  const flipId = useAppStore(flipIdOf);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   const playing = useAppStore((s) => s.playing);
@@ -141,8 +149,10 @@ export default function MapView() {
   const overlays = useAppStore((s) => s.overlays);
   const theme = useAppStore((s) => s.theme);
   const preview = useProcessingStore((s) => s.preview);
+  // What an entry fixed (a crop, a result) is cut to its own AOI, not the map's.
+  const previewAoi = useProcessingStore((s) => clipAoiOf(s, aoi));
   // Cut to the AOI only for "AOI only": a new AOI leaves the others alone.
-  const clipAoi = preview?.clipToAoi ? aoi : null;
+  const clipAoi = preview?.clipToAoi ? previewAoi : null;
   const previewTiles = useMemo(() => (preview ? previewOverlays(preview, clipAoi) : []), [preview, clipAoi]);
   const previewTilesRef = useRef(previewTiles);
   previewTilesRef.current = previewTiles;
@@ -243,13 +253,15 @@ export default function MapView() {
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
       const shown = resultsOnMapOf(st);
-      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded), st.resultsAt);
+      syncLayers(map, layersForMap(st.layers, viewLayer, st.showDownloaded), st.resultsAt, flipIdOf(st));
+      // A view draws the image that is shown, of the dataset of that image (NM4-53).
+      const drawn = st.focusMode ? shownViewOf(st) : null;
       syncMosaic(map, {
         // What browsing draws; a view draws its own scenes and needs the whole list for the quicklook under them.
-        items: st.focusMode ? st.items : shown.quicklooks,
+        items: drawn ? drawn.items : shown.quicklooks,
         highlight: shown.highlight,
-        dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
-        downloaded: st.downloaded,
+        dataset: drawn ? drawn.dataset : (st.datasets.find((d) => d.id === st.datasetId) ?? null),
+        downloaded: drawn ? drawn.downloaded : st.downloaded,
         selectedIds: st.selectedIds,
         render: st.appliedRender,
         focusMode: st.focusMode,
@@ -257,7 +269,7 @@ export default function MapView() {
         tilesInLayer: viewLayer !== null,
         aoi: st.viewAoi,
         cropToAoi: st.cropToAoi,
-        groups: st.groups,
+        groups: drawn ? drawn.groups : st.groups,
         datasets: st.datasets,
         openIds: openIdsOf(st.groups, st.expandedGroupIndex),
       });
@@ -348,9 +360,14 @@ export default function MapView() {
   // --- pinned layers (layer manager) ---
   // The mosaics this view asks for, the same object until one of them changes: another view's
   // TileJSON arriving must not tear this view's tiles down.
+  const shownImage = useAppStore((s) => s.shownImage);
+  const view = useMemo(
+    () => (focusMode ? shownViewOf({ downloaded, sections, openSectionId, datasetId, items, groups, datasets, shownImage }) : null),
+    [focusMode, downloaded, sections, openSectionId, datasetId, items, groups, datasets, shownImage],
+  );
   const picked = useMemo(
-    () => mosaicsOfView(allMosaics, datasetId, Object.entries(downloaded), groups),
-    [allMosaics, datasetId, downloaded, groups],
+    () => (view ? mosaicsOfView(allMosaics, view.dataset?.id ?? null, Object.entries(view.downloaded), view.groups) : {}),
+    [allMosaics, view],
   );
   const mosaicsRef = useRef(picked);
   if (!sameMosaics(mosaicsRef.current, picked)) mosaicsRef.current = picked;
@@ -377,11 +394,18 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const note = overlayBudgetNote(
-        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded), resultsAt),
+        syncLayers(map, layersForMap(layers, viewLayer, showDownloaded), resultsAt, flipId),
       );
       if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
-  }, [layers, resultsAt, viewLayer, showDownloaded]);
+  }, [layers, resultsAt, viewLayer, showDownloaded, flipId]);
+
+  // The opacity of the view of the search (Otto, 2.11.2026): before the view's own effect, so that a new picture is laid with it.
+  const viewOpacity = useAppStore((s) => s.viewOpacity);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current) setViewOpacity(map, viewOpacity);
+  }, [viewOpacity]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
@@ -390,22 +414,21 @@ export default function MapView() {
   // the control menu: drawing, changing or clearing that leaves the view alone. ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current && focusMode) {
-      const dataset = datasets.find((d) => d.id === datasetId) ?? null;
+    if (map && readyRef.current && focusMode && view) {
       syncFocusRaster(map, {
-        downloaded,
+        downloaded: view.downloaded,
         render: appliedRender,
         showDownloaded: viewShown(viewLayer, showDownloaded),
         tilesInLayer: viewLayer !== null,
         aoi: viewAoi,
         cropToAoi,
-        items,
-        dataset,
-        groups,
+        items: view.items,
+        dataset: view.dataset,
+        groups: view.groups,
         mosaics,
       });
     }
-  }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
+  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
 
   // --- the preview of the processing panel (M4-13c-2), a tier of "Results" over the results and the view
   // (`mapLayers.ts`); a new AOI cuts it again. ---
@@ -463,11 +486,11 @@ export default function MapView() {
         focusMode,
         cropToAoi,
         aoi: viewAoi,
-        downloaded,
-        groups,
+        downloaded: view ? view.downloaded : downloaded,
+        groups: view ? view.groups : groups,
       });
     }
-  }, [groups, focusMode, cropToAoi, viewAoi, downloaded, highlight, selectedIds]);
+  }, [groups, focusMode, cropToAoi, viewAoi, downloaded, view, highlight, selectedIds]);
 
   // --- fly to a geocoded place ---
   useEffect(() => {

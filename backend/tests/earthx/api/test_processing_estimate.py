@@ -50,7 +50,7 @@ class TestTheAnswer:
         response = await ask(rig)
         assert response.status_code == 200
         body = response.json()
-        assert set(body) == {"estimate", "skippedItems"}
+        assert set(body) == {"estimate", "skippedItems", "resampling"}
         assert set(body["estimate"]) == {
             "size",
             "duration",

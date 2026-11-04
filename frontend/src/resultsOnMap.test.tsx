@@ -82,6 +82,9 @@ const viewButton = (text: string): HTMLButtonElement => {
   if (!found) throw new Error(`no button "${text}" in the view`);
   return found;
 };
+// The red x of the settings bar: it closes the view and drops it, as "Clear" did (Otto, 2.11.2026).
+const viewClose = () => container.querySelector<HTMLButtonElement>('aside.inspector .vc-head .close-x')!;
+const pinnedLayer = (id: string) => ({ id, name: id, visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET, itemIds: [], groupItemIds: [], downloaded: {}, appliedRender: {}, selectedIds: [] } }) as never;
 const areaClear = () => [...container.querySelectorAll<HTMLButtonElement>('.toolbar button')].find((b) => b.textContent?.includes('Clear'))!;
 const flush = () => act(async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); });
 
@@ -138,8 +141,9 @@ interface Effect {
   startsOver?: boolean;
 }
 const OPERATIONS: [string, () => Promise<void> | void, Effect][] = [
-  ['"Clear" in the view', async () => { await openView(); click(viewButton('Clear')); }, {}],
-  ['"Change image" in the view', async () => { await openView(); click(viewButton('Change image')); }, {}],
+  ['the red x of the view', async () => { await openView(); click(viewClose()); }, {}],
+  // "Change image" goes back to the results: it shows them (Otto, 2.11.2026).
+  ['"Change image" in the view', async () => { await openView(); click(viewButton('Change image')); }, { switchTo: true }],
   ['"Crop to AOI"', () => openView(true), { switchTo: false, unticks: true }],
   ['"View whole scene"', () => openView(false), {}],
   ['"Clear" of the area in the control panel, in a view', async () => { await openView(); act(() => state().setToolMode('none')); act(() => state().reopenControls()); act(() => useAppStore.setState({ dock: 'controls' })); click(areaClear()); }, {}],
@@ -257,10 +261,10 @@ describe('"Hide results" hides a ticked scene too, and ticking while hidden show
 
     it('opens the eye, in the button too and in the browser', () => {
       act(() => useAppStore.setState({ dock: 'results' }));
-      expect(buttonWith('Show results').title).toBe('Show results on the map');
+      expect(buttonWith('Show search results').title).toBe('Show search results on the map');
       act(() => state().toggleSelected('a0'));
       expect(state().resultsOnMap).toBe(true);
-      expect(buttonWith('Hide results').title).toBe('Hide results on the map');
+      expect(buttonWith('Hide search results').title).toBe('Hide search results on the map');
       expect(window.localStorage.getItem('earthx.results')).toBe('show');
       expect(idsOf(resultsOnMapOf(state()).highlight)).toEqual(['a1', 'a0']);
     });
@@ -323,7 +327,7 @@ describe('Otto\'s click path (27.10.2026)', () => {
     await flush();
     expect(state().focusMode).toBe(true);
     expect(state().resultsOnMap).toBe(false);
-    expect(buttonWith('Show results').title).toBe('Show results on the map');
+    expect(buttonWith('Show search results').title).toBe('Show search results on the map');
     expect(state().selectedIds).toEqual([]);
     const shown = resultsOnMapOf(state());
     expect(shown.quicklooks).toEqual([]);
@@ -353,13 +357,13 @@ describe('Otto\'s click path (27.10.2026)', () => {
     act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
     click(buttonWith('Crop to AOI'));
     await flush();
-    click(buttonWith('Show results'));
+    click(buttonWith('Show search results'));
     expect(state().resultsOnMap).toBe(true);
     expect(state().focusMode).toBe(true);
     expect(resultsOnMapOf(state()).overlay.length).toBeGreaterThan(0);
   });
 
-  it('"Clear" of the area, then the view\'s own "Clear"', async () => {
+  it('"Clear" of the area, then the view\'s own x', async () => {
     act(() => { state().toggleSelected('a0'); useAppStore.setState({ dock: 'results' }); });
     click(buttonWith('Crop to AOI'));
     await flush();
@@ -368,21 +372,21 @@ describe('Otto\'s click path (27.10.2026)', () => {
     click(areaClear());
     expect(state().aoi).toBeNull();
     expect(state().focusMode).toBe(true);
-    click(viewButton('Clear'));
+    click(viewClose());
     expect(state().focusMode).toBe(false);
     expect(state().downloaded).toEqual({});
   });
 
   it('the eye says what a click does, and hiding takes everything off the map, a ticked scene included', async () => {
     act(() => useAppStore.setState({ dock: 'results' }));
-    expect(buttonWith('Hide results').title).toBe('Hide results on the map');
+    expect(buttonWith('Hide search results').title).toBe('Hide search results on the map');
     act(() => state().toggleSelected('a0'));
-    click(buttonWith('Hide results'));
-    expect(buttonWith('Show results').title).toBe('Show results on the map');
+    click(buttonWith('Hide search results'));
+    expect(buttonWith('Show search results').title).toBe('Show search results on the map');
     expectNothingOnMap();
-    // Leaving a view brings nothing back, and the tick stays.
+    // Leaving a view with its x brings nothing back, and the tick stays.
     await openView();
-    click(viewButton('Change image'));
+    click(viewClose());
     expect(state().resultsOnMap).toBe(false);
     expect(state().selectedIds).toEqual(['a0']);
     expectNothingOnMap();
@@ -390,17 +394,23 @@ describe('Otto\'s click path (27.10.2026)', () => {
     act(() => state().toggleSelected('a0'));
     expect(state().resultsOnMap).toBe(false);
     expectNothingOnMap();
+    // "Change image" goes back to the results and shows them (Otto, 2.11.2026).
+    act(() => state().toggleSelected('a0'));
+    act(() => useAppStore.setState({ resultsOnMap: false }));
+    await openView();
+    click(viewButton('Change image'));
+    expect(state().resultsOnMap).toBe(true);
   });
 });
 
-describe('"Clear" and "Change image" in the view', () => {
-  it('"Clear" takes the view off the map and nothing else: the tick, what was pinned, the switch and the panel stay', async () => {
+describe('the red x and "Change image" in the view', () => {
+  it('the red x takes the view off the map and nothing else, as "Clear" did: the tick, what was pinned, the switch and the panel stay', async () => {
     const layer = { id: 'pinned', name: 'Pinned', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET, itemIds: [], groupItemIds: [], downloaded: {}, appliedRender: {}, selectedIds: [] } } as never;
     act(() => state().toggleSelected('a0'));
     act(() => useAppStore.setState({ layers: [layer], resultsOnMap: false, dock: 'controls' }));
     await openView();
     const pinned = state().layers;
-    click(viewButton('Clear'));
+    click(viewClose());
     const s = state();
     expect(s.focusMode).toBe(false);
     expect(s.downloaded).toEqual({});
@@ -412,20 +422,22 @@ describe('"Clear" and "Change image" in the view', () => {
     expect(s.sections.length).toBe(1);
   });
 
-  it('"Change image" takes the view off the map and opens the results, and leaves the tick and the switch', async () => {
+  it('"Change image" takes the view off the map, opens the results, shows them and puts their row on top; the tick stays', async () => {
     act(() => state().toggleSelected('a0'));
-    act(() => useAppStore.setState({ dock: 'controls', resultsOnMap: false }));
+    act(() => useAppStore.setState({ dock: 'controls', resultsOnMap: false, resultsAt: 2, layers: [pinnedLayer('one'), pinnedLayer('two')] }));
     await openView();
     click(viewButton('Change image'));
     expect(state().focusMode).toBe(false);
     expect(state().dock).toBe('results');
     expect(state().selectedIds).toEqual(['a0']);
-    expect(state().resultsOnMap).toBe(false);
+    expect(state().resultsOnMap).toBe(true);
+    expect(state().resultsAt).toBe(0);
   });
 
   it('have the tooltips of what they do', async () => {
     await openView();
-    expect(viewButton('Clear').title).toBe('Remove this view from the map');
-    expect(viewButton('Change image').title).toBe('Remove this view and choose another scene from the results');
+    expect(viewClose().title).toBe('Close and drop this view');
+    expect(viewButton('Change image').title).toBe('Remove this view, show the search results and choose another scene');
+    expect([...container.querySelectorAll('.scene-view button')].some((b) => b.textContent?.includes('Clear'))).toBe(false);
   });
 });

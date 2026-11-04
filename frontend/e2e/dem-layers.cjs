@@ -205,16 +205,16 @@ async function check(browser, { name, theme, viewport }) {
   void cropless;
 
   // 2. "Hide results" takes it off the map; "Show results" brings it back.
-  await page.locator('.results-head').getByRole('button', { name: 'Hide results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Hide search results' }).click();
   await expectOff('"Hide results"', BASE_COLOUR);
-  await page.locator('.results-head').getByRole('button', { name: 'Show results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Show search results' }).click();
   await expectOn('"Show results"', BASE_COLOUR);
 
   // 3. Crop to AOI, a colormap, pin it.
   await page.getByRole('button', { name: /Crop( & merge)? to AOI/ }).click();
   await page.waitForSelector('.viewer-controls');
-  await page.locator('.results-head').getByRole('button', { name: 'Hide results' }).click().catch(() => {});
-  await page.locator('.viewer-controls select').selectOption('viridis');
+  await page.locator('.results-head').getByRole('button', { name: 'Hide search results' }).click().catch(() => {});
+  await page.locator('.viewer-controls label.vc-field', { hasText: /^Colormap/ }).locator('select').selectOption('viridis');
   await page.locator('.viewer-controls .vc-apply').click();
   await expectOn('the view after "Apply"', COLOURS.viridis);
   // The preview is the scenes as they are; the crop is the part of one scene under the AOI.
@@ -251,16 +251,17 @@ async function check(browser, { name, theme, viewport }) {
   await page.getByRole('button', { name: new RegExp(`^${spec.title}|Copernicus|Sentinel`) }).first().isVisible().catch(() => false);
   await page.locator('.layer-row:not(.results-row) .lm-name').first().click();
   await page.waitForSelector('.viewer-controls');
-  await page.locator('.viewer-controls select').selectOption('magma');
+  await page.locator('.viewer-controls label.vc-field', { hasText: /^Colormap/ }).locator('select').selectOption('magma');
   await page.locator('.viewer-controls input[type="number"]').first().fill('5');
   await page.locator('.viewer-controls .vc-apply').click();
   await page.waitForTimeout(500);
-  await page.getByRole('button', { name: /Clear/ }).click();
+  // A layer opened from the manager closes with its red x (it has no "Clear" any more, NM4-65).
+  await page.locator('.viewer-controls .close-x').click();
   await page.locator('.layer-row:not(.results-row) .lm-name').first().click();
   await page.waitForSelector('.viewer-controls');
   await page.waitForTimeout(800);
   const controls = await page.evaluate(() => ({
-    colormap: document.querySelector('.viewer-controls select')?.value,
+    colormap: [...document.querySelectorAll('.viewer-controls label.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap')?.querySelector('select')?.value,
     vmin: document.querySelector('.viewer-controls input[type="number"]')?.value,
   }));
   if (controls.colormap !== 'viridis' || controls.vmin !== '10') problems.push(`the controls of the layer show ${controls.colormap}, ${controls.vmin}; the layer was made with viridis, 10`);
@@ -366,11 +367,11 @@ async function checkTicks(browser, { theme, viewport }) {
   await shot('1-both');
 
   // "Hide results" takes all of them off, the ticks stay; "Clear search results" takes the ticks.
-  await page.locator('.results-head').getByRole('button', { name: 'Hide results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Hide search results' }).click();
   await page.waitForTimeout(1500);
   if ((await count(page, COLOURS.base.dem)) > 60 || (await count(page, COLOURS.base.s2)) > 60) problems.push('"Hide results" leaves a ticked scene on the map');
   await expectTicks('after "Hide results"', ['DEM_N47_E010', 'b1', 'a2']);
-  await page.locator('.results-head').getByRole('button', { name: 'Show results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Show search results' }).click();
   await page.getByRole('button', { name: /Clear search results/ }).click();
   await expectTicks('after "Clear search results"', []);
   await context.close();
@@ -454,10 +455,10 @@ async function checkOrder(browser, { theme, viewport }) {
   await open('Copernicus');
   await expectTop('the DEM open again, after a change of the basemap', 'dem');
   // "Hide results" takes both off, "Show results" brings them back in the same order.
-  await page.locator('.results-head').getByRole('button', { name: 'Hide results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Hide search results' }).click();
   await page.waitForTimeout(1500);
   if ((await count(page, COLOURS.base.s2)) > 60 || (await count(page, COLOURS.base.dem)) > 60) problems.push('"Hide results" leaves a scene on the map');
-  await page.locator('.results-head').getByRole('button', { name: 'Show results' }).click();
+  await page.locator('.results-head').getByRole('button', { name: 'Show search results' }).click();
   await expectTop('the DEM open, after "Show results"', 'dem');
   await context.close();
   return { name: label, problems, detail: '' };

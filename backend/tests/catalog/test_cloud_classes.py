@@ -8,7 +8,7 @@ import pytest
 
 from earthx.catalog.collection import to_stac_collection
 from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
-from earthx.catalog.registry import ConfigError, DataFormat, FilterKind
+from earthx.catalog.registry import AoiMeasure, ConfigError, DataFormat, FilterKind
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 
 
@@ -22,6 +22,17 @@ def _filters(**changes):
     return (replace(first, **changes), *rest)
 
 
+def _filters_of(property_name: str, **changes):
+    """The filters of Sentinel-2 with ``changes`` applied to the one on ``property_name``."""
+    return tuple(
+        replace(entry, **changes) if entry.property == property_name else entry for entry in SENTINEL_2_L2A.search_filters
+    )
+
+
+def _without_measures(filters=SENTINEL_2_L2A.search_filters):
+    return tuple(replace(entry, within_aoi=None) for entry in filters)
+
+
 class TestTheEntries:
     def test_sentinel_2_counts_the_classes_of_eo_cloud_cover(self) -> None:
         assert SENTINEL_2_L2A.mask.cloud_classes == frozenset({8, 9, 10})
@@ -31,21 +42,34 @@ class TestTheEntries:
     def test_cloud_shadows_and_snow_are_not_clouds(self) -> None:
         assert not SENTINEL_2_L2A.mask.cloud_classes & {0, 1, 3, 11}
 
-    def test_the_cloud_cover_filter_is_the_one_within_aoi(self) -> None:
-        marked = [entry.property for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi]
-        assert marked == ["eo:cloud_cover"]
+    def test_the_cloud_cover_and_the_no_data_filter_are_the_ones_within_aoi(self) -> None:
+        marked = {entry.property: entry.within_aoi for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi}
+        assert marked == {
+            "eo:cloud_cover": AoiMeasure.CLOUD_SHARE,
+            "s2:nodata_pixel_percentage": AoiMeasure.NODATA_SHARE,
+        }
+
+    def test_every_measure_has_its_own_reserved_property(self) -> None:
+        assert {measure.name: measure.value for measure in AoiMeasure} == {
+            "CLOUD_SHARE": "earthx:aoi_cloud_cover",
+            "NODATA_SHARE": "earthx:aoi_nodata",
+        }
+
+    def test_the_filters_without_an_area_have_none(self) -> None:
+        none = [entry.property for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi is None]
+        assert "platform" in none and "s2:snow_ice_percentage" in none and "eo:cloud_cover" not in none
 
     def test_the_synthetic_zarr_entry_has_no_cloud_classes_and_no_such_filter(self) -> None:
         assert SYNTHETIC_ZARR.mask.cloud_classes == frozenset() and SYNTHETIC_ZARR.mask.cloud_note == ""
-        assert not any(entry.within_aoi for entry in SYNTHETIC_ZARR.search_filters)
+        assert all(entry.within_aoi is None for entry in SYNTHETIC_ZARR.search_filters)
 
     def test_the_dem_has_no_mask_and_no_filter(self) -> None:
         assert COP_DEM_GLO_30.mask is None
-        assert not any(entry.within_aoi for entry in COP_DEM_GLO_30.search_filters)
+        assert all(entry.within_aoi is None for entry in COP_DEM_GLO_30.search_filters)
 
     @pytest.mark.parametrize("entry", TEST_ENTRIES, ids=lambda entry: entry.dataset_id)
     def test_a_filter_within_aoi_only_where_there_are_cloud_classes(self, entry) -> None:
-        has_filter = any(item.within_aoi for item in entry.search_filters)
+        has_filter = any(item.within_aoi is not None for item in entry.search_filters)
         has_classes = entry.mask is not None and bool(entry.mask.cloud_classes)
         assert has_filter <= has_classes
 
@@ -83,7 +107,7 @@ class TestCloudClassesAreRefused:
 
     def test_without_classes_a_note_and_any_format_are_taken(self) -> None:
         assert replace(SYNTHETIC_ZARR, mask=replace(SYNTHETIC_ZARR.mask, cloud_note="Note.")).format is DataFormat.ZARR
-        assert replace(SENTINEL_2_L2A, mask=_mask(cloud_classes=frozenset()), search_filters=_filters(within_aoi=False))
+        assert replace(SENTINEL_2_L2A, mask=_mask(cloud_classes=frozenset()), search_filters=_without_measures())
 
     def test_a_subset_of_the_classes_is_taken(self) -> None:
         assert replace(SENTINEL_2_L2A, mask=_mask(cloud_classes=frozenset({9}))).mask.cloud_classes == {9}
@@ -97,16 +121,42 @@ class TestWithinAoiIsRefused:
             replace(SENTINEL_2_L2A, mask=_mask(cloud_classes=frozenset()))
         assert SENTINEL_2_L2A.dataset_id in str(caught.value)
 
+    def test_the_no_data_share_is_as_strict_as_the_cloud_share(self) -> None:
+        """Both are read from the classification of a COG; a mask without cloud classes allows neither."""
+        only_nodata = _filters_of("eo:cloud_cover", within_aoi=None)
+        with pytest.raises(
+            ConfigError, match="within_aoi on 's2:nodata_pixel_percentage' needs a mask with cloud_classes"
+        ):
+            replace(SENTINEL_2_L2A, mask=_mask(cloud_classes=frozenset()), search_filters=only_nodata)
+        unmasked = replace(SENTINEL_2_L2A.capabilities, masking=False)
+        with pytest.raises(ConfigError, match="needs a mask with cloud_classes"):
+            replace(SENTINEL_2_L2A, mask=None, capabilities=unmasked, search_filters=only_nodata)
+
+    def test_the_no_data_share_alone_is_taken_where_the_classification_is_there(self) -> None:
+        only_nodata = _filters_of("eo:cloud_cover", within_aoi=None)
+        assert replace(SENTINEL_2_L2A, search_filters=only_nodata)
+
     def test_it_needs_a_mask_at_all(self) -> None:
         unmasked = replace(SENTINEL_2_L2A.capabilities, masking=False)
         with pytest.raises(ConfigError, match="needs a mask with cloud_classes"):
             replace(SENTINEL_2_L2A, mask=None, capabilities=unmasked)
 
-    def test_on_two_filters(self) -> None:
-        first, second, *others = SENTINEL_2_L2A.search_filters
-        with pytest.raises(ConfigError, match="more than one filter"):
-            replace(SENTINEL_2_L2A, search_filters=(first, replace(second, within_aoi=True), *others))
+    @pytest.mark.parametrize("measure", list(AoiMeasure), ids=lambda measure: measure.name)
+    def test_the_same_measure_on_two_filters(self, measure) -> None:
+        first, second, *others = _without_measures()
+        with pytest.raises(ConfigError, match="more than one filter") as caught:
+            replace(
+                SENTINEL_2_L2A,
+                search_filters=(replace(first, within_aoi=measure), replace(second, within_aoi=measure), *others),
+            )
+        assert SENTINEL_2_L2A.dataset_id in str(caught.value)
 
+    def test_two_measures_on_two_filters_are_taken(self) -> None:
+        first, second, *others = _without_measures()
+        both = (replace(first, within_aoi=AoiMeasure.CLOUD_SHARE), replace(second, within_aoi=AoiMeasure.NODATA_SHARE))
+        assert replace(SENTINEL_2_L2A, search_filters=(*both, *others))
+
+    @pytest.mark.parametrize("name", ["eo:cloud_cover", "s2:nodata_pixel_percentage"])
     @pytest.mark.parametrize(
         "changes",
         [
@@ -117,23 +167,24 @@ class TestWithinAoiIsRefused:
             {"unit": None},
         ],
     )
-    def test_on_a_range_that_is_not_a_percentage(self, changes) -> None:
-        with pytest.raises(ConfigError, match="range filter from 0 to 100"):
-            replace(SENTINEL_2_L2A, search_filters=_filters(**changes))
+    def test_on_a_range_that_is_not_a_percentage(self, name, changes) -> None:
+        with pytest.raises(ConfigError, match=f"within_aoi on '{name}' needs a range filter from 0 to 100"):
+            replace(SENTINEL_2_L2A, search_filters=_filters_of(name, **changes))
 
-    def test_on_a_values_filter(self) -> None:
+    @pytest.mark.parametrize("measure", list(AoiMeasure), ids=lambda measure: measure.name)
+    def test_on_a_values_filter(self, measure) -> None:
         *_, platform = SENTINEL_2_L2A.search_filters
         with pytest.raises(ConfigError, match="range filter from 0 to 100"):
-            replace(SENTINEL_2_L2A, search_filters=(replace(platform, within_aoi=True),))
+            replace(SENTINEL_2_L2A, search_filters=(replace(platform, within_aoi=measure),))
 
-    @pytest.mark.parametrize("flag", [1, "yes", None])
-    def test_not_a_bool(self, flag) -> None:
-        with pytest.raises(ConfigError, match="is True or False"):
+    @pytest.mark.parametrize("flag", [True, False, 1, 0, "yes", "earthx:aoi_cloud_cover", AoiMeasure])
+    def test_not_a_measure_or_none(self, flag) -> None:
+        with pytest.raises(ConfigError, match="is an AoiMeasure or None"):
             replace(SENTINEL_2_L2A, search_filters=_filters(within_aoi=flag))
 
     def test_a_filter_may_stay_without_it(self) -> None:
-        entry = replace(SENTINEL_2_L2A, search_filters=_filters(within_aoi=False))
-        assert not any(item.within_aoi for item in entry.search_filters)
+        entry = replace(SENTINEL_2_L2A, search_filters=_without_measures())
+        assert all(item.within_aoi is None for item in entry.search_filters)
 
     def test_the_cloud_cover_filter_stays_a_range(self) -> None:
         assert SENTINEL_2_L2A.search_filter("eo:cloud_cover").kind is FilterKind.RANGE
@@ -152,7 +203,15 @@ class TestTheCollection:
     def test_the_dem_still_publishes_no_mask(self) -> None:
         assert to_stac_collection(COP_DEM_GLO_30)["earthx:mask"] is None
 
-    def test_the_filters_publish_within_aoi(self) -> None:
+    def test_the_filters_publish_within_aoi_as_the_name_of_the_property_or_null(self) -> None:
         published = to_stac_collection(SENTINEL_2_L2A)["earthx:search_filters"]
-        assert [entry["property"] for entry in published if entry["within_aoi"]] == ["eo:cloud_cover"]
+        assert {entry["property"]: entry["within_aoi"] for entry in published} == {
+            **{entry.property: None for entry in SENTINEL_2_L2A.search_filters},
+            "eo:cloud_cover": "earthx:aoi_cloud_cover",
+            "s2:nodata_pixel_percentage": "earthx:aoi_nodata",
+        }
         assert len(published) == len(SENTINEL_2_L2A.search_filters)
+
+    def test_a_dataset_without_a_measure_publishes_null_everywhere(self) -> None:
+        published = to_stac_collection(SYNTHETIC_ZARR)["earthx:search_filters"]
+        assert published and all(entry["within_aoi"] is None for entry in published)

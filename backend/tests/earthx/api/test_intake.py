@@ -571,7 +571,7 @@ class TestUnits:
 
     def test_the_crop_recipe_names_the_same_units(self) -> None:
         document = crop_recipe_json(
-            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS
+            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, accepted_at=AT, years=YEARS
         )
         assert json.loads(document)["inputs"][0]["resolved"][0]["bands"][0]["unit"] == "1"
 
@@ -1150,7 +1150,7 @@ YEARS = AcquisitionYears(2026, 2026)
 
 def crop(config: DatasetConfig, groups: list[list[dict[str, Any]]], assets: list[str], **kw: Any) -> dict[str, Any]:
     raw = crop_recipe_json(
-        config, groups=groups, assets=assets, aoi=SQUARE, resolution_factor=kw.pop("factor", 1), accepted_at=AT, years=YEARS
+        config, groups=groups, assets=assets, aoi=SQUARE, accepted_at=AT, years=YEARS
     )
     assert raw.endswith(b"\n")
     return json.loads(raw)
@@ -1158,14 +1158,14 @@ def crop(config: DatasetConfig, groups: list[list[dict[str, Any]]], assets: list
 
 class TestCropRecipeJson:
     def test_the_same_schema_as_a_job_with_no_steps_and_the_crop_described(self) -> None:
-        document = crop(S2, [[s2_item()]], ["red", "nir"], factor=4)
+        document = crop(S2, [[s2_item()]], ["red", "nir"])
         provenance = document.pop("provenance")
         recipe = recipe_from_data(document, OPERATORS)
         assert recipe.steps == []
         assert document["output"] == {
             "kind": "crop",
             "format": "cog",
-            "resolution_factor": 4,
+            "resolution_factor": 1,
             "extent": "bbox(aoi ∩ footprints)",
             "mask": "file",
         }
@@ -1181,7 +1181,7 @@ class TestCropRecipeJson:
 
     def test_no_hash_anywhere(self) -> None:
         raw = crop_recipe_json(
-            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS
+            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, accepted_at=AT, years=YEARS
         )
         assert b"c1:" not in raw
 
@@ -1199,10 +1199,10 @@ class TestCropRecipeJson:
 
     def test_the_same_input_gives_the_same_bytes(self) -> None:
         one = crop_recipe_json(
-            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS
+            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, accepted_at=AT, years=YEARS
         )
         two = crop_recipe_json(
-            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS
+            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, accepted_at=AT, years=YEARS
         )
         assert one == two
 
@@ -1210,13 +1210,13 @@ class TestCropRecipeJson:
         item = s2_item()
         item["assets"]["red"]["href"] = "https://evil.example/B04.tif"
         with pytest.raises(OrderRefused) as error:
-            crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS)
+            crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, accepted_at=AT, years=YEARS)
         assert error.value.status_code == 502
 
     def test_an_aoi_with_properties_keeps_only_its_geometry(self) -> None:
         """A place-search AOI carries its provenance in `properties` (M3-07b); the notice reads it, the recipe does not."""
         aoi = {**SQUARE, "properties": {"attribution": "OSM contributors"}}
-        raw = crop_recipe_json(S2, groups=[[s2_item()]], assets=["red"], aoi=aoi, resolution_factor=1, accepted_at=AT, years=YEARS)
+        raw = crop_recipe_json(S2, groups=[[s2_item()]], assets=["red"], aoi=aoi, accepted_at=AT, years=YEARS)
         assert json.loads(raw)["aoi"] == SQUARE
         assert b"OSM" not in raw
 
@@ -1224,12 +1224,8 @@ class TestCropRecipeJson:
         item = s2_item()
         item["assets"]["red"]["file:checksum"] = "x" * 300
         with pytest.raises(OrderRefused) as error:
-            crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS)
+            crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, accepted_at=AT, years=YEARS)
         assert error.value.status_code == 502
-
-    def test_a_resolution_that_no_download_offers_is_refused(self) -> None:
-        with pytest.raises(OrderRefused):
-            crop_recipe_json(S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=3, accepted_at=AT, years=YEARS)
 
     def test_every_item_brings_its_footprint_and_one_without_a_polygon_brings_none(self) -> None:
         with_polygon = s2_item("S2_A")

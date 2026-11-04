@@ -88,7 +88,7 @@ function georeferencedScene(overrides: Partial<StacItem> = {}): StacItem {
 
 function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
   return {
-    tileUrl: '/collections/sentinel-2-c1-l2a/items/S2A_1/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual',
+    datasetId: 'sentinel-2-c1-l2a', tileUrl: '/collections/sentinel-2-c1-l2a/items/S2A_1/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual',
     bounds: [8.999746, 46.866609, 9.668828, 47.853693],
     asset: 'visual',
     minZoom: 8,

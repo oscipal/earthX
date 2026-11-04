@@ -11,9 +11,9 @@ import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import InlineRename from './InlineRename';
-import { DownloadZip, RESAMPLED_TIP } from './JobRow';
-import { canRestore, canRetry, failsAgain, formatUntil, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
-import Tip from './Tip';
+import { DownloadZip } from './JobRow';
+import { canRestore, canRetry, formatUntil, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
+import CloseButton from './CloseButton';
 
 export const NO_COPY_TIP = 'No copy of this order is kept: it was too large, or the browser ran out of room.';
 
@@ -172,13 +172,11 @@ export default function JobDetails() {
         >
           {folded ? '▴' : '▾'}
         </button>
-        <div className="vc-head">
+        <div className="pp-title-row">
           <button type="button" className="link-btn" title="Back to the order" onClick={back}>
             ‹ Order
           </button>
-          <button type="button" className="link-btn" title="Close the panel" onClick={close}>
-            ✕
-          </button>
+          <CloseButton onClick={close} />
         </div>
       </div>
       <div className="pp-body">
@@ -192,7 +190,6 @@ export default function JobDetails() {
               <dd>
                 {state.key === 'running' ? `Running · ${state.text}` : state.text}
                 {job.superseded && <span className="pm-tag"> · Superseded</span>}
-                {job.resampled === true && state.key === 'finished' && <Tip text={RESAMPLED_TIP} symbol="⚠" tone="warn" />}
               </dd>
               {state.key === 'deleted' ? (
                 restorable &&
@@ -238,7 +235,7 @@ export default function JobDetails() {
                   title="Draw the result on the map, cut to the area of the job, as a layer"
                   onClick={() => void showOnMap(job.jobID)}
                 >
-                  Show on map
+                  ＋ Add to layers
                 </button>
               )}
               {active && (
@@ -264,7 +261,7 @@ export default function JobDetails() {
                   ↻
                 </button>
               )}
-              {(state.key === 'expired' || state.key === 'unavailable' || (state.key === 'failed' && (failsAgain(job.failureKind) || job.retryRefused || !job.order))) && <OpenInPanel job={job} />}
+              <OpenInPanel job={job} />
             </div>
           </>
         )}

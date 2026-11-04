@@ -7,7 +7,17 @@
 //   - the coverage of the map extent (no AOI) is refused (a 400 means the extent is off the grid the route knows);
 //   - the page address itself carries the AOI.
 //
-//   cd frontend && npm run dev &            # the dev server, with `api` (8000) and `tiler` (8001) behind it
+// It needs the real `api` (8000) behind the dev server, because the check is also about what the server says to the
+// requests (a 400 for a map extent); a stand-in would give that up. The script asks `/stac/collections` first and stops
+// with exit code 2 and a hint when nothing answers. A `tiler` (8001) is not needed: the tiles of the scene in view may fail,
+// only that they are asked counts. One way to have the `api` without compose, from the root of the repository, with
+// Postgres and pgstac running as in the cloud session (the S3 values are placeholders: nothing here reads the store):
+//   set -a && . ./.env.test && set +a && export PYTHONPATH=backend
+//   python -m earthx.catalog.load           # the collections
+//   S3_ENDPOINT=http://127.0.0.1:3900 S3_PUBLIC_ENDPOINT=http://127.0.0.1:3900 S3_REGION=garage S3_BUCKET=earthx \
+//     S3_ACCESS_KEY=placeholder S3_SECRET_KEY=placeholder S3_LIFECYCLE_CHECK=off \
+//     uvicorn earthx.api.main:app --port 8000 --no-access-log &
+//   cd frontend && npm run dev &            # the dev server proxies /stac and /coverage to 8000
 //   node e2e/no-aoi-in-url.cjs              # BASE=http://localhost:5173 OUT=<directory for the screenshots>
 //
 // The one answer that is made up is `POST /stac/search`: the source of the datasets is not reachable from every machine
@@ -30,6 +40,11 @@ const SECRETS = ['9.3412', '9.6218', '48.3317', '48.5624'];
 const ASSETS = /^\/(src|@|node_modules)/;
 
 (async () => {
+  const answered = await fetch(`${BASE}/stac/collections`, { signal: AbortSignal.timeout(10000) }).then((response) => response.ok, () => false);
+  if (!answered) {
+    console.error(`nothing answers /stac/collections at ${BASE}: start the dev server and the api as in the header`);
+    process.exit(2);
+  }
   const problems = [];
   const expect = (what, ok, detail = '') => { if (!ok) problems.push(`${what}${detail ? `: ${detail}` : ''}`); };
   const browser = await chromium.launch();

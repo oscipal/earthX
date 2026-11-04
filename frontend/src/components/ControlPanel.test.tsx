@@ -317,7 +317,7 @@ describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () =>
       expect(panel.innerHTML).toBe(before);
     });
 
-    it('arrow down moves from the field into the list, Escape closes it', async () => {
+    it('arrow down moves from the field into the list; Escape leaves it open (Otto, 2.11.2026)', async () => {
       await found();
       placeInput().focus();
       key(placeInput(), 'ArrowDown');
@@ -327,7 +327,7 @@ describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () =>
       key(resultButtons()[1], 'ArrowUp');
       expect(document.activeElement).toBe(resultButtons()[0]);
       key(resultButtons()[0], 'Escape');
-      expect(container.querySelector('.place-results')).toBeNull();
+      expect(container.querySelector('.place-results')).not.toBeNull();
     });
 
     it('a click beside it closes it', async () => {
@@ -809,7 +809,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"')).toBe(before);
     });
 
-    it('is worked with the keyboard: arrow down opens it at the first entry, arrows move, Escape returns to the button', () => {
+    it('is worked with the keyboard: arrow down opens it at the first entry, arrows move, Escape closes nothing', () => {
       setUp(['optical', 'dem']);
       button().focus();
       act(() => button().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
@@ -819,8 +819,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       act(() => choices()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
       expect(document.activeElement).toBe(choices()[0]); // wraps round
       act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-      expect(container.querySelector('.coverage-choice')).toBeNull();
-      expect(document.activeElement).toBe(button());
+      expect(container.querySelector('.coverage-choice')).not.toBeNull();
+      expect(document.activeElement).toBe(choices()[0]);
     });
 
     it('"Clear coverage" is on only while a coverage map is shown, and hides it', () => {
@@ -891,14 +891,13 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(useAppStore.getState().showCoverage).toBe(false);
     });
 
-    it('Escape and a click outside close the choice without drawing anything', () => {
+    it('a click outside closes the choice without drawing anything; Escape does not close it (Otto, 2.11.2026)', () => {
       setUp(['optical', 'dem']);
       act(() => button().click());
       act(() => {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       });
-      expect(container.querySelector('.coverage-choice')).toBeNull();
-      act(() => button().click());
+      expect(container.querySelector('.coverage-choice')).not.toBeNull();
       act(() => {
         document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
       });

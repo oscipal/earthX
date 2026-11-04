@@ -39,7 +39,7 @@ def without_cloud_share(entry: DatasetConfig) -> DatasetConfig:
     return replace(
         entry,
         mask=replace(entry.mask, cloud_classes=frozenset(), cloud_note=""),
-        search_filters=tuple(replace(item, within_aoi=False) for item in entry.search_filters),
+        search_filters=tuple(replace(item, within_aoi=None) for item in entry.search_filters),
     )
 
 
@@ -85,7 +85,7 @@ SYNTHETIC_ZARR: DatasetConfig = replace(
     band_units={"SR_*": "1", "SCL_20m:scl": None},
     auxiliary_assets=(),
     # The Zarr layer has no cloud classes (DS-03 plan §6.19), so none of the inherited filters is "within AOI".
-    search_filters=tuple(replace(entry, within_aoi=False) for entry in SENTINEL_2_L2A.search_filters),
+    search_filters=tuple(replace(entry, within_aoi=None) for entry in SENTINEL_2_L2A.search_filters),
     index_presets=(),
     true_color=(),
 )

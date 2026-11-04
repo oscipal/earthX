@@ -18,6 +18,8 @@ const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-jo
 const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, height: 740 }, 'very narrow': { width: 320, height: 640 } };
 
+// The pencil and the arrow of a batch lie over the title, which is meant (Otto, 3.11.2026): its place is theirs.
+const overlays = (a, b) => [[a, b], [b, a]].some(([title, over]) => /pm-open/.test(title.cls) && /pm-edit|pm-chevron/.test(over.cls));
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 
 async function check(browser, { theme, viewport }) {
@@ -84,11 +86,11 @@ async function check(browser, { theme, viewport }) {
   if (JSON.stringify(found) !== JSON.stringify(want)) problems.push(`the symbols under "Active": ${JSON.stringify(found)}, not ${JSON.stringify(want)}`);
   const layout = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
-    return [...document.querySelectorAll('.pm-rows > .pm-row > .pm-line')].map((line) => ({ line: box(line), leaves: [...line.children].map((e) => ({ what: e.getAttribute('aria-label') ?? e.textContent?.slice(0, 12), ...box(e) })), scrolls: line.scrollWidth > line.clientWidth + 1 }));
+    return [...document.querySelectorAll('.pm-rows > .pm-row > .pm-line')].map((line) => ({ line: box(line), leaves: [...line.children].map((e) => ({ what: e.getAttribute('aria-label') ?? e.textContent?.slice(0, 12), cls: e.className, ...box(e) })).filter((e) => e.width > 1), scrolls: line.scrollWidth > line.clientWidth + 1 }));
   });
   for (const row of layout) {
     for (let i = 0; i < row.leaves.length; i++) {
-      for (let j = i + 1; j < row.leaves.length; j++) if (overlap(row.leaves[i], row.leaves[j])) problems.push(`${row.leaves[i].what} overlaps ${row.leaves[j].what}`);
+      for (let j = i + 1; j < row.leaves.length; j++) if (overlap(row.leaves[i], row.leaves[j]) && !overlays(row.leaves[i], row.leaves[j])) problems.push(`${row.leaves[i].what} overlaps ${row.leaves[j].what}`);
       if (row.leaves[i].x < row.line.x - 0.5 || row.leaves[i].x + row.leaves[i].width > row.line.x + row.line.width + 0.5) problems.push(`${row.leaves[i].what} leaves its row`);
     }
     if (row.scrolls) problems.push('a row scrolls sideways');

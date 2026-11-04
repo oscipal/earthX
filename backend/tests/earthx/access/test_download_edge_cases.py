@@ -116,7 +116,7 @@ class TestPolygonOverhangsTheAssetsEdge:
             item_ids=["ITEM1"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as ds:
                 assert ds.nodata == 0
                 mask = ds.dataset_mask()
                 # Some of the crop is real data (the half still over the asset)...
@@ -202,9 +202,9 @@ class TestPolygonMissesTheFootprintDespiteTheBbox:
 class TestMosaicAcrossUtmZones:
     """"Zwei Szenen einer Gruppe in verschiedenen UTM-Zonen": adjacent MGRS
     tiles straddling a zone boundary are a real, if infrequent, mosaic case —
-    both items reproject to the same WGS84 output grid regardless of their
-    own native CRS (the module docstring: `.part()`'s `dst_crs` defaults to
-    the AOI's own, WGS84, never either item's own CRS)."""
+    both items are laid on the grid of the first one (the zone most scenes of a
+    group lie in, `mosaic_order` puts those first): the scene in the other zone
+    is warped onto it, the others are copied as they are (NM4-75)."""
 
     def test_a_mosaic_of_two_utm_zones_merges_without_error(self) -> None:
         data = np.full((3, 20, 20), 77, dtype="uint8")
@@ -240,8 +240,27 @@ class TestMosaicAcrossUtmZones:
             item_ids=["ITEM32", "ITEM33"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as ds:
                 assert (ds.dataset_mask() == 255).any()
+                assert ds.crs.to_epsg() == 32632  # the CRS of the first scene, not WGS84
+
+    def test_a_scene_in_the_other_zone_is_warped_and_one_in_the_zone_of_the_grid_is_copied(self) -> None:
+        first = np.full((1, 20, 20), 11, dtype="uint8")
+        second = np.full((1, 20, 20), 22, dtype="uint8")
+        mem32 = _memcog(first, crs=UTM32, transform=from_origin(500000, 5700000, 10, 10))
+        # The other zone's scene lies where the first one's grid has no pixels of the first scene: east of it.
+        east = rasterio.warp.transform_bounds(UTM32, UTM33, 500200, 5699800, 500400, 5700000)
+        mem33 = _memcog(second, crs=UTM33, transform=from_origin(east[0], east[3], 10, 10))
+        aoi = _polygon(_bbox_to_wgs84(UTM32, (500000, 5699800, 500400, 5700000)))
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A, years=YEARS, open_reader=open_reader,
+            crops=[dl.AssetCrop(asset="red", paths=(_asset_path(mem32, item_id="A", asset="red"), _asset_path(mem33, item_id="B", asset="red")))],
+            aoi_geometry=aoi, item_ids=["A", "B"],
+        )  # fmt: skip
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive, rasterio.io.MemoryFile(archive.read("exports/red.tif")) as mf, mf.open() as ds:
+            values = set(np.unique(ds.read(1)[ds.dataset_mask() == 255]))
+            assert values == {11, 22}  # both scenes are in it, each with its own values, nothing averaged
+            assert (ds.transform.a, -ds.transform.e) == (10.0, 10.0)
 
 
 class TestMaskMatchesEachAssetsOwnResolution:
@@ -270,13 +289,13 @@ class TestMaskMatchesEachAssetsOwnResolution:
             item_ids=["ITEM1"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as visual_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as visual_ds:
                 visual_shape = visual_ds.shape
-            with rasterio.io.MemoryFile(archive.read("visual_mask.tif")) as mf, mf.open() as visual_mask_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual_mask.tif")) as mf, mf.open() as visual_mask_ds:
                 assert visual_mask_ds.shape == visual_shape
-            with rasterio.io.MemoryFile(archive.read("scl.tif")) as mf, mf.open() as scl_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/scl.tif")) as mf, mf.open() as scl_ds:
                 scl_shape = scl_ds.shape
-            with rasterio.io.MemoryFile(archive.read("scl_mask.tif")) as mf, mf.open() as scl_mask_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/scl_mask.tif")) as mf, mf.open() as scl_mask_ds:
                 assert scl_mask_ds.shape == scl_shape
             # The two assets really do have different native resolutions here —
             # otherwise this test would not distinguish "each asset gets its own
@@ -314,9 +333,9 @@ class TestCropExtentIsTheGroupsOwnFootprintNotTheWholeAoi:
             item_ids=["ITEM1"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as ds:
                 out_west, out_south, out_east, out_north = transform_bounds(ds.crs, "EPSG:4326", *ds.bounds)
-            with rasterio.io.MemoryFile(archive.read("visual_mask.tif")) as mf, mf.open() as mask_ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual_mask.tif")) as mf, mf.open() as mask_ds:
                 mask_west, mask_south, mask_east, mask_north = transform_bounds(
                     mask_ds.crs, "EPSG:4326", *mask_ds.bounds
                 )
@@ -370,7 +389,7 @@ class TestCropExtentIsTheGroupsOwnFootprintNotTheWholeAoi:
             item_ids=["ITEM1", "ITEM2"],
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+            with rasterio.io.MemoryFile(archive.read("exports/visual.tif")) as mf, mf.open() as ds:
                 out_bounds = transform_bounds(ds.crs, "EPSG:4326", *ds.bounds)
 
             # The extent is the union of both scenes' own footprints, well

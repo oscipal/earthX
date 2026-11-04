@@ -276,3 +276,71 @@ describe('the labels of the bar (UI-01g)', () => {
     }
   });
 });
+
+// NM4-53: a view takes the ticks of every dataset of the search; a download and a job work on one dataset.
+describe('ticks in several datasets', () => {
+  const itemOf = (id: string, collection: string): StacItem => ({ ...item(id), collection });
+  const sectionOf = (datasetId: string, items: StacItem[]) => ({
+    datasetId,
+    items,
+    groups: [{ key: ['2026-07-01'], label: '2026-07-01', items }],
+    notes: [],
+    groupingError: null,
+    origin: 'search' as const,
+    incomplete: false,
+  });
+
+  function twoDatasets(ticks: string[]) {
+    const d = [itemOf('A', 'd'), itemOf('B', 'd')];
+    const e = [itemOf('E1', 'e')];
+    const other = { ...dataset('cog'), id: 'e', title: 'Other dataset' };
+    useAppStore.setState({
+      datasets: [dataset('cog'), other],
+      datasetId: 'd',
+      openSectionId: 'd',
+      sections: [sectionOf('d', d), sectionOf('e', e)],
+      items: d,
+      groups: sectionOf('d', d).groups,
+      activeGroupIndex: 0,
+      selectedIds: ticks,
+      aoi: AOI,
+      error: null,
+    });
+    show();
+  }
+
+  it('counts the ticks of every dataset and names the spread in the tooltip', () => {
+    twoDatasets(['A', 'B', 'E1']);
+    expect(container.querySelector('.download-count strong')?.textContent).toBe('3');
+    expect(container.querySelector('.download-count')?.getAttribute('title')).toBe('Some dataset 2 · Other dataset 1');
+  });
+
+  it('lets the buttons that start a view take them all', () => {
+    twoDatasets(['A', 'E1']);
+    expect(button('Crop & merge to AOI').disabled).toBe(false);
+    expect(button('View merged scenes').disabled).toBe(false);
+  });
+
+  it('keeps the download and the job on the open dataset, and says so', () => {
+    twoDatasets(['A', 'E1']);
+    expect(button('⇩ Download crop').disabled).toBe(false);
+    expect(button('⇩ Download crop').title).toContain('Works on the 1 scene ticked in Some dataset only');
+    expect(button('⚙ Process').title).toContain('Works on the 1 scene ticked in Some dataset only');
+  });
+
+  it('shows the bar where the ticks are only in another dataset, with the download and the job off and the reason on them', () => {
+    twoDatasets(['E1']);
+    expect(container.querySelector('.download-count strong')?.textContent).toBe('1');
+    expect(button('Crop to AOI').disabled).toBe(false);
+    expect(button('⇩ Download crop').disabled).toBe(true);
+    expect(button('⇩ Download full scene').disabled).toBe(true);
+    expect(button('⚙ Process').disabled).toBe(true);
+    expect(button('⇩ Download crop').title).toContain('Tick scenes in Some dataset first');
+  });
+
+  it('says nothing more than before where all ticks are in the open dataset', () => {
+    twoDatasets(['A', 'B']);
+    expect(container.querySelector('.download-count')?.getAttribute('title')).toBeNull();
+    expect(button('⇩ Download merged crop').title).not.toContain('Works on');
+  });
+});

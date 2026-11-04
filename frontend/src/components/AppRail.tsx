@@ -72,7 +72,8 @@ const NO_RESULTS = 'No results yet: run a search first';
 export default function AppRail() {
   const dock = useAppStore((s) => s.dock);
   const toggleDock = useAppStore((s) => s.toggleDock);
-  const closeDock = useAppStore((s) => s.closeDock);
+  const flipping = useAppStore((s) => s.flipThrough);
+  const setFlipThrough = useAppStore((s) => s.setFlipThrough);
   const layerCount = useAppStore((s) => s.layers.length);
   // A job whose state is not known yet (an archived one, one of another tab) is not counted as running.
   const running = useProcessingStore((s) => s.jobs.filter((j) => j.phase === 'active' && j.status !== null).length);
@@ -96,7 +97,8 @@ export default function AppRail() {
     else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') go(at - 1);
     else if (event.key === 'Home') go(0);
     else if (event.key === 'End') go(ITEMS.length - 1);
-    else if (event.key === 'Escape' && dock) closeDock();
+    // Esc ends "Flip through layers" (NM4-65 part 9) and closes nothing: the panel closes with its symbol (Otto, 2.11.2026).
+    else if (event.key === 'Escape' && dock && flipping) setFlipThrough(false);
     else return;
     event.preventDefault();
   };

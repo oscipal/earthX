@@ -17,6 +17,7 @@ from datetime import date, datetime, timezone
 from earthx.catalog.registry import (
     AccessInfo,
     AdapterKind,
+    AoiMeasure,
     BrowseMode,
     Capabilities,
     CoverageInfo,
@@ -90,8 +91,12 @@ _SCL_NOTE = (
 # The aerosol optical thickness is unit less as well, so it shares the "1".
 _REFLECTANCE_UNIT = "1"
 
-def _scene_share(property_name: str, title: str, description: str, *, group: str) -> SearchFilter:
-    """A share of the scene in percent, 0 to 100: the form most of the scene properties of Sentinel-2 have."""
+def _scene_share(
+    property_name: str, title: str, description: str, *, group: str, within_aoi: AoiMeasure | None = None
+) -> SearchFilter:
+    """A share of the scene in percent, 0 to 100: the form most of the scene properties of Sentinel-2 have.
+
+    ``within_aoi`` is the measure that gives the share inside the AOI instead, where the filter has one."""
     return SearchFilter(
         property=property_name,
         kind=FilterKind.RANGE,
@@ -102,7 +107,7 @@ def _scene_share(property_name: str, title: str, description: str, *, group: str
         maximum=100.0,
         integer=False,
         values=(),
-        within_aoi=False,
+        within_aoi=within_aoi,
         group=group,
     )
 
@@ -342,7 +347,7 @@ SENTINEL_2_L2A = DatasetConfig(
             integer=False,
             values=(),
             # DS-03 plan §6.10: the range of this filter may also be applied to the cloud share inside the AOI.
-            within_aoi=True,
+            within_aoi=AoiMeasure.CLOUD_SHARE,
             group="Clouds",
         ),
         _scene_share(
@@ -362,6 +367,8 @@ SENTINEL_2_L2A = DatasetConfig(
             "No data",
             "Share of the scene tile without image data, e.g. at the edge of a swath.",
             group="Scene",
+            # Class 0 of the same classification the cloud share is read from (`mask`), so no further reading.
+            within_aoi=AoiMeasure.NODATA_SHARE,
         ),
         _scene_share("s2:snow_ice_percentage", "Snow and ice", "Share of the scene classified as snow or ice.", group="Scene"),
         _scene_share("s2:water_percentage", "Water", "Share of the scene classified as water.", group="Scene"),
@@ -393,7 +400,7 @@ SENTINEL_2_L2A = DatasetConfig(
                 FilterValue(value="sentinel-2b", label="Sentinel-2B"),
                 FilterValue(value="sentinel-2c", label="Sentinel-2C"),
             ),
-            within_aoi=False,
+            within_aoi=None,
             group="Acquisition",
         ),
         SearchFilter(
@@ -406,7 +413,7 @@ SENTINEL_2_L2A = DatasetConfig(
             maximum=90.0,
             integer=False,
             values=(),
-            within_aoi=False,
+            within_aoi=None,
             group="Acquisition",
         ),
         SearchFilter(
@@ -419,7 +426,7 @@ SENTINEL_2_L2A = DatasetConfig(
             maximum=360.0,
             integer=False,
             values=(),
-            within_aoi=False,
+            within_aoi=None,
             group="Acquisition",
         ),
         SearchFilter(
@@ -433,7 +440,7 @@ SENTINEL_2_L2A = DatasetConfig(
             integer=False,
             # Every value the source held on 30.10.2026 (measured over 2018–2026); the live test names a newer one.
             values=tuple(FilterValue(value=version, label=version) for version in ("05.00", "05.09", "05.10", "05.11", "05.12", "05.13")),
-            within_aoi=False,
+            within_aoi=None,
             group="Acquisition",
         ),
     ),

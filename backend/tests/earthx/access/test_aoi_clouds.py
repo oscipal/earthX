@@ -28,6 +28,7 @@ from earthx.access.aoi_clouds import (
     measure_aoi_clouds,
     overview_factor,
 )
+from earthx.api.aoi_cloud_filter import SceneMeasure
 from earthx.readers.cog import AssetPath
 
 CRS = "EPSG:32632"
@@ -447,6 +448,91 @@ class TestTheNumbers:
         with pytest.raises(AttributeError):
             counted.cloud_pixels = 5  # type: ignore[misc]
 
+
+
+def _nodata_expected(path: Path, region, overview_level: int | None = None) -> tuple[float, float]:
+    """The share of the AOI without a valid pixel, from the independent count of ``_expected``, and the most that the
+    share may differ where the part past the raster's edge is counted by its area and not pixel by pixel."""
+    counted = _expected(path, region, overview_level=overview_level)
+    share = 100 * (counted.aoi_pixels - counted.data_pixels) / counted.aoi_pixels
+    row_of_pixels = 100 * (region.length / counted.resolution) / counted.aoi_pixels
+    return share, row_of_pixels
+
+
+def _nodata_of(path: Path, region) -> float:
+    return SceneMeasure.of(measure_aoi_clouds(_cleared(path), _geojson(region), CLOUDS)).nodata_percent
+
+
+class TestTheNoDataShareInTheAoi:
+    """DS-03, Otto 31.10.2026: no data in the AOI is 100 less ``data_percent`` of the one reading the cloud share
+    comes from. Each value is checked against the independent count of ``_expected`` (class 0 is the file's nodata)."""
+
+    def test_an_aoi_over_the_no_data_corner_against_an_independent_count(self, scene: Path) -> None:
+        region = _square(4_000.5, 2_500.5, 3_000)  # rows 125..275 and columns 200..350: the corner is class 0
+        share, _ = _nodata_expected(scene, region)
+        assert 0 < share < 100
+        assert _nodata_of(scene, region) == pytest.approx(share, abs=0.1)
+
+    def test_an_aoi_on_an_overview_against_the_count_on_the_level_read_back(self, scene: Path) -> None:
+        region = _square(2_000.5, 1_000.5, 12_000)  # reaches the corner and the strip at the right edge
+        share, _ = _nodata_expected(scene, region, overview_level=FACTORS.index(4))
+        assert 0 < share < 100
+        assert _nodata_of(scene, region) == pytest.approx(share, abs=0.1)
+
+    def test_an_aoi_past_the_south_edge_counts_what_lies_past_it_as_no_data(self, scene: Path) -> None:
+        region = _square(8_000.5, SIZE * PIXEL - 500.5, 1_000)  # the south half lies past the raster
+        share, row = _nodata_expected(scene, region)
+        assert 45 < share < 55
+        assert _nodata_of(scene, region) == pytest.approx(share, abs=row + 0.1)
+
+    def test_a_scene_without_a_valid_pixel_in_the_aoi_is_measurable_with_100(self, scene: Path) -> None:
+        in_the_corner = _square(1_000.5, 1_000.5, 1_000)
+        counted = measure_aoi_clouds(_cleared(scene), _geojson(in_the_corner), CLOUDS)
+        assert counted.data_pixels == 0
+        measure = SceneMeasure.of(counted)
+        assert measure.nodata_percent == 100.0 and measure.cloud_percent is None, "the cloud share has no value"
+        outside = SceneMeasure.of(measure_aoi_clouds(_cleared(scene), _geojson(_square(-5_000.5, 3_000.5, 1_000)), CLOUDS))
+        assert outside.nodata_percent == 100.0 and outside.cloud_percent is None
+
+    def test_a_scene_valid_everywhere_in_the_aoi_has_0(self, tmp_path: Path) -> None:
+        data = numpy.full((256, 256), 9, dtype="uint8")
+        data[:, :128] = 1  # class 1 is a valid pixel
+        path = _write(tmp_path / "half.tif", data)
+        region = _square(78 * PIXEL, 78 * PIXEL, 100 * PIXEL)
+        assert _expected(path, region).data_pixels == _expected(path, region).aoi_pixels == 10_000
+        assert _nodata_of(path, region) == 0.0
+
+    def test_a_file_without_nodata_has_none_inside_the_raster_only(self, tmp_path: Path) -> None:
+        path = _write(tmp_path / "plain.tif", numpy.zeros((256, 256), dtype="uint8"), nodata=None)
+        assert _nodata_of(path, _square(78 * PIXEL, 78 * PIXEL, 100 * PIXEL)) == 0.0
+        half_out = _square(-50 * PIXEL, 78 * PIXEL, 100 * PIXEL)
+        share, row = _nodata_expected(path, half_out)
+        assert 45 < share < 55
+        assert _nodata_of(path, half_out) == pytest.approx(share, abs=row + 0.1)
+
+    def test_it_is_derived_from_the_numbers_the_cache_keeps(self, scene: Path) -> None:
+        """The cache holds ``as_measure()``; the value from it equals the value of the reading itself, so the cache needs
+        neither another key nor another number."""
+        regions = [
+            _square(4_000.5, 2_500.5, 3_000),
+            _square(8_000.5, SIZE * PIXEL - 500.5, 1_000),
+            _square(1_000.5, 1_000.5, 1_000),
+            _square(2_000.5, 1_000.5, 12_000),
+        ]
+        for region in regions:
+            counted = measure_aoi_clouds(_cleared(scene), _geojson(region), CLOUDS)
+            cached = SceneMeasure.stored(counted.as_measure())
+            assert cached is not None
+            assert cached.nodata_percent == SceneMeasure.of(counted).nodata_percent
+            assert cached.nodata_percent == round(100 - counted.data_percent, 1)
+
+    @pytest.mark.parametrize(
+        ("data_pixels", "aoi_pixels", "expected"),
+        [(0, 100, 100.0), (100, 100, 0.0), (1, 3, 66.7), (2, 3, 33.3), (1, 7, 85.7), (1, 10_000, 100.0), (9_999, 10_000, 0.0)],
+    )
+    def test_the_arithmetic(self, data_pixels: int, aoi_pixels: int, expected: float) -> None:
+        measure = SceneMeasure.of(AoiClouds(0, data_pixels, aoi_pixels, 20.0))
+        assert measure.nodata_percent == expected
 
 AOI = {"type": "Polygon", "coordinates": [[[10.0, 50.0], [10.1, 50.1], [10.2, 50.05], [10.0, 50.0]]]}
 

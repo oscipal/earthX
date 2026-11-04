@@ -12,12 +12,14 @@ import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter,
 import { isJobId } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
+import { useAppStore } from '../store';
 import DownloadAll from './DownloadAll';
+import { PencilIcon } from './Icons';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
 import Popover from './Popover';
 import { focusFirstItem } from '../popover';
-import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, formatUntil, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
+import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, formatShortDate, formatUntil, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
 import Tip from './Tip';
 import { useBundleDownload } from './useBundleDownload';
 
@@ -101,7 +103,6 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
       </button>
       <Popover
         anchorRef={anchor}
-        triggerRef={button}
         open={mode !== 'closed'}
         onClose={() => onMode('closed')}
         className="pm-menu-list"
@@ -306,21 +307,59 @@ export function RetryButton({ offered, name, tip, busy, onRetry }: { offered: bo
   );
 }
 
-// When a job goes: "until" for one that stands, "restore until" for a deleted one whose day is not over. A job that is
-// cancelled, deleted for good or forgotten by the server has no time to name.
-function UntilText({ job, state, now }: { job: JobEntry; state: JobState; now: number }) {
+// The date in the column "Expires": when a job goes (a deleted one: a day after its deletion, which is also the end of the time to
+// restore it, unless it expired before: then the day it expired; one that expired: when it did). A job that is cancelled or forgotten by the server has no time to name; its state stands in the place of the date.
+// The day a deleted job goes: a day after its deletion (`deletedUntil`), or the day it expired when that came first (it had expired
+// already, or it would have within the day). Otto, 3.11.2026.
+const goneDay = (job: Pick<JobEntry, 'expires' | 'deletedUntil'>): string =>
+  job.deletedUntil && Date.parse(job.deletedUntil) < Date.parse(job.expires) ? job.deletedUntil : job.expires;
+
+function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
   if (state.key === 'deleted') {
-    return canRestore(job, now) && job.deletedUntil ? (
-      <span className="pm-until" title={job.deletedUntil}>
-        restore until {formatUntil(job.deletedUntil, now)}
+    const day = goneDay(job);
+    return (
+      <span className="pm-until" title={day}>
+        {formatShortDate(day)}
       </span>
-    ) : null;
+    );
   }
   if (state.key === 'cancelled' || state.key === 'unavailable') return null;
   return (
     <span className="pm-until" title={job.expires}>
-      until {formatUntil(job.expires, now)}
+      {formatShortDate(job.expires)}
     </span>
+  );
+}
+
+// The pencil beside the title, as in the layer manager (`PencilIcon`, the same tooltip in the same wording): the title is edited in place. An
+// empty name is not taken.
+function RenameButton({ what, name, onRename }: { what: 'job' | 'batch'; name: string; onRename: () => void }) {
+  return (
+    <button type="button" className="pm-icon pm-edit" data-name={name} title={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
+      <PencilIcon size={11} />
+    </button>
+  );
+}
+
+export const ADD_TO_LAYERS_TIP = 'Add to layers';
+export const ALREADY_A_LAYER_TIP = 'This result is already a layer';
+
+// "＋" of a finished job: its result as a layer on the map. Where the result is one already, the symbol stays and says why it is locked.
+function AddToLayers({ job, name }: { job: JobEntry; name: string }) {
+  const showOnMap = useProcessingStore((s) => s.showResultOnMap);
+  const isLayer = useAppStore((s) => s.layers.some((l) => l.result?.jobID === job.jobID));
+  if (isLayer) {
+    // `aria-disabled`, not `disabled`: the symbol stays reachable by keyboard, and so does the reason.
+    return (
+      <button type="button" className="pm-icon has-tip" aria-disabled="true" data-tip={ALREADY_A_LAYER_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`}>
+        ＋
+      </button>
+    );
+  }
+  return (
+    <button type="button" className="pm-icon" title={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
+      ＋
+    </button>
   );
 }
 
@@ -374,7 +413,8 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
             label="Job title"
             maxLength={MAX_TITLE_LENGTH}
             onSave={(name) => {
-              rename(job.jobID, name);
+              // An empty name is no name: the old one stays.
+              if (name.trim()) rename(job.jobID, name);
               setRenaming(false);
             }}
             onCancel={() => setRenaming(false)}
@@ -390,19 +430,26 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
             }}
           >
             <span className="pm-title">{title}</span>
-            <span className={`pm-meta ${state.key}`}>
-              <span className="pm-state" title={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
-                {state.text}
-              </span>
-              <UntilText job={job} state={state} now={now} />
+          </button>
+        )}
+        <span className={`pm-meta ${state.key}`}>
+          <span className="pm-state" title={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
+            {state.text}
+          </span>
+          <UntilText job={job} state={state} />
+          {(job.archived || job.superseded) && (
+            <span className="pm-tags">
               {job.archived && <span className="pm-tag">Archived</span>}
               {job.superseded && <span className="pm-tag">Superseded</span>}
             </span>
-          </button>
-        )}
-        <RetryButton offered={canRetry(job, now, retired)} name={title} tip={RETRY_TIP} busy={job.retrying} onRetry={() => void retryJob(job.jobID)} />
+          )}
+        </span>
+        {!part && !renaming && <RenameButton what="job" name={title} onRename={() => setRenaming(true)} />}
+        {state.key === 'finished' && job.tiles ? <AddToLayers job={job} name={title} /> : <span className="pm-icon" aria-hidden="true" />}
         {restorable && job.deletedUntil ? (
           <RestoreButton name={title} until={job.deletedUntil} busy={job.deleting} onRestore={() => void restoreTarget(target)} />
+        ) : canRetry(job, now, retired) ? (
+          <RetryButton offered name={title} tip={RETRY_TIP} busy={job.retrying} onRetry={() => void retryJob(job.jobID)} />
         ) : (
           <DownloadZip job={job} now={now} />
         )}
@@ -474,7 +521,9 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
   const retryable = retryableParts(parts, now, (part) => orderRetired(part, descriptions));
   const restorable = parts.filter((p) => canRestore(p, now));
   // The soonest end of the days in which a part can still be restored: after it not every part can.
-  const restoreUntil = restorable.map((p) => p.deletedUntil ?? '').sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+  const restoreUntil = restorable.map(goneDay).sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+  // Once every part is deleted for good the column still names the day: the latest of theirs.
+  const deletedDay = parts.filter((p) => p.deletedUntil).map(goneDay).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   return (
     <li
       ref={row}
@@ -502,7 +551,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             label="Batch title"
             maxLength={MAX_TITLE_LENGTH}
             onSave={(name) => {
-              renameBatch(batch.id, name);
+              if (name.trim()) renameBatch(batch.id, name);
               setRenaming(false);
             }}
             onCancel={() => setRenaming(false)}
@@ -518,24 +567,29 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             }}
           >
             <span className="pm-title">{batch.title}</span>
-            <span className="pm-meta">
-              <span className="pm-state">{batchSummary(count)}</span>
-              {restoreUntil ? (
-                <span className="pm-until" title={restoreUntil}>
-                  restore until {formatUntil(restoreUntil, now)}
-                </span>
-              ) : (
-                count.expires &&
-                count.deleted < parts.length && (
-                  <span className="pm-until" title={count.expires}>
-                    until {formatUntil(count.expires, now)}
-                  </span>
-                )
-              )}
-              {batch.archived && <span className="pm-tag">Archived</span>}
-            </span>
           </button>
         )}
+        <span className={`pm-meta${running ? ' running' : ''}`}>
+          <span className="pm-state">{batchSummary(count)}</span>
+          {restoreUntil ? (
+            <span className="pm-until" title={restoreUntil}>
+              {formatShortDate(restoreUntil)}
+            </span>
+          ) : count.deleted === parts.length && deletedDay ? (
+            <span className="pm-until" title={deletedDay}>
+              {formatShortDate(deletedDay)}
+            </span>
+          ) : (
+            count.expires &&
+            count.deleted < parts.length && (
+              <span className="pm-until" title={count.expires}>
+                {formatShortDate(count.expires)}
+              </span>
+            )
+          )}
+          {batch.archived && <span className="pm-tag">Archived</span>}
+        </span>
+        {!renaming && <RenameButton what="batch" name={batch.title} onRename={() => setRenaming(true)} />}
         <RetryButton
           offered={retryable.length > 0}
           name={batch.title}
@@ -589,9 +643,9 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
               <div className="pm-line">
                 <span className="pm-open">
                   <span className="pm-title">{refused.label}</span>
-                  <span className="pm-meta">
-                    <span className="pm-state">Refused</span>
-                  </span>
+                </span>
+                <span className="pm-meta">
+                  <span className="pm-state">Refused</span>
                 </span>
                 <Tip text={refused.message} />
               </div>
@@ -643,24 +697,88 @@ function FoldButton({ name, listId, collapsed, onToggle, count }: { name: string
   );
 }
 
+// "⋯" at the end of a group's head, the same place as in a row: the rare things, rename and remove. A group that is not empty
+// cannot be removed; the entry stays, with its reason as the tooltip.
+function GroupMenu({ group, empty, onRename, anchor }: { group: ShelfGroup; empty: boolean; onRename: () => void; anchor: RefObject<HTMLElement | null> }) {
+  const removeGroup = useProcessingStore((s) => s.removeGroup);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="pm-menu">
+      <button
+        type="button"
+        className="pm-icon"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${group.name}`}
+        title="Actions"
+        onClick={() => setOpen(!open)}
+      >
+        ⋯
+      </button>
+      <Popover anchorRef={anchor} open={open} onClose={() => setOpen(false)} className="pm-menu-list" role="menu" ariaLabel={`Actions for ${group.name}`} focusOnOpen>
+        <div className="pm-menu-items">
+          <button
+            type="button"
+            role="menuitem"
+            aria-label={`Rename ${group.name}`}
+            onClick={() => {
+              setOpen(false);
+              onRename();
+            }}
+          >
+            Rename
+          </button>
+          {/* `aria-disabled`, not `disabled`: the entry stays reachable by keyboard, and so does the reason. */}
+          <button
+            type="button"
+            role="menuitem"
+            aria-disabled={!empty}
+            title={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
+            aria-label={empty ? `Remove ${group.name}` : `Remove ${group.name}: ${GROUP_NOT_EMPTY_TIP}`}
+            onClick={() => {
+              if (!empty) return;
+              setOpen(false);
+              removeGroup(group.id);
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      </Popover>
+    </div>
+  );
+}
+
+// What a head says of its jobs: how many rows there are, and how many of the jobs run.
+function GroupFacts({ count, running }: { count: number; running: number }) {
+  return (
+    <>
+      <span className="pm-count" aria-label={`${count} ${count === 1 ? 'row' : 'rows'}`}>{count}</span>
+      {running > 0 && <span className="pm-state">{running} running</span>}
+    </>
+  );
+}
+
 function GroupHeading({
   group,
   empty,
   collapsed,
   count,
+  running,
   onToggle,
 }: {
   group: ShelfGroup;
   empty: boolean;
   collapsed: boolean;
   count: number;
+  running: number;
   onToggle: () => void;
 }) {
   const renameGroup = useProcessingStore((s) => s.renameGroup);
-  const removeGroup = useProcessingStore((s) => s.removeGroup);
   const [renaming, setRenaming] = useState(false);
+  const head = useRef<HTMLElement>(null);
   return (
-    <header className="pm-group-head">
+    <header className="pm-group-head" ref={head}>
       <FoldButton name={group.name} listId={`pm-group-${group.id}`} collapsed={collapsed} onToggle={onToggle} count={count} />
       {renaming ? (
         <InlineRename
@@ -674,32 +792,21 @@ function GroupHeading({
           onCancel={() => setRenaming(false)}
         />
       ) : (
-        <h3 className="pm-group-name">
-          {group.name}
-          {collapsed && <span className="pm-count"> ({count})</span>}
-        </h3>
+        <>
+          <h3 className="pm-group-name">{group.name}</h3>
+          <GroupFacts count={count} running={running} />
+        </>
       )}
-      <button type="button" className="pm-icon" title="Rename this group" aria-label={`Rename ${group.name}`} onClick={() => setRenaming(true)}>
-        ✎
-      </button>
-      {/* `aria-disabled`, not `disabled`: the symbol stays reachable by keyboard, and so does the reason. */}
-      <button
-        type="button"
-        className="pm-icon has-tip"
-        aria-disabled={!empty}
-        data-tip={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
-        aria-label={empty ? `Remove ${group.name}` : `Remove ${group.name}: ${GROUP_NOT_EMPTY_TIP}`}
-        onClick={() => {
-          if (empty) removeGroup(group.id);
-        }}
-      >
-        ✕
-      </button>
+      <GroupMenu group={group} empty={empty} onRename={() => setRenaming(true)} anchor={head} />
     </header>
   );
 }
 
 const UNGROUPED = 'ungrouped';
+
+// The jobs that run in these rows (the parts of a batch count each).
+const runningOf = (entries: readonly Entry[]): number =>
+  entries.reduce((sum, e) => sum + (e.kind === 'job' ? Number(e.job.phase === 'active') : e.parts.filter((p) => p.phase === 'active').length), 0);
 
 // What a dragged row carries: the job or the batch, never more than its own id, and never leaving the page.
 const DRAG_TYPE = 'application/x-earthx-job-row';
@@ -897,19 +1004,25 @@ export default function ProcessingManager() {
               }}
             >
               {group ? (
-                <GroupHeading group={group} empty={empty} collapsed={folded} count={entries.length} onToggle={() => toggle(id)} />
+                <GroupHeading group={group} empty={empty} collapsed={folded} count={entries.length} running={runningOf(entries)} onToggle={() => toggle(id)} />
               ) : (
                 groups.length > 0 && (
                   <header className="pm-group-head">
                     <FoldButton name="Ungrouped" listId={listId} collapsed={folded} onToggle={() => toggle(id)} count={entries.length} />
-                    <h3 className="pm-group-name">
-                      Ungrouped
-                      {folded && <span className="pm-count"> ({entries.length})</span>}
-                    </h3>
+                    <h3 className="pm-group-name">Ungrouped</h3>
+                    <GroupFacts count={entries.length} running={runningOf(entries)} />
+                    <span className="pm-icon" aria-hidden="true" />
                   </header>
                 )
               )}
               {/* With no group there is no heading to fold under: the jobs are all there is. */}
+              {/* Under the head of every open group (and over the jobs, where there is no group) stand the titles of the columns. */}
+              {(!folded || (!group && groups.length === 0)) && entries.length > 0 && (
+                <div className="pm-columns" aria-hidden="true">
+                  <span className="pm-col-title">Title</span>
+                  <span className="pm-col-until">Expires</span>
+                </div>
+              )}
               {(!folded || (!group && groups.length === 0)) && (
                 <ul className="pm-rows" id={listId}>
                   {entries.map((entry) =>

@@ -110,7 +110,6 @@ describe('the panels', () => {
     expect(useAppStore.getState().dock).toBe('controls');
     expect(slot('controls')!.hidden).toBe(false);
     expect(symbol('controls').getAttribute('aria-expanded')).toBe('true');
-    expect(container.querySelector('.app')!.classList.contains('dock-open')).toBe(true);
   });
 
   it('open one at a time: a second symbol takes the place of the first', () => {
@@ -128,7 +127,6 @@ describe('the panels', () => {
     click(symbol('controls'));
     expect(useAppStore.getState().dock).toBeNull();
     expect(container.querySelector<HTMLElement>('.dock')!.hidden).toBe(true);
-    expect(container.querySelector('.app')!.classList.contains('dock-open')).toBe(false);
     expect(symbol('controls').getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -216,55 +214,52 @@ describe('the keyboard', () => {
     expect(useAppStore.getState().dock).toBe('layers');
   });
 
-  it('closes the open panel with Escape from inside it and gives the focus back to its symbol', () => {
+  // Otto, 2.11.2026: Esc closes nothing; a panel closes with its symbol. Esc ends "Flip through layers" (NM4-65 part 9), the one thing it does here.
+  it('leaves the open panel open on Escape, from inside it and from its symbol; its symbol closes it', () => {
     click(symbol('layers'));
-    const inside = container.querySelector<HTMLElement>('.layer-manager h2')!;
-    key(inside, 'Escape');
-    expect(useAppStore.getState().dock).toBeNull();
+    key(container.querySelector<HTMLElement>('.layer-manager h2')!, 'Escape');
+    expect(useAppStore.getState().dock).toBe('layers');
+    act(() => symbol('layers').focus());
+    key(symbol('layers'), 'Escape');
+    expect(useAppStore.getState().dock).toBe('layers');
     expect(document.activeElement).toBe(symbol('layers'));
-  });
-
-  it('closes the open panel with Escape from its symbol, which keeps the focus', () => {
-    act(() => symbol('controls').focus());
-    key(symbol('controls'), 'Escape');
+    click(symbol('layers'));
     expect(useAppStore.getState().dock).toBeNull();
-    expect(document.activeElement).toBe(symbol('controls'));
   });
 
-  it('leaves the panel open when Escape closes the menu of a job row, and closes it with the next Escape', () => {
+  it('ends "Flip through layers" with Escape from inside the layer manager, and the panel stays after the next Escape too', () => {
+    act(() => useAppStore.setState({ layers: [layer('a'), layer('b')], flipThrough: false, flipLayerId: null }));
+    click(symbol('layers'));
+    act(() => useAppStore.getState().setFlipThrough(true));
+    key(container.querySelector<HTMLElement>('.layer-manager h2')!, 'Escape');
+    expect(useAppStore.getState().flipThrough).toBe(false);
+    expect(useAppStore.getState().dock).toBe('layers');
+    key(container.querySelector<HTMLElement>('.layer-manager h2')!, 'Escape');
+    expect(useAppStore.getState().dock).toBe('layers');
+  });
+
+  it('ends "Flip through layers" with Escape from the symbol of the layers, and the panel stays after the next Escape too', () => {
+    act(() => useAppStore.setState({ layers: [layer('a'), layer('b')], flipThrough: false, flipLayerId: null }));
+    click(symbol('layers'));
+    act(() => useAppStore.getState().setFlipThrough(true));
+    act(() => symbol('layers').focus());
+    key(symbol('layers'), 'Escape');
+    expect(useAppStore.getState().flipThrough).toBe(false);
+    expect(useAppStore.getState().dock).toBe('layers');
+    key(symbol('layers'), 'Escape');
+    expect(useAppStore.getState().dock).toBe('layers');
+  });
+
+  it('leaves the menu of a job row and the panel open on Escape (Otto, 2.11.2026: Esc closes no menu either)', () => {
     act(() => useProcessingStore.setState({ jobs: [jobEntry(1)] }));
     click(symbol('jobs'));
     click(container.querySelector('button[aria-haspopup="menu"]')!);
     const first = document.querySelector('[role="menu"] button')!;
     key(first, 'Escape');
-    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
     expect(useAppStore.getState().dock).toBe('jobs');
     key(container.querySelector('.processing-manager h2')!, 'Escape');
-    expect(useAppStore.getState().dock).toBeNull();
-  });
-
-  it('does nothing with Escape where no panel is open', () => {
-    click(symbol('controls'));
-    key(symbol('controls'), 'Escape');
-    expect(useAppStore.getState().dock).toBeNull();
-  });
-
-  it.each([
-    ['a text field', () => container.querySelector<HTMLElement>('.control-panel input')],
-    ['a menu', () => { const el = document.createElement('div'); el.setAttribute('role', 'menu'); container.querySelector('.control-panel')!.append(el); return el; }],
-    ['a pop-over', () => { const el = document.createElement('div'); el.className = 'popover'; container.querySelector('.control-panel')!.append(el); return el; }],
-  ])('leaves Escape to %s inside the panel', (_, find) => {
-    const target = find()!;
-    expect(target).not.toBeNull();
-    key(target, 'Escape');
-    expect(useAppStore.getState().dock).toBe('controls');
-  });
-
-  it('leaves an Escape that something else already took', () => {
-    const inside = container.querySelector<HTMLElement>('.control-panel h2, .control-panel')!;
-    inside.addEventListener('keydown', (e) => e.preventDefault());
-    key(inside, 'Escape');
-    expect(useAppStore.getState().dock).toBe('controls');
+    expect(useAppStore.getState().dock).toBe('jobs');
   });
 });
 

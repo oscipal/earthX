@@ -7,6 +7,7 @@
 // anything else (plan §6.4), so a filter this sends is always one the dataset offers; the checks below are there
 // to tell the user what is wrong before "Search" is pressed, not to stand in for the server's.
 
+import { isPlatformProperty } from './aoiFilter';
 import type { Collection } from './types';
 
 export interface FilterValue {
@@ -24,6 +25,9 @@ export interface SearchFilterDescription {
   // The tooltip.
   description: string;
   unit: string | null;
+  // The property the server measures this filter under, inside the AOI (DS-03, `within_aoi` of the registry), or `null`
+  // for a filter that does not depend on the area. The switch of "Advanced search" moves the range to it.
+  withinAoi: string | null;
   // `range` only.
   minimum: number;
   maximum: number;
@@ -81,7 +85,7 @@ function describe(entry: unknown): SearchFilterDescription | null {
     const { minimum, maximum } = entry;
     if (typeof minimum !== 'number' || typeof maximum !== 'number') return null;
     if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum >= maximum) return null;
-    return { ...common, kind, minimum, maximum, integer: entry.type === 'integer', values: [] };
+    return { ...common, kind, minimum, maximum, integer: entry.type === 'integer', values: [], withinAoi: isPlatformProperty(entry.within_aoi) ? entry.within_aoi : null };
   }
   if (kind === 'values') {
     const options = entry.oneOf;
@@ -92,7 +96,7 @@ function describe(entry: unknown): SearchFilterDescription | null {
       values.push({ value: option.const, label: option.title });
     }
     if (values.length < 2 || new Set(values.map((v) => v.value)).size !== values.length) return null;
-    return { ...common, kind, minimum: 0, maximum: 0, integer: false, values };
+    return { ...common, kind, minimum: 0, maximum: 0, integer: false, values, withinAoi: null };
   }
   return null;
 }
@@ -165,18 +169,29 @@ export function hasFilterError(filters: SearchFilterDescription[], inputs: Filte
 // The `query` for the filters the user has set and got right: a filter with a wrong field is not sent (the search
 // itself is held back until it is right, `hasFilterError`; the coverage map has nothing to wait for, so it simply
 // goes without). `{}` when nothing is set.
-export function filterQuery(filters: SearchFilterDescription[], inputs: FilterInputs | undefined): FilterQuery {
+//
+// `within` says what the filters that depend on the area become while the switch "Filter within AOI only" is on (DS-03b):
+// `'aoi'` asks them inside the AOI instead, under the property the registry names for each (search), `'skip'` leaves them
+// out (the coverage map counts at the source and cannot measure, plan §6.5), and without it the switch is not looked at
+// and the ranges are the scene's. A filter that does not depend on the area is never changed.
+export function filterQuery(
+  filters: SearchFilterDescription[],
+  inputs: FilterInputs | undefined,
+  within?: 'aoi' | 'skip',
+): FilterQuery {
   const query: FilterQuery = {};
   for (const filter of filters) {
     const input = inputs?.[filter.property];
     if (!input || !isSet(input) || filterError(filter, input)) continue;
     if (input.kind === 'range' && filter.kind === 'range') {
+      const measured = within !== undefined ? filter.withinAoi : null;
+      if (measured && within === 'skip') continue;
       const from = bound(input.from);
       const to = bound(input.to);
       const operators: Record<string, number> = {};
       if (from !== null) operators.gte = from;
       if (to !== null) operators.lte = to;
-      query[filter.property] = operators;
+      query[measured ?? filter.property] = operators;
     } else if (input.kind === 'values' && filter.kind === 'values') {
       // In the order of the registry, and only values it offers.
       const values = filter.values.map((v) => v.value).filter((value) => input.values.includes(value));

@@ -102,6 +102,17 @@ export function saveJobFilter(filter: JobFilter): void {
   writeStored(JOB_FILTER_KEY, filter);
 }
 
+// The place and size the floating window of the jobs kept (UI-03c, gone again with #283): the old entry is deleted once at the start. A
+// storage that is locked or throws leaves it where it is, without a message.
+const JOBS_WINDOW_KEY = 'earthx.jobsWindow';
+export function forgetJobsWindow(): void {
+  try {
+    window.localStorage.removeItem(JOBS_WINDOW_KEY);
+  } catch {
+    /* storage disabled or locked: the entry stays, nothing reads it */
+  }
+}
+
 // The groups of the job manager that are folded up: their ids, and `ungrouped` for the jobs without a group.
 export function loadCollapsedGroups(): string[] {
   try {

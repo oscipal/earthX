@@ -465,7 +465,7 @@ describe('Share', () => {
     const rule = (selector: string) => new RegExp(`${selector.replace('.', '\\.')} \\{([^}]*)\\}`, 'u').exec(css)?.[1] ?? '';
     expect(rule('.pp-share')).not.toMatch(/margin/u);
     expect(rule('.pp-share')).toContain('align-items: flex-start');
-    expect(rule('.pp-foot')).toContain('gap: 8px');
+    expect(rule('.pp-foot')).toContain('gap: var(--space-2)');
   });
 
   it('has no title field, in the panel or in what is sent', async () => {

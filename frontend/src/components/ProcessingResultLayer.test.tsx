@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The result of a finished job as a layer (M4-13c-5): "Show on map" in the details of the job,
+// The result of a finished job as a layer (M4-13c-5): "＋ Add to layers" in the details of the job,
 // the layer it makes, "Overview" and "Expired". No backend: `fetch` answers the
 // TileJSON of the tiler only; the tiles are never requested (the map is not here).
 
@@ -10,11 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { saveShelf } from '../jobShelf';
 import type { MapLayer } from '../layers';
-import { layerProcessBlock, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
+import { layerProcessBlock, NO_COPY_TEXT, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { MIN_REMAINING_MS, resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
 import JobDetails from './JobDetails';
-import LayerManager, { EXPIRED_LAYER_TEXT, RESAMPLED_LAYER_TEXT } from './LayerManager';
+import LayerManager, { EXPIRED_LAYER_TEXT } from './LayerManager';
 import PreviewBadge, { OVERVIEW_TITLE } from './PreviewBadge';
 
 declare global {
@@ -39,6 +39,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     resampled: false,
     failure: null,
     failureKind: null,
+    normalize: null,
     error: null,
     cancelling: false,
     retrying: false,
@@ -57,6 +58,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     range: null,
     bandRanges: {},
     shownBand: null,
+    dates: null,
     archived: false,
     groupId: null,
     batchId: null,
@@ -129,14 +131,14 @@ const layers = () => useAppStore.getState().layers;
 
 async function showOnMap() {
   act(() => root.render(<JobDetails />));
-  click(button('Show on map'));
+  click(button('＋ Add to layers'));
   await flush();
 }
 
-describe('"Show on map" in the details of a finished job', () => {
+describe('"＋ Add to layers" in the details of a finished job', () => {
   it('is one button, with no menu behind it', () => {
     act(() => root.render(<JobDetails />));
-    const add = button('Show on map');
+    const add = button('＋ Add to layers');
     expect(add).toBeDefined();
     expect(add?.hasAttribute('aria-expanded')).toBe(false);
     click(add);
@@ -147,7 +149,7 @@ describe('"Show on map" in the details of a finished job', () => {
   it('is not offered for a job without tiles (an export, a result from before the link)', () => {
     useProcessingStore.setState({ jobs: [entry({ tiles: null })] });
     act(() => root.render(<JobDetails />));
-    expect(button('Show on map')).toBeUndefined();
+    expect(button('＋ Add to layers')).toBeUndefined();
   });
 
   it.each([
@@ -159,18 +161,18 @@ describe('"Show on map" in the details of a finished job', () => {
   ])('is not offered for a job that is %s', (_, over) => {
     useProcessingStore.setState({ jobs: [entry(over)] });
     act(() => root.render(<JobDetails />));
-    expect(button('Show on map')).toBeUndefined();
+    expect(button('＋ Add to layers')).toBeUndefined();
   });
 
   it('is gone from a minute before the results go, and the row says "Expired"', () => {
     vi.useFakeTimers();
     useProcessingStore.setState({ jobs: [entry({ expires: new Date(Date.now() + MIN_REMAINING_MS + 5000).toISOString() })] });
     act(() => root.render(<JobDetails />));
-    expect(button('Show on map')).toBeDefined();
+    expect(button('＋ Add to layers')).toBeDefined();
     act(() => {
       vi.advanceTimersByTime(5100);
     });
-    expect(button('Show on map')).toBeUndefined();
+    expect(button('＋ Add to layers')).toBeUndefined();
     expect(container.querySelector('.pm-facts dd')?.textContent).toBe('Expired');
   });
 });
@@ -184,7 +186,7 @@ describe('the layer a result becomes', () => {
     expect(layer.name).toBe('Result · Band math');
     expect(layer.derived).toBe('result');
     expect(layer.visible).toBe(true);
-    expect(layer.result).toEqual({ jobID: JOB, expires: expect.any(String), gsd: 10, resampled: false, expired: false, dataType: 'float32', stats: null });
+    expect(layer.result).toEqual({ jobID: JOB, expires: expect.any(String), gsd: 10, resampled: false, expired: false, dataType: 'float32', stats: null, preset: null });
     expect(layer.overlays).toEqual([
       {
         kind: 'raster',
@@ -194,6 +196,28 @@ describe('the layer a result becomes', () => {
         maxZoom: 19, // the map asks the tiler for the levels the TileJSON names and stretches none past them
       },
     ]);
+  });
+
+  // NM4-65 part 3: the acquisition date of the scenes of the job, kept with the job, shows on the layer of its result.
+  it('carries the day of the scenes of its job, and none where the job has none', async () => {
+    useProcessingStore.setState({ jobs: [entry({ dates: '2026-07-01 – 2026-07-06' })] });
+    await showOnMap();
+    expect(layers()[0].date).toBe('2026-07-01 – 2026-07-06');
+    act(() => useAppStore.setState({ layers: [] }));
+    useProcessingStore.setState({ jobs: [entry({ dates: null })] });
+    await showOnMap();
+    expect(layers()[0]).not.toHaveProperty('date');
+  });
+
+  // NM4-65 part 4: a range the job was saved with, typed in percentiles, shows "%" again on the layer.
+  it('carries the percentiles the range of its job was typed as', async () => {
+    useProcessingStore.setState({ jobs: [entry({ range: { vmin: '3', vmax: '97', colormap: 'viridis', percent: { low: '3', high: '97' } } })] });
+    await showOnMap();
+    expect(layers()[0].result).toMatchObject({ percent: { low: '3', high: '97' } });
+    act(() => useAppStore.setState({ layers: [] }));
+    useProcessingStore.setState({ jobs: [entry({ range: { vmin: '3', vmax: '97', colormap: 'viridis' } })] });
+    await showOnMap();
+    expect(layers()[0].result).not.toHaveProperty('percent');
   });
 
   it('is drawn with the range of the preview, as it stands', async () => {
@@ -290,7 +314,7 @@ describe('the layer a result becomes', () => {
           jobs: [
             {
               jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM', titleDefault: null, createdAt: '2026-10-10T12:00:00Z',
-              archived: false, groupId: null, batchId: null, part: null, range, bandRanges: {}, shownBand: null, order: null,
+              archived: false, groupId: null, batchId: null, part: null, range, bandRanges: {}, shownBand: null, dates: null, order: null,
               deletedUntil: null, serverDeleted: false, lost: false, superseded: false,
             },
           ],
@@ -309,7 +333,7 @@ describe('the layer a result becomes', () => {
           expression: false,
         });
         act(() => root.render(<JobDetails />));
-        click(button('Show on map'));
+        click(button('＋ Add to layers'));
         await flush();
         expect(urlOfLayer()).toContain('colormap_name=viridis&rescale=180%2C1900');
       });
@@ -328,7 +352,7 @@ describe('the layer a result becomes', () => {
         const job = await readJob(properties(DEM), { vmin: '0', vmax: '3000', colormap: 'magma' });
         expect(job.range).toEqual({ vmin: '0', vmax: '3000', colormap: 'magma' });
         act(() => root.render(<JobDetails />));
-        click(button('Show on map'));
+        click(button('＋ Add to layers'));
         await flush();
         expect(urlOfLayer()).toContain('colormap_name=magma&rescale=0%2C3000');
       });
@@ -338,7 +362,7 @@ describe('the layer a result becomes', () => {
         expect(job.statistics).toBeNull();
         expect(job.tiles).not.toBeNull();
         act(() => root.render(<JobDetails />));
-        click(button('Show on map'));
+        click(button('＋ Add to layers'));
         await flush();
         expect(urlOfLayer()).toContain('colormap_name=rdylgn&rescale=-1%2C1');
       });
@@ -383,7 +407,7 @@ describe('the layer a result becomes', () => {
     await showOnMap();
     act(() => useAppStore.getState().toggleLayerVisible(layers()[0].id));
     expect(layers()[0].visible).toBe(false);
-    click(button('Show on map'));
+    click(button('＋ Add to layers'));
     await flush();
     expect(layers()).toHaveLength(1);
     expect(layers()[0].visible).toBe(true);
@@ -396,7 +420,7 @@ describe('the layer a result becomes', () => {
     tileJson = () => gate.then((response) => response.clone());
     act(() => root.render(<JobDetails />));
     for (let i = 0; i < 2; i++) {
-      click(button('Show on map'));
+      click(button('＋ Add to layers'));
     }
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => {
@@ -406,17 +430,17 @@ describe('the layer a result becomes', () => {
     expect(layers()).toHaveLength(1);
   });
 
-  it('is not processed further and not downloaded as scenes', async () => {
+  it('is processed further only with the order of its job: without it the place of ⚙ is empty, and it is not downloaded as scenes', async () => {
     await showOnMap();
-    expect(layerProcessBlock(layers()[0], [])).toBe('A result cannot be processed further yet.');
+    // This job keeps no copy of its order (NM4-05b, Otto 31.10.2026): there is nothing to process, and nothing brings it back.
+    expect(layerProcessBlock(layers()[0], [])).toBe(NO_COPY_TEXT);
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.lm-btn[title="Process this layer"]')).toBeNull();
-    // Hidden, not greyed (Otto, 26.10.2026): the place is there, empty, until a result can be processed (NM4-05).
     expect(button('⚙')).toBeUndefined();
     const empty = container.querySelector('.layer-row [data-col="process"]');
     expect(empty?.tagName).toBe('SPAN');
     expect(empty?.getAttribute('aria-hidden')).toBe('true');
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(11);
     expect(button('⇩')).toBeUndefined();
   });
 
@@ -432,13 +456,14 @@ describe('the layer a result becomes', () => {
     expect(container.textContent).not.toMatch(/\bunit\b/iu);
   });
 
-  it('says in its row that the result was resampled to a common grid', async () => {
+  // NM4-65 part 7: the exclamation mark "Resampled to a common grid" is gone; the warning comes before the job.
+  it('says nothing in its row of a result that was resampled to a common grid, and shows no symbol', async () => {
     useProcessingStore.setState({ jobs: [entry({ resampled: true })] });
     await showOnMap();
     act(() => root.render(<LayerManager />));
-    expect(notesOfRows()).toEqual([RESAMPLED_LAYER_TEXT]);
-    // A note is a symbol with a tooltip, not a line of its own: the row keeps its height (UI-01 §6.11).
-    expect(container.textContent).not.toContain(RESAMPLED_LAYER_TEXT);
+    expect(notesOfRows()).toEqual([]);
+    expect(container.querySelector('.lm-note')).toBeNull();
+    expect(container.textContent).not.toContain('Resampled');
   });
 });
 
@@ -450,7 +475,7 @@ describe('when the result cannot be shown', () => {
     expect(useProcessingStore.getState().jobs[0].expired).toBe(true);
     act(() => root.render(<JobDetails />));
     expect(container.querySelector('.pm-facts dd')?.textContent).toBe('Expired');
-    expect(button('Show on map')).toBeUndefined();
+    expect(button('＋ Add to layers')).toBeUndefined();
   });
 
   it.each([
@@ -471,7 +496,7 @@ describe('when the result cannot be shown', () => {
     await showOnMap();
     expect(container.querySelector('.hint-text.error')).not.toBeNull();
     tileJson = () => json(TILE_JSON);
-    click(button('Show on map'));
+    click(button('＋ Add to layers'));
     await flush();
     expect(layers()).toHaveLength(1);
     expect(container.querySelector('.hint-text.error')).toBeNull();
@@ -633,7 +658,7 @@ describe('"Overview" over the map', () => {
 
     it('says it for the preview of the panel too, beside "Preview"', () => {
       useProcessingStore.setState({
-        preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, mosaics: [], scenes: [{ id: 'A', bbox: [10, 50, 11, 51], url: 'u' }], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false },
+        preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, preset: null, mosaics: [], scenes: [{ id: 'A', bbox: [10, 50, 11, 51], url: 'u' }], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false },
       });
       act(() => useAppStore.setState({ mapZoom: 3 }));
       act(() => root.render(<PreviewBadge />));
@@ -653,7 +678,7 @@ describe('"Overview" over the map', () => {
 
   it('stands beside "Preview" when both are on the map', () => {
     result();
-    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, mosaics: [], scenes: [], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false } });
+    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, preset: null, mosaics: [], scenes: [], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false } });
     act(() => root.render(<PreviewBadge />));
     expect(badge()).toBe('PreviewOverview');
   });

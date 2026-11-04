@@ -97,7 +97,7 @@ function zipResponse(headers: Record<string, string>): Response {
 }
 
 describe('confirmDownload — the skipped-groups notice (review finding on M3-17)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     const items = [cogScene('S1'), cogScene('S2')];
     useAppStore.setState({
       datasets: datasetsFrom([COG_DATASET]),
@@ -119,8 +119,10 @@ describe('confirmDownload — the skipped-groups notice (review finding on M3-17
       error: null,
       notice: null,
     });
-    useAppStore.getState().openDownloadForSelection('crop');
     vi.stubGlobal('fetch', vi.fn());
+    useAppStore.getState().openDownloadForSelection('crop');
+    // The table of bands is asked for first (here the stub gives none); the downloads wait for it.
+    await vi.waitFor(() => expect(useAppStore.getState().downloadBandsLoading).toBe(false));
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() }));
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   });
@@ -199,7 +201,7 @@ describe('confirmDownload — a crop too large for a direct download (M4-11b-2)'
     });
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const items = [cogScene('S1'), cogScene('S2')];
     useAppStore.setState({
       datasets: datasetsFrom([COG_DATASET]),
@@ -217,8 +219,10 @@ describe('confirmDownload — a crop too large for a direct download (M4-11b-2)'
       error: null,
       notice: null,
     });
-    useAppStore.getState().openDownloadForSelection('crop');
     vi.stubGlobal('fetch', vi.fn());
+    useAppStore.getState().openDownloadForSelection('crop');
+    // The table of bands is asked for first (here the stub gives none); the downloads wait for it.
+    await vi.waitFor(() => expect(useAppStore.getState().downloadBandsLoading).toBe(false));
   });
 
   afterEach(() => {
@@ -248,14 +252,6 @@ describe('confirmDownload — a crop too large for a direct download (M4-11b-2)'
     expect(s.downloadExportOffer).toBeNull();
   });
 
-  it('a 413 at a coarser factor is no offer: a job exports at factor 1 only', async () => {
-    useAppStore.getState().setDownloadResolution(2);
-    vi.mocked(fetch).mockImplementation(async () => refused(413, { 'X-Export-Job': 'available' }));
-    await useAppStore.getState().confirmDownload();
-    expect(useAppStore.getState().downloadExportOffer).toBeNull();
-    expect(useAppStore.getState().error).toContain('Download failed');
-  });
-
   it('a point AOI is no offer: only an area can be exported', async () => {
     useAppStore.setState({ aoi: { type: 'Point', coordinates: [10, 50] } });
     vi.mocked(fetch).mockImplementation(async () => refused(413, { 'X-Export-Job': 'available' }));
@@ -263,18 +259,20 @@ describe('confirmDownload — a crop too large for a direct download (M4-11b-2)'
     expect(useAppStore.getState().downloadExportOffer).toBeNull();
   });
 
-  it('the offer goes with a change of the resolution, with the dialog, and with the next attempt', async () => {
+  it('the offer goes with a change of the choice, with the dialog, and with the next attempt', async () => {
     vi.mocked(fetch).mockImplementation(async () => refused(413, { 'X-Export-Job': 'available' }));
     await useAppStore.getState().confirmDownload();
-    useAppStore.getState().setDownloadResolution(2);
+    expect(useAppStore.getState().downloadExportOffer).not.toBeNull();
+    useAppStore.getState().setDownloadForm('multi_band');
     expect(useAppStore.getState().downloadExportOffer).toBeNull();
 
-    useAppStore.getState().setDownloadResolution(1);
+    useAppStore.getState().setDownloadForm('per_band');
     await useAppStore.getState().confirmDownload();
     useAppStore.getState().closeDownloadDialog();
     expect(useAppStore.getState().downloadExportOffer).toBeNull();
 
     useAppStore.getState().openDownloadForSelection('crop');
+    await vi.waitFor(() => expect(useAppStore.getState().downloadBandsLoading).toBe(false));
     await useAppStore.getState().confirmDownload();
     vi.mocked(fetch).mockImplementation(async () => refused(502));
     await useAppStore.getState().confirmDownload();

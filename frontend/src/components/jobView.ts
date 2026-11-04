@@ -37,6 +37,16 @@ export function formatUntil(iso: string, now: number = Date.now()): string {
   return `${MONTH_DAY.format(date)}${year}, ${HOUR_MINUTE.format(date)}`;
 }
 
+// "08OCT-12:34": two digits for the day, the month as three capital letters, the hour and the minute, in the time of the browser. The
+// column "Expires" of the manager says what the date is.
+const SHORT_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+export function formatShortDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${two(date.getDate())}${SHORT_MONTHS[date.getMonth()]}-${two(date.getHours())}:${two(date.getMinutes())}`;
+}
+
 export interface BatchCount {
   done: number;
   running: number;

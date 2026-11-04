@@ -140,6 +140,62 @@ def _download(client: TestClient, dataset: str = DATASET, **body: Any) -> Any:
     return client.post(f"/collections/{dataset}/download", json=payload)
 
 
+class TestTheBandsOfSomeScenes:
+    """NM4-75: the bands the dialog offers come from the items and the registry, not from a list in the frontend."""
+
+    def _bands(self, client: TestClient, items: list[str], dataset: str = DATASET) -> Any:
+        return client.post(f"/collections/{dataset}/bands", json={"items": items})
+
+    def test_the_bands_are_the_geotiffs_without_the_pictures_and_the_thumbnail(self, client: TestClient) -> None:
+        response = self._bands(client, [ITEM_ID])
+        assert response.status_code == 200
+        bands = response.json()["bands"]
+        # `visual` is auxiliary, the thumbnail is no GeoTIFF; `elsewhere` is a GeoTIFF the item lists like any other.
+        assert [band["asset"] for band in bands] == ["red", "elsewhere"]
+        assert (bands[0]["name"], bands[0]["common_name"], bands[0]["wavelength_um"]) == ("B04", "red", 0.665)
+        assert [band["preselected"] for band in bands] == [True, False]  # a centre wavelength ticks a band, none does not
+
+    def test_several_scenes_give_one_table(self, client: TestClient) -> None:
+        response = self._bands(client, [ITEM_ID, f"{ITEM_ID}#2"])
+        assert response.status_code == 200 and len(response.json()["bands"]) == 2
+
+    @pytest.mark.parametrize("body", [{"items": []}, {"items": [ITEM_ID, ITEM_ID]}, {"items": ["a"] * 26}, {"items": [ITEM_ID], "aoi": {}}, {}])
+    def test_a_body_that_is_not_a_list_of_scenes_is_422(self, client: TestClient, body: dict[str, Any]) -> None:
+        assert client.post(f"/collections/{DATASET}/bands", json=body).status_code == 422
+
+    def test_an_unknown_dataset_or_scene_is_404(self, client: TestClient) -> None:
+        assert self._bands(client, [ITEM_ID], dataset="no-such-dataset").status_code == 404
+        assert self._bands(client, ["NOPE"]).status_code == 404
+
+
+class TestTheFormOfTheFiles:
+    """NM4-75: the request names how the bands are laid into files; what does not fit is refused before any read."""
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"form": "zip"},
+            {"form": "multi_band"},
+            {"form": "per_band", "common_resolution": 20},
+            {"form": "per_resolution", "common_resolution": 20},
+            {"form": "multi_band", "common_resolution": 0},
+            {"form": "multi_band", "common_resolution": 5000},
+        ],
+    )
+    def test_a_form_that_does_not_fit_its_resolution_is_422(self, client: TestClient, body: dict[str, Any]) -> None:
+        assert _download(client, **body).status_code == 422
+
+    def test_the_default_is_one_file_per_band_and_the_recipe_says_so(self, client: TestClient) -> None:
+        explicit = _download(client, form="per_band")
+        with _zip_of(_download(client)) as default, _zip_of(explicit) as named:
+            assert default.namelist() == named.namelist()
+            assert json.loads(default.read("recipe.json"))["output"]["layout"] == {"form": "per_band"}
+
+    def test_a_source_that_offers_no_raster_to_stack_is_422(self, client: TestClient) -> None:
+        response = _download(client, form="per_resolution")
+        assert response.status_code == 422
+
+
 class TestAcceptanceCriteria:
     def test_an_unknown_dataset_is_404(self, client: TestClient) -> None:
         response = _download(client, dataset="no-such-dataset")
@@ -189,45 +245,30 @@ class TestAcceptanceCriteria:
         assert response.status_code == 413
         assert response.headers["content-type"] != "application/zip"
 
-    def test_over_the_cap_names_the_smallest_fitting_resolution_factor(
-        self, client: TestClient
-    ) -> None:
-        """F10c (M3-18 §10): the rejection suggests a factor from
-        `RESOLUTION_FACTORS` that would bring this same request under the cap,
-        not just "smaller area or fewer layers"."""
+    def test_over_the_cap_suggests_no_factor_because_none_is_offered_any_more(self, client: TestClient) -> None:
+        """Otto, 03.11.2026 (NM4-75): the refusal names what can be changed, and no resolution factor."""
         response = _download(client, assets=["thumbnail"])
         assert response.status_code == 413
-        assert "x would fit" in response.json()["detail"]
+        detail = response.json()["detail"]
+        assert "x would fit" not in detail and "coarser resolution in the download dialog" not in detail
+        assert "smaller area" in detail and "fewer bands" in detail
 
-    def test_an_unknown_resolution_factor_is_a_validation_error(self, client: TestClient) -> None:
-        response = _download(client, resolution=3)
-        assert response.status_code == 422
+    @pytest.mark.parametrize("factor", [2, 3, 4, 10, 0, -1, "2"])
+    def test_a_resolution_factor_is_refused_not_ignored(self, client: TestClient, factor: Any) -> None:
+        """Gegenprobe: a client that still sends a coarser factor must not get native files without being told."""
+        assert _download(client, resolution=factor).status_code == 422
 
-    def test_an_explicit_resolution_factor_is_honored_in_the_filename_and_notice(
-        self, client: TestClient
-    ) -> None:
-        """F10c (M3-18 §10): an explicitly coarser resolution travels into the
-        archive — the filename and the notice both name it, never silently."""
-        response = _download(client, resolution=2)
+    def test_resolution_one_is_still_accepted_for_clients_that_send_it(self, client: TestClient) -> None:
+        response = _download(client, resolution=1)
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            names = set(archive.namelist())
-            assert names == {
-                "visual_2x.tif",
-                "visual_2x_mask.tif",
-                "ATTRIBUTION.txt",
-                "aoi.geojson",
-                "recipe.json",
-                "citation.bib",
-            }
-            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
-            assert "2x coarser than native" in notice
+            assert "exports/visual_10m.tif" in archive.namelist()
 
     def test_native_resolution_names_no_factor_in_filename_or_notice(self, client: TestClient) -> None:
         response = _download(client)
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            assert "visual.tif" in archive.namelist()
+            assert "exports/visual_10m.tif" in archive.namelist()
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "Resolution: native" in notice
 
@@ -281,8 +322,9 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             names = set(archive.namelist())
             assert names == {
-                "visual.tif",
-                "visual_mask.tif",
+                "exports/visual_10m.tif",
+                "exports/visual_10m_mask.tif",
+                "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
                 "recipe.json",
@@ -361,21 +403,6 @@ class TestAcceptanceCriteria:
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
         assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0" in notice
 
-    def test_an_explicit_resolution_factor_with_a_place_search_aoi_still_names_it(
-        self, client: TestClient
-    ) -> None:
-        """M3-18's windowed/coarser-resolution path (F10c, `resolution != 1`)
-        plans different `width`/`height` per crop but calls the same
-        `build_download_zip` — checked so a resolution-factor request is not a
-        silent second way to lose the provenance line."""
-        place_search_aoi = {**GOOD_AOI, "properties": {"attribution": "© OpenStreetMap contributors"}}
-        response = _download(client, resolution=2, aoi=place_search_aoi)
-        assert response.status_code == 200
-        with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
-        assert "AOI geometry: © OpenStreetMap contributors" in notice
-        assert "2x coarser than native" in notice
-
     def test_two_groups_land_in_separate_folders_of_the_same_zip(self, client: TestClient) -> None:
         """P19: separate groups as separate files, together in one ZIP (M3-17)."""
         response = _download(client, groups=[[ITEM_ID], [f"{ITEM_ID}#2"]])
@@ -383,26 +410,28 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             names = set(archive.namelist())
             assert names == {
-                "group-01/visual.tif",
-                "group-01/visual_mask.tif",
-                "group-02/visual.tif",
-                "group-02/visual_mask.tif",
+                "exports/group-01/visual_10m.tif",
+                "exports/group-01/visual_10m_mask.tif",
+                "exports/group-02/visual_10m.tif",
+                "exports/group-02/visual_10m_mask.tif",
+                "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
-            assert f"Group 1 (group-01/): {ITEM_ID}" in notice
-            assert f"Group 2 (group-02/): {ITEM_ID}#2" in notice
+            assert f"Group 1 (exports/group-01/): {ITEM_ID}" in notice
+            assert f"Group 2 (exports/group-02/): {ITEM_ID}#2" in notice
 
     def test_a_single_group_stays_the_flat_layout_from_before_m3_17(self, client: TestClient) -> None:
         response = _download(client, groups=[[ITEM_ID]])
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             assert set(archive.namelist()) == {
-                "visual.tif",
-                "visual_mask.tif",
+                "exports/visual_10m.tif",
+                "exports/visual_10m_mask.tif",
+                "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
                 "recipe.json",
@@ -418,8 +447,9 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             # One surviving group: the flat layout, not a `group-01/` folder.
             assert set(archive.namelist()) == {
-                "visual.tif",
-                "visual_mask.tif",
+                "exports/visual_10m.tif",
+                "exports/visual_10m_mask.tif",
+                "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
                 "recipe.json",
@@ -469,8 +499,8 @@ class TestAcceptanceCriteria:
 
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            assert archive.namelist().count("visual.tif") == 1
-            assert archive.namelist().count("visual_mask.tif") == 1
+            assert archive.namelist().count("exports/visual_10m.tif") == 1
+            assert archive.namelist().count("exports/visual_10m_mask.tif") == 1
 
     def test_an_empty_group_list_group_or_asset_list_is_a_validation_error(self, client: TestClient) -> None:
         assert _download(client, groups=[]).status_code == 422
@@ -616,7 +646,7 @@ class TestAFileThatDoesNotReadBack:
         assert len(calls) == 2
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             assert archive.testzip() is None
-            assert "visual.tif" in archive.namelist()
+            assert "exports/visual_10m.tif" in archive.namelist()
         warnings_logged = [record for record in caplog.records if record.levelno == logging.WARNING]
         assert len(warnings_logged) == 1
         assert "once more" in warnings_logged[0].getMessage()
@@ -664,6 +694,7 @@ class TestRecipeAndCitation:
             "resolution_factor": 1,
             "extent": "bbox(aoi ∩ footprints)",
             "mask": "file",
+            "layout": {"form": "per_band"},
         }
         assert recipe["aoi"] == GOOD_AOI
         assert recipe["inputs"][0]["dataset"] == DATASET
@@ -679,10 +710,10 @@ class TestRecipeAndCitation:
         assert "recipe_id" not in text
         assert "c1:" not in text
 
-    def test_recipe_json_names_the_resolution_factor_the_caller_chose(self, client: TestClient) -> None:
-        with _zip_of(_download(client, resolution=2)) as archive:
+    def test_recipe_json_has_the_native_factor_the_field_stays_for_old_recipes(self, client: TestClient) -> None:
+        with _zip_of(_download(client)) as archive:
             recipe = json.loads(archive.read("recipe.json"))
-        assert recipe["output"]["resolution_factor"] == 2
+        assert recipe["output"]["resolution_factor"] == 1
 
     def test_recipe_json_holds_the_aoi_without_a_place_search_provenance(self, client: TestClient) -> None:
         """The recipe model forbids ``properties``; the notice and ``aoi.geojson`` keep them."""
@@ -771,7 +802,7 @@ class TestRecipeAndCitation:
             names = set(archive.namelist())
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
         assert "recipe.json" not in names
-        assert {"visual.tif", "visual_mask.tif", "aoi.geojson", "citation.bib"} <= names
+        assert {"exports/visual_10m.tif", "exports/visual_10m_mask.tif", "aoi.geojson", "citation.bib"} <= names
         assert f"recipe.json is not included: the recipe could not be built from the source's item metadata (cause: {stage})." in notice
         # Not in the "Generated:" line: its timestamp holds "7.1" by chance (…14:25:17.100083Z).
         assert "7.1" not in _without_generated(notice)
@@ -810,9 +841,7 @@ class TestOverTheCapAnExportJob:
     def _caps(monkeypatch: pytest.MonkeyPatch, crop: int, job: int) -> None:
         monkeypatch.setattr(
             "earthx.api.tiler.check_output_size_cap",
-            lambda planned, native_planned=None: download_module.check_output_size_cap(
-                planned, max_bytes=crop, native_planned=native_planned
-            ),
+            lambda planned: download_module.check_output_size_cap(planned, max_bytes=crop),
         )
         monkeypatch.setattr("earthx.api.tiler.MAX_JOB_BYTES", job)
 
@@ -852,14 +881,6 @@ class TestOverTheCapAnExportJob:
             self._caps(monkeypatch, crop=total - 1, job=job)
             value = _download(client).headers["X-Export-Job"]
             assert value in {"available", "too-large"}
-
-    def test_a_coarser_factor_over_the_cap_is_offered_no_job(
-        self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        self._caps(monkeypatch, crop=1, job=10 * self._native_total(item))
-        response = _download(client, resolution=2)
-        assert response.status_code == 413
-        assert "X-Export-Job" not in response.headers
 
     def test_too_many_scenes_is_offered_no_job(self, client: TestClient) -> None:
         response = _download(client, groups=[[f"{ITEM_ID}#{i}"] for i in range(26)])

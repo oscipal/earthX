@@ -16,6 +16,7 @@ import { DEFAULT_RANGE } from '../processingPreview';
 import { layerProcessBlock, orderView, useProcessingStore } from '../processingStore';
 import { resultRender, resultStats } from '../resultLayer';
 import { bboxToPolygon } from '../geoUtils';
+import { layerShownName } from '../layerName';
 import { useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import LayerManager from './LayerManager';
@@ -420,7 +421,7 @@ describe('the preview section', () => {
 
   it('draws a chain of tile steps and counts what the map leaves out', async () => {
     await withNdvi();
-    const normalize = { key: 900, op: 'normalize', opVersion: 2, values: { bands: 'result', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
+    const normalize = { key: 900, op: 'normalize', opVersion: 4, values: { method: 'linear', bands: 'result', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
     act(() => useProcessingStore.setState({ steps: [...store().steps, normalize] }));
     await afterDebounce();
     await flush();
@@ -428,6 +429,8 @@ describe('the preview section', () => {
     expect(store().previewNote).toBeNull();
     const url = new URL(store().preview!.scenes[0].url, 'http://localhost');
     expect(url.searchParams.getAll('op')).toEqual(['band_math', 'normalize']);
+    // `normalize` of version 4 runs only as a job; the tile takes it as version 3 (NM4-71).
+    expect(url.searchParams.getAll('op_version')).toEqual(['2', '3']);
     expect(section().textContent).not.toContain('the job runs all steps');
     click(button('＋ Band math'));
     expect(section().textContent).toContain('The map shows the first 2 steps; the job runs all steps.');
@@ -582,7 +585,7 @@ describe('the preview section', () => {
     it('starts at -1 to 1 with rdylgn and draws a new range only after "Apply"', async () => {
       await withNdvi();
       expect(inputs().map((i) => i.value)).toEqual(['-1', '1']);
-      expect(section().querySelector('select')!.value).toBe('rdylgn');
+      expect(section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!.value).toBe('rdylgn');
       typeInto(inputs()[1], '0.8');
       await afterDebounce();
       expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale')).toBe('-1,1');
@@ -604,7 +607,7 @@ describe('the preview section', () => {
 
     it('takes another colormap, or none', async () => {
       await withNdvi();
-      const select_ = section().querySelector('select')!;
+      const select_ = section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!;
       act(() => {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
         setter.call(select_, '');
@@ -613,6 +616,36 @@ describe('the preview section', () => {
       click(button('Apply'));
       await afterDebounce();
       expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.has('colormap_name')).toBe(false);
+    });
+
+    // Otto, 01.11.2026: a change of the colormap alone must open "Apply", in values and in percentiles that are applied already.
+    it('opens "Apply" for a change of the colormap alone, in values and in percentiles that are applied already', async () => {
+      await withNdvi();
+      const colormapSelect = () => section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!;
+      const unitSelect = () => section().querySelector<HTMLSelectElement>('select.vc-unit')!;
+      const apply = () => section().querySelector<HTMLButtonElement>('.vc-apply')!;
+      const choose = (element: HTMLSelectElement, value: string) =>
+        act(() => {
+          Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(element, value);
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      choose(colormapSelect(), 'terrain');
+      expect(apply().disabled).toBe(false);
+      click(apply());
+      expect(store().range.colormap).toBe('terrain');
+      // In percentiles: applied, nothing left to apply ...
+      choose(unitSelect(), 'percent');
+      click(apply());
+      await flush();
+      expect(store().range.percent).toEqual({ low: '2', high: '98' });
+      expect(apply().disabled).toBe(true);
+      // ... until the colormap alone changes.
+      choose(colormapSelect(), 'magma');
+      expect(apply().disabled).toBe(false);
+      click(apply());
+      await flush();
+      expect(store().range).toMatchObject({ colormap: 'magma', percent: { low: '2', high: '98' } });
+      expect(apply().disabled).toBe(true);
     });
 
   });
@@ -642,7 +675,7 @@ describe('the preview section', () => {
       await withNdvi();
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
       expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
-      expect(section().querySelector('select')!.value).toBe('viridis');
+      expect(section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!.value).toBe('viridis');
       expect(store().range).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdylgn' }); // no choice of the user's
     });
 
@@ -722,7 +755,7 @@ describe('the preview section', () => {
       expect(rescale()).toBe('120,2400');
       typeInto(inputs()[0], '-1');
       typeInto(inputs()[1], '1');
-      const select_ = section().querySelector('select')!;
+      const select_ = section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!;
       act(() => {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
         setter.call(select_, 'rdylgn');
@@ -908,13 +941,13 @@ describe('the preview section', () => {
       expect(unit()).toBe('m');
     });
 
-    it('puts the unit in an element of its own beside the max field, never inside a field', async () => {
+    it('puts the unit in an element of its own under the fields of "Scale", never inside a field', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       const element = section().querySelector('.pp-unit')!;
       expect(element.closest('label')).toBeNull();
-      expect(element.previousElementSibling?.matches('label.vc-num')).toBe(true);
-      expect(element.previousElementSibling?.textContent).toContain('max');
+      expect(element.previousElementSibling?.matches('.vc-scale-fields')).toBe(true);
+      expect(element.previousElementSibling?.textContent).toContain('vmax');
     });
 
     it.each([['1'], [null], ['']])('writes no unit beside the range for %j', async (value) => {
@@ -1493,7 +1526,7 @@ describe('the ways into the panel (§3.5)', () => {
   });
 
   describe('the view stays as it is (Otto, 19.10.2026)', () => {
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     const OTHER_AOI = bboxToPolygon([10.1, 50.1, 10.2, 50.2]);
 
     it('does not enter the full-resolution view of a layer, and keeps the results list', async () => {
@@ -1683,7 +1716,7 @@ describe('the ways into the panel (§3.5)', () => {
     it('does the same for the full-resolution view, and says "view"', async () => {
       select([scene('S2B_A')]);
       catalog.GONE = scene('GONE');
-      const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+      const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
       useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile, GONE: tile } });
       mount(<ViewerControls />);
       click(button('⚙ Process'));
@@ -1739,7 +1772,7 @@ describe('the ways into the panel (§3.5)', () => {
 
   it('"⚙ Process" of the full-resolution view takes the scenes of the view, cropped or whole', async () => {
     select([scene('S2B_A'), scene('S2B_B')]);
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     useAppStore.setState({ focusMode: true, cropToAoi: true, viewAoi: useAppStore.getState().aoi, downloaded: { S2B_B: tile }, selectedIds: ['S2B_A', 'S2B_B'] });
     mount(<ViewerControls />);
     click(button('⚙ Process'));
@@ -1756,7 +1789,7 @@ describe('the ways into the panel (§3.5)', () => {
 
   it('locks "⚙ Process" of the full-resolution view for a dataset below processing', () => {
     select([scene('S2B_A')], 'catalog');
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile } });
     mount(<ViewerControls />);
     expect(button('⚙ Process').disabled).toBe(true);
@@ -2040,7 +2073,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(tiles).toEqual(['items', 'items', 'mosaic']);
     const mosaic = layer.overlays[2];
     expect(mosaic).toMatchObject({ kind: 'raster', minZoom: 8, preview: true });
-    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', maxZoom: 7, hideFrom: 6.5, preview: true });
+    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', maxZoom: 7, hideFrom: 7.5, preview: true });
     expect(layer.restore.itemIds).toEqual(['S2B_B', 'S2B_A']);
   });
 
@@ -2057,7 +2090,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       expect(layer.note).toBe(HINT);
       mount(<LayerManager />);
       expect(nameButton().getAttribute('title')).toContain(HINT);
-      expect(nameButton().getAttribute('title')).toContain(`${layer.name} — `);
+      expect(nameButton().getAttribute('title')).toContain(`${layerShownName(layer)} — `);
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('per scene');
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('may differ');
     });
@@ -2070,7 +2103,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       expect(useAppStore.getState().layers[0].note).toBeUndefined();
       mount(<LayerManager />);
       expect(nameButton().getAttribute('title')).not.toContain('per scene');
-      expect(nameButton().getAttribute('title')).toBe(`${useAppStore.getState().layers[0].name} — view this layer / continue working on it`);
+      expect(nameButton().getAttribute('title')).toBe(`${layerShownName(useAppStore.getState().layers[0])} — view this layer / continue working on it`);
     });
   });
 

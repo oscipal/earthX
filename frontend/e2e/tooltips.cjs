@@ -55,8 +55,9 @@ async function check(browser, { theme, viewport }) {
     const top = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.className, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
     if (top !== 'tip-layer') problems.push(`${label}: covered by "${top}"`);
     await page.screenshot({ path: path.join(OUT, `${label} ${name}.png`) });
+    // Esc closes nothing (Otto, 2.11.2026): the tip goes with the pointer.
     await page.keyboard.press('Escape');
-    if ((await page.locator('.tip-layer').count()) !== 0) problems.push(`${label}: Esc did not close it`);
+    if ((await page.locator('.tip-layer').count()) !== 1) problems.push(`${label}: Esc closed it`);
     await page.mouse.move(0, win.height - 1);
   };
 

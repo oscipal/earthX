@@ -2,7 +2,7 @@
 
 An immutable mapping ``(op, op_version) → Operator``. :data:`REGISTRY` is the one
 the platform runs; it holds ``band_math`` (M4-09), ``mask``, ``mask_values`` (DS-06) and ``normalize`` (M4-18, version 2 since NM4-43c: a
-stock of named bands, version 3 since NM4-11: the methods) and ``reproject`` (M4-10, versions 2 and 3 since M4-24, 4 since NM4-43b). A caller that needs
+stock of named bands, version 3 since NM4-11: the methods, version 4 since NM4-71: measured in the run) and ``reproject`` (M4-10, versions 2 and 3 since M4-24, 4 since NM4-43b). A caller that needs
 more — a test, and later the composition root that hands in the quad-pol operator from `datasets/` (§12) —
 builds its own with :meth:`OperatorRegistry.with_operators`, and passes it to
 ``processing.run``.
@@ -27,7 +27,7 @@ from earthx.processing.operators.band_math import BAND_MATH, BAND_MATH_V2
 from earthx.processing.operators.base import Operator
 from earthx.processing.operators.mask import MASK, MASK_V2
 from earthx.processing.operators.mask_values import MASK_VALUES
-from earthx.processing.operators.normalize import NORMALIZE, NORMALIZE_V2, NORMALIZE_V3
+from earthx.processing.operators.normalize import NORMALIZE, NORMALIZE_V2, NORMALIZE_V3, NORMALIZE_V4
 from earthx.processing.operators.reproject import REPROJECT, REPROJECT_V2, REPROJECT_V3
 
 __all__ = ["JSON_SCHEMA_DIALECT", "REGISTRY", "OperatorRegistry", "applicable"]
@@ -94,6 +94,7 @@ REGISTRY = OperatorRegistry(
         NORMALIZE,
         NORMALIZE_V2,
         NORMALIZE_V3,
+        NORMALIZE_V4,
         REPROJECT,
         REPROJECT_V2,
         REPROJECT_V3,
