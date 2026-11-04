@@ -4,7 +4,7 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Tip from './Tip';
 import TipLayer from './TipLayer';
@@ -75,6 +75,19 @@ describe('TipLayer', () => {
     expect(button.getAttribute('aria-describedby')).toBe('own');
   });
 
+  it('describes the field in a label with a tip, not the label', () => {
+    const label = document.createElement('label');
+    label.setAttribute('data-tip', 'The range of the band');
+    const field = document.createElement('input');
+    label.append('Scale', field);
+    container.querySelector('.panel')!.append(label);
+    act(() => label.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    expect(field.getAttribute('aria-describedby')).toBe(layer()?.id);
+    expect(label.hasAttribute('aria-describedby')).toBe(false);
+    act(() => label.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+    expect(field.hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('does not describe an element that its own text already names (the (i) says it once)', () => {
     act(() => tip().focus());
     expect(layer()?.textContent).toBe('Resampled to a common grid');
@@ -142,7 +155,18 @@ describe('TipLayer without an app around it', () => {
       locked.getBoundingClientRect = () => ({ left: 10, top: 10, right: 60, bottom: 40, width: 50, height: 30, x: 10, y: 10, toJSON: () => ({}) });
       container.querySelector('.panel')!.append(locked);
     });
-    const move = (x: number, y: number) => act(() => document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y })));
+    // The search runs in the next frame: the frames are collected here and run by hand.
+    let frames: FrameRequestCallback[] = [];
+    beforeEach(() => {
+      frames = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback));
+      vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    });
+    afterEach(() => vi.unstubAllGlobals());
+    const move = (x: number, y: number) => {
+      act(() => document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y })));
+      act(() => frames.splice(0).forEach((callback) => callback(0)));
+    };
 
     it('shows its reason where the pointer is over it, and no longer where it leaves', () => {
       move(30, 20);
@@ -160,6 +184,12 @@ describe('TipLayer without an app around it', () => {
       act(() => tip().dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
       move(300, 300);
       expect(layer()?.textContent).toBe('Resampled to a common grid');
+    });
+
+    it('looks for the pointer once a frame, not at every move', () => {
+      act(() => document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 30, clientY: 20 })));
+      act(() => document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 31, clientY: 20 })));
+      expect(frames).toHaveLength(1);
     });
 
     it('is not found when it is no longer locked', () => {

@@ -14,6 +14,7 @@ import { placeTip, type Side } from '../tipPlacement';
 const TIP = '[data-tip]';
 const TIP_ID = 'tip-layer';
 // A locked control: it takes no pointer events (`index.css`), so the pointer is looked for among them.
+const CONTROL = 'button, input, select, textarea, a[href], [tabindex]';
 const LOCKED = ':is(button, input, select, textarea):disabled[data-tip]';
 
 const lockedAt = (x: number, y: number): HTMLElement | null =>
@@ -39,10 +40,16 @@ export default function TipLayer() {
     const hide = (event: Event) => {
       if (tipOf(event.target)) setAnchor(null);
     };
+    // At most once a frame: the search over the locked controls is not for every move of a dragged map.
+    let frame = 0;
     const move = (event: MouseEvent) => {
-      if (tipOf(event.target)) return;
-      const locked = lockedAt(event.clientX, event.clientY);
-      setAnchor((was) => locked ?? (was?.matches(LOCKED) ? null : was));
+      if (tipOf(event.target) || frame !== 0) return;
+      const { clientX, clientY } = event;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const locked = lockedAt(clientX, clientY);
+        setAnchor((was) => locked ?? (was?.matches(LOCKED) ? null : was));
+      });
     };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseover', show);
@@ -51,6 +58,7 @@ export default function TipLayer() {
     document.addEventListener('focusout', hide);
     return () => {
       document.removeEventListener('mousemove', move);
+      cancelAnimationFrame(frame);
       document.removeEventListener('mouseover', show);
       document.removeEventListener('focusin', show);
       document.removeEventListener('mouseout', hide);
@@ -61,11 +69,13 @@ export default function TipLayer() {
   // The description of the element while its tip shows.
   useEffect(() => {
     if (!anchor || anchor.getAttribute('aria-label') === text) return undefined;
-    const before = anchor.getAttribute('aria-describedby');
-    anchor.setAttribute('aria-describedby', [before, TIP_ID].filter(Boolean).join(' '));
+    // On the control itself; a label or a box with a tip describes the field in it.
+    const target = anchor.matches(CONTROL) ? anchor : (anchor.querySelector<HTMLElement>(CONTROL) ?? anchor);
+    const before = target.getAttribute('aria-describedby');
+    target.setAttribute('aria-describedby', [before, TIP_ID].filter(Boolean).join(' '));
     return () => {
-      if (before === null) anchor.removeAttribute('aria-describedby');
-      else anchor.setAttribute('aria-describedby', before);
+      if (before === null) target.removeAttribute('aria-describedby');
+      else target.setAttribute('aria-describedby', before);
     };
   }, [anchor, text]);
 

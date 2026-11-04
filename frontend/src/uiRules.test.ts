@@ -249,6 +249,17 @@ describe('one dimming for a locked control (UI-04 part 3a): --disabled-opacity',
   });
 });
 
+describe('a locked control over the map (UI-04 part 3a, found in the review)', () => {
+  const css = withoutCssComments(CSS);
+  it('takes the click: a locked button in an overlay is not made transparent to the pointer', () => {
+    expect(css).toMatch(/\.overlay > :is\([^)]*\):disabled\[data-tip\] \{\s*pointer-events: auto;/u);
+  });
+
+  it('dims a field that is locked by aria-disabled too (the switch "Filter within AOI only")', () => {
+    expect(css).toMatch(/:is\(button, input, select, textarea, a, label,[^)]*\[role='switch'\]\)\[aria-disabled='true'\] \{\s*opacity: var\(--disabled-opacity\);/u);
+  });
+});
+
 describe('one focus ring (UI-04 part 3a): the token --focus, for everything that can be operated', () => {
   // The rules that set an outline: the ring for all, and what draws a ring of its own on purpose.
   const outlines = (css: string) =>

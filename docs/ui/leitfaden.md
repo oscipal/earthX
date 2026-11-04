@@ -111,7 +111,7 @@
 - **Ein Aussehen:** ein gesperrtes Element ist auf `--disabled-opacity` (0.4) gedimmt, in einer Regel für `:disabled` und `[aria-disabled='true']`. Keine eigene Deckkraft an einem gesperrten Element.
 - **`aria-disabled` für neue Sperren mit Grund:** das Element bleibt in der Tab-Reihenfolge, der Grund ist auch per Tastatur lesbar; der Handler fängt den Klick ab. Ein bestehendes `disabled` bleibt; sein Tooltip erscheint, wo der Zeiger darüber liegt (`TipLayer`), per Tastatur nicht.
 - Wo eine gesperrte Stelle einen Platz hält, bleibt sie an diesem Platz, z. B. die Colormap bei RGB als gesperrtes „— none —“, auch in der Processing-Vorschau.
-- **Ein Tooltip-Weg:** `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus; `TipLayer` setzt für die Dauer `aria-describedby`, ein Knopf nur mit Symbol hat zusätzlich seinen `aria-label`. **`title` gibt es an keinem Element** (ein zweiter Tooltip des Browsers), außer an `<option>` (eine native Liste zeigt sonst nichts) und an den Steuerelementen von MapLibre. Ein Test findet jedes andere `title`.
+- **Ein Tooltip-Weg:** `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus; `TipLayer` setzt für die Dauer `aria-describedby`, bei einem `label` mit Tooltip am Feld darin; ein Knopf nur mit Symbol hat zusätzlich seinen `aria-label`. **`title` gibt es an keinem Element** (ein zweiter Tooltip des Browsers), außer an `<option>` (eine native Liste zeigt sonst nichts) und an den Steuerelementen von MapLibre. Ein Test findet jedes andere `title`.
 
 ## 5. Schließen
 
@@ -167,9 +167,9 @@
 | `.close-x` | nur `CloseButton` (§5) |
 
 - **Ein Schalter** steht mit `aria-pressed`: `.btn` ist dann getönt in Akzent, `.icon-btn` in Akzentfarbe. Die offene Seite der Leiste links trägt `.on`.
-- **Eine Klasse für einen Ort** gibt nur Platz, Breite und Lage (`tool-btn`, `pm-icon`, `dataset-toggle`, `vc-apply`), nie Farbe, Rand, Radius, Schrift oder Deckkraft. Ein Knopf über der Karte trägt `.panel` dazu (`.btn.panel`).
+- **Eine Klasse für einen Ort** gibt Platz, Breite und Lage (`tool-btn`, `pm-icon`, `dataset-toggle`, `vc-apply`) und höchstens einen Zustand (`aria-expanded`, `.wrong`); sie erfindet keine neue Form, also keine eigene Schrift, Deckkraft oder Füllung. Ein Knopf über der Karte trägt `.panel` dazu (`.btn.panel`).
 - Eigene Formen haben bis Teil 3b noch: Segment-Umschalter und Chips (`pp-seg`, `pp-chip`), Zeilen in Menüs und Listen, Titel zum Umbenennen und die Falzgriffe (`pp-grip`).
-- **Fokus:** ein Ring für alles Bedienbare, `2px solid var(--focus)` per Tastatur (`:focus-visible`), in **einer** Regel. Kein `outline: none`, keine eigene Ringregel an einem Knopf oder Feld; Ausnahmen sind der Schieber (Ring am Griff) und die Ablagelinie beim Ziehen.
+- **Fokus:** ein Ring für alles Bedienbare, `2px solid var(--focus)` per Tastatur (`:focus-visible`), in **einer** Regel. Kein `outline: none`, keine eigene Ringregel an einem Knopf oder Feld; Ausnahmen sind der Schieber (Ring am Griff), der Rahmen eines Popovers (kein bedientes Element) und die Ablagelinie beim Ziehen.
 
 Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
 

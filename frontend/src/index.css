@@ -192,7 +192,7 @@ svg.lucide.icon-lead {
 /* A locked control: one dimming, and the reason in its tooltip (`data-tip`). `disabled` or `aria-disabled="true"`; the second one keeps
    the control in the tab order, so that its reason can be read. */
 :is(button, input, select, textarea, fieldset):disabled,
-:is(button, a, label, [role='button'], [role='menuitem'], [role='menuitemradio'])[aria-disabled='true'] {
+:is(button, input, select, textarea, a, label, [role='button'], [role='menuitem'], [role='menuitemradio'], [role='switch'])[aria-disabled='true'] {
   opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
@@ -200,6 +200,10 @@ svg.lucide.icon-lead {
 /* A locked control takes no pointer events, so that its reason shows in every browser (`TipLayer` finds it by the place of the pointer). */
 :is(button, input, select, textarea):disabled[data-tip] {
   pointer-events: none;
+}
+/* Over the map a locked button must still take the click, or it would reach the map under it; there the browser's own events show its tip. */
+.overlay > :is(button, input, select, textarea):disabled[data-tip] {
+  pointer-events: auto;
 }
 
 .btn,
