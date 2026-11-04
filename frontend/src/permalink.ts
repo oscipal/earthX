@@ -31,6 +31,9 @@ export interface PermalinkView {
   range: ViewRange | null;
   basemap: BasemapId;
   projection: Projection;
+  // Set when a link of the time when Relief was a basemap is opened (UI-04 part 4): it opens with the default basemap and the overlay
+  // Relief. Never written.
+  relief?: true;
 }
 
 // The basemap and projection a view is made with.
@@ -100,6 +103,8 @@ function choiceIn<T extends string>(value: unknown, valid: readonly T[], fallbac
   return typeof value === 'string' && (valid as readonly string[]).includes(value) ? (value as T) : null;
 }
 
+const OLD_RELIEF_BASEMAP = 'relief';
+
 export function parseView(value: unknown): PermalinkView | null {
   if (!isObject(value) || !Array.isArray(value.center) || value.center.length !== 2) return null;
   const [lon, lat] = value.center;
@@ -110,10 +115,12 @@ export function parseView(value: unknown): PermalinkView | null {
     parsed = isObject(range) ? parseViewRange(range) : null;
     if (!parsed) return null;
   }
-  const basemap = choiceIn(value.basemap, BASEMAP_IDS, DEFAULT_BASEMAP);
+  // The server still takes "relief" (a link kept for 30 days), the panel no longer writes it: it opens as the default basemap with the overlay.
+  const wasRelief = value.basemap === OLD_RELIEF_BASEMAP;
+  const basemap = wasRelief ? DEFAULT_BASEMAP : choiceIn(value.basemap, BASEMAP_IDS, DEFAULT_BASEMAP);
   const projection = choiceIn(value.projection, PROJECTIONS, DEFAULT_PROJECTION);
   if (!basemap || !projection) return null;
-  return { center: [lon, lat], zoom: value.zoom, range: parsed, basemap, projection };
+  return { center: [lon, lat], zoom: value.zoom, range: parsed, basemap, projection, ...(wasRelief ? { relief: true as const } : {}) };
 }
 
 // What the server keeps is checked again: it is a file of someone else's, as far as this tab knows.

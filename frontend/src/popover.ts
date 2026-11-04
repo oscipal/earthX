@@ -30,6 +30,22 @@ export function placePopover(
   return { top: above ? anchor.top - GAP - height : anchor.bottom + GAP, left, width, maxHeight, above };
 }
 
+// Where a dropdown goes that stands beside its anchor, for an anchor at the edge of the window (the "Settings" symbol at the bottom of the
+// rail): to the right of it, its bottom edge on the bottom of the anchor, and moved up as far as it must to stay inside the window.
+export function placePopoverBeside(
+  anchor: { top: number; bottom: number; right: number },
+  contentHeight: number,
+  viewport: { width: number; height: number },
+  wanted: number,
+): Placement {
+  const width = Math.min(wanted, viewport.width - 2 * MARGIN);
+  const maxHeight = Math.max(0, viewport.height - 2 * MARGIN);
+  const height = Math.min(contentHeight, maxHeight);
+  const left = Math.min(anchor.right + GAP, viewport.width - MARGIN - width);
+  const top = Math.max(MARGIN, Math.min(anchor.bottom - height, viewport.height - MARGIN - height));
+  return { top, left, width, maxHeight, above: false };
+}
+
 const ITEMS = '[role="option"], [role^="menuitem"], button:not(:disabled), a[href]';
 
 export function popoverItems(root: HTMLElement | null): HTMLElement[] {

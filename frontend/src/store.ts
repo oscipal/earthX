@@ -52,9 +52,10 @@ import { isMosaicPass, mosaicTemplateOf, orderedPass, orderKeyOf, oversizeNote, 
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
+import type { Appearance, Projection, Theme } from './preferences';
+import { loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTipLevel, migrateReliefBasemap, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTipLevel, themeOf } from './preferences';
+import { setTipLevel, type TipLevel } from './tipLevel';
 import { zoomTarget } from './zoomSelection';
-import type { Projection, Theme } from './preferences';
-import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
 import { channelsAtOwnPercent, samePercents, CHANNEL_COUNT, CHANNEL_NAMES, type ChannelRange } from './channels';
@@ -1439,8 +1440,12 @@ export interface AppState {
   flyToBbox: Bbox | null;
   // A camera to jump to as it is (a permalink's view, M4-19e): centre [lon, lat] and zoom.
   flyToView: { center: [number, number]; zoom: number } | null;
-  // --- view preferences (V-1), saved per browser (preferences.ts) ---
+  // --- view preferences (V-1, the "Settings" menu), saved per browser (preferences.ts) ---
+  // What the user chose, and the theme that is drawn: they differ while the choice is "system" (it follows the system's).
+  appearance: Appearance;
   theme: Theme;
+  // The step of the tooltips (`tipLevel.ts`).
+  tipLevel: TipLevel;
   projection: Projection;
   basemap: BasemapId;
   overlays: Overlays;
@@ -1806,14 +1811,24 @@ export interface AppState {
   showCoverageFor: (datasetId: string) => void;
   hideCoverage: () => void;
   setMapViewport: (zoom: number, bbox: Bbox, size: { width: number; height: number }) => void;
-  toggleTheme: () => void;
+  setAppearance: (appearance: Appearance) => void;
+  // The system's colour scheme changed: the theme follows it while the choice is "system".
+  followSystemTheme: (systemDark: boolean) => void;
+  setTipLevel: (level: TipLevel) => void;
   setProjection: (projection: Projection) => void;
   setBasemap: (basemap: BasemapId) => void;
   // The basemap and projection of an opened permalink (UI-02c): they hold for this view and are not written to the
   // browser, so the next visit opens with what the user chose in the menu.
-  showSharedLook: (look: { basemap: BasemapId; projection: Projection }) => void;
+  // `relief`: the link was made when Relief was a basemap; it opens with the overlay on (for this view only, like the rest).
+  showSharedLook: (look: { basemap: BasemapId; projection: Projection; relief?: boolean }) => void;
   setOverlay: (overlay: OverlayId, on: boolean) => void;
 }
+
+// "Relief" is no basemap any more: a browser that kept it as its basemap gets the overlay, before the first read.
+migrateReliefBasemap();
+const firstAppearance = loadAppearance();
+const firstTipLevel = loadTipLevel();
+setTipLevel(firstTipLevel);
 
 export const useAppStore = create<AppState>((set, get) => ({
   toolMode: 'none',
@@ -1823,7 +1838,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastAoiPoint: null,
   flyToBbox: null,
   flyToView: null,
-  theme: loadTheme(),
+  appearance: firstAppearance,
+  theme: themeOf(firstAppearance),
+  tipLevel: firstTipLevel,
   projection: loadProjection(),
   basemap: loadBasemap(),
   overlays: loadOverlays(),
@@ -3237,10 +3254,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
   setError: (error) => set({ error }),
   setNotice: (notice) => set({ notice }),
-  toggleTheme: () => {
-    const theme: Theme = get().theme === 'tech' ? 'normal' : 'tech';
-    saveTheme(theme);
-    set({ theme });
+  setAppearance: (appearance) => {
+    saveAppearance(appearance);
+    set({ appearance, theme: themeOf(appearance) });
+  },
+  followSystemTheme: (systemDark) => {
+    const { appearance, theme } = get();
+    if (appearance !== 'system') return;
+    const next = themeOf(appearance, systemDark);
+    if (next !== theme) set({ theme: next });
+  },
+  setTipLevel: (level) => {
+    saveTipLevel(level);
+    setTipLevel(level);
+    set({ tipLevel: level });
   },
   setProjection: (projection) => {
     saveProjection(projection);
@@ -3250,7 +3277,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     saveBasemap(basemap);
     set({ basemap });
   },
-  showSharedLook: ({ basemap, projection }) => set({ basemap, projection }),
+  showSharedLook: ({ basemap, projection, relief }) =>
+    set((s) => ({ basemap, projection, ...(relief ? { overlays: { ...s.overlays, relief: true } } : {}) })),
   setOverlay: (overlay, on) => {
     const overlays = { ...get().overlays, [overlay]: on };
     saveOverlays(overlays);

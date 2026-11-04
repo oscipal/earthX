@@ -1,6 +1,6 @@
 // The terrain shading (NM4-35, `docs/plans/querschnitt/nm4-35-relief.md` §6): MapLibre draws a `hillshade` layer in the
 // browser from elevation tiles it loads itself, from AWS Terrain Tiles (Terrarium PNG, no key). It serves the overlay
-// "Relief" over every basemap and the basemap "Relief" alone. The tiles do not pass through the platform, like those of
+// "Relief" over every basemap (since UI-04 part 4 it is no basemap any more). The tiles do not pass through the platform, like those of
 // the basemaps (UI-02 §6.7).
 
 import type { StyleSpecification } from 'maplibre-gl';
@@ -27,15 +27,12 @@ export function reliefSource(): Source {
   return { type: 'raster-dem', tiles: [TERRAIN_TILES], encoding: 'terrarium', tileSize: 256, maxzoom: TERRAIN_MAXZOOM, attribution: TERRAIN_ATTRIBUTION };
 }
 
-// Light from the north-west at 45° as maps usually have it, fixed to the map (it cannot turn or tilt here). The
-// overlay is light-handed so that the imagery under it stays readable; the basemap is the shading alone, so firmer.
-const LOOKS = {
-  overlay: { exaggeration: 0.5, shadow: 'rgba(0, 0, 0, 0.45)', highlight: 'rgba(255, 255, 255, 0.25)' },
-  basemap: { exaggeration: 0.6, shadow: 'rgba(0, 0, 0, 0.6)', highlight: 'rgba(255, 255, 255, 0.6)' },
-} as const;
+// Light from the north-west at 45° as maps usually have it, fixed to the map (it cannot turn or tilt here). The shading is light-handed so
+// that the imagery under it stays readable.
+const LOOK = { exaggeration: 0.5, shadow: 'rgba(0, 0, 0, 0.45)', highlight: 'rgba(255, 255, 255, 0.25)' } as const;
 
-export function reliefLayer(id: string, source: string, look: keyof typeof LOOKS): Layer {
-  const { exaggeration, shadow, highlight } = LOOKS[look];
+export function reliefLayer(id: string, source: string): Layer {
+  const { exaggeration, shadow, highlight } = LOOK;
   return {
     id,
     type: 'hillshade',

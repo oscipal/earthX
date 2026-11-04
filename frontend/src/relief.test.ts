@@ -8,11 +8,11 @@ import { describe, expect, it } from 'vitest';
 
 import { RELIEF_OVERLAY_ID, reliefLayer, reliefSource, TERRAIN_ATTRIBUTION, TERRAIN_ATTRIBUTION_URL, TERRAIN_MAXZOOM, TERRAIN_TILES } from './relief';
 
-const styleOf = (look: 'overlay' | 'basemap'): StyleSpecification => ({
+const style: StyleSpecification = {
   version: 8,
   sources: { dem: reliefSource() },
-  layers: [reliefLayer('shade', 'dem', look)],
-});
+  layers: [reliefLayer('shade', 'dem')],
+};
 
 describe('the elevation tiles', () => {
   it('come from AWS Terrain Tiles as Terrarium PNG, over HTTPS and without a key', () => {
@@ -44,12 +44,12 @@ describe('the elevation tiles', () => {
 });
 
 describe('the shading', () => {
-  it.each(['overlay', 'basemap'] as const)('%s: is a style MapLibre accepts', (look) => {
-    expect(validateStyleMin(styleOf(look))).toEqual([]);
+  it('is a style MapLibre accepts', () => {
+    expect(validateStyleMin(style)).toEqual([]);
   });
 
-  it.each(['overlay', 'basemap'] as const)('%s: has light from the north-west at 45° that is fixed to the map', (look) => {
-    expect(reliefLayer('shade', 'dem', look)).toMatchObject({
+  it('has light from the north-west at 45° that is fixed to the map', () => {
+    expect(reliefLayer('shade', 'dem')).toMatchObject({
       type: 'hillshade',
       id: 'shade',
       source: 'dem',
@@ -57,16 +57,14 @@ describe('the shading', () => {
     });
   });
 
-  it('is light-handed as an overlay and firmer as a basemap of its own', () => {
-    const paint = (look: 'overlay' | 'basemap') => reliefLayer('shade', 'dem', look).paint as Record<string, unknown>;
-    expect(paint('overlay')['hillshade-exaggeration']).toBe(0.5);
-    expect(paint('basemap')['hillshade-exaggeration']).toBe(0.6);
-    expect(paint('overlay')['hillshade-shadow-color']).toBe('rgba(0, 0, 0, 0.45)');
-    expect(paint('basemap')['hillshade-shadow-color']).toBe('rgba(0, 0, 0, 0.6)');
+  it('is light-handed, so that the imagery under it stays readable', () => {
+    const paint = reliefLayer('shade', 'dem').paint as Record<string, unknown>;
+    expect(paint['hillshade-exaggeration']).toBe(0.5);
+    expect(paint['hillshade-shadow-color']).toBe('rgba(0, 0, 0, 0.45)');
   });
 
   it('is the same in both themes: it asks for no colour of the theme', () => {
-    expect(JSON.stringify(reliefLayer('shade', 'dem', 'overlay'))).not.toMatch(/--map-bg|var\(/u);
+    expect(JSON.stringify(reliefLayer('shade', 'dem'))).not.toMatch(/--map-bg|var\(/u);
   });
 
   it('names its overlay with the prefix of the overlays', () => {

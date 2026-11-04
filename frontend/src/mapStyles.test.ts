@@ -11,7 +11,6 @@ import TOKENS from './tokens.css?raw';
 import { BASEMAP_IDS, BASEMAPS, ESRI_ATTRIBUTION, OPENFREEMAP_ATTRIBUTION, type BasemapId } from './basemaps';
 import { appLayers, publishedStyle } from './fixtures/publishedStyle';
 import { NO_OVERLAYS } from './overlays';
-import { TERRAIN_ATTRIBUTION } from './relief';
 import {
   applyBasemap,
   applyMapBackground,
@@ -219,7 +218,6 @@ describe('the attribution of each basemap', () => {
     const attributions = attributionsOf({ ...style, sources: Object.fromEntries(basemapSources) }).filter(Boolean);
     if (id === 'satellite') expect(attributions).toEqual([ESRI_ATTRIBUTION]);
     else if (id === 'outlines') expect(attributions).toEqual([OPENFREEMAP_ATTRIBUTION]);
-    else if (id === 'relief') expect(attributions).toEqual([TERRAIN_ATTRIBUTION]);
     // A published style: the wording OpenFreeMap asks for on its vector source; the raster source of its own stays.
     else expect(attributions).toEqual([OPENFREEMAP_ATTRIBUTION, 'a raster source of its own']);
   });

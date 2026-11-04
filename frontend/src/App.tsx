@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
 
 import AppRail from './components/AppRail';
-import BasemapMenu from './components/BasemapMenu';
 import ControlPanel from './components/ControlPanel';
 import DownloadDialog from './components/DownloadDialog';
 import ColormapPicker from './components/ColormapPicker';
-import { MoonIcon, SunIcon, ZoomToSelectionIcon } from './components/icons';
+import { ZoomToSelectionIcon } from './components/icons';
 import Inspector from './components/Inspector';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
@@ -41,7 +40,7 @@ export default function App() {
   // with none of them, it stays disabled and says why (`zoomSelection.ts`).
   const canZoom = useAppStore((s) => zoomBoxes(s).length > 0);
   const theme = useAppStore((s) => s.theme);
-  const toggleTheme = useAppStore((s) => s.toggleTheme);
+  const followSystemTheme = useAppStore((s) => s.followSystemTheme);
   const processingOpen = useProcessingStore((s) => s.open);
   const resumeJobs = useProcessingStore((s) => s.resumeJobs);
 
@@ -49,6 +48,16 @@ export default function App() {
   useEffect(() => {
     void loadDatasets().then(openPermalinkInAddress);
   }, [loadDatasets]);
+
+  // "System" in the settings: the theme follows the system's colour scheme, also while the page is open.
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const query = window.matchMedia('(prefers-color-scheme: light)');
+    const follow = () => followSystemTheme(!query.matches);
+    follow();
+    query.addEventListener('change', follow);
+    return () => query.removeEventListener('change', follow);
+  }, [followSystemTheme]);
 
   // The old place of the floating window of the jobs is of no use any more.
   useEffect(() => {
@@ -95,15 +104,6 @@ export default function App() {
           data-tip-level="advanced" data-tip={canZoom ? 'Zoom the map to fit the AOI, the open image and the layers that are shown' : NOTHING_TO_ZOOM}
         >
           <ZoomToSelectionIcon lead />Zoom to selection
-        </button>
-        <BasemapMenu />
-        <button
-          type="button"
-          className="panel btn"
-          onClick={() => toggleTheme()}
-          data-tip-level="advanced" data-tip={theme === 'tech' ? 'Switch to the light theme' : 'Switch to the dark theme'}
-        >
-          {theme === 'tech' ? <><SunIcon lead />Light</> : <><MoonIcon lead />Dark</>}
         </button>
       </div>
 

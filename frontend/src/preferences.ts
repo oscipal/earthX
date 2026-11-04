@@ -1,11 +1,18 @@
-// Client-side view preferences (V-1, UI-02a): dark/light HUD theme, flat/globe
-// projection and the basemap. All are saved per browser (`localStorage`), never
-// sent to the backend — the tile URLs are unaffected by any of them (D27).
+// Client-side view preferences (V-1, UI-02a, UI-04 part 4): the appearance (light, dark, or the system's), flat/globe
+// projection, the basemap, the overlays and the step of the tooltips — the content of the "Settings" menu. All are saved per
+// browser (`localStorage`), never sent to the backend — the tile URLs are unaffected by any of them (D27). A storage that is
+// locked or throws leaves the default and never breaks the viewer.
 
 import { BASEMAP_IDS, DEFAULT_BASEMAP, type BasemapId } from './basemaps';
 import { NO_OVERLAYS, OVERLAY_IDS, type Overlays } from './overlays';
+import { TIP_LEVELS, type TipLevel } from './tipLevel';
 
+// What is drawn: `tech` is the dark theme, `normal` the light one (the names of `data-theme` in `tokens.css`).
 export type Theme = 'tech' | 'normal';
+// What the user chose in "Settings": the system's choice follows `prefers-color-scheme`.
+export type Appearance = 'light' | 'dark' | 'system';
+export const APPEARANCES: readonly Appearance[] = ['light', 'dark', 'system'];
+export const DEFAULT_APPEARANCE: Appearance = 'dark';
 export type Projection = 'mercator' | 'globe';
 export const DEFAULT_PROJECTION: Projection = 'mercator';
 // The jobs the processing manager lists: those that are neither archived, expired nor deleted, the expired ones,
@@ -17,9 +24,12 @@ const PROJECTION_KEY = 'earthx.projection';
 const BASEMAP_KEY = 'earthx.basemap';
 const OVERLAYS_KEY = 'earthx.overlays';
 const RESULTS_KEY = 'earthx.results';
+const TIP_LEVEL_KEY = 'earthx.tooltips';
 const JOB_FILTER_KEY = 'earthx.jobfilter';
 
-const THEMES: readonly Theme[] = ['tech', 'normal'];
+// What `earthx.theme` holds: the two themes keep the words they had before "System" came (so that a choice made then holds),
+// and `system` is the new one.
+const STORED_APPEARANCE: Record<Appearance, string> = { light: 'normal', dark: 'tech', system: 'system' };
 export const PROJECTIONS: readonly Projection[] = ['mercator', 'globe'];
 const JOB_FILTERS: readonly JobFilter[] = ['active', 'expired', 'deleted', 'all'];
 const COLLAPSED_GROUPS_KEY = 'earthx.jobgroups.collapsed';
@@ -44,12 +54,46 @@ function writeStored(key: string, value: string): void {
   }
 }
 
-export function loadTheme(): Theme {
-  return readStored(THEME_KEY, THEMES, 'tech');
+export function loadAppearance(): Appearance {
+  const stored = readStored(THEME_KEY, Object.values(STORED_APPEARANCE), STORED_APPEARANCE[DEFAULT_APPEARANCE]);
+  return APPEARANCES.find((appearance) => STORED_APPEARANCE[appearance] === stored) ?? DEFAULT_APPEARANCE;
 }
 
-export function saveTheme(theme: Theme): void {
-  writeStored(THEME_KEY, theme);
+export function saveAppearance(appearance: Appearance): void {
+  writeStored(THEME_KEY, STORED_APPEARANCE[appearance]);
+}
+
+// Whether the system asks for a dark page (`prefers-color-scheme`); a browser that cannot tell is taken as dark, the default look.
+export function systemPrefersDark(): boolean {
+  try {
+    return typeof window.matchMedia !== 'function' || !window.matchMedia('(prefers-color-scheme: light)').matches;
+  } catch {
+    return true;
+  }
+}
+
+export const themeOf = (appearance: Appearance, systemDark: boolean = systemPrefersDark()): Theme =>
+  appearance === 'light' || (appearance === 'system' && !systemDark) ? 'normal' : 'tech';
+
+// The step of the tooltips (`tipLevel.ts`): `simple` unless the user chose `advanced`.
+export function loadTipLevel(): TipLevel {
+  return readStored(TIP_LEVEL_KEY, TIP_LEVELS, 'simple');
+}
+
+export function saveTipLevel(level: TipLevel): void {
+  writeStored(TIP_LEVEL_KEY, level);
+}
+
+// "Relief" was a basemap until UI-04 part 4; it is an overlay only. A browser that kept it as its basemap opens with the default basemap and
+// the overlay on, and the entry is rewritten once, so that switching the overlay off later is not undone by the old entry.
+export function migrateReliefBasemap(): void {
+  try {
+    if (window.localStorage.getItem(BASEMAP_KEY) !== 'relief') return;
+    writeStored(BASEMAP_KEY, DEFAULT_BASEMAP);
+    saveOverlays({ ...loadOverlays(), relief: true });
+  } catch {
+    /* storage disabled or locked: the old entry stays and reads as the default basemap */
+  }
 }
 
 export function loadProjection(): Projection {

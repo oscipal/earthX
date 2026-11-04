@@ -10,7 +10,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
-import { focusFirstItem, placePopover, popoverItems, type Placement } from '../popover';
+import { focusFirstItem, placePopover, placePopoverBeside, popoverItems, type Placement } from '../popover';
 
 export default function Popover({
   anchorRef,
@@ -21,6 +21,7 @@ export default function Popover({
   ariaLabel,
   focusOnOpen = false,
   form = false,
+  beside,
   children,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
@@ -35,6 +36,8 @@ export default function Popover({
   // A pop-up with fields in it (DS-02c): Tab and the arrow keys stay with the fields, a dropdown that opens inside it (its own
   // `Popover`, lying over this one) is no click "beside" it, and Esc does not close it.
   form?: boolean;
+  // Stands to the right of its anchor, at its bottom edge, this wide in px, instead of below it as wide as it is (`placePopoverBeside`).
+  beside?: number;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -56,7 +59,8 @@ export default function Popover({
           onClose();
           return;
         }
-        const next = placePopover(rect, content.scrollHeight, { width: window.innerWidth, height: window.innerHeight });
+        const viewport = { width: window.innerWidth, height: window.innerHeight };
+        const next = beside === undefined ? placePopover(rect, content.scrollHeight, viewport) : placePopoverBeside(rect, content.scrollHeight, viewport, beside);
         setPlacement((prev) => (prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       }
     };
@@ -69,7 +73,7 @@ export default function Popover({
     place();
     frame = window.requestAnimationFrame(loop);
     return () => window.cancelAnimationFrame(frame);
-  }, [open, anchorRef, onClose]);
+  }, [open, anchorRef, onClose, beside]);
 
   // Once per opening, as soon as it is placed (a hidden entry takes no focus).
   const focused = useRef(false);

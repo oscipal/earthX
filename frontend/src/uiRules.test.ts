@@ -514,6 +514,23 @@ describe('two steps of tooltips (UI-04 part 3b, Otto, 4.11.2026): data-tip-level
   });
 });
 
+describe('the settings are in one menu (UI-04 part 4, Otto, 3.11.2026)', () => {
+  const code = sources.map(([, text]) => withoutComments(text)).join('\n');
+
+  it('has no button "Basemap" and no button for the theme beside it: nothing of the old places is left', () => {
+    expect(code).not.toMatch(/\bBasemapMenu\b|basemap-btn|\btoggleTheme\b/u);
+    expect(code).not.toMatch(/Switch to the (?:light|dark) theme/u);
+  });
+
+  it('has Relief only as an overlay: no basemap of that name', () => {
+    expect(SOURCES['./basemaps.ts']).not.toMatch(/\brelief\b/iu);
+  });
+
+  it('keeps the symbol of the menu at the bottom of the rail, after the panels', () => {
+    expect(CSS).toMatch(/\.rail-settings \{[^}]*margin-top: auto/u);
+  });
+});
+
 describe('the full text of a cut-off text shows only while it is cut (UI-04 part 4, Otto, 4.11.2026): data-tip-cut', () => {
   const cutTags = (text: string) => openingTags(text).filter(({ attributes }) => /(?:^|\s)data-tip-cut(?:=|\s|$)/u.test(topLevel(attributes)));
   const faults = (text: string) =>

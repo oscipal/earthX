@@ -32,6 +32,7 @@ import {
   ClipboardList,
   Layers,
   MapPin,
+  Monitor,
   Moon,
   Pause,
   Pencil,
@@ -47,10 +48,12 @@ import {
   TriangleAlert,
   Upload,
   X,
+  createLucideIcon,
   type LucideIcon,
 } from 'lucide-react';
 
 import { ICON_SIZES } from './iconSizes';
+import { SETTINGS_ICON_NODE } from './settingsIconNode';
 
 // 16 px is the standard; 14 px stands in the rows of a list; 20 px is the rail at the left (Otto, 4.11.2026). The same numbers are the tokens
 // `--icon-size`, `--icon-size-sm` and `--icon-size-rail` of `tokens.css`; `icons.test.tsx` keeps the two together.
@@ -106,6 +109,7 @@ export const InfoIcon = icon('InfoIcon', Info);
 export const LayersIcon = icon('LayersIcon', Layers);
 export const JobsIcon = icon('JobsIcon', ClipboardList);
 export const MapPinIcon = icon('MapPinIcon', MapPin);
+export const MonitorIcon = icon('MonitorIcon', Monitor);
 export const MoonIcon = icon('MoonIcon', Moon);
 export const PauseIcon = icon('PauseIcon', Pause);
 export const PencilIcon = icon('PencilIcon', Pencil);
@@ -115,6 +119,8 @@ export const PlusIcon = icon('PlusIcon', Plus);
 export const ResultsListIcon = icon('ResultsListIcon', List);
 export const RetryIcon = icon('RetryIcon', RotateCw);
 export const SearchIcon = icon('SearchIcon', Search);
+// "Settings 6 Line" of MingCute, redrawn as strokes (`settingsIconNode.ts`): the one icon that is not Lucide's.
+export const SettingsIcon = icon('SettingsIcon', createLucideIcon('settings-6-line', SETTINGS_ICON_NODE));
 export const SquareIcon = icon('SquareIcon', Square);
 export const SunIcon = icon('SunIcon', Sun);
 export const TrashIcon = icon('TrashIcon', Trash2);

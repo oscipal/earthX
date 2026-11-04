@@ -293,10 +293,7 @@ svg.lucide.icon-lead {
 }
 
 /* --- persistent zoom button (top-right) --- */
-/* The menu of the "Basemap" button (`components/BasemapMenu.tsx`) is as wide as its button. */
-.basemap-btn {
-  min-width: 132px;
-}
+/* The groups of the menu of the "Settings" symbol (`components/SettingsMenu.tsx`). */
 .menu-group {
   display: flex;
   flex-direction: column;
@@ -313,7 +310,7 @@ svg.lucide.icon-lead {
   width: 14px;
   height: 14px;
 }
-.pm-menu-list.basemap-menu button {
+.pm-menu-list.settings-menu button {
   justify-content: flex-start;
   gap: calc(var(--space-1) * 1.5);
 }
@@ -2296,6 +2293,10 @@ textarea:autofill {
   width: 38px;
   height: 38px;
   border-radius: 8px;
+}
+/* "Settings" is the last symbol of the rail and stands at its bottom edge. */
+.rail-settings {
+  margin-top: auto;
 }
 /* The icons of the rail are larger than the rest: 20 px (`--icon-size-rail`, Otto, 4.11.2026). */
 .rail-btn svg.lucide {

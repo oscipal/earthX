@@ -140,12 +140,13 @@ afterEach(() => {
 });
 
 describe('the symbol', () => {
-  it('is the fourth in the rail, named "Results"', () => {
+  it('is the fourth in the rail, before "Settings", named "Search results"', () => {
     expect([...container.querySelectorAll('.app-rail button')].map((b) => b.id)).toEqual([
       'rail-controls',
       'rail-layers',
       'rail-jobs',
       'rail-results',
+      '',
     ]);
   });
 

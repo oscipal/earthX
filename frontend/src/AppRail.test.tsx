@@ -65,16 +65,17 @@ const key = (target: Element, name: string) => {
   act(() => target.dispatchEvent(event));
   return event;
 };
+const settings = () => rail().querySelector<HTMLButtonElement>('button.rail-settings')!;
 const stops = () => [...rail().querySelectorAll<HTMLElement>('button')].map((b) => b.tabIndex);
 
 describe('the symbols', () => {
-  it('are four, in a navigation named "Main", each with its name for a screen reader', () => {
+  it('are five, in a navigation named "Main", each with its name for a screen reader: four panels and "Settings" at the bottom', () => {
     expect(rail()).not.toBeNull();
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Jobs', 'Search results, No results yet: run a search first']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Jobs', 'Search results, No results yet: run a search first', 'Settings']);
   });
 
   it('carry their tooltip as text that shows on hover and on focus, and no second one as `title`', () => {
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Jobs', 'No results yet: run a search first']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Jobs', 'No results yet: run a search first', 'Settings']);
     expect(rail().querySelector('[title]')).toBeNull();
   });
 
@@ -84,7 +85,7 @@ describe('the symbols', () => {
 
   it('draw their icons 20 px large, the size of the token --icon-size-rail (Otto, 4.11.2026)', () => {
     const icons = [...rail().querySelectorAll('svg')];
-    expect(icons).toHaveLength(4);
+    expect(icons).toHaveLength(5);
     for (const svg of icons) {
       expect(svg.getAttribute('width')).toBe('20');
       expect(svg.getAttribute('height')).toBe('20');
@@ -177,23 +178,33 @@ describe('the panels', () => {
     expect(useAppStore.getState().dock).toBe('controls');
   });
 
-  it('leave the buttons "Zoom to selection", "Basemap" and "Light" at the top right', () => {
+  it('leave only the button "Zoom to selection" at the top right: Basemap and Light/Dark are in "Settings" now (UI-04 part 4)', () => {
     const top = container.querySelector('.top-right')!;
-    expect([...top.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Zoom to selection', 'Basemap', 'Light']);
+    expect([...top.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Zoom to selection']);
+  });
+
+  it('put "Settings" last, at the bottom edge of the rail, and it opens a menu, not a panel', () => {
+    const settings = rail().querySelector<HTMLButtonElement>('button.rail-settings')!;
+    expect([...rail().querySelectorAll('button')].at(-1)).toBe(settings);
+    expect(settings.getAttribute('aria-haspopup')).toBe('menu');
+    expect(settings.hasAttribute('aria-controls')).toBe(false);
+    click(settings);
+    expect(useAppStore.getState().dock).toBe('controls');
+    expect(document.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe('Settings');
   });
 });
 
 describe('the keyboard', () => {
   it('gives the Tab key one stop in the rail: the open panel\'s symbol', () => {
-    expect(stops()).toEqual([0, -1, -1, -1]);
+    expect(stops()).toEqual([0, -1, -1, -1, -1]);
     click(symbol('jobs'));
-    expect(stops()).toEqual([-1, -1, 0, -1]);
+    expect(stops()).toEqual([-1, -1, 0, -1, -1]);
   });
 
   it('keeps the stop on the last symbol focused where no panel is open', () => {
     click(symbol('controls'));
     act(() => symbol('layers').focus());
-    expect(stops()).toEqual([-1, 0, -1, -1]);
+    expect(stops()).toEqual([-1, 0, -1, -1, -1]);
   });
 
   it('moves between the symbols with the arrow keys and wraps at the ends', () => {
@@ -203,13 +214,15 @@ describe('the keyboard', () => {
     key(symbol('layers'), 'ArrowDown');
     key(symbol('jobs'), 'ArrowDown');
     key(symbol('results'), 'ArrowDown');
+    expect(document.activeElement).toBe(settings());
+    key(settings(), 'ArrowDown');
     expect(document.activeElement).toBe(symbol('controls'));
     key(symbol('controls'), 'ArrowUp');
-    expect(document.activeElement).toBe(symbol('results'));
-    key(symbol('results'), 'Home');
+    expect(document.activeElement).toBe(settings());
+    key(settings(), 'Home');
     expect(document.activeElement).toBe(symbol('controls'));
     key(symbol('controls'), 'End');
-    expect(document.activeElement).toBe(symbol('results'));
+    expect(document.activeElement).toBe(settings());
   });
 
   it('does not take other keys', () => {

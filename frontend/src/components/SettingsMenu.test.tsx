@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 //
-// UI-02a: the "Basemap" button and its menu. Every basemap and every projection can be chosen, the choice reaches
-// the store and the browser's storage, and each entry says where its tiles come from.
+// UI-02a, UI-04 part 4: the symbol "Settings" at the bottom of the rail and its menu. Every basemap, overlay, projection, appearance and step of
+// the tooltips can be chosen, the choice reaches the store and the browser's storage (and works when the storage is locked), and each entry says
+// what it is or where its tiles come from.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -10,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BASEMAP_IDS, BASEMAPS } from '../basemaps';
 import { NO_OVERLAYS, OVERLAYS } from '../overlays';
 import { useAppStore } from '../store';
-import BasemapMenu from './BasemapMenu';
+import { currentTipLevel, setTipLevel } from '../tipLevel';
+import SettingsMenu from './SettingsMenu';
 import { tipOf } from '../fixtures/tips';
 
 declare global {
@@ -29,8 +31,9 @@ beforeEach(() => {
   container.className = 'app';
   document.body.append(container);
   root = createRoot(container);
-  useAppStore.setState({ basemap: 'satellite', projection: 'mercator', overlays: { ...NO_OVERLAYS } });
-  act(() => root.render(<BasemapMenu />));
+  useAppStore.setState({ basemap: 'satellite', projection: 'mercator', overlays: { ...NO_OVERLAYS }, appearance: 'dark', theme: 'tech', tipLevel: 'simple' });
+  setTipLevel('simple');
+  act(() => root.render(<SettingsMenu buttonRef={() => undefined} tabIndex={0} onFocus={() => undefined} />));
 });
 
 afterEach(() => {
@@ -38,7 +41,7 @@ afterEach(() => {
   container.remove();
 });
 
-const trigger = (): HTMLButtonElement => container.querySelector('button.basemap-btn') as HTMLButtonElement;
+const trigger = (): HTMLButtonElement => container.querySelector('button.rail-settings') as HTMLButtonElement;
 const menu = (): HTMLElement | null => document.querySelector('[role="menu"]');
 const entries = (): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
 const entry = (name: string): HTMLButtonElement => {
@@ -47,7 +50,6 @@ const entry = (name: string): HTMLButtonElement => {
   return found;
 };
 const checkboxes = (): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]')];
-// The overlay and the basemap "Relief" share a name: `entry` finds the basemap, this the overlay.
 const overlayEntry = (name: string): HTMLButtonElement => {
   const found = checkboxes().find((e) => e.textContent === name);
   if (!found) throw new Error(`no overlay ${name}`);
@@ -57,42 +59,55 @@ const open = () => act(() => trigger().click());
 const choose = (name: string) => act(() => entry(name).click());
 const chooseOverlay = (name: string) => act(() => overlayEntry(name).click());
 
-describe('the Basemap button', () => {
-  it('is called "Basemap" and opens nothing before it is clicked', () => {
-    expect(trigger().textContent).toBe('Basemap');
+describe('the Settings symbol', () => {
+  it('is named "Settings", with the icon and nothing else in it, and opens nothing before it is clicked', () => {
+    expect(trigger().getAttribute('aria-label')).toBe('Settings');
+    expect(trigger().textContent).toBe('');
+    expect(trigger().querySelector('svg')).not.toBeNull();
+    expect(trigger().getAttribute('aria-haspopup')).toBe('menu');
     expect(trigger().getAttribute('aria-expanded')).toBe('false');
     expect(menu()).toBeNull();
   });
 
-  it('opens a menu with a group of basemaps, one of overlays and one of projections', () => {
+  it('says "Settings" in its tooltip, to the right of the rail, in the simple step too (the name of an icon that is not clear)', () => {
+    expect(tipOf(trigger())).toBe('Settings');
+    expect(trigger().getAttribute('data-tip-side')).toBe('right');
+    expect(trigger().getAttribute('data-tip-level')).toBeNull();
+  });
+
+  it('opens a menu named "Settings" with the groups Basemap, Overlays, Projection, Appearance and Tooltips', () => {
     open();
     expect(trigger().getAttribute('aria-expanded')).toBe('true');
+    expect(menu()?.getAttribute('aria-label')).toBe('Settings');
     const groups = [...document.querySelectorAll('[role="menu"] [role="group"]')];
-    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Basemap', 'Overlays', 'Projection']);
-    expect(entries().map((e) => e.textContent)).toEqual(['Satellite', 'Streets', 'Grey', 'Outlines', 'Relief', 'Mercator', 'Globe']);
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Basemap', 'Overlays', 'Projection', 'Appearance', 'Tooltips']);
+    expect(entries().map((e) => e.textContent)).toEqual(['Satellite', 'Streets', 'Grey', 'Outlines', 'Mercator', 'Globe', 'Light', 'Dark', 'System', 'Simple', 'Advanced']);
     expect(checkboxes().map((e) => e.textContent)).toEqual(['Labels', 'Graticule', 'Relief']);
   });
 
-  it('closes on the second click on the button', () => {
+  it('has no "Relief" among the basemaps: Relief is an overlay only (Otto, 3.11.2026)', () => {
+    open();
+    expect(entries().map((e) => e.textContent)).not.toContain('Relief');
+    expect(checkboxes().map((e) => e.textContent)).toContain('Relief');
+  });
+
+  it('closes on the second click on the symbol', () => {
     open();
     open();
     expect(menu()).toBeNull();
   });
 
-  it('has no theme entry (Light/Dark is a button of its own)', () => {
+  it('takes the place of the buttons "Basemap" and "Light/Dark": the menu is the one place for them', () => {
     open();
-    expect(menu()?.textContent ?? '').not.toMatch(/Light|Dark/u);
-  });
-
-  it('is called "Basemap, overlays and projection" in its tooltip', () => {
-    expect(tipOf(trigger())).toBe('Basemap, overlays and projection');
+    expect(document.querySelector('button.basemap-btn')).toBeNull();
+    expect(menu()?.textContent).not.toMatch(/Basemap, overlays and projection/u);
   });
 });
 
 describe('choosing a basemap', () => {
-  it('marks the chosen one, satellite at the start', () => {
+  it('marks the chosen ones of each group, satellite, mercator, dark and simple at the start', () => {
     open();
-    expect(entries().filter((e) => e.getAttribute('aria-checked') === 'true').map((e) => e.textContent)).toEqual(['Satellite', 'Mercator']);
+    expect(entries().filter((e) => e.getAttribute('aria-checked') === 'true').map((e) => e.textContent)).toEqual(['Satellite', 'Mercator', 'Dark', 'Simple']);
   });
 
   it.each(BASEMAP_IDS)('%s: the choice reaches the store, the storage and the mark', (id) => {
@@ -103,7 +118,7 @@ describe('choosing a basemap', () => {
     expect(useAppStore.getState().basemap).toBe(id);
     expect(window.localStorage.getItem('earthx.basemap')).toBe(id);
     expect(entry(BASEMAPS[id].name).getAttribute('aria-checked')).toBe('true');
-    expect(entries().filter((e) => e.getAttribute('aria-checked') === 'true')).toHaveLength(2);
+    expect(entries().filter((e) => e.getAttribute('aria-checked') === 'true')).toHaveLength(4);
   });
 
   it.each(BASEMAP_IDS)('%s: the tooltip says where its tiles come from', (id) => {
@@ -123,7 +138,7 @@ describe('choosing a basemap', () => {
     choose('Grey');
     choose('Grey');
     expect(useAppStore.getState().basemap).toBe('grey');
-    expect(entries().filter((e) => e.getAttribute('aria-checked') === 'true')).toHaveLength(2);
+    expect(entries().filter((e) => e.getAttribute('aria-checked') === 'true')).toHaveLength(4);
   });
 });
 
@@ -171,32 +186,6 @@ describe('switching an overlay on and off', () => {
       expect(overlayEntry('Relief').getAttribute('aria-checked')).toBe('true');
     }
   });
-
-  it('keeps the overlay "Relief" and the basemap "Relief" apart: each click moves only its own', () => {
-    open();
-    choose('Relief');
-    expect(useAppStore.getState().basemap).toBe('relief');
-    expect(useAppStore.getState().overlays.relief).toBe(false);
-    chooseOverlay('Relief');
-    expect(useAppStore.getState().overlays.relief).toBe(true);
-    expect(useAppStore.getState().basemap).toBe('relief');
-    expect(entry('Relief').getAttribute('aria-checked')).toBe('true');
-    expect(overlayEntry('Relief').getAttribute('aria-checked')).toBe('true');
-  });
-
-  it('works when the browser keeps nothing (storage blocked)', () => {
-    const setItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = () => {
-      throw new Error('blocked');
-    };
-    try {
-      open();
-      chooseOverlay('Labels');
-    } finally {
-      Storage.prototype.setItem = setItem;
-    }
-    expect(useAppStore.getState().overlays.labels).toBe(true);
-  });
 });
 
 describe('choosing a projection', () => {
@@ -217,8 +206,69 @@ describe('choosing a projection', () => {
     choose('Globe');
     expect(useAppStore.getState().basemap).toBe('satellite');
   });
+});
 
-  it('works when the browser keeps nothing (storage blocked)', () => {
+describe('choosing the appearance (Otto, 3.11.2026)', () => {
+  it.each([
+    ['Light', 'light', 'normal', 'normal'],
+    ['Dark', 'dark', 'tech', 'tech'],
+    ['System', 'system', 'system', 'tech'],
+  ] as const)('%s: reaches the store (the theme that is drawn as well) and the storage under earthx.theme', (name, appearance, stored, theme) => {
+    open();
+    useAppStore.setState({ appearance: name === 'Dark' ? 'light' : 'dark', theme: name === 'Dark' ? 'normal' : 'tech' });
+    choose(name);
+    expect(useAppStore.getState()).toMatchObject({ appearance, theme });
+    expect(window.localStorage.getItem('earthx.theme')).toBe(stored);
+    expect(entry(name).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('offers each with its own icon: sun, moon and monitor', () => {
+    open();
+    const iconOf = (name: string) => [...entry(name).querySelectorAll('svg')].map((svg) => svg.getAttribute('class') ?? '').find((c) => !c.includes('lucide-check')) ?? '';
+    expect(iconOf('Light')).toContain('lucide-sun');
+    expect(iconOf('Dark')).toContain('lucide-moon');
+    expect(iconOf('System')).toContain('lucide-monitor');
+  });
+
+  it('"System" follows the colour scheme of the system while the page is open, and the others do not', () => {
+    open();
+    choose('System');
+    act(() => useAppStore.getState().followSystemTheme(false));
+    expect(useAppStore.getState().theme).toBe('normal');
+    act(() => useAppStore.getState().followSystemTheme(true));
+    expect(useAppStore.getState().theme).toBe('tech');
+    choose('Dark');
+    act(() => useAppStore.getState().followSystemTheme(false));
+    expect(useAppStore.getState().theme).toBe('tech');
+    choose('Light');
+    act(() => useAppStore.getState().followSystemTheme(true));
+    expect(useAppStore.getState().theme).toBe('normal');
+  });
+});
+
+describe('choosing the tooltips (Otto, 4.11.2026)', () => {
+  it('"Advanced" reaches the store, the step the tooltips are in and the storage under earthx.tooltips; "Simple" takes it back', () => {
+    open();
+    choose('Advanced');
+    expect(useAppStore.getState().tipLevel).toBe('advanced');
+    expect(currentTipLevel()).toBe('advanced');
+    expect(window.localStorage.getItem('earthx.tooltips')).toBe('advanced');
+    expect(entry('Advanced').getAttribute('aria-checked')).toBe('true');
+    choose('Simple');
+    expect(useAppStore.getState().tipLevel).toBe('simple');
+    expect(currentTipLevel()).toBe('simple');
+    expect(window.localStorage.getItem('earthx.tooltips')).toBe('simple');
+  });
+
+  it('says in the tooltip of each what it does', () => {
+    open();
+    expect(tipOf(entry('Simple'))).toMatch(/where they are needed/u);
+    expect(tipOf(entry('Advanced'))).toBe('A tooltip on every control');
+  });
+});
+
+describe('a browser that keeps nothing (storage blocked)', () => {
+  it('still takes every choice for this visit', () => {
     const setItem = Storage.prototype.setItem;
     Storage.prototype.setItem = () => {
       throw new Error('blocked');
@@ -227,11 +277,15 @@ describe('choosing a projection', () => {
       open();
       choose('Globe');
       choose('Outlines');
+      choose('Light');
+      choose('Advanced');
+      chooseOverlay('Labels');
     } finally {
       Storage.prototype.setItem = setItem;
     }
-    expect(useAppStore.getState().projection).toBe('globe');
-    expect(useAppStore.getState().basemap).toBe('outlines');
+    expect(useAppStore.getState()).toMatchObject({ projection: 'globe', basemap: 'outlines', appearance: 'light', theme: 'normal', tipLevel: 'advanced' });
+    expect(useAppStore.getState().overlays.labels).toBe(true);
+    expect(currentTipLevel()).toBe('advanced');
   });
 });
 
@@ -242,9 +296,9 @@ describe('the keyboard and the mouse', () => {
     expect(document.activeElement?.textContent).toBe('Grey');
   });
 
-  it('moves between the entries with the arrow keys, across all three groups', () => {
+  it('moves between the entries with the arrow keys, across the groups', () => {
     open();
-    act(() => entry('Relief').focus());
+    act(() => entry('Outlines').focus());
     const down = () => act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
     down();
     expect(document.activeElement?.textContent).toBe('Labels');

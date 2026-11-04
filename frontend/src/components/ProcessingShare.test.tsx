@@ -308,7 +308,6 @@ describe('opening a link, basemap and projection', () => {
     ['grey', 'mercator'],
     ['outlines', 'globe'],
     ['satellite', 'globe'],
-    ['relief', 'mercator'],
   ] as const)('shows %s and %s for the opened view', async (basemap, projection) => {
     linkWith({ basemap, projection });
     await open();
@@ -328,17 +327,25 @@ describe('opening a link, basemap and projection', () => {
     expect(localStorage.getItem('earthx.basemap')).toBe('grey');
   });
 
-  it('opens the basemap "Relief" of a link and leaves the relief overlay and the kept basemap as the viewer had them (NM4-35)', async () => {
+  it('opens a link of the time when Relief was a basemap with the default basemap and the overlay Relief, for this view only (UI-04 part 4)', async () => {
     act(() => {
       useAppStore.getState().setBasemap('grey');
       useAppStore.getState().setOverlay('relief', false);
       useAppStore.getState().setOverlay('graticule', true);
     });
-    linkWith({ basemap: 'relief', projection: 'mercator' });
+    linkWith({ basemap: 'relief', projection: 'globe' });
     await open();
-    expect(useAppStore.getState()).toMatchObject({ basemap: 'relief', overlays: { relief: false, graticule: true, labels: false } });
+    expect(useAppStore.getState()).toMatchObject({ basemap: 'satellite', projection: 'globe', overlays: { relief: true, graticule: true, labels: false }, error: null });
+    // Nothing is written: the next visit opens with what the viewer chose.
     expect(localStorage.getItem('earthx.basemap')).toBe('grey');
     expect(JSON.parse(localStorage.getItem('earthx.overlays') ?? '{}')).toMatchObject({ relief: false, graticule: true });
+  });
+
+  it('opens a link of any other basemap without touching the overlays', async () => {
+    act(() => useAppStore.getState().setOverlay('relief', false));
+    linkWith({ basemap: 'grey', projection: 'mercator' });
+    await open();
+    expect(useAppStore.getState()).toMatchObject({ basemap: 'grey', overlays: { relief: false } });
   });
 
   it('writes nothing for a user who never chose, and a choice in the menu afterwards is kept as always', async () => {
@@ -440,13 +447,12 @@ describe('Share', () => {
 
   it('keeps no overlay in a link, the relief one neither: only the basemap and the projection are in the view', async () => {
     act(() => {
-      useAppStore.getState().showSharedLook({ basemap: 'relief', projection: 'globe' });
-      useAppStore.getState().setOverlay('relief', true);
+      useAppStore.getState().showSharedLook({ basemap: 'outlines', projection: 'globe', relief: true });
       useAppStore.getState().setOverlay('labels', true);
     });
     await click('Share');
     const view = JSON.parse(fetchMock.mock.calls[0][1].body).view;
-    expect(view).toMatchObject({ basemap: 'relief', projection: 'globe' });
+    expect(view).toMatchObject({ basemap: 'outlines', projection: 'globe' });
     expect(Object.keys(view).sort()).toEqual(['basemap', 'center', 'projection', 'range', 'zoom']);
     expect(JSON.stringify(view)).not.toMatch(/overlay|labels|graticule/u);
   });
