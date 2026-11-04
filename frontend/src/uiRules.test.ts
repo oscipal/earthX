@@ -195,6 +195,43 @@ describe('numbers and dates (NM4-21, UI-04 part 6): one way to show them', () =>
   });
 });
 
+describe('less text (NM4-22, UI-04 part 6): an explanation stands behind the (i), a reason in the tooltip of the locked button', () => {
+  // The explanations that were paragraphs: as the text between two tags they would be back.
+  const MOVED = [
+    'An estimate, not a promise.',
+    'Jobs run 2 at a time per source',
+    'Choose a dataset to search.',
+    'Choose a tool to define an AOI, or enter a scene name above.',
+    'The scenes are merged into one mosaic first',
+    'One job covers the scenes of one pass',
+    'Where scenes overlap, the preview may show another scene',
+    'A job on the platform merges the whole scenes of one pass',
+  ];
+  const inTags = (code: string, phrase: string) => new RegExp(`>\\s*${phrase.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}`, 'u').test(code);
+  // A hint or an error that is one long static sentence is an explanation; a state that asks for an action may stay.
+  const LONG_HINT = /<(p|span) className="(?:hint|error)[^"]*"[^>]*>\s*([^<>{}]{60,}?)\s*<\/\1>/gu;
+  const STATES = new Set([
+    'No layers yet — select an image and “Add to layers”.',
+    'No original file of this selection could be linked directly from the source.',
+    'The colormaps could not be loaded. Choose from the few of the field, or try again later.',
+  ]);
+  const longHints = (code: string) => [...code.matchAll(LONG_HINT)].map((m) => m[2].replace(/\s+/gu, ' ').trim()).filter((text) => !STATES.has(text));
+
+  it('shows none of the moved explanations as text between tags', () => {
+    expect(where((code) => MOVED.some((phrase) => inTags(code, phrase)))).toEqual([]);
+    expect(inTags('<p className="hint">An estimate, not a promise.</p>', MOVED[0])).toBe(true);
+    expect(inTags('const ESTIMATE_NOTE = \'An estimate, not a promise.\';', MOVED[0])).toBe(false);
+    expect(inTags('<Tip text="An estimate, not a promise." />', MOVED[0])).toBe(false);
+  });
+
+  it('has no hint or error of one long static sentence beyond the two listed states', () => {
+    expect(sources.flatMap(([path, text]) => longHints(withoutComments(text)).map((hint) => `${path}: ${hint}`))).toEqual([]);
+    expect(longHints('<p className="hint">Where scenes overlap, the preview may show another scene than the result.</p>')).toHaveLength(1);
+    expect(longHints('<p className="hint">No place found.</p>')).toEqual([]);
+    expect(longHints('<p className="hint warn">Left out (the AOI misses them): {skipped.join(\', \')}</p>')).toEqual([]);
+  });
+});
+
 // UI-04 part 3a: the tooltip, the shapes of a button, one dimming and one focus ring.
 // The opening tags of the elements (`<button …>`) of a source, with their name: the attributes are what a rule looks at.
 export function openingTags(text: string): { tag: string; attributes: string }[] {

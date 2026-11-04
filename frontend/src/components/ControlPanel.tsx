@@ -662,9 +662,7 @@ export default function ControlPanel() {
         </button>
 
         {count > 0 && <p className="result-count">{counted(count, 'scene')} found</p>}
-        {selectedCount === 0 && <p className="hint">Choose a dataset to search.</p>}
         {filtersWrong && !hasSceneName && <p className="error">Correct the filters in Advanced search.</p>}
-        {!aoi && !hasSceneName && <p className="hint">Choose a tool to define an AOI, or enter a scene name above.</p>}
       </div>
     </div>
   );

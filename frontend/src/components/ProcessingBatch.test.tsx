@@ -17,7 +17,7 @@ import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
-import { tipOf } from '../fixtures/tips';
+import { tipOf, tipsOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -358,7 +358,8 @@ describe('reviewing a batch', () => {
     await review();
     expect(text()).toContain('3 jobs · about 3 MP, 12 MB, 3 units in total');
     expect(text()).toContain('about 11 s of work');
-    expect(text()).toContain('Jobs run 2 at a time per source; the rest wait.');
+    expect(tipsOf(container)).toContain('Jobs run 2 at a time per source; the rest wait.');
+    expect(text()).not.toContain('Jobs run 2 at a time');
     expect(button('Start 3 jobs').disabled).toBe(false);
   });
 

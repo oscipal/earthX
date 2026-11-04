@@ -709,7 +709,9 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     setUp([]);
     useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } });
     act(() => root.render(<ControlPanel />));
-    expect(container.textContent).toContain('Choose a dataset to search.');
+    // The reason stands in the tooltip of the locked button, not in a paragraph below it (NM4-22).
+    expect(tipOf(searchButton())).toBe('Choose a dataset to search');
+    expect(container.textContent).not.toContain('Choose a dataset to search');
     expect(searchButton().disabled).toBe(true);
   });
 

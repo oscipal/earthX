@@ -17,6 +17,7 @@ import { bandNamesOf } from '../processingBands';
 import { bandSources, buildMosaicOrder } from '../processingOrder';
 import { orderStands, useProcessingStore } from '../processingStore';
 import { JobRow } from './JobRow';
+import Tip from './Tip';
 
 // "Merged per pass (job)" in the download dialog's choice for original files
 // (M4-12b, Zusatz 1a): one job per pass of two or more scenes, the whole scenes
@@ -26,6 +27,9 @@ import { JobRow } from './JobRow';
 // stays in the panel's list ("Jobs") when the dialog is closed.
 
 export type Started = { state: 'starting' } | { state: 'placed'; jobID: string } | { state: 'refused'; message: string };
+
+const MOSAIC_NOTE =
+  'A job on the platform merges the whole scenes of one pass into one COG. Scenes in another UTM zone are resampled (nearest neighbour) to the zone most scenes lie in.';
 
 export const TOO_MANY_SCENES = `A job takes at most ${MAX_JOB_SCENES} scenes; select fewer scenes of this pass.`;
 
@@ -93,12 +97,6 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
 
   return (
     <section className="dialog-mosaics" aria-label="Mosaic jobs">
-      {hasJobs && (
-        <p className="hint">
-          A job on the platform merges the whole scenes of one pass into one COG. Scenes in another UTM zone are
-          resampled (nearest neighbour) to the zone most scenes lie in.
-        </p>
-      )}
       {attribution && <p className="dialog-attribution">{attribution}</p>}
       {hasJobs && why && <p className="hint">{why}</p>}
       <ul>
@@ -147,6 +145,7 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
               >
                 {run?.state === 'starting' ? 'Starting…' : 'Start job'}
               </button>
+              <Tip text={MOSAIC_NOTE} />
               {tooMany && <p className="hint">{TOO_MANY_SCENES}</p>}
               {run?.state === 'refused' && (
                 <p className="error" role="alert">

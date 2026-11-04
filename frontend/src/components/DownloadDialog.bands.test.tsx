@@ -330,7 +330,7 @@ describe('the form is asked only for bands of different resolutions', () => {
     });
     vi.useRealTimers();
     await flush();
-    expect(container.textContent).toContain('About 2.0 MB · about 5 s');
+    expect(container.textContent).toContain('About 2 MB · about 5 s');
     expect(container.querySelector('.dialog-originals')).toBeNull();
     await click(button('Download'));
     const recipe = (calls.find((c) => c.url.endsWith('/execution'))!.body as { inputs: { recipe: { output: object } } }).inputs.recipe;
@@ -426,7 +426,7 @@ describe('whole scenes', () => {
     });
     vi.useRealTimers();
     await flush();
-    expect(container.textContent).toContain('About 2.0 MB · about 5 s');
+    expect(container.textContent).toContain('About 2 MB · about 5 s');
     expect(button('Download')!.disabled).toBe(false);
     await click(button('Download'));
     const placed = calls.filter((c) => c.url.endsWith('/execution'));
