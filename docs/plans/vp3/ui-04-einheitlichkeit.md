@@ -459,3 +459,8 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 2. **„Hide coverage“ bei mehreren Datensätzen**: (1) der Knopf „Hide coverage“ neben „Coverage“ bleibt, die Wahl enthält nur Datensätze — **Empfehlung**; (2) auch dieser Knopf entfällt, „Coverage“ schaltet selbst aus (ein Klick bei eingeschalteter Karte), ein anderer Datensatz erst nach dem Ausschalten.
 
 **Prüfungen:** Frontend `zoomSelection.test.ts`, `geoUtils.test.ts` (`unionBboxShortest`), `store.coverage.test.ts`, `store.test.ts`, `api.test.ts`, `SettingsMenu.test.tsx`, `AppRail.test.tsx`, `AppTopBar.test.tsx`, `preferences.test.ts`, `permalink.test.ts`, `ProcessingShare.test.tsx`, `tipLevel.test.ts`, `TipLayer.test.tsx`, `ControlPanel.test.tsx`, `icons.test.tsx`, `uiRules.test.ts`; Browser `e2e/settings-menu.cjs` (neu; Hell/Dunkel, 1280 und 360 px), `e2e/no-aoi-in-url.cjs` und `e2e/map-gl6.cjs` nachgezogen. Die Gegenprobe der neuen Tests gegen den Stand von `main` und die Ergebnisse aller Läufe stehen im Log ([#291](https://github.com/oscipal/earthX/pull/291)). **Bekannt, nicht aus diesem PR:** `e2e/range-layout.cjs` scheitert bei sehr schmalen Fenstern (Feld „-0.123456“ abgeschnitten), auch auf `main`; das gehört zu Teil 6.
+
+**Antworten Otto (04.11.2026, zu [#291](https://github.com/oscipal/earthX/pull/291)):**
+1. `POST /coverage/{id}` bleibt im Backend (Option 1).
+2. Der Knopf „Hide coverage“ neben „Coverage“ bleibt (Option 1).
+3. Das Menü scrollt bei 360 px in sich: in Ordnung.
