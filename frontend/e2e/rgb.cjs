@@ -108,7 +108,7 @@ async function checkFit(page, root, what, problems) {
   for (let i = 0; i < layout.leaves.length; i++) {
     for (let j = i + 1; j < layout.leaves.length; j++) if (overlap(layout.leaves[i], layout.leaves[j])) problems.push(`${what}: ${layout.leaves[i].what} overlaps ${layout.leaves[j].what}`);
     const leaf = layout.leaves[i];
-    if (leaf.x < layout.panel.x - 0.5 || leaf.x + leaf.width > layout.panel.x + layout.panel.width + 0.5) problems.push(`${what}: ${leaf.what} leaves its box`);
+    if (leaf.x < layout.panel.x - 0.5 || leaf.x + leaf.width > layout.panel.x + layout.panel.width + 0.5) problems.push(`${what}: ${leaf.what} leaves its box (leaf ${Math.round(leaf.x)}–${Math.round(leaf.x + leaf.width)}, box ${Math.round(layout.panel.x)}–${Math.round(layout.panel.x + layout.panel.width)})`);
   }
   if (layout.scrolls) problems.push(`${what}: scrolls sideways`);
 }

@@ -44,17 +44,23 @@ describe('the message of the status bar in a narrow window', () => {
 describe('the fields of a range in a narrow window', () => {
   const MINIMUM = 'minmax(var(--number-field-width), 1fr)';
 
-  it('keep room for "-0.123456": the fields have a minimum and the switch beside them gives way', () => {
-    const fields = css.match(/\.inspector \.vc-scale-fields \{([^}]*)\}/u)?.[1] ?? '';
+  it('keep room for "-0.123456" in the processing panel: the fields have a minimum and the switch beside them gives way', () => {
+    const fields = css.match(/\.processing-panel \.vc-scale-fields:not\(\.vc-channels\) \{([^}]*)\}/u)?.[1] ?? '';
     expect(fields).toContain(`grid-template-columns: ${MINIMUM} ${MINIMUM} minmax(0, auto)`);
-    const channels = css.match(/\.inspector \.vc-channels \{([^}]*)\}/u)?.[1] ?? '';
-    expect(channels).toContain(`grid-template-columns: auto ${MINIMUM} ${MINIMUM} minmax(0, auto)`);
   });
 
-  it('do not give the room back to the content of the switch (the old rule, which cut the number)', () => {
-    const OLD = /\.vc-scale-fields \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\) auto/u;
+  it('leave the settings bar and the rows of a colour picture as they were: their column has no room for the minimum', () => {
+    const bar = css.match(/\.inspector \.vc-scale-fields \{([^}]*)\}/u)?.[1] ?? '';
+    expect(bar).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto');
+    expect(bar).not.toContain('--number-field-width');
+    const channels = css.match(/\.inspector \.vc-channels \{([^}]*)\}/u)?.[1] ?? '';
+    expect(channels).toContain('grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto');
+  });
+
+  it('do not give the room back to the content of the switch in the processing panel (the old rule, which cut the number)', () => {
+    const OLD = /\.processing-panel \.vc-scale-fields:not\(\.vc-channels\) \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\) auto/u;
     expect(css).not.toMatch(OLD);
-    expect(OLD.test('.inspector .vc-scale-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }')).toBe(true);
+    expect(OLD.test('.processing-panel .vc-scale-fields:not(.vc-channels) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }')).toBe(true);
   });
 });
 
