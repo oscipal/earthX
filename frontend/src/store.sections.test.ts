@@ -828,7 +828,9 @@ describe('coverage of a chosen dataset', () => {
     expect(useAppStore.getState().coverageDatasetId).toBeNull();
   });
 
-  it('asks the coverage route for that dataset', async () => {
+  it('asks the coverage route for that dataset, over the extent of the map (no AOI is needed or sent)', async () => {
+    // Since UI-04 part 4 the question waits for the map to tell what is in view, whatever AOI there is.
+    useAppStore.setState({ aoi: null, mapZoom: 3, viewportBbox: [-20, 20, 40, 60], viewportSize: { width: 1280, height: 800 } });
     useAppStore.getState().showCoverageFor('dem');
     await new Promise((resolve) => setTimeout(resolve, 0));
     const [url] = vi.mocked(fetch).mock.calls[0];
