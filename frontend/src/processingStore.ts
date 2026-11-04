@@ -403,7 +403,7 @@ interface ProcessingState {
 
   openProcessing: (entry?: ProcessingEntry) => void;
   processLayer: (layerId: string) => Promise<void>;
-  // ⚙ of a result layer (NM4-05b, adr/0019 option 2): the order of its job with the steps locked at the start, the output of
+  // "Process" of a result layer (NM4-05b, adr/0019 option 2): the order of its job with the steps locked at the start, the output of
   // the job as the output; what is added is run with them as one order.
   extendResult: (layerId: string) => Promise<void>;
   // "Process" at a layer that shows an index (NM4-14b): the panel opens on the index as the one band of an entity of its own. The view of
@@ -1975,7 +1975,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       return { ok: true, notes: taken.notes, ...(options?.converted ? { converted: true } : {}) };
     },
 
-    // ⚙ of a result layer: the order of its job, the steps locked, on the scenes and the area of the job. The job's own output
+    // "Process" of a result layer: the order of its job, the steps locked, on the scenes and the area of the job. The job's own output
     // is the start of the output, and what the steps add comes in as always. A reason it cannot is told as an error.
     extendResult: async (layerId) => {
       const app = useAppStore.getState();

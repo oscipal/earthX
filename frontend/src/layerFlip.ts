@@ -1,5 +1,5 @@
 // "Flip through layers" (NM4-65 part 9, Otto, 31.10.2026): while it is on, the layer that was clicked or stepped to is drawn on
-// the map over all the others, without moving in the list; ↑/↓ or the mouse wheel over the list step to the next one. The
+// the map over all the others, without moving in the list; Up and Down or the mouse wheel over the list step to the next one. The
 // eye is respected: a layer that is switched off, and one whose results are gone, draws nothing, so the flipping passes them by
 // (to see one, switch it on). At the ends of the list it stops.
 

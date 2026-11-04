@@ -3,6 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
+import CSS from './index.css?raw';
+
 const SOURCES = import.meta.glob(['./**/*.ts', './**/*.tsx', '!./**/*.test.ts', '!./**/*.test.tsx', '!./fixtures/**'], {
   query: '?raw',
   import: 'default',
@@ -27,6 +29,9 @@ export function texts(text: string): string[] {
   return found.filter((t) => t.length > 0);
 }
 
+// The styles without their comments, for the same reason.
+const withoutCssComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//gu, '');
+
 const where = (test: (code: string) => boolean) => sources.filter(([, text]) => test(withoutComments(text))).map(([path]) => path).sort();
 
 describe('closing (§7.5 no. 1): one way, the red x of CloseButton', () => {
@@ -46,13 +51,44 @@ describe('closing (§7.5 no. 1): one way, the red x of CloseButton', () => {
     expect(/\bDismiss\b/u.test('aria-label="Dismiss"')).toBe(true);
   });
 
-  // The x of these is no close: it removes a step, a link or the results, or empties a field. Teil 2 gives them their Lucide symbols
-  // (`trash-2`, `circle-x`) and empties this list.
-  const UNTIL_PART_2 = ['components/ClearableInput.tsx', 'components/ResultsPanel.tsx', 'components/ShareLink.tsx', 'components/StepForm.tsx'];
-  it('has an x glyph in a button only where it removes or empties, until part 2', () => {
-    expect(where((code) => X_GLYPH.test(code))).toEqual(UNTIL_PART_2);
+  it('has no x character as the content of a button: removing and emptying have their own icons', () => {
+    expect(where((code) => X_GLYPH.test(code))).toEqual([]);
     expect(X_GLYPH.test('<button type="button">\n  ✕\n</button>')).toBe(true);
     expect(X_GLYPH.test('<span>10 m × 10 m</span>')).toBe(false);
+  });
+});
+
+describe('icons (§7.5 no. 3): one source, no character of the text for an icon', () => {
+  // The characters that stood for an icon: download, pencil, close, gear, plus, more, carets, triangles, retry, restore, upload, swap, (i),
+  // warning, tick, play and pause, zoom, sun and moon, back and forth, and the arrows of the keys. Left to the text: "…", "—", "·", "–", "→"
+  // between two dates, "×" in a size, "µ".
+  const SYMBOL = /[⇩⇊⬆⬇✎✏✕✖✗✓✔⚙＋⋯⋮▾▴▸◂▼▲▶❚↻↺⟳⤒⤓⤢⇄ⓘⓧ⚠☀☾‹›⏵⏸↑↓←🗑]/u;
+  const IMPORT_LUCIDE = /from\s+['"]lucide-react['"]/u;
+  // The line of a drawing: only the chart of a histogram is one; every icon is one of `icons.ts`.
+  const OWN_SVG = /<svg\b/u;
+
+  it('has no such character in the code of the interface (a comment may name one)', () => {
+    expect(where((code) => SYMBOL.test(code))).toEqual([]);
+    for (const glyph of ['⇩', '✎', '＋', '⋯', '▾', '↻', '⚠', '✓', '▶']) expect(SYMBOL.test(`<button>${glyph} Download</button>`)).toBe(true);
+    for (const kept of ['10 m × 10 m', 'a … b', '— none —', '2026-01-01 → 2026-02-01', 'µm', 'a · b', '3–5']) expect(SYMBOL.test(kept)).toBe(false);
+    expect(SYMBOL.test(withoutComments('// the ⇩ of a layer\nconst a = 1;'))).toBe(false);
+  });
+
+  it('has no such character in the styles (a tick of a menu is an icon, not a `content`)', () => {
+    expect(SYMBOL.test(withoutCssComments(CSS))).toBe(false);
+    expect(SYMBOL.test("content: '✓';")).toBe(true);
+  });
+
+  it('imports lucide-react only in icons.ts', () => {
+    expect(where((code) => IMPORT_LUCIDE.test(code))).toEqual(['components/icons.ts']);
+    expect(IMPORT_LUCIDE.test("import { Eye } from 'lucide-react';")).toBe(true);
+    expect(IMPORT_LUCIDE.test("import { Eye } from './icons';")).toBe(false);
+  });
+
+  it('draws no icon of its own: the only svg is the chart of the histogram', () => {
+    expect(where((code) => OWN_SVG.test(code))).toEqual(['components/RangeHistogram.tsx']);
+    expect(OWN_SVG.test('<svg viewBox="0 0 24 24"><path d="M0 0" /></svg>')).toBe(true);
+    expect(OWN_SVG.test('<DownloadIcon />')).toBe(false);
   });
 });
 

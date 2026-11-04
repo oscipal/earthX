@@ -17,7 +17,7 @@ import { bandsOf, bandSources, isArea, orderAoi } from './processingOrder';
 import type { Collection, StacItem } from './types';
 
 // Said, always the same, wherever the first whole scene stands in for the area of the crop (Otto, 3.11.2026, zu #282): in the view next to
-// the fields, the reason behind a ⓘ. No fall-back is silent.
+// the fields, the reason behind an (i). No fall-back is silent.
 export const MEASURED_ON_SCENE = 'Measured on the first scene';
 
 const REFUSED_TOO_MANY = 'The tiler measures at most 16 files (scenes times bands) in one go; this image has more.';
