@@ -60,7 +60,7 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
     <>
       <label className="vc-field vc-num">
         <span>vmin</span>
-        <input type="number" value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
+        <input autoComplete="off" type="number" value={vmin.value} placeholder={hint} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmin.onChange(e.target.value)} />
       </label>
       <VmaxField vmax={vmax} placeholder={hint} percent={percent} unit={unit} />
     </>
@@ -109,7 +109,7 @@ function VmaxField({ vmax, placeholder, percent, unit }: { vmax: Props['vmax']; 
   return (
     <label className="vc-field vc-num">
       <span id={nameId}>vmax</span>
-      <input type="number" aria-labelledby={nameId} value={vmax.value} placeholder={placeholder} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmax.onChange(e.target.value)} />
+      <input autoComplete="off" type="number" aria-labelledby={nameId} value={vmax.value} placeholder={placeholder} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmax.onChange(e.target.value)} />
       {unit && (
         // After the field, so that the label names the field and not the switch; the style puts it in the line of the label.
         <select className="vc-unit" aria-label="Range unit" data-tip-level="advanced" data-tip={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
@@ -135,7 +135,7 @@ function NumberField({ name, value, placeholder, percent, invalid = false, onCha
   return (
     <label className="vc-field vc-num" data-tip-level="advanced" data-tip={placeholder ? `${name}; empty: ${placeholder}` : name}>
       <span className="sr-only">{name}</span>
-      <input type="number" value={value} placeholder={short} aria-invalid={invalid || undefined} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => onChange(e.target.value)} />
+      <input autoComplete="off" type="number" value={value} placeholder={short} aria-invalid={invalid || undefined} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }

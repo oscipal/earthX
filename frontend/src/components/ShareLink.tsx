@@ -57,7 +57,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
       {made ? (
         <>
           <div className="pp-share-link">
-            <input type="text" readOnly value={permalinkAddress(made.id)} aria-label="Link" onFocus={(e) => e.currentTarget.select()} />
+            <input autoComplete="off" type="text" readOnly value={permalinkAddress(made.id)} aria-label="Link" onFocus={(e) => e.currentTarget.select()} />
             <CopyButton text={permalinkAddress(made.id)} title="Copy link" label="Copy link" />
             <button
               type="button"

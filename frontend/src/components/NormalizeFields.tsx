@@ -41,7 +41,7 @@ export default function NormalizeFields({
   const shown = (name: string) => (showErrors || text(name) !== '' ? errors[name] : undefined);
   const comma = (names: string[]) => names.some((name) => hasComma(text(name)));
   const number = (name: string, label: string) => (
-    <input
+    <input autoComplete="off"
       type="text"
       inputMode="decimal"
       aria-label={label}

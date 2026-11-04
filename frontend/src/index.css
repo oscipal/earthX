@@ -1084,10 +1084,23 @@ input[type='date'] {
   font-family: var(--font);
   font-size: var(--text-sm);
 }
-input[type='text']:focus,
-input[type='date']:focus {
-  border-color: var(--accent);
-  box-shadow: var(--glow);
+
+/* A field the browser has filled in (or offers to): its own light colour would stand in the dark theme. The colours are those of the field, from
+   the tokens: the text, and the background of the field laid over the background of the map (the field's own is see-through, the browser's is
+   not). Two rules, since a selector list with a pseudo-class the engine does not know is dropped whole. */
+input:-webkit-autofill,
+textarea:-webkit-autofill {
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  box-shadow: inset 0 0 0 100px var(--input-bg), inset 0 0 0 100px var(--map-bg);
+  transition: background-color 600000s 0s;
+}
+input:autofill,
+textarea:autofill {
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  box-shadow: inset 0 0 0 100px var(--input-bg), inset 0 0 0 100px var(--map-bg);
+  transition: background-color 600000s 0s;
 }
 
 /* The native calendar icon is drawn dark-on-transparent by default, which

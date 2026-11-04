@@ -41,7 +41,7 @@ function RangeField({
       </span>
       <div className="filter-range">
         <span>from</span>
-        <input
+        <input autoComplete="off"
           type="text"
           inputMode={inputMode}
           value={from}
@@ -52,7 +52,7 @@ function RangeField({
           onChange={(e) => edit({ from: e.target.value })}
         />
         <span>to</span>
-        <input
+        <input autoComplete="off"
           type="text"
           inputMode={inputMode}
           value={to}

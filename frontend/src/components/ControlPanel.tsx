@@ -38,7 +38,7 @@ function DateField({
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div className="date-field">
-      <input
+      <input autoComplete="off"
         ref={ref}
         type="date"
         value={value}

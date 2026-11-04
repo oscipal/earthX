@@ -86,7 +86,7 @@ function FieldInput({
       ) : bandTarget !== undefined ? (
         // A band-math expression: wraps in the wide panel (M4-13c §3.1), but stays
         // one line — Enter adds none, and a pasted line break becomes a space.
-        <textarea
+        <textarea autoComplete="off"
           id={inputId}
           rows={2}
           value={text}
@@ -100,7 +100,7 @@ function FieldInput({
           onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/gu, ' '))}
         />
       ) : (
-        <input
+        <input autoComplete="off"
           id={inputId}
           type="text"
           inputMode={field.kind === 'number' || field.kind === 'integer' ? 'decimal' : undefined}
@@ -154,7 +154,7 @@ function NameInput({
         {field.title}
         {tip && <Tip text={tip} />}
       </span>
-      <input
+      <input autoComplete="off"
         id={inputId}
         type="text"
         value={draft}

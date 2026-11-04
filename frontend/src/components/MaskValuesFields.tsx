@@ -53,7 +53,7 @@ export default function MaskValuesFields({
   const valuesError = comma ? 'Use . for decimals.' : showErrors || valuesTouched ? errors.values : undefined;
   const id = `pp-step-${stepKey}`;
   const number = (label: string, value: string, set: (value: string) => void) => (
-    <input
+    <input autoComplete="off"
       type="text"
       inputMode="decimal"
       aria-label={label}
@@ -133,7 +133,7 @@ export default function MaskValuesFields({
             </>
           )}
           {condition === 'eq' && (
-            <input
+            <input autoComplete="off"
               type="text"
               aria-label="Values"
               aria-invalid={!!valuesError}

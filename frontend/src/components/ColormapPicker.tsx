@@ -51,7 +51,7 @@ function Picker({ value, onPick }: { value: string; onPick: (name: string) => vo
           <span className="vc-title">Colormap</span>
         </div>
         <div className="insp-row insp-row2">
-          <input className="cm-search" type="search" placeholder="Search" aria-label="Search colormaps" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input autoComplete="off" className="cm-search" type="search" placeholder="Search" aria-label="Search colormaps" value={query} onChange={(e) => setQuery(e.target.value)} />
           <button type="button" className={`btn vc-reverse${reversed ? ' on' : ''}`} aria-pressed={reversed} data-tip={REVERSE_TIP} onClick={() => setReversed(!reversed)}>
             <ArrowLeftRightIcon />
             Reverse
