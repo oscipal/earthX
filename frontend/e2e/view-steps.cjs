@@ -224,9 +224,9 @@ async function run(browser, { theme, viewport }) {
   if (!saved || !saved.includes('255')) problems.push(`"Apply to all" did not save a look for the dataset: ${saved}`);
 
   // 6. Layers.
-  await page.getByRole('button', { name: '＋ Add to layers' }).click();
+  await page.getByRole('button', { name: 'Add to layers' }).click();
   if ((await read('s.layers.length')) !== 1) problems.push('"Add to layers" did not pin exactly the image shown');
-  await page.getByRole('button', { name: '＋ Add all to layers' }).click();
+  await page.getByRole('button', { name: 'Add all to layers' }).click();
   const names = await read('s.layers.map((l) => l.name)');
   if (names.length !== 4) problems.push(`"Add all to layers" left ${names.length} layers, expected 4`);
   if (!names.some((n) => n.includes('S2B'))) problems.push(`no layer is named after the satellite: ${JSON.stringify(names)}`);
