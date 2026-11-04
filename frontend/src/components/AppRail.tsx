@@ -66,7 +66,7 @@ export default function AppRail() {
   };
 
   return (
-    <nav className="app-rail" aria-label="Main" onKeyDown={onKeyDown}>
+    <nav className="app-rail" aria-label="Main" data-popover-edge="" onKeyDown={onKeyDown}>
       {ITEMS.map((item, index) => {
         const count = counts[item.panel];
         const open = dock === item.panel;

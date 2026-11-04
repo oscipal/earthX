@@ -36,7 +36,8 @@ export default function Popover({
   // A pop-up with fields in it (DS-02c): Tab and the arrow keys stay with the fields, a dropdown that opens inside it (its own
   // `Popover`, lying over this one) is no click "beside" it, and Esc does not close it.
   form?: boolean;
-  // Stands to the right of its anchor, at its bottom edge, this wide in px, instead of below it as wide as it is (`placePopoverBeside`).
+  // Stands to the right of its anchor (of the strip that has `data-popover-edge`, if the anchor is in one), at its bottom edge, this wide in px,
+  // instead of below it as wide as it is (`placePopoverBeside`).
   beside?: number;
   children: ReactNode;
 }) {
@@ -60,7 +61,12 @@ export default function Popover({
           return;
         }
         const viewport = { width: window.innerWidth, height: window.innerHeight };
-        const next = beside === undefined ? placePopover(rect, content.scrollHeight, viewport) : placePopoverBeside(rect, content.scrollHeight, viewport, beside);
+        // Beside the anchor, from the edge of the strip it stands in (the rail), not from the anchor: the menu does not lie over the strip.
+        const edge = (anchor.closest('[data-popover-edge]') ?? anchor).getBoundingClientRect();
+        const next =
+          beside === undefined
+            ? placePopover(rect, content.scrollHeight, viewport)
+            : placePopoverBeside({ top: rect.top, bottom: rect.bottom, right: edge.right }, content.scrollHeight, viewport, beside);
         setPlacement((prev) => (prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       }
     };
