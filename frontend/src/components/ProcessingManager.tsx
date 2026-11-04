@@ -427,6 +427,7 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
             type="button"
             className="pm-open"
             data-tip={title}
+            data-tip-cut=".pm-title"
             onClick={(e) => {
               e.currentTarget.focus();
               open(job.jobID);
@@ -564,6 +565,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             type="button"
             className="pm-open"
             data-tip={batch.title}
+            data-tip-cut=".pm-title"
             onClick={(e) => {
               e.currentTarget.focus();
               setExpanded(!expanded);

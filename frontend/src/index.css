@@ -267,6 +267,12 @@ svg.lucide.icon-lead {
 .icon-btn[aria-pressed='true']:not(.eye) {
   color: var(--accent);
 }
+/* A choice of one of a few, and an overlay that is on: the one that is chosen is filled (UI-04 part 4, Otto, 4.11.2026). */
+.btn.seg[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
 /* A button that stands over the map has the panel behind it. */
 .btn.panel {
   background: var(--panel-bg);
@@ -292,37 +298,12 @@ svg.lucide.icon-lead {
   border-color: var(--danger);
 }
 
-/* --- persistent zoom button (top-right) --- */
-/* The menu of the "Basemap" button (`components/BasemapMenu.tsx`) is as wide as its button. */
-.basemap-btn {
-  min-width: 132px;
-}
-.menu-group {
-  display: flex;
-  flex-direction: column;
-}
-.menu-group + .menu-group {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--panel-border);
-}
 /* The tick of a chosen entry (`MenuTick.tsx`) takes the place in front of the name, the same width for every entry. */
 .menu-tick {
   display: inline-flex;
   flex: none;
   width: 14px;
   height: 14px;
-}
-.pm-menu-list.basemap-menu button {
-  justify-content: flex-start;
-  gap: calc(var(--space-1) * 1.5);
-}
-.menu-group-label {
-  padding: 2px 10px;
-  color: var(--muted);
-  font-size: 9px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
 }
 
 /* --- full-resolution viewer controls (focus mode) --- */
@@ -1556,9 +1537,6 @@ textarea:autofill {
   color: var(--accent);
   font-weight: 700;
 }
-.coverage-choice-item.off {
-  color: var(--muted);
-}
 .coverage-dataset-name {
   color: var(--accent);
 }
@@ -2296,6 +2274,10 @@ textarea:autofill {
   width: 38px;
   height: 38px;
   border-radius: 8px;
+}
+/* "Settings" is the last symbol of the rail and stands at its bottom edge (`SettingsPanel.tsx`). */
+.rail-settings {
+  margin-top: auto;
 }
 /* The icons of the rail are larger than the rest: 20 px (`--icon-size-rail`, Otto, 4.11.2026). */
 .rail-btn svg.lucide {
@@ -3680,4 +3662,47 @@ button.pm-open:hover {
 }
 .aoi-stop {
   flex: none;
+}
+
+/* --- the panel "Settings" (UI-04 part 4): a head as the other panels have, then sections of segment buttons and the switch of the tooltips --- */
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+}
+.settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-3);
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.settings-heading {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.settings-row {
+  display: grid;
+  grid-template-columns: repeat(var(--settings-columns), minmax(0, 1fr));
+  gap: var(--space-1);
+}
+/* Every box of the panel has the size of one of four columns: Basemap fills the row, the others stand at its left, so that they all look alike. */
+.settings-panel {
+  --settings-columns: 4;
+}
+.settings-row > .btn.seg {
+  justify-content: center;
+  min-width: 0;
+  padding-inline: var(--space-1);
+  white-space: nowrap;
 }

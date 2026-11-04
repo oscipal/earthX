@@ -165,7 +165,6 @@ describe('viewOf, basemap and projection', () => {
     ['grey', 'mercator'],
     ['outlines', 'globe'],
     ['satellite', 'mercator'],
-    ['relief', 'globe'],
   ] as const)('keeps %s and %s as they are on screen', (basemap, projection) => {
     const view = viewOf([8, 46, 11, 48], 5, null, { basemap, projection });
     expect(view).toMatchObject({ basemap, projection });
@@ -184,8 +183,19 @@ describe('parseView', () => {
     expect(parseView(old)).toEqual({ ...old, basemap: 'satellite', projection: 'mercator' });
     expect(parseView({ ...old, basemap: null, projection: null })).toEqual({ ...old, basemap: 'satellite', projection: 'mercator' });
     expect(parseView({ ...old, basemap: 'grey' })).toMatchObject({ basemap: 'grey', projection: 'mercator' });
-    expect(parseView({ ...old, basemap: 'relief' })).toMatchObject({ basemap: 'relief', projection: 'mercator' });
     expect(parseView({ ...old, projection: 'globe' })).toMatchObject({ basemap: 'satellite', projection: 'globe' });
+  });
+
+  it('opens a link made when Relief was a basemap with the default basemap and the overlay Relief (UI-04 part 4)', () => {
+    const old = { center: [1, 2], zoom: 3, range: null };
+    const view = parseView({ ...old, basemap: 'relief', projection: 'globe' });
+    expect(view).toEqual({ ...old, basemap: 'satellite', projection: 'globe', relief: true });
+    // And it is never written again: what the panel makes has neither the basemap "relief" nor the field.
+    expect(JSON.stringify(viewOf([8, 46, 11, 48], 5, null, { basemap: view!.basemap, projection: view!.projection }))).not.toMatch(/relief/u);
+  });
+
+  it('gives no overlay to a link of any other basemap', () => {
+    expect(parseView({ center: [1, 2], zoom: 3, range: null, basemap: 'grey' })).not.toHaveProperty('relief');
   });
 
   it.each([

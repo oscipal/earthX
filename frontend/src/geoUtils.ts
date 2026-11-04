@@ -45,6 +45,32 @@ export function unionBbox(boxes: (Bbox | null | undefined)[]): Bbox | null {
   return Number.isFinite(minx) ? [minx, miny, maxx, maxy] : null;
 }
 
+// The smallest box that holds all of these, going the shorter way round the earth: two boxes either side of the antimeridian (Fiji, say)
+// give one box over it — west below 180, east past 180 — not one that spans the whole world. A box wider than 360° is the world. Every box
+// is an interval of longitude on a circle; the covering arc starts at one of them and is the shortest of those arcs. Nulls skipped; `null` if none.
+export function unionBboxShortest(boxes: (Bbox | null | undefined)[]): Bbox | null {
+  const valid = boxes.filter((b): b is Bbox => !!b && b.every(Number.isFinite));
+  if (valid.length === 0) return null;
+  const south = Math.min(...valid.map((b) => b[1]));
+  const north = Math.max(...valid.map((b) => b[3]));
+  const world: Bbox = [-180, south, 180, north];
+  // A value is moved only where it is outside ±180, so that boxes that need no moving come back as they were given.
+  const wrap = (x: number): number => (x >= -180 && x < 180 ? x : ((((x + 180) % 360) + 360) % 360) - 180);
+  const arcs = valid.map((b) => {
+    const start = wrap(b[0]);
+    return { start, end: b[2] + (start - b[0]) };
+  });
+  if (arcs.some((arc) => arc.end - arc.start >= 360)) return world;
+  let best: { start: number; end: number } | null = null;
+  for (const { start } of arcs) {
+    // The arcs that begin west of `start` are met again a turn later.
+    const end = Math.max(...arcs.map((arc) => (arc.start >= start ? arc.end : arc.end + 360)));
+    if (best === null || end - start < best.end - best.start) best = { start, end };
+  }
+  if (best === null || best.end - best.start >= 360) return world;
+  return [best.start, south, best.end, north];
+}
+
 // A clicked point becomes a small square AOI polygon (matches the backend
 // POINT_BUFFER_DEG behaviour, kept on the client so display == what we search).
 export function bufferPointToPolygon(lon: number, lat: number, deg: number): GeoJSON.Polygon {

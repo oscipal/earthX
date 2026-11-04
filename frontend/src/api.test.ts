@@ -117,9 +117,11 @@ describe('buildCoverageUrl', () => {
       expect([...url.searchParams.keys()]).toEqual(['zoom']);
     }
   });
-  // NM4-57 (M4 Q8): the box of an AOI is never in a URL.
-  it('never carries the box of an AOI', () => {
-    const url = buildCoverageUrl({ datasetId: 'optical', zoom: 4, aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234] });
+  // UI-04 part 4 (Otto, 4.11.2026): the question carries no AOI at all; the map extent is the only area it can name.
+  it('has no way to name an AOI: the question takes the map extent and nothing else for an area', () => {
+    // @ts-expect-error there is no `aoiBbox` any more
+    const params: CoverageParams = { datasetId: 'optical', zoom: 4, aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234] };
+    const url = buildCoverageUrl(params);
     expect(url).not.toContain('11.31234');
     expect(new URL(url, 'http://localhost').searchParams.has('bbox')).toBe(false);
   });
@@ -130,37 +132,7 @@ describe('fetchCoverage', () => {
 
   const answer = { ok: true, status: 200, json: async () => ({}) } as Response;
 
-  it('asks an AOI by POST: the box and the filters in the body, nothing in the URL', async () => {
-    const fetchMock = vi.fn(async () => answer);
-    vi.stubGlobal('fetch', fetchMock);
-    const query = { 'eo:cloud_cover': { lte: 20 } };
-
-    await fetchCoverage({
-      datasetId: 'optical',
-      zoom: 9,
-      aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234],
-      datetime: '2026-07-01T00:00:00Z/..',
-      query,
-    });
-
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('/coverage/optical');
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({
-      zoom: 9,
-      bbox: [11.31234, 47.81234, 11.51234, 47.91234],
-      datetime: '2026-07-01T00:00:00Z/..',
-      query,
-    });
-  });
-
-  it('does not take a map extent and the box of an AOI together (checked by the type)', () => {
-    // @ts-expect-error the extent goes in the URL, the AOI in the body: one question has one of them
-    const both: CoverageParams = { datasetId: 'optical', zoom: 4, bbox: [0, 0, 1, 1], aoiBbox: [0, 0, 1, 1] };
-    expect(both.zoom).toBe(4);
-  });
-
-  it('asks a map extent by GET, as before', async () => {
+  it('asks a map extent by GET, with the filters in the URL', async () => {
     const fetchMock = vi.fn(async () => answer);
     vi.stubGlobal('fetch', fetchMock);
 
@@ -169,14 +141,25 @@ describe('fetchCoverage', () => {
     expect(fetchMock.mock.calls[0]).toEqual(['/coverage/optical?zoom=6&bbox=-180%2C-85%2C180%2C85']);
   });
 
-  it('leaves a body without the optional fields out', async () => {
+  it('never asks by POST: no body goes out, whatever the question holds', async () => {
     const fetchMock = vi.fn(async () => answer);
     vi.stubGlobal('fetch', fetchMock);
 
-    await fetchCoverage({ datasetId: 'optical', zoom: 3, aoiBbox: [0, 0, 1, 1], query: {} });
+    await fetchCoverage({ datasetId: 'optical', zoom: 9, bbox: [0, 0, 1, 1], datetime: '2026-07-01T00:00:00Z/..', query: { 'eo:cloud_cover': { lte: 20 } } });
 
-    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
-    expect(JSON.parse(String(init.body))).toEqual({ zoom: 3, bbox: [0, 0, 1, 1] });
+    const calls = fetchMock.mock.calls as unknown as unknown[][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toHaveLength(1);
+    expect(String(calls[0][0])).toContain('query=');
+  });
+
+  it('asks the world without a box', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCoverage({ datasetId: 'optical', zoom: 1 });
+
+    expect(fetchMock.mock.calls[0]).toEqual(['/coverage/optical?zoom=1']);
   });
 });
 

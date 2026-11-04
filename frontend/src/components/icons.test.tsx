@@ -6,7 +6,9 @@ import { describe, expect, it } from 'vitest';
 
 import { ICON_SIZES } from './iconSizes';
 import * as icons from './icons';
+import notices from '../../THIRD_PARTY_NOTICES.md?raw';
 import tokens from '../tokens.css?raw';
+import settingsIconSource from './settingsIconNode.ts?raw';
 
 const SOURCES = import.meta.glob(['../**/*.ts', '../**/*.tsx', '!../**/*.test.ts', '!../**/*.test.tsx', '!../**/icons.ts'], {
   query: '?raw',
@@ -62,5 +64,40 @@ describe('icons.ts', () => {
   it.each(NAMES)('%s is used by the interface', (name) => {
     const used = Object.values(SOURCES).some((text) => new RegExp(`\\b${name}\\b`, 'u').test(text));
     expect(used).toBe(true);
+  });
+});
+
+// The one icon that is not Lucide's (UI-04 part 4, Otto, 3.11.2026): "Settings 6 Line" of MingCute, Apache-2.0, redrawn as strokes.
+describe('the icon "Settings" (MingCute, Apache-2.0)', () => {
+  it('has the stroke and the sizes of the others, drawn as lines and rings with nothing filled', () => {
+    const markup = render('SettingsIcon', { size: 20 });
+    expect(markup).toContain('width="20"');
+    expect(markup).toContain('fill="none"');
+    expect(Number(/stroke-width="([\d.]+)"/u.exec(markup)![1]) * (20 / 24)).toBeCloseTo(1.5, 5);
+    // Three rows, each a ring (the knob) with a line either side.
+    expect(markup.match(/<circle/gu)).toHaveLength(3);
+    expect(markup.match(/<path/gu)).toHaveLength(6);
+    expect(markup).not.toMatch(/fill="#|fill-rule/u);
+  });
+
+  it('says in its own file where it comes from and that it is changed (Apache-2.0 §4(b))', () => {
+    expect(settingsIconSource).toContain('mingcute_icon');
+    expect(settingsIconSource).toContain('settings_6_line.svg');
+    expect(settingsIconSource).toContain('Apache-2.0');
+    expect(settingsIconSource).toMatch(/CHANGED:/u);
+  });
+
+  it('is in THIRD_PARTY_NOTICES.md with its origin and the licence text (Apache-2.0 §4(a))', () => {
+    expect(notices).toContain('MingCute');
+    expect(notices).toContain('mingcute_icon');
+    expect(notices).toContain('settings_6_line.svg');
+    expect(notices).toContain('Apache License');
+    expect(notices).toContain('Version 2.0, January 2004');
+    expect(notices).toMatch(/Änderung \(Apache-2\.0 §4\(b\)\)/u);
+  });
+
+  it('is the only icon that does not come from Lucide: every other one is made from a Lucide glyph in icons.ts', () => {
+    const own = Object.keys(EXPORTS).filter((name) => name === 'SettingsIcon');
+    expect(own).toEqual(['SettingsIcon']);
   });
 });

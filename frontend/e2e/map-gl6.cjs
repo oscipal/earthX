@@ -6,7 +6,7 @@
 //      made the step necessary: 5.24 kept the second of two event attributes in a row, 6.x keeps none);
 //   3. the zoom limits or the no-tilt rule of the map have moved (levels 0 to 22, pitch 0);
 //   4. "Globe" and "Mercator" in the menu do not change the projection of the map;
-//   5. the basemap "Relief" (the one basemap whose host the cloud session can reach) draws no shading over mountains;
+//   5. the overlay "Relief" (its host is the one the cloud session can reach; it is no basemap since UI-04 part 4) draws no shading over mountains;
 //   6. the Point, Rectangle and Polygon tools set no AOI, an upload sets none or a wrong file changes the AOI;
 //   7. the outline of a ticked scene is not on the map.
 // Light and dark theme, 1280 and 360 px, mouse and touch. The basemaps Satellite, Streets, Grey and Outlines come from hosts
@@ -130,16 +130,17 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     expect('the map cannot be tilted', limits.maxPitch === 0 && limits.high.pitch === 0, JSON.stringify(limits));
     await jump(10.5, 30, 1.6);
 
-    // 4. The basemap "Relief" and the projection, through the menu.
+    // 4. The overlay "Relief" and the projection, through the panel "Settings" at the bottom of the rail.
     const menu = async (group, name) => {
       await dock(false);
-      const opener = page.getByRole('button', { name: 'Basemap', exact: true });
+      const opener = page.getByRole('button', { name: 'Settings', exact: true });
       if ((await opener.getAttribute('aria-expanded')) !== 'true') await opener.click();
-      await page.getByRole('group', { name: group }).getByRole('menuitemradio', { name }).click();
-      await opener.click(); // the menu stays open after a choice, over the map: closed with its button (Esc closes nothing)
+      // A choice is a segment button; an overlay is pressed while it is on and is clicked to switch it on or off.
+      await page.locator('.settings-panel').getByRole('group', { name: group }).getByRole('button', { name }).click();
+      await opener.click(); // the panel stays open after a choice, over the map under 900 px: closed with its symbol (Esc closes nothing)
       await idle();
     };
-    // Relief: shading over mountains, none over the sea (the one basemap whose host the cloud session reaches).
+    // Relief: shading over mountains, none over the sea (the one host the cloud session reaches), as the overlay over the default basemap.
     const stddev = async (fx = 0.5, fy = 0.5, size = 160) => {
       const png = (await page.locator('.maplibregl-canvas').screenshot()).toString('base64');
       return page.evaluate(async ([data, fx, fy, size]) => {
@@ -157,7 +158,7 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
         return Math.sqrt(Math.max(0, sq / n - (sum / n) ** 2));
       }, [png, fx, fy, size]);
     };
-    await menu('Basemap', /Relief/);
+    await menu('Overlays', /Relief/);
     await jump(...ALPS, 7);
     await idle();
     await page.waitForTimeout(1500);
@@ -183,6 +184,7 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     await shot('globe');
     await menu('Projection', /Mercator/);
     expect('"Mercator" gives Mercator back', (await page.evaluate((m) => m.getProjection()?.type, map)) === 'mercator');
+    await menu('Overlays', /Relief/); // the shading is switched off again: the basemaps below are judged without it
     const dismiss = async () => {
       const button = page.getByRole('alert').getByRole('button', { name: 'Close' });
       while (await button.count()) await button.first().click();
@@ -203,7 +205,7 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     hosts.told.push(...told);
     expect('the app to tell of the basemaps it could not load (Streets, Grey)', ['Streets', 'Grey'].every((name) => told.some((text) => text.includes(name))), told.join(' | '));
     await dismiss();
-    expect('the basemap to be one the map can show after the failures', ['satellite', 'streets', 'grey', 'outlines', 'relief'].includes(await store((st) => st.getState().basemap)));
+    expect('the basemap to be one the map can show after the failures', ['satellite', 'streets', 'grey', 'outlines'].includes(await store((st) => st.getState().basemap)));
     await menu('Basemap', /Satellite/);
     await page.keyboard.press('Tab');
 

@@ -342,7 +342,8 @@ async function caseStop(browser, how) {
     expectEq(problems, `${label}: rows`, await rowStates(page), ['Cancelled', 'Cancelled']);
     if (!(await page.getByRole('button', { name: 'Retry failed' }).count())) problems.push(`${label}: no "Retry failed" after the stop`);
   } else {
-    await page.getByTitle(/stops a download/).click();
+    // The red x of the dialog says in its tooltip (`data-tip` since part 3a, no `title`) that closing stops the download.
+    await page.locator('[data-tip*="stops a download"]').click();
   }
   const sentThen = [...control.sent.values()].reduce((a, b) => a + b, 0);
   await new Promise((resolve) => setTimeout(resolve, 1500));

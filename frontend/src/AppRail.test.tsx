@@ -57,24 +57,25 @@ afterEach(() => {
 });
 
 const rail = () => container.querySelector<HTMLElement>('nav[aria-label="Main"]')!;
-const symbol = (name: 'controls' | 'layers' | 'jobs' | 'results') => container.querySelector<HTMLButtonElement>(`#rail-${name}`)!;
-const slot = (name: 'controls' | 'layers' | 'jobs' | 'results') => container.querySelector<HTMLElement>(`#dock-${name}`);
+const symbol = (name: 'controls' | 'layers' | 'jobs' | 'results' | 'settings') => container.querySelector<HTMLButtonElement>(`#rail-${name}`)!;
+const slot = (name: 'controls' | 'layers' | 'jobs' | 'results' | 'settings') => container.querySelector<HTMLElement>(`#dock-${name}`);
 const click = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const key = (target: Element, name: string) => {
   const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
   act(() => target.dispatchEvent(event));
   return event;
 };
+const settings = () => rail().querySelector<HTMLButtonElement>('button.rail-settings')!;
 const stops = () => [...rail().querySelectorAll<HTMLElement>('button')].map((b) => b.tabIndex);
 
 describe('the symbols', () => {
-  it('are four, in a navigation named "Main", each with its name for a screen reader', () => {
+  it('are five, in a navigation named "Main", each with its name for a screen reader: four panels and "Settings" at the bottom', () => {
     expect(rail()).not.toBeNull();
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Jobs', 'Search results, No results yet: run a search first']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Jobs', 'Search results, No results yet: run a search first', 'Settings']);
   });
 
   it('carry their tooltip as text that shows on hover and on focus, and no second one as `title`', () => {
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Jobs', 'No results yet: run a search first']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Jobs', 'No results yet: run a search first', 'Settings']);
     expect(rail().querySelector('[title]')).toBeNull();
   });
 
@@ -84,7 +85,7 @@ describe('the symbols', () => {
 
   it('draw their icons 20 px large, the size of the token --icon-size-rail (Otto, 4.11.2026)', () => {
     const icons = [...rail().querySelectorAll('svg')];
-    expect(icons).toHaveLength(4);
+    expect(icons).toHaveLength(5);
     for (const svg of icons) {
       expect(svg.getAttribute('width')).toBe('20');
       expect(svg.getAttribute('height')).toBe('20');
@@ -177,23 +178,57 @@ describe('the panels', () => {
     expect(useAppStore.getState().dock).toBe('controls');
   });
 
-  it('leave the buttons "Zoom to selection", "Basemap" and "Light" at the top right', () => {
+  it('leave only the button "Zoom to selection" at the top right: Basemap and Light/Dark are in "Settings" now (UI-04 part 4)', () => {
     const top = container.querySelector('.top-right')!;
-    expect([...top.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Zoom to selection', 'Basemap', 'Light']);
+    expect([...top.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Zoom to selection']);
+  });
+
+  it('put "Settings" last, at the bottom edge of the rail, and it opens a panel like the others, not a menu (Otto, 4.11.2026)', () => {
+    const settings = rail().querySelector<HTMLButtonElement>('button.rail-settings')!;
+    expect([...rail().querySelectorAll('button')].at(-1)).toBe(settings);
+    expect(settings.id).toBe('rail-settings');
+    expect(settings.hasAttribute('aria-haspopup')).toBe(false);
+    expect(settings.getAttribute('aria-expanded')).toBe('false');
+    expect(slot('settings')!.hidden).toBe(true);
+    click(settings);
+    expect(useAppStore.getState().dock).toBe('settings');
+    expect(settings.getAttribute('aria-expanded')).toBe('true');
+    expect(settings.getAttribute('aria-controls')).toBe('dock-settings');
+    expect(slot('settings')!.hidden).toBe(false);
+    expect(slot('controls')!.hidden).toBe(true);
+    expect(container.querySelector('#dock-settings .settings-panel h2')?.textContent).toBe('Settings');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    // A second click closes it, like on the other symbols: it has no red x (Otto, 4.11.2026).
+    click(settings);
+    expect(useAppStore.getState().dock).toBeNull();
+    expect(container.querySelector('#dock-settings .close-x')).toBeNull();
+  });
+
+  it('have no red x in the head of any panel: a panel of the rail is opened and closed with its symbol only (Otto, 4.11.2026)', () => {
+    for (const name of ['controls', 'layers', 'jobs', 'results', 'settings'] as const) {
+      act(() => useAppStore.setState({ dock: name === 'results' ? 'controls' : name }));
+      expect(container.querySelector('.dock .close-x'), name).toBeNull();
+    }
+  });
+
+  it('give the panel "Settings" the width and the place of the other panels, in the same slot of the dock', () => {
+    const slots = [...container.querySelectorAll('.dock > .dock-slot')].map((el) => el.id);
+    expect(slots).toEqual(['dock-controls', 'dock-layers', 'dock-results', 'dock-settings']);
+    expect(container.querySelector('#dock-settings .dock-panel')).not.toBeNull();
   });
 });
 
 describe('the keyboard', () => {
   it('gives the Tab key one stop in the rail: the open panel\'s symbol', () => {
-    expect(stops()).toEqual([0, -1, -1, -1]);
+    expect(stops()).toEqual([0, -1, -1, -1, -1]);
     click(symbol('jobs'));
-    expect(stops()).toEqual([-1, -1, 0, -1]);
+    expect(stops()).toEqual([-1, -1, 0, -1, -1]);
   });
 
   it('keeps the stop on the last symbol focused where no panel is open', () => {
     click(symbol('controls'));
     act(() => symbol('layers').focus());
-    expect(stops()).toEqual([-1, 0, -1, -1]);
+    expect(stops()).toEqual([-1, 0, -1, -1, -1]);
   });
 
   it('moves between the symbols with the arrow keys and wraps at the ends', () => {
@@ -203,13 +238,15 @@ describe('the keyboard', () => {
     key(symbol('layers'), 'ArrowDown');
     key(symbol('jobs'), 'ArrowDown');
     key(symbol('results'), 'ArrowDown');
+    expect(document.activeElement).toBe(settings());
+    key(settings(), 'ArrowDown');
     expect(document.activeElement).toBe(symbol('controls'));
     key(symbol('controls'), 'ArrowUp');
-    expect(document.activeElement).toBe(symbol('results'));
-    key(symbol('results'), 'Home');
+    expect(document.activeElement).toBe(settings());
+    key(settings(), 'Home');
     expect(document.activeElement).toBe(symbol('controls'));
     key(symbol('controls'), 'End');
-    expect(document.activeElement).toBe(symbol('results'));
+    expect(document.activeElement).toBe(settings());
   });
 
   it('does not take other keys', () => {

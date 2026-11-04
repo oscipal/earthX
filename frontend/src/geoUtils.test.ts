@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { coordsBbox, MAX_INTERSECTS_POINTS, quicklookAoiPixelRings, quicklookCoords, searchArea } from './geoUtils';
+import { coordsBbox, MAX_INTERSECTS_POINTS, quicklookAoiPixelRings, quicklookCoords, searchArea, unionBboxShortest } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import type { StacAsset, StacItem } from './types';
 
@@ -292,5 +292,57 @@ describe('searchArea', () => {
       ],
     };
     expect(searchArea(multi, null)).toEqual({ intersects: multi });
+  });
+});
+
+// "Zoom to selection" takes the shorter way round the earth (UI-04 part 4, Otto, 3.11.2026).
+describe('unionBboxShortest', () => {
+  it('is the plain union where nothing is near the antimeridian', () => {
+    expect(unionBboxShortest([[-4, 27, -2, 29], [8, 46, 11, 48]])).toEqual([-4, 27, 11, 48]);
+    expect(unionBboxShortest([[8, 46, 11, 48]])).toEqual([8, 46, 11, 48]);
+  });
+
+  it('is a box that holds each of its boxes, and the order of the boxes does not matter', () => {
+    const boxes: [number, number, number, number][] = [[-4, 27, -2, 29], [8, 46, 11, 48], [100, -10, 120, 5]];
+    expect(unionBboxShortest(boxes)).toEqual(unionBboxShortest([...boxes].reverse()));
+    expect(unionBboxShortest(boxes)).toEqual([-4, -10, 120, 48]);
+  });
+
+  it('goes over the antimeridian when that is the shorter way: Fiji east and west of it gives one box past 180', () => {
+    // 177 to 179.9 on one side, -179.5 to -178 on the other: 4° wide over the line, not 358° the long way.
+    expect(unionBboxShortest([[177, -19, 179.9, -16], [-179.5, -18, -178, -16]])).toEqual([177, -19, 182, -16]);
+    expect(unionBboxShortest([[-179.5, -18, -178, -16], [177, -19, 179.9, -16]])).toEqual([177, -19, 182, -16]);
+  });
+
+  it('stays the long way where that is the shorter one', () => {
+    // Europe and Japan: 8 to 140 east is 132°, the other way is 228°.
+    expect(unionBboxShortest([[8, 46, 11, 48], [138, 34, 140, 36]])).toEqual([8, 34, 140, 48]);
+  });
+
+  it('takes the shorter way for the Atlantic as well: Tenerife and the Swiss Alps', () => {
+    const tenerife: [number, number, number, number] = [-16.9, 28, -16.1, 28.6];
+    const alps: [number, number, number, number] = [8, 46, 9, 47];
+    expect(unionBboxShortest([alps, tenerife])).toEqual([-16.9, 28, 9, 47]);
+  });
+
+  it('is the world for a box that is the world, or wider, or for boxes that spread round the whole earth', () => {
+    expect(unionBboxShortest([[-180, -60, 180, 70]])).toEqual([-180, -60, 180, 70]);
+    expect(unionBboxShortest([[-200, -10, 200, 10]])).toEqual([-180, -10, 180, 10]);
+    // Three boxes of 130° at 120° from each other leave no gap: every arc that holds them is longer than the earth.
+    expect(unionBboxShortest([[0, 0, 130, 1], [120, 0, 250, 1], [-120, 0, 10, 1]])).toEqual([-180, 0, 180, 1]);
+    // Narrow ones spread round the earth are one arc of 241°, not the world: the biggest gap is left out.
+    expect(unionBboxShortest([[0, 0, 1, 1], [120, 0, 121, 1], [-120, 0, -119, 1]])).toEqual([0, 0, 241, 1]);
+  });
+
+  it('reads a box that is already across the line (east past 180) as it is', () => {
+    expect(unionBboxShortest([[170, 10, 190, 20]])).toEqual([170, 10, 190, 20]);
+    expect(unionBboxShortest([[170, 10, 190, 20], [-175, 0, -170, 5]])).toEqual([170, 0, 190, 20]);
+  });
+
+  it('is null for none, and skips nulls and boxes that are not numbers', () => {
+    expect(unionBboxShortest([])).toBeNull();
+    expect(unionBboxShortest([null, undefined])).toBeNull();
+    expect(unionBboxShortest([[Number.NaN, 0, 1, 1]])).toBeNull();
+    expect(unionBboxShortest([null, [1, 2, 3, 4]])).toEqual([1, 2, 3, 4]);
   });
 });

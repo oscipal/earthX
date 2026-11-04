@@ -739,9 +739,8 @@ describe('the coverage map', () => {
   const coverageQueries = () =>
     fetchMock.mock.calls
       .filter(([url]) => String(url).startsWith('/coverage/'))
-      .map(([url, init]) => {
-        const parsed = init?.body ? (JSON.parse(init.body as string) as { query?: unknown }) : null;
-        if (parsed) return parsed.query;
+      .map(([url]) => {
+        // The coverage question is a GET, the AOI is no part of it (UI-04 part 4).
         const q = new URL(String(url), 'http://x').searchParams.get('query');
         return q ? JSON.parse(q) : undefined;
       });
@@ -756,6 +755,8 @@ describe('the coverage map', () => {
       showCoverage: true,
       coverageDatasetId: 'optical',
       mapZoom: 5,
+      viewportBbox: [8, 46, 12, 49],
+      viewportSize: { width: 1280, height: 800 },
     });
     state().showCoverageFor('optical');
     await vi.waitFor(() => expect(coverageQueries().length).toBeGreaterThan(0));
@@ -769,6 +770,8 @@ describe('the coverage map', () => {
       showCoverage: true,
       coverageDatasetId: 'optical',
       mapZoom: 5,
+      viewportBbox: [8, 46, 12, 49],
+      viewportSize: { width: 1280, height: 800 },
     });
     state().showCoverageFor('optical');
     await vi.waitFor(() => expect(coverageQueries().length).toBeGreaterThan(0));

@@ -261,7 +261,7 @@ Kein Symbol mehr als Textzeichen. Erlaubt bleiben typografische Zeichen im Text:
 | **5** | RGB je Kanal im Ergebnis-Layer und in der Processing-Vorschau, Permalink mit Kanälen (Backend-Ausnahme, §7.6) | 300–350 | neu |
 | **6** | NM4-56: Zahlenformat (NM4-21), weniger Text mit (i) (NM4-22, Zeilen 8, 31), Datums- und Prozentformat (Zeilen 33, 41, 49), schmale Fenster (Punkt 58: Toolbar 320 px, Statusleiste bei 360 px, Statusmeldung über den Kopfknöpfen); dazu die übrigen 201 festen Abstände, Schriftgrade und Radien auf Tokens (Otto, 04.11.2026, §8.4) | 350–400 plus die Token-Umstellung | neu |
 
-**Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen. Teil 3a ist umgesetzt (§8.3), Teil 3b ist umgesetzt (§8.4, Hinweise, Abzeichen, feste Farben, Schrift, `.btn.seg`, dazu drei Zusätze Ottos vom 04.11.2026: Tooltip-Stufen, Fokusring, Autofill). Teil 5 ist umgesetzt (§8.5).
+**Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen. Teil 3a ist umgesetzt (§8.3), Teil 3b ist umgesetzt (§8.4, Hinweise, Abzeichen, feste Farben, Schrift, `.btn.seg`, dazu drei Zusätze Ottos vom 04.11.2026: Tooltip-Stufen, Fokusring, Autofill). Teil 5 ist umgesetzt (§8.5). Teil 4 ist umgesetzt (§8.6, Einstellungsmenü, Relief nur als Overlay, „Zoom to selection“ über alles Gewählte, dazu die Vorgaben Ottos vom 04.11.2026: Tooltip-Schalter und gemessene Kürzung, Coverage unabhängig von der AOI, keine „Hide coverage“-Zeile in der Wahl des Datensatzes).
 
 Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Teile quer durch dieselben Dateien gehen. Teil 4 kann vor Teil 3 kommen, wenn Otto es zuerst sehen will. Die Teile 2 bis 6 bekommen je einen eigenen Plan-Abschnitt in dieser Datei („§8 Teil n“), damit eine neue Session ohne dieses Gespräch auskommt.
 
@@ -427,3 +427,65 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 5. Das Schema schreibt nur, was da ist: ein alter Link kommt ohne `percent: null` zurück (`_Sparse`), damit sich nichts an ihm ändert.
 
 **Prüfungen:** Backend `test_permalink_route.py` (alt, neu, Prozent je Kanal, zwei Kanäle, vier Kanäle, Prozent außerhalb 0–100, falsche Reihenfolge, Text, beides zusammen; Gegenprobe ohne die Prüfungen schlägt fünf Fälle fehl), Frontend `permalink.test.ts`, `ProcessingResultRgb.test.tsx`, `ProcessingShowRgb.test.tsx`, `ProcessingShare.test.tsx`, `jobShelf.test.ts`; Browser `e2e/rgb.cjs` (Hell/Dunkel, 1280 und 360 px, Einheiten je Kanal, Überlappung und Überstand).
+
+### 8.6 Teil 4 — Einstellungsmenü, Relief, Zoom, Coverage (umgesetzt, 04.11.2026)
+
+**Umfang:** §7.0 Nr. 5 (a–c), §7.9 Antworten 1, 4 und 5 und die Vorgaben Ottos vom 04.11.2026 (Auftrag dieser Session): (1) Knopf „Settings“ unten in der Leiste mit dem MingCute-Symbol, (2) Inhalt und Merken je Browser, (3) Tooltips mit vollem Text nur bei gemessener Kürzung, (4) „Zoom to selection“, (5) Coverage unabhängig von der AOI, (6) kein „Hide coverage“ in der Wahl des Datensatzes. Der PR liegt deutlich über dem Richtwert von 400 Zeilen (Tests und die Nachführung der Tests zu Relief, Theme-Knopf und Coverage mit AOI machen den größeren Teil).
+
+**Umgesetzt:**
+- **Symbol:** `components/settingsIconNode.ts` hält die Zeichnung (drei Linien, Ringe bei x = 16, 8, 16 auf y = 5, 12, 19; Strich, runde Enden) mit dem Vermerk von Herkunft und Änderung (Apache-2.0 §4(b)); `icons.ts` gibt sie als `SettingsIcon` weiter (`createLucideIcon`; nur `icons.ts` importiert `lucide-react`). `frontend/THIRD_PARTY_NOTICES.md` nennt Paket `mingcute_icon` 2.9.72, Datei `svg/system/settings_6_line.svg`, Repository, die Änderung und den vollen Lizenztext (§4(a)). Das Paket nennt keinen Rechteinhaber (Vorlagenzeile unausgefüllt); das steht so in der Hinweisdatei.
+- **Menü:** `components/SettingsMenu.tsx` (aus `BasemapMenu.tsx` hervorgegangen) sitzt im `AppRail` als fünfter Halt der Pfeiltasten, am unteren Rand (`.rail-settings { margin-top: auto }`). Es öffnet rechts neben der Leiste (`Popover` mit neuem `beside`, `placePopoverBeside`; die Kante ist die der Leiste, `data-popover-edge`). Abschnitte „Basemap“, „Overlays“, „Projection“, „Appearance“, „Tooltips“; unter 900 px mit Fingerhöhe der Zeilen scrollt das Menü im Fenster.
+- **Merken:** `preferences.ts`: `loadAppearance`/`saveAppearance` (Wörter `tech`, `normal`, `system` unter `earthx.theme`), `loadTipLevel`/`saveTipLevel` (`earthx.tooltips`, Vorgabe „simple“), `themeOf`, `systemPrefersDark`. Gesperrter oder werfender Speicher: Vorgabe beim Laden, Wahl gilt für den Besuch; der Test lässt den Speicher in jsdom und im Browser (`e2e/settings-menu.cjs`) werfen. Store: `appearance` (Wahl), `theme` (gezeichnet), `tipLevel`, `setAppearance`, `followSystemTheme`, `setTipLevel`; `App.tsx` hört auf `prefers-color-scheme`.
+- **Relief:** kein Basemap mehr (`basemaps.ts`, `relief.ts` nur noch mit dem Aussehen des Overlays). Ein Browser mit gemerkter Basemap „relief“: `migrateReliefBasemap()` schreibt einmal Standard-Basemap und Overlay Relief. Ein Permalink mit „relief“: `parseView` liefert die Standard-Basemap und `relief: true`, `showSharedLook` schaltet das Overlay für diese Ansicht ein, ohne etwas zu speichern; geschrieben wird `relief` nie. Das Backend nimmt `relief` weiter an (kein Schemawechsel).
+- **Tooltips:** Vorgabe „Simple“; `data-tip-cut` (§ Leitfaden 8a) an Titel eines Jobs, Titel eines Stapels und Kennung einer Szene; `tipShown` misst `scrollWidth > clientWidth` in beiden Stufen (`tipLevel.ts::isCut`).
+- **„Zoom to selection“:** `zoomSelection.ts` (`zoomBoxes`, `zoomTarget`), `geoUtils.ts::unionBboxShortest` (kürzester Bogen über den Längengrad, Rückgabe darf über 180° gehen; `fitBounds` von MapLibre nimmt das). In den Teilen 1 bis 3 war das nicht umgesetzt: der Knopf zoomte auf die AOI, sonst auf die Layer.
+- **Coverage:** `refreshCoverage` fragt immer den sichtbaren Ausschnitt (`bandViewportBbox`, `roundBboxToGrid`, Stufe aus `levelForViewport`); die AOI kommt in der Frage nicht vor (Schlüssel „dieselbe Frage nicht zweimal“ ohne AOI). `api.fetchCoverage` ist nur noch ein `GET`; `buildCoverageBody`, `aoiBbox` und das `POST` sind aus dem Frontend entfernt, ebenso `clampBboxLongitude` (nur für die AOI da). Die Footprints (`searchAllPages`) fragen den Ausschnitt, nicht die AOI. Ein beantworteter Ausschnitt ohne Footprints gilt nicht mehr, sobald Zoom und Quelle Footprints verlangen (vorher fehlte diese Prüfung auch im Fall ohne AOI).
+- **„Hide coverage“:** der Eintrag in der Wahl des Datensatzes unter „Coverage“ entfällt; der Knopf „Hide coverage“ neben „Coverage“ bleibt.
+
+**Route im Backend:** `POST /coverage/{id}` bleibt. Begründung: Sie ist Teil der dokumentierten Schnittstelle (`adr/0004`, Nachtrag NM4-57), sechs Testmodule des Backends prüfen sie (AOI als `bbox` und `intersects`, Zugriffslog ohne Koordinaten, Registry, gestrichene Datensätze), und das `GET` verweist bei einer AOI ausdrücklich auf sie (`400`). Im Repo benutzt sie außer diesen Tests niemand mehr; ein Entfernen wäre eine Schnittstellenänderung mit Umbau der Backend-Tests und von `adr/0004`, nicht eine Folge dieses Auftrags. Siehe Frage 1.
+
+**Auslegungen (Vorschlag, gelten bis Otto widerspricht):**
+1. **Standard „Dark“** für Appearance (wie bisher, ohne gemerkte Wahl).
+2. **Abschnitt „Tooltips“ ist der fünfte** (nach „Appearance“), die Reihenfolge der Antwort Ottos.
+3. **„Offene Ansicht“** ist die Ansicht der Seitenleiste (`focusMode`) mit ihren Bildern; die Treffer der Suche und die Vorschau der Ansicht beim Blättern zählen nicht. Ist die Ansicht ein angehefteter Layer, zählt sie über das Auge des Layers.
+4. **Ausblenden:** „Hide image“ der Ansicht nimmt die Ansicht aus dem Zoom, auch wenn sie ein Layer ist.
+5. **Der Knopf „Hide coverage“ neben „Coverage“ bleibt.** Gelesen wird „ein- und ausgeschaltet nur über den Knopf selbst“ so, dass die Wahl des Datensatzes nichts mehr ausschaltet. Siehe Frage 2.
+6. **Menü bei 360 px:** 14 Zeilen in Fingerhöhe (44 px) passen nicht in 740 px Fensterhöhe; das Menü scrollt dort in sich (nie seitwärts).
+7. **Der Tooltip „Settings“** ist einfach (Name eines Symbols, das nicht selbsterklärend ist), die Tooltips der Einträge im Menü sind „advanced“.
+8. **Der Tooltip von „Zoom to selection“** bleibt „advanced“; gesperrt zeigt er in beiden Stufen den Grund.
+
+**Fragen an Otto:**
+1. **`POST /coverage/{id}` im Backend**: (1) behalten — **Empfehlung**; (2) entfernen samt der Backend-Tests und eines Nachtrags in `adr/0004`.
+2. **„Hide coverage“ bei mehreren Datensätzen**: (1) der Knopf „Hide coverage“ neben „Coverage“ bleibt, die Wahl enthält nur Datensätze — **Empfehlung**; (2) auch dieser Knopf entfällt, „Coverage“ schaltet selbst aus (ein Klick bei eingeschalteter Karte), ein anderer Datensatz erst nach dem Ausschalten.
+
+**Prüfungen:** Frontend `zoomSelection.test.ts`, `geoUtils.test.ts` (`unionBboxShortest`), `store.coverage.test.ts`, `store.test.ts`, `api.test.ts`, `SettingsMenu.test.tsx`, `AppRail.test.tsx`, `AppTopBar.test.tsx`, `preferences.test.ts`, `permalink.test.ts`, `ProcessingShare.test.tsx`, `tipLevel.test.ts`, `TipLayer.test.tsx`, `ControlPanel.test.tsx`, `icons.test.tsx`, `uiRules.test.ts`; Browser `e2e/settings-menu.cjs` (neu; Hell/Dunkel, 1280 und 360 px), `e2e/no-aoi-in-url.cjs` und `e2e/map-gl6.cjs` nachgezogen. Die Gegenprobe der neuen Tests gegen den Stand von `main` und die Ergebnisse aller Läufe stehen im Log ([#291](https://github.com/oscipal/earthX/pull/291)). **Bekannt, nicht aus diesem PR:** `e2e/range-layout.cjs` scheitert bei sehr schmalen Fenstern (Feld „-0.123456“ abgeschnitten), auch auf `main`; das gehört zu Teil 6.
+
+**Antworten Otto (04.11.2026, zu [#291](https://github.com/oscipal/earthX/pull/291)):**
+1. `POST /coverage/{id}` bleibt im Backend (Option 1).
+2. Der Knopf „Hide coverage“ neben „Coverage“ bleibt (Option 1).
+3. Das Menü scrollt bei 360 px in sich: in Ordnung.
+
+**Zusatz Otto (04.11.2026, zu [#291](https://github.com/oscipal/earthX/pull/291)), umgesetzt:** Das Einstellungsmenü ist ein Panel, kein Popup.
+1. **Panel in der Leiste:** „Settings“ öffnet wie die übrigen Panels (`.dock`, Slot `dock-settings`, 340 px; unter 900 px über der Karte von der Leiste bis zum rechten Rand), mit dem Kopf `.results-head` (nur der Titel, kein x, siehe die Antworten unten); Esc schließt nichts. `SettingsMenu.tsx`, `Popover` mit `beside`, `placePopoverBeside` und `data-popover-edge` entfallen (`Popover` und `popover.ts` sind wieder wie auf `main`); `DockPanel` kennt `'settings'`, das Symbol ist das fünfte der Leiste (`AppRail`, `#rail-settings`).
+2. **Schalter der Tooltips:** `components/Switch.tsx` (`role="switch"`, `aria-checked`, `aria-label="Advanced tooltips"`), links „Simple“, rechts „Advanced“, Vorgabe links.
+3. **Knöpfe statt Häkchen:** Basemap, Projection und Appearance sind `.btn.seg` in einer Gruppe, der gewählte gefüllt (`.btn.seg[aria-pressed='true']`: Akzent, `--on-accent`); jedes Overlay ist ein Knopf derselben Form, gedrückt = an.
+4. Leitfaden §3 (Auswahl aus wenigen, Schalter), §7, §8a, §9, §10 nachgezogen; Prüfungen in `uiRules.test.ts`; `e2e/settings-menu.cjs` heißt jetzt `e2e/settings-panel.cjs`.
+
+**Auslegungen zum Zusatz (gelten bis Otto widerspricht):**
+1. **Der gefüllte gewählte Segment-Knopf gilt für alle `.btn.seg`** (auch Band-Chips, wenn sie gedrückt sind), nicht nur im Panel: ein Segment-Knopf sieht überall gleich aus. Vorher war ein gedrückter Knopf nur getönt.
+2. ~~Das rote x im Kopf hat nur „Settings“~~ — **Antwort Otto (04.11.2026): entfällt**, siehe unten.
+3. **Die Beschriftungen „Simple“ und „Advanced“ neben dem Schalter sind Text, kein Knopf;** gestellt wird mit dem Schalter. Der Tooltip steht am Schalter und erklärt beide Stufen.
+4. **„Filter within AOI only“** in „Advanced search“ bleibt ein Kontrollkästchen mit `role="switch"`; es wird nicht auf `Switch.tsx` umgestellt (ein anderes Bauteil, vom Zusatz nicht gemeint). Siehe Frage 2.
+5. **Das Panel schließt nicht, wenn man wählt;** der Schalter und die Knöpfe wirken sofort (wie das Menü vorher).
+
+**Fragen an Otto zum Zusatz:** beantwortet (siehe unten).
+
+**Antworten Otto (04.11.2026, zum Zusatz):**
+1. Panels in der linken Leiste haben nie ein rotes x im Kopf; sie schließen nur durch erneuten Klick auf ihr Symbol. Das x im Kopf von „Settings“ **entfällt**; Search, Layers, Jobs und Search results bleiben ohne. Im Leitfaden §5 als Regel („linke Panels: ein- und ausschalten über das Symbol, kein x“; das rote x bleibt für die Seitenleiste rechts, Dialoge, Blätter und Meldungen) und in der Prüfung gegen Rückfälle (`uiRules.test.ts`, `AppRail.test.tsx`, `SettingsPanel.test.tsx`, `settings-panel.cjs`).
+2. „Filter within AOI only“ bleibt, wie es ist (Kontrollkästchen mit `role="switch"`).
+3. Der gefüllte gewählte Segment-Knopf gilt überall: in Ordnung.
+
+**Zusatz Otto (04.11.2026, später, zu [#291](https://github.com/oscipal/earthX/pull/291)), umgesetzt:**
+1. **Alle Boxen gleich groß, ruhiger, wie beim Processing-Manager:** jede Reihe des Panels ist ein Raster aus vier gleich breiten Spalten (`.settings-row`, `--settings-columns: 4`); jede Box (Segment-Knopf) hat dieselbe Breite und Höhe, ihr Text ist nie abgeschnitten (gemessen bei 1280 und 360 px).
+2. **„Simple“ und „Advanced“ doch in verschiedenen Boxen:** zwei Segment-Knöpfe, der gewählte gefüllt, Vorgabe „Simple“. Der Schalter (`Switch.tsx`, `.switch`) entfällt, ebenso das Bauteil; der Leitfaden hält fest, dass `role="switch"` nur für An/Aus gilt (heute: „Filter within AOI only“).
+3. **Fehler: ein Tooltip verschwand nicht, wenn auf „Simple“ geschaltet war.** Ursache: `TipLayer` blendete einen Tooltip nur aus, wenn das Element, das der Zeiger verlässt, in der aktuellen Stufe einen Tooltip hat. Wer bei „Advanced“ einen Tooltip zeigte und dann auf „Simple“ klickte, verließ ein Element, dessen Tooltip „Simple“ zurückhält: das `mouseout` blieb ohne Wirkung, der Tooltip stand. Behoben: der gezeigte Tooltip geht, wenn der Zeiger oder der Fokus sein Element verlässt, in jeder Stufe, und ein Wechsel der Stufe nimmt ihn weg. Test `TipLayer.step.test.tsx` (gegen den alten Code scheitern drei von vier), im Browser `e2e/settings-panel.cjs` (auch mit dem Zeiger, der auf dem angeklickten Feld bleibt).

@@ -757,25 +757,16 @@ interface CoverageQuestion {
   query?: FilterQuery;
 }
 
-// Either the visible map extent or the box of an AOI, never both (NM4-57).
-export type CoverageParams = CoverageQuestion &
-  (
-    | {
-        // The visible map extent, rounded to the block grid of `coverage.ts` (`roundBboxToGrid`): no AOI, so it may
-        // stand in the URL of a GET. The route refuses a box that is off that grid.
-        bbox?: Bbox;
-        aoiBbox?: never;
-      }
-    | {
-        // The box of the AOI (M4 Q8): never in a URL, always in the body of a POST.
-        aoiBbox: Bbox;
-        bbox?: never;
-      }
-  );
+// The question carries no AOI (UI-04 part 4, Otto, 4.11.2026): the map shows the coverage of what is in view, drawn AOI or none.
+// `bbox` is the visible map extent, rounded to the block grid of `coverage.ts` (`roundBboxToGrid`), so it may stand in the URL of a GET;
+// the route refuses a box that is off that grid.
+export interface CoverageParams extends CoverageQuestion {
+  bbox?: Bbox;
+}
 
 const hasFilters = (query?: FilterQuery): query is FilterQuery => !!query && Object.keys(query).length > 0;
 
-// The URL of a coverage question without an AOI. It never carries `aoiBbox`.
+// The URL of a coverage question. It carries the map extent, never the box of an AOI (NM4-57).
 export function buildCoverageUrl(p: CoverageParams): string {
   const params = new URLSearchParams({ zoom: String(p.zoom) });
   if (p.bbox) params.set('bbox', p.bbox.join(','));
@@ -784,25 +775,8 @@ export function buildCoverageUrl(p: CoverageParams): string {
   return `${BASE}/coverage/${encodeURIComponent(p.datasetId)}?${params.toString()}`;
 }
 
-// The body of `POST /coverage/{id}` (`CoverageBody` in `api/coverage_route.py`): the AOI, and what the GET
-// carries in its query string, with the filters as an object.
-export function buildCoverageBody(p: CoverageParams): Record<string, unknown> {
-  const body: Record<string, unknown> = { zoom: p.zoom };
-  if (p.aoiBbox) body.bbox = p.aoiBbox;
-  if (p.datetime) body.datetime = p.datetime;
-  if (hasFilters(p.query)) body.query = p.query;
-  return body;
-}
-
 export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse> {
-  if (!p.aoiBbox) return jsonOrThrow(await fetch(buildCoverageUrl(p)));
-  return jsonOrThrow(
-    await fetch(`${BASE}/coverage/${encodeURIComponent(p.datasetId)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildCoverageBody(p)),
-    }),
-  );
+  return jsonOrThrow(await fetch(buildCoverageUrl(p)));
 }
 
 // POST /collections/{dataset}/download (M2-06): the AOI crop as a ZIP, streamed

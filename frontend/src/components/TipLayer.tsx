@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { placeTip, type Side } from '../tipPlacement';
+import { useAppStore } from '../store';
 import { currentTipLevel, tipShown } from '../tipLevel';
 
 // The one tooltip of the app (UI-01 §4). Every element with `data-tip` gets it on hover and on keyboard focus;
@@ -39,14 +40,21 @@ export default function TipLayer() {
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const text = anchor?.getAttribute('data-tip') ?? '';
+  // A change of the step takes the tip that is shown away: it may be one the new step holds back.
+  const level = useAppStore((s) => s.tipLevel);
+  useEffect(() => setAnchor(null), [level]);
 
   useEffect(() => {
     const show = (event: Event) => {
       const el = tipOf(event.target);
       if (el) setAnchor(el);
     };
+    // The tip goes with the pointer or the focus, whatever step the tips are in by then: a tip that was shown stays no more because the step
+    // changed to "simple" while the pointer was on it (a control of the other step is no tip any more, but its tip is still drawn).
     const hide = (event: Event) => {
-      if (tipOf(event.target)) setAnchor(null);
+      const target = event.target;
+      const left = tipOf(target) !== null;
+      setAnchor((was) => (left || (was !== null && target instanceof Node && was.contains(target)) ? null : was));
     };
     // At most once a frame: the search over the locked controls is not for every move of a dragged map.
     let frame = 0;

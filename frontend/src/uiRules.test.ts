@@ -514,6 +514,133 @@ describe('two steps of tooltips (UI-04 part 3b, Otto, 4.11.2026): data-tip-level
   });
 });
 
+describe('the settings are in one panel (UI-04 part 4, Otto, 3.11.2026 and 4.11.2026)', () => {
+  const code = sources.map(([, text]) => withoutComments(text)).join('\n');
+
+  it('has no button "Basemap" and no button for the theme beside it, and no pop-up menu of the settings: nothing of the old places is left', () => {
+    expect(code).not.toMatch(/\bBasemapMenu\b|\bSettingsMenu\b|basemap-btn|\btoggleTheme\b|placePopoverBeside/u);
+    expect(code).not.toMatch(/Switch to the (?:light|dark) theme/u);
+  });
+
+  it('has Relief only as an overlay: no basemap of that name', () => {
+    expect(SOURCES['./basemaps.ts']).not.toMatch(/\brelief\b/iu);
+  });
+
+  it('keeps the symbol of the panel at the bottom of the rail, after the others', () => {
+    expect(CSS).toMatch(/\.rail-settings \{[^}]*margin-top: auto/u);
+  });
+
+  it('is a panel of the dock like the others: a slot, the head of a panel without an x, no pop-up', () => {
+    expect(SOURCES['./App.tsx']).toMatch(/dockPanelId\('settings'\)/u);
+    const panel = SOURCES['./components/SettingsPanel.tsx'];
+    expect(panel).toMatch(/className="results-head"/u);
+    expect(panel).not.toMatch(/Popover|role="menu|menuitem|MenuTick/u);
+  });
+
+  it('has no list of ticks in it: every choice is a segment button, in rows of one size, the two steps of the tooltips too', () => {
+    const panel = SOURCES['./components/SettingsPanel.tsx'];
+    expect(panel).toMatch(/className="btn seg"/u);
+    expect(panel).toMatch(/aria-label="Tooltips"/u);
+    expect(panel).not.toMatch(/CheckIcon|aria-checked|type="checkbox"|type="radio"|role="switch"|<Switch\b/u);
+    expect(CSS).toMatch(/\.settings-row \{[^}]*grid-template-columns: repeat\(var\(--settings-columns\), minmax\(0, 1fr\)\)/u);
+    expect(CSS).toMatch(/\.settings-panel \{[^}]*--settings-columns: 4/u);
+  });
+});
+
+describe('the panels of the rail have no x (UI-04 part 4, Otto, 4.11.2026): they are opened and closed with their symbol', () => {
+  // The red x is for the side bar at the right, dialogs, sheets and messages (`CloseButton`); a panel at the left (Search and area, Layers, Jobs,
+  // Search results, Settings) is switched on and off with its symbol in the rail.
+  const PANELS = [
+    'components/ControlPanel.tsx',
+    'components/LayerManager.tsx',
+    'components/ProcessingManager.tsx',
+    'components/ResultsPanel.tsx',
+    'components/SettingsPanel.tsx',
+  ];
+  const holdsX = (text: string) => /<CloseButton\b|\bclose-x\b|\bcloseDock\b/u.test(withoutComments(text));
+
+  it.each(PANELS)('has no CloseButton, no close-x and no closeDock in %s', (path) => {
+    expect(SOURCES[`./${path}`], path).toBeDefined();
+    expect(holdsX(SOURCES[`./${path}`]), path).toBe(false);
+  });
+
+  it('finds an x in the head of a panel (counter-check)', () => {
+    expect(holdsX('<div className="results-head"><h2>Jobs</h2><CloseButton onClick={f} /></div>')).toBe(true);
+    expect(holdsX('<button className="close-x">')).toBe(true);
+    expect(holdsX('const close = useAppStore((s) => s.closeDock);')).toBe(true);
+    expect(holdsX('<div className="results-head"><h2>Jobs</h2></div>')).toBe(false);
+  });
+});
+
+describe('a segment button is the form of a choice (UI-04 part 4, Otto, 4.11.2026)', () => {
+  // A switch (`role="switch"`) is for something that is on or off and nothing else; a choice of one of several, the steps of the tooltips
+  // included, is a row of segment buttons, and a thing that is on beside others is a button that is pressed. Today the one switch is the
+  // checkbox "Filter within AOI only" (Otto, 4.11.2026: it stays).
+  const holders = (text: string) => /role="switch"/u.test(withoutComments(text));
+  it('has `role="switch"` only in the filter within the AOI, and no component `Switch`', () => {
+    expect(sources.filter(([, text]) => holders(text)).map(([path]) => path)).toEqual(['components/AdvancedSearch.tsx']);
+    expect(SOURCES['./components/Switch.tsx']).toBeUndefined();
+    expect(holders('<button role="switch" />')).toBe(true);
+    expect(holders('<button aria-pressed />')).toBe(false);
+  });
+
+  it('fills the segment button that is chosen, and the overlay that is on', () => {
+    expect(CSS).toMatch(/\.btn\.seg\[aria-pressed='true'\] \{[^}]*background: var\(--accent\)/u);
+    expect(CSS).toMatch(/\.btn\.seg\[aria-pressed='true'\] \{[^}]*color: var\(--on-accent\)/u);
+  });
+});
+
+describe('the full text of a cut-off text shows only while it is cut (UI-04 part 4, Otto, 4.11.2026): data-tip-cut', () => {
+  const cutTags = (text: string) => openingTags(text).filter(({ attributes }) => /(?:^|\s)data-tip-cut(?:=|\s|$)/u.test(topLevel(attributes)));
+  const faults = (text: string) =>
+    cutTags(text).flatMap(({ tag, attributes }) => {
+      const top = topLevel(attributes);
+      const problems: string[] = [];
+      if (!/(?:^|\s)data-tip=/u.test(top)) problems.push('no data-tip');
+      // It holds in both steps: a step beside it would hold the tip back in one of them.
+      if (/(?:^|\s)data-tip-level=/u.test(top)) problems.push('has a step');
+      // `data-tip-cut` alone would render as "true", which names no element to measure.
+      if (/(?:^|\s)data-tip-cut(?=\s|$)/u.test(top)) problems.push('empty without a value');
+      return problems.map((problem) => `<${tag}> ${problem}`);
+    });
+
+  it('sits only beside a data-tip, never with a step, and always with a value', () => {
+    expect(sources.flatMap(([path, text]) => faults(text).map((fault) => `${path}: ${fault}`))).toEqual([]);
+    expect(faults('<span data-tip="a" data-tip-cut="">')).toEqual([]);
+    expect(faults('<button data-tip={t} data-tip-cut=".pm-title">')).toEqual([]);
+  });
+
+  it('finds a fault in each of its three forms (counter-check)', () => {
+    expect(faults('<span data-tip-cut="">')).toHaveLength(1);
+    expect(faults('<span data-tip="a" data-tip-level="advanced" data-tip-cut="">')).toHaveLength(1);
+    expect(faults('<span data-tip="a" data-tip-cut>')).toHaveLength(1);
+  });
+
+  // The places where a text is cut with an ellipsis and has the full text as its tip: the title of a job and of a batch, the name of a scene.
+  const CUT_TEXTS = [
+    { what: 'the title of a job', file: 'components/ProcessingManager.tsx', test: /data-tip=\{title\}/u },
+    { what: 'the title of a batch', file: 'components/ProcessingManager.tsx', test: /data-tip=\{batch\.title\}/u },
+    { what: 'the name of a scene in the list', file: 'components/ResultsPanel.tsx', test: /data-tip=\{item\.id\}/u },
+  ];
+  it.each(CUT_TEXTS)('marks $what', ({ file, test }) => {
+    const tags = openingTags(SOURCES[`./${file}`]).filter(({ attributes }) => test.test(attributes));
+    expect(tags.length, file).toBeGreaterThan(0);
+    expect(tags.filter(({ attributes }) => !/(?:^|\s)data-tip-cut=/u.test(topLevel(attributes))).map(({ attributes }) => attributes.trim().slice(0, 50))).toEqual([]);
+  });
+
+  it('names an element that the button holds, where the tip sits on a button around the cut text', () => {
+    const tags = openingTags(SOURCES['./components/ProcessingManager.tsx']).filter(({ attributes }) => /data-tip-cut="\./u.test(attributes));
+    expect(tags.length).toBeGreaterThan(0);
+    for (const { attributes } of tags) {
+      const selector = /data-tip-cut="\.([\w-]+)"/u.exec(attributes)?.[1];
+      expect(selector).toBeTruthy();
+      expect(SOURCES['./components/ProcessingManager.tsx']).toContain(`className="${selector}"`);
+      // And that element is the one that is cut (`text-overflow: ellipsis`).
+      expect(new RegExp(`\\.${selector} \\{[^}]*text-overflow: ellipsis`, 'u').test(CSS)).toBe(true);
+    }
+  });
+});
+
 describe('no rule for a class nobody names (UI-04 part 3b)', () => {
   // Classes the code builds from a part (`range-hist-${channel}`) or that a library puts on its own elements (MapLibre).
   const BUILT = /^(?:range-hist-|vc-chip-|maplibregl-)/u;

@@ -1,10 +1,11 @@
-// Browser check of NM4-57 (M4 Q8): no URL the browser asks for carries the coordinates of an AOI, and the coverage of an
-// AOI is a POST. It does what a user does with an area: sets it, shows the coverage map, searches, looks at the previews of
-// the results, ticks a scene for the view, and then takes the area away and moves the map. Every request of the page is
+// Browser check of NM4-57 (M4 Q8), since UI-04 part 4 (Otto, 4.11.2026) without a coverage POST: no URL the browser asks for carries
+// the coordinates of an AOI, and the coverage map asks for the visible map extent whether an AOI is drawn or not (a GET, the AOI
+// is no part of the question). It does what a user does with an area: sets it, shows the coverage map, searches, looks at the
+// previews of the results, ticks a scene for the view, and then takes the area away and moves the map. Every request of the page is
 // recorded with its method, URL, status and body, and the check fails when
-//   - a coordinate of the AOI stands in a URL (path, query, in any spelling a browser sends: plain or percent-encoded);
-//   - the coverage of the AOI is not a POST, or its body does not carry the box of the AOI;
-//   - the coverage of the map extent (no AOI) is refused (a 400 means the extent is off the grid the route knows);
+//   - a coordinate of the AOI stands in a URL (path, query, in any spelling a browser sends: plain or percent-encoded) or in a body;
+//   - the coverage is asked by POST at all, or does not ask for a map extent while the AOI is drawn;
+//   - the coverage of the map extent is refused (a 400 means the extent is off the grid the route knows);
 //   - the page address itself carries the AOI.
 //
 // It needs the real `api` (8000) behind the dev server, because the check is also about what the server says to the
@@ -71,7 +72,7 @@ const ASSETS = /^\/(src|@|node_modules)/;
   await page.waitForSelector('.dataset-toggle');
   await page.locator('.dataset-toggle', { hasText: 'Sentinel-2' }).first().click();
 
-  // 1. An AOI, and the coverage map of its dataset.
+  // 1. An AOI, and the coverage map of its dataset (of the extent in view).
   await store((s, aoi) => { s.getState().setAoi(aoi); s.getState().flyTo([9.2, 48.2, 9.8, 48.7]); }, AOI);
   await settle();
   await store((s, id) => s.getState().showCoverageFor(id), DATASET);
@@ -114,13 +115,10 @@ const ASSETS = /^\/(src|@|node_modules)/;
   const coverage = mine.filter(({ url }) => new URL(url).pathname.startsWith('/coverage/'));
   const posts = coverage.filter(({ method }) => method === 'POST');
   const gets = coverage.filter(({ method }) => method === 'GET');
-  expect('no POST of the coverage of the AOI', posts.length > 0);
-  for (const { body, url } of posts) {
-    const sent = JSON.parse(body ?? '{}');
-    expect('the body of a coverage POST does not carry the box of the AOI', JSON.stringify(sent.bbox) === JSON.stringify([9.3412, 48.3317, 9.6218, 48.5624]), body ?? 'no body');
-    expect('a coverage POST has a query string', new URL(url).search === '', new URL(url).search);
-  }
+  expect('the coverage is never asked by POST (the AOI is no part of the question)', posts.length === 0, `${posts.length} POST`);
   expect('no GET of the coverage of a map extent', gets.length > 0);
+  expect('the coverage asks for a map extent while the AOI is drawn', gets.some(({ url }) => new URL(url).searchParams.has('bbox')), gets.map(({ url }) => text(url)).join(' | ').slice(0, 200));
+  for (const { body } of coverage) expect('a coverage request carries a body', !body, String(body).slice(0, 80));
   for (const { request, url } of coverage) {
     const status = answers.get(request);
     expect('the coverage is refused as a bad request', status !== 400 && status !== 422, `${request.method()} ${status} ${text(url).slice(0, 120)}`);
@@ -131,7 +129,7 @@ const ASSETS = /^\/(src|@|node_modules)/;
 
   console.log(`${mine.length} requests of the page to this server, ${posts.length} coverage POST, ${gets.length} coverage GET`);
   for (const { method, url, request } of mine) console.log(`  ${method} ${answers.get(request) ?? '-'} ${new URL(url).pathname}${new URL(url).search.slice(0, 90)}`);
-  console.log(problems.length ? `FAILED\n- ${problems.join('\n- ')}` : 'OK: no coordinate of the AOI in any URL');
+  console.log(problems.length ? `FAILED\n- ${problems.join('\n- ')}` : 'OK: no coordinate of the AOI in any URL, no coverage POST');
   console.log(`screenshots in ${OUT}`);
   process.exit(problems.length ? 1 : 0);
 })();

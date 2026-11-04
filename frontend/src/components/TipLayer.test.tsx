@@ -258,3 +258,83 @@ describe('TipLayer in the simple step', () => {
     expect(layer()).toBeNull();
   });
 });
+
+// UI-04 part 4 (Otto, 4.11.2026): the full text of a cut-off text shows only while it is really cut, in both steps. jsdom lays nothing out, so
+// the widths are set by hand, as a browser would measure them.
+describe('TipLayer with the full text of a cut-off text', () => {
+  let host: HTMLDivElement;
+  let hostRoot: Root;
+
+  const sizes = (el: Element, scrollWidth: number, clientWidth: number) => Object.defineProperties(el, { scrollWidth: { value: scrollWidth, configurable: true }, clientWidth: { value: clientWidth, configurable: true } });
+  const hover = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+  const leave = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+
+  beforeEach(() => {
+    host = document.createElement('div');
+    document.body.append(host);
+    hostRoot = createRoot(host);
+    act(() => {
+      hostRoot.render(
+        <div className="app">
+          <span id="own" data-tip="A long name that is cut" data-tip-cut="">A long name that is cut</span>
+          <button type="button" id="around" data-tip="A long job title" data-tip-cut=".title">
+            <span className="title">A long job title</span>
+          </button>
+          <TipLayer />
+        </div>,
+      );
+    });
+  });
+
+  afterEach(() => {
+    setTipLevel('advanced');
+    act(() => hostRoot.unmount());
+    host.remove();
+  });
+
+  const shown = () => document.body.querySelectorAll('.tip-layer')[0]?.textContent ?? null;
+
+  it.each(['simple', 'advanced'] as const)('%s: shows the full text while the text is cut', (level) => {
+    setTipLevel(level);
+    const own = host.querySelector('#own')!;
+    sizes(own, 180, 120);
+    hover(own);
+    expect(shown()).toBe('A long name that is cut');
+  });
+
+  it.each(['simple', 'advanced'] as const)('%s: shows nothing while the text fits, however wide the box is', (level) => {
+    setTipLevel(level);
+    const own = host.querySelector('#own')!;
+    sizes(own, 120, 120);
+    hover(own);
+    expect(shown()).toBeNull();
+    leave(own);
+    sizes(own, 60, 300);
+    hover(own);
+    expect(shown()).toBeNull();
+  });
+
+  it('measures the text inside a button, not the button', () => {
+    const around = host.querySelector('#around')!;
+    sizes(around, 100, 100);
+    sizes(around.querySelector('.title')!, 200, 100);
+    hover(around);
+    expect(shown()).toBe('A long job title');
+    leave(around);
+    sizes(around, 400, 100);
+    sizes(around.querySelector('.title')!, 100, 100);
+    hover(around);
+    expect(shown()).toBeNull();
+  });
+
+  it('follows the text: the same name shows once it is cut by a narrower box, and goes again when the box is wide', () => {
+    const own = host.querySelector('#own')!;
+    sizes(own, 150, 200);
+    hover(own);
+    expect(shown()).toBeNull();
+    leave(own);
+    sizes(own, 150, 90);
+    hover(own);
+    expect(shown()).toBe('A long name that is cut');
+  });
+});

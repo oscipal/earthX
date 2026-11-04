@@ -56,7 +56,7 @@ function Row({ item }: { item: StacItem }) {
       <div className="result-meta">
         <span className="result-date">{timeOf(item.properties)}</span>
         <span className="result-id-row">
-          <span className="result-id" data-tip={item.id}>
+          <span className="result-id" data-tip={item.id} data-tip-cut="">
             {item.id}
           </span>
           <CopyButton text={item.id} title="Copy scene name" label={`Copy scene name ${item.id}`} />
