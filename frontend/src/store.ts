@@ -18,6 +18,7 @@ import {
   bboxContains,
   clampBboxLongitude,
   FOOTPRINT_FETCH_LIMIT,
+  FOOTPRINT_MIN_ZOOM,
   levelForViewport,
   roundBboxToGrid,
   showFootprints,
@@ -208,6 +209,8 @@ let coverageDebounceHandle: number | undefined;
 // started can tell it has been superseded and must not overwrite fresher
 // state (the same pattern `mapLayers.ts` uses for quicklook loads).
 let coverageGen = 0;
+// The last question `refreshCoverage` sent (dataset, level, area, dates, filters), to leave out its repeats.
+let coverageQuestion = '';
 
 // M3-19 §3: the last few viewport (no-AOI) answers, so a pan/zoom that stays
 // inside a bbox already asked for skips the request instead of repeating it.
@@ -261,14 +264,14 @@ function scheduleCoverageRefresh(set: SetState, get: GetState): void {
 // it with.
 //
 // M3-19 (Otto, 23.09.2026, replacing adr/0010 answer 6a): with an AOI,
-// `bbox` is that AOI (`aoi`, drawn/uploaded) and the level follows the map's
-// floored zoom, unchanged from before. Since NM4-57 the AOI's box goes in the
+// `bbox` is that AOI (`aoi`, drawn/uploaded). Since NM4-57 the AOI's box goes in the
 // body of a POST (`aoiBbox`), never in a URL (M4 Q8). Without an AOI, `bbox` is the
 // *visible map extent* instead — banded across the antimeridian and rounded
 // outward to a coarser block (`coverage.ts`) so nearby viewports ask the
-// same question — and the level is derived from the viewport's own size so
+// same question. Either way the level is derived from the viewport's own size so
 // roughly the same number of cells always covers the screen
-// (`levelForViewport`). Either way `bbox` is a real spatial filter as far as
+// (`levelForViewport`); with an AOI it was the floored zoom alone until 03.11.2026,
+// which at the first zoom of the page is level 1, a quarter of the world in one cell. Either way `bbox` is a real spatial filter as far as
 // the route is concerned, so its `WORLD_LEVEL_CAP` no longer applies to the
 // no-AOI case; see the plan for why that is intended, not a leftover.
 //
@@ -306,13 +309,21 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
       return;
     }
     bbox = clampBboxLongitude(rawBbox);
-    level = Math.floor(s.mapZoom);
+    // The map fills the window; before it has told its size, the window's stands in for it.
+    const size = s.viewportSize ?? { width: window.innerWidth, height: window.innerHeight };
+    level = levelForViewport(s.mapZoom, size.width, size.height);
   } else {
     if (s.viewportBbox === null || s.viewportSize === null) return; // map not ready yet
     level = levelForViewport(s.mapZoom, s.viewportSize.width, s.viewportSize.height);
     viewport = bandViewportBbox(s.viewportBbox);
     bbox = roundBboxToGrid(viewport, level - VIEWPORT_ROUND_LEVELS);
   }
+
+  // The same question as the one on its way or on the map is not sent again: with an AOI every `moveend` asked anew.
+  // Whether the zoom allows footprints is part of it, since the level can stay the same across that brake.
+  const question = JSON.stringify([datasetId, level, hasAoi, bbox, datetime, filters, s.mapZoom >= FOOTPRINT_MIN_ZOOM]);
+  if (question === coverageQuestion && (s.coverageLoading || s.coverage !== null)) return;
+  coverageQuestion = question;
 
   const gen = ++coverageGen;
 
