@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CHANNEL_NAMES, channelsAtPercent, channelsOf, channelsOfRescale, checkChannels, rescaleOfChannels, rescaleParams } from './channels';
+import { CHANNEL_NAMES, channelProblems, channelsAtPercent, channelsOf, channelsOfRescale, checkChannels, rescaleOfChannels, rescaleParams } from './channels';
 
 const range = (vmin: string, vmax: string) => ({ vmin, vmax });
 const THREE = [range('1', '2'), range('3', '4'), range('5', '6')];
@@ -208,5 +208,30 @@ describe('channelsAtPercent', () => {
 
   it('is null for a pair of percentiles the wrong way round', () => {
     expect(channelsAtPercent([band(1, 5), band(1, 5), band(1, 5)], { low: 98, high: 2 })).toBeNull();
+  });
+});
+
+describe('channelProblems', () => {
+  const ok = { vmin: '0', vmax: '1' };
+
+  it('is null for every channel that can be drawn, in values or in percentiles', () => {
+    expect(channelProblems([ok, { ...ok, percent: { low: '2', high: '98' } }, ok])).toEqual([null, null, null]);
+  });
+
+  it('names the channel by its letter and the reason, for each that cannot', () => {
+    expect(channelProblems([{ vmin: '1', vmax: '1' }, { vmin: '', vmax: '1' }, { vmin: 'x', vmax: '1' }])).toEqual([
+      'R: vmin must be below vmax',
+      'G: enter a number for vmin and vmax',
+      'B: enter a number for vmin and vmax',
+    ]);
+    expect(channelProblems([ok, { ...ok, percent: { low: '98', high: '2' } }, { ...ok, percent: { low: '2', high: '101' } }])).toEqual([
+      null,
+      'G: the lower percentile must be below the upper one',
+      'B: enter whole percents from 0 to 100 for both ends',
+    ]);
+  });
+
+  it('does not look at the values of a channel typed in percentiles', () => {
+    expect(channelProblems([{ vmin: '5', vmax: '1', percent: { low: '2', high: '98' } }, ok, ok])).toEqual([null, null, null]);
   });
 });

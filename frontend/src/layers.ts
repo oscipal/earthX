@@ -151,4 +151,8 @@ export interface ResultLayerInfo {
   // values they gave. While a look is applied and not saved, `savedPercent` is what the saved look was typed as.
   percent?: Percent;
   savedPercent?: Percent | null;
+  // The same for a colour picture whose channels are each typed in their own unit (UI-04 part 5): a pair for a channel typed in
+  // percentiles, `null` for one typed in values, red, green, blue. Where it is set, `percent` is not.
+  percentChannels?: (Percent | null)[];
+  savedPercentChannels?: (Percent | null)[] | null;
 }

@@ -3,7 +3,7 @@
 // "Preview", and the layer a preview becomes. Pure functions; the state lives in
 // `processingStore.ts`.
 
-import { checkChannels, type ChannelRange } from './channels';
+import { checkChannels, withoutChannels, type ChannelRange } from './channels';
 import { clipTileUrl } from './aoiClip';
 import {
   buildMosaicOperatorTileJsonUrl,
@@ -456,9 +456,10 @@ export function previewSpec(args: {
   const clipAoi = area === 'aoi' ? args.clipAoi : undefined;
   if (!dataset?.viewable || assets.length === 0 || assets.length > MAX_PREVIEW_ASSETS) return null;
   if (band === RGB && args.bands?.length !== 3) return null;
-  const rescale = rescaleOf(range);
+  // A range for each channel is for the colour picture; one band takes the first.
+  const rescale = rescaleOf(band === RGB ? range : withoutChannels(range));
   if ('problem' in rescale) return null;
-  // The tiles ask for the band, or the three of the colour picture, which takes one range for all of them and no colormap.
+  // The tiles ask for the band, or the three of the colour picture, which takes a range for each of them and no colormap.
   const shown: string[] | null = band === null ? null : band === RGB ? [...args.bands!] : [band];
   const asked: ShownBands = shown === null ? null : shown.length === 1 ? shown[0] : shown;
   const render = { rescale: rescale.rescale, colormapName: band === RGB ? undefined : range.colormap || undefined };

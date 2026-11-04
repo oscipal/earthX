@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatasetOption } from '../datasets';
 import { jobEntry, NOW } from '../fixtures/jobEntries';
+import { SHELF_KEY } from '../jobShelf';
 import type { Order } from '../processing';
 import { RGB } from '../processingBands';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
@@ -288,11 +289,20 @@ describe('"Apply" and "Save" of RGB, a range for each channel (UI-03d)', () => {
     typeAll([['0.05', '0.7'], ['0.04', '0.5'], ['0.02', '0.4']]);
     act(() => button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
-    // Counter-check: one channel typed wrong draws nothing new and says which.
+    // Counter-check: one channel typed wrong locks "Apply" and "Save" with the channel and the reason, and marks its fields.
     type('green vmax', '0.01');
+    expect(button('Apply').getAttribute('aria-disabled')).toBe('true');
+    expect(button('Save').getAttribute('aria-disabled')).toBe('true');
+    expect([tipOf(button('Apply')), tipOf(button('Save'))]).toEqual(['G: vmin must be below vmax', 'G: vmin must be below vmax']);
+    expect(['red', 'green', 'blue'].map((c) => input(`${c} vmax`).getAttribute('aria-invalid'))).toEqual([null, 'true', null]);
     act(() => button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    act(() => button('Save').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
-    expect(container.textContent).toContain('The lower end of green must be below the upper end.');
+    expect(useProcessingStore.getState().jobs[0].bandRanges[RGB]).toBeUndefined();
+    // Mended, both are open again.
+    type('green vmax', '0.6');
+    expect(button('Apply').getAttribute('aria-disabled')).toBeNull();
+    expect(input('green vmax').getAttribute('aria-invalid')).toBeNull();
   });
 
   it('keeps the ranges for RGB with "Save", as for a band, and for no other band', async () => {
@@ -307,21 +317,127 @@ describe('"Apply" and "Save" of RGB, a range for each channel (UI-03d)', () => {
     expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
   });
 
-  it('takes each channel at the percentiles of its own values', async () => {
-    const stats = { bands: [{ statistics: BLUE }, { statistics: GREEN }, { statistics: RED }] }; // the file of `colourOnly`
+  // The three bands of the file of `colourOnly`; the statistics answer the percentiles (0 and 100 are the minimum and the maximum).
+  function answerStatistics() {
+    const stats = { bands: [{ statistics: BLUE }, { statistics: GREEN }, { statistics: RED }] };
     vi.mocked(fetch).mockImplementation(async (url) => (String(url) === HREF ? json(TILE_JSON) : String(url).endsWith('/statistics') ? json(stats) : json({ title: 'Not found' })));
-    await openControls();
-    const unit = container.querySelector<HTMLSelectElement>('.vc-unit')!;
+  }
+  const unitOf = (channel: string) => container.querySelector<HTMLSelectElement>(`select[aria-label="${channel} range unit"]`)!;
+  const setUnit = (channel: string, unit: string) =>
     act(() => {
-      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(unit, 'percent');
-      unit.dispatchEvent(new Event('change', { bubbles: true }));
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(unitOf(channel), unit);
+      unitOf(channel).dispatchEvent(new Event('change', { bubbles: true }));
     });
+  const click = async (label: string) => {
+    await act(async () => {
+      button(label).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+  };
+
+  it('has a unit for each channel, each in values at first', async () => {
+    await openControls();
+    expect(['red', 'green', 'blue'].map((c) => unitOf(c).value)).toEqual(['value', 'value', 'value']);
+    expect(container.querySelectorAll('.vc-unit')).toHaveLength(3);
+  });
+
+  it('takes a channel in percentiles at its own values and leaves the others as typed', async () => {
+    answerStatistics();
+    await openControls();
+    setUnit('red', 'percent');
+    setUnit('blue', 'percent');
+    type('blue low percentile', '0');
+    type('blue high percentile', '100');
+    type('green vmax', '0.45');
     await act(async () => {
       button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await vi.waitFor(() => expect(query().getAll('rescale')).toHaveLength(3));
     });
-    // red, green, blue: each its own 2nd and 98th percentile.
-    expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
+    // red at its 2nd to 98th, green as typed, blue from its minimum to its maximum.
+    expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.02,0.45', '0.005,0.6']);
+    expect(layers()[0].result?.percentChannels).toEqual([{ low: '2', high: '98' }, null, { low: '0', high: '100' }]);
+    expect(layers()[0].result?.percent).toBeUndefined();
+  });
+
+  it('shows the pair of a channel in percentiles again where the settings are opened on the layer', async () => {
+    answerStatistics();
+    await openControls();
+    setUnit('green', 'percent');
+    await act(async () => {
+      button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.waitFor(() => expect(query().getAll('rescale')).toHaveLength(3));
+    });
+    act(() => root.render(<div />));
+    act(() => root.render(<ResultControls />));
+    expect(unitOf('green').value).toBe('percent');
+    expect(unitOf('red').value).toBe('value');
+    expect([input('green low percentile').value, input('green high percentile').value]).toEqual(['2', '98']);
+    expect(button('Apply').getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('locks "Apply" and "Save" for a channel with a pair that is none, names the channel and the reason, and draws nothing', async () => {
+    answerStatistics();
+    await openControls();
+    const before = urlOf();
+    setUnit('blue', 'percent');
+    type('blue low percentile', '98');
+    type('blue high percentile', '2');
+    for (const label of ['Apply', 'Save']) {
+      expect(button(label).getAttribute('aria-disabled')).toBe('true');
+      expect(tipOf(button(label))).toBe('B: the lower percentile must be below the upper one');
+    }
+    expect(input('blue low percentile').getAttribute('aria-invalid')).toBe('true');
+    expect(input('red vmin').getAttribute('aria-invalid')).toBeNull();
+    await click('Apply');
+    await click('Save');
+    expect(urlOf()).toBe(before);
+    expect(useProcessingStore.getState().jobs[0].bandRanges[RGB]).toBeUndefined();
+    // Counter-check: a pair that is one draws.
+    type('blue low percentile', '2');
+    type('blue high percentile', '98');
+    expect(button('Apply').getAttribute('aria-disabled')).toBeNull();
+    await act(async () => {
+      button('Apply').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.waitFor(() => expect(urlOf()).not.toBe(before));
+    });
+  });
+
+  it('keeps the unit of each channel with "Save", for the layer and in the browser, and draws it again from there', async () => {
+    answerStatistics();
+    await openControls();
+    setUnit('red', 'percent');
+    await act(async () => {
+      button('Save').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.waitFor(() => expect(query().getAll('rescale')).toHaveLength(3));
+    });
+    const job = useProcessingStore.getState().jobs[0];
+    expect(job.bandRanges[RGB].channels?.map((c) => c.percent ?? null)).toEqual([{ low: '2', high: '98' }, null, null]);
+    expect(JSON.parse(localStorage.getItem(SHELF_KEY)!).jobs[0].bandRanges[RGB].channels[0].percent).toEqual({ low: '2', high: '98' });
+    // The next layer of the job starts from what was kept.
+    act(() => useAppStore.setState({ layers: [] }));
+    await useProcessingStore.getState().showResultOnMap(JOB);
+    expect(layers()[0].result?.percentChannels).toEqual([{ low: '2', high: '98' }, null, null]);
+    expect(query().getAll('rescale')).toEqual(['0.05,0.7', '0.02,0.7', '0.02,0.7']);
+  });
+
+  it('reads one pair kept for all three before as the pair of every channel', async () => {
+    await colourOnly({ bandRanges: { [RGB]: { vmin: '0.05', vmax: '0.7', colormap: '', percent: { low: '2', high: '98' } } } });
+    act(() => useAppStore.setState({ resultViewLayerId: layers()[0].id }));
+    act(() => root.render(<ResultControls />));
+    expect(['red', 'green', 'blue'].map((c) => unitOf(c).value)).toEqual(['percent', 'percent', 'percent']);
+    expect(button('Apply').getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('puts the usual pair on each channel in percentiles with the auto button, and the default of the statistics on the others', async () => {
+    await openControls();
+    setUnit('green', 'percent');
+    type('green low percentile', '10');
+    type('red vmin', '5');
+    type('red vmax', '6');
+    const auto = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Auto-scale')!;
+    act(() => auto.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect([input('green low percentile').value, input('green high percentile').value]).toEqual(['2', '98']);
+    expect([input('red vmin').value, input('red vmax').value, input('blue vmin').value, input('blue vmax').value]).toEqual(['0.02', '0.7', '0.02', '0.7']);
   });
 
   it('puts the one range of the three bands back with the auto button', async () => {

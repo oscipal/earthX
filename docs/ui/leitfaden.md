@@ -40,7 +40,7 @@
 | Retry / Run again / Retry failed parts | dieselbe Anfrage noch einmal / Job neu starten / nur die gescheiterten Teile eines Stapels | „Try again“ als Knopf (im Satz einer Meldung erlaubt) |
 | Auto-scale | 2. bis 98. Perzentil in die Felder | „auto-scale“, „Auto stretch“ |
 | Quick processing, Enhance contrast | Abschnitt der Seitenleiste mit Indizes und Kontrast (UI-03d/e) | |
-| Scale, vmin / vmax, absolute / percentile | der Bereich einer Darstellung und seine Art (NM4-65, UI-03e); RGB hat einen Bereich und eine Art je Kanal | „min/max“ |
+| Scale, vmin / vmax, absolute / percentile | der Bereich einer Darstellung und seine Art (NM4-65, UI-03e); RGB hat einen Bereich und eine Art je Kanal, in Ansicht, Layer, Ergebnis-Layer und Processing-Vorschau, und der Permalink hält beides | „min/max“ |
 | Temporary | Abzeichen neben dem Titel der Ansicht, solange kein Layer das Bild so hält, wie es gezeichnet ist | |
 | Filter within AOI only | der Schalter in „Advanced search“ | |
 | Copy original scene name | kopiert die Kennungen der Szenen in die Zwischenablage | |
@@ -110,6 +110,7 @@
 - Was gerade nicht geht, ist **gesperrt** (`disabled` oder `aria-disabled="true"`) und nennt den **Grund im Tooltip**. Der Grund wiederholt nicht den Knopftext. Beispiele: „Type a place name first“, „No earlier AOI in this browser“, „Already at the top“, „Job deleted: restore it first“.
 - **Ein Aussehen:** ein gesperrtes Element ist auf `--disabled-opacity` (0.4) gedimmt, in einer Regel für `:disabled` und `[aria-disabled='true']`. Keine eigene Deckkraft an einem gesperrten Element.
 - **`aria-disabled` für neue Sperren mit Grund:** das Element bleibt in der Tab-Reihenfolge, der Grund ist auch per Tastatur lesbar; der Handler fängt den Klick ab. Ein bestehendes `disabled` bleibt; sein Tooltip erscheint, wo der Zeiger darüber liegt (`TipLayer`), per Tastatur nicht.
+- **Bekannte Grenze (Otto, 04.11.2026):** Der Grund eines `disabled`-Knopfs ist per Tastatur und Screenreader nicht lesbar; ein `disabled`-Element nimmt keinen Fokus. Die Umstellung aller gesperrten Knöpfe auf `aria-disabled` ist ein Punkt für M6 (Barrierefreiheit).
 - Wo eine gesperrte Stelle einen Platz hält, bleibt sie an diesem Platz, z. B. die Colormap bei RGB als gesperrtes „— none —“, auch in der Processing-Vorschau.
 - **Ein Tooltip-Weg:** `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus; `TipLayer` setzt für die Dauer `aria-describedby`, bei einem `label` mit Tooltip am Feld darin; ein Knopf nur mit Symbol hat zusätzlich seinen `aria-label`. **`title` gibt es an keinem Element** (ein zweiter Tooltip des Browsers), außer an `<option>` (eine native Liste zeigt sonst nichts) und an den Steuerelementen von MapLibre. Ein Test findet jedes andere `title`.
 
@@ -168,7 +169,7 @@
 
 - **Ein Schalter** steht mit `aria-pressed`: `.btn` ist dann getönt in Akzent, `.icon-btn` in Akzentfarbe. Die offene Seite der Leiste links trägt `.on`.
 - **Eine Klasse für einen Ort** gibt Platz, Breite und Lage (`tool-btn`, `pm-icon`, `dataset-toggle`, `vc-apply`) und höchstens einen Zustand (`aria-expanded`, `.wrong`); sie erfindet keine neue Form, also keine eigene Schrift, Deckkraft oder Füllung. Ein Knopf über der Karte trägt `.panel` dazu (`.btn.panel`).
-- Eigene Formen haben bis Teil 3b noch: Segment-Umschalter und Chips (`pp-seg`, `pp-chip`), Zeilen in Menüs und Listen, Titel zum Umbenennen und die Falzgriffe (`pp-grip`).
+- Eigene Formen haben bis Teil 3b noch: Segment-Umschalter und Chips (`pp-seg`, `pp-chip`; werden in 3b zu einer Form `.btn.seg`, Otto, 04.11.2026), Zeilen in Menüs und Listen, Titel zum Umbenennen und die Falzgriffe (`pp-grip`).
 - **Fokus:** ein Ring für alles Bedienbare, `2px solid var(--focus)` per Tastatur (`:focus-visible`), in **einer** Regel. Kein `outline: none`, keine eigene Ringregel an einem Knopf oder Feld; Ausnahmen sind der Schieber (Ring am Griff), der Rahmen eines Popovers (kein bedientes Element) und die Ablagelinie beim Ziehen.
 
 Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.

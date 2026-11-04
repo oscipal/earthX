@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import { createPermalink, permalinkAddress, rememberKey, removePermalink, viewOf, type Created } from '../permalink';
 import type { OrderView } from '../processingStore';
-import { handRangeOf, useProcessingStore } from '../processingStore';
+import { handRangeOnShownBand, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import CopyButton from './CopyButton';
 import { TrashIcon } from './icons';
@@ -16,7 +16,6 @@ export default function ShareLink({ view }: { view: OrderView }) {
   const zoom = useAppStore((s) => s.mapZoom);
   const basemap = useAppStore((s) => s.basemap);
   const projection = useAppStore((s) => s.projection);
-  const range = useProcessingStore((s) => handRangeOf(s));
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<Created | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -29,6 +28,8 @@ export default function ShareLink({ view }: { view: OrderView }) {
     setBusy(true);
     setNote(null);
     try {
+      // The range of the band the map shows, read as the link is made.
+      const range = handRangeOnShownBand(view, useProcessingStore.getState());
       const created = await createPermalink(order, viewOf(bbox, zoom, range, { basemap, projection }));
       rememberKey(created);
       setMade(created);

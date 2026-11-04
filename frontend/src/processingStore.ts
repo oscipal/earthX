@@ -19,6 +19,7 @@
 import { create } from 'zustand';
 
 import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, withPercentiles, type AreaStatistics } from './api';
+import { CHANNEL_NAMES, channelsAtOwnPercent, withoutChannels, type ChannelRange } from './channels';
 import { checkPercent, NO_RANGE_AT_PERCENT, rescaleAtPercent, type Percent } from './percentRange';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import { resultsGroupByOfOption, type DatasetOption } from './datasets';
@@ -90,6 +91,7 @@ import {
   resultTileTemplate,
   startPlaceOf,
   tilesHref,
+  typedOf,
   type ResultBand,
 } from './resultLayer';
 import {
@@ -169,6 +171,7 @@ import type { ResultStats } from './render';
 import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
 import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
+import { previewRangeOf } from './permalinkRange';
 import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
 import { isStatistical, measuredFromRuns, normalizeRuns, startValues, type Measured, type Method, type NormalizeRun } from './normalizeMethods';
@@ -416,6 +419,8 @@ interface ProcessingState {
   // name those percentiles (the measure of a scene), from the tiler on the first scene of the preview. Resolves to the reason
   // there is none, or `null` once the range is applied.
   applyRangePercent: (percent: Percent) => Promise<string | null>;
+  // The same for a colour picture whose channels each have a unit (UI-04 part 5): the channels as the fields hold them.
+  applyRangeChannels: (channels: ChannelRange[]) => Promise<string | null>;
   // Back to the range the measure calls for (M4-19c), measured again where the measure failed.
   autoStretch: () => void;
   pinPreview: () => void;
@@ -1610,8 +1615,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       openCrop(cropToAoi && isArea(viewAoi) ? { itemIds: ids, aoi: viewAoi, result: null } : null, extraScenes, shown?.ids ?? []);
     },
     // Values typed by hand are no percentiles any more (NM4-65 part 4).
+    // The ranges of single channels are set with `channels`; a value typed in the shared fields is for all (UI-04 part 5).
     setRangeDraft: (patch) =>
-      set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch, ...('vmin' in patch || 'vmax' in patch ? { percent: undefined } : {}) }, rangeEdited: true })),
+      set((s) => ({
+        rangeDraft: { ...s.rangeDraft, ...patch, ...(('vmin' in patch || 'vmax' in patch) && !('channels' in patch) ? { percent: undefined, channels: undefined } : {}) },
+        rangeEdited: true,
+      })),
     applyRange: () => {
       if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeByHand: true, rangeEdited: false }));
     },
@@ -1620,23 +1629,28 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     applyRangePercent: async (percent) => {
       const checked = checkPercent(percent);
       if ('problem' in checked) return checked.problem;
-      const spec = wantedPreview();
-      const measure = get().measure;
-      // The measure of this very preview, if it names every percentile asked for.
-      const asked = [checked.low, checked.high].filter((n) => n !== 0 && n !== 100);
-      const named = measure && spec && measure.key === spec.measure && measure.raw && measure.raw.length > 0 && measure.raw.every((band) => asked.every((n) => typeof band[`percentile_${n}`] === 'number'));
-      let bands = named ? measure.raw! : null;
-      if (!bands) {
-        if (!spec) return 'There is no preview to take the percentiles from.';
-        try {
-          bands = Object.values(await fetchStatisticsAt(withPercentiles(spec.sceneMeasure, asked)));
-        } catch (error) {
-          return `Could not measure the percentiles: ${error instanceof Error ? error.message : String(error)}`;
-        }
-      }
+      const bands = await bandsAtPercent([checked.low, checked.high]);
+      if (typeof bands === 'string') return bands;
       const range = rescaleAtPercent(bands, checked);
       if (!range) return NO_RANGE_AT_PERCENT;
       const look: PreviewRange = { ...get().rangeDraft, vmin: String(range[0]), vmax: String(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
+      set({ rangeDraft: look, range: look, rangeByHand: true, rangeEdited: false });
+      return null;
+    },
+    // The colour picture, each channel in its own unit: the ones typed in percentiles are taken at their own values.
+    applyRangeChannels: async (channels) => {
+      const pairs: { low: number; high: number }[] = [];
+      for (const [index, channel] of channels.entries()) {
+        const checked = channel.percent && checkPercent(channel.percent);
+        if (checked && 'problem' in checked) return `${CHANNEL_NAMES[index]}: ${checked.problem}`;
+        if (checked) pairs.push(checked);
+      }
+      const bands = await bandsAtPercent(pairs.flatMap(({ low, high }) => [low, high]));
+      if (typeof bands === 'string') return bands;
+      const made = channelsAtOwnPercent(bands, channels);
+      if (!made) return NO_RANGE_AT_PERCENT;
+      const { percent: _shared, ...rest } = get().rangeDraft;
+      const look: PreviewRange = { ...rest, vmin: made[0].vmin, vmax: made[0].vmax, channels: made };
       set({ rangeDraft: look, range: look, rangeByHand: true, rangeEdited: false });
       return null;
     },
@@ -1723,7 +1737,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           stats,
           preset,
           ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
-          ...(ownRangeOf(job, job.bands, place)?.percent ? { percent: ownRangeOf(job, job.bands, place)!.percent } : {}),
+          ...typedOf(ownRangeOf(job, job.bands, place)),
         },
         overlays: [
           {
@@ -1965,7 +1979,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     // without an AOI keeps the AOI on the map and covers the whole scenes. Nothing is changed unless
     // the order is taken up as a whole.
     restoreOrder: async (order, view, options) => {
-      const range = view.range && { vmin: String(view.range.vmin), vmax: String(view.range.vmax), colormap: view.range.colormap };
+      const range = view.range && previewRangeOf(view.range);
       const taken = await takeOrder(order, 'this link', () => ({
         ...(range ? { range, rangeDraft: range, rangeByHand: true } : {}),
       }));
@@ -2204,15 +2218,14 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
           // What was applied and not saved belongs to the band it was applied to: it goes with it.
-          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, percent: _percent, ...kept } = l.result;
+          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, savedPercentChannels: _unsavedChannels, percent: _percent, percentChannels: _channels, ...kept } = l.result;
           let first = true;
           const overlays = l.overlays.map((o) => {
             if (o.kind !== 'raster' || !first) return o;
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          const typed = ownRangeOf(job, info.bands!, place)?.percent;
-          return { ...l, overlays, result: { ...kept, band: place, stats, preset, ...(typed ? { percent: typed } : {}) } };
+          return { ...l, overlays, result: { ...kept, band: place, stats, preset, ...typedOf(ownRangeOf(job, info.bands!, place)) } };
         }),
       });
     },
@@ -2433,13 +2446,41 @@ function startLook(
   view: OrderView,
   p: ProcessingState,
 ): { range: PreviewRange | null; bandRanges: Record<string, PreviewRange>; shownBand: string | null } {
-  const own = handRangeOf(p);
+  const own = handRangeOnShownBand(view, p);
   if (view.output.length <= 1) return { range: own, bandRanges: {}, shownBand: null };
-  const plan = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
-  const band = plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
+  const band = shownBandOf(view, p);
   // The colour picture has no colormap, whatever the fields of the range hold.
   const kept = own && band === RGB ? { ...own, colormap: '' } : own;
   return { range: null, bandRanges: kept && band !== null ? { [band]: kept } : {}, shownBand: band };
+}
+
+// The band the map of the preview shows, `null` where there is no preview.
+function shownBandOf(view: OrderView, p: Pick<ProcessingState, 'steps' | 'shown'>): string | null {
+  const plan = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
+  return plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
+}
+
+// The range set by hand as it holds for the band the map shows: a range for each channel is for the colour picture, on any other
+// band only its first is (UI-04 part 5).
+export function handRangeOnShownBand(view: OrderView, p: ProcessingState): PreviewRange | null {
+  const own = handRangeOf(p);
+  return own?.channels && shownBandOf(view, p) !== RGB ? { ...withoutChannels(own) } : own;
+}
+
+// The statistics of the bands of the preview for the whole percents asked: the measure of this very preview where it names them all, else
+// the tiler's on the first scene. The reason as text where there is none.
+async function bandsAtPercent(percents: readonly number[]): Promise<Record<string, unknown>[] | string> {
+  const spec = wantedPreview();
+  const measure = useProcessingStore.getState().measure;
+  const asked = [...new Set(percents)].filter((n) => n !== 0 && n !== 100);
+  const named = measure && spec && measure.key === spec.measure && measure.raw && measure.raw.length > 0 && measure.raw.every((band) => asked.every((n) => typeof band[`percentile_${n}`] === 'number'));
+  if (named) return measure.raw!;
+  if (!spec) return 'There is no preview to take the percentiles from.';
+  try {
+    return Object.values(await fetchStatisticsAt(withPercentiles(spec.sceneMeasure, asked)));
+  } catch (error) {
+    return `Could not measure the percentiles: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 function wantedPreview(limit?: number): PreviewSpec | null {

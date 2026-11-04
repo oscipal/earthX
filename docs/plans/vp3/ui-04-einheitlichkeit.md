@@ -261,7 +261,7 @@ Kein Symbol mehr als Textzeichen. Erlaubt bleiben typografische Zeichen im Text:
 | **5** | RGB je Kanal im Ergebnis-Layer und in der Processing-Vorschau, Permalink mit Kanälen (Backend-Ausnahme, §7.6) | 300–350 | neu |
 | **6** | NM4-56: Zahlenformat (NM4-21), weniger Text mit (i) (NM4-22, Zeilen 8, 31), Datums- und Prozentformat (Zeilen 33, 41, 49), schmale Fenster (Punkt 58: Toolbar 320 px, Statusleiste bei 360 px, Statusmeldung über den Kopfknöpfen) | 350–400 | neu |
 
-**Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen. Teil 3a ist umgesetzt (§8.3); Teil 3b (Hinweise, Abzeichen, feste Farben, Schrift) folgt in einer neuen Session.
+**Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen. Teil 3a ist umgesetzt (§8.3); Teil 3b (Hinweise, Abzeichen, feste Farben, Schrift, `.btn.seg`) folgt in einer neuen Session. Teil 5 ist umgesetzt (§8.5).
 
 Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Teile quer durch dieselben Dateien gehen. Teil 4 kann vor Teil 3 kommen, wenn Otto es zuerst sehen will. Die Teile 2 bis 6 bekommen je einen eigenen Plan-Abschnitt in dieser Datei („§8 Teil n“), damit eine neue Session ohne dieses Gespräch auskommt.
 
@@ -357,10 +357,26 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 7. **`Segment-Umschalter` (`pp-seg`), Chips (`pp-chip`), Zeilen in Menüs und Listen (`pm-menu-list button`, `lm-name`, `result-group-head`, `cm-item`), Titel zum Umbenennen (`vc-title-btn`, `pm-title-edit`) und die Falzgriffe (`pp-grip`)** haben weiter eigene Formen; sie sind keine Knopfformen im Sinn von Zeile 44. Siehe Frage 2.
 8. **Namen von Komponenten-Eigenschaften** (`CloseButton title`, `CopyButton title`, `AutoScaleButton title`) bleiben; sie reichen den Tooltip nur an `data-tip` weiter.
 
-**Fragen an Otto:**
-1. **Sperren per Tastatur:** Soll jeder gesperrte Knopf mit Grund auf `aria-disabled` umgestellt werden, damit der Grund auch per Tastatur lesbar ist?
-   (1) Nein, `disabled` bleibt, nur neue Sperren nehmen `aria-disabled` — **Empfehlung**, ändert nichts an gut 250 Prüfungen.
-   (2) Ja, alle gesperrten Knöpfe mit Grund; eigener PR, etwa 600 Zeilen Tests.
-2. **Weitere Formen:** Sollen die Segment-Umschalter und Chips (`pp-seg`, `pp-chip`, `level-btn`) mit in 3b?
-   (1) Ja, als eine Form `.btn.seg` in einer Gruppe — **Empfehlung**.
-   (2) Nein, bleiben.
+**Antworten Otto (04.11.2026, zu #289):**
+1. **Sperren per Tastatur:** `disabled` bleibt. Der Grund per Tastatur (`aria-disabled` an allen gesperrten Knöpfen) kommt nicht jetzt, sondern als Punkt für M6 (Barrierefreiheit) ins Backlog; im Leitfaden §4 steht er als bekannte Grenze.
+2. **Segment-Umschalter und Chips:** `pp-seg` und `pp-chip` werden in Teil 3b zu **einer** Form `.btn.seg` (in einer Gruppe).
+
+### 8.5 Teil 5 — RGB je Kanal (umgesetzt, 04.11.2026)
+
+**Umfang:** §7.6, Vorgabe 1 (§7.0): Bereich und Art (absolute/percentile) je Kanal im Ergebnis-Layer und in der Processing-Vorschau, der Permalink hält beides. Löst §6 auf.
+
+**Umgesetzt:**
+- **Ergebnis-Layer** (`ResultControls`): drei Kanalzeilen, jede mit eigener Einheit wie in der Ansicht (`RenderFields` mit `onUnit`/`onPercent`). „Apply“ misst die Kanäle in Perzentilen an ihren eigenen Werten (`channelsAtOwnPercent`), die anderen bleiben wie getippt. Der Layer hält die Paare in `ResultLayerInfo.percentChannels` (und `savedPercentChannels`, solange ein Look angewendet und nicht gespeichert ist), „Save“ schreibt `channels[i].percent` in `jobShelf` (`rangeJson`/`rangeOf`, ohne neue `SHELF_VERSION`: alte Einträge lesen sich wie vorher).
+- **Processing-Vorschau:** bei RGB drei Kanalzeilen; „Apply“ misst über `applyRangeChannels` (die Messung teilt sich `bandsAtPercent` mit `applyRangePercent`). `rangeDraft.channels` und `range.channels` tragen die Paare; ein Wert in den gemeinsamen Feldern gilt für alle und löscht `channels`.
+- **Permalink:** `view.range` bekommt `percent?` und `channels?` (§7.6; Backend `PermalinkRange`, `adr/0015` §14h). Das Frontend schreibt und liest sie in `permalinkRange.ts`; ein Link ohne beides öffnet wie vorher, ein ungültiger macht den Link unlesbar (wie jedes andere Glied der Ansicht).
+- **Nur für RGB:** `channels` gilt nur, solange die Vorschau das Farbbild zeigt (`handRangeOnShownBand`, `previewSpec`, `resultRender`); bei einem Band gilt nur der erste Kanal. So kann ein Rest aus RGB keine drei `rescale` an eine Einzelband-Kachel hängen.
+- **Alt:** Ein Paar für alle drei Kanäle (Look aus der Zeit vor UI-03e, auch in `jobShelf`) steht auf jedem Kanal, bis einer geändert wird (`channelsOfRange`).
+
+**Auslegungen (Vorschlag, gelten bis Otto widerspricht):**
+1. `percent` und `channels` am selben Bereich sind ein `422` (§7.6 „Kanäle bei einem Band: Vorschlag 422“): Das Backend kennt das Band nicht, es prüft die Form; ein Bereich nennt seine Einheit nur einmal.
+2. „Auto-scale“ bei RGB: Jeder Kanal in Perzentilen bekommt 2/98, die anderen den gemessenen Bereich (wie in der Ansicht); in der Vorschau ohne Kanal in Perzentilen bleibt es der alte Weg (`autoStretch`).
+3. ~~Ein Kanal mit unzulässigem Paar lässt „Apply“ und „Save“ offen~~ — **Antwort Otto (04.11.2026): gesperrt.** Ein Kanal mit unzulässigem Bereich oder Paar sperrt „Apply“ und „Save“ (Ergebnis-Layer) bzw. „Apply“ (Vorschau); der Tooltip nennt Kanal und Grund („G: vmin must be below vmax“, „B: the lower percentile must be below the upper one“), die Felder des Kanals sind markiert (`aria-invalid`, Rand `--invalid`). Die Meldung unter den Feldern entfällt für Kanäle (`channelProblems` in `channels.ts`).
+4. Prozente im Permalink sind ganze Zahlen (`int`, 0–100, `low` < `high`), wie sie die Felder zulassen.
+5. Das Schema schreibt nur, was da ist: ein alter Link kommt ohne `percent: null` zurück (`_Sparse`), damit sich nichts an ihm ändert.
+
+**Prüfungen:** Backend `test_permalink_route.py` (alt, neu, Prozent je Kanal, zwei Kanäle, vier Kanäle, Prozent außerhalb 0–100, falsche Reihenfolge, Text, beides zusammen; Gegenprobe ohne die Prüfungen schlägt fünf Fälle fehl), Frontend `permalink.test.ts`, `ProcessingResultRgb.test.tsx`, `ProcessingShowRgb.test.tsx`, `ProcessingShare.test.tsx`, `jobShelf.test.ts`; Browser `e2e/rgb.cjs` (Hell/Dunkel, 1280 und 360 px, Einheiten je Kanal, Überlappung und Überstand).

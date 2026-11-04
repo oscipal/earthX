@@ -396,6 +396,37 @@ describe('what the shelf reads', () => {
     expect(written['B'.repeat(22)]).toEqual(hand);
   });
 
+  // UI-04 part 5: a colour picture keeps a range for each channel, each with the pair it was typed as.
+  it('keeps the range and the pair of each channel of a colour picture, and drops what is not three of them', () => {
+    const channels = [
+      { vmin: '0.1', vmax: '0.7', percent: { low: '2', high: '98' } },
+      { vmin: '0.2', vmax: '0.5' },
+      { vmin: '0.0', vmax: '0.4', percent: { low: '5', high: '95' } },
+    ];
+    const hand = { vmin: '0.1', vmax: '0.7', colormap: '' };
+    const wrong = [
+      channels.slice(0, 2),
+      [...channels, channels[0]],
+      [channels[0], { vmin: 0.2, vmax: '0.5' }, channels[2]],
+      'nonsense',
+    ];
+    write({
+      v: 1,
+      jobs: [
+        entry({ bandRanges: { RGB: { ...hand, channels } } }),
+        ...wrong.map((bad, i) => entry({ jobID: String(i).repeat(22), bandRanges: { RGB: { ...hand, channels: bad } } })),
+        // A pair that is none in one channel is dropped, the values stay.
+        entry({ jobID: 'C'.repeat(22), bandRanges: { RGB: { ...hand, channels: [{ ...channels[0], percent: { low: '98', high: '2' } }, channels[1], channels[2]] } } }),
+      ],
+    });
+    const ranges = readShelf().shelf.jobs.map((j) => j.bandRanges.RGB);
+    expect(ranges[0]).toEqual({ ...hand, channels });
+    expect(ranges.slice(1, 5)).toEqual([hand, hand, hand, hand]);
+    expect(ranges[5].channels?.[0]).toEqual({ vmin: '0.1', vmax: '0.7' });
+    saveShelf(shelfOf([job('A'.repeat(22), { bandRanges: { RGB: { ...hand, channels } } })]));
+    expect(stored().jobs[0].bandRanges.RGB).toEqual({ ...hand, channels });
+  });
+
   // NM4-65 part 3: the layer of a result shows the day of the scenes of its job.
   it('keeps the day of the scenes as text of that shape, and nothing else', () => {
     write({
