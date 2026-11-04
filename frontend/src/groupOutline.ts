@@ -41,7 +41,7 @@ function fromResult(result: ReturnType<typeof union>): GeoJSON.Polygon | GeoJSON
 // produce a wildly wrong shape (measured: a ring from lon 179 to -179 comes
 // back stretched the wrong way around, 358° wide instead of 2°) rather than
 // an error to catch. The cheap defence is the same kind of bbox check
-// `aoiClip.ts`/`coverage.ts::clampBboxLongitude` already use elsewhere in
+// `aoiClip.ts` already uses elsewhere in
 // this codebase: if the combined longitude span of a group's footprints and
 // the AOI exceeds half the globe, treat it as at risk and skip the merge for
 // *that* group, rather than trust geometry that could be silently wrong

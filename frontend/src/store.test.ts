@@ -661,11 +661,10 @@ describe('runSearch', () => {
   });
 });
 
-// M3-19 (Otto, 23.09.2026): without an AOI, `refreshCoverage` asks for the
-// visible map extent and reuses an already-loaded answer for a viewport that
-// stays inside it, instead of firing a request on every `moveend`. With an
-// AOI nothing changes — every call still asks fresh.
-describe('refreshCoverage without an AOI (M3-19)', () => {
+// M3-19 (Otto, 23.09.2026): `refreshCoverage` asks for the visible map extent and reuses an already-loaded answer for a viewport that
+// stays inside it, instead of firing a request on every `moveend`. Since UI-04 part 4 (Otto, 4.11.2026) that holds with an AOI drawn as
+// well: the coverage map does not depend on the AOI (`store.coverage.test.ts`).
+describe('refreshCoverage (M3-19, UI-04 part 4)', () => {
   // A fresh id per test: the reuse cache is module-level (store.ts), so two
   // tests sharing a dataset id would see each other's cached answers.
   let testCounter = 0;
@@ -761,7 +760,7 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     expect(useAppStore.getState().coverage?.level).toBe(7);
   });
 
-  it('with an AOI, the cache of map extents is not used, and the same question is not sent again', async () => {
+  it('with an AOI drawn, the cache of map extents is used as without, and the same question is not sent again', async () => {
     const aoi: GeoJSON.Geometry = {
       type: 'Polygon',
       coordinates: [[[10, 49], [11, 49], [11, 50], [10, 50], [10, 49]]],
@@ -769,24 +768,29 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     useAppStore.setState({ aoi });
     const { setMapViewport } = useAppStore.getState();
 
-    setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    setMapViewport(0, [10, 10, 60, 60], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
     expect(fetch).toHaveBeenCalledTimes(1);
 
     // The very same report a second time (e.g. a resize firing `moveend` without the map actually moving) asks the
     // question that is already answered on the map: nothing is sent (Otto, 03.11.2026, eleven equal requests).
-    setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    setMapViewport(0, [10, 10, 60, 60], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // A small pan inside the same block is answered from what is there.
+    setMapViewport(0, [15, 15, 55, 55], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
     expect(fetch).toHaveBeenCalledTimes(1);
 
     // Another level is another question.
-    setMapViewport(10, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    setMapViewport(3, [10, 10, 60, 60], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  // NM4-57 (M4 Q8): the box of an AOI stands in the body of a POST; the map extent, which is no AOI, in the URL.
-  it('asks with an AOI by POST, and no coordinate of it stands in a URL', async () => {
+  // NM4-57 (M4 Q8), since UI-04 part 4 (Otto, 4.11.2026) without a POST at all: the AOI is no part of the question.
+  it('asks with an AOI drawn by GET with the map extent, and no coordinate of the AOI stands in any request', async () => {
     const aoi: GeoJSON.Geometry = {
       type: 'Polygon',
       coordinates: [[[11.31234, 47.81234], [11.51234, 47.81234], [11.51234, 47.91234], [11.31234, 47.91234], [11.31234, 47.81234]]],
@@ -797,13 +801,13 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     setMapViewport(8, [10, 47, 12, 48], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
 
-    const [url, init] = vi.mocked(fetch).mock.calls[0] as unknown as [string, RequestInit];
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body)).bbox).toEqual([11.31234, 47.81234, 11.51234, 47.91234]);
-    for (const [asked] of vi.mocked(fetch).mock.calls) {
-      expect(String(asked)).not.toMatch(/11\.31234|47\.81234|11\.51234|47\.91234/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const [asked, init] of vi.mocked(fetch).mock.calls as unknown as [string, RequestInit | undefined][]) {
+      expect(init).toBeUndefined();
+      expect(String(asked)).not.toMatch(/11\.31234|47\.81234|11\.51234|47\.91234/u);
+      expect(new URL(String(asked), 'http://x').searchParams.get('bbox')).not.toBeNull();
     }
-    expect(url).toBe(`/coverage/${DATASET_ID}`);
+    expect(String(vi.mocked(fetch).mock.calls[0][0]).startsWith(`/coverage/${DATASET_ID}?`)).toBe(true);
   });
 
   it('asks without an AOI by GET, with the map extent in the URL', async () => {
