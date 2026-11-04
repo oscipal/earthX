@@ -6,7 +6,8 @@ import type { ExportLayout } from './processing';
 import { dismissJob, estimateOrder, type Order } from './processing';
 import type { DownloadPass } from './download';
 import { explain, placeAndFollow, POLL_MS, saveFrom } from './indexDownload';
-import { buildExportOrder, formatBytes, formatDuration } from './processingOrder';
+import { formatBytes } from './numberFormat';
+import { buildExportOrder, formatDuration } from './processingOrder';
 import { resamplingParts, type ResamplingPart } from './resamplingWarning';
 
 // The order of whole scenes: the passes as groups, the chosen assets, the layout; `null` where no pass holds a scene.

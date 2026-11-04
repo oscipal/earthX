@@ -2,6 +2,7 @@
 // exclamation mark "Resampled to a common grid": what is resampled to which grid, by which method, and what that means for the
 // values. The facts are the server's (`resampling` of the estimate); this makes the short English text of them.
 
+import { formatNumber } from './numberFormat';
 import type { EstimateDocument, Resampling } from './processing';
 
 export interface ResamplingPart {
@@ -37,7 +38,7 @@ const METHODS: Record<string, { name: string; meaning: string }> = {
 
 const FALLBACK_MEANING = 'The values at the pixel edges change, and the pixel counts differ from the source.';
 
-export const metres = (resolution: number): string => `${Number(resolution.toPrecision(6))} m`;
+export const metres = (resolution: number): string => `${formatNumber(resolution)} m`;
 
 export interface ResamplingText {
   label: string | null;

@@ -381,7 +381,7 @@ describe('review before start (K4)', () => {
     await ndvi();
     expect(button('Start job').disabled).toBe(true);
     await review();
-    expect(container.textContent).toContain('about 1.0 MP, 4.0 MB, about 3 s, 1.0 units');
+    expect(container.textContent).toContain('about 1 MP, 4 MB, about 3 s, 1 unit');
     expect(container.textContent).toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(false);
     const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);

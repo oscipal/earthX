@@ -19,12 +19,11 @@ import { polygonBbox } from '../geoUtils';
 import { resamplingParts } from '../resamplingWarning';
 import { channelProblems, channelsAutoScaled, channelsOfRange, percentsOfChannels, samePercents, withoutChannels, type ChannelRange } from '../channels';
 import { DEFAULT_PERCENT, percentOf, samePercent, type Percent, type RangeUnit } from '../percentRange';
+import { formatBytes, formatMegapixels, formatUnits } from '../numberFormat';
 import { totalOf } from '../processingBatch';
 import {
   EMPTY_OUTPUT,
-  formatBytes,
   formatDuration,
-  formatMegapixels,
   insertName,
   isArea,
   processBlockReason,
@@ -374,7 +373,7 @@ function BatchEstimate({ parts }: { parts: readonly PartOutcome[] }) {
         <>
           <p>
             {total.jobs} job{total.jobs === 1 ? '' : 's'} · about {formatMegapixels(total.outputPixels)},{' '}
-            {formatBytes(total.size)}, {total.units.toFixed(1)} units in total
+            {formatBytes(total.size)}, {formatUnits(total.units)} in total
           </p>
           {total.duration && <p>{formatDuration(total.duration)} of work</p>}
           <p className="hint">Jobs run 2 at a time per source; the rest wait.</p>
@@ -896,7 +895,7 @@ export default function ProcessingPanel() {
             <div className="pp-estimate" aria-label="Estimate">
               <p>
                 about {formatMegapixels(estimate.estimate.outputPixels)}, {formatBytes(estimate.estimate.size)},{' '}
-                {formatDuration(estimate.estimate.duration)}, {estimate.estimate.units.toFixed(1)} units
+                {formatDuration(estimate.estimate.duration)}, {formatUnits(estimate.estimate.units)}
               </p>
               {estimate.skippedItems.length > 0 && (
                 <p className="hint warn">Left out (the AOI misses them): {estimate.skippedItems.join(', ')}</p>

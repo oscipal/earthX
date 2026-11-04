@@ -4,6 +4,7 @@
 
 import type { DownloadForm } from './api';
 import type { DownloadRequestInfo } from './download';
+import { formatNumber } from './numberFormat';
 import type { ExportLayout } from './processing';
 
 export const DEFAULT_FORM: DownloadForm = 'per_band';
@@ -121,7 +122,7 @@ export function conversionsOf(bands: readonly DownloadBand[], target: number | n
   return out;
 }
 
-export const metresText = (resolution: number): string => `${formatResolution(resolution)} m`;
+export const metresText = (resolution: number): string => `${formatNumber(resolution)} m`;
 
 // The tooltip behind (i): which of the ticked bands are converted to the common resolution, and how.
 export function conversionTip(bands: readonly DownloadBand[], target: number | null): string {
@@ -166,7 +167,8 @@ export function withBandChoice(
 
 // --- numbers and names -----------------------------------------------------------
 
-// `12.5`, `10`: no more digits than the pixel size has (six at most).
+// `12.5`, `10`: no more digits than the pixel size has (six at most). For a file name and for BANDS.txt, which keep the full value; the
+// eye gets `formatNumber` (NM4-21).
 export function formatResolution(resolution: number): string {
   return String(Number(resolution.toPrecision(6)));
 }

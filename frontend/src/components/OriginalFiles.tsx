@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { DownloadBand } from '../bandChoice';
 import type { DatasetOption } from '../datasets';
+import { formatPercent } from '../numberFormat';
 import {
   acquisitionYears,
   canExportLicense,
@@ -59,7 +60,7 @@ function rowText(state: SceneState): string {
     case 'waiting':
       return 'Waiting';
     case 'running':
-      return state.total ? `Loading ${Math.min(100, Math.floor((state.loaded / state.total) * 100))} %` : 'Loading…';
+      return state.total ? `Loading ${formatPercent(Math.min(100, Math.floor((state.loaded / state.total) * 100)))}` : 'Loading…';
     case 'done':
       return 'Done';
     case 'started':

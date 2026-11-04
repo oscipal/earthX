@@ -143,7 +143,7 @@ describe('the rows', () => {
     const ch = channel((job) => job.zipName === 'B.zip' && ch.jobs.filter((name) => name === 'B.zip').length === 1);
     page.zip = ch.zip;
     await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B', 'C')} started />);
-    expect(rows()).toEqual(['Done', 'Loading 40 %', 'Waiting']);
+    expect(rows()).toEqual(['Done', 'Loading 40%', 'Waiting']);
     expect(button('Retry failed')).toBeUndefined();
     await press('Stop');
     expect(rows()).toEqual(['Done', 'Cancelled', 'Cancelled']);

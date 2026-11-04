@@ -19,7 +19,6 @@ import {
   candidateItems,
   dataBandsOf,
   EMPTY_OUTPUT,
-  formatBytes,
   formatDuration,
   lonelyBand,
   maskAssetOf,
@@ -953,7 +952,6 @@ describe('small rules', () => {
   });
 
   it('formats the estimate', () => {
-    expect(formatBytes(4_200_000)).toBe('4.2 MB');
     expect(formatDuration('PT12.3S')).toBe('about 12 s');
     expect(formatDuration('PT0.4S')).toBe('under 1 s');
     expect(formatDuration('PT600.0S')).toBe('about 10 min');

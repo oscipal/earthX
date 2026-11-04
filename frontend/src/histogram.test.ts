@@ -193,8 +193,15 @@ describe('roundOnTrack', () => {
     expect(roundOnTrack(7.6, [0, 1000])).toBe('8');
   });
 
-  it('takes at most 10 digits on a track narrower than a billionth', () => {
-    expect(roundOnTrack(1.23456789012345, [0, 1e-9])).toBe('1.2345678901');
+  // NM4-21: a field shows three decimals at most; a track narrower than a thousand has fewer than a thousand steps then.
+  it('shows three decimals at most, whatever the track', () => {
+    expect(roundOnTrack(1.23456789012345, [0, 1e-9])).toBe('1.235');
+    expect(roundOnTrack(0.12345, [0, 0.5])).toBe('0.123');
+  });
+
+  it('writes a value below a thousandth as a scientific number that Number() reads back', () => {
+    expect(roundOnTrack(0.00042, [0, 0.01])).toBe('4.2e-4');
+    expect(Number(roundOnTrack(0.00042, [0, 0.01]))).toBeCloseTo(0.00042, 6);
   });
 
   it('takes no digits where the track has no width or is reversed', () => {

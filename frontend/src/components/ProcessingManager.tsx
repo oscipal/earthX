@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, type ShelfGroup } from '../jobShelf';
+import { formatMoment } from '../numberFormat';
 import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter, type JobFilter } from '../preferences';
 import { isJobId } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
@@ -20,7 +21,7 @@ import { DownloadZip } from './JobRow';
 import MenuTick from './MenuTick';
 import Popover from './Popover';
 import { focusFirstItem } from '../popover';
-import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, formatShortDate, formatUntil, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
+import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
 import Tip from './Tip';
 import { useBundleDownload } from './useBundleDownload';
 
@@ -293,7 +294,7 @@ function Meter({ state, progress }: { state: JobState; progress?: number }) {
 // The restore icon at the place of the download: the deleted job comes back. Its tooltip says until when that works.
 function RestoreButton({ name, until, busy, onRestore }: { name: string; until: string; busy: boolean; onRestore: () => void }) {
   return (
-    <button type="button" className="icon-btn pm-icon" disabled={busy} aria-label={`Restore ${name}`} data-tip={`Restore (possible until ${formatUntil(until)})`} onClick={onRestore}>
+    <button type="button" className="icon-btn pm-icon" disabled={busy} aria-label={`Restore ${name}`} data-tip={`Restore (possible until ${formatMoment(until)})`} onClick={onRestore}>
       <ArchiveRestoreIcon />
     </button>
   );
@@ -322,14 +323,14 @@ function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
     const day = goneDay(job);
     return (
       <span className="pm-until" data-tip-level="advanced" data-tip={day}>
-        {formatShortDate(day)}
+        {formatMoment(day)}
       </span>
     );
   }
   if (state.key === 'cancelled' || state.key === 'unavailable') return null;
   return (
     <span className="pm-until" data-tip-level="advanced" data-tip={job.expires}>
-      {formatShortDate(job.expires)}
+      {formatMoment(job.expires)}
     </span>
   );
 }
@@ -578,17 +579,17 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
           <span className="pm-state">{batchSummary(count)}</span>
           {restoreUntil ? (
             <span className="pm-until" data-tip-level="advanced" data-tip={restoreUntil}>
-              {formatShortDate(restoreUntil)}
+              {formatMoment(restoreUntil)}
             </span>
           ) : count.deleted === parts.length && deletedDay ? (
             <span className="pm-until" data-tip-level="advanced" data-tip={deletedDay}>
-              {formatShortDate(deletedDay)}
+              {formatMoment(deletedDay)}
             </span>
           ) : (
             count.expires &&
             count.deleted < parts.length && (
               <span className="pm-until" data-tip-level="advanced" data-tip={count.expires}>
-                {formatShortDate(count.expires)}
+                {formatMoment(count.expires)}
               </span>
             )
           )}

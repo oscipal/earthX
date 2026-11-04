@@ -219,7 +219,7 @@ describe('the download', () => {
     expect(JSON.stringify(placed[0].body)).toContain('(nir - red) / (nir + red)');
     expect(saved).toEqual([`/processing/jobs/${JOB_A}/results/result.zip`]);
     expect(text[0]).toBe('Computing NDVI…');
-    expect(text.some((t) => t.includes('40 %'))).toBe(true);
+    expect(text.some((t) => t.includes('40%'))).toBe(true);
     // No Processing panel, no job in its list, nothing kept in the browser.
     expect(useProcessingStore.getState().jobs).toEqual([]);
     expect(useProcessingStore.getState().open).toBe(false);

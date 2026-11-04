@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 
+import { formatDay } from '../numberFormat';
 import { createPermalink, permalinkAddress, rememberKey, removePermalink, viewOf, type Created } from '../permalink';
 import type { OrderView } from '../processingStore';
 import { handRangeOnShownBand, useProcessingStore } from '../processingStore';
@@ -70,7 +71,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
               <TrashIcon />
             </button>
           </div>
-          <p className="hint">Good until {new Date(made.expiresAt).toLocaleDateString()}. Anyone with the link sees your area.</p>
+          <p className="hint">Good until {formatDay(made.expiresAt)}. Anyone with the link sees your area.</p>
         </>
       ) : (
         <>

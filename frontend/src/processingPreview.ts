@@ -44,6 +44,7 @@ import {
 import type { Percent } from './percentRange';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
 import { NORMALIZE_VERSION, TILE_VERSION, isStatistical, type Measured } from './normalizeMethods';
+import { fieldNumber } from './numberFormat';
 import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
@@ -644,7 +645,7 @@ export function previewTitle(preview: PreviewSpec | null, measure: PreviewMeasur
 // The range the measure calls for as the panel holds it (the same rule as a result's, `scaleOf`), or `null`.
 export function measuredRange(measure: PreviewMeasure | null): PreviewRange | null {
   const scale = scaleOf(measure?.stats ?? null);
-  return scale ? { vmin: String(scale.low), vmax: String(scale.high), colormap: scale.colormap } : null;
+  return scale ? { vmin: fieldNumber(scale.low), vmax: fieldNumber(scale.high), colormap: scale.colormap } : null;
 }
 
 // What the panel says when the measure could not be had: the preview then keeps the start range.

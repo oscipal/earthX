@@ -130,6 +130,7 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     [/^Results \(/u, 'Search results'],
     [/^Processing jobs$/u, 'Jobs'],
     [/\b(?:Previous|Next|First|Last) step\b/u, 'time step'],
+    [/[\d}] %/u, 'a percent close to its number ("50%")'],
   ];
   const faults = (text: string) =>
     texts(text).flatMap((shown) => FORBIDDEN.filter(([word]) => word.test(shown)).map(([word, instead]) => `"${shown}" (${String(word)} → ${instead})`));
@@ -149,6 +150,8 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     ['<span>Clear</span>', 'Clear AOI'],
     ['<h2>Results (0/1)</h2>', 'Search results'],
     ["title=\"Previous step\"", 'time step'],
+    ['`Loading ${n} %`', 'a percent close to its number'],
+    ["'Range 2–98 %'", 'a percent close to its number'],
   ])('finds the old word in %j', (line, instead) => {
     expect(faults(line).join()).toContain(instead);
   });
@@ -156,6 +159,39 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
   it('reads no comment as text', () => {
     expect(faults('// The picture of the view (an old comment)\nconst a = 1;')).toEqual([]);
     expect(faults("/* Pin this */ const b = 'x';")).toEqual([]);
+  });
+});
+
+describe('numbers and dates (NM4-21, UI-04 part 6): one way to show them', () => {
+  // Only `numberFormat.ts` rounds a number or writes a date for the eye. What goes into a file or a name keeps its full value and is listed
+  // here with its reason.
+  const FORMATTING = /\.(?:toFixed|toPrecision|toExponential|toLocaleString|toLocaleDateString|toLocaleTimeString)\(|\bIntl\.(?:NumberFormat|DateTimeFormat)\b/u;
+  const KEPT = new Map([
+    ['numberFormat.ts', 'the one place'],
+    ['bandChoice.ts', 'the full value of a resolution and of a wavelength in file names and in BANDS.txt (`formatResolution`, `formatG`)'],
+  ]);
+
+  it('rounds and dates only in numberFormat.ts (and where a file keeps the full value)', () => {
+    expect(where((code) => FORMATTING.test(code)).filter((path) => !KEPT.has(path))).toEqual([]);
+    for (const line of ['value.toFixed(1)', 'x.toPrecision(4)', 'n.toExponential(2)', 'd.toLocaleDateString()', 'v.toLocaleString("en-US")', 'new Intl.DateTimeFormat("en-GB")'])
+      expect(FORMATTING.test(line)).toBe(true);
+    expect(FORMATTING.test('Number(text)')).toBe(false);
+  });
+
+  it('keeps the exceptions few: a file that names none of the calls is not an exception', () => {
+    for (const path of KEPT.keys()) expect(where((code) => FORMATTING.test(code))).toContain(path);
+  });
+
+  it('writes no percent with a space before its sign: "50%", not "50 %"', () => {
+    const SPACED = /[\d}] %/u;
+    expect(texts(sources.map(([, text]) => text).join('\n')).filter((shown) => SPACED.test(shown))).toEqual([]);
+    expect(SPACED.test('2–98 %')).toBe(true);
+    expect(SPACED.test('2–98%')).toBe(false);
+  });
+
+  it('has no table of month names: a date comes from formatMoment or formatDay', () => {
+    expect(where((code) => /'JAN',\s*'FEB'/u.test(code))).toEqual([]);
+    expect(/'JAN',\s*'FEB'/u.test("const M = ['JAN', 'FEB', 'MAR'];")).toBe(true);
   });
 });
 

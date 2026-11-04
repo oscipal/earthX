@@ -4,6 +4,7 @@
 // help while typing. Pure functions; the state lives in `processingStore.ts`.
 
 import type { AreaStatistics } from './api';
+import { formatNumber } from './numberFormat';
 import type { Field, FieldValue, ParamsForm } from './schemaForm';
 
 export type Method = 'linear' | 'percentile' | 'zscore' | 'robust';
@@ -59,7 +60,7 @@ export const RANGES: ReadonlyArray<{ low: number; high: number }> = [
   { low: 5, high: 95 },
 ];
 export const DEFAULT_RANGE = RANGES[2];
-export const rangeLabel = (range: { low: number; high: number }): string => `${range.low}–${range.high} %`;
+export const rangeLabel = (range: { low: number; high: number }): string => `${range.low}–${range.high}%`;
 
 export const isMethod = (value: unknown): value is Method => METHODS.some((m) => m.value === value);
 export const isStatistical = (method: unknown): boolean => isMethod(method) && method !== 'linear';
@@ -278,15 +279,14 @@ export const ANEW = 'Measured anew in the run.';
 // What the route said of its read, behind the (i) of the step (plan KE5): the preview is an estimate unless the route read exactly.
 export const previewNote = (exact: boolean): string => (exact ? 'Preview measured exactly over the AOI.' : 'Preview estimated on a coarser read; the job measures exactly.');
 
-const shortNumber = (value: number): string => String(Number(value.toPrecision(4)));
 
 // The tooltip of the measured values: the numbers of each band by the formula of the method.
 export function measuredText(method: Method, measured: Measured): string {
   return Object.entries(measured.bands)
     .map(([name, n]) => {
-      if (method === 'percentile') return `${name}: p_low ${shortNumber(n.p_low)}, p_high ${shortNumber(n.p_high)}`;
-      if (method === 'zscore') return `${name}: mean ${shortNumber(n.mean)}, standard deviation ${shortNumber(n.stddev)}`;
-      return `${name}: p25 ${shortNumber(n.p25)}, median ${shortNumber(n.median)}, p75 ${shortNumber(n.p75)}`;
+      if (method === 'percentile') return `${name}: p_low ${formatNumber(n.p_low)}, p_high ${formatNumber(n.p_high)}`;
+      if (method === 'zscore') return `${name}: mean ${formatNumber(n.mean)}, standard deviation ${formatNumber(n.stddev)}`;
+      return `${name}: p25 ${formatNumber(n.p25)}, median ${formatNumber(n.median)}, p75 ${formatNumber(n.p75)}`;
     })
     .join('\n');
 }

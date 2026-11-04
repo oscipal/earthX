@@ -31,6 +31,7 @@ import Tip from './Tip';
 import OpacityRow from './OpacityRow';
 import { InspectorHead, InspectorSection, LayerStepper } from './InspectorParts';
 import LayerActions from './LayerActions';
+import { fieldNumber } from '../numberFormat';
 
 // The range as drawn: one pair, or one for each channel of a colour picture (UI-03d).
 const scaleText = (range: PreviewRange) => (range.channels?.length ? (rescaleOfChannels(range.channels) ?? '') : `${range.vmin},${range.vmax}`);
@@ -185,7 +186,7 @@ function Controls({ layer }: { layer: MapLayer }) {
           setProblem(NO_RANGE_AT_PERCENT);
           return null;
         }
-        made = { ...rest, vmin: String(range[0]), vmax: String(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
+        made = { ...rest, vmin: fieldNumber(range[0]), vmax: fieldNumber(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
       }
       setDraft(made);
       setProblem(null);

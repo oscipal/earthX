@@ -23,7 +23,8 @@ import {
   type StatusInfo,
 } from './processing';
 import { chooseDtype } from './processingDefaults';
-import { aoiProvenanceFor, buildOrder, formatBytes, formatDuration, isArea, processBlockReason, processInfo, type DraftStep } from './processingOrder';
+import { formatBytes, formatPercent } from './numberFormat';
+import { aoiProvenanceFor, buildOrder, formatDuration, isArea, processBlockReason, processInfo, type DraftStep } from './processingOrder';
 import { RESULT_ZIP } from './resultLayer';
 import { viewIndexOf } from './viewIndex';
 
@@ -187,7 +188,7 @@ export async function placeAndFollow(args: {
       if (status.status !== 'successful') return say(status.message || failed);
     }
     const progress = statuses.reduce((sum, s) => sum + (done(s) ? 1 : s.progress / 100), 0) / Math.max(1, statuses.length);
-    onStatus(`${working}… ${Math.round(progress * 100)} %`);
+    onStatus(`${working}… ${formatPercent(Math.round(progress * 100))}`);
     if (running.size > 0) await sleep(pollMs, signal);
   }
   if (signal.aborted) return say('Cancelled.');

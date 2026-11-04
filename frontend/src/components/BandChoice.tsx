@@ -5,7 +5,6 @@ import {
   chosenBands,
   commonResolutionOf,
   conversionTip,
-  formatG,
   effectiveForm,
   layoutBlock,
   mixedResolutions,
@@ -13,6 +12,7 @@ import {
   resolutionsOf,
   type DownloadBand,
 } from '../bandChoice';
+import { formatNumber } from '../numberFormat';
 import { useAppStore } from '../store';
 import Tip from './Tip';
 
@@ -20,7 +20,7 @@ import Tip from './Tip';
 // is the bands the scenes themselves describe (`bandChoice.ts`); nothing here names a band.
 
 function detail(band: DownloadBand): string {
-  return [band.commonName, band.wavelength === null ? null : `${formatG(band.wavelength)} µm`].filter(Boolean).join(' · ');
+  return [band.commonName, band.wavelength === null ? null : `${formatNumber(band.wavelength)} µm`].filter(Boolean).join(' · ');
 }
 
 export default function BandChoice({ table, disabled }: { table: DownloadBand[]; disabled: boolean }) {
