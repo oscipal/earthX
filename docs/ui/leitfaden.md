@@ -201,6 +201,7 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 - **Advanced** (`data-tip-level="advanced"`): alle übrigen: Knöpfe mit Text, selbsterklärende Symbole (rotes x, Auge, Mülleimer, Download, Stift, Plus, Pfeile, Ziehgriff, Kopieren), Beschriftungen, Werte, Datensätze, Gruppen, Layer-Namen, Abzeichen.
 - **Gesperrt ist immer simple:** `TipLayer` zeigt den Tooltip eines gesperrten Elements (`disabled`, `aria-disabled="true"`) in beiden Stufen; ein Knopf, dessen Tooltip „Grund, sonst Beschreibung“ ist, trägt also `advanced` und zeigt den Grund trotzdem.
 - `aria-label` bleibt überall; die Stufe ändert nur, wann der Tooltip erscheint. Bis Teil 4 den Schalter bringt, gilt „Advanced“ (das bisherige Verhalten): `setTipLevel` in `tipLevel.ts`.
+- Der volle Text eines abgeschnittenen Textes (c) erscheint künftig nur, wenn der Text wirklich abgeschnitten ist (Teil 4 misst die Kürzung); bis dahin immer.
 - Neue Tooltips: erst fragen, ob sie (a)–(c) sind; wenn nicht, `data-tip-level="advanced"`. Die Liste der Stellen steht in `docs/plans/vp3/ui-04-einheitlichkeit.md` §8.4.
 
 ## 8b. Felder und Browser-Vorschläge
@@ -230,7 +231,7 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 | Begriffe (§2) gegen alle Texte der Oberfläche | `frontend/src/uiRules.test.ts` |
 | Sperrgrund im Tooltip | `frontend/src/fixtures/lockedControls.ts`, benutzt in `ControlPanel.test.tsx` und `LayerManager.test.tsx` |
 | Klick neben einen Dialog schließt nicht | `DownloadDialog.bands.test.tsx` |
-| Tokens statt fester Werte | `frontend/src/tokens.test.ts` (Abstände, Schriftgrade, Radien: `.btn`, `.icon-btn`, `.hint`, `.error`, `.badge`, Seitenleiste, Processing; die übrigen Klassen folgen, siehe Plan §8.4) |
+| Tokens statt fester Werte | `frontend/src/tokens.test.ts` (Abstände, Schriftgrade, Radien: `.btn`, `.icon-btn`, `.hint`, `.error`, `.badge`, Seitenleiste, Processing; die übrigen Klassen folgen in Teil 6, Otto 04.11.2026) |
 | kein `title` an einem Element außer `<option>`, ein Tooltip-Weg, Beschreibung per `aria-describedby`, gesperrter Knopf zeigt seinen Grund | `frontend/src/uiRules.test.ts`, `frontend/src/components/TipLayer.test.tsx`, `frontend/e2e/tooltips.cjs` |
 | keine alten Knopfklassen (`ghost-btn`, `primary-btn`, `lm-btn` …) | `frontend/src/uiRules.test.ts` |
 | keine feste Deckkraft an einem gesperrten Element | `frontend/src/uiRules.test.ts` |

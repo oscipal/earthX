@@ -259,7 +259,7 @@ Kein Symbol mehr als Textzeichen. Erlaubt bleiben typografische Zeichen im Text:
 | **3** | Bauteile und Tokens: Knopffamilien → vier Formen, `Badge`, Hinweise/Fehler, Sperr-Deckkraft, Fokusring, feste Farben → Tokens, Schrift (Vorgabe 4) mit Prüfungen 4 und 5, tote Regeln; Tooltip-Weg nach Frage 3 | 400+, darum in 3a (Knöpfe, Sperren, Fokus) und 3b (Hinweise, Abzeichen, Farben, Schrift) | je neu |
 | **4** | Einstellungsmenü in der Leiste (Basemap, Overlays, Projektion, Light/Dark/System), Relief nur als Overlay mit altem Permalink, „Zoom to selection“ über alles Gewählte (Vorgaben 5a–5c); Theme „System“ folgt `prefers-color-scheme` und wird als `earthx.theme = "system"` gemerkt | 250–300 | neu |
 | **5** | RGB je Kanal im Ergebnis-Layer und in der Processing-Vorschau, Permalink mit Kanälen (Backend-Ausnahme, §7.6) | 300–350 | neu |
-| **6** | NM4-56: Zahlenformat (NM4-21), weniger Text mit (i) (NM4-22, Zeilen 8, 31), Datums- und Prozentformat (Zeilen 33, 41, 49), schmale Fenster (Punkt 58: Toolbar 320 px, Statusleiste bei 360 px, Statusmeldung über den Kopfknöpfen) | 350–400 | neu |
+| **6** | NM4-56: Zahlenformat (NM4-21), weniger Text mit (i) (NM4-22, Zeilen 8, 31), Datums- und Prozentformat (Zeilen 33, 41, 49), schmale Fenster (Punkt 58: Toolbar 320 px, Statusleiste bei 360 px, Statusmeldung über den Kopfknöpfen); dazu die übrigen 201 festen Abstände, Schriftgrade und Radien auf Tokens (Otto, 04.11.2026, §8.4) | 350–400 plus die Token-Umstellung | neu |
 
 **Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen. Teil 3a ist umgesetzt (§8.3), Teil 3b ist umgesetzt (§8.4, Hinweise, Abzeichen, feste Farben, Schrift, `.btn.seg`, dazu drei Zusätze Ottos vom 04.11.2026: Tooltip-Stufen, Fokusring, Autofill). Teil 5 ist umgesetzt (§8.5).
 
@@ -394,7 +394,7 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 
 **Autofill (Zusatz Otto):** `autoComplete="off"` an jedem Feld, das Text annimmt (Suche, Szenenname, Ort, Zahlen, Datum, Namen, Ausdrücke; `ClearableInput` setzt es selbst); zwei Regeln für `input:-webkit-autofill` und `input:autofill` mit `--text` und `--input-bg` über `--map-bg` (ein Feld bleibt im dunklen Thema dunkel). Prüfung: `uiRules.test.ts` (jedes Textfeld hat es; die Regeln stehen; je mit Gegenprobe) und `e2e/focus-and-type.cjs` (Attribute im DOM, die Regeln im Blatt). **Grenze:** Chromium im Test lässt sich nicht von einem gespeicherten Eintrag füllen und bietet keinen Weg, `:autofill` zu erzwingen; die Farbe eines echten Vorschlags ist darum nicht im Bild geprüft, nur dass die Regel im Blatt steht und die Tokens nimmt.
 
-**Nicht in 3b (Vorschlag):** Abstände, Schriftgrade und Radien der übrigen Klassen (201 feste Längen in 287 Klassen von `index.css`; der Token-Test prüft sie nur für die Bereiche, die schon auf Tokens stehen). Das ist eine eigene Umstellung, siehe Frage 1.
+**Nicht in 3b (Vorschlag):** Abstände, Schriftgrade und Radien der übrigen Klassen (201 feste Längen in 287 Klassen von `index.css`; der Token-Test prüft sie nur für die Bereiche, die schon auf Tokens stehen). Das ist eine eigene Umstellung; Otto hat sie auf Teil 6 gelegt (siehe Antworten).
 
 **Auslegungen (Vorschlag, gelten bis Otto widerspricht):**
 1. `.hint` ist 11 px (vorher `hint-text` 10 px, `pp-help` 11 px): ein Wert für alle.
@@ -403,10 +403,10 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 4. `maturity-chip` (die Reife im Datensatzknopf) bleibt eine Beschriftung in `--accent-2`, kein Abzeichen: er sitzt in einem Knopf mit wenig Platz.
 5. Ein Textfeld zeigt den Ring auch nach einem Mausklick (der Browser setzt `:focus-visible` für Textfelder immer); Knöpfe nicht.
 
-**Fragen an Otto (kurz zu beantworten):**
-1. Die übrigen Abstände, Schriftgrade und Radien (201 feste Längen) auf Tokens: (1) eigener Teil nach 3b, vor 4 — **Empfehlung**; (2) in Teil 6 mitnehmen; (3) so lassen.
-2. Textfeld und Mausklick: (1) Ring bleibt auch beim Klick, das Textfeld braucht ein sichtbares Zeichen für die Schreibmarke — **Empfehlung**; (2) ein Textfeld zeigt nur bei Tastatur ein Zeichen (dann ohne Zeichen beim Klick hinein).
-3. Tooltip (c): (1) wie umgesetzt, immer ein Tooltip mit dem vollen Text — **Empfehlung** für Teil 3b; (2) Teil 4 misst die Kürzung (`scrollWidth > clientWidth`) und zeigt den Tooltip nur dann.
+**Antworten Otto (04.11.2026, zu [#290](https://github.com/oscipal/earthX/pull/290)):**
+1. Die übrigen 201 festen Werte (Abstände, Schriftgrade, Radien) gehören in **Teil 6** (Option 2).
+2. Der Ring am Textfeld nach einem Mausklick bleibt (Option 1).
+3. Ein Tooltip mit vollem Text erscheint nur bei wirklich abgeschnittenem Text (Option 2); **Teil 4** misst die Kürzung (`scrollWidth > clientWidth`). Bis dahin bleibt es beim Tooltip, der immer erscheint.
 
 ### 8.5 Teil 5 — RGB je Kanal (umgesetzt, 04.11.2026)
 
