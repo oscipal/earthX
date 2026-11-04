@@ -1,6 +1,6 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 04.11.2026, UI-04 Teil 4 (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 04.11.2026, UI-04 Teil 4 (mit dem Zusatz Ottos: Panel statt Menü) (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
@@ -48,8 +48,8 @@
 | — none — / — choose — | kein Wert, auch die gesperrte Colormap bei RGB / Pflichtwahl ohne Vorgabe | „–“ |
 | Choose | auswählen, im Text | „Pick“ |
 | finished | Status eines Jobs („Finished“); in Zusammenfassungen klein („3 finished · 1 running“) | „done“ |
-| Settings | das Einstellungsmenü unten in der Leiste links (§9); die Seitenleiste heißt für Screenreader nach ihrem Inhalt („Image settings“, „Layer settings“) | |
-| Basemap, Overlays, Projection, Appearance, Tooltips | die fünf Abschnitte des Menüs „Settings“; Wahl je Abschnitt: Satellite / Streets / Grey / Outlines, Labels / Graticule / Relief, Mercator / Globe, Light / Dark / System, Simple / Advanced | „Theme“, „Mode“ für Light/Dark |
+| Settings | das Panel der Einstellungen, das Symbol unten in der Leiste links (§9); die Seitenleiste heißt für Screenreader nach ihrem Inhalt („Image settings“, „Layer settings“) | |
+| Basemap, Overlays, Projection, Appearance, Tooltips | die fünf Abschnitte des Panels „Settings“; Wahl je Abschnitt: Satellite / Streets / Grey / Outlines, Labels / Graticule / Relief, Mercator / Globe, Light / Dark / System, Simple / Advanced | „Theme“, „Mode“ für Light/Dark |
 | Coverage, Hide coverage | die Abdeckung des gewählten Datensatzes über den sichtbaren Kartenausschnitt (§9); sie wird mit „Coverage“ gewählt und mit „Hide coverage“ beendet | „Clear coverage“, ein Eintrag „Hide coverage“ in der Wahl des Datensatzes |
 
 **Schreibweise:**
@@ -157,8 +157,9 @@
 | `EyeButton` | das Auge: zeigt oder verbirgt (§3) |
 | `icons.ts`, `MenuTick` | alle Symbole; der Haken in Menüs |
 | `Tip` / `TipLayer` | (i), Warnung und Tooltips |
-| `SettingsMenu` | das Symbol „Settings“ unten in der Leiste und sein Menü (§9); sitzt in `AppRail` |
-| `Popover` | Menüs, Listen und das Formular „Advanced search“; `beside` stellt ein Menü rechts neben einen Rand (die Leiste) |
+| `SettingsPanel` | das Panel „Settings“ (§9), geöffnet vom letzten Symbol der Leiste (`AppRail`) |
+| `Switch` | der Schalter für An/Aus (§7, Auswahl aus wenigen) |
+| `Popover` | Menüs, Listen und das Formular „Advanced search“ |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
 | `Badge` | das eine Abzeichen („Preview“, „Temporary“, „Overview“, „Zoom in“, „Loading…“): Pille in `--accent-2`, Großbuchstaben per CSS; `PreviewBadge` setzt sie über die Karte |
 
@@ -175,7 +176,9 @@
 
 - **Ein Schalter** steht mit `aria-pressed`: `.btn` ist dann getönt in Akzent, `.icon-btn` in Akzentfarbe. Die offene Seite der Leiste links trägt `.on`.
 - **Eine Klasse für einen Ort** gibt Platz, Breite und Lage (`tool-btn`, `pm-icon`, `dataset-toggle`, `vc-apply`) und höchstens einen Zustand (`aria-expanded`, `.wrong`); sie erfindet keine neue Form, also keine eigene Schrift, Deckkraft oder Füllung. Ein Knopf über der Karte trägt `.panel` dazu (`.btn.panel`).
-- **Auswahl aus wenigen** (Segment-Umschalter, Band-Chips, Filter): `.btn.seg` in einer Gruppe (`role="group"`), der gewählte trägt `aria-pressed` (Otto, 04.11.2026). Eigene Formen haben weiter Zeilen in Menüs und Listen, Titel zum Umbenennen und die Falzgriffe (`pp-grip`).
+- **Auswahl aus wenigen** (Segment-Umschalter, Band-Chips, Filter, Basemap, Projection, Appearance): `.btn.seg` in einer Gruppe (`role="group"`), der gewählte trägt `aria-pressed` und ist **gefüllt** (Akzent, Text `--on-accent`; Otto, 04.11.2026). Etwas, das neben anderem an sein kann (ein Overlay), ist ein Knopf derselben Form, der gedrückt ist, solange es an ist (`aria-pressed`). Keine Häkchen-Liste in einem Panel.
+- **Schalter** (`Switch.tsx`, `role="switch"`, `aria-checked`, Name für Screenreader): **nur für An/Aus** (Otto, 04.11.2026), links der Zustand „aus“, rechts „an“, daneben die Beschriftung der beiden Seiten (von links nach rechts „Simple“, der Schalter, „Advanced“). Eine Wahl unter mehreren ist nie ein Schalter, sondern Segment-Knöpfe. Heute: die Tooltips im Panel „Settings“ und „Filter within AOI only“ in „Advanced search“. Eigene Eigenschaft eines Schalters: `.switch` mit `.switch-thumb`, nur Tokens.
+- **Der Haken** (`MenuTick`) steht nur in Menüs und Listen mit Wahl (Gruppe eines Jobs), nie in einem Panel. Eigene Formen haben weiter Zeilen in Menüs und Listen, Titel zum Umbenennen und die Falzgriffe (`pp-grip`).
 - **Fokus:** ein Ring für alles Bedienbare, `2px solid var(--focus)` per Tastatur (`:focus-visible`), in **einer** Regel. Kein `outline: none`, keine eigene Ringregel an einem Knopf oder Feld; Ausnahmen sind der Schieber (Ring am Griff), der Rahmen eines Popovers (kein bedientes Element) und die Ablagelinie beim Ziehen.
   - **Ein Zeichen, nur am Element** (Otto, 04.11.2026): Ein Feld, das den Fokus hat, zeigt den Ring und sonst nichts: kein Randwechsel, kein Schatten (`:focus`), kein zweiter Rand bei `:focus-visible`. Ein Abschnitt oder eine Zeile bekommt bei `:focus-within` keinen Rahmen, keinen Ring, keinen Schatten; eine Zeile darf getönt werden (Hintergrund). Ein Abschnitt hat höchstens einen Rahmen.
   - **Maus:** Ein Knopf zeigt den Ring nach einem Klick nicht (der Browser setzt `:focus-visible` nur bei Tastatur). Ein Textfeld bekommt ihn vom Browser auch beim Klick; das ist die Schreibmarke des Feldes und bleibt der eine Ring.
@@ -203,7 +206,7 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 - **Simple** (ohne Angabe): (a) der **Grund**, warum etwas gesperrt ist; (b) der **Name** eines Knopfs nur mit Symbol, der nicht selbsterklärend ist (Flip through layers, Reverse, Process, die Symbole der Leiste, „Actions“, Nach oben legen); (c) der **volle Text**, wenn ein Text wirklich abgeschnitten ist; dazu alles hinter einem (i), in beiden Stufen.
 - **Advanced** (`data-tip-level="advanced"`): alle übrigen: Knöpfe mit Text, selbsterklärende Symbole (rotes x, Auge, Mülleimer, Download, Stift, Plus, Pfeile, Ziehgriff, Kopieren), Beschriftungen, Werte, Datensätze, Gruppen, Layer-Namen, Abzeichen.
 - **Gesperrt ist immer simple:** `TipLayer` zeigt den Tooltip eines gesperrten Elements (`disabled`, `aria-disabled="true"`) in beiden Stufen; ein Knopf, dessen Tooltip „Grund, sonst Beschreibung“ ist, trägt also `advanced` und zeigt den Grund trotzdem.
-- `aria-label` bleibt überall; die Stufe ändert nur, wann der Tooltip erscheint. **Vorgabe ist „Simple“** (Otto, 04.11.2026); der Schalter steht im Menü „Settings“, Abschnitt „Tooltips“, und wird je Browser gemerkt (`earthx.tooltips`; ein gesperrter Speicher lässt die Vorgabe und stört nichts): `setTipLevel` in `tipLevel.ts`, `setTipLevel` im Store.
+- `aria-label` bleibt überall; die Stufe ändert nur, wann der Tooltip erscheint. **Vorgabe ist „Simple“** (Otto, 04.11.2026); der Schalter („Simple“ links, „Advanced“ rechts, Vorgabe links) steht im Panel „Settings“, Abschnitt „Tooltips“, und wird je Browser gemerkt (`earthx.tooltips`; ein gesperrter Speicher lässt die Vorgabe und stört nichts): `setTipLevel` in `tipLevel.ts`, `setTipLevel` im Store.
 - **Der volle Text eines abgeschnittenen Textes (c)** erscheint nur, wenn der Text wirklich abgeschnitten ist, **in beiden Stufen** (Otto, 04.11.2026): `data-tip-cut=""` am Element mit `data-tip`; steht der Tooltip an einem Knopf um den gekürzten Text, nennt der Wert den inneren Selektor (`data-tip-cut=".pm-title"`). `TipLayer` misst beim Zeigen und beim Fokus `scrollWidth > clientWidth` und zeigt sonst nichts. Das Attribut steht nie zusammen mit `data-tip-level`, nie ohne Wert (leer = das Element selbst) und nie an Namen, die keinen Tooltip haben dürfen (§4). Heute: Titel eines Jobs, Titel eines Stapels, Kennung einer Szene in der Liste.
 - Neue Tooltips: erst fragen, ob sie (a)–(c) sind; wenn nicht, `data-tip-level="advanced"`. Die Liste der Stellen steht in `docs/plans/vp3/ui-04-einheitlichkeit.md` §8.4.
 
@@ -214,12 +217,13 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 
 ## 9. Karte und Einstellungen
 
-- **Einstellungsmenü „Settings“** (Teil 4, Otto, 04.11.2026), `components/SettingsMenu.tsx`:
-  - **Ort:** das letzte Symbol der Leiste links, am unteren Rand (MingCute „Settings 6 Line“, 20 px, Tooltip „Settings“). Es ist ein Halt der Pfeiltasten wie die anderen vier und öffnet ein Menü rechts neben der Leiste (`Popover` mit `beside`), kein Panel; Klick daneben und ein zweiter Klick auf das Symbol schließen es, Esc nicht (§5).
-  - **Abschnitte:** „Basemap“ (Satellite, Streets, Grey, Outlines), „Overlays“ (Labels, Graticule, Relief), „Projection“ (Mercator, Globe), „Appearance“ (Light, Dark, System, mit `sun`, `moon`, `monitor`), „Tooltips“ (Simple, Advanced; §8a). Eine Wahl schließt das Menü nicht.
+- **Panel „Settings“** (Teil 4, Otto, 04.11.2026; erst ein Menü, am selben Tag auf Ottos Zusatz ein Panel), `components/SettingsPanel.tsx`:
+  - **Ort:** das letzte Symbol der Leiste links, am unteren Rand (MingCute „Settings 6 Line“, 20 px, Tooltip „Settings“), ein Halt der Pfeiltasten wie die anderen vier. Es öffnet ein **Panel in der Leiste wie die übrigen** (`dock-slot` im `.dock`): dieselbe Breite (340 px, unter 900 px über der Karte von der Leiste bis zum rechten Rand), derselbe Kopf (`.results-head`: Titel „Settings“ und das rote x aus `CloseButton`). Es schließt mit dem x und mit dem Symbol, **Esc schließt nichts** (§5). Eine Wahl schließt es nicht. Die anderen Panels haben das x im Kopf heute nicht (sie schließen mit ihrem Symbol); siehe die Frage im Plan §8.6.
+  - **Abschnitte** (Überschrift in Großbuchstaben per CSS): „Basemap“ (Satellite, Streets, Grey, Outlines), „Overlays“ (Labels, Graticule, Relief), „Projection“ (Mercator, Globe), „Appearance“ (Light, Dark, System, mit `sun`, `moon`, `monitor`), „Tooltips“ (Schalter „Simple“ / „Advanced“; §8a).
+  - **Bedienformen:** Basemap, Projection und Appearance sind Segment-Knöpfe (`.btn.seg`, der gewählte gefüllt), jedes Overlay ein Knopf derselben Form, gedrückt = an, die Tooltips ein Schalter. Keine Häkchen-Liste, kein Menü.
   - **Je Browser gemerkt** (`preferences.ts`, `localStorage`): `earthx.basemap`, `earthx.overlays`, `earthx.projection`, `earthx.theme`, `earthx.tooltips`. Ein gesperrter oder werfender Speicher ändert nichts am Verhalten: Vorgabe beim Laden, die Wahl gilt für den Besuch.
   - **Appearance:** Vorgabe „Dark“. Gespeichert wird `tech` (Dark), `normal` (Light) oder `system`, damit eine Wahl aus der Zeit vor „System“ gilt. „System“ folgt `prefers-color-scheme` und wechselt mit dem System, auch während die Seite offen ist.
-  - **Die bisherigen Stellen entfallen:** der Knopf „Basemap“ und der Knopf Light/Dark oben rechts. Dort bleibt „Zoom to selection“. Neue Einstellungen dieser Art kommen in dieses Menü, nicht an einen eigenen Knopf.
+  - **Die bisherigen Stellen entfallen:** der Knopf „Basemap“ und der Knopf Light/Dark oben rechts. Dort bleibt „Zoom to selection“. Neue Einstellungen dieser Art kommen in dieses Panel, nicht an einen eigenen Knopf.
 - **Relief** gibt es nur als Overlay. Ein Browser, der die Basemap „relief“ gemerkt hat, öffnet mit der Standard-Basemap und dem Overlay Relief (der Eintrag wird einmal umgeschrieben). Ein alter Permalink mit Basemap „relief“ öffnet für diese Ansicht ebenso, ohne etwas zu speichern; das Backend nimmt `relief` weiter an, das Frontend schreibt es nicht mehr.
 - **„Zoom to selection“** zoomt auf alles Gewählte zusammen (`zoomSelection.ts`):
   - Dazu gehören die AOI, die Bilder der offenen Ansicht und die Bilder der sichtbaren Layer; ein ausgeblendeter Layer und eine Ansicht mit ausgeblendetem Bild zählen nicht. Beispiel: AOI in der Schweiz und Ansicht auf Teneriffa → beide sind im Bild.
@@ -257,9 +261,10 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 | Fokus: ein Zeichen am Element, nichts am Abschnitt | `frontend/src/uiRules.test.ts`, `frontend/e2e/focus-and-type.cjs` |
 | Tooltips: nur die Stufe „advanced“, nie an (i), Namen nicht selbsterklärender Symbole; gesperrt zeigt den Grund | `frontend/src/uiRules.test.ts`, `frontend/src/tipLevel.test.ts`, `frontend/src/components/TipLayer.test.tsx` |
 | `autocomplete="off"` an jedem Textfeld, Regeln für ein ausgefülltes Feld | `frontend/src/uiRules.test.ts`, `frontend/e2e/focus-and-type.cjs` |
-| Einstellungen in einem Menü: kein Knopf „Basemap“, kein Theme-Knopf, Relief nur als Overlay, das Symbol unten in der Leiste; Menü, Merken je Browser, gesperrter Speicher | `frontend/src/uiRules.test.ts`, `frontend/src/components/SettingsMenu.test.tsx`, `frontend/src/preferences.test.ts`, `frontend/e2e/settings-menu.cjs` |
+| Einstellungen in einem Panel der Leiste (Slot im Dock, Kopf mit x, kein Popup, keine Häkchen-Liste): kein Knopf „Basemap“, kein Theme-Knopf, Relief nur als Overlay, das Symbol unten in der Leiste; Segment-Knöpfe, Overlays als gedrückte Knöpfe, Schalter der Tooltips, Merken je Browser, gesperrter Speicher | `frontend/src/uiRules.test.ts`, `frontend/src/components/SettingsPanel.test.tsx`, `frontend/src/AppRail.test.tsx`, `frontend/src/preferences.test.ts`, `frontend/e2e/settings-panel.cjs` |
+| ein Schalter nur für An/Aus (`role="switch"` nur in `Switch.tsx` und im Filter der AOI); die gewählte Segment-Schaltfläche ist gefüllt | `frontend/src/uiRules.test.ts`, `frontend/src/components/SettingsPanel.test.tsx` |
 | das eine Symbol aus MingCute: Herkunft, Änderung und Lizenztext vermerkt | `frontend/src/components/icons.test.tsx` |
-| Tooltip mit vollem Text nur bei gemessener Kürzung, in beiden Stufen; `data-tip-cut` nur mit `data-tip`, ohne Stufe, mit Wert | `frontend/src/uiRules.test.ts`, `frontend/src/tipLevel.test.ts`, `frontend/src/components/TipLayer.test.tsx`, `frontend/e2e/settings-menu.cjs` |
+| Tooltip mit vollem Text nur bei gemessener Kürzung, in beiden Stufen; `data-tip-cut` nur mit `data-tip`, ohne Stufe, mit Wert | `frontend/src/uiRules.test.ts`, `frontend/src/tipLevel.test.ts`, `frontend/src/components/TipLayer.test.tsx`, `frontend/e2e/settings-panel.cjs` |
 | „Zoom to selection“ über AOI, Ansicht und sichtbare Layer, der kürzere Weg über die Datumsgrenze, gesperrt mit Grund | `frontend/src/zoomSelection.test.ts`, `frontend/src/geoUtils.test.ts`, `frontend/src/AppTopBar.test.tsx` |
 | Coverage ohne AOI: keine AOI in der Anfrage, kein POST, derselbe Ausschnitt mit und ohne AOI | `frontend/src/store.coverage.test.ts`, `frontend/src/api.test.ts`, `frontend/e2e/no-aoi-in-url.cjs` |
 | kein Eintrag „Hide coverage“ in der Wahl des Datensatzes | `frontend/src/components/ControlPanel.test.tsx` |
