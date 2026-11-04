@@ -62,7 +62,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
             <button
               type="button"
               className="icon-btn sm danger"
-              data-tip="Delete link"
+              data-tip-level="advanced" data-tip="Delete link"
               aria-label="Delete link"
               disabled={busy}
               onClick={() => void remove(made.id)}
@@ -78,7 +78,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
             type="button"
             className="btn"
             disabled={busy || !!blocked || !bbox}
-            data-tip={blocked ?? 'Keep this order and the map view under a link for 30 days'}
+            data-tip-level="advanced" data-tip={blocked ?? 'Keep this order and the map view under a link for 30 days'}
             onClick={() => void share()}
           >
             {busy ? 'Sharing…' : 'Share'}

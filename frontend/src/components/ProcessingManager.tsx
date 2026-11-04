@@ -321,14 +321,14 @@ function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
   if (state.key === 'deleted') {
     const day = goneDay(job);
     return (
-      <span className="pm-until" data-tip={day}>
+      <span className="pm-until" data-tip-level="advanced" data-tip={day}>
         {formatShortDate(day)}
       </span>
     );
   }
   if (state.key === 'cancelled' || state.key === 'unavailable') return null;
   return (
-    <span className="pm-until" data-tip={job.expires}>
+    <span className="pm-until" data-tip-level="advanced" data-tip={job.expires}>
       {formatShortDate(job.expires)}
     </span>
   );
@@ -338,7 +338,7 @@ function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
 // empty name is not taken.
 function RenameButton({ what, name, onRename }: { what: 'job' | 'batch'; name: string; onRename: () => void }) {
   return (
-    <button type="button" className="icon-btn quiet pm-icon pm-edit" data-name={name} data-tip={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
+    <button type="button" className="icon-btn quiet pm-icon pm-edit" data-name={name} data-tip-level="advanced" data-tip={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
       <PencilIcon size={14} />
     </button>
   );
@@ -360,7 +360,7 @@ function AddToLayers({ job, name }: { job: JobEntry; name: string }) {
     );
   }
   return (
-    <button type="button" className="icon-btn pm-icon" data-tip={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
+    <button type="button" className="icon-btn pm-icon" data-tip-level="advanced" data-tip={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
       <PlusIcon />
     </button>
   );
@@ -436,7 +436,7 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
           </button>
         )}
         <span className={`pm-meta ${state.key}`}>
-          <span className="pm-state" data-tip={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
+          <span className="pm-state" data-tip-level="advanced" data-tip={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
             {state.text}
           </span>
           <UntilText job={job} state={state} />
@@ -543,7 +543,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
           aria-expanded={expanded}
           aria-controls={listId}
           aria-label={expanded ? `Fold up ${batch.title}` : `Show the parts of ${batch.title}`}
-          data-tip={expanded ? 'Fold up' : 'Show the parts'}
+          data-tip-level="advanced" data-tip={expanded ? 'Fold up' : 'Show the parts'}
           onClick={() => setExpanded(!expanded)}
         >
           {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
@@ -575,17 +575,17 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
         <span className={`pm-meta${running ? ' running' : ''}`}>
           <span className="pm-state">{batchSummary(count)}</span>
           {restoreUntil ? (
-            <span className="pm-until" data-tip={restoreUntil}>
+            <span className="pm-until" data-tip-level="advanced" data-tip={restoreUntil}>
               {formatShortDate(restoreUntil)}
             </span>
           ) : count.deleted === parts.length && deletedDay ? (
-            <span className="pm-until" data-tip={deletedDay}>
+            <span className="pm-until" data-tip-level="advanced" data-tip={deletedDay}>
               {formatShortDate(deletedDay)}
             </span>
           ) : (
             count.expires &&
             count.deleted < parts.length && (
-              <span className="pm-until" data-tip={count.expires}>
+              <span className="pm-until" data-tip-level="advanced" data-tip={count.expires}>
                 {formatShortDate(count.expires)}
               </span>
             )
@@ -692,7 +692,7 @@ function FoldButton({ name, listId, collapsed, onToggle, count }: { name: string
       aria-expanded={!collapsed}
       aria-controls={listId}
       aria-label={collapsed ? `Show ${name}, ${count}` : `Fold up ${name}`}
-      data-tip={collapsed ? 'Show the group' : 'Fold up the group'}
+      data-tip-level="advanced" data-tip={collapsed ? 'Show the group' : 'Fold up the group'}
       onClick={onToggle}
     >
       {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
@@ -736,7 +736,7 @@ function GroupMenu({ group, empty, onRename, anchor }: { group: ShelfGroup; empt
             type="button"
             role="menuitem"
             aria-disabled={!empty}
-            data-tip={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
+            data-tip-level="advanced" data-tip={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
             aria-label={empty ? `Remove ${group.name}` : `Remove ${group.name}: ${GROUP_NOT_EMPTY_TIP}`}
             onClick={() => {
               if (!empty) return;
@@ -951,7 +951,7 @@ export default function ProcessingManager() {
             </button>
           ))}
         </div>
-        <button type="button" className="btn" data-tip="Make a group to put jobs in" onClick={() => setNaming(true)}>
+        <button type="button" className="btn" data-tip-level="advanced" data-tip="Make a group to put jobs in" onClick={() => setNaming(true)}>
           <PlusIcon lead />New group
         </button>
       </div>

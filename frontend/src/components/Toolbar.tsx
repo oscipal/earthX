@@ -23,7 +23,7 @@ export default function Toolbar() {
           key={t.mode}
           type="button"
           className="btn tool-btn"
-          data-tip={t.hint}
+          data-tip-level="advanced" data-tip={t.hint}
           aria-pressed={toolMode === t.mode}
           onClick={() => setToolMode(toolMode === t.mode ? 'none' : t.mode)}
         >
@@ -34,7 +34,7 @@ export default function Toolbar() {
       <button
         type="button"
         className="btn tool-wide"
-        data-tip={aoi ? 'Clear the AOI' : 'No AOI to clear'}
+        data-tip-level="advanced" data-tip={aoi ? 'Clear the AOI' : 'No AOI to clear'}
         aria-label="Clear AOI"
         disabled={!aoi}
         onClick={() => {

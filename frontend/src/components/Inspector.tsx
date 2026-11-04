@@ -42,7 +42,7 @@ function Sheet({ kind, hidden }: { kind: 'view' | 'result'; hidden: boolean }) {
         className="pp-grip"
         aria-expanded={!folded}
         aria-label={folded ? 'Show the settings' : 'Fold the settings down'}
-        data-tip={folded ? 'Show the settings' : 'Fold the settings down'}
+        data-tip-level="advanced" data-tip={folded ? 'Show the settings' : 'Fold the settings down'}
         onClick={() => setFolded(!folded)}
       >
         {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}

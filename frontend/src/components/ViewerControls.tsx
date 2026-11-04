@@ -207,7 +207,7 @@ export default function ViewerControls() {
         })
       : null;
   const note = index && indexBlock && (
-    <p className="vc-note hint-text warn" role="status" data-tip={indexNoteTip(indexBlock)}>
+    <p className="hint warn" role="status" data-tip-level="advanced" data-tip={indexNoteTip(indexBlock)}>
       {indexNote(indexBlock, index.name)}
     </p>
   );
@@ -336,7 +336,7 @@ export default function ViewerControls() {
                 type="button"
                 className="btn vc-apply"
                 aria-disabled={!changed || undefined}
-                data-tip={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
+                data-tip-level="advanced" data-tip={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
                 onClick={() => {
                   if (changed) applyRender();
                 }}
@@ -347,7 +347,7 @@ export default function ViewerControls() {
                 type="button"
                 className="btn primary vc-save"
                 aria-disabled={!savable || undefined}
-                data-tip={
+                data-tip-level="advanced" data-tip={
                   savable
                     ? compact
                       ? 'Keep this image, these values and this opacity for the layer; closing the settings without it puts the saved layer back'
@@ -395,7 +395,7 @@ export default function ViewerControls() {
                       className={`btn${on ? ' on' : ''}`}
                       aria-pressed={on}
                       disabled={pinLoading}
-                      data-tip={`${presetTip(preset)} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
+                      data-tip-level="advanced" data-tip={`${presetTip(preset)} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
                       onClick={() => void quickIndex(preset.name)}
                     >
                       {preset.name}
@@ -408,7 +408,7 @@ export default function ViewerControls() {
                   className={`btn${enhanced ? ' on' : ''}`}
                   aria-pressed={enhanced}
                   disabled={focusLoading}
-                  data-tip={enhanced ? 'Click again for the fields as they were before' : ENHANCE_RGB_TIP}
+                  data-tip-level="advanced" data-tip={enhanced ? 'Click again for the fields as they were before' : ENHANCE_RGB_TIP}
                   onClick={() => void enhanceContrast()}
                 >
                   Enhance contrast
@@ -433,14 +433,14 @@ export default function ViewerControls() {
           <InspectorSection title="Actions">
             {/* In pairs (Otto, 2.11.2026): what to look at next, what to keep, what to download. */}
             <div className="vc-actions">
-              <button type="button" className="btn" data-tip="Remove this view, show the search results and choose another scene" onClick={() => changeImage()}>
+              <button type="button" className="btn" data-tip-level="advanced" data-tip="Remove this view, show the search results and choose another scene" onClick={() => changeImage()}>
                 <ArrowLeftIcon lead />Change image
               </button>
               <button
                 type="button"
                 className="btn"
                 disabled={processBlock !== null}
-                data-tip={processBlock ?? 'Build a processing job for the scenes of this view'}
+                data-tip-level="advanced" data-tip={processBlock ?? 'Build a processing job for the scenes of this view'}
                 onClick={() => void processFocusView()}
               >
                 <CogIcon lead />Process
@@ -448,7 +448,7 @@ export default function ViewerControls() {
               <button
                 type="button"
                 className="btn"
-                data-tip={images.length > 1 ? 'Add the image that is shown to the layers' : 'Add this image to the layers'}
+                data-tip-level="advanced" data-tip={images.length > 1 ? 'Add the image that is shown to the layers' : 'Add this image to the layers'}
                 disabled={pinLoading}
                 onClick={() => addCurrentToLayers()}
               >
@@ -457,7 +457,7 @@ export default function ViewerControls() {
               <button
                 type="button"
                 className="btn"
-                data-tip={images.length > 1 ? `Add all ${images.length} images of the view to the layers, one layer each` : 'There is only one image'}
+                data-tip-level="advanced" data-tip={images.length > 1 ? `Add all ${images.length} images of the view to the layers, one layer each` : 'There is only one image'}
                 disabled={pinLoading || images.length <= 1}
                 onClick={() => addAllToLayers()}
               >
@@ -467,7 +467,7 @@ export default function ViewerControls() {
                 type="button"
                 className="btn"
                 disabled={!aoi}
-                data-tip={aoi ? 'Download the image shown at full resolution as the AOI crop, one file per group' : DRAW_AOI_TO_CROP}
+                data-tip-level="advanced" data-tip={aoi ? 'Download the image shown at full resolution as the AOI crop, one file per group' : DRAW_AOI_TO_CROP}
                 onClick={() => openDownloadForView('crop')}
               >
                 <DownloadIcon lead />Download crop
@@ -476,7 +476,7 @@ export default function ViewerControls() {
                 type="button"
                 className="btn"
                 disabled={!originalsAllowed}
-                data-tip={originalsAllowed ? originalsTitle(count > 1, shownDataset?.collection['earthx:access']?.cors === true, originalsSummary) : noOriginalsReason(shownDataset)}
+                data-tip-level="advanced" data-tip={originalsAllowed ? originalsTitle(count > 1, shownDataset?.collection['earthx:access']?.cors === true, originalsSummary) : noOriginalsReason(shownDataset)}
                 onClick={() => openDownloadForView('originals')}
               >
                 <DownloadIcon lead />Download full scene

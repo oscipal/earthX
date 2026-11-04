@@ -36,7 +36,7 @@ function RangeField({
   const edit = (next: { from?: string; to?: string }) => onChange({ kind: 'range', from, to, ...next });
   return (
     <div className="filter-field">
-      <span className="filter-title" data-tip={filter.description}>
+      <span className="filter-title" data-tip-level="advanced" data-tip={filter.description}>
         {filter.title}
       </span>
       <div className="filter-range">
@@ -87,7 +87,7 @@ function ValuesField({
     onChange({ kind: 'values', values: ticked.includes(value) ? ticked.filter((v) => v !== value) : [...ticked, value] });
   return (
     <fieldset className="filter-field">
-      <legend className="filter-title" data-tip={filter.description}>
+      <legend className="filter-title" data-tip-level="advanced" data-tip={filter.description}>
         {filter.title}
       </legend>
       <div className="filter-values">
@@ -109,7 +109,7 @@ function OfferLine({ offer, set }: { offer: Offer; set: boolean }) {
       <span className="dataset-select-title">
         {offer.dataset.title}
       </span>
-      {set && <span className="filter-dot" role="img" aria-label="Filters set" data-tip="Filters set" />}
+      {set && <span className="filter-dot" role="img" aria-label="Filters set" data-tip-level="advanced" data-tip="Filters set" />}
     </span>
   );
 }
@@ -132,7 +132,7 @@ function WithinAoiSwitch({
 }) {
   const locked = lock !== null;
   return (
-    <label className={`within-aoi${locked ? ' locked' : ''}`} data-tip={lock ?? tip}>
+    <label className={`within-aoi${locked ? ' locked' : ''}`} data-tip-level={lock ? undefined : 'advanced'} data-tip={lock ?? tip}>
       <input
         type="checkbox"
         role="switch"
@@ -227,7 +227,7 @@ export default function AdvancedSearch() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? dialogId : undefined}
-        data-tip={tooltip}
+        data-tip-level="advanced" data-tip={tooltip}
         onClick={() => setOpen((v) => !v)}
       >
         Advanced search{count > 0 && ` · ${count}`}

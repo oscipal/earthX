@@ -12,7 +12,7 @@ export default function OpacityRow({ layer }: { layer?: MapLayer }) {
   const title = `Opacity ${Math.round(opacity * 100)}%`;
   return (
     <div className="vc-opacity">
-      <label className="vc-field" data-tip={title}>
+      <label className="vc-field" data-tip-level="advanced" data-tip={title}>
         <span>Opacity</span>
         <input
           type="range"
@@ -21,7 +21,7 @@ export default function OpacityRow({ layer }: { layer?: MapLayer }) {
           max={1}
           step={0.05}
           value={opacity}
-          data-tip={title}
+          data-tip-level="advanced" data-tip={title}
           onChange={(e) => {
             const value = Number(e.target.value);
             if (layer) setLayerOpacity(layer.id, value);

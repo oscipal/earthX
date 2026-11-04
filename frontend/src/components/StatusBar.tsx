@@ -61,7 +61,7 @@ export default function StatusBar() {
           <span className="spinner" aria-hidden="true" />
           {busy}
           {checking && (
-            <button type="button" className="btn aoi-stop" data-tip="Stop checking. What is found stays." onClick={stopSearch}>
+            <button type="button" className="btn aoi-stop" data-tip-level="advanced" data-tip="Stop checking. What is found stays." onClick={stopSearch}>
               Stop
             </button>
           )}

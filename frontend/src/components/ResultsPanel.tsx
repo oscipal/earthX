@@ -28,7 +28,7 @@ function Row({ item }: { item: StacItem }) {
       <input
         type="checkbox"
         checked={selected}
-        data-tip="Select this scene"
+        data-tip-level="advanced" data-tip="Select this scene"
         onClick={(e) => e.stopPropagation()}
         onChange={() => toggleSelected(item.id)}
         aria-label={`Select ${item.id}`}
@@ -50,7 +50,7 @@ function Row({ item }: { item: StacItem }) {
         // on the zoom, neither of which this row knows.
         <span
           className="result-thumb placeholder"
-          data-tip="No preview image for this scene"
+          data-tip-level="advanced" data-tip="No preview image for this scene"
         />
       )}
       <div className="result-meta">
@@ -240,11 +240,11 @@ export function AoiProgress({ datasetId }: { datasetId: string | null }) {
   const stop = useAppStore((s) => s.stopSearch);
   return (
     <div className="aoi-progress" role="status">
-      <span data-tip="Scenes within the limit, of the scenes checked so far">
+      <span data-tip-level="advanced" data-tip="Scenes within the limit, of the scenes checked so far">
         {counts?.found ?? 0} found / {counts?.checked ?? 0} checked
       </span>
       {walking && (
-        <button type="button" className="btn aoi-stop" data-tip="Stop checking. What is found stays." onClick={stop}>
+        <button type="button" className="btn aoi-stop" data-tip-level="advanced" data-tip="Stop checking. What is found stays." onClick={stop}>
           Stop
         </button>
       )}
@@ -295,7 +295,7 @@ export default function ResultsPanel() {
   return (
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
-        <h2 data-tip="Selected scenes / scenes found">Search results ({selected}/{totalItems(sections)})</h2>
+        <h2 data-tip-level="advanced" data-tip="Selected scenes / scenes found">Search results ({selected}/{totalItems(sections)})</h2>
         <div className="results-head-switches">
           <ResultsToTop />
           <ResultsEye />
@@ -314,7 +314,7 @@ function ClearResults() {
     <button
       type="button"
       className="btn clear-results"
-      data-tip="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
+      data-tip-level="advanced" data-tip="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
       onClick={() => clearSearchResults()}
     >
       <TrashIcon className="clear-results-x" />

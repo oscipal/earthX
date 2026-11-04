@@ -123,7 +123,7 @@ function RecipeLoader() {
 
   return (
     <div className="pp-recipe">
-      <label className="btn" aria-disabled={busy || undefined} data-tip="Take the steps, the output bands and the data type from a recipe.json, onto the current selection">
+      <label className="btn" aria-disabled={busy || undefined} data-tip-level="advanced" data-tip="Take the steps, the output bands and the data type from a recipe.json, onto the current selection">
         <UploadIcon lead />Load recipe…
         <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => void pick(e)} />
       </label>
@@ -237,14 +237,14 @@ function OutputBands({ view }: { view: OrderView }) {
             <button
               type="button"
               className="link-btn"
-              data-tip="Put every band into the output"
+              data-tip-level="advanced" data-tip="Put every band into the output"
               onClick={() => setOutput([...everything, ...view.output.filter((name) => !everything.includes(name))])}
             >
               All
             </button>
           )}
           {count > 0 && (
-            <button type="button" className="link-btn" data-tip="Take every band out of the output" onClick={() => setOutput([])}>
+            <button type="button" className="link-btn" data-tip-level="advanced" data-tip="Take every band out of the output" onClick={() => setOutput([])}>
               None
             </button>
           )}
@@ -301,7 +301,7 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           type="button"
           className={`pp-seg${area === 'scene' ? ' on' : ''}`}
           aria-pressed={area === 'scene'}
-          data-tip={result ? 'Process the area of the result' : 'Process the whole scenes; no AOI is sent'}
+          data-tip-level="advanced" data-tip={result ? 'Process the area of the result' : 'Process the whole scenes; no AOI is sent'}
           onClick={() => setArea('scene')}
         >
           Whole scene
@@ -311,7 +311,7 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           className={`pp-seg${area === 'aoi' ? ' on' : ''}`}
           aria-pressed={area === 'aoi'}
           disabled={!hasAoi}
-          data-tip={hasAoi ? (result ? 'Process only the AOI, cut to the area of the result' : 'Process only the AOI') : 'Draw an AOI first'}
+          data-tip-level="advanced" data-tip={hasAoi ? (result ? 'Process only the AOI, cut to the area of the result' : 'Process only the AOI') : 'Draw an AOI first'}
           onClick={() => setArea('aoi')}
         >
           AOI only
@@ -381,7 +381,7 @@ function BatchEstimate({ parts }: { parts: readonly PartOutcome[] }) {
       )}
       {skipped.length > 0 && <p className="hint-text warn">Left out (the AOI misses them): {skipped.join(', ')}</p>}
       {refused.map((part) => (
-        <p key={part.unit.key} className="hint-text error" role="alert" data-tip={part.refusal!.reason}>
+        <p key={part.unit.key} className="error" role="alert" data-tip-level="advanced" data-tip={part.refusal!.reason}>
           {part.unit.label}: {part.refusal!.message}
         </p>
       ))}
@@ -522,7 +522,7 @@ function PreviewSection({ view }: { view: OrderView }) {
                 type="button"
                 className="btn"
                 disabled={colourPercent ? channelValues.every((channel) => !channel.percent || samePercent(channel.percent, DEFAULT_PERCENT)) : singlePercent ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
-                data-tip="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
+                data-tip-level="advanced" data-tip="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
                 onClick={() => {
                   if (colourPercent) editChannels(channelsAutoScaled(channelValues, measuredRange(measure)));
                   else if (singlePercent) setTyped(DEFAULT_PERCENT);
@@ -563,7 +563,7 @@ function PreviewSection({ view }: { view: OrderView }) {
               type="button"
               className="btn"
               disabled={!preview}
-              data-tip="Add this preview to the layers"
+              data-tip-level="advanced" data-tip="Add this preview to the layers"
               onClick={() => pinPreview()}
             >
               <PlusIcon lead />Add preview to layers
@@ -689,7 +689,7 @@ export default function ProcessingPanel() {
           className="pp-grip"
           aria-expanded={!folded}
           aria-label={folded ? 'Show the panel' : 'Fold the panel down'}
-          data-tip={folded ? 'Show the panel' : 'Fold the panel down'}
+          data-tip-level="advanced" data-tip={folded ? 'Show the panel' : 'Fold the panel down'}
           onClick={() => setFolded(!folded)}
         >
           {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
@@ -723,12 +723,12 @@ export default function ProcessingPanel() {
                 <p className="hint-text error">No selected scene meets the AOI.</p>
               )}
               {view.runAs !== 'one' && (
-                <p className="pp-help" data-tip={view.pass?.items.map((i) => i.id).join(', ')}>
+                <p className="hint" data-tip-level="advanced" data-tip={view.pass?.items.map((i) => i.id).join(', ')}>
                   Every {view.runAs} gets a job of its own with the same steps, bands and data type.
                 </p>
               )}
               {view.runAs === 'one' && view.pass && sceneCount > 1 && (
-                <p className="pp-help" data-tip={view.pass.items.map((i) => i.id).join(', ')}>
+                <p className="hint" data-tip-level="advanced" data-tip={view.pass.items.map((i) => i.id).join(', ')}>
                   The scenes are merged into one mosaic first; the steps run on the mosaic.
                 </p>
               )}
@@ -843,7 +843,7 @@ export default function ProcessingPanel() {
                           type="button"
                           className="btn pp-add-btn"
                           disabled={!operator.form.supported || full || !!view.nameBlock}
-                          data-tip={why}
+                          data-tip-level="advanced" data-tip={why}
                           onClick={() => p.addStep(operator.op, operator.opVersion)}
                         >
                           <PlusIcon lead />{operator.title}
@@ -880,7 +880,7 @@ export default function ProcessingPanel() {
               type="button"
               className="btn"
               disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock}
-              data-tip={crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost'}
+              data-tip-level="advanced" data-tip={crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost'}
               onClick={() => void p.reviewOrder()}
             >
               {p.reviewing ? 'Reviewing…' : 'Review'}
@@ -889,7 +889,7 @@ export default function ProcessingPanel() {
               type="button"
               className="btn primary"
               disabled={!startReady || p.starting || !!crsBlock || !!view.nameBlock}
-              data-tip={crsBlock ?? view.nameBlock ?? startTitle}
+              data-tip-level="advanced" data-tip={crsBlock ?? view.nameBlock ?? startTitle}
               onClick={() => void p.startJob()}
             >
               {startLabel}
@@ -914,7 +914,7 @@ export default function ProcessingPanel() {
             </p>
           ))}
           {orderRefusals.map((refusal, index) => (
-            <p key={index} className="hint-text error" role="alert" data-tip={refusal!.reason}>
+            <p key={index} className="error" role="alert" data-tip-level="advanced" data-tip={refusal!.reason}>
               {refusal!.message}
             </p>
           ))}

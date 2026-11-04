@@ -70,7 +70,7 @@ export default function TimeSlider() {
     index === null ? (
       <span className="icon-btn gone" aria-hidden="true" />
     ) : (
-      <button type="button" className="icon-btn" data-tip={`${label}: ${name(index)}`} aria-label={label} onClick={() => go(index)}>
+      <button type="button" className="icon-btn" data-tip-level="advanced" data-tip={`${label}: ${name(index)}`} aria-label={label} onClick={() => go(index)}>
         {direction === 'left' ? <ChevronLeftIcon /> : <ChevronRightIcon />}
       </button>
     );
@@ -78,7 +78,7 @@ export default function TimeSlider() {
   return (
     <div className="time-slider">
       <div className="time-dates">
-        <span className={`time-end first${showFirst ? '' : ' gone'}`} data-tip="First time step" aria-hidden={!showFirst || undefined}>
+        <span className={`time-end first${showFirst ? '' : ' gone'}`} data-tip-level="advanced" data-tip="First time step" aria-hidden={!showFirst || undefined}>
           {showFirst ? name(groups.length - 1) : ''}
         </span>
         {near(older, 'before')}
@@ -86,7 +86,7 @@ export default function TimeSlider() {
         <strong>{name(shown)}</strong>
         {arrow(newer, 'Next time step', 'right')}
         {near(newer, 'after')}
-        <span className={`time-end last${showLast ? '' : ' gone'}`} data-tip="Last time step" aria-hidden={!showLast || undefined}>
+        <span className={`time-end last${showLast ? '' : ' gone'}`} data-tip-level="advanced" data-tip="Last time step" aria-hidden={!showLast || undefined}>
           {showLast ? name(0) : ''}
         </span>
       </div>
@@ -113,7 +113,7 @@ export default function TimeSlider() {
           onChange={(e) => setActiveGroupIndex(groups.length - 1 - Number(e.target.value))}
           aria-label="Timeline (mosaic groups)"
         />
-        <span className="time-count" data-tip={loading ? 'Waiting for the next time step to load; the image stays until it has' : undefined}>
+        <span className="time-count" data-tip-level="advanced" data-tip={loading ? 'Waiting for the next time step to load; the image stays until it has' : undefined}>
           {loading ? 'Loading…' : `${activeGroupIndex + 1} / ${groups.length}`}
         </span>
       </div>

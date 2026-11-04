@@ -312,7 +312,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                   type="button"
                   className="btn vc-apply"
                   aria-disabled={!canApply || blocked !== null || undefined}
-                  data-tip={blocked ?? (canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY)}
+                  data-tip-level="advanced" data-tip={blocked ?? (canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY)}
                   onClick={apply}
                 >
                   Apply
@@ -321,7 +321,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                   type="button"
                   className="btn primary vc-save"
                   aria-disabled={!canSave || blocked !== null || undefined}
-                  data-tip={blocked ?? (canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE)}
+                  data-tip-level="advanced" data-tip={blocked ?? (canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE)}
                   onClick={keep}
                 >
                   Save

@@ -112,7 +112,7 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
         type="button"
         className="btn primary"
         disabled={blocked}
-        data-tip={estimate.state === 'too-large' ? TOO_LARGE_FOR_A_JOB : 'Compute the crop on the platform, as a job'}
+        data-tip-level="advanced" data-tip={estimate.state === 'too-large' ? TOO_LARGE_FOR_A_JOB : 'Compute the crop on the platform, as a job'}
         onClick={() => (parts.length > 0 ? setAsking(true) : void start())}
       >
         {started?.state === 'starting' ? 'Starting…' : 'Export as job'}

@@ -142,7 +142,7 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
                 type="button"
                 className="btn"
                 disabled={!!blocked || run?.state === 'starting' || orderStands(job)}
-                data-tip={blocked ?? 'Merge the scenes of this pass into one file, as a job'}
+                data-tip-level="advanced" data-tip={blocked ?? 'Merge the scenes of this pass into one file, as a job'}
                 onClick={() => void start(index, pass)}
               >
                 {run?.state === 'starting' ? 'Starting…' : 'Start job'}

@@ -143,8 +143,8 @@ export default function DownloadDialog() {
               {table.length > 0 && !started && <BandChoice table={table} disabled={downloading} />}
               {!inBrowser && (
                 <p
-                  className={`hint-text${!downloading && (jobNote?.state === 'blocked' || jobNote?.state === 'failed') ? ' warn' : ''}`}
-                  data-tip={jobNote && jobNote.state !== 'estimating' ? jobNote.tip : 'What the platform expects to make of these scenes'}
+                  className={`hint${!downloading && (jobNote?.state === 'blocked' || jobNote?.state === 'failed') ? ' warn' : ''}`}
+                  data-tip-level="advanced" data-tip={jobNote && jobNote.state !== 'estimating' ? jobNote.tip : 'What the platform expects to make of these scenes'}
                   role={jobNote?.state === 'blocked' || jobNote?.state === 'failed' ? 'alert' : undefined}
                 >
                   {downloading ? (downloadStatus ?? 'Preparing…') : jobNote === null || jobNote.state === 'estimating' ? (block ?? 'Estimating…') : jobNote.text}
@@ -252,7 +252,7 @@ export default function DownloadDialog() {
             {offered && !layer?.restore.indexOnly && (
               <div className="dialog-as" role="radiogroup" aria-label="What to download">
                 {(['raw', 'index'] as const).map((what) => (
-                  <label key={what} style={{ marginRight: '1em' }} data-tip={what === 'raw' ? 'The bands of the scenes, cut to the AOI' : `The ${offered.name}, computed as a Processing job would give it`}>
+                  <label key={what} style={{ marginRight: '1em' }} data-tip-level="advanced" data-tip={what === 'raw' ? 'The bands of the scenes, cut to the AOI' : `The ${offered.name}, computed as a Processing job would give it`}>
                     <input type="radio" name="download-as" checked={downloadAs === what} onChange={() => setDownloadAs(what)} disabled={downloading} />{' '}
                     {what === 'raw' ? 'Raw bands' : offered.name}
                   </label>
@@ -271,8 +271,8 @@ export default function DownloadDialog() {
 
             {index && (
               <p
-                className={`hint-text${!downloading && (indexNote?.state === 'blocked' || indexNote?.state === 'failed') ? ' warn' : ''}`}
-                data-tip={indexNote && indexNote.state !== 'estimating' ? indexNote.tip : 'The same result a Processing job would give for these scenes and this area'}
+                className={`hint${!downloading && (indexNote?.state === 'blocked' || indexNote?.state === 'failed') ? ' warn' : ''}`}
+                data-tip-level="advanced" data-tip={indexNote && indexNote.state !== 'estimating' ? indexNote.tip : 'The same result a Processing job would give for these scenes and this area'}
                 role={indexNote?.state === 'blocked' || indexNote?.state === 'failed' ? 'alert' : undefined}
               >
                 {downloading

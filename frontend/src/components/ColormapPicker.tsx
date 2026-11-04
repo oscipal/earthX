@@ -38,14 +38,14 @@ function Picker({ value, onPick }: { value: string; onPick: (name: string) => vo
         className="pp-grip"
         aria-expanded={!folded}
         aria-label={folded ? 'Show the colormaps' : 'Fold the colormaps down'}
-        data-tip={folded ? 'Show the colormaps' : 'Fold the colormaps down'}
+        data-tip-level="advanced" data-tip={folded ? 'Show the colormaps' : 'Fold the colormaps down'}
         onClick={() => setFolded(!folded)}
       >
         {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
       </button>
       <div className="vc-head">
         <div className="insp-row">
-          <button type="button" className="icon-btn" data-tip={BACK_TIP} aria-label={BACK_TIP} onClick={close}>
+          <button type="button" className="icon-btn" data-tip-level="advanced" data-tip={BACK_TIP} aria-label={BACK_TIP} onClick={close}>
             <ArrowLeftIcon />
           </button>
           <span className="vc-title">Colormap</span>

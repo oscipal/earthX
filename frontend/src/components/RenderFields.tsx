@@ -69,7 +69,7 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
     <>
       {band && <BandSelect label="Band" {...band} />}
       {index && (
-        <label className="vc-field" data-tip={index.tip}>
+        <label className="vc-field" data-tip-level="advanced" data-tip={index.tip}>
           <span>Index</span>
           <select value={index.value} onChange={(e) => index.onChange(e.target.value || null)}>
             <option value="">— none —</option>
@@ -85,9 +85,9 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
       {colormap &&
         ('fixed' in colormap ? (
           // Not left out: the field keeps its place whatever band is drawn, locked, and its tooltip says why (NM4-54 part 5).
-          <label className="vc-field" data-tip={colormap.title}>
+          <label className="vc-field" data-tip-level="advanced" data-tip={colormap.title}>
             <span>Colormap</span>
-            <select value="" disabled aria-label="Colormap" data-tip={colormap.title} onChange={() => undefined}>
+            <select value="" disabled aria-label="Colormap" data-tip-level="advanced" data-tip={colormap.title} onChange={() => undefined}>
               <option value="">{colormap.fixed}</option>
             </select>
           </label>
@@ -112,7 +112,7 @@ function VmaxField({ vmax, placeholder, percent, unit }: { vmax: Props['vmax']; 
       <input type="number" aria-labelledby={nameId} value={vmax.value} placeholder={placeholder} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => vmax.onChange(e.target.value)} />
       {unit && (
         // After the field, so that the label names the field and not the switch; the style puts it in the line of the label.
-        <select className="vc-unit" aria-label="Range unit" data-tip={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
+        <select className="vc-unit" aria-label="Range unit" data-tip-level="advanced" data-tip={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
           <option value="value">{UNIT_LABELS.value}</option>
           <option value="percent">{UNIT_LABELS.percent}</option>
         </select>
@@ -123,7 +123,7 @@ function VmaxField({ vmax, placeholder, percent, unit }: { vmax: Props['vmax']; 
 
 function UnitSelect({ unit, label = 'Range unit' }: { unit: NonNullable<Props['unit']>; label?: string }) {
   return (
-    <select className="vc-unit" aria-label={label} data-tip={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
+    <select className="vc-unit" aria-label={label} data-tip-level="advanced" data-tip={UNIT_TIP} value={unit.value} onChange={(e) => unit.onChange(e.target.value as RangeUnit)}>
       <option value="value">{UNIT_LABELS.value}</option>
       <option value="percent">{UNIT_LABELS.percent}</option>
     </select>
@@ -133,7 +133,7 @@ function UnitSelect({ unit, label = 'Range unit' }: { unit: NonNullable<Props['u
 function NumberField({ name, value, placeholder, percent, invalid = false, onChange }: { name: string; value: string; placeholder?: string; percent: boolean; invalid?: boolean; onChange: (value: string) => void }) {
   const short = name.split(' ').pop() ?? name;
   return (
-    <label className="vc-field vc-num" data-tip={placeholder ? `${name}; empty: ${placeholder}` : name}>
+    <label className="vc-field vc-num" data-tip-level="advanced" data-tip={placeholder ? `${name}; empty: ${placeholder}` : name}>
       <span className="sr-only">{name}</span>
       <input type="number" value={value} placeholder={short} aria-invalid={invalid || undefined} {...(percent ? PERCENT_INPUT : {})} onChange={(e) => onChange(e.target.value)} />
     </label>
@@ -156,7 +156,7 @@ function ScaleRow({ vmin, vmax, placeholder, percent, unit, channels, below }: {
               const typed = channels.onUnit && own?.percent ? own.percent : null;
               return (
                 <Fragment key={channel}>
-                  <span className={`vc-chip vc-chip-${channel}`} data-tip={channel}>
+                  <span className={`vc-chip vc-chip-${channel}`} data-tip-level="advanced" data-tip={channel}>
                     {channel[0].toUpperCase()}
                   </span>
                   <NumberField

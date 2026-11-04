@@ -22,7 +22,7 @@ export default function EyeButton({ shown, tip, onToggle, row = false, locked = 
       type="button"
       className={`icon-btn eye${row ? ' sm' : ''}`}
       data-col={col}
-      data-tip={tip}
+      data-tip-level="advanced" data-tip={tip}
       aria-label={tip}
       aria-pressed={locked ? undefined : shown}
       aria-disabled={locked || undefined}

@@ -186,7 +186,7 @@ function PlaceSearchField() {
           className="btn"
           aria-busy={searching}
           disabled={searching || !query.trim()}
-          data-tip={searching ? 'Looking for the place…' : !query.trim() ? 'Type a place name first' : 'Find the place on the map'}
+          data-tip-level="advanced" data-tip={searching ? 'Looking for the place…' : !query.trim() ? 'Type a place name first' : 'Find the place on the map'}
           onClick={() => void runSearch()}
         >
           {searching ? 'Finding…' : 'Find'}
@@ -200,7 +200,7 @@ function PlaceSearchField() {
               key={`${r.display_name}-${i}`}
               type="button"
               className="place-result"
-              data-tip={r.outline_simplified ? 'Outline simplified' : undefined}
+              data-tip-level="advanced" data-tip={r.outline_simplified ? 'Outline simplified' : undefined}
               onClick={() => choose(r)}
             >
               <span className="place-result-name">{r.name}</span>
@@ -275,7 +275,7 @@ function AoiExtras() {
       <label
         className="btn"
         aria-busy={uploading}
-        data-tip="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
+        data-tip-level="advanced" data-tip="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
       >
         <input
           type="file"
@@ -292,7 +292,7 @@ function AoiExtras() {
         type="button"
         className="btn"
         disabled={!lastAoi}
-        data-tip={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
+        data-tip-level="advanced" data-tip={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
         onClick={() => applyLastAoi()}
       >
         <span>
@@ -366,7 +366,7 @@ function MultiSelectToggle() {
   const setMultiSelect = useAppStore((s) => s.setMultiSelect);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   return (
-    <label className="multi-select-toggle" data-tip="Choose several datasets and search them together">
+    <label className="multi-select-toggle" data-tip-level="advanced" data-tip="Choose several datasets and search them together">
       <input type="checkbox" checked={multiSelect} disabled={busy} onChange={(e) => setMultiSelect(e.target.checked)} />
       Select multiple datasets
     </label>
@@ -437,7 +437,7 @@ function CoverageHistogram({
             key={bucket.t}
             className={`histogram-bar${inRange ? ' in-range' : ''}`}
             style={{ height: `${Math.max(2, (bucket.n / max) * 100)}%` }}
-            data-tip={`${month}: ${bucket.n}`}
+            data-tip-level="advanced" data-tip={`${month}: ${bucket.n}`}
           />
         );
       })}
@@ -530,7 +530,7 @@ function CoverageButton() {
         aria-haspopup={picked.length > 1 ? 'menu' : undefined}
         aria-expanded={picked.length > 1 ? choosing : undefined}
         disabled={picked.length === 0}
-        data-tip={
+        data-tip-level="advanced" data-tip={
           picked.length === 0
             ? 'Choose a dataset to see its coverage'
             : showCoverage
@@ -552,7 +552,7 @@ function CoverageButton() {
         type="button"
         className="btn"
         disabled={!showCoverage}
-        data-tip={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
+        data-tip-level="advanced" data-tip={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
         onClick={() => hideCoverage()}
       >
         Hide coverage

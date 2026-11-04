@@ -18,7 +18,7 @@ const PROJECTIONS: { id: Projection; name: string; tip: string }[] = [
 
 function Choice({ name, tip, checked, onChoose, role = 'menuitemradio' }: { name: string; tip: string; checked: boolean; onChoose: () => void; role?: string }) {
   return (
-    <button type="button" role={role} aria-checked={checked} data-tip={tip} onClick={onChoose}>
+    <button type="button" role={role} aria-checked={checked} data-tip-level="advanced" data-tip={tip} onClick={onChoose}>
       <MenuTick checked={checked} />
       <span className="pm-menu-label">{name}</span>
     </button>
@@ -43,7 +43,7 @@ export default function BasemapMenu() {
         className="panel btn basemap-btn"
         aria-haspopup="menu"
         aria-expanded={open}
-        data-tip="Basemap, overlays and projection"
+        data-tip-level="advanced" data-tip="Basemap, overlays and projection"
         onClick={() => setOpen((was) => !was)}
       >
         Basemap
