@@ -172,7 +172,6 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     await idle();
     await page.waitForTimeout(1500);
     await shot('relief');
-    await menu('Overlays', /Relief/); // and off again
     await menu('Projection', /Globe/);
     await jump(10, 20, 0.8);
     await idle();
@@ -184,6 +183,7 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     await shot('globe');
     await menu('Projection', /Mercator/);
     expect('"Mercator" gives Mercator back', (await page.evaluate((m) => m.getProjection()?.type, map)) === 'mercator');
+    await menu('Overlays', /Relief/); // the shading is switched off again: the basemaps below are judged without it
     const dismiss = async () => {
       const button = page.getByRole('alert').getByRole('button', { name: 'Close' });
       while (await button.count()) await button.first().click();
