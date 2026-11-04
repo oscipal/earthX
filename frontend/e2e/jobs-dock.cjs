@@ -7,7 +7,7 @@
 //      tooltip, a group head has its count and "n running" and its menu at the right. There is no column of the state: it stands in the
 //      place of the date while a job runs ("70%").
 //      The titles of the columns (Title, Expires) stand under the head of every open group, small and with no background, at the x of the
-//      places of the row; the columns are as wide in every group; the date is "08OCT-12:34", no "until".
+//      places of the row; the columns are as wide in every group; the date is "10 Nov, 20:15" (as in the details of a job), no "until".
 //      A running job has a line of two pixels at the bottom edge of its row, as wide as the row, with the progress in it.
 //   3. Under 900 px (a column of about 260 px, symbols a finger high) the narrow form applies: status and date under the title.
 //   4. Nothing scrolls sideways, nothing lies outside the panel, the symbols of a row do not overlap.
@@ -71,6 +71,9 @@ async function check(browser, theme, viewport) {
   if ((await rail.getAttribute('aria-expanded')) !== 'true') await rail.click();
   await page.waitForSelector('.processing-manager .pm-row');
   // "All", so that the job the server forgot ("No longer available") is in the list too.
+  // The made-up server answers 404 to what the page asks; the message stands over the panel in a narrow window (UI-04 part 6) until
+  // its red x closes it, as a person would.
+  for (const close of await page.locator('.toast .close-x').all()) await close.click();
   await page.locator('.pm-filter').getByRole('button', { name: 'All', exact: true }).click();
   await page.waitForTimeout(300);
   await page.waitForTimeout(500);
@@ -177,7 +180,8 @@ async function check(browser, theme, viewport) {
     if (!a || !b) problems.push('the job with two marks has fewer');
     else if (overlap(a, b) || (Math.abs(a.y - b.y) > 2 || b.x < a.right - 0.5) || a.y < report.rows[4].title.bottom - 1) problems.push(`the marks "Archived" and "Superseded" are not side by side under the title: ${JSON.stringify([a, b])}`);
   }
-  for (const date of report.dates) if (!/^\d{2}[A-Z]{3}-\d{2}:\d{2}$/.test(date)) problems.push(`the date reads "${date}", not 08OCT-12:34`);
+  for (const date of report.dates) if (!/^\d{1,2} [A-Z][a-z]{2}(?: \d{4})?, \d{2}:\d{2}$/.test(date)) problems.push(`the date reads "${date}", not "10 Nov, 20:15"`);
+  if (report.dates.length === 0) problems.push('no date to read in the manager');
   if (!report.heads[1].menu) problems.push('the head of a group has no menu');
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}.png`) });
   await context.close();

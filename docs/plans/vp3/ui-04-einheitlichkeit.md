@@ -510,3 +510,7 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 5. **Die Kennungen der Szenen** („Scenes: …“) stehen im (i) hinter der Auswahl; vorher waren sie der Tooltip eines Absatzes.
 6. **Zwischenstufen:** 1–2 px → `--space-0`, 3–4 → `--space-1`, 5–6 → `--space-1-5`, 7–9 → `--space-2`, 10–13 → `--space-3`, 14–16 → `--space-4`; Radius 1–4 → `--radius-xs`, 5–6 → `--radius-sm`, 8–10 → `--radius-md`; Schrift 9–10 → `--text-2xs`, 16 → `--text-xl`. Sichtbar ändert das einzelne Listenzeilen um höchstens 2 px (z. B. das Panel der Suchergebnisse 14 → 16 px seitlich); Balken des Coverage-Histogramms haben nun 4 px Radius.
 7. **Eine Ausnahme von der Regel „jede Regel nimmt Tokens“** gibt es nicht; das tote Vite-Blatt `src/App.css` wird nicht geladen und bleibt unberührt (kein Teil dieser Aufgabe).
+
+**Antworten Otto (04.11.2026, zu [#292](https://github.com/oscipal/earthX/pull/292)):**
+1. Das Datum steht überall als „10 Nov, 20:15“, auch im Jobs-Manager (ersetzt „08OCT-12:34“ aus #283); im Browser geprüft (`e2e/jobs-dock.cjs`).
+2. Die Auslegungen 1–3 sind angenommen.
