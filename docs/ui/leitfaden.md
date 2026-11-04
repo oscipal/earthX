@@ -1,10 +1,10 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 04.11.2026, UI-04 Teil 3b (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 04.11.2026, UI-04 Teil 4 (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
-**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt.
+**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. (Nach Teil 4 stehen nur noch Regeln mit Markierung für Teil 6.)
 
 ## 1. Grundsätze
 
@@ -48,7 +48,9 @@
 | — none — / — choose — | kein Wert, auch die gesperrte Colormap bei RGB / Pflichtwahl ohne Vorgabe | „–“ |
 | Choose | auswählen, im Text | „Pick“ |
 | finished | Status eines Jobs („Finished“); in Zusammenfassungen klein („3 finished · 1 running“) | „done“ |
-| Settings | das Einstellungsmenü unten in der Leiste *(folgt in Teil 4)*; die Seitenleiste heißt für Screenreader nach ihrem Inhalt („Image settings“, „Layer settings“) | |
+| Settings | das Einstellungsmenü unten in der Leiste links (§9); die Seitenleiste heißt für Screenreader nach ihrem Inhalt („Image settings“, „Layer settings“) | |
+| Basemap, Overlays, Projection, Appearance, Tooltips | die fünf Abschnitte des Menüs „Settings“; Wahl je Abschnitt: Satellite / Streets / Grey / Outlines, Labels / Graticule / Relief, Mercator / Globe, Light / Dark / System, Simple / Advanced | „Theme“, „Mode“ für Light/Dark |
+| Coverage, Hide coverage | die Abdeckung des gewählten Datensatzes über den sichtbaren Kartenausschnitt (§9); sie wird mit „Coverage“ gewählt und mit „Hide coverage“ beendet | „Clear coverage“, ein Eintrag „Hide coverage“ in der Wahl des Datensatzes |
 
 **Schreibweise:**
 - **Satzanfang-Stil** für Knopftexte, Überschriften und Tooltips („Add to layers“, „Auto-scale“). Großbuchstaben bei Abschnittsköpfen nur per CSS.
@@ -68,7 +70,7 @@
 - **Ein Knopf nur mit Symbol** hat einen Namen für Screenreader (`aria-label`) und einen Tooltip. Gleiche Aktion, gleiches Symbol, auch wenn Text dabeisteht oder nicht.
 - **Eigene Zeichnungen gibt es nicht.** Das einzige `<svg>` im Code ist das Balkendiagramm des Histogramms (`RangeHistogram`), kein Symbol.
 - **Der Haken** vor dem gewählten Eintrag eines Menüs ist ein Symbol in einem Platz fester Breite (`MenuTick`), kein Zeichen im CSS.
-- **Einzige Ausnahme:** Settings ist „Settings 6 Line“ von MingCute (Apache-2.0, `mingcute_icon` 2.9.72, `svg/system/settings_6_line.svg`). Es wird als einzelnes SVG übernommen, als Strich nachgezeichnet und an Lucide angeglichen; die Änderung ist vermerkt. Herkunft und Lizenz stehen in `frontend/THIRD_PARTY_NOTICES.md` *(folgt in Teil 4)*.
+- **Einzige Ausnahme:** Settings ist „Settings 6 Line“ von MingCute (Apache-2.0, `mingcute_icon` 2.9.72, `svg/system/settings_6_line.svg`). Es wird als einzelnes SVG übernommen, als Strich nachgezeichnet und an Lucide angeglichen; die Änderung ist vermerkt. Herkunft, Änderung und Lizenztext stehen in `frontend/THIRD_PARTY_NOTICES.md`, die Zeichnung (mit dem Vermerk der Änderung, Apache-2.0 §4(b)) in `components/settingsIconNode.ts`; `icons.ts` gibt sie als `SettingsIcon` weiter, wie alle anderen.
 - **Das Auge ist ein Bauteil, `EyeButton`** (Otto, 04.11.2026): in der Layer-Zeile, bei „Search results“ (Kopf der Liste und Eintrag im Layer-Manager), im Kopf der Seitenleiste und überall sonst, wo etwas gezeigt oder verborgen wird. Eine Farbe, die des Textes; **verborgen** (oder gesperrt) ist das durchgestrichene Auge (`eye-off`), nie eine andere Farbe und kein Rahmen. In Listenzeilen 22 px mit 14-px-Symbol (`row`), sonst 28 px mit 16 px. `EyeIcon` und `EyeOffIcon` kommen nur in `EyeButton.tsx` vor; kein CSS gibt dem Auge eine eigene Farbe.
 - **Keine Textzeichen als Symbole** (⇩ ✎ ✕ ⚙ ＋ ⋯ ▾ ↻ …). Im Text erlaubt bleiben „…“, „—“ in „— none —“, „·“, „–“, „→“ zwischen zwei Datumsfeldern, „×“ in Maßen („10 m × 10 m“), „µm“.
 
@@ -79,7 +81,7 @@
 | Entfernen / Löschen / Leeren einer Liste (auch „Clear AOI“, „Clear search results“) | `trash-2` |
 | Umbenennen | `pencil` |
 | Process | `cog` (das Zahnrad bleibt, Otto) |
-| Settings | MingCute „Settings 6 Line“ |
+| Settings | MingCute „Settings 6 Line“ (`SettingsIcon`, als Strich nachgezeichnet) |
 | Mehr | `ellipsis` |
 | Ziehgriff | `grip-vertical` (Zeilen), `grip-horizontal` (Auswahlleiste) |
 | Zurück („Change image“, „Order“, Colormap-Liste) | `arrow-left` |
@@ -104,7 +106,7 @@
 | AOI-Werkzeuge | `map-pin`, `square`, `pentagon` |
 | Leiste | `search`, `layers`, `clipboard-list`, `list` |
 | Coverage | `layout-grid` |
-| Erscheinungsbild | `sun`, `moon`, `monitor` |
+| Erscheinungsbild (Light / Dark / System) | `sun`, `moon`, `monitor` |
 
 ## 4. Sperren
 
@@ -155,7 +157,8 @@
 | `EyeButton` | das Auge: zeigt oder verbirgt (§3) |
 | `icons.ts`, `MenuTick` | alle Symbole; der Haken in Menüs |
 | `Tip` / `TipLayer` | (i), Warnung und Tooltips |
-| `Popover` | Menüs, Listen und das Formular „Advanced search“ |
+| `SettingsMenu` | das Symbol „Settings“ unten in der Leiste und sein Menü (§9); sitzt in `AppRail` |
+| `Popover` | Menüs, Listen und das Formular „Advanced search“; `beside` stellt ein Menü rechts neben einen Rand (die Leiste) |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
 | `Badge` | das eine Abzeichen („Preview“, „Temporary“, „Overview“, „Zoom in“, „Loading…“): Pille in `--accent-2`, Großbuchstaben per CSS; `PreviewBadge` setzt sie über die Karte |
 
@@ -200,8 +203,8 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 - **Simple** (ohne Angabe): (a) der **Grund**, warum etwas gesperrt ist; (b) der **Name** eines Knopfs nur mit Symbol, der nicht selbsterklärend ist (Flip through layers, Reverse, Process, die Symbole der Leiste, „Actions“, Nach oben legen); (c) der **volle Text**, wenn ein Text wirklich abgeschnitten ist; dazu alles hinter einem (i), in beiden Stufen.
 - **Advanced** (`data-tip-level="advanced"`): alle übrigen: Knöpfe mit Text, selbsterklärende Symbole (rotes x, Auge, Mülleimer, Download, Stift, Plus, Pfeile, Ziehgriff, Kopieren), Beschriftungen, Werte, Datensätze, Gruppen, Layer-Namen, Abzeichen.
 - **Gesperrt ist immer simple:** `TipLayer` zeigt den Tooltip eines gesperrten Elements (`disabled`, `aria-disabled="true"`) in beiden Stufen; ein Knopf, dessen Tooltip „Grund, sonst Beschreibung“ ist, trägt also `advanced` und zeigt den Grund trotzdem.
-- `aria-label` bleibt überall; die Stufe ändert nur, wann der Tooltip erscheint. Bis Teil 4 den Schalter bringt, gilt „Advanced“ (das bisherige Verhalten): `setTipLevel` in `tipLevel.ts`.
-- Der volle Text eines abgeschnittenen Textes (c) erscheint künftig nur, wenn der Text wirklich abgeschnitten ist (Teil 4 misst die Kürzung); bis dahin immer.
+- `aria-label` bleibt überall; die Stufe ändert nur, wann der Tooltip erscheint. **Vorgabe ist „Simple“** (Otto, 04.11.2026); der Schalter steht im Menü „Settings“, Abschnitt „Tooltips“, und wird je Browser gemerkt (`earthx.tooltips`; ein gesperrter Speicher lässt die Vorgabe und stört nichts): `setTipLevel` in `tipLevel.ts`, `setTipLevel` im Store.
+- **Der volle Text eines abgeschnittenen Textes (c)** erscheint nur, wenn der Text wirklich abgeschnitten ist, **in beiden Stufen** (Otto, 04.11.2026): `data-tip-cut=""` am Element mit `data-tip`; steht der Tooltip an einem Knopf um den gekürzten Text, nennt der Wert den inneren Selektor (`data-tip-cut=".pm-title"`). `TipLayer` misst beim Zeigen und beim Fokus `scrollWidth > clientWidth` und zeigt sonst nichts. Das Attribut steht nie zusammen mit `data-tip-level`, nie ohne Wert (leer = das Element selbst) und nie an Namen, die keinen Tooltip haben dürfen (§4). Heute: Titel eines Jobs, Titel eines Stapels, Kennung einer Szene in der Liste.
 - Neue Tooltips: erst fragen, ob sie (a)–(c) sind; wenn nicht, `data-tip-level="advanced"`. Die Liste der Stellen steht in `docs/plans/vp3/ui-04-einheitlichkeit.md` §8.4.
 
 ## 8b. Felder und Browser-Vorschläge
@@ -211,15 +214,23 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 
 ## 9. Karte und Einstellungen
 
-- **Einstellungsmenü** *(folgt in Teil 4)*:
-  - Ort: ganz unten in der Leiste links (MingCute „Settings 6 Line“, Tooltip „Settings“).
-  - Abschnitte: „Basemap“, „Overlays“, „Projection“, „Appearance“ (Light / Dark / System).
-  - Die bisherigen Knöpfe „Basemap“ und Light/Dark oben rechts entfallen.
-- **Relief** gibt es nur als Overlay. Ein alter Permalink mit Basemap „relief“ öffnet mit der Standard-Basemap und dem Overlay Relief *(folgt in Teil 4)*.
-- **„Zoom to selection“** zoomt auf alles Gewählte zusammen *(folgt in Teil 4)*:
-  - Dazu gehören AOI, offene Ansicht und sichtbare Layer; ausgeblendete Layer zählen nicht.
-  - Über die Datumsgrenze gilt der kürzere Weg.
-  - Ohne etwas Gewähltes ist der Knopf gesperrt und nennt den Grund.
+- **Einstellungsmenü „Settings“** (Teil 4, Otto, 04.11.2026), `components/SettingsMenu.tsx`:
+  - **Ort:** das letzte Symbol der Leiste links, am unteren Rand (MingCute „Settings 6 Line“, 20 px, Tooltip „Settings“). Es ist ein Halt der Pfeiltasten wie die anderen vier und öffnet ein Menü rechts neben der Leiste (`Popover` mit `beside`), kein Panel; Klick daneben und ein zweiter Klick auf das Symbol schließen es, Esc nicht (§5).
+  - **Abschnitte:** „Basemap“ (Satellite, Streets, Grey, Outlines), „Overlays“ (Labels, Graticule, Relief), „Projection“ (Mercator, Globe), „Appearance“ (Light, Dark, System, mit `sun`, `moon`, `monitor`), „Tooltips“ (Simple, Advanced; §8a). Eine Wahl schließt das Menü nicht.
+  - **Je Browser gemerkt** (`preferences.ts`, `localStorage`): `earthx.basemap`, `earthx.overlays`, `earthx.projection`, `earthx.theme`, `earthx.tooltips`. Ein gesperrter oder werfender Speicher ändert nichts am Verhalten: Vorgabe beim Laden, die Wahl gilt für den Besuch.
+  - **Appearance:** Vorgabe „Dark“. Gespeichert wird `tech` (Dark), `normal` (Light) oder `system`, damit eine Wahl aus der Zeit vor „System“ gilt. „System“ folgt `prefers-color-scheme` und wechselt mit dem System, auch während die Seite offen ist.
+  - **Die bisherigen Stellen entfallen:** der Knopf „Basemap“ und der Knopf Light/Dark oben rechts. Dort bleibt „Zoom to selection“. Neue Einstellungen dieser Art kommen in dieses Menü, nicht an einen eigenen Knopf.
+- **Relief** gibt es nur als Overlay. Ein Browser, der die Basemap „relief“ gemerkt hat, öffnet mit der Standard-Basemap und dem Overlay Relief (der Eintrag wird einmal umgeschrieben). Ein alter Permalink mit Basemap „relief“ öffnet für diese Ansicht ebenso, ohne etwas zu speichern; das Backend nimmt `relief` weiter an, das Frontend schreibt es nicht mehr.
+- **„Zoom to selection“** zoomt auf alles Gewählte zusammen (`zoomSelection.ts`):
+  - Dazu gehören die AOI, die Bilder der offenen Ansicht und die Bilder der sichtbaren Layer; ein ausgeblendeter Layer und eine Ansicht mit ausgeblendetem Bild zählen nicht. Beispiel: AOI in der Schweiz und Ansicht auf Teneriffa → beide sind im Bild.
+  - Über die Datumsgrenze gilt der kürzere Weg (`unionBboxShortest`): Fidschi beiderseits der Linie ist ein Kasten über 180°, nicht die Welt.
+  - Ohne etwas Gewähltes ist der Knopf gesperrt und nennt den Grund: „Nothing to zoom to: draw an AOI, open an image or show a layer“.
+- **Coverage unabhängig von der AOI** (Teil 4, Otto, 04.11.2026; ersetzt die Regel „mit AOI über die AOI“ aus M3-19):
+  - Die Karte zeigt immer die Abdeckung über den **sichtbaren Kartenausschnitt**, bei kleinem Zoom die ganze Welt, auch wenn eine AOI gezeichnet ist. Eine AOI zu zeichnen, zu ändern oder zu löschen stellt keine neue Frage.
+  - Die Anfrage ist ein `GET /coverage/{id}` mit Ausschnitt, Zeitraum und Filtern; sie trägt **keine AOI** (`api.fetchCoverage` hat keinen Weg dafür), und das Frontend benutzt `POST /coverage/{id}` nicht mehr.
+  - Die Stufenregel (Stufe aus Zoom und Fenstergröße, `levelForViewport`, #286) und „dieselbe Frage nicht zweimal“ bleiben; beantwortete Ausschnitte werden auch mit AOI wiederverwendet. Filter aus „Advanced search“ wirken weiter auf die Coverage.
+  - Ein Schalter „Filter within AOI only“ lässt die Filter, die von der Fläche abhängen, in der Coverage weg (sie kann sie nicht messen); die AOI ändert so höchstens die Filter, nie den Ausschnitt.
+- **Die Wahl des Datensatzes unter „Coverage“** (mehrere Datensätze gewählt) enthält nur Datensätze, keinen Eintrag „Hide coverage“. Beendet wird die Karte mit dem Knopf „Hide coverage“ neben „Coverage“.
 
 ## 10. Prüfungen gegen Rückfälle
 
@@ -246,5 +257,11 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 | Fokus: ein Zeichen am Element, nichts am Abschnitt | `frontend/src/uiRules.test.ts`, `frontend/e2e/focus-and-type.cjs` |
 | Tooltips: nur die Stufe „advanced“, nie an (i), Namen nicht selbsterklärender Symbole; gesperrt zeigt den Grund | `frontend/src/uiRules.test.ts`, `frontend/src/tipLevel.test.ts`, `frontend/src/components/TipLayer.test.tsx` |
 | `autocomplete="off"` an jedem Textfeld, Regeln für ein ausgefülltes Feld | `frontend/src/uiRules.test.ts`, `frontend/e2e/focus-and-type.cjs` |
+| Einstellungen in einem Menü: kein Knopf „Basemap“, kein Theme-Knopf, Relief nur als Overlay, das Symbol unten in der Leiste; Menü, Merken je Browser, gesperrter Speicher | `frontend/src/uiRules.test.ts`, `frontend/src/components/SettingsMenu.test.tsx`, `frontend/src/preferences.test.ts`, `frontend/e2e/settings-menu.cjs` |
+| das eine Symbol aus MingCute: Herkunft, Änderung und Lizenztext vermerkt | `frontend/src/components/icons.test.tsx` |
+| Tooltip mit vollem Text nur bei gemessener Kürzung, in beiden Stufen; `data-tip-cut` nur mit `data-tip`, ohne Stufe, mit Wert | `frontend/src/uiRules.test.ts`, `frontend/src/tipLevel.test.ts`, `frontend/src/components/TipLayer.test.tsx`, `frontend/e2e/settings-menu.cjs` |
+| „Zoom to selection“ über AOI, Ansicht und sichtbare Layer, der kürzere Weg über die Datumsgrenze, gesperrt mit Grund | `frontend/src/zoomSelection.test.ts`, `frontend/src/geoUtils.test.ts`, `frontend/src/AppTopBar.test.tsx` |
+| Coverage ohne AOI: keine AOI in der Anfrage, kein POST, derselbe Ausschnitt mit und ohne AOI | `frontend/src/store.coverage.test.ts`, `frontend/src/api.test.ts`, `frontend/e2e/no-aoi-in-url.cjs` |
+| kein Eintrag „Hide coverage“ in der Wahl des Datensatzes | `frontend/src/components/ControlPanel.test.tsx` |
 
 Ein neuer Begriff, der ein altes Wort ersetzt, bekommt eine Zeile in der Liste `FORBIDDEN` von `uiRules.test.ts` mit Gegenprobe.
