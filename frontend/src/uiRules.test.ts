@@ -530,11 +530,10 @@ describe('the settings are in one panel (UI-04 part 4, Otto, 3.11.2026 and 4.11.
     expect(CSS).toMatch(/\.rail-settings \{[^}]*margin-top: auto/u);
   });
 
-  it('is a panel of the dock like the others: a slot, the head of a panel with the red x, no pop-up', () => {
+  it('is a panel of the dock like the others: a slot, the head of a panel without an x, no pop-up', () => {
     expect(SOURCES['./App.tsx']).toMatch(/dockPanelId\('settings'\)/u);
     const panel = SOURCES['./components/SettingsPanel.tsx'];
     expect(panel).toMatch(/className="results-head"/u);
-    expect(panel).toMatch(/<CloseButton\b/u);
     expect(panel).not.toMatch(/Popover|role="menu|menuitem|MenuTick/u);
   });
 
@@ -543,6 +542,31 @@ describe('the settings are in one panel (UI-04 part 4, Otto, 3.11.2026 and 4.11.
     expect(panel).toMatch(/className="btn seg"/u);
     expect(panel).toMatch(/<Switch\b/u);
     expect(panel).not.toMatch(/CheckIcon|aria-checked|type="checkbox"|type="radio"/u);
+  });
+});
+
+describe('the panels of the rail have no x (UI-04 part 4, Otto, 4.11.2026): they are opened and closed with their symbol', () => {
+  // The red x is for the side bar at the right, dialogs, sheets and messages (`CloseButton`); a panel at the left (Search and area, Layers, Jobs,
+  // Search results, Settings) is switched on and off with its symbol in the rail.
+  const PANELS = [
+    'components/ControlPanel.tsx',
+    'components/LayerManager.tsx',
+    'components/ProcessingManager.tsx',
+    'components/ResultsPanel.tsx',
+    'components/SettingsPanel.tsx',
+  ];
+  const holdsX = (text: string) => /<CloseButton\b|\bclose-x\b|\bcloseDock\b/u.test(withoutComments(text));
+
+  it.each(PANELS)('has no CloseButton, no close-x and no closeDock in %s', (path) => {
+    expect(SOURCES[`./${path}`], path).toBeDefined();
+    expect(holdsX(SOURCES[`./${path}`]), path).toBe(false);
+  });
+
+  it('finds an x in the head of a panel (counter-check)', () => {
+    expect(holdsX('<div className="results-head"><h2>Jobs</h2><CloseButton onClick={f} /></div>')).toBe(true);
+    expect(holdsX('<button className="close-x">')).toBe(true);
+    expect(holdsX('const close = useAppStore((s) => s.closeDock);')).toBe(true);
+    expect(holdsX('<div className="results-head"><h2>Jobs</h2></div>')).toBe(false);
   });
 });
 

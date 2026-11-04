@@ -198,12 +198,17 @@ describe('the panels', () => {
     expect(slot('controls')!.hidden).toBe(true);
     expect(container.querySelector('#dock-settings .settings-panel h2')?.textContent).toBe('Settings');
     expect(document.querySelector('[role="menu"]')).toBeNull();
-    // A second click, like on the other symbols, closes it; so does the red x of its head.
+    // A second click closes it, like on the other symbols: it has no red x (Otto, 4.11.2026).
     click(settings);
     expect(useAppStore.getState().dock).toBeNull();
-    click(settings);
-    click(container.querySelector('#dock-settings button.close-x')!);
-    expect(useAppStore.getState().dock).toBeNull();
+    expect(container.querySelector('#dock-settings .close-x')).toBeNull();
+  });
+
+  it('have no red x in the head of any panel: a panel of the rail is opened and closed with its symbol only (Otto, 4.11.2026)', () => {
+    for (const name of ['controls', 'layers', 'jobs', 'results', 'settings'] as const) {
+      act(() => useAppStore.setState({ dock: name === 'results' ? 'controls' : name }));
+      expect(container.querySelector('.dock .close-x'), name).toBeNull();
+    }
   });
 
   it('give the panel "Settings" the width and the place of the other panels, in the same slot of the dock', () => {

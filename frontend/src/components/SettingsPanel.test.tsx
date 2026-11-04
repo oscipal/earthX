@@ -2,7 +2,7 @@
 //
 // UI-02a, UI-04 part 4: the panel "Settings" beside the rail. A choice of one is a row of segment buttons, an overlay is a button that is pressed
 // while it is on, the tooltips are a switch. The choice reaches the store and the browser's storage (and works when the storage is locked), and
-// each button says what it is or where its tiles come from. Opened and closed with its symbol or the red x; Esc closes nothing.
+// each button says what it is or where its tiles come from. Opened and closed with its symbol only, as the other panels of the rail are: no red x in its head, and Esc closes nothing.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -52,21 +52,21 @@ const click = (el: Element) => act(() => (el as HTMLElement).click());
 const tipSwitch = (): HTMLButtonElement => container.querySelector('button[role="switch"]') as HTMLButtonElement;
 
 describe('the panel', () => {
-  it('has the head of a panel: the title "Settings" and the red x, and is a region of that name', () => {
+  it('has the head of a panel: the title "Settings" and no x (a panel of the rail has none, Otto, 4.11.2026), and is a region of that name', () => {
     const panel = container.querySelector('.settings-panel')!;
     expect(panel.getAttribute('role')).toBe('region');
     expect(panel.getAttribute('aria-label')).toBe('Settings');
     expect(panel.querySelector('.results-head h2')?.textContent).toBe('Settings');
-    const x = panel.querySelector('.results-head button.close-x') as HTMLButtonElement;
-    expect(x.getAttribute('aria-label')).toBe('Close');
+    expect(panel.querySelector('.close-x, [aria-label="Close"]')).toBeNull();
+    expect(panel.querySelector('.results-head button')).toBeNull();
     expect(panel.classList.contains('dock-panel')).toBe(true);
   });
 
-  it('closes with the red x, and with nothing else: Escape leaves it open (Otto, 2.11.2026)', () => {
+  it('has no way to close in it: Escape leaves it open (Otto, 2.11.2026); the symbol of the rail opens and closes it', () => {
     act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     act(() => container.querySelector('.settings-panel')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(useAppStore.getState().dock).toBe('settings');
-    click(container.querySelector('button.close-x')!);
+    act(() => useAppStore.getState().toggleDock('settings'));
     expect(useAppStore.getState().dock).toBeNull();
   });
 

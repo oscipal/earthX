@@ -1,6 +1,7 @@
 // The panel "Settings" of the rail (UI-04 part 4, Otto, 4.11.2026): which map lies under the app's own layers (Basemap), the overlays over it
 // (Labels, Graticule, Relief), how the earth is shown (Projection), how the page looks (Appearance) and how many tooltips there are (Tooltips).
-// It opens beside the rail like the other panels — the same width, a head with the title and the red x, a sheet over the map under 900 px —
+// It opens beside the rail like the other panels — the same width, a head with the title and no x (a panel of the rail is opened and closed with its
+// symbol, Otto, 4.11.2026), a sheet over the map under 900 px —
 // and takes the place of the buttons "Basemap" and Light/Dark at the top right. A choice of one is a row of segment buttons, an overlay is a
 // button that is pressed while it is on, the tooltips are a switch. Every choice is kept per browser (`preferences.ts`) and works with a
 // storage that is locked. The tooltip of each basemap says where its tiles come from (UI-02 §6.7).
@@ -11,7 +12,6 @@ import { BASEMAP_IDS, BASEMAPS } from '../basemaps';
 import { OVERLAY_IDS, OVERLAYS } from '../overlays';
 import { APPEARANCES, type Appearance, type Projection } from '../preferences';
 import { useAppStore } from '../store';
-import CloseButton from './CloseButton';
 import { MonitorIcon, MoonIcon, SunIcon } from './icons';
 import Switch from './Switch';
 
@@ -60,14 +60,12 @@ export default function SettingsPanel() {
   const setProjection = useAppStore((s) => s.setProjection);
   const setAppearance = useAppStore((s) => s.setAppearance);
   const setTipLevel = useAppStore((s) => s.setTipLevel);
-  const closeDock = useAppStore((s) => s.closeDock);
   const advanced = tipLevel === 'advanced';
 
   return (
     <div className="panel dock-panel settings-panel" role="region" aria-label={SETTINGS_LABEL}>
       <div className="results-head">
         <h2>{SETTINGS_LABEL}</h2>
-        <CloseButton onClick={closeDock} />
       </div>
       <div className="settings-body">
         <Section label="Basemap">
