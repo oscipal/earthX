@@ -33,6 +33,15 @@
   /* For a finger (Otto, 2.11.2026): what `--control-height` becomes on a touch screen and in a window under 900 px. */
   --control-height-touch: 44px;
 
+  /* The size of an icon (`components/icons.ts` holds the same numbers): 16 px as a rule, 14 px in the rows of a list, 20 px on the rail at the left
+     (Otto, 4.11.2026). Their stroke is 1.5 px at each size. */
+  --icon-size: 16px;
+  --icon-size-sm: 14px;
+  --icon-size-rail: 20px;
+
+  /* What a locked control is dimmed to; its reason stands in its tooltip (UI-04 §7.2 no. 43). */
+  --disabled-opacity: 0.4;
+
   /* The rail, the panel beside it, the side bar and the wide sheet (UI-01 §6.9, UI-03 §7.2). */
   --rail-width: 48px;
   --dock-width: 340px;

@@ -2660,6 +2660,11 @@ input[type='date']:focus-visible {
   color: var(--text);
   cursor: pointer;
 }
+/* The icons of the rail are larger than the rest: 20 px (`--icon-size-rail`, Otto, 4.11.2026). */
+.rail-btn svg.lucide {
+  width: var(--icon-size-rail);
+  height: var(--icon-size-rail);
+}
 .rail-btn:hover,
 .rail-btn:focus-visible {
   border-color: var(--accent);

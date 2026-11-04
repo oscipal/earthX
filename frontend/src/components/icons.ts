@@ -1,7 +1,8 @@
-// The one source of the icons of the interface (UI-04 part 2, `docs/ui/leitfaden.md` §3): Lucide, one stroke, two sizes. Nothing else imports
+// The one source of the icons of the interface (UI-04 part 2, `docs/ui/leitfaden.md` §3): Lucide, one stroke, three sizes. Nothing else imports
 // `lucide-react`, and no character of the text stands for an icon. A new icon gets its line here and a row in the table of the guide.
 
 import { createElement, type ComponentType } from 'react';
+
 import {
   ArchiveRestore,
   ArrowDown,
@@ -49,8 +50,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-// 16 px is the standard; 14 px stands in the rows of a list.
-export type IconSize = 14 | 16;
+import { ICON_SIZES } from './iconSizes';
+
+// 16 px is the standard; 14 px stands in the rows of a list; 20 px is the rail at the left (Otto, 4.11.2026). The same numbers are the tokens
+// `--icon-size`, `--icon-size-sm` and `--icon-size-rail` of `tokens.css`; `icons.test.tsx` keeps the two together.
+export type IconSize = (typeof ICON_SIZES)[keyof typeof ICON_SIZES];
 export interface IconProps {
   size?: IconSize;
   // Stands in front of a text: keeps its distance from it (`.icon-lead`).
@@ -62,7 +66,7 @@ export interface IconProps {
 const STROKE = 1.5;
 
 function icon(name: string, Glyph: LucideIcon): ComponentType<IconProps> {
-  const Icon = ({ size = 16, lead = false, className }: IconProps) =>
+  const Icon = ({ size = ICON_SIZES.standard, lead = false, className }: IconProps) =>
     createElement(Glyph, {
       size,
       strokeWidth: STROKE,

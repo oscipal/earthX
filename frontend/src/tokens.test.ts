@@ -30,6 +30,7 @@ const ROOT_TOKENS = [
   '--leading-tight', '--leading', '--weight-regular', '--weight-semibold',
   '--radius-sm', '--radius-md', '--radius-full', '--line-width',
   '--control-height', '--control-height-sm', '--control-height-touch',
+  '--icon-size', '--icon-size-sm', '--icon-size-rail', '--disabled-opacity',
   '--rail-width', '--dock-width', '--inspector-width', '--sheet-wide-width',
   '--font', '--font-mono',
 ];

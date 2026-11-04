@@ -4,7 +4,9 @@ import { createElement, type ComponentType } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import { ICON_SIZES } from './iconSizes';
 import * as icons from './icons';
+import tokens from '../tokens.css?raw';
 
 const SOURCES = import.meta.glob(['../**/*.ts', '../**/*.tsx', '!../**/*.test.ts', '!../**/*.test.tsx', '!../**/icons.ts'], {
   query: '?raw',
@@ -36,6 +38,20 @@ describe('icons.ts', () => {
     const markup = render('DownloadIcon', { size: 14 });
     expect(markup).toContain('width="14"');
     expect(Number(/stroke-width="([\d.]+)"/u.exec(markup)![1]) * (14 / 24)).toBeCloseTo(1.5, 5);
+  });
+
+  it('has a third size, 20 px, for the rail, with the same stroke on the screen', () => {
+    const markup = render('SearchIcon', { size: 20 });
+    expect(markup).toContain('width="20"');
+    expect(Number(/stroke-width="([\d.]+)"/u.exec(markup)![1]) * (20 / 24)).toBeCloseTo(1.5, 5);
+  });
+
+  it('has the sizes of the tokens in tokens.css (Otto, 4.11.2026: 20 px on the rail as a token of its own)', () => {
+    const token = (name: string) => Number(new RegExp(`${name}:\\s*(\\d+)px`, 'u').exec(tokens)?.[1]);
+    expect(token('--icon-size')).toBe(ICON_SIZES.standard);
+    expect(token('--icon-size-sm')).toBe(ICON_SIZES.small);
+    expect(token('--icon-size-rail')).toBe(20);
+    expect(token('--icon-size-rail')).toBe(ICON_SIZES.rail);
   });
 
   it('keeps its distance from a text only when it is told to', () => {
