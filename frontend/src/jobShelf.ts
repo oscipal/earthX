@@ -14,7 +14,8 @@
 // - The jobs of the `sessionStorage` list of M4-13 are taken over once.
 
 import { isJobId, type Order } from './processing';
-import { percentOf } from './percentRange';
+import { CHANNEL_COUNT, type ChannelRange } from './channels';
+import { percentOf, type Percent } from './percentRange';
 import type { PreviewRange } from './processingPreview';
 import { upgradeOrder } from './recipeUpgrade';
 
@@ -142,14 +143,38 @@ function datesText(value: unknown): string | null {
   return typeof value === 'string' && DATES.test(value) ? value : null;
 }
 
-function rangeOf(value: unknown): PreviewRange | null {
-  if (!record(value) || typeof value.vmin !== 'string' || typeof value.vmax !== 'string' || typeof value.colormap !== 'string') return null;
-  const percent = percentOf(record(value.percent) && typeof value.percent.low === 'string' && typeof value.percent.high === 'string' ? { low: value.percent.low, high: value.percent.high } : null);
-  return { vmin: value.vmin, vmax: value.vmax, colormap: value.colormap, ...(percent ? { percent } : {}) };
+const percentRead = (value: unknown) => percentOf(record(value) && typeof value.low === 'string' && typeof value.high === 'string' ? { low: value.low, high: value.high } : null);
+
+// The range of each channel of a colour picture (UI-04 part 5), exactly three, each with the pair it was typed as; none where they are not.
+function channelsRead(value: unknown): ChannelRange[] | null {
+  if (!Array.isArray(value) || value.length !== CHANNEL_COUNT) return null;
+  const read = value.map((channel) => {
+    if (!record(channel) || typeof channel.vmin !== 'string' || typeof channel.vmax !== 'string') return null;
+    const percent = percentRead(channel.percent);
+    return { vmin: channel.vmin, vmax: channel.vmax, ...(percent ? { percent } : {}) };
+  });
+  return read.every((channel) => channel !== null) ? read : null;
 }
 
-// A range as it is written: the percentiles it was typed as go with it (NM4-65 part 4).
-const rangeJson = (r: PreviewRange) => ({ vmin: r.vmin, vmax: r.vmax, colormap: r.colormap, ...(r.percent ? { percent: { low: r.percent.low, high: r.percent.high } } : {}) });
+function rangeOf(value: unknown): PreviewRange | null {
+  if (!record(value) || typeof value.vmin !== 'string' || typeof value.vmax !== 'string' || typeof value.colormap !== 'string') return null;
+  const percent = percentRead(value.percent);
+  const channels = channelsRead(value.channels);
+  return { vmin: value.vmin, vmax: value.vmax, colormap: value.colormap, ...(percent ? { percent } : {}), ...(channels ? { channels } : {}) };
+}
+
+const percentJson = (p: Percent) => ({ low: p.low, high: p.high });
+
+// A range as it is written: the percentiles it was typed as go with it (NM4-65 part 4), for a colour picture each channel's.
+const rangeJson = (r: PreviewRange) => ({
+  vmin: r.vmin,
+  vmax: r.vmax,
+  colormap: r.colormap,
+  ...(r.percent ? { percent: percentJson(r.percent) } : {}),
+  ...(r.channels?.length === CHANNEL_COUNT
+    ? { channels: r.channels.map((c) => ({ vmin: c.vmin, vmax: c.vmax, ...(c.percent ? { percent: percentJson(c.percent) } : {}) })) }
+    : {}),
+});
 
 const MAX_BAND_RANGES = 64;
 

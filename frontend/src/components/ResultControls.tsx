@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react';
 
 import { fetchResultStatistics } from '../api';
-import { channelsAtPercent, channelsOf, rescaleOfChannels } from '../channels';
+import { channelProblems, channelsAtOwnPercent, channelsAutoScaled, channelsOf, channelsOfRange, CHANNEL_COUNT, CHANNEL_NAMES, percentsOfChannels, rescaleOfChannels, samePercents, type ChannelRange } from '../channels';
 import { histogramOf, type Histogram } from '../histogram';
 
 import { layerShownName } from '../layerName';
@@ -17,8 +17,9 @@ import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, percentOf, rescaleA
 import { rescaleOf, type PreviewRange } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
 import { NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
+import type { AppliedRender } from '../types';
 import { RGB, RGB_LABEL } from '../processingBands';
-import { bandPlacesOfTileUrl, defaultRange, rangeOfTileUrl, renderOfRange, resultPathOfTileUrl } from '../resultLayer';
+import { bandPlacesOfTileUrl, defaultRange, rangeOfTileUrl, renderOfRange, resultPathOfTileUrl, typedOf } from '../resultLayer';
 import { useAppStore } from '../store';
 import { sceneNamesOfOrder } from '../sceneNames';
 import { ONE_BAND_TIP } from '../viewBand';
@@ -33,7 +34,21 @@ import LayerActions from './LayerActions';
 
 // The range as drawn: one pair, or one for each channel of a colour picture (UI-03d).
 const scaleText = (range: PreviewRange) => (range.channels?.length ? (rescaleOfChannels(range.channels) ?? '') : `${range.vmin},${range.vmax}`);
-const sameRange = (a: PreviewRange, b: PreviewRange) => scaleText(a) === scaleText(b) && a.colormap === b.colormap && samePercent(a.percent, b.percent);
+// A colour picture is compared channel by channel, each with its own pair (UI-04 part 5): one range for all is three equal ones.
+const channelwise = (range: PreviewRange): PreviewRange => ({ colormap: range.colormap, vmin: range.vmin, vmax: range.vmax, channels: channelsOfRange(range) });
+function sameRange(a: PreviewRange, b: PreviewRange, colour = false): boolean {
+  const [x, y] = colour ? [channelwise(a), channelwise(b)] : [a, b];
+  const pairs = (range: PreviewRange) => (range.channels ? percentsOfChannels(range.channels) : undefined);
+  return scaleText(x) === scaleText(y) && x.colormap === y.colormap && samePercent(x.percent, y.percent) && samePercents(pairs(x), pairs(y));
+}
+
+// What a layer draws, with the units it was typed in: one pair, or the pair of each channel typed in percentiles.
+function lookOf(tileUrl: string, percent: Percent | undefined, pairs: readonly (Percent | null)[] | undefined): PreviewRange {
+  const range = rangeOfTileUrl(tileUrl);
+  if (pairs?.length !== CHANNEL_COUNT) return { ...range, ...(percent ? { percent } : {}) };
+  const base = range.channels ?? channelsOf(range.vmin, range.vmax);
+  return { ...range, channels: base.map((channel, index) => (pairs[index] ? { ...channel, percent: pairs[index] } : channel)) };
+}
 
 // The histograms of the bands a result layer draws, from the statistics of the result over its mask.
 async function resultHistograms(path: string, places: readonly number[]): Promise<Histogram[] | null> {
@@ -64,7 +79,7 @@ function Controls({ layer }: { layer: MapLayer }) {
   const sceneNames = useMemo(() => JSON.parse(orderedScenes) as string[], [orderedScenes]);
   const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   // What the typed fields hold, from what the layer draws now; a layer drawn another way starts over.
-  const [draft, setDraft] = useState<PreviewRange>(() => ({ ...rangeOfTileUrl(tileUrl), ...(layer.result?.percent ? { percent: layer.result.percent } : {}) }));
+  const [draft, setDraft] = useState<PreviewRange>(() => lookOf(tileUrl, layer.result?.percent, layer.result?.percentChannels));
   const [problem, setProblem] = useState<string | null>(null);
   // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4): in percentiles the fields hold what was typed, and `draft` the
   // values of the last "Apply".
@@ -76,10 +91,26 @@ function Controls({ layer }: { layer: MapLayer }) {
   const histograms = useHistograms(path && info && !info.expired && !info.deleted ? `${path}|${places.join(',')}` : null, () => resultHistograms(path!, places));
   if (!info) return null;
   const colour = info.band === RGB;
-  // A colour picture in values: the range of each channel, the one range three times until one is changed.
-  const channelValues = draft.channels?.length ? draft.channels : channelsOf(draft.vmin, draft.vmax);
+  const same = (a: PreviewRange, b: PreviewRange) => sameRange(a, b, colour);
+  // A colour picture: the range of each channel, each in values or in percentiles; the one range three times until one is changed.
+  const channelValues = channelsOfRange(draft);
+  // A channel that cannot be drawn locks "Apply" and "Save" with its reason, and its fields are marked.
+  const problems = colour ? channelProblems(channelValues) : [];
+  const blocked = problems.find((reason) => reason !== null) ?? null;
+  const colourPercent = colour && channelValues.some((channel) => channel.percent);
+  const editChannels = (channels: ChannelRange[]) => edit({ channels, vmin: channels[0].vmin, vmax: channels[0].vmax, percent: undefined });
   const editChannel = (channel: number, end: 'vmin' | 'vmax', text: string) =>
-    edit({ channels: channelValues.map((range, index) => (index === channel ? { ...range, [end]: text } : range)), ...(channel === 0 ? { [end]: text } : {}) });
+    editChannels(channelValues.map((range, index) => (index === channel ? { ...range, [end]: text } : range)));
+  const editChannelUnit = (channel: number, next: RangeUnit) =>
+    editChannels(
+      channelValues.map((range, index) => {
+        if (index !== channel) return range;
+        const { percent, ...values } = range;
+        return next === 'percent' ? { ...values, percent: percent ?? { ...DEFAULT_PERCENT } } : values;
+      }),
+    );
+  const editChannelPercent = (channel: number, end: 'low' | 'high', text: string) =>
+    editChannels(channelValues.map((range, index) => (index === channel ? { ...range, percent: { ...(range.percent ?? DEFAULT_PERCENT), [end]: text } } : range)));
   const adjustable = info.dataType !== null && /^float/.test(info.dataType);
   // What cannot be set at all is not shown: a result of whole numbers is drawn as it is, an expired one not at all.
   const settable = adjustable && !info.expired && !info.deleted;
@@ -99,15 +130,18 @@ function Controls({ layer }: { layer: MapLayer }) {
     ...(range.channels?.length ? { channels: range.channels } : {}),
     ...(percent ? { percent } : {}),
   });
-  const drawn = withPercent(rangeOfTileUrl(tileUrl), info.percent);
-  const saved = withPercent(rangeOfTileUrl(info.savedTileUrl ?? tileUrl), info.savedTileUrl === undefined ? info.percent : (info.savedPercent ?? undefined));
+  const drawn = lookOf(tileUrl, info.percent, info.percentChannels);
+  const unsaved = info.savedTileUrl !== undefined;
+  const saved = lookOf(info.savedTileUrl ?? tileUrl, unsaved ? (info.savedPercent ?? undefined) : info.percent, unsaved ? (info.savedPercentChannels ?? undefined) : info.percentChannels);
   const typedPair = unit === 'percent' ? percentOf(typed) : null;
   // The look the fields ask for: in percentiles with the pair typed (a pair that is none counts as another look, so that "Apply"
   // is open and says why it cannot).
-  const asked = withPercent(draft, unit === 'percent' ? (typedPair ?? { low: typed.low, high: typed.high }) : undefined);
-  const canApply = !sameRange(asked, drawn);
+  const asked = colour
+    ? { colormap: draft.colormap, vmin: channelValues[0].vmin, vmax: channelValues[0].vmax, channels: channelValues }
+    : withPercent(draft, unit === 'percent' ? (typedPair ?? { low: typed.low, high: typed.high }) : undefined);
+  const canApply = !same(asked, drawn);
   // Also where only the opacity was changed: it is kept with "Save" too (NM4-54, Otto, 1.11.2026).
-  const canSave = !sameRange(asked, saved) || layer.saved !== undefined;
+  const canSave = !same(asked, saved) || layer.saved !== undefined;
   const render = (range: PreviewRange) => {
     const made = renderOfRange(range);
     if (!made) {
@@ -119,10 +153,14 @@ function Controls({ layer }: { layer: MapLayer }) {
   // The values the percentiles typed give: the statistics of the result over its mask, for the bands this layer draws. `null`,
   // with the reason said, where there are none.
   const resolve = async (): Promise<PreviewRange | null> => {
-    const checked = checkPercent(typed);
-    if ('problem' in checked) {
-      setProblem(checked.problem);
-      return null;
+    // A colour picture checks the pair of each channel typed in percentiles, the others the one pair.
+    const pairs = colour ? channelValues.flatMap((channel, index) => (channel.percent ? [{ name: CHANNEL_NAMES[index], pair: channel.percent }] : [])) : [{ name: '', pair: typed }];
+    for (const { name, pair } of pairs) {
+      const checked = checkPercent(pair);
+      if ('problem' in checked) {
+        setProblem(name ? `${name}: ${checked.problem}` : checked.problem);
+        return null;
+      }
     }
     const path = resultPathOfTileUrl(tileUrl);
     if (!path) return null;
@@ -130,19 +168,25 @@ function Controls({ layer }: { layer: MapLayer }) {
     try {
       const bands = await fetchResultStatistics(path);
       const wanted = bandPlacesOfTileUrl(tileUrl).flatMap((place) => (bands[place]?.statistics ? [bands[place].statistics] : []));
-      const range = rescaleAtPercent(wanted, checked);
-      if (!range) {
-        setProblem(NO_RANGE_AT_PERCENT);
-        return null;
+      const { percent: _shared, channels: _drop, ...rest } = draft;
+      let made: PreviewRange;
+      if (colour) {
+        // Each channel at the percentiles of its own values, in its own unit (UI-03d, UI-04 part 5).
+        const channels = channelsAtOwnPercent(wanted, channelValues);
+        if (!channels) {
+          setProblem(NO_RANGE_AT_PERCENT);
+          return null;
+        }
+        made = { ...rest, vmin: channels[0].vmin, vmax: channels[0].vmax, channels };
+      } else {
+        const checked = checkPercent(typed) as { low: number; high: number };
+        const range = rescaleAtPercent(wanted, checked);
+        if (!range) {
+          setProblem(NO_RANGE_AT_PERCENT);
+          return null;
+        }
+        made = { ...rest, vmin: String(range[0]), vmax: String(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
       }
-      // A colour picture takes each channel at the percentiles of its own values (UI-03d).
-      const channels = colour ? channelsAtPercent(wanted, checked) : null;
-      const { channels: _drop, ...rest } = draft;
-      const made: PreviewRange = {
-        ...rest,
-        ...(channels ? { vmin: channels[0].vmin, vmax: channels[0].vmax, channels } : { vmin: String(range[0]), vmax: String(range[1]) }),
-        percent: { low: String(checked.low), high: String(checked.high) },
-      };
       setDraft(made);
       setProblem(null);
       return made;
@@ -155,14 +199,25 @@ function Controls({ layer }: { layer: MapLayer }) {
   };
   // What the fields ask for as a look with values, where that needs no statistics: values as typed, percentiles that are the
   // ones drawn. Anything else is read first (`resolve`), so that "Apply" and "Save" of values stay done when the click returns.
-  const known = (): PreviewRange | null => (unit === 'value' ? withPercent(draft, undefined) : typedPair && samePercent(typedPair, drawn.percent) ? withPercent(draft, typedPair) : null);
+  const known = (): PreviewRange | null => {
+    if (!colour) return unit === 'value' ? withPercent(draft, undefined) : typedPair && samePercent(typedPair, drawn.percent) ? withPercent(draft, typedPair) : null;
+    // A channel in percentiles at the pair drawn has the values drawn; one in values the values typed.
+    const drawnChannels = channelsOfRange(drawn);
+    const channels = channelValues.map((channel, index) => {
+      if (!channel.percent) return { vmin: channel.vmin, vmax: channel.vmax };
+      const pair = percentOf(channel.percent);
+      return pair && samePercent(pair, drawnChannels[index].percent) ? drawnChannels[index] : null;
+    });
+    return channels.every((channel) => channel !== null) ? { colormap: draft.colormap, vmin: channels[0].vmin, vmax: channels[0].vmax, channels } : null;
+  };
+  const drawLook = (made: AppliedRender, range: PreviewRange) => restyle(layer.id, made, range.percent ?? null, typedOf(range).percentChannels);
   const draw = (range: PreviewRange) => {
     const made = render(range);
-    if (made) restyle(layer.id, made, range.percent ?? null);
+    if (made) drawLook(made, range);
     return made !== null;
   };
   const apply = () => {
-    if (!canApply) return;
+    if (!canApply || blocked) return;
     const range = known();
     if (range) draw(range);
     else void resolve().then((read) => read && draw(read));
@@ -172,25 +227,30 @@ function Controls({ layer }: { layer: MapLayer }) {
   const keepRange = (range: PreviewRange) => {
     const made = render(range);
     if (!made) return;
-    if (!sameRange(range, drawn)) restyle(layer.id, made, range.percent ?? null);
+    if (!same(range, drawn)) drawLook(made, range);
     save(layer.id);
     // A layer of its own band keeps its look for itself: the job and the layer it came from stay as they are.
     if (info.own) return;
     const fallback = defaultRange(info, useProcessingStore.getState().range);
     // A result of several bands keeps the range of the band it draws, by the band's name ("RGB" for the colour picture).
     const named = info.bands && info.bands.length > 1 ? (info.band === RGB ? RGB : (info.bands[info.band ?? 0]?.name ?? '')) : undefined;
-    setJobRange(info.jobID, fallback && sameRange(range, fallback) ? null : range, named);
+    setJobRange(info.jobID, fallback && same(range, fallback) ? null : range, named);
   };
   const keep = () => {
-    if (!canSave) return;
+    if (!canSave || blocked) return;
     const range = known();
     if (range) keepRange(range);
     else void resolve().then((read) => read && keepRange(read));
   };
   const auto = () => {
-    // In percentiles the usual stretch is the 2nd to the 98th.
-    if (unit === 'percent') setTyped(DEFAULT_PERCENT);
-    else setDraft(defaultRange(info, useProcessingStore.getState().range) ?? { vmin: '', vmax: '', colormap: '' });
+    const fallback = defaultRange(info, useProcessingStore.getState().range);
+    // In percentiles the usual stretch is the 2nd to the 98th; a colour picture does that for each channel typed in percentiles and
+    // takes the default of the statistics for the others.
+    if (colour) {
+      const channels = channelsAutoScaled(channelValues, fallback);
+      setDraft((d) => ({ ...d, vmin: channels[0].vmin, vmax: channels[0].vmax, channels, percent: undefined }));
+    } else if (unit === 'percent') setTyped(DEFAULT_PERCENT);
+    else setDraft(fallback ?? { vmin: '', vmax: '', colormap: '' });
     setProblem(null);
   };
 
@@ -226,18 +286,18 @@ function Controls({ layer }: { layer: MapLayer }) {
                 }}
                 vmin={unit === 'percent' ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } } : { value: draft.vmin, onChange: (vmin) => edit({ vmin }) }}
                 vmax={unit === 'percent' ? { value: typed.high, onChange: (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } } : { value: draft.vmax, onChange: (vmax) => edit({ vmax }) }}
-                unit={{ value: unit, onChange: setUnit }}
-                channels={colour ? { values: channelValues, onChange: editChannel } : undefined}
+                unit={colour ? undefined : { value: unit, onChange: setUnit }}
+                channels={colour ? { values: channelValues, onChange: editChannel, onPercent: editChannelPercent, onUnit: editChannelUnit, problems } : undefined}
                 histograms={
                   histograms && (
                     <ScaleHistograms
                       histograms={histograms}
-                      unit={unit}
+                      unit={colour ? 'value' : unit}
                       vmin={unit === 'percent' ? typed.low : draft.vmin}
                       vmax={unit === 'percent' ? typed.high : draft.vmax}
                       onVmin={unit === 'percent' ? (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } : (vmin) => edit({ vmin })}
                       onVmax={unit === 'percent' ? (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } : (vmax) => edit({ vmax })}
-                      channels={colour ? { values: channelValues, onChange: editChannel } : undefined}
+                      channels={colour ? { values: channelValues, onChange: editChannel, onPercent: editChannelPercent } : undefined}
                     />
                   )
                 }
@@ -248,12 +308,12 @@ function Controls({ layer }: { layer: MapLayer }) {
             <OpacityRow layer={layer} />
             {settable && (
               <div className="vc-buttons">
-                <AutoScaleButton title={unit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Put the range of the statistics of this result in the fields'} busy={measuring} onClick={auto} />
+                <AutoScaleButton title={(colour ? colourPercent : unit === 'percent') ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Put the range of the statistics of this result in the fields'} busy={measuring} onClick={auto} />
                 <button
                   type="button"
                   className="ghost-btn vc-apply"
-                  aria-disabled={!canApply || undefined}
-                  title={canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY}
+                  aria-disabled={!canApply || blocked !== null || undefined}
+                  title={blocked ?? (canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY)}
                   onClick={apply}
                 >
                   Apply
@@ -261,8 +321,8 @@ function Controls({ layer }: { layer: MapLayer }) {
                 <button
                   type="button"
                   className="primary-btn vc-save"
-                  aria-disabled={!canSave || undefined}
-                  title={canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE}
+                  aria-disabled={!canSave || blocked !== null || undefined}
+                  title={blocked ?? (canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE)}
                   onClick={keep}
                 >
                   Save

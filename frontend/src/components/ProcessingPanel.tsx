@@ -17,6 +17,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
 import { resamplingParts } from '../resamplingWarning';
+import { channelProblems, channelsAutoScaled, channelsOfRange, percentsOfChannels, samePercents, withoutChannels, type ChannelRange } from '../channels';
 import { DEFAULT_PERCENT, percentOf, samePercent, type Percent, type RangeUnit } from '../percentRange';
 import { totalOf } from '../processingBatch';
 import {
@@ -33,6 +34,7 @@ import {
 import {
   furtherNote,
   MAX_PREVIEW_ASSETS,
+  measuredRange,
   planPreview,
   previewRead,
   previewTitle,
@@ -408,6 +410,7 @@ function PreviewSection({ view }: { view: OrderView }) {
   // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4): in percentiles the fields hold what was typed.
   const range = useProcessingStore((s) => s.range);
   const applyRangePercent = useProcessingStore((s) => s.applyRangePercent);
+  const applyRangeChannels = useProcessingStore((s) => s.applyRangeChannels);
   const [rangeUnit, setRangeUnit] = useState<RangeUnit>(() => (rangeByHand && range.percent ? 'percent' : 'value'));
   const [typed, setTyped] = useState<Percent>(() => range.percent ?? DEFAULT_PERCENT);
   const [percentProblem, setPercentProblem] = useState<string | null>(null);
@@ -418,7 +421,6 @@ function PreviewSection({ view }: { view: OrderView }) {
   const percentApplied = percentMode && typedPair !== null && rangeByHand && samePercent(typedPair, range.percent) && rangeDraft.colormap === range.colormap;
   const loading = usePreviewLoading();
   const plan = planPreview(steps, view.info, measuredNumbers(steps, view.built));
-  const valueRange = rescaleOf(rangeDraft);
   // The band the map shows, and what it reads for it (adr/0020 §10): the limit of the tile is that of these assets.
   const read =
     plan.state === 'ready'
@@ -434,6 +436,37 @@ function PreviewSection({ view }: { view: OrderView }) {
         })
       : null;
   const sceneCount = view.pass?.items.length ?? 0;
+  // The colour picture has a range and a unit for each channel (UI-04 part 5), the pair "Apply" has to measure being each one's own.
+  const colour = read?.band === RGB;
+  const singlePercent = percentMode && !colour;
+  const channelValues = channelsOfRange(rangeDraft);
+  const colourPercent = colour && channelValues.some((channel) => channel.percent);
+  // A channel that cannot be drawn locks "Apply" with its reason, and its fields are marked.
+  const problems = colour ? channelProblems(channelValues) : [];
+  const blocked = problems.find((reason) => reason !== null) ?? null;
+  const valueRange = rescaleOf(colour ? { ...rangeDraft, channels: channelValues } : withoutChannels(rangeDraft));
+  const editChannels = (channels: ChannelRange[]) => {
+    setRangeDraft({ channels, vmin: channels[0].vmin, vmax: channels[0].vmax, percent: undefined });
+    setPercentProblem(null);
+  };
+  const channels = colour
+    ? {
+        values: channelValues,
+        onChange: (channel: number, end: 'vmin' | 'vmax', text: string) => editChannels(channelValues.map((range, index) => (index === channel ? { ...range, [end]: text } : range))),
+        onPercent: (channel: number, end: 'low' | 'high', text: string) =>
+          editChannels(channelValues.map((range, index) => (index === channel ? { ...range, percent: { ...(range.percent ?? DEFAULT_PERCENT), [end]: text } } : range))),
+        problems,
+        onUnit: (channel: number, next: RangeUnit) =>
+          editChannels(
+            channelValues.map((range, index) => {
+              if (index !== channel) return range;
+              const { percent, ...values } = range;
+              return next === 'percent' ? { ...values, percent: percent ?? { ...DEFAULT_PERCENT } } : values;
+            }),
+          ),
+      }
+    : undefined;
+  const appliedChannels = colourPercent && rangeByHand && rangeDraft.colormap === range.colormap && samePercents(percentsOfChannels(channelValues), percentsOfChannels(channelsOfRange(range)));
   return (
     <section className="pp-section" aria-label="Preview on the map">
       <h3 className="pp-heading">
@@ -468,7 +501,8 @@ function PreviewSection({ view }: { view: OrderView }) {
                   : undefined
               }
               vmin={percentMode ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setPercentProblem(null); } } : { value: rangeDraft.vmin, onChange: (vmin) => setRangeDraft({ vmin }) }}
-              unit={{
+              channels={channels}
+              unit={colour ? undefined : {
                 value: rangeUnit,
                 onChange: (next) => {
                   setRangeUnit(next);
@@ -487,10 +521,11 @@ function PreviewSection({ view }: { view: OrderView }) {
               <button
                 type="button"
                 className="ghost-btn"
-                disabled={percentMode ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
+                disabled={colourPercent ? channelValues.every((channel) => !channel.percent || samePercent(channel.percent, DEFAULT_PERCENT)) : singlePercent ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
                 title="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
                 onClick={() => {
-                  if (percentMode) setTyped(DEFAULT_PERCENT);
+                  if (colourPercent) editChannels(channelsAutoScaled(channelValues, measuredRange(measure)));
+                  else if (singlePercent) setTyped(DEFAULT_PERCENT);
                   else autoStretch();
                 }}
               >
@@ -499,15 +534,16 @@ function PreviewSection({ view }: { view: OrderView }) {
               <button
                 type="button"
                 className="primary-btn vc-apply"
-                disabled={percentMode ? percentApplied : 'problem' in valueRange}
-                onClick={() => (percentMode ? void applyRangePercent(typed).then(setPercentProblem) : applyRange())}
+                disabled={blocked !== null || (colourPercent ? appliedChannels : singlePercent ? percentApplied : 'problem' in valueRange)}
+                title={blocked ?? undefined}
+                onClick={() => (colourPercent ? void applyRangeChannels(channelValues).then(setPercentProblem) : singlePercent ? void applyRangePercent(typed).then(setPercentProblem) : applyRange())}
               >
                 Apply
               </button>
             </div>
           </div>
-          {!percentMode && 'problem' in valueRange && <p className="hint-text error">{valueRange.problem}</p>}
-          {percentMode && percentProblem && <p className="hint-text error">{percentProblem}</p>}
+          {!singlePercent && !colour && 'problem' in valueRange && <p className="hint-text error">{valueRange.problem}</p>}
+          {(singlePercent || colourPercent) && percentProblem && <p className="hint-text error">{percentProblem}</p>}
           {rangeNote && <p className="hint-text">{rangeNote}</p>}
           {read?.assets.length === 0 && <p className="hint-text">Choose a band for the output to see the preview.</p>}
           {read && read.assets.length > MAX_PREVIEW_ASSETS && (
