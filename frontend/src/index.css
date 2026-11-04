@@ -166,7 +166,7 @@ svg.lucide {
   vertical-align: -0.2em;
 }
 svg.lucide.icon-lead {
-  margin-inline-end: 0.4em;
+  margin-inline-end: var(--space-1);
 }
 
 /* --- persistent zoom button (top-right) --- */
@@ -811,7 +811,8 @@ svg.lucide.icon-lead {
 .inspector .vc-actions > * {
   min-width: 0;
   display: block;
-  padding: var(--space-1) var(--space-1);
+  /* No side padding: the frame of the button is its margin, and the icon of a pair needs the room ("Download full scene" in 140 px). */
+  padding: var(--space-1) 0;
   overflow: hidden;
   font-size: var(--text-sm);
   line-height: calc(var(--control-height) - 2 * var(--space-1) - 2 * var(--line-width));
