@@ -41,7 +41,7 @@ export default function NormalizeFields({
   const shown = (name: string) => (showErrors || text(name) !== '' ? errors[name] : undefined);
   const comma = (names: string[]) => names.some((name) => hasComma(text(name)));
   const number = (name: string, label: string) => (
-    <input
+    <input autoComplete="off"
       type="text"
       inputMode="decimal"
       aria-label={label}
@@ -54,7 +54,7 @@ export default function NormalizeFields({
   );
   const problem = (names: string[]) => {
     const message = comma(names) ? 'Use . for decimals.' : names.map(shown).find(Boolean);
-    return message && <span className="hint-text error">{message}</span>;
+    return message && <span className="error">{message}</span>;
   };
   const range = RANGES.find((r) => String(r.low) === text('low') && String(r.high) === text('high'));
   const target = (
@@ -65,7 +65,7 @@ export default function NormalizeFields({
       </span>
       <div className="pp-where">
         {number('out_min', 'Target min')}
-        <span className="pp-help">to</span>
+        <span className="hint">to</span>
         {number('out_max', 'Target max')}
       </div>
       {problem(['out_min', 'out_max'])}
@@ -101,7 +101,7 @@ export default function NormalizeFields({
             </option>
           ))}
         </select>
-        {shown('method') && <span className="hint-text error">{shown('method')}</span>}
+        {shown('method') && <span className="error">{shown('method')}</span>}
       </label>
       {bands}
       {method === 'linear' && (
@@ -112,7 +112,7 @@ export default function NormalizeFields({
           </span>
           <div className="pp-where">
             {number('in_min', 'From min')}
-            <span className="pp-help">to</span>
+            <span className="hint">to</span>
             {number('in_max', 'From max')}
           </div>
           {problem(['in_min', 'in_max'])}
@@ -152,7 +152,7 @@ export default function NormalizeFields({
         </>
       )}
       {isStatistical(method) && measure && (
-        <p className="pp-measure hint-text" role="status">
+        <p className="pp-measure hint" role="status">
           {measure.state === 'measuring' && 'Measuring…'}
           {measure.state === 'ready' && (
             <>

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { placeTip, type Side } from '../tipPlacement';
+import { currentTipLevel, tipShown } from '../tipLevel';
 
 // The one tooltip of the app (UI-01 §4). Every element with `data-tip` gets it on hover and on keyboard focus;
 // it is drawn in `.app` (where the theme tokens are) beside the panels, not in one, so no panel can cover or cut it off. It goes with the pointer
@@ -9,7 +10,7 @@ import { placeTip, type Side } from '../tipPlacement';
 //
 // It is the one tooltip (UI-04 part 3a, Otto, 3.11.2026): no element carries a `title`. A screen reader gets the text as the description of
 // the element while the tip shows (`aria-describedby`), unless the element is named by the same text. A locked button (`disabled`) gets no
-// mouse events in every browser, so it is found by where the pointer is.
+// mouse events in every browser, so it is found by where the pointer is. Each tip has a step, `simple` or `advanced` (`tipLevel.ts`).
 
 const TIP = '[data-tip]';
 const TIP_ID = 'tip-layer';
@@ -17,14 +18,21 @@ const TIP_ID = 'tip-layer';
 const CONTROL = 'button, input, select, textarea, a[href], [tabindex]';
 const LOCKED = ':is(button, input, select, textarea):disabled[data-tip]';
 
+// The element with a tip that this step of the tooltips shows (`tipLevel.ts`): the nearest one up the tree, since a field inside a label
+// that has a tip of the other step still has the tip of the label.
+const shownTip = (element: Element | null): HTMLElement | null => {
+  const level = currentTipLevel();
+  for (let el = element?.closest(TIP) ?? null; el; el = el.parentElement?.closest(TIP) ?? null) if (tipShown(el, level)) return el as HTMLElement;
+  return null;
+};
+
 const lockedAt = (x: number, y: number): HTMLElement | null =>
   [...document.querySelectorAll<HTMLElement>(LOCKED)].find((el) => {
     const box = el.getBoundingClientRect();
     return box.width > 0 && x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
   }) ?? null;
 
-const tipOf = (target: EventTarget | null): HTMLElement | null =>
-  target instanceof Element ? (target.closest(TIP) as HTMLElement | null) : null;
+const tipOf = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? shownTip(target) : null);
 
 export default function TipLayer() {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);

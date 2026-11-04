@@ -184,7 +184,7 @@ async function checkDraw(browser, theme, viewport) {
   if (query.get('rescale') !== '-1,1' || query.get('colormap_name') !== 'rdbu') problems.push(`the tile asks for ${query.get('rescale')} in ${query.get('colormap_name')}`);
   if (query.getAll('item').join() !== SCENES.join()) problems.push(`the tile names the scenes ${query.getAll('item')}`);
   if ((await field(page).getAttribute('data-tip')) !== TIP_NDWI) problems.push(`the tooltip is ${await field(page).getAttribute('data-tip')}`);
-  if ((await page.locator('.scene-view .vc-note').count()) !== 0) problems.push('a note at zoom 9');
+  if ((await page.locator('.scene-view .hint.warn[role="status"]').count()) !== 0) problems.push('a note at zoom 9');
   if ((await page.locator('.scene-view .vc-colormap select').inputValue()) !== 'rdbu') problems.push('the colormap field does not show rdbu');
   await page.locator('.scene-view').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_drawn.png`) });
 
@@ -201,7 +201,7 @@ async function checkDraw(browser, theme, viewport) {
   await fly(page, 3);
   tiles.length = 0;
   await page.waitForTimeout(800);
-  const note = page.locator('.scene-view .vc-note');
+  const note = page.locator('.scene-view .hint.warn[role="status"]');
   if ((await note.count()) !== 1) problems.push('no note when the map is zoomed out');
   else {
     if ((await note.textContent()) !== 'Zoom in to compute NDWI') problems.push(`the note says ${await note.textContent()}`);
@@ -223,7 +223,7 @@ async function checkDraw(browser, theme, viewport) {
   await page.locator('.scene-view').getByRole('button', { name: /Process/ }).click();
   await page.locator('.processing-panel').waitFor({ timeout: 8000 }).catch(() => problems.push('the panel did not open from the view'));
   await page.waitForTimeout(800);
-  const viewChips = await page.locator('.processing-panel section[aria-label="Bands"] .pp-chip').allTextContents();
+  const viewChips = await page.locator('.processing-panel section[aria-label="Bands"] .pp-chips .seg').allTextContents();
   if (viewChips.some((c) => c.startsWith('NDWI')) || !viewChips.some((c) => c.startsWith('red'))) problems.push(`the panel of the view has the bands ${viewChips}`);
   if ((await page.locator('.processing-panel [aria-label="Area"] button').allTextContents()).join() !== 'Whole scene,AOI only') problems.push('the area of the cropped view is not to choose');
   await page.locator('.processing-panel .close-x').click();
@@ -282,7 +282,7 @@ async function checkDraw(browser, theme, viewport) {
   const dialogText = await dialog.innerText();
   if (!/NDWI \(\(G - N\) \/ \(G \+ N\)\)/.test(dialogText)) problems.push(`the dialog does not name the index: ${dialogText.slice(0, 160)}`);
   if (await dialog.locator('.dialog-resolution').count()) problems.push('the dialog offers a resolution for an index');
-  await dialog.locator('.hint-text', { hasText: 'About 12.4 MB' }).waitFor({ timeout: 8000 }).catch(() => problems.push(`the dialog shows no estimate: ${dialogText.slice(0, 120)}`));
+  await dialog.locator('.hint', { hasText: 'About 12.4 MB' }).waitFor({ timeout: 8000 }).catch(() => problems.push(`the dialog shows no estimate: ${dialogText.slice(0, 120)}`));
   await dialog.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_dialog.png`) });
   const [file] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }).catch(() => null), dialog.locator('.primary').click()]);
   if (!file) problems.push('no file came');
@@ -302,7 +302,7 @@ async function checkDraw(browser, theme, viewport) {
   await page.locator('.layer-row [data-col="process"]').first().click({ force: true });
   await page.locator('.processing-panel').waitFor({ timeout: 8000 }).catch(() => problems.push('the panel did not open'));
   await page.waitForTimeout(800);
-  const chips = await page.locator('.processing-panel section[aria-label="Bands"] .pp-chip').allTextContents();
+  const chips = await page.locator('.processing-panel section[aria-label="Bands"] .pp-chips .seg').allTextContents();
   if (chips.join('|') !== 'NDWI') problems.push(`the bands of the panel are ${chips}`);
   await page.locator('.processing-panel').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_panel.png`) });
   await context.close();

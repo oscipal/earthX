@@ -38,20 +38,20 @@ function Picker({ value, onPick }: { value: string; onPick: (name: string) => vo
         className="pp-grip"
         aria-expanded={!folded}
         aria-label={folded ? 'Show the colormaps' : 'Fold the colormaps down'}
-        data-tip={folded ? 'Show the colormaps' : 'Fold the colormaps down'}
+        data-tip-level="advanced" data-tip={folded ? 'Show the colormaps' : 'Fold the colormaps down'}
         onClick={() => setFolded(!folded)}
       >
         {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
       </button>
       <div className="vc-head">
         <div className="insp-row">
-          <button type="button" className="icon-btn" data-tip={BACK_TIP} aria-label={BACK_TIP} onClick={close}>
+          <button type="button" className="icon-btn" data-tip-level="advanced" data-tip={BACK_TIP} aria-label={BACK_TIP} onClick={close}>
             <ArrowLeftIcon />
           </button>
           <span className="vc-title">Colormap</span>
         </div>
         <div className="insp-row insp-row2">
-          <input className="cm-search" type="search" placeholder="Search" aria-label="Search colormaps" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input autoComplete="off" className="cm-search" type="search" placeholder="Search" aria-label="Search colormaps" value={query} onChange={(e) => setQuery(e.target.value)} />
           <button type="button" className={`btn vc-reverse${reversed ? ' on' : ''}`} aria-pressed={reversed} data-tip={REVERSE_TIP} onClick={() => setReversed(!reversed)}>
             <ArrowLeftRightIcon />
             Reverse
@@ -60,13 +60,13 @@ function Picker({ value, onPick }: { value: string; onPick: (name: string) => vo
       </div>
       <div className="insp-body">
         {groups === null ? (
-          <p className="hint-text">Loading the colormaps…</p>
+          <p className="hint">Loading the colormaps…</p>
         ) : groups === 'failed' ? (
-          <p className="hint-text warn" role="alert">
+          <p className="hint warn" role="alert">
             The colormaps could not be loaded. Choose from the few of the field, or try again later.
           </p>
         ) : shown.length === 0 ? (
-          <p className="hint-text">No colormap of this name</p>
+          <p className="hint">No colormap of this name</p>
         ) : (
           shown.map((group) => (
             <section key={group.name} className="insp-section">

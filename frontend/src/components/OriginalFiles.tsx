@@ -137,7 +137,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
           const state = states[index] ?? { status: 'waiting' };
           return (
             <li key={scene.item.id} className={`dialog-original-row ${state.status}`}>
-              <span className="dialog-original-name" data-tip={scene.groupLabel}>
+              <span className="dialog-original-name" data-tip-level="advanced" data-tip={scene.groupLabel}>
                 {way.way === 'zip' ? scene.zipName : scene.item.id}
               </span>
               <span className="dialog-original-state">{rowText(state)}</span>
@@ -149,7 +149,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
         })}
       </ul>
       {note && (
-        <p className="hint-text" data-tip={way.reason ? `${note.why} ${way.reason}` : note.why}>
+        <p className="hint" data-tip-level="advanced" data-tip={way.reason ? `${note.why} ${way.reason}` : note.why}>
           {note.text}
         </p>
       )}
@@ -158,7 +158,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
           <button
             type="button"
             className="btn"
-            data-tip="Stop the download. Files already saved stay."
+            data-tip-level="advanced" data-tip="Stop the download. Files already saved stay."
             onClick={() => control.current?.abort()}
           >
             Stop
@@ -168,7 +168,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
           <button
             type="button"
             className="btn"
-            data-tip="Load the scenes that did not finish again, each from the start."
+            data-tip-level="advanced" data-tip="Load the scenes that did not finish again, each from the start."
             onClick={() => {
               retry.current = latest.current.flatMap((state, index) => (isRetryable(state) ? [index] : []));
               setAttempt((n) => n + 1);
@@ -190,9 +190,9 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
     [dataset, passes, pick, table],
   );
 
-  if (links === null) return <p className="hint-text">Loading the original files…</p>;
+  if (links === null) return <p className="hint">Loading the original files…</p>;
   if (!dataset || scenes.every((scene) => scene.entries.length === 0)) {
-    return <p className="hint-text">No original file of this selection could be linked directly from the source.</p>;
+    return <p className="hint">No original file of this selection could be linked directly from the source.</p>;
   }
 
   const asks = (passes ?? []).some((pass) => pass.items.length > 1);
@@ -204,7 +204,7 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
 
   return (
     <div className="dialog-originals">
-      <p className="hint-text">{summaryText(summaryOf(dataset.collection, scenes))}</p>
+      <p className="hint">{summaryText(summaryOf(dataset.collection, scenes))}</p>
       {go && <SceneRows dataset={dataset} scenes={scenes} />}
       <p className="dialog-original-buttons">
         {asks && (
@@ -213,7 +213,7 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
             className="btn"
             disabled={!mergeAllowed}
             aria-pressed={merged}
-            data-tip={mergeAllowed ? 'One merged file per pass, made as a job on the platform' : noMerge}
+            data-tip-level="advanced" data-tip={mergeAllowed ? 'One merged file per pass, made as a job on the platform' : noMerge}
             onClick={() => setMerged((on) => !on)}
           >
             Merged per pass (job)
@@ -223,7 +223,7 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
           <button
             type="button"
             className="btn"
-            data-tip="A text file with one address per line, for a download manager."
+            data-tip-level="advanced" data-tip="A text file with one address per line, for a download manager."
             onClick={() => saveLinkList(dataset.id, all)}
           >
             Save link list

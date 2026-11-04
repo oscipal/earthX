@@ -91,7 +91,7 @@ export default function App() {
           className="panel btn"
           onClick={() => zoomToView()}
           disabled={!canZoom}
-          data-tip="Zoom the map to fit the AOI, or the pinned layer images"
+          data-tip-level="advanced" data-tip="Zoom the map to fit the AOI, or the pinned layer images"
         >
           <ZoomToSelectionIcon lead />Zoom to selection
         </button>
@@ -100,7 +100,7 @@ export default function App() {
           type="button"
           className="panel btn"
           onClick={() => toggleTheme()}
-          data-tip={theme === 'tech' ? 'Switch to the light theme' : 'Switch to the dark theme'}
+          data-tip-level="advanced" data-tip={theme === 'tech' ? 'Switch to the light theme' : 'Switch to the dark theme'}
         >
           {theme === 'tech' ? <><SunIcon lead />Light</> : <><MoonIcon lead />Dark</>}
         </button>

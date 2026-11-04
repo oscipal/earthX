@@ -55,7 +55,7 @@ function FieldInput({
       {tip && <Tip text={tip} />}
     </span>
   );
-  const problem = error && <span className="hint-text error">{error}</span>;
+  const problem = error && <span className="error">{error}</span>;
   if (field.kind === 'boolean') {
     return (
       <label className="pp-check">
@@ -86,7 +86,7 @@ function FieldInput({
       ) : bandTarget !== undefined ? (
         // A band-math expression: wraps in the wide panel (M4-13c §3.1), but stays
         // one line — Enter adds none, and a pasted line break becomes a space.
-        <textarea
+        <textarea autoComplete="off"
           id={inputId}
           rows={2}
           value={text}
@@ -100,7 +100,7 @@ function FieldInput({
           onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/gu, ' '))}
         />
       ) : (
-        <input
+        <input autoComplete="off"
           id={inputId}
           type="text"
           inputMode={field.kind === 'number' || field.kind === 'integer' ? 'decimal' : undefined}
@@ -154,7 +154,7 @@ function NameInput({
         {field.title}
         {tip && <Tip text={tip} />}
       </span>
-      <input
+      <input autoComplete="off"
         id={inputId}
         type="text"
         value={draft}
@@ -169,7 +169,7 @@ function NameInput({
         }}
       />
       {problem && (
-        <span id={`${inputId}-problem`} className="hint-text error">
+        <span id={`${inputId}-problem`} className="error">
           {problem}
         </span>
       )}
@@ -207,7 +207,7 @@ function BandChoice({
           <button
             key={name}
             type="button"
-            className={`pp-chip${chosen.includes(name) ? ' on' : ''}`}
+            className="btn seg"
             aria-pressed={chosen.includes(name)}
             onClick={() => toggle(name)}
           >
@@ -215,7 +215,7 @@ function BandChoice({
           </button>
         ))}
       </div>
-      {error && <span className="hint-text error">{error}</span>}
+      {error && <span className="error">{error}</span>}
     </fieldset>
   );
 }
@@ -266,10 +266,10 @@ function ClassPicker({
         <label key={entry.value} className="pp-check">
           <input type="checkbox" checked={ticked.has(entry.value)} onChange={() => toggle(entry.value)} />
           {entry.value} · {entry.label}
-          {layer.suggested.includes(entry.value) && <span className="pp-help"> (suggested)</span>}
+          {layer.suggested.includes(entry.value) && <span className="hint"> (suggested)</span>}
         </label>
       ))}
-      {error && <span className="hint-text error">{error}</span>}
+      {error && <span className="error">{error}</span>}
     </fieldset>
   );
 }
@@ -368,22 +368,22 @@ export default function StepForm({
         </span>
         <span className="pp-step-actions">
           {bandMath && (
-            <button type="button" className="icon-btn" aria-label="Rename" data-tip="Rename the band this step adds" onClick={rename}>
+            <button type="button" className="icon-btn" aria-label="Rename" data-tip-level="advanced" data-tip="Rename the band this step adds" onClick={rename}>
               <PencilIcon />
             </button>
           )}
-          <button type="button" className="icon-btn" aria-label="Move up" data-tip="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
+          <button type="button" className="icon-btn" aria-label="Move up" data-tip-level="advanced" data-tip="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
             <ArrowUpIcon />
           </button>
-          <button type="button" className="icon-btn" aria-label="Move down" data-tip="Move this step down" disabled={index === count - 1} onClick={() => onMove(1)}>
+          <button type="button" className="icon-btn" aria-label="Move down" data-tip-level="advanced" data-tip="Move this step down" disabled={index === count - 1} onClick={() => onMove(1)}>
             <ArrowDownIcon />
           </button>
-          <button type="button" className="icon-btn danger" aria-label="Remove" data-tip="Remove this step" onClick={onRemove}>
+          <button type="button" className="icon-btn danger" aria-label="Remove" data-tip-level="advanced" data-tip="Remove this step" onClick={onRemove}>
             <TrashIcon />
           </button>
         </span>
       </div>
-      {unsupported && <p className="hint-text error">{unsupported}</p>}
+      {unsupported && <p className="error">{unsupported}</p>}
       {maskValues && (
         <MaskValuesFields
           stepKey={stepKey}
@@ -481,7 +481,7 @@ export default function StepForm({
             <button
               key={band}
               type="button"
-              className="pp-chip"
+              className="btn seg"
               // Keep the cursor where it is: a click on a button would take the focus, and with it the field.
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onInsert(band)}
@@ -492,7 +492,7 @@ export default function StepForm({
         </div>
       )}
       {refusal && (
-        <p className="hint-text error" role="alert">
+        <p className="error" role="alert">
           {refusal}
         </p>
       )}

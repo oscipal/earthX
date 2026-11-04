@@ -279,7 +279,7 @@ async function caseNoCors(browser, { why, cors, origin }) {
   const attribution = downloads.find((d) => d.name.endsWith('_ATTRIBUTION.txt'));
   const text = attribution?.file ? fs.readFileSync(attribution.file, 'utf8') : '';
   if (!text.includes('Scenes: S2_A, S2_B') || !text.includes('red.tif (S2_A, asset red)') || text.includes('granule_metadata')) problems.push(`${label}: ATTRIBUTION.txt is not as expected`);
-  const note = await page.locator('.dialog-originals .hint-text').nth(1).textContent();
+  const note = await page.locator('.dialog-originals .hint').nth(1).textContent();
   if (!/downloads each file/.test(note ?? '')) problems.push(`${label}: no note on the way, got ${JSON.stringify(note)}`);
   await layout(page, label, problems);
   await page.locator('.dialog-panel').screenshot({ path: path.join(OUT, `no-cors-${why.replace(/\W+/g, '_')}.png`) });
@@ -298,7 +298,7 @@ async function caseNoWorker(browser) {
   expectEq(problems, `${label}: files`, downloads.map((d) => d.name).sort(), ['S2_A_item.json', 'S2_A_nir.tif', 'S2_A_red.tif', 'S2_A_scl.tif', 'S2_A_visual.tif', 'S2_A_granule_metadata.xml', 'e2e_ATTRIBUTION.txt'].sort());
   const nir = downloads.find((d) => d.name === 'S2_A_nir.tif');
   if (nir?.file && sha(fs.readFileSync(nir.file)) !== sha(bytesOf('S2_A/nir.tif', ASSETS.nir))) problems.push(`${label}: S2_A_nir.tif differs from what the source sent`);
-  const note = await page.locator('.dialog-originals .hint-text').nth(1).textContent();
+  const note = await page.locator('.dialog-originals .hint').nth(1).textContent();
   if (!/one by one/.test(note ?? '')) problems.push(`${label}: no note on the way, got ${JSON.stringify(note)}`);
   await layout(page, label, problems);
   await page.locator('.dialog-panel').screenshot({ path: path.join(OUT, 'no-worker.png') });

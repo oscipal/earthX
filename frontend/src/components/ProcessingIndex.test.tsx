@@ -164,8 +164,8 @@ const click = (element: HTMLElement | null | undefined) => {
   act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
 const gear = () => container.querySelector<HTMLButtonElement>('.layer-row [data-col="process"]')!;
-const infoChips = () => [...container.querySelectorAll('section[aria-label="Bands"] .pp-chip')].map((c) => c.textContent);
-const dataChips = () => [...container.querySelectorAll('section[aria-label="Output"] [aria-label="Bands of the data"] .pp-chip')].map((c) => c.textContent);
+const infoChips = () => [...container.querySelectorAll('section[aria-label="Bands"] .pp-chips .seg')].map((c) => c.textContent);
+const dataChips = () => [...container.querySelectorAll('section[aria-label="Output"] [aria-label="Bands of the data"] .pp-chips .seg')].map((c) => c.textContent);
 const stepForms = () => container.querySelectorAll('.pp-steps > li').length;
 
 async function processLayer() {

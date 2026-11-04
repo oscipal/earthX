@@ -183,11 +183,11 @@ const store = () => useProcessingStore.getState();
 const out = () => container.querySelector('section[aria-label="Output"]')!;
 const info = () => container.querySelector('section[aria-label="Bands"]')!;
 const group = (label: string) => out().querySelector(`[aria-label="${label}"]`);
-const names = (where: ParentNode | null) => [...(where?.querySelectorAll('.pp-chip') ?? [])].map((c) => c.childNodes[0].textContent);
+const names = (where: ParentNode | null) => [...(where?.querySelectorAll('.pp-chips .seg') ?? [])].map((c) => c.childNodes[0].textContent);
 const checked = () =>
-  [...out().querySelectorAll<HTMLButtonElement>('.pp-chip[aria-pressed="true"]')].map((c) => c.childNodes[0].textContent);
-const outChip = (name: string) => [...out().querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.childNodes[0].textContent === name)!;
-const infoChip = (name: string) => [...info().querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.childNodes[0].textContent === name)!;
+  [...out().querySelectorAll<HTMLButtonElement>('.pp-chips .seg[aria-pressed="true"]')].map((c) => c.childNodes[0].textContent);
+const outChip = (name: string) => [...out().querySelectorAll<HTMLButtonElement>('.pp-chips .seg')].find((c) => c.childNodes[0].textContent === name)!;
+const infoChip = (name: string) => [...info().querySelectorAll<HTMLButtonElement>('.pp-chips .seg')].find((c) => c.childNodes[0].textContent === name)!;
 const heading = () => out().querySelector('h3')!.textContent;
 const summary = () => out().querySelector('[aria-label="Output summary"]')!.textContent;
 const expression = (step = 0) => container.querySelectorAll<HTMLTextAreaElement>('textarea[data-band-target]')[step];
@@ -382,7 +382,7 @@ describe('the results of band math steps', () => {
 });
 
 describe('what an expression names', () => {
-  const problemOf = (step = 0) => container.querySelectorAll('.pp-step')[step].querySelector('.hint-text.error')?.textContent ?? null;
+  const problemOf = (step = 0) => container.querySelectorAll('.pp-step')[step].querySelector('.error')?.textContent ?? null;
 
   it('is a band of the data or a result of a step before: anything else is told at once, as a name is', async () => {
     select(scene());
@@ -503,7 +503,7 @@ describe('the name of a result', () => {
     typeInto(nameField(step), text);
     if (leave) act(() => nameField(step).blur());
   }
-  const hint = () => container.querySelector('.hint-text.error[id$="-problem"]')?.textContent ?? null;
+  const hint = () => container.querySelector('.error[id$="-problem"]')?.textContent ?? null;
 
   it('is result by default, and result_1, result_2 where that is taken', async () => {
     select(scene());

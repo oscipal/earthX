@@ -114,7 +114,7 @@ async function checkS2(browser, theme, viewport) {
   if ((await shown()) !== 'Condition,From,To') problems.push(`between shows ${await shown()}`);
   if ((await step.locator('input[aria-label="From"]').inputValue()) !== '0.2') problems.push('the number was not kept for between');
   await step.locator('input[aria-label="To"]').fill('0.1');
-  const message = await step.locator('.hint-text.error').allTextContents();
+  const message = await step.locator('.error').allTextContents();
   if (message.join() !== '“from” must be below “to”.') problems.push(`the mistake is told as ${JSON.stringify(message)}`);
   await layout(page, problems);
   fs.mkdirSync(OUT, { recursive: true });

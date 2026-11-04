@@ -96,7 +96,7 @@ afterEach(() => {
 const field = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Band') ?? null;
 const select = () => field()?.querySelector('select') as HTMLSelectElement;
 const colormapSelect = () => [...container.querySelectorAll<HTMLLabelElement>('.vc-render label')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!.querySelector('select')!;
-const note = () => container.querySelector<HTMLElement>('.vc-note');
+const note = () => container.querySelector<HTMLElement>('.hint.warn[role="status"]');
 const apply = () => act(() => (container.querySelector('.vc-apply') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const choose = (value: string) =>
   act(() => {
@@ -310,7 +310,8 @@ describe('the note under the settings', () => {
 });
 
 describe('the layout (the CSS the view is made with)', () => {
-  it('has the yellow note in a darker yellow on the light theme, where the pale one does not read', () => {
-    expect(CSS).toMatch(/\.app\[data-theme='normal'\] \.inspector \.vc-note \{\s*color: #8a5a00;/u);
+  it('colours the yellow note with the token of the warning, which is a darker yellow on the light theme', () => {
+    expect(CSS).toMatch(/\.hint\.warn \{\s*color: var\(--accent-2\);/u);
+    expect(CSS).not.toMatch(/#8a5a00/u);
   });
 });

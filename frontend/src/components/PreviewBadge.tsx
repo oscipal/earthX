@@ -24,6 +24,7 @@ import { tileSizeOf } from '../tileSize';
 import { clipAoiOf, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import { zoomInTo } from '../zoomHint';
+import Badge from './Badge';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
 
 export const OVERVIEW_TITLE = 'Drawn coarser than the result: zoom in for its full resolution.';
@@ -61,26 +62,14 @@ export default function PreviewBadge() {
   if (!draft && !pinned && !overview && waiting.length === 0 && !loading) return null;
   return (
     <div className="overlay preview-badge-dock">
-      {(draft || pinned) && (
-        <span className="preview-badge" data-tip={previewTitle(draft, draftMeasure)}>
-          Preview
-        </span>
-      )}
+      {(draft || pinned) && <Badge tip={previewTitle(draft, draftMeasure)}>Preview</Badge>}
       {loading && (
-        <span className="preview-badge loading" role="status" data-tip={LOADING_TITLE}>
+        <Badge loading role="status" tip={LOADING_TITLE}>
           Loading…
-        </span>
+        </Badge>
       )}
-      {overview && (
-        <span className="preview-badge" data-tip={OVERVIEW_TITLE}>
-          Overview
-        </span>
-      )}
-      {waiting.length > 0 && (
-        <span className="preview-badge" data-tip={zoomInTitle(waiting)}>
-          Zoom in
-        </span>
-      )}
+      {overview && <Badge tip={OVERVIEW_TITLE}>Overview</Badge>}
+      {waiting.length > 0 && <Badge tip={zoomInTitle(waiting)}>Zoom in</Badge>}
     </div>
   );
 }

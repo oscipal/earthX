@@ -92,7 +92,7 @@ export interface RowDnd {
 function Grip({ dnd }: { dnd: RowDnd }) {
   if (!dnd.grip) return <Slot col="grip" />;
   return (
-    <span className="lm-grip" data-col="grip" data-tip="Drag to move" aria-hidden="true" {...dnd.grip}>
+    <span className="lm-grip" data-col="grip" data-tip-level="advanced" data-tip="Drag to move" aria-hidden="true" {...dnd.grip}>
       <GripVerticalIcon size={14} />
     </span>
   );
@@ -127,7 +127,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       <Grip dnd={dnd} />
       <EyeButton row col="eye" shown={shown} locked={locked} tip={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP} onToggle={() => toggleVis(l.id)} />
       {renaming ? (
-        <span className="lm-name lm-renaming" data-col="name" data-tip="A layer needs a name: an empty one keeps the name it had">
+        <span className="lm-name lm-renaming" data-col="name" data-tip-level="advanced" data-tip="A layer needs a name: an empty one keeps the name it had">
           <InlineRename
             value={l.name}
             label="Layer name"
@@ -144,14 +144,14 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           type="button"
           className="lm-name"
           data-col="name"
-          data-tip={l.note}
+          data-tip-level="advanced" data-tip={l.note}
           onClick={() => (flipping ? flipTo(l.id) : select(l.id))}
         >
           {layerShownName(l)}
         </button>
       )}
       {/* The name is renamed here as in the head of the settings (Otto, 3.11.2026). */}
-      <button type="button" className="icon-btn sm quiet" data-col="rename" data-tip={locked ? LOCKED_LAYER_TIP : RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>
+      <button type="button" className="icon-btn sm quiet" data-col="rename" data-tip-level="advanced" data-tip={locked ? LOCKED_LAYER_TIP : RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>
         <PencilIcon size={14} />
       </button>
       <input
@@ -162,15 +162,15 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         max={1}
         step={0.05}
         value={l.opacity}
-        data-tip={locked ? LOCKED_LAYER_TIP : `Opacity ${Math.round(l.opacity * 100)}%`}
+        data-tip-level="advanced" data-tip={locked ? LOCKED_LAYER_TIP : `Opacity ${Math.round(l.opacity * 100)}%`}
         aria-label={`Opacity of ${l.name}`}
         disabled={locked}
         onChange={(e) => setOpacity(l.id, Number(e.target.value))}
       />
-      <button type="button" className="icon-btn sm" data-col="up" data-tip={moveTip('up', index === 0)} aria-label="Move up" disabled={index === 0} onClick={() => move(l.id, 'up')}>
+      <button type="button" className="icon-btn sm" data-col="up" data-tip-level="advanced" data-tip={moveTip('up', index === 0)} aria-label="Move up" disabled={index === 0} onClick={() => move(l.id, 'up')}>
         <ArrowUpIcon size={14} />
       </button>
-      <button type="button" className="icon-btn sm" data-col="down" data-tip={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move(l.id, 'down')}>
+      <button type="button" className="icon-btn sm" data-col="down" data-tip-level="advanced" data-tip={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move(l.id, 'down')}>
         <ArrowDownIcon size={14} />
       </button>
       {l.result && processBlock === NO_COPY_TEXT ? (
@@ -198,7 +198,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       ) : (
         <Slot col="note" />
       )}
-      <button type="button" className="icon-btn sm danger" data-col="remove" data-tip={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(l.id)}>
+      <button type="button" className="icon-btn sm danger" data-col="remove" data-tip-level="advanced" data-tip={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(l.id)}>
         <TrashIcon size={14} />
       </button>
       {bands && bands.length > 1 && (
@@ -216,7 +216,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         />
       )}
       {bands && bands.length > 1 && !locked && l.result?.expired !== true && (
-        <button type="button" className="icon-btn sm lm-add-band" data-tip={ADD_BAND_TIP} aria-label={ADD_BAND_TIP} onClick={() => addBand(l.id)}>
+        <button type="button" className="icon-btn sm lm-add-band" data-tip-level="advanced" data-tip={ADD_BAND_TIP} aria-label={ADD_BAND_TIP} onClick={() => addBand(l.id)}>
           <PlusIcon size={14} />
         </button>
       )}
@@ -232,15 +232,15 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
     <li className={`layer-row results-row${dnd.className}`}>
       <Grip dnd={dnd} />
       <ResultsEye />
-      <span className="lm-name results-name" data-col="name" data-tip={RESULTS_ENTRY_TIP}>
+      <span className="lm-name results-name" data-col="name" data-tip-level="advanced" data-tip={RESULTS_ENTRY_TIP}>
         Search results
       </span>
       <Slot col="rename" />
       <Slot col="opacity" />
-      <button type="button" className="icon-btn sm" data-col="up" data-tip={moveTip('up', first)} aria-label="Move up" disabled={first} onClick={() => move('up')}>
+      <button type="button" className="icon-btn sm" data-col="up" data-tip-level="advanced" data-tip={moveTip('up', first)} aria-label="Move up" disabled={first} onClick={() => move('up')}>
         <ArrowUpIcon size={14} />
       </button>
-      <button type="button" className="icon-btn sm" data-col="down" data-tip={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move('down')}>
+      <button type="button" className="icon-btn sm" data-col="down" data-tip-level="advanced" data-tip={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move('down')}>
         <ArrowDownIcon size={14} />
       </button>
       <Slot col="process" />
@@ -367,14 +367,14 @@ export default function LayerManager() {
       <div className="panel dock-panel layer-manager">
         <div className="results-head">
           <h2>Layers</h2>
-          <div className="results-head-right">
+          <div>
             {(layers.length > 1 || flipping) && <FlipToggle />}
             <span>{layers.length}</span>
           </div>
         </div>
 
         {rows === 0 ? (
-          <p className="hint-text lm-empty">
+          <p className="hint lm-empty">
             No layers yet — select an image and “Add to layers”.
           </p>
         ) : (

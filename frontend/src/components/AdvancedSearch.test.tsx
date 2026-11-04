@@ -467,7 +467,7 @@ describe('fields that are wrong', () => {
   const states = () => ({
     search: searchButton().disabled,
     invalid: [...container.querySelectorAll('input[aria-invalid="true"]')].map((i) => i.getAttribute('aria-label')),
-    messages: [...container.querySelectorAll('.filter-field .hint-text.error')].map((p) => text(p)),
+    messages: [...container.querySelectorAll('.filter-field .error')].map((p) => text(p)),
   });
 
   it('marks the field, says why under it and holds "Search" back until it is right', () => {
@@ -477,7 +477,7 @@ describe('fields that are wrong', () => {
 
     type(field('Cloud cover, to'), '120');
     expect(states()).toEqual({ search: true, invalid: ['Cloud cover, to'], messages: ['Between 0 and 100'] });
-    expect(field('Cloud cover, to').getAttribute('aria-describedby')).toBe(container.querySelector('.filter-field .hint-text.error')!.id);
+    expect(field('Cloud cover, to').getAttribute('aria-describedby')).toBe(container.querySelector('.filter-field .error')!.id);
     expect(text(container.querySelector('.control-footer'))).toContain('Correct the filters in Advanced search.');
     expect(button()!.classList.contains('wrong')).toBe(true);
 

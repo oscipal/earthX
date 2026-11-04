@@ -36,7 +36,7 @@ export function InspectorHead({ title, mark, eye, onClose, closeTitle, copy, chi
     <div className="vc-head">
       <div className="insp-row">
         {rename && editing ? (
-          <span className="vc-title vc-rename" data-tip={EMPTY_NAME_TIP}>
+          <span className="vc-title vc-rename" data-tip-level="advanced" data-tip={EMPTY_NAME_TIP}>
             <InlineRename
               value={rename.name}
               label="Layer name"
@@ -53,7 +53,7 @@ export function InspectorHead({ title, mark, eye, onClose, closeTitle, copy, chi
             <button type="button" className="vc-title vc-title-btn" onClick={() => setEditing(true)}>
               {title}
             </button>
-            <button type="button" className="icon-btn sm quiet" data-tip={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
+            <button type="button" className="icon-btn sm quiet" data-tip-level="advanced" data-tip={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
               <PencilIcon />
             </button>
           </>
@@ -95,7 +95,7 @@ export function Stepper({ text, tip, previous, next, onKeyDown, single = false }
   if (single) {
     return (
       <div className="vc-stepper" role="group" aria-label="Time step">
-        <span className="vc-step-text" data-tip={tip}>
+        <span className="vc-step-text" data-tip-level="advanced" data-tip={tip}>
           {text}
         </span>
       </div>
@@ -103,13 +103,13 @@ export function Stepper({ text, tip, previous, next, onKeyDown, single = false }
   }
   return (
     <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeyDown}>
-      <button type="button" className="icon-btn" aria-label="Previous image" aria-disabled={previous.disabled || undefined} data-tip={previous.title} onClick={previous.onClick}>
+      <button type="button" className="icon-btn" aria-label="Previous image" aria-disabled={previous.disabled || undefined} data-tip-level="advanced" data-tip={previous.title} onClick={previous.onClick}>
         <ChevronLeftIcon />
       </button>
-      <span className="vc-step-text" data-tip={tip}>
+      <span className="vc-step-text" data-tip-level="advanced" data-tip={tip}>
         {text}
       </span>
-      <button type="button" className="icon-btn" aria-label="Next image" aria-disabled={next.disabled || undefined} data-tip={next.title} onClick={next.onClick}>
+      <button type="button" className="icon-btn" aria-label="Next image" aria-disabled={next.disabled || undefined} data-tip-level="advanced" data-tip={next.title} onClick={next.onClick}>
         <ChevronRightIcon />
       </button>
     </div>

@@ -767,7 +767,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
 
   it('lists the maturity note of every ticked dataset, named by title once there are several', () => {
     setUp(['optical', 'dem']);
-    const notes = [...container.querySelectorAll('.dataset-notes .hint-text')].map((n) => n.textContent);
+    const notes = [...container.querySelectorAll('.dataset-notes .hint')].map((n) => n.textContent);
     expect(notes).toEqual(['Optical imagery: staging: the provider may withdraw this collection without notice']);
   });
 

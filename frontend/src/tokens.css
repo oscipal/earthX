@@ -41,6 +41,8 @@
 
   /* What a locked control is dimmed to; its reason stands in its tooltip (UI-04 §7.2 no. 43). */
   --disabled-opacity: 0.4;
+  /* What lies behind a dialog and dims the page. */
+  --scrim: rgba(0, 0, 0, 0.5);
 
   /* The rail, the panel beside it, the side bar and the wide sheet (UI-01 §6.9, UI-03 §7.2). */
   --rail-width: 48px;

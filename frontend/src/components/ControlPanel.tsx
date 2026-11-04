@@ -38,7 +38,7 @@ function DateField({
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div className="date-field">
-      <input
+      <input autoComplete="off"
         ref={ref}
         type="date"
         value={value}
@@ -97,7 +97,7 @@ function AcquisitionDateFields() {
         <DateField value={dateTo} onChange={setDateTo} label="To date" disabled={locked} />
       </div>
       {notes.map((n) => (
-        <p key={n.id} className="hint-text">
+        <p key={n.id} className="hint">
           {n.text}
         </p>
       ))}
@@ -186,7 +186,7 @@ function PlaceSearchField() {
           className="btn"
           aria-busy={searching}
           disabled={searching || !query.trim()}
-          data-tip={searching ? 'Looking for the place…' : !query.trim() ? 'Type a place name first' : 'Find the place on the map'}
+          data-tip-level="advanced" data-tip={searching ? 'Looking for the place…' : !query.trim() ? 'Type a place name first' : 'Find the place on the map'}
           onClick={() => void runSearch()}
         >
           {searching ? 'Finding…' : 'Find'}
@@ -194,13 +194,13 @@ function PlaceSearchField() {
       </div>
       <Popover anchorRef={rowRef} open={showResults} onClose={closeResults} className="place-results" ariaLabel="Places found">
         <div ref={resultsRef}>
-          {results.length === 0 && <p className="hint-text">No place found.</p>}
+          {results.length === 0 && <p className="hint">No place found.</p>}
           {results.map((r, i) => (
             <button
               key={`${r.display_name}-${i}`}
               type="button"
               className="place-result"
-              data-tip={r.outline_simplified ? 'Outline simplified' : undefined}
+              data-tip-level="advanced" data-tip={r.outline_simplified ? 'Outline simplified' : undefined}
               onClick={() => choose(r)}
             >
               <span className="place-result-name">{r.name}</span>
@@ -209,7 +209,7 @@ function PlaceSearchField() {
             </button>
           ))}
           {attribution && (
-            <p className="hint-text place-attribution">
+            <p className="hint place-attribution">
               {attribution.url?.startsWith('https://') ? (
                 <a href={attribution.url} target="_blank" rel="noopener noreferrer">
                   {attribution.text}
@@ -222,7 +222,7 @@ function PlaceSearchField() {
         </div>
       </Popover>
       {stillActive && picked && (
-        <p className="hint-text place-attribution">
+        <p className="hint place-attribution">
           {picked.name} · {PLACE_SEARCH_PROVENANCE.attribution}
         </p>
       )}
@@ -275,7 +275,7 @@ function AoiExtras() {
       <label
         className="btn"
         aria-busy={uploading}
-        data-tip="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
+        data-tip-level="advanced" data-tip="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
       >
         <input
           type="file"
@@ -292,7 +292,7 @@ function AoiExtras() {
         type="button"
         className="btn"
         disabled={!lastAoi}
-        data-tip={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
+        data-tip-level="advanced" data-tip={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
         onClick={() => applyLastAoi()}
       >
         <span>
@@ -323,7 +323,7 @@ function DatasetNotes() {
   return (
     <div className="dataset-notes">
       {notes.map((n) => (
-        <p key={n.id} className="hint-text warn">
+        <p key={n.id} className="hint warn">
           {n.text}
         </p>
       ))}
@@ -366,7 +366,7 @@ function MultiSelectToggle() {
   const setMultiSelect = useAppStore((s) => s.setMultiSelect);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   return (
-    <label className="multi-select-toggle" data-tip="Choose several datasets and search them together">
+    <label className="multi-select-toggle" data-tip-level="advanced" data-tip="Choose several datasets and search them together">
       <input type="checkbox" checked={multiSelect} disabled={busy} onChange={(e) => setMultiSelect(e.target.checked)} />
       Select multiple datasets
     </label>
@@ -437,7 +437,7 @@ function CoverageHistogram({
             key={bucket.t}
             className={`histogram-bar${inRange ? ' in-range' : ''}`}
             style={{ height: `${Math.max(2, (bucket.n / max) * 100)}%` }}
-            data-tip={`${month}: ${bucket.n}`}
+            data-tip-level="advanced" data-tip={`${month}: ${bucket.n}`}
           />
         );
       })}
@@ -460,9 +460,9 @@ function CoverageLegend() {
   const note = coverage ? completenessNote(coverage) : null;
   return (
     <div className="coverage-controls">
-      <p className="hint-text coverage-dataset-name">Coverage · {title}</p>
-      {coverageLoading && <p className="hint-text">Loading coverage…</p>}
-      {coverageError && <p className="hint-text error">{coverageError}</p>}
+      <p className="hint coverage-dataset-name">Coverage · {title}</p>
+      {coverageLoading && <p className="hint">Loading coverage…</p>}
+      {coverageError && <p className="error">{coverageError}</p>}
       {coverage && (
         <div className="coverage-legend">
           <div className="legend-scale">
@@ -474,8 +474,8 @@ function CoverageLegend() {
           </div>
           {/* English, matching the rest of the UI (D25; adr/0004 §5.3 nachtrag
               22.09.2026 lifts the earlier German-terms default). */}
-          <p className="hint-text">Scenes counted by their center point in the cell</p>
-          {note && <p className="hint-text coverage-note">{note}</p>}
+          <p className="hint">Scenes counted by their center point in the cell</p>
+          {note && <p className="hint coverage-note">{note}</p>}
           {coverage.histogram.length > 0 && (
             <CoverageHistogram histogram={coverage.histogram} dateFrom={dateFrom} dateTo={dateTo} />
           )}
@@ -530,7 +530,7 @@ function CoverageButton() {
         aria-haspopup={picked.length > 1 ? 'menu' : undefined}
         aria-expanded={picked.length > 1 ? choosing : undefined}
         disabled={picked.length === 0}
-        data-tip={
+        data-tip-level="advanced" data-tip={
           picked.length === 0
             ? 'Choose a dataset to see its coverage'
             : showCoverage
@@ -552,7 +552,7 @@ function CoverageButton() {
         type="button"
         className="btn"
         disabled={!showCoverage}
-        data-tip={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
+        data-tip-level="advanced" data-tip={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
         onClick={() => hideCoverage()}
       >
         Hide coverage
@@ -667,9 +667,9 @@ export default function ControlPanel() {
         </button>
 
         {count > 0 && <p className="result-count">{counted(count, 'scene')} found</p>}
-        {selectedCount === 0 && <p className="hint-text">Choose a dataset to search.</p>}
-        {filtersWrong && !hasSceneName && <p className="hint-text error">Correct the filters in Advanced search.</p>}
-        {!aoi && !hasSceneName && <p className="hint-text">Choose a tool to define an AOI, or enter a scene name above.</p>}
+        {selectedCount === 0 && <p className="hint">Choose a dataset to search.</p>}
+        {filtersWrong && !hasSceneName && <p className="error">Correct the filters in Advanced search.</p>}
+        {!aoi && !hasSceneName && <p className="hint">Choose a tool to define an AOI, or enter a scene name above.</p>}
       </div>
     </div>
   );

@@ -16,12 +16,12 @@ const MANAGER = [
   '.pm-menu-items', '.pm-key', '.pm-fold', '.pm-chevron', '.pm-count', '.pm-rename',
 ] as const;
 // The processing panel (UI-03b) is the `.processing-…` classes, every `.pp-…` class of the sheet and the details of a job in it;
-// `.pp-badge` is shared with the mark of the preview on the map and waits for UI-04.
+// `.badge` is shared with the mark of the preview on the map and waits for UI-04.
 const PANEL = [
   '.processing-sheet', '.processing-panel',
   '.pm-detail-title', '.pm-title-text', '.pm-title-edit', '.pm-facts', '.pm-steps', '.pm-step-values',
   ...new Set(index.match(/\.pp-[a-z-]+/gu) ?? []),
-].filter((selector) => selector !== '.pp-badge');
+].filter((selector) => selector !== '.badge');
 const CHECKED_AREAS = ['.btn', '.icon-btn', '.close-x', '.inspector', ...PANEL, ...MANAGER] as const;
 
 const ROOT_TOKENS = [
@@ -30,7 +30,7 @@ const ROOT_TOKENS = [
   '--leading-tight', '--leading', '--weight-regular', '--weight-semibold',
   '--radius-sm', '--radius-md', '--radius-full', '--line-width',
   '--control-height', '--control-height-sm', '--control-height-touch',
-  '--icon-size', '--icon-size-sm', '--icon-size-rail', '--disabled-opacity',
+  '--icon-size', '--icon-size-sm', '--icon-size-rail', '--disabled-opacity', '--scrim',
   '--rail-width', '--dock-width', '--inspector-width', '--sheet-wide-width',
   '--font', '--font-mono',
 ];
@@ -93,6 +93,12 @@ describe('tokens.css', () => {
 describe('hard values in the checked areas of index.css', () => {
   it('finds none in the shared controls, the settings bar, the processing panel and the processing manager', () => {
     expect(hardValues(index, CHECKED_AREAS)).toEqual([]);
+  });
+
+  it('has one token for a wrong field and an error: --danger, no --invalid of its own', () => {
+    expect(index).not.toContain('--invalid');
+    expect(tokens).not.toContain('--invalid');
+    expect(block(index, '.dialog-backdrop')).toContain('background: var(--scrim)');
   });
 
   it('sets the close cross in one colour token for both themes', () => {

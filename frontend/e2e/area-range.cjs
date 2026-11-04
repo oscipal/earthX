@@ -107,7 +107,7 @@ async function check(browser, { name, theme, viewport }) {
       ...[...row.querySelectorAll('button')].map((e) => ({ what: `button ${e.textContent}`, e })),
     ].map(({ what, e }) => ({ what, ...box(e), cutOff: e.tagName === 'INPUT' && e.scrollWidth > e.clientWidth }));
     const body = row.closest('.pp-body') ?? document.querySelector('.processing-panel');
-    const badge = document.querySelector('section[aria-label="Preview on the map"] .pp-heading .pp-badge:not(.loading)');
+    const badge = document.querySelector('section[aria-label="Preview on the map"] .pp-heading .badge:not(.loading)');
     return {
       theme: document.querySelector('.app')?.dataset.theme,
       leaves,

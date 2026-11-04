@@ -63,7 +63,7 @@ async function mount(over: Partial<AppState> = {}) {
   });
 }
 
-const hint = () => container.querySelector('.vc-note.hint-text:not(.warn)');
+const hint = () => container.querySelector('.hint:not(.warn)[role="status"]');
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;

@@ -242,7 +242,7 @@ describe('the preview section', () => {
   it('says nothing before there is a step, and asks to complete the first one', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    expect(section().querySelector('.hint-text')).toBeNull();
+    expect(section().querySelector('.hint')).toBeNull();
     expect(section().querySelector('.pp-range')).toBeNull();
     click(button('Band math'));
     expect(section().textContent).toContain('Complete the step to see the preview.');
@@ -993,7 +993,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
   const sceneAsked = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/statistics?'));
   const rescale = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale');
   const colormap = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('colormap_name');
-  const title = () => section().querySelector('.pp-badge:not(.loading)')?.getAttribute('data-tip') ?? null;
+  const title = () => section().querySelector('.badge:not(.loading)')?.getAttribute('data-tip') ?? null;
   const unit = () => section().querySelector('.pp-unit')?.textContent ?? null;
   const DEM = { count: 900, min: 100, max: 2500, percentile_2: 120, percentile_98: 2400, unit: 'm' };
   const OUTLIERS = { count: 900, min: -1.3, max: 1.5, percentile_2: 0, percentile_98: 0.91, unit: null };
@@ -1122,7 +1122,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       expect(store().measure).toMatchObject({ source: 'area', exact: true });
       both();
       expect(title()).toBeNull();
-      expect(container.querySelector('.preview-badge')!.getAttribute('data-tip')).toBeNull();
+      expect(container.querySelector('.preview-badge-dock .badge')!.getAttribute('data-tip')).toBeNull();
     });
 
     it('says the tiler read a coarser raster, on the panel and on the map', async () => {
@@ -1131,7 +1131,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       expect(store().measure).toMatchObject({ source: 'area', exact: false });
       both();
       expect(title()).toBe(COARSE_HINT);
-      expect(container.querySelector('.preview-badge')!.getAttribute('data-tip')).toBe(COARSE_HINT);
+      expect(container.querySelector('.preview-badge-dock .badge')!.getAttribute('data-tip')).toBe(COARSE_HINT);
       // The range of a coarse read is drawn all the same: it is better than the first whole scene's.
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
     });
@@ -1319,18 +1319,18 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     select([scene('S2B_A', 10)]);
     act(() => store().openProcessing());
     await flush();
-    expect(container.querySelector('.preview-badge')).toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).toBeNull();
     vi.useFakeTimers();
     click(button('Band math'));
     typeInto(expression(), 'nir / red');
     await afterDebounce();
     for (const zoom of [3, 12.5, 18, 22]) {
       act(() => useAppStore.setState({ mapZoom: zoom, viewportBbox: [10, 50, 11, 51] }));
-      expect(section().querySelector('.pp-badge')?.textContent).toBe('Preview');
-      expect(container.querySelector('.preview-badge')?.textContent).toBe('Preview');
+      expect(section().querySelector('.badge')?.textContent).toBe('Preview');
+      expect(container.querySelector('.preview-badge-dock .badge')?.textContent).toBe('Preview');
     }
     act(() => store().closeProcessing());
-    expect(container.querySelector('.preview-badge')).toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).toBeNull();
   });
 
   it('holds the tiles of the preview under the pixel size of the data', async () => {
@@ -1358,8 +1358,8 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     expect(container.textContent).not.toContain('pixel size');
     for (const zoom of [3, 12.5, 22]) {
       act(() => useAppStore.setState({ mapZoom: zoom }));
-      expect(container.querySelector('.preview-badge')?.textContent).toBe('Preview');
-      expect(section().querySelector('.pp-badge')?.textContent).toBe('Preview');
+      expect(container.querySelector('.preview-badge-dock .badge')?.textContent).toBe('Preview');
+      expect(section().querySelector('.badge')?.textContent).toBe('Preview');
     }
   });
 
@@ -1372,11 +1372,11 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     });
     useAppStore.setState({ layers: [layer('P1', false)] });
     mount(<PreviewBadge />);
-    expect(container.querySelector('.preview-badge')).toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).toBeNull();
     act(() => useAppStore.setState({ layers: [layer('P1', true)] }));
-    expect(container.querySelector('.preview-badge')).not.toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).not.toBeNull();
     act(() => useAppStore.setState({ mapZoom: 20 }));
-    expect(container.querySelector('.preview-badge')).not.toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).not.toBeNull();
   });
 
   it('does not stand for an ordinary layer', () => {
@@ -1384,7 +1384,7 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
       layers: [{ ...pinned('L1'), overlays: [{ kind: 'raster', tileUrl: 'u', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }] }],
     });
     mount(<PreviewBadge />);
-    expect(container.querySelector('.preview-badge')).toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).toBeNull();
   });
 });
 
@@ -1820,8 +1820,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     await flush();
   }
 
-  const dockBadge = () => container.querySelector('.preview-badge-dock .preview-badge:not(.loading)');
-  const panelBadge = () => section().querySelector('.pp-badge');
+  const dockBadge = () => container.querySelector('.preview-badge-dock .badge:not(.loading)');
+  const panelBadge = () => section().querySelector('.badge');
 
   it('draws one job over a pass as its mosaic with the steps, and the scenes below it in the order of the tiler', async () => {
     tilejson = taking(['S2B_B', 'S2B_C', 'S2B_A']);
@@ -2099,7 +2099,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
   });
 
   describe('"Loading…" while the first tile is on its way (Otto, 28.10.2026: cold 6.0 s, warm 0.16 s)', () => {
-    const loading = () => container.querySelector('.preview-badge-dock .preview-badge.loading');
+    const loading = () => container.querySelector('.preview-badge-dock .badge.loading');
     let release: (response: Response) => void;
 
     function holdTheMosaic() {
@@ -2126,7 +2126,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       expect(loading()?.getAttribute('data-tip')).toBe('Reading the scenes. The first tile of a mosaic can take several seconds.');
       expect(loading()?.getAttribute('role')).toBe('status');
       // The heading of the preview says it too, for a window in which the panel hides the map: a badge, no line of text.
-      const inHeading = section().querySelector('.pp-heading .pp-badge.loading');
+      const inHeading = section().querySelector('.pp-heading .badge.loading');
       expect(inHeading?.textContent).toBe('Loading…');
       expect(inHeading?.getAttribute('data-tip')).toBe(loading()?.getAttribute('data-tip'));
       expect(section().querySelector('p')?.textContent ?? '').not.toContain('Loading');

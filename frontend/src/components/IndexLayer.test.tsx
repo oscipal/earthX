@@ -292,7 +292,7 @@ describe('the dialog of the download', () => {
     }
   };
   const primary = () => container.querySelector<HTMLButtonElement>('.dialog-actions .primary')!;
-  const line = () => container.querySelector<HTMLElement>('.dialog-body .hint-text')!;
+  const line = () => container.querySelector<HTMLElement>('.dialog-body .hint')!;
   const press = async () => {
     await act(async () => {
       primary().dispatchEvent(new MouseEvent('click', { bubbles: true }));

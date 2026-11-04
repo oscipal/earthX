@@ -23,6 +23,14 @@ body {
   overflow: hidden;
 }
 
+/* A control takes the type of the page; no rule of its own names a family (UI-04 part 3b, Otto, 3.11.2026). */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
 .app {
   /* The boxes over the map stand where they are anchored, whether a panel is open or not (NM4-66): they are centred in
      the map beside the rail (widths: `tokens.css`, UI-01 §6.9). */
@@ -216,7 +224,6 @@ svg.lucide.icon-lead {
   border: var(--line-width) solid transparent;
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--font);
   text-decoration: none;
   cursor: pointer;
 }
@@ -313,7 +320,6 @@ svg.lucide.icon-lead {
 .menu-group-label {
   padding: 2px 10px;
   color: var(--muted);
-  font-family: var(--font);
   font-size: 9px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -329,15 +335,6 @@ svg.lucide.icon-lead {
   font-size: 12px;
   letter-spacing: 2px;
   color: var(--accent);
-}
-.vc-polmodes {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.vc-polmodes .level-btn {
-  flex: 1;
-  min-width: 90px;
 }
 .vc-apply {
   align-self: flex-end;
@@ -362,7 +359,6 @@ svg.lucide.icon-lead {
   border: var(--line-width) solid var(--panel-border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--font);
   font-size: var(--text-sm);
 }
 /* One height for the fields of a panel (a tick box and a slider keep their own). */
@@ -370,12 +366,6 @@ svg.lucide.icon-lead {
 .vc-field input:not([type='checkbox'], [type='radio'], [type='range']),
 .vc-dataset {
   min-height: var(--control-height);
-}
-.vc-field select:focus,
-.vc-field input:focus,
-.vc-field textarea:focus,
-.vc-dataset:focus {
-  border-color: var(--accent);
 }
 .vc-num input {
   width: 84px;
@@ -413,8 +403,7 @@ svg.lucide.icon-lead {
 .vc-field.vc-num:has(.vc-unit) input {
   width: 116px;
 }
-.vc-field.vc-num .vc-unit:hover,
-.vc-field.vc-num .vc-unit:focus-visible {
+.vc-field.vc-num .vc-unit:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -483,13 +472,6 @@ svg.lucide.icon-lead {
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
   color: var(--text);
-}
-.inspector .vc-temporary {
-  flex: none;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-md);
-  font-size: var(--text-xs);
-  white-space: nowrap;
 }
 .inspector .vc-dataset {
   flex: 1 1 0;
@@ -594,7 +576,7 @@ svg.lucide.icon-lead {
 }
 .processing-panel .vc-scale-fields input[aria-invalid='true'],
 .inspector .vc-scale-fields input[aria-invalid='true'] {
-  border-color: var(--invalid);
+  border-color: var(--danger);
 }
 .processing-panel .vc-scale-fields input[type='number'],
 .inspector .vc-scale-fields input[type='number'] {
@@ -855,12 +837,6 @@ svg.lucide.icon-lead {
   padding: var(--space-1) var(--space-2);
   white-space: nowrap;
 }
-.inspector .vc-note {
-  margin: 0;
-}
-.app[data-theme='normal'] .inspector .vc-note {
-  color: #8a5a00;
-}
 /* The actions in pairs (Otto, 2.11.2026): two columns of one width, every button as high as a control; none wraps its words, a long
    one is cut with "…" and its tooltip has it in full. */
 .inspector .vc-actions {
@@ -1081,13 +1057,25 @@ input[type='date'] {
   border: var(--line-width) solid var(--panel-border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--font);
   font-size: var(--text-sm);
 }
-input[type='text']:focus,
-input[type='date']:focus {
-  border-color: var(--accent);
-  box-shadow: var(--glow);
+
+/* A field the browser has filled in (or offers to): its own light colour would stand in the dark theme. The colours are those of the field, from
+   the tokens: the text, and the background of the field laid over the background of the map (the field's own is see-through, the browser's is
+   not). Two rules, since a selector list with a pseudo-class the engine does not know is dropped whole. */
+input:-webkit-autofill,
+textarea:-webkit-autofill {
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  box-shadow: inset 0 0 0 100px var(--input-bg), inset 0 0 0 100px var(--map-bg);
+  transition: background-color 600000s 0s;
+}
+input:autofill,
+textarea:autofill {
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  box-shadow: inset 0 0 0 100px var(--input-bg), inset 0 0 0 100px var(--map-bg);
+  transition: background-color 600000s 0s;
 }
 
 /* The native calendar icon is drawn dark-on-transparent by default, which
@@ -1166,20 +1154,6 @@ input[type='date']:focus {
 }
 
 /* --- search box + autocomplete --- */
-.searchbox {
-  position: relative;
-}
-.searchbox-spinner {
-  position: absolute;
-  right: 10px;
-  top: 9px;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--muted);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
 .searchbox-results {
   list-style: none;
   margin: 4px 0 0;
@@ -1200,7 +1174,6 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--font);
   font-size: 11px;
   padding: 6px 8px;
   border-radius: 4px;
@@ -1258,7 +1231,6 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--font);
   font-size: 11px;
   padding: 6px 8px;
   border-radius: 4px;
@@ -1306,13 +1278,21 @@ input[type='date']:focus {
   font-size: 11px;
   color: var(--accent);
 }
-.hint-text {
+/* A hint, a warning and an error (UI-04 part 3b): the three small lines under a field or a button. A hint is quiet, a warning is
+   the yellow of the theme, an error is the red one and says what has to be done. */
+.hint,
+.error {
   margin: 0;
-  font-size: 10px;
+  font-size: var(--text-xs);
+}
+.hint {
   color: var(--muted);
 }
-.hint-text.error {
-  color: #ff6b6b;
+.hint.warn {
+  color: var(--accent-2);
+}
+.error {
+  color: var(--danger);
 }
 /* "Copy original scene name" in the row of the date, left of it (Otto, 3.11.2026): small, quiet, a link in all but name; where the row is
    too narrow it is cut with "…". */
@@ -1338,8 +1318,7 @@ input[type='date']:focus {
   text-decoration: underline dotted;
   text-underline-offset: 2px;
 }
-.inspector .vc-scene-names:hover,
-.inspector .vc-scene-names:focus-visible {
+.inspector .vc-scene-names:hover {
   color: var(--text);
 }
 
@@ -1461,7 +1440,7 @@ input[type='date']:focus {
   height: 40px;
   object-fit: cover;
   border-radius: 4px;
-  background: rgba(128, 128, 128, 0.2);
+  background: var(--surface-2);
   flex: 0 0 auto;
 }
 .result-thumb.placeholder {
@@ -1477,10 +1456,6 @@ input[type='date']:focus {
   font-size: 12px;
   font-weight: 700;
 }
-.result-collection {
-  font-size: 10px;
-  color: var(--accent);
-}
 .result-id-row {
   display: flex;
   align-items: center;
@@ -1494,20 +1469,6 @@ input[type='date']:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-}
-.badge {
-  font-size: 8px;
-  letter-spacing: 1px;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: var(--accent-2);
-  color: #1a1200;
-  flex: 0 0 auto;
-}
-.badge.preview {
-  background: transparent;
-  color: var(--muted);
-  border: 1px solid var(--panel-border);
 }
 
 /* --- dataset toggles (M3-10): a 2 x 2 grid, then the list scrolls --- */
@@ -1551,11 +1512,6 @@ input[type='date']:focus {
   margin-top: 0;
   line-height: 1.1;
 }
-.field-label-aside {
-  float: right;
-  text-transform: none;
-  letter-spacing: 0;
-}
 /* "Coverage" and "Clear coverage" fill the panel's width, like the tool rows. */
 .coverage-button-wrap {
   display: grid;
@@ -1588,7 +1544,6 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--font);
   font-size: 11px;
   text-align: left;
   cursor: pointer;
@@ -1651,7 +1606,6 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--font);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -1711,12 +1665,6 @@ input[type='date']:focus {
 /* --- Advanced search in the control menu (DS-02c) ---
    The dataset box is the one of the results (`DatasetSelect`), without the tinted card around it. A wrong field is
    red in both themes, dark enough on the light panel to be read. */
-.app[data-theme='tech'] {
-  --invalid: #ff6b6b;
-}
-.app[data-theme='normal'] {
-  --invalid: #c62f2f;
-}
 .dataset-select.plain {
   padding: 0;
   background: none;
@@ -1730,8 +1678,8 @@ input[type='date']:focus {
   color: var(--accent);
 }
 .advanced-btn.wrong {
-  border-color: var(--invalid);
-  color: var(--invalid);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 /* The pop-up lies over the map, as wide as the button it opens from; the heading (the dataset box) and the buttons stay
    in view, the fields between them scroll. */
@@ -1827,19 +1775,10 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--font);
   font-size: 12px;
 }
-.filter-range input[type='text']:focus {
-  border-color: var(--accent);
-  box-shadow: var(--glow);
-}
-.filter-range input[aria-invalid='true'],
-.filter-range input[aria-invalid='true']:focus {
-  border-color: var(--invalid);
-}
-.filter-field .hint-text.error {
-  color: var(--invalid);
+.filter-range input[aria-invalid='true'] {
+  border-color: var(--danger);
 }
 .filter-unit {
   min-width: 1ch;
@@ -1927,7 +1866,6 @@ input[type='date']:focus {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font);
   font-size: 12px;
   color: var(--text);
   cursor: pointer;
@@ -1958,7 +1896,6 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--font);
   font-size: 12px;
   padding: 8px 6px;
   cursor: pointer;
@@ -2003,7 +1940,6 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--accent);
-  font-family: var(--font);
   font-size: var(--text-xs);
   cursor: pointer;
   padding: 0;
@@ -2135,15 +2071,6 @@ input[type='date']:focus {
   min-width: 0;
   min-height: 44px;
   line-height: 1.25;
-}
-.db-select {
-  padding: 8px 10px;
-  background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 12px;
 }
 
 /* --- layer manager (docked beside the rail, UI-01 §6.9) --- */
@@ -2293,7 +2220,6 @@ input[type='date']:focus {
   background: none;
   border: none;
   color: var(--text);
-  font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
@@ -2402,7 +2328,6 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--text);
-  font-family: var(--font);
   font-size: 11px;
   font-weight: 400;
   line-height: 1.4;
@@ -2575,10 +2500,13 @@ input[type='date']:focus {
   column-gap: var(--space-1);
   border-radius: var(--radius-sm);
 }
-/* The row under the pointer or with the focus, so the user sees which one the keys R, G and A act on. */
+/* The row under the pointer or with the focus, so the user sees which one the keys R, G and A act on. The focus tints the row; it draws no
+   bar or frame around the row (UI-04 part 3b: the ring is at the control, not at the section). */
 .pm-line:hover,
 .pm-line:focus-within {
   background: var(--row-hover);
+}
+.pm-line:hover {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .pm-open {
@@ -2593,7 +2521,6 @@ input[type='date']:focus {
   border: none;
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--font);
   font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
@@ -2793,7 +2720,6 @@ button.pm-open:hover {
   border: none;
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--font);
   font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
@@ -2830,7 +2756,6 @@ button.pm-open:hover {
   border: var(--line-width) solid var(--accent);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--font);
   font-size: var(--text-sm);
 }
 /* Under 900 px and on a touch screen the symbols are a finger high and a line has no room for the title: the status and the date go under
@@ -2915,8 +2840,7 @@ button.pm-open:hover {
   overflow-wrap: anywhere;
   cursor: text;
 }
-.pm-title-edit:hover,
-.pm-title-edit:focus-visible {
+.pm-title-edit:hover {
   border-bottom-color: var(--accent);
 }
 .pm-facts {
@@ -2947,7 +2871,7 @@ button.pm-open:hover {
 .dialog-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3003,7 +2927,7 @@ button.pm-open:hover {
 .dialog-choice-label {
   font-weight: var(--weight-semibold);
 }
-.dialog-choice-head .hint-text {
+.dialog-choice-head .hint {
   margin: 0 auto 0 0;
 }
 .dialog-bands {
@@ -3053,7 +2977,6 @@ button.pm-open:hover {
   border: var(--line-width) solid var(--panel-border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: var(--font);
   font-size: var(--text-sm);
 }
 
@@ -3089,8 +3012,8 @@ button.pm-open:hover {
   background: var(--panel-bg);
 }
 .toast.error {
-  border-color: #ff5a6e;
-  color: #ff9aa7;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 .toast.notice {
   border-color: var(--accent);
@@ -3122,13 +3045,18 @@ button.pm-open:hover {
   }
 }
 
-/* MapLibre attribution in the tech theme: light text on a dark strip (it is always open, `ATTRIBUTION_CONTROL`). */
+/* MapLibre sets its own family on the map; the attribution, the controls and the rest of the map's text use the one of the interface. */
+/* `.app` in front: MapLibre's own sheet is loaded after this one and would win at the same weight. */
+.app .maplibregl-map {
+  font-family: var(--font);
+}
+/* MapLibre attribution in the tech theme: the text of the panel on the panel's dark strip (it is always open, `ATTRIBUTION_CONTROL`). */
 .app[data-theme='tech'] .maplibregl-ctrl-attrib {
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
+  background: var(--panel-bg);
+  color: var(--text);
 }
 .app[data-theme='tech'] .maplibregl-ctrl-attrib a {
-  color: #fff;
+  color: var(--text);
 }
 
 /* --- what the catalogue says about the source (M2-10) --- */
@@ -3138,9 +3066,6 @@ button.pm-open:hover {
   gap: 2px;
   margin-top: 4px;
 }
-.hint-text.warn {
-  color: #ffd166;
-}
 /* The maturity chip sits inside the dataset button, so it has to stay small
    enough not to push the title out of a three-across row. */
 .maturity-chip {
@@ -3149,7 +3074,7 @@ button.pm-open:hover {
   font-size: 9px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #ffd166;
+  color: var(--accent-2);
 }
 
 /* --- text fields with a "×" that empties them (Otto, 30.09.2026) --- */
@@ -3208,9 +3133,6 @@ button.pm-open:hover {
 }
 .pp-foot {
   border-top: var(--line-width) solid var(--line);
-}
-.processing-panel .hint-text {
-  font-size: var(--text-xs);
 }
 /* "Review" and "Start job": two buttons of one width. */
 .pp-foot .vc-actions {
@@ -3363,12 +3285,6 @@ button.pm-open:hover {
   color: var(--text);
   overflow-wrap: anywhere;
 }
-.pp-help {
-  font-size: var(--text-xs);
-  color: var(--muted);
-  text-transform: none;
-  letter-spacing: 0;
-}
 .pp-recipe {
   display: flex;
   flex-direction: column;
@@ -3398,10 +3314,6 @@ button.pm-open:hover {
   flex: 1 1 auto;
   min-width: 0;
 }
-.pp-options {
-  margin: 0;
-  padding-left: var(--space-3);
-}
 /* A field of a step: the name in the column of the labels, the control after it (the shared form rules above); what a field adds
    below it (a problem, a unit) stands in the column of the control. A narrow window puts the name over the control. */
 .pp-field {
@@ -3414,7 +3326,7 @@ button.pm-open:hover {
   white-space: normal;
   overflow: visible;
 }
-.pp-field > .hint-text,
+.pp-field > :is(.hint, .error),
 .pp-field > .pp-unit-line {
   overflow: visible;
   white-space: normal;
@@ -3479,7 +3391,7 @@ button.pm-open:hover {
   align-items: start;
   gap: var(--space-2);
 }
-.pp-chip-row > .pp-help {
+.pp-chip-row > .hint {
   min-height: var(--control-height);
   display: flex;
   align-items: center;
@@ -3494,7 +3406,7 @@ button.pm-open:hover {
   gap: var(--space-1);
 }
 /* A hint inside a label is a sentence, not a label: no capitals. */
-.vc-field .hint-text,
+.vc-field :is(.hint, .error),
 .vc-field .pp-unit-line {
   text-transform: none;
   letter-spacing: normal;
@@ -3534,22 +3446,9 @@ button.pm-open:hover {
 .pp-field textarea[aria-invalid='true'] {
   border-color: var(--danger);
 }
-.pp-chip,
-.pp-seg {
-  min-height: var(--control-height);
+.btn.seg {
   padding: var(--space-1) var(--space-2);
-  background: none;
-  border: var(--line-width) solid var(--panel-border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: var(--font);
   font-size: var(--text-xs);
-  cursor: pointer;
-}
-.pp-chip.on,
-.pp-seg.on {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 /* The unit of a band after its name (M4-19b): present, but quieter than the name. */
 .pp-chip-unit {
@@ -3610,8 +3509,7 @@ button.pm-open:hover {
   align-items: stretch;
   gap: var(--space-2);
 }
-.pp-add > .pp-help,
-.pp-add > .hint-text {
+.pp-add > :is(.hint, .error) {
   grid-column: 1 / -1;
 }
 .pp-add-btn {
@@ -3671,7 +3569,6 @@ button.pm-open:hover {
   border-bottom: 1px solid var(--panel-border);
 }
 .dialog-original-name {
-  font-family: var(--font);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -3683,7 +3580,7 @@ button.pm-open:hover {
 .dialog-original-row.failed .dialog-original-state {
   grid-column: 1 / -1;
   text-align: left;
-  color: var(--invalid, #ff6b6b);
+  color: var(--danger);
 }
 .dialog-original-row.done .dialog-original-state,
 .dialog-original-row.started .dialog-original-state {
@@ -3716,25 +3613,26 @@ button.pm-open:hover {
   bottom: 20px;
   z-index: 11;
 }
-.preview-badge,
-.pp-badge {
+/* A badge (`components/Badge.tsx`, UI-04 part 3b): the small mark beside a title or over the map. One shape for "Preview", "Temporary",
+   "Overview", "Zoom in" and "Loading…". */
+.badge {
   display: inline-block;
-  padding: 2px 8px;
-  border: 1px solid var(--accent-2);
-  border-radius: 10px;
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border: var(--line-width) solid var(--accent-2);
+  border-radius: var(--radius-full);
   color: var(--accent-2);
   background: var(--panel-bg);
-  font-size: 10px;
-  letter-spacing: 1px;
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
-.preview-badge + .preview-badge,
-.pp-badge + .pp-badge {
-  margin-left: 6px;
+.badge + .badge {
+  margin-left: var(--space-2);
 }
 /* "Loading…" (NM4-04b): the badge itself breathes, so a cold mosaic does not look stuck. */
-.preview-badge.loading,
-.pp-badge.loading {
+.badge.loading {
   animation: previewLoading 1.4s ease-in-out infinite;
 }
 @keyframes previewLoading {
@@ -3743,8 +3641,7 @@ button.pm-open:hover {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .preview-badge.loading,
-  .pp-badge.loading {
+  .badge.loading {
     animation: none;
   }
 }
@@ -3778,7 +3675,6 @@ button.pm-open:hover {
   gap: 8px;
   min-width: 0;
   padding: 6px 14px;
-  font-family: var(--font);
   font-size: 11px;
   color: var(--accent);
 }

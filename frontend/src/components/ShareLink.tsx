@@ -57,12 +57,12 @@ export default function ShareLink({ view }: { view: OrderView }) {
       {made ? (
         <>
           <div className="pp-share-link">
-            <input type="text" readOnly value={permalinkAddress(made.id)} aria-label="Link" onFocus={(e) => e.currentTarget.select()} />
+            <input autoComplete="off" type="text" readOnly value={permalinkAddress(made.id)} aria-label="Link" onFocus={(e) => e.currentTarget.select()} />
             <CopyButton text={permalinkAddress(made.id)} title="Copy link" label="Copy link" />
             <button
               type="button"
               className="icon-btn sm danger"
-              data-tip="Delete link"
+              data-tip-level="advanced" data-tip="Delete link"
               aria-label="Delete link"
               disabled={busy}
               onClick={() => void remove(made.id)}
@@ -70,7 +70,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
               <TrashIcon />
             </button>
           </div>
-          <p className="pp-help">Good until {new Date(made.expiresAt).toLocaleDateString()}. Anyone with the link sees your area.</p>
+          <p className="hint">Good until {new Date(made.expiresAt).toLocaleDateString()}. Anyone with the link sees your area.</p>
         </>
       ) : (
         <>
@@ -78,7 +78,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
             type="button"
             className="btn"
             disabled={busy || !!blocked || !bbox}
-            data-tip={blocked ?? 'Keep this order and the map view under a link for 30 days'}
+            data-tip-level="advanced" data-tip={blocked ?? 'Keep this order and the map view under a link for 30 days'}
             onClick={() => void share()}
           >
             {busy ? 'Sharing…' : 'Share'}
@@ -86,7 +86,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
         </>
       )}
       {note && (
-        <p className={note.ok ? 'pp-help' : 'hint-text error'} role="status">
+        <p className={note.ok ? 'hint' : 'error'} role="status">
           {note.text}
         </p>
       )}

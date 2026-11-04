@@ -18,13 +18,13 @@ export default function ClearableInput({ value, onChange, onClear, clearLabel, c
   const ref = useRef<HTMLInputElement>(null);
   return (
     <span className={`clearable${className ? ` ${className}` : ''}`}>
-      <input ref={ref} type="text" value={value} onChange={(e) => onChange(e.target.value)} {...input} />
+      <input autoComplete="off" ref={ref} type="text" value={value} onChange={(e) => onChange(e.target.value)} {...input} />
       {value !== '' && !input.disabled && (
         <button
           type="button"
           className="icon-btn sm quiet clear-btn"
           aria-label={clearLabel}
-          data-tip={clearLabel}
+          data-tip-level="advanced" data-tip={clearLabel}
           onClick={() => {
             onChange('');
             onClear?.();

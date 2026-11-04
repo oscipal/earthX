@@ -85,16 +85,16 @@ function Title({ job }: { job: JobEntry }) {
       ) : (
         <>
           <h3 className="pm-title-text">
-            <button type="button" className="pm-title-edit" data-tip="Rename this job" onClick={() => setEditing(true)}>
+            <button type="button" className="pm-title-edit" data-tip-level="advanced" data-tip="Rename this job" onClick={() => setEditing(true)}>
               {jobLabel(job)}
             </button>
           </h3>
-          <button type="button" className="link-btn" data-tip="Rename this job" aria-label="Rename this job" onClick={() => setEditing(true)}>
+          <button type="button" className="link-btn" data-tip-level="advanced" data-tip="Rename this job" aria-label="Rename this job" onClick={() => setEditing(true)}>
             <PencilIcon />
           </button>
         </>
       )}
-      {batch && job.part && <span className="pp-help">{`${batch.title} · ${job.part}`}</span>}
+      {batch && job.part && <span className="hint">{`${batch.title} · ${job.part}`}</span>}
     </div>
   );
 }
@@ -121,7 +121,7 @@ function OpenInPanel({ job }: { job: JobEntry }) {
         type="button"
         className="btn has-tip"
         aria-disabled={!order || busy}
-        data-tip={order ? 'Take the order of this job back into the panel' : NO_COPY_TIP}
+        data-tip-level="advanced" data-tip={order ? 'Take the order of this job back into the panel' : NO_COPY_TIP}
         aria-label={order ? undefined : `Open in panel: ${NO_COPY_TIP}`}
         onClick={() => {
           if (order && !busy) void open();
@@ -130,7 +130,7 @@ function OpenInPanel({ job }: { job: JobEntry }) {
         Open in panel
       </button>
       {problem && (
-        <p className="hint-text error" role="alert">
+        <p className="error" role="alert">
           {problem}
         </p>
       )}
@@ -168,13 +168,13 @@ export default function JobDetails() {
           className="pp-grip"
           aria-expanded={!folded}
           aria-label={folded ? 'Show the panel' : 'Fold the panel down'}
-          data-tip={folded ? 'Show the panel' : 'Fold the panel down'}
+          data-tip-level="advanced" data-tip={folded ? 'Show the panel' : 'Fold the panel down'}
           onClick={() => setFolded(!folded)}
         >
           {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </button>
         <div className="pp-title-row">
-          <button type="button" className="link-btn" data-tip="Back to the order" onClick={back}>
+          <button type="button" className="link-btn" data-tip-level="advanced" data-tip="Back to the order" onClick={back}>
             <ArrowLeftIcon lead />Order
           </button>
           <CloseButton onClick={close} />
@@ -182,7 +182,7 @@ export default function JobDetails() {
       </div>
       <div className="pp-body">
         {!job || !state ? (
-          <p className="hint-text">This job is not in the list.</p>
+          <p className="hint">This job is not in the list.</p>
         ) : (
           <>
             <Title job={job} />
@@ -197,7 +197,7 @@ export default function JobDetails() {
                 job.deletedUntil && (
                   <>
                     <dt>Restore until</dt>
-                    <dd data-tip={job.deletedUntil}>{formatUntil(job.deletedUntil, now)}</dd>
+                    <dd data-tip-level="advanced" data-tip={job.deletedUntil}>{formatUntil(job.deletedUntil, now)}</dd>
                   </>
                 )
               ) : (
@@ -205,24 +205,24 @@ export default function JobDetails() {
                 state.key !== 'unavailable' && (
                   <>
                     <dt>Expires</dt>
-                    <dd data-tip={job.expires}>{formatUntil(job.expires, now)}</dd>
+                    <dd data-tip-level="advanced" data-tip={job.expires}>{formatUntil(job.expires, now)}</dd>
                   </>
                 )
               )}
             </dl>
             {active && <progress className="pp-progress" max={100} value={job.status?.progress ?? 0} aria-label="Progress" />}
             {job.phase === 'failed' && (
-              <p className="hint-text error" role="alert">
+              <p className="error" role="alert">
                 {job.failure ?? job.status?.message ?? 'The job failed'}
               </p>
             )}
             {job.error && (
-              <p className="hint-text error" role="alert">
+              <p className="error" role="alert">
                 {job.error}
               </p>
             )}
             {job.retryError && (
-              <p className="hint-text error" role="alert">
+              <p className="error" role="alert">
                 {job.retryError}
               </p>
             )}
@@ -233,7 +233,7 @@ export default function JobDetails() {
                 <button
                   type="button"
                   className="btn"
-                  data-tip="Draw the result on the map, cut to the area of the job, as a layer"
+                  data-tip-level="advanced" data-tip="Draw the result on the map, cut to the area of the job, as a layer"
                   onClick={() => void showOnMap(job.jobID)}
                 >
                   <PlusIcon lead />Add to layers
@@ -244,7 +244,7 @@ export default function JobDetails() {
                   type="button"
                   className="btn"
                   disabled={job.cancelling || !job.status}
-                  data-tip={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
+                  data-tip-level="advanced" data-tip={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
                   onClick={() => void cancelJob(job.jobID)}
                 >
                   {job.cancelling ? 'Cancelling…' : 'Cancel'}
@@ -255,7 +255,7 @@ export default function JobDetails() {
                   type="button"
                   className="btn"
                   disabled={job.retrying}
-                  data-tip={job.retrying ? 'Starting it again…' : RETRY_TIP}
+                  data-tip-level="advanced" data-tip={job.retrying ? 'Starting it again…' : RETRY_TIP}
                   aria-label={RETRY_TIP}
                   onClick={() => void retryJob(job.jobID)}
                 >

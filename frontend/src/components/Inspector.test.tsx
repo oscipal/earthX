@@ -204,7 +204,7 @@ describe('the places', () => {
     act(() => root.render(<Inspector />));
     openView();
     const [one, two] = [...aside()!.querySelector('.vc-head')!.children].map((row) => [...row.children].map((el) => el.className));
-    expect(one).toEqual(['vc-title', 'pp-badge vc-temporary', 'icon-btn eye', 'close-x']);
+    expect(one).toEqual(['vc-title', 'badge', 'icon-btn eye', 'close-x']);
     // "Copy original scene name" ends the row of the date (Otto, 3.11.2026).
     expect(two).toEqual(['vc-stepper', 'vc-scene-names']);
   });
@@ -216,7 +216,7 @@ describe('the places', () => {
     const row = aside()!.querySelector('.insp-row2')!;
     expect(row.querySelector('.vc-step-text')!.textContent).toBe('2026-07-01');
     expect(row.querySelectorAll('button[aria-label$=" image"]')).toHaveLength(0);
-    expect(aside()!.querySelector('.vc-head button[aria-label$=" image"], .vc-temporary')).toBeNull();
+    expect(aside()!.querySelector('.vc-head button[aria-label$=" image"], .vc-head .badge')).toBeNull();
     openResult([result('R1', {}), result('R2')]);
     act(() => useAppStore.setState({ layers: [{ ...result('R1'), date: '2026-08-09' }, result('R2')] }));
     expect(aside()!.querySelector('.insp-row2 .vc-step-text')!.textContent).toBe('2026-08-09');
@@ -269,7 +269,7 @@ describe('the swap', () => {
     act(() => root.render(<Inspector />));
     openView();
     const bar = aside()!;
-    expect(bar.querySelector('.vc-temporary')).not.toBeNull();
+    expect(bar.querySelector('.vc-head .badge')).not.toBeNull();
     openResult();
     expect(aside()).toBe(bar);
     expect(bar.querySelector('.result-controls')).not.toBeNull();
@@ -604,7 +604,7 @@ describe('a layer that goes while its bar is open', () => {
     openPinnedView();
     act(() => state().removeLayer('L1'));
     expect(aside()).not.toBeNull();
-    expect(aside()!.querySelector('.vc-temporary')).not.toBeNull();
+    expect(aside()!.querySelector('.vc-head .badge')).not.toBeNull();
   });
 });
 
@@ -749,7 +749,7 @@ describe('the actions of a layer', () => {
     openPinnedView();
     click(actionButton('Remove layer'));
     expect(state().layers).toEqual([]);
-    expect(aside()!.querySelector('.vc-temporary')).not.toBeNull();
+    expect(aside()!.querySelector('.vc-head .badge')).not.toBeNull();
   });
 
   it('removes a result layer by the bin, and its settings close with it', () => {

@@ -66,9 +66,9 @@ async function check(browser, { name, theme, viewport }) {
     useProcessingStore.getState().openProcessing();
   }, { spec });
   const output = page.locator('section[aria-label="Output"]');
-  await output.locator('.pp-chip').first().waitFor();
-  const pressed = () => page.evaluate(() => [...document.querySelectorAll('section[aria-label="Output"] .pp-chip[aria-pressed="true"]')].map((c) => c.firstChild?.textContent));
-  const offered = () => page.evaluate(() => [...document.querySelectorAll('section[aria-label="Output"] .pp-chip')].map((c) => c.firstChild?.textContent));
+  await output.locator('.pp-chips .seg').first().waitFor();
+  const pressed = () => page.evaluate(() => [...document.querySelectorAll('section[aria-label="Output"] .pp-chips .seg[aria-pressed="true"]')].map((c) => c.firstChild?.textContent));
+  const offered = () => page.evaluate(() => [...document.querySelectorAll('section[aria-label="Output"] .pp-chips .seg')].map((c) => c.firstChild?.textContent));
   const summary = () => output.locator('[aria-label="Output summary"]').textContent();
   const problems = [];
   const expect = (what, got, want) => { if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`${what}: ${JSON.stringify(got)}, not ${JSON.stringify(want)}`); };
@@ -88,7 +88,7 @@ async function check(browser, { name, theme, viewport }) {
   const chips = await offered();
   // The layer of the mask is listed, but "All" leaves it out; the auxiliary assets are not listed at all.
   expect('the bands offered', chips, spec.mask ? [...spec.all, 'scl'] : spec.all);
-  if ((await page.locator('section[aria-label="Bands"] .pp-chip').allTextContents()).some((text) => text.startsWith('visual') || text.startsWith('preview'))) problems.push('an auxiliary asset is listed in "Bands"');
+  if ((await page.locator('section[aria-label="Bands"] .pp-chips .seg').allTextContents()).some((text) => text.startsWith('visual') || text.startsWith('preview'))) problems.push('an auxiliary asset is listed in "Bands"');
   fs.mkdirSync(OUT, { recursive: true });
   await output.screenshot({ path: path.join(OUT, `${label.replace(/ /g, '_')}.png`) });
 

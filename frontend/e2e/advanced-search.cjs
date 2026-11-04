@@ -257,7 +257,7 @@ async function check(browser, { theme, viewport }) {
   await settle();
   expect('"Search" is not held back', await searchButton.isDisabled());
   expect('the wrong field is not marked', (await fields('Cloud cover, to').getAttribute('aria-invalid')) === 'true');
-  expect('the message under the field', (await popup.locator('.filter-field .hint-text.error').textContent()) === 'Between 0 and 100');
+  expect('the message under the field', (await popup.locator('.filter-field .error').textContent()) === 'Between 0 and 100');
   expect('the coverage asked with the wrong field', JSON.stringify(requests.coverage.at(-1).query) === JSON.stringify({ platform: { in: ['sentinel-2a'] } }), JSON.stringify(requests.coverage.at(-1)));
   await shot('5-wrong');
   await done();
@@ -271,7 +271,7 @@ async function check(browser, { theme, viewport }) {
   // Typed key by key, as a user does: "20-" is no number, and the field says so instead of dropping the filter.
   await fields('Cloud cover, to').fill('');
   await fields('Cloud cover, to').pressSequentially('20-');
-  expect('half-typed text is not marked', (await fields('Cloud cover, to').getAttribute('aria-invalid')) === 'true' && (await popup.locator('.filter-field .hint-text.error').textContent()) === 'Enter a number');
+  expect('half-typed text is not marked', (await fields('Cloud cover, to').getAttribute('aria-invalid')) === 'true' && (await popup.locator('.filter-field .error').textContent()) === 'Enter a number');
   expect('half-typed text does not hold "Search" back', await searchButton.isDisabled());
   await fields('Cloud cover, from').fill('50');
   await fields('Cloud cover, to').fill('20');
@@ -334,7 +334,7 @@ async function check(browser, { theme, viewport }) {
   expect('a heading for the one group of the radar', (await popup.locator('.filter-group-title').count()) === 0);
   expect('the radar field is not empty', (await fields('Relative orbit, from').inputValue()) === '');
   await fields('Relative orbit, from').fill('22.5');
-  expect('a fraction for whole numbers is not marked', (await popup.locator('.hint-text.error').textContent()) === 'Whole numbers only');
+  expect('a fraction for whole numbers is not marked', (await popup.locator('.error').textContent()) === 'Whole numbers only');
   await fields('Relative orbit, from').fill('22');
   await fields('Relative orbit, to').fill('22');
   expect('the button counts three filters', (await button.textContent()) === 'Advanced search · 3', await button.textContent());

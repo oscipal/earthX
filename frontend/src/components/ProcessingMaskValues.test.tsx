@@ -185,7 +185,7 @@ const hasButton = (label: string) => [...container.querySelectorAll('button')].s
 // The explanations are the tooltips (ⓘ), not text in the form.
 const tipsOf = (root: Element) => [...root.querySelectorAll('[data-tip]')].map((tip) => tip.getAttribute('data-tip')).join(' ');
 const dataGroup = () => container.querySelector('section[aria-label="Output"] [aria-label="Bands of the data"]')!;
-const chip = (name: string) => [...dataGroup().querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.textContent === name)!;
+const chip = (name: string) => [...dataGroup().querySelectorAll<HTMLButtonElement>('.pp-chips .seg')].find((c) => c.textContent === name)!;
 
 function demScene(): StacItem {
   const bbox: [number, number, number, number] = [10, 50, 11, 51];
@@ -219,7 +219,7 @@ const step = () => container.querySelector('li.pp-step')!;
 const bandSelect = () => step().querySelector<HTMLSelectElement>('select[id$="-band"]')!;
 const conditionSelect = () => step().querySelector<HTMLSelectElement>('select[aria-label="Condition"]')!;
 const numberBox = (label: string) => step().querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
-const problems = () => [...step().querySelectorAll('.hint-text.error')].map((p) => p.textContent);
+const problems = () => [...step().querySelectorAll('.error')].map((p) => p.textContent);
 
 function choose(select: HTMLSelectElement, value: string) {
   act(() => {

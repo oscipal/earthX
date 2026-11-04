@@ -47,7 +47,7 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
         <span id={`${id}-bands`} className="dialog-choice-label">
           Bands
         </span>
-        <span className="hint-text">
+        <span className="hint">
           {bands.length} of {table.length}
         </span>
         <button type="button" className="btn" disabled={disabled} onClick={() => setBands(table.map((band) => band.asset))}>
@@ -60,7 +60,7 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
       <ul className="dialog-bands" aria-labelledby={`${id}-bands`}>
         {table.map((band) => (
           <li key={band.asset}>
-            <label className="dialog-band" data-tip={band.asset}>
+            <label className="dialog-band" data-tip-level="advanced" data-tip={band.asset}>
               <input type="checkbox" checked={keys.includes(band.asset)} disabled={disabled} onChange={(e) => toggle(band.asset, e.target.checked)} />
               <span className="dialog-band-name">{band.name}</span>
               <span className="dialog-band-detail">{detail(band)}</span>
@@ -75,9 +75,9 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
             <button
               key={choice.value}
               type="button"
-              className={`pp-seg${form === choice.value ? ' on' : ''}`}
+              className="btn seg"
               aria-pressed={form === choice.value}
-              data-tip={choice.tip}
+              data-tip-level="advanced" data-tip={choice.tip}
               disabled={disabled}
               onClick={() => setForm(choice.value)}
             >
@@ -105,7 +105,7 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
           <Tip text={conversionTip(bands, common)} />
         </div>
       )}
-      {block && <p className="hint-text warn">{block}</p>}
+      {block && <p className="hint warn">{block}</p>}
     </section>
   );
 }

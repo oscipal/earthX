@@ -485,7 +485,7 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
     });
   };
   const unitText = () => chip().selectedOptions[0].textContent;
-  const problem = () => section().querySelector('.hint-text.error')?.textContent ?? null;
+  const problem = () => section().querySelector('.error')?.textContent ?? null;
   const percentValues = () => asked().filter((u) => u.includes('p=3'));
   const withPercentiles = (over: object = {}) => {
     statistics = () => ({ band: { ...INDEX, percentile_3: -0.15, percentile_97: 0.85, ...over } });

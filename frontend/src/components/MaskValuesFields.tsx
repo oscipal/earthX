@@ -53,7 +53,7 @@ export default function MaskValuesFields({
   const valuesError = comma ? 'Use . for decimals.' : showErrors || valuesTouched ? errors.values : undefined;
   const id = `pp-step-${stepKey}`;
   const number = (label: string, value: string, set: (value: string) => void) => (
-    <input
+    <input autoComplete="off"
       type="text"
       inputMode="decimal"
       aria-label={label}
@@ -99,7 +99,7 @@ export default function MaskValuesFields({
             ))
           )}
         </select>
-        {bandError && <span className="hint-text error">{bandError}</span>}
+        {bandError && <span className="error">{bandError}</span>}
       </label>
       <div className="vc-field pp-field" role="group" aria-labelledby={`${id}-where`}>
         <span className="pp-label" id={`${id}-where`}>
@@ -128,12 +128,12 @@ export default function MaskValuesFields({
           {condition === 'between' && (
             <>
               {number('From', from, (value) => onChange('values', betweenText(value, to)))}
-              <span className="pp-help">and</span>
+              <span className="hint">and</span>
               {number('To', to, (value) => onChange('values', betweenText(from, value)))}
             </>
           )}
           {condition === 'eq' && (
-            <input
+            <input autoComplete="off"
               type="text"
               aria-label="Values"
               aria-invalid={!!valuesError}
@@ -144,8 +144,8 @@ export default function MaskValuesFields({
             />
           )}
         </div>
-        {errors.condition && (showErrors || condition !== '') && <span className="hint-text error">{errors.condition}</span>}
-        {valuesError && <span className="hint-text error">{valuesError}</span>}
+        {errors.condition && (showErrors || condition !== '') && <span className="error">{errors.condition}</span>}
+        {valuesError && <span className="error">{valuesError}</span>}
       </div>
     </>
   );

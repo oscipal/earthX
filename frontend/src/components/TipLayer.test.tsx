@@ -7,6 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Tip from './Tip';
+import { setTipLevel } from '../tipLevel';
 import TipLayer from './TipLayer';
 
 declare global {
@@ -36,6 +37,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setTipLevel('advanced');
   act(() => root.unmount());
   container.remove();
 });
@@ -197,5 +199,62 @@ describe('TipLayer without an app around it', () => {
       move(30, 20);
       expect(layer()).toBeNull();
     });
+  });
+});
+
+// UI-04 part 3b (Otto, 4.11.2026): two steps. The simple one holds back the tips marked advanced, but never the reason of a locked control.
+describe('TipLayer in the simple step', () => {
+  const over = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+  const out = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+
+  function mount(): void {
+    act(() => {
+      root.render(
+        <div className="app">
+          <button type="button" id="plain" aria-label="Flip through layers" data-tip="Flip through layers" />
+          <button type="button" id="text" data-tip-level="advanced" data-tip="Draw the result on the map">Show</button>
+          <button type="button" id="locked" aria-disabled="true" data-tip-level="advanced" data-tip="Draw an AOI first">Download</button>
+          <label id="label" data-tip-level="advanced" data-tip="The label explains">
+            <input id="inside" data-tip-level="advanced" data-tip="The field explains" />
+          </label>
+          <TipLayer />
+        </div>,
+      );
+    });
+  }
+
+  it('shows a tip without a step', () => {
+    setTipLevel('simple');
+    mount();
+    over(container.querySelector('#plain')!);
+    expect(layer()?.textContent).toBe('Flip through layers');
+  });
+
+  it('shows no advanced tip, and shows it in the advanced step', () => {
+    setTipLevel('simple');
+    mount();
+    over(container.querySelector('#text')!);
+    expect(layer()).toBeNull();
+    setTipLevel('advanced');
+    over(container.querySelector('#text')!);
+    expect(layer()?.textContent).toBe('Draw the result on the map');
+  });
+
+  it('shows the reason of a locked control although the tip of the control is advanced', () => {
+    setTipLevel('simple');
+    mount();
+    over(container.querySelector('#locked')!);
+    expect(layer()?.textContent).toBe('Draw an AOI first');
+  });
+
+  it('shows nothing for a field whose label and itself are advanced, and leaves no stale tip when the pointer goes', () => {
+    setTipLevel('simple');
+    mount();
+    over(container.querySelector('#inside')!);
+    expect(layer()).toBeNull();
+    over(container.querySelector('#plain')!);
+    expect(layer()).not.toBeNull();
+    out(container.querySelector('#plain')!);
+    expect(layer()).toBeNull();
   });
 });

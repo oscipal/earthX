@@ -20,7 +20,7 @@ export default function CopySceneNames({ names, write }: { names: readonly strin
     timer.current = setTimeout(() => setDone(null), SHOWN_MS);
   };
   return (
-    <button type="button" className="vc-scene-names" data-tip={copyTip(count)} onClick={() => void click()}>
+    <button type="button" className="vc-scene-names" data-tip-level="advanced" data-tip={copyTip(count)} onClick={() => void click()}>
       {done === 'copied' ? COPIED_LABEL : done === 'failed' ? COPY_FAILED_LABEL : COPY_LABEL}
     </button>
   );

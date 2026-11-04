@@ -463,7 +463,7 @@ describe('a layer pinned with a band', () => {
 // Otto, 1.11.2026 (zu #272): "Temporary" goes with "Add to layers" for the image pinned, and comes back with a change; "Add all to layers"
 // takes it off every image, so that a step nobody changed shows none.
 describe('the mark "Temporary" and the layers', () => {
-  const temporary = () => container.querySelector('.vc-temporary') !== null;
+  const temporary = () => container.querySelector('.vc-head .badge') !== null;
   const twoImages = () => {
     const items = [item('s0'), item('s1')];
     mount({ items, groups: [{ key: ['a'], label: 'a', items: [items[0]] }, { key: ['b'], label: 'b', items: [items[1]] }], selectedIds: [] });
