@@ -160,9 +160,9 @@ export function areaGeometry(result: CoverageResponse): GeoJSON.Geometry | null 
 // room for (zoom 1.6 asked for level 1 — four cells for the whole globe —
 // before a fixed z6 cap ever applied). See
 // `plans/m3/m3-19-weltueberblick-ausschnitt.md` §1 for the derivation and §2 for
-// the measured cell counts/payload sizes it is chosen from. With an AOI nothing
-// changes: the request is a real spatial filter, and the map's zoom alone
-// still decides (`Math.floor`, in `store.ts`).
+// the measured cell counts/payload sizes it is chosen from. With an AOI the level
+// is the same (Otto, 03.11.2026): the map's zoom alone asked level 1 at the first zoom
+// of the page, a quarter of the world in one cell around a small AOI.
 //
 // A geotile cell of level `L` is `512 * 2^(mapZoom - L)` CSS pixels wide at
 // map zoom `mapZoom` (MapLibre draws the whole world at `512 * 2^mapZoom`

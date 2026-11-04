@@ -761,7 +761,7 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     expect(useAppStore.getState().coverage?.level).toBe(7);
   });
 
-  it('with an AOI, every viewport report still asks fresh — no reuse', async () => {
+  it('with an AOI, the cache of map extents is not used, and the same question is not sent again', async () => {
     const aoi: GeoJSON.Geometry = {
       type: 'Polygon',
       coordinates: [[[10, 49], [11, 49], [11, 50], [10, 50], [10, 49]]],
@@ -773,9 +773,14 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(fetch).toHaveBeenCalledTimes(1);
 
-    // The very same report a second time (e.g. a resize firing `moveend`
-    // without the map actually moving) is not treated as reuse either.
+    // The very same report a second time (e.g. a resize firing `moveend` without the map actually moving) asks the
+    // question that is already answered on the map: nothing is sent (Otto, 03.11.2026, eleven equal requests).
     setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // Another level is another question.
+    setMapViewport(10, [10, 49, 11, 50], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
