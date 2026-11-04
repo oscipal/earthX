@@ -451,7 +451,7 @@ describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
     const load = buttons.findIndex((b) => b.textContent === 'Load more');
     expect(load).toBeGreaterThan(-1);
     expect(buttons.indexOf(clearButton())).toBeGreaterThan(load);
-    expect(clearButton().querySelector('.clear-results-x')?.textContent).toBe('✕');
+    expect(clearButton().querySelector('svg.lucide-trash-2.clear-results-x')).not.toBeNull();
     expect(clearButton().querySelector('.clear-results-x')?.getAttribute('aria-hidden')).toBe('true');
   });
 

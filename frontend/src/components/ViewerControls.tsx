@@ -27,8 +27,8 @@ import { fallbackReasonOf, MEASURED_ON_SCENE, measureView, type ViewMeasure } fr
 import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Tip from './Tip';
-import Eye from './Eye';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
+import { ArrowLeftIcon, CogIcon, DownloadIcon, EyeIcon, EyeOffIcon, PlusIcon } from './icons';
 import LayerActions from './LayerActions';
 import OpacityRow from './OpacityRow';
 import type { BandOption } from './BandSelect';
@@ -259,7 +259,7 @@ export default function ViewerControls() {
               aria-label={showDownloaded ? 'Hide image' : 'Show image'}
               onClick={() => toggleDownloaded()}
             >
-              <Eye off={!showDownloaded} />
+              {showDownloaded ? <EyeIcon /> : <EyeOffIcon />}
             </button>
           )
         }
@@ -444,7 +444,7 @@ export default function ViewerControls() {
             {/* In pairs (Otto, 2.11.2026): what to look at next, what to keep, what to download. */}
             <div className="vc-actions">
               <button type="button" className="ghost-btn" title="Remove this view, show the search results and choose another scene" onClick={() => changeImage()}>
-                ‹ Change image
+                <ArrowLeftIcon lead />Change image
               </button>
               <button
                 type="button"
@@ -453,7 +453,7 @@ export default function ViewerControls() {
                 title={processBlock ?? 'Build a processing job for the scenes of this view'}
                 onClick={() => void processFocusView()}
               >
-                ⚙ Process
+                <CogIcon lead />Process
               </button>
               <button
                 type="button"
@@ -462,7 +462,7 @@ export default function ViewerControls() {
                 disabled={pinLoading}
                 onClick={() => addCurrentToLayers()}
               >
-                {pinLoading ? 'Loading…' : '＋ Add to layers'}
+                {pinLoading ? 'Loading…' : (<><PlusIcon lead />Add to layers</>)}
               </button>
               <button
                 type="button"
@@ -471,7 +471,7 @@ export default function ViewerControls() {
                 disabled={pinLoading || images.length <= 1}
                 onClick={() => addAllToLayers()}
               >
-                {pinLoading ? 'Loading…' : '＋ Add all to layers'}
+                {pinLoading ? 'Loading…' : (<><PlusIcon lead />Add all to layers</>)}
               </button>
               <button
                 type="button"
@@ -480,7 +480,7 @@ export default function ViewerControls() {
                 title={aoi ? 'Download the image shown at full resolution as the AOI crop, one file per group' : DRAW_AOI_TO_CROP}
                 onClick={() => openDownloadForView('crop')}
               >
-                ⇩ Download crop
+                <DownloadIcon lead />Download crop
               </button>
               <button
                 type="button"
@@ -489,7 +489,7 @@ export default function ViewerControls() {
                 title={originalsAllowed ? originalsTitle(count > 1, shownDataset?.collection['earthx:access']?.cors === true, originalsSummary) : noOriginalsReason(shownDataset)}
                 onClick={() => openDownloadForView('originals')}
               >
-                ⇩ Download full scene
+                <DownloadIcon lead />Download full scene
               </button>
             </div>
           </InspectorSection>

@@ -1,5 +1,5 @@
 // One step of the processing panel: the form built from its operator's
-// parameter schema (`schemaForm.ts`). What a field means is the tooltip of an ⓘ beside its label, not a text in the
+// parameter schema (`schemaForm.ts`). What a field means is the tooltip of an (i) beside its label, not a text in the
 // box (Otto, 30.10.2026); an error of the field and the server's own refusal of this step are shown below it.
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -10,6 +10,7 @@ import type { MeasureStatus, Operator } from '../processingOrder';
 import { integersIn, namesIn, type Field, type FieldValue } from '../schemaForm';
 import type { EarthxMask } from '../types';
 import { CellSize, CellSizeError, CrsRefusal } from './CellSize';
+import { ArrowDownIcon, ArrowUpIcon, PencilIcon, TrashIcon } from './icons';
 import MaskValuesFields from './MaskValuesFields';
 import NormalizeFields from './NormalizeFields';
 import Tip from './Tip';
@@ -35,7 +36,7 @@ function FieldInput({
   bandTarget?: number;
   // More for the tooltip of the label, after what the schema says of the field.
   extraTip?: string | null;
-  // Small beside the title, before the ⓘ: the unit of the resolution.
+  // Small beside the title, before the (i): the unit of the resolution.
   labelNote?: ReactNode;
   onChange: (value: FieldValue) => void;
 }) {
@@ -368,17 +369,17 @@ export default function StepForm({
         <span className="pp-step-actions">
           {bandMath && (
             <button type="button" className="pp-icon-btn" aria-label="Rename" title="Rename the band this step adds" onClick={rename}>
-              ✎
+              <PencilIcon />
             </button>
           )}
           <button type="button" className="pp-icon-btn" aria-label="Move up" title="Move this step up" disabled={index === 0} onClick={() => onMove(-1)}>
-            ↑
+            <ArrowUpIcon />
           </button>
           <button type="button" className="pp-icon-btn" aria-label="Move down" title="Move this step down" disabled={index === count - 1} onClick={() => onMove(1)}>
-            ↓
+            <ArrowDownIcon />
           </button>
           <button type="button" className="pp-icon-btn danger" aria-label="Remove" title="Remove this step" onClick={onRemove}>
-            ✕
+            <TrashIcon />
           </button>
         </span>
       </div>

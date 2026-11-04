@@ -9,6 +9,7 @@ import type { OrderView } from '../processingStore';
 import { handRangeOf, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import CopyButton from './CopyButton';
+import { TrashIcon } from './icons';
 
 export default function ShareLink({ view }: { view: OrderView }) {
   const bbox = useAppStore((s) => s.viewportBbox);
@@ -65,7 +66,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
               disabled={busy}
               onClick={() => void remove(made.id)}
             >
-              ✕
+              <TrashIcon />
             </button>
           </div>
           <p className="pp-help">Good until {new Date(made.expiresAt).toLocaleDateString()}. Anyone with the link sees your area.</p>

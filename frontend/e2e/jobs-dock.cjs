@@ -1,8 +1,8 @@
 // The processing manager docked at the left (UI-03c, docked again on 3.11.2026 in #283), in a real browser:
 //   1. Width: the panel is 340 px wide from 900 px (`--dock-width`, as wide as the other panels), flush from the top to the foot beside the
 //      rail; under 900 px it covers the map from the rail to the right edge.
-//   2. From 900 px every row of a job is one line: title, date, then "＋" (finished jobs), "⇩" ("↻" in its place for a job that failed) and
-//      "⋯"; the pencil (as in the layer manager) stands beside the title, in a place of its own; the date and its title "Expires" are
+//   2. From 900 px every row of a job is one line: title, date, then add (finished jobs), download (retry in its place for a job that failed) and
+//      more; the pencil (as in the layer manager) stands beside the title, in a place of its own; the date and its title "Expires" are
 //      left-aligned in one column, and "No longer available" stays inside it; the title is cut with "…" and holds its whole text as a
 //      tooltip, a group head has its count and "n running" and its menu at the right. There is no column of the state: it stands in the
 //      place of the date while a job runs ("70%").
@@ -80,7 +80,7 @@ async function check(browser, theme, viewport) {
     const rows = [...panel.querySelectorAll('.pm-rows > .pm-row')].map((row) => {
       const open = row.querySelector('.pm-open');
       const line = row.querySelector('.pm-line');
-      const symbol = (e) => ({ label: e.getAttribute('aria-label') ?? e.textContent, ...box(e) });
+      const symbol = (e) => ({ label: e.getAttribute('aria-label') ?? e.textContent, menu: !!e.querySelector('[aria-haspopup="menu"]'), ...box(e) });
       return {
         state: box(row.querySelector('.pm-state')), stateText: row.querySelector('.pm-state').textContent, stateShown: getComputedStyle(row.querySelector('.pm-state')).position !== 'absolute',
         title: box(open.querySelector('.pm-title')), until: row.querySelector('.pm-until') ? box(row.querySelector('.pm-until')) : { x: 0, y: 0, width: 0, height: 0, right: 0, bottom: 0 }, untilShown: !!row.querySelector('.pm-until') && getComputedStyle(row.querySelector('.pm-until')).display !== 'none',
@@ -123,10 +123,10 @@ async function check(browser, theme, viewport) {
       if (row.icons[i].right > report.panel.right + 0.5) problems.push('a symbol leaves the panel');
     }
   }
-  // "＋" before "⇩" before "⋯" in the rows of the finished jobs (Job 4 and Job 2).
+  // add before download before more in the rows of the finished jobs (Job 4 and Job 2).
   for (const index of [1, 6]) {
-    const tail = report.rows[index]?.tail.map((t) => (t.label.startsWith('Add to layers') ? '+' : t.label === 'Download (ZIP)' ? 'dl' : t.label === '⋯' ? 'menu' : t.label));
-    if (JSON.stringify(tail) !== JSON.stringify(['+', 'dl', 'menu'])) problems.push(`the symbols of row ${index + 1} are ${JSON.stringify(tail)}, not ＋ ⇩ ⋯`);
+    const tail = report.rows[index]?.tail.map((t) => (t.label.startsWith('Add to layers') ? '+' : t.label === 'Download (ZIP)' ? 'dl' : t.menu ? 'menu' : t.label));
+    if (JSON.stringify(tail) !== JSON.stringify(['+', 'dl', 'menu'])) problems.push(`the symbols of row ${index + 1} are ${JSON.stringify(tail)}, not add, download, more`);
   }
   if (!narrow) {
     for (const key of ['title', 'until']) {
@@ -195,5 +195,5 @@ async function check(browser, theme, viewport) {
     console.log(`${failed} case(s) with problems`);
     process.exit(1);
   }
-  console.log('the jobs are docked, 340 px wide, one line with pencil, ＋, ⇩ and ⋯ from 900 px, the narrow form under it');
+  console.log('the jobs are docked, 340 px wide, one line with pencil, add, download and more from 900 px, the narrow form under it');
 })();

@@ -216,7 +216,7 @@ async function runCase(browser, theme, viewport, results) {
     await page.waitForSelector('.inspector .vc-pencil');
     if ((await page.$$('.inspector .vc-step')).length !== 0) fail('arrows beside the date of a layer');
     const actions = await page.$$eval('.inspector .vc-actions > *', (as) => as.map((a) => a.textContent || a.getAttribute('aria-label')));
-    if (actions.join('|') !== '⚙ Process|⇩ Download|＋ Add current view to layers|Remove layer') fail(`layer actions: ${actions}`);
+    if (actions.join('|') !== 'Process|Download|Add current view to layers|Remove layer') fail(`layer actions: ${actions}`);
     // Otto, 3.11.2026: the bin as wide as the others, the copy read in full (two lines).
     const sizes = await page.$$eval('.inspector .vc-actions > *', (as) => as.map((a) => ({ w: Math.round(a.getBoundingClientRect().width), cut: a.scrollWidth > a.clientWidth + 1 || a.scrollHeight > a.clientHeight + 1 })));
     if (sizes[3].w !== sizes[0].w) fail(`the bin is ${sizes[3].w} px wide, "Process" ${sizes[0].w}`);

@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { resultUrl } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { useProcessingStore, ZIP_LABEL, type JobEntry } from '../processingStore';
+import { DownloadIcon } from './icons';
 import { EXPIRED_TIP, formatUntil, jobState, useNowUntil } from './jobView';
 
 
@@ -16,14 +17,14 @@ export function DownloadZip({ job, now, label, className = 'pm-icon' }: { job: J
   if (state.key === 'expired' && job.phase === 'successful') {
     return (
       <button type="button" className={`${className} has-tip`} aria-disabled="true" data-tip={EXPIRED_TIP} aria-label={`${ZIP_LABEL}: ${EXPIRED_TIP}`}>
-        {label ?? '⇩'}
+        {label ? <><DownloadIcon lead />{label}</> : <DownloadIcon />}
       </button>
     );
   }
   if (state.key !== 'finished' || !job.archive) return <span className={className} aria-hidden="true" />;
   return (
     <a className={className} href={resultUrl(job.jobID, job.archive)} download rel="noopener noreferrer" title={ZIP_LABEL} aria-label={ZIP_LABEL}>
-      {label ?? '⇩'}
+      {label ? <><DownloadIcon lead />{label}</> : <DownloadIcon />}
     </a>
   );
 }

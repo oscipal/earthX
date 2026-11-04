@@ -147,7 +147,7 @@ describe('the symbol', () => {
     mount();
     tab('All');
     const symbol = retryIn(rows()[0])!;
-    expect(symbol.textContent).toBe('↻');
+    expect(symbol.querySelector('svg.lucide-rotate-cw')).not.toBeNull();
     expect(symbol.title).toBe('Run again');
   });
 

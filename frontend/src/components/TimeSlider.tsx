@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { stepLabel, runPlayback, STEP_LATE_AFTER_MS } from '../playback';
 import { useAppStore } from '../store';
-import Chevron from './Chevron';
+import { ChevronLeftIcon, ChevronRightIcon, PauseIcon, PlayIcon } from './icons';
 
 export default function TimeSlider() {
   const groups = useAppStore((s) => s.groups);
@@ -71,7 +71,7 @@ export default function TimeSlider() {
       <span className="vc-step gone" aria-hidden="true" />
     ) : (
       <button type="button" className="vc-step" title={`${label}: ${name(index)}`} aria-label={label} onClick={() => go(index)}>
-        <Chevron direction={direction} />
+        {direction === 'left' ? <ChevronLeftIcon /> : <ChevronRightIcon />}
       </button>
     );
 
@@ -102,7 +102,7 @@ export default function TimeSlider() {
           aria-label={playing ? 'Pause' : 'Play'}
           disabled={groups.length < 2}
         >
-          {playing ? '❚❚' : '▶'}
+          {playing ? <PauseIcon /> : <PlayIcon />}
         </button>
         <input
           type="range"

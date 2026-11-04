@@ -170,7 +170,7 @@ async function render() {
 const gear = () => container.querySelector<HTMLButtonElement>('.layer-row [data-col="process"]')!;
 
 async function ndviAndStart() {
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(container.querySelector('textarea[id$="-expression"]')!, '(nir - red) / (nir + red)');
   click(button('Review', container));
   await flush();

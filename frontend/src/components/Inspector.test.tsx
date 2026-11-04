@@ -239,7 +239,7 @@ describe('the places', () => {
     act(() => root.render(<Inspector />));
     openView();
     expect([...aside()!.querySelectorAll('.vc-actions > *')].map((b) => b.textContent)).toEqual([
-      '‹ Change image', '⚙ Process', '＋ Add to layers', '＋ Add all to layers', '⇩ Download crop', '⇩ Download full scene',
+      'Change image', 'Process', 'Add to layers', 'Add all to layers', 'Download crop', 'Download full scene',
     ]);
     expect(aside()!.querySelector('.vc-head .close-x')!.getAttribute('title')).toBe('Close and drop this view');
   });
@@ -249,17 +249,17 @@ describe('the places', () => {
     act(() => root.render(<Inspector />));
     openPinnedView();
     const actions = () => [...aside()!.querySelectorAll('.vc-actions > *')];
-    expect(actions().map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['⚙ Process', '⇩ Download', '＋ Add current view to layers', 'Remove layer']);
+    expect(actions().map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Process', 'Download', 'Add current view to layers', 'Remove layer']);
     expect(actions()[3].getAttribute('title')).toBe('Remove layer');
     openResult();
-    expect(actions().map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['⚙ Process', '⇩ Download', '＋ Add current view to layers', 'Remove layer']);
+    expect(actions().map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Process', 'Download', 'Add current view to layers', 'Remove layer']);
   });
 
   it('keeps the place of the download empty for a layer that offers none, and the other actions', () => {
     act(() => root.render(<Inspector />));
     openResult([result('R1', { expired: true })]);
     expect(headings()).toEqual(['Display', 'Actions']);
-    expect([...aside()!.querySelectorAll('.vc-actions > *')].map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['⚙ Process', null, '＋ Add current view to layers', 'Remove layer']);
+    expect([...aside()!.querySelectorAll('.vc-actions > *')].map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Process', null, 'Add current view to layers', 'Remove layer']);
   });
 });
 
@@ -418,7 +418,7 @@ describe('what does not apply is locked, with its reason', () => {
     act(() => root.render(<Inspector />));
     openView();
     act(() => state().setViewOpacity(0.35));
-    click(button('＋ Add to layers'));
+    click(button('Add to layers'));
     await act(async () => {
       for (let i = 0; i < 10; i++) await Promise.resolve();
     });
@@ -482,10 +482,10 @@ describe('what does not apply is locked, with its reason', () => {
   it('locks "Add all to layers" for one image, with the reason, and frees it for several', () => {
     act(() => root.render(<Inspector />));
     openView({ downloaded: { s0: info('s0') } });
-    expect(button('＋ Add all to layers').disabled).toBe(true);
-    expect(button('＋ Add all to layers').title).toBe('There is only one image');
+    expect(button('Add all to layers').disabled).toBe(true);
+    expect(button('Add all to layers').title).toBe('There is only one image');
     openView();
-    expect(button('＋ Add all to layers').disabled).toBe(false);
+    expect(button('Add all to layers').disabled).toBe(false);
   });
 
   it('locks "Apply" and "Save" with the reason while there is nothing to do', () => {
@@ -498,11 +498,11 @@ describe('what does not apply is locked, with its reason', () => {
   it('locks the downloads of the view without an AOI and without a COG dataset, with the reason', () => {
     act(() => root.render(<Inspector />));
     openView({ aoi: null });
-    expect(button('⇩ Download crop').disabled).toBe(true);
-    expect(button('⇩ Download crop').title).toBe(DRAW_AOI_TO_CROP);
+    expect(button('Download crop').disabled).toBe(true);
+    expect(button('Download crop').title).toBe(DRAW_AOI_TO_CROP);
     act(() => useAppStore.setState({ datasets: datasetsFrom([{ ...collection, 'earthx:format': 'zarr' } as Collection]) }));
-    expect(button('⇩ Download full scene').disabled).toBe(true);
-    expect(button('⇩ Download full scene').title).toMatch(/no single original file per scene/);
+    expect(button('Download full scene').disabled).toBe(true);
+    expect(button('Download full scene').title).toMatch(/no single original file per scene/);
   });
 });
 
@@ -510,11 +510,11 @@ describe('the downloads of the view', () => {
   it('open the dialog for the scenes of the shown image, not for the ticks', () => {
     act(() => root.render(<Inspector />));
     openView({ selectedIds: ['s1'] });
-    click(button('⇩ Download crop'));
+    click(button('Download crop'));
     expect(state().downloadSelection).toBe(true);
     expect(state().downloadView?.items.map((it) => it.id)).toEqual(['s0']);
     act(() => state().closeDownloadDialog());
-    click(button('⇩ Download full scene'));
+    click(button('Download full scene'));
     expect(state().downloadPasses?.map((pass) => pass.items.map((it) => it.id))).toEqual([['s0']]);
   });
 
@@ -522,7 +522,7 @@ describe('the downloads of the view', () => {
     act(() => root.render(<Inspector />));
     openView();
     click(aside()!.querySelector('[aria-label="Next image"]'));
-    click(button('⇩ Download crop'));
+    click(button('Download crop'));
     expect(state().downloadView?.items.map((it) => it.id)).toEqual(['s1']);
   });
 });
@@ -537,7 +537,8 @@ describe('the download of a layer', () => {
     expect(own.title).toBe(row.title);
     expect(own.getAttribute('aria-label')).toBe(row.getAttribute('aria-label'));
     expect(row.className).toBe('lm-btn');
-    expect(row.textContent).toBe('⇩');
+    expect(row.querySelector('svg.lucide-download')).not.toBeNull();
+    expect(row.textContent).toBe('');
     expect(own.className).toBe('ghost-btn');
   });
 
@@ -545,14 +546,14 @@ describe('the download of a layer', () => {
     act(() => root.render(<><LayerManager /><Inspector /></>));
     openPinnedView();
     const row = () => container.querySelector<HTMLButtonElement>('.layer-row [data-col="download"]')!;
-    expect(button('⇩ Download').title).toBe(row().title);
-    expect(button('⇩ Download').title).toBe('Download the original files, straight from the source');
-    expect(button('⇩ Download').disabled).toBe(false);
+    expect(button('Download').title).toBe(row().title);
+    expect(button('Download').title).toBe('Download the original files, straight from the source');
+    expect(button('Download').disabled).toBe(false);
     act(() => useAppStore.setState({ datasets: datasetsFrom([{ ...collection, 'earthx:format': 'zarr' } as Collection]) }));
-    expect(button('⇩ Download').disabled).toBe(true);
+    expect(button('Download').disabled).toBe(true);
     expect(row().disabled).toBe(true);
-    expect(button('⇩ Download').title).toBe('Draw an AOI to download this layer');
-    expect(button('⇩ Download').title).toBe(row().title);
+    expect(button('Download').title).toBe('Draw an AOI to download this layer');
+    expect(button('Download').title).toBe(row().title);
   });
 });
 
@@ -612,7 +613,7 @@ describe('a view without an image', () => {
     openView({ downloaded: {}, items: [], groups: [] });
     expect(aside()).not.toBeNull();
     expect(aside()!.querySelector('.vc-stepper')).toBeNull();
-    expect(button('＋ Add all to layers').disabled).toBe(true);
+    expect(button('Add all to layers').disabled).toBe(true);
   });
 });
 
@@ -764,7 +765,7 @@ describe('the actions of a layer', () => {
     openPinnedView();
     act(() => state().setPendingVmax('1000'));
     await act(async () => {
-      actionButton('＋ Add current view to layers').click();
+      actionButton('Add current view to layers').click();
       await vi.waitFor(() => expect(state().layers).toHaveLength(2));
     });
     const [copy, original] = state().layers;
@@ -781,7 +782,7 @@ describe('the actions of a layer', () => {
     act(() => root.render(<Inspector />));
     openResult([{ ...result('R1', { savedTileUrl: '/results/AbCdEfGhIjKlMnOpQrSt_-/tiles/{z}/{x}/{y}?colormap_name=viridis&rescale=0%2C5' }) }]);
     await act(async () => {
-      actionButton('＋ Add current view to layers').click();
+      actionButton('Add current view to layers').click();
       await vi.waitFor(() => expect(state().layers).toHaveLength(2));
     });
     const [copy, original] = state().layers;
@@ -795,11 +796,11 @@ describe('the actions of a layer', () => {
     act(() => root.render(<><LayerManager /><Inspector /></>));
     const row = () => container.querySelector<HTMLButtonElement>('.layer-row [data-col="process"]')!;
     openPinnedView();
-    expect([actionButton('⚙ Process').disabled, actionButton('⚙ Process').title]).toEqual([row().disabled, row().title]);
-    expect(actionButton('⚙ Process').disabled).toBe(true);
+    expect([actionButton('Process').disabled, actionButton('Process').title]).toEqual([row().disabled, row().title]);
+    expect(actionButton('Process').disabled).toBe(true);
     // A dataset that allows processing: both free.
     act(() => useAppStore.setState({ datasets: datasetsFrom([{ ...collection, 'earthx:license_flags': { tier: 'processing' } } as unknown as Collection]) }));
-    expect([actionButton('⚙ Process').disabled, actionButton('⚙ Process').title]).toEqual([false, 'Process this layer']);
+    expect([actionButton('Process').disabled, actionButton('Process').title]).toEqual([false, 'Process this layer']);
     expect([row().disabled, row().title]).toEqual([false, 'Process this layer']);
   });
 });

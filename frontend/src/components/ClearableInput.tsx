@@ -4,6 +4,8 @@
 
 import { useRef, type InputHTMLAttributes } from 'react';
 
+import { ClearIcon } from './icons';
+
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'> & {
   value: string;
   onChange: (value: string) => void;
@@ -29,7 +31,7 @@ export default function ClearableInput({ value, onChange, onClear, clearLabel, c
             ref.current?.focus();
           }}
         >
-          ×
+          <ClearIcon size={14} />
         </button>
       )}
     </span>

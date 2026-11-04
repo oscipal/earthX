@@ -396,7 +396,7 @@ describe('the panel from a result', () => {
 
   it('checks a new result, as it does for a scene, and leaves the bands of the result unchecked', async () => {
     await process(null);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(output()).toEqual(['result']);
     expect(pressed()).toEqual([]);
   });
@@ -584,8 +584,8 @@ describe('the panel from a result', () => {
 
   it('puts a new step behind the locked ones, and nothing in front of them', async () => {
     await process();
-    click(button('＋ Band math'));
-    click(button('＋ Normalize'));
+    click(button('Band math'));
+    click(button('Normalize'));
     expect(store().steps.map((s) => s.op)).toEqual(['band_math', 'band_math', 'normalize']);
     const [, added, normalize] = store().steps;
     store().moveStep(added.key, -1);
@@ -601,7 +601,7 @@ describe('the panel from a result', () => {
 
   it('keeps the bands of the job in the stock: a new step reads them, and so does the output', async () => {
     await process();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     typeInto(field, 'NDVI * 2 + red');
     // The result of the job is a chip of the new step, and the expression naming it is no problem.
@@ -623,7 +623,7 @@ describe('the panel from a result', () => {
 
   it('does not let a new step read a band the job did not keep, nor take its name', async () => {
     await process();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     // `nir` is in the data and was read by the job, but it is not in the output.
     typeInto(field, 'nir * 2');
@@ -646,7 +646,7 @@ describe('the panel from a result', () => {
     useProcessingStore.setState({ jobs: [entry({ order })] });
     await process();
     expect(infoChips()).toEqual(['NDVI']);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     typeInto(field, 'NDWI + 1');
     expect(container.querySelector('.pp-step .hint-text.error')?.textContent).toBe("'NDWI' is not a band name");
@@ -665,7 +665,7 @@ describe('the panel from a result', () => {
     });
     useProcessingStore.setState({ jobs: [entry({ order })] });
     await process();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     act(() => store().setOutput([]));
     click(button('All'));
     expect(orderView(selectionState(useAppStore.getState()), store()).output).toEqual(['NDVI', 'result', 'red']);
@@ -673,15 +673,15 @@ describe('the panel from a result', () => {
 
   it('offers no mask where the job did not keep the layer the mask reads', async () => {
     await process();
-    expect(button('＋ Mask by class')).toBeUndefined();
-    expect(button('＋ Normalize')).toBeDefined();
-    expect(button('＋ Band math')).toBeDefined();
+    expect(button('Mask by class')).toBeUndefined();
+    expect(button('Normalize')).toBeDefined();
+    expect(button('Band math')).toBeDefined();
   });
 
   it('offers a mask where the layer is part of the output of the job', async () => {
     useProcessingStore.setState({ jobs: [entry({ order: parent({ steps: [], output: { kind: 'raster', format: 'cog', dtype: 'uint16', bands: ['red', 'scl'] } }) })] });
     await process();
-    expect(button('＋ Mask by class')).toBeDefined();
+    expect(button('Mask by class')).toBeDefined();
   });
 
   it('lets the person take a band of the locked steps out of the output', async () => {
@@ -693,7 +693,7 @@ describe('the panel from a result', () => {
   // NM4-65 part 3: the layer of the result shows the day of the scenes, read while the search still knows them.
   it('keeps the day of the scenes it read for the new job, for the layer of its result', async () => {
     await process();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 2');
     click(button('Review'));
     await flush();
@@ -704,7 +704,7 @@ describe('the panel from a result', () => {
 
   it('sends one ordinary order with all the steps in order, and starts a new job', async () => {
     await process();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 2');
     click(button('Review'));
     await flush();
@@ -731,9 +731,9 @@ describe('the panel from a result', () => {
 
   it('names the job after the operators added, each once', async () => {
     await process();
-    click(button('＋ Band math'));
-    click(button('＋ Band math'));
-    click(button('＋ Normalize'));
+    click(button('Band math'));
+    click(button('Band math'));
+    click(button('Normalize'));
     const [, first, second] = store().steps;
     for (const [step, name] of [[first, 'a'], [second, 'b']] as const) {
       store().updateStep(step.key, 'expression', 'red');
@@ -867,7 +867,7 @@ describe('a result of several bands, and RGB', () => {
   it('shows the result added last, with RGB still on offer, and puts the new band beside the three', async () => {
     useProcessingStore.setState({ jobs: [entry({ order: colour() })] });
     await process(['red', 'green', 'blue']);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(container.querySelector<HTMLTextAreaElement>('li:not(.pp-locked) textarea[id$="-expression"]')!, '(nir - red) / (nir + red)');
     expect(output()).toEqual(['red', 'green', 'blue', 'result']);
     expect(orderView(selectionState(useAppStore.getState()), store()).output).toEqual(['result', 'red', 'green', 'blue']);
@@ -908,7 +908,7 @@ describe('the warning at the review of a job that resamples bands', () => {
   const startButton = () => button('Start job') as HTMLButtonElement;
   async function prepare() {
     await process();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(container.querySelector('li:not(.pp-locked) textarea[id$="-expression"]')!, 'NDVI * 2');
   }
   async function review() {
@@ -1034,7 +1034,7 @@ describe('the numbers of a normalize step of the result (NM4-11b, NM4-71, adr/00
       await process(['red']);
       act(() => useAppStore.setState({ aoi: INNER_AOI }));
       act(() => store().setArea('aoi'));
-      click(button('＋ Normalize'));
+      click(button('Normalize'));
       const added = store().steps[1].key;
       act(() => {
         store().updateStep(added, 'bands', 'red');

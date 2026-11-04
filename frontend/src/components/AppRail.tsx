@@ -9,6 +9,7 @@ import { dockPanelId, railButtonId } from '../dock';
 import { useProcessingStore } from '../processingStore';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore, type DockPanel } from '../store';
+import { JobsIcon, LayersIcon, ResultsListIcon, SearchIcon } from './icons';
 
 interface Item {
   panel: DockPanel;
@@ -16,55 +17,11 @@ interface Item {
   icon: ReactNode;
 }
 
-const svg = (children: ReactNode) => (
-  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-    {children}
-  </svg>
-);
-
 const ITEMS: Item[] = [
-  {
-    panel: 'controls',
-    label: 'Search and area',
-    icon: svg(
-      <>
-        <circle cx="10.5" cy="10.5" r="6" />
-        <path d="m15 15 6 6" />
-      </>,
-    ),
-  },
-  {
-    panel: 'layers',
-    label: 'Layers',
-    icon: svg(
-      <>
-        <path d="m12 3 9 5-9 5-9-5z" />
-        <path d="m3 12 9 5 9-5" />
-        <path d="m3 16 9 5 9-5" />
-      </>,
-    ),
-  },
-  {
-    panel: 'jobs',
-    label: 'Jobs',
-    icon: svg(
-      <>
-        <rect x="4" y="3" width="16" height="18" rx="2" />
-        <path d="M8 8h8M8 12h8M8 16h5" />
-      </>,
-    ),
-  },
-  {
-    panel: 'results',
-    label: 'Search results',
-    icon: svg(
-      <>
-        <rect x="3" y="4" width="5" height="5" rx="1" />
-        <rect x="3" y="15" width="5" height="5" rx="1" />
-        <path d="M12 6.5h9M12 17.5h9" />
-      </>,
-    ),
-  },
+  { panel: 'controls', label: 'Search and area', icon: <SearchIcon /> },
+  { panel: 'layers', label: 'Layers', icon: <LayersIcon /> },
+  { panel: 'jobs', label: 'Jobs', icon: <JobsIcon /> },
+  { panel: 'results', label: 'Search results', icon: <ResultsListIcon /> },
 ];
 
 const NO_RESULTS = 'No results yet: run a search first';

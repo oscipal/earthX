@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // NM4-65 part 8 (Otto, 31.10.2026: "consistency!!"): everything that is closed is closed with the same small red "x" and
-// the tooltip "Close" — the settings of a layer (it was "‹ Close"), the processing panel, the details of a job, the windows
+// the tooltip "Close" — the settings of a layer (it was "Close"), the processing panel, the details of a job, the windows
 // of the download and the pop-up "Advanced search". What removes or empties something keeps its own button.
 
 import { act } from 'react';

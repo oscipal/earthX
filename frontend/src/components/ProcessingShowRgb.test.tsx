@@ -202,7 +202,7 @@ async function openWith(items: StacItem[], trueColor?: string[] | null) {
 // One Band math step (NDVI), and the output: the result alone, or with more bands.
 async function ndvi(output: string[] = ['result'], trueColor?: string[] | null, items = [scene('S2B_A')]) {
   await openWith(items, trueColor);
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(expression(0), NDVI);
   act(() => store().setOutput(output));
   await afterDebounce();

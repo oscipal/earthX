@@ -77,13 +77,13 @@ describe('top-right map controls', () => {
 
   it('labels the theme button by the switch target: "Light" while dark, "Dark" while light (point 1)', () => {
     const view = mount();
-    expect(btn(view, 'Light')?.textContent).toContain('☀');
+    expect(btn(view, 'Light')?.querySelector('svg.lucide-sun')).not.toBeNull();
     expect(btn(view, 'Dark')).toBeNull();
 
     act(() => {
       btn(view, 'Light')!.click();
     });
-    expect(btn(view, 'Dark')?.textContent).toContain('☾');
+    expect(btn(view, 'Dark')?.querySelector('svg.lucide-moon')).not.toBeNull();
     expect(btn(view, 'Light')).toBeNull();
   });
 

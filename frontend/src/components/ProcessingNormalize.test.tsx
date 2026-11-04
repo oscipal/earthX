@@ -194,7 +194,7 @@ async function withNormalize(options: { aoi?: GeoJSON.Geometry | null; area?: 'a
   select([scene('S2B_A')], aoi);
   await openPanel();
   store().setArea(area);
-  click(button('＋ Normalize'));
+  click(button('Normalize'));
   const key = store().steps[0].key;
   store().updateStep(key, 'bands', bands);
   store().setOutput(bands.split(', '));
@@ -302,7 +302,7 @@ describe('the measure (for the preview alone)', () => {
       steps: [],
       output: { kind: 'raster', format: 'cog', dtype: 'float64', bands: ['red'] },
     });
-    expect(step().textContent).toContain('Preview measured ✓');
+    expect(step().textContent).toContain('Preview measured');
     expect(tipsOf(step())).toContain('red: p_low 200, p_high 6000');
     fillTarget();
     click(button('Review'));
@@ -416,7 +416,7 @@ describe('the measure (for the preview alone)', () => {
     click(button('Retry'));
     await flush();
     expect(questions()).toHaveLength(2);
-    expect(step().textContent).toContain('Preview measured ✓');
+    expect(step().textContent).toContain('Preview measured');
     expect(previewSteps()).toHaveLength(1);
   });
 
@@ -475,7 +475,7 @@ describe('the measure (for the preview alone)', () => {
     expect(questions()).toHaveLength(3);
     expect(questions()[2].output.bands).toEqual(['red', 'nir']);
     // A step before it.
-    click(button('＋ Mask by value'));
+    click(button('Mask by value'));
     const key = store().steps[1].key;
     store().moveStep(key, -1);
     store().updateStep(key, 'band', 'red');
@@ -488,7 +488,7 @@ describe('the measure (for the preview alone)', () => {
   it('measures a second step on the first one as the tile takes it (version 3 with its numbers); the job gets version 4 for both', async () => {
     await withNormalize();
     await setMethod('zscore');
-    click(button('＋ Normalize'));
+    click(button('Normalize'));
     const second = store().steps[1].key;
     store().updateStep(second, 'bands', 'red');
     store().updateStep(second, 'method', 'robust');
@@ -602,7 +602,7 @@ describe('without an AOI', () => {
     expect(questions()).toHaveLength(1);
     expect(questions()[0]).not.toHaveProperty('aoi');
     expect(questions()[0]).toMatchObject({ steps: [], output: { dtype: 'float64', bands: ['red'] } });
-    expect(step().textContent).toContain('Preview measured ✓');
+    expect(step().textContent).toContain('Preview measured');
   });
 
   it('sends the job without an AOI and without numbers, and says the preview is an estimate where the route says so', async () => {
@@ -654,7 +654,7 @@ describe('several jobs (Run as)', () => {
     await openPanel();
     store().setArea('aoi');
     store().setRunAs('scene');
-    click(button('＋ Normalize'));
+    click(button('Normalize'));
     const key = store().steps[0].key;
     store().updateStep(key, 'bands', 'red');
     store().setOutput(['red']);
@@ -688,7 +688,7 @@ describe('several jobs (Run as)', () => {
     click(button('Retry'));
     await flush();
     expect(questions()).toHaveLength(2);
-    expect(step().textContent).toContain('Preview measured ✓');
+    expect(step().textContent).toContain('Preview measured');
   });
 });
 
@@ -779,7 +779,7 @@ describe('a recipe.json that is loaded', () => {
 describe('the locks', () => {
   it('turns off the options after a reprojection, with the reason, and measures above it', async () => {
     await withNormalize();
-    click(button(/＋ Reproject/u));
+    click(button(/Reproject/u));
     const reproject = store().steps[1].key;
     expect([...methodSelect().options].map((o) => o.disabled)).toEqual([false, false, false, false]);
     store().moveStep(reproject, -1);
@@ -792,7 +792,7 @@ describe('the locks', () => {
   it('keeps a step that holds a method after a reprojection out of the order, with the reason at the method', async () => {
     await withNormalize();
     await setMethod('zscore');
-    click(button(/＋ Reproject/u));
+    click(button(/Reproject/u));
     store().moveStep(store().steps[1].key, -1);
     await flush();
     expect(tipsOf(step(1))).toContain('Move Normalize above Reproject');

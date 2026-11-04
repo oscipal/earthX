@@ -6,6 +6,7 @@ import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
 import CopyButton from './CopyButton';
 import DatasetSelect from './DatasetSelect';
+import { ChevronDownIcon, ChevronRightIcon, TrashIcon } from './icons';
 import ResultsEye from './ResultsEye';
 import ResultsToTop from './ResultsToTop';
 
@@ -128,7 +129,7 @@ function GroupBlock({
       <div className="result-group-row">
         <GroupSelectBox group={group} index={index} />
         <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
-          <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
+          <span className="rg-caret">{expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}</span>
           <span className="rg-label" title={group.label}>
             {group.label}
           </span>
@@ -317,9 +318,7 @@ function ClearResults() {
       title="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
       onClick={() => clearSearchResults()}
     >
-      <span className="clear-results-x" aria-hidden="true">
-        ✕
-      </span>
+      <TrashIcon className="clear-results-x" />
       Clear search results
     </button>
   );

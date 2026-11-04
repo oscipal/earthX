@@ -195,7 +195,7 @@ async function layout(page, label, problems) {
   if (found.scrolls) problems.push(`${label}: the dialog scrolls sideways`);
 }
 
-const downloadButton = (page) => page.getByRole('button', { name: /^⇩ Download full scenes?$/ });
+const downloadButton = (page) => page.getByRole('button', { name: /^Download full scenes?$/ });
 // Since NM4-75 the button opens the dialog with the choice of the bands; its "Download" starts the files.
 async function startDownload(page) {
   await downloadButton(page).click();

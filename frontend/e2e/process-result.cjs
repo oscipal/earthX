@@ -139,7 +139,7 @@ async function check(browser, theme, viewport) {
   if ((await panel.locator('.pp-step').count()) !== 0) problems.push('the steps of the job are shown as steps');
   const chips = async (selector) => page.$$eval(selector, (c) => c.map((x) => x.textContent));
   if ((await chips('section[aria-label="Bands"] .pp-chip')).join() !== 'NDVI,red,green,blue') problems.push(`the bands on top are ${await chips('section[aria-label="Bands"] .pp-chip')}`);
-  if ((await panel.getByRole('button', { name: '＋ Mask', exact: true }).count()) !== 0) problems.push('a mask is offered without its layer in the output');
+  if ((await panel.getByRole('button', { name: 'Mask', exact: true }).count()) !== 0) problems.push('a mask is offered without its layer in the output');
   // The same area choice as the panel of a scene: "Whole scene" is the area of the result, "AOI only" an AOI inside it.
   if ((await panel.getByRole('button', { name: 'Whole scene' }).getAttribute('aria-pressed')) !== 'true') problems.push('"Whole scene" is not the start');
   if (await panel.getByRole('button', { name: 'AOI only' }).isDisabled()) problems.push('"AOI only" is locked although the map has an AOI');

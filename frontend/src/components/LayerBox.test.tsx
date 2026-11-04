@@ -113,9 +113,9 @@ describe('a layer opened from the layer manager', () => {
 
   // Otto, 2.11.2026: the actions of a layer, not those of the search.
   it('has the actions of a layer and none of the search: no pinning of the view, no "Change image", no "Clear"', () => {
-    expect(actions()).toEqual(['⚙ Process', '⇩ Download', '＋ Add current view to layers', '']);
+    expect(actions()).toEqual(['Process', 'Download', 'Add current view to layers', '']);
     const text = container.textContent!;
-    for (const gone of ['＋ Add to layers', 'Add all to layers', 'Change image', 'Clear', 'Download crop']) expect(text, gone).not.toContain(gone);
+    for (const gone of ['Add to layers', 'Add all to layers', 'Change image', 'Clear', 'Download crop']) expect(text, gone).not.toContain(gone);
   });
 
   it('has the head of every layer: its name with the date, in the style of a title, the date without arrows, and the red x', () => {
@@ -158,7 +158,7 @@ describe('a layer opened from the layer manager', () => {
     const crop = layer();
     crop.restore = { ...crop.restore, cropToAoi: true, aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } };
     act(() => useAppStore.setState({ cropToAoi: true, viewAoi: crop.restore.aoi, layers: [crop] }));
-    expect(actions()).toEqual(['⚙ Process', '⇩ Download', '＋ Add current view to layers', '']);
+    expect(actions()).toEqual(['Process', 'Download', 'Add current view to layers', '']);
     expect(labels()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     expect(buttons()).toEqual(['Auto-scale', 'Apply', 'Save']);
   });
@@ -167,13 +167,13 @@ describe('a layer opened from the layer manager', () => {
 describe('a view that is still open from the search', () => {
   it('keeps all of it with no layer, and with its image pinned', () => {
     mount(false, []);
-    expect(actions()).toContain('＋ Add to layers');
+    expect(actions()).toContain('Add to layers');
     expect(container.querySelector('.vc-stepper')).not.toBeNull();
     mount(false);
-    expect(actions()).toContain('＋ Add to layers');
+    expect(actions()).toContain('Add to layers');
     expect(container.textContent).toContain('Add to layers');
     expect(container.querySelectorAll('.vc-head .close-x')).toHaveLength(1);
-    expect(actions()).toContain('‹ Change image');
+    expect(actions()).toContain('Change image');
     expect(container.querySelector('.vc-title')!.textContent).not.toContain('2026-07-01 ·');
   });
 });
@@ -215,6 +215,6 @@ describe('a click on a search result while a layer is open from the layer manage
     act(() => useAppStore.setState({ items: [scene, item2], groups: [{ key: ['a'], label: 'a', items: [scene, item2] }] }));
     act(() => state().toggleSelected('s9'));
     expect(state().focusMode).toBe(true);
-    expect(actions()).toContain('＋ Add to layers');
+    expect(actions()).toContain('Add to layers');
   });
 });

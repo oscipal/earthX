@@ -14,9 +14,10 @@ import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
 import { useAppStore } from '../store';
 import DownloadAll from './DownloadAll';
-import { PencilIcon } from './Icons';
+import { ArchiveRestoreIcon, ChevronDownIcon, ChevronRightIcon, EllipsisIcon, PencilIcon, PlusIcon, RetryIcon } from './icons';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
+import MenuTick from './MenuTick';
 import Popover from './Popover';
 import { focusFirstItem } from '../popover';
 import { batchSummary, bundleOffer, canDelete, canRestore, canRetry, countBatch, deletableParts, formatShortDate, formatUntil, jobLabel, jobState, RETRY_PARTS_TIP, RETRY_TIP, retryableParts, SHORTCUTS, UNAVAILABLE_TIP, useNowUntil, type JobState } from './jobView';
@@ -50,7 +51,7 @@ interface MenuProps {
   anchor: RefObject<HTMLElement | null>;
 }
 
-// "⋯" at the end of a row. The list is a `Popover`: in a portal over the whole window, so the scrolling list
+// The "more" icon at the end of a row. The list is a `Popover`: in a portal over the whole window, so the scrolling list
 // of jobs and the panel cannot cut it off or cover it.
 function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cancel, onDelete, onRestore, name, mode, onMode, anchor }: MenuProps) {
   const button = useRef<HTMLButtonElement>(null);
@@ -99,7 +100,7 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
         title="Actions"
         onClick={() => onMode(mode === 'closed' ? 'menu' : 'closed')}
       >
-        ⋯
+        <EllipsisIcon />
       </button>
       <Popover
         anchorRef={anchor}
@@ -131,10 +132,12 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
           {moving && onMove && (
             <>
               <button type="button" role="menuitemradio" aria-checked={groupId === null} onClick={done(() => onMove(null), true)}>
+                <MenuTick checked={groupId === null} />
                 Ungrouped
               </button>
               {groups.map((g) => (
                 <button key={g.id} type="button" role="menuitemradio" aria-checked={groupId === g.id} onClick={done(() => onMove(g.id), true)}>
+                  <MenuTick checked={groupId === g.id} />
                   {g.name}
                 </button>
               ))}
@@ -287,22 +290,22 @@ function Meter({ state, progress }: { state: JobState; progress?: number }) {
   return value === null ? null : <progress className="pm-progress" max={100} value={value} aria-label="Progress" />;
 }
 
-// "↺" at the place of the download: the deleted job comes back. Its tooltip says until when that works.
+// The restore icon at the place of the download: the deleted job comes back. Its tooltip says until when that works.
 function RestoreButton({ name, until, busy, onRestore }: { name: string; until: string; busy: boolean; onRestore: () => void }) {
   return (
     <button type="button" className="pm-icon" disabled={busy} aria-label={`Restore ${name}`} title={`Restore (possible until ${formatUntil(until)})`} onClick={onRestore}>
-      ↺
+      <ArchiveRestoreIcon />
     </button>
   );
 }
 
-// "↻" in front of the download: the order of the job goes to the server once more. Where it cannot be offered the
+// The retry icon in front of the download: the order of the job goes to the server once more. Where it cannot be offered the
 // place stays empty, so that no other symbol moves.
 export function RetryButton({ offered, name, tip, busy, onRetry }: { offered: boolean; name: string; tip: string; busy: boolean; onRetry: () => void }) {
   if (!offered) return <span className="pm-icon" aria-hidden="true" />;
   return (
     <button type="button" className="pm-icon" disabled={busy} aria-label={`${tip}: ${name}`} title={tip} onClick={onRetry}>
-      ↻
+      <RetryIcon />
     </button>
   );
 }
@@ -336,7 +339,7 @@ function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
 function RenameButton({ what, name, onRename }: { what: 'job' | 'batch'; name: string; onRename: () => void }) {
   return (
     <button type="button" className="pm-icon pm-edit" data-name={name} title={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
-      <PencilIcon size={11} />
+      <PencilIcon size={14} />
     </button>
   );
 }
@@ -344,7 +347,7 @@ function RenameButton({ what, name, onRename }: { what: 'job' | 'batch'; name: s
 export const ADD_TO_LAYERS_TIP = 'Add to layers';
 export const ALREADY_A_LAYER_TIP = 'This result is already a layer';
 
-// "＋" of a finished job: its result as a layer on the map. Where the result is one already, the symbol stays and says why it is locked.
+// The plus of a finished job: its result as a layer on the map. Where the result is one already, the symbol stays and says why it is locked.
 function AddToLayers({ job, name }: { job: JobEntry; name: string }) {
   const showOnMap = useProcessingStore((s) => s.showResultOnMap);
   const isLayer = useAppStore((s) => s.layers.some((l) => l.result?.jobID === job.jobID));
@@ -352,13 +355,13 @@ function AddToLayers({ job, name }: { job: JobEntry; name: string }) {
     // `aria-disabled`, not `disabled`: the symbol stays reachable by keyboard, and so does the reason.
     return (
       <button type="button" className="pm-icon has-tip" aria-disabled="true" data-tip={ALREADY_A_LAYER_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`}>
-        ＋
+        <PlusIcon />
       </button>
     );
   }
   return (
     <button type="button" className="pm-icon" title={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
-      ＋
+      <PlusIcon />
     </button>
   );
 }
@@ -543,7 +546,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
           title={expanded ? 'Fold up' : 'Show the parts'}
           onClick={() => setExpanded(!expanded)}
         >
-          {expanded ? '▾' : '▸'}
+          {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
         </button>
         {renaming ? (
           <InlineRename
@@ -692,12 +695,12 @@ function FoldButton({ name, listId, collapsed, onToggle, count }: { name: string
       title={collapsed ? 'Show the group' : 'Fold up the group'}
       onClick={onToggle}
     >
-      {collapsed ? '▸' : '▾'}
+      {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
     </button>
   );
 }
 
-// "⋯" at the end of a group's head, the same place as in a row: the rare things, rename and remove. A group that is not empty
+// The "more" icon at the end of a group's head, the same place as in a row: the rare things, rename and remove. A group that is not empty
 // cannot be removed; the entry stays, with its reason as the tooltip.
 function GroupMenu({ group, empty, onRename, anchor }: { group: ShelfGroup; empty: boolean; onRename: () => void; anchor: RefObject<HTMLElement | null> }) {
   const removeGroup = useProcessingStore((s) => s.removeGroup);
@@ -713,7 +716,7 @@ function GroupMenu({ group, empty, onRename, anchor }: { group: ShelfGroup; empt
         title="Actions"
         onClick={() => setOpen(!open)}
       >
-        ⋯
+        <EllipsisIcon />
       </button>
       <Popover anchorRef={anchor} open={open} onClose={() => setOpen(false)} className="pm-menu-list" role="menu" ariaLabel={`Actions for ${group.name}`} focusOnOpen>
         <div className="pm-menu-items">
@@ -937,7 +940,7 @@ export default function ProcessingManager() {
         <h2>Jobs</h2>
         <div className="results-head-right">
           <Tip text={KEPT_HERE_TIP} />
-          {shelf === 'trimmed' && <Tip text={STORAGE_FULL_TIP} symbol="⚠" tone="warn" />}
+          {shelf === 'trimmed' && <Tip text={STORAGE_FULL_TIP} tone="warn" />}
         </div>
       </div>
       <div className="pm-tools">
@@ -949,7 +952,7 @@ export default function ProcessingManager() {
           ))}
         </div>
         <button type="button" className="ghost-btn" title="Make a group to put jobs in" onClick={() => setNaming(true)}>
-          ＋ New group
+          <PlusIcon lead />New group
         </button>
       </div>
       {shelf === 'memory' && (

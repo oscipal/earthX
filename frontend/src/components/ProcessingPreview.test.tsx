@@ -197,7 +197,7 @@ async function openPanel() {
 
 function button(label: string | RegExp, within: Element = container): HTMLButtonElement {
   const found = [...within.querySelectorAll('button')].find((b) =>
-    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+    typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.textContent ?? '') || label.test(b.getAttribute('aria-label') ?? ''),
   );
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found as HTMLButtonElement;
@@ -233,7 +233,7 @@ async function withNdvi(items = [scene('S2B_A')]) {
   select(items);
   await openPanel();
   vi.useFakeTimers();
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(expression(), '(nir - red) / (nir + red)');
   await afterDebounce();
 }
@@ -244,7 +244,7 @@ describe('the preview section', () => {
     await openPanel();
     expect(section().querySelector('.hint-text')).toBeNull();
     expect(section().querySelector('.pp-range')).toBeNull();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(section().textContent).toContain('Complete the step to see the preview.');
     expect(store().preview).toBeNull();
   });
@@ -253,7 +253,7 @@ describe('the preview section', () => {
     select([scene('S2B_A'), scene('S2B_B')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     act(() => {
       vi.advanceTimersByTime(399);
@@ -321,7 +321,7 @@ describe('the preview section', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     act(() => store().closeProcessing());
     await afterDebounce();
@@ -364,7 +364,7 @@ describe('the preview section', () => {
     for (let i = 1; i <= 17; i++) wide.assets[`b${i}`] = { href: 'https://example.org/b.tif', type: COG, 'raster:bands': [{ data_type: 'uint16' }] };
     select([wide]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), Array.from({ length: 17 }, (_, i) => `b${i + 1}`).join(' + '));
     expect(section().textContent).toContain('No preview: the map takes at most 16 bands.');
     expect(store().preview).toBeNull();
@@ -381,7 +381,7 @@ describe('the preview section', () => {
       ],
     });
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     expect(section().textContent).toContain('Choose a pass to see the preview.');
     expect(store().preview).toBeNull();
@@ -391,8 +391,8 @@ describe('the preview section', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Reproject and resample'));
-    click(button('＋ Band math'));
+    click(button('Reproject and resample'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     await afterDebounce();
     expect(section().textContent).toContain('No preview: the first step runs only as a job.');
@@ -403,14 +403,14 @@ describe('the preview section', () => {
   it('says the job runs all steps while the map shows the first', async () => {
     await withNdvi();
     expect(section().textContent).not.toContain('the job runs all steps');
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(section().textContent).toContain('The map shows the first step; the job runs all steps.');
     expect(store().preview!.title).toBe('Band math');
   });
 
   async function chainOfTwo(): Promise<void> {
     await withNdvi();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), 'red + 1');
     await afterDebounce();
     await flush();
@@ -432,7 +432,7 @@ describe('the preview section', () => {
     // `normalize` of version 4 runs only as a job; the tile takes it as version 3 (NM4-71).
     expect(url.searchParams.getAll('op_version')).toEqual(['2', '3']);
     expect(section().textContent).not.toContain('the job runs all steps');
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(section().textContent).toContain('The map shows the first 2 steps; the job runs all steps.');
     expect(store().preview!.title).toBe('Band math → Normalize');
   });
@@ -573,7 +573,7 @@ describe('the preview section', () => {
   it('asks for a band when none is named', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), '1 + 1');
     expect(section().textContent).toContain('Choose a band for the output to see the preview.');
     expect(store().preview).toBeNull();
@@ -736,7 +736,7 @@ describe('the preview section', () => {
       select([scene('S2B_A')]);
       await openPanel();
       vi.useFakeTimers();
-      click(button('＋ Band math'));
+      click(button('Band math'));
       typeInto(expression(), 'nir / red');
       act(() => {
         vi.advanceTimersByTime(400);
@@ -776,7 +776,7 @@ describe('the preview section', () => {
       select([scene('S2B_A')]);
       await openPanel();
       vi.useFakeTimers();
-      click(button('＋ Band math'));
+      click(button('Band math'));
       typeInto(expression(), 'nir - red');
       await afterDebounce();
       typeInto(expression(), 'nir / red'); // inside the 400 ms of the next picture
@@ -804,7 +804,7 @@ describe('the preview section', () => {
         await openPanel();
         vi.useFakeTimers();
         const seen = drawn();
-        click(button('＋ Band math'));
+        click(button('Band math'));
         typeInto(expression(), 'nir / red');
         await afterDebounce();
         return seen;
@@ -869,7 +869,7 @@ describe('the preview section', () => {
         await openPanel();
         vi.useFakeTimers();
         const seen = drawn();
-        click(button('＋ Band math'));
+        click(button('Band math'));
         typeInto(expression(), 'nir');
         await afterDebounce();
         await flush();
@@ -969,7 +969,7 @@ describe('the preview section', () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       expect(unit()).toBeNull();
-      click(button('＋ Add preview to layers'));
+      click(button('Add preview to layers'));
       expect(useAppStore.getState().layers[0]).not.toHaveProperty('unit');
       const manager = document.createElement('div');
       document.body.append(manager);
@@ -1099,7 +1099,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     await openPanel();
     act(() => useProcessingStore.setState({ runAs: 'scene' }));
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), '(nir - red) / (nir + red)');
     click(button('AOI only'));
     await afterDebounce();
@@ -1213,7 +1213,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       click(button('AOI only'));
       await afterDebounce();
       expect(posted()).toHaveLength(1);
-      click(button('＋ Band math'));
+      click(button('Band math'));
       typeInto(expression(1), 'red + 1');
       await afterDebounce();
       await flush();
@@ -1274,7 +1274,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir - red');
     click(button('AOI only'));
     await afterDebounce();
@@ -1291,7 +1291,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     click(button('AOI only'));
     await afterDebounce();
@@ -1321,7 +1321,7 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     await flush();
     expect(container.querySelector('.preview-badge')).toBeNull();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     await afterDebounce();
     for (const zoom of [3, 12.5, 18, 22]) {
@@ -1351,7 +1351,7 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     act(() => store().openProcessing());
     await flush();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     await afterDebounce();
     expect(store().preview).toMatchObject({ minZoom: 8, maxZoom: 14 });
@@ -1389,10 +1389,10 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
 });
 
 describe('the preview as a layer (§3.4)', () => {
-  it('"＋ Add preview to layers" pins it on top, with the badge right, and leaves the others', async () => {
+  it('"Add preview to layers" pins it on top, with the badge right, and leaves the others', async () => {
     await withNdvi([scene('S2B_A'), scene('S2B_B')]);
     useAppStore.setState({ layers: [pinned('L1')] });
-    click(button('＋ Add preview to layers'));
+    click(button('Add preview to layers'));
     const [layer, other] = useAppStore.getState().layers;
     expect(other.id).toBe('L1');
     expect(other.visible).toBe(true);
@@ -1408,7 +1408,7 @@ describe('the preview as a layer (§3.4)', () => {
     await withNdvi();
     click(button('AOI only'));
     await afterDebounce();
-    click(button('＋ Add preview to layers'));
+    click(button('Add preview to layers'));
     const layer = useAppStore.getState().layers[0];
     expect(layer.restore.cropToAoi).toBe(true);
     const url = (layer.overlays[0] as { tileUrl: string }).tileUrl;
@@ -1421,12 +1421,12 @@ describe('the preview as a layer (§3.4)', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     // The step is complete, the picture follows in 400 ms.
-    expect(button('＋ Add preview to layers').disabled).toBe(true);
+    expect(button('Add preview to layers').disabled).toBe(true);
     await afterDebounce();
-    expect(button('＋ Add preview to layers').disabled).toBe(false);
+    expect(button('Add preview to layers').disabled).toBe(false);
   });
 
   it('leaves the other layers as they are, also when the panel was opened from one of them', async () => {
@@ -1438,13 +1438,13 @@ describe('the preview as a layer (§3.4)', () => {
         <LayerManager />
       </>,
     );
-    click(button('⚙', container.querySelectorAll('.layer-row')[1] as HTMLElement));
+    click(button('Process layer', container.querySelectorAll('.layer-row')[1] as HTMLElement));
     await flush();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), '(nir - red) / (nir + red)');
     await afterDebounce();
-    click(button('＋ Add preview to layers'));
+    click(button('Add preview to layers'));
     expect(useAppStore.getState().layers.map((l) => [l.id.startsWith('P') ? 'preview' : l.id, l.visible])).toEqual([
       ['preview', true],
       ['L0', true],
@@ -1464,7 +1464,7 @@ describe('the ways into the panel (§3.5)', () => {
       </>,
     );
     expect(store().open).toBe(false);
-    click(button('⚙'));
+    click(button('Process layer'));
     await flush();
     expect(useAppStore.getState().selectedIds).toEqual(['S2B_B']);
     expect(useAppStore.getState().aoi).toBe(AOI);
@@ -1476,7 +1476,7 @@ describe('the ways into the panel (§3.5)', () => {
     select([scene('S2B_A')]);
     useAppStore.setState({ layers: [pinned('L1', { cropToAoi: true, focusMode: true })] });
     mount(<LayerManager />);
-    click(button('⚙'));
+    click(button('Process layer'));
     await flush();
     expect(store()).toMatchObject({ open: true, area: 'aoi' });
   });
@@ -1485,7 +1485,7 @@ describe('the ways into the panel (§3.5)', () => {
     select([scene('S2B_A')]);
     useAppStore.setState({ layers: [pinned('L1', { cropToAoi: true, aoi: null })] });
     mount(<LayerManager />);
-    click(button('⚙'));
+    click(button('Process layer'));
     await flush();
     expect(store().area).toBe('scene');
   });
@@ -1494,7 +1494,7 @@ describe('the ways into the panel (§3.5)', () => {
     select([scene('S2B_A')]);
     useAppStore.setState({ layers: [{ ...pinned('P1'), derived: 'preview' }] });
     mount(<LayerManager />);
-    const gear = button('⚙');
+    const gear = button('Process layer');
     expect(gear.disabled).toBe(true);
     expect(gear.title).toBe('A result cannot be processed further yet.');
     click(gear);
@@ -1505,8 +1505,8 @@ describe('the ways into the panel (§3.5)', () => {
     select([scene('S2B_A')], 'display');
     useAppStore.setState({ layers: [pinned('L1')] });
     mount(<LayerManager />);
-    expect(button('⚙').disabled).toBe(true);
-    expect(button('⚙').title).toContain('does not allow processing');
+    expect(button('Process layer').disabled).toBe(true);
+    expect(button('Process layer').title).toContain('does not allow processing');
   });
 
   it('does not offer to download a preview, which is no scene file', () => {
@@ -1514,7 +1514,7 @@ describe('the ways into the panel (§3.5)', () => {
     useAppStore.setState({ layers: [pinned('L1'), { ...pinned('P1'), derived: 'preview' }] });
     mount(<LayerManager />);
     const rows = [...container.querySelectorAll('.layer-row')];
-    expect(rows.map((row) => [...row.querySelectorAll('button')].some((b) => b.textContent === '⇩'))).toEqual([true, false]);
+    expect(rows.map((row) => [...row.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Download'))).toEqual([true, false]);
   });
 
   describe('the view stays as it is (Otto, 19.10.2026)', () => {
@@ -1535,7 +1535,7 @@ describe('the ways into the panel (§3.5)', () => {
       });
       useAppStore.setState({ layers: [cropped] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       const after = useAppStore.getState();
       expect(store()).toMatchObject({ open: true, area: 'aoi' });
@@ -1555,7 +1555,7 @@ describe('the ways into the panel (§3.5)', () => {
       select([scene('S2B_A')]);
       useAppStore.setState({ layers: [pinned('L1', { aoi: OTHER_AOI, cropToAoi: false })] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(store().area).toBe('scene');
       expect(useAppStore.getState().aoi).toBe(AOI);
@@ -1570,7 +1570,7 @@ describe('the ways into the panel (§3.5)', () => {
         layers: [pinned('L1', { focusMode: true, downloaded: { S2B_A: tile } })],
       });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       const after = useAppStore.getState();
       expect(after.focusMode).toBe(true);
@@ -1588,7 +1588,7 @@ describe('the ways into the panel (§3.5)', () => {
         layers: [pinned('L1', { focusMode: true })],
       });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(useAppStore.getState().datasetId).toBe('sentinel-2-c1-l2a');
       expect(useAppStore.getState().focusMode).toBe(false);
@@ -1610,7 +1610,7 @@ describe('the ways into the panel (§3.5)', () => {
           <ProcessingPanel />
         </>,
       );
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
       expect(useAppStore.getState().selectedIds).toEqual(['S2B_A', 'GONE']);
@@ -1627,7 +1627,7 @@ describe('the ways into the panel (§3.5)', () => {
       catalog.OTHER_DAY = { ...scene('OTHER_DAY'), properties: { datetime: '2026-06-01T10:00:00Z' } };
       useAppStore.setState({ layers: [pinned('L1', { itemIds: ['S2B_A', 'SAME_DAY'], selectedIds: ['S2B_A', 'SAME_DAY'] })] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       const view = orderView(useAppStore.getState(), store());
       expect(view.passes.map((p) => p.items.map((i) => i.id))).toEqual([['S2B_A', 'SAME_DAY']]);
@@ -1635,7 +1635,7 @@ describe('the ways into the panel (§3.5)', () => {
       act(() =>
         useAppStore.setState({ layers: [pinned('L2', { itemIds: ['S2B_A', 'OTHER_DAY'], selectedIds: ['S2B_A', 'OTHER_DAY'] })] }),
       );
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       const second = orderView(useAppStore.getState(), store());
       expect(second.passes.map((p) => p.items.map((i) => i.id))).toEqual([['S2B_A'], ['OTHER_DAY']]);
@@ -1646,7 +1646,7 @@ describe('the ways into the panel (§3.5)', () => {
       catalog.GONE = scene('GONE');
       useAppStore.setState({ layers: [layerOf('S2B_A', 'S2B_B', 'GONE')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
     });
@@ -1655,7 +1655,7 @@ describe('the ways into the panel (§3.5)', () => {
       select([scene('S2B_A')]);
       useAppStore.setState({ layers: [layerOf('S2B_A')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(itemRequests()).toEqual([]);
       expect(store().extraScenes).toBeNull();
@@ -1665,7 +1665,7 @@ describe('the ways into the panel (§3.5)', () => {
       select([scene('S2B_A')]);
       useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(store().open).toBe(false);
       expect(useAppStore.getState().error).toBe('Could not load the scenes of this layer. GONE: not found in the catalog');
@@ -1677,7 +1677,7 @@ describe('the ways into the panel (§3.5)', () => {
       catalog.ALSO = scene('ALSO');
       useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE', 'ALSO')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(store().open).toBe(false);
       expect(store().extraScenes).toBeNull();
@@ -1692,7 +1692,7 @@ describe('the ways into the panel (§3.5)', () => {
       pending[`${ITEM_URL}SLOW`] = new Promise<Response>((resolve) => (answer = resolve));
       useAppStore.setState({ layers: [layerOf('S2B_A', 'SLOW'), { ...layerOf('S2B_A'), id: 'L2' }] });
       mount(<LayerManager />);
-      const gears = () => [...container.querySelectorAll<HTMLButtonElement>('.layer-row button')].filter((b) => b.textContent === '⚙');
+      const gears = () => [...container.querySelectorAll<HTMLButtonElement>('.layer-row button')].filter((b) => b.getAttribute('aria-label') === 'Process layer');
       click(gears()[0]);
       await flush();
       click(gears()[1]);
@@ -1711,14 +1711,14 @@ describe('the ways into the panel (§3.5)', () => {
       const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
       useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile, GONE: tile } });
       mount(<ViewerControls />);
-      click(button('⚙ Process'));
+      click(button('Process'));
       await flush();
       expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
       expect(store().open).toBe(true);
 
       act(() => store().closeProcessing());
       delete catalog.GONE;
-      click(button('⚙ Process'));
+      click(button('Process'));
       await flush();
       expect(store().open).toBe(false);
       expect(useAppStore.getState().error).toBe('Could not load the scenes of this view. GONE: not found in the catalog');
@@ -1729,7 +1729,7 @@ describe('the ways into the panel (§3.5)', () => {
       catalog.GONE = scene('GONE');
       useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(store().extraScenes).not.toBeNull();
       act(() => useAppStore.setState({ datasetId: 'other' }));
@@ -1747,44 +1747,44 @@ describe('the ways into the panel (§3.5)', () => {
         <ViewBar />
       </>,
     );
-    click(button('⚙', container.querySelector('.layer-row') as HTMLElement));
+    click(button('Process layer', container.querySelector('.layer-row') as HTMLElement));
     await flush();
     expect(store()).toMatchObject({ open: true, area: 'aoi' });
 
     act(() => store().closeProcessing());
-    click(button('⚙ Process'));
+    click(button('Process'));
     expect(store()).toMatchObject({ open: true, area: 'scene' });
 
     // Also while the panel stays open: every entry sets the area.
     click(button('AOI only'));
     expect(store().area).toBe('aoi');
-    click(button('⚙ Process'));
+    click(button('Process'));
     expect(store().area).toBe('scene');
   });
 
-  it('"⚙ Process" of the full-resolution view takes the scenes of the view, cropped or whole', async () => {
+  it('"Process" of the full-resolution view takes the scenes of the view, cropped or whole', async () => {
     select([scene('S2B_A'), scene('S2B_B')]);
     const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     useAppStore.setState({ focusMode: true, cropToAoi: true, viewAoi: useAppStore.getState().aoi, downloaded: { S2B_B: tile }, selectedIds: ['S2B_A', 'S2B_B'] });
     mount(<ViewerControls />);
-    click(button('⚙ Process'));
+    click(button('Process'));
     await flush();
     expect(useAppStore.getState().selectedIds).toEqual(['S2B_B']);
     expect(store()).toMatchObject({ open: true, area: 'aoi' });
 
     act(() => store().closeProcessing());
     useAppStore.setState({ cropToAoi: false });
-    click(button('⚙ Process'));
+    click(button('Process'));
     await flush();
     expect(store().area).toBe('scene');
   });
 
-  it('locks "⚙ Process" of the full-resolution view for a dataset below processing', () => {
+  it('locks "Process" of the full-resolution view for a dataset below processing', () => {
     select([scene('S2B_A')], 'catalog');
     const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile } });
     mount(<ViewerControls />);
-    expect(button('⚙ Process').disabled).toBe(true);
+    expect(button('Process').disabled).toBe(true);
   });
 });
 
@@ -1814,7 +1814,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       </>,
     );
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), expressionText);
     await afterDebounce();
     await flush();
@@ -1956,7 +1956,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
         : json({ tilejson: '3.0.0' });
     selectWide([scene('S2B_A'), scene('S2B_B')]);
     await typeNdvi();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), 'red + 1');
     await afterDebounce();
     await flush();
@@ -1981,7 +1981,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
         : json({ tilejson: '3.0.0', 'earthx:order': ['S2B_A', 'S2B_B'] });
     selectWide([scene('S2B_A'), scene('S2B_B')]);
     await typeNdvi();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), 'red + 1');
     await afterDebounce();
     await flush();
@@ -2017,7 +2017,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       </>,
     );
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     await afterDebounce();
     await flush();

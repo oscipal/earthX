@@ -503,7 +503,7 @@ describe('Share', () => {
     const confirm = vi.spyOn(window, 'confirm');
     await click('Share');
     const cross = icon('Delete link')!;
-    expect([cross.className, cross.title, cross.textContent]).toEqual(['delete-btn', 'Delete link', '✕']);
+    expect([cross.className, cross.title, cross.textContent, cross.querySelector('svg.lucide-trash-2') !== null]).toEqual(['delete-btn', 'Delete link', '', true]);
     expect(button('Delete link')).toBeUndefined();
     await clickIcon('Delete link');
     expect(confirm).not.toHaveBeenCalled();

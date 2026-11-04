@@ -213,7 +213,7 @@ function typeInto(input: HTMLTextAreaElement, value: string) {
 }
 
 async function ndvi() {
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(container.querySelector('textarea[id$="-expression"]')!, '(nir - red) / (nir + red)');
 }
 
@@ -701,7 +701,7 @@ describe('a draft that changes while the batch is on its way', () => {
     await review();
     click(button('Start 2 jobs'));
     await flush();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     release();
     await flush();
     expect(useProcessingStore.getState().jobs.map((j) => j.title)).toEqual([

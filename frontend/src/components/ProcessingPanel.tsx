@@ -54,6 +54,7 @@ import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
+import { ChevronDownIcon, ChevronUpIcon, PlusIcon, UploadIcon } from './icons';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
 import ResamplingDialog from './ResamplingDialog';
 import JobDetails from './JobDetails';
@@ -121,7 +122,7 @@ function RecipeLoader() {
   return (
     <div className="pp-recipe">
       <label className={`ghost-btn pp-recipe-btn${busy ? ' disabled' : ''}`} title="Take the steps, the output bands and the data type from a recipe.json, onto the current selection">
-        ⬆ Load recipe…
+        <UploadIcon lead />Load recipe…
         <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => void pick(e)} />
       </label>
       {outcome && (
@@ -529,7 +530,7 @@ function PreviewSection({ view }: { view: OrderView }) {
               title="Add this preview to the layers"
               onClick={() => pinPreview()}
             >
-              ＋ Add preview to layers
+              <PlusIcon lead />Add preview to layers
             </button>
           </div>
         </>
@@ -655,7 +656,7 @@ export default function ProcessingPanel() {
           title={folded ? 'Show the panel' : 'Fold the panel down'}
           onClick={() => setFolded(!folded)}
         >
-          {folded ? '▴' : '▾'}
+          {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </button>
         <div className="pp-title-row">
           <h2 className="pp-title">Processing</h2>
@@ -809,7 +810,7 @@ export default function ProcessingPanel() {
                           title={why}
                           onClick={() => p.addStep(operator.op, operator.opVersion)}
                         >
-                          ＋ {operator.title}
+                          <PlusIcon lead />{operator.title}
                         </button>
                       );
                     })}

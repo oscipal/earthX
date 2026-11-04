@@ -194,7 +194,7 @@ const nameField = (step = 0) => container.querySelectorAll<HTMLInputElement>('in
 const startButton = () => button(/Start job|Starting/);
 
 async function addBandMath(text = 'nir - red') {
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(expression(store().steps.filter((s) => s.op === 'band_math').length - 1), text);
 }
 
@@ -220,7 +220,7 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
   it('is nothing after reproject, mask or normalize either, and nothing without a step', async () => {
     select(scene());
     await openPanel();
-    for (const op of ['＋ Reproject and resample', '＋ Mask by class', '＋ Normalize']) {
+    for (const op of ['Reproject and resample', 'Mask by class', 'Normalize']) {
       click(button(op));
       expect(checked(), op).toEqual([]);
     }
@@ -242,7 +242,7 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
   it('locks the start while the output is empty, and says why in the tooltip', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Mask by class'));
+    click(button('Mask by class'));
     expect(startButton().disabled).toBe(true);
     expect(startButton().title).toBe(EMPTY_OUTPUT);
     expect(EMPTY_OUTPUT).toBe('Choose at least one band for the output.');
@@ -259,7 +259,7 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
     await flush();
     expect(checked()).toEqual([]);
     // Another step does not bring it back.
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     await flush();
     expect(checked()).toEqual([]);
   });
@@ -410,7 +410,7 @@ describe('what an expression names', () => {
     expect(button('Review').disabled).toBe(true);
     expect(button('Review').title).toBe(why);
     expect(startButton().title).toBe(why);
-    expect(button('＋ Mask by class').disabled).toBe(true);
+    expect(button('Mask by class').disabled).toBe(true);
     await review();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     typeInto(expression(0), 'red / nir');
@@ -422,8 +422,8 @@ describe('what an expression names', () => {
     await openPanel();
     await addBandMath('red - re');
     const why = "Step 1: 're' is not a band name";
-    expect(button('＋ Mask by class').disabled).toBe(true);
-    expect(button('＋ Mask by class').title).toBe(why);
+    expect(button('Mask by class').disabled).toBe(true);
+    expect(button('Mask by class').title).toBe(why);
     expect(button('Review').disabled).toBe(true);
     expect(button('Review').title).toBe(why);
     expect(startButton().disabled).toBe(true);
@@ -432,7 +432,7 @@ describe('what an expression names', () => {
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     typeInto(expression(0), 'red - nir');
     expect(button('Review').disabled).toBe(false);
-    expect(button('＋ Mask by class').disabled).toBe(false);
+    expect(button('Mask by class').disabled).toBe(false);
   });
 
   it('takes the result of an earlier step and the name of a function, not a number or a longer name for a band', async () => {
@@ -467,7 +467,7 @@ describe('the resolution of a reproject step (review of #250)', () => {
   it('has its unit small beside its label, once the code is known', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     const label = field('resolution').closest('label')!;
     expect(label.querySelector('[aria-label="Unit"]')).toBeNull();
     typeInto(field('crs'), 'EPSG:3035');
@@ -480,7 +480,7 @@ describe('the resolution of a reproject step (review of #250)', () => {
   it('says what format a code needs, not the pattern', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     typeInto(field('crs'), 'EPSG:30');
     expect(container.textContent).toContain('Needs to be in the format "EPSG:3035"');
     expect(container.textContent).not.toContain('Does not match');
@@ -493,7 +493,7 @@ describe('the name of a result', () => {
     await openPanel();
     await addBandMath('(nir - red) / (nir + red)');
     await addBandMath('result * 2');
-    click(button('＋ Normalize'));
+    click(button('Normalize'));
   }
 
   // The name is typed into the field and taken over when the field is left, as a person does it.
@@ -568,7 +568,7 @@ describe('the name of a result', () => {
     typeInto(nameField(0), 'red');
     const why = "Step 1: 'red' is already a band name";
     expect(store().nameProblems).toEqual({ [store().steps[0].key]: "'red' is already a band name" });
-    for (const label of ['＋ Band math', '＋ Mask by class', '＋ Normalize', '＋ Reproject and resample']) {
+    for (const label of ['Band math', 'Mask by class', 'Normalize', 'Reproject and resample']) {
       expect(button(label).disabled, label).toBe(true);
       expect(button(label).title, label).toBe(why);
     }
@@ -583,7 +583,7 @@ describe('the name of a result', () => {
     act(() => nameField(0).blur());
     expect(store().nameProblems).toEqual({});
     expect(button('Review').disabled).toBe(false);
-    expect(button('＋ Band math').disabled).toBe(false);
+    expect(button('Band math').disabled).toBe(false);
     expect(hint()).toBeNull();
   });
 
@@ -687,7 +687,7 @@ describe('no limit of bands (adr/0020 §7)', () => {
   it('takes 20 bands into one order, which was refused above 16', async () => {
     select({ ...scene(), assets: MANY }, dataset({ 'earthx:mask': undefined, 'earthx:auxiliary_assets': undefined }));
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     expect(checked()).toEqual([]);
     click(button('All'));
     expect(checked()).toHaveLength(20);
@@ -733,7 +733,7 @@ describe('the bands a normalize step converts', () => {
     select(scene());
     await openPanel();
     await addBandMath();
-    click(button('＋ Normalize'));
+    click(button('Normalize'));
     expect(store().steps[1].values.bands).toBe('result');
     const picker = container.querySelector('fieldset.pp-classes')!;
     expect(names(picker)).toEqual(['result', 'green', 'red', 'nir']);
@@ -747,7 +747,7 @@ describe('the bands a normalize step converts', () => {
   it('is told to pick a band when none is chosen', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Normalize'));
+    click(button('Normalize'));
     await review();
     expect(container.textContent).toContain('Choose at least one band.');
   });

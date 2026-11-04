@@ -191,7 +191,7 @@ describe('the eye', () => {
 
 describe('the fields and the buttons', () => {
   // In pairs, no "Clear" (Otto, 2.11.2026).
-  const ACTIONS = ['‹ Change image', '⚙ Process', '＋ Add to layers', '＋ Add all to layers', '⇩ Download crop', '⇩ Download full scene'];
+  const ACTIONS = ['Change image', 'Process', 'Add to layers', 'Add all to layers', 'Download crop', 'Download full scene'];
   const actions = () => [...row('vc-actions').children] as HTMLButtonElement[];
   const actionNamed = (text: string) => actions().find((b) => b.textContent === text)!;
 
@@ -208,7 +208,7 @@ describe('the fields and the buttons', () => {
 
   it('has the tooltips of what "Change image" and the red x do', () => {
     mount();
-    expect(actionNamed('‹ Change image').title).toBe('Remove this view, show the search results and choose another scene');
+    expect(actionNamed('Change image').title).toBe('Remove this view, show the search results and choose another scene');
     expect(container.querySelector('.vc-head .close-x')!.getAttribute('title')).toBe('Close and drop this view');
   });
 
@@ -226,7 +226,7 @@ describe('the fields and the buttons', () => {
   it('"Change image" takes the view off the map, opens the results and shows them, and leaves the tick (Otto, 2.11.2026)', () => {
     const sections = [{ datasetId: 'optical', items: withDays([undefined])[0].items, groups: [], notes: [] }] as never;
     mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false, sections });
-    act(() => actionNamed('‹ Change image').click());
+    act(() => actionNamed('Change image').click());
     const s = useAppStore.getState();
     expect(s.focusMode).toBe(false);
     expect(s.dock).toBe('results');

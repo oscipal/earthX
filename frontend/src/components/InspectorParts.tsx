@@ -4,9 +4,8 @@
 
 import { useState, type KeyboardEventHandler, type ReactNode } from 'react';
 
-import Chevron from './Chevron';
 import CloseButton from './CloseButton';
-import { PencilIcon } from './Icons';
+import { ChevronLeftIcon, ChevronRightIcon, PencilIcon } from './icons';
 import InlineRename from './InlineRename';
 
 export const ONE_IMAGE_TIP = 'A layer holds one image';
@@ -93,7 +92,7 @@ interface StepperProps {
   single?: boolean;
 }
 
-// `‹ date ›`. At the first or the last of several the arrow stays, locked, and says why in its tooltip.
+// `< date >`. At the first or the last of several the arrow stays, locked, and says why in its tooltip.
 export function Stepper({ text, tip, previous, next, onKeyDown, single = false }: StepperProps) {
   if (single) {
     return (
@@ -107,13 +106,13 @@ export function Stepper({ text, tip, previous, next, onKeyDown, single = false }
   return (
     <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeyDown}>
       <button type="button" className="vc-step" aria-label="Previous image" aria-disabled={previous.disabled || undefined} title={previous.title} onClick={previous.onClick}>
-        <Chevron direction="left" />
+        <ChevronLeftIcon />
       </button>
       <span className="vc-step-text" title={tip}>
         {text}
       </span>
       <button type="button" className="vc-step" aria-label="Next image" aria-disabled={next.disabled || undefined} title={next.title} onClick={next.onClick}>
-        <Chevron direction="right" />
+        <ChevronRightIcon />
       </button>
     </div>
   );

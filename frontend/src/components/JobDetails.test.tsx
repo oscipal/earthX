@@ -73,8 +73,8 @@ const click = (el: Element | null | undefined) => {
   act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
 const button = (label: string | RegExp) =>
-  [...container.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''))) as HTMLButtonElement | undefined;
-const actions = () => [...container.querySelectorAll('.vc-actions > *')].map((el) => el.textContent?.trim());
+  [...container.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.textContent ?? '') || label.test(b.getAttribute('aria-label') ?? ''))) as HTMLButtonElement | undefined;
+const actions = () => [...container.querySelectorAll('.vc-actions > *')].map((el) => el.textContent?.trim() || el.getAttribute('aria-label'));
 const fact = (name: string) => {
   const dt = [...container.querySelectorAll('.pm-facts dt')].find((d) => d.textContent === name);
   return dt?.nextElementSibling?.textContent ?? null;
@@ -89,12 +89,12 @@ const type = (input: HTMLInputElement, value: string) => {
 const key = (target: Element, name: string) => act(() => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })));
 
 describe('the window', () => {
-  it('takes the place of the order in the processing window, and "‹ Order" brings the order back, unchanged', () => {
+  it('takes the place of the order in the processing window, and "Order" brings the order back, unchanged', () => {
     act(() => useProcessingStore.setState({ steps: [{ key: 1, op: 'band_math', opVersion: 2, values: { expression: 'a', name: 'NDVI' } }] }));
     show(jobEntry(1), <ProcessingPanel />);
     expect(container.querySelector('[aria-label="Job"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Processing"]')).toBeNull();
-    click(button('‹ Order'));
+    click(button('Order'));
     expect(useProcessingStore.getState().detailJobID).toBeNull();
     expect(container.querySelector('[aria-label="Processing"]')).not.toBeNull();
     expect(useProcessingStore.getState().steps).toHaveLength(1);
@@ -103,9 +103,9 @@ describe('the window', () => {
   it('folds down to its head and opens again, as the order does (narrow screens)', () => {
     show(jobEntry(1));
     const panel = container.querySelector('.processing-panel')!;
-    click(button('▾'));
+    click(button('Fold the panel down'));
     expect(panel.classList.contains('folded')).toBe(true);
-    click(button('▴'));
+    click(button('Show the panel'));
     expect(panel.classList.contains('folded')).toBe(false);
   });
 
@@ -231,7 +231,7 @@ describe('"Run again"', () => {
   it('sends the kept order once, however often it is pressed, and the new job takes the place of the old one', async () => {
     const fetchMock = stubExecution(() => new Response(JSON.stringify(accepted(jobId(9))), { status: 201, headers: { 'Content-Type': 'application/json' } }));
     show(failedJob());
-    const symbol = button('↻')!;
+    const symbol = button('Run again')!;
     expect(symbol.title).toBe('Run again');
     await act(async () => {
       symbol.click();
@@ -249,10 +249,10 @@ describe('"Run again"', () => {
   it('says why the order was not sent, and offers the symbol again', async () => {
     stubExecution(() => new Response(JSON.stringify({ title: 'No', detail: 'step 0 is not valid' }), { status: 422, headers: { 'Content-Type': 'application/problem+json' } }));
     show(failedJob());
-    click(button('↻'));
+    click(button('Run again'));
     await vi.waitFor(() => expect(useProcessingStore.getState().jobs[0].retryError).not.toBeNull());
     expect([...container.querySelectorAll('[role="alert"]')].map((a) => a.textContent)).toEqual(['The source failed', 'step 0 is not valid']);
-    expect(button('↻')).toBeDefined();
+    expect(button('Run again')).toBeDefined();
     expect(useProcessingStore.getState().jobs).toHaveLength(1);
   });
 
@@ -354,9 +354,9 @@ describe('the steps', () => {
 });
 
 describe('the actions', () => {
-  it('of a finished job are "Download (ZIP)" and "＋ Add to layers", and no other file, no "Methods", no "Copy"', () => {
+  it('of a finished job are "Download (ZIP)" and "Add to layers", and no other file, no "Methods", no "Copy"', () => {
     show(finished(1, { tiles: { href: '/results/x/WebMercatorQuad/tilejson.json', width: 10, gsd: 10 }, order: ORDER }));
-    expect(actions()).toEqual(['Download (ZIP)', '＋ Add to layers', 'Open in panel']);
+    expect(actions()).toEqual(['Download (ZIP)', 'Add to layers', 'Open in panel']);
     const link = container.querySelector<HTMLAnchorElement>('.vc-actions a')!;
     expect(link.getAttribute('href')).toBe(`/processing/jobs/${jobId(1)}/results/result.zip`);
     expect(link.hasAttribute('download')).toBe(true);
@@ -416,20 +416,20 @@ describe('the actions', () => {
 
   it('of a failed or cancelled job is "Run again" and "Open in panel"', () => {
     show(jobEntry(1, { phase: 'failed', failure: 'x', order: ORDER }));
-    expect(actions()).toEqual(['↻', 'Open in panel']);
+    expect(actions()).toEqual(['Run again', 'Open in panel']);
     show(jobEntry(1, { phase: 'dismissed', order: ORDER }));
-    expect(actions()).toEqual(['↻', 'Open in panel']);
+    expect(actions()).toEqual(['Run again', 'Open in panel']);
   });
 
   it('of an expired job is "Run again" and "Open in panel", and nothing to download', () => {
     show(finished(1, { expired: true, order: ORDER }));
-    expect(actions()).toEqual(['↻', 'Open in panel']);
+    expect(actions()).toEqual(['Run again', 'Open in panel']);
     expect(button('Open in panel')!.getAttribute('aria-disabled')).toBe('false');
   });
 
   it('of a job the server forgot is "Run again" and "Open in panel"', () => {
     show(jobEntry(1, { phase: 'gone', order: ORDER }));
-    expect(actions()).toEqual(['↻', 'Open in panel']);
+    expect(actions()).toEqual(['Run again', 'Open in panel']);
     show(jobEntry(1, { phase: 'gone', order: null }));
     expect(actions()).toEqual(['Open in panel']);
   });
@@ -447,11 +447,11 @@ describe('the actions', () => {
     expect(actions()).toEqual(['Open in panel']);
   });
 
-  it('draws the result on the map from "＋ Add to layers"', () => {
+  it('draws the result on the map from "Add to layers"', () => {
     const showOnMap = vi.fn(async () => undefined);
     act(() => useProcessingStore.setState({ showResultOnMap: showOnMap }));
     show(finished(1, { tiles: { href: '/results/x/WebMercatorQuad/tilejson.json', width: 10, gsd: 10 } }));
-    click(button('＋ Add to layers'));
+    click(button('Add to layers'));
     expect(showOnMap).toHaveBeenCalledWith(jobId(1));
   });
 });

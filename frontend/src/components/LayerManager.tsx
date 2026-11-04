@@ -10,8 +10,7 @@ import { hasResultsPanel } from '../sections';
 import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
 import BandSelect from './BandSelect';
-import Eye from './Eye';
-import { BinIcon, PencilIcon } from './Icons';
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CogIcon, EyeIcon, EyeOffIcon, GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
 import InlineRename from './InlineRename';
 import { RENAME_TIP } from './InspectorParts';
 import { REMOVE_TIP } from './LayerActions';
@@ -30,7 +29,7 @@ const moveTip = (direction: 'up' | 'down', blocked: boolean) => (blocked ? (dire
 export const HIDE_LAYER_TIP = 'Hide layer';
 export const SHOW_LAYER_TIP = 'Show layer';
 export const ADD_BAND_TIP = 'Add this band as a layer of its own';
-export const FLIP_TIP = 'Flip through layers (↑/↓ or the mouse wheel over the list, Esc to stop)';
+export const FLIP_TIP = 'Flip through layers (Up and Down or the mouse wheel over the list, Esc to stop)';
 export const FLIP_ROW_TIP = 'Draw this layer on top of the others';
 export const RESULTS_ENTRY_TIP = 'The search results, the view and the processing preview. Move to change what lies above.';
 
@@ -88,15 +87,13 @@ export interface RowDnd {
   grip: ReturnType<ReturnType<typeof useRowDrag>['grip']> | null;
 }
 
-// The grip at the left of a row: 2 × 3 small dots to take the row with the mouse or a finger. ▲/▼ stay for the keyboard, so the
+// The grip at the left of a row to take the row with the mouse or a finger. The arrows stay for the keyboard, so the
 // grip is no tab stop and no screen reader's business.
 function Grip({ dnd }: { dnd: RowDnd }) {
   if (!dnd.grip) return <Slot col="grip" />;
   return (
     <span className="lm-grip" data-col="grip" title="Drag to move" aria-hidden="true" {...dnd.grip}>
-      <svg viewBox="0 0 8 12" width="8" height="12" focusable="false">
-        {[1, 4].flatMap((x) => [1.5, 6, 10.5].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.1" fill="currentColor" />))}
-      </svg>
+      <GripVerticalIcon size={14} />
     </span>
   );
 }
@@ -140,7 +137,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           if (!locked) toggleVis(l.id);
         }}
       >
-        <Eye off={!shown} />
+        {shown ? <EyeIcon size={14} /> : <EyeOffIcon size={14} />}
       </button>
       {renaming ? (
         <span className="lm-name lm-renaming" data-col="name" title="A layer needs a name: an empty one keeps the name it had">
@@ -171,7 +168,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       )}
       {/* The name is renamed here as in the head of the settings (Otto, 3.11.2026). */}
       <button type="button" className="lm-btn lm-pencil" data-col="rename" title={locked ? LOCKED_LAYER_TIP : RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>
-        <PencilIcon size={11} />
+        <PencilIcon size={14} />
       </button>
       <input
         type="range"
@@ -187,10 +184,10 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         onChange={(e) => setOpacity(l.id, Number(e.target.value))}
       />
       <button type="button" className="lm-btn" data-col="up" title={moveTip('up', index === 0)} aria-label="Move up" disabled={index === 0} onClick={() => move(l.id, 'up')}>
-        ▲
+        <ArrowUpIcon size={14} />
       </button>
       <button type="button" className="lm-btn" data-col="down" title={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move(l.id, 'down')}>
-        ▼
+        <ArrowDownIcon size={14} />
       </button>
       {l.result && processBlock === NO_COPY_TEXT ? (
         // Without the order of its job a result cannot be processed further, and nothing the person does brings it back: the place
@@ -203,21 +200,22 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           data-col="process"
           disabled={processBlock !== null}
           title={processBlock ?? (l.result ? (l.result.expired ? EXPIRED_PROCESS_TEXT : PROCESS_RESULT_TEXT) : 'Process this layer')}
+          aria-label="Process layer"
           onClick={() => void processLayer(l.id)}
         >
-          ⚙
+          <CogIcon size={14} />
         </button>
       )}
       <LayerDownload layer={l} col="download" empty={<Slot col="download" />} />
       {notes.length > 0 ? (
         <span className="lm-note" data-col="note">
-          <Tip text={notes.join(' ')} symbol="⚠" tone="warn" />
+          <Tip text={notes.join(' ')} tone="warn" />
         </span>
       ) : (
         <Slot col="note" />
       )}
       <button type="button" className="lm-btn danger" data-col="remove" title={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(l.id)}>
-        <BinIcon size={12} />
+        <TrashIcon size={14} />
       </button>
       {bands && bands.length > 1 && (
         <BandSelect
@@ -235,7 +233,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       )}
       {bands && bands.length > 1 && !locked && l.result?.expired !== true && (
         <button type="button" className="lm-btn lm-add-band" title={ADD_BAND_TIP} aria-label={ADD_BAND_TIP} onClick={() => addBand(l.id)}>
-          ＋
+          <PlusIcon size={14} />
         </button>
       )}
     </li>
@@ -243,7 +241,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
 }
 
 // The entry "Results" (NM4-59): the search results, the view and the live preview, moved among the layers as one. It has
-// a grip, an eye and ▲/▼ only; the other places stay empty.
+// a grip, an eye and the two arrows only; the other places stay empty.
 function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: RowDnd }) {
   const move = useAppStore((s) => s.moveResults);
   return (
@@ -256,10 +254,10 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
       <Slot col="rename" />
       <Slot col="opacity" />
       <button type="button" className="lm-btn" data-col="up" title={moveTip('up', first)} aria-label="Move up" disabled={first} onClick={() => move('up')}>
-        ▲
+        <ArrowUpIcon size={14} />
       </button>
       <button type="button" className="lm-btn" data-col="down" title={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move('down')}>
-        ▼
+        <ArrowDownIcon size={14} />
       </button>
       <Slot col="process" />
       <Slot col="download" />
@@ -275,11 +273,7 @@ function FlipToggle() {
   const set = useAppStore((s) => s.setFlipThrough);
   return (
     <button type="button" className="lm-btn lm-flip" aria-pressed={on} title={FLIP_TIP} aria-label="Flip through layers" onClick={() => set(!on)}>
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-        <path d="M8 1.5 11.5 5h-7z" fill="currentColor" />
-        <path d="M8 14.5 4.5 11h7z" fill="currentColor" />
-        <rect x="3" y="7" width="10" height="2" rx="1" fill="currentColor" />
-      </svg>
+      <ArrowUpDownIcon size={14} />
     </button>
   );
 }
@@ -335,7 +329,7 @@ function useFlipping(listRef: RefObject<HTMLUListElement | null>) {
 const WHEEL_NOTCH = 40;
 const WHEEL_PAUSE_MS = 180;
 
-// Keys in the manager while flipping. Esc ends it, the one thing Esc does besides "Cancel" in a dialog (Otto, 2.11.2026). ↑/↓ step,
+// Keys in the manager while flipping. Esc ends it, the one thing Esc does besides "Cancel" in a dialog (Otto, 2.11.2026). Up and Down step,
 // but not in a field, where the arrows are the field's (the opacity slider, a dropdown).
 function onFlipKeys(event: ReactKeyboardEvent<HTMLElement>, step: (dir: 1 | -1) => void, end: () => void) {
   if (event.key === 'Escape' && !event.defaultPrevented && !(event.target as HTMLElement).closest('input, textarea, select, .popover, [role="menu"]')) {

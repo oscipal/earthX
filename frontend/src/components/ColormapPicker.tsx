@@ -1,13 +1,13 @@
 // All colormaps (UI-03d, Otto, 2.11.2026): a bar of its own at the right edge, in the place of the settings, over them or the
 // processing panel, which stay as they were. Each colormap with its preview and its name, by group; a search and "Reverse". A click
-// chooses and goes back; "‹" goes back without a choice. Esc closes nothing. Under 900 px a sheet from the bottom, as the settings are.
+// chooses and goes back; the arrow goes back without a choice. Esc closes nothing. Under 900 px a sheet from the bottom, as the settings are.
 
 import { useMemo, useState } from 'react';
 
 import { baseOf, gradientOf, isReversed, withReverse } from '../colormaps';
 import { useColormapPicker } from '../colormapPicker';
-import Chevron from './Chevron';
 import { REVERSE_TIP } from './ColormapField';
+import { ArrowLeftIcon, ArrowLeftRightIcon, ChevronDownIcon, ChevronUpIcon } from './icons';
 import { useColormapGroups } from './useColormapGroups';
 
 export const BACK_TIP = 'Back';
@@ -41,19 +41,20 @@ function Picker({ value, onPick }: { value: string; onPick: (name: string) => vo
         title={folded ? 'Show the colormaps' : 'Fold the colormaps down'}
         onClick={() => setFolded(!folded)}
       >
-        {folded ? '▴' : '▾'}
+        {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
       </button>
       <div className="vc-head">
         <div className="insp-row">
           <button type="button" className="vc-back" title={BACK_TIP} aria-label={BACK_TIP} onClick={close}>
-            <Chevron direction="left" />
+            <ArrowLeftIcon />
           </button>
           <span className="vc-title">Colormap</span>
         </div>
         <div className="insp-row insp-row2">
           <input className="cm-search" type="search" placeholder="Search" aria-label="Search colormaps" value={query} onChange={(e) => setQuery(e.target.value)} />
           <button type="button" className={`ghost-btn vc-reverse${reversed ? ' on' : ''}`} aria-pressed={reversed} title={REVERSE_TIP} onClick={() => setReversed(!reversed)}>
-            ⇄ Reverse
+            <ArrowLeftRightIcon />
+            Reverse
           </button>
         </div>
       </div>

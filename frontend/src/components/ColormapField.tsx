@@ -4,6 +4,7 @@
 
 import { baseOf, isReversed, shortList, withReverse } from '../colormaps';
 import { useColormapPicker } from '../colormapPicker';
+import { ArrowLeftRightIcon } from './icons';
 import { useColormapGroups } from './useColormapGroups';
 
 export const NONE = '— none —';
@@ -54,7 +55,7 @@ export default function ColormapField({ value, onChange }: Props) {
           disabled={base === ''}
           onClick={() => onChange(withReverse(value, !reversed))}
         >
-          ⇄
+          <ArrowLeftRightIcon />
         </button>
       </div>
     </label>

@@ -137,7 +137,7 @@ async function check(browser, { theme, viewport }) {
   await expectColour('before', 'red');
   stage = 'toggle on';
   const toggle = page.locator('.lm-flip');
-  if ((await toggle.getAttribute('title')) !== 'Flip through layers (↑/↓ or the mouse wheel over the list, Esc to stop)') problems.push(`tooltip: ${await toggle.getAttribute('title')}`);
+  if ((await toggle.getAttribute('title')) !== 'Flip through layers (Up and Down or the mouse wheel over the list, Esc to stop)') problems.push(`tooltip: ${await toggle.getAttribute('title')}`);
   await toggle.click();
   if ((await toggle.getAttribute('aria-pressed')) !== 'true') problems.push('the toggle does not show that it is on');
   await expectColour('on, first layer', 'red');

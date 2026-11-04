@@ -16,6 +16,7 @@ import { useProcessingStore } from '../processingStore';
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { selectionItemsFrom, ticksOfOpen, ticksOfSearch, useAppStore } from '../store';
 import { sectionsForView } from '../viewImages';
+import { CogIcon, DownloadIcon } from './icons';
 
 // "12 scenes · Sentinel-2 L2A 8 · Copernicus DEM 4": how the ticks are spread over the datasets, where they are in several.
 function spreadText(ticks: ReadonlySet<string>, sections: ReturnType<typeof sectionsForView>, titleOf: (id: string) => string): string {
@@ -109,7 +110,7 @@ export default function ViewBar() {
         }
         onClick={() => openDownloadForSelection('crop')}
       >
-        {openCount > 1 ? '⇩ Download merged crop' : '⇩ Download crop'}
+        <DownloadIcon lead />{openCount > 1 ? 'Download merged crop' : 'Download crop'}
       </button>
       <button
         type="button"
@@ -122,7 +123,7 @@ export default function ViewBar() {
         }
         onClick={() => openDownloadForSelection('originals')}
       >
-        {openCount > 1 ? '⇩ Download full scenes' : '⇩ Download full scene'}
+        <DownloadIcon lead />{openCount > 1 ? 'Download full scenes' : 'Download full scene'}
       </button>
       <button
         type="button"
@@ -131,7 +132,7 @@ export default function ViewBar() {
         title={processBlocked ?? (openCount === 0 ? onlyOpen ?? '' : `Build a processing job for the selected scene${openCount > 1 ? 's' : ''}${onlyOpen ? `. ${onlyOpen}` : ''}`)}
         onClick={() => openProcessing()}
       >
-        ⚙ Process
+        <CogIcon lead />Process
       </button>
     </div>
   );

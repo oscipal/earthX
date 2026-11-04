@@ -9,6 +9,7 @@ import { useColormapPicker } from '../colormapPicker';
 import { useProcessingStore } from '../processingStore';
 import { inspectorKindOf } from '../inspectorKind';
 import { useAppStore } from '../store';
+import { ChevronDownIcon, ChevronUpIcon } from './icons';
 import ResultControls from './ResultControls';
 import ViewerControls from './ViewerControls';
 
@@ -44,7 +45,7 @@ function Sheet({ kind, hidden }: { kind: 'view' | 'result'; hidden: boolean }) {
         title={folded ? 'Show the settings' : 'Fold the settings down'}
         onClick={() => setFolded(!folded)}
       >
-        {folded ? '▴' : '▾'}
+        {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
       </button>
       {kind === 'view' ? <ViewerControls /> : <ResultControls />}
     </aside>

@@ -138,7 +138,7 @@ async function openWith(presets: unknown) {
 }
 
 const store = () => useProcessingStore.getState();
-const bandMath = () => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === '＋ Band math')!;
+const bandMath = () => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Band math')!;
 const click = (element: HTMLElement) => act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const expression = (at: number) => container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]')[at]!;
 const section = () => container.querySelector('section[aria-label="Preview on the map"]')!;

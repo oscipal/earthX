@@ -98,12 +98,12 @@ async function selectScene(page, withAoi, aoi = AOI) {
     useProcessingStore.getState().openProcessing();
     if (aoi) useProcessingStore.getState().setArea('aoi');
   }, withAoi);
-  await page.getByRole('button', { name: '＋ Normalize' }).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: 'Normalize' }).waitFor({ timeout: 15000 });
 }
 
 // The step with the band `red` chosen and in the output, and the method.
 async function withStep(page, method) {
-  await page.getByRole('button', { name: '＋ Normalize' }).click();
+  await page.getByRole('button', { name: 'Normalize' }).click();
   await page.evaluate(async () => {
     const { useProcessingStore } = await import('/src/processingStore.ts');
     useProcessingStore.getState().setOutput(['red']);
@@ -151,7 +151,7 @@ async function checkMethods(browser, theme, viewport) {
   const state = { statistics: 'ok' };
   const { context, page } = await open(browser, theme, viewport, state);
   await selectScene(page, true);
-  await page.getByRole('button', { name: '＋ Normalize' }).click();
+  await page.getByRole('button', { name: 'Normalize' }).click();
   const step = page.locator('li.pp-step').first();
   await step.locator('fieldset .pp-chip', { hasText: 'red' }).click();
   const options = await step.locator('select[id$="-method"] option').allTextContents();
@@ -167,7 +167,7 @@ async function checkMethods(browser, theme, viewport) {
   if (!tips.includes('NDVI −1…1 → 0…1') || !tips.includes('(x − from) / (to − from)')) problems.push('the tooltip has no example or formula');
   if (!tips.includes('Sensitive to outliers, e.g. in indices; prefer Robust (median, IQR) there.')) problems.push('the tooltip of Z-score does not warn of outliers');
   await step.locator('select[id$="-method"]').selectOption('percentile');
-  await step.locator('text=Preview measured ✓').waitFor({ timeout: 5000 }).catch(() => problems.push('the numbers were not measured'));
+  await step.locator('text=Preview measured').waitFor({ timeout: 5000 }).catch(() => problems.push('the numbers were not measured'));
   if ((await shown()) !== 'method,range,Target min,Target max,clip') problems.push(`percentile shows ${await shown()}`);
   if ((await step.locator('select[id$="-range"]').inputValue()) !== '2–98 %') problems.push('the range does not start at 2–98 %');
   const body = state.asked[0];
@@ -212,7 +212,7 @@ async function checkReview(browser, theme, viewport) {
   await shot(step, name, 'measuring');
   state.statistics = 'ok';
   state.release();
-  await step.locator('text=Preview measured ✓').waitFor({ timeout: 5000 }).catch(() => problems.push('the held question was not answered'));
+  await step.locator('text=Preview measured').waitFor({ timeout: 5000 }).catch(() => problems.push('the held question was not answered'));
   await shot(step, name, 'measured');
   // A failure: the reason of the route behind the (!), "Retry"; nothing is held.
   state.statistics = 'fail';
@@ -231,7 +231,7 @@ async function checkReview(browser, theme, viewport) {
   await shot(step, name, 'failed');
   state.statistics = 'ok';
   await step.getByRole('button', { name: 'Retry' }).click();
-  await step.locator('text=Preview measured ✓').waitFor({ timeout: 5000 }).catch(() => problems.push('Retry did not measure again'));
+  await step.locator('text=Preview measured').waitFor({ timeout: 5000 }).catch(() => problems.push('Retry did not measure again'));
   await context.close();
   return { name, problems };
 }
@@ -249,7 +249,7 @@ async function checkNoAoi(browser, theme, viewport) {
   if ((await tipsOf(step)).includes('Draw an AOI')) problems.push('a tooltip still asks for an AOI');
   if (state.asked.length > 0) problems.push('a question was asked for a fixed range');
   await step.locator('select[id$="-method"]').selectOption('robust');
-  await step.locator('text=Preview measured ✓').waitFor({ timeout: 5000 }).catch(() => problems.push('the whole scenes were not measured'));
+  await step.locator('text=Preview measured').waitFor({ timeout: 5000 }).catch(() => problems.push('the whole scenes were not measured'));
   if (state.asked.length !== 1 || 'aoi' in state.asked[0]) problems.push(`the question is ${JSON.stringify(state.asked[0]?.aoi ?? 'without aoi')}`);
   const tips = await tipsOf(step);
   if (!tips.includes(ESTIMATED)) problems.push('the tooltip does not say the preview is an estimate');
@@ -274,7 +274,7 @@ async function checkLarge(browser, theme, viewport) {
   const { context, page } = await open(browser, theme, viewport, state);
   await selectScene(page, true);
   const step = await withStep(page, 'percentile');
-  await step.locator('text=Preview measured ✓').waitFor({ timeout: 5000 }).catch(() => problems.push('the AOI was not measured'));
+  await step.locator('text=Preview measured').waitFor({ timeout: 5000 }).catch(() => problems.push('the AOI was not measured'));
   if (!(await tipsOf(step)).includes(ESTIMATED)) problems.push('the tooltip does not say the preview is an estimate');
   if (state.asked[0]?.aoi === undefined) problems.push('the question holds no AOI');
   state.exact = true;
@@ -285,7 +285,7 @@ async function checkLarge(browser, theme, viewport) {
   });
   await page.waitForFunction((text) => [...document.querySelectorAll('li.pp-step [data-tip]')].some((t) => t.getAttribute('data-tip').includes(text)), EXACT, { timeout: 5000 }).catch(() => problems.push('the tooltip does not say the preview is measured exactly'));
   // Behind a reprojection.
-  await page.getByRole('button', { name: /＋ Reproject/ }).click();
+  await page.getByRole('button', { name: /Reproject/ }).click();
   await page.evaluate(async () => {
     const { useProcessingStore } = await import('/src/processingStore.ts');
     const steps = useProcessingStore.getState().steps;

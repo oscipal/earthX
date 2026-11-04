@@ -1,16 +1,16 @@
 // "Actions" of a layer in the settings bar (Otto, 2.11.2026): process it, download it, add a copy of it as it is drawn now, remove it.
-// The same for a pinned view and a result layer, with the rules of the layer manager: the same "Process", the same ⇩, the same
+// The same for a pinned view and a result layer, with the rules of the layer manager: the same "Process", the same download, the same
 // removal (the settings close with the layer).
 
 import { layerDownloadKind } from '../download';
 import type { MapLayer } from '../layers';
 import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_RESULT_TEXT, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
-import { BinIcon } from './Icons';
+import { CogIcon, PlusIcon, TrashIcon } from './icons';
 import LayerDownload from './LayerDownload';
 
 export const REMOVE_TIP = 'Remove layer';
-export const COPY_LABEL = '＋ Add current view to layers';
+export const COPY_LABEL = 'Add current view to layers';
 const COPY_TIP = 'Add a copy of this layer, drawn as it is now, as a new layer; this layer stays as it was saved';
 
 interface Props {
@@ -37,7 +37,7 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
         title={processBlock === NO_COPY_TEXT ? NO_COPY_TEXT : (processBlock ?? (layer.result ? (layer.result.expired ? EXPIRED_PROCESS_TEXT : PROCESS_RESULT_TEXT) : 'Process this layer'))}
         onClick={() => void processLayer(layer.id)}
       >
-        ⚙ Process
+        <CogIcon lead />Process
       </button>
       {layerDownloadKind(layer) !== null ? <LayerDownload layer={layer} className="ghost-btn" label="Download" /> : <span />}
       <button
@@ -49,10 +49,10 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
           void (beforeCopy ? beforeCopy() : Promise.resolve(true)).then((drawn) => drawn && copy(layer.id));
         }}
       >
-        {COPY_LABEL}
+        <PlusIcon lead />{COPY_LABEL}
       </button>
       <button type="button" className="ghost-btn danger vc-remove" title={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(layer.id)}>
-        <BinIcon />
+        <TrashIcon />
       </button>
     </div>
   );

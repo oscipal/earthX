@@ -80,7 +80,7 @@ const click = (element: Element | null | undefined) => {
   act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
 const button = (label: string | RegExp, within: ParentNode = container): HTMLButtonElement => {
-  const found = [...within.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? '')));
+  const found = [...within.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.textContent ?? '') || label.test(b.getAttribute('aria-label') ?? '')));
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found;
 };
@@ -408,7 +408,7 @@ describe('groups', () => {
   it('makes a group with "New group" and shows it, empty, under its name', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
-    click(button('＋ New group'));
+    click(button('New group'));
     type(field(), 'Field 7');
     key(field(), 'Enter');
     const sections = [...container.querySelectorAll('.pm-group')].map((s) => s.getAttribute('aria-label'));
@@ -418,7 +418,7 @@ describe('groups', () => {
 
   it('makes no group of an empty name', () => {
     mount();
-    click(button('＋ New group'));
+    click(button('New group'));
     type(field(), '  ');
     key(field(), 'Enter');
     expect(useProcessingStore.getState().groups).toEqual([]);
@@ -572,7 +572,7 @@ describe('the keys of a focused row (R, G, A)', () => {
   it('act on the batch for a part of it: a part has no keys of its own', () => {
     put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const part = container.querySelector<HTMLElement>('.pm-parts .pm-row')!;
     press(openButton(part), 'a');
     expect(useProcessingStore.getState().batches[0].archived).toBe(true);
@@ -587,7 +587,7 @@ describe('the keys of a focused row (R, G, A)', () => {
     for (const letter of ['a', 'g', 'r']) expect(press(field(), letter).defaultPrevented).toBe(false);
     expect(rows()).toHaveLength(1);
     key(field(), 'Escape');
-    click(button('＋ New group'));
+    click(button('New group'));
     expect(press(field(), 'a').defaultPrevented).toBe(false);
     expect(useProcessingStore.getState().jobs[0].archived).toBe(false);
   });
@@ -705,7 +705,7 @@ describe('the letters of the open menu', () => {
   it('have no letter for an action the row does not offer: a part has only "Cancel"', () => {
     put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     menuOf(container.querySelector('.pm-parts .pm-row')!);
     expect(press(document.activeElement!, 'r').defaultPrevented).toBe(false);
     expect(press(document.activeElement!, 'a').defaultPrevented).toBe(false);
@@ -842,7 +842,7 @@ describe('dragging a row to a group', () => {
   it('does not offer a part of a batch, or a row that is being renamed, for dragging', () => {
     put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' }), jobEntry(2)], batches: [batchEntry(BATCH)] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     expect(container.querySelector('.pm-parts .pm-row')!.hasAttribute('draggable')).toBe(false);
     expect(rows()[0].getAttribute('draggable')).toBe('true');
     press(openButton(rows()[1]), 'r');
@@ -925,7 +925,7 @@ describe('the keys with no click first', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     over(rows()[0]);
-    click(button('＋ New group'));
+    click(button('New group'));
     expect(press(field(), 'a').defaultPrevented).toBe(false);
     key(field(), 'Escape');
     expect(press(document.body, 'a', { ctrlKey: true }).defaultPrevented).toBe(false);
@@ -968,7 +968,7 @@ describe('the keys with no click first', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     expect(press(document.body, 'ArrowDown').defaultPrevented).toBe(false);
-    click(button('＋ New group'));
+    click(button('New group'));
     expect(press(field(), 'ArrowDown').defaultPrevented).toBe(false);
   });
 });
@@ -1009,7 +1009,7 @@ describe('the focus of a row', () => {
   it('is not set on the row of a part of a batch: its keys are the batch\'s', () => {
     put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const part = container.querySelector<HTMLElement>('.pm-parts .pm-row')!;
     (document.activeElement as HTMLElement | null)?.blur();
     down(part);
@@ -1062,7 +1062,7 @@ describe('the focus of a row', () => {
     mount();
     openButton(rows()[0]).focus();
     press(openButton(rows()[0]), 'a');
-    click(button('＋ New group'));
+    click(button('New group'));
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(document.activeElement).toBe(field());
   });
@@ -1183,10 +1183,10 @@ describe('a batch', () => {
     expect(rows()).toHaveLength(1);
     expect(titles()).toEqual(['Band math · Sentinel-2 L2A · 12 Oct']);
     expect(container.querySelectorAll('.pm-parts')).toHaveLength(0);
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const list = container.querySelector('.pm-parts')!;
     expect([...list.querySelectorAll('.pm-title')].map((t) => t.textContent)).toEqual(['S1', 'S2', 'S3', 'S4']);
-    click(button('▾'));
+    click(button(/^Fold up/u));
     expect(container.querySelector('.pm-parts')).toBeNull();
   });
 
@@ -1226,7 +1226,7 @@ describe('a batch', () => {
   it('lists a part the server refused, without a job, with the reason as its tooltip', () => {
     withBatch(parts(1), { refused: [{ label: 'S2', message: 'no good' }] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const refused = container.querySelector('.pm-row.refused')!;
     expect(refused.querySelector('.pm-title')?.textContent).toBe('S2');
     expect(refused.querySelector('.pm-state')?.textContent).toBe('Refused');
@@ -1239,7 +1239,7 @@ describe('a batch', () => {
   it('gives a part its download and a menu with nothing but "Delete" once it is done and "Cancel" while it runs', () => {
     withBatch([finished(1, { batchId: BATCH, part: 'S1' }), jobEntry(2, { batchId: BATCH, part: 'S2' })]);
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const [done, running] = [...container.querySelectorAll<HTMLElement>('.pm-parts .pm-row')];
     expect(done.querySelector('a[aria-label="Download (ZIP)"]')).not.toBeNull();
     menuOf(done);
@@ -1367,7 +1367,7 @@ describe('a batch', () => {
     it('is not on a job of its own, nor on the parts of an opened batch', () => {
       put({ jobs: [part(1), part(2), finished(3)], batches: [batchEntry(BATCH)] });
       mount();
-      click(button('▸'));
+      click(button(/^Show the parts of/u));
       expect(container.querySelectorAll('[aria-label^="Download all (ZIP)"]')).toHaveLength(1);
     });
 
