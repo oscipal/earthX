@@ -3,10 +3,11 @@
 //   2. It opens a panel beside the rail like the other panels: the same width, from the top to the foot, a head with the title and no x (a panel
 //      of the rail is opened and closed with its symbol, not with Esc); under 900 px it covers the map from the rail to the right edge, as they do. Sections Basemap,
 //      Overlays, Projection, Appearance and Tooltips; "Relief" is an overlay and no basemap.
-//   3. Every choice is a segment button (the chosen one filled), an overlay is a button that is pressed while it is on, the tooltips are a switch
-//      with "Simple" at the left and "Advanced" at the right; no list of ticks.
+//   3. Every choice is a segment button (the chosen one filled), all of one size (the width of one of four columns, the height of a control), an
+//      overlay is a button of that form that is pressed while it is on, "Simple" and "Advanced" are two boxes as well; no list of ticks, no switch.
 //   4. Light, Dark and System change the theme at once; System follows the colour scheme of the system while the page is open.
-//   5. Tooltips: in the simple step a tip of the other step does not show, the reason of a locked button does; with the switch right all show.
+//   5. Tooltips: in the simple step a tip of the other step does not show, the reason of a locked button does; with "Advanced" all show; and a tip
+//      that is drawn goes when the step is put back to "Simple" (it used to stay).
 //   6. The choices are kept per browser (a reload), and a browser with a locked storage still takes them for the visit.
 //   7. A browser that kept the basemap "relief" opens with the default basemap and the overlay Relief.
 //   8. The full text of a cut-off text shows only while it is cut (measured in the layout of the page), in both steps.
@@ -63,7 +64,6 @@ const box = (locator) => locator.evaluate((e) => e.getBoundingClientRect().toJSO
 const settings = (page) => page.locator('nav[aria-label="Main"] button[aria-label="Settings"]');
 const panel = (page) => page.locator('.settings-panel');
 const seg = (page, group, name) => panel(page).getByRole('group', { name: group }).getByRole('button', { name, exact: true });
-const tipSwitch = (page) => panel(page).getByRole('switch', { name: 'Advanced tooltips' });
 // A panel of the rail is closed with its symbol (Otto, 4.11.2026).
 const closePanel = async (page) => { if ((await settings(page).getAttribute('aria-expanded')) === 'true') await settings(page).click(); };
 // The panel is open: the symbol opens it, and the panel that was open before gives way.
@@ -134,7 +134,7 @@ async function layout(browser, theme, viewport) {
   // 3. Buttons, not ticks.
   expect(`${name}: no tick, no menu, no checkbox`, (await panel(page).locator('[role^="menuitem"], [role="menu"], .menu-tick, input[type="checkbox"], input[type="radio"]').count()) === 0);
   const segs = await panel(page).locator('.settings-row button').evaluateAll((els) => els.map((e) => [e.className, e.hasAttribute('aria-pressed')]));
-  expect(`${name}: every choice is a .btn.seg with a pressed state`, segs.length === 12 && segs.every(([c, p]) => c === 'btn seg' && p), JSON.stringify(segs));
+  expect(`${name}: every choice is a .btn.seg with a pressed state`, segs.length === 14 && segs.every(([c, p]) => c === 'btn seg' && p), JSON.stringify(segs));
   const fills = await panel(page).evaluate((e) => {
     const pick = (el) => ({ bg: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color });
     const on = e.querySelector('[aria-label="Basemap"] [aria-pressed="true"]');
@@ -188,12 +188,13 @@ async function layout(browser, theme, viewport) {
   await seg(page, 'Overlays', 'Relief').click();
   expect(`${name}: and not pressed when it is off`, (await seg(page, 'Overlays', 'Relief').getAttribute('aria-pressed')) === 'false');
 
-  // 3 (switch). "Simple" at the left, the switch between, "Advanced" at the right.
-  const row = await panel(page).locator('.settings-switch-row').evaluate((e) => [...e.children].map((c) => ({ text: c.textContent, role: c.getAttribute('role'), x: c.getBoundingClientRect().x })));
-  expect(`${name}: Simple, the switch, Advanced from the left to the right`, row.length === 3 && row[0].text === 'Simple' && row[1].role === 'switch' && row[2].text === 'Advanced' && row[0].x < row[1].x && row[1].x < row[2].x, JSON.stringify(row));
-  const thumb = async () => tipSwitch(page).evaluate((e) => { const t = e.querySelector('.switch-thumb').getBoundingClientRect(); const r = e.getBoundingClientRect(); return { left: t.left - r.left, right: r.right - t.right }; });
-  const simple = await thumb();
-  expect(`${name}: the switch is left while simple`, simple.left < simple.right && (await tipSwitch(page).getAttribute('aria-checked')) === 'false', JSON.stringify(simple));
+  // 3 (sizes). Every box is as wide as one of four columns and as high as every other, and its text fits in it.
+  const sizes = await panel(page).locator('.settings-row button').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, cut: e.scrollWidth > e.clientWidth + 1 }; }));
+  expect(`${name}: all the boxes are of one size`, new Set(sizes.map((x) => x.w)).size === 1 && new Set(sizes.map((x) => x.h)).size === 1, JSON.stringify([...new Set(sizes.map((x) => `${x.w}x${x.h}`))]));
+  expect(`${name}: the text of no box is cut off`, sizes.every((x) => !x.cut), JSON.stringify(sizes.filter((x) => x.cut)));
+  const tipsRow = await panel(page).getByRole('group', { name: 'Tooltips' }).getByRole('button').allTextContents();
+  expect(`${name}: Simple and Advanced are two boxes`, JSON.stringify(tipsRow) === JSON.stringify(['Simple', 'Advanced']) && (await panel(page).locator('[role="switch"]').count()) === 0, JSON.stringify(tipsRow));
+  expect(`${name}: Simple is chosen`, (await seg(page, 'Tooltips', 'Simple').getAttribute('aria-pressed')) === 'true');
 
   // 5. The steps of the tooltips. The panel is closed to reach the map.
   await closePanel(page);
@@ -213,11 +214,8 @@ async function layout(browser, theme, viewport) {
   expect(`${name}: the tip of the free button is held back in the simple step`, (await page.locator('.tip-layer').count()) === 0);
   await page.mouse.move(win.width / 2, win.height / 2);
   await openPanel(page);
-  await tipSwitch(page).click();
-  expect(`${name}: the switch is right and Advanced is kept`, (await tipSwitch(page).getAttribute('aria-checked')) === 'true' && (await page.evaluate(() => localStorage.getItem('earthx.tooltips'))) === 'advanced');
-  await page.waitForTimeout(250); // the thumb takes 120 ms to move
-  const advanced = await thumb();
-  expect(`${name}: the thumb moved to the right`, advanced.right < advanced.left, JSON.stringify(advanced));
+  await seg(page, 'Tooltips', 'Advanced').click();
+  expect(`${name}: Advanced is chosen and kept`, (await seg(page, 'Tooltips', 'Advanced').getAttribute('aria-pressed')) === 'true' && (await page.evaluate(() => localStorage.getItem('earthx.tooltips'))) === 'advanced');
   await page.screenshot({ path: path.join(OUT, `panel advanced ${name}.png`) });
   await closePanel(page);
   await zoom.hover();
@@ -225,11 +223,23 @@ async function layout(browser, theme, viewport) {
   await page.mouse.move(win.width / 2, win.height / 2);
   await zoom.hover();
   await page.locator('.tip-layer').waitFor({ timeout: 2000 });
-  expect(`${name}: the same tip shows with the switch right`, /^Zoom the map to fit/.test((await page.locator('.tip-layer').textContent()) ?? ''));
+  expect(`${name}: the same tip shows with Advanced`, /^Zoom the map to fit/.test((await page.locator('.tip-layer').textContent()) ?? ''));
   await page.mouse.move(win.width / 2, win.height / 2);
   await openPanel(page);
-  await tipSwitch(page).click();
-  expect(`${name}: the switch back to the left keeps Simple`, (await page.evaluate(() => localStorage.getItem('earthx.tooltips'))) === 'simple');
+  // A tip that is drawn goes when the step is put back to "Simple" and the pointer leaves (Otto, 4.11.2026: it stayed).
+  await seg(page, 'Tooltips', 'Advanced').hover();
+  await page.locator('.tip-layer').waitFor({ timeout: 2000 });
+  await seg(page, 'Tooltips', 'Simple').click();
+  await page.mouse.move(win.width - 40, win.height / 2);
+  await page.waitForTimeout(300);
+  expect(`${name}: the tip is gone after "Simple" and a move of the pointer`, (await page.locator('.tip-layer').count()) === 0);
+  await seg(page, 'Tooltips', 'Advanced').click();
+  await seg(page, 'Tooltips', 'Simple').hover();
+  await page.locator('.tip-layer').waitFor({ timeout: 2000 });
+  await seg(page, 'Tooltips', 'Simple').click();
+  await page.waitForTimeout(300);
+  expect(`${name}: and also while the pointer stays on the box that was clicked`, (await page.locator('.tip-layer').count()) === 0);
+  expect(`${name}: Simple is kept`, (await page.evaluate(() => localStorage.getItem('earthx.tooltips'))) === 'simple');
   await closePanel(page);
 
   // 8. The full text of a cut-off text.
@@ -273,7 +283,7 @@ async function kept(browser, viewport) {
   await seg(page, 'Basemap', 'Outlines').click();
   await seg(page, 'Projection', 'Globe').click();
   await seg(page, 'Overlays', 'Graticule').click();
-  await tipSwitch(page).click();
+  await seg(page, 'Tooltips', 'Advanced').click();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('nav[aria-label="Main"] button');
   const state = await store(page, (s) => ({ appearance: s.getState().appearance, theme: s.getState().theme, basemap: s.getState().basemap, projection: s.getState().projection, graticule: s.getState().overlays.graticule, tips: s.getState().tipLevel }));
@@ -281,8 +291,7 @@ async function kept(browser, viewport) {
   expect(`kept ${viewport}: the page is light`, (await page.locator('.app').getAttribute('data-theme')) === 'normal');
   await openPanel(page);
   const pressed = await panel(page).locator('.settings-row [aria-pressed="true"]').allTextContents();
-  expect(`kept ${viewport}: the panel marks what was chosen`, JSON.stringify(pressed) === JSON.stringify(['Outlines', 'Graticule', 'Globe', 'Light']), JSON.stringify(pressed));
-  expect(`kept ${viewport}: and the switch is right`, (await tipSwitch(page).getAttribute('aria-checked')) === 'true');
+  expect(`kept ${viewport}: the panel marks what was chosen`, JSON.stringify(pressed) === JSON.stringify(['Outlines', 'Graticule', 'Globe', 'Light', 'Advanced']), JSON.stringify(pressed));
   expect(`kept ${viewport}: no error on the page`, errors.length === 0, errors.join(' | '));
   await context.close();
 
@@ -298,7 +307,7 @@ async function kept(browser, viewport) {
   await openPanel(locked.page);
   await seg(locked.page, 'Appearance', 'Light').click();
   await seg(locked.page, 'Basemap', 'Outlines').click();
-  await tipSwitch(locked.page).click();
+  await seg(locked.page, 'Tooltips', 'Advanced').click();
   const lockedState = await store(locked.page, (s) => ({ theme: s.getState().theme, basemap: s.getState().basemap, tips: s.getState().tipLevel }));
   expect(`locked storage ${viewport}: the choices hold for the visit`, JSON.stringify(lockedState) === JSON.stringify({ theme: 'normal', basemap: 'outlines', tips: 'advanced' }), JSON.stringify(lockedState));
   expect(`locked storage ${viewport}: no error on the page`, locked.errors.length === 0, locked.errors.join(' | '));
