@@ -123,6 +123,8 @@ describe('top-right map controls', () => {
   it('disables "Zoom to selection" with neither an AOI nor pinned layers, and enables it once one exists (point 3)', () => {
     const view = mount();
     expect(btn(view, 'Zoom to selection')?.disabled).toBe(true);
+    // A locked button says why (`TipLayer` shows it in either step of the tooltips).
+    expect(btn(view, 'Zoom to selection')?.getAttribute('data-tip')).toBe('Nothing to zoom to: draw an AOI, open an image or show a layer');
 
     act(() => {
       useAppStore.setState({
@@ -141,6 +143,7 @@ describe('top-right map controls', () => {
       });
     });
     expect(btn(view, 'Zoom to selection')?.disabled).toBe(false);
+    expect(btn(view, 'Zoom to selection')?.getAttribute('data-tip')).toMatch(/^Zoom the map to fit/u);
   });
 });
 

@@ -40,7 +40,7 @@ import {
   type ExportOffer,
   type OriginalFileLink,
 } from './download';
-import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
+import { polygonBbox, quicklookCoords, searchArea } from './geoUtils';
 import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
 import { datesOfIds, dateOf, knownItems } from './layerDate';
 import { flipNext, flipStart } from './layerFlip';
@@ -52,6 +52,7 @@ import { isMosaicPass, mosaicTemplateOf, orderedPass, orderKeyOf, oversizeNote, 
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
+import { zoomTarget } from './zoomSelection';
 import type { Projection, Theme } from './preferences';
 import { loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTheme, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTheme } from './preferences';
 import type { Percent } from './percentRange';
@@ -3122,22 +3123,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ focusLoading: false });
     }
   },
-  // Zoom to the AOI; if none is drawn, to the pinned layer images; if there
-  // are none of those either, the button stays disabled (App.tsx::canZoom)
-  // and this is never called.
+  // Zoom to everything that is chosen at once: the AOI, the open view and the layers that are shown (`zoomSelection.ts`). With none of
+  // them the button is locked (App.tsx) and this is never called.
   zoomToView: () => {
-    const { aoi, layers } = get();
-    if (aoi) {
-      const bb = polygonBbox(aoi);
-      if (bb) {
-        set({ flyToBbox: bb });
-        return;
-      }
-    }
-    const boxes = layers.flatMap((layer) =>
-      layer.overlays.map((ov) => (ov.kind === 'raster' ? ov.bounds : coordsBbox(ov.coords))),
-    );
-    const bb = unionBbox(boxes);
+    const bb = zoomTarget(get());
     if (bb) set({ flyToBbox: bb });
   },
   // Also expands the matching group in the results list — everything that

@@ -23,6 +23,7 @@ import { openPermalinkInAddress } from './permalink';
 import { forgetJobsWindow } from './preferences';
 import { useProcessingStore } from './processingStore';
 import { ticksOfSearch, useAppStore } from './store';
+import { NOTHING_TO_ZOOM, zoomBoxes } from './zoomSelection';
 
 export default function App() {
   const loadDatasets = useAppStore((s) => s.loadDatasets);
@@ -36,9 +37,9 @@ export default function App() {
   // A scene ticked in the list while a view is open that the view does not draw: the bar of the selection shows
   // above the controls of the view, as it does after any click on a result.
   const tickedBesideView = useAppStore((s) => ticksOfSearch(s).some((id) => !(id in s.downloaded)));
-  // "Zoom to selection" zooms to the AOI, else the pinned layer images;
-  // with neither, it stays visibly disabled (store.ts::zoomToView).
-  const canZoom = useAppStore((s) => !!s.aoi || s.layers.length > 0);
+  // "Zoom to selection" zooms to the AOI, the open view and the layers that are shown together;
+  // with none of them, it stays disabled and says why (`zoomSelection.ts`).
+  const canZoom = useAppStore((s) => zoomBoxes(s).length > 0);
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const processingOpen = useProcessingStore((s) => s.open);
@@ -91,7 +92,7 @@ export default function App() {
           className="panel btn"
           onClick={() => zoomToView()}
           disabled={!canZoom}
-          data-tip-level="advanced" data-tip="Zoom the map to fit the AOI, or the pinned layer images"
+          data-tip-level="advanced" data-tip={canZoom ? 'Zoom the map to fit the AOI, the open image and the layers that are shown' : NOTHING_TO_ZOOM}
         >
           <ZoomToSelectionIcon lead />Zoom to selection
         </button>

@@ -255,10 +255,10 @@ describe('zoomToView', () => {
   };
 
   beforeEach(() => {
-    useAppStore.setState({ aoi: null, layers: [], flyToBbox: null });
+    useAppStore.setState({ aoi: null, layers: [], flyToBbox: null, focusMode: false, downloaded: {}, showDownloaded: true, viewLayerId: null });
   });
 
-  it('prefers the AOI over pinned layers', () => {
+  it('zooms to the AOI and the layers that are shown together (UI-04 part 4: it no longer prefers the AOI)', () => {
     useAppStore.setState({
       aoi: AOI,
       layers: [
@@ -284,10 +284,10 @@ describe('zoomToView', () => {
       ],
     });
     useAppStore.getState().zoomToView();
-    expect(useAppStore.getState().flyToBbox).toEqual([1, 1, 2, 2]);
+    expect(useAppStore.getState().flyToBbox).toEqual([1, 1, 41, 41]);
   });
 
-  it('falls back to the pinned layer images without an AOI, raster and image overlays alike', () => {
+  it('zooms to the pinned layer images alone without an AOI, raster and image overlays alike', () => {
     useAppStore.setState({
       layers: [
         {
