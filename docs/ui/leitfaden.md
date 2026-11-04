@@ -120,6 +120,7 @@
 
 ## 5. Schließen
 
+- **Linke Panels: ein- und ausschalten über das Symbol, kein x** (Otto, 04.11.2026). Search and area, Layers, Jobs, Search results und Settings öffnen und schließen nur mit ihrem Symbol in der Leiste (ein zweiter Klick schließt); ihr Kopf hat den Titel und kein x. Das rote x bleibt für die **Seitenleiste rechts, Dialoge, Blätter (Popover-Formulare, Processing-Panel) und Meldungen**.
 - **Ein Weg:** das kleine rote x aus `CloseButton.tsx` (Tooltip „Close“, ein längerer Tooltip, wo das Schließen eine Folge hat). Das gilt auch für Meldungen der Statusleiste.
 - **Esc schließt nichts:** keine Ansicht, Seitenleiste, kein Panel, Blatt, Menü, keine Liste und keinen Tooltip. Ausnahmen:
   - Esc = „Cancel“ in Bestätigungsdialogen („Values are resampled“);
@@ -218,7 +219,7 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 ## 9. Karte und Einstellungen
 
 - **Panel „Settings“** (Teil 4, Otto, 04.11.2026; erst ein Menü, am selben Tag auf Ottos Zusatz ein Panel), `components/SettingsPanel.tsx`:
-  - **Ort:** das letzte Symbol der Leiste links, am unteren Rand (MingCute „Settings 6 Line“, 20 px, Tooltip „Settings“), ein Halt der Pfeiltasten wie die anderen vier. Es öffnet ein **Panel in der Leiste wie die übrigen** (`dock-slot` im `.dock`): dieselbe Breite (340 px, unter 900 px über der Karte von der Leiste bis zum rechten Rand), derselbe Kopf (`.results-head`: Titel „Settings“ und das rote x aus `CloseButton`). Es schließt mit dem x und mit dem Symbol, **Esc schließt nichts** (§5). Eine Wahl schließt es nicht. Die anderen Panels haben das x im Kopf heute nicht (sie schließen mit ihrem Symbol); siehe die Frage im Plan §8.6.
+  - **Ort:** das letzte Symbol der Leiste links, am unteren Rand (MingCute „Settings 6 Line“, 20 px, Tooltip „Settings“), ein Halt der Pfeiltasten wie die anderen vier. Es öffnet ein **Panel in der Leiste wie die übrigen** (`dock-slot` im `.dock`): dieselbe Breite (340 px, unter 900 px über der Karte von der Leiste bis zum rechten Rand), derselbe Kopf (`.results-head`: nur der Titel „Settings“, **kein x**, wie bei den anderen linken Panels, §5). Es öffnet und schließt mit dem Symbol, **Esc schließt nichts**. Eine Wahl schließt es nicht.
   - **Abschnitte** (Überschrift in Großbuchstaben per CSS): „Basemap“ (Satellite, Streets, Grey, Outlines), „Overlays“ (Labels, Graticule, Relief), „Projection“ (Mercator, Globe), „Appearance“ (Light, Dark, System, mit `sun`, `moon`, `monitor`), „Tooltips“ (Schalter „Simple“ / „Advanced“; §8a).
   - **Bedienformen:** Basemap, Projection und Appearance sind Segment-Knöpfe (`.btn.seg`, der gewählte gefüllt), jedes Overlay ein Knopf derselben Form, gedrückt = an, die Tooltips ein Schalter. Keine Häkchen-Liste, kein Menü.
   - **Je Browser gemerkt** (`preferences.ts`, `localStorage`): `earthx.basemap`, `earthx.overlays`, `earthx.projection`, `earthx.theme`, `earthx.tooltips`. Ein gesperrter oder werfender Speicher ändert nichts am Verhalten: Vorgabe beim Laden, die Wahl gilt für den Besuch.
@@ -240,6 +241,7 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 
 | Regel | Test |
 |---|---|
+| kein x im Kopf eines linken Panels (Search and area, Layers, Jobs, Search results, Settings: kein `CloseButton`, kein `close-x`, kein `closeDock`) | `frontend/src/uiRules.test.ts`, `frontend/src/AppRail.test.tsx`, `frontend/src/components/SettingsPanel.test.tsx`, `frontend/e2e/settings-panel.cjs` |
 | rotes x und „Close“ nur in `CloseButton`, kein „Dismiss“, kein x-Zeichen als Inhalt eines Knopfs | `frontend/src/uiRules.test.ts` |
 | Esc nur in den Ausnahmen | `frontend/src/uiRules.test.ts`, dazu Esc-Tests je Panel und Dialog |
 | keine Einheit an „Scale“ | `frontend/src/uiRules.test.ts`, `ProcessingPreview.test.tsx` |
@@ -261,7 +263,7 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLe
 | Fokus: ein Zeichen am Element, nichts am Abschnitt | `frontend/src/uiRules.test.ts`, `frontend/e2e/focus-and-type.cjs` |
 | Tooltips: nur die Stufe „advanced“, nie an (i), Namen nicht selbsterklärender Symbole; gesperrt zeigt den Grund | `frontend/src/uiRules.test.ts`, `frontend/src/tipLevel.test.ts`, `frontend/src/components/TipLayer.test.tsx` |
 | `autocomplete="off"` an jedem Textfeld, Regeln für ein ausgefülltes Feld | `frontend/src/uiRules.test.ts`, `frontend/e2e/focus-and-type.cjs` |
-| Einstellungen in einem Panel der Leiste (Slot im Dock, Kopf mit x, kein Popup, keine Häkchen-Liste): kein Knopf „Basemap“, kein Theme-Knopf, Relief nur als Overlay, das Symbol unten in der Leiste; Segment-Knöpfe, Overlays als gedrückte Knöpfe, Schalter der Tooltips, Merken je Browser, gesperrter Speicher | `frontend/src/uiRules.test.ts`, `frontend/src/components/SettingsPanel.test.tsx`, `frontend/src/AppRail.test.tsx`, `frontend/src/preferences.test.ts`, `frontend/e2e/settings-panel.cjs` |
+| Einstellungen in einem Panel der Leiste (Slot im Dock, Kopf ohne x, kein Popup, keine Häkchen-Liste): kein Knopf „Basemap“, kein Theme-Knopf, Relief nur als Overlay, das Symbol unten in der Leiste; Segment-Knöpfe, Overlays als gedrückte Knöpfe, Schalter der Tooltips, Merken je Browser, gesperrter Speicher | `frontend/src/uiRules.test.ts`, `frontend/src/components/SettingsPanel.test.tsx`, `frontend/src/AppRail.test.tsx`, `frontend/src/preferences.test.ts`, `frontend/e2e/settings-panel.cjs` |
 | ein Schalter nur für An/Aus (`role="switch"` nur in `Switch.tsx` und im Filter der AOI); die gewählte Segment-Schaltfläche ist gefüllt | `frontend/src/uiRules.test.ts`, `frontend/src/components/SettingsPanel.test.tsx` |
 | das eine Symbol aus MingCute: Herkunft, Änderung und Lizenztext vermerkt | `frontend/src/components/icons.test.tsx` |
 | Tooltip mit vollem Text nur bei gemessener Kürzung, in beiden Stufen; `data-tip-cut` nur mit `data-tip`, ohne Stufe, mit Wert | `frontend/src/uiRules.test.ts`, `frontend/src/tipLevel.test.ts`, `frontend/src/components/TipLayer.test.tsx`, `frontend/e2e/settings-panel.cjs` |

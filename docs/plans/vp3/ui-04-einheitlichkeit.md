@@ -466,18 +466,21 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 3. Das Menü scrollt bei 360 px in sich: in Ordnung.
 
 **Zusatz Otto (04.11.2026, zu [#291](https://github.com/oscipal/earthX/pull/291)), umgesetzt:** Das Einstellungsmenü ist ein Panel, kein Popup.
-1. **Panel in der Leiste:** „Settings“ öffnet wie die übrigen Panels (`.dock`, Slot `dock-settings`, 340 px; unter 900 px über der Karte von der Leiste bis zum rechten Rand), mit dem Kopf `.results-head` (Titel, rotes x); Esc schließt nichts. `SettingsMenu.tsx`, `Popover` mit `beside`, `placePopoverBeside` und `data-popover-edge` entfallen (`Popover` und `popover.ts` sind wieder wie auf `main`); `DockPanel` kennt `'settings'`, das Symbol ist das fünfte der Leiste (`AppRail`, `#rail-settings`).
+1. **Panel in der Leiste:** „Settings“ öffnet wie die übrigen Panels (`.dock`, Slot `dock-settings`, 340 px; unter 900 px über der Karte von der Leiste bis zum rechten Rand), mit dem Kopf `.results-head` (nur der Titel, kein x, siehe die Antworten unten); Esc schließt nichts. `SettingsMenu.tsx`, `Popover` mit `beside`, `placePopoverBeside` und `data-popover-edge` entfallen (`Popover` und `popover.ts` sind wieder wie auf `main`); `DockPanel` kennt `'settings'`, das Symbol ist das fünfte der Leiste (`AppRail`, `#rail-settings`).
 2. **Schalter der Tooltips:** `components/Switch.tsx` (`role="switch"`, `aria-checked`, `aria-label="Advanced tooltips"`), links „Simple“, rechts „Advanced“, Vorgabe links.
 3. **Knöpfe statt Häkchen:** Basemap, Projection und Appearance sind `.btn.seg` in einer Gruppe, der gewählte gefüllt (`.btn.seg[aria-pressed='true']`: Akzent, `--on-accent`); jedes Overlay ist ein Knopf derselben Form, gedrückt = an.
 4. Leitfaden §3 (Auswahl aus wenigen, Schalter), §7, §8a, §9, §10 nachgezogen; Prüfungen in `uiRules.test.ts`; `e2e/settings-menu.cjs` heißt jetzt `e2e/settings-panel.cjs`.
 
 **Auslegungen zum Zusatz (gelten bis Otto widerspricht):**
 1. **Der gefüllte gewählte Segment-Knopf gilt für alle `.btn.seg`** (auch Band-Chips, wenn sie gedrückt sind), nicht nur im Panel: ein Segment-Knopf sieht überall gleich aus. Vorher war ein gedrückter Knopf nur getönt.
-2. **Das rote x im Kopf hat nur „Settings“:** die Panels Search, Layers, Jobs und Search results haben heute kein x im Kopf, sie schließen mit ihrem Symbol (Plan §8.3, Leitfaden §5). Otto schrieb „gleicher Kopf mit Titel und rotem x“; das Panel hat beides, die anderen wurden nicht angefasst. Siehe Frage 1.
+2. ~~Das rote x im Kopf hat nur „Settings“~~ — **Antwort Otto (04.11.2026): entfällt**, siehe unten.
 3. **Die Beschriftungen „Simple“ und „Advanced“ neben dem Schalter sind Text, kein Knopf;** gestellt wird mit dem Schalter. Der Tooltip steht am Schalter und erklärt beide Stufen.
 4. **„Filter within AOI only“** in „Advanced search“ bleibt ein Kontrollkästchen mit `role="switch"`; es wird nicht auf `Switch.tsx` umgestellt (ein anderes Bauteil, vom Zusatz nicht gemeint). Siehe Frage 2.
 5. **Das Panel schließt nicht, wenn man wählt;** der Schalter und die Knöpfe wirken sofort (wie das Menü vorher).
 
-**Fragen an Otto zum Zusatz:**
-1. Soll das rote x im Kopf auch an den Panels Search, Layers, Jobs und Search results stehen? (1) Nein, nur „Settings“ hat es, bis du es für alle willst — **Empfehlung** (eine Änderung quer durch alle Panels, nicht Teil dieses Zusatzes); (2) ja, in einem Teil für alle.
-2. „Filter within AOI only“ auf den neuen Schalter (`Switch.tsx`) umstellen? (1) Ja, in Teil 6 — **Empfehlung**; (2) so lassen.
+**Fragen an Otto zum Zusatz:** beantwortet (siehe unten).
+
+**Antworten Otto (04.11.2026, zum Zusatz):**
+1. Panels in der linken Leiste haben nie ein rotes x im Kopf; sie schließen nur durch erneuten Klick auf ihr Symbol. Das x im Kopf von „Settings“ **entfällt**; Search, Layers, Jobs und Search results bleiben ohne. Im Leitfaden §5 als Regel („linke Panels: ein- und ausschalten über das Symbol, kein x“; das rote x bleibt für die Seitenleiste rechts, Dialoge, Blätter und Meldungen) und in der Prüfung gegen Rückfälle (`uiRules.test.ts`, `AppRail.test.tsx`, `SettingsPanel.test.tsx`, `settings-panel.cjs`).
+2. „Filter within AOI only“ bleibt, wie es ist (Kontrollkästchen mit `role="switch"`).
+3. Der gefüllte gewählte Segment-Knopf gilt überall: in Ordnung.
