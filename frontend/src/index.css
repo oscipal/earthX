@@ -96,6 +96,15 @@ textarea {
   transform: translateX(-50%);
   /* Centred on the map right of the rail: no wider than that, or a phone scrolls sideways (UI-03d, seen at 360 px). */
   width: min(560px, calc(100vw - var(--rail-width) - 16px));
+  /* Over the panel of the rail (11), the settings bar and the sheet (12), under the rail itself (14): a message is never hidden by a panel
+     (UI-04 part 6, backlog item 58). */
+  z-index: 13;
+}
+/* Narrow windows: the buttons at the top right stand in the row at the top, the message under them (it was over them, in two rows). */
+@media (max-width: 899px) {
+  .overlay.status {
+    top: calc(var(--space-4) + var(--control-height) + var(--space-2));
+  }
 }
 
 /* --- draggable panels --- */
@@ -533,11 +542,12 @@ svg.lucide.icon-lead {
   white-space: nowrap;
 }
 /* "Scale" (Otto, 2.11.2026): vmin and vmax side by side, of one width, and the switch "absolute / percentile" after them, as high as
-   they are; it shows what fits and the rest with "…". */
+   they are; it shows what fits and the rest with "…". A number is never cut: the fields keep `--number-field-width` and the switch, which
+   can be read in its list, gives way in a very narrow window. */
 .processing-panel .vc-scale-fields,
 .inspector .vc-scale-fields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(var(--number-field-width), 1fr) minmax(var(--number-field-width), 1fr) minmax(0, auto);
   gap: var(--space-1);
   min-width: 0;
 }
@@ -592,7 +602,7 @@ svg.lucide.icon-lead {
 }
 .processing-panel .vc-channels,
 .inspector .vc-channels {
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(var(--number-field-width), 1fr) minmax(var(--number-field-width), 1fr) minmax(0, auto);
   align-items: center;
 }
 .processing-panel .vc-chip,
@@ -2991,7 +3001,8 @@ button.pm-open:hover {
   font-size: var(--text-sm);
   backdrop-filter: blur(10px);
   border: 1px solid var(--panel-border);
-  background: var(--panel-bg);
+  /* Opaque: a message lies over a panel in a narrow window, and its text must not show through. */
+  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
 }
 .toast.error {
   border-color: var(--danger);

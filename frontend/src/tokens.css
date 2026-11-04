@@ -53,6 +53,9 @@
   --rail-width: 48px;
   --dock-width: 340px;
   --inspector-width: 320px;
+  /* What a field of a range needs for "-0.123456" with its padding at the small type size: a number is never cut off, the switch beside
+     the fields gives way instead (UI-04 part 6). */
+  --number-field-width: 80px;
   /* The column of the names in a form: the settings bar's, and the processing panel sets its own wider one. */
   --form-label-width: 72px;
   --sheet-wide-width: clamp(520px, 34vw, 640px);

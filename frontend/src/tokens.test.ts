@@ -13,7 +13,7 @@ const ROOT_TOKENS = [
   '--radius-xs', '--radius-sm', '--radius-md', '--radius-full', '--line-width',
   '--control-height', '--control-height-sm', '--control-height-touch',
   '--icon-size', '--icon-size-sm', '--icon-size-rail', '--disabled-opacity', '--scrim',
-  '--rail-width', '--dock-width', '--inspector-width', '--sheet-wide-width',
+  '--rail-width', '--dock-width', '--inspector-width', '--sheet-wide-width', '--number-field-width',
   '--font', '--font-mono',
 ];
 const THEME_TOKENS = [
