@@ -28,6 +28,13 @@ pytestmark = pytest.mark.anyio
 PATH = "/processing/permalinks"
 VIEW = {"center": [9.5, 47.25], "zoom": 9.5, "range": {"vmin": -1.0, "vmax": 1.0, "colormap": "rdylgn"}}
 KEY_HEADER = "X-Delete-Key"
+RANGE = {"vmin": 0.0, "vmax": 0.3, "colormap": ""}
+# Red in percentiles, green in values, blue in percentiles (UI-04 part 5).
+CHANNELS = [
+    {"vmin": 0.01, "vmax": 0.25, "percent": {"low": 2, "high": 98}},
+    {"vmin": 0.02, "vmax": 0.3},
+    {"vmin": 0.0, "vmax": 0.2, "percent": {"low": 5, "high": 95}},
+]
 
 
 def body(document: dict[str, Any] | None = None, view: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -62,6 +69,21 @@ class TestCreateReadDelete:
         made = await create(rig, body(view={"center": [0, 0], "zoom": 2}))
         stored = (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]
         assert stored == {"center": [0, 0], "zoom": 2, "range": None, "basemap": None, "projection": None}
+
+    async def test_a_range_without_channels_or_percent_is_stored_as_it_was_sent(self, rig: Rig) -> None:
+        made = await create(rig)
+        stored = (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]["range"]
+        assert stored == VIEW["range"]
+
+    async def test_a_range_with_the_percentiles_it_was_typed_as_comes_back(self, rig: Rig) -> None:
+        view = {**VIEW, "range": {**RANGE, "percent": {"low": 2, "high": 98}}}
+        made = await create(rig, body(view=view))
+        assert (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]["range"] == view["range"]
+
+    async def test_a_colour_range_with_a_range_and_a_unit_for_each_channel_comes_back(self, rig: Rig) -> None:
+        view = {**VIEW, "range": {**RANGE, "channels": CHANNELS}}
+        made = await create(rig, body(view=view))
+        assert (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]["range"] == view["range"]
 
     @pytest.mark.parametrize("basemap", ["satellite", "streets", "grey", "outlines", "relief"])
     @pytest.mark.parametrize("projection", ["mercator", "globe"])
@@ -176,6 +198,24 @@ class TestWhatIsRefused:
             {"center": [9.5, 47], "zoom": 5, "range": {"vmin": 0, "vmax": 1}},
             {"center": [9.5, 47], "zoom": 5, "range": {"vmin": 0, "vmax": 1, "colormap": "../x"}},
             {"center": [9.5, 47], "zoom": 5, "range": {"vmin": 0, "vmax": 1, "colormap": "a", "extra": 1}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "percent": {"low": -1, "high": 98}}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "percent": {"low": 2, "high": 101}}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "percent": {"low": 98, "high": 2}}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "percent": {"low": 2, "high": 2}}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "percent": {"low": 2.5, "high": 98}}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "percent": {"low": "2", "high": "98"}}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "percent": {"low": 2}}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "percent": {"low": 2, "high": 98, "x": 1}}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "channels": CHANNELS[:2]}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "channels": [*CHANNELS, CHANNELS[0]]}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "channels": []}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "channels": CHANNELS[0]}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "channels": [{"vmin": 0, "vmax": 1}, {"vmin": 0}, CHANNELS[2]]}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "channels": [{**CHANNELS[1], "x": 1}] * 3}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "channels": [{**CHANNELS[1], "vmin": "0"}] * 3}},
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "channels": [{**CHANNELS[1], "percent": {"low": 2, "high": 200}}] * 3}},
+            # Two units for one range: the channels carry their own.
+            {"center": [9.5, 47], "zoom": 5, "range": {**RANGE, "percent": {"low": 2, "high": 98}, "channels": CHANNELS}},
             "text",
             None,
         ],

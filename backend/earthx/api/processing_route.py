@@ -78,7 +78,15 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from psycopg_pool import ConnectionPool, PoolTimeout
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationError,
+    model_serializer,
+    model_validator,
+)
 from starlette.concurrency import run_in_threadpool
 
 from earthx.access.crop_rules import RECIPE_FILENAME, TEXT_FILES
@@ -1410,14 +1418,57 @@ def _no_such_permalink() -> Problem:
     return Problem(404, "there is no such permalink", type_=NO_SUCH_PERMALINK, title="No such permalink")
 
 
-class PermalinkRange(BaseModel):
-    """The range and colormap of the preview as it was on screen; ``colormap`` empty for none."""
+class _Sparse(BaseModel):
+    """A model that writes only the members it has: what an older link did not carry is not written as ``null``."""
 
     model_config = ConfigDict(strict=True, extra="forbid", allow_inf_nan=False)
+
+    @model_serializer(mode="wrap")
+    def _only_what_is_there(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return {name: value for name, value in handler(self).items() if value is not None}
+
+
+class PermalinkPercent(_Sparse):
+    """The percentiles a range was typed as (whole, 0 to 100); the values beside them are the ones they gave."""
+
+    low: int = Field(ge=0, le=100)
+    high: int = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> PermalinkPercent:
+        if self.low >= self.high:
+            raise ValueError("the lower percentile is below the upper one")
+        return self
+
+
+class PermalinkChannel(_Sparse):
+    """The range of one channel of a colour picture, in values and, where it was typed so, as percentiles."""
+
+    vmin: float
+    vmax: float
+    percent: PermalinkPercent | None = None
+
+
+class PermalinkRange(_Sparse):
+    """The range and colormap of the preview as it was on screen; ``colormap`` empty for none.
+
+    A colour picture (UI-04 part 5) may carry a range for each of red, green and blue in ``channels`` (exactly three, in
+    that order; ``vmin``/``vmax`` are then the first's), each with the percentiles it was typed as. Any other range
+    may carry ``percent``. The two never come together: that would say the unit twice. A link made before
+    these two members existed has neither and is read as it was.
+    """
 
     vmin: float
     vmax: float
     colormap: str = Field(max_length=32, pattern=r"^[A-Za-z0-9_]*$")
+    percent: PermalinkPercent | None = None
+    channels: list[PermalinkChannel] | None = Field(default=None, min_length=3, max_length=3)
+
+    @model_validator(mode="after")
+    def _one_unit(self) -> PermalinkRange:
+        if self.channels is not None and self.percent is not None:
+            raise ValueError("percent is for one range; channels carry their own")
+        return self
 
 
 class PermalinkView(BaseModel):
