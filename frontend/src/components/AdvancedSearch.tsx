@@ -106,7 +106,7 @@ function ValuesField({
 function OfferLine({ offer, set }: { offer: Offer; set: boolean }) {
   return (
     <span className="dataset-select-line">
-      <span className="dataset-select-title" data-tip={offer.dataset.title}>
+      <span className="dataset-select-title">
         {offer.dataset.title}
       </span>
       {set && <span className="filter-dot" role="img" aria-label="Filters set" data-tip="Filters set" />}

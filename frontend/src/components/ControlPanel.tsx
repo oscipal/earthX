@@ -390,18 +390,13 @@ function DatasetPicker() {
       <div className="dataset-list" role="group" aria-label="Datasets">
         {datasets.map((d) => {
           const picked = selectedDatasetIds.includes(d.id);
-          const maturity = d.viewable ? maturityNote(d.collection) : null;
           const label = d.viewable ? maturityLabel(d.collection) : null;
           return (
             <button
               key={d.id}
               type="button"
               className="btn dataset-toggle"
-              data-tip={
-                d.viewable
-                  ? [d.title, maturity, d.collection.description].filter(Boolean).join(' — ')
-                  : `${d.title} — not viewable: ${d.reason}`
-              }
+              data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}
               aria-pressed={picked}
               disabled={!d.viewable || busy}
               onClick={() => toggle(d.id)}

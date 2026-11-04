@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flipIdOf } from '../layerFlip';
 import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
-import LayerManager, { FLIP_ROW_TIP, FLIP_TIP } from './LayerManager';
+import LayerManager, { FLIP_TIP } from './LayerManager';
 import { tipOf } from '../fixtures/tips';
 
 declare global {
@@ -127,7 +127,7 @@ describe('the layer that is drawn on top', () => {
     const select = vi.fn();
     act(() => useAppStore.setState({ selectLayer: select }));
     click(toggle());
-    expect(rows()[2].querySelector('.lm-name')!.getAttribute('data-tip')).toContain(FLIP_ROW_TIP);
+    expect(rows()[2].querySelector('.lm-name')!.hasAttribute('data-tip')).toBe(false);
     click(rows()[2].querySelector('.lm-name'));
     expect(state().flipLayerId).toBe('c');
     expect(flippedRows()).toEqual([2]);

@@ -69,12 +69,13 @@
 - **Eigene Zeichnungen gibt es nicht.** Das einzige `<svg>` im Code ist das Balkendiagramm des Histogramms (`RangeHistogram`), kein Symbol.
 - **Der Haken** vor dem gewählten Eintrag eines Menüs ist ein Symbol in einem Platz fester Breite (`MenuTick`), kein Zeichen im CSS.
 - **Einzige Ausnahme:** Settings ist „Settings 6 Line“ von MingCute (Apache-2.0, `mingcute_icon` 2.9.72, `svg/system/settings_6_line.svg`). Es wird als einzelnes SVG übernommen, als Strich nachgezeichnet und an Lucide angeglichen; die Änderung ist vermerkt. Herkunft und Lizenz stehen in `frontend/THIRD_PARTY_NOTICES.md` *(folgt in Teil 4)*.
+- **Das Auge ist ein Bauteil, `EyeButton`** (Otto, 04.11.2026): in der Layer-Zeile, bei „Search results“ (Kopf der Liste und Eintrag im Layer-Manager), im Kopf der Seitenleiste und überall sonst, wo etwas gezeigt oder verborgen wird. Eine Farbe, die des Textes; **verborgen** (oder gesperrt) ist das durchgestrichene Auge (`eye-off`), nie eine andere Farbe und kein Rahmen. In Listenzeilen 22 px mit 14-px-Symbol (`row`), sonst 28 px mit 16 px. `EyeIcon` und `EyeOffIcon` kommen nur in `EyeButton.tsx` vor; kein CSS gibt dem Auge eine eigene Farbe.
 - **Keine Textzeichen als Symbole** (⇩ ✎ ✕ ⚙ ＋ ⋯ ▾ ↻ …). Im Text erlaubt bleiben „…“, „—“ in „— none —“, „·“, „–“, „→“ zwischen zwei Datumsfeldern, „×“ in Maßen („10 m × 10 m“), „µm“.
 
 | Bedeutung | Lucide |
 |---|---|
 | Download (überall, auch „Download all“) | `download` |
-| Zeigen / Verbergen | `eye` / `eye-off` |
+| Zeigen / Verbergen (`EyeButton`, Textfarbe) | `eye` / `eye-off` (durchgestrichen = verborgen) |
 | Entfernen / Löschen / Leeren einer Liste (auch „Clear AOI“, „Clear search results“) | `trash-2` |
 | Umbenennen | `pencil` |
 | Process | `cog` (das Zahnrad bleibt, Otto) |
@@ -112,7 +113,8 @@
 - **`aria-disabled` für neue Sperren mit Grund:** das Element bleibt in der Tab-Reihenfolge, der Grund ist auch per Tastatur lesbar; der Handler fängt den Klick ab. Ein bestehendes `disabled` bleibt; sein Tooltip erscheint, wo der Zeiger darüber liegt (`TipLayer`), per Tastatur nicht.
 - **Bekannte Grenze (Otto, 04.11.2026):** Der Grund eines `disabled`-Knopfs ist per Tastatur und Screenreader nicht lesbar; ein `disabled`-Element nimmt keinen Fokus. Die Umstellung aller gesperrten Knöpfe auf `aria-disabled` ist ein Punkt für M6 (Barrierefreiheit).
 - Wo eine gesperrte Stelle einen Platz hält, bleibt sie an diesem Platz, z. B. die Colormap bei RGB als gesperrtes „— none —“, auch in der Processing-Vorschau.
-- **Ein Tooltip-Weg:** `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus; `TipLayer` setzt für die Dauer `aria-describedby`, bei einem `label` mit Tooltip am Feld darin; ein Knopf nur mit Symbol hat zusätzlich seinen `aria-label`. **`title` gibt es an keinem Element** (ein zweiter Tooltip des Browsers), außer an `<option>` (eine native Liste zeigt sonst nichts) und an den Steuerelementen von MapLibre. Ein Test findet jedes andere `title`.
+- **Ein Tooltip-Weg:** `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus; `TipLayer` setzt für die Dauer `aria-describedby`, bei einem `label` mit Tooltip am Feld darin; ein Knopf nur mit Symbol hat zusätzlich seinen `aria-label`. **Keine Tooltips an Namen** (Otto, 04.11.2026): nicht an Datensätzen (Auswahl im Control-Menü, Dropdowns in der Suche, in der Liste und in der Ansicht), nicht an Gruppenköpfen, nicht an den Namen von Layern und dem Titel der Ansicht. Ausnahmen: ein Datensatz, der gerade nicht wählbar ist, nennt weiter den Grund („… — not viewable: …“); der Hinweis eines Layers (`note`, etwa bei einer Vorschau je Szene) und die Erklärung des Eintrags „Search results“ im Layer-Manager. Ein langer Name wird gekürzt, nicht erklärt.
+- **`title` gibt es an keinem Element** (ein zweiter Tooltip des Browsers), außer an `<option>` (eine native Liste zeigt sonst nichts) und an den Steuerelementen von MapLibre. Ein Test findet jedes andere `title`.
 
 ## 5. Schließen
 
@@ -150,6 +152,7 @@
 | `Inspector` / `InspectorParts` | die Seitenleiste rechts (320 px, unter 900 px Blatt bis 55 %), Kopf, „Display“, „Actions“ |
 | `RenderFields`, `ColormapField`, `ScaleHistograms` | Band, „Scale“, Colormap; überall, wo eine Darstellung eingestellt wird |
 | `BandSelect`, `OpacityRow`, `LayerActions`, `LayerDownload`, `CopySceneNames` | gemeinsame Felder und Aktionen von Ansicht und Layer |
+| `EyeButton` | das Auge: zeigt oder verbirgt (§3) |
 | `icons.ts`, `MenuTick` | alle Symbole; der Haken in Menüs |
 | `Tip` / `TipLayer` | (i), Warnung und Tooltips |
 | `Popover` | Menüs, Listen und das Formular „Advanced search“ |
@@ -209,6 +212,8 @@ Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
 | keine alten Knopfklassen (`ghost-btn`, `primary-btn`, `lm-btn` …) | `frontend/src/uiRules.test.ts` |
 | keine feste Deckkraft an einem gesperrten Element | `frontend/src/uiRules.test.ts` |
 | ein Fokusring, kein `outline` an einem Knopf oder Feld | `frontend/src/uiRules.test.ts` |
+| ein Auge (`EyeButton`), nur in Textfarbe, verborgen = durchgestrichen | `frontend/src/uiRules.test.ts`, `frontend/src/components/EyeButton.test.tsx` |
+| kein Tooltip an Datensatz, Gruppenkopf, Layer-Name (außer Grund, Hinweis, Eintrag „Search results“) | `frontend/src/uiRules.test.ts` |
 | Symbole der Leiste 20 px, Token und Zahlen gleich | `frontend/src/AppRail.test.tsx`, `frontend/src/components/icons.test.tsx` |
 | Symbole nur aus `icons.ts`, keine Textzeichen als Symbol (Code und CSS), kein eigenes `<svg>`, Strich und Größen, jedes Symbol benutzt | `frontend/src/uiRules.test.ts`, `frontend/src/components/icons.test.tsx` |
 | Schrift | *(folgt in Teil 3b)* |

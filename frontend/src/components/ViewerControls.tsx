@@ -23,12 +23,13 @@ import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView 
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
 import CopySceneNames from './CopySceneNames';
+import EyeButton from './EyeButton';
 import { fallbackReasonOf, MEASURED_ON_SCENE, measureView, type ViewMeasure } from '../viewMeasure';
 import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Tip from './Tip';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
-import { ArrowLeftIcon, CogIcon, DownloadIcon, EyeIcon, EyeOffIcon, PlusIcon } from './icons';
+import { ArrowLeftIcon, CogIcon, DownloadIcon, PlusIcon } from './icons';
 import LayerActions from './LayerActions';
 import OpacityRow from './OpacityRow';
 import type { BandOption } from './BandSelect';
@@ -145,7 +146,6 @@ export default function ViewerControls() {
   const datasetTitle = shown ? datasetTitleOf(shown.datasetId) : '';
   const count = shown?.ids.length ?? Object.keys(downloaded).length;
   // What the head cuts short, in full.
-  const title = [datasetTitle, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
   const here = shown ? imagesOfDataset(images, shown.datasetId) : [];
   // What "Download full scene" will load, told in its tooltip.
   const originalsSummary = useMemo(() => {
@@ -239,7 +239,6 @@ export default function ViewerControls() {
           picture, not a layer (Otto, 1.11.2026): "Temporary", the badge of "Preview", beside the title. */}
       <InspectorHead
         title={compact ? layerShownName(layer) : [datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
-        tip={compact ? layerShownName(layer) : title}
         // The scenes of the image shown, which is the layer's own where the settings of a layer are open.
         copy={<CopySceneNames names={shown?.ids ?? []} />}
         mark={
@@ -252,15 +251,7 @@ export default function ViewerControls() {
         }
         eye={
           !compact && (
-            <button
-              type="button"
-              className={`icon-btn${showDownloaded ? '' : ' off'}`}
-              data-tip={showDownloaded ? 'Hide image' : 'Show image'}
-              aria-label={showDownloaded ? 'Hide image' : 'Show image'}
-              onClick={() => toggleDownloaded()}
-            >
-              {showDownloaded ? <EyeIcon /> : <EyeOffIcon />}
-            </button>
+            <EyeButton shown={showDownloaded} tip={showDownloaded ? 'Hide image' : 'Show image'} onToggle={() => toggleDownloaded()} />
           )
         }
         onClose={() => exitFocus()}
@@ -275,7 +266,6 @@ export default function ViewerControls() {
               <select
                 className="vc-dataset"
                 aria-label="Dataset"
-                data-tip={`Dataset of the image shown: ${datasetTitle}`}
                 value={shown.datasetId}
                 onChange={(e) => chooseViewDataset(e.target.value)}
               >

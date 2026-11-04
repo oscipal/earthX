@@ -12,8 +12,6 @@ export const ONE_IMAGE_TIP = 'A layer holds one image';
 
 interface HeadProps {
   title: string;
-  // The title in full, where the line cuts it short.
-  tip: string;
   // The mark beside the title ("Temporary", the note of a result of whole numbers).
   mark?: ReactNode;
   eye?: ReactNode;
@@ -32,7 +30,7 @@ interface HeadProps {
 export const RENAME_TIP = 'Rename layer';
 const EMPTY_NAME_TIP = 'A layer needs a name: an empty one keeps the name it had';
 
-export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy, children, rename }: HeadProps) {
+export function InspectorHead({ title, mark, eye, onClose, closeTitle, copy, children, rename }: HeadProps) {
   const [editing, setEditing] = useState(false);
   return (
     <div className="vc-head">
@@ -52,7 +50,7 @@ export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy
           </span>
         ) : rename ? (
           <>
-            <button type="button" className="vc-title vc-title-btn" data-tip={tip} onClick={() => setEditing(true)}>
+            <button type="button" className="vc-title vc-title-btn" onClick={() => setEditing(true)}>
               {title}
             </button>
             <button type="button" className="icon-btn sm quiet" data-tip={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
@@ -60,7 +58,7 @@ export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy
             </button>
           </>
         ) : (
-          <span className="vc-title" data-tip={tip}>
+          <span className="vc-title">
             {title}
           </span>
         )}

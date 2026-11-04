@@ -62,11 +62,11 @@ describe('the date in the name of a layer (Otto, 1.11.2026: "das datum gehört i
     expect(container.querySelector('.layer-row')!.children).toHaveLength(11);
   });
 
-  it('is in the name of results and previews too, and the name is its tooltip in full', () => {
+  it('is in the name of results and previews too, and the name has no tooltip', () => {
     useAppStore.setState({ layers: [layer('p', '2026-07-01', { derived: 'preview' }), layer('r', '2026-07-02', { derived: 'result' })], dock: 'layers' });
     act(() => root.render(<LayerManager />));
     expect(names()).toEqual(['Layer p · 2026-07-01', 'Layer r · 2026-07-02']);
-    expect(container.querySelector('.layer-row .lm-name')!.getAttribute('data-tip')).toContain('Layer p · 2026-07-01');
+    expect(container.querySelector('.layer-row .lm-name')!.hasAttribute('data-tip')).toBe(false);
   });
 
   it('is not added to a name that has it already (a layer named after its group)', () => {

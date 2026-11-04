@@ -126,11 +126,11 @@ describe('the head', () => {
     expect(tipOf(title())).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
   });
 
-  it('has no empty separator for a product without an instant, and the scenes merged in the tooltip', () => {
+  it('has no empty separator for a product without an instant, and no tooltip at the title', () => {
     mount({ groups: withDays([undefined]) });
     expect(title().textContent).toBe('Sentinel-2 L2A · AOI crop');
     mount({ downloaded: scenes(2), groups: withDays(['2025-07-29T10:00:00Z', '2025-08-03T10:00:00Z']) });
-    expect(tipOf(title())).toBe('Sentinel-2 L2A · cropped to the AOI · 2 scenes merged');
+    expect(title().hasAttribute('data-tip')).toBe(false);
   });
 
   it('has no "Full-resolution view" and no count of one image', () => {
@@ -139,9 +139,9 @@ describe('the head', () => {
     expect(head().textContent).not.toMatch(/\bimages?\b/u);
   });
 
-  it('gives the whole text as the tooltip, for the cut-off one', () => {
+  it('has no tooltip at the title, also not at a cut-off one (Otto, 4.11.2026)', () => {
     mount({ cropToAoi: true, downloaded: scenes(3) }, 'Copernicus DEM GLO-30, global 30 m digital surface model');
-    expect(tipOf(title())).toBe('Copernicus DEM GLO-30, global 30 m digital surface model · cropped to the AOI · 3 scenes merged');
+    expect(title().hasAttribute('data-tip')).toBe(false);
     expect(title().textContent).toContain('Copernicus DEM GLO-30, global 30 m digital surface model');
   });
 
@@ -177,7 +177,7 @@ describe('the eye', () => {
     act(() => eye().click());
     expect(useAppStore.getState().showDownloaded).toBe(false);
     expect(tipOf(eye())).toBe('Show image');
-    expect(eye().classList.contains('off')).toBe(true);
+    expect(eye().querySelector('svg.lucide-eye-off')).not.toBeNull();
     act(() => eye().click());
     expect(useAppStore.getState().showDownloaded).toBe(true);
     expect(tipOf(eye())).toBe('Hide image');

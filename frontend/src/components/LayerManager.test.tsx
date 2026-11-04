@@ -232,9 +232,9 @@ describe('LayerManager', () => {
       expect(rows()[kinds.findIndex((k) => k.id === 'old')].textContent).not.toContain('Resampled');
     });
 
-    it('show the whole name in the tooltip of a name that is cut', () => {
+    it('have no tooltip at a name, also not at one that is cut (Otto, 4.11.2026)', () => {
       const name = rows()[kinds.length - 1].querySelector<HTMLElement>('[data-col="name"]')!;
-      expect(name.getAttribute('data-tip')).toContain(kinds[kinds.length - 1].name);
+      expect(name.hasAttribute('data-tip')).toBe(false);
     });
   });
 });
@@ -262,9 +262,9 @@ describe('the eye of a layer', () => {
   it('is open for a shown layer and struck through for a hidden one, with a drawing and no text glyph', () => {
     expect(eye('shown').querySelector('svg')).not.toBeNull();
     expect(eye('shown').querySelector('svg.lucide-eye')).not.toBeNull();
-    expect(eye('shown').classList.contains('off')).toBe(false);
+    expect(eye('shown').classList.contains('off')).toBe(false); // no colour for "hidden": the crossed eye says it
     expect(eye('hidden').querySelector('svg.lucide-eye-off')).not.toBeNull();
-    expect(eye('hidden').classList.contains('off')).toBe(true);
+    expect(eye('hidden').classList.contains('off')).toBe(false);
     expect(eye('shown').textContent).toBe('');
   });
 

@@ -286,3 +286,66 @@ describe('one focus ring (UI-04 part 3a): the token --focus, for everything that
     expect(withoutCssComments(CSS)).toMatch(/\[tabindex\]\):focus-visible \{\s*outline: 2px solid var\(--focus\);/u);
   });
 });
+
+describe('one eye (UI-04 part 3a, Otto, 4.11.2026): EyeButton, in the colour of the text, hidden is the eye crossed out', () => {
+  const EYE = /(?<![\w-])Eye(?:Off)?Icon(?![\w-])/u;
+  // A rule that gives an eye a colour of its own: its class `.eye` (except to leave it out), or the old `.off` of an icon button.
+  const colourRules = (css: string) =>
+    [...withoutCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+      .filter(([, selector, body]) => (/\.eye\b/u.test(selector.replace(/:not\(\.eye\)/gu, '')) || /\.icon-btn\.off\b|\.lm-eye|\.vc-eye/u.test(selector)) && /(?:^|;|\s)color:/u.test(body))
+      .map(([, selector]) => selector.trim());
+
+  it('draws the eye in EyeButton only', () => {
+    expect(where((code) => EYE.test(code))).toEqual(['components/EyeButton.tsx', 'components/icons.ts']);
+    expect(EYE.test('<button>{shown ? <EyeIcon /> : <EyeOffIcon />}</button>')).toBe(true);
+    expect(EYE.test('<EyeButton shown={on} />')).toBe(false);
+  });
+
+  it('gives the eye no colour of its own, shown or hidden', () => {
+    expect(colourRules(CSS)).toEqual([]);
+    expect(colourRules('.icon-btn.off { color: var(--muted); }')).toEqual(['.icon-btn.off']);
+    expect(colourRules('.eye:hover { color: var(--accent); }')).toEqual(['.eye:hover']);
+    expect(colourRules(".icon-btn[aria-pressed='true']:not(.eye) { color: var(--accent); }")).toEqual([]);
+  });
+
+  it('has no eye in a class of a place (the old lm-eye, vc-eye) in the code', () => {
+    expect(where((code) => /(?<![\w-])(?:lm-eye|vc-eye)(?![\w-])/u.test(code))).toEqual([]);
+  });
+});
+
+describe('no tooltip at a dataset, a group head or the name of a layer (UI-04 part 3a, Otto, 4.11.2026)', () => {
+  // The places of a name: the dataset (the buttons and the lines of its dropdowns, in the view too), the head of a group, the title of a
+  // view and the name of a layer. Only a dataset that cannot be chosen has a tooltip: its reason.
+  const NAMES = /(?<![\w-])(?:dataset-toggle|dataset-select-title|dataset-select-box|dataset-select-option|vc-dataset|rg-label|rg-select|result-group-head|vc-title|vc-title-btn|lm-name)(?![\w-])/u;
+  const withTip = (text: string) =>
+    openingTags(text)
+      .filter(({ attributes }) => NAMES.test(attributes.match(/className=(?:"[^"]*"|\{`[^`]*`\})/u)?.[0] ?? '') && /(?:^|\s)data-tip=/u.test(topLevel(attributes)))
+      .map(({ attributes }) => (attributes.match(/className=(?:"([^"]*)"|\{`([^`]*)`\})/u) ?? [])[1] ?? '');
+  // What stays: the tip of a dataset that cannot be chosen (its reason), the note of a layer (the hint of a preview) the name being renamed (its rule) and the entry "Search results" of the layer manager (it explains what the entry holds; it is no layer).
+  const ALLOWED = [/not viewable/u, /\bl\.note\b/u, /EMPTY_NAME_TIP|A layer needs a name/u, /RESULTS_ENTRY_TIP/u];
+  const faults = (text: string) =>
+    openingTags(text)
+      .filter(({ attributes }) => NAMES.test(attributes.match(/className=(?:"[^"]*"|\{`[^`]*`\})/u)?.[0] ?? '') && /(?:^|\s)data-tip=/u.test(topLevel(attributes)) && !ALLOWED.some((ok) => ok.test(attributes)))
+      .map(({ attributes }) => attributes.trim().slice(0, 60));
+
+  it('has none in the code, but the reason of a dataset that cannot be chosen', () => {
+    expect(sources.flatMap(([path, text]) => faults(text).map((fault) => `${path}: ${fault}`))).toEqual([]);
+    expect(withTip('<button className="btn dataset-toggle" data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}>').length).toBe(1);
+  });
+
+  it('finds a tooltip at each place of a name (counter-check)', () => {
+    for (const line of [
+      '<span className="dataset-select-title" data-tip={title}>',
+      '<button className="btn dataset-toggle" data-tip={d.description}>',
+      '<select className="vc-dataset" aria-label="Dataset" data-tip="Dataset of the image shown">',
+      '<span className="rg-label" data-tip={group.label}>',
+      '<button type="button" className="result-group-head" data-tip="x">',
+      '<span className="vc-title" data-tip={tip}>',
+      '<button className="lm-name" data-col="name" data-tip={`${name} — view this layer`}>',
+    ]) expect(faults(line), line).toHaveLength(1);
+    expect(faults('<button className="btn dataset-toggle" data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}>')).toEqual([]);
+    expect(faults('<button className="lm-name" data-tip={l.note}>')).toEqual([]);
+    expect(faults('<span className="result-id" data-tip={item.id}>')).toEqual([]);
+    expect(faults('<button className="btn" data-tip="Remove">')).toEqual([]);
+  });
+});

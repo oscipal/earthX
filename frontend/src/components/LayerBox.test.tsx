@@ -120,7 +120,7 @@ describe('a layer opened from the layer manager', () => {
 
   it('has the head of every layer: its name with the date, in the style of a title, the date without arrows, and the red x', () => {
     expect(container.querySelector('.vc-title')!.textContent).toBe('Optical · crop · 2026-07-01');
-    expect(container.querySelector('.vc-title')!.getAttribute('data-tip')).toBe('Optical · crop · 2026-07-01');
+    expect(container.querySelector('.vc-title')!.hasAttribute('data-tip')).toBe(false); // no tooltip at the name of a layer (Otto, 4.11.2026)
     expect(container.querySelectorAll('.vc-head .close-x')).toHaveLength(1);
     expect(container.querySelector('.vc-head .close-x')!.getAttribute('data-tip')).toBe('Close');
     // The place of the time step of the view holds the date of the layer and no arrows; no dataset box, no eye of the view: the layer has its own eye in the manager.

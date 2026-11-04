@@ -293,7 +293,7 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(useAppStore.getState().resultsOnMap).toBe(false);
     expect(tipOf(toggle())).toBe(SHOW_RESULTS_TIP);
     expect(toggle().getAttribute('aria-pressed')).toBe('false');
-    expect(toggle().classList.contains('off')).toBe(true);
+    expect(toggle().querySelector('svg.lucide-eye-off')).not.toBeNull();
     expect(container.querySelectorAll('.result-group')).toHaveLength(2);
     expect(container.querySelector('h2')?.textContent).toBe('Search results (0/3)');
     act(() => toggle().click());

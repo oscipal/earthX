@@ -190,7 +190,7 @@ describe('the eye of "Results"', () => {
     expect(state().resultsOnMap).toBe(false);
     expect(eye().getAttribute('aria-pressed')).toBe('false');
     expect(tipOf(eye())).toBe(SHOW_RESULTS_TIP);
-    expect(eye().classList.contains('off')).toBe(true);
+    expect(eye().querySelector('svg.lucide-eye-off')).not.toBeNull();
     click(eye());
     expect(state().resultsOnMap).toBe(true);
   });

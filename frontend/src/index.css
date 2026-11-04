@@ -241,8 +241,7 @@ svg.lucide.icon-lead {
   height: var(--control-height-sm);
 }
 /* Quiet: an icon that is not the point of its row (rename, copy, empty a field). */
-.icon-btn.quiet,
-.icon-btn.off {
+.icon-btn.quiet {
   color: var(--muted);
 }
 .btn:hover:not(:disabled, [aria-disabled='true']),
@@ -256,8 +255,9 @@ svg.lucide.icon-lead {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--accent);
 }
-/* An icon that is a switch (the eye, "Flip through layers") shows that it is set by its colour. */
-.icon-btn[aria-pressed='true'] {
+/* An icon that is a switch ("Flip through layers") shows that it is set by its colour. The eye (`EyeButton`) does not: it keeps the colour of the
+   text, and what is hidden is the eye crossed out (UI-04 part 3a, Otto, 4.11.2026). */
+.icon-btn[aria-pressed='true']:not(.eye) {
   color: var(--accent);
 }
 /* A button that stands over the map has the panel behind it. */

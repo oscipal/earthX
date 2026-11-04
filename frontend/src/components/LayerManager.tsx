@@ -10,7 +10,8 @@ import { hasResultsPanel } from '../sections';
 import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
 import BandSelect from './BandSelect';
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CogIcon, EyeIcon, EyeOffIcon, GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
+import EyeButton from './EyeButton';
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CogIcon, GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
 import InlineRename from './InlineRename';
 import { RENAME_TIP } from './InspectorParts';
 import { REMOVE_TIP } from './LayerActions';
@@ -30,7 +31,6 @@ export const HIDE_LAYER_TIP = 'Hide layer';
 export const SHOW_LAYER_TIP = 'Show layer';
 export const ADD_BAND_TIP = 'Add this band as a layer of its own';
 export const FLIP_TIP = 'Flip through layers (Up and Down or the mouse wheel over the list, Esc to stop)';
-export const FLIP_ROW_TIP = 'Draw this layer on top of the others';
 export const RESULTS_ENTRY_TIP = 'The search results, the view and the processing preview. Move to change what lies above.';
 
 // Marks a result layer "Expired" when the time comes (M4-13c-5): one timer for the
@@ -125,20 +125,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   return (
     <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>
       <Grip dnd={dnd} />
-      <button
-        type="button"
-        className={`icon-btn sm${shown ? '' : ' off'}`}
-        data-col="eye"
-        data-tip={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP}
-        aria-label={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP}
-        aria-pressed={locked ? undefined : shown}
-        aria-disabled={locked || undefined}
-        onClick={() => {
-          if (!locked) toggleVis(l.id);
-        }}
-      >
-        {shown ? <EyeIcon size={14} /> : <EyeOffIcon size={14} />}
-      </button>
+      <EyeButton row col="eye" shown={shown} locked={locked} tip={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP} onToggle={() => toggleVis(l.id)} />
       {renaming ? (
         <span className="lm-name lm-renaming" data-col="name" data-tip="A layer needs a name: an empty one keeps the name it had">
           <InlineRename
@@ -157,10 +144,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           type="button"
           className="lm-name"
           data-col="name"
-          data-tip={
-            (locked ? `${layerShownName(l)} — ${DELETED_LAYER_TIP}` : `${layerShownName(l)} — ${flipping ? FLIP_ROW_TIP : 'view this layer / continue working on it'}`) +
-            (l.note ? `\n${l.note}` : '')
-          }
+          data-tip={l.note}
           onClick={() => (flipping ? flipTo(l.id) : select(l.id))}
         >
           {layerShownName(l)}

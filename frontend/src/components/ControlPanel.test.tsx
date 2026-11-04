@@ -690,10 +690,12 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     expect(tipOf(broken)).toContain('group_by');
   });
 
-  it('shows the maturity chip and puts the description into the tooltip', () => {
+  // Otto, 4.11.2026: no tooltip at a dataset, but the reason where one cannot be chosen (above).
+  it('shows the maturity chip and has no tooltip at a dataset that can be chosen', () => {
     setUp(['optical']);
     expect(buttons()[0].querySelector('.maturity-chip')?.textContent).toBe('staging');
-    expect(tipOf(buttons()[0])).toContain('Multispectral optical imagery.');
+    expect(buttons()[0].hasAttribute('data-tip')).toBe(false);
+    expect(buttons()[0].hasAttribute('title')).toBe(false);
   });
 
   it('shows every dataset of the catalogue in one grid, however many — the grid itself scrolls (CSS shows 2 x 2)', () => {

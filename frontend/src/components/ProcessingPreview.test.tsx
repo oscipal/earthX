@@ -16,7 +16,6 @@ import { DEFAULT_RANGE } from '../processingPreview';
 import { layerProcessBlock, orderView, useProcessingStore } from '../processingStore';
 import { resultRender, resultStats } from '../resultLayer';
 import { bboxToPolygon } from '../geoUtils';
-import { layerShownName } from '../layerName';
 import { useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import LayerManager from './LayerManager';
@@ -2082,8 +2081,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       const layer = useAppStore.getState().layers[0];
       expect(layer.note).toBe(HINT);
       mount(<LayerManager />);
-      expect(nameButton().getAttribute('data-tip')).toContain(HINT);
-      expect(nameButton().getAttribute('data-tip')).toContain(`${layerShownName(layer)} — `);
+      // The name has no tooltip of its own (Otto, 4.11.2026); the hint of the preview is the whole of it.
+      expect(nameButton().getAttribute('data-tip')).toBe(HINT);
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('per scene');
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('may differ');
     });
@@ -2095,8 +2094,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       click(button(/Add preview to layers/));
       expect(useAppStore.getState().layers[0].note).toBeUndefined();
       mount(<LayerManager />);
-      expect(nameButton().getAttribute('data-tip')).not.toContain('per scene');
-      expect(nameButton().getAttribute('data-tip')).toBe(`${layerShownName(useAppStore.getState().layers[0])} — view this layer / continue working on it`);
+      expect(nameButton().hasAttribute('data-tip')).toBe(false);
     });
   });
 

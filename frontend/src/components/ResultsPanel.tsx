@@ -106,7 +106,6 @@ function GroupSelectBox({ group, index }: { group: TimeStepGroup; index: number 
       ref={(el) => {
         if (el) el.indeterminate = count > 0 && !all;
       }}
-      data-tip={`Select all scenes of ${group.label}`}
       aria-label={`Select all scenes of ${group.label}`}
       onChange={() => toggleGroupSelected(index)}
     />
@@ -130,7 +129,7 @@ function GroupBlock({
         <GroupSelectBox group={group} index={index} />
         <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
           <span className="rg-caret">{expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}</span>
-          <span className="rg-label" data-tip={group.label}>
+          <span className="rg-label">
             {group.label}
           </span>
           <span className="rg-count">{group.items.length}</span>
@@ -165,7 +164,7 @@ function SectionSummary({ section }: { section: ResultSection }) {
   return (
     <>
       <span className="dataset-select-line">
-        <span className="dataset-select-title" data-tip={title}>
+        <span className="dataset-select-title">
           {title}
         </span>
         {label && <span className="maturity-chip">{label}</span>}

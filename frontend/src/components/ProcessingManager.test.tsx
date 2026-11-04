@@ -1843,7 +1843,7 @@ describe('the line of a job', () => {
     expect(rule).toMatch(/grid-column: 2;\s*grid-row: 1;/u);
     expect(rule).not.toMatch(/justify-self|background|z-index|color/u);
     // The same quiet icon button as the pencil of a layer (UI-04 part 3a): its colour is the one of `.icon-btn.quiet`.
-    expect(css).toMatch(/\.icon-btn\.quiet,\s*\.icon-btn\.off \{\s*color: var\(--muted\)/u);
+    expect(css).toMatch(/\.icon-btn\.quiet \{\s*color: var\(--muted\)/u);
   });
 
   it('hides the titles where the status and the date stand under the title', () => {

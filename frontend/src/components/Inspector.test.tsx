@@ -204,7 +204,7 @@ describe('the places', () => {
     act(() => root.render(<Inspector />));
     openView();
     const [one, two] = [...aside()!.querySelector('.vc-head')!.children].map((row) => [...row.children].map((el) => el.className));
-    expect(one).toEqual(['vc-title', 'pp-badge vc-temporary', 'icon-btn', 'close-x']);
+    expect(one).toEqual(['vc-title', 'pp-badge vc-temporary', 'icon-btn eye', 'close-x']);
     // "Copy original scene name" ends the row of the date (Otto, 3.11.2026).
     expect(two).toEqual(['vc-stepper', 'vc-scene-names']);
   });

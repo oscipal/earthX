@@ -258,7 +258,6 @@ function Controls({ layer }: { layer: MapLayer }) {
     <div className="viewer-controls scene-view result-controls">
       <InspectorHead
         title={layerShownName(layer)}
-        tip={layerShownName(layer)}
         mark={!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
         onClose={() => close()}
         rename={{ name: layer.name, onRename: (name) => renameLayer(layer.id, name) }}
