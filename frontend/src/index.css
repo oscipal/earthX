@@ -96,14 +96,14 @@ textarea {
   transform: translateX(-50%);
   /* Centred on the map right of the rail: no wider than that, or a phone scrolls sideways (UI-03d, seen at 360 px). */
   width: min(560px, calc(100vw - var(--rail-width) - 16px));
-  /* Over the panel of the rail (11), the settings bar and the sheet (12), under the rail itself (14): a message is never hidden by a panel
-     (UI-04 part 6, backlog item 58). */
-  z-index: 13;
 }
-/* Narrow windows: the buttons at the top right stand in the row at the top, the message under them (it was over them, in two rows). */
+/* Narrow windows: a panel covers the whole map, so the message lies over the panel of the rail (11), the settings bar and the sheet (12),
+   under the rail itself (14), and is never hidden by one (UI-04 part 6, backlog item 58). The buttons at the top right stand in the row
+   at the top, the message under them (it was over them, in two rows). */
 @media (max-width: 899px) {
   .overlay.status {
     top: calc(var(--space-4) + var(--control-height) + var(--space-2));
+    z-index: 13;
   }
 }
 

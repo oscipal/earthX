@@ -18,11 +18,14 @@ export function ruleOf(sheet: string, selector: string, inMedia?: string): strin
 const zIndex = (sheet: string, selector: string): number => Number(/z-index:\s*(\d+)/u.exec(ruleOf(sheet, selector))?.[1] ?? Number.NaN);
 
 describe('the message of the status bar in a narrow window', () => {
-  it('lies over the panel of the rail, the settings bar and the sheet, and under the rail', () => {
-    const status = zIndex(css, '.status');
+  it('lies over the panel of the rail, the settings bar and the sheet, and under the rail, below 900 px only', () => {
+    const narrow = '@media (max-width: 899px)';
+    const status = Number(/z-index:\s*(\d+)/u.exec(ruleOf(css, '.overlay.status', narrow))?.[1] ?? Number.NaN);
     expect(status).toBeGreaterThan(zIndex(css, '.dock'));
     expect(status).toBeGreaterThan(zIndex(css, '.inspector.panel'));
     expect(status).toBeLessThan(zIndex(css, '.app-rail'));
+    // A wide window keeps the message beside the panel, where it never meets it: no rule lifts it there.
+    expect(ruleOf(css, '.status')).not.toContain('z-index');
   });
 
   it('stands under the buttons at the top right below 900 px, one control high and one gap below them', () => {
