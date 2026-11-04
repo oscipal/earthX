@@ -8,6 +8,7 @@ import { BASEMAP_IDS, BASEMAPS } from '../basemaps';
 import { OVERLAY_IDS, OVERLAYS } from '../overlays';
 import type { Projection } from '../preferences';
 import { useAppStore } from '../store';
+import MenuTick from './MenuTick';
 import Popover from './Popover';
 
 const PROJECTIONS: { id: Projection; name: string; tip: string }[] = [
@@ -18,6 +19,7 @@ const PROJECTIONS: { id: Projection; name: string; tip: string }[] = [
 function Choice({ name, tip, checked, onChoose, role = 'menuitemradio' }: { name: string; tip: string; checked: boolean; onChoose: () => void; role?: string }) {
   return (
     <button type="button" role={role} aria-checked={checked} title={tip} onClick={onChoose}>
+      <MenuTick checked={checked} />
       <span className="pm-menu-label">{name}</span>
     </button>
   );

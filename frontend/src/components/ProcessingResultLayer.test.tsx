@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The result of a finished job as a layer (M4-13c-5): "＋ Add to layers" in the details of the job,
+// The result of a finished job as a layer (M4-13c-5): "Add to layers" in the details of the job,
 // the layer it makes, "Overview" and "Expired". No backend: `fetch` answers the
 // TileJSON of the tiler only; the tiles are never requested (the map is not here).
 
@@ -118,7 +118,7 @@ async function flush() {
 
 function button(label: string | RegExp, within: Element = container): HTMLButtonElement | undefined {
   return [...within.querySelectorAll('button')].find((b) =>
-    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+    typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.textContent ?? '') || label.test(b.getAttribute('aria-label') ?? ''),
   ) as HTMLButtonElement | undefined;
 }
 
@@ -131,14 +131,14 @@ const layers = () => useAppStore.getState().layers;
 
 async function showOnMap() {
   act(() => root.render(<JobDetails />));
-  click(button('＋ Add to layers'));
+  click(button('Add to layers'));
   await flush();
 }
 
-describe('"＋ Add to layers" in the details of a finished job', () => {
+describe('"Add to layers" in the details of a finished job', () => {
   it('is one button, with no menu behind it', () => {
     act(() => root.render(<JobDetails />));
-    const add = button('＋ Add to layers');
+    const add = button('Add to layers');
     expect(add).toBeDefined();
     expect(add?.hasAttribute('aria-expanded')).toBe(false);
     click(add);
@@ -149,7 +149,7 @@ describe('"＋ Add to layers" in the details of a finished job', () => {
   it('is not offered for a job without tiles (an export, a result from before the link)', () => {
     useProcessingStore.setState({ jobs: [entry({ tiles: null })] });
     act(() => root.render(<JobDetails />));
-    expect(button('＋ Add to layers')).toBeUndefined();
+    expect(button('Add to layers')).toBeUndefined();
   });
 
   it.each([
@@ -161,18 +161,18 @@ describe('"＋ Add to layers" in the details of a finished job', () => {
   ])('is not offered for a job that is %s', (_, over) => {
     useProcessingStore.setState({ jobs: [entry(over)] });
     act(() => root.render(<JobDetails />));
-    expect(button('＋ Add to layers')).toBeUndefined();
+    expect(button('Add to layers')).toBeUndefined();
   });
 
   it('is gone from a minute before the results go, and the row says "Expired"', () => {
     vi.useFakeTimers();
     useProcessingStore.setState({ jobs: [entry({ expires: new Date(Date.now() + MIN_REMAINING_MS + 5000).toISOString() })] });
     act(() => root.render(<JobDetails />));
-    expect(button('＋ Add to layers')).toBeDefined();
+    expect(button('Add to layers')).toBeDefined();
     act(() => {
       vi.advanceTimersByTime(5100);
     });
-    expect(button('＋ Add to layers')).toBeUndefined();
+    expect(button('Add to layers')).toBeUndefined();
     expect(container.querySelector('.pm-facts dd')?.textContent).toBe('Expired');
   });
 });
@@ -333,7 +333,7 @@ describe('the layer a result becomes', () => {
           expression: false,
         });
         act(() => root.render(<JobDetails />));
-        click(button('＋ Add to layers'));
+        click(button('Add to layers'));
         await flush();
         expect(urlOfLayer()).toContain('colormap_name=viridis&rescale=180%2C1900');
       });
@@ -352,7 +352,7 @@ describe('the layer a result becomes', () => {
         const job = await readJob(properties(DEM), { vmin: '0', vmax: '3000', colormap: 'magma' });
         expect(job.range).toEqual({ vmin: '0', vmax: '3000', colormap: 'magma' });
         act(() => root.render(<JobDetails />));
-        click(button('＋ Add to layers'));
+        click(button('Add to layers'));
         await flush();
         expect(urlOfLayer()).toContain('colormap_name=magma&rescale=0%2C3000');
       });
@@ -362,7 +362,7 @@ describe('the layer a result becomes', () => {
         expect(job.statistics).toBeNull();
         expect(job.tiles).not.toBeNull();
         act(() => root.render(<JobDetails />));
-        click(button('＋ Add to layers'));
+        click(button('Add to layers'));
         await flush();
         expect(urlOfLayer()).toContain('colormap_name=rdylgn&rescale=-1%2C1');
       });
@@ -407,7 +407,7 @@ describe('the layer a result becomes', () => {
     await showOnMap();
     act(() => useAppStore.getState().toggleLayerVisible(layers()[0].id));
     expect(layers()[0].visible).toBe(false);
-    click(button('＋ Add to layers'));
+    click(button('Add to layers'));
     await flush();
     expect(layers()).toHaveLength(1);
     expect(layers()[0].visible).toBe(true);
@@ -420,7 +420,7 @@ describe('the layer a result becomes', () => {
     tileJson = () => gate.then((response) => response.clone());
     act(() => root.render(<JobDetails />));
     for (let i = 0; i < 2; i++) {
-      click(button('＋ Add to layers'));
+      click(button('Add to layers'));
     }
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => {
@@ -436,12 +436,12 @@ describe('the layer a result becomes', () => {
     expect(layerProcessBlock(layers()[0], [])).toBe(NO_COPY_TEXT);
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.lm-btn[title="Process this layer"]')).toBeNull();
-    expect(button('⚙')).toBeUndefined();
+    expect(button('Process layer')).toBeUndefined();
     const empty = container.querySelector('.layer-row [data-col="process"]');
     expect(empty?.tagName).toBe('SPAN');
     expect(empty?.getAttribute('aria-hidden')).toBe('true');
     expect(container.querySelector('.layer-row')?.children).toHaveLength(11);
-    expect(button('⇩')).toBeUndefined();
+    expect(button('Download')).toBeUndefined();
   });
 
   // Otto, 24.10.2026: units are on the band chips of the panel and in the data, never in the layer manager.
@@ -475,7 +475,7 @@ describe('when the result cannot be shown', () => {
     expect(useProcessingStore.getState().jobs[0].expired).toBe(true);
     act(() => root.render(<JobDetails />));
     expect(container.querySelector('.pm-facts dd')?.textContent).toBe('Expired');
-    expect(button('＋ Add to layers')).toBeUndefined();
+    expect(button('Add to layers')).toBeUndefined();
   });
 
   it.each([
@@ -496,7 +496,7 @@ describe('when the result cannot be shown', () => {
     await showOnMap();
     expect(container.querySelector('.hint-text.error')).not.toBeNull();
     tileJson = () => json(TILE_JSON);
-    click(button('＋ Add to layers'));
+    click(button('Add to layers'));
     await flush();
     expect(layers()).toHaveLength(1);
     expect(container.querySelector('.hint-text.error')).toBeNull();

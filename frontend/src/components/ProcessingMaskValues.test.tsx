@@ -230,7 +230,7 @@ function choose(select: HTMLSelectElement, value: string) {
 async function withMaskByValue(band: string | null = 'red') {
   select([scene('S2B_A')]);
   await openPanel();
-  click(button('＋ Mask by value'));
+  click(button('Mask by value'));
   if (band) choose(bandSelect(), band);
 }
 
@@ -248,15 +248,15 @@ describe('the buttons', () => {
   it('offers the mask by class and the mask by value where the dataset has a classification layer', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    expect(hasButton('＋ Mask by class')).toBe(true);
-    expect(hasButton('＋ Mask by value')).toBe(true);
+    expect(hasButton('Mask by class')).toBe(true);
+    expect(hasButton('Mask by value')).toBe(true);
     expect(container.textContent).not.toContain('no classification layer');
   });
 
   it('offers only the mask by value where there is no layer, and says nothing of the layer', async () => {
     await openDem();
-    expect(hasButton('＋ Mask by value')).toBe(true);
-    expect(hasButton('＋ Mask by class')).toBe(false);
+    expect(hasButton('Mask by value')).toBe(true);
+    expect(hasButton('Mask by class')).toBe(false);
     expect(container.textContent).not.toContain('no classification layer');
     expect(container.textContent).not.toContain('Mask:');
   });
@@ -283,9 +283,9 @@ describe('a mask by value step', () => {
   it('offers the results of earlier steps first, then the bands of the data, no layer of classes and no helper asset', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(step().querySelector<HTMLTextAreaElement>('textarea')!, '(nir - red) / (nir + red)');
-    click(button('＋ Mask by value'));
+    click(button('Mask by value'));
     const mask = container.querySelectorAll('li.pp-step')[1];
     const groups = [...mask.querySelectorAll('optgroup')].map((g) => [g.label, [...g.querySelectorAll('option')].map((o) => o.value)]);
     expect(groups).toEqual([
@@ -299,7 +299,7 @@ describe('a mask by value step', () => {
   it('leaves the classification layer to the mask by class', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Mask by value'));
+    click(button('Mask by value'));
     const values = [...bandSelect().querySelectorAll('option')].map((o) => o.value);
     expect(values).toEqual(['', 'red', 'nir']);
     expect(values).not.toContain('scl');
@@ -307,7 +307,7 @@ describe('a mask by value step', () => {
 
   it('shows the unit of the band beside "Hide where"', async () => {
     await openDem();
-    click(button('＋ Mask by value'));
+    click(button('Mask by value'));
     expect(step().textContent).not.toContain('in m');
     choose(bandSelect(), 'data');
     expect(step().querySelector('.pp-unit')!.textContent).toBe('in m');
@@ -364,7 +364,7 @@ describe('the order of a mask by value', () => {
 
   it('works on the DEM, which has no layer to mask by class', async () => {
     await openDem();
-    click(button('＋ Mask by value'));
+    click(button('Mask by value'));
     choose(bandSelect(), 'data');
     choose(conditionSelect(), 'gt');
     typeInto(numberBox('Value')!, '2000');
@@ -424,15 +424,15 @@ describe('what the form tells', () => {
   it('holds back the steps, the review and the start while the band is added by a later step', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(step().querySelector<HTMLTextAreaElement>('textarea')!, 'nir - red');
-    click(button('＋ Mask by value'));
+    click(button('Mask by value'));
     act(() => store().moveStep(store().steps[1].key, -1));
     const why = "Step 1: 'result' is added by a later step";
     expect(container.querySelector('li.pp-step select[id$="-band"]')!.closest('li')!.textContent).toContain("'result' is added by a later step");
     expect(button('Review').disabled).toBe(true);
     expect(button('Review').title).toBe(why);
-    expect(button('＋ Mask by class').disabled).toBe(true);
+    expect(button('Mask by class').disabled).toBe(true);
     act(() => store().moveStep(store().steps[0].key, 1));
     expect(button('Review').disabled).toBe(false);
   });
@@ -456,9 +456,9 @@ describe('renaming the result it looks at', () => {
   it('pulls the band of the mask along', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(step().querySelector<HTMLTextAreaElement>('textarea')!, '(nir - red) / (nir + red)');
-    click(button('＋ Mask by value'));
+    click(button('Mask by value'));
     const name = step().querySelector<HTMLInputElement>('input[id$="-name"]')!;
     typeInto(name, 'NDVI');
     act(() => void name.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));

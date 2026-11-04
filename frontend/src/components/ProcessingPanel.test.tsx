@@ -227,7 +227,7 @@ const outputSection = () => container.querySelector<HTMLElement>('section[aria-l
 const outputOf = () => useProcessingStore.getState().output;
 
 async function ndvi() {
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(container.querySelector('textarea[id$="-expression"]')!, '(nir - red) / (nir + red)');
 }
 
@@ -240,8 +240,8 @@ describe('the panel built from the schema', () => {
   it('offers the operators of the Sentinel-2 fixture and the bands of the scene', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    expect(button('＋ Band math').disabled).toBe(false);
-    expect(button('＋ Reproject and resample').disabled).toBe(false);
+    expect(button('Band math').disabled).toBe(false);
+    expect(button('Reproject and resample').disabled).toBe(false);
     expect(infoChips()).toEqual(['red', 'nir']);
     expect(dataChips()).toEqual(['red', 'nir']);
     expect(container.textContent).toContain('Sentinel-2 L2A · 2026-07-01 · S2B_A');
@@ -283,7 +283,7 @@ describe('the panel built from the schema', () => {
     async function withBandMath() {
       select([scene('S2B_A')]);
       await openPanel();
-      click(button('＋ Band math'));
+      click(button('Band math'));
     }
 
     it('inserts its name where the cursor is in an expression, and the bands follow the expression', async () => {
@@ -329,8 +329,8 @@ describe('the panel built from the schema', () => {
     it('does not insert while the cursor is in another field', async () => {
       select([scene('S2B_A')]);
       await openPanel();
-      click(button('＋ Band math'));
-      click(button('＋ Reproject and resample'));
+      click(button('Band math'));
+      click(button('Reproject and resample'));
       const resolution = container.querySelector<HTMLInputElement>('input[id$="-resolution"]')!;
       act(() => resolution.focus());
       click(chip('nir'));
@@ -476,7 +476,7 @@ describe('review before start (K4)', () => {
     select([scene('S2B_A')]);
     await openPanel();
     await ndvi();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     const expressions = container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]');
     typeInto(expressions[1], 'red + 1');
     await review();
@@ -550,9 +550,9 @@ describe('review before start (K4)', () => {
   it('disables adding a step once the schema maximum is reached', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    for (let i = 0; i < 16; i++) click(button('＋ Band math'));
-    expect(button('＋ Band math').disabled).toBe(true);
-    expect(button('＋ Band math').title).toBe('At most 16 steps');
+    for (let i = 0; i < 16; i++) click(button('Band math'));
+    expect(button('Band math').disabled).toBe(true);
+    expect(button('Band math').title).toBe('At most 16 steps');
     expect(container.querySelectorAll('.pp-step')).toHaveLength(16);
   });
 
@@ -561,7 +561,7 @@ describe('review before start (K4)', () => {
     await openPanel();
     click(dataChip('red'));
     expect(dataChip('red').getAttribute('aria-pressed')).toBe('true');
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(pressedData()).toEqual(['red']);
     click(dataChip('red'));
     expect(dataChip('red').getAttribute('aria-pressed')).toBe('false');
@@ -572,7 +572,7 @@ describe('review before start (K4)', () => {
   it('blocks review with a message while the order is incomplete', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     await review();
     expect(container.textContent).toContain('Required.');
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
@@ -677,7 +677,7 @@ describe('the process description', () => {
     routes['GET /processing/processes/recipe?dataset=sentinel-2-c1-l2a'] = () => json(s2);
     click(button('Retry'));
     await flush();
-    expect(button('＋ Band math').disabled).toBe(false);
+    expect(button('Band math').disabled).toBe(false);
   });
 });
 
@@ -704,7 +704,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
   async function reprojectDem() {
     select([dem()]);
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     fill('crs', 'EPSG:3035');
     fill('resolution', '30');
   }
@@ -763,7 +763,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     };
     select([item]);
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     fill('crs', 'EPSG:3035');
     fill('resolution', '30');
     expect(dtypeLine()).toContain('float32'); // no resampling chosen yet
@@ -788,7 +788,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     };
     select([item]);
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     choose(resampling(), 'bilinear');
     expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
   });
@@ -801,7 +801,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     act(() => details.setAttribute('open', ''));
     choose(dtypeSelect(), 'uint16');
     expect(dtypeLine()).toBe('Data type: uint16 (your choice)');
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
     const disabled = [...dtypeSelect().options].filter((o) => o.disabled).map((o) => o.value);
     expect(disabled).toEqual(['uint8', 'uint16', 'int16', 'uint32', 'int32']);
@@ -1029,7 +1029,7 @@ describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
     await openPanel();
     expect(infoChips()).toEqual(['b04', 'b08']);
     expect(dataChips()).toEqual(['b04', 'b08']);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(container.querySelector('textarea[id$="-expression"]')!, 'b08 - b04');
     click(dataChip('b08'));
     await review();
@@ -1432,22 +1432,22 @@ describe('starting and following a job', () => {
     await waitFor(() => downloads().length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: 1000, gsd: 10 });
     // The result goes on the map from the details, not from the list.
-    expect([...container.querySelectorAll('.processing-manager button')].map((b) => b.textContent)).not.toContain('＋ Add to layers');
+    expect([...container.querySelectorAll('.processing-manager button')].map((b) => b.textContent)).not.toContain('Add to layers');
     showDetails();
     expect(downloads().length).toBeGreaterThan(0);
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('＋ Add to layers');
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Add to layers');
   });
 
   it.each([
     ['an export', { export: link('export.zip'), recipe: link('recipe.json') }],
     ['a link of another shape', { result: link('result.tif'), bundle: link('result.zip'), tiles: { href: 'https://example.org/results/x/tilejson.json' } }],
     ['a link to a file of the job API', { result: link('result.tif'), bundle: link('result.zip'), tiles: link('result.tif') }],
-  ])('offers no "＋ Add to layers" for %s', async (_, doc) => {
+  ])('offers no "Add to layers" for %s', async (_, doc) => {
     await resume(() => json(doc));
     await waitFor(() => downloads().length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toBeNull();
     showDetails();
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('＋ Add to layers');
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Add to layers');
   });
 
   it.each([
@@ -1745,7 +1745,7 @@ describe('bands named in an expression are read by themselves (M4-13c point 5, a
   it('are those of a typed expression, without a click on a chip, and drop out with the name', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     typeInto(field, 'nir * 2');
     await review();
@@ -1765,7 +1765,7 @@ describe('the expression field (M4-13c §3.1)', () => {
   it('stays one line: Enter adds none, a pasted line break becomes a space', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
     act(() => field.dispatchEvent(enter));
@@ -1797,9 +1797,9 @@ describe('the panel and the manager of the jobs (M4-13c §3.1, UI-01 §6.9)', ()
     select([scene('S2B_A')]);
     await openPanel();
     const panel = container.querySelector('.processing-panel')!;
-    click(button('▾'));
+    click(button('Fold the panel down'));
     expect(panel.classList.contains('folded')).toBe(true);
-    click(button('▴'));
+    click(button('Show the panel'));
     expect(panel.classList.contains('folded')).toBe(false);
   });
 });
@@ -1833,7 +1833,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
   async function openStep(items: StacItem[] = [southern()]) {
     select(items);
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
   }
 
   // Past the rest of the field (300 ms) and the answer.
@@ -2019,7 +2019,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
     it('does not hold back a step that is not a reproject', async () => {
       await refused();
       click(button('Remove', container.querySelector('.pp-step')!));
-      click(button('＋ Band math'));
+      click(button('Band math'));
       typeInto(container.querySelector('textarea[id$="-expression"]')!, 'data * 2');
       expect(button('Review').disabled).toBe(false);
     });

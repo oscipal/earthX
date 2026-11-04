@@ -11,6 +11,7 @@ import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import InlineRename from './InlineRename';
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, PlusIcon, RetryIcon } from './icons';
 import { DownloadZip } from './JobRow';
 import { canRestore, canRetry, formatUntil, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
 import CloseButton from './CloseButton';
@@ -89,7 +90,7 @@ function Title({ job }: { job: JobEntry }) {
             </button>
           </h3>
           <button type="button" className="link-btn" title="Rename this job" aria-label="Rename this job" onClick={() => setEditing(true)}>
-            ✎
+            <PencilIcon />
           </button>
         </>
       )}
@@ -170,11 +171,11 @@ export default function JobDetails() {
           title={folded ? 'Show the panel' : 'Fold the panel down'}
           onClick={() => setFolded(!folded)}
         >
-          {folded ? '▴' : '▾'}
+          {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </button>
         <div className="pp-title-row">
           <button type="button" className="link-btn" title="Back to the order" onClick={back}>
-            ‹ Order
+            <ArrowLeftIcon lead />Order
           </button>
           <CloseButton onClick={close} />
         </div>
@@ -235,7 +236,7 @@ export default function JobDetails() {
                   title="Draw the result on the map, cut to the area of the job, as a layer"
                   onClick={() => void showOnMap(job.jobID)}
                 >
-                  ＋ Add to layers
+                  <PlusIcon lead />Add to layers
                 </button>
               )}
               {active && (
@@ -258,7 +259,7 @@ export default function JobDetails() {
                   aria-label={RETRY_TIP}
                   onClick={() => void retryJob(job.jobID)}
                 >
-                  ↻
+                  <RetryIcon />
                 </button>
               )}
               <OpenInPanel job={job} />

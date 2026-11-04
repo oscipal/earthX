@@ -196,7 +196,7 @@ async function openWith(items: StacItem[]) {
 // One Band math step (NDVI), and the output: the result alone, or with more bands.
 async function ndvi(items = [scene('S2B_A')], output: string[] = ['result']) {
   await openWith(items);
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(expression(0), NDVI);
   act(() => store().setOutput(output));
   await afterDebounce();
@@ -227,9 +227,9 @@ describe('the dropdown "Show"', () => {
 
   it('lists every band of the output, the results above the bands of the data', async () => {
     await openWith([scene('S2B_A')]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     act(() => store().setOutput(['red', 'result_1', 'green', 'result']));
     await afterDebounce();
@@ -238,7 +238,7 @@ describe('the dropdown "Show"', () => {
 
   it('does not list a result that is not in the output, nor a band of the data that is not', async () => {
     await ndvi(undefined, ['result', 'green']);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     await afterDebounce();
     expect(store().output).toEqual(expect.arrayContaining(['result', 'result_1', 'green']));
@@ -249,9 +249,9 @@ describe('the dropdown "Show"', () => {
 
   it('starts with the result added last, not the last of the chain', async () => {
     await openWith([scene('S2B_A')]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     act(() => store().setOutput(['result', 'result_1', 'red']));
     await afterDebounce();
@@ -266,7 +266,7 @@ describe('the dropdown "Show"', () => {
 
   it('starts with the first band of the output where it holds no result', async () => {
     await openWith([scene('S2B_A')]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
     act(() => store().setOutput(['red', 'green']));
     await afterDebounce();
@@ -297,8 +297,8 @@ describe('what the picture reads for the band (adr/0020 §4)', () => {
   it('adds the layer of a mask, and nothing else, to NDVI with a mask (three assets)', async () => {
     const wide = scene('S2B_A', 17);
     await openWith([wide]);
-    click(button('＋ Mask by class'));
-    click(button('＋ Band math'));
+    click(button('Mask by class'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
     act(() => store().setOutput(['result', 'red', 'green', ...Array.from({ length: 17 }, (_, i) => `b${i + 1}`)]));
     await afterDebounce();
@@ -309,7 +309,7 @@ describe('what the picture reads for the band (adr/0020 §4)', () => {
   it('still says there is no picture where one band needs more assets than the map takes', async () => {
     const wide = scene('S2B_A', 17);
     await openWith([wide]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), Array.from({ length: 17 }, (_, i) => `b${i + 1}`).join(' + '));
     await afterDebounce();
     expect(section().textContent).toContain('No preview: the map takes at most 16 bands.');
@@ -327,9 +327,9 @@ describe('what the picture reads for the band (adr/0020 §4)', () => {
 
   it('shows the band of the second step with the assets of that step', async () => {
     await openWith([scene('S2B_A')]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     act(() => store().setOutput(['result', 'result_1']));
     await afterDebounce();
@@ -463,7 +463,7 @@ describe('what follows from a change of the output', () => {
     await ndvi(undefined, ['result', 'red']);
     expect(store().steps.map((s) => s.op)).toEqual(['band_math']);
     act(() => store().addStep('reproject', 4));
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     act(() => store().setOutput(['result', 'result_1', 'red']));
     await afterDebounce();

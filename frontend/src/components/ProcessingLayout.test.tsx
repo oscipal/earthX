@@ -180,7 +180,7 @@ const expression = (step = 0) => container.querySelectorAll<HTMLTextAreaElement>
 const nameField = (step = 0) => container.querySelectorAll<HTMLInputElement>('input[id$="-name"]')[step];
 
 async function addBandMath(text = 'nir - red') {
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(expression(store().steps.filter((s) => s.op === 'band_math').length - 1), text);
 }
 
@@ -206,8 +206,8 @@ describe('the sections of the panel', () => {
     select(scene());
     await openPanel();
     const before = sections();
-    click(button('＋ Band math'));
-    click(button('＋ Normalize'));
+    click(button('Band math'));
+    click(button('Normalize'));
     expect(sections()).toEqual(before);
     expect(container.querySelectorAll('.pp-steps > li')).toHaveLength(2);
   });
@@ -238,14 +238,14 @@ describe('the card of a step', () => {
   it('has a head with its name and the buttons Move up, Move down and Remove, each with its tooltip, as symbols', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Normalize'));
-    click(button('＋ Mask by class'));
+    click(button('Normalize'));
+    click(button('Mask by class'));
     const head = card(0).querySelector('.pp-step-head')!;
     expect(head.querySelector('.pp-step-title')!.textContent).toContain('1. Normalize');
-    expect([...head.querySelectorAll('button')].map((b) => [b.getAttribute('aria-label'), b.title, b.textContent])).toEqual([
-      ['Move up', 'Move this step up', '↑'],
-      ['Move down', 'Move this step down', '↓'],
-      ['Remove', 'Remove this step', '✕'],
+    expect([...head.querySelectorAll('button')].map((b) => [b.getAttribute('aria-label'), b.title, b.querySelector('svg')?.getAttribute('class')?.split(' ').at(-1), b.textContent])).toEqual([
+      ['Move up', 'Move this step up', 'lucide-arrow-up', ''],
+      ['Move down', 'Move this step down', 'lucide-arrow-down', ''],
+      ['Remove', 'Remove this step', 'lucide-trash-2', ''],
     ]);
     // The first cannot move up and the last cannot move down; the middle ones can both.
     expect(button('Move up', card(0)).disabled).toBe(true);
@@ -257,8 +257,8 @@ describe('the card of a step', () => {
   it('moves and removes a step with the buttons of its head', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Normalize'));
-    click(button('＋ Mask by class'));
+    click(button('Normalize'));
+    click(button('Mask by class'));
     expect(store().steps.map((s) => s.op)).toEqual(['normalize', 'mask']);
     click(button('Move down', card(0)));
     expect(store().steps.map((s) => s.op)).toEqual(['mask', 'normalize']);
@@ -269,7 +269,7 @@ describe('the card of a step', () => {
   it('offers "Rename" only where a step has a name, and takes it to the field of the name, which keeps the rules', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Normalize'));
+    click(button('Normalize'));
     expect([...card(0).querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Rename')).toBe(false);
     await addBandMath('nir - red');
     const rename = button('Rename', card(1));
@@ -284,7 +284,7 @@ describe('the card of a step', () => {
   it('keeps the fields of every operator in one grid: a name and a control, as in the settings bar', async () => {
     select(scene());
     await openPanel();
-    for (const op of ['＋ Band math', '＋ Reproject and resample', '＋ Normalize', '＋ Mask by class']) click(button(op));
+    for (const op of ['Band math', 'Reproject and resample', 'Normalize', 'Mask by class']) click(button(op));
     const fields = [...container.querySelectorAll('.pp-steps label.vc-field.pp-field')];
     expect(fields.length).toBeGreaterThan(4);
     for (const field of fields) expect(field.firstElementChild!.classList.contains('pp-label') || field.firstElementChild!.tagName === 'SPAN', field.textContent ?? '').toBe(true);
@@ -296,7 +296,7 @@ describe('what the panel does not do', () => {
   it('stays open on Escape, in the panel, in a field and on the map: Esc closes nothing (Otto, 2.11.2026)', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     for (const target of [container.querySelector('.processing-panel')!, expression(0), document.body, document]) {
       act(() => void target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     }

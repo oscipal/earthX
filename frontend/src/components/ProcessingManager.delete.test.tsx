@@ -88,8 +88,10 @@ const click = (element: Element | null | undefined) => {
   if (!element) throw new Error(`nothing to click in ${container.textContent}`);
   act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
-const button = (label: string): HTMLButtonElement => {
-  const found = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
+const button = (label: string | RegExp): HTMLButtonElement => {
+  const found = [...container.querySelectorAll('button')].find((b) =>
+    typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.getAttribute('aria-label') ?? ''),
+  );
   if (!found) throw new Error(`no button ${label} in ${container.textContent}`);
   return found;
 };
@@ -545,7 +547,7 @@ describe('a batch', () => {
     for (const n of [1, 2]) serverHolds(jobId(n));
     withBatch([part(1), part(2)]);
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     press(openButton(container.querySelector<HTMLElement>('.pm-parts .pm-row')!), 'd');
     await settle();
     expect(asked).toHaveLength(2);
@@ -567,7 +569,7 @@ describe('a batch', () => {
     serverHolds(jobId(2));
     withBatch([part(1), part(2), part(3)]);
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const second = container.querySelectorAll<HTMLElement>('.pm-parts .pm-row')[1];
     menuOf(second);
     click(item('Delete'));

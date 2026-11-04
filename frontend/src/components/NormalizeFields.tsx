@@ -6,6 +6,7 @@ import type { FieldValue } from '../schemaForm';
 import type { MeasureStatus } from '../processingOrder';
 import { METHODS, RANGES, isMethod, isStatistical, methodTip, rangeLabel } from '../normalizeMethods';
 import { hasComma, oneNumber } from '../maskValues';
+import { CheckIcon } from './icons';
 import Tip from './Tip';
 
 const CLIP_TIP = 'Limit the result to the target range. Without it the values continue along the same line.';
@@ -85,7 +86,7 @@ export default function NormalizeFields({
         <span className="pp-label">
           Method
           <Tip text={methodTip(method)} />
-          {locked && <Tip tone="warn" text={locked} symbol="⚠" />}
+          {locked && <Tip tone="warn" text={locked} />}
         </span>
         <select
           id={`${id}-method`}
@@ -155,12 +156,12 @@ export default function NormalizeFields({
           {measure.state === 'measuring' && 'Measuring…'}
           {measure.state === 'ready' && (
             <>
-              Preview measured ✓<Tip text={measure.text} />
+              Preview measured <CheckIcon size={14} /><Tip text={measure.text} />
             </>
           )}
           {measure.state === 'failed' && (
             <>
-              <span className="error">Not measured.</span> <Tip tone="warn" text={measure.text} symbol="⚠" />{' '}
+              <span className="error">Not measured.</span> <Tip tone="warn" text={measure.text} />{' '}
               {!measure.final && (
                 <button type="button" className="link-btn" onClick={onRetry}>
                   Retry
