@@ -12,6 +12,7 @@ import PreviewBadge from './components/PreviewBadge';
 import ProcessingManager from './components/ProcessingManager';
 import ProcessingPanel from './components/ProcessingPanel';
 import ResultsPanel from './components/ResultsPanel';
+import SettingsPanel from './components/SettingsPanel';
 import SelectionBlock from './components/SelectionBlock';
 import { selectionBlockModeOf } from './selectionBlockMode';
 import StatusBar from './components/StatusBar';
@@ -87,6 +88,9 @@ export default function App() {
         </div>
         <div className="dock-slot" id={dockPanelId('results')} hidden={dock !== 'results'}>
           <ResultsPanel />
+        </div>
+        <div className="dock-slot" id={dockPanelId('settings')} hidden={dock !== 'settings'}>
+          <SettingsPanel />
         </div>
         {dock === 'jobs' && (
           <div className="dock-slot" id={dockPanelId('jobs')}>

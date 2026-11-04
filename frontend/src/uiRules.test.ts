@@ -514,11 +514,11 @@ describe('two steps of tooltips (UI-04 part 3b, Otto, 4.11.2026): data-tip-level
   });
 });
 
-describe('the settings are in one menu (UI-04 part 4, Otto, 3.11.2026)', () => {
+describe('the settings are in one panel (UI-04 part 4, Otto, 3.11.2026 and 4.11.2026)', () => {
   const code = sources.map(([, text]) => withoutComments(text)).join('\n');
 
-  it('has no button "Basemap" and no button for the theme beside it: nothing of the old places is left', () => {
-    expect(code).not.toMatch(/\bBasemapMenu\b|basemap-btn|\btoggleTheme\b/u);
+  it('has no button "Basemap" and no button for the theme beside it, and no pop-up menu of the settings: nothing of the old places is left', () => {
+    expect(code).not.toMatch(/\bBasemapMenu\b|\bSettingsMenu\b|basemap-btn|\btoggleTheme\b|placePopoverBeside/u);
     expect(code).not.toMatch(/Switch to the (?:light|dark) theme/u);
   });
 
@@ -526,8 +526,44 @@ describe('the settings are in one menu (UI-04 part 4, Otto, 3.11.2026)', () => {
     expect(SOURCES['./basemaps.ts']).not.toMatch(/\brelief\b/iu);
   });
 
-  it('keeps the symbol of the menu at the bottom of the rail, after the panels', () => {
+  it('keeps the symbol of the panel at the bottom of the rail, after the others', () => {
     expect(CSS).toMatch(/\.rail-settings \{[^}]*margin-top: auto/u);
+  });
+
+  it('is a panel of the dock like the others: a slot, the head of a panel with the red x, no pop-up', () => {
+    expect(SOURCES['./App.tsx']).toMatch(/dockPanelId\('settings'\)/u);
+    const panel = SOURCES['./components/SettingsPanel.tsx'];
+    expect(panel).toMatch(/className="results-head"/u);
+    expect(panel).toMatch(/<CloseButton\b/u);
+    expect(panel).not.toMatch(/Popover|role="menu|menuitem|MenuTick/u);
+  });
+
+  it('has no list of ticks in it: every choice is a segment button, the tooltips are a switch', () => {
+    const panel = SOURCES['./components/SettingsPanel.tsx'];
+    expect(panel).toMatch(/className="btn seg"/u);
+    expect(panel).toMatch(/<Switch\b/u);
+    expect(panel).not.toMatch(/CheckIcon|aria-checked|type="checkbox"|type="radio"/u);
+  });
+});
+
+describe('a switch is for something that is on or off (UI-04 part 4, Otto, 4.11.2026)', () => {
+  // One component, `Switch`, and the checkbox of "Filter within AOI only": nothing else is a switch; a choice of one of several is a row of
+  // segment buttons, and a thing that is on beside others is a button that is pressed.
+  const holders = (text: string) => (/role="switch"/u.test(withoutComments(text)) ? true : false);
+  it('has `role="switch"` only in Switch.tsx and in the filter within the AOI', () => {
+    expect(sources.filter(([, text]) => holders(text)).map(([path]) => path).sort()).toEqual(['components/AdvancedSearch.tsx', 'components/Switch.tsx']);
+  });
+
+  it('is used with a name for a screen reader and a boolean, not with a choice of several (counter-check on the text)', () => {
+    expect(SOURCES['./components/Switch.tsx']).toMatch(/aria-checked=\{on\}/u);
+    expect(SOURCES['./components/Switch.tsx']).toMatch(/aria-label=\{label\}/u);
+    expect(holders('<button role="switch" />')).toBe(true);
+    expect(holders('<button aria-pressed />')).toBe(false);
+  });
+
+  it('fills the segment button that is chosen, and the overlay that is on', () => {
+    expect(CSS).toMatch(/\.btn\.seg\[aria-pressed='true'\] \{[^}]*background: var\(--accent\)/u);
+    expect(CSS).toMatch(/\.btn\.seg\[aria-pressed='true'\] \{[^}]*color: var\(--on-accent\)/u);
   });
 });
 

@@ -130,13 +130,14 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     expect('the map cannot be tilted', limits.maxPitch === 0 && limits.high.pitch === 0, JSON.stringify(limits));
     await jump(10.5, 30, 1.6);
 
-    // 4. The overlay "Relief" and the projection, through the menu "Settings" at the bottom of the rail.
+    // 4. The overlay "Relief" and the projection, through the panel "Settings" at the bottom of the rail.
     const menu = async (group, name) => {
       await dock(false);
       const opener = page.getByRole('button', { name: 'Settings', exact: true });
       if ((await opener.getAttribute('aria-expanded')) !== 'true') await opener.click();
-      await page.getByRole('group', { name: group }).getByRole(group === 'Overlays' ? 'menuitemcheckbox' : 'menuitemradio', { name }).click();
-      await opener.click(); // the menu stays open after a choice, over the map: closed with its button (Esc closes nothing)
+      // A choice is a segment button; an overlay is pressed while it is on and is clicked to switch it on or off.
+      await page.locator('.settings-panel').getByRole('group', { name: group }).getByRole('button', { name }).click();
+      await opener.click(); // the panel stays open after a choice, over the map under 900 px: closed with its symbol (Esc closes nothing)
       await idle();
     };
     // Relief: shading over mountains, none over the sea (the one host the cloud session reaches), as the overlay over the default basemap.

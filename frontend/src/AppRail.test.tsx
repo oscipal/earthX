@@ -57,8 +57,8 @@ afterEach(() => {
 });
 
 const rail = () => container.querySelector<HTMLElement>('nav[aria-label="Main"]')!;
-const symbol = (name: 'controls' | 'layers' | 'jobs' | 'results') => container.querySelector<HTMLButtonElement>(`#rail-${name}`)!;
-const slot = (name: 'controls' | 'layers' | 'jobs' | 'results') => container.querySelector<HTMLElement>(`#dock-${name}`);
+const symbol = (name: 'controls' | 'layers' | 'jobs' | 'results' | 'settings') => container.querySelector<HTMLButtonElement>(`#rail-${name}`)!;
+const slot = (name: 'controls' | 'layers' | 'jobs' | 'results' | 'settings') => container.querySelector<HTMLElement>(`#dock-${name}`);
 const click = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const key = (target: Element, name: string) => {
   const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
@@ -183,14 +183,33 @@ describe('the panels', () => {
     expect([...top.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Zoom to selection']);
   });
 
-  it('put "Settings" last, at the bottom edge of the rail, and it opens a menu, not a panel', () => {
+  it('put "Settings" last, at the bottom edge of the rail, and it opens a panel like the others, not a menu (Otto, 4.11.2026)', () => {
     const settings = rail().querySelector<HTMLButtonElement>('button.rail-settings')!;
     expect([...rail().querySelectorAll('button')].at(-1)).toBe(settings);
-    expect(settings.getAttribute('aria-haspopup')).toBe('menu');
-    expect(settings.hasAttribute('aria-controls')).toBe(false);
+    expect(settings.id).toBe('rail-settings');
+    expect(settings.hasAttribute('aria-haspopup')).toBe(false);
+    expect(settings.getAttribute('aria-expanded')).toBe('false');
+    expect(slot('settings')!.hidden).toBe(true);
     click(settings);
-    expect(useAppStore.getState().dock).toBe('controls');
-    expect(document.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe('Settings');
+    expect(useAppStore.getState().dock).toBe('settings');
+    expect(settings.getAttribute('aria-expanded')).toBe('true');
+    expect(settings.getAttribute('aria-controls')).toBe('dock-settings');
+    expect(slot('settings')!.hidden).toBe(false);
+    expect(slot('controls')!.hidden).toBe(true);
+    expect(container.querySelector('#dock-settings .settings-panel h2')?.textContent).toBe('Settings');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    // A second click, like on the other symbols, closes it; so does the red x of its head.
+    click(settings);
+    expect(useAppStore.getState().dock).toBeNull();
+    click(settings);
+    click(container.querySelector('#dock-settings button.close-x')!);
+    expect(useAppStore.getState().dock).toBeNull();
+  });
+
+  it('give the panel "Settings" the width and the place of the other panels, in the same slot of the dock', () => {
+    const slots = [...container.querySelectorAll('.dock > .dock-slot')].map((el) => el.id);
+    expect(slots).toEqual(['dock-controls', 'dock-layers', 'dock-results', 'dock-settings']);
+    expect(container.querySelector('#dock-settings .dock-panel')).not.toBeNull();
   });
 });
 

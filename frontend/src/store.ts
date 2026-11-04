@@ -1380,7 +1380,7 @@ function forgetSearch() {
 }
 
 // The panels beside the rail (UI-01 §6.9). One is open at a time, or none.
-export type DockPanel = 'controls' | 'layers' | 'jobs' | 'results';
+export type DockPanel = 'controls' | 'layers' | 'jobs' | 'results' | 'settings';
 
 // Sliding the control panel away leaves another panel where it is.
 const withoutControls = (dock: DockPanel | null): DockPanel | null => (dock === 'controls' ? null : dock);

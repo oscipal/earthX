@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // V-2 (docs/plans/m2/m2-format-und-viewer.md), five findings from Otto's review:
-// 1. the theme/projection buttons (gone with UI-04 part 4: the menu of "Settings" has them, `SettingsMenu.test.tsx`);
+// 1. the theme/projection buttons (gone with UI-04 part 4: the menu of "Settings" has them, `SettingsPanel.test.tsx`);
 // 2. (icons for the projection: replaced by the "Basemap" menu, UI-02a; the symbol for "Layers" moved to the
 //    rail, UI-01, `AppRail.test.tsx`);
 // 3. "Zoom to selection" is disabled with neither an AOI nor pinned layers;
@@ -73,7 +73,7 @@ describe('top-right map controls', () => {
     vi.unstubAllGlobals();
   });
 
-  it('has no button for the theme any more: "Light", "Dark" and "System" are in the menu of "Settings" (UI-04 part 4)', () => {
+  it('has no button for the theme any more: "Light", "Dark" and "System" are in the panel "Settings" (UI-04 part 4)', () => {
     const view = mount();
     const bar = view.querySelector<HTMLElement>('.top-right')!;
     expect(btn(bar, 'Light')).toBeNull();
@@ -83,12 +83,12 @@ describe('top-right map controls', () => {
       view.querySelector<HTMLButtonElement>('button.rail-settings')!.click();
     });
     act(() => {
-      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find((e) => e.textContent === 'Light')!.click();
+      [...view.querySelectorAll<HTMLButtonElement>('.settings-panel .btn.seg')].find((e) => e.textContent === 'Light')!.click();
     });
     expect(view.querySelector('.app')?.getAttribute('data-theme')).toBe('normal');
   });
 
-  it('has no "Basemap" button and none for the projection: the menu of "Settings" has both (UI-02a, UI-04 part 4)', () => {
+  it('has no "Basemap" button and none for the projection: the panel "Settings" has both (UI-02a, UI-04 part 4)', () => {
     const view = mount();
     const bar = view.querySelector<HTMLElement>('.top-right')!;
     expect(btn(bar, 'Basemap')).toBeNull();
@@ -97,11 +97,11 @@ describe('top-right map controls', () => {
     expect(view.querySelector('button.rail-settings')).not.toBeNull();
   });
 
-  it('puts the projection in the menu of "Settings", and back', () => {
+  it('puts the projection in the panel "Settings", and back', () => {
     const view = mount();
     const choose = (name: string) =>
       act(() => {
-        [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find((e) => e.textContent === name)!.click();
+        [...view.querySelectorAll<HTMLButtonElement>('.settings-panel .btn.seg')].find((e) => e.textContent === name)!.click();
       });
     act(() => {
       view.querySelector<HTMLButtonElement>('button.rail-settings')!.click();

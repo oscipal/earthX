@@ -146,7 +146,7 @@ describe('the symbol', () => {
       'rail-layers',
       'rail-jobs',
       'rail-results',
-      '',
+      'rail-settings',
     ]);
   });
 
