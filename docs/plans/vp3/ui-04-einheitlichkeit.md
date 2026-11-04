@@ -330,3 +330,4 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 7. **„Clear“ der AOI** und **„Clear search results“** zeigen `trash-2`, **Teilen** „Delete link“ ebenfalls; das graue `circle-x` leert nur ein Feld (`ClearIcon`).
 8. **Download überall `download`**, auch „Download all (ZIP)“ (vorher ⇊) und die Zeile eines Jobs.
 9. **Nicht berührt:** `.vc-eye` (28 px), `.lm-eye` (22 px) und andere feste Knopfgrößen; sie gehören zu Teil 3a (Knopfformen).
+10. **Antworten Otto (04.11.2026):** Die Leiste links bekommt in Teil 3 eine dritte Größe 20 px als Token (hier 16 px, unverändert). Der Knopf „Clear“ der AOI im Control-Menü heißt „Clear AOI“ (Beschriftung, Tooltip, `aria-label`); gesperrt ohne AOI mit dem Grund „No AOI to clear“.
