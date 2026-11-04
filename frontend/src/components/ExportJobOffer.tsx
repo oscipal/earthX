@@ -110,9 +110,9 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
       )}
       <button
         type="button"
-        className="lm-btn primary"
+        className="btn primary"
         disabled={blocked}
-        title={estimate.state === 'too-large' ? TOO_LARGE_FOR_A_JOB : 'Compute the crop on the platform, as a job'}
+        data-tip={estimate.state === 'too-large' ? TOO_LARGE_FOR_A_JOB : 'Compute the crop on the platform, as a job'}
         onClick={() => (parts.length > 0 ? setAsking(true) : void start())}
       >
         {started?.state === 'starting' ? 'Starting…' : 'Export as job'}

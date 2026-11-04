@@ -12,8 +12,6 @@ export const ONE_IMAGE_TIP = 'A layer holds one image';
 
 interface HeadProps {
   title: string;
-  // The title in full, where the line cuts it short.
-  tip: string;
   // The mark beside the title ("Temporary", the note of a result of whole numbers).
   mark?: ReactNode;
   eye?: ReactNode;
@@ -32,13 +30,13 @@ interface HeadProps {
 export const RENAME_TIP = 'Rename layer';
 const EMPTY_NAME_TIP = 'A layer needs a name: an empty one keeps the name it had';
 
-export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy, children, rename }: HeadProps) {
+export function InspectorHead({ title, mark, eye, onClose, closeTitle, copy, children, rename }: HeadProps) {
   const [editing, setEditing] = useState(false);
   return (
     <div className="vc-head">
       <div className="insp-row">
         {rename && editing ? (
-          <span className="vc-title vc-rename" title={EMPTY_NAME_TIP}>
+          <span className="vc-title vc-rename" data-tip={EMPTY_NAME_TIP}>
             <InlineRename
               value={rename.name}
               label="Layer name"
@@ -52,15 +50,15 @@ export function InspectorHead({ title, tip, mark, eye, onClose, closeTitle, copy
           </span>
         ) : rename ? (
           <>
-            <button type="button" className="vc-title vc-title-btn" title={tip} onClick={() => setEditing(true)}>
+            <button type="button" className="vc-title vc-title-btn" onClick={() => setEditing(true)}>
               {title}
             </button>
-            <button type="button" className="vc-pencil" title={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
+            <button type="button" className="icon-btn sm quiet" data-tip={RENAME_TIP} aria-label={RENAME_TIP} onClick={() => setEditing(true)}>
               <PencilIcon />
             </button>
           </>
         ) : (
-          <span className="vc-title" title={tip}>
+          <span className="vc-title">
             {title}
           </span>
         )}
@@ -97,7 +95,7 @@ export function Stepper({ text, tip, previous, next, onKeyDown, single = false }
   if (single) {
     return (
       <div className="vc-stepper" role="group" aria-label="Time step">
-        <span className="vc-step-text" title={tip}>
+        <span className="vc-step-text" data-tip={tip}>
           {text}
         </span>
       </div>
@@ -105,13 +103,13 @@ export function Stepper({ text, tip, previous, next, onKeyDown, single = false }
   }
   return (
     <div className="vc-stepper" role="group" aria-label="Time step" onKeyDown={onKeyDown}>
-      <button type="button" className="vc-step" aria-label="Previous image" aria-disabled={previous.disabled || undefined} title={previous.title} onClick={previous.onClick}>
+      <button type="button" className="icon-btn" aria-label="Previous image" aria-disabled={previous.disabled || undefined} data-tip={previous.title} onClick={previous.onClick}>
         <ChevronLeftIcon />
       </button>
-      <span className="vc-step-text" title={tip}>
+      <span className="vc-step-text" data-tip={tip}>
         {text}
       </span>
-      <button type="button" className="vc-step" aria-label="Next image" aria-disabled={next.disabled || undefined} title={next.title} onClick={next.onClick}>
+      <button type="button" className="icon-btn" aria-label="Next image" aria-disabled={next.disabled || undefined} data-tip={next.title} onClick={next.onClick}>
         <ChevronRightIcon />
       </button>
     </div>

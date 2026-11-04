@@ -130,7 +130,7 @@ async function check(browser, theme, viewport) {
       heads: steps.map((s) => ({ card: box(s), actions: [...s.querySelectorAll('.pp-step-head button')].map((b) => ({ label: b.getAttribute('aria-label'), ...box(b) })) })),
       heights: {
         field: [...root.querySelectorAll('.pp-step input:not([type=checkbox]), .pp-step select')].map((e) => Math.round(e.getBoundingClientRect().height)),
-        button: [...root.querySelectorAll('.pp-add-btn, .pp-foot .primary-btn, .pp-foot .ghost-btn, .pp-icon-btn, .pp-chip')].map((e) => Math.round(e.getBoundingClientRect().height)),
+        button: [...root.querySelectorAll('.pp-add-btn, .pp-foot .btn.primary, .pp-foot .btn, .icon-btn, .pp-chip')].map((e) => Math.round(e.getBoundingClientRect().height)),
       },
       theme: document.querySelector('.app')?.dataset.theme,
     };

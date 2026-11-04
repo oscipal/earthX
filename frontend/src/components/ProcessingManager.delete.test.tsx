@@ -135,7 +135,7 @@ describe('Delete with D', () => {
     expect(states()).toEqual(['Deleted']);
     expect(rows()[0].classList.contains('deleted')).toBe(true);
     expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^21OCT-\d{2}:\d{2}$/u);
-    expect(rows()[0].querySelector('.pm-until')?.getAttribute('title')).toBe(new Date(NOW + DAY).toISOString());
+    expect(rows()[0].querySelector('.pm-until')?.getAttribute('data-tip')).toBe(new Date(NOW + DAY).toISOString());
     expect(job(1)).toMatchObject({ phase: 'dismissed', serverDeleted: true, deletedUntil: new Date(NOW + DAY).toISOString() });
     expect(stored().jobs[0]).toMatchObject({ jobID: jobId(1), deletedUntil: new Date(NOW + DAY).toISOString(), serverDeleted: true });
   });
@@ -335,7 +335,7 @@ describe('Restore', () => {
     put({ jobs: [deleted(1)] });
     mount();
     click(button('Deleted'));
-    expect(restoreIcon(rows()[0])?.getAttribute('title')).toMatch(/^Restore \(possible until 20 Oct, \d{2}:\d{2}\)$/u);
+    expect(restoreIcon(rows()[0])?.getAttribute('data-tip')).toMatch(/^Restore \(possible until 20 Oct, \d{2}:\d{2}\)$/u);
     click(restoreIcon(rows()[0]));
     await settle();
     expect(asked[0]).toBe(`POST /processing/jobs/${jobId(1)}/restore`);
@@ -369,7 +369,7 @@ describe('Restore', () => {
     expect(states()).toEqual(['Deleted']);
     expect(restoreIcon(rows()[0])).toBeNull();
     // The column of the dates names the day a day after the deletion, which has passed: the job is deleted for good (Otto, 3.11.2026).
-    expect(rows()[0].querySelector('.pm-until')?.getAttribute('title')).toBe(job(1).deletedUntil);
+    expect(rows()[0].querySelector('.pm-until')?.getAttribute('data-tip')).toBe(job(1).deletedUntil);
     expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^\d{2}[A-Z]{3}-\d{2}:\d{2}$/u);
   });
 
@@ -386,10 +386,10 @@ describe('Restore', () => {
     mount();
     click(button('Deleted'));
     const until = (n: number) => rows().find((r) => r.textContent?.includes(`Job ${n}`) || r.querySelector(`[data-row-id="${jobId(n)}"]`) || r.getAttribute('data-row-id') === jobId(n))!.querySelector('.pm-until')!;
-    expect(until(1).getAttribute('title')).toBe(early);
-    expect(until(2).getAttribute('title')).toBe(soon);
+    expect(until(1).getAttribute('data-tip')).toBe(early);
+    expect(until(2).getAttribute('data-tip')).toBe(soon);
     // A job that goes after the day of its deletion has that day: a day after the deletion.
-    expect(until(3).getAttribute('title')).toBe(new Date(NOW + 3_600_000).toISOString());
+    expect(until(3).getAttribute('data-tip')).toBe(new Date(NOW + 3_600_000).toISOString());
   });
 
   it('does not ask once the day is over, whatever the screen still shows', async () => {
@@ -606,7 +606,7 @@ describe('a batch', () => {
     click(button('Deleted'));
     expect(restoreIcon(rows()[0])).toBeNull();
     // The column still names the day, the latest of the parts': a day after they were deleted (Otto, 3.11.2026).
-    expect(rows()[0].querySelector('.pm-until')?.getAttribute('title')).toBe(new Date(NOW - 1000).toISOString());
+    expect(rows()[0].querySelector('.pm-until')?.getAttribute('data-tip')).toBe(new Date(NOW - 1000).toISOString());
   });
 
   it('names the soonest end of the days when the parts were deleted at different times', () => {
@@ -616,7 +616,7 @@ describe('a batch', () => {
     ]);
     mount();
     click(button('Deleted'));
-    expect(rows()[0].querySelector('.pm-until')?.getAttribute('title')).toBe(new Date(NOW + 3_600_000).toISOString());
+    expect(rows()[0].querySelector('.pm-until')?.getAttribute('data-tip')).toBe(new Date(NOW + 3_600_000).toISOString());
   });
 
   it('is "Expired" when the parts that are not deleted have expired, and "Deleted" only when all are deleted', () => {
@@ -644,7 +644,7 @@ describe('a reload', () => {
     expect(rows()).toHaveLength(0);
     click(button('Expired'));
     expect(states()).toEqual(['No longer available']);
-    expect(rows()[0].querySelector('.pm-state')?.getAttribute('title')).toBe('The server does not know this job any more.');
+    expect(rows()[0].querySelector('.pm-state')?.getAttribute('data-tip')).toBe('The server does not know this job any more.');
     expect(rows()[0].querySelector('.pm-until')).toBeNull();
   });
 

@@ -17,6 +17,7 @@ import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import ResultsPanel from './ResultsPanel';
 import StatusBar from './StatusBar';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -132,7 +133,7 @@ describe('how far the search got', () => {
 
   it('explains itself in a tooltip', () => {
     load({ features: THREE, counts: counts() });
-    expect(progress()!.querySelector('span')!.title).toBe('Scenes within the limit, of the scenes checked so far');
+    expect(tipOf(progress()!.querySelector('span')!)).toBe('Scenes within the limit, of the scenes checked so far');
   });
 
   it('is not there for a search without the limit', () => {

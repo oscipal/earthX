@@ -61,8 +61,8 @@ export default function ShareLink({ view }: { view: OrderView }) {
             <CopyButton text={permalinkAddress(made.id)} title="Copy link" label="Copy link" />
             <button
               type="button"
-              className="delete-btn"
-              title="Delete link"
+              className="icon-btn sm danger"
+              data-tip="Delete link"
               aria-label="Delete link"
               disabled={busy}
               onClick={() => void remove(made.id)}
@@ -76,9 +76,9 @@ export default function ShareLink({ view }: { view: OrderView }) {
         <>
           <button
             type="button"
-            className="ghost-btn"
+            className="btn"
             disabled={busy || !!blocked || !bbox}
-            title={blocked ?? 'Keep this order and the map view under a link for 30 days'}
+            data-tip={blocked ?? 'Keep this order and the map view under a link for 30 days'}
             onClick={() => void share()}
           >
             {busy ? 'Sharing…' : 'Share'}

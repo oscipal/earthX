@@ -28,7 +28,7 @@ function Row({ item }: { item: StacItem }) {
       <input
         type="checkbox"
         checked={selected}
-        title="Select this scene"
+        data-tip="Select this scene"
         onClick={(e) => e.stopPropagation()}
         onChange={() => toggleSelected(item.id)}
         aria-label={`Select ${item.id}`}
@@ -50,13 +50,13 @@ function Row({ item }: { item: StacItem }) {
         // on the zoom, neither of which this row knows.
         <span
           className="result-thumb placeholder"
-          title="No preview image for this scene"
+          data-tip="No preview image for this scene"
         />
       )}
       <div className="result-meta">
         <span className="result-date">{timeOf(item.properties)}</span>
         <span className="result-id-row">
-          <span className="result-id" title={item.id}>
+          <span className="result-id" data-tip={item.id}>
             {item.id}
           </span>
           <CopyButton text={item.id} title="Copy scene name" label={`Copy scene name ${item.id}`} />
@@ -106,7 +106,6 @@ function GroupSelectBox({ group, index }: { group: TimeStepGroup; index: number 
       ref={(el) => {
         if (el) el.indeterminate = count > 0 && !all;
       }}
-      title={`Select all scenes of ${group.label}`}
       aria-label={`Select all scenes of ${group.label}`}
       onChange={() => toggleGroupSelected(index)}
     />
@@ -130,7 +129,7 @@ function GroupBlock({
         <GroupSelectBox group={group} index={index} />
         <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
           <span className="rg-caret">{expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}</span>
-          <span className="rg-label" title={group.label}>
+          <span className="rg-label">
             {group.label}
           </span>
           <span className="rg-count">{group.items.length}</span>
@@ -165,7 +164,7 @@ function SectionSummary({ section }: { section: ResultSection }) {
   return (
     <>
       <span className="dataset-select-line">
-        <span className="dataset-select-title" title={title}>
+        <span className="dataset-select-title">
           {title}
         </span>
         {label && <span className="maturity-chip">{label}</span>}
@@ -225,7 +224,7 @@ function LoadMore({ openId }: { openId: string | null }) {
   return (
     <div className="load-more">
       <span className="hint-text">More scenes may be available.</span>
-      <button type="button" className="ghost-btn" disabled={loading} onClick={() => void loadMore()}>
+      <button type="button" className="btn" disabled={loading} onClick={() => void loadMore()}>
         {loading ? 'Loading…' : 'Load more'}
       </button>
     </div>
@@ -241,11 +240,11 @@ export function AoiProgress({ datasetId }: { datasetId: string | null }) {
   const stop = useAppStore((s) => s.stopSearch);
   return (
     <div className="aoi-progress" role="status">
-      <span title="Scenes within the limit, of the scenes checked so far">
+      <span data-tip="Scenes within the limit, of the scenes checked so far">
         {counts?.found ?? 0} found / {counts?.checked ?? 0} checked
       </span>
       {walking && (
-        <button type="button" className="ghost-btn aoi-stop" title="Stop checking. What is found stays." onClick={stop}>
+        <button type="button" className="btn aoi-stop" data-tip="Stop checking. What is found stays." onClick={stop}>
           Stop
         </button>
       )}
@@ -296,7 +295,7 @@ export default function ResultsPanel() {
   return (
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
-        <h2 title="Selected scenes / scenes found">Search results ({selected}/{totalItems(sections)})</h2>
+        <h2 data-tip="Selected scenes / scenes found">Search results ({selected}/{totalItems(sections)})</h2>
         <div className="results-head-switches">
           <ResultsToTop />
           <ResultsEye />
@@ -314,8 +313,8 @@ function ClearResults() {
   return (
     <button
       type="button"
-      className="clear-results"
-      title="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
+      className="btn clear-results"
+      data-tip="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
       onClick={() => clearSearchResults()}
     >
       <TrashIcon className="clear-results-x" />

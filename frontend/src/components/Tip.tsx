@@ -1,5 +1,5 @@
 // A reason or an explanation as a tooltip (UI-01 §4, "wenig Text"): it shows on hover and on keyboard
-// focus, and a screen reader reads it as the name of the symbol. Plain `title` shows on hover only.
+// focus, and a screen reader reads it as the name of the symbol. It is the (i) beside a text; a tooltip on a control is its `data-tip`.
 
 import { InfoIcon, WarningIcon } from './icons';
 

@@ -17,6 +17,7 @@ import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import DownloadDialog from './DownloadDialog';
 import { TOO_LARGE_FOR_A_JOB } from './ExportJobOffer';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -279,7 +280,7 @@ describe('the offer', () => {
     await show();
     expect(section()?.textContent).toContain(TOO_LARGE_FOR_A_JOB);
     expect(button(EXPORT)?.disabled).toBe(true);
-    expect(button(EXPORT)?.title).toBe(TOO_LARGE_FOR_A_JOB);
+    expect(tipOf(button(EXPORT))).toBe(TOO_LARGE_FOR_A_JOB);
     expect(calls('/processing/processes/recipe/estimate')).toHaveLength(0);
   });
 

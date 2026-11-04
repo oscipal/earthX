@@ -73,15 +73,15 @@ export default function ViewBar() {
 
   return (
     <div className="download-bar" role="group" aria-label="Selected scenes, full resolution">
-      <span className="download-count" title={spread || undefined}>
+      <span className="download-count" data-tip={spread || undefined}>
         <strong>{count}</strong>
         <span>scene{plural ? 's' : ''} selected</span>
       </span>
       <button
         type="button"
-        className="primary-btn"
+        className="btn primary"
         disabled={focusLoading || !aoi}
-        title={
+        data-tip={
           aoi
             ? `View the selected scene${plural ? 's' : ''} at full resolution, cut to your AOI${plural ? ' and merged' : ''}`
             : 'Draw an AOI first to crop the full-resolution view to it'
@@ -92,18 +92,18 @@ export default function ViewBar() {
       </button>
       <button
         type="button"
-        className="ghost-btn"
+        className="btn"
         disabled={focusLoading}
-        title={`View the whole selected scene${plural ? 's, merged,' : ''} at full resolution, tiled straight from the source`}
+        data-tip={`View the whole selected scene${plural ? 's, merged,' : ''} at full resolution, tiled straight from the source`}
         onClick={() => enterFocus(false)}
       >
         {focusLoading ? 'Loading…' : plural ? 'View merged scenes' : 'View whole scene'}
       </button>
       <button
         type="button"
-        className="ghost-btn"
+        className="btn"
         disabled={!aoi || openCount === 0}
-        title={
+        data-tip={
           !aoi
             ? DRAW_AOI_TO_CROP
             : `Download the selected scenes at full resolution as the AOI crop, one file per group${onlyOpen ? `. ${onlyOpen}` : ''}`
@@ -114,9 +114,9 @@ export default function ViewBar() {
       </button>
       <button
         type="button"
-        className="ghost-btn"
+        className="btn"
         disabled={!originalsAllowed || openCount === 0}
-        title={
+        data-tip={
           originalsAllowed
             ? `${originalsTitle(openCount > 1, dataset?.collection['earthx:access']?.cors === true, summary)}${onlyOpen ? ` ${onlyOpen}.` : ''}`
             : noOriginalsReason(dataset)
@@ -127,9 +127,9 @@ export default function ViewBar() {
       </button>
       <button
         type="button"
-        className="ghost-btn"
+        className="btn"
         disabled={processBlocked !== null || openCount === 0}
-        title={processBlocked ?? (openCount === 0 ? onlyOpen ?? '' : `Build a processing job for the selected scene${openCount > 1 ? 's' : ''}${onlyOpen ? `. ${onlyOpen}` : ''}`)}
+        data-tip={processBlocked ?? (openCount === 0 ? onlyOpen ?? '' : `Build a processing job for the selected scene${openCount > 1 ? 's' : ''}${onlyOpen ? `. ${onlyOpen}` : ''}`)}
         onClick={() => openProcessing()}
       >
         <CogIcon lead />Process

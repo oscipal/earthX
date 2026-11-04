@@ -258,7 +258,6 @@ function Controls({ layer }: { layer: MapLayer }) {
     <div className="viewer-controls scene-view result-controls">
       <InspectorHead
         title={layerShownName(layer)}
-        tip={layerShownName(layer)}
         mark={!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
         onClose={() => close()}
         rename={{ name: layer.name, onRename: (name) => renameLayer(layer.id, name) }}
@@ -311,18 +310,18 @@ function Controls({ layer }: { layer: MapLayer }) {
                 <AutoScaleButton title={(colour ? colourPercent : unit === 'percent') ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Put the range of the statistics of this result in the fields'} busy={measuring} onClick={auto} />
                 <button
                   type="button"
-                  className="ghost-btn vc-apply"
+                  className="btn vc-apply"
                   aria-disabled={!canApply || blocked !== null || undefined}
-                  title={blocked ?? (canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY)}
+                  data-tip={blocked ?? (canApply ? 'Draw the result with these values; not kept until you save' : NOTHING_TO_APPLY)}
                   onClick={apply}
                 >
                   Apply
                 </button>
                 <button
                   type="button"
-                  className="primary-btn vc-save"
+                  className="btn primary vc-save"
                   aria-disabled={!canSave || blocked !== null || undefined}
-                  title={blocked ?? (canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE)}
+                  data-tip={blocked ?? (canSave ? SAVE_TIP[info.own ? 'own' : info.bands && info.bands.length > 1 ? 'band' : 'job'] : NOTHING_TO_SAVE)}
                   onClick={keep}
                 >
                   Save

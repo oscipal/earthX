@@ -13,7 +13,7 @@ interface Props {
 
 export default function CloseButton({ onClick, title = 'Close', className = '' }: Props) {
   return (
-    <button type="button" className={`close-x ${className}`.trim()} title={title} aria-label="Close" onClick={onClick}>
+    <button type="button" className={`close-x ${className}`.trim()} data-tip={title} aria-label="Close" onClick={onClick}>
       <XIcon size={14} />
     </button>
   );

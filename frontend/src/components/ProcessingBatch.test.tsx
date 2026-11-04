@@ -17,6 +17,7 @@ import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -257,7 +258,7 @@ describe('what "Run as" offers', () => {
     await openPanel();
     const perScene = button('One job per scene (26)');
     expect(perScene.disabled).toBe(true);
-    expect(perScene.title).toBe('At most 25 jobs at once');
+    expect(tipOf(perScene)).toBe('At most 25 jobs at once');
     // not only in the tooltip: a touch screen has none
     expect(text()).toContain('At most 25 jobs at once.');
   });
@@ -367,7 +368,7 @@ describe('reviewing a batch', () => {
     await ndvi();
     click(button('One job per scene (3)'));
     expect(button('Start 3 jobs').disabled).toBe(true);
-    expect(button('Start 3 jobs').title).toBe('Review the order first');
+    expect(tipOf(button('Start 3 jobs'))).toBe('Review the order first');
   });
 
   it('asks for four estimates at a time at most', async () => {
@@ -845,7 +846,7 @@ describe('the buttons of a reviewed batch', () => {
     await review();
     const startButton = button('Start 0 of 2 jobs');
     expect(startButton.disabled).toBe(true);
-    expect(startButton.title).toBe('The server refused every job');
+    expect(tipOf(startButton)).toBe('The server refused every job');
   });
 
   it('takes no panel away from the user, however many jobs are started', async () => {

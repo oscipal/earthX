@@ -158,3 +158,194 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     expect(faults("/* Pin this */ const b = 'x';")).toEqual([]);
   });
 });
+
+// UI-04 part 3a: the tooltip, the shapes of a button, one dimming and one focus ring.
+// The opening tags of the elements (`<button …>`) of a source, with their name: the attributes are what a rule looks at.
+export function openingTags(text: string): { tag: string; attributes: string }[] {
+  const code = withoutComments(text);
+  const found: { tag: string; attributes: string }[] = [];
+  for (const start of code.matchAll(/<([a-z][a-z0-9]*)(?=[\s/>])/gu)) {
+    let depth = 0;
+    let quote = '';
+    let at = start.index + start[0].length;
+    for (; at < code.length; at += 1) {
+      const c = code[at];
+      if (quote) {
+        if (c === '\\') at += 1;
+        else if (c === quote) quote = '';
+      } else if ((depth === 0 && (c === '"' || c === "'")) || (depth > 0 && (c === '"' || c === "'" || c === '`'))) quote = c;
+      else if (c === '{') depth += 1;
+      else if (c === '}') depth -= 1;
+      else if (c === '>' && depth === 0 && code[at - 1] !== '=') break;
+    }
+    found.push({ tag: start[1], attributes: code.slice(start.index + start[0].length, at) });
+  }
+  return found;
+}
+
+// The attributes of an element at its own level, not those inside a `{…}`.
+const topLevel = (attributes: string): string => {
+  let depth = 0;
+  let quote = '';
+  let out = '';
+  for (const c of attributes) {
+    if (quote) {
+      if (c === quote) quote = '';
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '{') depth += 1;
+    else if (c === '}') depth -= 1;
+    else if (depth === 0) out += c;
+  }
+  return out;
+};
+
+describe('the one tooltip (UI-04 part 3a, Otto, 3.11.2026): data-tip, drawn by TipLayer, no title', () => {
+  // `<option>` is the one place: a native list shows no tooltip of ours, so its own `title` is what the browser can draw.
+  const withTitle = (text: string) => openingTags(text).filter(({ tag, attributes }) => tag !== 'option' && /(?:^|\s)title=/u.test(topLevel(attributes))).map(({ tag }) => tag);
+
+  it('has no element with a title but an option', () => {
+    expect(sources.flatMap(([path, text]) => withTitle(text).map((tag) => `${path} <${tag}>`))).toEqual([]);
+    expect(withTitle('<button type="button" title="Close">x</button>')).toEqual(['button']);
+    expect(withTitle('<span\n  className="a"\n  title={tip}\n>')).toEqual(['span']);
+    expect(withTitle('<option value="a" title="Why">A</option>')).toEqual([]);
+    expect(withTitle('<InspectorSection title="Display">')).toEqual([]);
+    expect(withTitle('<button data-tip="a title=b">x</button>')).toEqual([]);
+  });
+});
+
+describe('the shapes of a button (UI-04 part 3a): .btn, .btn.primary, .btn.danger, .icon-btn and .link-btn', () => {
+  // The families that the four shapes replace: each had its own padding, colours, focus and dimming.
+  const OLD = /(?<![\w-])(?:ghost-btn|primary-btn|lm-btn|lm-eye|vc-eye|vc-step|zoom-btn|coverage-btn|play-btn|pp-icon-btn|delete-btn|copy-btn|vc-pencil|vc-back|lm-pencil)(?![\w-])/u;
+
+  it('has none of the old classes in the code or the styles', () => {
+    expect(where((code) => OLD.test(code))).toEqual([]);
+    expect(OLD.test(withoutCssComments(CSS))).toBe(false);
+    expect(OLD.test('<button className="ghost-btn danger">')).toBe(true);
+    expect(OLD.test('.lm-btn:hover { }')).toBe(true);
+    expect(OLD.test('<span className="vc-step-text">')).toBe(false);
+  });
+});
+
+describe('one dimming for a locked control (UI-04 part 3a): --disabled-opacity', () => {
+  // The rules of a locked control, or of a locked row: whatever dimming they use must be the token.
+  const lockedRules = (css: string) =>
+    [...withoutCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+      .filter(([, selector]) => /:disabled|\[aria-disabled|\.locked|\.disabled/u.test(selector))
+      // A rule may take the dimming away (`opacity: 1`, the box of the one dataset) or use the token; no other number.
+      .filter(([, , body]) => /(?:^|;|\s)opacity:/u.test(body) && !/opacity:\s*(?:var\(--disabled-opacity\)|1)\s*(?:;|$)/u.test(body))
+      .map(([, selector]) => selector.trim());
+
+  it('has no hard opacity in a rule of a locked control', () => {
+    expect(lockedRules(CSS)).toEqual([]);
+    expect(lockedRules('.x:disabled { opacity: 0.45; }')).toEqual(['.x:disabled']);
+    expect(lockedRules(".y[aria-disabled='true'] { cursor: x; opacity: 0.3 }")).toHaveLength(1);
+    expect(lockedRules('.x:disabled { opacity: var(--disabled-opacity); }')).toEqual([]);
+    expect(lockedRules('.z { opacity: 0.45; }')).toEqual([]);
+    expect(lockedRules('.x:disabled { opacity: 1; }')).toEqual([]);
+  });
+
+  it('dims locked controls in one rule, for the disabled attribute and aria-disabled', () => {
+    expect(withoutCssComments(CSS)).toMatch(/:disabled,\s*:is\([^)]*\)\[aria-disabled='true'\] \{\s*opacity: var\(--disabled-opacity\);/u);
+  });
+});
+
+describe('a locked control over the map (UI-04 part 3a, found in the review)', () => {
+  const css = withoutCssComments(CSS);
+  it('takes the click: a locked button in an overlay is not made transparent to the pointer', () => {
+    expect(css).toMatch(/\.overlay > :is\([^)]*\):disabled\[data-tip\] \{\s*pointer-events: auto;/u);
+  });
+
+  it('dims a field that is locked by aria-disabled too (the switch "Filter within AOI only")', () => {
+    expect(css).toMatch(/:is\(button, input, select, textarea, a, label,[^)]*\[role='switch'\]\)\[aria-disabled='true'\] \{\s*opacity: var\(--disabled-opacity\);/u);
+  });
+});
+
+describe('one focus ring (UI-04 part 3a): the token --focus, for everything that can be operated', () => {
+  // The rules that set an outline: the ring for all, and what draws a ring of its own on purpose.
+  const outlines = (css: string) =>
+    [...withoutCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter(([, , body]) => /(?:^|;|\s)outline(?:-[a-z]+)?:/u.test(body)).map(([, selector]) => selector.trim().replace(/\s+/gu, ' '));
+  const ALLOWED = [
+    // The ring for all controls.
+    ":is(a[href], button, input, select, textarea, summary, [role='button'], [role='menuitem'], [role='menuitemradio'], [tabindex]):focus-visible",
+    // A slider that draws its ring on its thumb, and the container of a pop-up that is not an operated control.
+    ".inspector .range-hist input[type='range']:focus-visible",
+    '.popover:focus-within',
+    // The dashed line where a row is dropped.
+    '.pm-group.drop',
+  ];
+
+  it('has no ring of its own for a button, a link or a field', () => {
+    const found = outlines(CSS).filter((selector) => !ALLOWED.some((allowed) => selector.startsWith(allowed)));
+    expect(found).toEqual([]);
+    expect(outlines('.x:focus-visible { outline: 1px solid red; }')).toEqual(['.x:focus-visible']);
+    expect(outlines('.y:hover { outline: none; }')).toEqual(['.y:hover']);
+    expect(outlines('.z { color: red; }')).toEqual([]);
+  });
+
+  it('draws the one ring with the token', () => {
+    expect(withoutCssComments(CSS)).toMatch(/\[tabindex\]\):focus-visible \{\s*outline: 2px solid var\(--focus\);/u);
+  });
+});
+
+describe('one eye (UI-04 part 3a, Otto, 4.11.2026): EyeButton, in the colour of the text, hidden is the eye crossed out', () => {
+  const EYE = /(?<![\w-])Eye(?:Off)?Icon(?![\w-])/u;
+  // A rule that gives an eye a colour of its own: its class `.eye` (except to leave it out), or the old `.off` of an icon button.
+  const colourRules = (css: string) =>
+    [...withoutCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+      .filter(([, selector, body]) => (/\.eye\b/u.test(selector.replace(/:not\(\.eye\)/gu, '')) || /\.icon-btn\.off\b|\.lm-eye|\.vc-eye/u.test(selector)) && /(?:^|;|\s)color:/u.test(body))
+      .map(([, selector]) => selector.trim());
+
+  it('draws the eye in EyeButton only', () => {
+    expect(where((code) => EYE.test(code))).toEqual(['components/EyeButton.tsx', 'components/icons.ts']);
+    expect(EYE.test('<button>{shown ? <EyeIcon /> : <EyeOffIcon />}</button>')).toBe(true);
+    expect(EYE.test('<EyeButton shown={on} />')).toBe(false);
+  });
+
+  it('gives the eye no colour of its own, shown or hidden', () => {
+    expect(colourRules(CSS)).toEqual([]);
+    expect(colourRules('.icon-btn.off { color: var(--muted); }')).toEqual(['.icon-btn.off']);
+    expect(colourRules('.eye:hover { color: var(--accent); }')).toEqual(['.eye:hover']);
+    expect(colourRules(".icon-btn[aria-pressed='true']:not(.eye) { color: var(--accent); }")).toEqual([]);
+  });
+
+  it('has no eye in a class of a place (the old lm-eye, vc-eye) in the code', () => {
+    expect(where((code) => /(?<![\w-])(?:lm-eye|vc-eye)(?![\w-])/u.test(code))).toEqual([]);
+  });
+});
+
+describe('no tooltip at a dataset, a group head or the name of a layer (UI-04 part 3a, Otto, 4.11.2026)', () => {
+  // The places of a name: the dataset (the buttons and the lines of its dropdowns, in the view too), the head of a group, the title of a
+  // view and the name of a layer. Only a dataset that cannot be chosen has a tooltip: its reason.
+  const NAMES = /(?<![\w-])(?:dataset-toggle|dataset-select-title|dataset-select-box|dataset-select-option|vc-dataset|rg-label|rg-select|result-group-head|vc-title|vc-title-btn|lm-name)(?![\w-])/u;
+  const withTip = (text: string) =>
+    openingTags(text)
+      .filter(({ attributes }) => NAMES.test(attributes.match(/className=(?:"[^"]*"|\{`[^`]*`\})/u)?.[0] ?? '') && /(?:^|\s)data-tip=/u.test(topLevel(attributes)))
+      .map(({ attributes }) => (attributes.match(/className=(?:"([^"]*)"|\{`([^`]*)`\})/u) ?? [])[1] ?? '');
+  // What stays: the tip of a dataset that cannot be chosen (its reason), the note of a layer (the hint of a preview) the name being renamed (its rule) and the entry "Search results" of the layer manager (it explains what the entry holds; it is no layer).
+  const ALLOWED = [/not viewable/u, /\bl\.note\b/u, /EMPTY_NAME_TIP|A layer needs a name/u, /RESULTS_ENTRY_TIP/u];
+  const faults = (text: string) =>
+    openingTags(text)
+      .filter(({ attributes }) => NAMES.test(attributes.match(/className=(?:"[^"]*"|\{`[^`]*`\})/u)?.[0] ?? '') && /(?:^|\s)data-tip=/u.test(topLevel(attributes)) && !ALLOWED.some((ok) => ok.test(attributes)))
+      .map(({ attributes }) => attributes.trim().slice(0, 60));
+
+  it('has none in the code, but the reason of a dataset that cannot be chosen', () => {
+    expect(sources.flatMap(([path, text]) => faults(text).map((fault) => `${path}: ${fault}`))).toEqual([]);
+    expect(withTip('<button className="btn dataset-toggle" data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}>').length).toBe(1);
+  });
+
+  it('finds a tooltip at each place of a name (counter-check)', () => {
+    for (const line of [
+      '<span className="dataset-select-title" data-tip={title}>',
+      '<button className="btn dataset-toggle" data-tip={d.description}>',
+      '<select className="vc-dataset" aria-label="Dataset" data-tip="Dataset of the image shown">',
+      '<span className="rg-label" data-tip={group.label}>',
+      '<button type="button" className="result-group-head" data-tip="x">',
+      '<span className="vc-title" data-tip={tip}>',
+      '<button className="lm-name" data-col="name" data-tip={`${name} — view this layer`}>',
+    ]) expect(faults(line), line).toHaveLength(1);
+    expect(faults('<button className="btn dataset-toggle" data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}>')).toEqual([]);
+    expect(faults('<button className="lm-name" data-tip={l.note}>')).toEqual([]);
+    expect(faults('<span className="result-id" data-tip={item.id}>')).toEqual([]);
+    expect(faults('<button className="btn" data-tip="Remove">')).toEqual([]);
+  });
+});

@@ -12,6 +12,7 @@ import { datasetsFrom } from '../datasets';
 import { useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
 import ViewerControls from './ViewerControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -136,7 +137,7 @@ describe('what is not possible is not there', () => {
   it('puts them in the second row of the head, the dataset and then the date with the arrows, under the title and the eye', () => {
     mount({ ...THREE, D: info('dem') });
     const [first, second] = [...container.querySelector('.vc-head')!.children].map((row) => [...row.children].map((el) => el.className));
-    expect(first).toEqual(['vc-title', 'pp-badge vc-temporary', 'vc-eye', 'close-x']);
+    expect(first).toEqual(['vc-title', 'pp-badge vc-temporary', 'icon-btn eye', 'close-x']);
     // "Copy original scene name" ends the row (Otto, 3.11.2026).
     expect(second).toEqual(['vc-dataset', 'vc-stepper', 'vc-scene-names']);
   });
@@ -160,7 +161,7 @@ describe('what is not possible is not there', () => {
   it('has arrows for a dataset with several images, the first locked, and none for one with a single image', () => {
     mount({ ...THREE, D: info('dem') });
     expect(prev()!.getAttribute('aria-disabled')).toBe('true');
-    expect(prev()!.title).toBe('This is the first image');
+    expect(tipOf(prev()!)).toBe('This is the first image');
     expect(next()!.getAttribute('aria-disabled')).toBeNull();
     act(() => useAppStore.getState().chooseViewDataset('dem'));
     expect(prev()).toBeNull();
@@ -189,14 +190,14 @@ describe('the arrows', () => {
   it('are greyed out with the reason at the ends, and do nothing there', () => {
     mount(THREE);
     expect(prev()!.getAttribute('aria-disabled')).toBe('true');
-    expect(prev()!.title).toBe('This is the first image');
+    expect(tipOf(prev()!)).toBe('This is the first image');
     act(() => prev()!.click());
     expect(stepText()).toBe('2025-07-29');
     act(() => useAppStore.getState().showImage(useAppStore.getState().shownImage ?? ''));
     act(() => next()!.click());
     act(() => next()!.click());
     expect(next()!.getAttribute('aria-disabled')).toBe('true');
-    expect(next()!.title).toBe('This is the last image');
+    expect(tipOf(next()!)).toBe('This is the last image');
     act(() => next()!.click());
     expect(stepText()).toBe('2025-08-08');
   });
@@ -204,7 +205,7 @@ describe('the arrows', () => {
   it('tell the satellite, the step and the group in the tooltip of the date', () => {
     mount(THREE);
     expect(container.querySelector('.vc-step-text')?.textContent).not.toContain('S2');
-    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('2025-07-29 · S2A · step 1 of 3');
+    expect(container.querySelector('.vc-step-text')?.getAttribute('data-tip')).toBe('2025-07-29 · S2A · step 1 of 3');
   });
 
   it('are reached with the keys when one of them has the focus, and not otherwise', () => {
@@ -232,7 +233,7 @@ describe('the arrows', () => {
     act(() => useAppStore.setState({ showDownloaded: false }));
     act(() => next()!.click());
     expect(useAppStore.getState().showDownloaded).toBe(false);
-    expect(container.querySelector('.vc-eye.off')).not.toBeNull();
+    expect(container.querySelector('.vc-head .eye svg.lucide-eye-off')).not.toBeNull();
   });
 });
 
@@ -260,10 +261,10 @@ describe('a satellite the registry does not name', () => {
     const Y = scene('Y', 's2', '2025-09-05T10:00:00Z');
     mount({ X: info('s2'), Y: info('s2') }, [section('s2', [X, Y], [group('2025-09-05', [Y]), group('2025-09-01', [X])]), DEM_SECTION]);
     expect(stepText()).toBe('2025-09-01');
-    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('2025-09-01 · landsat-9 · step 1 of 2');
+    expect(container.querySelector('.vc-step-text')?.getAttribute('data-tip')).toBe('2025-09-01 · landsat-9 · step 1 of 2');
     act(() => next()!.click());
     expect(stepText()).toBe('2025-09-05');
-    expect(container.querySelector('.vc-step-text')?.getAttribute('title')).toBe('2025-09-05 · step 2 of 2');
+    expect(container.querySelector('.vc-step-text')?.getAttribute('data-tip')).toBe('2025-09-05 · step 2 of 2');
   });
 });
 
@@ -275,18 +276,18 @@ describe('"Apply to all" for the images of a dataset', () => {
   it('is always there, also for a dataset of one image and for the elevation model, locked with the reason', () => {
     mount({ A: info('s2'), D: info('dem') });
     expect(button('Apply to all')!.getAttribute('aria-disabled')).toBe('true');
-    expect(button('Apply to all')!.title).toBe('Nothing to apply to all: this dataset has only one image in the view');
+    expect(tipOf(button('Apply to all')!)).toBe('Nothing to apply to all: this dataset has only one image in the view');
     expect(button('Save')).toBeUndefined();
     act(() => useAppStore.getState().chooseViewDataset('dem'));
     expect(button('Apply to all')!.getAttribute('aria-disabled')).toBe('true');
-    expect(button('Apply to all')!.title).toBe('Nothing to apply to all: this dataset has only one image in the view');
+    expect(tipOf(button('Apply to all')!)).toBe('Nothing to apply to all: this dataset has only one image in the view');
   });
 
   it('is there where it has several, locked with the reason while all look alike', () => {
     mount(THREE);
     type('0', '255');
     expect(button('Apply to all')!.getAttribute('aria-disabled')).toBe('true');
-    expect(button('Apply to all')!.title).toBe('Nothing to apply to all: every image of this dataset is drawn like this');
+    expect(tipOf(button('Apply to all')!)).toBe('Nothing to apply to all: every image of this dataset is drawn like this');
     act(() => button('Apply to all')!.click());
     expect(useAppStore.getState().savedLooks).toEqual({});
   });
@@ -295,7 +296,7 @@ describe('"Apply to all" for the images of a dataset', () => {
     mount(THREE);
     type('10', '90');
     expect(button('Apply to all')!.getAttribute('aria-disabled')).toBeNull();
-    expect(button('Apply to all')!.title).toBe('Draw every image of this dataset with these values');
+    expect(tipOf(button('Apply to all')!)).toBe('Draw every image of this dataset with these values');
     act(() => button('Apply to all')!.click());
     expect(useAppStore.getState().savedLooks.s2).toMatchObject({ rescale: '10,90' });
     expect(button('Apply to all')!.getAttribute('aria-disabled')).toBe('true');
@@ -348,7 +349,7 @@ describe('an image of three bands', () => {
     s2TrueColor = ['red', 'green', 'blue'];
     mount(THREE);
     expect(useAppStore.getState().pendingColormapName).toBe('');
-    expect((colormapField()!.parentElement!.querySelector('select') as HTMLSelectElement).title).toBe('True colour: three bands, no colormap');
+    expect(tipOf((colormapField()!.parentElement!.querySelector('select') as HTMLSelectElement))).toBe('True colour: three bands, no colormap');
   });
 });
 
@@ -356,10 +357,10 @@ describe('"Add to layers" and "Add all to layers"', () => {
   it('has "Add all to layers" always, locked with the reason where the view holds one image', () => {
     mount({ A: info('s2') });
     expect(button('Add all to layers')!.disabled).toBe(true);
-    expect(button('Add all to layers')!.title).toBe('There is only one image');
+    expect(tipOf(button('Add all to layers')!)).toBe('There is only one image');
     mount(THREE);
     expect(button('Add all to layers')!.disabled).toBe(false);
-    expect(button('Add all to layers')!.title).toBe('Add all 3 images of the view to the layers, one layer each');
+    expect(tipOf(button('Add all to layers')!)).toBe('Add all 3 images of the view to the layers, one layer each');
   });
 
   it('pins the image shown with "Add to layers" and every image of every dataset with "Add all to layers"', () => {

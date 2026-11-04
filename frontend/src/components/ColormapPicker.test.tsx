@@ -13,6 +13,7 @@ import { useColormapPicker } from '../colormapPicker';
 import { parseView, viewOf } from '../permalink';
 import ColormapField from './ColormapField';
 import ColormapPicker from './ColormapPicker';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -117,7 +118,7 @@ describe('the field "Colormap"', () => {
     value = '';
     mount();
     expect(reverse().disabled).toBe(true);
-    expect(reverse().title).toBe('Choose a colormap to reverse');
+    expect(tipOf(reverse())).toBe('Choose a colormap to reverse');
   });
 });
 
@@ -172,8 +173,8 @@ describe('"More…" and the list of all colormaps', () => {
     act(() => void picker()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(picker()).not.toBeNull();
-    const back = picker()!.querySelector<HTMLButtonElement>('.vc-back')!;
-    expect(back.title).toBe('Back');
+    const back = picker()!.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!;
+    expect(tipOf(back)).toBe('Back');
     expect(picker()!.querySelector('.close-x')).toBeNull();
     act(() => back.click());
     expect(picker()).toBeNull();

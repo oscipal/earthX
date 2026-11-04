@@ -23,12 +23,13 @@ import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView 
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
 import { layerShownName } from '../layerName';
 import CopySceneNames from './CopySceneNames';
+import EyeButton from './EyeButton';
 import { fallbackReasonOf, MEASURED_ON_SCENE, measureView, type ViewMeasure } from '../viewMeasure';
 import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Tip from './Tip';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
-import { ArrowLeftIcon, CogIcon, DownloadIcon, EyeIcon, EyeOffIcon, PlusIcon } from './icons';
+import { ArrowLeftIcon, CogIcon, DownloadIcon, PlusIcon } from './icons';
 import LayerActions from './LayerActions';
 import OpacityRow from './OpacityRow';
 import type { BandOption } from './BandSelect';
@@ -145,7 +146,6 @@ export default function ViewerControls() {
   const datasetTitle = shown ? datasetTitleOf(shown.datasetId) : '';
   const count = shown?.ids.length ?? Object.keys(downloaded).length;
   // What the head cuts short, in full.
-  const title = [datasetTitle, cropToAoi ? 'cropped to the AOI' : 'whole scene'].filter(Boolean).join(' · ') + (count > 1 ? ` · ${count} scenes merged` : '');
   const here = shown ? imagesOfDataset(images, shown.datasetId) : [];
   // What "Download full scene" will load, told in its tooltip.
   const originalsSummary = useMemo(() => {
@@ -207,7 +207,7 @@ export default function ViewerControls() {
         })
       : null;
   const note = index && indexBlock && (
-    <p className="vc-note hint-text warn" role="status" title={indexNoteTip(indexBlock)}>
+    <p className="vc-note hint-text warn" role="status" data-tip={indexNoteTip(indexBlock)}>
       {indexNote(indexBlock, index.name)}
     </p>
   );
@@ -239,28 +239,19 @@ export default function ViewerControls() {
           picture, not a layer (Otto, 1.11.2026): "Temporary", the badge of "Preview", beside the title. */}
       <InspectorHead
         title={compact ? layerShownName(layer) : [datasetTitle, viewKind(cropToAoi, count)].filter(Boolean).join(' · ')}
-        tip={compact ? layerShownName(layer) : title}
         // The scenes of the image shown, which is the layer's own where the settings of a layer are open.
         copy={<CopySceneNames names={shown?.ids ?? []} />}
         mark={
           !compact &&
           temporary && (
-            <span className="pp-badge vc-temporary" title="This image is not a layer: add it to the layers to keep it">
+            <span className="pp-badge vc-temporary" data-tip="This image is not a layer: add it to the layers to keep it">
               Temporary
             </span>
           )
         }
         eye={
           !compact && (
-            <button
-              type="button"
-              className={`vc-eye${showDownloaded ? '' : ' off'}`}
-              title={showDownloaded ? 'Hide image' : 'Show image'}
-              aria-label={showDownloaded ? 'Hide image' : 'Show image'}
-              onClick={() => toggleDownloaded()}
-            >
-              {showDownloaded ? <EyeIcon /> : <EyeOffIcon />}
-            </button>
+            <EyeButton shown={showDownloaded} tip={showDownloaded ? 'Hide image' : 'Show image'} onToggle={() => toggleDownloaded()} />
           )
         }
         onClose={() => exitFocus()}
@@ -275,7 +266,6 @@ export default function ViewerControls() {
               <select
                 className="vc-dataset"
                 aria-label="Dataset"
-                title={`Dataset of the image shown: ${datasetTitle}`}
                 value={shown.datasetId}
                 onChange={(e) => chooseViewDataset(e.target.value)}
               >
@@ -344,9 +334,9 @@ export default function ViewerControls() {
               />
               <button
                 type="button"
-                className="ghost-btn vc-apply"
+                className="btn vc-apply"
                 aria-disabled={!changed || undefined}
-                title={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
+                data-tip={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
                 onClick={() => {
                   if (changed) applyRender();
                 }}
@@ -355,9 +345,9 @@ export default function ViewerControls() {
               </button>
               <button
                 type="button"
-                className="primary-btn vc-save"
+                className="btn primary vc-save"
                 aria-disabled={!savable || undefined}
-                title={
+                data-tip={
                   savable
                     ? compact
                       ? 'Keep this image, these values and this opacity for the layer; closing the settings without it puts the saved layer back'
@@ -402,10 +392,10 @@ export default function ViewerControls() {
                     <button
                       key={preset.name}
                       type="button"
-                      className={`ghost-btn${on ? ' on' : ''}`}
+                      className={`btn${on ? ' on' : ''}`}
                       aria-pressed={on}
                       disabled={pinLoading}
-                      title={`${presetTip(preset)} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
+                      data-tip={`${presetTip(preset)} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
                       onClick={() => void quickIndex(preset.name)}
                     >
                       {preset.name}
@@ -415,10 +405,10 @@ export default function ViewerControls() {
               {colour && (
                 <button
                   type="button"
-                  className={`ghost-btn${enhanced ? ' on' : ''}`}
+                  className={`btn${enhanced ? ' on' : ''}`}
                   aria-pressed={enhanced}
                   disabled={focusLoading}
-                  title={enhanced ? 'Click again for the fields as they were before' : ENHANCE_RGB_TIP}
+                  data-tip={enhanced ? 'Click again for the fields as they were before' : ENHANCE_RGB_TIP}
                   onClick={() => void enhanceContrast()}
                 >
                   Enhance contrast
@@ -443,22 +433,22 @@ export default function ViewerControls() {
           <InspectorSection title="Actions">
             {/* In pairs (Otto, 2.11.2026): what to look at next, what to keep, what to download. */}
             <div className="vc-actions">
-              <button type="button" className="ghost-btn" title="Remove this view, show the search results and choose another scene" onClick={() => changeImage()}>
+              <button type="button" className="btn" data-tip="Remove this view, show the search results and choose another scene" onClick={() => changeImage()}>
                 <ArrowLeftIcon lead />Change image
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 disabled={processBlock !== null}
-                title={processBlock ?? 'Build a processing job for the scenes of this view'}
+                data-tip={processBlock ?? 'Build a processing job for the scenes of this view'}
                 onClick={() => void processFocusView()}
               >
                 <CogIcon lead />Process
               </button>
               <button
                 type="button"
-                className="ghost-btn"
-                title={images.length > 1 ? 'Add the image that is shown to the layers' : 'Add this image to the layers'}
+                className="btn"
+                data-tip={images.length > 1 ? 'Add the image that is shown to the layers' : 'Add this image to the layers'}
                 disabled={pinLoading}
                 onClick={() => addCurrentToLayers()}
               >
@@ -466,8 +456,8 @@ export default function ViewerControls() {
               </button>
               <button
                 type="button"
-                className="ghost-btn"
-                title={images.length > 1 ? `Add all ${images.length} images of the view to the layers, one layer each` : 'There is only one image'}
+                className="btn"
+                data-tip={images.length > 1 ? `Add all ${images.length} images of the view to the layers, one layer each` : 'There is only one image'}
                 disabled={pinLoading || images.length <= 1}
                 onClick={() => addAllToLayers()}
               >
@@ -475,18 +465,18 @@ export default function ViewerControls() {
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 disabled={!aoi}
-                title={aoi ? 'Download the image shown at full resolution as the AOI crop, one file per group' : DRAW_AOI_TO_CROP}
+                data-tip={aoi ? 'Download the image shown at full resolution as the AOI crop, one file per group' : DRAW_AOI_TO_CROP}
                 onClick={() => openDownloadForView('crop')}
               >
                 <DownloadIcon lead />Download crop
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 disabled={!originalsAllowed}
-                title={originalsAllowed ? originalsTitle(count > 1, shownDataset?.collection['earthx:access']?.cors === true, originalsSummary) : noOriginalsReason(shownDataset)}
+                data-tip={originalsAllowed ? originalsTitle(count > 1, shownDataset?.collection['earthx:access']?.cors === true, originalsSummary) : noOriginalsReason(shownDataset)}
                 onClick={() => openDownloadForView('originals')}
               >
                 <DownloadIcon lead />Download full scene

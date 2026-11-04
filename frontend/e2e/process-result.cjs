@@ -131,7 +131,7 @@ async function check(browser, theme, viewport) {
   const { context, page, posted } = await open(browser, theme, viewport);
   await setUp(page, true);
   if (await gear(page).isDisabled()) problems.push('the ⚙ is locked with the order of the job');
-  if ((await gear(page).getAttribute('title')) !== 'Process further') problems.push(`the ⚙ says ${await gear(page).getAttribute('title')}`);
+  if ((await gear(page).getAttribute('data-tip')) !== 'Process further') problems.push(`the ⚙ says ${await gear(page).getAttribute('data-tip')}`);
   await gear(page).click();
   await page.waitForSelector('.processing-panel section[aria-label="Selection"] [aria-label="Area"]', { timeout: 10000 });
 
@@ -154,7 +154,7 @@ async function check(browser, theme, viewport) {
   const stored = () => page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().output);
   if ((await stored()).length !== 0) problems.push(`the output starts with ${await stored()}`);
   if ((await page.$$('section[aria-label="Output"] [aria-label="Bands of the data"] .pp-chip[aria-pressed="true"]')).length !== 0) problems.push('a band of the result is checked');
-  if (!(await panel.locator('button.primary-btn', { hasText: 'Start job' }).isDisabled())) problems.push('"Start job" is active with nothing checked');
+  if (!(await panel.locator('button.btn.primary', { hasText: 'Start job' }).isDisabled())) problems.push('"Start job" is active with nothing checked');
   for (const name of ['NDVI', 'red', 'green', 'blue']) await panel.locator('section[aria-label="Output"] [aria-label="Bands of the data"]').getByRole('button', { name, exact: true }).click();
   // RGB is on offer once the three bands are in the output.
   const options = await page.$$eval('.pp-show select option', (o) => o.map((x) => x.value));
@@ -192,8 +192,8 @@ async function check(browser, theme, viewport) {
 
   // Review and start: one order, the steps in order, a new job beside the old one.
   await panel.getByRole('button', { name: 'Review', exact: true }).click();
-  await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
-  await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+  await page.waitForSelector('.processing-panel button.btn.primary:not([disabled])', { timeout: 10000 });
+  await panel.locator('button.btn.primary', { hasText: 'Start job' }).click();
   await page.waitForTimeout(800);
   if (posted.length !== 1) problems.push(`${posted.length} orders were sent`);
   else {
@@ -217,8 +217,8 @@ async function check(browser, theme, viewport) {
   await page.waitForTimeout(300);
   if (await panel.getByText('The AOI does not meet the result.').count()) problems.push('an AOI inside the result is turned away');
   await panel.getByRole('button', { name: 'Review', exact: true }).click();
-  await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
-  await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+  await page.waitForSelector('.processing-panel button.btn.primary:not([disabled])', { timeout: 10000 });
+  await panel.locator('button.btn.primary', { hasText: 'Start job' }).click();
   await page.waitForTimeout(800);
   if (posted.length !== 2 || posted[1].aoi.coordinates[0][0].join() !== '10.45,50.45') problems.push(`the second order has the area ${JSON.stringify(posted[1]?.aoi)}`);
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_inner.png`) });
@@ -232,8 +232,8 @@ async function check(browser, theme, viewport) {
   await page.waitForTimeout(300);
   if (await panel.getByText('The AOI does not meet the result.').count()) problems.push('an AOI that covers part of the result is turned away');
   await panel.getByRole('button', { name: 'Review', exact: true }).click();
-  await page.waitForSelector('.processing-panel button.primary-btn:not([disabled])', { timeout: 10000 });
-  await panel.locator('button.primary-btn', { hasText: 'Start job' }).click();
+  await page.waitForSelector('.processing-panel button.btn.primary:not([disabled])', { timeout: 10000 });
+  await panel.locator('button.btn.primary', { hasText: 'Start job' }).click();
   await page.waitForTimeout(800);
   const part = (posted[2]?.aoi?.coordinates?.[0] ?? []).flat();
   const xs = part.filter((_, i) => i % 2 === 0);

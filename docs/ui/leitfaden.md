@@ -1,6 +1,6 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 04.11.2026, UI-04 Teil 2 (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 04.11.2026, UI-04 Teil 3a (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
@@ -63,18 +63,19 @@
 ## 3. Symbole
 
 - **Eine Quelle:** Lucide (`lucide-react`, ISC; die Symbole aus Feather unter MIT, Hinweise in `frontend/THIRD_PARTY_NOTICES.md`). Importiert werden nur die benutzten Symbole, alle in einer Datei: `frontend/src/components/icons.ts`. Sie gibt jedes unter eigenem Namen weiter (`DownloadIcon`); nur sie importiert `lucide-react`, und jeder Eintrag muss benutzt sein.
-- **Ein Strich:** 1.5 px, an jeder Größe gleich dick (`absoluteStrokeWidth`). Zwei Größen: 16 px als Standard (`<DownloadIcon />`), 14 px in Listenzeilen (`<DownloadIcon size={14} />`). Farbe `currentColor`.
+- **Ein Strich:** 1.5 px, an jeder Größe gleich dick (`absoluteStrokeWidth`). Drei Größen, als Token in `tokens.css` und als Zahlen in `components/iconSizes.ts` (ein Test hält beide zusammen): 16 px als Standard (`--icon-size`, `<DownloadIcon />`), 14 px in Listenzeilen (`--icon-size-sm`, `<DownloadIcon size={14} />`) und 20 px für die Symbole der Leiste links (`--icon-size-rail`, `size={ICON_SIZES.rail}`; Otto, 04.11.2026). Farbe `currentColor`.
 - **Neben einem Text** steht das Symbol davor und bekommt `lead`: `<CogIcon lead />Process`. Der Abstand kommt aus dem CSS (`.icon-lead`), kein Leerzeichen im Text.
 - **Ein Knopf nur mit Symbol** hat einen Namen für Screenreader (`aria-label`) und einen Tooltip. Gleiche Aktion, gleiches Symbol, auch wenn Text dabeisteht oder nicht.
 - **Eigene Zeichnungen gibt es nicht.** Das einzige `<svg>` im Code ist das Balkendiagramm des Histogramms (`RangeHistogram`), kein Symbol.
 - **Der Haken** vor dem gewählten Eintrag eines Menüs ist ein Symbol in einem Platz fester Breite (`MenuTick`), kein Zeichen im CSS.
 - **Einzige Ausnahme:** Settings ist „Settings 6 Line“ von MingCute (Apache-2.0, `mingcute_icon` 2.9.72, `svg/system/settings_6_line.svg`). Es wird als einzelnes SVG übernommen, als Strich nachgezeichnet und an Lucide angeglichen; die Änderung ist vermerkt. Herkunft und Lizenz stehen in `frontend/THIRD_PARTY_NOTICES.md` *(folgt in Teil 4)*.
+- **Das Auge ist ein Bauteil, `EyeButton`** (Otto, 04.11.2026): in der Layer-Zeile, bei „Search results“ (Kopf der Liste und Eintrag im Layer-Manager), im Kopf der Seitenleiste und überall sonst, wo etwas gezeigt oder verborgen wird. Eine Farbe, die des Textes; **verborgen** (oder gesperrt) ist das durchgestrichene Auge (`eye-off`), nie eine andere Farbe und kein Rahmen. In Listenzeilen 22 px mit 14-px-Symbol (`row`), sonst 28 px mit 16 px. `EyeIcon` und `EyeOffIcon` kommen nur in `EyeButton.tsx` vor; kein CSS gibt dem Auge eine eigene Farbe.
 - **Keine Textzeichen als Symbole** (⇩ ✎ ✕ ⚙ ＋ ⋯ ▾ ↻ …). Im Text erlaubt bleiben „…“, „—“ in „— none —“, „·“, „–“, „→“ zwischen zwei Datumsfeldern, „×“ in Maßen („10 m × 10 m“), „µm“.
 
 | Bedeutung | Lucide |
 |---|---|
 | Download (überall, auch „Download all“) | `download` |
-| Zeigen / Verbergen | `eye` / `eye-off` |
+| Zeigen / Verbergen (`EyeButton`, Textfarbe) | `eye` / `eye-off` (durchgestrichen = verborgen) |
 | Entfernen / Löschen / Leeren einer Liste (auch „Clear AOI“, „Clear search results“) | `trash-2` |
 | Umbenennen | `pencil` |
 | Process | `cog` (das Zahnrad bleibt, Otto) |
@@ -108,8 +109,12 @@
 ## 4. Sperren
 
 - Was gerade nicht geht, ist **gesperrt** (`disabled` oder `aria-disabled="true"`) und nennt den **Grund im Tooltip**. Der Grund wiederholt nicht den Knopftext. Beispiele: „Type a place name first“, „No earlier AOI in this browser“, „Already at the top“, „Job deleted: restore it first“.
+- **Ein Aussehen:** ein gesperrtes Element ist auf `--disabled-opacity` (0.4) gedimmt, in einer Regel für `:disabled` und `[aria-disabled='true']`. Keine eigene Deckkraft an einem gesperrten Element.
+- **`aria-disabled` für neue Sperren mit Grund:** das Element bleibt in der Tab-Reihenfolge, der Grund ist auch per Tastatur lesbar; der Handler fängt den Klick ab. Ein bestehendes `disabled` bleibt; sein Tooltip erscheint, wo der Zeiger darüber liegt (`TipLayer`), per Tastatur nicht.
+- **Bekannte Grenze (Otto, 04.11.2026):** Der Grund eines `disabled`-Knopfs ist per Tastatur und Screenreader nicht lesbar; ein `disabled`-Element nimmt keinen Fokus. Die Umstellung aller gesperrten Knöpfe auf `aria-disabled` ist ein Punkt für M6 (Barrierefreiheit).
 - Wo eine gesperrte Stelle einen Platz hält, bleibt sie an diesem Platz, z. B. die Colormap bei RGB als gesperrtes „— none —“, auch in der Processing-Vorschau.
-- Es gibt einen Tooltip-Weg: `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus, auch an gesperrten Knöpfen *(folgt in Teil 3a; bis dahin `title`)*.
+- **Ein Tooltip-Weg:** `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus; `TipLayer` setzt für die Dauer `aria-describedby`, bei einem `label` mit Tooltip am Feld darin; ein Knopf nur mit Symbol hat zusätzlich seinen `aria-label`. **Keine Tooltips an Namen** (Otto, 04.11.2026): nicht an Datensätzen (Auswahl im Control-Menü, Dropdowns in der Suche, in der Liste und in der Ansicht), nicht an Gruppenköpfen, nicht an den Namen von Layern und dem Titel der Ansicht. Ausnahmen: ein Datensatz, der gerade nicht wählbar ist, nennt weiter den Grund („… — not viewable: …“); der Hinweis eines Layers (`note`, etwa bei einer Vorschau je Szene) und die Erklärung des Eintrags „Search results“ im Layer-Manager. Ein langer Name wird gekürzt, nicht erklärt.
+- **`title` gibt es an keinem Element** (ein zweiter Tooltip des Browsers), außer an `<option>` (eine native Liste zeigt sonst nichts) und an den Steuerelementen von MapLibre. Ein Test findet jedes andere `title`.
 
 ## 5. Schließen
 
@@ -147,13 +152,30 @@
 | `Inspector` / `InspectorParts` | die Seitenleiste rechts (320 px, unter 900 px Blatt bis 55 %), Kopf, „Display“, „Actions“ |
 | `RenderFields`, `ColormapField`, `ScaleHistograms` | Band, „Scale“, Colormap; überall, wo eine Darstellung eingestellt wird |
 | `BandSelect`, `OpacityRow`, `LayerActions`, `LayerDownload`, `CopySceneNames` | gemeinsame Felder und Aktionen von Ansicht und Layer |
+| `EyeButton` | das Auge: zeigt oder verbirgt (§3) |
 | `icons.ts`, `MenuTick` | alle Symbole; der Haken in Menüs |
 | `Tip` / `TipLayer` | (i), Warnung und Tooltips |
 | `Popover` | Menüs, Listen und das Formular „Advanced search“ |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
 | `PreviewBadge`, `pp-badge` | Abzeichen „Preview“, „Temporary“, „Overview“, „Zoom in“ *(ein Bauteil `Badge` folgt in Teil 3b)* |
 
-Knopfformen: `.btn` (Standard), `.btn.primary`, `.btn.danger`, `.icon-btn`, dazu `.link-btn` im Fließtext *(folgt in Teil 3a; heute `ghost-btn`, `primary-btn`, `lm-btn` u. a.)*. Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
+**Knopfformen** (`index.css`, vorn im Blatt):
+
+| Form | wofür |
+|---|---|
+| `.btn` | Text, mit oder ohne Symbol davor (`<CogIcon lead />Process`); Standard |
+| `.btn.primary` | die eine Handlung eines Formulars oder Dialogs (gefüllt, Text `--on-accent`) |
+| `.btn.danger` | verwirft oder löscht (Rand und Schrift `--danger`) |
+| `.icon-btn` | nur ein Symbol, quadratisch, so hoch wie ein Steuerelement; `.sm` für Listenzeilen (22 px), `.quiet` für Nebensächliches (Umbenennen, Kopieren, Feld leeren), `.off` für ein ausgeschaltetes Auge |
+| `.link-btn` | in einem Satz; sonst `.btn` |
+| `.close-x` | nur `CloseButton` (§5) |
+
+- **Ein Schalter** steht mit `aria-pressed`: `.btn` ist dann getönt in Akzent, `.icon-btn` in Akzentfarbe. Die offene Seite der Leiste links trägt `.on`.
+- **Eine Klasse für einen Ort** gibt Platz, Breite und Lage (`tool-btn`, `pm-icon`, `dataset-toggle`, `vc-apply`) und höchstens einen Zustand (`aria-expanded`, `.wrong`); sie erfindet keine neue Form, also keine eigene Schrift, Deckkraft oder Füllung. Ein Knopf über der Karte trägt `.panel` dazu (`.btn.panel`).
+- Eigene Formen haben bis Teil 3b noch: Segment-Umschalter und Chips (`pp-seg`, `pp-chip`; werden in 3b zu einer Form `.btn.seg`, Otto, 04.11.2026), Zeilen in Menüs und Listen, Titel zum Umbenennen und die Falzgriffe (`pp-grip`).
+- **Fokus:** ein Ring für alles Bedienbare, `2px solid var(--focus)` per Tastatur (`:focus-visible`), in **einer** Regel. Kein `outline: none`, keine eigene Ringregel an einem Knopf oder Feld; Ausnahmen sind der Schieber (Ring am Griff), der Rahmen eines Popovers (kein bedientes Element) und die Ablagelinie beim Ziehen.
+
+Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
 
 **Steuerhöhe:** 28 px; bei Touch und unter 900 px 44 px (`--control-height-touch`).
 
@@ -185,7 +207,14 @@ Knopfformen: `.btn` (Standard), `.btn.primary`, `.btn.danger`, `.icon-btn`, dazu
 | Begriffe (§2) gegen alle Texte der Oberfläche | `frontend/src/uiRules.test.ts` |
 | Sperrgrund im Tooltip | `frontend/src/fixtures/lockedControls.ts`, benutzt in `ControlPanel.test.tsx` und `LayerManager.test.tsx` |
 | Klick neben einen Dialog schließt nicht | `DownloadDialog.bands.test.tsx` |
-| Tokens statt fester Werte | `frontend/src/tokens.test.ts` (alle Klassen ab Teil 3) |
+| Tokens statt fester Werte | `frontend/src/tokens.test.ts` (`.btn` und `.icon-btn` schon, alle Klassen ab Teil 3b) |
+| kein `title` an einem Element außer `<option>`, ein Tooltip-Weg, Beschreibung per `aria-describedby`, gesperrter Knopf zeigt seinen Grund | `frontend/src/uiRules.test.ts`, `frontend/src/components/TipLayer.test.tsx`, `frontend/e2e/tooltips.cjs` |
+| keine alten Knopfklassen (`ghost-btn`, `primary-btn`, `lm-btn` …) | `frontend/src/uiRules.test.ts` |
+| keine feste Deckkraft an einem gesperrten Element | `frontend/src/uiRules.test.ts` |
+| ein Fokusring, kein `outline` an einem Knopf oder Feld | `frontend/src/uiRules.test.ts` |
+| ein Auge (`EyeButton`), nur in Textfarbe, verborgen = durchgestrichen | `frontend/src/uiRules.test.ts`, `frontend/src/components/EyeButton.test.tsx` |
+| kein Tooltip an Datensatz, Gruppenkopf, Layer-Name (außer Grund, Hinweis, Eintrag „Search results“) | `frontend/src/uiRules.test.ts` |
+| Symbole der Leiste 20 px, Token und Zahlen gleich | `frontend/src/AppRail.test.tsx`, `frontend/src/components/icons.test.tsx` |
 | Symbole nur aus `icons.ts`, keine Textzeichen als Symbol (Code und CSS), kein eigenes `<svg>`, Strich und Größen, jedes Symbol benutzt | `frontend/src/uiRules.test.ts`, `frontend/src/components/icons.test.tsx` |
 | Schrift | *(folgt in Teil 3b)* |
 

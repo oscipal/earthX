@@ -56,8 +56,13 @@ body {
   pointer-events: auto;
 }
 .top-right {
-  top: 16px;
-  right: 16px;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
 }
 .right {
   top: 96px;
@@ -168,24 +173,119 @@ svg.lucide {
 svg.lucide.icon-lead {
   margin-inline-end: var(--space-1);
 }
+/* A button spaces its icon and its text with its own `gap`. */
+.btn > svg.lucide.icon-lead {
+  margin-inline-end: 0;
+}
 
-/* --- persistent zoom button (top-right) --- */
-.zoom-btn {
-  padding: 9px 14px;
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 11px;
-  letter-spacing: 1px;
-  cursor: pointer;
+/* --- the four shapes of a button and what all controls share (UI-04 part 3a, `docs/ui/leitfaden.md` §7) ---
+   `.btn` (text, with or without an icon), `.btn.primary` (the one action of a form), `.btn.danger`, `.icon-btn` (an icon only, as high as
+   a control; `.sm` as high as a row of a list) and `.link-btn` in the middle of a text. A class of a place sets where a button stands and how
+   wide it is, never how it looks. */
+
+/* One ring for everything that can be operated: the token --focus, from the keyboard. */
+:is(a[href], button, input, select, textarea, summary, [role='button'], [role='menuitem'], [role='menuitemradio'], [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: var(--line-width);
 }
-.zoom-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.zoom-btn:disabled {
-  opacity: 0.4;
+
+/* A locked control: one dimming, and the reason in its tooltip (`data-tip`). `disabled` or `aria-disabled="true"`; the second one keeps
+   the control in the tab order, so that its reason can be read. */
+:is(button, input, select, textarea, fieldset):disabled,
+:is(button, input, select, textarea, a, label, [role='button'], [role='menuitem'], [role='menuitemradio'], [role='switch'])[aria-disabled='true'] {
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
+
+/* A locked control takes no pointer events, so that its reason shows in every browser (`TipLayer` finds it by the place of the pointer). */
+:is(button, input, select, textarea):disabled[data-tip] {
+  pointer-events: none;
+}
+/* Over the map a locked button must still take the click, or it would reach the map under it; there the browser's own events show its tip. */
+.overlay > :is(button, input, select, textarea):disabled[data-tip] {
+  pointer-events: auto;
+}
+
+.btn,
+.icon-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: var(--line-width) solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font);
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn {
+  gap: var(--space-1);
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
+  border-color: var(--panel-border);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.icon-btn {
+  flex: none;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  font-size: var(--text-md);
+}
+.icon-btn.sm {
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+}
+/* Quiet: an icon that is not the point of its row (rename, copy, empty a field). */
+.icon-btn.quiet {
+  color: var(--muted);
+}
+.btn:hover:not(:disabled, [aria-disabled='true']),
+.icon-btn:hover:not(:disabled, [aria-disabled='true']) {
+  border-color: var(--accent);
+}
+/* On: a switch that is set (`aria-pressed`), or the panel of the rail that is open. */
+.btn:is([aria-pressed='true'], .on),
+.icon-btn.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+/* An icon that is a switch ("Flip through layers") shows that it is set by its colour. The eye (`EyeButton`) does not: it keeps the colour of the
+   text, and what is hidden is the eye crossed out (UI-04 part 3a, Otto, 4.11.2026). */
+.icon-btn[aria-pressed='true']:not(.eye) {
+  color: var(--accent);
+}
+/* A button that stands over the map has the panel behind it. */
+.btn.panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--glow);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: var(--weight-semibold);
+}
+.btn.primary:hover:not(:disabled, [aria-disabled='true']) {
+  box-shadow: var(--glow);
+}
+.btn.danger,
+.icon-btn.danger {
+  color: var(--danger);
+}
+.btn.danger,
+.btn.danger:hover:not(:disabled, [aria-disabled='true']),
+.icon-btn.danger:hover:not(:disabled, [aria-disabled='true']) {
+  border-color: var(--danger);
+}
+
+/* --- persistent zoom button (top-right) --- */
 /* The menu of the "Basemap" button (`components/BasemapMenu.tsx`) is as wide as its button. */
 .basemap-btn {
   min-width: 132px;
@@ -240,7 +340,6 @@ svg.lucide.icon-lead {
   min-width: 90px;
 }
 .vc-apply {
-  padding: 6px 16px;
   align-self: flex-end;
 }
 /* The labelled fields of the settings bar, the processing panel and its preview (NM4-54 part 5, Otto, 1.11.2026); the bar lays them out
@@ -265,7 +364,6 @@ svg.lucide.icon-lead {
   color: var(--text);
   font-family: var(--font);
   font-size: var(--text-sm);
-  outline: none;
 }
 /* One height for the fields of a panel (a tick box and a slider keep their own). */
 .vc-field select,
@@ -462,13 +560,6 @@ svg.lucide.icon-lead {
 .inspector .vc-field input[type='number'] {
   appearance: textfield;
 }
-.processing-panel .vc-field select:disabled,
-.processing-panel .vc-field input:disabled,
-.inspector .vc-field select:disabled,
-.inspector .vc-field input:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
 /* A name for a screen reader only. */
 .sr-only {
   position: absolute;
@@ -650,23 +741,6 @@ svg.lucide.icon-lead {
   text-align: left;
   cursor: text;
 }
-.inspector .vc-pencil {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-height-sm);
-  height: var(--control-height-sm);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-.inspector .vc-pencil:hover {
-  color: var(--text);
-}
 .inspector .vc-rename .pm-rename {
   width: 100%;
   box-sizing: border-box;
@@ -697,30 +771,11 @@ svg.lucide.icon-lead {
   min-width: var(--control-height);
   padding: 0 var(--space-2);
 }
-.vc-reverse.on {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--panel-bg);
-}
 /* All colormaps: a bar over the settings or the processing panel, at the same place; under 900 px the sheet of the settings. */
 .inspector.panel.colormap-picker {
   z-index: 14;
   /* Opaque: the processing panel under it does not show through the tint of the panels. */
   background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
-}
-.inspector .vc-back {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-height);
-  height: var(--control-height);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--text);
-  cursor: pointer;
 }
 .inspector .cm-search {
   flex: 1 1 0;
@@ -799,10 +854,6 @@ svg.lucide.icon-lead {
   min-width: 0;
   padding: var(--space-1) var(--space-2);
   white-space: nowrap;
-}
-.inspector .vc-buttons > button[aria-disabled='true'] {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 .inspector .vc-note {
   margin: 0;
@@ -897,64 +948,12 @@ svg.lucide.icon-lead {
     bottom: var(--inspector-sheet-height, 0px);
   }
 }
-.vc-eye {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--accent);
-  cursor: pointer;
-}
-.vc-eye:hover,
-.vc-eye:focus-visible {
-  border-color: var(--accent);
-  outline: none;
-}
-.vc-eye.off {
-  color: var(--muted);
-}
 .vc-stepper {
   flex: 0 1 auto;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-.vc-step {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 50%;
-  color: var(--accent);
-  cursor: pointer;
-  transition: border-color 0.12s, background-color 0.12s;
-}
-.vc-step:hover,
-.vc-step:focus-visible {
-  border-color: var(--accent);
-  background: var(--row-hover);
-  outline: none;
-}
-.vc-step[aria-disabled='true'] {
-  color: var(--muted);
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.vc-step[aria-disabled='true']:hover {
-  border-color: var(--panel-border);
-  background: var(--input-bg);
 }
 .vc-step-text {
   flex: 0 1 auto;
@@ -965,10 +964,6 @@ svg.lucide.icon-lead {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-}
-.ghost-btn.danger {
-  border-color: #ff5a6e;
-  color: #ff9aa7;
 }
 
 /* --- auto-fading info toast --- */
@@ -1088,7 +1083,6 @@ input[type='date'] {
   color: var(--text);
   font-family: var(--font);
   font-size: var(--text-sm);
-  outline: none;
 }
 input[type='text']:focus,
 input[type='date']:focus {
@@ -1225,33 +1219,13 @@ input[type='date']:focus {
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
+/* The AOI tools: three in a row, "Clear AOI" under them over the full width. */
 .tool-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 6px;
-  background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 11px;
-  cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  justify-content: flex-start;
+  padding-inline: var(--space-1);
+  overflow-wrap: normal;
 }
-.tool-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-.tool-btn.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: var(--glow);
-}
-.tool-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.tool-btn.ghost {
+.tool-wide {
   grid-column: 1 / -1;
   justify-content: center;
 }
@@ -1266,10 +1240,8 @@ input[type='date']:focus {
   display: flex;
   gap: 6px;
 }
-.place-search-row .tool-btn {
+.place-search-row .btn {
   flex: 0 0 auto;
-  grid-column: auto;
-  padding: 8px 12px;
 }
 /* A dropdown over the panel (`Popover`, Otto 30.09.2026) — it closes when the
    panel slides away for a draw tool or the collapse toggle. */
@@ -1324,74 +1296,10 @@ input[type='date']:focus {
   display: flex;
   gap: 6px;
 }
-.aoi-extras .tool-btn {
+.aoi-extras .btn {
   flex: 1;
-  justify-content: center;
-  font-size: 10px;
-  cursor: pointer;
-}
-.aoi-extras .tool-btn.ghost {
-  grid-column: auto;
 }
 
-/* One focus ring for the shared controls (UI-03 §7.3). */
-.ghost-btn:focus-visible,
-.primary-btn:focus-visible,
-.link-btn:focus-visible,
-.pp-seg:focus-visible,
-.close-x:focus-visible,
-.vc-field select:focus-visible,
-.vc-field input:focus-visible,
-.vc-field textarea:focus-visible,
-.vc-dataset:focus-visible,
-input[type='text']:focus-visible,
-input[type='search']:focus-visible,
-input[type='date']:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
-}
-
-/* --- buttons --- */
-.primary-btn {
-  min-height: var(--control-height);
-  padding: var(--space-1) var(--space-3);
-  background: var(--accent);
-  color: #04141a;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-family: var(--font);
-  font-weight: var(--weight-semibold);
-  font-size: var(--text-sm);
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  box-shadow: var(--glow);
-}
-.app[data-theme='normal'] .primary-btn {
-  color: #fff;
-}
-.primary-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-.ghost-btn {
-  min-height: var(--control-height);
-  padding: var(--space-1) var(--space-3);
-  background: none;
-  color: var(--text);
-  border: var(--line-width) solid var(--panel-border);
-  border-radius: var(--radius-sm);
-  font-family: var(--font);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-.ghost-btn {
-  overflow-wrap: anywhere;
-}
-.ghost-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
 
 .result-count {
   margin: 0;
@@ -1503,24 +1411,9 @@ input[type='date']:focus-visible {
 }
 /* The switch for the results on the map: a bordered button, but no taller than the head's text line. */
 .clear-results {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
   flex: none;
-  padding: 8px 14px;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--panel-border);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 12px;
-  cursor: pointer;
-}
-.clear-results:hover,
-.clear-results:focus-visible {
-  background: var(--row-hover);
-  outline: none;
+  gap: var(--space-2);
+  margin: var(--space-2);
 }
 .clear-results-x {
   color: var(--danger);
@@ -1531,15 +1424,6 @@ input[type='date']:focus-visible {
   display: flex;
   align-items: center;
   gap: 2px;
-}
-.results-head .lm-eye,
-.results-to-top {
-  width: 24px;
-  height: 22px;
-}
-.results-to-top[aria-disabled='true'] {
-  color: var(--muted);
-  cursor: not-allowed;
 }
 .results-list {
   --group-head-h: 34px;
@@ -1611,22 +1495,6 @@ input[type='date']:focus-visible {
   text-overflow: ellipsis;
   min-width: 0;
 }
-.copy-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: 1px solid transparent;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 3px;
-  border-radius: 4px;
-  flex: 0 0 auto;
-}
-.copy-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
 .badge {
   font-size: 8px;
   letter-spacing: 1px;
@@ -1656,36 +1524,12 @@ input[type='date']:focus-visible {
   padding: 1px 3px 1px 1px;
 }
 .dataset-toggle {
-  box-sizing: border-box;
-  display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
   gap: 1px;
   min-width: 0;
-  padding: 0 9px;
-  background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--muted);
-  font-family: var(--font);
-  font-size: 11px;
+  padding: 0 var(--space-2);
   text-align: left;
-  cursor: pointer;
-}
-.dataset-toggle:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-.dataset-toggle.active {
-  background: color-mix(in srgb, var(--accent) 22%, var(--input-bg));
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 700;
-  box-shadow: var(--glow);
-}
-.dataset-toggle:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 /* Half the panel width: a long title wraps onto a second line (two at most); next
    to the maturity chip it keeps one, so the button stays one row high. */
@@ -1712,43 +1556,11 @@ input[type='date']:focus-visible {
   text-transform: none;
   letter-spacing: 0;
 }
-/* The footer's action row: "Coverage" beside "Search" — kept apart from the
-   dataset buttons (its own place, an icon, dashed outline until it is on). */
 /* "Coverage" and "Clear coverage" fill the panel's width, like the tool rows. */
 .coverage-button-wrap {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-}
-.coverage-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 7px 12px;
-  background: transparent;
-  border: 1px dashed var(--panel-border);
-  border-radius: 6px;
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-}
-.coverage-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.coverage-btn.active {
-  border-style: solid;
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent);
-  box-shadow: var(--glow);
-}
-.coverage-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 /* --- dropdowns (`components/Popover.tsx`, Otto 30.09.2026) ---
    Over what is below them, never pushing it down; placed and sized by the
@@ -1769,10 +1581,6 @@ input[type='date']:focus-visible {
 }
 .popover:focus-within {
   outline: none;
-}
-.popover button:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
 }
 .coverage-choice-item {
   padding: 7px 10px;
@@ -1829,10 +1637,6 @@ input[type='date']:focus-visible {
   gap: 8px;
   margin: 0;
   padding: 6px 14px 12px;
-}
-.load-more .ghost-btn {
-  padding: 6px 12px;
-  font-size: 11px;
 }
 .dataset-select-box,
 .dataset-select-option {
@@ -1920,10 +1724,6 @@ input[type='date']:focus-visible {
 }
 .advanced-btn {
   width: 100%;
-  box-sizing: border-box;
-  padding: 10px 14px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
 }
 .advanced-btn[aria-expanded='true'] {
   border-color: var(--accent);
@@ -1987,11 +1787,6 @@ input[type='date']:focus-visible {
   justify-content: flex-end;
   gap: 8px;
 }
-.advanced-actions .ghost-btn,
-.advanced-actions .primary-btn {
-  padding: 8px 16px;
-  font-size: 11px;
-}
 .filter-dot {
   flex: none;
   width: 7px;
@@ -2034,7 +1829,6 @@ input[type='date']:focus-visible {
   color: var(--text);
   font-family: var(--font);
   font-size: 12px;
-  outline: none;
 }
 .filter-range input[type='text']:focus {
   border-color: var(--accent);
@@ -2083,10 +1877,6 @@ input[type='date']:focus-visible {
 .within-aoi.locked {
   color: var(--muted);
   cursor: not-allowed;
-}
-.within-aoi.locked input {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 /* --- grouped (mosaic) results --- */
@@ -2204,7 +1994,7 @@ input[type='date']:focus-visible {
   padding: 0 4px 6px;
 }
 .result-row.disabled {
-  opacity: 0.6;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
@@ -2300,21 +2090,6 @@ input[type='date']:focus-visible {
   align-items: center;
   gap: 12px;
 }
-.play-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid var(--panel-border);
-  background: var(--input-bg);
-  color: var(--accent);
-  font-size: 13px;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-.play-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
 .time-controls input[type='range'] {
   flex: 1;
   min-width: 0;
@@ -2356,14 +2131,10 @@ input[type='date']:focus-visible {
 .download-count span {
   font-size: 11px;
 }
-.download-bar .primary-btn,
-.download-bar .ghost-btn {
+.download-bar .btn {
   min-width: 0;
   min-height: 44px;
-  padding: 6px 8px;
   line-height: 1.25;
-  text-align: center;
-  overflow-wrap: anywhere;
 }
 .db-select {
   padding: 8px 10px;
@@ -2373,7 +2144,6 @@ input[type='date']:focus-visible {
   color: var(--text);
   font-family: var(--font);
   font-size: 12px;
-  outline: none;
 }
 
 /* --- layer manager (docked beside the rail, UI-01 §6.9) --- */
@@ -2392,7 +2162,7 @@ input[type='date']:focus-visible {
   overflow-y: auto;
 }
 .layer-row {
-  --lm-button: 22px;
+  --lm-button: var(--control-height-sm);
   display: grid;
   /* The title of a layer has the first line to itself, with its date in it; the buttons are under it (Otto, 1.11.2026). Grip, eye,
      opacity (the wide place), up, down, process, download, note, remove: a button that is missing leaves its place empty
@@ -2417,12 +2187,6 @@ input[type='date']:focus-visible {
 .layer-row > [data-col='rename'] {
   grid-column: -2;
   grid-row: 1;
-}
-.lm-pencil {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
 }
 .lm-renaming .pm-rename {
   width: 100%;
@@ -2515,57 +2279,13 @@ input[type='date']:focus-visible {
   justify-content: center;
   min-width: 0;
 }
-.lm-eye,
-.lm-btn {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 2px 0;
-  border-radius: 4px;
-  text-align: center;
-  text-decoration: none;
-}
-.lm-btn[aria-disabled='true'] {
-  color: var(--muted);
-  cursor: not-allowed;
-}
-.lm-eye {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent);
-}
-.lm-eye:hover:not([aria-disabled='true']),
-.lm-eye:focus-visible {
-  border-color: var(--accent);
-  outline: none;
-}
-.lm-eye.off {
-  color: var(--muted);
-}
 /* The result of a deleted job (NM4-27): in the list, not on the map, until it is restored or its day is over. */
-.lm-eye[aria-disabled='true'] {
-  cursor: not-allowed;
-}
 .layer-row.locked .lm-name,
 .layer-row.locked .lm-opacity {
-  opacity: 0.45;
+  opacity: var(--disabled-opacity);
 }
 .layer-row.locked .lm-name {
   cursor: help;
-}
-.lm-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-.lm-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-.lm-btn.danger {
-  color: #ff9aa7;
 }
 .lm-name {
   min-width: 0;
@@ -2588,18 +2308,7 @@ input[type='date']:focus-visible {
 }
 /* "Flip through layers" (NM4-65 part 9): the toggle in the head, and the row that is drawn on top. */
 .lm-flip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 22px;
   margin-right: 6px;
-  padding: 0;
-}
-.lm-flip[aria-pressed='true'] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--panel-bg, #fff);
 }
 .layer-row.flip {
   background: var(--row-hover);
@@ -2660,36 +2369,14 @@ input[type='date']:focus-visible {
   position: relative;
   width: 38px;
   height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: 1px solid transparent;
   border-radius: 8px;
-  color: var(--text);
-  cursor: pointer;
 }
-.rail-btn:hover,
-.rail-btn:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
-  outline: none;
-}
-.rail-btn.on {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--row-hover);
+/* The icons of the rail are larger than the rest: 20 px (`--icon-size-rail`, Otto, 4.11.2026). */
+.rail-btn svg.lucide {
+  width: var(--icon-size-rail);
+  height: var(--icon-size-rail);
 }
 /* Nothing to show yet: dim, still in the tab order and with its tooltip. */
-.rail-btn[aria-disabled='true'] {
-  color: var(--muted);
-  cursor: not-allowed;
-}
-.rail-btn[aria-disabled='true']:hover,
-.rail-btn[aria-disabled='true']:focus-visible {
-  border-color: var(--panel-border);
-  color: var(--muted);
-}
 .rail-badge {
   position: absolute;
   top: -3px;
@@ -2737,8 +2424,7 @@ input[type='date']:focus-visible {
   color: var(--accent-2);
 }
 .tip:focus-visible {
-  outline: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 /* Beside the rail, from the top to the foot of the window; the panel inside fills it. */
 .dock {
@@ -2998,7 +2684,6 @@ button.pm-open:hover {
 .pm-edit {
   grid-column: 2;
   grid-row: 1;
-  color: var(--muted);
 }
 .pm-until {
   grid-column: 3;
@@ -3049,36 +2734,8 @@ button.pm-open:hover {
   width: var(--pm-icon, var(--control-height));
   height: var(--pm-icon, var(--control-height));
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: none;
-  border: var(--line-width) solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: var(--text-lg);
-  text-decoration: none;
-  cursor: pointer;
-}
-button.pm-icon:hover:not(:disabled),
-a.pm-icon:hover {
-  border-color: var(--accent);
-}
-.pm-icon:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
 }
 /* A symbol that is off but still reachable, so that its reason shows on focus (UI-01 §4). */
-.pm-icon[aria-disabled='true'],
-.ghost-btn[aria-disabled='true'] {
-  color: var(--muted);
-  cursor: not-allowed;
-}
-.pm-icon[aria-disabled='true']:hover,
-.pm-icon[aria-disabled='true']:focus-visible {
-  border-color: transparent;
-}
 /* A running job: a line of two pixels at the bottom edge of its row, under the title, over the line between the two jobs. */
 .pm-row {
   position: relative;
@@ -3151,12 +2808,6 @@ a.pm-icon:hover {
 .pm-menu-list button:focus-visible {
   background: var(--row-hover);
   color: var(--accent);
-  outline: none;
-}
-.pm-menu-list button:disabled,
-.pm-menu-list button[aria-disabled='true'] {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 .pm-fold {
   flex: 0 0 var(--pm-chevron);
@@ -3338,11 +2989,6 @@ a.pm-icon:hover {
 .dialog-download {
   width: 420px;
 }
-.dialog-download .dialog-actions .lm-btn {
-  min-height: var(--control-height);
-  padding: 0 var(--space-3);
-  border-color: var(--panel-border);
-}
 .dialog-choice {
   display: flex;
   flex-direction: column;
@@ -3359,12 +3005,6 @@ a.pm-icon:hover {
 }
 .dialog-choice-head .hint-text {
   margin: 0 auto 0 0;
-}
-.dialog-choice-btn {
-  min-height: var(--control-height);
-  min-width: var(--control-height);
-  padding: 0 var(--space-2);
-  border-color: var(--panel-border);
 }
 .dialog-bands {
   list-style: none;
@@ -3416,18 +3056,6 @@ a.pm-icon:hover {
   font-family: var(--font);
   font-size: var(--text-sm);
 }
-.dialog-common select:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
-}
-.lm-btn.primary {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.lm-btn.primary:disabled {
-  border-color: var(--panel-border);
-  color: var(--muted);
-}
 
 /* --- status toasts --- */
 /* The stack spans the full 560px of `.status` and sits at the top centre, where
@@ -3459,13 +3087,6 @@ a.pm-icon:hover {
   backdrop-filter: blur(10px);
   border: 1px solid var(--panel-border);
   background: var(--panel-bg);
-}
-.toast button:not(.close-x) {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font-size: 12px;
 }
 .toast.error {
   border-color: #ff5a6e;
@@ -3545,25 +3166,12 @@ a.pm-icon:hover {
 .clear-btn {
   position: absolute;
   top: 50%;
-  right: 6px;
+  right: var(--space-1);
   transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  border-radius: 50%;
-  color: var(--muted);
-  line-height: 1;
-  cursor: pointer;
 }
 .clear-btn:hover,
 .clear-btn:focus-visible {
   color: var(--accent);
-  outline: none;
 }
 
 /* --- processing panel (M4-13b; side bar since M4-13c §3.1) --- */
@@ -3660,10 +3268,6 @@ a.pm-icon:hover {
   grid-auto-flow: column;
   align-items: center;
   column-gap: var(--space-2);
-}
-.pp-seg:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 .pp-field textarea {
   width: 100%;
@@ -3771,14 +3375,6 @@ a.pm-icon:hover {
   align-items: flex-start;
   gap: var(--space-1);
 }
-.pp-recipe-btn {
-  display: inline-flex;
-  align-items: center;
-}
-.pp-recipe-btn.disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
 .pp-recipe p {
   margin: 0;
 }
@@ -3801,24 +3397,6 @@ a.pm-icon:hover {
 .pp-share-link input {
   flex: 1 1 auto;
   min-width: 0;
-}
-.delete-btn {
-  flex: 0 0 auto;
-  padding: 3px 5px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: #ff5a6e;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-}
-.delete-btn:hover:not(:disabled) {
-  border-color: #ff5a6e;
-}
-.delete-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 .pp-options {
   margin: 0;
@@ -4025,36 +3603,6 @@ a.pm-icon:hover {
   gap: var(--space-1);
 }
 /* A symbol as a button, as high as a control and square: the head of a step. */
-.pp-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-height);
-  height: var(--control-height);
-  padding: 0;
-  background: none;
-  border: var(--line-width) solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  font-family: var(--font);
-  font-size: var(--text-md);
-  cursor: pointer;
-}
-.pp-icon-btn:hover:not(:disabled) {
-  border-color: var(--line);
-  color: var(--text);
-}
-.pp-icon-btn.danger {
-  color: var(--danger);
-}
-.pp-icon-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-.pp-icon-btn:focus-visible {
-  outline: var(--line-width) solid var(--focus);
-  outline-offset: var(--line-width);
-}
 /* "Add step": the operators as buttons of one width, in rows. */
 .pp-add {
   display: grid;
@@ -4067,7 +3615,7 @@ a.pm-icon:hover {
   grid-column: 1 / -1;
 }
 .pp-add-btn {
-  padding: var(--space-1) var(--space-2);
+  justify-content: flex-start;
   text-align: left;
 }
 .pp-estimate p {
@@ -4236,11 +3784,4 @@ a.pm-icon:hover {
 }
 .aoi-stop {
   flex: none;
-  padding: 3px 10px;
-  font-size: 11px;
-}
-.toast .aoi-stop {
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--text);
 }

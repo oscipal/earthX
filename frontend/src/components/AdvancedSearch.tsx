@@ -36,7 +36,7 @@ function RangeField({
   const edit = (next: { from?: string; to?: string }) => onChange({ kind: 'range', from, to, ...next });
   return (
     <div className="filter-field">
-      <span className="filter-title" title={filter.description}>
+      <span className="filter-title" data-tip={filter.description}>
         {filter.title}
       </span>
       <div className="filter-range">
@@ -87,7 +87,7 @@ function ValuesField({
     onChange({ kind: 'values', values: ticked.includes(value) ? ticked.filter((v) => v !== value) : [...ticked, value] });
   return (
     <fieldset className="filter-field">
-      <legend className="filter-title" title={filter.description}>
+      <legend className="filter-title" data-tip={filter.description}>
         {filter.title}
       </legend>
       <div className="filter-values">
@@ -106,10 +106,10 @@ function ValuesField({
 function OfferLine({ offer, set }: { offer: Offer; set: boolean }) {
   return (
     <span className="dataset-select-line">
-      <span className="dataset-select-title" title={offer.dataset.title}>
+      <span className="dataset-select-title">
         {offer.dataset.title}
       </span>
-      {set && <span className="filter-dot" role="img" aria-label="Filters set" title="Filters set" />}
+      {set && <span className="filter-dot" role="img" aria-label="Filters set" data-tip="Filters set" />}
     </span>
   );
 }
@@ -132,7 +132,7 @@ function WithinAoiSwitch({
 }) {
   const locked = lock !== null;
   return (
-    <label className={`within-aoi${locked ? ' locked' : ''}`} title={lock ?? tip}>
+    <label className={`within-aoi${locked ? ' locked' : ''}`} data-tip={lock ?? tip}>
       <input
         type="checkbox"
         role="switch"
@@ -223,11 +223,11 @@ export default function AdvancedSearch() {
       <button
         ref={buttonRef}
         type="button"
-        className={`ghost-btn advanced-btn${wrong ? ' wrong' : ''}`}
+        className={`btn advanced-btn${wrong ? ' wrong' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? dialogId : undefined}
-        title={tooltip}
+        data-tip={tooltip}
         onClick={() => setOpen((v) => !v)}
       >
         Advanced search{count > 0 && ` · ${count}`}
@@ -290,7 +290,7 @@ export default function AdvancedSearch() {
             {(setOf(shown).length > 0 || searchWithin[shown.dataset.id] === true) && (
               <button
                 type="button"
-                className="ghost-btn"
+                className="btn"
                 onClick={() => {
                   resetSearchFilters(shown.dataset.id);
                   // The button goes with the filters; the keyboard user stays in the pop-up.
@@ -302,7 +302,7 @@ export default function AdvancedSearch() {
             )}
             <button
               type="button"
-              className="primary-btn"
+              className="btn primary"
               onClick={() => {
                 close();
                 buttonRef.current?.focus();

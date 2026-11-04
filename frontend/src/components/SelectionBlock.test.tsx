@@ -14,6 +14,7 @@ import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import { selectionBlockModeOf } from '../selectionBlockMode';
 import SelectionBlock from './SelectionBlock';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -124,7 +125,7 @@ describe('one block', () => {
     render(true, true);
     const head = container.querySelector('.block-head')!;
     expect(head.querySelectorAll('button')).toHaveLength(1);
-    expect(head.querySelector('button')!.title).toBe('Close');
+    expect(tipOf(head.querySelector('button')!)).toBe('Close');
     expect(container.querySelector('.download-bar .close-x')).toBeNull();
   });
 });

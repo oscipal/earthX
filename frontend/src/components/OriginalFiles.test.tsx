@@ -194,6 +194,6 @@ describe('the rows', () => {
   it('a note names the way where it is not the ZIP', async () => {
     await show(<OriginalFiles dataset={dataset(makeCollection({ 'earthx:access': { cors: false } }))} links={[]} passes={passes('A')} started />);
     expect(container.textContent).toContain('Your browser downloads each file.');
-    expect(container.querySelector('.hint-text[title]')?.getAttribute('title')).toContain('under the name the source gives it');
+    expect(container.querySelector('.hint-text[data-tip]')?.getAttribute('data-tip')).toContain('under the name the source gives it');
   });
 });

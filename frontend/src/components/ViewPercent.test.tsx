@@ -15,6 +15,7 @@ import { pendingFieldsOf } from '../render';
 import { useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import ViewerControls from './ViewerControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -121,7 +122,7 @@ describe('the switch "value / %"', () => {
   it('is a small dropdown with words after vmin and vmax in the row "Scale", "absolute value" to begin with', () => {
     expect(unitText()).toBe('absolute');
     expect([...chip().options].map((o) => o.textContent)).toEqual(['absolute', 'percentile']);
-    expect(chip().title).toBe(UNIT_TIP);
+    expect(tipOf(chip())).toBe(UNIT_TIP);
     expect(chip().getAttribute('aria-label')).toBe('Range unit');
     const row = chip().closest('.vc-scale')!;
     expect(row.querySelector(':scope > span')!.textContent).toBe('Scale');

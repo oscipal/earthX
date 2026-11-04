@@ -16,6 +16,7 @@ import type { Collection, DownloadedInfo, StacAsset, StacItem } from '../types';
 import { viewLayerOf } from '../viewLayer';
 import Inspector from './Inspector';
 import ViewerControls from './ViewerControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -163,7 +164,7 @@ describe('the dropdown "Band" of the view', () => {
     mount({}, collection({ 'earthx:index_presets': [] }), { visual: tiff(3) });
     expect(field('Band')).not.toBeNull();
     expect(select().disabled).toBe(true);
-    expect(field('Band')!.title).toBe('This image has one band');
+    expect(tipOf(field('Band')!)).toBe('This image has one band');
   });
 
   it('is there for bands alone, without presets', () => {

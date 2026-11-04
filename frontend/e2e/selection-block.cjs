@@ -111,7 +111,7 @@ async function run(browser, theme, viewport) {
   }
   const colour = await page.locator('.selection-block .close-x').evaluate((e) => getComputedStyle(e).color);
   if (!/^rgb\((255, 90, 110|198, 40, 64)\)$/.test(colour)) problems.push(`the "x" is ${colour}, not red`);
-  if ((await page.locator('.selection-block .close-x').getAttribute('title')) !== 'Close') problems.push('the "x" has no tooltip "Close"');
+  if ((await page.locator('.selection-block .close-x').getAttribute('data-tip')) !== 'Close') problems.push('the "x" has no tooltip "Close"');
 
   // --- the row of dates ---------------------------------------------------------------------------------------------
   // activeGroupIndex 3 of 7 (newest first): shown 2026-07-04.

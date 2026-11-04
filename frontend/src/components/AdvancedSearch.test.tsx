@@ -14,6 +14,7 @@ import { datasetsFrom } from '../datasets';
 import { ELEVATION, LEGACY, OPTICAL, RADAR } from '../fixtures/searchFilters';
 import { useAppStore } from '../store';
 import ControlPanel from './ControlPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -63,7 +64,7 @@ const text = (el: Element | null) => el?.textContent ?? '';
 const field = (label: string) => container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
 const titles = () => [...container.querySelectorAll('.filter-title')].map((el) => text(el));
 const headings = () => [...container.querySelectorAll('.filter-group-title')].map((el) => text(el));
-const searchButton = () => container.querySelector<HTMLButtonElement>('.control-footer .primary-btn')!;
+const searchButton = () => container.querySelector<HTMLButtonElement>('.control-footer .btn.primary')!;
 const open = () => act(() => button()!.click());
 const key = (target: Element | Document, name: string) =>
   act(() => {
@@ -197,7 +198,7 @@ describe('the pop-up', () => {
     expect([from.type, from.placeholder, to.placeholder, from.value, to.value]).toEqual(['text', '0', '100', '', '']);
     expect(from.inputMode).toBe('decimal');
     expect(text(container.querySelector('.filter-range'))).toBe('fromto%');
-    expect(container.querySelector('.filter-title')!.getAttribute('title')).toBe('Share of the scene covered by clouds.');
+    expect(container.querySelector('.filter-title')!.getAttribute('data-tip')).toBe('Share of the scene covered by clouds.');
   });
 
   it('asks for whole numbers where the registry says so', () => {
@@ -278,7 +279,7 @@ describe('closing keeps the values', () => {
   it('the red "x" closes it, gives the focus back to the button and keeps the values', () => {
     filled();
     const cross = popup()!.querySelector<HTMLButtonElement>('.advanced-top .close-x')!;
-    expect(cross.title).toBe('Close');
+    expect(tipOf(cross)).toBe('Close');
     act(() => cross.click());
     expect(popup()).toBeNull();
     expect(document.activeElement).toBe(button());
@@ -426,7 +427,7 @@ describe('the number on the button', () => {
   it('says nothing while no filter is set', () => {
     pick('optical', 'radar');
     expect(text(button())).toBe('Advanced search');
-    expect(button()!.title).toMatch(/^Narrow the search/);
+    expect(tipOf(button()!)).toMatch(/^Narrow the search/);
   });
 
   it('counts the filters that are set, over the datasets, with the tooltip naming them', () => {
@@ -436,11 +437,11 @@ describe('the number on the button', () => {
     expect(text(button())).toBe('Advanced search · 1');
     tick('Satellite A');
     expect(text(button())).toBe('Advanced search · 2');
-    expect(button()!.title).toBe('Optical imagery: Cloud cover, Satellite');
+    expect(tipOf(button()!)).toBe('Optical imagery: Cloud cover, Satellite');
     switchTo(1);
     type(field('Relative orbit, from'), '22');
     expect(text(button())).toBe('Advanced search · 3');
-    expect(button()!.title).toBe('Optical imagery: Cloud cover, Satellite\nRadar imagery: Relative orbit');
+    expect(tipOf(button()!)).toBe('Optical imagery: Cloud cover, Satellite\nRadar imagery: Relative orbit');
   });
 
   it('stays when the pop-up is closed', () => {
@@ -684,7 +685,7 @@ describe('"Filter within AOI only"', () => {
   it('names in its tooltip the filters it changes and not the others, the classes and the note of the registry', () => {
     pick('optical');
     open();
-    const tip = within()!.title;
+    const tip = tipOf(within()!);
     expect(tip).toContain('Cloud cover (classes 5, 6; cloud shadows do not count), No data.');
     expect(tip).toContain('Others are unchanged.');
     expect(tip).not.toContain('Satellite');
@@ -741,7 +742,7 @@ describe('"Filter within AOI only"', () => {
       expect(within()).not.toBeNull();
       expect(within()!.classList.contains('locked')).toBe(true);
       expect(withinBox().getAttribute('aria-disabled')).toBe('true');
-      expect(within()!.title).toBe(reason);
+      expect(tipOf(within()!)).toBe(reason);
     });
 
     it('does nothing when it is pressed', () => {
@@ -760,7 +761,7 @@ describe('"Filter within AOI only"', () => {
     expect(within()!.classList.contains('locked')).toBe(true);
     act(() => useAppStore.setState({ aoi: AOI }));
     expect(within()!.classList.contains('locked')).toBe(false);
-    expect(within()!.title).toContain('Measure these filters inside the AOI');
+    expect(tipOf(within()!)).toContain('Measure these filters inside the AOI');
   });
 
   it('goes off when the dates go and is then locked with the reason; it does not come back on its own', () => {
@@ -773,7 +774,7 @@ describe('"Filter within AOI only"', () => {
     expect(withinBox().checked).toBe(false);
     expect(stored()).toEqual({});
     expect(within()!.classList.contains('locked')).toBe(true);
-    expect(within()!.title).toBe('Draw an AOI and set a date range first');
+    expect(tipOf(within()!)).toBe('Draw an AOI and set a date range first');
 
     act(() => useAppStore.setState({ dateTo: '2026-07-31' }));
     expect(withinBox().checked).toBe(false);

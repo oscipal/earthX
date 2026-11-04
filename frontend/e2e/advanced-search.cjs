@@ -194,7 +194,7 @@ async function check(browser, { theme, viewport }) {
   const titles = await popup.locator('.filter-title').allTextContents();
   const expectedTitles = SENTINEL_2_FILTERS.map((f) => f.title);
   expect('the filters of Sentinel-2 in the order of the registry', JSON.stringify(titles) === JSON.stringify(expectedTitles), JSON.stringify(titles));
-  expect('the tooltip of Cloud cover', (await popup.locator('.filter-title').first().getAttribute('title')) === SENTINEL_2_FILTERS[0].description);
+  expect('the tooltip of Cloud cover', (await popup.locator('.filter-title').first().getAttribute('data-tip')) === SENTINEL_2_FILTERS[0].description);
   expect('the placeholders are the bounds', (await fields('Cloud cover, from').getAttribute('placeholder')) === '0' && (await fields('Cloud cover, to').getAttribute('placeholder')) === '100');
   expect('the unit of the sun elevation', (await popup.locator('.filter-range', { has: page.locator('input[aria-label="Sun elevation, to"]') }).locator('.filter-unit').textContent()) === '°');
   expect('the focus is not in the pop-up', await popup.evaluate((el) => el.contains(document.activeElement)));
@@ -249,7 +249,7 @@ async function check(browser, { theme, viewport }) {
 
   // 6. The button counts the filters set, closed too; the tooltip names them.
   expect('the count on the button', (await button.textContent()) === 'Advanced search · 2', await button.textContent());
-  expect('the tooltip of the button', (await button.getAttribute('title')) === 'Sentinel-2 L2A: Cloud cover, Satellite', await button.getAttribute('title'));
+  expect('the tooltip of the button', (await button.getAttribute('data-tip')) === 'Sentinel-2 L2A: Cloud cover, Satellite', await button.getAttribute('data-tip'));
 
   // 7. A wrong field is marked, "Done" closes the pop-up all the same, "Search" stays held back, the coverage goes without it.
   await popup.locator('.advanced-fields').evaluate((el) => { el.scrollTop = 0; });

@@ -62,22 +62,22 @@ export default function PreviewBadge() {
   return (
     <div className="overlay preview-badge-dock">
       {(draft || pinned) && (
-        <span className="preview-badge" title={previewTitle(draft, draftMeasure)}>
+        <span className="preview-badge" data-tip={previewTitle(draft, draftMeasure)}>
           Preview
         </span>
       )}
       {loading && (
-        <span className="preview-badge loading" role="status" title={LOADING_TITLE}>
+        <span className="preview-badge loading" role="status" data-tip={LOADING_TITLE}>
           Loading…
         </span>
       )}
       {overview && (
-        <span className="preview-badge" title={OVERVIEW_TITLE}>
+        <span className="preview-badge" data-tip={OVERVIEW_TITLE}>
           Overview
         </span>
       )}
       {waiting.length > 0 && (
-        <span className="preview-badge" title={zoomInTitle(waiting)}>
+        <span className="preview-badge" data-tip={zoomInTitle(waiting)}>
           Zoom in
         </span>
       )}

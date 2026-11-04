@@ -18,6 +18,7 @@ import { bboxToPolygon } from './geoUtils';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
+import { tipOf } from './fixtures/tips';
 
 vi.mock('./components/MapView', () => ({ default: () => null }));
 
@@ -101,7 +102,7 @@ afterEach(() => {
 describe('the entry "Results" in the layer manager', () => {
   it('is there with the results, on top, with an eye and ▲/▼ and nothing else', () => {
     expect(rowNames()).toEqual(['Search results']);
-    expect(resultsButton('name').getAttribute('title')).toBe(RESULTS_ENTRY_TIP);
+    expect(resultsButton('name').getAttribute('data-tip')).toBe(RESULTS_ENTRY_TIP);
     for (const col of ['opacity', 'process', 'download', 'note', 'remove']) expect(resultsRow()!.querySelector(`button[data-col="${col}"], input[data-col="${col}"]`)).toBeNull();
     expect(resultsButton('up').disabled).toBe(true);
     expect(resultsButton('down').disabled).toBe(true);
@@ -184,12 +185,12 @@ describe('the eye of "Results"', () => {
   it('is the switch of the results on the map, with what a click does in its tooltip', () => {
     const eye = () => resultsButton('eye');
     expect(eye().getAttribute('aria-pressed')).toBe('true');
-    expect(eye().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(eye())).toBe(HIDE_RESULTS_TIP);
     click(eye());
     expect(state().resultsOnMap).toBe(false);
     expect(eye().getAttribute('aria-pressed')).toBe('false');
-    expect(eye().title).toBe(SHOW_RESULTS_TIP);
-    expect(eye().classList.contains('off')).toBe(true);
+    expect(tipOf(eye())).toBe(SHOW_RESULTS_TIP);
+    expect(eye().querySelector('svg.lucide-eye-off')).not.toBeNull();
     click(eye());
     expect(state().resultsOnMap).toBe(true);
   });
@@ -227,9 +228,9 @@ describe('"Results" on top, from the results list', () => {
   it('is there left of the eye, greyed out while "Results" is on top, the reason in its tooltip', () => {
     const [first, second] = [...head().children];
     expect(first).toBe(toTop());
-    expect((second as HTMLButtonElement).title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf((second as HTMLButtonElement))).toBe(HIDE_RESULTS_TIP);
     expect(greyed()).toBe(true);
-    expect(toTop().title).toBe(RESULTS_ON_TOP_TIP);
+    expect(tipOf(toTop())).toBe(RESULTS_ON_TOP_TIP);
   });
 
   it('does nothing while greyed out', () => {
@@ -248,7 +249,7 @@ describe('"Results" on top, from the results list', () => {
     act(() => state().moveResults('down'));
     expect(rowNames()).toEqual(['Job two', 'Job one', 'Search results']);
     expect(greyed()).toBe(false);
-    expect(toTop().title).toBe(RESULTS_TO_TOP_TIP);
+    expect(tipOf(toTop())).toBe(RESULTS_TO_TOP_TIP);
     click(toTop());
     expect(rowNames()).toEqual(['Search results', 'Job two', 'Job one']);
     expect(greyed()).toBe(true);

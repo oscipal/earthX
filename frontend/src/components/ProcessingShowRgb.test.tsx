@@ -16,6 +16,7 @@ import { handRangeOnShownBand, orderView, selectionState, useProcessingStore } f
 import { useAppStore } from '../store';
 import type { Collection, EarthxMask, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -324,7 +325,7 @@ describe('the picture of RGB', () => {
     // Counter-check: one end typed wrong locks "Apply" with the channel and the reason, and marks the fields of that channel.
     typeInto(fields()[3], '0.01');
     expect(button('Apply').disabled).toBe(true);
-    expect(button('Apply').title).toBe('G: vmin must be below vmax');
+    expect(tipOf(button('Apply'))).toBe('G: vmin must be below vmax');
     expect(fields().map((f) => f.getAttribute('aria-invalid'))).toEqual([null, null, 'true', 'true', null, null]);
     expect(tiles().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
     typeInto(fields()[3], '0.6');
@@ -358,7 +359,7 @@ describe('the picture of RGB', () => {
     typeInto(fields()[2], '98');
     typeInto(fields()[3], '2');
     expect(button('Apply').disabled).toBe(true);
-    expect(button('Apply').title).toBe('G: the lower percentile must be below the upper one');
+    expect(tipOf(button('Apply'))).toBe('G: the lower percentile must be below the upper one');
     click(button('Apply'));
     await afterDebounce();
     expect(store().rangeByHand).toBe(false);

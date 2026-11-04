@@ -65,12 +65,12 @@ export default function TimeSlider() {
       {index === null ? '' : name(index)}
     </span>
   );
-  // The buttons of the stepper in the view of an image (`ViewerControls`): the same round button with the same chevron.
+  // The buttons of the stepper in the view of an image (`ViewerControls`): the same icon button with the same chevron.
   const arrow = (index: number | null, label: string, direction: 'left' | 'right') =>
     index === null ? (
-      <span className="vc-step gone" aria-hidden="true" />
+      <span className="icon-btn gone" aria-hidden="true" />
     ) : (
-      <button type="button" className="vc-step" title={`${label}: ${name(index)}`} aria-label={label} onClick={() => go(index)}>
+      <button type="button" className="icon-btn" data-tip={`${label}: ${name(index)}`} aria-label={label} onClick={() => go(index)}>
         {direction === 'left' ? <ChevronLeftIcon /> : <ChevronRightIcon />}
       </button>
     );
@@ -78,7 +78,7 @@ export default function TimeSlider() {
   return (
     <div className="time-slider">
       <div className="time-dates">
-        <span className={`time-end first${showFirst ? '' : ' gone'}`} title="First time step" aria-hidden={!showFirst || undefined}>
+        <span className={`time-end first${showFirst ? '' : ' gone'}`} data-tip="First time step" aria-hidden={!showFirst || undefined}>
           {showFirst ? name(groups.length - 1) : ''}
         </span>
         {near(older, 'before')}
@@ -86,14 +86,14 @@ export default function TimeSlider() {
         <strong>{name(shown)}</strong>
         {arrow(newer, 'Next time step', 'right')}
         {near(newer, 'after')}
-        <span className={`time-end last${showLast ? '' : ' gone'}`} title="Last time step" aria-hidden={!showLast || undefined}>
+        <span className={`time-end last${showLast ? '' : ' gone'}`} data-tip="Last time step" aria-hidden={!showLast || undefined}>
           {showLast ? name(0) : ''}
         </span>
       </div>
       <div className="time-controls">
         <button
           type="button"
-          className="play-btn"
+          className="icon-btn"
           onClick={() => {
             // Playing shows the steps on the map: with the results hidden, "Play" shows them again (Otto, 30.10.2026).
             if (!playing && !resultsOnMap) toggleResultsOnMap();
@@ -113,7 +113,7 @@ export default function TimeSlider() {
           onChange={(e) => setActiveGroupIndex(groups.length - 1 - Number(e.target.value))}
           aria-label="Timeline (mosaic groups)"
         />
-        <span className="time-count" title={loading ? 'Waiting for the next time step to load; the image stays until it has' : undefined}>
+        <span className="time-count" data-tip={loading ? 'Waiting for the next time step to load; the image stays until it has' : undefined}>
           {loading ? 'Loading…' : `${activeGroupIndex + 1} / ${groups.length}`}
         </span>
       </div>

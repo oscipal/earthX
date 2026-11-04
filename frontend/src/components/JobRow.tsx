@@ -12,7 +12,7 @@ import { EXPIRED_TIP, formatUntil, jobState, useNowUntil } from './jobView';
 
 
 // The archive of a finished job as a link; once it expired, the link is gone and the reason is the tooltip.
-export function DownloadZip({ job, now, label, className = 'pm-icon' }: { job: JobEntry; now: number; label?: string; className?: string }) {
+export function DownloadZip({ job, now, label, className = 'icon-btn pm-icon' }: { job: JobEntry; now: number; label?: string; className?: string }) {
   const state = jobState(job, now);
   if (state.key === 'expired' && job.phase === 'successful') {
     return (
@@ -23,7 +23,7 @@ export function DownloadZip({ job, now, label, className = 'pm-icon' }: { job: J
   }
   if (state.key !== 'finished' || !job.archive) return <span className={className} aria-hidden="true" />;
   return (
-    <a className={className} href={resultUrl(job.jobID, job.archive)} download rel="noopener noreferrer" title={ZIP_LABEL} aria-label={ZIP_LABEL}>
+    <a className={className} href={resultUrl(job.jobID, job.archive)} download rel="noopener noreferrer" data-tip={ZIP_LABEL} aria-label={ZIP_LABEL}>
       {label ? <><DownloadIcon lead />{label}</> : <DownloadIcon />}
     </a>
   );
@@ -49,7 +49,7 @@ export function JobRow({ job }: { job: JobEntry }) {
             type="button"
             className="link-btn"
             disabled={job.cancelling || !job.status}
-            title={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
+            data-tip={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
             onClick={() => void cancelJob(job.jobID)}
           >
             {job.cancelling ? 'Cancelling…' : 'Cancel'}
@@ -59,7 +59,7 @@ export function JobRow({ job }: { job: JobEntry }) {
       {active && <progress className="pp-progress" max={100} value={job.status?.progress ?? 0} aria-label="Progress" />}
       {job.phase === 'failed' && <span className="hint-text error">{job.failure ?? job.status?.message ?? 'The job failed'}</span>}
       {state.key !== 'cancelled' && state.key !== 'unavailable' && state.key !== 'deleted' && (
-        <span className="pp-help" title={job.expires}>
+        <span className="pp-help" data-tip={job.expires}>
           until {formatUntil(job.expires, now)}
         </span>
       )}

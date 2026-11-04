@@ -200,7 +200,7 @@ async function checkReview(browser, theme, viewport) {
   const step = await withStep(page, 'zscore');
   await step.locator('text=Measuring…').waitFor({ timeout: 5000 }).catch(() => problems.push('no "Measuring…"'));
   for (const button of [review(page), start(page)]) {
-    if (/measuring/i.test((await button.getAttribute('title')) ?? '')) problems.push(`a button says ${await button.getAttribute('title')}`);
+    if (/measuring/i.test((await button.getAttribute('data-tip')) ?? '')) problems.push(`a button says ${await button.getAttribute('data-tip')}`);
   }
   if (await review(page).isDisabled()) problems.push('Review is held while the measure runs');
   await review(page).click();

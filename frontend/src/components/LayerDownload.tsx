@@ -14,7 +14,7 @@ import { DownloadIcon } from './icons';
 
 interface Props {
   layer: MapLayer;
-  // The class of the button or link; the manager's `lm-btn` by default.
+  // The class of the button or link; the manager's `icon-btn sm` by default.
   className?: string;
   // A word after the icon (the manager shows the icon only).
   label?: string;
@@ -23,14 +23,14 @@ interface Props {
   empty?: ReactNode;
 }
 
-export default function LayerDownload({ layer, className = 'lm-btn', label, col, empty = null }: Props) {
+export default function LayerDownload({ layer, className = 'icon-btn sm', label, col, empty = null }: Props) {
   const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasets = useAppStore((s) => s.datasets);
   const kind = layerDownloadKind(layer);
   const text = label ? (<><DownloadIcon lead />{label}</>) : <DownloadIcon size={14} />;
   if (kind === 'zip' && layer.result) {
     return (
-      <a className={className} data-col={col} href={resultUrl(layer.result.jobID, RESULT_ZIP)} download rel="noopener noreferrer" title={ZIP_LABEL} aria-label={ZIP_LABEL}>
+      <a className={className} data-col={col} href={resultUrl(layer.result.jobID, RESULT_ZIP)} download rel="noopener noreferrer" data-tip={ZIP_LABEL} aria-label={ZIP_LABEL}>
         {text}
       </a>
     );
@@ -46,7 +46,7 @@ export default function LayerDownload({ layer, className = 'lm-btn', label, col,
       className={className}
       data-col={col}
       disabled={outcome === 'disabled' || indexBlock !== null || !canDownloadLayer(layer, datasets)}
-      title={
+      data-tip={
         outcome === 'disabled'
           ? 'Draw an AOI to download this layer'
           : indexBlock

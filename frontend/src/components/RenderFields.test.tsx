@@ -15,6 +15,7 @@ import { RGB } from '../processingBands';
 import { useAppStore } from '../store';
 import RenderFields from './RenderFields';
 import ResultControls from './ResultControls';
+import { tipOf } from '../fixtures/tips';
 
 vi.mock('./MapView', () => ({ default: () => null }));
 
@@ -72,7 +73,7 @@ describe('RenderFields', () => {
       ),
     );
     expect(names()).toEqual(['Index', 'vmin', 'vmax', 'Colormap']);
-    expect(container.querySelector('select[title="True colour"] option')?.textContent).toBe('RGB');
+    expect(container.querySelector('select[data-tip="True colour"] option')?.textContent).toBe('RGB');
   });
 
   it('never calls the ends "min" and "max"', () => {
@@ -152,7 +153,7 @@ describe('the settings of a result layer', () => {
     const colormap = [...container.querySelectorAll<HTMLLabelElement>('label.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap')!;
     expect(colormap.querySelector('select')!.disabled).toBe(true);
     expect(colormap.querySelector('select')!.selectedOptions[0].textContent).toBe('— none —');
-    expect(colormap.title).toBe('True colour: three bands, no colormap');
+    expect(tipOf(colormap)).toBe('True colour: three bands, no colormap');
     expect([...container.querySelectorAll<HTMLOptionElement>('.band-select option')].map((o) => o.textContent)).toEqual(['RGB', 'red', 'green', 'blue']);
   });
 
@@ -164,6 +165,6 @@ describe('the settings of a result layer', () => {
     expect(names()).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
     const band = container.querySelector<HTMLLabelElement>('.band-select')!;
     expect(band.querySelector('select')!.disabled).toBe(true);
-    expect(band.title).toBe('This image has one band');
+    expect(tipOf(band)).toBe('This image has one band');
   });
 });

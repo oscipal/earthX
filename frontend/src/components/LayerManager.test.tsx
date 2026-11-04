@@ -105,25 +105,25 @@ describe('LayerManager', () => {
     });
 
     it('switches the layer of that row and no other', () => {
-      click(rows()[2].querySelector('.lm-eye'));
+      click(rows()[2].querySelector('[data-col="eye"]'));
       expect(flags()).toEqual(['one:1', 'two:1', 'three:0', 'four:1', 'five:1']);
-      click(rows()[2].querySelector('.lm-eye'));
+      click(rows()[2].querySelector('[data-col="eye"]'));
       expect(flags()).toEqual(['one:1', 'two:1', 'three:1', 'four:1', 'five:1']);
     });
 
     it('still reaches its own layer after the rows were moved', () => {
-      click(rows()[3].querySelector('button[title="Move up"]'));
-      click(rows()[2].querySelector('button[title="Move up"]'));
+      click(rows()[3].querySelector('button[data-tip="Move up"]'));
+      click(rows()[2].querySelector('button[data-tip="Move up"]'));
       expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['one', 'four', 'two', 'three', 'five']);
-      click(rows()[1].querySelector('.lm-eye')); // "four", now second
+      click(rows()[1].querySelector('[data-col="eye"]')); // "four", now second
       expect(flags()).toEqual(['one:1', 'four:0', 'two:1', 'three:1', 'five:1']);
-      click(rows()[4].querySelector('button[title="Remove layer"]')); // "five"
-      click(rows()[3].querySelector('.lm-eye')); // "three"
+      click(rows()[4].querySelector('button[data-tip="Remove layer"]')); // "five"
+      click(rows()[3].querySelector('[data-col="eye"]')); // "three"
       expect(flags()).toEqual(['one:1', 'four:0', 'two:1', 'three:0']);
     });
 
     it('lands on the layers clicked in quick succession, each once', () => {
-      for (const i of [0, 4, 2, 0, 3, 4]) click(rows()[i].querySelector('.lm-eye'));
+      for (const i of [0, 4, 2, 0, 3, 4]) click(rows()[i].querySelector('[data-col="eye"]'));
       expect(flags()).toEqual(['one:1', 'two:1', 'three:0', 'four:0', 'five:1']);
     });
 
@@ -232,9 +232,9 @@ describe('LayerManager', () => {
       expect(rows()[kinds.findIndex((k) => k.id === 'old')].textContent).not.toContain('Resampled');
     });
 
-    it('show the whole name in the tooltip of a name that is cut', () => {
+    it('have no tooltip at a name, also not at one that is cut (Otto, 4.11.2026)', () => {
       const name = rows()[kinds.length - 1].querySelector<HTMLElement>('[data-col="name"]')!;
-      expect(name.getAttribute('title')).toContain(kinds[kinds.length - 1].name);
+      expect(name.hasAttribute('data-tip')).toBe(false);
     });
   });
 });
@@ -262,16 +262,16 @@ describe('the eye of a layer', () => {
   it('is open for a shown layer and struck through for a hidden one, with a drawing and no text glyph', () => {
     expect(eye('shown').querySelector('svg')).not.toBeNull();
     expect(eye('shown').querySelector('svg.lucide-eye')).not.toBeNull();
-    expect(eye('shown').classList.contains('off')).toBe(false);
+    expect(eye('shown').classList.contains('off')).toBe(false); // no colour for "hidden": the crossed eye says it
     expect(eye('hidden').querySelector('svg.lucide-eye-off')).not.toBeNull();
-    expect(eye('hidden').classList.contains('off')).toBe(true);
+    expect(eye('hidden').classList.contains('off')).toBe(false);
     expect(eye('shown').textContent).toBe('');
   });
 
   it('says "Hide layer" while shown and "Show layer" while hidden', () => {
-    expect(eye('shown').getAttribute('title')).toBe(HIDE_LAYER_TIP);
+    expect(eye('shown').getAttribute('data-tip')).toBe(HIDE_LAYER_TIP);
     expect(eye('shown').getAttribute('aria-label')).toBe(HIDE_LAYER_TIP);
-    expect(eye('hidden').getAttribute('title')).toBe(SHOW_LAYER_TIP);
+    expect(eye('hidden').getAttribute('data-tip')).toBe(SHOW_LAYER_TIP);
     expect(eye('shown').getAttribute('aria-pressed')).toBe('true');
     expect(eye('hidden').getAttribute('aria-pressed')).toBe('false');
   });
@@ -279,11 +279,11 @@ describe('the eye of a layer', () => {
   it('switches the layer with a click, and the eye follows', () => {
     act(() => eye('shown').click());
     expect(useAppStore.getState().layers.map((l) => l.visible)).toEqual([false, false]);
-    expect(eye('shown').getAttribute('title')).toBe(SHOW_LAYER_TIP);
+    expect(eye('shown').getAttribute('data-tip')).toBe(SHOW_LAYER_TIP);
     expect(eye('shown').querySelector('svg.lucide-eye-off')).not.toBeNull();
     act(() => eye('hidden').click());
     expect(useAppStore.getState().layers.map((l) => l.visible)).toEqual([false, true]);
-    expect(eye('hidden').getAttribute('title')).toBe(HIDE_LAYER_TIP);
+    expect(eye('hidden').getAttribute('data-tip')).toBe(HIDE_LAYER_TIP);
   });
 });
 
@@ -322,7 +322,7 @@ describe('the result layer of a deleted job', () => {
     expect(locked.classList.contains('locked')).toBe(true);
     expect(free.classList.contains('locked')).toBe(false);
     const eye = locked.querySelector<HTMLElement>('[data-col="eye"]')!;
-    expect(eye.getAttribute('title')).toBe(DELETED_LAYER_TIP);
+    expect(eye.getAttribute('data-tip')).toBe(DELETED_LAYER_TIP);
     expect(eye.getAttribute('aria-disabled')).toBe('true');
     expect(DELETED_LAYER_TIP).toBe('Job deleted: restore it to show it');
     expect(locked.querySelector('[data-col="opacity"]')?.hasAttribute('disabled')).toBe(true);
@@ -337,15 +337,15 @@ describe('the result layer of a deleted job', () => {
     deleteJobAt(1, NOW + DAY);
     expect(lockedWithoutReason(container)).toEqual([]);
     const [first, last] = rows();
-    expect(first.querySelector('[data-col="up"]')?.getAttribute('title')).toBe('Already at the top');
-    expect(last.querySelector('[data-col="down"]')?.getAttribute('title')).toBe('Already at the bottom');
-    expect(first.querySelector('[data-col="rename"]')?.getAttribute('title')).toBe('Job deleted: restore it first');
+    expect(first.querySelector('[data-col="up"]')?.getAttribute('data-tip')).toBe('Already at the top');
+    expect(last.querySelector('[data-col="down"]')?.getAttribute('data-tip')).toBe('Already at the bottom');
+    expect(first.querySelector('[data-col="rename"]')?.getAttribute('data-tip')).toBe('Job deleted: restore it first');
   });
 
   it('finds a locked control without a reason (counter-check of the rule)', () => {
     const probe = document.createElement('div');
-    probe.innerHTML = '<button disabled>Find</button><button disabled title="Find">Find</button><button disabled title="Type a place name first">Find</button>';
-    expect(lockedWithoutReason(probe)).toEqual(['Find', 'Find']);
+    probe.innerHTML = '<button disabled>Find</button><button disabled data-tip="Find">Find</button><button disabled data-tip="Type a place name first">Find</button><button disabled title="Type a place name first">Find</button>';
+    expect(lockedWithoutReason(probe)).toEqual(['Find', 'Find', 'Find']);
   });
 
   it('keeps its eleven places', () => {
@@ -370,7 +370,7 @@ describe('the result layer of a deleted job', () => {
     expect(layer.result?.deleted).toBe(false);
     expect(layer.visible).toBe(true);
     expect(rows()[0].classList.contains('locked')).toBe(false);
-    expect(rows()[0].querySelector('[data-col="eye"]')?.getAttribute('title')).toBe('Hide layer');
+    expect(rows()[0].querySelector('[data-col="eye"]')?.getAttribute('data-tip')).toBe('Hide layer');
   });
 
   it('goes from the list when the day is over, on the minute and not before', () => {

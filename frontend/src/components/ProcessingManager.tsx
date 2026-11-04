@@ -93,11 +93,11 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
       <button
         type="button"
         ref={button}
-        className="pm-icon"
+        className="icon-btn pm-icon"
         aria-haspopup="menu"
         aria-expanded={mode !== 'closed'}
         aria-label={`Actions for ${name}`}
-        title="Actions"
+        data-tip="Actions"
         onClick={() => onMode(mode === 'closed' ? 'menu' : 'closed')}
       >
         <EllipsisIcon />
@@ -293,7 +293,7 @@ function Meter({ state, progress }: { state: JobState; progress?: number }) {
 // The restore icon at the place of the download: the deleted job comes back. Its tooltip says until when that works.
 function RestoreButton({ name, until, busy, onRestore }: { name: string; until: string; busy: boolean; onRestore: () => void }) {
   return (
-    <button type="button" className="pm-icon" disabled={busy} aria-label={`Restore ${name}`} title={`Restore (possible until ${formatUntil(until)})`} onClick={onRestore}>
+    <button type="button" className="icon-btn pm-icon" disabled={busy} aria-label={`Restore ${name}`} data-tip={`Restore (possible until ${formatUntil(until)})`} onClick={onRestore}>
       <ArchiveRestoreIcon />
     </button>
   );
@@ -304,7 +304,7 @@ function RestoreButton({ name, until, busy, onRestore }: { name: string; until: 
 export function RetryButton({ offered, name, tip, busy, onRetry }: { offered: boolean; name: string; tip: string; busy: boolean; onRetry: () => void }) {
   if (!offered) return <span className="pm-icon" aria-hidden="true" />;
   return (
-    <button type="button" className="pm-icon" disabled={busy} aria-label={`${tip}: ${name}`} title={tip} onClick={onRetry}>
+    <button type="button" className="icon-btn pm-icon" disabled={busy} aria-label={`${tip}: ${name}`} data-tip={tip} onClick={onRetry}>
       <RetryIcon />
     </button>
   );
@@ -321,14 +321,14 @@ function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
   if (state.key === 'deleted') {
     const day = goneDay(job);
     return (
-      <span className="pm-until" title={day}>
+      <span className="pm-until" data-tip={day}>
         {formatShortDate(day)}
       </span>
     );
   }
   if (state.key === 'cancelled' || state.key === 'unavailable') return null;
   return (
-    <span className="pm-until" title={job.expires}>
+    <span className="pm-until" data-tip={job.expires}>
       {formatShortDate(job.expires)}
     </span>
   );
@@ -338,7 +338,7 @@ function UntilText({ job, state }: { job: JobEntry; state: JobState }) {
 // empty name is not taken.
 function RenameButton({ what, name, onRename }: { what: 'job' | 'batch'; name: string; onRename: () => void }) {
   return (
-    <button type="button" className="pm-icon pm-edit" data-name={name} title={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
+    <button type="button" className="icon-btn quiet pm-icon pm-edit" data-name={name} data-tip={`Rename ${what}`} aria-label={`Rename ${what}`} onClick={onRename}>
       <PencilIcon size={14} />
     </button>
   );
@@ -354,13 +354,13 @@ function AddToLayers({ job, name }: { job: JobEntry; name: string }) {
   if (isLayer) {
     // `aria-disabled`, not `disabled`: the symbol stays reachable by keyboard, and so does the reason.
     return (
-      <button type="button" className="pm-icon has-tip" aria-disabled="true" data-tip={ALREADY_A_LAYER_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`}>
+      <button type="button" className="icon-btn pm-icon has-tip" aria-disabled="true" data-tip={ALREADY_A_LAYER_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`}>
         <PlusIcon />
       </button>
     );
   }
   return (
-    <button type="button" className="pm-icon" title={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
+    <button type="button" className="icon-btn pm-icon" data-tip={ADD_TO_LAYERS_TIP} aria-label={`${ADD_TO_LAYERS_TIP}: ${name}`} onClick={() => void showOnMap(job.jobID)}>
       <PlusIcon />
     </button>
   );
@@ -426,7 +426,7 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
           <button
             type="button"
             className="pm-open"
-            title={title}
+            data-tip={title}
             onClick={(e) => {
               e.currentTarget.focus();
               open(job.jobID);
@@ -436,7 +436,7 @@ function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; 
           </button>
         )}
         <span className={`pm-meta ${state.key}`}>
-          <span className="pm-state" title={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
+          <span className="pm-state" data-tip={state.key === 'unavailable' ? UNAVAILABLE_TIP : undefined}>
             {state.text}
           </span>
           <UntilText job={job} state={state} />
@@ -539,11 +539,11 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
       <div className="pm-line" ref={line}>
         <button
           type="button"
-          className="pm-icon pm-chevron"
+          className="icon-btn pm-icon pm-chevron"
           aria-expanded={expanded}
           aria-controls={listId}
           aria-label={expanded ? `Fold up ${batch.title}` : `Show the parts of ${batch.title}`}
-          title={expanded ? 'Fold up' : 'Show the parts'}
+          data-tip={expanded ? 'Fold up' : 'Show the parts'}
           onClick={() => setExpanded(!expanded)}
         >
           {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
@@ -563,7 +563,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
           <button
             type="button"
             className="pm-open"
-            title={batch.title}
+            data-tip={batch.title}
             onClick={(e) => {
               e.currentTarget.focus();
               setExpanded(!expanded);
@@ -575,17 +575,17 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
         <span className={`pm-meta${running ? ' running' : ''}`}>
           <span className="pm-state">{batchSummary(count)}</span>
           {restoreUntil ? (
-            <span className="pm-until" title={restoreUntil}>
+            <span className="pm-until" data-tip={restoreUntil}>
               {formatShortDate(restoreUntil)}
             </span>
           ) : count.deleted === parts.length && deletedDay ? (
-            <span className="pm-until" title={deletedDay}>
+            <span className="pm-until" data-tip={deletedDay}>
               {formatShortDate(deletedDay)}
             </span>
           ) : (
             count.expires &&
             count.deleted < parts.length && (
-              <span className="pm-until" title={count.expires}>
+              <span className="pm-until" data-tip={count.expires}>
                 {formatShortDate(count.expires)}
               </span>
             )
@@ -688,11 +688,11 @@ function FoldButton({ name, listId, collapsed, onToggle, count }: { name: string
   return (
     <button
       type="button"
-      className="pm-icon pm-fold"
+      className="icon-btn pm-icon pm-fold"
       aria-expanded={!collapsed}
       aria-controls={listId}
       aria-label={collapsed ? `Show ${name}, ${count}` : `Fold up ${name}`}
-      title={collapsed ? 'Show the group' : 'Fold up the group'}
+      data-tip={collapsed ? 'Show the group' : 'Fold up the group'}
       onClick={onToggle}
     >
       {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
@@ -709,11 +709,11 @@ function GroupMenu({ group, empty, onRename, anchor }: { group: ShelfGroup; empt
     <div className="pm-menu">
       <button
         type="button"
-        className="pm-icon"
+        className="icon-btn pm-icon"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Actions for ${group.name}`}
-        title="Actions"
+        data-tip="Actions"
         onClick={() => setOpen(!open)}
       >
         <EllipsisIcon />
@@ -736,7 +736,7 @@ function GroupMenu({ group, empty, onRename, anchor }: { group: ShelfGroup; empt
             type="button"
             role="menuitem"
             aria-disabled={!empty}
-            title={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
+            data-tip={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
             aria-label={empty ? `Remove ${group.name}` : `Remove ${group.name}: ${GROUP_NOT_EMPTY_TIP}`}
             onClick={() => {
               if (!empty) return;
@@ -951,7 +951,7 @@ export default function ProcessingManager() {
             </button>
           ))}
         </div>
-        <button type="button" className="ghost-btn" title="Make a group to put jobs in" onClick={() => setNaming(true)}>
+        <button type="button" className="btn" data-tip="Make a group to put jobs in" onClick={() => setNaming(true)}>
           <PlusIcon lead />New group
         </button>
       </div>

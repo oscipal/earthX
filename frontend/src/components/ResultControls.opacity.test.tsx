@@ -15,6 +15,7 @@ import { useAppStore } from '../store';
 import LayerManager from './LayerManager';
 import Inspector from './Inspector';
 import ResultControls from './ResultControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -63,7 +64,7 @@ describe('the opacity slider in the settings of a layer', () => {
     expect(inSettings.value).toBe(inRow.value);
     expect(inSettings.value).toBe('1');
     expect(inSettings.max).toBe(inRow.max);
-    expect(inSettings.title).toBe('Opacity 100%');
+    expect(tipOf(inSettings)).toBe('Opacity 100%');
   });
 
   it('is moved to 1 by the keyboard and the store keeps exactly 1 (the way Otto reached it)', () => {
@@ -90,7 +91,7 @@ describe('the opacity slider in the settings of a layer', () => {
   });
 
   it('keeps a visible focus ring now that the frame is gone', () => {
-    expect(CSS).toMatch(/\.vc-field input:focus-visible[^{]*\{[^}]*outline: 2px solid var\(--focus\)/u);
+    expect(CSS).toMatch(/:is\([^)]*\binput\b[^)]*\):focus-visible \{[^}]*outline: 2px solid var\(--focus\)/u);
   });
 });
 

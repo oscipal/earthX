@@ -264,7 +264,7 @@ async function checkLayer(browser, theme, viewport) {
   // A field that does not apply to the choice keeps its place and is locked with its reason (NM4-54 part 5); RGB has no colormap.
   const colormaps = await page.$$eval('.result-controls .vc-field', (fields) => fields
     .filter((f) => f.querySelector('span')?.textContent === 'Colormap')
-    .map((f) => ({ locked: f.querySelector('select')?.disabled ?? null, title: f.title, shown: f.querySelector('select')?.selectedOptions[0]?.textContent ?? null })));
+    .map((f) => ({ locked: f.querySelector('select')?.disabled ?? null, title: f.getAttribute('data-tip'), shown: f.querySelector('select')?.selectedOptions[0]?.textContent ?? null })));
   if (colormaps.length !== 1 || colormaps[0].locked !== true || !colormaps[0].title || colormaps[0].shown !== '— none —') problems.push(`the colormap of RGB is not one locked field "— none —" with its reason (${JSON.stringify(colormaps)})`);
   const view = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
@@ -287,7 +287,7 @@ async function checkLayer(browser, theme, viewport) {
   await page.selectOption('.result-controls select[aria-label="green range unit"]', 'value');
   // A channel that cannot be drawn locks "Apply" and "Save" with its letter and reason, and its fields are marked (Otto, 4.11.2026).
   await page.fill('.result-controls input[type=number] >> nth=3', '0.01');
-  const locked = await page.$$eval('.result-controls .vc-apply, .result-controls .vc-save', (b) => b.map((x) => `${x.getAttribute('aria-disabled')}|${x.title}`));
+  const locked = await page.$$eval('.result-controls .vc-apply, .result-controls .vc-save', (b) => b.map((x) => `${x.getAttribute('aria-disabled')}|${x.getAttribute('data-tip')}`));
   if (locked.join() !== 'true|G: vmin must be below vmax,true|G: vmin must be below vmax') problems.push(`a wrong channel says ${locked}`);
   const marked = await page.$$eval('.result-controls input[aria-invalid=true]', (i) => i.length);
   if (marked !== 2) problems.push(`${marked} fields are marked, not the 2 of green`);

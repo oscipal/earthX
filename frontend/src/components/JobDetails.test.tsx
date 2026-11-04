@@ -16,6 +16,7 @@ import { useAppStore } from '../store';
 import JobDetails, { NO_COPY_TIP } from './JobDetails';
 import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -232,7 +233,7 @@ describe('"Run again"', () => {
     const fetchMock = stubExecution(() => new Response(JSON.stringify(accepted(jobId(9))), { status: 201, headers: { 'Content-Type': 'application/json' } }));
     show(failedJob());
     const symbol = button('Run again')!;
-    expect(symbol.title).toBe('Run again');
+    expect(tipOf(symbol)).toBe('Run again');
     await act(async () => {
       symbol.click();
       symbol.click();

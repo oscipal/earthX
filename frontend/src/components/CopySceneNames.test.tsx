@@ -8,6 +8,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CopySceneNames from './CopySceneNames';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -47,12 +48,12 @@ describe('the line', () => {
   it('says "Copy original scene name", and the tooltip for one scene says what it copies', () => {
     render(['S2A_1']);
     expect(link()!.textContent).toBe('Copy original scene name');
-    expect(link()!.title).toBe('Copy the name of the original scene');
+    expect(tipOf(link()!)).toBe('Copy the name of the original scene');
   });
 
   it('has "n scenes" as the tooltip for several', () => {
     render(['S2A_1', 'S2A_2', 'S2B_1']);
-    expect(link()!.title).toBe('3 scenes');
+    expect(tipOf(link()!)).toBe('3 scenes');
   });
 
   it('is not there without scenes: the order is gone, or there is no scene', () => {

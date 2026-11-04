@@ -166,7 +166,7 @@ async function run(browser, { theme, viewport }) {
   // The head of the settings bar: title, mark, eye and x in the first row; the dataset and the date with the arrows in the second.
   const order = await page.evaluate(() => [...document.querySelector('.vc-head').children].map((row) => [...row.children].map((el) => el.className.split(' ')[0]).join()));
   // Row 2 ends with "Copy original scene name" (UI-03e, Otto, 3.11.2026).
-  if (order.join(' | ') !== 'vc-title,pp-badge,vc-eye,close-x | vc-dataset,vc-stepper,vc-scene-names') problems.push(`the head holds ${order.join(' | ')}`);
+  if (order.join(' | ') !== 'vc-title,pp-badge,icon-btn,close-x | vc-dataset,vc-stepper,vc-scene-names') problems.push(`the head holds ${order.join(' | ')}`);
   if ((await page.getByRole('button', { name: 'Apply to all' }).count()) !== 1) problems.push('"Apply to all" is not there');
   const colormapBox = () => page.evaluate(() => {
     const label = [...document.querySelectorAll('.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap');
@@ -208,7 +208,7 @@ async function run(browser, { theme, viewport }) {
     if ((await page.getByRole('button', { name }).count()) !== 0) problems.push(`"${name}" is there for a dataset of one image`);
   }
   if ((await page.getByRole('button', { name: 'Apply to all' }).getAttribute('aria-disabled')) !== 'true') problems.push('"Apply to all" is not locked for a dataset of one image');
-  if (!(await page.getByRole('button', { name: 'Apply to all' }).getAttribute('title')).includes('only one image')) problems.push('"Apply to all" does not say why it is locked');
+  if (!(await page.getByRole('button', { name: 'Apply to all' }).getAttribute('data-tip')).includes('only one image')) problems.push('"Apply to all" does not say why it is locked');
   await page.screenshot({ path: path.join(OUT, `dem ${name}.png`) });
   await page.selectOption('select[aria-label="Dataset"]', 's2');
   await expectColour('back to the first overpass of the dataset', 'S2_A');

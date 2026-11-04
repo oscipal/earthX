@@ -18,6 +18,7 @@ import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import DownloadDialog from './DownloadDialog';
 import { TOO_MANY_SCENES } from './MosaicJobs';
+import { tipOf } from '../fixtures/tips';
 
 // What the page would do to download the files; here nothing, and the source is not asked.
 vi.mock('../originalsClient', () => ({
@@ -315,7 +316,7 @@ describe('beside the download (Zusatz 1a, NM4-33)', () => {
     open('catalog');
     await show();
     expect(buttons(MERGED)[0].disabled).toBe(true);
-    expect(buttons(MERGED)[0].title).toContain('licence does not permit processing');
+    expect(tipOf(buttons(MERGED)[0])).toContain('licence does not permit processing');
     expect(container.textContent).not.toContain('Contains modified');
     await press('Download');
     expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
@@ -452,7 +453,7 @@ describe('Merged per pass (job)', () => {
     useAppStore.setState({ downloadPasses: [{ label: '2026-07-03', items: many }] });
     await showMerged();
     expect(buttons(START)[0].disabled).toBe(true);
-    expect(buttons(START)[0].title).toBe(TOO_MANY_SCENES);
+    expect(tipOf(buttons(START)[0])).toBe(TOO_MANY_SCENES);
     expect(container.querySelector('.dialog-mosaics')?.textContent).toContain(TOO_MANY_SCENES);
     expect(placed()).toHaveLength(0);
   });

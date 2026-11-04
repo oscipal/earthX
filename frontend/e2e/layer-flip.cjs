@@ -137,7 +137,7 @@ async function check(browser, { theme, viewport }) {
   await expectColour('before', 'red');
   stage = 'toggle on';
   const toggle = page.locator('.lm-flip');
-  if ((await toggle.getAttribute('title')) !== 'Flip through layers (Up and Down or the mouse wheel over the list, Esc to stop)') problems.push(`tooltip: ${await toggle.getAttribute('title')}`);
+  if ((await toggle.getAttribute('data-tip')) !== 'Flip through layers (Up and Down or the mouse wheel over the list, Esc to stop)') problems.push(`tooltip: ${await toggle.getAttribute('data-tip')}`);
   await toggle.click();
   if ((await toggle.getAttribute('aria-pressed')) !== 'true') problems.push('the toggle does not show that it is on');
   await expectColour('on, first layer', 'red');
@@ -182,11 +182,11 @@ async function check(browser, { theme, viewport }) {
 
   stage = 'eye';
   // A layer that is switched off is passed by.
-  await page.locator('.layer-row .lm-eye').nth(2).click();
+  await page.locator('.layer-row [data-col="eye"]').nth(2).click();
   await page.locator('.layer-row .lm-name').nth(1).click();
   await press('ArrowDown');
   if ((await store(page, 's.flipLayerId')) !== 'green') problems.push(`↓ went to the layer that is switched off: ${await store(page, 's.flipLayerId')}`);
-  await page.locator('.layer-row .lm-eye').nth(2).click();
+  await page.locator('.layer-row [data-col="eye"]').nth(2).click();
 
   stage = 'esc';
   // Esc ends it.

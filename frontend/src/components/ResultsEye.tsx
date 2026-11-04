@@ -1,5 +1,5 @@
 import { useAppStore } from '../store';
-import { EyeIcon, EyeOffIcon } from './icons';
+import EyeButton from './EyeButton';
 
 export const HIDE_RESULTS_TIP = 'Hide search results on the map';
 export const SHOW_RESULTS_TIP = 'Show search results on the map';
@@ -11,9 +11,5 @@ export default function ResultsEye() {
   const on = useAppStore((s) => s.resultsOnMap);
   const toggle = useAppStore((s) => s.toggleResultsOnMap);
   const tip = on ? HIDE_RESULTS_TIP : SHOW_RESULTS_TIP;
-  return (
-    <button type="button" className={`lm-eye${on ? '' : ' off'}`} data-col="eye" title={tip} aria-label={tip} aria-pressed={on} onClick={() => toggle()}>
-      {on ? <EyeIcon size={14} /> : <EyeOffIcon size={14} />}
-    </button>
-  );
+  return <EyeButton row col="eye" shown={on} tip={tip} onToggle={() => toggle()} />;
 }

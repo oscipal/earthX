@@ -59,10 +59,10 @@ export default function ResamplingDialog({ parts, onContinue, onCancel }: Props)
           ))}
         </div>
         <div className="dialog-actions">
-          <button type="button" className="lm-btn" ref={cancel} onClick={onCancel}>
+          <button type="button" className="btn" ref={cancel} onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="lm-btn primary" ref={proceed} onClick={onContinue}>
+          <button type="button" className="btn primary" ref={proceed} onClick={onContinue}>
             Continue
           </button>
         </div>

@@ -12,6 +12,7 @@ import { jobEntry, NOW } from './fixtures/jobEntries';
 import type { MapLayer } from './layers';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
+import tokens from './tokens.css?raw';
 
 vi.mock('./components/MapView', () => ({ default: () => null }));
 
@@ -79,6 +80,16 @@ describe('the symbols', () => {
 
   it('have an icon that a screen reader skips', () => {
     for (const svg of rail().querySelectorAll('svg')) expect(svg.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('draw their icons 20 px large, the size of the token --icon-size-rail (Otto, 4.11.2026)', () => {
+    const icons = [...rail().querySelectorAll('svg')];
+    expect(icons).toHaveLength(4);
+    for (const svg of icons) {
+      expect(svg.getAttribute('width')).toBe('20');
+      expect(svg.getAttribute('height')).toBe('20');
+    }
+    expect(tokens).toMatch(/--icon-size-rail:\s*20px/u);
   });
 
   it('count the layers and the jobs that run, and the count goes into the name', () => {

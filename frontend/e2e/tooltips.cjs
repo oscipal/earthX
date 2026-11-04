@@ -70,6 +70,23 @@ async function check(browser, { theme, viewport }) {
   await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: null })); // in a narrow window the panel covers the view
   if ((await page.locator('.result-controls .vc-head .tip').count()) > 0) await probe('view-bar', page.locator('.result-controls .vc-head .tip').first());
 
+  // A locked button takes no pointer events (UI-04 part 3a), and its reason shows all the same: found by the place of the pointer.
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: 'layers' }));
+  await page.waitForSelector('.layer-row [data-col="up"]');
+  const locked = page.locator('.layer-row').first().locator('[data-col="up"]');
+  if (!(await locked.isDisabled())) problems.push('locked: the first "up" is not locked');
+  const lockedBox = await locked.boundingBox();
+  await page.mouse.move(lockedBox.x + lockedBox.width / 2, lockedBox.y + lockedBox.height / 2);
+  await page.waitForTimeout(100);
+  const said = await page.locator('.tip-layer').textContent({ timeout: 1000 }).catch(() => null);
+  if (said !== 'Already at the top') problems.push(`locked: the reason shows as ${JSON.stringify(said)}`);
+  await page.mouse.move(0, win.height - 1);
+  await page.waitForTimeout(100);
+  if ((await page.locator('.tip-layer').count()) !== 0) problems.push('locked: the reason stays when the pointer has left');
+  // No element carries a `title` any more (a second tooltip of the browser), but an option of a list and the controls of MapLibre itself.
+  const titled = await page.evaluate(() => [...document.querySelectorAll('[title]')].filter((el) => el.tagName !== 'OPTION' && !el.closest('.maplibregl-ctrl')).map((el) => el.tagName));
+  if (titled.length > 0) problems.push(`title on ${titled.join(', ')}`);
+
   await context.close();
   return { name, problems };
 }

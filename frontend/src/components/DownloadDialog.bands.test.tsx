@@ -131,7 +131,7 @@ describe('the list of bands', () => {
     const red = container.querySelectorAll('.dialog-band')[1];
     expect(red.textContent).toContain('red · 0.665 µm');
     expect(red.querySelector('.dialog-band-res')?.textContent).toBe('10 m');
-    expect(red.getAttribute('title')).toBe('a_red');
+    expect(red.getAttribute('data-tip')).toBe('a_red');
   });
 
   it('has the spectral bands and the layer of the mask ticked, and a band with no wavelength not', async () => {

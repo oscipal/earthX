@@ -19,6 +19,7 @@ import { useAppStore } from '../store';
 import JobDetails from './JobDetails';
 import LayerManager from './LayerManager';
 import ResultControls from './ResultControls';
+import { tipOf } from '../fixtures/tips';
 
 vi.mock('./MapView', () => ({ default: () => null }));
 
@@ -193,7 +194,7 @@ describe('a click on a result layer', () => {
 
     click(container.querySelector('.layer-row .lm-name'));
     expect(useAppStore.getState().resultViewLayerId).toBe(layers()[0].id);
-    click(container.querySelector('button[title="Remove layer"]'));
+    click(container.querySelector('button[data-tip="Remove layer"]'));
     expect(useAppStore.getState().resultViewLayerId).toBeNull();
 
     await showOnMap();
@@ -269,7 +270,7 @@ describe('the range of a result layer', () => {
     type(field('vmin'), '50');
     click(button('Apply'));
     click(button('Save'));
-    click(container.querySelector('button[title="Remove layer"]'));
+    click(container.querySelector('button[data-tip="Remove layer"]'));
     expect(layers()).toEqual([]);
     await showOnMap();
     expect(urlOf()).toContain('colormap_name=viridis&rescale=50%2C1900');
@@ -279,7 +280,7 @@ describe('the range of a result layer', () => {
     await openView();
     type(field('vmin'), '50');
     click(button('Apply'));
-    click(container.querySelector('button[title="Remove layer"]'));
+    click(container.querySelector('button[data-tip="Remove layer"]'));
     await showOnMap();
     expect(urlOf()).toContain('rescale=180%2C1900');
   });
@@ -394,16 +395,16 @@ describe('"Apply" and "Save" of a result layer', () => {
     const [auto, apply, save] = [...container.querySelector('.result-controls .vc-buttons')!.children] as HTMLElement[];
     const format = (el: HTMLElement) => [...el.classList].filter((c) => !c.startsWith('vc-')).sort();
     expect(format(apply)).toEqual(format(auto));
-    expect(format(apply)).toEqual(['ghost-btn']);
-    expect(format(save)).toEqual(['primary-btn']);
+    expect(format(apply)).toEqual(['btn']);
+    expect(format(save)).toEqual(['btn', 'primary']);
   });
 
   it('are both locked while the fields hold what the layer draws and is saved with, with the reason as the tooltip', async () => {
     await openView();
     expect(disabled('Apply')).toBe(true);
     expect(disabled('Save')).toBe(true);
-    expect(button('Apply')?.title).toBe('Nothing to apply: the map shows these values');
-    expect(button('Save')?.title).toBe('Nothing to save: the layer is saved as it is drawn');
+    expect(tipOf(button('Apply'))).toBe('Nothing to apply: the map shows these values');
+    expect(tipOf(button('Save'))).toBe('Nothing to save: the layer is saved as it is drawn');
   });
 
   it('are both open once something is typed, and do nothing when they are locked and clicked', async () => {
@@ -414,7 +415,7 @@ describe('"Apply" and "Save" of a result layer', () => {
     type(field('vmax'), '2000');
     expect(disabled('Apply')).toBe(false);
     expect(disabled('Save')).toBe(false);
-    expect(button('Apply')?.title).not.toMatch(/Nothing/u);
+    expect(tipOf(button('Apply'))).not.toMatch(/Nothing/u);
   });
 
   it('lock "Apply" after it was used, and keep "Save" open until the look is saved', async () => {
@@ -541,7 +542,7 @@ describe('"Copy original scene name" of a result layer', () => {
   it('copies the scenes of the order, one to a line, from the copy of the order the job keeps', async () => {
     useProcessingStore.setState({ jobs: [entry({ order: ordered([['S2A_1', 'S2A_2'], ['S2B_1']]) })] });
     await openView();
-    expect(copyLine()!.title).toBe('3 scenes');
+    expect(tipOf(copyLine()!)).toBe('3 scenes');
     const write = vi.fn(async () => undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText: write } });
     await act(async () => {
@@ -558,7 +559,7 @@ describe('"Copy original scene name" of a result layer', () => {
     expect(head.children).toHaveLength(2);
     expect(copyLine()!.parentElement).toBe(head.children[1]);
     expect(head.children[1].classList.contains('insp-row2')).toBe(true);
-    expect(copyLine()!.title).toBe('Copy the name of the original scene');
+    expect(tipOf(copyLine()!)).toBe('Copy the name of the original scene');
   });
 
   it('is not there where the copy of the order is gone', async () => {

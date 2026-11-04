@@ -18,14 +18,14 @@ export default function DownloadAll({ offer, busy, onRun }: { offer: BundleOffer
   if (offer.kind === 'locked' || busy) {
     const reason = offer.kind === 'locked' ? offer.reason : 'Preparing the ZIP…';
     return (
-      <button type="button" className="pm-icon has-tip" aria-disabled="true" data-tip={reason} aria-label={`${BUNDLE_LABEL}: ${reason}`}>
+      <button type="button" className="icon-btn pm-icon has-tip" aria-disabled="true" data-tip={reason} aria-label={`${BUNDLE_LABEL}: ${reason}`}>
         <DownloadIcon />
       </button>
     );
   }
   const note = offer.leftOut > 0 ? ` ${offer.leftOut} of ${offer.jobIds.length} parts are left out; MISSING.txt in the ZIP says why.` : '';
   return (
-    <button type="button" className="pm-icon has-tip" data-tip={`${BUNDLE_LABEL}.${note}`} aria-label={`${BUNDLE_LABEL}.${note}`} onClick={onRun}>
+    <button type="button" className="icon-btn pm-icon has-tip" data-tip={`${BUNDLE_LABEL}.${note}`} aria-label={`${BUNDLE_LABEL}.${note}`} onClick={onRun}>
       <DownloadIcon />
     </button>
   );

@@ -183,10 +183,10 @@ function PlaceSearchField() {
         />
         <button
           type="button"
-          className="tool-btn ghost"
+          className="btn"
           aria-busy={searching}
           disabled={searching || !query.trim()}
-          title={searching ? 'Looking for the place…' : !query.trim() ? 'Type a place name first' : 'Find the place on the map'}
+          data-tip={searching ? 'Looking for the place…' : !query.trim() ? 'Type a place name first' : 'Find the place on the map'}
           onClick={() => void runSearch()}
         >
           {searching ? 'Finding…' : 'Find'}
@@ -200,7 +200,7 @@ function PlaceSearchField() {
               key={`${r.display_name}-${i}`}
               type="button"
               className="place-result"
-              title={r.outline_simplified ? 'Outline simplified' : undefined}
+              data-tip={r.outline_simplified ? 'Outline simplified' : undefined}
               onClick={() => choose(r)}
             >
               <span className="place-result-name">{r.name}</span>
@@ -273,9 +273,9 @@ function AoiExtras() {
   return (
     <div className="aoi-extras">
       <label
-        className="tool-btn ghost"
+        className="btn"
         aria-busy={uploading}
-        title="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
+        data-tip="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
       >
         <input
           type="file"
@@ -290,9 +290,9 @@ function AoiExtras() {
       </label>
       <button
         type="button"
-        className="tool-btn ghost"
+        className="btn"
         disabled={!lastAoi}
-        title={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
+        data-tip={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
         onClick={() => applyLastAoi()}
       >
         <span>
@@ -366,7 +366,7 @@ function MultiSelectToggle() {
   const setMultiSelect = useAppStore((s) => s.setMultiSelect);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   return (
-    <label className="multi-select-toggle" title="Choose several datasets and search them together">
+    <label className="multi-select-toggle" data-tip="Choose several datasets and search them together">
       <input type="checkbox" checked={multiSelect} disabled={busy} onChange={(e) => setMultiSelect(e.target.checked)} />
       Select multiple datasets
     </label>
@@ -390,18 +390,13 @@ function DatasetPicker() {
       <div className="dataset-list" role="group" aria-label="Datasets">
         {datasets.map((d) => {
           const picked = selectedDatasetIds.includes(d.id);
-          const maturity = d.viewable ? maturityNote(d.collection) : null;
           const label = d.viewable ? maturityLabel(d.collection) : null;
           return (
             <button
               key={d.id}
               type="button"
-              className={`dataset-toggle${picked ? ' active' : ''}`}
-              title={
-                d.viewable
-                  ? [d.title, maturity, d.collection.description].filter(Boolean).join(' — ')
-                  : `${d.title} — not viewable: ${d.reason}`
-              }
+              className="btn dataset-toggle"
+              data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}
               aria-pressed={picked}
               disabled={!d.viewable || busy}
               onClick={() => toggle(d.id)}
@@ -442,7 +437,7 @@ function CoverageHistogram({
             key={bucket.t}
             className={`histogram-bar${inRange ? ' in-range' : ''}`}
             style={{ height: `${Math.max(2, (bucket.n / max) * 100)}%` }}
-            title={`${month}: ${bucket.n}`}
+            data-tip={`${month}: ${bucket.n}`}
           />
         );
       })}
@@ -530,12 +525,12 @@ function CoverageButton() {
       <button
         ref={buttonRef}
         type="button"
-        className={`coverage-btn${showCoverage ? ' active' : ''}`}
+        className="btn"
         aria-pressed={showCoverage}
         aria-haspopup={picked.length > 1 ? 'menu' : undefined}
         aria-expanded={picked.length > 1 ? choosing : undefined}
         disabled={picked.length === 0}
-        title={
+        data-tip={
           picked.length === 0
             ? 'Choose a dataset to see its coverage'
             : showCoverage
@@ -555,9 +550,9 @@ function CoverageButton() {
       </button>
       <button
         type="button"
-        className="coverage-btn coverage-clear-btn"
+        className="btn"
         disabled={!showCoverage}
-        title={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
+        data-tip={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
         onClick={() => hideCoverage()}
       >
         Hide coverage
@@ -667,7 +662,7 @@ export default function ControlPanel() {
       {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
       <div className="control-footer">
         <AdvancedSearch />
-        <button type="button" className="primary-btn" disabled={!canSearch} title={canSearch ? undefined : (searchBlock ?? undefined)} onClick={search}>
+        <button type="button" className="btn primary" disabled={!canSearch} data-tip={canSearch ? undefined : (searchBlock ?? undefined)} onClick={search}>
           {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
         </button>
 

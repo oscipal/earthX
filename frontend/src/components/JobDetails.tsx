@@ -85,11 +85,11 @@ function Title({ job }: { job: JobEntry }) {
       ) : (
         <>
           <h3 className="pm-title-text">
-            <button type="button" className="pm-title-edit" title="Rename this job" onClick={() => setEditing(true)}>
+            <button type="button" className="pm-title-edit" data-tip="Rename this job" onClick={() => setEditing(true)}>
               {jobLabel(job)}
             </button>
           </h3>
-          <button type="button" className="link-btn" title="Rename this job" aria-label="Rename this job" onClick={() => setEditing(true)}>
+          <button type="button" className="link-btn" data-tip="Rename this job" aria-label="Rename this job" onClick={() => setEditing(true)}>
             <PencilIcon />
           </button>
         </>
@@ -119,7 +119,7 @@ function OpenInPanel({ job }: { job: JobEntry }) {
     <>
       <button
         type="button"
-        className="ghost-btn has-tip"
+        className="btn has-tip"
         aria-disabled={!order || busy}
         data-tip={order ? 'Take the order of this job back into the panel' : NO_COPY_TIP}
         aria-label={order ? undefined : `Open in panel: ${NO_COPY_TIP}`}
@@ -168,13 +168,13 @@ export default function JobDetails() {
           className="pp-grip"
           aria-expanded={!folded}
           aria-label={folded ? 'Show the panel' : 'Fold the panel down'}
-          title={folded ? 'Show the panel' : 'Fold the panel down'}
+          data-tip={folded ? 'Show the panel' : 'Fold the panel down'}
           onClick={() => setFolded(!folded)}
         >
           {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </button>
         <div className="pp-title-row">
-          <button type="button" className="link-btn" title="Back to the order" onClick={back}>
+          <button type="button" className="link-btn" data-tip="Back to the order" onClick={back}>
             <ArrowLeftIcon lead />Order
           </button>
           <CloseButton onClick={close} />
@@ -197,7 +197,7 @@ export default function JobDetails() {
                 job.deletedUntil && (
                   <>
                     <dt>Restore until</dt>
-                    <dd title={job.deletedUntil}>{formatUntil(job.deletedUntil, now)}</dd>
+                    <dd data-tip={job.deletedUntil}>{formatUntil(job.deletedUntil, now)}</dd>
                   </>
                 )
               ) : (
@@ -205,7 +205,7 @@ export default function JobDetails() {
                 state.key !== 'unavailable' && (
                   <>
                     <dt>Expires</dt>
-                    <dd title={job.expires}>{formatUntil(job.expires, now)}</dd>
+                    <dd data-tip={job.expires}>{formatUntil(job.expires, now)}</dd>
                   </>
                 )
               )}
@@ -228,12 +228,12 @@ export default function JobDetails() {
             )}
             {job.order && <Steps order={job.order} />}
             <div className="vc-actions">
-              {state.key === 'finished' && job.archive && <DownloadZip job={job} now={now} label="Download (ZIP)" className="ghost-btn" />}
+              {state.key === 'finished' && job.archive && <DownloadZip job={job} now={now} label="Download (ZIP)" className="btn" />}
               {state.key === 'finished' && job.tiles && (
                 <button
                   type="button"
-                  className="ghost-btn"
-                  title="Draw the result on the map, cut to the area of the job, as a layer"
+                  className="btn"
+                  data-tip="Draw the result on the map, cut to the area of the job, as a layer"
                   onClick={() => void showOnMap(job.jobID)}
                 >
                   <PlusIcon lead />Add to layers
@@ -242,9 +242,9 @@ export default function JobDetails() {
               {active && (
                 <button
                   type="button"
-                  className="ghost-btn"
+                  className="btn"
                   disabled={job.cancelling || !job.status}
-                  title={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
+                  data-tip={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
                   onClick={() => void cancelJob(job.jobID)}
                 >
                   {job.cancelling ? 'Cancelling…' : 'Cancel'}
@@ -253,9 +253,9 @@ export default function JobDetails() {
               {retryable && (
                 <button
                   type="button"
-                  className="ghost-btn"
+                  className="btn"
                   disabled={job.retrying}
-                  title={job.retrying ? 'Starting it again…' : RETRY_TIP}
+                  data-tip={job.retrying ? 'Starting it again…' : RETRY_TIP}
                   aria-label={RETRY_TIP}
                   onClick={() => void retryJob(job.jobID)}
                 >

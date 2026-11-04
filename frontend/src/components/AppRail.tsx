@@ -9,6 +9,7 @@ import { dockPanelId, railButtonId } from '../dock';
 import { useProcessingStore } from '../processingStore';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore, type DockPanel } from '../store';
+import { ICON_SIZES } from './iconSizes';
 import { JobsIcon, LayersIcon, ResultsListIcon, SearchIcon } from './icons';
 
 interface Item {
@@ -18,10 +19,10 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
-  { panel: 'controls', label: 'Search and area', icon: <SearchIcon /> },
-  { panel: 'layers', label: 'Layers', icon: <LayersIcon /> },
-  { panel: 'jobs', label: 'Jobs', icon: <JobsIcon /> },
-  { panel: 'results', label: 'Search results', icon: <ResultsListIcon /> },
+  { panel: 'controls', label: 'Search and area', icon: <SearchIcon size={ICON_SIZES.rail} /> },
+  { panel: 'layers', label: 'Layers', icon: <LayersIcon size={ICON_SIZES.rail} /> },
+  { panel: 'jobs', label: 'Jobs', icon: <JobsIcon size={ICON_SIZES.rail} /> },
+  { panel: 'results', label: 'Search results', icon: <ResultsListIcon size={ICON_SIZES.rail} /> },
 ];
 
 const NO_RESULTS = 'No results yet: run a search first';
@@ -75,7 +76,7 @@ export default function AppRail() {
             ref={(element) => {
               buttons.current[index] = element;
             }}
-            className={`rail-btn has-tip${open ? ' on' : ''}`}
+            className={`icon-btn rail-btn has-tip${open ? ' on' : ''}`}
             data-tip={locked ? NO_RESULTS : item.label}
             data-tip-side="right"
             aria-label={locked ? `${item.label}, ${NO_RESULTS}` : count > 0 ? `${item.label}, ${count}` : item.label}
