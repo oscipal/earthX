@@ -210,7 +210,7 @@
 | Radius | `--radius-xs` 4, `--radius-sm` 6, `--radius-md` 10 px, `--radius-full` Pille |
 
 - Ein Wert dazwischen gibt es nicht; wer einen braucht, nimmt die nächste Stufe (bei Gleichstand die größere: 10 → `--space-3`, 14 → `--space-4`, 8 Radius → `--radius-md`) oder rechnet mit einem Token (`calc(var(--control-height) + var(--space-1))`, z. B. der Platz für den Knopf in einem Feld). **Eine neue Stufe kommt zuerst nach `tokens.css`** und in die Liste in `tokens.test.ts`.
-- Ein Feld für eine Zahl behält `--number-field-width` (80 px: „-0.123456“ mit Rand), auch im schmalsten Fenster; was daneben steht (die Einheit des Bereichs), gibt nach.
+- Ein Feld für eine Zahl behält `--number-field-width` (88 px: „-0.123456“ mit Rand), auch im schmalsten Fenster; was daneben steht (die Einheit des Bereichs), gibt nach.
 - **Test:** `tokens.test.ts` prüft **alle** Regeln (`hardValues` mit `ALL_RULES`), nicht mehr nur eine Liste von Bereichen. Ausnahmen gibt es nicht; ein Maß wie `width`, `height` oder `top` ist kein Abstand und bleibt frei.
 
 **Steuerhöhe:** 28 px; bei Touch und unter 900 px 44 px (`--control-height-touch`).
