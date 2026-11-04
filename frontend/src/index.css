@@ -371,12 +371,6 @@ svg.lucide.icon-lead {
 .vc-dataset {
   min-height: var(--control-height);
 }
-.vc-field select:focus,
-.vc-field input:focus,
-.vc-field textarea:focus,
-.vc-dataset:focus {
-  border-color: var(--accent);
-}
 .vc-num input {
   width: 84px;
 }
@@ -413,8 +407,7 @@ svg.lucide.icon-lead {
 .vc-field.vc-num:has(.vc-unit) input {
   width: 116px;
 }
-.vc-field.vc-num .vc-unit:hover,
-.vc-field.vc-num .vc-unit:focus-visible {
+.vc-field.vc-num .vc-unit:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -1351,8 +1344,7 @@ textarea:autofill {
   text-decoration: underline dotted;
   text-underline-offset: 2px;
 }
-.inspector .vc-scene-names:hover,
-.inspector .vc-scene-names:focus-visible {
+.inspector .vc-scene-names:hover {
   color: var(--text);
 }
 
@@ -1843,16 +1835,8 @@ textarea:autofill {
   font-family: var(--font);
   font-size: 12px;
 }
-.filter-range input[type='text']:focus {
-  border-color: var(--accent);
-  box-shadow: var(--glow);
-}
-.filter-range input[aria-invalid='true'],
-.filter-range input[aria-invalid='true']:focus {
-  border-color: var(--invalid);
-}
-.filter-field .hint-text.error {
-  color: var(--invalid);
+.filter-range input[aria-invalid='true'] {
+  border-color: var(--danger);
 }
 .filter-unit {
   min-width: 1ch;
@@ -2521,6 +2505,8 @@ textarea:autofill {
 .pm-row.dragging {
   opacity: 0.4;
 }
+}
+.pm-line:hover {
 .pm-group {
   min-height: var(--control-height);
 }
@@ -2928,8 +2914,7 @@ button.pm-open:hover {
   overflow-wrap: anywhere;
   cursor: text;
 }
-.pm-title-edit:hover,
-.pm-title-edit:focus-visible {
+.pm-title-edit:hover {
   border-bottom-color: var(--accent);
 }
 .pm-facts {
