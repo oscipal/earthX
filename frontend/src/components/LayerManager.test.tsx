@@ -261,9 +261,9 @@ describe('the eye of a layer', () => {
 
   it('is open for a shown layer and struck through for a hidden one, with a drawing and no text glyph', () => {
     expect(eye('shown').querySelector('svg')).not.toBeNull();
-    expect(eye('shown').querySelectorAll('svg path')).toHaveLength(1);
+    expect(eye('shown').querySelector('svg.lucide-eye')).not.toBeNull();
     expect(eye('shown').classList.contains('off')).toBe(false);
-    expect(eye('hidden').querySelectorAll('svg path')).toHaveLength(2);
+    expect(eye('hidden').querySelector('svg.lucide-eye-off')).not.toBeNull();
     expect(eye('hidden').classList.contains('off')).toBe(true);
     expect(eye('shown').textContent).toBe('');
   });
@@ -280,7 +280,7 @@ describe('the eye of a layer', () => {
     act(() => eye('shown').click());
     expect(useAppStore.getState().layers.map((l) => l.visible)).toEqual([false, false]);
     expect(eye('shown').getAttribute('title')).toBe(SHOW_LAYER_TIP);
-    expect(eye('shown').querySelectorAll('svg path')).toHaveLength(2);
+    expect(eye('shown').querySelector('svg.lucide-eye-off')).not.toBeNull();
     act(() => eye('hidden').click());
     expect(useAppStore.getState().layers.map((l) => l.visible)).toEqual([false, true]);
     expect(eye('hidden').getAttribute('title')).toBe(HIDE_LAYER_TIP);

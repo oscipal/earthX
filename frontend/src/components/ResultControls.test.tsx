@@ -50,7 +50,7 @@ beforeEach(() => {
   localStorage.clear();
   tileJsonBody = TILE_JSON;
   vi.stubGlobal('fetch', vi.fn(async (url: string) => (url === HREF ? json(tileJsonBody) : new Response('{}', { status: 404 }))));
-  // The job of the fixture expires 7 days after `NOW`; "＋ Add to layers" refuses an expired job by the clock.
+  // The job of the fixture expires 7 days after `NOW`; "Add to layers" refuses an expired job by the clock.
   vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   resetJobs();
   useProcessingStore.getState().resetDraft();
@@ -77,7 +77,7 @@ const click = (el: Element | null | undefined) => {
   act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
 const button = (label: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
-// The small red x of the settings (NM4-65 part 8), what "‹ Close" was.
+// The small red x of the settings (NM4-65 part 8), what "Close" was.
 const closeX = () => container.querySelector('.result-controls .close-x');
 const field = (label: string) =>
   [...container.querySelectorAll<HTMLElement>('.result-controls label')].find((l) => l.textContent?.startsWith(label))!.querySelector<HTMLInputElement | HTMLSelectElement>('input, select')!;

@@ -355,19 +355,19 @@ describe('an image of three bands', () => {
 describe('"Add to layers" and "Add all to layers"', () => {
   it('has "Add all to layers" always, locked with the reason where the view holds one image', () => {
     mount({ A: info('s2') });
-    expect(button('＋ Add all to layers')!.disabled).toBe(true);
-    expect(button('＋ Add all to layers')!.title).toBe('There is only one image');
+    expect(button('Add all to layers')!.disabled).toBe(true);
+    expect(button('Add all to layers')!.title).toBe('There is only one image');
     mount(THREE);
-    expect(button('＋ Add all to layers')!.disabled).toBe(false);
-    expect(button('＋ Add all to layers')!.title).toBe('Add all 3 images of the view to the layers, one layer each');
+    expect(button('Add all to layers')!.disabled).toBe(false);
+    expect(button('Add all to layers')!.title).toBe('Add all 3 images of the view to the layers, one layer each');
   });
 
   it('pins the image shown with "Add to layers" and every image of every dataset with "Add all to layers"', () => {
     mount({ ...THREE, D: info('dem') });
-    act(() => button('＋ Add to layers')!.click());
+    act(() => button('Add to layers')!.click());
     expect(useAppStore.getState().layers.map((l) => l.restore.itemIds)).toEqual([['A']]);
     act(() => useAppStore.setState({ layers: [] }));
-    act(() => button('＋ Add all to layers')!.click());
+    act(() => button('Add all to layers')!.click());
     const { layers } = useAppStore.getState();
     expect(layers.map((l) => l.restore.itemIds)).toEqual([['D'], ['C'], ['B'], ['A']]);
     expect(layers.map((l) => l.restore.datasetId)).toEqual(['dem', 's2', 's2', 's2']);
@@ -375,7 +375,7 @@ describe('"Add to layers" and "Add all to layers"', () => {
 
   it('names the layers after dataset, time step and satellite', () => {
     mount(THREE);
-    act(() => button('＋ Add all to layers')!.click());
+    act(() => button('Add all to layers')!.click());
     expect(useAppStore.getState().layers.map((l) => l.name)).toEqual([
       'Sentinel-2 L2A · 2025-08-08 · S2A',
       'Sentinel-2 L2A · 2025-08-03 · S2B',
@@ -386,7 +386,7 @@ describe('"Add to layers" and "Add all to layers"', () => {
   it('puts every new layer on top of the layers, under "Search results" on top (Otto, 2.11.2026)', () => {
     mount(THREE);
     act(() => useAppStore.setState({ layers: [], resultsAt: 0 }));
-    act(() => button('＋ Add all to layers')!.click());
+    act(() => button('Add all to layers')!.click());
     expect(useAppStore.getState().layers).toHaveLength(3);
     expect(useAppStore.getState().resultsAt).toBe(0);
   });

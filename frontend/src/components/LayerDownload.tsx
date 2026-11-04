@@ -1,4 +1,4 @@
-// The ⇩ of a layer: the ZIP of a result, or the dialog of the AOI crop and the original files for a layer of scenes. One block for the
+// The download of a layer: the ZIP of a result, or the dialog of the AOI crop and the original files for a layer of scenes. One block for the
 // row of the layer manager and for the settings bar, so that they look and answer alike (UI-03a, Otto, 2.11.2026).
 
 import type { ReactNode } from 'react';
@@ -10,12 +10,13 @@ import { resultUrl } from '../processing';
 import { ZIP_LABEL } from '../processingStore';
 import { RESULT_ZIP } from '../resultLayer';
 import { useAppStore } from '../store';
+import { DownloadIcon } from './icons';
 
 interface Props {
   layer: MapLayer;
   // The class of the button or link; the manager's `lm-btn` by default.
   className?: string;
-  // A word after the ⇩ (the manager shows the symbol only).
+  // A word after the icon (the manager shows the icon only).
   label?: string;
   // The column of the manager's grid; with it, a layer without a download leaves an empty place (`empty`), without it nothing.
   col?: string;
@@ -26,7 +27,7 @@ export default function LayerDownload({ layer, className = 'lm-btn', label, col,
   const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasets = useAppStore((s) => s.datasets);
   const kind = layerDownloadKind(layer);
-  const text = label ? `⇩ ${label}` : '⇩';
+  const text = label ? (<><DownloadIcon lead />{label}</>) : <DownloadIcon size={14} />;
   if (kind === 'zip' && layer.result) {
     return (
       <a className={className} data-col={col} href={resultUrl(layer.result.jobID, RESULT_ZIP)} download rel="noopener noreferrer" title={ZIP_LABEL} aria-label={ZIP_LABEL}>
@@ -58,6 +59,7 @@ export default function LayerDownload({ layer, className = 'lm-btn', label, col,
                   ? 'Download the original files, straight from the source'
                   : 'Download the AOI crop, one file per group'
       }
+      aria-label={label ? undefined : 'Download'}
       onClick={() => void openDownload(layer.id)}
     >
       {text}

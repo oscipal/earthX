@@ -1,6 +1,6 @@
 // Drags a row of a list with the mouse or a finger by its grip (NM4-65 part 1): pointer events, so that one piece of logic
 // serves both, and no library. While a row is dragged the row under the pointer is the place it will take; letting go moves
-// it there, Escape and a cancelled pointer drop nothing. The list stays as it is until then. ▲/▼ remain for the keyboard.
+// it there, Escape and a cancelled pointer drop nothing. The list stays as it is until then. The arrows remain for the keyboard.
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
