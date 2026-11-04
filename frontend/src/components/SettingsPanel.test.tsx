@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // UI-02a, UI-04 part 4: the panel "Settings" beside the rail. A choice of one is a row of segment buttons, an overlay is a button that is pressed
-// while it is on, the tooltips are a switch. The choice reaches the store and the browser's storage (and works when the storage is locked), and
+// while it is on, the tooltips are two boxes. The choice reaches the store and the browser's storage (and works when the storage is locked), and
 // each button says what it is or where its tiles come from. Opened and closed with its symbol only, as the other panels of the rail are: no red x in its head, and Esc closes nothing.
 
 import { act } from 'react';
@@ -49,7 +49,6 @@ const button = (groupName: string, name: string): HTMLButtonElement => {
 };
 const pressed = (groupName: string): string[] => buttons(groupName).filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent ?? '');
 const click = (el: Element) => act(() => (el as HTMLElement).click());
-const tipSwitch = (): HTMLButtonElement => container.querySelector('button[role="switch"]') as HTMLButtonElement;
 
 describe('the panel', () => {
   it('has the head of a panel: the title "Settings" and no x (a panel of the rail has none, Otto, 4.11.2026), and is a region of that name', () => {
@@ -76,6 +75,7 @@ describe('the panel', () => {
     expect(buttons('Overlays').map((b) => b.textContent)).toEqual(['Labels', 'Graticule', 'Relief']);
     expect(buttons('Projection').map((b) => b.textContent)).toEqual(['Mercator', 'Globe']);
     expect(buttons('Appearance').map((b) => b.textContent)).toEqual(['Light', 'Dark', 'System']);
+    expect(buttons('Tooltips').map((b) => b.textContent)).toEqual(['Simple', 'Advanced']);
   });
 
   it('has no list of ticks and no menu: every choice is a button (Otto, 4.11.2026)', () => {
@@ -91,12 +91,12 @@ describe('the panel', () => {
     expect(buttons('Overlays').map((b) => b.textContent)).toContain('Relief');
   });
 
-  it('marks the chosen ones at the start: satellite, mercator, dark, no overlay, and the switch left (simple)', () => {
+  it('marks the chosen ones at the start: satellite, mercator, dark, no overlay, simple', () => {
     expect(pressed('Basemap')).toEqual(['Satellite']);
     expect(pressed('Projection')).toEqual(['Mercator']);
     expect(pressed('Appearance')).toEqual(['Dark']);
     expect(pressed('Overlays')).toEqual([]);
-    expect(tipSwitch().getAttribute('aria-checked')).toBe('false');
+    expect(pressed('Tooltips')).toEqual(['Simple']);
   });
 });
 
@@ -212,41 +212,43 @@ describe('choosing the appearance (Otto, 3.11.2026)', () => {
   });
 });
 
-describe('the switch of the tooltips (Otto, 4.11.2026)', () => {
-  const sides = () => [...container.querySelectorAll('.settings-switch-row > *')].map((e) => e.textContent || e.getAttribute('role'));
-
-  it('has "Simple" at the left, the switch between, "Advanced" at the right, and is left at the start', () => {
-    expect(sides()).toEqual(['Simple', 'switch', 'Advanced']);
-    expect(tipSwitch().getAttribute('aria-label')).toBe('Advanced tooltips');
-    expect(tipSwitch().getAttribute('aria-checked')).toBe('false');
-    expect(container.querySelector('.settings-switch-side.on')?.textContent).toBe('Simple');
+describe('the step of the tooltips: two boxes, Simple and Advanced (Otto, 4.11.2026)', () => {
+  it('has "Simple" and "Advanced" as two segment buttons of the same row form, and "Simple" is chosen at the start', () => {
+    expect(buttons('Tooltips').map((b) => b.textContent)).toEqual(['Simple', 'Advanced']);
+    expect(pressed('Tooltips')).toEqual(['Simple']);
+    expect(container.querySelector('[role="switch"]')).toBeNull();
   });
 
-  it('is not a list of buttons: no segment button, no tick, for something that is on or off', () => {
-    expect(container.querySelector('.settings-switch-row .btn')).toBeNull();
-  });
-
-  it('a click puts it right ("Advanced") — the store, the step the tooltips are in, the storage — and the next one left again', () => {
-    click(tipSwitch());
-    expect(tipSwitch().getAttribute('aria-checked')).toBe('true');
+  it('"Advanced" reaches the store, the step the tooltips are in and the storage under earthx.tooltips; "Simple" takes it back', () => {
+    click(button('Tooltips', 'Advanced'));
     expect(useAppStore.getState().tipLevel).toBe('advanced');
     expect(currentTipLevel()).toBe('advanced');
     expect(window.localStorage.getItem('earthx.tooltips')).toBe('advanced');
-    expect(container.querySelector('.settings-switch-side.on')?.textContent).toBe('Advanced');
-    click(tipSwitch());
+    expect(pressed('Tooltips')).toEqual(['Advanced']);
+    click(button('Tooltips', 'Simple'));
     expect(useAppStore.getState().tipLevel).toBe('simple');
     expect(currentTipLevel()).toBe('simple');
     expect(window.localStorage.getItem('earthx.tooltips')).toBe('simple');
-    expect(tipSwitch().getAttribute('aria-checked')).toBe('false');
+    expect(pressed('Tooltips')).toEqual(['Simple']);
   });
 
-  it('shows the step that is kept: a browser that kept "advanced" opens with the switch right', () => {
+  it('shows the step that is kept: a browser that kept "advanced" opens with that box chosen', () => {
     act(() => useAppStore.setState({ tipLevel: 'advanced' }));
-    expect(tipSwitch().getAttribute('aria-checked')).toBe('true');
+    expect(pressed('Tooltips')).toEqual(['Advanced']);
   });
 
-  it('says in its tooltip what the two steps are', () => {
-    expect(tipOf(tipSwitch())).toMatch(/Simple: tooltips only where they are needed.*Advanced: a tooltip on every control/u);
+  it('says in the tooltip of each box what the step is', () => {
+    expect(tipOf(button('Tooltips', 'Simple'))).toMatch(/only where they are needed/u);
+    expect(tipOf(button('Tooltips', 'Advanced'))).toBe('A tooltip on every control');
+  });
+});
+
+describe('every box has the size of one column (Otto, 4.11.2026)', () => {
+  it('puts all the choices in rows of the same grid: one class, one width of column, for every section', () => {
+    const rows = [...container.querySelectorAll('.settings-row')];
+    expect(rows).toHaveLength(5);
+    for (const row of rows) for (const b of row.querySelectorAll('button')) expect(b.className).toBe('btn seg');
+    expect(container.querySelector('.settings-panel')!.className).toContain('settings-panel');
   });
 });
 
@@ -260,7 +262,7 @@ describe('a browser that keeps nothing (storage blocked)', () => {
       click(button('Projection', 'Globe'));
       click(button('Basemap', 'Outlines'));
       click(button('Appearance', 'Light'));
-      click(tipSwitch());
+      click(button('Tooltips', 'Advanced'));
       click(button('Overlays', 'Labels'));
     } finally {
       Storage.prototype.setItem = setItem;

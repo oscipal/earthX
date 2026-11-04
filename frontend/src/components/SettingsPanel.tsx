@@ -2,8 +2,8 @@
 // (Labels, Graticule, Relief), how the earth is shown (Projection), how the page looks (Appearance) and how many tooltips there are (Tooltips).
 // It opens beside the rail like the other panels — the same width, a head with the title and no x (a panel of the rail is opened and closed with its
 // symbol, Otto, 4.11.2026), a sheet over the map under 900 px —
-// and takes the place of the buttons "Basemap" and Light/Dark at the top right. A choice of one is a row of segment buttons, an overlay is a
-// button that is pressed while it is on, the tooltips are a switch. Every choice is kept per browser (`preferences.ts`) and works with a
+// and takes the place of the buttons "Basemap" and Light/Dark at the top right. Every choice is a row of segment buttons of one size (Simple and
+// Advanced are two boxes as well), and an overlay is a button of the same form that is pressed while it is on. Every choice is kept per browser (`preferences.ts`) and works with a
 // storage that is locked. The tooltip of each basemap says where its tiles come from (UI-02 §6.7).
 
 import type { ReactNode } from 'react';
@@ -12,8 +12,8 @@ import { BASEMAP_IDS, BASEMAPS } from '../basemaps';
 import { OVERLAY_IDS, OVERLAYS } from '../overlays';
 import { APPEARANCES, type Appearance, type Projection } from '../preferences';
 import { useAppStore } from '../store';
+import { TIP_LEVELS, type TipLevel } from '../tipLevel';
 import { MonitorIcon, MoonIcon, SunIcon } from './icons';
-import Switch from './Switch';
 
 export const SETTINGS_LABEL = 'Settings';
 
@@ -28,7 +28,10 @@ const APPEARANCE_ENTRIES: Record<Appearance, { name: string; icon: ReactNode; ti
   system: { name: 'System', icon: <MonitorIcon lead />, tip: 'Light or dark as the system asks for' },
 };
 
-const TIPS_TIP = 'Simple: tooltips only where they are needed (the reason a control is locked, the name of an unclear icon, a cut-off text). Advanced: a tooltip on every control.';
+const TIP_LEVEL_ENTRIES: Record<TipLevel, { name: string; tip: string }> = {
+  simple: { name: 'Simple', tip: 'Tooltips only where they are needed: the reason a control is locked, the name of an unclear icon, a cut-off text' },
+  advanced: { name: 'Advanced', tip: 'A tooltip on every control' },
+};
 
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -60,7 +63,6 @@ export default function SettingsPanel() {
   const setProjection = useAppStore((s) => s.setProjection);
   const setAppearance = useAppStore((s) => s.setAppearance);
   const setTipLevel = useAppStore((s) => s.setTipLevel);
-  const advanced = tipLevel === 'advanced';
 
   return (
     <div className="panel dock-panel settings-panel" role="region" aria-label={SETTINGS_LABEL}>
@@ -104,14 +106,10 @@ export default function SettingsPanel() {
           </div>
         </Section>
         <Section label="Tooltips">
-          <div className="settings-switch-row">
-            <span className={`settings-switch-side${advanced ? '' : ' on'}`}>
-              Simple
-            </span>
-            <Switch on={advanced} onChange={(on) => setTipLevel(on ? 'advanced' : 'simple')} label="Advanced tooltips" tip={TIPS_TIP} />
-            <span className={`settings-switch-side${advanced ? ' on' : ''}`}>
-              Advanced
-            </span>
+          <div className="settings-row" role="group" aria-label="Tooltips">
+            {TIP_LEVELS.map((id) => (
+              <Choice key={id} name={TIP_LEVEL_ENTRIES[id].name} tip={TIP_LEVEL_ENTRIES[id].tip} pressed={tipLevel === id} onChoose={() => setTipLevel(id)} />
+            ))}
           </div>
         </Section>
       </div>

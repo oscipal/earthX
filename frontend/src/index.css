@@ -3692,52 +3692,17 @@ button.pm-open:hover {
   color: var(--muted);
 }
 .settings-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(var(--settings-columns), minmax(0, 1fr));
   gap: var(--space-1);
 }
-.settings-switch-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  font-size: var(--text-sm);
-  color: var(--muted);
+/* Every box of the panel has the size of one of four columns: Basemap fills the row, the others stand at its left, so that they all look alike. */
+.settings-panel {
+  --settings-columns: 4;
 }
-.settings-switch-side.on {
-  color: var(--text);
-  font-weight: var(--weight-semibold);
-}
-/* The switch: a track and a thumb that sits left (off) or right (on). It is for something that is on or off and nothing else (`Switch.tsx`). */
-.switch {
-  position: relative;
-  flex: none;
-  width: var(--space-6);
-  height: var(--space-4);
-  padding: 0;
-  border: var(--line-width) solid var(--panel-border);
-  border-radius: var(--radius-full);
-  background: var(--input-bg);
-  cursor: pointer;
-}
-.switch:hover {
-  border-color: var(--accent);
-}
-.switch[aria-checked='true'] {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-.switch-thumb {
-  position: absolute;
-  top: 50%;
-  left: var(--space-1);
-  width: var(--space-3);
-  height: var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--muted);
-  transform: translateY(-50%);
-  transition: left 120ms ease;
-}
-.switch[aria-checked='true'] .switch-thumb {
-  left: calc(100% - var(--space-3) - var(--space-1));
-  background: var(--on-accent);
+.settings-row > .btn.seg {
+  justify-content: center;
+  min-width: 0;
+  padding-inline: var(--space-1);
+  white-space: nowrap;
 }

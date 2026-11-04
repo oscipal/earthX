@@ -537,11 +537,13 @@ describe('the settings are in one panel (UI-04 part 4, Otto, 3.11.2026 and 4.11.
     expect(panel).not.toMatch(/Popover|role="menu|menuitem|MenuTick/u);
   });
 
-  it('has no list of ticks in it: every choice is a segment button, the tooltips are a switch', () => {
+  it('has no list of ticks in it: every choice is a segment button, in rows of one size, the two steps of the tooltips too', () => {
     const panel = SOURCES['./components/SettingsPanel.tsx'];
     expect(panel).toMatch(/className="btn seg"/u);
-    expect(panel).toMatch(/<Switch\b/u);
-    expect(panel).not.toMatch(/CheckIcon|aria-checked|type="checkbox"|type="radio"/u);
+    expect(panel).toMatch(/aria-label="Tooltips"/u);
+    expect(panel).not.toMatch(/CheckIcon|aria-checked|type="checkbox"|type="radio"|role="switch"|<Switch\b/u);
+    expect(CSS).toMatch(/\.settings-row \{[^}]*grid-template-columns: repeat\(var\(--settings-columns\), minmax\(0, 1fr\)\)/u);
+    expect(CSS).toMatch(/\.settings-panel \{[^}]*--settings-columns: 4/u);
   });
 });
 
@@ -570,17 +572,14 @@ describe('the panels of the rail have no x (UI-04 part 4, Otto, 4.11.2026): they
   });
 });
 
-describe('a switch is for something that is on or off (UI-04 part 4, Otto, 4.11.2026)', () => {
-  // One component, `Switch`, and the checkbox of "Filter within AOI only": nothing else is a switch; a choice of one of several is a row of
-  // segment buttons, and a thing that is on beside others is a button that is pressed.
-  const holders = (text: string) => (/role="switch"/u.test(withoutComments(text)) ? true : false);
-  it('has `role="switch"` only in Switch.tsx and in the filter within the AOI', () => {
-    expect(sources.filter(([, text]) => holders(text)).map(([path]) => path).sort()).toEqual(['components/AdvancedSearch.tsx', 'components/Switch.tsx']);
-  });
-
-  it('is used with a name for a screen reader and a boolean, not with a choice of several (counter-check on the text)', () => {
-    expect(SOURCES['./components/Switch.tsx']).toMatch(/aria-checked=\{on\}/u);
-    expect(SOURCES['./components/Switch.tsx']).toMatch(/aria-label=\{label\}/u);
+describe('a segment button is the form of a choice (UI-04 part 4, Otto, 4.11.2026)', () => {
+  // A switch (`role="switch"`) is for something that is on or off and nothing else; a choice of one of several, the steps of the tooltips
+  // included, is a row of segment buttons, and a thing that is on beside others is a button that is pressed. Today the one switch is the
+  // checkbox "Filter within AOI only" (Otto, 4.11.2026: it stays).
+  const holders = (text: string) => /role="switch"/u.test(withoutComments(text));
+  it('has `role="switch"` only in the filter within the AOI, and no component `Switch`', () => {
+    expect(sources.filter(([, text]) => holders(text)).map(([path]) => path)).toEqual(['components/AdvancedSearch.tsx']);
+    expect(SOURCES['./components/Switch.tsx']).toBeUndefined();
     expect(holders('<button role="switch" />')).toBe(true);
     expect(holders('<button aria-pressed />')).toBe(false);
   });
