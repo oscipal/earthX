@@ -349,3 +349,262 @@ describe('no tooltip at a dataset, a group head or the name of a layer (UI-04 pa
     expect(faults('<button className="btn" data-tip="Remove">')).toEqual([]);
   });
 });
+
+// UI-04 part 3b: hints, errors and badges as one component each, no hard colour, one family, two steps of tooltips.
+describe('one hint, one error, one badge, one choice button (UI-04 part 3b)', () => {
+  // The classes the new ones replace: the small lines (`hint-text`, `pp-help`, `vc-note`), the marks (`pp-badge`, `preview-badge`,
+  // `vc-temporary`) and the buttons of a choice (`pp-seg`, `pp-chip`). The dock `preview-badge-dock` and `pp-chip-row` stay.
+  const OLD = /(?<![\w-])(?:hint-text|pp-help|vc-note|pp-badge|preview-badge|vc-temporary|pp-seg|pp-chip)(?![\w-])/u;
+
+  it('has none of the old classes in the code or the styles', () => {
+    expect(where((code) => OLD.test(code))).toEqual([]);
+    expect(OLD.test(withoutCssComments(CSS))).toBe(false);
+    expect(OLD.test('<p className="hint-text error">')).toBe(true);
+    expect(OLD.test('<span className="pp-help">')).toBe(true);
+    expect(OLD.test('<span className="pp-badge vc-temporary">')).toBe(true);
+    expect(OLD.test('<button className={`pp-seg${on}`}>')).toBe(true);
+    expect(OLD.test('<div className="overlay preview-badge-dock">')).toBe(false);
+    expect(OLD.test('<div className="pp-chip-row">')).toBe(false);
+  });
+
+  it('draws the badge in Badge.tsx only', () => {
+    const BADGE = /className=[{"'`][^>\n]*(?<![\w-])badge(?![\w-])/u;
+    expect(where((code) => BADGE.test(code))).toEqual(['components/Badge.tsx']);
+    expect(BADGE.test('<span className="badge loading">')).toBe(true);
+    expect(BADGE.test('<span className="rail-badge">')).toBe(false);
+  });
+
+  it('gives the hint, the warning and the error their colours as tokens', () => {
+    const css = withoutCssComments(CSS);
+    expect(css).toMatch(/\n\.hint \{\s*color: var\(--muted\);/u);
+    expect(css).toMatch(/\n\.hint\.warn \{\s*color: var\(--accent-2\);/u);
+    expect(css).toMatch(/\n\.error \{\s*color: var\(--danger\);/u);
+  });
+});
+
+describe('no hard colour outside tokens.css (UI-04 §7.5 no. 4)', () => {
+  // A colour is written as `#hex`, `rgb()`, `rgba()`, `hsl()`, `hsla()` or by name. The rules named here may keep theirs, each with its reason.
+  const EXCEPTIONS: Record<string, string> = {
+    '.legend-gradient': 'the colours of the data: the same palette as the cells of the coverage map (`coverage.ts`), not those of a control',
+  };
+  const COLOUR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(|(?<![\w-])(?:white|black|red|green|blue|gray|grey|yellow|orange|purple|pink|cyan|magenta)(?![\w-])/u;
+  const hardColours = (css: string, exceptions: Record<string, string> = EXCEPTIONS) =>
+    [...withoutCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/gu)]
+      .filter(([, selector, body]) => COLOUR.test(body.replace(/url\([^)]*\)/gu, '')) && !Object.keys(exceptions).includes(selector.trim()))
+      .map(([, selector]) => selector.trim().replace(/\s+/gu, ' '));
+
+  it('has none in index.css, but the colours of the data', () => {
+    expect(hardColours(CSS)).toEqual([]);
+  });
+
+  it('finds a colour in every notation (counter-check)', () => {
+    expect(hardColours('.a { color: #fff; }')).toEqual(['.a']);
+    expect(hardColours('.a { color: #ff5a6e }')).toEqual(['.a']);
+    expect(hardColours('.a { background: rgba(0, 0, 0, 0.5); }')).toEqual(['.a']);
+    expect(hardColours('.a { border-color: rgb(1 2 3); }')).toEqual(['.a']);
+    expect(hardColours('.a { color: hsl(10 20% 30%); }')).toEqual(['.a']);
+    expect(hardColours('.a { color: white; }')).toEqual(['.a']);
+    expect(hardColours('@media (max-width: 1px) { .b { color: #123456 } }')).toEqual(['.b']);
+  });
+
+  it('lets tokens, color-mix and a named exception pass', () => {
+    expect(hardColours('.a { color: var(--text); background: color-mix(in srgb, var(--accent) 22%, transparent); }')).toEqual([]);
+    expect(hardColours('.a { color: var(--danger, var(--text)); }')).toEqual([]);
+    expect(hardColours('.legend-gradient { background: linear-gradient(#2c7bb6, #d7191c); }')).toEqual([]);
+    expect(hardColours('.legend-gradient-2 { background: #2c7bb6; }')).toEqual(['.legend-gradient-2']);
+    expect(hardColours('.x { background: url("data:image/svg+xml;utf8,<svg fill=\'red\'/>"); }')).toEqual([]);
+  });
+
+  it('names a reason for each exception, and each exception still exists', () => {
+    for (const [selector, reason] of Object.entries(EXCEPTIONS)) {
+      expect(reason.length, selector).toBeGreaterThan(20);
+      expect(CSS, selector).toContain(`${selector} {`);
+    }
+  });
+});
+
+describe('one family (UI-04 part 3b, Otto, 3.11.2026): the font of the page, the monospace one for the band math only', () => {
+  // Every `font-family` declaration with the rule it stands in; `font:` is only ever `inherit`.
+  const declarations = (css: string, property: RegExp) =>
+    [...withoutCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/gu)].flatMap(([, selector, body]) =>
+      body
+        .split(';')
+        .map((declaration) => declaration.trim())
+        .filter((declaration) => property.test(declaration))
+        .map((declaration) => `${selector.trim().replace(/\s+/gu, ' ')} -> ${declaration.replace(/\s+/gu, ' ')}`),
+    );
+  // The page, the map (MapLibre sets its own), and the formula field.
+  const FAMILIES = ['body -> font-family: var(--font)', '.app .maplibregl-map -> font-family: var(--font)', '.pp-field textarea -> font-family: var(--font-mono)'];
+
+  it('names a family in the page, the map and the formula field only', () => {
+    expect(declarations(CSS, /^font-family\s*:/u)).toEqual(FAMILIES);
+    expect(declarations('.a { font-family: Arial, sans-serif; }', /^font-family\s*:/u)).toEqual(['.a -> font-family: Arial, sans-serif']);
+    expect(declarations('.a { color: red; }', /^font-family\s*:/u)).toEqual([]);
+  });
+
+  it('writes the shorthand `font` only as `inherit`', () => {
+    const shorthand = declarations(CSS, /^font\s*:/u);
+    expect(shorthand.length).toBeGreaterThan(0);
+    expect(shorthand.filter((declaration) => !declaration.endsWith('font: inherit'))).toEqual([]);
+    expect(declarations('.a { font: 12px Arial; }', /^font\s*:/u).filter((declaration) => !declaration.endsWith('font: inherit'))).toHaveLength(1);
+  });
+
+  it('lets the controls take the type of the page in one rule', () => {
+    expect(withoutCssComments(CSS)).toMatch(/\nbutton,\s*input,\s*select,\s*textarea \{\s*font: inherit;\s*\}/u);
+  });
+
+  it('sets no family in the code', () => {
+    const FAMILY = /fontFamily|font-family/u;
+    expect(where((code) => FAMILY.test(code))).toEqual([]);
+    expect(FAMILY.test('<span style={{ fontFamily: "Arial" }}>')).toBe(true);
+  });
+});
+
+describe('two steps of tooltips (UI-04 part 3b, Otto, 4.11.2026): data-tip-level="advanced", none = simple', () => {
+  // The step is written as the literal "advanced", or as an expression that gives 'advanced' or nothing (a tip that is a reason while the
+  // control is locked, a description otherwise). There is no literal "simple": no step is simple.
+  const levelOf = (attributes: string): string[] | null => {
+    const m = /(?:^|\s)data-tip-level=(?:"([^"]*)"|\{((?:[^{}]|\{[^{}]*\})*)\})/u.exec(attributes);
+    if (!m) return null;
+    if (m[1] !== undefined) return [m[1]];
+    return [...m[2].matchAll(/'([^']*)'|"([^"]*)"/gu)].map((s) => s[1] ?? s[2]);
+  };
+  const tagsWithTip = (text: string) => openingTags(text).filter(({ attributes }) => /(?:^|\s)data-tip=/u.test(topLevel(attributes)));
+  const badSteps = (text: string) =>
+    openingTags(text).flatMap(({ tag, attributes }) => {
+      const levels = levelOf(topLevel(attributes) + attributes);
+      if (levels === null) return [];
+      const ok = levels.length > 0 && levels.every((l) => l === 'advanced') && /(?:^|\s)data-tip=/u.test(topLevel(attributes));
+      return ok ? [] : [`<${tag}> ${attributes.trim().slice(0, 60)}`];
+    });
+
+  it('has no step but "advanced", and only beside a data-tip', () => {
+    expect(sources.flatMap(([path, text]) => badSteps(text).map((fault) => `${path}: ${fault}`))).toEqual([]);
+    expect(badSteps('<button data-tip="x" data-tip-level="advanced">')).toEqual([]);
+    expect(badSteps("<button data-tip={a} data-tip-level={a ? undefined : 'advanced'}>")).toEqual([]);
+    expect(badSteps('<button data-tip="x" data-tip-level="simple">')).toHaveLength(1);
+    expect(badSteps('<button data-tip="x" data-tip-level="Advanced">')).toHaveLength(1);
+    expect(badSteps('<button data-tip="x" data-tip-level={a ? "basic" : undefined}>')).toHaveLength(1);
+    expect(badSteps('<button data-tip-level="advanced">')).toHaveLength(1);
+  });
+
+  // (b) the name of a button with only an icon that is not obvious, (a) and (c) are the unmarked or the locked ones, and what stands behind an (i).
+  const NEVER_ADVANCED = [
+    { what: 'the (i)', file: 'components/Tip.tsx', test: /./u },
+    { what: 'a rail button', file: 'components/AppRail.tsx', test: /\brail-btn\b/u },
+    { what: '"Flip through layers"', file: 'components/LayerManager.tsx', test: /\blm-flip\b/u },
+    { what: '"Reverse" the colormap', file: 'components/ColormapField.tsx', test: /\bvc-reverse\b/u },
+    { what: '"Reverse" in the list of colormaps', file: 'components/ColormapPicker.tsx', test: /\bvc-reverse\b/u },
+    { what: '"Process layer"', file: 'components/LayerManager.tsx', test: /Process layer/u },
+    { what: '"Search results" to the top', file: 'components/ResultsToTop.tsx', test: /RESULTS_TO_TOP_TIP/u },
+    { what: 'the actions of a job or a group', file: 'components/ProcessingManager.tsx', test: /Actions for/u },
+  ];
+  it.each(NEVER_ADVANCED)('does not hold back the tip of $what', ({ file, test }) => {
+    const tags = tagsWithTip(SOURCES[`./${file}`]).filter(({ attributes }) => test.test(attributes) || file.endsWith('Tip.tsx'));
+    expect(tags.length, file).toBeGreaterThan(0);
+    expect(tags.filter(({ attributes }) => levelOf(attributes) !== null).map(({ attributes }) => attributes.trim().slice(0, 50))).toEqual([]);
+  });
+
+  it('marks the obvious controls: the red x, the eye, the bin and the badge', () => {
+    for (const file of ['components/CloseButton.tsx', 'components/EyeButton.tsx', 'components/Badge.tsx', 'components/ShareLink.tsx']) {
+      const tags = tagsWithTip(SOURCES[`./${file}`]);
+      expect(tags.length, file).toBeGreaterThan(0);
+      expect(tags.some(({ attributes }) => levelOf(attributes)?.includes('advanced')), file).toBe(true);
+    }
+  });
+});
+
+describe('no rule for a class nobody names (UI-04 part 3b)', () => {
+  // Classes the code builds from a part (`range-hist-${channel}`) or that a library puts on its own elements (MapLibre).
+  const BUILT = /^(?:range-hist-|vc-chip-|maplibregl-)/u;
+  const unused = (css: string, code: string) => {
+    const classes = new Set([...withoutCssComments(css).replace(/\{[^{}]*\}/gu, '{}').matchAll(/(?<![\w-])\.([a-zA-Z][\w-]*)/gu)].map((m) => m[1]));
+    return [...classes].filter((name) => !BUILT.test(name) && !new RegExp(`(?<![\\w-])${name}(?![\\w-])`, 'u').test(code)).sort();
+  };
+
+  it('has none in index.css', () => {
+    expect(unused(CSS, sources.map(([, text]) => withoutComments(text)).join('\n'))).toEqual([]);
+  });
+
+  it('finds a rule without a user (counter-check)', () => {
+    expect(unused('.used { } .gone > .used { } .maplibregl-map { }', '<div className="used" />')).toEqual(['gone']);
+  });
+});
+
+describe('no autofill of the browser (UI-04 part 3b, Otto, 4.11.2026): autocomplete="off" at every field, and the filled-in colours from the tokens', () => {
+  // A field that takes text: a text, a search, a number or a date, and a text area. A tick, a choice, a slider and a file are no such field.
+  const NOT_TEXT = /type="(?:checkbox|radio|range|file|hidden|button|submit|reset|image|color)"/u;
+  const withoutOff = (text: string) =>
+    openingTags(text)
+      .filter(({ tag, attributes }) => (tag === 'input' || tag === 'textarea') && !NOT_TEXT.test(attributes))
+      .filter(({ attributes }) => !/(?:^|\s)autoComplete="off"/u.test(topLevel(attributes) + attributes))
+      .map(({ tag, attributes }) => `<${tag} ${attributes.trim().slice(0, 50)}`);
+
+  it('has autocomplete off at every input and text area that takes text', () => {
+    expect(sources.flatMap(([path, text]) => withoutOff(text).map((tag) => `${path}: ${tag}`))).toEqual([]);
+    expect(withoutOff('<input type="text" value={v} />')).toHaveLength(1);
+    expect(withoutOff('<input value={v} onChange={f} />')).toHaveLength(1);
+    expect(withoutOff('<textarea rows={3} />')).toHaveLength(1);
+    expect(withoutOff('<input type="number" autoComplete="on" />')).toHaveLength(1);
+    expect(withoutOff('<input type="number" autoComplete="off" />')).toEqual([]);
+    expect(withoutOff('<input type="checkbox" checked />')).toEqual([]);
+    expect(withoutOff('<input type="range" />')).toEqual([]);
+    expect(withoutOff('<select autoComplete="x" />')).toEqual([]);
+  });
+
+  it('has no input component (the one that takes the props of an input) without it either', () => {
+    expect(SOURCES['./components/ClearableInput.tsx']).toMatch(/<input[^>]*autoComplete="off"/u);
+  });
+
+  const css = withoutCssComments(CSS);
+  it.each([':-webkit-autofill', ':autofill'])('draws a field the browser filled in (%s) with the colours of the field, in both themes', (pseudo) => {
+    const start = css.indexOf(`input${pseudo},\ntextarea${pseudo} {`);
+    expect(start, pseudo).toBeGreaterThanOrEqual(0);
+    const rule = css.slice(start, css.indexOf('}', start));
+    expect(rule).toContain('-webkit-text-fill-color: var(--text)');
+    expect(rule).toContain('var(--input-bg)');
+    expect(rule).toContain('var(--map-bg)');
+    expect(rule).toContain('transition: background-color');
+  });
+});
+
+describe('one frame, one ring (UI-04 part 3b, Otto, 4.11.2026): the ring is at the control, from the keyboard, and nothing else frames the focus', () => {
+  // The rules of the focus: what they set, by the pseudo-class they name. A plain `:focus` is also a click of the mouse; `:focus-within` is
+  // the whole section that holds the control.
+  const FRAME = /(?:^|;|\s)(?:outline(?:-[a-z]+)?|border(?![a-z-]*radius)(?:-[a-z]+)*|box-shadow):/u;
+  const rules = (css: string) => [...withoutCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/gu)].map(([, selector, body]) => ({ selector: selector.trim().replace(/\s+/gu, ' '), body }));
+  const inFocus = (css: string, pseudo: RegExp) => rules(css).filter(({ selector, body }) => pseudo.test(selector) && FRAME.test(body)).map(({ selector }) => selector);
+  // What stays: the ring of the slider on its thumb, and the popover, which takes its ring away.
+  const KEPT_RING = [
+    ":is(a[href], button, input, select, textarea, summary, [role='button'], [role='menuitem'], [role='menuitemradio'], [tabindex]):focus-visible",
+    ".inspector .range-hist input[type='range']:focus-visible",
+    '.popover:focus-within',
+  ];
+
+  it('has no frame, shadow or ring at a plain :focus (the mouse shows it too): the ring is the one sign', () => {
+    expect(inFocus(CSS, /:focus(?![-\w])/u)).toEqual([]);
+    expect(inFocus('.a input:focus { border-color: red; }', /:focus(?![-\w])/u)).toHaveLength(1);
+    expect(inFocus('input:focus { box-shadow: var(--glow); }', /:focus(?![-\w])/u)).toHaveLength(1);
+    expect(inFocus('input:focus-visible { box-shadow: var(--glow); }', /:focus(?![-\w])/u)).toEqual([]);
+  });
+
+  it('has no second frame beside the ring at :focus-visible: only the ring itself and the thumb of a slider', () => {
+    const found = inFocus(CSS, /:focus-visible/u).filter((selector) => !KEPT_RING.some((kept) => selector.startsWith(kept)));
+    expect(found).toEqual([]);
+    expect(inFocus('.vc-unit:focus-visible { border-color: var(--accent); }', /:focus-visible/u)).toHaveLength(1);
+    expect(inFocus('.tip:focus-visible { border-radius: var(--radius-sm); }', /:focus-visible/u)).toEqual([]);
+  });
+
+  it('draws nothing around a whole section when the focus is inside it (:focus-within): a row may be tinted, not framed', () => {
+    const found = inFocus(CSS, /:focus-within/u).filter((selector) => selector !== '.popover:focus-within');
+    expect(found).toEqual([]);
+    expect(inFocus('.section:focus-within { outline: 2px solid var(--focus); }', /:focus-within/u)).toHaveLength(1);
+    expect(inFocus('.box:focus-within { border-color: var(--accent); }', /:focus-within/u)).toHaveLength(1);
+    expect(inFocus('.row:focus-within { box-shadow: inset 2px 0 0 var(--accent); }', /:focus-within/u)).toHaveLength(1);
+    expect(inFocus('.row:focus-within { background: var(--row-hover); }', /:focus-within/u)).toEqual([]);
+  });
+
+  it('takes the ring away from the popover as a whole', () => {
+    expect(withoutCssComments(CSS)).toMatch(/\.popover:focus-within \{\s*outline: none;/u);
+  });
+});

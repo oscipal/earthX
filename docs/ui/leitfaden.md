@@ -1,6 +1,6 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 04.11.2026, UI-04 Teil 3a (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 04.11.2026, UI-04 Teil 3b (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
@@ -157,7 +157,7 @@
 | `Tip` / `TipLayer` | (i), Warnung und Tooltips |
 | `Popover` | Menüs, Listen und das Formular „Advanced search“ |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
-| `PreviewBadge`, `pp-badge` | Abzeichen „Preview“, „Temporary“, „Overview“, „Zoom in“ *(ein Bauteil `Badge` folgt in Teil 3b)* |
+| `Badge` | das eine Abzeichen („Preview“, „Temporary“, „Overview“, „Zoom in“, „Loading…“): Pille in `--accent-2`, Großbuchstaben per CSS; `PreviewBadge` setzt sie über die Karte |
 
 **Knopfformen** (`index.css`, vorn im Blatt):
 
@@ -172,10 +172,19 @@
 
 - **Ein Schalter** steht mit `aria-pressed`: `.btn` ist dann getönt in Akzent, `.icon-btn` in Akzentfarbe. Die offene Seite der Leiste links trägt `.on`.
 - **Eine Klasse für einen Ort** gibt Platz, Breite und Lage (`tool-btn`, `pm-icon`, `dataset-toggle`, `vc-apply`) und höchstens einen Zustand (`aria-expanded`, `.wrong`); sie erfindet keine neue Form, also keine eigene Schrift, Deckkraft oder Füllung. Ein Knopf über der Karte trägt `.panel` dazu (`.btn.panel`).
-- Eigene Formen haben bis Teil 3b noch: Segment-Umschalter und Chips (`pp-seg`, `pp-chip`; werden in 3b zu einer Form `.btn.seg`, Otto, 04.11.2026), Zeilen in Menüs und Listen, Titel zum Umbenennen und die Falzgriffe (`pp-grip`).
+- **Auswahl aus wenigen** (Segment-Umschalter, Band-Chips, Filter): `.btn.seg` in einer Gruppe (`role="group"`), der gewählte trägt `aria-pressed` (Otto, 04.11.2026). Eigene Formen haben weiter Zeilen in Menüs und Listen, Titel zum Umbenennen und die Falzgriffe (`pp-grip`).
 - **Fokus:** ein Ring für alles Bedienbare, `2px solid var(--focus)` per Tastatur (`:focus-visible`), in **einer** Regel. Kein `outline: none`, keine eigene Ringregel an einem Knopf oder Feld; Ausnahmen sind der Schieber (Ring am Griff), der Rahmen eines Popovers (kein bedientes Element) und die Ablagelinie beim Ziehen.
+  - **Ein Zeichen, nur am Element** (Otto, 04.11.2026): Ein Feld, das den Fokus hat, zeigt den Ring und sonst nichts: kein Randwechsel, kein Schatten (`:focus`), kein zweiter Rand bei `:focus-visible`. Ein Abschnitt oder eine Zeile bekommt bei `:focus-within` keinen Rahmen, keinen Ring, keinen Schatten; eine Zeile darf getönt werden (Hintergrund). Ein Abschnitt hat höchstens einen Rahmen.
+  - **Maus:** Ein Knopf zeigt den Ring nach einem Klick nicht (der Browser setzt `:focus-visible` nur bei Tastatur). Ein Textfeld bekommt ihn vom Browser auch beim Klick; das ist die Schreibmarke des Feldes und bleibt der eine Ring.
 
-Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
+**Hinweise** (Teil 3b): drei Klassen für die kleinen Zeilen unter einem Feld oder Knopf, nie eine eigene:
+- `.hint` ruhig (`--text-xs`, `--muted`): eine Auskunft, ein Ladezustand, eine Beschriftung wie „Area:“.
+- `.hint.warn` gelb (`--accent-2`): es geht, aber mit Folgen.
+- `.error` rot (`--danger`): es geht nicht, und was zu tun ist; mit `role="alert"`, wo eine Handlung nötig ist.
+- Nicht mehr: `hint-text`, `pp-help`, `vc-note`. Ein falsches Feld trägt `--danger` (`--invalid` gibt es nicht mehr).
+- Eine Klasse eines Ortes (`pm-note`, `pm-empty`, `place-attribution`) gibt höchstens Platz.
+
+**Farben:** Keine Farbe als `#hex`, `rgb()`, `hsl()` oder Name außerhalb von `tokens.css`. Ausnahme: die Farben von Daten (`.legend-gradient`, gleiche Palette wie die Zellen der Coverage); jede Ausnahme steht mit Grund in `uiRules.test.ts`. Das Dunkel hinter einem Dialog ist `--scrim`. Das Attribut-Feld der Karte nimmt im dunklen Thema `--panel-bg` und `--text`.
 
 **Steuerhöhe:** 28 px; bei Touch und unter 900 px 44 px (`--control-height-touch`).
 
@@ -183,7 +192,21 @@ Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
 
 - Überall die System-Schrift `--font` aus `tokens.css` mit gleich breiten Ziffern.
 - Monospace (`--font-mono`) nur im Band-Math-Feld.
-- Auch die Attribution der Karte und die Knöpfe der Statusleiste tragen `--font`. Ein Test findet fremde Schriftangaben *(folgt in Teil 3b)*.
+- Eine Regel gibt allen Bedienelementen die Schrift der Seite (`button, input, select, textarea { font: inherit }`); die Karte bekommt `--font` über `.app .maplibregl-map` (MapLibre setzt eine eigene). **Keine Regel nennt eine Familie außer** `body` (`--font`), der Karte und dem Formelfeld (`--font-mono`); `font:` steht nur als `inherit`. Ein Test findet jede andere Angabe, dazu `e2e/focus-and-type.cjs` (berechnete Familie jedes sichtbaren Textes).
+
+## 8a. Tooltips in zwei Stufen (Otto, 04.11.2026)
+
+Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (`frontend/src/tipLevel.ts`). **Nichts wird entfernt.**
+- **Simple** (ohne Angabe): (a) der **Grund**, warum etwas gesperrt ist; (b) der **Name** eines Knopfs nur mit Symbol, der nicht selbsterklärend ist (Flip through layers, Reverse, Process, die Symbole der Leiste, „Actions“, Nach oben legen); (c) der **volle Text**, wenn ein Text wirklich abgeschnitten ist; dazu alles hinter einem (i), in beiden Stufen.
+- **Advanced** (`data-tip-level="advanced"`): alle übrigen: Knöpfe mit Text, selbsterklärende Symbole (rotes x, Auge, Mülleimer, Download, Stift, Plus, Pfeile, Ziehgriff, Kopieren), Beschriftungen, Werte, Datensätze, Gruppen, Layer-Namen, Abzeichen.
+- **Gesperrt ist immer simple:** `TipLayer` zeigt den Tooltip eines gesperrten Elements (`disabled`, `aria-disabled="true"`) in beiden Stufen; ein Knopf, dessen Tooltip „Grund, sonst Beschreibung“ ist, trägt also `advanced` und zeigt den Grund trotzdem.
+- `aria-label` bleibt überall; die Stufe ändert nur, wann der Tooltip erscheint. Bis Teil 4 den Schalter bringt, gilt „Advanced“ (das bisherige Verhalten): `setTipLevel` in `tipLevel.ts`.
+- Neue Tooltips: erst fragen, ob sie (a)–(c) sind; wenn nicht, `data-tip-level="advanced"`. Die Liste der Stellen steht in `docs/plans/vp3/ui-04-einheitlichkeit.md` §8.4.
+
+## 8b. Felder und Browser-Vorschläge
+
+- **Jedes Feld, das Text annimmt** (Text, Suche, Zahl, Datum, Textfläche) hat `autoComplete="off"`: nichts in der Oberfläche ist eine persönliche Formulareingabe, der Browser soll keine „gespeicherten Informationen“ anbieten. Ein Bauteil, das die Eigenschaften eines `input` durchreicht (`ClearableInput`), setzt es selbst.
+- Für den Rest (ein Browser, der es trotzdem tut) gibt es zwei Regeln für `:-webkit-autofill` und `:autofill`: Text `--text`, Fläche `--input-bg` über `--map-bg`, damit das Feld im dunklen Thema dunkel bleibt.
 
 ## 9. Karte und Einstellungen
 
@@ -207,7 +230,7 @@ Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
 | Begriffe (§2) gegen alle Texte der Oberfläche | `frontend/src/uiRules.test.ts` |
 | Sperrgrund im Tooltip | `frontend/src/fixtures/lockedControls.ts`, benutzt in `ControlPanel.test.tsx` und `LayerManager.test.tsx` |
 | Klick neben einen Dialog schließt nicht | `DownloadDialog.bands.test.tsx` |
-| Tokens statt fester Werte | `frontend/src/tokens.test.ts` (`.btn` und `.icon-btn` schon, alle Klassen ab Teil 3b) |
+| Tokens statt fester Werte | `frontend/src/tokens.test.ts` (Abstände, Schriftgrade, Radien: `.btn`, `.icon-btn`, `.hint`, `.error`, `.badge`, Seitenleiste, Processing; die übrigen Klassen folgen, siehe Plan §8.4) |
 | kein `title` an einem Element außer `<option>`, ein Tooltip-Weg, Beschreibung per `aria-describedby`, gesperrter Knopf zeigt seinen Grund | `frontend/src/uiRules.test.ts`, `frontend/src/components/TipLayer.test.tsx`, `frontend/e2e/tooltips.cjs` |
 | keine alten Knopfklassen (`ghost-btn`, `primary-btn`, `lm-btn` …) | `frontend/src/uiRules.test.ts` |
 | keine feste Deckkraft an einem gesperrten Element | `frontend/src/uiRules.test.ts` |
@@ -216,6 +239,11 @@ Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
 | kein Tooltip an Datensatz, Gruppenkopf, Layer-Name (außer Grund, Hinweis, Eintrag „Search results“) | `frontend/src/uiRules.test.ts` |
 | Symbole der Leiste 20 px, Token und Zahlen gleich | `frontend/src/AppRail.test.tsx`, `frontend/src/components/icons.test.tsx` |
 | Symbole nur aus `icons.ts`, keine Textzeichen als Symbol (Code und CSS), kein eigenes `<svg>`, Strich und Größen, jedes Symbol benutzt | `frontend/src/uiRules.test.ts`, `frontend/src/components/icons.test.tsx` |
-| Schrift | *(folgt in Teil 3b)* |
+| Schrift: eine Familie, `font: inherit` an Bedienelementen | `frontend/src/uiRules.test.ts`, `frontend/e2e/focus-and-type.cjs` |
+| keine feste Farbe außerhalb von `tokens.css` (Ausnahme: Farben von Daten) | `frontend/src/uiRules.test.ts` |
+| keine alten Klassen (`hint-text`, `pp-help`, `pp-badge`, `pp-seg`, …), ein Abzeichen (`Badge`), keine Regel für eine Klasse, die niemand nennt | `frontend/src/uiRules.test.ts` |
+| Fokus: ein Zeichen am Element, nichts am Abschnitt | `frontend/src/uiRules.test.ts`, `frontend/e2e/focus-and-type.cjs` |
+| Tooltips: nur die Stufe „advanced“, nie an (i), Namen nicht selbsterklärender Symbole; gesperrt zeigt den Grund | `frontend/src/uiRules.test.ts`, `frontend/src/tipLevel.test.ts`, `frontend/src/components/TipLayer.test.tsx` |
+| `autocomplete="off"` an jedem Textfeld, Regeln für ein ausgefülltes Feld | `frontend/src/uiRules.test.ts`, `frontend/e2e/focus-and-type.cjs` |
 
 Ein neuer Begriff, der ein altes Wort ersetzt, bekommt eine Zeile in der Liste `FORBIDDEN` von `uiRules.test.ts` mit Gegenprobe.
