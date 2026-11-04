@@ -104,7 +104,7 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
         <p className="hint-text error" role="alert">
           {estimate.message}{' '}
           <button type="button" className="link-btn" onClick={retry}>
-            Try again
+            Retry
           </button>
         </p>
       )}

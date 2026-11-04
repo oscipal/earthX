@@ -93,9 +93,9 @@ async function check(browser, { kind, theme, viewport }) {
   const auto = await box('.vc-buttons > :nth-child(1)');
   const apply = await box('.vc-buttons > :nth-child(2)');
   const save = await box('.vc-buttons > :nth-child(3)');
-  if ((await page.locator(`${root} .vc-buttons > :nth-child(1)`).textContent())?.trim() !== 'auto-scale') problems.push('the first button is not "auto-scale"');
+  if ((await page.locator(`${root} .vc-buttons > :nth-child(1)`).textContent())?.trim() !== 'Auto-scale') problems.push('the first button is not "auto-scale"');
   const input = await page.locator(`${root} .vc-field input`).first().boundingBox();
-  for (const [name, b] of [['auto-scale', auto], ['Apply', apply], ['Save', save]]) {
+  for (const [name, b] of [['Auto-scale', auto], ['Apply', apply], ['Save', save]]) {
     if (Math.abs(b.height - input.height) > 1.5) problems.push(`"${name}" is ${b.height.toFixed(1)} px high, the input of the fields ${input.height.toFixed(1)} px`);
     if (Math.abs(b.y - auto.y) > 1) problems.push(`"${name}" is not in the row of "auto-scale"`);
     if (Math.abs(b.width - auto.width) > 1.5) problems.push(`"${name}" is ${b.width.toFixed(1)} px wide, "auto-scale" ${auto.width.toFixed(1)} px`);

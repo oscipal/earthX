@@ -11,6 +11,7 @@ import { datasetsFrom } from '../datasets';
 import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
 import { jobEntry, jobId, NOW } from '../fixtures/jobEntries';
+import { lockedWithoutReason } from '../fixtures/lockedControls';
 import { resetJobs, useProcessingStore } from '../processingStore';
 import LayerManager, { DELETED_LAYER_TIP, EXPIRED_LAYER_TEXT, HIDE_LAYER_TIP, SHOW_LAYER_TIP } from './LayerManager';
 
@@ -323,13 +324,28 @@ describe('the result layer of a deleted job', () => {
     const eye = locked.querySelector<HTMLElement>('[data-col="eye"]')!;
     expect(eye.getAttribute('title')).toBe(DELETED_LAYER_TIP);
     expect(eye.getAttribute('aria-disabled')).toBe('true');
-    expect(DELETED_LAYER_TIP).toBe('Job deleted – restore to show');
+    expect(DELETED_LAYER_TIP).toBe('Job deleted: restore it to show it');
     expect(locked.querySelector('[data-col="opacity"]')?.hasAttribute('disabled')).toBe(true);
     expect(locked.querySelector('[data-col="download"]')?.tagName).toBe('SPAN');
     expect(locked.querySelector('[data-col="note"]')?.className).toBe('lm-slot');
     expect(locked.textContent).not.toMatch(/delet|restore|job/iu);
     expect(useAppStore.getState().layers[0].result?.deleted).toBe(true);
     expect(useAppStore.getState().layers[1].result?.deleted).toBeFalsy();
+  });
+
+  it('names the reason of everything it locks, and of the arrows at the ends of the list (UI-04)', () => {
+    deleteJobAt(1, NOW + DAY);
+    expect(lockedWithoutReason(container)).toEqual([]);
+    const [first, last] = rows();
+    expect(first.querySelector('[data-col="up"]')?.getAttribute('title')).toBe('Already at the top');
+    expect(last.querySelector('[data-col="down"]')?.getAttribute('title')).toBe('Already at the bottom');
+    expect(first.querySelector('[data-col="rename"]')?.getAttribute('title')).toBe('Job deleted: restore it first');
+  });
+
+  it('finds a locked control without a reason (counter-check of the rule)', () => {
+    const probe = document.createElement('div');
+    probe.innerHTML = '<button disabled>Find</button><button disabled title="Find">Find</button><button disabled title="Type a place name first">Find</button>';
+    expect(lockedWithoutReason(probe)).toEqual(['Find', 'Find']);
   });
 
   it('keeps its eleven places', () => {

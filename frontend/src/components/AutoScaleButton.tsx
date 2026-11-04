@@ -4,7 +4,7 @@
 export default function AutoScaleButton({ title, busy = false, onClick }: { title: string; busy?: boolean; onClick: () => void }) {
   return (
     <button type="button" className="ghost-btn vc-auto" disabled={busy} title={title} onClick={onClick}>
-      auto-scale
+      Auto-scale
     </button>
   );
 }

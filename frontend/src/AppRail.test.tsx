@@ -69,11 +69,11 @@ const stops = () => [...rail().querySelectorAll<HTMLElement>('button')].map((b) 
 describe('the symbols', () => {
   it('are four, in a navigation named "Main", each with its name for a screen reader', () => {
     expect(rail()).not.toBeNull();
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Processing jobs', 'Results, No results yet: run a search first']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Jobs', 'Search results, No results yet: run a search first']);
   });
 
   it('carry their tooltip as text that shows on hover and on focus, and no second one as `title`', () => {
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Processing jobs', 'No results yet: run a search first']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Jobs', 'No results yet: run a search first']);
     expect(rail().querySelector('[title]')).toBeNull();
   });
 
@@ -88,13 +88,13 @@ describe('the symbols', () => {
     });
     expect(symbol('layers').getAttribute('aria-label')).toBe('Layers, 3');
     expect(symbol('layers').querySelector('.rail-badge')?.textContent).toBe('3');
-    expect(symbol('jobs').getAttribute('aria-label')).toBe('Processing jobs, 2');
+    expect(symbol('jobs').getAttribute('aria-label')).toBe('Jobs, 2');
     expect(symbol('controls').querySelector('.rail-badge')).toBeNull();
   });
 
   it('do not count a job whose state is not known yet as running: an archived one, one of another tab', () => {
     act(() => useProcessingStore.setState({ jobs: [jobEntry(1, { status: null }), jobEntry(2)] }));
-    expect(symbol('jobs').getAttribute('aria-label')).toBe('Processing jobs, 1');
+    expect(symbol('jobs').getAttribute('aria-label')).toBe('Jobs, 1');
   });
 
   it('show no count where there is nothing to count, and "99+" for a great many', () => {

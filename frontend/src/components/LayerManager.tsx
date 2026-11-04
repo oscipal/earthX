@@ -21,7 +21,12 @@ import Tip from './Tip';
 import { useRowDrag, type RowDrag } from './useRowDrag';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
-export const DELETED_LAYER_TIP = 'Job deleted – restore to show';
+export const DELETED_LAYER_TIP = 'Job deleted: restore it to show it';
+// The reason in the tooltip of what a layer of a deleted job locks (UI-04: a locked control says why).
+export const LOCKED_LAYER_TIP = 'Job deleted: restore it first';
+export const TOP_TIP = 'Already at the top';
+export const BOTTOM_TIP = 'Already at the bottom';
+const moveTip = (direction: 'up' | 'down', blocked: boolean) => (blocked ? (direction === 'up' ? TOP_TIP : BOTTOM_TIP) : direction === 'up' ? 'Move up' : 'Move down');
 export const HIDE_LAYER_TIP = 'Hide layer';
 export const SHOW_LAYER_TIP = 'Show layer';
 export const ADD_BAND_TIP = 'Add this band as a layer of its own';
@@ -165,7 +170,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         </button>
       )}
       {/* The name is renamed here as in the head of the settings (Otto, 3.11.2026). */}
-      <button type="button" className="lm-btn lm-pencil" data-col="rename" title={RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>
+      <button type="button" className="lm-btn lm-pencil" data-col="rename" title={locked ? LOCKED_LAYER_TIP : RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>
         <PencilIcon size={11} />
       </button>
       <input
@@ -176,15 +181,15 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         max={1}
         step={0.05}
         value={l.opacity}
-        title={`Opacity ${Math.round(l.opacity * 100)}%`}
+        title={locked ? LOCKED_LAYER_TIP : `Opacity ${Math.round(l.opacity * 100)}%`}
         aria-label={`Opacity of ${l.name}`}
         disabled={locked}
         onChange={(e) => setOpacity(l.id, Number(e.target.value))}
       />
-      <button type="button" className="lm-btn" data-col="up" title="Move up" disabled={index === 0} onClick={() => move(l.id, 'up')}>
+      <button type="button" className="lm-btn" data-col="up" title={moveTip('up', index === 0)} aria-label="Move up" disabled={index === 0} onClick={() => move(l.id, 'up')}>
         ▲
       </button>
-      <button type="button" className="lm-btn" data-col="down" title="Move down" disabled={last} onClick={() => move(l.id, 'down')}>
+      <button type="button" className="lm-btn" data-col="down" title={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move(l.id, 'down')}>
         ▼
       </button>
       {l.result && processBlock === NO_COPY_TEXT ? (
@@ -218,7 +223,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         <BandSelect
           label="Band"
           className="lm-band"
-          title="The band of the result this layer draws"
+          title={locked ? LOCKED_LAYER_TIP : l.result?.expired ? 'The result has expired: start the job again' : 'The band of the result this layer draws'}
           value={String(l.result?.band ?? 0)}
           options={[
             ...(l.result?.colour ? [{ value: RGB, label: RGB_LABEL }] : []),
@@ -250,10 +255,10 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
       </span>
       <Slot col="rename" />
       <Slot col="opacity" />
-      <button type="button" className="lm-btn" data-col="up" title="Move up" disabled={first} onClick={() => move('up')}>
+      <button type="button" className="lm-btn" data-col="up" title={moveTip('up', first)} aria-label="Move up" disabled={first} onClick={() => move('up')}>
         ▲
       </button>
-      <button type="button" className="lm-btn" data-col="down" title="Move down" disabled={last} onClick={() => move('down')}>
+      <button type="button" className="lm-btn" data-col="down" title={moveTip('down', last)} aria-label="Move down" disabled={last} onClick={() => move('down')}>
         ▼
       </button>
       <Slot col="process" />

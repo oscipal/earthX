@@ -163,7 +163,7 @@ describe('the dropdown "Band" of the view', () => {
     mount({}, collection({ 'earthx:index_presets': [] }), { visual: tiff(3) });
     expect(field('Band')).not.toBeNull();
     expect(select().disabled).toBe(true);
-    expect(field('Band')!.title).toBe('This picture has one band');
+    expect(field('Band')!.title).toBe('This image has one band');
   });
 
   it('is there for bands alone, without presets', () => {

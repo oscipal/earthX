@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { datasetsFrom } from '../datasets';
 import { useAppStore } from '../store';
 import type { Collection } from '../types';
+import { lockedWithoutReason } from '../fixtures/lockedControls';
 import ControlPanel from './ControlPanel';
 
 declare global {
@@ -728,7 +729,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       ],
     });
     act(() => root.render(<ControlPanel />));
-    expect(container.textContent).toContain('3 scene(s) found');
+    expect(container.textContent).toContain('3 scenes found');
   });
 
   it('the scene name field has a "×" while it holds text, which empties it', () => {
@@ -823,10 +824,10 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(document.activeElement).toBe(choices()[0]);
     });
 
-    it('"Clear coverage" is on only while a coverage map is shown, and hides it', () => {
+    it('"Hide coverage" is on only while a coverage map is shown, and hides it', () => {
       const clear = () => container.querySelector('.coverage-clear-btn') as HTMLButtonElement;
       setUp(['optical']);
-      expect(clear().textContent).toBe('Clear coverage');
+      expect(clear().textContent).toBe('Hide coverage');
       expect(clear().disabled).toBe(true);
       act(() => button().click());
       expect(useAppStore.getState().showCoverage).toBe(true);
@@ -837,10 +838,10 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(clear().disabled).toBe(true);
     });
 
-    it('"Coverage" and "Clear coverage" share one row', () => {
+    it('"Coverage" and "Hide coverage" share one row', () => {
       setUp(['optical']);
       const row = container.querySelector('.coverage-button-wrap')!;
-      expect([...row.children].map((c) => c.textContent)).toEqual(['Coverage', 'Clear coverage']);
+      expect([...row.children].map((c) => c.textContent)).toEqual(['Coverage', 'Hide coverage']);
     });
 
     it('is visible but off when no dataset is picked', () => {
@@ -921,3 +922,17 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     });
   });
 });
+
+// UI-04 §7.5 no. 8: what is locked says why in its tooltip.
+describe('locked controls of the menu', () => {
+  it('name their reason: Find without a name, Last AOI without one, Search without a dataset or an AOI', () => {
+    useAppStore.setState({ datasets: [], datasetId: null, selectedDatasetIds: [], searching: false, sceneLookupLoading: false });
+    act(() => root.render(<ControlPanel />));
+    expect(lockedWithoutReason(container)).toEqual([]);
+    const button = (text: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim().endsWith(text));
+    expect(button('Find')?.getAttribute('title')).toBe('Type a place name first');
+    expect(button('Last AOI')?.getAttribute('title')).toBe('No earlier AOI in this browser');
+    expect(button('Search')?.getAttribute('title')).toBe('Choose a dataset to search');
+  });
+});
+

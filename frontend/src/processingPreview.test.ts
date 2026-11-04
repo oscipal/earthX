@@ -34,7 +34,6 @@ import {
   planPreview,
   previewOverlays,
   previewTitle,
-  previewUnit,
   probeChain,
   refusedNote,
   refusedStepOf,
@@ -833,22 +832,6 @@ describe('the measure of a preview (M4-19c)', () => {
       colormap: 'viridis',
     });
     expect(measuredRange(null)).toBeNull();
-  });
-
-  const spec = { measure: 'M' } as PreviewSpec;
-  it.each([
-    ['m', 'm'],
-    ['1', null],
-    ['', null],
-    [null, null],
-  ])('shows the unit %j beside the range as %j', (unit, shown) => {
-    expect(previewUnit(spec, { key: 'M', stats: null, unit, source: 'scene', exact: true })).toBe(shown);
-  });
-
-  it('shows the unit of the measure of this preview and of no other', () => {
-    expect(previewUnit(spec, { key: 'other', stats: null, unit: 'm', source: 'scene', exact: true })).toBeNull();
-    expect(previewUnit(spec, null)).toBeNull();
-    expect(previewUnit(null, { key: 'M', stats: null, unit: 'm', source: 'scene', exact: true })).toBeNull();
   });
 });
 

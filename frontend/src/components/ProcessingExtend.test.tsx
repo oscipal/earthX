@@ -285,7 +285,7 @@ describe('whether a result layer can be processed further', () => {
 
   it('cannot where the dataset does not allow processing or is not there', () => {
     expect(layerProcessBlock(layer(), [dataset('view')], jobs())).toMatch(/does not allow processing/u);
-    expect(layerProcessBlock(layer(), [], jobs())).toBe('Pick a dataset first.');
+    expect(layerProcessBlock(layer(), [], jobs())).toBe('Choose a dataset first.');
   });
 
   it('cannot for the copy of an export, which has no bands', () => {
@@ -388,7 +388,7 @@ describe('the panel from a result', () => {
     expect(pressed()).toEqual([]);
     expect(output()).toEqual([]);
     expect((button('Start job') as HTMLButtonElement).disabled).toBe(true);
-    expect((button('Start job') as HTMLButtonElement).title).toBe('Pick at least one band for the output.');
+    expect((button('Start job') as HTMLButtonElement).title).toBe('Choose at least one band for the output.');
     click(button('NDVI', dataGroup()));
     expect(pressed()).toEqual(['NDVI']);
     expect(orderView(selectionState(useAppStore.getState()), store()).built?.order).not.toBeNull();

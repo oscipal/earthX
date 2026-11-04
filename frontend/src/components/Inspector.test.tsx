@@ -152,18 +152,18 @@ const button = (label: string) => [...container.querySelectorAll<HTMLButtonEleme
 const labels = () => [...container.querySelectorAll('.inspector label.vc-field > span')].map((s) => s.textContent);
 const headings = () => [...container.querySelectorAll('.inspector .insp-heading')].map((h) => h.textContent);
 
-const KINDS: [string, () => void][] = [
-  ['the view of the search', () => openView()],
-  ['the pinned view', openPinnedView],
-  ['the settings of a result', () => openResult()],
+const KINDS: [string, () => void, string][] = [
+  ['the view of the search', () => openView(), 'Image settings'],
+  ['the pinned view', openPinnedView, 'Image settings'],
+  ['the settings of a result', () => openResult(), 'Layer settings'],
 ];
 
 describe('the places', () => {
-  it.each(KINDS)('is an aside "Settings" with the head, then "Display", then "Actions": %s', (_, open) => {
+  it.each(KINDS)('is an aside named for what it sets, with the head, then "Display", then "Actions": %s', (_, open, name) => {
     act(() => root.render(<Inspector />));
     expect(aside()).toBeNull();
     open();
-    expect(aside()!.getAttribute('aria-label')).toBe('Settings');
+    expect(aside()!.getAttribute('aria-label')).toBe(name);
     expect(aside()!.classList.contains('panel')).toBe(true);
     // Row 1 of the head holds the title and the red x; row 2 is there whatever it holds.
     const head = aside()!.querySelector('.vc-head')!;
@@ -196,7 +196,7 @@ describe('the places', () => {
     for (let i = 1; i < order.length; i += 1) {
       expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING, `place ${i}`).toBeTruthy();
     }
-    expect([...aside()!.querySelector('.vc-buttons')!.children].map((b) => b.textContent)).toEqual(['auto-scale', 'Apply', expect.stringMatching(/^(Apply to all|Save)$/u)]);
+    expect([...aside()!.querySelector('.vc-buttons')!.children].map((b) => b.textContent)).toEqual(['Auto-scale', 'Apply', expect.stringMatching(/^(Apply to all|Save)$/u)]);
   });
 
   it('puts the title, the mark, the eye and the x of the view of the search in row 1, and the dataset and the time step in row 2', () => {
@@ -463,12 +463,12 @@ describe('what does not apply is locked, with its reason', () => {
     }
   });
 
-  it('keeps the band of a picture of one band in its place, locked: "This picture has one band"', () => {
+  it('keeps the band of a picture of one band in its place, locked: "This image has one band"', () => {
     act(() => root.render(<Inspector />));
     for (const open of [() => openView(), () => openResult([result('R1', { bands: [RESULT_BANDS[0]] })])]) {
       open();
       expect(field('Band').querySelector('select')!.disabled).toBe(true);
-      expect(field('Band').title).toBe('This picture has one band');
+      expect(field('Band').title).toBe('This image has one band');
       expect(labels().slice(0, 2)).toEqual(['Band', 'vmin']);
     }
   });

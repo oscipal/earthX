@@ -1,5 +1,5 @@
 // The view of scenes steps through its images (NM4-53, Otto, 31.10.2026, zu #257): two overpasses of a Sentinel-2 like
-// dataset (three bands, RGB) and one elevation tile, ticked, then "Crop & merge to AOI". Each scene is one solid colour,
+// dataset (three bands, RGB) and one elevation tile, ticked, then "Crop and merge to AOI". Each scene is one solid colour,
 // and the pixel in the middle of the map is read:
 //   1. the view opens with the image of the group that is open (green, the later overpass); the head says the date only (no satellite)
 //      between the title and the eye, with the dataset to choose, and the title has no date;
@@ -157,7 +157,7 @@ async function run(browser, { theme, viewport }) {
   const text = (selector) => page.locator(selector).first().textContent();
 
   // 1. Crop & merge over two overpasses and the elevation tile.
-  await page.getByRole('button', { name: 'Crop & merge to AOI' }).click();
+  await page.getByRole('button', { name: 'Crop and merge to AOI' }).click();
   await page.waitForSelector('.vc-head .vc-stepper');
   await expectColour('the open group (the later overpass) first', 'S2_B');
   const row = () => text('.vc-step-text');
@@ -165,7 +165,8 @@ async function run(browser, { theme, viewport }) {
   if (/\d{4}-\d{2}-\d{2}/.test(await page.locator('.vc-title').first().textContent())) problems.push('the title of the head has a date');
   // The head of the settings bar: title, mark, eye and x in the first row; the dataset and the date with the arrows in the second.
   const order = await page.evaluate(() => [...document.querySelector('.vc-head').children].map((row) => [...row.children].map((el) => el.className.split(' ')[0]).join()));
-  if (order.join(' | ') !== 'vc-title,pp-badge,vc-eye,close-x | vc-dataset,vc-stepper') problems.push(`the head holds ${order.join(' | ')}`);
+  // Row 2 ends with "Copy original scene name" (UI-03e, Otto, 3.11.2026).
+  if (order.join(' | ') !== 'vc-title,pp-badge,vc-eye,close-x | vc-dataset,vc-stepper,vc-scene-names') problems.push(`the head holds ${order.join(' | ')}`);
   if ((await page.getByRole('button', { name: 'Apply to all' }).count()) !== 1) problems.push('"Apply to all" is not there');
   const colormapBox = () => page.evaluate(() => {
     const label = [...document.querySelectorAll('.vc-field')].find((l) => l.querySelector('span')?.textContent === 'Colormap');

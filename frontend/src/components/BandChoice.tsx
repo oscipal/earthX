@@ -95,7 +95,7 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
             disabled={disabled || options.length === 0}
             onChange={(e) => setCommon(Number(e.target.value))}
           >
-            {common === null && <option value="">–</option>}
+            {common === null && <option value="">— choose —</option>}
             {options.map((resolution) => (
               <option key={resolution} value={String(resolution)}>
                 {metresText(resolution)}

@@ -67,7 +67,7 @@ async function check(browser, theme, viewport) {
     ].map((j) => ({ ...j, status: j.status ? { jobID: j.jobID, message: '', expires: j.expires, ...j.status } : { jobID: j.jobID, status: j.phase === 'successful' ? 'successful' : 'failed', message: '', progress: 100, expires: j.expires } }));
     useProcessingStore.setState({ groups: [{ id: group, name: 'Field 7' }], jobs });
   });
-  const rail = page.locator('nav[aria-label="Main"] button[aria-label^="Processing jobs"]');
+  const rail = page.locator('nav[aria-label="Main"] button[aria-label^="Jobs"]');
   if ((await rail.getAttribute('aria-expanded')) !== 'true') await rail.click();
   await page.waitForSelector('.processing-manager .pm-row');
   // "All", so that the job the server forgot ("No longer available") is in the list too.

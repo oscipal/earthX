@@ -359,7 +359,7 @@ describe('"Add to layers" and "Add all to layers"', () => {
     expect(button('＋ Add all to layers')!.title).toBe('There is only one image');
     mount(THREE);
     expect(button('＋ Add all to layers')!.disabled).toBe(false);
-    expect(button('＋ Add all to layers')!.title).toBe('Pin all 3 images of the view into the layer manager, one layer each');
+    expect(button('＋ Add all to layers')!.title).toBe('Add all 3 images of the view to the layers, one layer each');
   });
 
   it('pins the image shown with "Add to layers" and every image of every dataset with "Add all to layers"', () => {

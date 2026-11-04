@@ -1130,7 +1130,7 @@ describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
     await openPanel();
     click(button('Review'));
     await flush();
-    expect(container.textContent).toContain('Pick a pass.');
+    expect(container.textContent).toContain('Choose a pass.');
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
   });
 
@@ -1653,11 +1653,12 @@ describe('the area of the order (M4-13c §3.2)', () => {
   const recipeOf = (call: unknown[]) => JSON.parse((call[1] as RequestInit).body as string).inputs.recipe;
   const lastEstimate = () => recipeOf(fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/estimate')).at(-1)!);
 
-  it('starts on "Whole scene", sends no AOI and says what the mask covers', async () => {
+  it('starts on "Whole scene", sends no AOI and adds no note under the choice (Otto, 03.11.2026)', async () => {
     select([scene('S2B_A')]);
     await openPanel();
     expect(button('Whole scene').getAttribute('aria-pressed')).toBe('true');
-    expect(container.textContent).toContain('The result covers the whole scene; the mask marks where they have data.');
+    expect(container.textContent).not.toContain('The result covers');
+    expect(container.querySelector('.pp-area > .pp-help')).toBeNull();
     await ndvi();
     await review();
     expect(lastEstimate()).not.toHaveProperty('aoi');

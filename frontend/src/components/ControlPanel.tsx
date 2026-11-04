@@ -13,6 +13,7 @@ import AdvancedSearch from './AdvancedSearch';
 import ClearableInput from './ClearableInput';
 import Popover from './Popover';
 import Toolbar from './Toolbar';
+import { counted } from '../plural';
 
 // A date input plus a transparent button covering its calendar icon
 // (V-5). The tech theme draws its own icon and hides the native
@@ -184,6 +185,7 @@ function PlaceSearchField() {
           className="tool-btn ghost"
           aria-busy={searching}
           disabled={searching || !query.trim()}
+          title={searching ? 'Looking for the place…' : !query.trim() ? 'Type a place name first' : 'Find the place on the map'}
           onClick={() => void runSearch()}
         >
           {searching ? 'Finding…' : 'Find'}
@@ -287,7 +289,7 @@ function AoiExtras() {
         type="button"
         className="tool-btn ghost"
         disabled={!lastAoi}
-        title="Reuse the previous area of interest"
+        title={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
         onClick={() => applyLastAoi()}
       >
         <span>↺ Last AOI</span>
@@ -359,7 +361,7 @@ function MultiSelectToggle() {
   const setMultiSelect = useAppStore((s) => s.setMultiSelect);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   return (
-    <label className="multi-select-toggle" title="Pick several datasets and search them together">
+    <label className="multi-select-toggle" title="Choose several datasets and search them together">
       <input type="checkbox" checked={multiSelect} disabled={busy} onChange={(e) => setMultiSelect(e.target.checked)} />
       Select multiple datasets
     </label>
@@ -530,7 +532,7 @@ function CoverageButton() {
         disabled={picked.length === 0}
         title={
           picked.length === 0
-            ? 'Pick a dataset to see its coverage'
+            ? 'Choose a dataset to see its coverage'
             : showCoverage
               ? 'Coverage map on — click to change or hide it'
               : 'Show how densely a dataset covers the world'
@@ -558,7 +560,7 @@ function CoverageButton() {
         title={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
         onClick={() => hideCoverage()}
       >
-        Clear coverage
+        Hide coverage
       </button>
       <Popover
         anchorRef={rowRef}
@@ -613,6 +615,18 @@ export default function ControlPanel() {
   // The scene-name lookup and the search both ask every ticked dataset.
   // The filters of "Advanced search" belong to the search of an area; the lookup of a name does not read them.
   const canSearch = !busy && !!datasetId && selectedCount > 0 && (hasSceneName || (!!aoi && !filtersWrong));
+  // Why "Search" is held back, for its tooltip (UI-04: a locked control says why).
+  const searchBlock = busy
+    ? 'A search is running'
+    : selectedCount === 0 || !datasetId
+      ? 'Choose a dataset to search'
+      : hasSceneName
+        ? null
+        : !aoi
+          ? 'Choose a tool to define an AOI, or enter a scene name'
+          : filtersWrong
+            ? 'Correct the filters in Advanced search'
+            : null;
   const search = () => {
     if (!canSearch) return;
     if (hasSceneName) void findSceneByName();
@@ -653,14 +667,14 @@ export default function ControlPanel() {
       {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
       <div className="control-footer">
         <AdvancedSearch />
-        <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
+        <button type="button" className="primary-btn" disabled={!canSearch} title={canSearch ? undefined : (searchBlock ?? undefined)} onClick={search}>
           {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
         </button>
 
-        {count > 0 && <p className="result-count">{count} scene(s) found</p>}
+        {count > 0 && <p className="result-count">{counted(count, 'scene')} found</p>}
         {selectedCount === 0 && <p className="hint-text">Choose a dataset to search.</p>}
         {filtersWrong && !hasSceneName && <p className="hint-text error">Correct the filters in Advanced search.</p>}
-        {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
+        {!aoi && !hasSceneName && <p className="hint-text">Choose a tool to define an AOI, or enter a scene name above.</p>}
       </div>
     </div>
   );

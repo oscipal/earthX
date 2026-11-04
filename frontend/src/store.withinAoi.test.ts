@@ -260,7 +260,7 @@ describe('the walk through the answers', () => {
     expect(seen.every((s) => s.notice === null)).toBe(true);
     expect(sceneIds()).toEqual(['a', 'b']);
     expect(state().dock).toBe('results');
-    expect(state().notice).toContain('2 scene(s)');
+    expect(state().notice).toContain('2 scenes');
   });
 
   it('stops at a full page and leaves the token for "Load more", which fills the next page the same way', async () => {
@@ -332,7 +332,7 @@ describe('the walk through the answers', () => {
   it('leaves the hints to the head of the dataset when there is a list to show them in', async () => {
     steps = [{ scenes: [scene('a')], checked: 500, limit: true, unreadable: 1 }];
     await state().runSearch();
-    expect(state().notice).toBe('1 scene(s) in 1 time step(s).');
+    expect(state().notice).toBe('1 scene in 1 time step.');
   });
 
   it('does not look for the nearest date around a range that was searched with the limit (KE4)', async () => {
@@ -410,7 +410,7 @@ describe('ending the walk', () => {
     expect(state().searchContext?.nextToken).toBe('t2');
     expect(state().searchContext?.answer.aoiFilter?.optical?.checked).toBe(100);
     // The verdict of the notice is given now.
-    expect(state().notice).toContain('1 scene(s)');
+    expect(state().notice).toContain('1 scene');
 
     await state().loadMore();
     // The request that was dropped is asked again from the token before it, and the walk then ends.

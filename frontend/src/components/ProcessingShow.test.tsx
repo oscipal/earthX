@@ -358,7 +358,7 @@ describe('a scale of its own for every band', () => {
     await afterDebounce();
     expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
     expect(fields().map((f) => f.value)).toEqual(['120', '2400']);
-    expect(section().querySelector('.pp-unit')!.textContent).toBe('m');
+    expect(section().querySelector('.pp-unit')).toBeNull();
   });
 
   it('takes a band of the data for no index, however small its values are', async () => {
@@ -390,7 +390,7 @@ describe('a scale of its own for every band', () => {
     await afterDebounce();
     expect(rescale()).toBe('120,2400');
     expect(store().rangeByHand).toBe(false);
-    expect((button('Auto stretch') as HTMLButtonElement).disabled).toBe(true);
+    expect((button('Auto-scale') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('measures over the AOI for "AOI only", takes the band from the answer by its name, and asks the order once for all bands', async () => {
@@ -572,11 +572,11 @@ describe('"vmin" and "vmax" as percentiles in the preview', () => {
     expect(problem()).toMatch(/^Could not measure the percentiles/u);
   });
 
-  it('puts the usual stretch back with "Auto stretch" in percentiles, and the values back in values', async () => {
+  it('puts the usual stretch back with "Auto-scale" in percentiles, and the values back in values', async () => {
     await ndvi();
     toggleUnit();
     typeInto(fields()[0], '10');
-    click(button('Auto stretch'));
+    click(button('Auto-scale'));
     expect(fields().map((f) => f.value)).toEqual(['2', '98']);
   });
 

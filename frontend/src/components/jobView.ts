@@ -85,10 +85,10 @@ export function countBatch(batch: BatchEntry, parts: readonly JobEntry[], now: n
   };
 }
 
-// "12 done · 3 running · 1 refused · 1 failed"; what is zero is left out.
+// "12 finished · 3 running · 1 refused · 1 failed"; what is zero is left out.
 export function batchSummary(count: BatchCount): string {
   const parts: [number, string][] = [
-    [count.done, 'done'],
+    [count.done, 'finished'],
     [count.running, 'running'],
     [count.refused, 'refused'],
     [count.failed, 'failed'],

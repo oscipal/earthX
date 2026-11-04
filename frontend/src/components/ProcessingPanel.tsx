@@ -36,7 +36,6 @@ import {
   planPreview,
   previewRead,
   previewTitle,
-  previewUnit,
   rescaleOf,
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
@@ -55,7 +54,7 @@ import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
-import RenderFields from './RenderFields';
+import RenderFields, { NO_COLORMAP } from './RenderFields';
 import ResamplingDialog from './ResamplingDialog';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
@@ -106,7 +105,7 @@ function RecipeLoader() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.json')) return setOutcome({ ok: false, message: 'Pick a .json file.' });
+    if (!file.name.toLowerCase().endsWith('.json')) return setOutcome({ ok: false, message: 'Choose a .json file.' });
     if (file.size > MAX_RECIPE_BYTES) return setOutcome({ ok: false, message: 'The file is larger than 1 MB.' });
     setBusy(true);
     setOutcome(null);
@@ -177,7 +176,7 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
   );
 }
 
-// "Select Bands that are processed" (adr/0020 §9, §14): the bands of the output, the results of the steps ("New") and
+// "Select bands to process" (adr/0020 §9, §14): the bands of the output, the results of the steps ("New") and
 // the bands of the data ("Data"), a click each. Nothing is checked for the person, but the result of a step and the one
 // band of a dataset that has only one.
 function OutputBands({ view }: { view: OrderView }) {
@@ -211,7 +210,7 @@ function OutputBands({ view }: { view: OrderView }) {
   return (
     <section className="pp-section" aria-label="Output">
       <div className="pp-bands-head">
-        <h3 className="pp-heading">Select Bands that are processed</h3>
+        <h3 className="pp-heading">Select bands to process</h3>
         <Tip text="The bands of the result. Click a band to put it into the output or take it out." />
         <span className="pp-help" aria-label="Output summary">
           {count} band{count === 1 ? '' : 's'} · {view.dtype}
@@ -289,7 +288,6 @@ function areaLatitude(area: Area, aoi: GeoJSON.Geometry | null, scenes: readonly
 function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
   const area = useProcessingStore((s) => s.area);
   const setArea = useProcessingStore((s) => s.setArea);
-  const scenes = (view.pass?.items.length ?? 0) > 1 ? 'scenes' : 'scene';
   // On a result "Whole scene" is the result's own area, and "AOI only" another AOI inside it (NM4-05b).
   const result = view.fixed?.result != null;
   return (
@@ -316,11 +314,7 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
           AOI only
         </button>
       </div>
-      {area === 'scene' ? (
-        <p className="pp-help">
-          {result ? 'The result covers the area it has.' : `The result covers the whole ${scenes}; the mask marks where they have data.`}
-        </p>
-      ) : !hasAoi ? (
+      {area === 'scene' ? null : !hasAoi ? (
         <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
       ) : (
         view.outside && <p className="hint-text error">{OUTSIDE_TEXT}</p>
@@ -410,7 +404,6 @@ function PreviewSection({ view }: { view: OrderView }) {
   const autoStretch = useProcessingStore((s) => s.autoStretch);
   const shown = useProcessingStore((s) => s.shown);
   const setShown = useProcessingStore((s) => s.setShown);
-  const unit = previewUnit(preview, measure);
   // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4): in percentiles the fields hold what was typed.
   const range = useProcessingStore((s) => s.range);
   const applyRangePercent = useProcessingStore((s) => s.applyRangePercent);
@@ -486,13 +479,8 @@ function PreviewSection({ view }: { view: OrderView }) {
               vmax={{
                 value: percentMode ? typed.high : rangeDraft.vmax,
                 onChange: (vmax) => (percentMode ? (setTyped((t) => ({ ...t, high: vmax })), setPercentProblem(null)) : setRangeDraft({ vmax })),
-                after: unit ? (
-                  <span className="pp-unit" aria-label="Unit of the range">
-                    {unit}
-                  </span>
-                ) : undefined,
               }}
-              colormap={read?.band === RGB ? null : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
+              colormap={read?.band === RGB ? { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' } : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
             />
             <div className="pp-buttons">
               <button
@@ -505,7 +493,7 @@ function PreviewSection({ view }: { view: OrderView }) {
                   else autoStretch();
                 }}
               >
-                Auto stretch
+                Auto-scale
               </button>
               <button
                 type="button"
@@ -520,7 +508,7 @@ function PreviewSection({ view }: { view: OrderView }) {
           {!percentMode && 'problem' in valueRange && <p className="hint-text error">{valueRange.problem}</p>}
           {percentMode && percentProblem && <p className="hint-text error">{percentProblem}</p>}
           {rangeNote && <p className="hint-text">{rangeNote}</p>}
-          {read?.assets.length === 0 && <p className="hint-text">Pick a band for the output to see the preview.</p>}
+          {read?.assets.length === 0 && <p className="hint-text">Choose a band for the output to see the preview.</p>}
           {read && read.assets.length > MAX_PREVIEW_ASSETS && (
             <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
           )}
@@ -538,7 +526,7 @@ function PreviewSection({ view }: { view: OrderView }) {
               type="button"
               className="ghost-btn"
               disabled={!preview}
-              title="Pin this preview into the layer manager"
+              title="Add this preview to the layers"
               onClick={() => pinPreview()}
             >
               ＋ Add preview to layers

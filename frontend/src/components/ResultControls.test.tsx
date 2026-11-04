@@ -175,7 +175,7 @@ describe('a click on a result layer', () => {
     expect(field('vmin').value).toBe('180');
     expect(field('vmax').value).toBe('1900');
     expect(button('Apply')).toBeDefined();
-    expect(button('auto-scale')).toBeDefined();
+    expect(button('Auto-scale')).toBeDefined();
   });
 
   it('shows no unit, in the row or in the view', async () => {
@@ -290,7 +290,7 @@ describe('the range of a result layer', () => {
     type(field('vmax'), '60');
     click(button('Apply'));
     click(button('Save'));
-    click(button('auto-scale'));
+    click(button('Auto-scale'));
     expect(field('vmin').value).toBe('180');
     expect(field('vmax').value).toBe('1900');
     expect(urlOf()).toContain('rescale=50%2C60');
@@ -303,7 +303,7 @@ describe('the range of a result layer', () => {
     type(field('vmax'), '60');
     click(button('Apply'));
     click(button('Save'));
-    click(button('auto-scale'));
+    click(button('Auto-scale'));
     click(button('Save'));
     expect(urlOf()).toContain('colormap_name=viridis&rescale=180%2C1900');
     expect(keptRange()).toBeNull();
@@ -314,7 +314,7 @@ describe('the range of a result layer', () => {
   it('"auto-scale" also drops what was typed and not applied', async () => {
     await openView();
     type(field('vmin'), '7');
-    click(button('auto-scale'));
+    click(button('Auto-scale'));
     expect(field('vmin').value).toBe('180');
   });
 
@@ -386,7 +386,7 @@ describe('"Apply" and "Save" of a result layer', () => {
   it('stand under "auto-scale" and beside each other, in one cluster', async () => {
     await openView();
     const cluster = container.querySelector('.result-controls .vc-buttons')!;
-    expect([...cluster.children].map((el) => el.textContent?.trim())).toEqual(['auto-scale', 'Apply', 'Save']);
+    expect([...cluster.children].map((el) => el.textContent?.trim())).toEqual(['Auto-scale', 'Apply', 'Save']);
   });
 
   it('have one format for "auto-scale" and "Apply", and only "Save" is blue', async () => {
@@ -497,7 +497,7 @@ describe('a result drawn as it is, or gone', () => {
     expect(container.querySelector('.vc-num')).toBeNull();
     expect(container.querySelector('select')).toBeNull();
     expect(button('Apply')).toBeUndefined();
-    expect(button('auto-scale')).toBeUndefined();
+    expect(button('Auto-scale')).toBeUndefined();
     expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toMatch(/whole numbers/u);
     // The opacity stays, and the way out.
     expect(field('Opacity').disabled).toBe(false);
@@ -511,7 +511,7 @@ describe('a result drawn as it is, or gone', () => {
     expect(container.querySelector('.vc-num')).toBeNull();
     expect(container.querySelector('select')).toBeNull();
     expect(button('Apply')).toBeUndefined();
-    expect(button('auto-scale')).toBeUndefined();
+    expect(button('Auto-scale')).toBeUndefined();
     expect(field('Opacity').disabled).toBe(false);
   });
 });

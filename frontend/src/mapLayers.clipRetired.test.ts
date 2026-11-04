@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// NM4-25 (Otto, 25.10.2026): "Crop & merge to AOI" opens the view over the quicklook of the whole scene. That picture stays
+// NM4-25 (Otto, 25.10.2026): "Crop and merge to AOI" opens the view over the quicklook of the whole scene. That picture stays
 // until the new one has loaded, so that the basemap never shows, but it must follow the AOI: outside it, it is gone as soon
 // as its cut copy is on the map, inside it nothing changes until the tiles of the view are in.
 

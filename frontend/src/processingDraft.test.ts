@@ -196,9 +196,9 @@ describe('draftFromOrder', () => {
     });
 
     it('are refused as an object, a list of numbers, or an empty list', () => {
-      expect(check({ data: true }).problems).toEqual(['Step 1 (normalize): bands has the wrong type.', 'Step 1 (normalize): bands: Pick at least one band.']);
+      expect(check({ data: true }).problems).toEqual(['Step 1 (normalize): bands has the wrong type.', 'Step 1 (normalize): bands: Choose at least one band.']);
       expect(check([1, 2]).problems.join(' ')).toMatch(/bands has the wrong type/u);
-      expect(check([]).problems).toEqual(['Step 1 (normalize): bands: Pick at least one band.']);
+      expect(check([]).problems).toEqual(['Step 1 (normalize): bands: Choose at least one band.']);
     });
   });
 
@@ -303,7 +303,7 @@ describe('draftFromOrder', () => {
       expect(draftFromOrder(withStep(4, { method: 'zscore', bands: ['data'], measured }), info, keys()).problems).toEqual(['Step 1 (normalize): unknown parameter measured.']);
       expect(draftFromOrder(withStep(4, { bands: ['data'] }), info, keys()).problems).toEqual(['Step 1 (normalize): method: Required.']);
       expect(draftFromOrder(withStep(4, { method: 'median', bands: ['data'] }), info, keys()).problems).toEqual([
-        'Step 1 (normalize): method: Pick one of the options.',
+        'Step 1 (normalize): method: Choose one of the options.',
       ]);
       expect(draftFromOrder(withStep(4, { method: 'zscore', bands: ['data'], threshold: 1 }), info, keys()).problems).toEqual([
         'Step 1 (normalize): unknown parameter threshold.',

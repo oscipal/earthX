@@ -78,15 +78,15 @@ export default function TimeSlider() {
   return (
     <div className="time-slider">
       <div className="time-dates">
-        <span className={`time-end first${showFirst ? '' : ' gone'}`} title="First step" aria-hidden={!showFirst || undefined}>
+        <span className={`time-end first${showFirst ? '' : ' gone'}`} title="First time step" aria-hidden={!showFirst || undefined}>
           {showFirst ? name(groups.length - 1) : ''}
         </span>
         {near(older, 'before')}
-        {arrow(older, 'Previous step', 'left')}
+        {arrow(older, 'Previous time step', 'left')}
         <strong>{name(shown)}</strong>
-        {arrow(newer, 'Next step', 'right')}
+        {arrow(newer, 'Next time step', 'right')}
         {near(newer, 'after')}
-        <span className={`time-end last${showLast ? '' : ' gone'}`} title="Last step" aria-hidden={!showLast || undefined}>
+        <span className={`time-end last${showLast ? '' : ' gone'}`} title="Last time step" aria-hidden={!showLast || undefined}>
           {showLast ? name(0) : ''}
         </span>
       </div>
@@ -113,8 +113,8 @@ export default function TimeSlider() {
           onChange={(e) => setActiveGroupIndex(groups.length - 1 - Number(e.target.value))}
           aria-label="Timeline (mosaic groups)"
         />
-        <span className="time-count" title={loading ? 'Waiting for the next step to load; the picture stays until it has' : undefined}>
-          {loading ? 'Loading…' : `${activeGroupIndex + 1}/${groups.length}`}
+        <span className="time-count" title={loading ? 'Waiting for the next time step to load; the image stays until it has' : undefined}>
+          {loading ? 'Loading…' : `${activeGroupIndex + 1} / ${groups.length}`}
         </span>
       </div>
     </div>

@@ -245,7 +245,7 @@ describe('opening a link', () => {
     link = () => json({ order: { ...ORDER, inputs: [{ ...ORDER.inputs[0], dataset: 'never-was' }] }, view: VIEW, expires_at: EXPIRES });
     onAddress(`?permalink=${ID}`);
     await open();
-    expect(useAppStore.getState().error).toBe('Pick a dataset first.');
+    expect(useAppStore.getState().error).toBe('Choose a dataset first.');
   });
 
   it('says a scene is gone from the catalog', async () => {

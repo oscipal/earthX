@@ -93,14 +93,14 @@ export function areaQuestionOf(args: {
   let scalings: BandScaling[] | null = null;
   for (const item of items) {
     const source = bandSources(item, 'cog', null, collection).find((one) => one.asset === asset);
-    if (!source || source.names.length === 0 || (names.length > 0 && names.join() !== source.names.join())) return { reason: 'The items do not describe the bands of this picture.' };
+    if (!source || source.names.length === 0 || (names.length > 0 && names.join() !== source.names.join())) return { reason: 'The items do not describe the bands of this image.' };
     const own = scalingsOf(item, asset, source.names.length);
     if (!own) return { reason: NOT_INVERTIBLE };
     if (scalings && !sameScalings(scalings, own)) return { reason: 'The scenes of this image are scaled differently, so one range would not fit them all.' };
     names = source.names;
     scalings = own;
   }
-  if (!scalings) return { reason: 'The items do not describe the bands of this picture.' };
+  if (!scalings) return { reason: 'The items do not describe the bands of this image.' };
   return { datasetId, order: { recipe_version: 2, inputs: [input], aoi: orderAoi(aoi), steps: [], output: output(names) }, scalings };
 }
 

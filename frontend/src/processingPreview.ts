@@ -35,7 +35,6 @@ import { assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, st
 import {
   bandsOf,
   namesInExpression,
-  shownUnit,
   type Area,
   type BandSource,
   type DraftStep,
@@ -647,14 +646,8 @@ export function measuredRange(measure: PreviewMeasure | null): PreviewRange | nu
   return scale ? { vmin: String(scale.low), vmax: String(scale.high), colormap: scale.colormap } : null;
 }
 
-// The unit beside the range of the preview: that of the measure of this very preview, and nothing for a
-// dimensionless quantity ("1") or an unknown one.
-export function previewUnit(preview: PreviewSpec | null, measure: PreviewMeasure | null): string | null {
-  return preview && measure && measure.key === preview.measure ? shownUnit(measure.unit) : null;
-}
-
 // What the panel says when the measure could not be had: the preview then keeps the start range.
-export const NO_MEASURE = 'The range could not be measured, so the preview uses its start range. Set it by hand or try Auto stretch.';
+export const NO_MEASURE = 'The range could not be measured, so the preview uses its start range. Set it by hand or try Auto-scale.';
 
 // The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes. A scene
 // below a mosaic is drawn up to the level before it and steps aside for it (`hideFrom`, as in `mosaic.ts::viewOfPass`).

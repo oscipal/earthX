@@ -46,7 +46,7 @@ const ITEMS: Item[] = [
   },
   {
     panel: 'jobs',
-    label: 'Processing jobs',
+    label: 'Jobs',
     icon: svg(
       <>
         <rect x="4" y="3" width="16" height="18" rx="2" />
@@ -56,7 +56,7 @@ const ITEMS: Item[] = [
   },
   {
     panel: 'results',
-    label: 'Results',
+    label: 'Search results',
     icon: svg(
       <>
         <rect x="3" y="4" width="5" height="5" rx="1" />

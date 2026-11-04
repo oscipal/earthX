@@ -125,7 +125,7 @@ describe('the parameters a method writes', () => {
       out_min: 'Required.',
       out_max: 'Required.',
     });
-    expect(paramsFrom(FIELDS, { method: 'zscore', bands: '' }, 'normalize').errors).toEqual({ bands: 'Pick at least one band.' });
+    expect(paramsFrom(FIELDS, { method: 'zscore', bands: '' }, 'normalize').errors).toEqual({ bands: 'Choose at least one band.' });
   });
 
   it('refuses numbers the server would refuse, with a comma as a decimal mark, and a range that is not on offer', () => {
@@ -139,8 +139,8 @@ describe('the parameters a method writes', () => {
     // A target that runs backwards is allowed (`out_max` below `out_min`).
     expect(errors({ out_min: '1', out_max: '0' })).toEqual({});
     const percentile = (low: string, high: string) => paramsFrom(FIELDS, { ...values, method: 'percentile', low, high }, 'normalize').errors;
-    expect(percentile('3', '98')).toEqual({ low: 'Pick one of the ranges.' });
-    expect(percentile('2', '97')).toEqual({ high: 'Pick one of the ranges.' });
+    expect(percentile('3', '98')).toEqual({ low: 'Choose one of the ranges.' });
+    expect(percentile('2', '97')).toEqual({ high: 'Choose one of the ranges.' });
     expect(percentile('', '98')).toEqual({ low: 'Required.' });
   });
 

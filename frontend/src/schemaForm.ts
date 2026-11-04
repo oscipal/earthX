@@ -87,12 +87,16 @@ function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+// The names the server's schema writes in title case (pydantic makes "Crs" of `crs`), as the interface writes them (UI-04 §7.4).
+const ACRONYMS: Readonly<Record<string, string>> = { Crs: 'CRS', Aoi: 'AOI', Rgb: 'RGB', Utm: 'UTM' };
+export const fieldTitle = (title: string): string => title.replace(/\b[A-Z][a-z]+\b/gu, (word) => ACRONYMS[word] ?? word);
+
 function fieldOf(name: string, schema: JsonSchema, required: boolean): Field | string {
   const extra = Object.keys(schema).find((key) => !FIELD_KEYWORDS.has(key));
   if (extra) return `keyword ${extra} in ${name}`;
   const base = {
     name,
-    title: typeof schema.title === 'string' ? schema.title : name,
+    title: fieldTitle(typeof schema.title === 'string' ? schema.title : name),
     ...(typeof schema.description === 'string' ? { description: schema.description } : {}),
     required,
     ...('default' in schema ? { default: schema.default } : {}),
@@ -283,10 +287,10 @@ function valueOf(field: Field, raw: FieldValue | undefined): { value?: unknown; 
   if (field.kind === 'const') return { value: field.constValue };
   if (field.kind === 'boolean') return { value: raw === true };
   const text = typeof raw === 'string' ? raw : '';
-  if (text === '') return field.required ? { error: field.kind === 'names' ? 'Pick at least one band.' : 'Required.' } : {};
+  if (text === '') return field.required ? { error: field.kind === 'names' ? 'Choose at least one band.' : 'Required.' } : {};
   switch (field.kind) {
     case 'enum':
-      return field.options?.includes(text) ? { value: text } : { error: 'Pick one of the options.' };
+      return field.options?.includes(text) ? { value: text } : { error: 'Choose one of the options.' };
     case 'number':
     case 'integer': {
       const value = parseNumber(field, text);
@@ -317,7 +321,7 @@ function valueOf(field: Field, raw: FieldValue | undefined): { value?: unknown; 
     }
     case 'names': {
       const value = namesIn(text);
-      if (field.minItems !== undefined && value.length < field.minItems) return { error: 'Pick at least one band.' };
+      if (field.minItems !== undefined && value.length < field.minItems) return { error: 'Choose at least one band.' };
       if (field.maxItems !== undefined && value.length > field.maxItems) return { error: `At most ${field.maxItems} bands.` };
       return { value };
     }

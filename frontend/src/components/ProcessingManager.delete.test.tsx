@@ -573,7 +573,7 @@ describe('a batch', () => {
     click(item('Delete'));
     await settle();
     expect(asked).toEqual([`DELETE /processing/jobs/${jobId(2)}`]);
-    expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('2 done · 1 deleted');
+    expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('2 finished · 1 deleted');
     // Not every part is deleted, so the batch stays under "Active".
     expect(titles()).toHaveLength(1);
     expect(job(1).deletedUntil).toBeNull();
