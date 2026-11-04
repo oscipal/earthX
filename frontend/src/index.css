@@ -1553,9 +1553,6 @@ textarea:autofill {
   color: var(--accent);
   font-weight: 700;
 }
-.coverage-choice-item.off {
-  color: var(--muted);
-}
 .coverage-dataset-name {
   color: var(--accent);
 }

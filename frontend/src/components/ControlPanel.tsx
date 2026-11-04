@@ -489,9 +489,9 @@ function CoverageLegend() {
 // buttons, outside it so it stays in view however that grid scrolls, and set
 // apart from them. One dataset picked: a click shows its coverage (or hides it
 // again). Several picked: the click first offers the choice of which dataset,
-// lying over what is below — nothing is drawn until one is chosen. Beside it
-// "Clear coverage", on only while a coverage map is shown; the two fill the
-// panel's width. Off by default (M2-07c).
+// lying over what is below — nothing is drawn until one is chosen. The choice holds only datasets (UI-04 part 4, Otto,
+// 4.11.2026): the map is switched on and off with the buttons, not with an entry of the choice. Beside "Coverage",
+// "Hide coverage", on only while a coverage map is shown; the two fill the panel's width. Off by default (M2-07c).
 function CoverageButton() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
@@ -578,11 +578,6 @@ function CoverageButton() {
             {d.title}
           </button>
         ))}
-        {showCoverage && (
-          <button type="button" role="menuitem" className="coverage-choice-item off" onClick={() => chosen(hideCoverage)}>
-            Hide coverage
-          </button>
-        )}
       </Popover>
     </div>
   );

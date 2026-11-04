@@ -883,15 +883,35 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(container.textContent).toContain('Coverage · Elevation model');
     });
 
-    it('with the coverage on and several picked, the choice also offers to hide it and marks the current one', () => {
+    it('with the coverage on and several picked, the choice holds the datasets only, with no entry "Hide coverage", and marks the current one (UI-04 part 4)', () => {
       setUp(['optical', 'dem']);
       act(() => button().click());
       act(() => choices()[0].click());
       act(() => button().click());
-      expect(choices().map((c) => c.textContent)).toEqual(['Optical imagery', 'Elevation model', 'Hide coverage']);
+      expect(choices().map((c) => c.textContent)).toEqual(['Optical imagery', 'Elevation model']);
+      expect(container.querySelector('.coverage-choice')?.textContent).not.toMatch(/Hide coverage/u);
       expect(choices()[0].getAttribute('aria-checked')).toBe('true');
-      act(() => choices()[2].click());
+      expect(choices()[1].getAttribute('aria-checked')).toBe('false');
+    });
+
+    it('with the coverage on and several picked, it is hidden with the button "Hide coverage" beside "Coverage", not from the choice', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => choices()[0].click());
+      expect(useAppStore.getState().showCoverage).toBe(true);
+      const hide = container.querySelector('.coverage-button-wrap > .btn:nth-child(2)') as HTMLButtonElement;
+      expect(hide.textContent).toBe('Hide coverage');
+      act(() => hide.click());
       expect(useAppStore.getState().showCoverage).toBe(false);
+    });
+
+    it('chooses another dataset from the choice while the coverage is on, and the map follows without being hidden first', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => choices()[0].click());
+      act(() => button().click());
+      act(() => choices()[1].click());
+      expect(useAppStore.getState()).toMatchObject({ showCoverage: true, coverageDatasetId: 'dem' });
     });
 
     it('a click outside closes the choice without drawing anything; Escape does not close it (Otto, 2.11.2026)', () => {
