@@ -70,7 +70,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
               <TrashIcon />
             </button>
           </div>
-          <p className="pp-help">Good until {new Date(made.expiresAt).toLocaleDateString()}. Anyone with the link sees your area.</p>
+          <p className="hint">Good until {new Date(made.expiresAt).toLocaleDateString()}. Anyone with the link sees your area.</p>
         </>
       ) : (
         <>
@@ -86,7 +86,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
         </>
       )}
       {note && (
-        <p className={note.ok ? 'pp-help' : 'hint-text error'} role="status">
+        <p className={note.ok ? 'hint' : 'error'} role="status">
           {note.text}
         </p>
       )}

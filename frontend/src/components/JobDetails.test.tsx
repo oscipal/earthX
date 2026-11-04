@@ -215,7 +215,7 @@ describe('what it says of the job', () => {
     const batch = 'b'.repeat(32);
     act(() => useProcessingStore.setState({ batches: [{ id: batch, title: 'Field 7', titleDefault: 'Field 7', createdAt: new Date(NOW).toISOString(), archived: false, groupId: null, refused: [] }] }));
     show(jobEntry(1, { batchId: batch, part: 'S2' }));
-    expect(container.querySelector('.pm-detail-title .pp-help')?.textContent).toBe('Field 7 · S2');
+    expect(container.querySelector('.pm-detail-title .hint')?.textContent).toBe('Field 7 · S2');
   });
 });
 

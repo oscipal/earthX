@@ -330,7 +330,7 @@ function Controls({ layer }: { layer: MapLayer }) {
             )}
           </div>
           {settable && problem && (
-            <p className="hint-text warn" role="alert">
+            <p className="hint warn" role="alert">
               {problem}
             </p>
           )}

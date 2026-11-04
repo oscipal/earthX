@@ -27,6 +27,7 @@ import EyeButton from './EyeButton';
 import { fallbackReasonOf, MEASURED_ON_SCENE, measureView, type ViewMeasure } from '../viewMeasure';
 import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
+import Badge from './Badge';
 import Tip from './Tip';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
 import { ArrowLeftIcon, CogIcon, DownloadIcon, PlusIcon } from './icons';
@@ -243,11 +244,7 @@ export default function ViewerControls() {
         copy={<CopySceneNames names={shown?.ids ?? []} />}
         mark={
           !compact &&
-          temporary && (
-            <span className="pp-badge vc-temporary" data-tip="This image is not a layer: add it to the layers to keep it">
-              Temporary
-            </span>
-          )
+          temporary && <Badge tip="This image is not a layer: add it to the layers to keep it">Temporary</Badge>
         }
         eye={
           !compact && (
@@ -371,7 +368,7 @@ export default function ViewerControls() {
             </div>
           </div>
           {measuredOnScene && (
-            <p className="vc-note hint-text" role="status">
+            <p className="hint" role="status">
               {MEASURED_ON_SCENE} <Tip text={measuredOnScene} />
             </p>
           )}

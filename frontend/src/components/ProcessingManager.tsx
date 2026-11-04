@@ -938,7 +938,7 @@ export default function ProcessingManager() {
     <div className="panel dock-panel processing-manager" role="region" aria-label="Jobs">
       <div className="results-head pm-head">
         <h2>Jobs</h2>
-        <div className="results-head-right">
+        <div>
           <Tip text={KEPT_HERE_TIP} />
           {shelf === 'trimmed' && <Tip text={STORAGE_FULL_TIP} tone="warn" />}
         </div>
@@ -946,7 +946,7 @@ export default function ProcessingManager() {
       <div className="pm-tools">
         <div className="pm-filter" role="group" aria-label="Show">
           {FILTERS.map(([value, label]) => (
-            <button key={value} type="button" className={`pp-seg${filter === value ? ' on' : ''}`} aria-pressed={filter === value} onClick={() => choose(value)}>
+            <button key={value} type="button" className="btn seg" aria-pressed={filter === value} onClick={() => choose(value)}>
               {label}
             </button>
           ))}
@@ -956,7 +956,7 @@ export default function ProcessingManager() {
         </button>
       </div>
       {shelf === 'memory' && (
-        <p className="hint-text warn pm-note" role="status">
+        <p className="hint warn pm-note" role="status">
           {NOT_KEPT_TEXT}
         </p>
       )}
@@ -975,7 +975,7 @@ export default function ProcessingManager() {
         </div>
       )}
       <div className="pm-list">
-        {shown.length === 0 && groups.length === 0 && <p className="hint-text pm-empty">{emptyText(filter, all.length)}</p>}
+        {shown.length === 0 && groups.length === 0 && <p className="hint pm-empty">{emptyText(filter, all.length)}</p>}
         {sections.map(({ group, entries, empty }) => {
           const id = group?.id ?? UNGROUPED;
           const folded = collapsed.includes(id);

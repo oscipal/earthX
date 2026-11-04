@@ -92,16 +92,16 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
   return (
     <section className="dialog-export-job" aria-label="Export as job">
       <h3>Too large for a direct download</h3>
-      <p className="hint-text">{offer.message}</p>
-      {estimate.state === 'estimating' && <p className="hint-text">Estimating the export…</p>}
+      <p className="hint">{offer.message}</p>
+      {estimate.state === 'estimating' && <p className="hint">Estimating the export…</p>}
       {estimate.state === 'ready' && (
         <p>
           About {formatBytes(estimate.doc.estimate.size)} · {formatDuration(estimate.doc.estimate.duration)}
         </p>
       )}
-      {estimate.state === 'too-large' && <p className="hint-text warn">{TOO_LARGE_FOR_A_JOB}</p>}
+      {estimate.state === 'too-large' && <p className="hint warn">{TOO_LARGE_FOR_A_JOB}</p>}
       {estimate.state === 'error' && (
-        <p className="hint-text error" role="alert">
+        <p className="error" role="alert">
           {estimate.message}{' '}
           <button type="button" className="link-btn" onClick={retry}>
             Retry
@@ -118,7 +118,7 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
         {started?.state === 'starting' ? 'Starting…' : 'Export as job'}
       </button>
       {started?.state === 'refused' && (
-        <p className="hint-text error" role="alert">
+        <p className="error" role="alert">
           {started.message}
         </p>
       )}

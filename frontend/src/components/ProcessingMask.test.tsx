@@ -190,8 +190,8 @@ const ticked = () =>
     .map((input) => Number(input.parentElement!.textContent!.split(' · ')[0]));
 // The bands of the data in the output section; the chips of the section "Bands" only help to write an expression.
 const dataGroup = () => container.querySelector('section[aria-label="Output"] [aria-label="Bands of the data"]')!;
-const chip = (name: string) => [...dataGroup().querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.textContent === name)!;
-const chips = () => [...dataGroup().querySelectorAll('.pp-chip')].map((c) => c.textContent);
+const chip = (name: string) => [...dataGroup().querySelectorAll<HTMLButtonElement>('.pp-chips .seg')].find((c) => c.textContent === name)!;
+const chips = () => [...dataGroup().querySelectorAll('.pp-chips .seg')].map((c) => c.textContent);
 const section = () => container.querySelector('section[aria-label="Preview on the map"]')!;
 const store = () => useProcessingStore.getState();
 
@@ -453,7 +453,7 @@ describe('the data type after normalize (Otto, 22.10.2026)', () => {
     click(button('Normalize'));
     // The step scales the bands it names; the type follows once one of them is in the output.
     const bands = [...container.querySelectorAll('fieldset.pp-classes')].find((f) => f.querySelector('legend')!.textContent!.startsWith('Band'))!;
-    click([...bands.querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.textContent === 'red')!);
+    click([...bands.querySelectorAll<HTMLButtonElement>('.pp-chips .seg')].find((c) => c.textContent === 'red')!);
     expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('float32');
     const options = [...container.querySelectorAll('select option')].map((o) => o.textContent);
     expect(options).toContain('uint16 (not after normalize)');

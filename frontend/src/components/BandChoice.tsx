@@ -47,7 +47,7 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
         <span id={`${id}-bands`} className="dialog-choice-label">
           Bands
         </span>
-        <span className="hint-text">
+        <span className="hint">
           {bands.length} of {table.length}
         </span>
         <button type="button" className="btn" disabled={disabled} onClick={() => setBands(table.map((band) => band.asset))}>
@@ -75,7 +75,7 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
             <button
               key={choice.value}
               type="button"
-              className={`pp-seg${form === choice.value ? ' on' : ''}`}
+              className="btn seg"
               aria-pressed={form === choice.value}
               data-tip-level="advanced" data-tip={choice.tip}
               disabled={disabled}
@@ -105,7 +105,7 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
           <Tip text={conversionTip(bands, common)} />
         </div>
       )}
-      {block && <p className="hint-text warn">{block}</p>}
+      {block && <p className="hint warn">{block}</p>}
     </section>
   );
 }

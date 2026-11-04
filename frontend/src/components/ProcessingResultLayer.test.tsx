@@ -488,18 +488,18 @@ describe('when the result cannot be shown', () => {
     await showOnMap();
     expect(layers()).toEqual([]);
     expect(useProcessingStore.getState().jobs[0].expired).toBe(false);
-    expect(container.querySelector('.hint-text.error')?.textContent).toContain('could not be shown on the map');
+    expect(container.querySelector('.error')?.textContent).toContain('could not be shown on the map');
   });
 
   it('asks again after an error, and the error goes', async () => {
     tileJson = () => json({ detail: 'down' }, 503);
     await showOnMap();
-    expect(container.querySelector('.hint-text.error')).not.toBeNull();
+    expect(container.querySelector('.error')).not.toBeNull();
     tileJson = () => json(TILE_JSON);
     click(button('Add to layers'));
     await flush();
     expect(layers()).toHaveLength(1);
-    expect(container.querySelector('.hint-text.error')).toBeNull();
+    expect(container.querySelector('.error')).toBeNull();
   });
 
   it('asks nothing of a job that is past its minute', async () => {
@@ -618,7 +618,7 @@ describe('"Overview" over the map', () => {
     result();
     act(() => root.render(<PreviewBadge />));
     expect(badge()).toBe('Overview');
-    expect(container.querySelector('.preview-badge')?.getAttribute('data-tip')).toBe(OVERVIEW_TITLE);
+    expect(container.querySelector('.preview-badge-dock .badge')?.getAttribute('data-tip')).toBe(OVERVIEW_TITLE);
     act(() => useAppStore.setState({ mapZoom: 15 }));
     expect(container.querySelector('.preview-badge-dock')).toBeNull();
     act(() => useAppStore.setState({ mapZoom: 3 }));
@@ -627,14 +627,14 @@ describe('"Overview" over the map', () => {
 
   describe('"Zoom in" (Otto, 25.10.2026: the picture does not vanish without a word)', () => {
     const from = (minZoom: number) => ({ overlays: [{ kind: 'raster' as const, tileUrl: 'https://t/{z}', bounds: [10, 50, 11, 51] as [number, number, number, number], minZoom, maxZoom: 14 }] });
-    const chips = () => [...container.querySelectorAll('.preview-badge')].map((chip) => chip.textContent);
+    const chips = () => [...container.querySelectorAll('.preview-badge-dock .badge')].map((chip) => chip.textContent);
 
     it('says from which zoom a layer is drawn, while the map is zoomed out of it', () => {
       result({ gsd: null }, from(8));
       act(() => useAppStore.setState({ mapZoom: 3 }));
       act(() => root.render(<PreviewBadge />));
       expect(chips()).toEqual(['Zoom in']);
-      expect(container.querySelector('.preview-badge')?.getAttribute('data-tip')).toContain('is drawn from zoom 7.');
+      expect(container.querySelector('.preview-badge-dock .badge')?.getAttribute('data-tip')).toContain('is drawn from zoom 7.');
       act(() => useAppStore.setState({ mapZoom: 7 }));
       expect(container.querySelector('.preview-badge-dock')).toBeNull();
     });

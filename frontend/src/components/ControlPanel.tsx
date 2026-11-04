@@ -97,7 +97,7 @@ function AcquisitionDateFields() {
         <DateField value={dateTo} onChange={setDateTo} label="To date" disabled={locked} />
       </div>
       {notes.map((n) => (
-        <p key={n.id} className="hint-text">
+        <p key={n.id} className="hint">
           {n.text}
         </p>
       ))}
@@ -194,7 +194,7 @@ function PlaceSearchField() {
       </div>
       <Popover anchorRef={rowRef} open={showResults} onClose={closeResults} className="place-results" ariaLabel="Places found">
         <div ref={resultsRef}>
-          {results.length === 0 && <p className="hint-text">No place found.</p>}
+          {results.length === 0 && <p className="hint">No place found.</p>}
           {results.map((r, i) => (
             <button
               key={`${r.display_name}-${i}`}
@@ -209,7 +209,7 @@ function PlaceSearchField() {
             </button>
           ))}
           {attribution && (
-            <p className="hint-text place-attribution">
+            <p className="hint place-attribution">
               {attribution.url?.startsWith('https://') ? (
                 <a href={attribution.url} target="_blank" rel="noopener noreferrer">
                   {attribution.text}
@@ -222,7 +222,7 @@ function PlaceSearchField() {
         </div>
       </Popover>
       {stillActive && picked && (
-        <p className="hint-text place-attribution">
+        <p className="hint place-attribution">
           {picked.name} · {PLACE_SEARCH_PROVENANCE.attribution}
         </p>
       )}
@@ -323,7 +323,7 @@ function DatasetNotes() {
   return (
     <div className="dataset-notes">
       {notes.map((n) => (
-        <p key={n.id} className="hint-text warn">
+        <p key={n.id} className="hint warn">
           {n.text}
         </p>
       ))}
@@ -460,9 +460,9 @@ function CoverageLegend() {
   const note = coverage ? completenessNote(coverage) : null;
   return (
     <div className="coverage-controls">
-      <p className="hint-text coverage-dataset-name">Coverage · {title}</p>
-      {coverageLoading && <p className="hint-text">Loading coverage…</p>}
-      {coverageError && <p className="hint-text error">{coverageError}</p>}
+      <p className="hint coverage-dataset-name">Coverage · {title}</p>
+      {coverageLoading && <p className="hint">Loading coverage…</p>}
+      {coverageError && <p className="error">{coverageError}</p>}
       {coverage && (
         <div className="coverage-legend">
           <div className="legend-scale">
@@ -474,8 +474,8 @@ function CoverageLegend() {
           </div>
           {/* English, matching the rest of the UI (D25; adr/0004 §5.3 nachtrag
               22.09.2026 lifts the earlier German-terms default). */}
-          <p className="hint-text">Scenes counted by their center point in the cell</p>
-          {note && <p className="hint-text coverage-note">{note}</p>}
+          <p className="hint">Scenes counted by their center point in the cell</p>
+          {note && <p className="hint coverage-note">{note}</p>}
           {coverage.histogram.length > 0 && (
             <CoverageHistogram histogram={coverage.histogram} dateFrom={dateFrom} dateTo={dateTo} />
           )}
@@ -667,9 +667,9 @@ export default function ControlPanel() {
         </button>
 
         {count > 0 && <p className="result-count">{counted(count, 'scene')} found</p>}
-        {selectedCount === 0 && <p className="hint-text">Choose a dataset to search.</p>}
-        {filtersWrong && !hasSceneName && <p className="hint-text error">Correct the filters in Advanced search.</p>}
-        {!aoi && !hasSceneName && <p className="hint-text">Choose a tool to define an AOI, or enter a scene name above.</p>}
+        {selectedCount === 0 && <p className="hint">Choose a dataset to search.</p>}
+        {filtersWrong && !hasSceneName && <p className="error">Correct the filters in Advanced search.</p>}
+        {!aoi && !hasSceneName && <p className="hint">Choose a tool to define an AOI, or enter a scene name above.</p>}
       </div>
     </div>
   );

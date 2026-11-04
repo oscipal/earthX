@@ -185,7 +185,7 @@ const rangeSelect = () => step().querySelector<HTMLSelectElement>('select[id$="-
 const box = (label: string) => step().querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
 const legends = () => [...step().querySelectorAll('legend, .pp-label')].map((l) => l.firstChild?.textContent ?? '');
 const tipsOf = (element: Element) => [...element.querySelectorAll('[data-tip]')].map((tip) => tip.getAttribute('data-tip')).join('\n');
-const bandChip = (name: string) => [...step().querySelectorAll<HTMLButtonElement>('fieldset .pp-chip')].find((c) => c.textContent === name)!;
+const bandChip = (name: string) => [...step().querySelectorAll<HTMLButtonElement>('fieldset .pp-chips .seg')].find((c) => c.textContent === name)!;
 const questions = () =>
   fetchMock.mock.calls.filter(([u, init]) => u === STATISTICS_ROUTE && init?.method === 'POST').map(([, init]) => JSON.parse(String(init.body)));
 const estimates = () => fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/estimate'));
@@ -265,7 +265,7 @@ describe('the step', () => {
 
   it('shows no text besides the labels: the explanations are tooltips', async () => {
     await withNormalize();
-    expect(step().querySelectorAll('p:not(.hint-text)')).toHaveLength(0);
+    expect(step().querySelectorAll('p:not(.hint)')).toHaveLength(0);
   });
 
 

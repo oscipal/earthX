@@ -244,10 +244,10 @@ const gear = () => container.querySelector<HTMLButtonElement>('.layer-row [data-
 const execution = () => fetchMock.mock.calls.filter(([u, init]) => String(u).endsWith('/execution') && init?.method === 'POST');
 const sent = () => JSON.parse(execution()[0][1].body).inputs.recipe as Order;
 const output = () => store().output;
-const infoChips = () => [...container.querySelectorAll('section[aria-label="Bands"] .pp-chip')].map((c) => c.textContent);
+const infoChips = () => [...container.querySelectorAll('section[aria-label="Bands"] .pp-chips .seg')].map((c) => c.textContent);
 const dataGroup = () => container.querySelector('section[aria-label="Output"] [aria-label="Bands of the data"]')!;
-const dataChips = () => [...dataGroup().querySelectorAll('.pp-chip')].map((c) => c.textContent);
-const pressed = () => [...dataGroup().querySelectorAll('.pp-chip')].filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
+const dataChips = () => [...dataGroup().querySelectorAll('.pp-chips .seg')].map((c) => c.textContent);
+const pressed = () => [...dataGroup().querySelectorAll('.pp-chips .seg')].filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
 
 // ⚙ at the layer, then the panel. The bands of the result are in the list of the output and none is checked (Otto, 2026-10-31);
 // most tests need something to start, so they check `ticked` themselves, and `null` leaves the list as the panel made it.
@@ -465,7 +465,7 @@ describe('the panel from a result', () => {
     const view = orderView(selectionState(useAppStore.getState()), store());
     expect(view.outside).toBe(true);
     expect(view.built?.order).toBeNull();
-    expect(container.querySelector('.hint-text.error')?.textContent).toBe('The AOI does not meet the result.');
+    expect(container.querySelector('.error')?.textContent).toBe('The AOI does not meet the result.');
     expect((button('Start job') as HTMLButtonElement).disabled).toBe(true);
     click(button('Review'));
     await flush();
@@ -490,7 +490,7 @@ describe('the panel from a result', () => {
     await flush();
     expect(sent().aoi).toEqual(view.aoi && orderAoi(view.aoi as GeoJSON.Polygon));
     expect(sent().aoi).not.toEqual(orderAoi(EDGE_AOI));
-    expect(container.querySelector('.hint-text.error')).toBeNull();
+    expect(container.querySelector('.error')).toBeNull();
   });
 
   it('draws no preview for an AOI that misses the result, and one cut to the part that is inside otherwise', async () => {
@@ -606,9 +606,9 @@ describe('the panel from a result', () => {
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     typeInto(field, 'NDVI * 2 + red');
     // The result of the job is a chip of the new step, and the expression naming it is no problem.
-    const chips = container.querySelectorAll('[aria-label="Results of earlier steps"] .pp-chip');
+    const chips = container.querySelectorAll('[aria-label="Results of earlier steps"] .seg');
     expect([...chips].map((c) => c.textContent)).toEqual(['NDVI']);
-    expect(container.querySelector('.pp-step .hint-text.error')).toBeNull();
+    expect(container.querySelector('.pp-step .error')).toBeNull();
     const view = orderView(selectionState(useAppStore.getState()), store());
     expect(view.results.map((r) => r.name)).toEqual(['NDVI', 'result']);
     expect(view.inherited).toEqual(['NDVI']);
@@ -616,7 +616,7 @@ describe('the panel from a result', () => {
     expect(view.nameBlock).toBeNull();
     // Only the new result is "New"; the new result comes into the output ticked, the output of the job stays; the file holds the
     // results first.
-    expect([...container.querySelectorAll('[aria-label="New bands"] .pp-chip')].map((c) => c.textContent)).toEqual(['result']);
+    expect([...container.querySelectorAll('[aria-label="New bands"] .pp-chips .seg')].map((c) => c.textContent)).toEqual(['result']);
     expect(output()).toEqual(['NDVI', 'red', 'result']);
     expect(view.output).toEqual(['NDVI', 'result', 'red']);
     expect(view.built?.order?.output.kind === 'raster' && view.built.order.output.bands).toEqual(['NDVI', 'result', 'red']);
@@ -628,7 +628,7 @@ describe('the panel from a result', () => {
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     // `nir` is in the data and was read by the job, but it is not in the output.
     typeInto(field, 'nir * 2');
-    expect(container.querySelector('.pp-step .hint-text.error')?.textContent).toBe("'nir' is not a band name");
+    expect(container.querySelector('.pp-step .error')?.textContent).toBe("'nir' is not a band name");
     expect(orderView(selectionState(useAppStore.getState()), store()).nameBlock).toBe("Step 2: 'nir' is not a band name");
     expect(orderView(selectionState(useAppStore.getState()), store()).built?.order).toBeNull();
     expect((button('Review') as HTMLButtonElement).disabled).toBe(true);
@@ -650,8 +650,8 @@ describe('the panel from a result', () => {
     click(button('Band math'));
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     typeInto(field, 'NDWI + 1');
-    expect(container.querySelector('.pp-step .hint-text.error')?.textContent).toBe("'NDWI' is not a band name");
-    expect([...container.querySelectorAll('[aria-label="Results of earlier steps"] .pp-chip')].map((c) => c.textContent)).toEqual(['NDVI']);
+    expect(container.querySelector('.pp-step .error')?.textContent).toBe("'NDWI' is not a band name");
+    expect([...container.querySelectorAll('[aria-label="Results of earlier steps"] .seg')].map((c) => c.textContent)).toEqual(['NDVI']);
     // The name of the hidden result is used in the chain.
     store().renameResult(store().steps[2].key, 'ndwi');
     expect(store().steps[2].values.name).toBe('result');

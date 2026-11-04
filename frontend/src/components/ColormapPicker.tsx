@@ -60,13 +60,13 @@ function Picker({ value, onPick }: { value: string; onPick: (name: string) => vo
       </div>
       <div className="insp-body">
         {groups === null ? (
-          <p className="hint-text">Loading the colormaps…</p>
+          <p className="hint">Loading the colormaps…</p>
         ) : groups === 'failed' ? (
-          <p className="hint-text warn" role="alert">
+          <p className="hint warn" role="alert">
             The colormaps could not be loaded. Choose from the few of the field, or try again later.
           </p>
         ) : shown.length === 0 ? (
-          <p className="hint-text">No colormap of this name</p>
+          <p className="hint">No colormap of this name</p>
         ) : (
           shown.map((group) => (
             <section key={group.name} className="insp-section">

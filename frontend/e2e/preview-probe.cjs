@@ -200,7 +200,7 @@ async function check(browser, theme, viewport, standIn) {
   });
   if (scroll) problems.push('the panel scrolls sideways');
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_refused.png`) });
-  const shown = page.locator('.processing-panel p.hint-text', { hasText: 'No preview: ' });
+  const shown = page.locator('.processing-panel p.hint', { hasText: 'No preview: ' });
   if ((await shown.count()) === 1) {
     await shown.scrollIntoViewIfNeeded();
     if (!(await shown.isVisible())) problems.push('the refusal cannot be scrolled into view');

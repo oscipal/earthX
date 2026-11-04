@@ -153,7 +153,7 @@ async function checkMethods(browser, theme, viewport) {
   await selectScene(page, true);
   await page.getByRole('button', { name: 'Normalize' }).click();
   const step = page.locator('li.pp-step').first();
-  await step.locator('fieldset .pp-chip', { hasText: 'red' }).click();
+  await step.locator('fieldset .pp-chips .seg', { hasText: 'red' }).click();
   const options = await step.locator('select[id$="-method"] option').allTextContents();
   if (options.join() !== 'Fixed range,Percentile stretch,Z-score,Robust (median, IQR)') problems.push(`the methods are ${options.join()}`);
   const shown = () => step.evaluate((s) => [...s.querySelectorAll('input, select')].filter((e) => e.offsetParent).map((e) => e.getAttribute('aria-label') ?? e.id.replace(/^pp-step-\d+-/, '')).join());
@@ -346,7 +346,7 @@ async function extendCase(browser, theme, viewport, label, { bands, normalize, c
   await page.waitForTimeout(600);
   if (await page.locator('.processing-panel li.pp-step').count()) problems.push('the locked step is shown as a step');
   // The bands of the result are in the list of the output; a result of one band has it checked already.
-  const red = page.locator('.processing-panel section[aria-label="Output"] .pp-chip', { hasText: 'red' }).first();
+  const red = page.locator('.processing-panel section[aria-label="Output"] .pp-chips .seg', { hasText: 'red' }).first();
   if ((await red.getAttribute('aria-pressed')) !== 'true') await red.click();
   const view = await page.evaluate(async () => {
     const { orderView, selectionState, useProcessingStore } = await import('/src/processingStore.ts');

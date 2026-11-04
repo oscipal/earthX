@@ -394,7 +394,7 @@ describe('whole scenes', () => {
     expect(container.querySelector('h2')?.textContent).toBe('Download full scene');
     expect(container.querySelector('.dialog-original-row')).toBeNull();
     expect(page.jobs).toEqual([]);
-    expect(container.querySelector('.dialog-originals > .hint-text')?.textContent).toBe('1 scene · 6 kB');
+    expect(container.querySelector('.dialog-originals > .hint')?.textContent).toBe('1 scene · 6 kB');
     expect(resolutionRow()).toBeNull();
   });
 
@@ -403,7 +403,7 @@ describe('whole scenes', () => {
     await click(button('None'));
     await click(boxes()[1]);
     await click(boxes()[4]);
-    expect(container.querySelector('.dialog-originals > .hint-text')?.textContent).toBe('1 scene · 3 kB');
+    expect(container.querySelector('.dialog-originals > .hint')?.textContent).toBe('1 scene · 3 kB');
     await click(button('Download'));
     expect(page.jobs).toHaveLength(1);
     expect(page.jobs[0].zipName).toBe('S1.zip');

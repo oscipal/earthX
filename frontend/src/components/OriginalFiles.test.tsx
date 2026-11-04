@@ -125,7 +125,7 @@ describe('the rows', () => {
   it('names the scenes and the size above the rows, as the tooltip of the button did', async () => {
     page.zip = channel(() => false).zip;
     await show(<OriginalFiles dataset={dataset(makeCollection())} links={[]} passes={passes('A', 'B')} started />);
-    expect(container.querySelector('.dialog-originals > .hint-text')?.textContent).toBe('2 scenes · 5 kB');
+    expect(container.querySelector('.dialog-originals > .hint')?.textContent).toBe('2 scenes · 5 kB');
   });
 
   it('React starting and stopping the run at once (StrictMode) does no download twice', async () => {
@@ -194,6 +194,6 @@ describe('the rows', () => {
   it('a note names the way where it is not the ZIP', async () => {
     await show(<OriginalFiles dataset={dataset(makeCollection({ 'earthx:access': { cors: false } }))} links={[]} passes={passes('A')} started />);
     expect(container.textContent).toContain('Your browser downloads each file.');
-    expect(container.querySelector('.hint-text[data-tip]')?.getAttribute('data-tip')).toContain('under the name the source gives it');
+    expect(container.querySelector('.hint[data-tip]')?.getAttribute('data-tip')).toContain('under the name the source gives it');
   });
 });

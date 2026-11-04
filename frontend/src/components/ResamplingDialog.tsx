@@ -50,11 +50,11 @@ export default function ResamplingDialog({ parts, onContinue, onCancel }: Props)
         <div className="dialog-body" id="resampling-body">
           {texts.map((text, index) => (
             <div key={index} className="resampling-part">
-              {text.label && <p className="resampling-label">{text.label}</p>}
+              {text.label && <p>{text.label}</p>}
               <p>{text.grid}</p>
               {text.bands && <p>{text.bands}</p>}
               {text.scenes && <p>{text.scenes}</p>}
-              <p className="hint-text">{text.meaning}</p>
+              <p className="hint">{text.meaning}</p>
             </div>
           ))}
         </div>

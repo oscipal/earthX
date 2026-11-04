@@ -107,7 +107,7 @@ describe('the entry "Results" in the layer manager', () => {
     expect(resultsButton('up').disabled).toBe(true);
     expect(resultsButton('down').disabled).toBe(true);
     // The count in the head is that of the pinned layers.
-    expect(container.querySelector('.layer-manager .results-head-right')?.textContent).toBe('0');
+    expect(container.querySelector('.layer-manager .results-head > div')?.textContent).toBe('0');
   });
 
   // Otto, 2.11.2026 (replaces "a new layer goes over it" of 30.10.2026, zu #249): it stays on top unless the user moves it down.

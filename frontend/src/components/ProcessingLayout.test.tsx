@@ -229,7 +229,7 @@ describe('the sections of the panel', () => {
     select(scene(), dataset({ 'earthx:license_flags': { tier: 'viewer' } }));
     await openPanel();
     expect(sections()).toEqual([]);
-    expect(container.querySelector('.pp-body .hint-text')).not.toBeNull();
+    expect(container.querySelector('.pp-body .hint')).not.toBeNull();
   });
 });
 
@@ -279,7 +279,7 @@ describe('the card of a step', () => {
     expect(document.activeElement).toBe(nameField(0));
     // Typing a name that breaks a rule is told at once, as before: the head only moves the cursor.
     typeInto(nameField(0), 'not a name');
-    expect(card(1).querySelector('.hint-text.error')).not.toBeNull();
+    expect(card(1).querySelector('.error')).not.toBeNull();
   });
 
   it('keeps the fields of every operator in one grid: a name and a control, as in the settings bar', async () => {
@@ -335,7 +335,8 @@ describe('the layout contract in index.css (UI-03b)', () => {
   it('makes every control of the panel at least as high as a control, which is a finger high on touch and under 900 px', () => {
     // A button with only an icon is square and a control high (UI-04 part 3a: the one `.icon-btn`, no `.pp-icon-btn` of its own).
     expect(css).toMatch(/(?<!,)\n\.icon-btn \{[^}]*\n  width: var\(--control-height\);\n  height: var\(--control-height\);/u);
-    expect(rule('.pp-chip,\n.pp-seg')).toContain('min-height: var(--control-height)');
+    expect(rule('.btn')).toContain('min-height: var(--control-height)');
+    expect(rule('.btn.seg')).toContain('font-size: var(--text-xs)');
     expect(rule('.pp-details summary')).toContain('min-height: var(--control-height)');
     expect(rule('.pp-check')).toContain('min-height: var(--control-height)');
     expect(rule('.pp-title-row')).toContain('min-height: var(--control-height)');

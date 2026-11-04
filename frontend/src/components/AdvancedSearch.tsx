@@ -65,7 +65,7 @@ function RangeField({
         {filter.unit && <span className="filter-unit">{filter.unit}</span>}
       </div>
       {error && (
-        <p className="hint-text error" id={errorId}>
+        <p className="error" id={errorId}>
           {error.message}
         </p>
       )}

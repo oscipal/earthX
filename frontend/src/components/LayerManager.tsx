@@ -367,14 +367,14 @@ export default function LayerManager() {
       <div className="panel dock-panel layer-manager">
         <div className="results-head">
           <h2>Layers</h2>
-          <div className="results-head-right">
+          <div>
             {(layers.length > 1 || flipping) && <FlipToggle />}
             <span>{layers.length}</span>
           </div>
         </div>
 
         {rows === 0 ? (
-          <p className="hint-text lm-empty">
+          <p className="hint lm-empty">
             No layers yet — select an image and “Add to layers”.
           </p>
         ) : (

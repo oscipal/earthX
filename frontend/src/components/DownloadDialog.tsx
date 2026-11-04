@@ -139,7 +139,7 @@ export default function DownloadDialog() {
                   </a>
                 </p>
               )}
-              {bandsLoading && <p className="hint-text">Loading the bands…</p>}
+              {bandsLoading && <p className="hint">Loading the bands…</p>}
               {table.length > 0 && !started && <BandChoice table={table} disabled={downloading} />}
               {!inBrowser && (
                 <p
@@ -191,7 +191,7 @@ export default function DownloadDialog() {
             <p>
               <strong>{title}</strong>
             </p>
-            <p className="hint-text">{skippedGroupsNotice}</p>
+            <p className="hint">{skippedGroupsNotice}</p>
           </div>
           <div className="dialog-actions">
             <button type="button" className="btn primary" onClick={close}>
@@ -250,7 +250,7 @@ export default function DownloadDialog() {
             </p>
 
             {offered && !layer?.restore.indexOnly && (
-              <div className="dialog-as" role="radiogroup" aria-label="What to download">
+              <div role="radiogroup" aria-label="What to download">
                 {(['raw', 'index'] as const).map((what) => (
                   <label key={what} style={{ marginRight: '1em' }} data-tip-level="advanced" data-tip={what === 'raw' ? 'The bands of the scenes, cut to the AOI' : `The ${offered.name}, computed as a Processing job would give it`}>
                     <input type="radio" name="download-as" checked={downloadAs === what} onChange={() => setDownloadAs(what)} disabled={downloading} />{' '}
@@ -260,11 +260,11 @@ export default function DownloadDialog() {
               </div>
             )}
 
-            {req && !index && bandsLoading && <p className="hint-text">Loading the bands…</p>}
+            {req && !index && bandsLoading && <p className="hint">Loading the bands…</p>}
             {req && !index && table.length > 0 && <BandChoice table={table} disabled={downloading} />}
 
             {!exportAllowed && (
-              <p className="hint-text">
+              <p className="hint">
                 {dataset?.title ?? 'This dataset'}&rsquo;s licence does not permit a data export.
               </p>
             )}
@@ -293,7 +293,7 @@ export default function DownloadDialog() {
             )}
 
             {!req && (
-              <p className="hint-text">
+              <p className="hint">
                 {selectionMode ? 'Nothing left to crop.' : 'This layer has nothing left to crop.'}
               </p>
             )}

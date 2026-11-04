@@ -218,12 +218,12 @@ function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) 
 // The chips of the section "Bands" (information and a help to write an expression) and the group "Bands of the data"
 // of the section "Output" (a click puts a band into the output or takes it out).
 const infoSection = () => container.querySelector<HTMLElement>('section[aria-label="Bands"]')!;
-const infoChips = () => [...infoSection().querySelectorAll('.pp-chip')].map((c) => c.textContent);
+const infoChips = () => [...infoSection().querySelectorAll('.pp-chips .seg')].map((c) => c.textContent);
 const dataGroup = () => container.querySelector<HTMLElement>('section[aria-label="Output"] [aria-label="Bands of the data"]')!;
-const dataChips = () => [...dataGroup().querySelectorAll('.pp-chip')].map((c) => c.textContent);
+const dataChips = () => [...dataGroup().querySelectorAll('.pp-chips .seg')].map((c) => c.textContent);
 const dataChip = (label: string | RegExp) => button(label, dataGroup());
 const pressedData = () =>
-  [...dataGroup().querySelectorAll('.pp-chip')].filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
+  [...dataGroup().querySelectorAll('.pp-chips .seg')].filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
 const outputSection = () => container.querySelector<HTMLElement>('section[aria-label="Output"]')!;
 const outputOf = () => useProcessingStore.getState().output;
 
@@ -370,7 +370,7 @@ describe('the panel built from the schema', () => {
     select([]);
     await openPanel();
     expect(container.textContent).toContain('Select a scene first.');
-    expect(container.querySelector('.pp-chip')).toBeNull();
+    expect(container.querySelector('.pp-chips .seg')).toBeNull();
   });
 });
 
@@ -1042,7 +1042,7 @@ describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
   it('offers no chip and says so when the asset lists no band names, whatever an extension field says', async () => {
     select([zarrScene(undefined)], 'processing', dataset('processing', ID, 'zarr'));
     await openPanel();
-    expect(container.querySelector('.pp-chip')).toBeNull();
+    expect(container.querySelector('.pp-chips .seg')).toBeNull();
     expect(container.textContent).toContain('This dataset does not list band names yet.');
     expect(container.textContent).not.toContain('b99');
   });
@@ -1108,7 +1108,7 @@ describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
     });
     await openPanel();
     expect(container.textContent).toContain('One job covers the scenes of one pass');
-    expect(container.querySelector('.pp-chip')).toBeNull();
+    expect(container.querySelector('.pp-chips .seg')).toBeNull();
     expect([...passPicker()!.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
       '— choose one pass —',
       '2026-07-02 (1 scene)',
@@ -1469,7 +1469,7 @@ describe('starting and following a job', () => {
     expect(downloads()).toHaveLength(0);
     // The file is not offered; the reason is the tooltip of the dimmed symbol.
     expect(container.querySelector<HTMLButtonElement>('button.pm-icon[aria-disabled="true"]')?.getAttribute('data-tip')).toBe(EXPIRED_TIP);
-    expect(container.querySelector('.hint-text.error')).toBeNull();
+    expect(container.querySelector('.error')).toBeNull();
   });
 });
 
@@ -1659,7 +1659,7 @@ describe('the area of the order (M4-13c §3.2)', () => {
     await openPanel();
     expect(button('Whole scene').getAttribute('aria-pressed')).toBe('true');
     expect(container.textContent).not.toContain('The result covers');
-    expect(container.querySelector('.pp-area > .pp-help')).toBeNull();
+    expect(container.querySelector('.pp-area > .hint')).toBeNull();
     await ndvi();
     await review();
     expect(lastEstimate()).not.toHaveProperty('aoi');

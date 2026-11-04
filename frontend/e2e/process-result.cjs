@@ -138,7 +138,7 @@ async function check(browser, theme, viewport) {
   const panel = page.locator('.processing-panel');
   if ((await panel.locator('.pp-step').count()) !== 0) problems.push('the steps of the job are shown as steps');
   const chips = async (selector) => page.$$eval(selector, (c) => c.map((x) => x.textContent));
-  if ((await chips('section[aria-label="Bands"] .pp-chip')).join() !== 'NDVI,red,green,blue') problems.push(`the bands on top are ${await chips('section[aria-label="Bands"] .pp-chip')}`);
+  if ((await chips('section[aria-label="Bands"] .pp-chips .seg')).join() !== 'NDVI,red,green,blue') problems.push(`the bands on top are ${await chips('section[aria-label="Bands"] .pp-chips .seg')}`);
   if ((await panel.getByRole('button', { name: 'Mask', exact: true }).count()) !== 0) problems.push('a mask is offered without its layer in the output');
   // The same area choice as the panel of a scene: "Whole scene" is the area of the result, "AOI only" an AOI inside it.
   if ((await panel.getByRole('button', { name: 'Whole scene' }).getAttribute('aria-pressed')) !== 'true') problems.push('"Whole scene" is not the start');
@@ -147,13 +147,13 @@ async function check(browser, theme, viewport) {
   if ((await panel.getByText('Load recipe').count()) !== 1) problems.push('"Load recipe…" is not offered');
   if ((await panel.getByText('From result').count()) !== 0) problems.push('the panel has a line "From result"');
   if ((await panel.locator('.pp-area .tip').count()) !== 0) problems.push('the area has a tooltip of the chain');
-  const labels = await page.$$eval('section[aria-label="Output"] .pp-chip-row .pp-help', (e) => e.map((x) => x.textContent));
+  const labels = await page.$$eval('section[aria-label="Output"] .pp-chip-row .hint', (e) => e.map((x) => x.textContent));
   if (labels.join() !== 'Data') problems.push(`the groups of the output are ${labels}`);
 
   // The bands of the job are listed in "Data", none of them checked; "Start job" waits for one.
   const stored = () => page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().output);
   if ((await stored()).length !== 0) problems.push(`the output starts with ${await stored()}`);
-  if ((await page.$$('section[aria-label="Output"] [aria-label="Bands of the data"] .pp-chip[aria-pressed="true"]')).length !== 0) problems.push('a band of the result is checked');
+  if ((await page.$$('section[aria-label="Output"] [aria-label="Bands of the data"] .pp-chips .seg[aria-pressed="true"]')).length !== 0) problems.push('a band of the result is checked');
   if (!(await panel.locator('button.btn.primary', { hasText: 'Start job' }).isDisabled())) problems.push('"Start job" is active with nothing checked');
   for (const name of ['NDVI', 'red', 'green', 'blue']) await panel.locator('section[aria-label="Output"] [aria-label="Bands of the data"]').getByRole('button', { name, exact: true }).click();
   // RGB is on offer once the three bands are in the output.
@@ -164,9 +164,9 @@ async function check(browser, theme, viewport) {
   // A new step reads the bands of the job, not the stock it did not keep.
   await panel.getByRole('button', { name: /Band math/ }).first().click();
   await page.locator('textarea[id$="-expression"]').fill('nir * 2');
-  if ((await page.locator('.pp-step .hint-text.error').first().textContent()) !== "'nir' is not a band name") problems.push('a band outside the output can be read');
+  if ((await page.locator('.pp-step .error').first().textContent()) !== "'nir' is not a band name") problems.push('a band outside the output can be read');
   await page.locator('textarea[id$="-expression"]').fill('NDVI * 2');
-  const earlier = await chips('[aria-label="Results of earlier steps"] .pp-chip');
+  const earlier = await chips('[aria-label="Results of earlier steps"] .seg');
   if (earlier.join() !== 'NDVI') problems.push(`the new step offers the chips ${earlier}`);
 
   const layout = await page.evaluate(() => {

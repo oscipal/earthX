@@ -91,12 +91,12 @@ describe('the head', () => {
   // Otto, 1.11.2026 (zu #272): the view of the search is a temporary picture, and a yellow box beside the title says so.
   it('has a badge "Temporary" right after the title, before the eye and the x, in the style of the "Preview" badge', () => {
     mount();
-    const temporary = container.querySelector('.vc-temporary') as HTMLElement;
+    const temporary = container.querySelector('.vc-head .badge') as HTMLElement;
     expect(temporary.textContent).toBe('Temporary');
     expect(temporary.previousElementSibling).toBe(title());
     expect(temporary.nextElementSibling).toBe(eye());
-    expect(temporary.classList.contains('pp-badge')).toBe(true);
-    expect(CSS).toMatch(/\.preview-badge,\s*\.pp-badge \{[^}]*border: 1px solid var\(--accent-2\)/u);
+    expect(temporary.classList.contains('badge')).toBe(true);
+    expect(CSS).toMatch(/\n\.badge \{[^}]*border: var\(--line-width\) solid var\(--accent-2\)/u);
   });
 
   it('has the dataset and the date with the arrows in a second row, under the title', () => {
@@ -110,7 +110,7 @@ describe('the head', () => {
 
   it('has no box "Temporary" in the settings of a layer: a layer is not temporary', () => {
     mount({ viewOfLayer: true, layers: [{ id: 'L1', name: 'Optical', visible: true, opacity: 1, overlays: [], restore: { focusMode: true, downloaded: scenes(1), appliedRender: {}, activeGroupIndex: 0, selectedIds: [], itemIds: [], groupItemIds: [], aoi: null, cropToAoi: true, datasetId: 'optical' } } as never], viewLayerId: 'L1' });
-    expect(container.querySelector('.vc-temporary')).toBeNull();
+    expect(container.querySelector('.vc-head .badge')).toBeNull();
     act(() => useAppStore.setState({ viewOfLayer: false, layers: [], viewLayerId: null }));
   });
 
@@ -311,16 +311,16 @@ describe('"Save" of the view of a pinned layer', () => {
   // Otto, 1.11.2026 (zu #272): "Temporary" goes when the image is a layer, and comes back with a change.
   it('takes off "Temporary" while a layer holds the image as it is drawn, and puts it back with an applied change; the fields alone do not', () => {
     mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [], cropToAoi: false });
-    expect(container.querySelector('.vc-temporary')).not.toBeNull();
+    expect(container.querySelector('.vc-head .badge')).not.toBeNull();
     mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
-    expect(container.querySelector('.vc-temporary')).toBeNull();
+    expect(container.querySelector('.vc-head .badge')).toBeNull();
     type(vmax(), '2000');
-    expect(container.querySelector('.vc-temporary')).toBeNull(); // typed, not drawn
+    expect(container.querySelector('.vc-head .badge')).toBeNull(); // typed, not drawn
     act(() => void (container.querySelector('.vc-apply') as HTMLButtonElement).click());
-    expect(container.querySelector('.vc-temporary')).not.toBeNull();
+    expect(container.querySelector('.vc-head .badge')).not.toBeNull();
     type(vmax(), '3000');
     act(() => void (container.querySelector('.vc-apply') as HTMLButtonElement).click());
-    expect(container.querySelector('.vc-temporary')).toBeNull();
+    expect(container.querySelector('.vc-head .badge')).toBeNull();
   });
 
   it('stands beside "Apply", after "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {

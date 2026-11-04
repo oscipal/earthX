@@ -149,8 +149,8 @@ async function check(browser, theme, viewport, scenario) {
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
   fs.mkdirSync(OUT, { recursive: true });
   const shot = (label) => page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_${label}.png`) });
-  const loading = page.locator('.preview-badge-dock .preview-badge.loading');
-  const badges = () => page.locator('.preview-badge-dock .preview-badge:not(.loading)');
+  const loading = page.locator('.preview-badge-dock .badge.loading');
+  const badges = () => page.locator('.preview-badge-dock .badge:not(.loading)');
 
   if (scenario === 'cold') {
     // 400 ms of debounce, 600 ms before the badge shows: by 1.6 s the wait is on the map and in no line of the panel.
@@ -165,7 +165,7 @@ async function check(browser, theme, viewport, scenario) {
       await shot('loading');
     }
     // The panel's heading says it too, in a badge: a narrow window hides the map behind the panel.
-    const inHeading = page.locator('.processing-panel .pp-heading .pp-badge.loading');
+    const inHeading = page.locator('.processing-panel .pp-heading .badge.loading');
     if ((await inHeading.count()) !== 1) problems.push('no "Loading…" badge in the heading of the preview');
     else {
       await inHeading.scrollIntoViewIfNeeded();
@@ -195,7 +195,7 @@ async function check(browser, theme, viewport, scenario) {
     const badge = badges().first();
     if ((await badge.textContent()) !== 'Preview') problems.push('no "Preview" badge');
     if ((await badge.getAttribute('data-tip')) !== HINT) problems.push('"Preview" over the map has no hint in its tooltip');
-    const inPanel = page.locator('.processing-panel .pp-badge:not(.loading)');
+    const inPanel = page.locator('.processing-panel .badge:not(.loading)');
     if ((await inPanel.getAttribute('data-tip')) !== HINT) problems.push('"Preview" in the panel has no hint in its tooltip');
     const panel = await page.evaluate(() => document.querySelector('.processing-panel')?.textContent ?? '');
     if (/Preview per scene|may differ from the job/.test(panel)) problems.push('the panel carries the hint as text');

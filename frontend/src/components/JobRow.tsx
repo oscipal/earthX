@@ -57,7 +57,7 @@ export function JobRow({ job }: { job: JobEntry }) {
         )}
       </div>
       {active && <progress className="pp-progress" max={100} value={job.status?.progress ?? 0} aria-label="Progress" />}
-      {job.phase === 'failed' && <span className="hint-text error">{job.failure ?? job.status?.message ?? 'The job failed'}</span>}
+      {job.phase === 'failed' && <span className="error">{job.failure ?? job.status?.message ?? 'The job failed'}</span>}
       {state.key !== 'cancelled' && state.key !== 'unavailable' && state.key !== 'deleted' && (
         <span className="hint" data-tip-level="advanced" data-tip={job.expires}>
           until {formatUntil(job.expires, now)}
@@ -70,7 +70,7 @@ export function JobRow({ job }: { job: JobEntry }) {
           </a>
         </span>
       )}
-      {job.error && <span className="hint-text error">{job.error}</span>}
+      {job.error && <span className="error">{job.error}</span>}
     </li>
   );
 }

@@ -94,7 +94,7 @@ function Title({ job }: { job: JobEntry }) {
           </button>
         </>
       )}
-      {batch && job.part && <span className="pp-help">{`${batch.title} · ${job.part}`}</span>}
+      {batch && job.part && <span className="hint">{`${batch.title} · ${job.part}`}</span>}
     </div>
   );
 }
@@ -130,7 +130,7 @@ function OpenInPanel({ job }: { job: JobEntry }) {
         Open in panel
       </button>
       {problem && (
-        <p className="hint-text error" role="alert">
+        <p className="error" role="alert">
           {problem}
         </p>
       )}
@@ -182,7 +182,7 @@ export default function JobDetails() {
       </div>
       <div className="pp-body">
         {!job || !state ? (
-          <p className="hint-text">This job is not in the list.</p>
+          <p className="hint">This job is not in the list.</p>
         ) : (
           <>
             <Title job={job} />
@@ -212,17 +212,17 @@ export default function JobDetails() {
             </dl>
             {active && <progress className="pp-progress" max={100} value={job.status?.progress ?? 0} aria-label="Progress" />}
             {job.phase === 'failed' && (
-              <p className="hint-text error" role="alert">
+              <p className="error" role="alert">
                 {job.failure ?? job.status?.message ?? 'The job failed'}
               </p>
             )}
             {job.error && (
-              <p className="hint-text error" role="alert">
+              <p className="error" role="alert">
                 {job.error}
               </p>
             )}
             {job.retryError && (
-              <p className="hint-text error" role="alert">
+              <p className="error" role="alert">
                 {job.retryError}
               </p>
             )}

@@ -190,9 +190,9 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
     [dataset, passes, pick, table],
   );
 
-  if (links === null) return <p className="hint-text">Loading the original files…</p>;
+  if (links === null) return <p className="hint">Loading the original files…</p>;
   if (!dataset || scenes.every((scene) => scene.entries.length === 0)) {
-    return <p className="hint-text">No original file of this selection could be linked directly from the source.</p>;
+    return <p className="hint">No original file of this selection could be linked directly from the source.</p>;
   }
 
   const asks = (passes ?? []).some((pass) => pass.items.length > 1);
@@ -204,7 +204,7 @@ export default function OriginalFiles({ dataset, links, passes, pick, table, sta
 
   return (
     <div className="dialog-originals">
-      <p className="hint-text">{summaryText(summaryOf(dataset.collection, scenes))}</p>
+      <p className="hint">{summaryText(summaryOf(dataset.collection, scenes))}</p>
       {go && <SceneRows dataset={dataset} scenes={scenes} />}
       <p className="dialog-original-buttons">
         {asks && (

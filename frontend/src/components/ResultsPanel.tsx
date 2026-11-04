@@ -219,11 +219,11 @@ function LoadMore({ openId }: { openId: string | null }) {
   // A search that checks the clouds inside the AOI asks on by itself and shows how far it is (DS-03b).
   const walking = useAppStore((s) => s.aoiWalking);
   if (walking) return null;
-  if (failed) return <p className="hint-text load-more">{failed}</p>;
-  if (!canLoad) return used ? <p className="hint-text load-more">No more results available.</p> : null;
+  if (failed) return <p className="hint load-more">{failed}</p>;
+  if (!canLoad) return used ? <p className="hint load-more">No more results available.</p> : null;
   return (
     <div className="load-more">
-      <span className="hint-text">More scenes may be available.</span>
+      <span className="hint">More scenes may be available.</span>
       <button type="button" className="btn" disabled={loading} onClick={() => void loadMore()}>
         {loading ? 'Loading…' : 'Load more'}
       </button>
