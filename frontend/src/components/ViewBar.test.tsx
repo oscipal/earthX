@@ -168,25 +168,25 @@ describe('the download buttons', () => {
 
     it('the number of scenes and the sum of the sizes, first', () => {
       expect(withSizes(true, [4_500_000_000, 5_900_000_000])).toMatch(/^2 scenes · 10\.4 GB\. Download each selected scene as one ZIP/);
-      expect(withSizes(true, [887_000_000])).toMatch(/^1 scene · 887\.0 MB\. Download the selected scene as one ZIP/);
+      expect(withSizes(true, [887_000_000])).toMatch(/^1 scene · 887 MB\. Download the selected scene as one ZIP/);
     });
 
     it('where the browser downloads the files itself: the same, with no ZIP', () => {
       const title = withSizes(false, [40_000_000, 40_000_000]);
-      expect(title).toMatch(/^2 scenes · 80\.0 MB\. Download the original files/);
+      expect(title).toMatch(/^2 scenes · 80 MB\. Download the original files/);
       expect(title).not.toContain('ZIP');
     });
 
     it('a size not known is said so, whole or in part', () => {
       expect(withSizes(true, [null, null])).toMatch(/^2 scenes · size unknown\./);
-      expect(withSizes(true, [2_000_000, null])).toMatch(/^2 scenes · 2\.0 MB and more, some sizes unknown\./);
+      expect(withSizes(true, [2_000_000, null])).toMatch(/^2 scenes · 2 MB and more, some sizes unknown\./);
     });
 
     it('counts the scenes the download takes: the ticked ones, else those of the open group', () => {
       withSizes(true, [1_000_000, 1_000_000, 1_000_000]);
       useAppStore.setState({ selectedIds: ['S0', 'S2'] });
       show();
-      expect(tipOf(button('Download full scenes'))).toMatch(/^2 scenes · 2\.0 MB\./);
+      expect(tipOf(button('Download full scenes'))).toMatch(/^2 scenes · 2 MB\./);
     });
   });
 

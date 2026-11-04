@@ -335,7 +335,7 @@ describe('whole scenes', () => {
     useAppStore.getState().setDownloadBands(['a_red', 'a_edge']);
     await vi.advanceTimersByTimeAsync(400);
     expect(estimates()).toHaveLength(1);
-    expect(useAppStore.getState().downloadJobNote).toMatchObject({ state: 'ready', text: 'About 2.0 MB · about 5 s' });
+    expect(useAppStore.getState().downloadJobNote).toMatchObject({ state: 'ready', text: 'About 2 MB · about 5 s' });
     useAppStore.getState().setDownloadForm('per_band');
     expect(useAppStore.getState().downloadJobNote).toBeNull();
     await vi.advanceTimersByTimeAsync(400);
