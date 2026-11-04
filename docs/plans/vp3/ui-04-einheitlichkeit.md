@@ -261,7 +261,7 @@ Kein Symbol mehr als Textzeichen. Erlaubt bleiben typografische Zeichen im Text:
 | **5** | RGB je Kanal im Ergebnis-Layer und in der Processing-Vorschau, Permalink mit Kanälen (Backend-Ausnahme, §7.6) | 300–350 | neu |
 | **6** | NM4-56: Zahlenformat (NM4-21), weniger Text mit (i) (NM4-22, Zeilen 8, 31), Datums- und Prozentformat (Zeilen 33, 41, 49), schmale Fenster (Punkt 58: Toolbar 320 px, Statusleiste bei 360 px, Statusmeldung über den Kopfknöpfen) | 350–400 | neu |
 
-**Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen.
+**Stand 04.11.2026:** Teil 1 ist umgesetzt und gemergt (#285). Teil 2 ist umgesetzt (§8.2); die Liste `UNTIL_PART_2` in `frontend/src/uiRules.test.ts` ist entfallen. Teil 3a ist umgesetzt (§8.3); Teil 3b (Hinweise, Abzeichen, feste Farben, Schrift) folgt in einer neuen Session.
 
 Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Teile quer durch dieselben Dateien gehen. Teil 4 kann vor Teil 3 kommen, wenn Otto es zuerst sehen will. Die Teile 2 bis 6 bekommen je einen eigenen Plan-Abschnitt in dieser Datei („§8 Teil n“), damit eine neue Session ohne dieses Gespräch auskommt.
 
@@ -331,3 +331,36 @@ Reihenfolge 1 → 2 → 3a → 3b → 4 → 5 → 6, nacheinander, weil alle Tei
 8. **Download überall `download`**, auch „Download all (ZIP)“ (vorher ⇊) und die Zeile eines Jobs.
 9. **Nicht berührt:** `.vc-eye` (28 px), `.lm-eye` (22 px) und andere feste Knopfgrößen; sie gehören zu Teil 3a (Knopfformen).
 10. **Antworten Otto (04.11.2026):** Die Leiste links bekommt in Teil 3 eine dritte Größe 20 px als Token (hier 16 px, unverändert). Der Knopf „Clear“ der AOI im Control-Menü heißt „Clear AOI“ (Beschriftung, Tooltip, `aria-label`); gesperrt ohne AOI mit dem Grund „No AOI to clear“.
+
+### 8.3 Teil 3a — Knöpfe, Sperren, Fokus, Tooltip-Weg (umgesetzt, 04.11.2026)
+
+**Umfang:** Teil 3 war in §7.7 als „400+“ in 3a und 3b geschnitten. Diese Session setzt **3a** um, dazu Ottos Vorgabe vom 04.11.2026 (Symbole der Leiste links 20 px als eigenes Token). Teil 3b (Hinweise, Abzeichen, feste Farben, Schrift, tote Regeln; Prüfungen 4 und 5) folgt in einer neuen Session. Der PR ist mit rund 1100 geänderten Zeilen größer als der Richtwert; etwa die Hälfte ist mechanisch (`title` → `data-tip` an gut 180 Stellen, die Nachführung der Tests).
+
+**Umgesetzt:**
+- **Token:** `--icon-size` (16 px), `--icon-size-sm` (14 px), `--icon-size-rail` (20 px, Otto), `--disabled-opacity` (0.4), `--on-accent` (Text auf gefülltem Akzent, beide Themen). `components/iconSizes.ts` hält dieselben Zahlen für `icons.ts`; `icons.test.tsx` prüft, dass Datei und Token gleich sind. Die vier Symbole der Leiste sind 20 px groß, der Strich bleibt 1.5 px (`AppRail.test.tsx`).
+- **Vier Knopfformen** (`index.css`, ganz vorn, damit Klassen eines Ortes sie überschreiben dürfen): `.btn`, `.btn.primary`, `.btn.danger`, `.icon-btn` (mit `.sm` = 22 px für Listenzeilen und `.quiet` = leise, `.off` = aus). Dazu `.link-btn` im Fließtext und `.close-x` (nur `CloseButton`). Ein Schalter steht mit `aria-pressed` (`.btn`: getönt mit Akzent; `.icon-btn`: Akzentfarbe) oder `.on` (die offene Seite der Leiste).
+- **Weg:** `ghost-btn`, `primary-btn`, `lm-btn`, `lm-eye`, `vc-eye`, `vc-step`, `zoom-btn`, `coverage-btn`, `play-btn`, `pp-icon-btn`, `delete-btn`, `copy-btn`, `vc-pencil`, `vc-back`, `lm-pencil`. Übrig bleiben Klassen eines Ortes mit Platz und Breite, nie mit Farbe, Rand oder Schrift (`tool-btn`, `pm-icon`, `dataset-toggle`, `aoi-stop`, `vc-apply`, `lm-flip`, …).
+- **Sperren:** `:disabled` und `[aria-disabled='true']` werden in **einer** Regel auf `--disabled-opacity` gedimmt; die Deckkraftwerte 0.3 bis 0.55 an Knöpfen, Feldern und Zeilen entfallen.
+- **Fokus:** ein Ring (`2px solid var(--focus)`) für alles Bedienbare (`a[href]`, `button`, Felder, `summary`, `[role=button|menuitem|menuitemradio]`, `[tabindex]`); die Einzelregeln und alle `outline: none` an Knöpfen und Feldern entfallen. Ausnahmen mit Grund: der Schieber (Ring am Griff), der Rahmen eines Popovers, die gestrichelte Ablagelinie.
+- **Ein Tooltip-Weg** (Frage 3, Otto): `data-tip` für alles, `TipLayer` zeichnet ihn. `title` steht an keinem Element mehr, **außer** an `<option>` (eine native Liste kann sonst nichts zeigen) und an den eigenen Steuerelementen von MapLibre. `TipLayer` setzt für die Dauer des Tooltips `aria-describedby` (außer der Name ist schon derselbe Text), der Tooltip hat `role="tooltip"`.
+- **Gesperrte Knöpfe:** Ein `disabled`-Knopf bekommt nicht in jedem Browser Mausereignisse. Er nimmt darum keine Zeigerereignisse an (`pointer-events: none`), und `TipLayer` findet ihn über die Lage des Zeigers.
+- **Prüfungen** (`uiRules.test.ts`, je mit Gegenprobe): kein `title` an einem Element außer `<option>`; keine der alten Knopfklassen in Code und CSS; keine feste Deckkraft in einer Regel eines gesperrten Elements; kein eigener Ring außer den Ausnahmen; der Ring nutzt den Token. `TipLayer.test.tsx` (Beschreibung, gesperrter Knopf), `AppRail.test.tsx` (20 px), `tokens.test.ts` (neue Token; `.btn` und `.icon-btn` ohne feste Maße). Die Tests lesen Tooltips über `fixtures/tips.ts` (`tipOf`).
+- **Browser** (Hell/Dunkel, 1280 und 360 px): `tooltips.cjs` prüft zusätzlich einen gesperrten Knopf („Already at the top“ erscheint, geht mit dem Zeiger) und dass kein `title` außer an `<option>` und MapLibre steht. Alle Skripte außer `settings-box` laufen grün (Stand siehe Log).
+
+**Auslegungen (Vorschlag, gelten bis Otto widerspricht):**
+1. **Gesperrt = `disabled` bleibt**, wo es steht (253 Prüfungen in den Tests hängen daran). Der Tooltip erscheint über die Zeigerlage; **per Tastatur ist ein `disabled`-Knopf nicht erreichbar**, sein Grund also nur mit der Maus zu lesen. Neue Sperren mit Grund nehmen `aria-disabled="true"` (bleibt in der Tab-Reihenfolge, Tooltip auch per Fokus); ein Klick darauf muss der Handler abfangen. Siehe Frage 1.
+2. **Knöpfe nur mit Symbol sind quadratisch und leise:** die runden Pfeile der Zeitleiste und des Datumsschritts und der Abspielknopf sind jetzt `.icon-btn`; Augen, Pfeile und Stift in Listenzeilen sind `.icon-btn.sm`. Das Auge ist in Textfarbe, ausgeschaltet gedämpft, ein gesetzter Schalter (`aria-pressed`) in Akzentfarbe.
+3. **Alle Knopftexte 12 px ohne Sperrung der Buchstaben:** `zoom-btn` (11 px, 1 px Abstand), `primary-btn` (0.5 px) und `tool-btn`/`coverage-btn` (11 px) tragen jetzt `--text-sm` und keinen Buchstabenabstand.
+4. **Primäre Knöpfe sind gefüllt:** die Knöpfe „Continue“, „Download“, „Run as a job“ in Dialogen (`lm-btn primary`: nur Rand und Schrift in Akzent) sind jetzt `.btn.primary`.
+5. **Datensatz-, Coverage- und Werkzeugknöpfe** sind `.btn` mit `aria-pressed`; „Coverage“ ist nicht mehr gestrichelt. Die Datensatzknöpfe bleiben zweizeilig mit dem Reifegrad-Chip.
+6. **Die Knöpfe oben rechts** (`Zoom to selection`, `Basemap`, Theme) sind `.btn.panel` (Panel-Hintergrund) in einer Flexreihe mit `--space-2` Abstand; der Theme-Knopf hat kein `aria-pressed` mehr, bis ihn Teil 4 ablöst.
+7. **`Segment-Umschalter` (`pp-seg`), Chips (`pp-chip`), Zeilen in Menüs und Listen (`pm-menu-list button`, `lm-name`, `result-group-head`, `cm-item`), Titel zum Umbenennen (`vc-title-btn`, `pm-title-edit`) und die Falzgriffe (`pp-grip`)** haben weiter eigene Formen; sie sind keine Knopfformen im Sinn von Zeile 44. Siehe Frage 2.
+8. **Namen von Komponenten-Eigenschaften** (`CloseButton title`, `CopyButton title`, `AutoScaleButton title`) bleiben; sie reichen den Tooltip nur an `data-tip` weiter.
+
+**Fragen an Otto:**
+1. **Sperren per Tastatur:** Soll jeder gesperrte Knopf mit Grund auf `aria-disabled` umgestellt werden, damit der Grund auch per Tastatur lesbar ist?
+   (1) Nein, `disabled` bleibt, nur neue Sperren nehmen `aria-disabled` — **Empfehlung**, ändert nichts an gut 250 Prüfungen.
+   (2) Ja, alle gesperrten Knöpfe mit Grund; eigener PR, etwa 600 Zeilen Tests.
+2. **Weitere Formen:** Sollen die Segment-Umschalter und Chips (`pp-seg`, `pp-chip`, `level-btn`) mit in 3b?
+   (1) Ja, als eine Form `.btn.seg` in einer Gruppe — **Empfehlung**.
+   (2) Nein, bleiben.

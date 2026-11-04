@@ -1,6 +1,6 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 04.11.2026, UI-04 Teil 2 (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 04.11.2026, UI-04 Teil 3a (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
@@ -63,7 +63,7 @@
 ## 3. Symbole
 
 - **Eine Quelle:** Lucide (`lucide-react`, ISC; die Symbole aus Feather unter MIT, Hinweise in `frontend/THIRD_PARTY_NOTICES.md`). Importiert werden nur die benutzten Symbole, alle in einer Datei: `frontend/src/components/icons.ts`. Sie gibt jedes unter eigenem Namen weiter (`DownloadIcon`); nur sie importiert `lucide-react`, und jeder Eintrag muss benutzt sein.
-- **Ein Strich:** 1.5 px, an jeder Größe gleich dick (`absoluteStrokeWidth`). Zwei Größen: 16 px als Standard (`<DownloadIcon />`), 14 px in Listenzeilen (`<DownloadIcon size={14} />`). Farbe `currentColor`.
+- **Ein Strich:** 1.5 px, an jeder Größe gleich dick (`absoluteStrokeWidth`). Drei Größen, als Token in `tokens.css` und als Zahlen in `components/iconSizes.ts` (ein Test hält beide zusammen): 16 px als Standard (`--icon-size`, `<DownloadIcon />`), 14 px in Listenzeilen (`--icon-size-sm`, `<DownloadIcon size={14} />`) und 20 px für die Symbole der Leiste links (`--icon-size-rail`, `size={ICON_SIZES.rail}`; Otto, 04.11.2026). Farbe `currentColor`.
 - **Neben einem Text** steht das Symbol davor und bekommt `lead`: `<CogIcon lead />Process`. Der Abstand kommt aus dem CSS (`.icon-lead`), kein Leerzeichen im Text.
 - **Ein Knopf nur mit Symbol** hat einen Namen für Screenreader (`aria-label`) und einen Tooltip. Gleiche Aktion, gleiches Symbol, auch wenn Text dabeisteht oder nicht.
 - **Eigene Zeichnungen gibt es nicht.** Das einzige `<svg>` im Code ist das Balkendiagramm des Histogramms (`RangeHistogram`), kein Symbol.
@@ -108,8 +108,10 @@
 ## 4. Sperren
 
 - Was gerade nicht geht, ist **gesperrt** (`disabled` oder `aria-disabled="true"`) und nennt den **Grund im Tooltip**. Der Grund wiederholt nicht den Knopftext. Beispiele: „Type a place name first“, „No earlier AOI in this browser“, „Already at the top“, „Job deleted: restore it first“.
+- **Ein Aussehen:** ein gesperrtes Element ist auf `--disabled-opacity` (0.4) gedimmt, in einer Regel für `:disabled` und `[aria-disabled='true']`. Keine eigene Deckkraft an einem gesperrten Element.
+- **`aria-disabled` für neue Sperren mit Grund:** das Element bleibt in der Tab-Reihenfolge, der Grund ist auch per Tastatur lesbar; der Handler fängt den Klick ab. Ein bestehendes `disabled` bleibt; sein Tooltip erscheint, wo der Zeiger darüber liegt (`TipLayer`), per Tastatur nicht.
 - Wo eine gesperrte Stelle einen Platz hält, bleibt sie an diesem Platz, z. B. die Colormap bei RGB als gesperrtes „— none —“, auch in der Processing-Vorschau.
-- Es gibt einen Tooltip-Weg: `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus, auch an gesperrten Knöpfen *(folgt in Teil 3a; bis dahin `title`)*.
+- **Ein Tooltip-Weg:** `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus; `TipLayer` setzt für die Dauer `aria-describedby`, ein Knopf nur mit Symbol hat zusätzlich seinen `aria-label`. **`title` gibt es an keinem Element** (ein zweiter Tooltip des Browsers), außer an `<option>` (eine native Liste zeigt sonst nichts) und an den Steuerelementen von MapLibre. Ein Test findet jedes andere `title`.
 
 ## 5. Schließen
 
@@ -153,7 +155,23 @@
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
 | `PreviewBadge`, `pp-badge` | Abzeichen „Preview“, „Temporary“, „Overview“, „Zoom in“ *(ein Bauteil `Badge` folgt in Teil 3b)* |
 
-Knopfformen: `.btn` (Standard), `.btn.primary`, `.btn.danger`, `.icon-btn`, dazu `.link-btn` im Fließtext *(folgt in Teil 3a; heute `ghost-btn`, `primary-btn`, `lm-btn` u. a.)*. Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
+**Knopfformen** (`index.css`, vorn im Blatt):
+
+| Form | wofür |
+|---|---|
+| `.btn` | Text, mit oder ohne Symbol davor (`<CogIcon lead />Process`); Standard |
+| `.btn.primary` | die eine Handlung eines Formulars oder Dialogs (gefüllt, Text `--on-accent`) |
+| `.btn.danger` | verwirft oder löscht (Rand und Schrift `--danger`) |
+| `.icon-btn` | nur ein Symbol, quadratisch, so hoch wie ein Steuerelement; `.sm` für Listenzeilen (22 px), `.quiet` für Nebensächliches (Umbenennen, Kopieren, Feld leeren), `.off` für ein ausgeschaltetes Auge |
+| `.link-btn` | in einem Satz; sonst `.btn` |
+| `.close-x` | nur `CloseButton` (§5) |
+
+- **Ein Schalter** steht mit `aria-pressed`: `.btn` ist dann getönt in Akzent, `.icon-btn` in Akzentfarbe. Die offene Seite der Leiste links trägt `.on`.
+- **Eine Klasse für einen Ort** gibt nur Platz, Breite und Lage (`tool-btn`, `pm-icon`, `dataset-toggle`, `vc-apply`), nie Farbe, Rand, Radius, Schrift oder Deckkraft. Ein Knopf über der Karte trägt `.panel` dazu (`.btn.panel`).
+- Eigene Formen haben bis Teil 3b noch: Segment-Umschalter und Chips (`pp-seg`, `pp-chip`), Zeilen in Menüs und Listen, Titel zum Umbenennen und die Falzgriffe (`pp-grip`).
+- **Fokus:** ein Ring für alles Bedienbare, `2px solid var(--focus)` per Tastatur (`:focus-visible`), in **einer** Regel. Kein `outline: none`, keine eigene Ringregel an einem Knopf oder Feld; Ausnahmen sind der Schieber (Ring am Griff) und die Ablagelinie beim Ziehen.
+
+Hinweise: `.hint`, `.hint.warn`, `.error` mit Tokens *(folgt in Teil 3b)*.
 
 **Steuerhöhe:** 28 px; bei Touch und unter 900 px 44 px (`--control-height-touch`).
 
@@ -185,7 +203,12 @@ Knopfformen: `.btn` (Standard), `.btn.primary`, `.btn.danger`, `.icon-btn`, dazu
 | Begriffe (§2) gegen alle Texte der Oberfläche | `frontend/src/uiRules.test.ts` |
 | Sperrgrund im Tooltip | `frontend/src/fixtures/lockedControls.ts`, benutzt in `ControlPanel.test.tsx` und `LayerManager.test.tsx` |
 | Klick neben einen Dialog schließt nicht | `DownloadDialog.bands.test.tsx` |
-| Tokens statt fester Werte | `frontend/src/tokens.test.ts` (alle Klassen ab Teil 3) |
+| Tokens statt fester Werte | `frontend/src/tokens.test.ts` (`.btn` und `.icon-btn` schon, alle Klassen ab Teil 3b) |
+| kein `title` an einem Element außer `<option>`, ein Tooltip-Weg, Beschreibung per `aria-describedby`, gesperrter Knopf zeigt seinen Grund | `frontend/src/uiRules.test.ts`, `frontend/src/components/TipLayer.test.tsx`, `frontend/e2e/tooltips.cjs` |
+| keine alten Knopfklassen (`ghost-btn`, `primary-btn`, `lm-btn` …) | `frontend/src/uiRules.test.ts` |
+| keine feste Deckkraft an einem gesperrten Element | `frontend/src/uiRules.test.ts` |
+| ein Fokusring, kein `outline` an einem Knopf oder Feld | `frontend/src/uiRules.test.ts` |
+| Symbole der Leiste 20 px, Token und Zahlen gleich | `frontend/src/AppRail.test.tsx`, `frontend/src/components/icons.test.tsx` |
 | Symbole nur aus `icons.ts`, keine Textzeichen als Symbol (Code und CSS), kein eigenes `<svg>`, Strich und Größen, jedes Symbol benutzt | `frontend/src/uiRules.test.ts`, `frontend/src/components/icons.test.tsx` |
 | Schrift | *(folgt in Teil 3b)* |
 
