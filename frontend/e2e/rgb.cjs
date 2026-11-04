@@ -287,7 +287,7 @@ async function checkLayer(browser, theme, viewport) {
   await page.selectOption('.result-controls select[aria-label="green range unit"]', 'value');
   // A channel that cannot be drawn locks "Apply" and "Save" with its letter and reason, and its fields are marked (Otto, 4.11.2026).
   await page.fill('.result-controls input[type=number] >> nth=3', '0.01');
-  const locked = await page.$$eval('.result-controls .vc-apply, .result-controls .vc-save', (b) => b.map((x) => `${x.getAttribute('aria-disabled')}|${x.title}`));
+  const locked = await page.$$eval('.result-controls .vc-apply, .result-controls .vc-save', (b) => b.map((x) => `${x.getAttribute('aria-disabled')}|${x.getAttribute('data-tip')}`));
   if (locked.join() !== 'true|G: vmin must be below vmax,true|G: vmin must be below vmax') problems.push(`a wrong channel says ${locked}`);
   const marked = await page.$$eval('.result-controls input[aria-invalid=true]', (i) => i.length);
   if (marked !== 2) problems.push(`${marked} fields are marked, not the 2 of green`);
