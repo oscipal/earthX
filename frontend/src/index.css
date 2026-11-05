@@ -542,18 +542,16 @@ svg.lucide.icon-lead {
   white-space: nowrap;
 }
 /* "Scale" (Otto, 2.11.2026): vmin and vmax side by side, of one width, and the switch "absolute / percentile" after them, as high as
-   they are; it shows what fits and the rest with "…". */
+   they are; it shows what fits and the rest with "…". A number is never cut, wherever the field stands (the settings bar of a view, a
+   layer and a result, the preview of the processing panel): the fields keep `--number-field-width` and the switch, which can be read in
+   its list, gives way in a very narrow window (UI-04 part 6, Otto 4.11.2026). The name "Scale" stands over the fields in the bar (below),
+   so that they have the width of the bar. */
 .processing-panel .vc-scale-fields,
 .inspector .vc-scale-fields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(var(--number-field-width), 1fr) minmax(var(--number-field-width), 1fr) minmax(0, auto);
   gap: var(--space-1);
   min-width: 0;
-}
-/* In the processing panel a number is never cut: the fields keep `--number-field-width` and the switch, which can be read in its list,
-   gives way in a very narrow window (UI-04 part 6). The settings bar has a column of its own for the fields and keeps the rule above. */
-.processing-panel .vc-scale-fields:not(.vc-channels) {
-  grid-template-columns: minmax(var(--number-field-width), 1fr) minmax(var(--number-field-width), 1fr) minmax(0, auto);
 }
 .processing-panel .vc-scale-fields .vc-field,
 .inspector .vc-scale-fields .vc-field {
@@ -596,6 +594,11 @@ svg.lucide.icon-lead {
   color: var(--muted);
   font-size: var(--text-xs);
 }
+/* The row "Scale" puts its name over the fields, which need the width of the bar (two numbers of `--number-field-width` and the switch). */
+.inspector .vc-scale {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-1);
+}
 /* A colour picture in values (UI-03d): a row of vmin and vmax for each channel, its letter in front, the switch in the first row. */
 .processing-panel .vc-scale-body,
 .inspector .vc-scale-body {
@@ -606,7 +609,7 @@ svg.lucide.icon-lead {
 }
 .processing-panel .vc-channels,
 .inspector .vc-channels {
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(var(--number-field-width), 1fr) minmax(var(--number-field-width), 1fr) minmax(0, auto);
   align-items: center;
 }
 .processing-panel .vc-chip,

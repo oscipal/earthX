@@ -46,24 +46,35 @@ describe('the message of the status bar in a narrow window', () => {
 
 describe('the fields of a range in a narrow window', () => {
   const MINIMUM = 'minmax(var(--number-field-width), 1fr)';
+  const FIELDS = (sheet: string, selector: string) => sheet.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\:]/gu, '\\$&')}[^{}]*\\{([^}]*)\\}`, 'u'))?.[1] ?? '';
 
-  it('keep room for "-0.123456" in the processing panel: the fields have a minimum and the switch beside them gives way', () => {
-    const fields = css.match(/\.processing-panel \.vc-scale-fields:not\(\.vc-channels\) \{([^}]*)\}/u)?.[1] ?? '';
+  // Otto, 4.11.2026: the same number field keeps the same room wherever it stands: the settings bar of a view, a layer and a result, and
+  // the preview of the processing panel.
+  it.each(['.processing-panel', '.inspector'])('keep room for "-0.123456" in %s: the fields have a minimum and the switch beside them gives way', (area) => {
+    const fields = css.match(new RegExp(`\\${area} \\.vc-scale-fields[^{]*\\{([^}]*)\\}`, 'u'))?.[1] ?? '';
     expect(fields).toContain(`grid-template-columns: ${MINIMUM} ${MINIMUM} minmax(0, auto)`);
   });
 
-  it('leave the settings bar and the rows of a colour picture as they were: their column has no room for the minimum', () => {
-    const bar = css.match(/\.inspector \.vc-scale-fields \{([^}]*)\}/u)?.[1] ?? '';
-    expect(bar).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto');
-    expect(bar).not.toContain('--number-field-width');
+  it('keep it in the rows of a colour picture too', () => {
     const channels = css.match(/\.inspector \.vc-channels \{([^}]*)\}/u)?.[1] ?? '';
-    expect(channels).toContain('grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto');
+    expect(channels).toContain(`grid-template-columns: auto ${MINIMUM} ${MINIMUM} minmax(0, auto)`);
   });
 
-  it('do not give the room back to the content of the switch in the processing panel (the old rule, which cut the number)', () => {
-    const OLD = /\.processing-panel \.vc-scale-fields:not\(\.vc-channels\) \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\) auto/u;
+  it('put the name "Scale" over the fields in the settings bar, which have the width of the bar then', () => {
+    const name = css.match(/\.inspector \.vc-scale \{([^}]*)\}/u)?.[1] ?? '';
+    expect(name).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(name).not.toContain('--form-label-width');
+  });
+
+  it('do not give the room back to the content of the switch (the old rule, which cut the number)', () => {
+    const OLD = /\.vc-scale-fields[^{]*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\) auto/u;
     expect(css).not.toMatch(OLD);
-    expect(OLD.test('.processing-panel .vc-scale-fields:not(.vc-channels) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }')).toBe(true);
+    expect(css).not.toMatch(/\.vc-channels \{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) minmax\(0, 1fr\) auto/u);
+    expect(OLD.test('.inspector .vc-scale-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }')).toBe(true);
+  });
+
+  it('read a rule by its selector', () => {
+    expect(FIELDS('.a .b { x: 1 } .c { y: 2 }', '.c')).toContain('y: 2');
   });
 });
 

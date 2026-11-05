@@ -210,7 +210,7 @@
 | Radius | `--radius-xs` 4, `--radius-sm` 6, `--radius-md` 10 px, `--radius-full` Pille |
 
 - Ein Wert dazwischen gibt es nicht; wer einen braucht, nimmt die nächste Stufe (bei Gleichstand die größere: 10 → `--space-3`, 14 → `--space-4`, 8 Radius → `--radius-md`) oder rechnet mit einem Token (`calc(var(--control-height) + var(--space-1))`, z. B. der Platz für den Knopf in einem Feld). **Eine neue Stufe kommt zuerst nach `tokens.css`** und in die Liste in `tokens.test.ts`.
-- Ein Feld für eine Zahl behält `--number-field-width` (88 px: „-0.123456“ mit Rand), auch im schmalsten Fenster; was daneben steht (die Einheit des Bereichs), gibt nach.
+- Ein Feld für eine Zahl behält `--number-field-width` (88 px: „-0.123456“ mit Rand), auch im schmalsten Fenster, **überall, wo dasselbe Feld vorkommt** (Otto, 04.11.2026): Seitenleiste (Ansicht, Layer, Ergebnis-Layer) und Vorschau im Processing-Panel, auch in den Kanalzeilen eines Farbbilds; was daneben steht (die Einheit des Bereichs), gibt nach. In der Seitenleiste steht dazu der Name „Scale“ über den Feldern (nicht in einer Spalte links), damit sie die Breite der Leiste haben. Der Download-Dialog hat kein solches Feld; ein neues Zahlenfeld nimmt dieselbe Regel.
 - **Test:** `tokens.test.ts` prüft **alle** Regeln (`hardValues` mit `ALL_RULES`), nicht mehr nur eine Liste von Bereichen. Ausnahmen gibt es nicht; ein Maß wie `width`, `height` oder `top` ist kein Abstand und bleibt frei.
 
 **Steuerhöhe:** 28 px; bei Touch und unter 900 px 44 px (`--control-height-touch`).
@@ -259,8 +259,8 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (ein gezeigter Toolt
   - **Statusmeldung:** liegt über jedem Panel (`z-index` 13 nur unter 900 px, wo ein Panel die ganze Karte deckt: über dem Panel der Leiste 11 und der Seitenleiste und dem Sheet 12, unter der Leiste 14; im breiten Fenster steht sie neben dem Panel), steht unter der Reihe der Knöpfe oben rechts (`top` = 16 px + `--control-height` + `--space-2`) und nie über dem Rand (Breite höchstens die Karte rechts der Leiste); ein langer Text bricht um, das rote x ist immer erreichbar. Die Meldung ist **deckend** (`--panel-bg` über `--map-bg`), weil sie über einem Panel liegt.
   - **Knöpfe oben rechts:** eine Reihe, nicht zwei; die Statusmeldung liegt nicht darüber.
   - **AOI-Werkzeuge** im Control-Menü: bei 320 px kein Überstand der Zeile (`.toolbar`, `.tool-btn`).
-  - **Felder eines Bereichs** („Scale“): behalten `--number-field-width`; die Einheit daneben kürzt mit „…“ und ist in ihrer Liste vollständig.
-  - Prüfungen: `frontend/e2e/narrow-windows.cjs` (320, 360 und 1280 px, Hell und Dunkel, jedes Panel der Leiste: Meldung im Fenster, nicht verdeckt, unter den Knöpfen, mit rotem x schließbar; Gegenprobe mit den alten Regeln über `FAULT=1`), `frontend/e2e/range-layout.cjs` (kein abgeschnittener Wert), `frontend/src/narrowWindows.test.ts`.
+  - **Felder eines Bereichs** („Scale“) in Seitenleiste und Processing-Panel: behalten `--number-field-width`; die Einheit daneben kürzt mit „…“ und ist in ihrer Liste vollständig.
+  - Prüfungen: `frontend/e2e/narrow-windows.cjs` (320, 360 und 1280 px, Hell und Dunkel, jedes Panel der Leiste: Meldung im Fenster, nicht verdeckt, unter den Knöpfen, mit rotem x schließbar; Gegenprobe mit den alten Regeln über `FAULT=1`), `frontend/e2e/range-layout.cjs` (Vorschau des Processing-Panels: kein abgeschnittener Wert), `frontend/src/narrowWindows.test.ts`. `narrow-windows.cjs` prüft zusätzlich die Felder in Ansicht, Layer und Ergebnis-Layer mit „-0.123456“ (Gegenprobe `FAULT=1` mit den alten Regeln: Feld 33 px breit, Wert abgeschnitten).
 - **Die Wahl des Datensatzes unter „Coverage“** (mehrere Datensätze gewählt) enthält nur Datensätze, keinen Eintrag „Hide coverage“. Beendet wird die Karte mit dem Knopf „Hide coverage“ neben „Coverage“.
 
 ## 10. Prüfungen gegen Rückfälle
