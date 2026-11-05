@@ -8,7 +8,7 @@ from dataclasses import replace
 import pytest
 
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
+from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import (
     ConfigError,
     CoverageProvider,
@@ -356,3 +356,12 @@ def test_the_key_of_the_same_question_is_one_spelling() -> None:
     second = {"eo:cloud_cover": RangeCondition(None, 20.0), "platform": ValuesCondition(("sentinel-2a",))}
     assert conditions_key(first) == conditions_key(second)
     assert conditions_key(first) == {"eo:cloud_cover": ["range", None, 20.0], "platform": ["values", ["sentinel-2a"]]}
+
+
+class TestEveryDatasetOffersTheCoverage:
+    """Otto, 05.11.2026: "AOI coverage" is there for all datasets, and stands first in "Advanced search"."""
+
+    @pytest.mark.parametrize("entry", REGISTRY, ids=lambda entry: entry.dataset_id)
+    def test_each_dataset_of_the_registry_says_so(self, entry) -> None:
+        assert entry.search_capabilities.aoi_coverage is True
+        assert to_stac_collection(entry)["earthx:search_capabilities"]["aoi_coverage"] is True

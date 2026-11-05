@@ -131,6 +131,34 @@ async function run(browser, theme, viewport) {
   if (viewport === 'wide' && hiddenNow.some(Boolean)) problems.push('a date is hidden in the wide window');
   if (viewport === 'narrow') console.log(`  ${name}: hidden dates at ${Math.round(blockBox.width)} px:`, hiddenNow.map((h, i) => (h ? row[i] : null)).filter(Boolean).join(' '));
 
+  // The date and its arrows stand in the same place at every step, also at the first and the last (Otto, 05.11.2026).
+  const places = [];
+  for (const at of [0, 3, 6]) {
+    await page.evaluate(async (i) => (await import('/src/store.ts')).useAppStore.getState().setActiveGroupIndex(i), at);
+    await page.waitForTimeout(60);
+    places.push(await page.evaluate(() => {
+      const left = (el) => Math.round(el.getBoundingClientRect().left * 10) / 10;
+      const row = document.querySelector('.time-dates');
+      return { date: left(row.querySelector('strong')), before: left(row.children[2]), after: left(row.children[4]) };
+    }));
+  }
+  for (const key of ['date', 'before', 'after']) {
+    if (Math.max(...places.map((p) => p[key])) - Math.min(...places.map((p) => p[key])) > 1) problems.push(`the ${key} moves with the step: ${JSON.stringify(places)}`);
+  }
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().setActiveGroupIndex(3));
+
+  // The arrow keys browse the passes: left to the one before, right to the one after, and not past an end.
+  await page.locator('body').click({ position: { x: 5, y: 5 } }).catch(() => {});
+  await page.keyboard.press('ArrowLeft');
+  if ((await page.locator('.time-dates strong').innerText()) !== '2026-07-03') problems.push('the left arrow key did not go to the step before');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  if ((await page.locator('.time-dates strong').innerText()) !== '2026-07-05') problems.push('the right arrow key did not go to the step after');
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().setActiveGroupIndex(0));
+  await page.keyboard.press('ArrowRight');
+  if ((await state('s.activeGroupIndex')) !== 0) problems.push('the right arrow key went past the newest step');
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().setActiveGroupIndex(3));
+
   await page.getByRole('button', { name: 'Previous time step' }).click();
   if ((await page.locator('.time-dates strong').innerText()) !== '2026-07-03') problems.push('"<" did not go to the step before');
   if ((await state('s.activeGroupIndex')) !== 4) problems.push('the step is not 4 of 7 in the store');

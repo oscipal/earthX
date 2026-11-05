@@ -351,3 +351,67 @@ describe('"AOI coverage"', () => {
     }
   });
 });
+
+// Otto, 05.11.2026: the settings of "Advanced search" are never kept. The search that is started takes them, and the fields are empty
+// again afterwards; "Load more" goes on with what the search was asked.
+describe('the settings of "Advanced search" are not kept', () => {
+  it('are empty after a search: no filter, no "Filter within AOI only", "Evaluate" per pass', async () => {
+    state().setSearchFilter('optical', 'platform', values('sat-a'));
+    state().setSearchFilter('optical', COVERAGE, range('60', ''));
+    state().setSearchWithin('optical', true);
+    state().setSearchEvaluate('scene');
+    steps = [{ scenes: [scene('a')], checked: 0 }];
+    await state().runSearch();
+    expect(asked[0].query_by_collection).toEqual({ optical: { platform: { in: ['sat-a'] }, [COVERAGE]: { gte: 60 } } });
+    expect(state().searchFilters).toEqual({});
+    expect(state().searchWithin).toEqual({});
+    expect(state().searchEvaluate).toBe('pass');
+  });
+
+  it('are kept by the search itself: "Load more" asks what the search asked', async () => {
+    state().setSearchFilter('optical', 'platform', values('sat-a'));
+    state().setSearchEvaluate('scene');
+    steps = [{ scenes: [scene('a')], checked: 0, next: 't1' }, { scenes: [scene('b')], checked: 0 }];
+    await state().runSearch();
+    expect(state().searchContext?.nextToken ?? null).toBeNull(); // the page walk ends by itself
+    for (const request of asked) expect(request.query_by_collection).toEqual({ optical: { platform: { in: ['sat-a'] } } });
+    expect(asked.every((request) => !('earthx:evaluate' in request))).toBe(true);
+  });
+
+  it('are not there for the next search (Gegenprobe of the one before)', async () => {
+    state().setSearchFilter('optical', 'platform', values('sat-a'));
+    steps = [{ scenes: [], checked: 0 }];
+    await state().runSearch();
+    asked.length = 0;
+    index = 0;
+    await state().runSearch();
+    expect(asked[0]).not.toHaveProperty('query_by_collection');
+    expect(asked[0]).not.toHaveProperty('earthx:evaluate');
+  });
+
+  it('are not reset by a search that does not go out (no AOI)', async () => {
+    state().setSearchFilter('optical', 'platform', values('sat-a'));
+    useAppStore.setState({ aoi: null });
+    await state().runSearch();
+    expect(asked).toHaveLength(0);
+    expect(state().searchFilters.optical).toBeDefined();
+  });
+
+  it('a change of the fields after the search started is still a change that stops the walk', async () => {
+    state().setSearchFilter('optical', 'platform', values('sat-a'));
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url !== '/stac/search') return json({ detail: 'not found' }, 404);
+      asked.push(JSON.parse(init!.body as string));
+      if (asked.length === 1) await gate;
+      return json({ features: [], numberReturned: 0, links: [{ rel: 'next', href: '/stac/search', method: 'POST', body: { token: 't1' } }], 'earthx:aoi_filter': { checked: 100, found: 0, unreadable: 0, limit_reached: false } });
+    });
+    const running = state().runSearch();
+    await vi.waitFor(() => expect(asked).toHaveLength(1));
+    state().setSearchFilter('optical', 'platform', values('sat-b'));
+    release();
+    await running;
+    expect(state().searchContext?.nextToken ?? null).toBeNull();
+  });
+});

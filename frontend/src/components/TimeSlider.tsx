@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { stepLabel, runPlayback, STEP_LATE_AFTER_MS } from '../playback';
+import { stepWithArrowKeys } from '../stepKeys';
 import { useAppStore } from '../store';
 import { ChevronLeftIcon, ChevronRightIcon, PauseIcon, PlayIcon } from './icons';
 
@@ -30,6 +31,14 @@ export default function TimeSlider() {
     if (!playing || groups.length < 2) return;
     return runPlayback();
   }, [playing, groups]);
+
+  // Capture: before the map sees the key.
+  const browsable = groups.length > 1;
+  useEffect(() => {
+    if (!browsable) return;
+    window.addEventListener('keydown', stepWithArrowKeys, true);
+    return () => window.removeEventListener('keydown', stepWithArrowKeys, true);
+  }, [browsable]);
 
   useEffect(() => {
     setLate(false);

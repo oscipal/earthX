@@ -154,16 +154,16 @@ describe('the pop-up', () => {
   it('stands the filters under the headings of the registry, in its order', () => {
     pick('optical');
     open();
-    // "AOI coverage" is the platform's own filter, last, under "Area" (DS-03c).
-    expect(headings()).toEqual(['Clouds', 'Scene', 'Acquisition', 'Area']);
-    expect(titles()).toEqual(['Cloud cover', 'No data', 'Satellite', 'AOI coverage']);
+    // "AOI coverage" is the platform's own filter and stands first, over "Clouds", under "Area" (DS-03c, Otto 05.11.2026).
+    expect(headings()).toEqual(['Area', 'Clouds', 'Scene', 'Acquisition']);
+    expect(titles()).toEqual(['AOI coverage', 'Cloud cover', 'No data', 'Satellite']);
     const sections = [...container.querySelectorAll('.filter-group')];
-    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual(['Clouds', 'Scene', 'Acquisition', 'Area']);
+    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual(['Area', 'Clouds', 'Scene', 'Acquisition']);
     expect(sections.map((s) => [...s.querySelectorAll('.filter-title')].map((t) => text(t)))).toEqual([
+      ['AOI coverage'],
       ['Cloud cover'],
       ['No data'],
       ['Satellite'],
-      ['AOI coverage'],
     ]);
   });
 
@@ -190,7 +190,7 @@ describe('the pop-up', () => {
     act(() => useAppStore.setState({ datasets: datasetsFrom([added]) }));
     pick('optical');
     open();
-    expect(headings()).toEqual(['Clouds', 'Scene', 'Acquisition', 'Elsewhere', 'Area']);
+    expect(headings()).toEqual(['Area', 'Clouds', 'Scene', 'Acquisition', 'Elsewhere']);
     expect(text(container.querySelectorAll('.filter-range')[2])).toBe('fromtokm');
     type(field('Brand new, to'), '3');
     expect(useAppStore.getState().searchFilters.optical['made:up']).toEqual({ kind: 'range', from: '', to: '3' });
@@ -204,7 +204,7 @@ describe('the pop-up', () => {
     expect([from.type, from.placeholder, to.placeholder, from.value, to.value]).toEqual(['text', '0', '100', '', '']);
     expect(from.inputMode).toBe('decimal');
     expect(text(container.querySelector('.filter-range'))).toBe('fromto%');
-    expect(container.querySelector('.filter-title')!.getAttribute('data-tip')).toBe('Share of the scene covered by clouds.');
+    expect(from.closest('.filter-field')!.querySelector('.filter-title')!.getAttribute('data-tip')).toBe('Share of the scene covered by clouds.');
   });
 
   it('asks for whole numbers where the registry says so', () => {
@@ -425,7 +425,7 @@ describe('one dataset at a time, each with its own values', () => {
     switchTo(1);
     pick('optical');
     expect(text(box())).toBe('Optical imagery');
-    expect(titles()).toEqual(['Cloud cover', 'No data', 'Satellite', 'AOI coverage']);
+    expect(titles()).toEqual(['AOI coverage', 'Cloud cover', 'No data', 'Satellite']);
   });
 });
 

@@ -96,7 +96,8 @@ export function searchFiltersOf(collection: Collection): SearchFilterDescription
     seen.add(description.property);
     found.push(description);
   }
-  if (searchCapabilitiesOf(collection).aoiCoverage) found.push(COVERAGE_FILTER);
+  // First, over the filters of the registry (Otto, 05.11.2026): it asks the least of the area and every dataset offers it.
+  if (searchCapabilitiesOf(collection).aoiCoverage) found.unshift(COVERAGE_FILTER);
   read.set(collection, found);
   return found;
 }

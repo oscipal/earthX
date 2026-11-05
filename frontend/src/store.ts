@@ -508,6 +508,14 @@ function askedState(s: FilterState & WithinState & Pick<AppState, 'searchEvaluat
   return JSON.stringify([asked, evaluationOf(s, asked)]);
 }
 
+// The settings of "Advanced search" go back to empty (filters, "Filter within AOI only", "Evaluate" per pass): they are
+// taken by the search that is started and never kept (Otto, 05.11.2026). The coverage map, which follows the filters, follows.
+function forgetAdvancedSearch(set: SetState, get: GetState): void {
+  set({ searchFilters: {}, searchWithin: {}, searchEvaluate: DEFAULT_EVALUATE });
+  const { showCoverage } = get();
+  if (showCoverage) scheduleCoverageRefresh(set, get);
+}
+
 // How the search judges the filters (DS-03c): the datasets whose registry offers judging per pass and that are asked something
 // are judged per pass when the user chose it. They are sent as `earthx:evaluate`, once for the whole search; a search per scene
 // sends nothing, which is what the server does without it.
@@ -3332,8 +3340,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const ids = chosen.map((d) => d.id);
       const asked = filterQueriesOf(get(), ids);
-      // What this search is asked with, kept as it starts: a later change of the fields or of "Evaluate" is compared to it.
-      const startedWith = JSON.stringify([asked, evaluationOf(get(), asked)]);
       const query = {
         collections: ids,
         bbox: area.bbox,
@@ -3344,6 +3350,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         // A long AOI is searched by its box; the clouds are measured in the AOI itself (plan §6.5, KE1).
         ...(area.truncatedNotice && needsAoiBody({ queryByCollection: asked }) ? { aoi } : {}),
       };
+      // The settings of "Advanced search" are never kept (Otto, 05.11.2026): this search takes them, and the next one starts
+      // from empty fields. A change after this point is a change of the fields, which the search on screen then cannot follow.
+      forgetAdvancedSearch(set, get);
+      const idle = askedState(get(), ids);
       if (anyMeasuresAoi(query)) {
         await walkAoiSearch(set, get, {
           base: {
@@ -3361,7 +3371,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
           fresh: true,
           // Filters or area changed while the first answer was on its way.
-          unchanged: () => askedState(get(), ids) === startedWith,
+          unchanged: () => askedState(get(), ids) === idle,
         });
         // A dataset searched without the limit gets its nearest date as always; one searched with it does not (KE4).
         const { openSectionId } = get();
@@ -3372,7 +3382,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (gen !== searchGen) return;
       // Filters changed while the search ran (the page token cannot be dropped yet, there is no search on screen):
       // "Load more" would go on with filters the fields no longer show.
-      const filtersKept = JSON.stringify(filterQueriesOf(get(), ids)) === JSON.stringify(asked);
+      const filtersKept = askedState(get(), ids) === idle;
       showSearchResults(
         set,
         get,
