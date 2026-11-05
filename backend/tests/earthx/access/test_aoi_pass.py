@@ -39,7 +39,9 @@ VEGETATION, CLOUD, WATER = 4, 8, 6
 TO_LONLAT = Transformer.from_crs(CRS, "EPSG:4326", always_xy=True)
 
 
-def _write(path: Path, data: numpy.ndarray, *, left: float = 0.0, crs: str = CRS, origin: tuple[float, float] | None = None) -> AssetPath:
+def _write(
+    path: Path, data: numpy.ndarray, *, left: float = 0.0, crs: str = CRS, origin: tuple[float, float] | None = None, nodata: int | None = 0
+) -> AssetPath:
     """A scene whose upper left corner lies ``left`` metres east of the common origin (or at ``origin`` in ``crs``)."""
     x, y = origin if origin is not None else (ORIGIN_X + left, ORIGIN_Y)
     profile = {
@@ -50,7 +52,7 @@ def _write(path: Path, data: numpy.ndarray, *, left: float = 0.0, crs: str = CRS
         "width": data.shape[1],
         "crs": crs,
         "transform": from_origin(x, y, PIXEL, PIXEL),
-        "nodata": 0,
+        "nodata": nodata,
         "tiled": True,
         "blockxsize": 256,
         "blockysize": 256,
@@ -203,6 +205,22 @@ class TestTheMerge:
         large = measure_aoi_pass(pair, _region(1_000, 1_000, 9_000), CLOUDS)
         assert small.resolution <= large.resolution
         assert small.aoi_pixels >= MIN_AOI_PIXELS or small.resolution == PIXEL
+
+
+class TestRastersWithoutANodataValue:
+    def test_class_zero_is_a_class_there_and_a_cell_past_the_edge_is_no_scene(self, tmp_path: Path) -> None:
+        """Review of DS-03c: without a nodata value the second scene must still own what the first does not reach."""
+        a = _write(tmp_path / "a.tif", _filled(VEGETATION), nodata=None)
+        b = _write(tmp_path / "b.tif", _filled(CLOUD), left=SIZE * PIXEL / 2, nodata=None)
+        counts = measure_aoi_pass([b, a], _region(2_000, 1_000, 8_000), CLOUDS)  # b owns its half, a fills the rest
+        assert set(counts.class_pixels) == {VEGETATION, CLOUD}
+        assert 0 not in counts.class_pixels
+
+    def test_the_same_files_with_nodata_count_the_same(self, tmp_path: Path) -> None:
+        one = [_write(tmp_path / "b.tif", _filled(CLOUD), left=SIZE * PIXEL / 2, nodata=None), _write(tmp_path / "a.tif", _filled(VEGETATION), nodata=None)]
+        two = [_write(tmp_path / "d.tif", _filled(CLOUD), left=SIZE * PIXEL / 2), _write(tmp_path / "c.tif", _filled(VEGETATION))]
+        aoi = _region(2_000, 1_000, 8_000)
+        assert measure_aoi_pass(one, aoi, CLOUDS).class_pixels == measure_aoi_pass(two, aoi, CLOUDS).class_pixels
 
 
 class TestRefusals:

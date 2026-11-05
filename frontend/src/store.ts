@@ -3220,7 +3220,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSearchEvaluate: (evaluate) => {
     if (get().searchEvaluate === evaluate) return;
     set({ searchEvaluate: evaluate });
-    if (get().searchContext) dropPageToken(set, get);
+    // Only a search that was, or now would be, judged per pass cannot go on with its token.
+    const ctx = get().searchContext;
+    if (ctx && (ctx.query.evaluate !== undefined || evaluationOf(get(), ctx.query.queryByCollection ?? {}).evaluate)) {
+      dropPageToken(set, get);
+    }
   },
   resetSearchFilters: (datasetId) => {
     changeSearchFilters(set, get, datasetId, {});
@@ -3328,6 +3332,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const ids = chosen.map((d) => d.id);
       const asked = filterQueriesOf(get(), ids);
+      // What this search is asked with, kept as it starts: a later change of the fields or of "Evaluate" is compared to it.
+      const startedWith = JSON.stringify([asked, evaluationOf(get(), asked)]);
       const query = {
         collections: ids,
         bbox: area.bbox,
@@ -3355,7 +3361,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
           fresh: true,
           // Filters or area changed while the first answer was on its way.
-          unchanged: () => askedState(get(), ids) === JSON.stringify([asked, evaluationOf(get(), asked)]),
+          unchanged: () => askedState(get(), ids) === startedWith,
         });
         // A dataset searched without the limit gets its nearest date as always; one searched with it does not (KE4).
         const { openSectionId } = get();

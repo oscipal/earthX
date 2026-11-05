@@ -649,14 +649,13 @@ class TestTheRequest:
         request = pass_request(CLOUD_AT_MOST_20, aoi=None)
         assert request.aoi is None and request.evaluate_pass and request.scene_conditions
 
-    def test_the_aoi_alone_without_anything_it_goes_with_is_refused(self) -> None:
-        from earthx.catalog.search_filters import InvalidFilter
-
-        with pytest.raises(InvalidFilter, match="earthx:aoi"):
-            read_aoi_request(
-                "s2", {}, datetime_value=None, bbox=(9, 9, 12, 12), intersects=None, earthx_aoi=AOI_SQUARE,
-                evaluate_pass=True, scene_conditions={CLOUD: RangeCondition(None, 5.0)},
-            )
+    def test_a_dataset_that_needs_no_area_leaves_earthx_aoi_to_the_others(self) -> None:
+        """In a search over several datasets another one may need the AOI beside the box (review of DS-03c)."""
+        request = read_aoi_request(
+            "s2", {}, datetime_value=None, bbox=(9, 9, 12, 12), intersects=None, earthx_aoi=AOI_SQUARE,
+            evaluate_pass=True, scene_conditions={CLOUD: RangeCondition(None, 5.0)},
+        )
+        assert request.aoi is None
 
     def test_nothing_to_judge_is_a_value_error(self) -> None:
         with pytest.raises(ValueError):

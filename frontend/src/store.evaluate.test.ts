@@ -218,6 +218,36 @@ describe('what the search asks', () => {
   });
 });
 
+describe('a change of "Evaluate" while the first answer is on its way', () => {
+  it('stops the walk and keeps no token: the search went out per pass and the fields now say per scene', async () => {
+    state().setSearchFilter('optical', 'platform', values('sat-a'));
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url !== '/stac/search') return json({ detail: 'not found' }, 404);
+      const request = JSON.parse(init!.body as string);
+      asked.push(request);
+      if (asked.length === 1) await gate;
+      return json({ features: [], numberReturned: 0, links: [{ rel: 'next', href: '/stac/search', method: 'POST', body: { token: 't1' } }], 'earthx:aoi_filter': { checked: 100, found: 0, unreadable: 0, limit_reached: false } });
+    });
+    const running = state().runSearch();
+    await vi.waitFor(() => expect(asked).toHaveLength(1));
+    state().setSearchEvaluate('scene');
+    release();
+    await running;
+    expect(state().searchContext?.nextToken ?? null).toBeNull();
+  });
+
+  it('keeps the token when nothing was judged per pass either way (no filter set)', async () => {
+    steps = [{ scenes: [scene('a')], checked: 0, next: 't1' }, { scenes: [], checked: 0 }];
+    state().setSearchEvaluate('scene');
+    await state().runSearch();
+    const token = state().searchContext?.nextToken;
+    state().setSearchEvaluate('pass');
+    expect(state().searchContext?.nextToken).toBe(token);
+  });
+});
+
 describe('"AOI coverage"', () => {
   it('goes with the filters of its dataset, with no date range', async () => {
     useAppStore.setState({ dateFrom: '', dateTo: '' });

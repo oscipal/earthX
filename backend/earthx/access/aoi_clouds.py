@@ -445,20 +445,21 @@ def _first_valid(
         nodata = level.nodata
         if _is_nodata(values, nodata).all():
             continue
-        fill = 0 if nodata is None or math.isnan(nodata) else nodata
-        placed = numpy.full(cells, fill, dtype=merged.dtype)
-        reproject(
-            source=values,
-            destination=placed,
-            src_transform=level.window_transform(window),
-            src_crs=level.crs,
-            dst_transform=grid,
-            dst_crs=target.crs,
-            src_nodata=nodata,
-            dst_nodata=fill,
-            resampling=Resampling.nearest,
-        )
-        fresh = ~filled & ~_is_nodata(placed, nodata) & inside
+        placed = numpy.zeros(cells, dtype=merged.dtype)
+        known = numpy.zeros(cells, dtype="uint8")
+        for source, destination in ((values, placed), ((~_is_nodata(values, nodata)).astype("uint8"), known)):
+            reproject(
+                source=source,
+                destination=destination,
+                src_transform=level.window_transform(window),
+                src_crs=level.crs,
+                dst_transform=grid,
+                dst_crs=target.crs,
+                resampling=Resampling.nearest,
+            )
+        # Valid is what the warp of the scene's own mask says, not a value that stands for nodata: a raster without a
+        # nodata value (or with NaN) has class 0 as a class, and a cell past its edge has no scene at all.
+        fresh = ~filled & (known == 1) & inside
         merged[fresh] = placed[fresh]
         filled |= fresh
     return merged, filled

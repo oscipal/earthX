@@ -139,9 +139,8 @@ def read_aoi_request(
     needs_area = bool(conditions) or coverage is not None
     if needs_area:
         aoi: Mapping[str, Any] | None = _area(bbox, intersects, earthx_aoi, label)
-    elif earthx_aoi is not None:
-        raise InvalidFilter(f"earthx:aoi goes with {AOI_FILTERS_TEXT}")
     else:
+        # In a search over several datasets another one may need the AOI beside the box (`earthx:aoi`): this one does not.
         aoi = None
     return AoiFilterRequest(
         dataset_id=dataset_id,
