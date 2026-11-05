@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from earthx.api.tiler import build_app
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import check_url
 
 MATERIALIZED = replace(
@@ -39,6 +39,7 @@ MATERIALIZED = replace(
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
     search_filters=(),
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
 )
 
 BASE = f"/collections/{MATERIALIZED.dataset_id}/items"

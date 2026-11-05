@@ -787,6 +787,11 @@ class MaskSource:
     layer must be a COG, because the share is read from the overviews of the file itself. ``cloud_note`` is one
     sentence on the limits of the classification, shown as a tooltip; it may be empty only without ``cloud_classes``.
     Neither has a default (B10): an entry says on purpose whether it offers the share.
+
+    ``share_classes`` are the classes of the other shares the search can measure inside the AOI (DS-03c): one
+    :class:`ShareClasses` per measure that counts classes (every measure but the cloud share, which has
+    ``cloud_classes`` above, and the no-data share, which is class ``nodata`` of the file). An entry without any says
+    so with an empty tuple (B10).
     """
 
     asset: str
@@ -797,6 +802,7 @@ class MaskSource:
     note: str
     cloud_classes: frozenset[int]
     cloud_note: str
+    share_classes: tuple[ShareClasses, ...]
 
 
 class FilterKind(Enum):
@@ -815,7 +821,27 @@ class AoiMeasure(Enum):
 
     CLOUD_SHARE = "earthx:aoi_cloud_cover"  # clouds in percent of the valid pixels of the AOI
     NODATA_SHARE = "earthx:aoi_nodata"  # pixels of the AOI without a valid pixel, in percent of the AOI
+    # DS-03c (Otto, 05.11.2026): one share per class of the classification, in percent of the valid pixels of the AOI,
+    # counted in the same reading as the cloud share. The classes are the dataset's (`MaskSource.share_classes`).
+    CIRRUS_SHARE = "earthx:aoi_thin_cirrus"
+    SHADOW_SHARE = "earthx:aoi_cloud_shadow"
+    SNOW_SHARE = "earthx:aoi_snow_ice"
+    WATER_SHARE = "earthx:aoi_water"
+    VEGETATION_SHARE = "earthx:aoi_vegetation"
+    NOT_VEGETATED_SHARE = "earthx:aoi_not_vegetated"
 
+
+@dataclass(frozen=True, slots=True)
+class ShareClasses:
+    """The classes of the classification that make up one share (:class:`AoiMeasure`) inside the AOI."""
+
+    measure: AoiMeasure
+    classes: frozenset[int]
+
+
+#: The measures that count the classes `MaskSource.share_classes` names (the cloud share has `cloud_classes`, the no-data share
+#: the file's `nodata`).
+CLASS_MEASURES = frozenset(AoiMeasure) - {AoiMeasure.CLOUD_SHARE, AoiMeasure.NODATA_SHARE}
 
 # A STAC property as the source names it: ``platform``, ``eo:cloud_cover``. ``earthx:`` is kept free for filters the
 # platform computes itself (DS-03), ``datetime`` has its own field.
@@ -840,7 +866,12 @@ class SearchFilter:
     ``None`` on a filter that has no area to measure (DS-03 plan §6.10); a measure needs ``MaskSource.cloud_classes``
     and stands on at most one filter of the dataset. ``group`` is the heading the filter stands under in the
     pop-up (DS-02c), e.g. "Clouds": the filters of one group follow each other, and the order of the registry is the
-    order shown. No defaults (B10)."""
+    order shown.
+
+    ``area_based`` says the filter is a share of an area (of the scene, or of the AOI where ``within_aoi`` is set): a
+    search per pass evaluates it over the merged scenes of an overpass, weighting the scenes by the area each adds to
+    the mosaic (DS-03c). A filter without it (the satellite, the sun) has no area; a pass meets it if its scenes do.
+    No defaults (B10)."""
 
     property: str
     kind: FilterKind
@@ -853,6 +884,19 @@ class SearchFilter:
     values: tuple[FilterValue, ...]
     within_aoi: AoiMeasure | None
     group: str
+    area_based: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SearchCapabilities:
+    """What a dataset's search can do beyond its filters (DS-03c, published as ``earthx:search_capabilities``).
+
+    ``evaluate``: the search can judge the filters per overpass as well as per scene (needs filters, a source whose
+    page the platform walks, and an overpass key that holds the acquisition instant). ``aoi_coverage``: the filter
+    "AOI coverage" (the share of the AOI the outlines of the scenes cover) is offered. No defaults (B10)."""
+
+    evaluate: bool
+    aoi_coverage: bool
 
 
 def _filter_problem(search_filter: SearchFilter) -> str | None:
@@ -866,6 +910,10 @@ def _filter_problem(search_filter: SearchFilter) -> str | None:
         return f"the filter on {name!r} has a title and a description"
     if search_filter.within_aoi is not None and not isinstance(search_filter.within_aoi, AoiMeasure):
         return f"within_aoi of the filter on {name!r} is an AoiMeasure or None"
+    if not isinstance(search_filter.area_based, bool):
+        return f"area_based of the filter on {name!r} is true or false"
+    if search_filter.area_based and search_filter.kind is not FilterKind.RANGE:
+        return f"the area-based filter on {name!r} is a range"
     group = search_filter.group
     if not isinstance(group, str) or not group.strip() or group != group.strip() or len(group) > MAX_GROUP_CHARS:
         return f"the group of the filter on {name!r} is a short non-blank text"
@@ -1007,6 +1055,8 @@ class DatasetConfig:
     # The filters the search offers for this dataset, in the order the panel shows them (DS-02). No default
     # (KLAERUNGEN B10): an entry says so, with an empty tuple where it offers none.
     search_filters: tuple[SearchFilter, ...]
+    # What the search can do besides filter (DS-03c). No default (KLAERUNGEN B10).
+    search_capabilities: SearchCapabilities
     # The indices the panel offers as one click each (NM4-14), in the order of the buttons. No default (KLAERUNGEN
     # B10): an entry says so, with an empty tuple where it offers none.
     index_presets: tuple[IndexPreset, ...]
@@ -1060,6 +1110,24 @@ class DatasetConfig:
             # Our own items are searched by pgstac, which applies no filter of this kind yet (DS-02 plan §6.5).
             raise ConfigError(f"{self.dataset_id}: search filters need federated items")
         self._check_within_aoi()
+        self._check_search_capabilities()
+
+    def _check_search_capabilities(self) -> None:
+        """Evaluating per overpass needs filters and a source the platform walks; the pass is the overpass key."""
+        capabilities = self.search_capabilities
+        if not isinstance(capabilities, SearchCapabilities) or not all(
+            isinstance(flag, bool) for flag in (capabilities.evaluate, capabilities.aoi_coverage)
+        ):
+            raise ConfigError(f"{self.dataset_id}: search_capabilities is a SearchCapabilities of two flags")
+        if capabilities.evaluate:
+            if not self.search_filters:
+                raise ConfigError(f"{self.dataset_id}: evaluate per pass needs search filters to judge")
+            if self.source.item_holding is not ItemHolding.FEDERATED:
+                raise ConfigError(f"{self.dataset_id}: evaluate per pass needs federated items")
+            if self.viewer is None or ACQUISITION_INSTANT not in self.viewer.results_group_by:
+                raise ConfigError(
+                    f"{self.dataset_id}: evaluate per pass needs an overpass key that holds {ACQUISITION_INSTANT!r}"
+                )
 
     def _check_within_aoi(self) -> None:
         """Each :class:`AoiMeasure` sits on at most one filter: a percentage from 0 to 100 the AOI measure can stand in for.
@@ -1077,10 +1145,16 @@ class DatasetConfig:
                 raise ConfigError(
                     f"{self.dataset_id}: within_aoi on {entry.property!r} needs a range filter from 0 to 100 in '%'"
                 )
+            if not entry.area_based:
+                raise ConfigError(f"{self.dataset_id}: within_aoi on {entry.property!r} needs an area-based filter")
             if self.mask is None or not self.mask.cloud_classes:
                 raise ConfigError(
                     f"{self.dataset_id}: within_aoi on {entry.property!r} needs a mask with cloud_classes"
                 )
+            if entry.within_aoi in CLASS_MEASURES and entry.within_aoi not in {
+                share.measure for share in self.mask.share_classes
+            }:
+                raise ConfigError(f"{self.dataset_id}: within_aoi on {entry.property!r} needs share_classes for its measure")
 
     def band_unit(self, asset: str) -> str | None:
         """The unit the entry names for ``asset`` (one key, not a list of variables), or ``None`` where it names none.
@@ -1214,6 +1288,7 @@ class DatasetConfig:
             raise ConfigError(f"{self.dataset_id}: cloud_classes are among the listed mask classes")
         if not isinstance(mask.cloud_note, str):
             raise ConfigError(f"{self.dataset_id}: cloud_note is a text, empty without cloud_classes")
+        self._check_share_classes(mask, values)
         if not cloud:
             return
         if not mask.cloud_note.strip():
@@ -1223,6 +1298,24 @@ class DatasetConfig:
                 f"{self.dataset_id}: cloud_classes need a COG: the cloud share is read from the overviews of the "
                 f"file itself, and a {self.format.value} dataset needs a reader of its own first (DS-03 plan §6.19)"
             )
+
+    def _check_share_classes(self, mask: MaskSource, values: list[int]) -> None:
+        """Each class share names classes of the layer, once per measure, and only measures that count classes."""
+        if not isinstance(mask.share_classes, tuple) or not all(isinstance(e, ShareClasses) for e in mask.share_classes):
+            raise ConfigError(f"{self.dataset_id}: share_classes is a tuple of ShareClasses")
+        measures = [entry.measure for entry in mask.share_classes]
+        if len(set(measures)) != len(measures):
+            raise ConfigError(f"{self.dataset_id}: share_classes names a measure twice")
+        for entry in mask.share_classes:
+            if entry.measure not in CLASS_MEASURES:
+                raise ConfigError(f"{self.dataset_id}: share_classes cannot name {entry.measure.value}")
+            classes = entry.classes
+            if not isinstance(classes, frozenset) or not classes or not all(_is_whole_number(v) for v in classes):
+                raise ConfigError(f"{self.dataset_id}: the classes of {entry.measure.value} are a non-empty frozenset of whole numbers")
+            if not classes <= set(values):
+                raise ConfigError(f"{self.dataset_id}: the classes of {entry.measure.value} are among the listed mask classes")
+        if mask.share_classes and not mask.cloud_classes:
+            raise ConfigError(f"{self.dataset_id}: share_classes need cloud_classes: one reading of a COG gives every share")
 
     def _check_keywords(self) -> None:
         """At least one keyword, each a non-blank string (M3-10): the viewer's filter

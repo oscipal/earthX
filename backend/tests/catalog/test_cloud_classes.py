@@ -13,6 +13,8 @@ from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 
 
 def _mask(**changes):
+    if changes.get("cloud_classes") == frozenset():
+        changes.setdefault("share_classes", ())  # the other shares are read from the same reading: no cloud classes, none
     return replace(SENTINEL_2_L2A.mask, **changes)
 
 
@@ -20,6 +22,27 @@ def _filters(**changes):
     """The filters of Sentinel-2 with ``changes`` applied to the cloud cover one."""
     first, *rest = SENTINEL_2_L2A.search_filters
     return (replace(first, **changes), *rest)
+
+
+#: DS-03c (Otto, 05.11.2026): every filter on a share that the classification gives a class for, and the no-data filter.
+SENTINEL_2_MEASURES = {
+    "eo:cloud_cover": AoiMeasure.CLOUD_SHARE,
+    "s2:thin_cirrus_percentage": AoiMeasure.CIRRUS_SHARE,
+    "s2:cloud_shadow_percentage": AoiMeasure.SHADOW_SHARE,
+    "s2:nodata_pixel_percentage": AoiMeasure.NODATA_SHARE,
+    "s2:snow_ice_percentage": AoiMeasure.SNOW_SHARE,
+    "s2:water_percentage": AoiMeasure.WATER_SHARE,
+    "s2:vegetation_percentage": AoiMeasure.VEGETATION_SHARE,
+    "s2:not_vegetated_percentage": AoiMeasure.NOT_VEGETATED_SHARE,
+}
+
+
+def _only_nodata():
+    """The filters of Sentinel-2 where the no-data share is the only one measured inside the AOI."""
+    keep = "s2:nodata_pixel_percentage"
+    return tuple(
+        entry if entry.property == keep else replace(entry, within_aoi=None) for entry in SENTINEL_2_L2A.search_filters
+    )
 
 
 def _filters_of(property_name: str, **changes):
@@ -42,22 +65,25 @@ class TestTheEntries:
     def test_cloud_shadows_and_snow_are_not_clouds(self) -> None:
         assert not SENTINEL_2_L2A.mask.cloud_classes & {0, 1, 3, 11}
 
-    def test_the_cloud_cover_and_the_no_data_filter_are_the_ones_within_aoi(self) -> None:
+    def test_every_share_of_a_class_and_the_no_data_filter_are_the_ones_within_aoi(self) -> None:
         marked = {entry.property: entry.within_aoi for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi}
-        assert marked == {
-            "eo:cloud_cover": AoiMeasure.CLOUD_SHARE,
-            "s2:nodata_pixel_percentage": AoiMeasure.NODATA_SHARE,
-        }
+        assert marked == SENTINEL_2_MEASURES
 
     def test_every_measure_has_its_own_reserved_property(self) -> None:
         assert {measure.name: measure.value for measure in AoiMeasure} == {
             "CLOUD_SHARE": "earthx:aoi_cloud_cover",
             "NODATA_SHARE": "earthx:aoi_nodata",
+            "CIRRUS_SHARE": "earthx:aoi_thin_cirrus",
+            "SHADOW_SHARE": "earthx:aoi_cloud_shadow",
+            "SNOW_SHARE": "earthx:aoi_snow_ice",
+            "WATER_SHARE": "earthx:aoi_water",
+            "VEGETATION_SHARE": "earthx:aoi_vegetation",
+            "NOT_VEGETATED_SHARE": "earthx:aoi_not_vegetated",
         }
 
     def test_the_filters_without_an_area_have_none(self) -> None:
         none = [entry.property for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi is None]
-        assert "platform" in none and "s2:snow_ice_percentage" in none and "eo:cloud_cover" not in none
+        assert "platform" in none and "s2:degraded_msi_data_percentage" in none and "eo:cloud_cover" not in none
 
     def test_the_synthetic_zarr_entry_has_no_cloud_classes_and_no_such_filter(self) -> None:
         assert SYNTHETIC_ZARR.mask.cloud_classes == frozenset() and SYNTHETIC_ZARR.mask.cloud_note == ""
@@ -123,7 +149,7 @@ class TestWithinAoiIsRefused:
 
     def test_the_no_data_share_is_as_strict_as_the_cloud_share(self) -> None:
         """Both are read from the classification of a COG; a mask without cloud classes allows neither."""
-        only_nodata = _filters_of("eo:cloud_cover", within_aoi=None)
+        only_nodata = _only_nodata()
         with pytest.raises(
             ConfigError, match="within_aoi on 's2:nodata_pixel_percentage' needs a mask with cloud_classes"
         ):
@@ -133,7 +159,7 @@ class TestWithinAoiIsRefused:
             replace(SENTINEL_2_L2A, mask=None, capabilities=unmasked, search_filters=only_nodata)
 
     def test_the_no_data_share_alone_is_taken_where_the_classification_is_there(self) -> None:
-        only_nodata = _filters_of("eo:cloud_cover", within_aoi=None)
+        only_nodata = _only_nodata()
         assert replace(SENTINEL_2_L2A, search_filters=only_nodata)
 
     def test_it_needs_a_mask_at_all(self) -> None:
@@ -207,8 +233,7 @@ class TestTheCollection:
         published = to_stac_collection(SENTINEL_2_L2A)["earthx:search_filters"]
         assert {entry["property"]: entry["within_aoi"] for entry in published} == {
             **{entry.property: None for entry in SENTINEL_2_L2A.search_filters},
-            "eo:cloud_cover": "earthx:aoi_cloud_cover",
-            "s2:nodata_pixel_percentage": "earthx:aoi_nodata",
+            **{name: measure.value for name, measure in SENTINEL_2_MEASURES.items()},
         }
         assert len(published) == len(SENTINEL_2_L2A.search_filters)
 

@@ -38,7 +38,7 @@ from earthx.api.tiler import (
     build_app,
 )
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import DatasetRegistry, LicenseTier, ViewerInfo
+from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities, ViewerInfo
 from earthx.gateway import (
     CachingResolver,
     UpstreamError,
@@ -505,6 +505,7 @@ class TestDisplayLicenceTier:
             SENTINEL_2_L2A,
             license=replace(SENTINEL_2_L2A.license, tier=LicenseTier.CATALOG),
             viewer=None,
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
         )
         registry = DatasetRegistry((catalog_tier,))
         app = build_app(registry)

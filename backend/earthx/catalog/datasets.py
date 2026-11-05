@@ -39,7 +39,9 @@ from earthx.catalog.registry import (
     MaskSource,
     Maturity,
     RetiredDataset,
+    SearchCapabilities,
     SearchFilter,
+    ShareClasses,
     SourceInfo,
     SpatialExtent,
     TemporalExtent,
@@ -96,7 +98,8 @@ def _scene_share(
 ) -> SearchFilter:
     """A share of the scene in percent, 0 to 100: the form most of the scene properties of Sentinel-2 have.
 
-    ``within_aoi`` is the measure that gives the share inside the AOI instead, where the filter has one."""
+    ``within_aoi`` is the measure that gives the share inside the AOI instead, where the filter has one. Every share is
+    area-based: a search per pass weights the scenes of an overpass by the area they add to the mosaic."""
     return SearchFilter(
         property=property_name,
         kind=FilterKind.RANGE,
@@ -109,6 +112,7 @@ def _scene_share(
         values=(),
         within_aoi=within_aoi,
         group=group,
+        area_based=True,
     )
 
 
@@ -303,6 +307,16 @@ SENTINEL_2_L2A = DatasetConfig(
         # (plan §6.2.5); cloud shadows (3) do not count.
         cloud_classes=frozenset({8, 9, 10}),
         cloud_note="Sen2Cor's classification can miss thin cirrus and can take snow or bright ground for clouds.",
+        # DS-03c (Otto, 05.11.2026): the class of the filter of the same name, counted in the one reading of the
+        # classification. "Degraded data" has no class and stays with the value of the item.
+        share_classes=(
+            ShareClasses(AoiMeasure.CIRRUS_SHARE, frozenset({10})),
+            ShareClasses(AoiMeasure.SHADOW_SHARE, frozenset({3})),
+            ShareClasses(AoiMeasure.SNOW_SHARE, frozenset({11})),
+            ShareClasses(AoiMeasure.WATER_SHARE, frozenset({6})),
+            ShareClasses(AoiMeasure.VEGETATION_SHARE, frozenset({4})),
+            ShareClasses(AoiMeasure.NOT_VEGETATED_SHARE, frozenset({5})),
+        ),
     ),
     # The twelve reflectance bands of the L2A product (surface reflectance, scaled by the item), then the other
     # assets. Sources: Sen2Cor L2A IODD (S2-PDGS-MPC-L2A-IODD-2.4, issue 02) Tables 6 and 7 (cloud and snow
@@ -349,18 +363,21 @@ SENTINEL_2_L2A = DatasetConfig(
             # DS-03 plan §6.10: the range of this filter may also be applied to the cloud share inside the AOI.
             within_aoi=AoiMeasure.CLOUD_SHARE,
             group="Clouds",
+            area_based=True,
         ),
         _scene_share(
             "s2:thin_cirrus_percentage",
             "Thin cirrus",
             "Share of the scene covered by thin cirrus clouds. Part of the cloud cover.",
             group="Clouds",
+            within_aoi=AoiMeasure.CIRRUS_SHARE,
         ),
         _scene_share(
             "s2:cloud_shadow_percentage",
             "Cloud shadow",
             "Share of the scene lying in the shadow of clouds. Not part of the cloud cover.",
             group="Clouds",
+            within_aoi=AoiMeasure.SHADOW_SHARE,
         ),
         _scene_share(
             "s2:nodata_pixel_percentage",
@@ -370,14 +387,33 @@ SENTINEL_2_L2A = DatasetConfig(
             # Class 0 of the same classification the cloud share is read from (`mask`), so no further reading.
             within_aoi=AoiMeasure.NODATA_SHARE,
         ),
-        _scene_share("s2:snow_ice_percentage", "Snow and ice", "Share of the scene classified as snow or ice.", group="Scene"),
-        _scene_share("s2:water_percentage", "Water", "Share of the scene classified as water.", group="Scene"),
-        _scene_share("s2:vegetation_percentage", "Vegetation", "Share of the scene classified as vegetation.", group="Scene"),
+        _scene_share(
+            "s2:snow_ice_percentage",
+            "Snow and ice",
+            "Share of the scene classified as snow or ice.",
+            group="Scene",
+            within_aoi=AoiMeasure.SNOW_SHARE,
+        ),
+        _scene_share(
+            "s2:water_percentage",
+            "Water",
+            "Share of the scene classified as water.",
+            group="Scene",
+            within_aoi=AoiMeasure.WATER_SHARE,
+        ),
+        _scene_share(
+            "s2:vegetation_percentage",
+            "Vegetation",
+            "Share of the scene classified as vegetation.",
+            group="Scene",
+            within_aoi=AoiMeasure.VEGETATION_SHARE,
+        ),
         _scene_share(
             "s2:not_vegetated_percentage",
             "Not vegetated",
             "Share of the scene classified as not vegetated, e.g. bare ground or built-up areas.",
             group="Scene",
+            within_aoi=AoiMeasure.NOT_VEGETATED_SHARE,
         ),
         _scene_share(
             "s2:degraded_msi_data_percentage",
@@ -402,6 +438,7 @@ SENTINEL_2_L2A = DatasetConfig(
             ),
             within_aoi=None,
             group="Acquisition",
+            area_based=False,
         ),
         SearchFilter(
             property="view:sun_elevation",
@@ -415,6 +452,7 @@ SENTINEL_2_L2A = DatasetConfig(
             values=(),
             within_aoi=None,
             group="Acquisition",
+            area_based=False,
         ),
         SearchFilter(
             property="view:sun_azimuth",
@@ -428,6 +466,7 @@ SENTINEL_2_L2A = DatasetConfig(
             values=(),
             within_aoi=None,
             group="Acquisition",
+            area_based=False,
         ),
         SearchFilter(
             property="s2:processing_baseline",
@@ -442,8 +481,12 @@ SENTINEL_2_L2A = DatasetConfig(
             values=tuple(FilterValue(value=version, label=version) for version in ("05.00", "05.09", "05.10", "05.11", "05.12", "05.13")),
             within_aoi=None,
             group="Acquisition",
+            area_based=False,
         ),
     ),
+    # DS-03c: Sentinel-2 judges its filters per overpass (the overpass key `results_group_by` holds the instant) and
+    # offers the coverage of the AOI.
+    search_capabilities=SearchCapabilities(evaluate=True, aoi_coverage=True),
     # NM4-14 plan §7.5 (Otto 30.10.2026): five indices of Awesome Spectral Indices (MIT; Montero et al. 2023, Scientific
     # Data 10, 197, https://doi.org/10.1038/s41597-023-02096-0), `formula` and `reference` as its
     # `spectral-indices-dict.json` holds them at commit 835fea7. The bands are the ones Earth Search names, N as `nir`
@@ -687,6 +730,10 @@ COP_DEM_GLO_30 = DatasetConfig(
     band_units={"data": "m"},
     auxiliary_assets=(),
     search_filters=(),
+    # DS-03c (Otto, 04.11.2026): the coverage of the AOI is meaningful, the share of the AOI the 1° tiles reach (oceans carry
+    # none). "Evaluate" is not: the dataset has no filter to judge, and all its tiles share one acquisition period, so
+    # there is one pass and per pass and per scene would differ only in the coverage, which has its own wording.
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=True),
     # One band of heights: none of the indices of Awesome Spectral Indices reads it.
     index_presets=(),
     # One band of heights: no picture in colours of light.

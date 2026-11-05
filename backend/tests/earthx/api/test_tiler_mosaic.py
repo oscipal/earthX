@@ -40,7 +40,7 @@ from earthx.adapters.errors import UnknownCollection
 from earthx.api import mosaic_tiles
 from earthx.api.tiler import MOSAIC_ROUTER_PREFIX, build_app
 from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
-from earthx.catalog.registry import DatasetRegistry, LicenseTier
+from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities
 from earthx.gateway import UpstreamError, check_url
 from tests.conftest import own_log_text
 from tests.earthx.access.test_mosaic_tiles import SEAM_X, SEAM_Y, TILE, TMS, TOP
@@ -63,11 +63,12 @@ SYNTHETIC = replace(SENTINEL_2_L2A, dataset_id=DATASET, source=replace(SENTINEL_
 REGISTRY = DatasetRegistry(
     (
         SYNTHETIC,
-        replace(SYNTHETIC, dataset_id=NO_VIEWER, viewer=None),
+        replace(SYNTHETIC, dataset_id=NO_VIEWER, viewer=None, search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False)),
         replace(
             SYNTHETIC,
             dataset_id=CATALOG_ONLY,
             viewer=None,
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
             license=replace(SYNTHETIC.license, tier=LicenseTier.CATALOG),
         ),
         replace(SYNTHETIC, dataset_id=DISPLAY_DATASET, license=replace(SYNTHETIC.license, tier=LicenseTier.DISPLAY)),

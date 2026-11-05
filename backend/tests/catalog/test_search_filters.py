@@ -39,6 +39,7 @@ CLOUD = SearchFilter(
     values=(),
     within_aoi=None,
     group="Clouds",
+    area_based=True,
 )
 ORBIT = replace(
     CLOUD,
@@ -49,6 +50,7 @@ ORBIT = replace(
     maximum=175,
     integer=True,
     group="Acquisition",
+    area_based=False,
 )
 PLATFORM = SearchFilter(
     property="platform",
@@ -62,6 +64,7 @@ PLATFORM = SearchFilter(
     values=(FilterValue("sentinel-2a", "Sentinel-2A"), FilterValue("sentinel-2b", "Sentinel-2B")),
     within_aoi=None,
     group="Acquisition",
+    area_based=False,
 )
 
 
@@ -118,11 +121,17 @@ class TestTheEntries:
         tooltips = [entry.description for entry in SENTINEL_2_L2A.search_filters]
         assert len(set(tooltips)) == len(tooltips)
 
-    def test_only_the_cloud_cover_and_the_no_data_filter_may_be_applied_inside_the_aoi(self) -> None:
+    def test_the_shares_of_a_class_may_be_applied_inside_the_aoi_and_degraded_data_may_not(self) -> None:
         assert [entry.property for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi] == [
             "eo:cloud_cover",
+            "s2:thin_cirrus_percentage",
+            "s2:cloud_shadow_percentage",
             "s2:nodata_pixel_percentage",
-        ]
+            "s2:snow_ice_percentage",
+            "s2:water_percentage",
+            "s2:vegetation_percentage",
+            "s2:not_vegetated_percentage",
+        ]  # "Degraded data" has no class of the classification (Otto, 05.11.2026)
 
     @pytest.mark.parametrize(
         "property_name",
@@ -226,6 +235,7 @@ class TestTheCollection:
                 "description": "Share of the scene covered by clouds.",
                 "unit": "%",
                 "within_aoi": None,
+                "area_based": True,
                 "group": "Clouds",
                 "type": "number",
                 "minimum": 0.0,
@@ -238,6 +248,7 @@ class TestTheCollection:
                 "description": "Share of the scene covered by clouds.",
                 "unit": None,
                 "within_aoi": None,
+                "area_based": False,
                 "group": "Acquisition",
                 "type": "integer",
                 "minimum": 1,
@@ -250,6 +261,7 @@ class TestTheCollection:
                 "description": "The satellite that took the scene.",
                 "unit": None,
                 "within_aoi": None,
+                "area_based": False,
                 "group": "Acquisition",
                 "type": "string",
                 "oneOf": [

@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import MAX_BODY_BYTES, build_router
 from earthx.catalog.datasets import SENTINEL_2_L2A
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from tests.earthx.adapters.conftest import answering, gateway_for, load
 
 DATASET = SENTINEL_2_L2A.dataset_id
@@ -320,7 +320,7 @@ class TestSearchFilters:
         assert "10.4321" not in response.text and not seen
 
     def test_a_dataset_without_filters_refuses_any(self) -> None:
-        config = replace(SENTINEL_2_L2A, search_filters=())
+        config = replace(SENTINEL_2_L2A, search_filters=(), search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False))
         gateway, seen = answering(ok("aggregate_complete"))
         response = get(
             client_for(gateway, registry=DatasetRegistry((config,))),
@@ -592,6 +592,7 @@ class TestUnavailableProvider:
             SENTINEL_2_L2A,
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
             search_filters=(),
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
             # local-sql is only a valid combination on a materialized entry
             # (M3-11a K-05) — this route's 501 is about no caller existing yet,
             # not about the combination itself being invalid.
@@ -615,6 +616,7 @@ class TestAreaPathWithoutADatabase:
             capabilities=replace(SENTINEL_2_L2A.capabilities, single_coverage_product=True),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
             search_filters=(),
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
         )
 
