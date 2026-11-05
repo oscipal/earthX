@@ -34,6 +34,7 @@ from earthx.api.aoi_cloud_filter import (
     read_aoi_request,
     run_filter,
 )
+from earthx.api.search_filters import SearchConditions
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AoiMeasure
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition
@@ -292,7 +293,7 @@ class TestSceneMeasure:
         assert measure.value_of(AoiMeasure.CLOUD_SHARE) is None
 
     def test_a_cached_entry_without_a_valid_pixel_is_100_whatever_its_percentage_says(self) -> None:
-        stored = SceneMeasure.stored({"data_percent": 40.0, "cloud_pixels": 0, "data_pixels": 0, "resolution": 80.0})
+        stored = SceneMeasure.stored({"data_percent": 40.0, "cloud_pixels": 0, "data_pixels": 0, "resolution": 80.0, "class_pixels": {}})
         assert stored is not None and stored.nodata_percent == 100.0
 
     def test_the_value_of_each_measure(self) -> None:
@@ -303,11 +304,11 @@ class TestSceneMeasure:
 
     def test_the_counts_of_a_reading(self) -> None:
         measure = SceneMeasure.of(AoiClouds(cloud_pixels=25, data_pixels=50, aoi_pixels=100, resolution=80.0))
-        assert measure.as_measure() == {"data_percent": 50.0, "cloud_pixels": 25, "data_pixels": 50, "resolution": 80.0}
+        assert measure.as_measure() == {"data_percent": 50.0, "cloud_pixels": 25, "data_pixels": 50, "resolution": 80.0, "class_pixels": {}}
         assert not measure.cached
 
     def test_a_stored_entry_reads_back_as_cached(self) -> None:
-        stored = SceneMeasure.stored({"data_percent": 50.0, "cloud_pixels": 25, "data_pixels": 50, "resolution": 80.0})
+        stored = SceneMeasure.stored({"data_percent": 50.0, "cloud_pixels": 25, "data_pixels": 50, "resolution": 80.0, "class_pixels": {}})
         assert stored == SceneMeasure(25, 50, 50.0, 80.0, cached=True)
 
     @pytest.mark.parametrize(
@@ -425,7 +426,7 @@ class TestTheLoop:
         assert numbers(outcome) == list(range(0, 40, 4))
         first = outcome.items[0]["properties"]
         assert first["earthx:aoi_cloud_cover"] == 5.0
-        assert first["earthx:aoi_measure"] == {"data_percent": 100.0, "cloud_pixels": 50, "data_pixels": 1000, "resolution": 80.0}
+        assert first["earthx:aoi_measure"] == {"data_percent": 100.0, "cloud_pixels": 50, "data_pixels": 1000, "resolution": 80.0, "class_pixels": {}}
         assert first["datetime"].startswith("2024-05"), "the properties of the source stay"
         assert outcome.summary() == {"checked": 40, "found": 10, "unreadable": 0, "limit_reached": False}
         assert outcome.next_token is None
@@ -715,7 +716,7 @@ class TestSeveralRanges:
         (item,) = outcome.items
         assert item["properties"]["earthx:aoi_cloud_cover"] is None, "no value for the clouds on this scene"
         assert item["properties"]["earthx:aoi_measure"] == {
-            "data_percent": 0.0, "cloud_pixels": 0, "data_pixels": 0, "resolution": 80.0
+            "data_percent": 0.0, "cloud_pixels": 0, "data_pixels": 0, "resolution": 80.0, "class_pixels": {}
         }
         _, outcome, _ = await self.keep(nodata=RangeCondition(None, 20.0))
         assert [i["properties"]["earthx:aoi_cloud_cover"] for i in outcome.items] == [12.5, 0.0]
@@ -839,7 +840,7 @@ class TestMeasuringAScene:
         assert len(reads) == 1
         assert cache.ttls == [7 * 24 * 3600]
         (stored,) = cache.rows.values()
-        assert stored == {"data_percent": 80.0, "cloud_pixels": 40, "data_pixels": 160, "resolution": 80.0}
+        assert stored == {"data_percent": 80.0, "cloud_pixels": 40, "data_pixels": 160, "resolution": 80.0, "class_pixels": {}}
 
     async def test_the_cache_key_is_the_scene_and_the_area(self, reads: list) -> None:
         cache = DictCache()
@@ -1038,7 +1039,7 @@ class TestTheRequestOfAnotherSource:
         infos = {"native": (ItemHolding.MATERIALIZED, True)}
         with pytest.raises(HTTPException) as caught:
             await _aoi_requests(
-                Stub(), {"native": CLOUD_5}, infos, {}, datetime_value=PERIOD, bbox=None,
+                Stub(), SearchConditions(aoi={"native": CLOUD_5}), infos, {}, None, datetime_value=PERIOD, bbox=None,
                 intersects=SQUARE,
             )
         assert caught.value.status_code == 400 and "federated collection only" in caught.value.detail
@@ -1056,7 +1057,7 @@ class TestTheRequestOfAnotherSource:
 
         with pytest.raises(HTTPException) as caught:
             await _aoi_requests(
-                Stub(), {"native": {AoiMeasure.NODATA_SHARE: RangeCondition(None, 5.0)}},
-                {"native": (ItemHolding.MATERIALIZED, True)}, {}, datetime_value=PERIOD, bbox=None, intersects=SQUARE,
+                Stub(), SearchConditions(aoi={"native": {AoiMeasure.NODATA_SHARE: RangeCondition(None, 5.0)}}),
+                {"native": (ItemHolding.MATERIALIZED, True)}, {}, None, datetime_value=PERIOD, bbox=None, intersects=SQUARE,
             )
         assert caught.value.detail == "earthx:aoi_nodata is measured on a federated collection only"

@@ -30,7 +30,7 @@ from earthx.api.main import build_app
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.load import main as load_catalog
 from earthx.catalog.pgstac import load_collection, use_pgstac_search_path
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Gateway, Policy, ReadSlots
 from earthx.readers.cog import AssetPath
 
@@ -47,6 +47,7 @@ NATIVE = replace(
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
     search_filters=(),
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
 )
 POLICY = Policy(allowed_hosts=frozenset({HOST, ASSET_HOST}))
 
