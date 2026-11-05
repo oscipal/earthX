@@ -11,6 +11,11 @@ Two spellings, never both in one request:
 Only ``gte``/``lte`` on a range and ``in`` on a list of values. The checks on the values themselves are
 ``catalog.search_filters``', independent of this spelling. No message names a value of the request.
 
+Two more keys are the platform's (DS-03c). ``earthx:evaluate`` in the body says whether the filters are judged per ``pass`` (the
+scenes of an overpass stay or go together) or per ``scene`` (the default, as before the key existed); it counts for the
+collections whose registry offers it and is ignored for the others. ``earthx:aoi_coverage`` is a range filter like the others
+on the part of the AOI the outlines of the scenes cover, offered by the collections whose registry says so.
+
 The filters the platform computes (DS-03 plan §6.5) are the ranges of a measure inside the AOI, one property per
 :class:`~earthx.catalog.registry.AoiMeasure`: ``earthx:aoi_cloud_cover``, ``earthx:aoi_nodata``. A collection offers the
 property of each measure its registry sets as ``within_aoi`` on a filter; it takes that filter's range. They are read

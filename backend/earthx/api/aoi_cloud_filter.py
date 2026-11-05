@@ -140,7 +140,7 @@ def read_aoi_request(
     if needs_area:
         aoi: Mapping[str, Any] | None = _area(bbox, intersects, earthx_aoi, label)
     elif earthx_aoi is not None:
-        raise InvalidFilter(f"{AOI_FILTERS_TEXT} is the only thing earthx:aoi goes with")
+        raise InvalidFilter(f"earthx:aoi goes with {AOI_FILTERS_TEXT}")
     else:
         aoi = None
     return AoiFilterRequest(
