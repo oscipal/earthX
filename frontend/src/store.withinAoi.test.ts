@@ -93,6 +93,8 @@ function reset(selected: string[] = ['optical']) {
     dateTo: '2026-07-31',
     searchFilters: { optical: { 'test:cloud': range('', '20') } },
     searchWithin: { optical: true },
+    // Per scene, as the filter was first made; "per pass" has its own file (`store.evaluate.test.ts`).
+    searchEvaluate: 'scene',
     sections: [],
     openSectionId: null,
     items: [],

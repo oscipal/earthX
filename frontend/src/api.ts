@@ -4,7 +4,7 @@
 
 import type { DownloadBand } from './bandChoice';
 import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
-import { AOI_BODY_KEY, aoiCountsOf, type AoiCounts } from './aoiFilter';
+import { AOI_BODY_KEY, aoiCountsOf, EVALUATE_BODY_KEY, type AoiCounts } from './aoiFilter';
 import { MOSAIC_TILE_SIZE } from './tileSize';
 import { HISTOGRAM_BINS } from './histogram';
 import type { Bbox, Collection, StacItem } from './types';
@@ -206,6 +206,11 @@ export interface SearchQuery {
   // DS-03b: the AOI itself, sent beside the `bbox` that stands for it when it is too long to search by its shape, so that
   // the cloud share in the AOI is measured in the AOI and not in its box (plan §6.5). Only ever in the body.
   aoi?: GeoJSON.Geometry;
+  // DS-03c: the filters of the datasets that offer it are judged over the overpass (`earthx:evaluate`); without it, per scene.
+  // Never sent as a query parameter.
+  evaluate?: 'pass';
+  // The datasets that will be judged per pass: the client's note for walking on and counting, not part of the body.
+  judgedByPass?: string[];
   limit?: number;
   token?: string;
   // Ends the request ("Stop", or a change of the search the request belongs to).
@@ -291,6 +296,7 @@ export function buildSearchBody(q: SearchQuery): Record<string, unknown> {
   if (q.datetime) body.datetime = q.datetime;
   if (q.queryByCollection && Object.keys(q.queryByCollection).length > 0) body.query_by_collection = q.queryByCollection;
   if (q.aoi) body[AOI_BODY_KEY] = q.aoi;
+  if (q.evaluate) body[EVALUATE_BODY_KEY] = q.evaluate;
   if (q.limit) body.limit = q.limit;
   if (q.token) body.token = q.token;
   return body;
@@ -323,7 +329,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     ignoredFiltersByCollection: ignoredByCollectionFrom(body.ignored_filters_by_collection),
     incompleteCollections: body.incomplete_collections ?? [],
     openCollections: openCollectionsFrom(body.open_collections),
-    aoiFilter: aoiCountsOf(body as Record<string, unknown>, q.queryByCollection),
+    aoiFilter: aoiCountsOf(body as Record<string, unknown>, q.queryByCollection, q.judgedByPass),
   };
 }
 

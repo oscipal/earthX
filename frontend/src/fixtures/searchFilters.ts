@@ -2,7 +2,7 @@
 // `earthx:search_filters` (`backend/earthx/catalog/collection.py::_earthx_search_filters`). Made up for the tests: two
 // datasets with filters of their own and one without, so that nothing here depends on a real dataset (and no source-specific property name stands in this file, `test_frontend_no_dataset_literals`).
 
-import type { Collection, EarthxMask } from '../types';
+import type { Collection, EarthxMask, EarthxSearchCapabilities } from '../types';
 
 export const CLOUD_FILTER = {
   property: 'test:cloud',
@@ -12,6 +12,7 @@ export const CLOUD_FILTER = {
   description: 'Share of the scene covered by clouds.',
   unit: '%',
   within_aoi: 'earthx:aoi_cloud_cover',
+  area_based: true,
   type: 'number',
   minimum: 0,
   maximum: 100,
@@ -25,6 +26,7 @@ export const NODATA_FILTER = {
   description: 'Share of the scene without image data.',
   unit: '%',
   within_aoi: 'earthx:aoi_nodata',
+  area_based: true,
   type: 'number',
   minimum: 0,
   maximum: 100,
@@ -38,6 +40,7 @@ export const SATELLITE_FILTER = {
   description: 'The satellite that took the scene.',
   unit: null,
   within_aoi: null,
+  area_based: false,
   type: 'string',
   oneOf: [
     { const: 'sat-a', title: 'Satellite A' },
@@ -53,6 +56,7 @@ export const ORBIT_FILTER = {
   description: 'The orbit track the scene lies on.',
   unit: null,
   within_aoi: null,
+  area_based: false,
   type: 'integer',
   minimum: 1,
   maximum: 175,
@@ -87,7 +91,13 @@ export const CLASSIFICATION: EarthxMask = {
   cloud_note: 'The classification can miss thin haze and can take snow for clouds.',
 };
 
-function viewable(id: string, title: string, filters: unknown[] | undefined, mask?: EarthxMask): Collection {
+function viewable(
+  id: string,
+  title: string,
+  filters: unknown[] | undefined,
+  mask?: EarthxMask,
+  capabilities?: EarthxSearchCapabilities,
+): Collection {
   return {
     id,
     title,
@@ -102,12 +112,19 @@ function viewable(id: string, title: string, filters: unknown[] | undefined, mas
     },
     ...(filters ? { 'earthx:search_filters': filters } : {}),
     ...(mask ? { 'earthx:mask': mask } : {}),
+    ...(capabilities ? { 'earthx:search_capabilities': capabilities } : {}),
   };
 }
 
 // Three groups, so that the pop-up has headings; the radar has one, so that it has none.
-export const OPTICAL = viewable('optical', 'Optical imagery', [CLOUD_FILTER, NODATA_FILTER, SATELLITE_FILTER], CLASSIFICATION);
-export const RADAR = viewable('radar', 'Radar imagery', [ORBIT_FILTER]);
+// The optical dataset judges its filters per pass and offers the coverage of the AOI (`earthx:search_capabilities`, DS-03c).
+export const OPTICAL = viewable('optical', 'Optical imagery', [CLOUD_FILTER, NODATA_FILTER, SATELLITE_FILTER], CLASSIFICATION, {
+  evaluate: true,
+  aoi_coverage: true,
+});
+export const RADAR = viewable('radar', 'Radar imagery', [ORBIT_FILTER], undefined, { evaluate: false, aoi_coverage: false });
 // A dataset without filters publishes an empty list (the DEM), one from an older backend none at all.
 export const ELEVATION = viewable('elevation', 'Elevation model', []);
 export const LEGACY = viewable('legacy', 'Legacy imagery', undefined);
+// A dataset like the elevation model: no filters of its own, but the coverage of the AOI (DS-03c).
+export const TILES = viewable('tiles', 'Tiled model', [], undefined, { evaluate: false, aoi_coverage: true });

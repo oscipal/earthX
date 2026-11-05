@@ -156,6 +156,8 @@ async function check(browser, { theme, viewport }) {
   const fields = (name) => popup.locator(`input[aria-label="${name}"]`);
   const button = page.locator('.advanced-btn');
   const within = popup.locator('.within-aoi');
+  // The explanation of the switch stands behind the (i) beside it (DS-03c, Otto 05.11.2026).
+  const withinTip = popup.locator('.within-aoi-row .tip');
   const searchButton = page.getByRole('button', { name: 'Search', exact: true });
   const rect = (locator) => locator.evaluate((el) => el.getBoundingClientRect().toJSON());
   const inside = (inner, outer, slack = 1) => inner.x >= outer.x - slack && inner.y >= outer.y - slack && inner.x + inner.width <= outer.x + outer.width + slack && inner.y + inner.height <= outer.y + outer.height + slack;
@@ -182,7 +184,7 @@ async function check(browser, { theme, viewport }) {
   await button.click();
   await popup.waitFor();
   expect('no switch under "Cloud cover"', (await within.count()) === 1);
-  expect('the switch is not at the top of the pop-up, over the fields', await within.evaluate((el) => el.nextElementSibling?.classList.contains('advanced-fields') && el.previousElementSibling?.classList.contains('advanced-top')));
+  expect('the switch is not at the top of the pop-up, over the fields', await within.evaluate((el) => el.parentElement.nextElementSibling?.classList.contains('advanced-fields') && !el.parentElement.previousElementSibling?.classList.contains('advanced-fields')));
   expect('the switch is not named "Filter within AOI only"', (await text(within)) === 'Filter within AOI only', await text(within));
   expect('a second switch', (await popup.locator('.within-aoi').count()) === 1);
   expect('the switch is not locked without AOI and dates', await locked());
@@ -204,7 +206,8 @@ async function check(browser, { theme, viewport }) {
   await store((s) => s.getState().setDateTo('2026-07-31'));
   await button.click();
   expect('the switch is locked with an AOI and both dates', !(await locked()));
-  const tip = await within.getAttribute('data-tip');
+  const tip = await withinTip.getAttribute('data-tip');
+  expect('a tooltip on the free switch itself (the explanation is the (i)\'s)', (await within.getAttribute('data-tip')) === null, await within.getAttribute('data-tip'));
   expect('the tooltip names the filters it changes', tip.includes('Cloud cover (classes 8, 9, 10; cloud shadows do not count), No data. Others are unchanged.'), tip);
   expect('the tooltip names a filter that does not depend on the area', !tip.includes('Satellite'), tip);
   expect('the tooltip names the limit', tip.includes('checks up to 500 scenes'), tip);

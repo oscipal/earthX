@@ -190,6 +190,14 @@ export interface EarthxMask {
   // where the dataset has no such measure), and the registry's sentence to the limits of the classification.
   cloud_classes?: number[] | null;
   cloud_note?: string | null;
+  // DS-03c: the classes of the other shares measured in the AOI, by the property the search sends the range under.
+  share_classes?: Record<string, number[]> | null;
+}
+
+// What a dataset's search can do besides its filters (DS-03c): judge them per overpass, and the filter "AOI coverage".
+export interface EarthxSearchCapabilities {
+  evaluate?: boolean;
+  aoi_coverage?: boolean;
 }
 
 export interface Collection {
@@ -225,6 +233,8 @@ export interface Collection {
   // The filters the search offers for this dataset (DS-02), in the words of STAC queryables; read, and checked
   // entry by entry, by `searchFilters.ts`. Absent on a backend before DS-02a.
   'earthx:search_filters'?: unknown[] | null;
+  // What the search can do besides filtering (DS-03c); absent on a backend before it, which means neither.
+  'earthx:search_capabilities'?: EarthxSearchCapabilities | null;
   // The indices the panel offers as one click each (NM4-14), in the words of the registry; read, and checked entry by
   // entry, by `indexPresets.ts`. Absent on a backend before NM4-14a.
   'earthx:index_presets'?: unknown[] | null;

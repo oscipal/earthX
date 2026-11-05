@@ -26,6 +26,7 @@ describe('searchFiltersOf: what the registry offers', () => {
       ['Clouds', 'test:cloud', 'range'],
       ['Scene', 'test:nodata', 'range'],
       ['Acquisition', 'platform', 'values'],
+      ['Area', 'earthx:aoi_coverage', 'range'],
     ]);
     expect(cloud).toEqual({
       property: 'test:cloud',
@@ -35,6 +36,8 @@ describe('searchFiltersOf: what the registry offers', () => {
       description: 'Share of the scene covered by clouds.',
       unit: '%',
       withinAoi: 'earthx:aoi_cloud_cover',
+      areaBased: true,
+      needsAoi: false,
       minimum: 0,
       maximum: 100,
       integer: false,
@@ -48,6 +51,8 @@ describe('searchFiltersOf: what the registry offers', () => {
       description: 'The satellite that took the scene.',
       unit: null,
       withinAoi: null,
+      areaBased: false,
+      needsAoi: false,
       minimum: 0,
       maximum: 0,
       integer: false,
@@ -106,6 +111,7 @@ describe('groupsOf: the headings of the pop-up', () => {
       ['Clouds', ['Cloud cover']],
       ['Scene', ['No data']],
       ['Acquisition', ['Satellite']],
+      ['Area', ['AOI coverage']],
     ]);
   });
 

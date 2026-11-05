@@ -154,11 +154,17 @@ describe('the pop-up', () => {
   it('stands the filters under the headings of the registry, in its order', () => {
     pick('optical');
     open();
-    expect(headings()).toEqual(['Clouds', 'Scene', 'Acquisition']);
-    expect(titles()).toEqual(['Cloud cover', 'No data', 'Satellite']);
+    // "AOI coverage" is the platform's own filter, last, under "Area" (DS-03c).
+    expect(headings()).toEqual(['Clouds', 'Scene', 'Acquisition', 'Area']);
+    expect(titles()).toEqual(['Cloud cover', 'No data', 'Satellite', 'AOI coverage']);
     const sections = [...container.querySelectorAll('.filter-group')];
-    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual(['Clouds', 'Scene', 'Acquisition']);
-    expect(sections.map((s) => [...s.querySelectorAll('.filter-title')].map((t) => text(t)))).toEqual([['Cloud cover'], ['No data'], ['Satellite']]);
+    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual(['Clouds', 'Scene', 'Acquisition', 'Area']);
+    expect(sections.map((s) => [...s.querySelectorAll('.filter-title')].map((t) => text(t)))).toEqual([
+      ['Cloud cover'],
+      ['No data'],
+      ['Satellite'],
+      ['AOI coverage'],
+    ]);
   });
 
   it('has no heading where the dataset has only one group', () => {
@@ -184,7 +190,7 @@ describe('the pop-up', () => {
     act(() => useAppStore.setState({ datasets: datasetsFrom([added]) }));
     pick('optical');
     open();
-    expect(headings()).toEqual(['Clouds', 'Scene', 'Acquisition', 'Elsewhere']);
+    expect(headings()).toEqual(['Clouds', 'Scene', 'Acquisition', 'Elsewhere', 'Area']);
     expect(text(container.querySelectorAll('.filter-range')[2])).toBe('fromtokm');
     type(field('Brand new, to'), '3');
     expect(useAppStore.getState().searchFilters.optical['made:up']).toEqual({ kind: 'range', from: '', to: '3' });
@@ -243,8 +249,8 @@ describe('the pop-up', () => {
   it('puts the focus on the first thing to work with when it opens', () => {
     pick('optical');
     open();
-    // The switch at the top comes first (Otto, 31.10.2026); a dataset without one starts with its first field.
-    expect(document.activeElement).toBe(container.querySelector('.within-aoi input'));
+    // "Evaluate" at the top comes first (DS-03c), then the switch (Otto, 31.10.2026); a dataset without them starts with its first field.
+    expect(document.activeElement).toBe(container.querySelector('.evaluate-choice .btn'));
     open();
     pick('radar');
     open();
@@ -419,7 +425,7 @@ describe('one dataset at a time, each with its own values', () => {
     switchTo(1);
     pick('optical');
     expect(text(box())).toBe('Optical imagery');
-    expect(titles()).toEqual(['Cloud cover', 'No data', 'Satellite']);
+    expect(titles()).toEqual(['Cloud cover', 'No data', 'Satellite', 'AOI coverage']);
   });
 });
 
@@ -642,6 +648,8 @@ describe('"Filter within AOI only"', () => {
   const withinBox = () => within()!.querySelector<HTMLInputElement>('input')!;
   const clickWithin = () => act(() => withinBox().click());
   const stored = () => useAppStore.getState().searchWithin;
+  // What the switch does is explained behind the (i) beside it (DS-03c, Otto 05.11.2026).
+  const withinTip = () => tipOf(container.querySelector('.within-aoi-row .tip')!);
 
   beforeEach(() => {
     useAppStore.setState({ ...DATES, searchWithin: {} });
@@ -653,7 +661,13 @@ describe('"Filter within AOI only"', () => {
     expect(container.querySelectorAll('.within-aoi')).toHaveLength(1);
     expect(text(within())).toBe('Filter within AOI only');
     const body = container.querySelector('.advanced-popup-body')!;
-    expect([...body.children].map((c) => c.className.split(' ')[0])).toEqual(['advanced-top', 'within-aoi', 'advanced-fields', 'advanced-actions']);
+    expect([...body.children].map((c) => c.className.split(' ')[0])).toEqual([
+      'advanced-top',
+      'evaluate-choice',
+      'within-aoi-row',
+      'advanced-fields',
+      'advanced-actions',
+    ]);
     // The dataset box and the red x (NM4-65 part 8) share the first line.
     expect([...body.firstElementChild!.children].map((c) => c.className.split(' ')[0])).toEqual(['dataset-select', 'close-x']);
   });
@@ -685,7 +699,7 @@ describe('"Filter within AOI only"', () => {
   it('names in its tooltip the filters it changes and not the others, the classes and the note of the registry', () => {
     pick('optical');
     open();
-    const tip = tipOf(within()!);
+    const tip = withinTip();
     expect(tip).toContain('Cloud cover (classes 5, 6; cloud shadows do not count), No data.');
     expect(tip).toContain('Others are unchanged.');
     expect(tip).not.toContain('Satellite');
@@ -761,7 +775,7 @@ describe('"Filter within AOI only"', () => {
     expect(within()!.classList.contains('locked')).toBe(true);
     act(() => useAppStore.setState({ aoi: AOI }));
     expect(within()!.classList.contains('locked')).toBe(false);
-    expect(tipOf(within()!)).toContain('Measure these filters inside the AOI');
+    expect(withinTip()).toContain('Measure these filters inside the AOI');
   });
 
   it('goes off when the dates go and is then locked with the reason; it does not come back on its own', () => {

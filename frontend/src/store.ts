@@ -7,11 +7,15 @@ import { downloadSceneJob, estimateSceneJob, resamplingOfOrder, sceneJobOrder, t
 import type { ResamplingPart } from './resamplingWarning';
 import {
   anyMeasuresAoi,
+  coverageLock,
+  DEFAULT_EVALUATE,
   limitNote,
   measuresAoi,
+  needsAoiBody,
   NONE_WITHIN_NOTE,
   unreadableNote,
   withinAoiLock,
+  type Evaluate,
 } from './aoiFilter';
 import {
   bandViewportBbox,
@@ -78,6 +82,7 @@ import {
   hasFilterError,
   isEmptyQuery,
   isSet,
+  searchCapabilitiesOf,
   searchFiltersOf,
   type FilterInput,
   type FilterInputs,
@@ -279,7 +284,8 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   }
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
   // The filters of the coverage's dataset (DS-02c, adr/0004 K1): the map counts what the search would find.
-  const query = filterQueryOf(s, datasetId, withinFor(s, datasetId, 'coverage'));
+  // "AOI coverage" is judged from the outlines of scenes the search found; the map counts at the source and cannot (DS-03c).
+  const query = filterQueryOf(s, datasetId, withinFor(s, datasetId, 'coverage'), true);
   const filters = JSON.stringify(query);
 
   if (s.viewportBbox === null || s.viewportSize === null) return; // map not ready yet
@@ -477,9 +483,9 @@ function viewableDatasets(datasets: DatasetOption[], ids: readonly string[]): Vi
 // goes without it meanwhile.
 type FilterState = Pick<AppState, 'datasets' | 'searchFilters'>;
 
-function filterQueryOf(s: FilterState, datasetId: string, within?: 'aoi' | 'skip'): FilterQuery {
+function filterQueryOf(s: FilterState, datasetId: string, within?: 'aoi' | 'skip', withoutArea = false): FilterQuery {
   const dataset = s.datasets.find((d) => d.id === datasetId);
-  return dataset ? filterQuery(searchFiltersOf(dataset.collection), s.searchFilters[datasetId], within) : {};
+  return dataset ? filterQuery(searchFiltersOf(dataset.collection), s.searchFilters[datasetId], within, withoutArea) : {};
 }
 
 // What the switch "Filter within AOI only" does to a request (DS-03b): where it is on and can be used (an area and a date
@@ -490,9 +496,30 @@ type WithinState = Pick<AppState, 'aoi' | 'aoiPoint' | 'dateFrom' | 'dateTo' | '
 const withinFor = (s: WithinState, datasetId: string, request: 'search' | 'coverage'): 'aoi' | 'skip' | undefined =>
   s.searchWithin[datasetId] === true && withinAoiLock(s) === null ? (request === 'search' ? 'aoi' : 'skip') : undefined;
 
-// What each of these datasets is asked with, `{}` where nothing is set.
+// What each of these datasets is asked with, `{}` where nothing is set. "AOI coverage" goes only with an AOI it can use.
 function filterQueriesOf(s: FilterState & WithinState, ids: readonly string[]): FilterQueryByCollection {
-  return Object.fromEntries(ids.map((id) => [id, filterQueryOf(s, id, withinFor(s, id, 'search'))]));
+  const withoutArea = coverageLock(s) !== null;
+  return Object.fromEntries(ids.map((id) => [id, filterQueryOf(s, id, withinFor(s, id, 'search'), withoutArea)]));
+}
+
+// What a search on screen was asked with, to tell whether it still is what the fields say.
+function askedState(s: FilterState & WithinState & Pick<AppState, 'searchEvaluate'>, ids: readonly string[]): string {
+  const asked = filterQueriesOf(s, ids);
+  return JSON.stringify([asked, evaluationOf(s, asked)]);
+}
+
+// How the search judges the filters (DS-03c): the datasets whose registry offers judging per pass and that are asked something
+// are judged per pass when the user chose it. They are sent as `earthx:evaluate`, once for the whole search; a search per scene
+// sends nothing, which is what the server does without it.
+function evaluationOf(
+  s: Pick<AppState, 'datasets' | 'searchEvaluate'>,
+  asked: FilterQueryByCollection,
+): { evaluate?: 'pass'; judgedByPass?: string[] } {
+  if (s.searchEvaluate !== 'pass') return {};
+  const judged = Object.entries(asked)
+    .filter(([id, query]) => !isEmptyQuery(query) && s.datasets.some((d) => d.id === id && searchCapabilitiesOf(d.collection).evaluate))
+    .map(([id]) => id);
+  return judged.length > 0 ? { evaluate: 'pass', judgedByPass: judged } : {};
 }
 
 // `{queryByCollection}` for a request, or nothing when no dataset has a filter set: a search without filters
@@ -1609,6 +1636,9 @@ export interface AppState {
   searchFilters: Record<string, FilterInputs>;
   // The switch "Filter within AOI only" of each dataset (DS-03b): the user's choice, whether or not it can be used right now.
   searchWithin: Record<string, boolean>;
+  // "Evaluate: per pass / per scene" of "Advanced search" (DS-03c): how every filter is judged, for the whole search. Per
+  // pass until the user chooses otherwise; it counts for the datasets that offer it and is read at the next "Search".
+  searchEvaluate: Evaluate;
 
   // --- scene lookup by name (M2-17) ---
   sceneNameQuery: string;
@@ -1761,6 +1791,7 @@ export interface AppState {
   setSearchFilter: (datasetId: string, property: string, input: FilterInput) => void;
   // The switch "Filter within AOI only" of a dataset.
   setSearchWithin: (datasetId: string, on: boolean) => void;
+  setSearchEvaluate: (evaluate: Evaluate) => void;
   // "Reset filters" of a dataset: the filters and the switch.
   resetSearchFilters: (datasetId: string) => void;
   setPlaying: (v: boolean) => void;
@@ -1893,6 +1924,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dateTo: '',
   searchFilters: {},
   searchWithin: {},
+  searchEvaluate: DEFAULT_EVALUATE,
 
   sceneNameQuery: '',
   sceneLookupLoading: false,
@@ -3185,6 +3217,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     changeSearchFilters(set, get, datasetId, isSet(input) ? { ...others, [property]: input } : others);
   },
   setSearchWithin: (datasetId, on) => changeSearchWithin(set, get, datasetId, on),
+  setSearchEvaluate: (evaluate) => {
+    if (get().searchEvaluate === evaluate) return;
+    set({ searchEvaluate: evaluate });
+    if (get().searchContext) dropPageToken(set, get);
+  },
   resetSearchFilters: (datasetId) => {
     changeSearchFilters(set, get, datasetId, {});
     changeSearchWithin(set, get, datasetId, false);
@@ -3297,8 +3334,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         intersects: area.intersects,
         datetime: buildDatetime(dateFrom, dateTo),
         ...queryByCollectionOf(asked),
+        ...evaluationOf(get(), asked),
         // A long AOI is searched by its box; the clouds are measured in the AOI itself (plan §6.5, KE1).
-        ...(area.truncatedNotice && anyMeasuresAoi({ queryByCollection: asked }) ? { aoi } : {}),
+        ...(area.truncatedNotice && needsAoiBody({ queryByCollection: asked }) ? { aoi } : {}),
       };
       if (anyMeasuresAoi(query)) {
         await walkAoiSearch(set, get, {
@@ -3317,7 +3355,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
           fresh: true,
           // Filters or area changed while the first answer was on its way.
-          unchanged: () => JSON.stringify(filterQueriesOf(get(), ids)) === JSON.stringify(asked),
+          unchanged: () => askedState(get(), ids) === JSON.stringify([asked, evaluationOf(get(), asked)]),
         });
         // A dataset searched without the limit gets its nearest date as always; one searched with it does not (KE4).
         const { openSectionId } = get();
