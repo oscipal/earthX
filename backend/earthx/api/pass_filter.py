@@ -1,8 +1,9 @@
 """The search judged per overpass: a pass stays or falls as a whole (DS-03c, Otto 05.11.2026).
 
 ``api`` fetches the scenes of the source **without** the filters of the property kind (a scene that fails one alone may
-belong to a pass that meets it), cuts the source's order into clusters, groups the scenes of a cluster by the overpass key of
-the registry (``results_group_by``) and judges every group:
+belong to a pass that meets it), groups them by the overpass key of the registry
+(:func:`~earthx.catalog.registry.overpass_key`, ``results_group_by``: the one rule of the results list, the mosaic job and the
+mosaic tile; Otto, 05.11.2026, on #293) and judges every group:
 
 * **Coverage** of the AOI by the union of the outlines of the scenes of the pass (no pixel).
 * **Filters on a share of an area** (``SearchFilter.area_based``) without "Filter within AOI only": the value of the pass is
@@ -15,12 +16,16 @@ the registry (``results_group_by``) and judges every group:
 * **Filters without an area** (the satellite, the sun): the pass meets one if every one of its scenes does, which is the same
   as "the value is unique in the pass" where it is unique (DS-03c, proposal in the PR for the rest).
 
-Why clusters: the source gives scenes by acquisition time, and the scenes of one overpass lie within minutes of each
-other, but scenes of another overpass can lie between them. The order is cut where the time between two neighbours exceeds
-:data:`CLUSTER_GAP`; every pass lies inside one cluster, so a pass is never judged in two halves, and the marker of the next
-response stands on a boundary between clusters. A cluster is cut at :data:`MAX_CLUSTER` scenes, and then the pass that lies
-across the cut is judged in two parts (a search of a very large area at a very busy time; the answer's
-``earthx:aoi_filter`` does not say so).
+When a group is complete: the source gives its scenes newest first (``adapters.federated_search.SORTBY``), and the key of the
+pass starts with the UTC day of acquisition (``acquisition_day``). All scenes of one day therefore follow each other, and a
+group is complete once a scene of another day comes, or the source ends. The loop reads the scenes of one day (a **block**,
+across pages of the source where it has to), groups them with the registry's key and judges the groups; the marker of the next
+response stands between two blocks. No rule of its own decides what a pass is. A block is cut at :data:`MAX_DAY_SCENES`
+scenes (the most a search checks), and then the pass across the cut is judged in two parts (not seen in practice).
+
+**No response ends without progress** (Otto, 05.11.2026): the first block of a response is judged to the end, whatever the
+response's own time says. A pass is read within :func:`~earthx.api.aoi_cloud_filter.read_seconds` of its scenes, in parallel,
+and once more if that failed; only then it is skipped (counted under ``unreadable``) and the search goes on.
 
 Nothing here logs an address, an item id, a bound of a range or a key; the one line per response names the dataset and counts.
 """
@@ -35,23 +40,27 @@ from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date
+from functools import partial
 from typing import Any
 
-import anyio
-import anyio.to_thread
 from rasterio import Env
 from rasterio.errors import RasterioError
 from shapely.geometry.base import BaseGeometry
 
-from earthx.access.aoi_clouds import AoiClouds, aoi_pass_cache_key, measure_aoi_pass
+from earthx.access.aoi_clouds import (
+    AssetPath,
+    EnterRead,
+    ReadDeadlineExceeded,
+    aoi_pass_cache_key,
+    measure_aoi_pass,
+)
 from earthx.access.crop_rules import mosaic_order
 from earthx.access.outlines import AoiOutlines, mosaic_weights, outline_of
 from earthx.access.resolve import AssetResolutionError, ResolvedAsset, open_asset_ref, resolve_asset
 from earthx.adapters import ItemPage
 from earthx.api.aoi_cloud_filter import (
     FETCH_MARGIN_S,
-    PAGE_SIZE,
     RESPONSE_SCENES,
     RESPONSE_SECONDS,
     SEARCH_SCENES,
@@ -59,41 +68,41 @@ from earthx.api.aoi_cloud_filter import (
     AoiMeasurer,
     Cursor,
     FilterOutcome,
+    ReadOutcome,
     SceneMeasure,
+    _deadline,
     decode_cursor,
     detach,
     encode_cursor,
+    read_seconds,
     settle,
 )
-from earthx.catalog.registry import MissingProperty, ViewerInfo, group_key
+from earthx.catalog.registry import MissingProperty, ViewerInfo, acquisition_day, overpass_key
 from earthx.catalog.search_filters import Condition, RangeCondition, ValuesCondition
 from earthx.gateway import GatewayError, host_of
 from earthx.readers import AssetRejected
-from earthx.readers.cog import AssetPath
 
 LOGGER = logging.getLogger("earthx.api.pass_filter")
 
-#: Scenes further apart in time than this belong to different clusters (30 minutes: the scenes of one overpass of an
-#: area lie within minutes of each other; a datatake of the satellite is shorter than this between two neighbouring tiles).
-CLUSTER_GAP_S = 30 * 60
-#: Most scenes of one cluster; a longer run is cut here (see the module text).
-MAX_CLUSTER = PAGE_SIZE
+#: Most scenes of one block (the scenes of one UTC day); a longer run is cut here (see the module text).
+MAX_DAY_SCENES = SEARCH_SCENES
 #: Passes judged at once; `gateway.ReadSlots` holds the real limit per host.
 CONCURRENT_PASSES = 4
 
 __all__ = [
-    "CLUSTER_GAP_S",
-    "MAX_CLUSTER",
+    "MAX_DAY_SCENES",
     "PassMeasurer",
+    "day_of",
     "judge_properties",
     "mosaic_ordered",
-    "overpass_key",
+    "pass_key_of",
     "run_pass_filter",
     "settle",
     "weighted_value",
 ]
 
 GroupOf = Callable[[Mapping[str, Any]], tuple[str, ...]]
+DayOf = Callable[[Mapping[str, Any]], date | None]
 OrderOf = Callable[[Sequence[dict[str, Any]]], list[dict[str, Any]]]
 MeasurePass = Callable[[Sequence[dict[str, Any]]], Awaitable[SceneMeasure | None]]
 
@@ -101,28 +110,25 @@ MeasurePass = Callable[[Sequence[dict[str, Any]]], Awaitable[SceneMeasure | None
 # -- the pieces of a request ------------------------------------------------------------------------------------
 
 
-def overpass_key(viewer: ViewerInfo) -> GroupOf:
-    """The overpass key of an item, from the registry's ``results_group_by``; an item that lacks a part of it stands alone."""
+def pass_key_of(viewer: ViewerInfo) -> GroupOf:
+    """The overpass key of an item (:func:`~earthx.catalog.registry.overpass_key`); an item that lacks a part of it stands alone."""
 
     def key_of(item: Mapping[str, Any]) -> tuple[str, ...]:
         try:
-            return group_key(item, viewer, viewer.results_group_by)
+            return overpass_key(item, viewer)
         except MissingProperty:
             return ("item", str(item.get("id")))
 
     return key_of
 
 
-def _instant(item: Mapping[str, Any]) -> float | None:
-    """The acquisition instant of an item in seconds, or ``None`` where it has none that reads."""
-    properties = item.get("properties")
-    value = properties.get("datetime") if isinstance(properties, Mapping) else None
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.fromisoformat(value).timestamp()
-    except ValueError:
-        return None
+def day_of(viewer: ViewerInfo) -> DayOf:
+    """The UTC day of acquisition of an item, by the registry's rule (``acquisition_day``): the day its pass belongs to."""
+    return partial(_day, viewer)
+
+
+def _day(viewer: ViewerInfo, item: Mapping[str, Any]) -> date | None:
+    return acquisition_day(item, viewer)
 
 
 # -- judging one pass -------------------------------------------------------------------------------------------
@@ -227,7 +233,7 @@ class PassMeasurer(AoiMeasurer):
         stored = SceneMeasure.stored(await self._cached(key))
         if stored is not None:
             return stored
-        counts = await anyio.to_thread.run_sync(self._read_pass, refs, limiter=self._limiter)
+        counts = await self.attempts(partial(self._read_pass, refs, read_seconds(len(refs))))
         if counts is None:
             return None
         measure = SceneMeasure.of(counts)
@@ -238,21 +244,30 @@ class PassMeasurer(AoiMeasurer):
         outline = outline_of(item)
         return outline is None or self._outlines.touches(outline)  # an item without an outline is read to be sure
 
-    def _read_pass(self, refs: Sequence[ResolvedAsset]) -> AoiClouds | None:
-        """The counts of the merged scenes, or ``None`` where they cannot be read. Runs in a thread."""
+    def _read_pass(self, refs: Sequence[ResolvedAsset], seconds: float) -> ReadOutcome:
+        """One try at the counts of the merged scenes. Runs in a thread; the scenes are read in parallel, each inside the slot
+        of its host and the GDAL environment of the gateway, and the time is that of :func:`read_seconds`."""
         if any(ref.reader != "cog" for ref in refs):
-            return None
+            return ReadOutcome(None, retry=False)
         try:
             paths = [open_asset_ref(ref, self._policy, self._resolver) for ref in refs]
-            with ExitStack() as stack:
-                for host in sorted({host_of(ref.href) for ref in refs}):
-                    stack.enter_context(self._slots.slot(host))
+            hosts = {str(path): host_of(ref.href) for path, ref in zip(paths, refs, strict=True)}
+            clean = [path for path in paths if isinstance(path, AssetPath)]  # COGs, as checked above
+
+            def enter(path: AssetPath) -> ExitStack:
+                stack = ExitStack()
+                stack.enter_context(self._slots.slot(hosts[str(path)]))
                 stack.enter_context(Env(**self._options))
-                assert all(isinstance(path, AssetPath) for path in paths)  # COGs, as checked above
-                return measure_aoi_pass([p for p in paths if isinstance(p, AssetPath)], self._aoi, self._classes)
-        except (AssetRejected, GatewayError, RasterioError, ValueError, OSError):
-            # GDAL's text and the AOI's errors can name the address or a position: the fact only, counted by the caller.
-            return None
+                return stack
+
+            read: EnterRead = enter
+            with _deadline(seconds):
+                return ReadOutcome(measure_aoi_pass(clean, self._aoi, self._classes, enter=read), retry=False)
+        except (ReadDeadlineExceeded, GatewayError, RasterioError, OSError):
+            # GDAL's text can name the address: the fact only, counted by the caller. Another try may do better.
+            return ReadOutcome(None, retry=True)
+        except (AssetRejected, ValueError):
+            return ReadOutcome(None, retry=False)
 
 
 def mosaic_ordered(config: Any, asset: str) -> OrderOf:
@@ -330,31 +345,27 @@ class _Tally:
         return kept >= limit or self.scenes >= RESPONSE_SCENES or self.checked >= SEARCH_SCENES
 
 
-async def _read_cluster(
-    fetch_page: Callable[[str | None], Awaitable[ItemPage]], position: tuple[str | None, int]
+async def _read_day(
+    fetch_page: Callable[[str | None], Awaitable[ItemPage]], position: tuple[str | None, int], day_of: DayOf
 ) -> tuple[list[dict[str, Any]], tuple[str | None, int] | None]:
-    """The scenes of the cluster that starts at ``position``, and where the next one starts (``None``: the source ends).
+    """The scenes of one UTC day from ``position`` on (a block), and where the next block starts (``None``: the source ends).
 
-    Pages are fetched as the cluster needs them: a cluster that runs to the end of a page goes on in the next."""
+    The source gives scenes newest first, so the scenes of a day follow each other. Pages are fetched as the block needs them:
+    a day that runs to the end of a page goes on in the next. A scene with no day stands alone."""
     marker, offset = position
-    cluster: list[dict[str, Any]] = []
-    previous: float | None = None
+    block: list[dict[str, Any]] = []
+    block_day: date | None = None
     while True:
         page = await fetch_page(marker)
         for index in range(offset, len(page.items)):
             item = page.items[index]
-            instant = _instant(item)
-            if cluster and (
-                len(cluster) >= MAX_CLUSTER
-                or instant is None
-                or previous is None
-                or abs(previous - instant) > CLUSTER_GAP_S
-            ):
-                return cluster, (marker, index)
-            cluster.append(dict(item))
-            previous = instant
+            day = day_of(item)
+            if block and (len(block) >= MAX_DAY_SCENES or day is None or day != block_day):
+                return block, (marker, index)
+            block.append(dict(item))
+            block_day = day
         if not page.next_page_token:
-            return cluster, None
+            return block, None
         marker, offset = page.next_page_token, 0
 
 
@@ -363,6 +374,7 @@ async def run_pass_filter(
     *,
     fetch_page: Callable[[str | None], Awaitable[ItemPage]],
     group_of: GroupOf,
+    day_of: DayOf,
     order_of: OrderOf,
     measure_pass: MeasurePass,
     limit: int,
@@ -373,10 +385,12 @@ async def run_pass_filter(
     """One response of a search per pass, from the position ``token`` names (``None``: the beginning).
 
     The same limits and the same marker as :func:`~earthx.api.aoi_cloud_filter.run_filter` (a response ends at ``limit`` scenes
-    kept, 100 scenes checked, 8 s, 500 scenes checked in the search, or the end of the source), but the unit is a cluster of
-    scenes: the response ends between two clusters, never inside one, and so may carry a few more scenes than ``limit``
-    (a pass is not cut). A cluster whose passes cannot all be judged in time is left for the next response, which finds
-    the readings the first one began in the cache.
+    kept, 100 scenes checked, 8 s, 500 scenes checked in the search, or the end of the source), but the unit is a block, the
+    scenes of one UTC day: the response ends between two blocks, never inside one, and so may carry a few more scenes than
+    ``limit`` (a pass is not cut). **The first block of a response is judged to the end, whatever the clock says**, so that a
+    response always moves on; a pass that cannot be read in its time and a second try is skipped and counted. A later block
+    whose passes cannot all be judged within the response's own time is left for the next response, which finds the readings
+    the first one began in the cache.
     """
     started = clock()
     deadline = started + RESPONSE_SECONDS
@@ -387,11 +401,11 @@ async def run_pass_filter(
     kept: list[dict[str, Any]] = []
     position: tuple[str | None, int] | None = (cursor.page, cursor.offset)
     fetched = False
-    while position is not None and not tally.done(limit, len(kept)) and clock() < deadline:
+    while position is not None and not tally.done(limit, len(kept)) and (clock() < deadline or tally.scenes == 0):
         if fetched and deadline - clock() < FETCH_MARGIN_S:
             break
         fetched = True
-        cluster, following = await _read_cluster(fetch_page, position)
+        cluster, following = await _read_day(fetch_page, position, day_of)
         if not cluster:
             position = following
             continue
@@ -399,9 +413,14 @@ async def run_pass_filter(
         for item in cluster:
             groups.setdefault(group_of(item), []).append(item)
         verdicts = await _judge_groups(
-            request, list(groups.values()), order_of, measure_pass, aoi, max(deadline - clock(), 0)
+            request,
+            list(groups.values()),
+            order_of,
+            measure_pass,
+            aoi,
+            None if tally.scenes == 0 else max(deadline - clock(), 0),
         )
-        if verdicts is None:  # out of time: this cluster is for the next response
+        if verdicts is None:  # out of time: this block is for the next response
             break
         # The verdicts hold the same dicts as `cluster`, in the order of the mosaic; the answer keeps the source's order.
         keep_ids = {id(item) for verdict in verdicts if verdict.kept for item in verdict.items}
@@ -446,9 +465,9 @@ async def _judge_groups(
     order_of: OrderOf,
     measure_pass: MeasurePass,
     aoi: AoiOutlines | None,
-    seconds: float,
+    seconds: float | None,
 ) -> list[_Verdict] | None:
-    """The verdicts of ``groups`` (a few at once), or ``None`` if they are not all in within ``seconds``.
+    """The verdicts of ``groups`` (a few at once), or ``None`` if they are not all in within ``seconds`` (``None``: wait for them).
 
     Passes still reading when time is up are not cancelled (a task stopped in the middle of a database call leaves its
     connection broken): they finish on their own, store their measure, and the next response asks for the same passes first."""

@@ -25,8 +25,10 @@ import logging
 import math
 import time
 from collections import Counter
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 import anyio
@@ -38,7 +40,14 @@ from shapely.errors import ShapelyError
 from shapely.geometry import MultiPolygon, box, shape
 from stac_fastapi.types.rfc3339 import str_to_interval
 
-from earthx.access.aoi_clouds import AoiClouds, aoi_clouds_cache_key, canonical_aoi, measure_aoi_clouds
+from earthx.access.aoi_clouds import (
+    READ_DEADLINE,
+    AoiClouds,
+    ReadDeadlineExceeded,
+    aoi_clouds_cache_key,
+    canonical_aoi,
+    measure_aoi_clouds,
+)
 from earthx.access.aoi_upload import MAX_AOI_POINTS
 from earthx.access.outlines import AoiOutlines, outline_of
 from earthx.access.resolve import AssetResolutionError, ResolvedAsset, open_asset_ref, resolve_asset
@@ -65,6 +74,24 @@ SEARCH_SCENES = 500
 FETCH_MARGIN_S = 2.0
 #: Scenes measured ahead at once. `ReadSlots` holds the real limit per host; this keeps the readers busy.
 CONCURRENT_READS = 6
+#: DS-03c (Otto, 05.11.2026): a scene or a pass is skipped as little as possible. A reading has :func:`read_seconds` to
+#: finish, per scene of it (a pass has more to read), and gets :data:`ATTEMPTS` tries: a failure or a timeout is repeated
+#: once, the second time often over a source that has warmed up. Only then the scene or the pass counts as skipped, and the
+#: search goes on. The counts of the answer (`earthx:aoi_filter.unreadable`) are these skipped scenes.
+SCENE_SECONDS = 8.0
+PASS_SECONDS_MAX = 30.0
+ATTEMPTS = 2
+
+
+def read_seconds(scenes: int) -> float:
+    """How long one try at reading ``scenes`` scenes may take: 8 s each, at most 30 s."""
+    return min(SCENE_SECONDS * max(scenes, 1), PASS_SECONDS_MAX)
+
+
+#: The longest a response of a search with filters measured by reading can take: its first scene or pass is read to the end,
+#: whatever the response's own limit says, so that no response ends without progress (every try of it, and the page of the
+#: source before it). The mixed search gives a source with such a filter this long (`api.federating_client`).
+FILTERED_SOURCE_SECONDS = ATTEMPTS * PASS_SECONDS_MAX + 30.0
 #: A measure lives at most seven days: its key can be recomputed from the AOI (F2e).
 CACHE_TTL_S = 7 * 24 * 60 * 60
 #: The body of a search that carries an AOI to measure (§6.5 condition 2).
@@ -425,6 +452,24 @@ def _stored_classes(value: Any, data_pixels: int) -> dict[int, int] | None:
 Measure = Callable[[Mapping[str, Any]], Awaitable[SceneMeasure | None]]
 
 
+@dataclass(frozen=True, slots=True)
+class ReadOutcome:
+    """One try at a reading: the counts, or nothing and whether another try may do better."""
+
+    counts: AoiClouds | None
+    retry: bool
+
+
+@contextmanager
+def _deadline(seconds: float) -> Iterator[None]:
+    """The reading inside the block must end within ``seconds`` (checked between its blocks)."""
+    token = READ_DEADLINE.set(time.monotonic() + seconds)
+    try:
+        yield
+    finally:
+        READ_DEADLINE.reset(token)
+
+
 class AoiMeasurer:
     """Measures the cloud share of one scene in the AOI: from the cache, else by reading the classification.
 
@@ -459,6 +504,7 @@ class AoiMeasurer:
         self._slots = slots
         self._cache = cache
         self._limiter = limiter
+        self.retries = 0  # the tries that were repeated, for the log
 
     async def __call__(self, item: Mapping[str, Any]) -> SceneMeasure | None:
         try:
@@ -470,25 +516,40 @@ class AoiMeasurer:
         if stored is not None:
             return stored
         # Waiting for a free reader happens here, in the event loop, not in a thread of the shared pool.
-        counts = await anyio.to_thread.run_sync(self._read, ref, limiter=self._limiter)
+        counts = await self.attempts(partial(self._read, ref, read_seconds(1)))
         if counts is None:
             return None
         measure = SceneMeasure.of(counts)
         await self._store(key, measure)
         return measure
 
-    def _read(self, ref: ResolvedAsset) -> AoiClouds | None:
-        """The counts of one scene, or ``None`` where it cannot be read. Runs in a thread."""
+    async def attempts(self, read: Callable[[], ReadOutcome]) -> AoiClouds | None:
+        """``read`` in a thread, once more if it failed in a way another try may mend (:data:`ATTEMPTS` in all)."""
+        for attempt in range(ATTEMPTS):
+            outcome = await anyio.to_thread.run_sync(read, limiter=self._limiter)
+            if outcome.counts is not None:
+                return outcome.counts
+            if not outcome.retry:
+                return None
+            self.retries += attempt == 0
+        return None
+
+    def _read(self, ref: ResolvedAsset, seconds: float) -> ReadOutcome:
+        """One try at the counts of one scene. Runs in a thread; the time starts when the reader is free."""
         if ref.reader != "cog":
-            return None
+            return ReadOutcome(None, retry=False)
         try:
             path = open_asset_ref(ref, self._policy, self._resolver)
             with self._slots.slot(host_of(ref.href)), rasterio.Env(**self._options):
                 assert isinstance(path, AssetPath)  # a COG, as checked above
-                return measure_aoi_clouds(path, self._aoi, self._classes)
-        except (AssetRejected, GatewayError, RasterioError, ValueError, OSError):
-            # GDAL's text and the AOI's errors can name the address or a position: the fact only, counted by the caller.
-            return None
+                with _deadline(seconds):
+                    return ReadOutcome(measure_aoi_clouds(path, self._aoi, self._classes), retry=False)
+        except (ReadDeadlineExceeded, GatewayError, RasterioError, OSError):
+            # GDAL's text can name the address: the fact only, counted by the caller. Another try may do better.
+            return ReadOutcome(None, retry=True)
+        except (AssetRejected, ValueError):
+            # An address the gateway refuses, an AOI that does not fit the raster: the same again.
+            return ReadOutcome(None, retry=False)
 
     async def _cached(self, key: str) -> Any:
         if self._cache is None:
@@ -706,12 +767,15 @@ async def _take_page(
     taken = 0
     try:
         for index, item in enumerate(items):
-            if tally.done(limit) or clock() >= deadline:
+            # The first scene of a response is waited for to the end, whatever the clock says (DS-03c): a scene is read within
+            # its own time and one retry, so no response ends without having moved on.
+            first = tally.scenes == 0
+            if tally.done(limit) or (clock() >= deadline and not first):
                 break
             allowance = min(RESPONSE_SCENES - tally.scenes, SEARCH_SCENES - tally.checked)
             while len(tasks) < min(len(items), index + min(CONCURRENT_READS, allowance)):
                 tasks.append(asyncio.ensure_future(measure(items[len(tasks)])))
-            done, _ = await asyncio.wait({tasks[index]}, timeout=max(deadline - clock(), 0))
+            done, _ = await asyncio.wait({tasks[index]}, timeout=None if first else max(deadline - clock(), 0))
             if not done:
                 break
             tally.take(item, tasks[index].result(), conditions, share_classes)

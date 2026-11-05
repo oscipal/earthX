@@ -593,6 +593,27 @@ def group_key(
     return tuple(key)
 
 
+def overpass_key(item: Mapping[str, object], viewer: ViewerInfo) -> tuple[str, ...]:
+    """The key of the overpass ``item`` belongs to: its ``results_group_by`` (P19, M4-12a).
+
+    The one rule for "which scenes are one overpass": the groups of the results list (mirrored in the front end's
+    ``grouping.ts``), the mosaic job and the mosaic tile, and the search per pass all take it from here. Raises
+    :class:`MissingProperty` for an item that lacks a part of it."""
+    return group_key(item, viewer, viewer.results_group_by)
+
+
+def group_by_overpass(
+    items: Iterable[Mapping[str, object]], viewer: ViewerInfo
+) -> dict[tuple[str, ...], list[Mapping[str, object]]]:
+    """``items`` grouped by :func:`overpass_key`, each group in the order the items came in, the groups in order of their first.
+
+    An item without a key part raises :class:`MissingProperty`, as the list of results fails on it (``grouping.ts``)."""
+    groups: dict[tuple[str, ...], list[Mapping[str, object]]] = {}
+    for item in items:
+        groups.setdefault(overpass_key(item, viewer), []).append(item)
+    return groups
+
+
 #: The STAC instant of a scene's acquisition; where the overpass key names it, the dataset has a day of acquisition.
 ACQUISITION_INSTANT = "datetime"
 

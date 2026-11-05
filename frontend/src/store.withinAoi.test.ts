@@ -326,7 +326,7 @@ describe('the walk through the answers', () => {
     steps = [{ checked: 500, found: 0, unreadable: 2, limit: true }];
     await state().runSearch();
     expect(state().notice).toBe(
-      'No scenes within the AOI limit in this date range (500 checked). Checked 500 scenes. Narrow the date range to search further. 2 scenes could not be checked.',
+      'No scenes within the AOI limit in this date range (500 checked). Checked 500 scenes. Narrow the date range to search further. 2 scenes skipped.',
     );
     expect(state().sections[0].items).toEqual([]);
   });

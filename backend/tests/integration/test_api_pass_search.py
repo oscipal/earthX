@@ -263,7 +263,7 @@ class Reader:
         self.passes: list[list[str]] = []
         self.scenes: list[str] = []
 
-    def together(self, paths: list[Any], aoi: dict[str, Any], classes: frozenset[int]) -> AoiClouds:
+    def together(self, paths: list[Any], aoi: dict[str, Any], classes: frozenset[int], **reading: Any) -> AoiClouds:
         names = [path.item_id for path in paths]
         self.passes.append(names)
         water = 600 if "S2_0" in names else 100
@@ -327,7 +327,7 @@ class TestTheMeasuresInThePass:
         assert found(again) == ["S2_0", "S2_1"]
 
     async def test_a_pass_that_cannot_be_read_is_counted(self, catalog: None, source: Source, monkeypatch: pytest.MonkeyPatch) -> None:
-        def broken(paths: list[Any], aoi: dict[str, Any], classes: frozenset[int]) -> AoiClouds:
+        def broken(paths: list[Any], aoi: dict[str, Any], classes: frozenset[int], **reading: Any) -> AoiClouds:
             raise ValueError("no")
 
         monkeypatch.setattr(pass_filter, "measure_aoi_pass", broken)

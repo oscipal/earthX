@@ -13,6 +13,7 @@ import {
   LOCK_TOO_MANY,
   MAX_AOI_POSITIONS,
   measuresAoi,
+  unreadableNote,
   withinAoiLock,
   withinAoiTip,
   withinFilters,
@@ -169,17 +170,17 @@ describe('the notes of a section searched with the limit', () => {
     expect(aoiNotes(waiting, counts(), false)).toEqual([LOAD_MORE_NOTE]);
   });
 
-  it('names the scenes it checked when the limit is reached, and those it could not read', () => {
+  it('names the scenes it checked when the limit is reached; what was skipped stands in the head, not in the notes', () => {
     const notes = aoiNotes(section(), counts({ checked: 500, limitReached: true, unreadable: 2 }), false);
     expect(notes).toEqual([
       'No scenes within the AOI limit in this date range',
       'Checked 500 scenes. Narrow the date range to search further.',
-      '2 scenes could not be checked',
     ]);
   });
 
-  it('says "1 scene" for one', () => {
-    expect(aoiNotes(section({ items: [item('a')] }), counts({ unreadable: 1 }), false)).toEqual(['1 scene could not be checked']);
+  it('says "1 scene" for one, where there is no list to say it in', () => {
+    expect(unreadableNote(counts({ unreadable: 1 }))).toBe('1 scene skipped');
+    expect(unreadableNote(counts({ unreadable: 2 }))).toBe('2 scenes skipped');
   });
 
   it('keeps the other notes of the section, and does not claim "nothing within" over an answer that is incomplete', () => {

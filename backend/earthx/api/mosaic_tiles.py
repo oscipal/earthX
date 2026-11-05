@@ -36,7 +36,7 @@ from shapely.geometry.base import BaseGeometry
 
 from earthx.adapters.federated_search import ITEM_ID
 from earthx.api.item_source import ItemSource, OrderRefused, fetch_item_or_refuse, malformed_item_detail
-from earthx.catalog.registry import MissingProperty, ViewerInfo, group_key
+from earthx.catalog.registry import MissingProperty, ViewerInfo, overpass_key
 
 LOGGER = logging.getLogger("earthx.api.mosaic_tiles")
 
@@ -239,7 +239,7 @@ def check_one_overpass(items: Mapping[str, dict[str, Any]], viewer: ViewerInfo) 
     keys: dict[str, tuple[str, ...]] = {}
     for item_id in sorted(items):
         try:
-            keys[item_id] = group_key(items[item_id], viewer, viewer.results_group_by)
+            keys[item_id] = overpass_key(items[item_id], viewer)
         except MissingProperty as error:
             raise OrderRefused(502, f"item {item_id!r} lacks {error}, which names its overpass", "items") from None
     first = next(iter(keys))

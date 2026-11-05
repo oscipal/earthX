@@ -48,7 +48,7 @@ export default function StatusBar() {
 
   const busy = searching
     ? checking && counts
-      ? `Checking scenes · ${counts.found} found / ${counts.checked} checked`
+      ? `Checking scenes · ${counts.found} found / ${counts.checked} checked${counts.unreadable > 0 ? ` / ${counts.unreadable} skipped` : ''}`
       : 'Searching STAC catalog…'
     : downloading
       ? 'Processing on the server (crop / decomposition)…'

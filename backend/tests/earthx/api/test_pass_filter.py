@@ -25,10 +25,10 @@ from earthx.api.aoi_cloud_filter import (
     run_filter,
 )
 from earthx.api.pass_filter import (
-    CLUSTER_GAP_S,
-    MAX_CLUSTER,
+    MAX_DAY_SCENES,
+    day_of,
     judge_properties,
-    overpass_key,
+    pass_key_of,
     run_pass_filter,
     weighted_value,
 )
@@ -39,7 +39,8 @@ from earthx.catalog.search_filters import RangeCondition, ValuesCondition
 pytestmark = pytest.mark.anyio
 
 FILTERS = {entry.property: entry for entry in SENTINEL_2_L2A.search_filters}
-KEY_OF = overpass_key(SENTINEL_2_L2A.viewer)
+KEY_OF = pass_key_of(SENTINEL_2_L2A.viewer)
+DAY_OF = day_of(SENTINEL_2_L2A.viewer)
 CLOUD = "eo:cloud_cover"
 SHARES = {entry.measure: entry.classes for entry in SENTINEL_2_L2A.mask.share_classes}
 #: The AOI: a degree square, 10° east, 10° north.
@@ -96,6 +97,16 @@ def pass_request(
     )
 
 
+class Clock:
+    """A clock the test moves."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
 def order_by_id(items: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(items, key=lambda item: item["id"])
 
@@ -139,6 +150,7 @@ async def judged(
             request,
             fetch_page=source.fetch,
             group_of=KEY_OF,
+            day_of=DAY_OF,
             order_of=order,
             measure_pass=measure,
             limit=limit,
@@ -530,7 +542,9 @@ class TestEveryMeasureInsideTheAoiWorksPerPassAndPerScene:
         assert outcome.items == [] and outcome.summary()["unreadable"] == 2
 
 
-class TestTheClusters:
+class TestTheBlocks:
+    """The scenes of one UTC day, across pages, judged by the registry's key (Otto, 05.11.2026, on #293)."""
+
     async def test_a_pass_across_two_pages_of_the_source_is_judged_whole(self) -> None:
         source = Source(
             [scene(f"s{n}", n, "d1", west=10.0 + n, east=11.0 + n, **{CLOUD: 10.0 if n else 30.0}) for n in range(4)],
@@ -549,23 +563,33 @@ class TestTheClusters:
         outcome = await judged(pass_request(CLOUD_AT_MOST_20), source)
         assert ids(outcome) == ["a1", "a2"]
 
-    async def test_scenes_further_apart_than_the_gap_are_two_clusters_and_two_passes(self) -> None:
-        late = CLUSTER_GAP_S / 60 + 1
+    async def test_scenes_of_one_key_hours_apart_are_one_pass(self) -> None:
+        """Gegenprobe of the time gap the first version cut by: the key decides, not the clock."""
         source = Source([
-            scene("a", 0, "d1", **{CLOUD: 5.0}),
-            scene("b", late, "d1", west=11.0, east=12.0, **{CLOUD: 90.0}),
+            scene("a", 0, "d1", west=10.0, east=11.0, **{CLOUD: 5.0}),
+            scene("b", 600, "d1", west=11.0, east=12.0, **{CLOUD: 90.0}),
         ])
-        outcome = await judged(pass_request(CLOUD_AT_MOST_20), source)
-        assert ids(outcome) == ["a"], "the late scene is a pass of its own"
+        assert (await judged(pass_request(CLOUD_AT_MOST_20), source)).items == []  # 47.5 % together
 
-    async def test_the_response_ends_between_clusters_and_the_next_goes_on(self) -> None:
-        items = [scene(f"p{p}-{k}", p * 120 + k, f"d{p}", west=10.0 + k, east=11.0 + k, **{CLOUD: 5.0}) for p in range(6) for k in range(2)]
+    async def test_scenes_of_one_datatake_on_two_days_are_two_passes_as_in_the_list(self) -> None:
+        source = Source([
+            scene("a", 0, "d1", day=10, west=10.0, east=11.0, **{CLOUD: 5.0}),
+            scene("b", 0, "d1", day=11, west=11.0, east=12.0, **{CLOUD: 90.0}),
+        ])
+        assert ids(await judged(pass_request(CLOUD_AT_MOST_20), source)) == ["a"]
+
+    async def test_a_block_ends_with_its_day_and_the_next_response_goes_on_with_the_next_day(self) -> None:
+        items = [
+            scene(f"p{p}-{k}", k, f"d{p}", day=10 + p, west=10.0 + k, east=11.0 + k, **{CLOUD: 5.0})
+            for p in range(6)
+            for k in range(2)
+        ]
         source = Source(items, size=5)
         kept: list[str] = []
         token = None
         responses = 0
         while True:
-            outcome = await judged(pass_request(CLOUD_AT_MOST_20), source, limit=4, token=token)
+            outcome = await judged(pass_request(CLOUD_AT_MOST_20), source, limit=3, token=token)
             kept += [item["id"] for item in outcome.items]
             responses += 1
             token = outcome.next_token
@@ -580,17 +604,17 @@ class TestTheClusters:
         outcome = await judged(pass_request(CLOUD_AT_MOST_20), source, limit=2)
         assert len(outcome.items) == 5
 
-    async def test_a_cluster_is_cut_at_the_most_scenes_of_one(self) -> None:
+    async def test_a_day_is_cut_at_the_most_scenes_a_search_checks(self) -> None:
         source = Source(
-            [scene(f"s{k:03d}", k * 0.05, "d1", west=10.0, east=11.0, **{CLOUD: 5.0}) for k in range(MAX_CLUSTER + 20)],
-            size=MAX_CLUSTER + 20,
+            [scene(f"s{k:03d}", k * 0.05, "d1", west=10.0, east=11.0, **{CLOUD: 5.0}) for k in range(MAX_DAY_SCENES + 20)],
+            size=MAX_DAY_SCENES + 20,
         )
         first = await judged(pass_request(CLOUD_AT_MOST_20), source, limit=1000)
-        assert first.summary()["checked"] == MAX_CLUSTER
-        assert first.next_token is not None
+        assert first.summary()["checked"] == MAX_DAY_SCENES
+        assert first.summary()["limit_reached"] is True and first.next_token is None
 
     async def test_the_marker_belongs_to_the_search_that_made_it(self) -> None:
-        source = Source([scene(f"p{p}", p * 120, f"d{p}", **{CLOUD: 5.0}) for p in range(4)])
+        source = Source([scene(f"p{p}", 0, f"d{p}", day=10 + p, **{CLOUD: 5.0}) for p in range(4)])
         first = await judged(pass_request(CLOUD_AT_MOST_20), source, limit=1, binding="a")
         assert first.next_token is not None
         with pytest.raises(InvalidQuery, match="different search"):
@@ -600,9 +624,29 @@ class TestTheClusters:
             await judged(other, source, token=first.next_token, binding="a")
 
     async def test_the_marker_of_the_judged_search_is_not_the_scene_search_s(self) -> None:
-        source = Source([scene(f"p{p}", p * 120, f"d{p}", **{CLOUD: 5.0}) for p in range(4)])
+        source = Source([scene(f"p{p}", 0, f"d{p}", day=10 + p, **{CLOUD: 5.0}) for p in range(4)])
         first = await judged(pass_request(CLOUD_AT_MOST_20), source, limit=1)
         assert decode_cursor(first.next_token, _key(pass_request(CLOUD_AT_MOST_20))) == Cursor(None, 1, 1, 1, 0)
+
+    async def test_the_source_sorts_by_time_newest_first_which_the_blocks_rely_on(self) -> None:
+        from earthx.adapters.federated_search import SORTBY
+
+        assert SORTBY[0] == {"field": "properties.datetime", "direction": "desc"}
+
+    async def test_the_filter_pass_and_the_list_group_hold_the_same_scenes(self) -> None:
+        """Otto, 05.11.2026: the same grouping as the results list and the mosaic job. The groups of the filter are
+        the registry's (`group_by_overpass`), and so are those of the list's mirror, `grouping.ts`; the fixture is shared."""
+        import json
+        from pathlib import Path
+
+        from earthx.catalog.registry import group_by_overpass
+
+        shared = json.loads((Path(__file__).resolve().parents[2] / "fixtures" / "overpass_groups.json").read_text(encoding="utf-8"))
+        groups = group_by_overpass(shared["items"], SENTINEL_2_L2A.viewer)
+        assert [[item["id"] for item in group] for group in groups.values()] == shared["groups"]
+        # and the loop judges exactly these groups: a filter every scene of them meets keeps them all, nothing else
+        kept = await judged(pass_request(("platform", ValuesCondition(("sentinel-2a",)))), Source(shared["items"]))
+        assert sorted(item["id"] for item in kept.items) == sorted(i for group in shared["groups"] for i in group)
 
 
 def _key(request: AoiFilterRequest) -> str:
@@ -612,36 +656,92 @@ def _key(request: AoiFilterRequest) -> str:
 
 
 class TestTheTime:
-    async def test_a_cluster_that_is_not_judged_in_time_is_left_for_the_next_response(self) -> None:
-        release = asyncio.Event()
-        calls = 0
+    def slow_for(self, release: asyncio.Event, slow_pass: str) -> Any:
+        calls: list[str] = []
 
-        async def slow(items: Sequence[dict[str, Any]]) -> SceneMeasure:
-            nonlocal calls
-            calls += 1
-            await release.wait()
+        async def measure(items: Sequence[dict[str, Any]]) -> SceneMeasure:
+            calls.append(items[0]["properties"]["s2:datatake_id"])
+            if items[0]["properties"]["s2:datatake_id"] == slow_pass:
+                await release.wait()
             return SceneMeasure(0, 100, 100.0, 80.0, class_pixels={4: 100})
 
-        source = Source([scene("a", 0, "d1"), scene("b", 0.5, "d1", west=11.0, east=12.0)])
-        request = pass_request(measures={AoiMeasure.VEGETATION_SHARE: RangeCondition(50.0, None)})
-        old = filter_module.RESPONSE_SECONDS
-        filter_module.RESPONSE_SECONDS = 0.05
-        try:
-            import earthx.api.pass_filter as pass_module
+        measure.calls = calls  # type: ignore[attr-defined]
+        return measure
 
-            pass_module.RESPONSE_SECONDS = 0.05
+    async def test_the_first_block_is_judged_to_the_end_whatever_the_clock_says(self) -> None:
+        """Otto, 05.11.2026: no response without progress. The pass takes longer than the response's time and is still judged."""
+        import earthx.api.pass_filter as pass_module
+
+        async def late(items: Sequence[dict[str, Any]]) -> SceneMeasure:
+            await asyncio.sleep(0.3)  # a cold source
+            return SceneMeasure(0, 100, 100.0, 80.0, class_pixels={4: 100})
+
+        source = Source([scene("a", 0, "d1", west=10.0, east=11.0), scene("b", 0.5, "d1", west=11.0, east=12.0)])
+        request = pass_request(measures={AoiMeasure.VEGETATION_SHARE: RangeCondition(50.0, None)})
+        old = (filter_module.RESPONSE_SECONDS, pass_module.RESPONSE_SECONDS)
+        filter_module.RESPONSE_SECONDS = pass_module.RESPONSE_SECONDS = 0.05
+        try:
+            first = await judged(request, source, measure=late)
+        finally:
+            filter_module.RESPONSE_SECONDS, pass_module.RESPONSE_SECONDS = old
+        assert ids(first) == ["a", "b"] and first.summary()["checked"] == 2
+
+    async def test_a_response_that_finds_the_time_gone_after_the_first_block_ends_there(self) -> None:
+        import earthx.api.pass_filter as pass_module
+
+        async def late(items: Sequence[dict[str, Any]]) -> SceneMeasure:
+            await asyncio.sleep(0.2)
+            return SceneMeasure(0, 100, 100.0, 80.0, class_pixels={4: 100})
+
+        source = Source([scene("a", 0, "d1", day=11), scene("b", 0, "d2", day=10)])
+        request = pass_request(measures={AoiMeasure.VEGETATION_SHARE: RangeCondition(50.0, None)})
+        old = (filter_module.RESPONSE_SECONDS, pass_module.RESPONSE_SECONDS)
+        filter_module.RESPONSE_SECONDS = pass_module.RESPONSE_SECONDS = 0.05
+        try:
+            first = await judged(request, source, measure=late)
+            assert ids(first) == ["a"] and first.next_token is not None, "the second day is for the next response"
+            second = await judged(request, source, measure=late, token=first.next_token)
+        finally:
+            filter_module.RESPONSE_SECONDS, pass_module.RESPONSE_SECONDS = old
+        assert ids(second) == ["b"] and second.next_token is None
+
+    async def test_a_later_block_that_is_not_judged_in_time_is_left_for_the_next_response(self) -> None:
+        release = asyncio.Event()
+        measure = self.slow_for(release, slow_pass="d2")
+        source = Source([scene("a", 0, "d1", day=11), scene("b", 0, "d2", day=10)])
+        request = pass_request(measures={AoiMeasure.VEGETATION_SHARE: RangeCondition(50.0, None)})
+        import earthx.api.pass_filter as pass_module
+
+        old = (filter_module.RESPONSE_SECONDS, pass_module.RESPONSE_SECONDS)
+        filter_module.RESPONSE_SECONDS = pass_module.RESPONSE_SECONDS = 0.05
+        try:
             first = await run_pass_filter(
-                request, fetch_page=source.fetch, group_of=KEY_OF, order_of=order_by_id, measure_pass=slow,
-                limit=10, token=None,
+                request, fetch_page=source.fetch, group_of=KEY_OF, day_of=DAY_OF, order_of=order_by_id,
+                measure_pass=measure, limit=10, token=None,
             )
         finally:
-            filter_module.RESPONSE_SECONDS = old
-            pass_module.RESPONSE_SECONDS = old
-        assert first.items == [] and first.summary()["checked"] == 0
-        assert first.next_token is not None, "the cluster is still to come"
+            filter_module.RESPONSE_SECONDS, pass_module.RESPONSE_SECONDS = old
+        assert ids(first) == ["a"] and first.next_token is not None
         release.set()
         await filter_module.settle()
-        assert calls == 1
+
+    async def test_a_pass_that_could_not_be_read_is_skipped_and_the_search_goes_on(self) -> None:
+        async def unreadable(items: Sequence[dict[str, Any]]) -> SceneMeasure | None:
+            return None if items[0]["properties"]["s2:datatake_id"] == "d1" else SceneMeasure(0, 100, 100.0, 80.0, class_pixels={4: 100})
+
+        source = Source([scene("a", 0, "d1", day=11), scene("b", 0, "d2", day=10)])
+        request = pass_request(measures={AoiMeasure.VEGETATION_SHARE: RangeCondition(50.0, None)})
+        kept: list[str] = []
+        token = None
+        skipped = 0
+        for _ in range(5):
+            outcome = await judged(request, source, measure=unreadable, token=token, limit=1)
+            kept += ids(outcome)
+            skipped = outcome.summary()["unreadable"]
+            token = outcome.next_token
+            if token is None:
+                break
+        assert kept == ["b"] and skipped == 1, "the skipped pass is counted, the next one still comes"
 
 
 class TestTheRequest:

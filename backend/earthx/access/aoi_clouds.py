@@ -13,9 +13,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Iterator, Mapping, Sequence
-from contextlib import ExitStack
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager, ExitStack, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 import numpy
@@ -38,6 +42,21 @@ from earthx.readers.cog import AssetPath
 MIN_AOI_PIXELS = 10_000
 
 _AREA_TYPES = frozenset({"Polygon", "MultiPolygon"})
+
+
+class ReadDeadlineExceeded(Exception):
+    """A reading ran past the time its caller gave it (DS-03c): it stops between two blocks and frees its reader."""
+
+
+#: The moment (``time.monotonic()``) a reading must end by, set by the caller in the thread it reads in; ``None``: no limit.
+#: A context variable, so that the functions below keep their signatures. Checked between blocks, never inside one: a
+#: stall inside a block is the GDAL timeout's to end.
+READ_DEADLINE: ContextVar[float | None] = ContextVar("READ_DEADLINE", default=None)
+
+
+def _check_deadline(deadline: float | None) -> None:
+    if deadline is not None and time.monotonic() > deadline:
+        raise ReadDeadlineExceeded
 
 # How many lists lie above the numbers: Polygon rings, positions, numbers; a MultiPolygon one more.
 _NUMBER_DEPTH = {"Polygon": 3, "MultiPolygon": 4}
@@ -251,7 +270,9 @@ def _count(
     if not on_raster.is_empty:
         geometry = mapping(on_raster)
         prepared = prep(on_raster)
+        deadline = READ_DEADLINE.get()
         for window in _blocks_over(level, on_raster.bounds):
+            _check_deadline(deadline)
             grid = level.window_transform(window)
             if not prepared.intersects(box(*rasterio.windows.bounds(window, level.transform))):
                 continue
@@ -316,7 +337,21 @@ def _is_nodata(values: numpy.ndarray, nodata: float | None) -> numpy.ndarray:
 PASS_CHUNK = 2048
 
 
-def measure_aoi_pass(paths: Sequence[AssetPath], aoi: Mapping[str, Any], cloud_classes: frozenset[int]) -> AoiClouds:
+#: Scenes read at once for one pass; a caller's reader slots (``gateway.ReadSlots``) are the real limit per host.
+PASS_READERS = 8
+
+#: What a reading of a scene runs inside: the slot of its host and the GDAL environment of the gateway. Called in the
+#: thread that reads, once per read. The default is nothing, for a file on disk.
+EnterRead = Callable[[AssetPath], AbstractContextManager[Any]]
+
+
+def measure_aoi_pass(
+    paths: Sequence[AssetPath],
+    aoi: Mapping[str, Any],
+    cloud_classes: frozenset[int],
+    *,
+    enter: EnterRead | None = None,
+) -> AoiClouds:
     """The valid and class pixels of the merged scenes of one overpass inside ``aoi`` (DS-03c).
 
     ``paths`` are the classification rasters of the pass **in the order of the mosaic**
@@ -326,6 +361,11 @@ def measure_aoi_pass(paths: Sequence[AssetPath], aoi: Mapping[str, Any], cloud_c
     :data:`MIN_AOI_PIXELS` pixels of the AOI that lie on the scenes, as :func:`measure_aoi_clouds` picks it. The counts of the
     separate scenes cannot be added up for this: each scene picks its own level, and an overlap would count twice.
 
+    **The scenes are read in parallel** (Otto, 05.11.2026): each is opened, and each block of the grid read from it, in a
+    thread of its own, inside ``enter(path)`` (the slot of its host and the GDAL environment); the merge then runs in the order
+    of the mosaic. The time :data:`READ_DEADLINE` gives is checked before each read, and a pass that runs past it raises
+    :class:`ReadDeadlineExceeded` with every reader freed.
+
     The part of the AOI no scene covers has no data and joins ``aoi_pixels`` by its area. Errors are those of
     :func:`measure_aoi_clouds`, a ``ValueError`` without a coordinate.
     """
@@ -333,8 +373,16 @@ def measure_aoi_pass(paths: Sequence[AssetPath], aoi: Mapping[str, Any], cloud_c
         raise TypeError("the pass share reads paths the gateway cleared, not plain strings (KLAERUNGEN B8)")
     if not isinstance(aoi, Mapping) or aoi.get("type") not in _AREA_TYPES:
         raise ValueError("the AOI must be a Polygon or MultiPolygon")
-    with ExitStack() as stack:
-        scenes = [stack.enter_context(rasterio.open(path)) for path in paths]
+    deadline = READ_DEADLINE.get()
+    around = enter or (lambda path: nullcontext())
+
+    def reading(path: AssetPath, work: Callable[[], Any]) -> Any:
+        with around(path):
+            _check_deadline(deadline)
+            return work()
+
+    with ExitStack() as stack, ThreadPoolExecutor(max_workers=min(len(paths), PASS_READERS)) as pool:
+        scenes = _open_all(stack, pool, [(path, partial(rasterio.open, path)) for path in paths], reading)
         target = scenes[0]
         whole, _ = _geometry_in(target, aoi)
         try:
@@ -347,8 +395,33 @@ def measure_aoi_pass(paths: Sequence[AssetPath], aoi: Mapping[str, Any], cloud_c
         off_scenes_pixels = round((whole.area - on_scenes.area) / cell**2)
         if on_scenes.is_empty:
             return AoiClouds(0, 0, off_scenes_pixels, cell, {})
-        levels = [stack.enter_context(_level(path, scene, factor)) for path, scene in zip(paths, scenes, strict=True)]
-        return _merge(levels, target, on_scenes, cell, off_scenes_pixels, frozenset(cloud_classes))
+        levels = _open_all(
+            stack,
+            pool,
+            [(path, partial(_level, path, scene, factor)) for path, scene in zip(paths, scenes, strict=True)],
+            reading,
+        )
+        return _merge(levels, paths, target, on_scenes, cell, off_scenes_pixels, frozenset(cloud_classes), pool, reading)
+
+
+def _open_all(
+    stack: ExitStack,
+    pool: ThreadPoolExecutor,
+    openings: Sequence[tuple[AssetPath, Callable[[], rasterio.DatasetReader]]],
+    reading: Callable[[AssetPath, Callable[[], Any]], Any],
+) -> list[rasterio.DatasetReader]:
+    """Open the files at once; every one that opened is closed with ``stack``, also when another one fails."""
+    futures = [pool.submit(reading, path, opening) for path, opening in openings]
+    opened: list[rasterio.DatasetReader] = []
+    failure: BaseException | None = None
+    for future in futures:
+        try:
+            opened.append(stack.enter_context(future.result()))
+        except BaseException as error:  # the first stands; the others are collected so that nothing stays open
+            failure = failure or error
+    if failure is not None:
+        raise failure
+    return opened
 
 
 def _reach(scenes: Sequence[rasterio.DatasetReader], target: rasterio.DatasetReader) -> BaseGeometry:
@@ -375,15 +448,19 @@ def _level(path: AssetPath, scene: rasterio.DatasetReader, factor: int) -> raste
 
 def _merge(
     levels: Sequence[rasterio.DatasetReader],
+    paths: Sequence[AssetPath],
     target: rasterio.DatasetReader,
     on_scenes: BaseGeometry,
     cell: float,
     off_scenes_pixels: int,
     classes: frozenset[int],
+    pool: ThreadPoolExecutor,
+    reading: Callable[[AssetPath, Callable[[], Any]], Any],
 ) -> AoiClouds:
     """Count the first valid pixel of the scenes, chunk by chunk of one grid laid over the AOI on the scenes.
 
-    The grid is anchored at the origin of the first scene, so its cells are that scene's own where the level is the same."""
+    The grid is anchored at the origin of the first scene, so its cells are that scene's own where the level is the same.
+    Within a chunk the scenes are read at once; the first valid value of the scenes, in the order given, owns a cell."""
     origin_x, origin_y = target.transform.c, target.transform.f
     minx, miny, maxx, maxy = on_scenes.bounds
     col0 = math.floor((minx - origin_x) / cell)
@@ -405,7 +482,20 @@ def _merge(
             inside = geometry_mask([geometry], out_shape=(rows, cols), transform=grid, invert=True)
             if not inside.any():
                 continue
-            merged, filled = _first_valid(levels, target, grid, (rows, cols), inside)
+            futures = [
+                pool.submit(reading, path, partial(_scene_on_grid, level, target, grid, (rows, cols)))
+                for path, level in zip(paths, levels, strict=True)
+            ]
+            merged = numpy.zeros((rows, cols), dtype=levels[0].dtypes[0])
+            filled = numpy.zeros((rows, cols), dtype=bool)
+            for future in futures:  # in the order of the mosaic
+                laid = future.result()
+                if laid is None:
+                    continue
+                placed, known = laid
+                fresh = ~filled & known & inside
+                merged[fresh] = placed[fresh]
+                filled |= fresh
             valid = filled & inside
             on_pixels += int(inside.sum())
             data_pixels += int(valid.sum())
@@ -419,50 +509,41 @@ def _merge(
     )
 
 
-def _first_valid(
-    levels: Sequence[rasterio.DatasetReader],
-    target: rasterio.DatasetReader,
-    grid: Affine,
-    cells: tuple[int, int],
-    inside: numpy.ndarray,
-) -> tuple[numpy.ndarray, numpy.ndarray]:
-    """One chunk: the value of the first scene (in the order given) that has a valid pixel at each cell, and where there is one."""
-    merged = numpy.zeros(cells, dtype=levels[0].dtypes[0])
-    filled = numpy.zeros(cells, dtype=bool)
+def _scene_on_grid(
+    level: rasterio.DatasetReader, target: rasterio.DatasetReader, grid: Affine, cells: tuple[int, int]
+) -> tuple[numpy.ndarray, numpy.ndarray] | None:
+    """One scene read for one chunk and laid on its grid: the values and where the scene has a valid pixel; ``None``
+    where the scene has nothing under the chunk.
+
+    Validity is the warp of the scene's own mask, not a value that stands for nodata: a raster without a nodata value (or
+    with NaN) has class 0 as a class, and a cell past its edge has no scene at all."""
     west, north = grid * (0, 0)
     east, south = grid * (cells[1], cells[0])
-    for level in levels:
-        if filled[inside].all():
-            break
-        if level.crs == target.crs:
-            bounds = (west, south, east, north)
-        else:
-            bounds = shape(transform_geom(target.crs, level.crs, mapping(box(west, south, east, north)))).bounds
-        window = _window_over(level, bounds)
-        if window is None:
-            continue
-        values = level.read(1, window=window)
-        nodata = level.nodata
-        if _is_nodata(values, nodata).all():
-            continue
-        placed = numpy.zeros(cells, dtype=merged.dtype)
-        known = numpy.zeros(cells, dtype="uint8")
-        for source, destination in ((values, placed), ((~_is_nodata(values, nodata)).astype("uint8"), known)):
-            reproject(
-                source=source,
-                destination=destination,
-                src_transform=level.window_transform(window),
-                src_crs=level.crs,
-                dst_transform=grid,
-                dst_crs=target.crs,
-                resampling=Resampling.nearest,
-            )
-        # Valid is what the warp of the scene's own mask says, not a value that stands for nodata: a raster without a
-        # nodata value (or with NaN) has class 0 as a class, and a cell past its edge has no scene at all.
-        fresh = ~filled & (known == 1) & inside
-        merged[fresh] = placed[fresh]
-        filled |= fresh
-    return merged, filled
+    if level.crs == target.crs:
+        bounds = (west, south, east, north)
+    else:
+        bounds = shape(transform_geom(target.crs, level.crs, mapping(box(west, south, east, north)))).bounds
+    window = _window_over(level, bounds)
+    if window is None:
+        return None
+    values = level.read(1, window=window)
+    nodata = level.nodata
+    valid_here = ~_is_nodata(values, nodata)
+    if not valid_here.any():
+        return None
+    placed = numpy.zeros(cells, dtype=values.dtype)
+    known = numpy.zeros(cells, dtype="uint8")
+    for source, destination in ((values, placed), (valid_here.astype("uint8"), known)):
+        reproject(
+            source=source,
+            destination=destination,
+            src_transform=level.window_transform(window),
+            src_crs=level.crs,
+            dst_transform=grid,
+            dst_crs=target.crs,
+            resampling=Resampling.nearest,
+        )
+    return placed, known == 1
 
 
 def _window_over(level: rasterio.DatasetReader, bounds: tuple[float, float, float, float]) -> Window | None:

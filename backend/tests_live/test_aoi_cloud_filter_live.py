@@ -20,7 +20,6 @@ pass test reads one pass of two or three scenes.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -41,9 +40,9 @@ from earthx.adapters import ADAPTER_SPECS, SearchParams, search_items
 from earthx.api import aoi_cloud_filter
 from earthx.api.aoi_cloud_filter import AoiMeasurer, SceneMeasure, read_aoi_request, run_filter
 from earthx.api.dependencies import policy_from_registry
-from earthx.api.pass_filter import mosaic_ordered, overpass_key, run_pass_filter
+from earthx.api.pass_filter import day_of, mosaic_ordered, pass_key_of, run_pass_filter
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import AoiMeasure
+from earthx.catalog.registry import AoiMeasure, group_by_overpass
 from earthx.catalog.search_filters import RangeCondition
 from earthx.gateway import CachingResolver, Gateway, ReadSlots, Resolver
 from earthx.gateway.gdal import gdal_options
@@ -241,19 +240,17 @@ def _utm(geometry: dict) -> object:
 
 
 async def _passes(gateway: Gateway, aoi: dict) -> dict[tuple[str, ...], list[dict]]:
-    """The scenes of the window over ``aoi`` by overpass key (up to two pages of the source)."""
-    key = overpass_key(CONFIG.viewer)
-    passes: dict[tuple[str, ...], list[dict]] = defaultdict(list)
+    """The scenes of the window over ``aoi`` by overpass, as the results list and the mosaic job group them (up to two pages)."""
+    items: list[dict] = []
     marker = None
     for _ in range(2):
         params = SearchParams(intersects=aoi, start=WINDOW[0], end=WINDOW[1], limit=100, page_token=marker)
         page = await search_items(CONFIG, params, adapters=ADAPTER_SPECS, gateway=gateway)
-        for item in page.items:
-            passes[key(item)].append(dict(item))
+        items += [dict(item) for item in page.items]
         marker = page.next_page_token
         if marker is None:
             break
-    return passes
+    return {key: [dict(item) for item in group] for key, group in group_by_overpass(items, CONFIG.viewer).items()}
 
 
 def _independent_coverage(scenes: list[dict], aoi: dict) -> float:
@@ -294,12 +291,11 @@ async def test_a_search_per_pass_keeps_or_drops_whole_passes_by_the_weighted_val
         raise AssertionError("a search over properties alone reads no raster")
 
     outcome = await run_pass_filter(
-        request, fetch_page=fetch_page, group_of=overpass_key(CONFIG.viewer), order_of=mosaic_ordered(CONFIG, CONFIG.mask.asset),
+        request, fetch_page=fetch_page, group_of=pass_key_of(CONFIG.viewer), day_of=day_of(CONFIG.viewer), order_of=mosaic_ordered(CONFIG, CONFIG.mask.asset),
         measure_pass=never, limit=1000, token=None,
     )
     kept = {item["id"] for item in outcome.items}
-    key = overpass_key(CONFIG.viewer)
-    for scenes in passes.values():
+    for key, scenes in passes.items():
         order = mosaic_order({scene["id"]: scene["properties"].get("proj:code") for scene in scenes})
         by_id = {scene["id"]: scene for scene in scenes}
         taken = Polygon()
@@ -313,7 +309,7 @@ async def test_a_search_per_pass_keeps_or_drops_whole_passes_by_the_weighted_val
         names = {scene["id"] for scene in scenes}
         if abs(value - 30.0) < 1.0:
             continue  # too close to the bound for two projections to agree
-        assert (names <= kept) if value < 30.0 else names.isdisjoint(kept), f"pass {key(scenes[0])}: {value:.1f} %"
+        assert (names <= kept) if value < 30.0 else names.isdisjoint(kept), f"pass {key}: {value:.1f} %"
 
 
 async def test_the_scenes_of_a_pass_read_together_have_a_share_between_those_read_alone(gateway: Gateway) -> None:

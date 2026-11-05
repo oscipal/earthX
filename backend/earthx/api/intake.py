@@ -100,7 +100,7 @@ from earthx.catalog.registry import (
     RetiredDatasetError,
     UnknownDatasetError,
     acquisition_day,
-    group_key,
+    overpass_key,
 )
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnknownOperator, UnsupportedRecipe
@@ -880,7 +880,7 @@ def _one_overpass(
     keys: dict[str, tuple[str, ...]] = {}
     for item_id in ids:
         try:
-            keys[item_id] = group_key(items[item_id], config.viewer, config.viewer.results_group_by)
+            keys[item_id] = overpass_key(items[item_id], config.viewer)
         except MissingProperty as error:
             raise OrderRefused(502, f"item {item_id!r} lacks {error}, which names its overpass", "items") from None
     if len(set(keys.values())) > 1:

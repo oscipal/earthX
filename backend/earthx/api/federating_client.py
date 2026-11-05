@@ -61,6 +61,7 @@ from earthx.adapters import search_items as adapter_search_items
 from earthx.adapters.federated_search import search_fingerprint
 from earthx.api import mixed_search
 from earthx.api.aoi_cloud_filter import (
+    FILTERED_SOURCE_SECONDS,
     MAX_BODY_BYTES,
     PAGE_SIZE,
     AoiFilterRequest,
@@ -81,7 +82,7 @@ from earthx.api.mixed_search import (
     is_mixed_token,
     mixed_fingerprint,
 )
-from earthx.api.pass_filter import PassMeasurer, mosaic_ordered, overpass_key, run_pass_filter
+from earthx.api.pass_filter import PassMeasurer, day_of, mosaic_ordered, pass_key_of, run_pass_filter
 from earthx.api.search_filters import (
     AOI_FILTERS_TEXT,
     AOI_KEY,
@@ -1160,7 +1161,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
         outcome = await run_pass_filter(
             aoi,
             fetch_page=fetch_page,
-            group_of=overpass_key(viewer),
+            group_of=pass_key_of(viewer),
+            day_of=day_of(viewer),
             order_of=mosaic_ordered(config, asset),
             measure_pass=measure_pass,
             limit=wanted,
@@ -1393,7 +1395,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
                         self._filtered_search_raw(
                             source, request, bbox=bbox, intersects=intersects, ids=ids, limit=share, token=marker
                         ),
-                        timeout=mixed_search.SOURCE_TIMEOUT_S,
+                        # A source that reads rasters ends its response with its first scene or pass, which has its own time
+                        # and a second try (`aoi_cloud_filter.FILTERED_SOURCE_SECONDS`); the others keep the budget.
+                        timeout=FILTERED_SOURCE_SECONDS if source.aoi.conditions else mixed_search.SOURCE_TIMEOUT_S,
                     )
                 else:
                     page = await asyncio.wait_for(

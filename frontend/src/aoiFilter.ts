@@ -190,9 +190,14 @@ export function limitNote(counts: AoiCounts): string {
   return `Checked ${counts.checked} scenes. Narrow the date range to search further.`;
 }
 
+// What the server could not read, in the words of the list: "k skipped" (Otto, 05.11.2026, on #293). A scene or a pass has
+// its own time and one second try; only then is it skipped and the search goes on.
 export function unreadableNote(counts: AoiCounts): string {
-  return `${counts.unreadable} ${counts.unreadable === 1 ? 'scene' : 'scenes'} could not be checked`;
+  return `${counts.unreadable} ${counts.unreadable === 1 ? 'scene' : 'scenes'} skipped`;
 }
+
+export const SKIPPED_TIP =
+  'Skipped: a scene, or the scenes of a pass, that the server could not read in the time it has (8 s a scene, at most 30 s), also on a second try. The search goes on without it. Search again to try it once more, or narrow the date range.';
 
 export const NONE_WITHIN_NOTE = 'No scenes within the AOI limit in this date range';
 
@@ -205,6 +210,5 @@ export function aoiNotes(section: ResultSection, counts: AoiCounts | undefined, 
   const nothing = section.items.length === 0 && !section.incomplete && section.groupingError === null;
   if (nothing && !walking && !kept.includes(LOAD_MORE_NOTE)) added.push(NONE_WITHIN_NOTE);
   if (counts?.limitReached) added.push(limitNote(counts));
-  if (counts && counts.unreadable > 0) added.push(unreadableNote(counts));
-  return [...kept, ...added];
+  return [...kept, ...added]; // what was skipped stands in the head of the list ("k skipped"), not here
 }
