@@ -137,6 +137,9 @@ def _expected(path: Path, region, classes=CLOUDS, overview_level: int | None = N
         data_pixels=int(valid.sum()),
         aoi_pixels=int(inside.sum()),
         resolution=abs(transform.a),
+        class_pixels={
+            int(value): int((valid & (values == value)).sum()) for value in numpy.unique(values[valid]).tolist()
+        },
     )
 
 
@@ -440,6 +443,7 @@ class TestTheNumbers:
             "cloud_pixels": 25,
             "data_pixels": 50,
             "resolution": 80.0,
+            "class_pixels": {},
         }
 
     def test_it_is_a_value(self) -> None:
