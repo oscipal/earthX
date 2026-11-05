@@ -125,7 +125,7 @@ describe('the rows', () => {
     const first = rows()[0];
     expect(first.querySelector('.pm-state')?.textContent).toBe('70%');
     expect(first.querySelector('progress')?.getAttribute('value')).toBe('70');
-    expect(first.querySelector('.pm-until')?.textContent).toMatch(/^27OCT-\d{2}:\d{2}$/u);
+    expect(first.querySelector('.pm-until')?.textContent).toMatch(/^27 Oct, \d{2}:\d{2}$/u);
   });
 
   it('shows a finished job as such, with "Download (ZIP)" at the end of the row and nothing else', () => {
@@ -159,7 +159,7 @@ describe('the rows', () => {
     expect(off.getAttribute('data-tip')).toBe('Expired: results are kept for 7 days.');
     expect(off.disabled).toBe(false);
     // The date stays, so the user can see when it went.
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^\d{2}OCT-\d{2}:\d{2}$/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^\d{1,2} Oct, \d{2}:\d{2}$/u);
   });
 
   it('shows a failed job with its reason, and a cancelled one as cancelled', () => {
@@ -1747,7 +1747,7 @@ describe('the line of a job', () => {
     expect([...open.children].map((c) => c.className)).toEqual(['pm-title']);
     expect(row.querySelector('.pm-meta')!.parentElement).toBe(row.querySelector('.pm-line'));
     expect(row.querySelector('.pm-state')!.textContent).toBe('Finished');
-    expect(row.querySelector('.pm-until')!.textContent).toMatch(/^27OCT-\d{2}:\d{2}$/u);
+    expect(row.querySelector('.pm-until')!.textContent).toMatch(/^27 Oct, \d{2}:\d{2}$/u);
   });
 
   it('has "+" and the download in two places of their own and "⋯" last, and leaves both empty for a job that runs', () => {
@@ -1770,7 +1770,7 @@ describe('the line of a job', () => {
     expect(done.querySelector('progress')).toBeNull();
   });
 
-  it('names the columns under the head of every open group, quietly, and writes the date as DDMMM-HH:MM without "until"', () => {
+  it('names the columns under the head of every open group, quietly, and writes the date as "27 Oct, 14:02" (as in the details) without "until"', () => {
     put({
       jobs: [finished(1, { groupId: GROUP }), finished(2), finished(3, { groupId: OTHER_GROUP })],
       groups: [{ id: GROUP, name: 'Field 7' }, { id: OTHER_GROUP, name: 'Field 8' }],
@@ -1785,7 +1785,7 @@ describe('the line of a job', () => {
       expect(header!.previousElementSibling!.classList.contains('pm-group-head')).toBe(true);
       expect(header!.nextElementSibling!.classList.contains('pm-rows')).toBe(true);
     }
-    expect(rows()[0].querySelector('.pm-until')!.textContent).toMatch(/^\d{2}[A-Z]{3}-\d{2}:\d{2}$/u);
+    expect(rows()[0].querySelector('.pm-until')!.textContent).toMatch(/^\d{1,2} [A-Z][a-z]{2}(?: \d{4})?, \d{2}:\d{2}$/u);
     expect(rows()[0].textContent).not.toMatch(/until/iu);
   });
 

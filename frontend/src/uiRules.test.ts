@@ -130,6 +130,7 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     [/^Results \(/u, 'Search results'],
     [/^Processing jobs$/u, 'Jobs'],
     [/\b(?:Previous|Next|First|Last) step\b/u, 'time step'],
+    [/[\d}] %/u, 'a percent close to its number ("50%")'],
   ];
   const faults = (text: string) =>
     texts(text).flatMap((shown) => FORBIDDEN.filter(([word]) => word.test(shown)).map(([word, instead]) => `"${shown}" (${String(word)} → ${instead})`));
@@ -149,6 +150,8 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     ['<span>Clear</span>', 'Clear AOI'],
     ['<h2>Results (0/1)</h2>', 'Search results'],
     ["title=\"Previous step\"", 'time step'],
+    ['`Loading ${n} %`', 'a percent close to its number'],
+    ["'Range 2–98 %'", 'a percent close to its number'],
   ])('finds the old word in %j', (line, instead) => {
     expect(faults(line).join()).toContain(instead);
   });
@@ -156,6 +159,76 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
   it('reads no comment as text', () => {
     expect(faults('// The picture of the view (an old comment)\nconst a = 1;')).toEqual([]);
     expect(faults("/* Pin this */ const b = 'x';")).toEqual([]);
+  });
+});
+
+describe('numbers and dates (NM4-21, UI-04 part 6): one way to show them', () => {
+  // Only `numberFormat.ts` rounds a number or writes a date for the eye. What goes into a file or a name keeps its full value and is listed
+  // here with its reason.
+  const FORMATTING = /\.(?:toFixed|toPrecision|toExponential|toLocaleString|toLocaleDateString|toLocaleTimeString)\(|\bIntl\.(?:NumberFormat|DateTimeFormat)\b/u;
+  const KEPT = new Map([
+    ['numberFormat.ts', 'the one place'],
+    ['bandChoice.ts', 'the full value of a resolution and of a wavelength in file names and in BANDS.txt (`formatResolution`, `formatG`)'],
+  ]);
+
+  it('rounds and dates only in numberFormat.ts (and where a file keeps the full value)', () => {
+    expect(where((code) => FORMATTING.test(code)).filter((path) => !KEPT.has(path))).toEqual([]);
+    for (const line of ['value.toFixed(1)', 'x.toPrecision(4)', 'n.toExponential(2)', 'd.toLocaleDateString()', 'v.toLocaleString("en-US")', 'new Intl.DateTimeFormat("en-GB")'])
+      expect(FORMATTING.test(line)).toBe(true);
+    expect(FORMATTING.test('Number(text)')).toBe(false);
+  });
+
+  it('keeps the exceptions few: a file that names none of the calls is not an exception', () => {
+    for (const path of KEPT.keys()) expect(where((code) => FORMATTING.test(code))).toContain(path);
+  });
+
+  it('writes no percent with a space before its sign: "50%", not "50 %"', () => {
+    const SPACED = /[\d}] %/u;
+    expect(texts(sources.map(([, text]) => text).join('\n')).filter((shown) => SPACED.test(shown))).toEqual([]);
+    expect(SPACED.test('2–98 %')).toBe(true);
+    expect(SPACED.test('2–98%')).toBe(false);
+  });
+
+  it('has no table of month names: a date comes from formatMoment or formatDay', () => {
+    expect(where((code) => /'JAN',\s*'FEB'/u.test(code))).toEqual([]);
+    expect(/'JAN',\s*'FEB'/u.test("const M = ['JAN', 'FEB', 'MAR'];")).toBe(true);
+  });
+});
+
+describe('less text (NM4-22, UI-04 part 6): an explanation stands behind the (i), a reason in the tooltip of the locked button', () => {
+  // The explanations that were paragraphs: as the text between two tags they would be back.
+  const MOVED = [
+    'An estimate, not a promise.',
+    'Jobs run 2 at a time per source',
+    'Choose a dataset to search.',
+    'Choose a tool to define an AOI, or enter a scene name above.',
+    'The scenes are merged into one mosaic first',
+    'One job covers the scenes of one pass',
+    'Where scenes overlap, the preview may show another scene',
+    'A job on the platform merges the whole scenes of one pass',
+  ];
+  const inTags = (code: string, phrase: string) => new RegExp(`>\\s*${phrase.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}`, 'u').test(code);
+  // A hint or an error that is one long static sentence is an explanation; a state that asks for an action may stay.
+  const LONG_HINT = /<(p|span) className="(?:hint|error)[^"]*"[^>]*>\s*([^<>{}]{60,}?)\s*<\/\1>/gu;
+  const STATES = new Set([
+    'No layers yet — select an image and “Add to layers”.',
+    'No original file of this selection could be linked directly from the source.',
+    'The colormaps could not be loaded. Choose from the few of the field, or try again later.',
+  ]);
+  const longHints = (code: string) => [...code.matchAll(LONG_HINT)].map((m) => m[2].replace(/\s+/gu, ' ').trim()).filter((text) => !STATES.has(text));
+
+  it('shows none of the moved explanations as text between tags', () => {
+    expect(where((code) => MOVED.some((phrase) => inTags(code, phrase)))).toEqual([]);
+    expect(inTags('<p className="hint">An estimate, not a promise.</p>', MOVED[0])).toBe(true);
+    expect(inTags('const ESTIMATE_NOTE = \'An estimate, not a promise.\';', MOVED[0])).toBe(false);
+    expect(inTags('<Tip text="An estimate, not a promise." />', MOVED[0])).toBe(false);
+  });
+
+  it('has no hint or error of one long static sentence beyond the two listed states', () => {
+    expect(sources.flatMap(([path, text]) => longHints(withoutComments(text)).map((hint) => `${path}: ${hint}`))).toEqual([]);
+    expect(longHints('<p className="hint">Where scenes overlap, the preview may show another scene than the result.</p>')).toHaveLength(1);
+    expect(longHints('<p className="hint">No place found.</p>')).toEqual([]);
+    expect(longHints('<p className="hint warn">Left out (the AOI misses them): {skipped.join(\', \')}</p>')).toEqual([]);
   });
 });
 

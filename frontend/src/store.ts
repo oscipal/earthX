@@ -93,6 +93,7 @@ import { canonicalJson } from './processing';
 import { areaQuestionOf, measureView, type ViewMeasure } from './viewMeasure';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 import { counted } from './plural';
+import { fieldNumber } from './numberFormat';
 
 const PAGE_LIMIT = 100;
 
@@ -828,7 +829,7 @@ async function applyPercentRender(set: SetState, get: GetState): Promise<void> {
         set({ notice: NO_RANGE_AT_PERCENT });
         return;
       }
-      set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
+      set({ pendingVmin: fieldNumber(range[0]), pendingVmax: fieldNumber(range[1]), pendingChannels: [] });
     }
     const now = get();
     set({ appliedRender: { ...now.appliedRender, ...lookOfPendingFields(now) } });
@@ -3094,9 +3095,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       const { statistics: stats } = await measureView(measure);
       const range = autoRescale(stats);
       if (range && channels?.some((channel) => channel.percent)) {
-        const measured = { vmin: String(range[0]), vmax: String(range[1]) };
+        const measured = { vmin: fieldNumber(range[0]), vmax: fieldNumber(range[1]) };
         set({ pendingVmin: measured.vmin, pendingVmax: measured.vmax, pendingChannels: channels.map((channel) => (channel.percent ? usual(channel) : measured)), pendingUnit: 'value' });
-      } else if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]), pendingChannels: [] });
+      } else if (range) set({ pendingVmin: fieldNumber(range[0]), pendingVmax: fieldNumber(range[1]), pendingChannels: [] });
     } catch (e) {
       set({ notice: `Could not measure a stretch automatically: ${(e as Error).message}` });
     } finally {

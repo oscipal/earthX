@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { formatMoment, formatNumber } from '../numberFormat';
 import { viewOf } from '../permalink';
 import { MAX_TITLE_LENGTH } from '../jobShelf';
 import type { Order, OrderStep } from '../processing';
@@ -13,7 +14,7 @@ import { useAppStore } from '../store';
 import InlineRename from './InlineRename';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, PlusIcon, RetryIcon } from './icons';
 import { DownloadZip } from './JobRow';
-import { canRestore, canRetry, formatUntil, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
+import { canRestore, canRetry, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
 import CloseButton from './CloseButton';
 
 export const NO_COPY_TIP = 'No copy of this order is kept: it was too large, or the browser ran out of room.';
@@ -27,8 +28,11 @@ const stepName = (op: string) => {
 // not shown as coordinates.
 function valueText(value: unknown): string | null {
   if (typeof value === 'string') return value.length > 120 ? `${value.slice(0, 120)}…` : value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value) && value.every((v) => typeof v === 'string' || typeof v === 'number')) return value.join(', ');
+  if (typeof value === 'number') return formatNumber(value);
+  if (typeof value === 'boolean') return String(value);
+  if (Array.isArray(value) && value.every((v) => typeof v === 'string' || typeof v === 'number')) {
+    return value.map((v) => (typeof v === 'number' ? formatNumber(v) : v)).join(', ');
+  }
   return null;
 }
 
@@ -197,7 +201,7 @@ export default function JobDetails() {
                 job.deletedUntil && (
                   <>
                     <dt>Restore until</dt>
-                    <dd data-tip-level="advanced" data-tip={job.deletedUntil}>{formatUntil(job.deletedUntil, now)}</dd>
+                    <dd data-tip-level="advanced" data-tip={job.deletedUntil}>{formatMoment(job.deletedUntil, now)}</dd>
                   </>
                 )
               ) : (
@@ -205,7 +209,7 @@ export default function JobDetails() {
                 state.key !== 'unavailable' && (
                   <>
                     <dt>Expires</dt>
-                    <dd data-tip-level="advanced" data-tip={job.expires}>{formatUntil(job.expires, now)}</dd>
+                    <dd data-tip-level="advanced" data-tip={job.expires}>{formatMoment(job.expires, now)}</dd>
                   </>
                 )
               )}

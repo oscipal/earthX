@@ -200,7 +200,7 @@ describe('the numbers taken from the answer of the route (plan §15, point 2)', 
 
   it('writes the numbers of each band as the tooltip', () => {
     const measured = { factor: 3, bands: { NDVI: { p_low: -0.123456, p_high: 0.8 } } };
-    expect(measuredText('percentile', measured)).toBe('NDVI: p_low -0.1235, p_high 0.8');
+    expect(measuredText('percentile', measured)).toBe('NDVI: p_low -0.123, p_high 0.8');
     expect(measuredText('zscore', { factor: 1, bands: { a: { mean: 1, stddev: 2 } } })).toBe('a: mean 1, standard deviation 2');
     expect(measuredText('robust', { factor: 1, bands: { a: { p25: 1, median: 2, p75: 3 } } })).toBe('a: p25 1, median 2, p75 3');
   });

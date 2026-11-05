@@ -184,6 +184,7 @@ import type { IndexPreset } from './indexPresets';
 import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
+import { fieldNumber } from './numberFormat';
 import type { EarthxMask, StacItem, TimeStepGroup } from './types';
 
 // Where a panel opens from: the "Area" it starts with, and the scenes the
@@ -1633,7 +1634,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (typeof bands === 'string') return bands;
       const range = rescaleAtPercent(bands, checked);
       if (!range) return NO_RANGE_AT_PERCENT;
-      const look: PreviewRange = { ...get().rangeDraft, vmin: String(range[0]), vmax: String(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
+      const look: PreviewRange = { ...get().rangeDraft, vmin: fieldNumber(range[0]), vmax: fieldNumber(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
       set({ rangeDraft: look, range: look, rangeByHand: true, rangeEdited: false });
       return null;
     },

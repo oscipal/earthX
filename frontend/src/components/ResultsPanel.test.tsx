@@ -515,7 +515,7 @@ describe('the group heads in index.css', () => {
   it('lets the list scroll with no padding above, or the head would stop below its edge', () => {
     const list = rule('.results-list');
     expect(list).toContain('overflow-y: auto');
-    expect(list).toMatch(/padding: 0 \d+px \d+px/);
+    expect(list).toMatch(/padding: 0 var\(--space-[\w-]+\) var\(--space-[\w-]+\)/);
   });
 
   it('scrolls a focused scene into view below the head, not under it', () => {

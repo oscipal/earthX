@@ -13,7 +13,7 @@ import {
 import type { DownloadPass, OriginalFileLink } from './download';
 import { attributionText, isDirectDownloadHref, termsNoticeText } from './download';
 import type { ZipJob } from './originalsZip';
-import { formatBytes } from './processingOrder';
+import { formatBytes } from './numberFormat';
 import type { Collection, LicenseFlags, StacItem } from './types';
 
 // A file larger than this does not go through the memory of the page when a ZIP cannot be streamed (Otto, 29.10.2026):

@@ -8,7 +8,8 @@ import { resultUrl } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { useProcessingStore, ZIP_LABEL, type JobEntry } from '../processingStore';
 import { DownloadIcon } from './icons';
-import { EXPIRED_TIP, formatUntil, jobState, useNowUntil } from './jobView';
+import { formatMoment } from '../numberFormat';
+import { EXPIRED_TIP, jobState, useNowUntil } from './jobView';
 
 
 // The archive of a finished job as a link; once it expired, the link is gone and the reason is the tooltip.
@@ -60,7 +61,7 @@ export function JobRow({ job }: { job: JobEntry }) {
       {job.phase === 'failed' && <span className="error">{job.failure ?? job.status?.message ?? 'The job failed'}</span>}
       {state.key !== 'cancelled' && state.key !== 'unavailable' && state.key !== 'deleted' && (
         <span className="hint" data-tip-level="advanced" data-tip={job.expires}>
-          until {formatUntil(job.expires, now)}
+          until {formatMoment(job.expires, now)}
         </span>
       )}
       {state.key === 'finished' && job.archive && (

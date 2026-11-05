@@ -956,13 +956,6 @@ export function stepOfRefusal(detail: string, steps: readonly Pick<DraftStep, 'o
 
 // --- numbers for the review (K4) ---------------------------------------------
 
-export function formatBytes(bytes: number): string {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
-  if (bytes >= 1e3) return `${Math.round(bytes / 1e3)} kB`;
-  return `${bytes} B`;
-}
-
 // `PT12.3S` (the only form the route writes) → "about 12 s"; anything else is
 // shown as it came.
 export function formatDuration(duration: string): string {
@@ -974,7 +967,3 @@ export function formatDuration(duration: string): string {
   return `about ${Math.round(seconds / 60)} min`;
 }
 
-export function formatMegapixels(pixels: number): string {
-  const mp = pixels / 1e6;
-  return mp >= 10 ? `${Math.round(mp)} MP` : `${mp.toFixed(1)} MP`;
-}

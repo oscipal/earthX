@@ -25,28 +25,6 @@ export function useNowUntil(deadline: number): number {
   return now;
 }
 
-const MONTH_DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
-const HOUR_MINUTE = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-const YEAR = new Intl.DateTimeFormat('en-GB', { year: 'numeric' });
-
-// "31 Oct, 14:02"; the year only when it is not this one.
-export function formatUntil(iso: string, now: number = Date.now()): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const year = YEAR.format(date) === YEAR.format(now) ? '' : ` ${YEAR.format(date)}`;
-  return `${MONTH_DAY.format(date)}${year}, ${HOUR_MINUTE.format(date)}`;
-}
-
-// "08OCT-12:34": two digits for the day, the month as three capital letters, the hour and the minute, in the time of the browser. The
-// column "Expires" of the manager says what the date is.
-const SHORT_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-export function formatShortDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const two = (n: number) => String(n).padStart(2, '0');
-  return `${two(date.getDate())}${SHORT_MONTHS[date.getMonth()]}-${two(date.getHours())}:${two(date.getMinutes())}`;
-}
-
 export interface BatchCount {
   done: number;
   running: number;

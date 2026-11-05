@@ -23,7 +23,7 @@ import { EXPIRED_TIP } from './jobView';
 import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
-import { tipOf } from '../fixtures/tips';
+import { tipOf, tipsOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -381,8 +381,10 @@ describe('review before start (K4)', () => {
     await ndvi();
     expect(button('Start job').disabled).toBe(true);
     await review();
-    expect(container.textContent).toContain('about 1.0 MP, 4.0 MB, about 3 s, 1.0 units');
-    expect(container.textContent).toContain('An estimate, not a promise.');
+    expect(container.textContent).toContain('about 1 MP, 4 MB, about 3 s, 1 unit');
+    // Behind the (i) of the estimate, not a paragraph (NM4-22).
+    expect(tipsOf(container)).toContain('An estimate, not a promise.');
+    expect(container.textContent).not.toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(false);
     const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
     expect(body.inputs.recipe.inputs).toEqual([{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_A']] }]);
@@ -392,7 +394,7 @@ describe('review before start (K4)', () => {
     expect(body.inputs.recipe.output).toEqual({ kind: 'raster', format: 'cog', dtype: 'float32', bands: ['result'] });
 
     typeInto(container.querySelector('textarea[id$="-expression"]')!, 'nir / red');
-    expect(container.textContent).not.toContain('An estimate, not a promise.');
+    expect(tipsOf(container)).not.toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(true);
   });
 
@@ -598,7 +600,7 @@ describe('review before start (K4)', () => {
     expect(signal.aborted).toBe(true);
     answer(json(ESTIMATE));
     await flush();
-    expect(container.textContent).not.toContain('An estimate, not a promise.');
+    expect(tipsOf(container)).not.toContain('An estimate, not a promise.');
     expect(button('Review').disabled).toBe(false);
   });
 
@@ -643,7 +645,7 @@ describe('review before start (K4)', () => {
     expect(button('Start job').disabled).toBe(false);
     act(() => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) }));
     expect(container.querySelector('.pp-step')).not.toBeNull();
-    expect(container.textContent).not.toContain('An estimate, not a promise.');
+    expect(tipsOf(container)).not.toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(true);
   });
 
@@ -653,7 +655,7 @@ describe('review before start (K4)', () => {
     await ndvi();
     await review();
     act(() => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) }));
-    expect(container.textContent).toContain('An estimate, not a promise.');
+    expect(tipsOf(container)).toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(false);
   });
 
@@ -1084,7 +1086,8 @@ describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
     await openPanel();
     click(button('AOI only'));
     expect(container.textContent).toContain('2 scenes');
-    expect(container.textContent).toContain('merged into one mosaic');
+    expect(tipsOf(container)).toContain('merged into one mosaic');
+    expect(container.textContent).not.toContain('merged into one mosaic');
     expect(passPicker()).toBeNull();
     const recipe = await estimateBody();
     expect(recipe.inputs[0].groups).toEqual([['S2B_A', 'S2B_B']]);
@@ -1107,7 +1110,8 @@ describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
       '2026-07-01': [scene('S2B_A'), scene('S2B_B', NEAR)],
     });
     await openPanel();
-    expect(container.textContent).toContain('One job covers the scenes of one pass');
+    expect(tipsOf(container)).toContain('One job covers the scenes of one pass');
+    expect(container.textContent).not.toContain('One job covers the scenes of one pass');
     expect(container.querySelector('.pp-chips .seg')).toBeNull();
     expect([...passPicker()!.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
       '— choose one pass —',

@@ -68,6 +68,8 @@ async function check(browser, { theme, viewport }) {
   // A narrow window is covered by the panel: open the layer manager by the rail, as a person does.
   if (viewport === 'narrow') await state(page, "(s.toggleDock('layers'), 1)");
   await page.waitForSelector('.layer-row');
+  // A message of the status bar stands over the panel in a narrow window (UI-04 part 6) until its red x closes it, as a person would.
+  for (const close of await page.locator('.toast .close-x').all()) await close.click().catch(() => undefined);
 
   // --- part 3: the dates are in the names, the buttons of a row are under its title
   const names0 = await page.$$eval('.layer-row .lm-name', (n) => n.map((x) => x.textContent));

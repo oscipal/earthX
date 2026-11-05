@@ -17,7 +17,7 @@ import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
-import { tipOf } from '../fixtures/tips';
+import { tipOf, tipsOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -356,9 +356,10 @@ describe('reviewing a batch', () => {
     await ndvi();
     click(button('One job per scene (3)'));
     await review();
-    expect(text()).toContain('3 jobs · about 3.0 MP, 12.0 MB, 3.0 units in total');
+    expect(text()).toContain('3 jobs · about 3 MP, 12 MB, 3 units in total');
     expect(text()).toContain('about 11 s of work');
-    expect(text()).toContain('Jobs run 2 at a time per source; the rest wait.');
+    expect(tipsOf(container)).toContain('Jobs run 2 at a time per source; the rest wait.');
+    expect(text()).not.toContain('Jobs run 2 at a time');
     expect(button('Start 3 jobs').disabled).toBe(false);
   });
 
@@ -403,7 +404,7 @@ describe('reviewing a batch', () => {
     await review();
     const alerts = [...container.querySelectorAll('[role="alert"]')].map((a) => a.textContent);
     expect(alerts).toEqual(['S2: the job is larger than 5 GB']);
-    expect(text()).toContain('2 jobs · about 2.0 MP');
+    expect(text()).toContain('2 jobs · about 2 MP');
     expect(button('Start 2 of 3 jobs').disabled).toBe(false);
     // 413 under "Whole scene": the suggestion of K2
     expect(text()).toContain('The whole scene is too large for one job.');

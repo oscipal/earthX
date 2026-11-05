@@ -1,17 +1,17 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 04.11.2026, UI-04 Teil 4 (mit dem Zusatz Ottos: Panel statt Menü) (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 04.11.2026, UI-04 Teil 6 (Zahlenformat, weniger Text, schmale Fenster, Tokens für alle Maße) (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
-**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. (Nach Teil 4 stehen nur noch Regeln mit Markierung für Teil 6.)
+**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. Nach Teil 6 gibt es keine Regel mit dieser Markierung mehr.
 
 ## 1. Grundsätze
 
-1. **Gleiches sieht gleich aus:** Ähnliche Bedienelemente nutzen dasselbe Bauteil und die Tokens aus `frontend/src/tokens.css`. Feste Farben, Abstände, Schriftgrade und Radien gibt es nur dort.
+1. **Gleiches sieht gleich aus:** Ähnliche Bedienelemente nutzen dasselbe Bauteil und die Tokens aus `frontend/src/tokens.css`. Feste Farben, Abstände, Schriftgrade und Radien gibt es nur dort, in **jeder** Regel von `index.css` (§7).
 2. **Gleiches heißt gleich:** ein Begriff je Sache (§2), in Knopftext, Überschrift, Tooltip, `aria-label` und Fehlermeldung.
 3. **Gleiches bedient sich gleich:** ein Weg zum Schließen (§5), ein Weg zum Übernehmen und Speichern (§6), eine Sperrregel (§4), ein Symbol je Aktion (§3).
-4. **Wenig Text:** Sichtbar sind Beschriftungen, Werte, Fehler, die eine Handlung verlangen, und Pflichtangaben (Attribution, Lizenz). Erklärungen stehen im Tooltip oder hinter (i) *(Rest folgt in Teil 6)*.
+4. **Wenig Text:** Sichtbar sind Beschriftungen, Werte, Fehler, die eine Handlung verlangen, und Pflichtangaben (Attribution, Lizenz). Erklärungen stehen im Tooltip oder hinter einem (i) neben der Zeile, die sie erklären (§4); der Grund eines gesperrten Knopfs steht in seinem Tooltip, nie als Absatz darunter.
 5. **Keine Funktion entfernen oder ausblenden, um aufzuräumen** (Otto, 31.10.2026). Was gerade nicht geht, bleibt gesperrt und nennt den Grund. Ausnahmen hat Otto einzeln entschieden, z. B. „Quick processing“ zeigt nur, was gilt (#280).
 6. **Oberflächentexte nur Englisch.** Dokumente zur Oberfläche sind Deutsch.
 
@@ -60,6 +60,14 @@
 - Kein „&“, sondern „and“. Trenner „·“, Bereich „–“, Bruch der Zeitleiste „4 / 7“.
 - **Tooltips:** ein Satzteil ohne Schlusspunkt; ganze Sätze mit Punkt.
 - Anführungszeichen typografisch („ “ als “ ”).
+- **Zahlen** (NM4-21, Teil 6): eine Funktion, `formatNumber` in `frontend/src/numberFormat.ts`; nur dort wird eine Zahl für das Auge gerundet oder ein Datum geschrieben (`toFixed`, `toPrecision`, `toLocale…`, `Intl` sonst nirgends).
+  - **Höchstens drei Nachkommastellen**, ohne nachgestellte Nullen: 12.3456 → „12.346“, 2.5 → „2.5“.
+  - **Sehr kleine und sehr große Beträge wissenschaftlich**, mit höchstens drei gültigen Stellen und ohne „+“: unter 0.001 (außer 0) und ab 1e6, also 0.000000052 → „5.2e-8“, 1234567 → „1.23e6“. Das Minus ist der einfache Bindestrich, damit ein gezeigter Wert wieder in ein Feld getippt werden kann.
+  - **Nicht-Zahlen:** `NaN` ist „—“, unendlich „∞“ und „-∞“.
+  - **Einheit mit Leerzeichen, Prozent und Grad ohne:** „4.2 MB“, „12 s“, „10 m“, aber „50%“, „2–98%“, „52.5° N“. Dateigrößen in kB ganz, in MB und GB mit höchstens einer Stelle; „1 unit“, „2.5 units“ nach der Zahl.
+  - **Felder:** Die Startwerte eines Bereichs aus der Statistik gehen durch `fieldNumber` (dieselbe Rundung, leer für eine Nicht-Zahl). **Was der Nutzer tippt, gilt genau so** und wird nie umgeschrieben. Ein Regler schreibt ebenso höchstens drei Stellen; auf einer Skala schmaler als 1 hat er darum weniger als tausend Schritte.
+  - **Unberührt (volle Genauigkeit):** Werte in `recipe.json`, API, Permalink, Dateinamen und `BANDS.txt` (`formatResolution`, `formatG` in `bandChoice.ts`), Kennungen, Koordinaten, Zählungen. Die Zeile der Zellgröße gibt die getippte Auflösung als Ziffern ohne Exponent zurück (`formatPlain`: 0.0000001 bleibt 0.0000001), die Meter am Boden laufen durch `formatNumber`.
+- **Daten:** „31 Oct, 14:02“ (`formatMoment`; das Jahr nur, wenn es nicht das laufende ist: „5 Jan 2027, 14:02“), überall gleich, in der Zeile eines Jobs wie in den Details; ein Tag als „2026-12-03“ (`formatDay`, unabhängig von der Sprache des Browsers). Kein Monatskürzel in Großbuchstaben („08OCT-12:34“) und kein `toLocaleDateString`.
 - **Keine Einheit an „Scale“** (vmin/vmax), an keiner Stelle: Seitenleiste, Layer, Ergebnis-Layer, Processing-Vorschau (Otto, 03.11.2026). Die Einheiten der Daten stehen in `BANDS.txt` und in den Metadaten; an den Band-Chips des Processing-Panels bleibt die Einheit („· dB“).
 
 ## 3. Symbole
@@ -115,6 +123,7 @@
 - **`aria-disabled` für neue Sperren mit Grund:** das Element bleibt in der Tab-Reihenfolge, der Grund ist auch per Tastatur lesbar; der Handler fängt den Klick ab. Ein bestehendes `disabled` bleibt; sein Tooltip erscheint, wo der Zeiger darüber liegt (`TipLayer`), per Tastatur nicht.
 - **Bekannte Grenze (Otto, 04.11.2026):** Der Grund eines `disabled`-Knopfs ist per Tastatur und Screenreader nicht lesbar; ein `disabled`-Element nimmt keinen Fokus. Die Umstellung aller gesperrten Knöpfe auf `aria-disabled` ist ein Punkt für M6 (Barrierefreiheit).
 - Wo eine gesperrte Stelle einen Platz hält, bleibt sie an diesem Platz, z. B. die Colormap bei RGB als gesperrtes „— none —“, auch in der Processing-Vorschau.
+- **Weniger Text, Erklärungen hinter (i)** (NM4-22, Teil 6): Sichtbar bleiben Beschriftungen, Werte, Fehler, die eine Handlung verlangen, ein Leerzustand, der sagt, was zu tun ist („No layers yet — …“), und Pflichtangaben. Eine **Erklärung** (wie etwas läuft, warum, was ein Wort heißt) ist ein `Tip` (das (i), `tone="warn"` für eine Warnung) **neben der Zeile, die sie erklärt**: „An estimate, not a promise.“ hinter der Schätzung, die Regel der Warteschlange dahinter, „One job covers the scenes of one pass“ hinter „Pass“, die Verschmelzung der Szenen hinter der Auswahl, der Hinweis zu überlappenden Szenen hinter „Preview on the map“, das Zusammenführen im Download-Dialog hinter „Start job“. Der **Grund eines gesperrten Knopfs** steht im Tooltip des Knopfs („Choose a dataset to search“), nicht in einem Absatz darunter. Ein Fehler, der etwas zu korrigieren verlangt („Correct the filters in Advanced search.“), bleibt sichtbar. Ein Test findet die verschobenen Texte als Absatz und jeden neuen Hinweis aus einem langen festen Satz.
 - **Ein Tooltip-Weg:** `TipLayer` über `data-tip`. Er erscheint bei Zeiger und Fokus; `TipLayer` setzt für die Dauer `aria-describedby`, bei einem `label` mit Tooltip am Feld darin; ein Knopf nur mit Symbol hat zusätzlich seinen `aria-label`. **Keine Tooltips an Namen** (Otto, 04.11.2026): nicht an Datensätzen (Auswahl im Control-Menü, Dropdowns in der Suche, in der Liste und in der Ansicht), nicht an Gruppenköpfen, nicht an den Namen von Layern und dem Titel der Ansicht. Ausnahmen: ein Datensatz, der gerade nicht wählbar ist, nennt weiter den Grund („… — not viewable: …“); der Hinweis eines Layers (`note`, etwa bei einer Vorschau je Szene) und die Erklärung des Eintrags „Search results“ im Layer-Manager. Ein langer Name wird gekürzt, nicht erklärt.
 - **`title` gibt es an keinem Element** (ein zweiter Tooltip des Browsers), außer an `<option>` (eine native Liste zeigt sonst nichts) und an den Steuerelementen von MapLibre. Ein Test findet jedes andere `title`.
 
@@ -192,6 +201,18 @@
 
 **Farben:** Keine Farbe als `#hex`, `rgb()`, `hsl()` oder Name außerhalb von `tokens.css`. Ausnahme: die Farben von Daten (`.legend-gradient`, gleiche Palette wie die Zellen der Coverage); jede Ausnahme steht mit Grund in `uiRules.test.ts`. Das Dunkel hinter einem Dialog ist `--scrim`. Das Attribut-Feld der Karte nimmt im dunklen Thema `--panel-bg` und `--text`.
 
+**Abstände, Schriftgrade und Radien** (Teil 6, Otto, 04.11.2026): **jede** Regel von `index.css` nimmt Tokens aus `tokens.css`, keine Regel mehr eine Länge in `px` oder `rem` für `padding`, `margin`, `gap`, `font-size` und `border-radius` (`0` und `%` sind keine Länge). Die Stufen:
+
+| Bereich | Tokens |
+|---|---|
+| Abstand | `--space-0` 2, `--space-1` 4, `--space-1-5` 6, `--space-2` 8, `--space-3` 12, `--space-4` 16, `--space-5` 24, `--space-6` 32 px |
+| Schrift | `--text-2xs` 10, `--text-xs` 11, `--text-sm` 12, `--text-md` 13, `--text-lg` 15, `--text-xl` 17 px |
+| Radius | `--radius-xs` 4, `--radius-sm` 6, `--radius-md` 10 px, `--radius-full` Pille |
+
+- Ein Wert dazwischen gibt es nicht; wer einen braucht, nimmt die nächste Stufe (bei Gleichstand die größere: 10 → `--space-3`, 14 → `--space-4`, 8 Radius → `--radius-md`) oder rechnet mit einem Token (`calc(var(--control-height) + var(--space-1))`, z. B. der Platz für den Knopf in einem Feld). **Eine neue Stufe kommt zuerst nach `tokens.css`** und in die Liste in `tokens.test.ts`.
+- Ein Feld für eine Zahl behält `--number-field-width` (88 px: „-0.123456“ mit Rand), auch im schmalsten Fenster, **überall, wo dasselbe Feld vorkommt** (Otto, 04.11.2026): Seitenleiste (Ansicht, Layer, Ergebnis-Layer) und Vorschau im Processing-Panel, auch in den Kanalzeilen eines Farbbilds; was daneben steht (die Einheit des Bereichs), gibt nach. In der Seitenleiste steht dazu der Name „Scale“ über den Feldern (nicht in einer Spalte links), damit sie die Breite der Leiste haben. Der Download-Dialog hat kein solches Feld; ein neues Zahlenfeld nimmt dieselbe Regel.
+- **Test:** `tokens.test.ts` prüft **alle** Regeln (`hardValues` mit `ALL_RULES`), nicht mehr nur eine Liste von Bereichen. Ausnahmen gibt es nicht; ein Maß wie `width`, `height` oder `top` ist kein Abstand und bleibt frei.
+
 **Steuerhöhe:** 28 px; bei Touch und unter 900 px 44 px (`--control-height-touch`).
 
 ## 8. Schrift
@@ -234,6 +255,12 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (ein gezeigter Toolt
   - Die Anfrage ist ein `GET /coverage/{id}` mit Ausschnitt, Zeitraum und Filtern; sie trägt **keine AOI** (`api.fetchCoverage` hat keinen Weg dafür), und das Frontend benutzt `POST /coverage/{id}` nicht mehr.
   - Die Stufenregel (Stufe aus Zoom und Fenstergröße, `levelForViewport`, #286) und „dieselbe Frage nicht zweimal“ bleiben; beantwortete Ausschnitte werden auch mit AOI wiederverwendet. Filter aus „Advanced search“ wirken weiter auf die Coverage.
   - Ein Schalter „Filter within AOI only“ lässt die Filter, die von der Fläche abhängen, in der Coverage weg (sie kann sie nicht messen); die AOI ändert so höchstens die Filter, nie den Ausschnitt.
+- **Schmale Fenster** (unter 900 px; Teil 6, Punkt 58 des Backlogs):
+  - **Statusmeldung:** liegt über jedem Panel (`z-index` 13 nur unter 900 px, wo ein Panel die ganze Karte deckt: über dem Panel der Leiste 11 und der Seitenleiste und dem Sheet 12, unter der Leiste 14; im breiten Fenster steht sie neben dem Panel), steht unter der Reihe der Knöpfe oben rechts (`top` = 16 px + `--control-height` + `--space-2`) und nie über dem Rand (Breite höchstens die Karte rechts der Leiste); ein langer Text bricht um, das rote x ist immer erreichbar. Die Meldung ist **deckend** (`--panel-bg` über `--map-bg`), weil sie über einem Panel liegt.
+  - **Knöpfe oben rechts:** eine Reihe, nicht zwei; die Statusmeldung liegt nicht darüber.
+  - **AOI-Werkzeuge** im Control-Menü: bei 320 px kein Überstand der Zeile (`.toolbar`, `.tool-btn`).
+  - **Felder eines Bereichs** („Scale“) in Seitenleiste und Processing-Panel: behalten `--number-field-width`; die Einheit daneben kürzt mit „…“ und ist in ihrer Liste vollständig.
+  - Prüfungen: `frontend/e2e/narrow-windows.cjs` (320, 360 und 1280 px, Hell und Dunkel, jedes Panel der Leiste: Meldung im Fenster, nicht verdeckt, unter den Knöpfen, mit rotem x schließbar; Gegenprobe mit den alten Regeln über `FAULT=1`), `frontend/e2e/range-layout.cjs` (Vorschau des Processing-Panels: kein abgeschnittener Wert), `frontend/src/narrowWindows.test.ts`. `narrow-windows.cjs` prüft zusätzlich die Felder in Ansicht, Layer und Ergebnis-Layer mit „-0.123456“ (Gegenprobe `FAULT=1` mit den alten Regeln: Feld 33 px breit, Wert abgeschnitten).
 - **Die Wahl des Datensatzes unter „Coverage“** (mehrere Datensätze gewählt) enthält nur Datensätze, keinen Eintrag „Hide coverage“. Beendet wird die Karte mit dem Knopf „Hide coverage“ neben „Coverage“.
 
 ## 10. Prüfungen gegen Rückfälle
@@ -247,7 +274,10 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (ein gezeigter Toolt
 | Begriffe (§2) gegen alle Texte der Oberfläche | `frontend/src/uiRules.test.ts` |
 | Sperrgrund im Tooltip | `frontend/src/fixtures/lockedControls.ts`, benutzt in `ControlPanel.test.tsx` und `LayerManager.test.tsx` |
 | Klick neben einen Dialog schließt nicht | `DownloadDialog.bands.test.tsx` |
-| Tokens statt fester Werte | `frontend/src/tokens.test.ts` (Abstände, Schriftgrade, Radien: `.btn`, `.icon-btn`, `.hint`, `.error`, `.badge`, Seitenleiste, Processing; die übrigen Klassen folgen in Teil 6, Otto 04.11.2026) |
+| Tokens statt fester Werte: keine Länge in `px`/`rem` für Abstand, Schriftgrad und Radius in **irgendeiner** Regel von `index.css` | `frontend/src/tokens.test.ts` |
+| eine Zahl nur über `numberFormat.ts`: kein `toFixed`, `toPrecision`, `toLocale…`, `Intl` sonst (Ausnahme: Dateien und Namen in `bandChoice.ts`), kein Prozent mit Leerzeichen, keine Monatstabelle | `frontend/src/uiRules.test.ts`, `frontend/src/numberFormat.test.ts` |
+| Erklärungen als (i) statt als Absatz: die verschobenen Texte nicht zwischen Tags, kein Hinweis aus einem langen festen Satz (außer den Zuständen mit Handlung) | `frontend/src/uiRules.test.ts`, `ProcessingPanel.test.tsx`, `ProcessingBatch.test.tsx`, `ProcessingPreview.test.tsx`, `ControlPanel.test.tsx` |
+| schmale Fenster: Statusmeldung über dem Panel und unter den Knöpfen, deckend; Felder eines Bereichs mit Mindestbreite | `frontend/src/narrowWindows.test.ts`, `frontend/e2e/narrow-windows.cjs`, `frontend/e2e/range-layout.cjs` |
 | kein `title` an einem Element außer `<option>`, ein Tooltip-Weg, Beschreibung per `aria-describedby`, gesperrter Knopf zeigt seinen Grund | `frontend/src/uiRules.test.ts`, `frontend/src/components/TipLayer.test.tsx`, `frontend/e2e/tooltips.cjs` |
 | keine alten Knopfklassen (`ghost-btn`, `primary-btn`, `lm-btn` …) | `frontend/src/uiRules.test.ts` |
 | keine feste Deckkraft an einem gesperrten Element | `frontend/src/uiRules.test.ts` |

@@ -3,6 +3,7 @@
 // on the ground at the latitude of the area. The wording is the panel's; the
 // numbers come from the server's answer and the WGS84 series below.
 
+import { formatLatitude, formatNumber, formatPlain } from './numberFormat';
 import type { CrsInfo } from './processing';
 import type { Bbox } from './types';
 
@@ -40,18 +41,9 @@ export function midLatitude(boxes: readonly Bbox[]): number | null {
   return Number.isFinite(south) && Number.isFinite(north) ? (south + north) / 2 : null;
 }
 
-// A number as plain digits, without an exponent.
-function plain(value: number): string {
-  return value.toLocaleString('en-US', { maximumFractionDigits: 12, useGrouping: false });
-}
-
 // A length on the ground: to the centimetre below 10 m, to the metre above.
 function metres(value: number): string {
-  return plain(value < 10 ? Math.round(value * 100) / 100 : Math.round(value));
-}
-
-function latitudeText(phi: number): string {
-  return `${Math.abs(phi).toFixed(1)}° ${phi < 0 ? 'S' : 'N'}`;
+  return formatNumber(value < 10 ? Math.round(value * 100) / 100 : Math.round(value));
 }
 
 // "Cell size: …" for a resolution in the units of `info`'s CRS, or `null` while
@@ -60,7 +52,7 @@ function latitudeText(phi: number): string {
 export function cellSizeText(info: CrsInfo, resolution: number, latitude: number | null): string | null {
   if (!Number.isFinite(resolution) || resolution <= 0) return null;
   const { name, kind, toBase } = info.unit;
-  const size = plain(resolution);
+  const size = formatPlain(resolution);
   if (!Number.isFinite(toBase) || toBase <= 0) return `Cell size: ${size} ${name} × ${size} ${name}`;
   if (kind === 'angular') {
     const label = name === 'degree' ? '°' : ` ${name}`;
@@ -70,7 +62,7 @@ export function cellSizeText(info: CrsInfo, resolution: number, latitude: number
     const ground = metresPerDegree(latitude);
     return (
       `${own} ≈ ${metres(degrees * ground.northSouth)} m (N–S) × ${metres(degrees * ground.eastWest)} m (E–W)` +
-      ` at ${latitudeText(latitude)}`
+      ` at ${formatLatitude(latitude)}`
     );
   }
   if (name === 'metre') return `Cell size: ${size} m × ${size} m`;

@@ -253,6 +253,8 @@ async function checkDraw(browser, theme, viewport) {
     useAppStore.getState().exitFocus();
     useAppStore.setState({ dock: 'layers' });
   });
+  // A message of the status bar stands over the panel in a narrow window (UI-04 part 6) until its red x closes it, as a person would.
+  for (const close of await page.locator('.toast .close-x').all()) await close.click().catch(() => undefined);
   await page.locator('.layer-row [data-col="name"]').first().click({ force: true });
   await page.waitForSelector('.scene-view .vc-apply');
   // The dock of the layers lies over the left of the box at 1280 px: it is closed for the clicks on the box.
@@ -299,6 +301,7 @@ async function checkDraw(browser, theme, viewport) {
   if ((await page.locator('.dialog-panel').count()) !== 0) problems.push('the dialog stays after the download');
 
   // Its ⚙: the panel with the index as the one band, not the raw bands.
+  for (const close of await page.locator('.toast .close-x').all()) await close.click().catch(() => undefined);
   await page.locator('.layer-row [data-col="process"]').first().click({ force: true });
   await page.locator('.processing-panel').waitFor({ timeout: 8000 }).catch(() => problems.push('the panel did not open'));
   await page.waitForTimeout(800);

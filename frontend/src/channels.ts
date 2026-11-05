@@ -3,6 +3,7 @@
 // pairs are written as one, as before, so that a picture drawn alike is the same look and the same URL.
 
 import { checkPercent, DEFAULT_PERCENT, percentOf, samePercent, valueAtPercent, type Percent } from './percentRange';
+import { fieldNumber } from './numberFormat';
 
 export const CHANNEL_NAMES = ['red', 'green', 'blue'] as const;
 export const CHANNEL_COUNT = CHANNEL_NAMES.length;
@@ -95,7 +96,7 @@ export function channelsAtPercent(bands: readonly Record<string, unknown>[], per
   if (bands.length !== CHANNEL_COUNT) return null;
   const ranges = bands.map((band) => [valueAtPercent(band, percent.low), valueAtPercent(band, percent.high)] as const);
   if (ranges.some(([low, high]) => low === null || high === null || !(low < high))) return null;
-  return ranges.map(([low, high]) => ({ vmin: String(low), vmax: String(high) }));
+  return ranges.map(([low, high]) => ({ vmin: fieldNumber(low ?? NaN), vmax: fieldNumber(high ?? NaN) }));
 }
 
 // The pair of each channel typed in percentiles, `null` for the others; `undefined` where none is. A pair that is none counts as a
@@ -128,7 +129,7 @@ export function channelsAtOwnPercent(bands: readonly Record<string, unknown>[], 
     if (!pair) return null;
     const [low, high] = [valueAtPercent(bands[index], Number(pair.low)), valueAtPercent(bands[index], Number(pair.high))];
     if (low === null || high === null || !(low < high)) return null;
-    made.push({ vmin: String(low), vmax: String(high), percent: pair });
+    made.push({ vmin: fieldNumber(low), vmax: fieldNumber(high), percent: pair });
   }
   return made;
 }

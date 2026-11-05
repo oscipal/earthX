@@ -19,12 +19,11 @@ import { polygonBbox } from '../geoUtils';
 import { resamplingParts } from '../resamplingWarning';
 import { channelProblems, channelsAutoScaled, channelsOfRange, percentsOfChannels, samePercents, withoutChannels, type ChannelRange } from '../channels';
 import { DEFAULT_PERCENT, percentOf, samePercent, type Percent, type RangeUnit } from '../percentRange';
+import { formatBytes, formatMegapixels, formatUnits } from '../numberFormat';
 import { totalOf } from '../processingBatch';
 import {
   EMPTY_OUTPUT,
-  formatBytes,
   formatDuration,
-  formatMegapixels,
   insertName,
   isArea,
   processBlockReason,
@@ -72,6 +71,17 @@ const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(mess
 
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
+const OVERLAP_NOTE = 'Where scenes overlap, the preview may show another scene than the result: the job follows the mosaic rule of the server.';
+const QUEUE_NOTE = 'Jobs run 2 at a time per source; the rest wait.';
+const ESTIMATE_NOTE = 'An estimate, not a promise.';
+
+// What "Run as" does with the scenes, behind the (i) of the selection: one job for all of them or one job each, and the scenes by name.
+function runAsNote(view: OrderView, sceneCount: number): string | null {
+  const scenes = view.pass?.items.map((item) => item.id).join(', ');
+  if (view.runAs !== 'one') return `Every ${view.runAs} gets a job of its own with the same steps, bands and data type.${scenes ? `\nScenes: ${scenes}` : ''}`;
+  if (view.pass && sceneCount > 1) return `The scenes are merged into one mosaic first; the steps run on the mosaic.\nScenes: ${scenes}`;
+  return null;
+}
 
 // The expression field that has the cursor, if one has: only into that field a
 // band chip inserts its name (Otto, 12.10.2026).
@@ -374,10 +384,9 @@ function BatchEstimate({ parts }: { parts: readonly PartOutcome[] }) {
         <>
           <p>
             {total.jobs} job{total.jobs === 1 ? '' : 's'} · about {formatMegapixels(total.outputPixels)},{' '}
-            {formatBytes(total.size)}, {total.units.toFixed(1)} units in total
+            {formatBytes(total.size)}, {formatUnits(total.units)} in total <Tip text={`${QUEUE_NOTE} ${ESTIMATE_NOTE}`} />
           </p>
           {total.duration && <p>{formatDuration(total.duration)} of work</p>}
-          <p className="hint">Jobs run 2 at a time per source; the rest wait.</p>
         </>
       )}
       {skipped.length > 0 && <p className="hint warn">Left out (the AOI misses them): {skipped.join(', ')}</p>}
@@ -386,7 +395,6 @@ function BatchEstimate({ parts }: { parts: readonly PartOutcome[] }) {
           {part.unit.label}: {part.refusal!.message}
         </p>
       ))}
-      <p className="hint">An estimate, not a promise.</p>
     </div>
   );
 }
@@ -472,6 +480,7 @@ function PreviewSection({ view }: { view: OrderView }) {
     <section className="pp-section" aria-label="Preview on the map">
       <h3 className="pp-heading">
         Preview on the map{' '}
+        {sceneCount > 1 && <Tip text={OVERLAP_NOTE} />}{' '}
         {preview && <Badge tip={previewTitle(preview, measure)}>Preview</Badge>}
         {loading && (
           <Badge loading tip={LOADING_TITLE}>
@@ -549,12 +558,6 @@ function PreviewSection({ view }: { view: OrderView }) {
           {!view.pass && <p className="hint">Choose a pass to see the preview.</p>}
           {plan.further && <p className="hint">{furtherNote(plan)}</p>}
           {previewNote && <p className="hint">{previewNote}</p>}
-          {sceneCount > 1 && (
-            <p className="hint">
-              Where scenes overlap, the preview may show another scene than the result: the job follows the mosaic rule of
-              the server.
-            </p>
-          )}
           <div className="vc-actions">
             <button
               type="button"
@@ -712,6 +715,7 @@ export default function ProcessingPanel() {
                 ]
                   .filter(Boolean)
                   .join(' · ')}
+                {runAsNote(view, sceneCount) && <Tip text={runAsNote(view, sceneCount)!} />}
               </p>
               {/* A crop has its own AOI to take, the map's AOI or none is no matter (NM4-06). */}
               <AreaChoice view={view} hasAoi={hasAoi || (view.fixed != null && view.fixed.result === null)} />
@@ -719,20 +723,13 @@ export default function ProcessingPanel() {
               {view.area === 'aoi' && view.aoi !== null && view.candidates.length === 0 && (
                 <p className="error">No selected scene meets the AOI.</p>
               )}
-              {view.runAs !== 'one' && (
-                <p className="hint" data-tip-level="advanced" data-tip={view.pass?.items.map((i) => i.id).join(', ')}>
-                  Every {view.runAs} gets a job of its own with the same steps, bands and data type.
-                </p>
-              )}
-              {view.runAs === 'one' && view.pass && sceneCount > 1 && (
-                <p className="hint" data-tip-level="advanced" data-tip={view.pass.items.map((i) => i.id).join(', ')}>
-                  The scenes are merged into one mosaic first; the steps run on the mosaic.
-                </p>
-              )}
               {view.runAs === 'one' && view.passes.length > 1 && (
                 <>
                   <label className="vc-field pp-field">
-                    Pass
+                    <span className="pp-label">
+                      Pass
+                      <Tip tone="warn" text={PASS_NOTE} />
+                    </span>
                     <select value={view.pass?.key ?? ''} onChange={(e) => p.choosePass(e.target.value)}>
                       <option value="" disabled>
                         — choose one pass —
@@ -744,7 +741,6 @@ export default function ProcessingPanel() {
                       ))}
                     </select>
                   </label>
-                  <p className="hint warn">{PASS_NOTE}</p>
                 </>
               )}
               <RecipeLoader />
@@ -896,12 +892,11 @@ export default function ProcessingPanel() {
             <div className="pp-estimate" aria-label="Estimate">
               <p>
                 about {formatMegapixels(estimate.estimate.outputPixels)}, {formatBytes(estimate.estimate.size)},{' '}
-                {formatDuration(estimate.estimate.duration)}, {estimate.estimate.units.toFixed(1)} units
+                {formatDuration(estimate.estimate.duration)}, {formatUnits(estimate.estimate.units)} <Tip text={ESTIMATE_NOTE} />
               </p>
               {estimate.skippedItems.length > 0 && (
                 <p className="hint warn">Left out (the AOI misses them): {estimate.skippedItems.join(', ')}</p>
               )}
-              <p className="hint">An estimate, not a promise.</p>
             </div>
           )}
           {batch && <BatchEstimate parts={batch} />}

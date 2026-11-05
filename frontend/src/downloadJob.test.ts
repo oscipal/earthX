@@ -125,7 +125,7 @@ describe('the download', () => {
     expect(placed[0].body?.inputs).not.toHaveProperty('aoiProvenance');
     expect(saved).toEqual([`/processing/jobs/${JOB}/results/result.zip`]);
     expect(text[0]).toBe('Preparing…');
-    expect(text.some((t) => /Preparing… 40 %/.test(t))).toBe(true);
+    expect(text.some((t) => /Preparing… 40%/.test(t))).toBe(true);
     expect(useProcessingStore.getState().jobs).toEqual([]);
   });
 

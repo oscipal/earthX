@@ -169,7 +169,7 @@ async function checkMethods(browser, theme, viewport) {
   await step.locator('select[id$="-method"]').selectOption('percentile');
   await step.locator('text=Preview measured').waitFor({ timeout: 5000 }).catch(() => problems.push('the numbers were not measured'));
   if ((await shown()) !== 'method,range,Target min,Target max,clip') problems.push(`percentile shows ${await shown()}`);
-  if ((await step.locator('select[id$="-range"]').inputValue()) !== '2–98 %') problems.push('the range does not start at 2–98 %');
+  if ((await step.locator('select[id$="-range"]').inputValue()) !== '2–98%') problems.push('the range does not start at 2–98%');
   const body = state.asked[0];
   if (!body || body.output.dtype !== 'float64' || body.steps.length !== 0 || JSON.stringify(body.output.bands) !== '["red"]') problems.push(`the question is ${JSON.stringify(body?.output)}`);
   const numbers = await tipsOf(step);

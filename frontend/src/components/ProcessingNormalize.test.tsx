@@ -233,8 +233,8 @@ describe('the step', () => {
     expect(box('From min')).not.toBeNull();
     expect(step().querySelector('select[id$="-range"]')).toBeNull();
     await setMethod('percentile');
-    expect(rangeSelect().value).toBe('2–98 %');
-    expect([...rangeSelect().options].map((o) => o.textContent)).toEqual(['0–100 %', '1–99 %', '2–98 %', '5–95 %']);
+    expect(rangeSelect().value).toBe('2–98%');
+    expect([...rangeSelect().options].map((o) => o.textContent)).toEqual(['0–100%', '1–99%', '2–98%', '5–95%']);
     expect(box('From min')).toBeNull();
     expect(box('Target min')).not.toBeNull();
     expect(tipsOf(step())).toContain('(x − p_low) / (p_high − p_low)');
@@ -358,10 +358,10 @@ describe('the measure (for the preview alone)', () => {
     else expect(Object.keys(tile.params).sort()).toEqual(keys);
   });
 
-  it('takes the minimum and the maximum for 0–100 % into the tile', async () => {
+  it('takes the minimum and the maximum for 0–100% into the tile', async () => {
     await withNormalize();
     await setMethod('percentile');
-    choose(rangeSelect(), '0–100 %');
+    choose(rangeSelect(), '0–100%');
     fillTarget();
     expect(previewSteps()![0].params).toMatchObject({ low: 0, high: 100, measured: { bands: { red: { p_low: 100, p_high: 9000 } } } });
     click(button('Review'));

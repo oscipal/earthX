@@ -440,7 +440,7 @@ describe('the dialog of the download', () => {
     await act(async () => { primary().dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
     expect(useAppStore.getState().downloading).toBe(true);
-    expect(line().textContent).toMatch(/^Computing NDVI… \d+ %$/u);
+    expect(line().textContent).toMatch(/^Computing NDVI… \d+%$/u);
     act(() => useAppStore.getState().closeDownloadDialog());
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2300)); });
     const methods = fetchMock.mock.calls.map(([u, i]) => `${(i as RequestInit | undefined)?.method ?? 'GET'} ${u}`);

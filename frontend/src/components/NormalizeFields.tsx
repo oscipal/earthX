@@ -122,7 +122,7 @@ export default function NormalizeFields({
         <label className="vc-field pp-field" htmlFor={`${id}-range`}>
           <span className="pp-label">
             Range
-            <Tip text="The values at these percentiles of the AOI become “min” and “max” of the target range. 0–100 % is the lowest to the highest value." />
+            <Tip text="The values at these percentiles of the AOI become “min” and “max” of the target range. 0–100% is the lowest to the highest value." />
           </span>
           <select
             id={`${id}-range`}

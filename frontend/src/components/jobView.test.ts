@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { batchEntry, finished, jobEntry, NOW, status } from '../fixtures/jobEntries';
 import { MIN_REMAINING_MS } from '../resultLayer';
-import { batchSummary, canDelete, canRestore, countBatch, deletableParts, formatShortDate, formatUntil, jobLabel, jobState } from './jobView';
+import { batchSummary, canDelete, canRestore, countBatch, deletableParts, jobLabel, jobState } from './jobView';
 
 describe('jobState', () => {
   it('names the state of a job that waits, runs or has not been asked yet', () => {
@@ -32,20 +32,6 @@ describe('jobState', () => {
 
   it('leaves a failed job failed after its expiry: the reason is what the user needs', () => {
     expect(jobState(jobEntry(1, { phase: 'failed', expires: new Date(NOW - 1000).toISOString() }), NOW).key).toBe('failed');
-  });
-});
-
-describe('formatUntil', () => {
-  it('is day, month, hour and minute, without a year in this year', () => {
-    expect(formatUntil('2026-10-31T14:02:00Z', NOW)).toMatch(/^31 Oct, \d{2}:\d{2}$/u);
-  });
-
-  it('names the year when it is not this one', () => {
-    expect(formatUntil('2027-01-05T14:02:00Z', NOW)).toMatch(/^5 Jan 2027, \d{2}:\d{2}$/u);
-  });
-
-  it('shows what it cannot read as it is', () => {
-    expect(formatUntil('soon', NOW)).toBe('soon');
   });
 });
 
@@ -164,25 +150,5 @@ describe('the count of a batch with deleted and forgotten parts', () => {
 
   it('names the end of the parts that still stand and not of those that are deleted or forgotten', () => {
     expect(countBatch(batch, parts, NOW).expires).toBe(parts[0].expires);
-  });
-});
-
-describe('formatShortDate (the column "Expires" of the manager)', () => {
-  const local = (y: number, mo: number, d: number, h: number, mi: number) => new Date(y, mo - 1, d, h, mi).toISOString();
-
-  it('is DDMMM-HH:MM: two digits for the day, three capital letters for the month, two digits each for the time', () => {
-    expect(formatShortDate(local(2026, 10, 8, 12, 34))).toBe('08OCT-12:34');
-    expect(formatShortDate(local(2026, 1, 5, 7, 4))).toBe('05JAN-07:04');
-    expect(formatShortDate(local(2026, 12, 31, 0, 0))).toBe('31DEC-00:00');
-    expect(formatShortDate(local(2026, 11, 8, 23, 48))).toBe('08NOV-23:48');
-  });
-
-  it('has the same shape for every month and a year that is not this one', () => {
-    for (let month = 1; month <= 12; month += 1) expect(formatShortDate(local(2027, month, 9, 9, 5))).toMatch(/^09[A-Z]{3}-09:05$/u);
-  });
-
-  it('gives back what is no date, and has no "until" in it', () => {
-    expect(formatShortDate('soon')).toBe('soon');
-    expect(formatShortDate(local(2026, 11, 8, 23, 48))).not.toMatch(/until/iu);
   });
 });

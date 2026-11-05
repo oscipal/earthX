@@ -3,6 +3,8 @@
 // percentile of the histogram lies, and moving it gives the percentile back; both are read from the histogram, so they are close to,
 // not exactly, the percentiles of the statistics.
 
+import { fieldNumber, roundTo } from './numberFormat';
+
 // Bins the page asks the tiler for (`histogram_bins`); the result route always has 64 (`processing/statistics.py::DISPLAY_BINS`).
 export const HISTOGRAM_BINS = 64;
 
@@ -65,7 +67,7 @@ export function trackOf(h: Histogram, ends: readonly (number | null)[]): [number
 export function roundOnTrack(value: number, track: readonly [number, number]): string {
   const step = (track[1] - track[0]) / 1000;
   const digits = step > 0 ? Math.max(0, Math.min(10, -Math.floor(Math.log10(step)))) : 0;
-  return String(Number(value.toFixed(digits)));
+  return fieldNumber(roundTo(value, digits));
 }
 
 // A number typed into a field, `null` where it is none.

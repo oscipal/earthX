@@ -148,6 +148,8 @@ async function run(browser, { theme, viewport }) {
     const c = await settle(want);
     if (!near(c, want)) problems.push(`${what}: expected ${JSON.stringify(want)}, the map shows ${JSON.stringify(c)}`);
   };
+  // A message of the status bar stands over the panel in a narrow window (UI-04 part 6) until its red x closes it, as a person would.
+  for (const close of await page.locator('.toast .close-x').all()) await close.click().catch(() => undefined);
   const resultsRow = page.locator('.layer-manager .results-row');
   // A click in a panel of the dock: opened by its symbol on the rail, closed again so that the map is read uncovered
   // (in a narrow window the panel lies over the middle of the map).

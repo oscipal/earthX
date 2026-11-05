@@ -6,13 +6,17 @@
    =========================================================================== */
 
 :root {
+  /* 2 px and 6 px are the two steps between the others that dense lists need (rows of a list, chips, the gap of a toolbar). */
+  --space-0: 2px;
   --space-1: 4px;
+  --space-1-5: 6px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
 
+  --text-2xs: 10px;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-md: 13px;
@@ -23,6 +27,7 @@
   --weight-regular: 400;
   --weight-semibold: 600;
 
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-full: 999px;
@@ -48,6 +53,9 @@
   --rail-width: 48px;
   --dock-width: 340px;
   --inspector-width: 320px;
+  /* What a field of a range needs for "-0.123456" with its padding at the small type size: a number is never cut off, the switch beside
+     the fields gives way instead (UI-04 part 6). */
+  --number-field-width: 88px;
   /* The column of the names in a form: the settings bar's, and the processing panel sets its own wider one. */
   --form-label-width: 72px;
   --sheet-wide-width: clamp(520px, 34vw, 640px);

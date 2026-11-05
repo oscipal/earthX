@@ -4,7 +4,7 @@
 // button overlaps another, leaves the panel, or cuts a value off; writes a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
-//   node e2e/range-layout.cjs               # BASE=http://localhost:5173 OUT=<directory for the screenshots>
+//   node e2e/range-layout.cjs               # BASE=http://localhost:5173 OUT=<directory for the screenshots>; ONLY="very narrow typed" runs the cases that contain the text
 //
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
@@ -89,7 +89,7 @@ async function check(browser, { measure, theme, viewport, values, show }) {
       ...[...row.querySelectorAll('.pp-unit')].map((e) => ({ what: `unit ${e.textContent}`, e })),
       ...[...row.querySelectorAll('select')].map((e) => ({ what: e.closest('.pp-show') ? 'show' : 'colormap', e })),
       ...[...row.querySelectorAll('button')].map((e) => ({ what: `button ${e.textContent}`, e })),
-    ].map(({ what, e }) => ({ what, ...box(e), cutOff: e.tagName === 'INPUT' && e.scrollWidth > e.clientWidth }));
+    ].map(({ what, e }) => ({ what, ...box(e), cutOff: e.tagName === 'INPUT' && e.scrollWidth > e.clientWidth, scroll: e.scrollWidth }));
     const panel = document.querySelector('.processing-panel');
     const body = row.closest('.pp-body') ?? panel;
     return { theme: document.querySelector('.app')?.dataset.theme, leaves, panel: box(body), scrolls: body.scrollWidth > body.clientWidth + 1, unit: row.querySelector('.pp-unit')?.textContent ?? null, fields: [...row.querySelectorAll('input')].map((e) => e.value) };
@@ -99,7 +99,7 @@ async function check(browser, { measure, theme, viewport, values, show }) {
   for (let i = 0; i < leaves.length; i++) {
     for (let j = i + 1; j < leaves.length; j++) if (overlap(leaves[i], leaves[j])) problems.push(`${leaves[i].what} overlaps ${leaves[j].what}`);
     if (leaves[i].x < panel.x - 0.5 || leaves[i].x + leaves[i].width > panel.x + panel.width + 0.5) problems.push(`${leaves[i].what} leaves the panel`);
-    if (leaves[i].cutOff) problems.push(`${leaves[i].what} is cut off`);
+    if (leaves[i].cutOff) problems.push(`${leaves[i].what} is cut off (box ${Math.round(leaves[i].width)} px, text needs ${leaves[i].scroll} px)`);
   }
   const named = (what) => leaves.find((leaf) => leaf.what === what || leaf.what.startsWith(`${what} `));
   if (show === 'with') {
@@ -122,6 +122,7 @@ async function check(browser, { measure, theme, viewport, values, show }) {
   const browser = await chromium.launch();
   let failed = 0;
   for (const measure of Object.keys(MEASURES)) for (const theme of ['light', 'dark']) for (const viewport of Object.keys(VIEWPORTS)) for (const values of ['measured', 'typed']) for (const show of ['without', 'with']) {
+    if (process.env.ONLY && !`${measure} ${theme} ${viewport} ${values} ${show}`.includes(process.env.ONLY)) continue;
     const result = await check(browser, { measure, theme, viewport, values, show });
     failed += result.problems.length > 0 ? 1 : 0;
     console.log(`${result.problems.length ? 'FAIL' : 'ok  '} ${result.name} [${result.fields.join(' … ')}]${result.problems.length ? '\n     ' + result.problems.join('\n     ') : ''}`);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { withinAoiLock, withinAoiTip, withinFilters } from '../aoiFilter';
 import type { DatasetOption } from '../datasets';
+import { formatNumber } from '../numberFormat';
 import {
   filterError,
   groupsOf,
@@ -45,7 +46,7 @@ function RangeField({
           type="text"
           inputMode={inputMode}
           value={from}
-          placeholder={String(filter.minimum)}
+          placeholder={formatNumber(filter.minimum)}
           aria-label={`${filter.title}, from`}
           aria-invalid={error?.field === 'from' || error?.field === 'both'}
           aria-describedby={error ? errorId : undefined}
@@ -56,7 +57,7 @@ function RangeField({
           type="text"
           inputMode={inputMode}
           value={to}
-          placeholder={String(filter.maximum)}
+          placeholder={formatNumber(filter.maximum)}
           aria-label={`${filter.title}, to`}
           aria-invalid={error?.field === 'to' || error?.field === 'both'}
           aria-describedby={error ? errorId : undefined}

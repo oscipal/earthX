@@ -23,7 +23,7 @@ import PreviewBadge from './PreviewBadge';
 import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
 import ViewerControls from './ViewerControls';
-import { tipOf } from '../fixtures/tips';
+import { tipOf, tipsOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -276,7 +276,8 @@ describe('the preview section', () => {
     expect(JSON.parse(params.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'result' });
     expect(params.get('rescale')).toBe('-1,1');
     expect(params.get('colormap_name')).toBe('rdylgn');
-    expect(section().textContent).toContain('Where scenes overlap');
+    expect(tipsOf(section())).toContain('Where scenes overlap');
+    expect(section().textContent).not.toContain('Where scenes overlap');
   });
 
   it('is cut to the AOI only for "AOI only"', async () => {

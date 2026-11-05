@@ -124,6 +124,8 @@ async function check(browser, { theme, viewport }) {
   await page.locator('.processing-manager').screenshot({ path: file('batch') });
 
   // "All" keeps the old jobs, set aside.
+  // A message of the status bar stands over the panel in a narrow window (UI-04 part 6) until its red x closes it, as a person would.
+  for (const close of await page.locator('.toast .close-x').all()) await close.click().catch(() => undefined);
   await page.getByRole('button', { name: 'All', exact: true }).click();
   const tags = await page.evaluate(() => [...document.querySelectorAll('.pm-rows > .pm-row .pm-tag')].map((t) => t.textContent));
   if (!tags.includes('Superseded')) problems.push('"Superseded" is not shown under "All"');
