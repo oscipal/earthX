@@ -127,6 +127,9 @@ describe('the search carries the filters of each dataset (DS-02c)', () => {
     await useAppStore.getState().runSearch();
     expect(bodies()[0].query_by_collection).toEqual({ optical: { 'test:cloud': { lte: 10 } } });
 
+    // The fields are empty after a search (Otto, 05.11.2026): set again.
+    useAppStore.getState().setSearchFilter('radar', 'test:track', range('1', '5'));
+    useAppStore.getState().setSearchFilter('optical', 'test:cloud', range('', '10'));
     useAppStore.setState({ selectedDatasetIds: ['optical', 'radar'] });
     await useAppStore.getState().runSearch();
     expect(bodies()[1].query_by_collection).toEqual({
@@ -184,6 +187,7 @@ describe('the search carries the filters of each dataset (DS-02c)', () => {
     expect(useAppStore.getState().notice).toBe('No scenes found for this area.');
 
     useAppStore.getState().setSearchFilter('optical', 'test:cloud', range('', '1'));
+    useAppStore.setState({ searchEvaluate: 'scene' }); // the search after a search starts from per pass; this is about the source's filters
     await useAppStore.getState().runSearch();
     expect(useAppStore.getState().notice).toBe('No scenes found for this area. Search filters are set.');
   });
@@ -244,18 +248,19 @@ describe('"Load more" and the date fallback keep the filters (DS-02c)', () => {
 });
 
 describe('the filters are a search setting (DS-02c)', () => {
-  it('"Clear search results" keeps them, and the next search uses them', async () => {
+  it('"Clear search results" and the next search start from empty fields: nothing is kept (Otto, 05.11.2026)', async () => {
     reset(['optical']);
     answer = () => page([scene('a1', 'optical')]);
     useAppStore.getState().setSearchFilter('optical', 'test:cloud', range('', '20'));
     await useAppStore.getState().runSearch();
+    expect(bodies()[0].query_by_collection).toEqual({ optical: { 'test:cloud': { lte: 20 } } });
 
     useAppStore.getState().clearSearchResults();
 
     expect(useAppStore.getState().sections).toEqual([]);
-    expect(useAppStore.getState().searchFilters).toEqual({ optical: { 'test:cloud': range('', '20') } });
+    expect(useAppStore.getState().searchFilters).toEqual({});
     await useAppStore.getState().runSearch();
-    expect(bodies()[1].query_by_collection).toEqual({ optical: { 'test:cloud': { lte: 20 } } });
+    expect(bodies()[1]).not.toHaveProperty('query_by_collection');
   });
 
   it('"Reset filters" takes back one dataset and leaves the others', () => {
@@ -275,9 +280,13 @@ describe('the filters are a search setting (DS-02c)', () => {
     useAppStore.getState().setSearchFilter('optical', 'test:cloud', range('', '20'));
     await useAppStore.getState().runSearch();
     expect(useAppStore.getState().searchContext?.nextToken).toBe('p4');
-    useAppStore.getState().setSearchFilter('optical', 'test:cloud', range('', '20'));
+    // The fields are empty after the search: taking back what is not set changes nothing.
     useAppStore.getState().resetSearchFilters('radar');
+    useAppStore.getState().resetSearchFilters('optical');
     expect(useAppStore.getState().searchContext?.nextToken).toBe('p4');
+    // Setting a filter is a change.
+    useAppStore.getState().setSearchFilter('optical', 'test:cloud', range('', '20'));
+    expect(useAppStore.getState().searchContext?.nextToken).toBeNull();
   });
 
   it('a change while the search runs leaves no page token for filters the fields no longer show', async () => {

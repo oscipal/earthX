@@ -714,7 +714,9 @@ describe('the switch in the store', () => {
     steps = [{ scenes: [scene('a')], checked: 100, next: 't2' }];
     await state().runSearch();
     expect(state().searchContext?.nextToken).toBe('t2');
-    state().setSearchWithin('optical', false);
+    // The settings of "Advanced search" are empty after a search (Otto, 05.11.2026): the switch is off. Turning it on is a change.
+    expect(state().searchWithin).toEqual({});
+    state().setSearchWithin('optical', true);
     expect(state().searchContext?.nextToken).toBeNull();
   });
 });

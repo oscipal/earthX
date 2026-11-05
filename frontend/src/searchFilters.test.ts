@@ -16,7 +16,7 @@ import type { Collection } from './types';
 
 // "AOI coverage" stands first (Otto, 05.11.2026), then the filters of the registry in its order.
 const [coverage, cloud, , satellite] = searchFiltersOf(OPTICAL);
-const [, orbit] = searchFiltersOf(RADAR);
+const [orbit] = searchFiltersOf(RADAR);
 const range = (from: string, to: string): FilterInput => ({ kind: 'range', from, to });
 const values = (...ticked: string[]): FilterInput => ({ kind: 'values', values: ticked });
 const withFilters = (filters: unknown): Collection => ({ id: 'x', 'earthx:search_filters': filters as unknown[] });
