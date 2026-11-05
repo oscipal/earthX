@@ -284,10 +284,11 @@ async function check(browser, { theme, viewport }) {
   const last = requests.search.at(-1);
   expect('"Load more" did not go on from the token of the answer before', requests.search.some((r) => r.token === 't3') && last.token === 't5', JSON.stringify(requests.search.map((r) => r.token)));
   const end = await text(progress);
-  expect('the head at the limit', /^6 found \/ 500 checked$/.test(end), end);
+  expect('the head at the limit', /^6 found \/ 500 checked2 skipped$/.test(end), end);
   const notes = await page.locator('.dataset-select-note').allTextContents();
   expect('the hint of the limit', notes.includes('Checked 500 scenes. Narrow the date range to search further.'), JSON.stringify(notes));
-  expect('the hint of the unreadable scenes', notes.includes('2 scenes could not be checked'), JSON.stringify(notes));
+  expect('the skipped scenes stand in the head, with the reason behind a (i)', (await text(progress.locator('.aoi-skipped'))) === '2 skipped' && /second try/.test((await progress.locator('.tip').getAttribute('data-tip')) ?? ''), JSON.stringify(notes));
+  expect('the skipped scenes are said twice', !notes.some((note) => /could not be checked|skipped/.test(note)), JSON.stringify(notes));
   await shot('8-limit');
   expect('the date fallback ran', requests.search.every((r) => r.datetime === '2026-07-01T00:00:00Z/2026-07-31T23:59:59Z'));
 

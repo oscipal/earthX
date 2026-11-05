@@ -204,9 +204,15 @@ async function check(browser, { theme, viewport }) {
   expect('the coverage is not in the query', JSON.stringify(perPass.query_by_collection) === JSON.stringify({ [S2]: { 'earthx:aoi_coverage': { gte: 60 } } }), JSON.stringify(perPass.query_by_collection));
   expect('the coverage wanted a date range', !('datetime' in perPass), JSON.stringify(perPass.datetime));
 
-  // 5. Per scene: no earthx:evaluate, the coverage stays.
+  // 5. Per scene: no earthx:evaluate, the coverage stays. The settings are empty after a search (Otto, 05.11.2026): the coverage
+  // is set again, and "per pass" is pressed again.
   await store((s) => { s.getState().clearSearchResults(); s.setState({ dock: 'controls' }); });
   await page.waitForSelector('.control-panel');
+  expect('the settings were kept after the search', (await text(button)) === 'Advanced search', await text(button));
+  await button.click();
+  expect('"per pass" is not pressed again after a search', (await buttons.nth(0).getAttribute('aria-pressed')) === 'true');
+  await number.fill('60');
+  await close();
   await button.click();
   await buttons.nth(1).click();
   expect('"per scene" is not pressed', (await buttons.nth(1).getAttribute('aria-pressed')) === 'true' && (await buttons.nth(0).getAttribute('aria-pressed')) === 'false');
