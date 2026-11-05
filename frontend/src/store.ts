@@ -505,7 +505,8 @@ function filterQueriesOf(s: FilterState & WithinState, ids: readonly string[]): 
 // What a search on screen was asked with, to tell whether it still is what the fields say.
 function askedState(s: FilterState & WithinState & Pick<AppState, 'searchEvaluate'>, ids: readonly string[]): string {
   const asked = filterQueriesOf(s, ids);
-  return JSON.stringify([asked, evaluationOf(s, asked)]);
+  // The raw settings too: after a search they are the empty ones, and any change of them is a change of the fields.
+  return JSON.stringify([asked, evaluationOf(s, asked), s.searchEvaluate, s.searchWithin]);
 }
 
 // The settings of "Advanced search" go back to empty (filters, "Filter within AOI only", "Evaluate" per pass): they are

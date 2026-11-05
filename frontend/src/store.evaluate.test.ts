@@ -207,13 +207,17 @@ describe('what the search asks', () => {
     expect(asked.every((body) => body['earthx:evaluate'] === 'pass')).toBe(true);
   });
 
-  it('forgets a page token when the way of judging changes: the old one belongs to the other search', async () => {
+  it('forgets a page token when the way of judging changes to one the search was not: the old token belongs to the other search', async () => {
     state().setSearchFilter('optical', 'platform', values('sat-a'));
     state().setSearchEvaluate('scene');
     steps = [{ scenes: [scene('a')], checked: 0, next: 't1' }];
     await state().runSearch();
     expect(state().searchContext?.nextToken).toBe('t1');
-    state().setSearchEvaluate('pass');
+    // The settings are empty after the search: "per pass" is pressed again, and the search on screen was per scene.
+    expect(state().searchEvaluate).toBe('pass');
+    state().setSearchEvaluate('scene'); // the same as the search: nothing changes for "Load more"
+    expect(state().searchContext?.nextToken).toBe('t1');
+    state().setSearchEvaluate('pass'); // the filters of the search would now be judged per pass
     expect(state().searchContext?.nextToken).toBeNull();
   });
 });
