@@ -384,7 +384,10 @@ class TestOnlyReleasedZoomLevels:
 
     @staticmethod
     def _client_for(viewer: ViewerInfo | None, client: TestClient, fetched: list[str]) -> TestClient:
-        registry = DatasetRegistry((replace(SENTINEL_2_L2A, viewer=viewer),))
+        # A dataset without a viewer has no overpass key to judge per pass on (DS-03c).
+        registry = DatasetRegistry(
+            (replace(SENTINEL_2_L2A, viewer=viewer, search_capabilities=SearchCapabilities(False, False)),)
+        )
         app = build_app(registry)
         app.state.earthx_item_source = client.app.state.earthx_item_source
         app.state.earthx_cache_pool = None

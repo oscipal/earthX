@@ -218,7 +218,7 @@ class TestOneCollection:
         properties = answer["features"][0]["properties"]
         assert properties["earthx:aoi_cloud_cover"] == 5.0
         assert properties["earthx:aoi_measure"] == {
-            "data_percent": 100.0, "cloud_pixels": 50, "data_pixels": 1000, "resolution": 80.0
+            "data_percent": 100.0, "cloud_pixels": 50, "data_pixels": 1000, "resolution": 80.0, "class_pixels": {}
         }
         assert answer["earthx:aoi_filter"] == {"checked": 40, "found": 10, "unreadable": 0, "limit_reached": False}
         assert "earthx:aoi_filter_by_collection" not in answer
@@ -881,7 +881,7 @@ class TestTheCache:
             ).fetchall()
         assert rows
         for payload, remaining in rows:
-            assert set(payload) == {"data_percent", "cloud_pixels", "data_pixels", "resolution"}
+            assert set(payload) == {"data_percent", "cloud_pixels", "data_pixels", "resolution", "class_pixels"}
             assert timedelta(days=6, hours=23) < remaining <= timedelta(days=7)
 
     async def test_the_pages_of_the_source_come_from_the_search_cache_but_the_filtered_answer_is_not_stored(
