@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from earthx.access import colormaps
-from earthx.access.colormaps import COLORMAPS, GROUPS, PREVIEW_STOPS, REVERSED, catalog
+from earthx.access.colormaps import CLASS_TABLES, COLORMAPS, GROUPS, PREVIEW_STOPS, REVERSED, catalog
 
 #: The `<colorramp>` names of QGIS's default style library, lower case as the tiler names them.
 QGIS_DEFAULT_RAMPS = (
@@ -26,7 +26,7 @@ DATA = Path(colormaps.__file__).with_name("colormap_data")
 
 
 def _base_names() -> set[str]:
-    return {name for name in COLORMAPS.list() if not name.endswith(REVERSED)}
+    return {name for name in COLORMAPS.list() if not name.endswith(REVERSED) and name not in CLASS_TABLES}
 
 
 class TestTheGroups:
@@ -82,3 +82,22 @@ class TestThePreview:
                 assert all(len(colour) == 7 and colour.startswith("#") for colour in entry["colors"])
         viridis = next(e for g in catalog()["groups"] for e in g["colormaps"] if e["name"] == "viridis")
         assert viridis["colors"][0] == "#440154" and viridis["colors"][-1] == "#fde724"
+
+
+class TestClassTables:
+    """M5-07 plan F4: a class layer is painted with its source's own colours, and no stretch."""
+
+    def test_the_worldcover_table_holds_the_colours_of_the_file(self) -> None:
+        table = COLORMAPS.get("esa-worldcover")
+        assert sorted(table) == [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100]
+        assert tuple(map(int, table[10])) == (0, 100, 0, 255)
+        assert tuple(map(int, table[100])) == (250, 230, 160, 255)
+        # No data stays see-through.
+        assert int(table[0][3]) == 0
+
+    def test_a_class_table_is_no_ramp_of_the_list(self) -> None:
+        listed = {entry["name"] for group in catalog()["groups"] for entry in group["colormaps"]}
+        names = set(COLORMAPS.list())
+        for name in CLASS_TABLES:
+            assert name not in listed
+            assert f"{name}{REVERSED}" not in names
