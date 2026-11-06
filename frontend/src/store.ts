@@ -28,6 +28,7 @@ import {
   VIEWPORT_ROUND_LEVELS,
 } from './coverage';
 import type { DatasetOption } from './datasets';
+import { clampDay, dateBounds, todayUtc } from './dateBounds';
 import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import {
@@ -1167,8 +1168,12 @@ function applyDatasetSelection(
   const s = get();
   const datasetId =
     s.datasetId && selectedDatasetIds.includes(s.datasetId) ? s.datasetId : (selectedDatasetIds[0] ?? null);
+  // The dates stay within the days of the new choice (UI-05 §3.3).
+  const bounds = dateBounds(s.datasets, selectedDatasetIds, todayUtc());
   set({
     selectedDatasetIds,
+    dateFrom: clampDay(s.dateFrom, bounds),
+    dateTo: clampDay(s.dateTo, bounds),
     lastPickedDatasetId: lastPickedDatasetId && selectedDatasetIds.includes(lastPickedDatasetId) ? lastPickedDatasetId : null,
     datasetId,
     sections: [],
