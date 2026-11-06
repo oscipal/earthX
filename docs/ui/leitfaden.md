@@ -4,7 +4,7 @@
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
-**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. Nach Teil 6 gibt es keine Regel mit dieser Markierung mehr.
+**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. Nach UI-04 Teil 6 gab es keine Regel mit dieser Markierung mehr; neu ist *(folgt in UI-05 Teil 2)* (Fenster, §5, §7).
 
 ## 1. Grundsätze
 
@@ -131,14 +131,15 @@
 
 ## 5. Schließen
 
-- **Linke Panels: ein- und ausschalten über das Symbol, kein x** (Otto, 04.11.2026). Search and area, Layers, Jobs, Search results und Settings öffnen und schließen nur mit ihrem Symbol in der Leiste (ein zweiter Klick schließt); ihr Kopf hat den Titel und kein x. Das rote x bleibt für die **Seitenleiste rechts, Dialoge, Blätter (Popover-Formulare, Processing-Panel) und Meldungen**.
+- **Linke Panels: ein- und ausschalten über das Symbol, kein x** (Otto, 04.11.2026). Search and area, Layers, Jobs, Search results und Settings öffnen und schließen nur mit ihrem Symbol in der Leiste (ein zweiter Klick schließt); ihr Kopf hat den Titel und kein x. Das rote x bleibt für die **Seitenleiste rechts, Dialoge, Fenster, Blätter (Popover-Formulare, Processing-Panel) und Meldungen**.
+- **Fenster** (Otto, 06.11.2026, UI-05; *folgt in UI-05 Teil 2*): ein größeres Fenster über der Karte, das ein Symbol der Leiste links öffnet, heute nur der „Data catalogue“. Es schließt mit dem roten x in seinem Kopf **oder** einem zweiten Klick auf sein Symbol (wie die linken Panels); Esc schließt nichts; ein Klick daneben schließt es nicht (wie bei Dialogen).
 - **Ein Weg:** das kleine rote x aus `CloseButton.tsx` (Tooltip „Close“, ein längerer Tooltip, wo das Schließen eine Folge hat). Das gilt auch für Meldungen der Statusleiste.
 - **Esc schließt nichts:** keine Ansicht, Seitenleiste, kein Panel, Blatt, Menü, keine Liste und keinen Tooltip. Ausnahmen:
   - Esc = „Cancel“ in Bestätigungsdialogen („Values are resampled“);
   - Esc beendet „Flip through layers“;
   - Esc bricht das Umbenennen und das Ziehen einer Zeile ab (schließt nichts).
 - **Klick daneben:**
-  - Dialoge schließen nicht; sonst ginge z. B. ein laufender Download verloren. Ausnahme: die Rückfrage „Values are resampled“ (Klick daneben = Cancel).
+  - Dialoge und Fenster schließen nicht; sonst ginge z. B. ein laufender Download verloren. Ausnahme: die Rückfrage „Values are resampled“ (Klick daneben = Cancel).
   - „Advanced search“ schließt (Otto, 02.11.2026).
   - Menüs und Auswahllisten schließen mit einer Wahl oder einem Klick daneben; Tooltips gehen mit Zeiger oder Fokus.
 - Was etwas entfernt (Layer, Schritt, Link, Suchergebnisse) oder leert, ist kein Schließen und hat sein eigenes Symbol (§3).
@@ -172,6 +173,7 @@
 | `SettingsPanel` | das Panel „Settings“ (§9), geöffnet vom letzten Symbol der Leiste (`AppRail`) |
 | `Popover` | Menüs, Listen und das Formular „Advanced search“ |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
+| Fenster (`DataCatalogue`, *folgt in UI-05 Teil 2*) | größeres Fenster über der Karte, geöffnet und geschlossen über sein Symbol in der Leiste, dazu das rote x im Kopf (§5); der Kopf ist ein eigener Bereich, in den später Suchfeld und AOI-Schalter kommen, ohne sichtbar leere Fläche, solange sie fehlen |
 | `Badge` | das eine Abzeichen („Preview“, „Temporary“, „Overview“, „Zoom in“, „Loading…“): Pille in `--accent-2`, Großbuchstaben per CSS; `PreviewBadge` setzt sie über die Karte |
 
 **Knopfformen** (`index.css`, vorn im Blatt):

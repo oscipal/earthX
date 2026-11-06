@@ -77,7 +77,7 @@ Ein Test in `uiRules.test.ts` findet die verschobenen Texte als Absatz wieder (M
 ### 4.1 Ort und Form
 
 - **Symbol „Data catalogue“ in der Leiste links** (Otto, 06.11.2026, F5; Lucide `library`, neu in `icons.ts` und Leitfaden §3). Es öffnet kein Panel im Dock, sondern das Fenster unten; ein zweiter Klick auf das Symbol schließt es wie das rote x. Die Abweichung von `adr/0026` §7 (dort im linken Panel) ist gewollt (Otto); das Suchfeld kommt später oben ins Fenster.
-- **Ein größeres Fenster über der Karte** (**F5**): links die gruppierte Liste, rechts die Angaben des gewählten Eintrags. Schließen mit dem roten x (Leitfaden §5: Blätter haben das x), Esc schließt nichts, Klick daneben schließt nicht. Unter 900 px über die ganze Breite; die Angaben sind dann eine zweite Stufe mit „Back“ (`arrow-left`).
+- **Ein größeres Fenster über der Karte** (**F5**; neue Form „Fenster“, Leitfaden §5, §7): links die gruppierte Liste, rechts die Angaben des gewählten Eintrags. Schließen mit dem roten x oder einem zweiten Klick auf das Symbol in der Leiste (wie bei den linken Panels); Esc schließt nichts; ein Klick neben das Fenster schließt es nicht (wie bei Dialogen; Otto, 06.11.2026, aus `adr/0026`, #301). Unter 900 px über die ganze Breite; die Angaben sind dann eine zweite Stufe mit „Back“ (`arrow-left`).
 
 ### 4.2 Liste
 
@@ -85,7 +85,7 @@ Ein Test in `uiRules.test.ts` findet die verschobenen Texte als Absatz wieder (M
 - **Zeile:** Titel, Marken (§4.4), rechts ein Knopf **„Add“** (`plus`) bzw. **„Remove“** (`trash-2`), je nachdem, ob der Datensatz im Control Panel ist (Begriffe Leitfaden §2: „Remove“ nimmt aus einer Liste der Oberfläche). Ein nicht anzeigbarer Datensatz (`viewable: false`) ist gesperrt mit Grund, wie im Panel heute. Ein Konto-Datensatz (W0) hat statt „Add“ einen Link zur Quelle (§4.4).
 - Klick auf die Zeile zeigt die Angaben; der Knopf wirkt nur auf sich.
 - **„Add“** hängt den Datensatz hinten an und blättert das Control Panel auf seine Seite; gewählt wird er nicht (A5). **„Remove“** wählt ihn ab, falls gewählt, und nimmt ihn aus dem Panel; Suchergebnisse, Ansicht und Layer des Datensatzes bleiben (sie sind eigene Dinge) (A6).
-- **Platz für die Suche (F6):** Die Kopfzeile des Blatts hat links den Titel „Data catalogue“ und ist so gebaut, dass später ein Suchfeld aus `adr/0026` darunter passt; heute steht dort nichts.
+- **Platz für die Suche (F6, Nachtrag Otto 06.11.2026):** Der obere Bereich des Fensters bleibt frei für das Suchfeld und den AOI-Schalter aus `adr/0026`, **ohne sichtbar leere Fläche**: Heute steht dort nur die Kopfzeile mit dem Titel „Data catalogue“ und dem roten x; die Liste schließt direkt an. Die Kopfzeile ist ein eigener Bereich (`catalogue-head`), in den Suchfeld und Schalter später als zweite Zeile kommen, ohne die Liste umzubauen.
 
 ### 4.3 Angaben je Datensatz
 
@@ -227,3 +227,4 @@ Teil 1 in diesem PR, Teil 2 in einer neuen Session mit eigenem PR nach dem Merge
 - **F3 ergänzt:** Gibt es mehr als sechs Datensätze, sind beim ersten Besuch die ersten sechs in der Reihenfolge der Gruppen hinzugefügt (§4.5).
 - **A1–A9** angenommen.
 - Danach: Teil 1 umsetzen (§6.1, §9).
+- **Nachtrag (Otto, 06.11.2026, aus `adr/0026`, #301):** Der Data catalogue ist ein Fenster: ein Klick daneben schließt es nicht, ein zweiter Klick auf das Symbol in der Leiste schließt es. Der obere Bereich bleibt frei für Suchfeld und AOI-Schalter, ohne sichtbar leere Fläche (§4.1, §4.2). Die Form „Fenster“ steht im Leitfaden §5 und §7.
