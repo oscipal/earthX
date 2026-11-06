@@ -90,6 +90,8 @@ def test_source_carries_what_adr_0005_branches_on(collection: dict) -> None:
     # M3-11a K-05: what `FederatingCoreCrudClient._holding_of` reads back off this
     # very document to decide federated vs. materialized.
     assert source["item_holding"] == "federated"
+    # M5-07: the region the entry's asset host names (adr/0022 §7.2).
+    assert source["data_region"] == "aws:us-west-2"
     # adr/0011 F5: runs live in `earthx_materialize_runs`, not in the document.
     assert "harvest_run" not in source
 
