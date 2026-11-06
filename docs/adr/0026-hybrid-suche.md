@@ -1,7 +1,7 @@
 # ADR 0026 — Hybrid-Suche und Bewertungs-Set
 
-- **Status:** Entwurf, offen (Fragen F1–F9 in §11). Die Nummer 0026 ist im M5-Plan fest vergeben (`plans/m5/m5-discovery-und-suche.md` §5a).
-- **Datum:** 2026-11-06
+- **Status:** Angenommen (fest, Otto, 06.11.2026; Antworten in §11). F1 und F4–F9 jeweils Option 1, F2 Option 1 mit zwei Bedingungen, F3 Option 2 (kein pgvector in M5). Die Nummer 0026 ist im M5-Plan fest vergeben (`plans/m5/m5-discovery-und-suche.md` §5a).
+- **Datum:** 2026-11-06 (Entwurf, Draft-PR #301); angenommen 2026-11-06.
 - **Aufgabe:** M5-04 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (Entscheidungsvorlage C, §4).
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert werden nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -21,7 +21,7 @@
   - `architekturplan.md` 3.1, 4.3 (Enrich), 5.1, 5.2, 5.3, 8.3, 10, 15.2 (Spike „Hybrid-Suche“).
   - `projektplan.md` 3.4, M5, M7 Paket 7a.
   - `adr/0005` (föderierte Item-Suche, Regel VI zu Extensions), `adr/0021` (Suchfilter je Datensatz), `adr/0023` §7.5, §8.3, §11, `adr/0024` R7, R8, `adr/0027` §4.1, §6.1.
-- **Betroffen (erst mit einer Entscheidung):** Fassung 3 des M5-Plans; `catalog` (Suchindex, Glossar), `api` (Collection-Suche), Postgres-Image in Compose, CI und Cloud-Umgebung; das Frontend des „Data catalogue“ (nach UI-05); Onboarding-Checkliste (F7); `adr/0025` (wo Embeddings entstehen).
+- **Betroffen:** Fassung 3 des M5-Plans; `catalog` (Suchindex, Glossar), `api` (Collection-Suche, Vektorvergleich, Modell nur im Image von `api`), `backend/Dockerfile` (eigene Stufe für das Modell); das Frontend des „Data catalogue“ (nach UI-05); Onboarding-Checkliste (F7); `adr/0025` (wo Embeddings entstehen); `architekturplan.md` 5.3 und 10 (Nachtrag, F3). Nicht betroffen nach F3: Postgres-Image, `docker-compose.yml` (Dienst `postgres`), `.github/workflows/ci.yml`.
 
 ---
 
@@ -56,16 +56,16 @@ Belegstufen wie in `adr/0023`:
 ## 0. Kurzfassung
 
 1. **Was gesucht wird:** Datensätze (STAC-Collections), nicht Szenen. Heute sind es zwei; mit M5 rund zehn, nach dem Harvest vielleicht einige Hundert bis Tausend (§1). Die Szenen bleiben bei der föderierten Item-Suche (`adr/0005`).
-2. **Empfehlung (§6):** Hybrid-Suche ganz in Postgres, wie geplant, mit fünf Festlegungen:
+2. **Entscheidung (§6, Otto 06.11.2026):** Hybrid-Suche mit Postgres und dem Prozess `api`, mit fünf Festlegungen:
    - **Lexikalischer Arm:** Volltext mit drei Konfigurationen zugleich (`simple`, `german`, `english`) plus `unaccent`, dazu Trigramme für Tippfehler und ein kuratiertes **Glossar** de/en, das die Anfrage erweitert.
-   - **Vektorarm:** ein kleines, mehrsprachiges Embedding-Modell mit offener Lizenz, **lokal im Prozess** `api` (ONNX auf CPU), kein gehosteter Dienst. Gesucht wird exakt ohne Index, solange der Katalog klein ist; ein Mindestmaß an Ähnlichkeit erlaubt „kein Treffer“.
+   - **Vektorarm:** ein kleines, mehrsprachiges Embedding-Modell mit offener Lizenz, höchstens so groß wie multilingual-e5-base, bevorzugt int8, **lokal im Prozess** `api` (ONNX auf CPU), kein gehosteter Dienst (F2). **Kein pgvector in M5 (F3):** Die Vektoren liegen als Spalte in Postgres, die harten Filter laufen in SQL, der Vergleich exakt im Prozess `api`. Ein Mindestmaß an Ähnlichkeit erlaubt „kein Treffer“.
    - **Fusion:** RRF mit k = 60 über beide Arme. Raum, Zeit und Zugang sind **harte Filter vor der Fusion**, keine Rangpunkte.
    - **Schnittstelle:** STAC Collection Search mit Freitext `q`; eine AOI nur im Body (`POST`), nie in der URL.
    - **Index:** Text, `tsvector` und Embedding je Datensatz entstehen beim Laden des Katalogs (`catalog-load`) und nur bei geändertem Text oder Modell.
 3. **Bewertungs-Set (§8):** 50 Fragen, je zur Hälfte deutsch und englisch, über die Datensätze aus `adr/0023` §11 und die vorhandenen. Sie prüfen Namen, Themen, Sprachwechsel, Region, Zeit, Fähigkeiten, Abkürzungen und Tippfehler, Konto-Einträge und vier Fragen ohne passenden Datensatz. Eine Frage ruht, bis ihr Datensatz im Katalog steht.
 4. **Wie das Set läuft (§8.4):** als Test in der CI **ohne Modell und ohne Netz**, mit vorab gerechneten Vektoren als Fixture. Ein Prüfwert zum Text erzwingt, dass die Vektoren neu gerechnet werden, wenn sich ein Text ändert.
 5. **Oberfläche (§7):** ein Suchfeld oben im „Data catalogue“. Leer zeigt der Katalog seine Gruppen (UI-05); mit Text eine gerankte Liste derselben Zeilen mit der Gruppe als Marke. Dazu ein Schalter für die AOI (F6). Keine Punktzahlen, kein Zusatztext.
-6. **Hindernis vor dem Bau:** pgvector fehlt im Postgres-Image von Compose und CI [P] und in der Cloud-Sitzung [M]. Das Image zu ändern berührt `.github/` und braucht Ottos Zustimmung (F3).
+6. **Kein Image-Wechsel der Datenbank:** pgvector fehlt im Postgres-Image von Compose und CI [P] und in der Cloud-Sitzung [M]. Nach F3 (Option 2) bleibt das so: Postgres-Image, `.github/workflows/ci.yml` und Cloud-Umgebung ändern sich in M5 nicht. pgvector kommt erst, wenn die Menge einen Index verlangt.
 7. **Nicht gemessen:** die Qualität eines Modells am Set. Hugging Face ist aus der Sitzung gesperrt [M]. Die Auswahl des Modells ist deshalb Teil der Umsetzung (F2), mit einer Vorauswahl nach Lizenz und Größe (§3.4).
 
 ---
@@ -231,15 +231,17 @@ Der Architekturplan nennt Titel, Beschreibung, Schlagworte, Variablen und Bände
 ### 4.3 Vektorarm
 
 - **Modell:** mehrsprachig, offene Lizenz (MIT oder Apache-2.0; nicht „nicht kommerziell“), klein genug für die CPU im Prozess `api`. Die Vorauswahl steht in §3.4; ausgewählt wird per Set (F2). Präfixe wie „query: “ bei e5 setzt der Code der Einbettung, nicht der Suchtext.
+- **Größe (F2, Bedingung b):** Kandidaten höchstens bis zur Größe von multilingual-e5-base (278 Mio. Parameter), bevorzugt int8. Damit bleiben aus §3.4 multilingual-e5-small und -base sowie zum Vergleich die beiden paraphrase-Modelle; bge-m3, Qwen3, gte-multilingual-base und die großen e5 fallen weg. Der PR der Umsetzung nennt den gemessenen Speicher je Prozess `api`.
 - **Ort der Rechnung:** Die Anfrage wird im Prozess `api` eingebettet (ONNX Runtime, CPU). Die Texte der Datensätze werden beim Laden des Katalogs eingebettet (§4.6).
+  - **Nur im Image von `api` (F2, Bedingung a):** Heute bauen alle Dienste das Ziel `app`, und der Runner baut darauf auf (`backend/Dockerfile`, `FROM app AS runner`) [P]. Die Modelldateien kommen deshalb in eine eigene Stufe über `app`, die nur `api` nutzt; der Runner bleibt ohne Modell. Rechnet `catalog-load` die Embeddings (§4.6), nutzt es dieselbe Stufe wie `api` [A, Auslegung; gilt bis Otto widerspricht]. Ein Test prüft, dass das Runner-Image keine Modelldatei enthält.
   - Die Modelldateien liegen im Image; der Pfad kommt aus der Konfiguration (`EARTHX_…`, Name in der Umsetzung). Zur Laufzeit gibt es keinen Abruf aus dem Netz, also nichts, was an `gateway` vorbei ginge.
   - Woher die Dateien beim Bau des Images kommen (Hugging Face, Revision und Prüfsumme festgeschrieben), legt die Umsetzung fest. Hugging Face ist aus der Cloud-Sitzung gesperrt [M].
-- **Suche ohne Index:** Bei bis zu einigen Tausend Zeilen ist ein exakter Vergleich mit allen Zeilen schnell genug [A, §3.2]; ein ANN-Index (HNSW) kommt erst, wenn Messungen es verlangen. Exakt heißt auch: Filter und Vektor vertragen sich ohne die bekannten Fallen gefilterter ANN-Suche.
+- **Vergleich im Prozess `api`, ohne pgvector (F3 = 2):** Die Vektoren liegen als Spalte (z. B. `real[]`) in der Tabelle des Suchindex. Eine SQL-Abfrage liefert die Datensätze, die die harten Filter bestehen, mit ihren Vektoren; `api` vergleicht exakt (Kosinus über normierte Vektoren, numpy). Bei bis zu einigen Tausend Zeilen ist das schnell genug [A, §3.2]. Exakt heißt auch: Filter und Vektor vertragen sich ohne die Fallen gefilterter ANN-Suche. pgvector mit Index (HNSW) kommt erst, wenn die Menge einen Index verlangt; die Spalte lässt sich dann in `vector` umwandeln, ohne die Embeddings neu zu rechnen.
 - **Mindestähnlichkeit:** RRF hat keinen absoluten Wert; der Vektorarm liefert sonst immer einen „nächsten“ Datensatz, auch zu „Bevölkerungsdichte“. Deshalb zählt im Vektorarm nur, was über einer Schwelle liegt. Die Schwelle hängt vom Modell ab und wird am Set festgelegt (Negativfragen Q47–Q50).
 
 ### 4.4 Fusion und Filter
 
-- **RRF:** `score(d) = Σ 1 / (k + rang_i(d))` über die Arme Volltext, Trigramm und Vektor, k = 60 (§3.1). Ein Datensatz, den kein Arm liefert, erscheint nicht.
+- **RRF:** `score(d) = Σ 1 / (k + rang_i(d))` über die Arme Volltext, Trigramm und Vektor, k = 60 (§3.1). Ein Datensatz, den kein Arm liefert, erscheint nicht. Volltext und Trigramm ranken in SQL, der Vektorarm in `api`; die Fusion rechnet `api`.
 - **Harte Filter vor der Fusion** (alle Arme sehen nur, was passt):
   - **Raum:** Die Abdeckung des Datensatzes schneidet die AOI. Wo es Footprints gibt (materialisierte Items, `LOCAL_SQL`), zählen die Footprints; sonst die Bbox der Collection. Die Bbox allein wäre bei regionalen Datensätzen zu grob: Die Bbox der Schweiz reicht bis über 10° O nach Tirol hinein [A].
   - **Zeit:** Die zeitliche Ausdehnung überlappt den Zeitraum; ein offenes Ende heißt heute. Datensätze ohne Zeitachse (`time_range = false`) fallen nie wegen eines Zeitraums heraus. Das ist dieselbe Regel wie bei `/coverage` und `/stac/search` (`architekturplan.md` 5.1); die Antwort nennt den ignorierten Filter in `ignored_filters`.
@@ -260,7 +262,7 @@ Der Architekturplan nennt Titel, Beschreibung, Schlagworte, Variablen und Bände
 
 ### 4.6 Wann der Index entsteht
 
-- **Beim Laden des Katalogs** (`catalog-load`, heute aus der Registry, später aus dem YAML-Lader, B13): Für jeden Datensatz wird der Suchtext gebaut (§4.1), der `tsvector` gerechnet und, wenn sich der Prüfwert geändert hat, das Embedding. Gespeichert wird beides in einer eigenen Tabelle neben pgstac mit Modellkennung und Prüfwert (`architekturplan.md` 10 nennt sie `dataset_embedding`).
+- **Beim Laden des Katalogs** (`catalog-load`, heute aus der Registry, später aus dem YAML-Lader, B13): Für jeden Datensatz wird der Suchtext gebaut (§4.1), der `tsvector` gerechnet und, wenn sich der Prüfwert geändert hat, das Embedding. Gespeichert wird beides in einer eigenen Tabelle neben pgstac mit Modellkennung und Prüfwert (`architekturplan.md` 10 nennt sie `dataset_embedding`); das Embedding als gewöhnliche Spalte, nicht als `vector` (F3).
 - **Nicht im Harvester:** Die Stufe „Enrich“ des Architekturplans (4.3) nennt das Embedding. Würde der Harvester es rechnen, gäbe es zwei Orte mit Modell und zwei Wahrheiten. Der Harvester liefert Texte, der Lader rechnet (Weitergabe an `adr/0025`).
 - **Modellwechsel:** neue Modellkennung, alle Embeddings neu; der Lader prüft beim Start, dass Index und Modell zusammenpassen, sonst Startfehler im Prozess `api` (wie die Startprüfungen der Registry).
 
@@ -284,11 +286,13 @@ Bewertung [A]:
 - **B** ist der kleinste Schritt und fände die meisten Fragen des Sets über Glossar und Schlagworte. Es verschiebt aber die Arbeit, die das Set ohnehin verlangt (Sprachwechsel ohne gemeinsames Wort, z. B. Q16, Q18, Q37–Q39), und die Plattform bekäme in M5 keine Antwort auf den Spike aus 15.2.
 - **A** ist der geplante Weg und erfüllt alle Kriterien. Sein Preis sind pgvector im Image und ein Modell im Image.
 
+**Nach Ottos Antworten (06.11.2026):** A gilt (F1), aber ohne pgvector in M5 (F3 = 2): Der Vektorvergleich liegt im Prozess `api`, das Postgres-Image bleibt. Das Modell liegt nur im Image von `api` (F2).
+
 ---
 
 ## 6. Empfehlung
 
-**Option A**, gebaut in dieser Reihenfolge, damit jede Stufe für sich am Set gemessen wird [A]:
+**Entschieden (Otto, 06.11.2026): Option A** (F1), mit dem Vektorvergleich im Prozess `api` statt in pgvector (F3 = 2) und einem Modell bis zur Größe von e5-base (F2). Gebaut in dieser Reihenfolge, damit jede Stufe für sich am Set gemessen wird [A]:
 
 1. Bewertungs-Set als Fixture und Test (§8.4); Messung der heutigen Lage (keine Suche) als Nullpunkt.
 2. Lexikalischer Arm mit Glossar (§4.2). Messung am Set.
@@ -452,8 +456,8 @@ Abschätzung [A]; gemessen wird in der Umsetzung.
 
 - **Je Anfrage:** ein Embedding der Anfrage auf der CPU (kleines Modell, wenige Wörter: Millisekunden bis wenige Dutzend Millisekunden), dazu eine SQL-Abfrage mit drei Teilabfragen über höchstens einige Tausend Zeilen. Das liegt weit unter einer Kachel.
 - **Beim Laden:** ein Embedding je geändertem Datensatz. Bei Tausend Datensätzen und einem neuen Modell einige Minuten auf der CPU, einmalig.
-- **Speicher:** das Modell im Prozess `api` und im Image. In float32 sind das rund 0,5 GB bei 118 Millionen Parametern (e5-small) und gut 2 GB bei rund 570 Millionen (bge-m3, Qwen3) [A, aus §3.4]; eine Quantisierung auf int8 viertelt das ungefähr. Jeder Prozess `api` hält es einmal.
-- **Datenbank:** ein Vektor je Datensatz (384 bis 1024 Zahlen), dazu ein `tsvector`; bei Tausend Datensätzen wenige Megabyte.
+- **Speicher:** das Modell im Prozess `api` und im Image von `api`. Mit int8 sind die Gewichte rund 0,12 GB (e5-small, 118 Mio. Parameter) bzw. 0,28 GB (e5-base, 278 Mio.), in float32 das Vierfache; dazu kommt der Bedarf der Laufzeit [A, aus §3.4]. Jeder Prozess `api` hält es einmal. Der PR der Umsetzung nennt den gemessenen Wert (F2).
+- **Datenbank:** ein Vektor je Datensatz (384 oder 768 Zahlen) als Spalte, dazu ein `tsvector`; bei Tausend Datensätzen wenige Megabyte. Je Anfrage liest `api` die Vektoren der gefilterten Datensätze: bei Tausend Datensätzen und 768 Zahlen rund 3 MB als float32 [A]; wird das spürbar, hält `api` sie im Speicher oder pgvector kommt.
 - **Keine laufenden Kosten** für einen fremden Dienst (Option C entfällt).
 
 ---
@@ -469,52 +473,74 @@ Abschätzung [A]; gemessen wird in der Umsetzung.
 
 ---
 
-## 11. Fragen an Otto
+## 11. Fragen an Otto und Antworten
+
+Otto hat am 06.11.2026 alle neun Fragen beantwortet. Die Antworten stehen unter der jeweiligen Frage.
 
 **F1 — Gesamtweg (§5, §6)?**
 1. Option A: Hybrid in Postgres mit lokalem Modell, gebaut in vier gemessenen Stufen (§6) **(Empfehlung)**
 2. Option B: in M5 nur lexikalisch mit Glossar; Vektor erst, wenn das Set es verlangt
 3. Option C: Embeddings über einen gehosteten Dienst
 
+**Antwort F1 (Otto, 06.11.2026): 1, fest.**
+
 **F2 — Embedding-Modell?**
 1. Auswahl per Set in der Umsetzung unter den Kandidaten aus §3.4 (offene Lizenz, CPU); das kleinste Modell, das die Grenze aus F5 erreicht, gewinnt; Otto bestätigt Modell und Lizenz im PR **(Empfehlung)**
 2. Jetzt multilingual-e5-small festlegen (MIT, kleinster Kandidat)
 3. Das größte Modell der Liste, Größe egal
 
-**F3 — pgvector in die Datenbank (§0 Punkt 6)?**
+**Antwort F2 (Otto, 06.11.2026): 1, fest, mit zwei Bedingungen:**
+- (a) Modelldateien nur im Image von `api`, nicht im Runner-Image (umgesetzt in §4.3);
+- (b) Kandidaten höchstens bis zur Größe von e5-base, bevorzugt int8; der PR nennt den Speicher je Prozess `api` (§4.3, §9).
+
+**F3 — pgvector in die Datenbank?**
 1. Eigenes Postgres-Image (PostGIS mit pgvector aus den Paketquellen von PostgreSQL) für Compose und CI, dazu das Paket im Setup der Cloud-Umgebung; die Änderung an `.github/workflows/ci.yml` erlaubst du hiermit **(Empfehlung)**
 2. Ohne pgvector: Vektoren als Spalte, Vergleich im Prozess `api` (numpy), solange es wenige Tausend sind
 3. Erst entscheiden, wenn Schritt 2 aus §6 gemessen ist
+
+**Antwort F3 (Otto, 06.11.2026): 2, fest.** Kein pgvector in M5: Vektoren als Spalte, harte Filter in SQL, Vergleich exakt im Prozess `api` (§4.3, §4.4). pgvector erst, wenn die Menge einen Index verlangt. Folge: Nachtrag zu `architekturplan.md` 5.3 und 10 (§12); Postgres-Image und `ci.yml` bleiben unverändert.
 
 **F4 — Bewertungs-Set (§8.3)?**
 1. So freigeben; du ergänzt Fragen im PR **(Empfehlung)**
 2. Freigeben und Fragen auf Französisch und Italienisch ergänzen (FSDI)
 3. Erst überarbeiten (bitte sagen, was)
 
+**Antwort F4 (Otto, 06.11.2026): 1, fest.** Otto ergänzt gegebenenfalls Fragen im PR.
+
 **F5 — Wann besteht das Set (§8.1)?**
 1. Recall@5 ≥ 0,9 und MRR@10 ≥ 0,8 je Sprache, alle Filterfragen, drei von vier Negativfragen **(Empfehlung)**
 2. Strenger: jede aktive Frage einzeln (alle Datensätze mit Note 2 unter den ersten fünf)
 3. In M5 nur berichten, keine Grenze
+
+**Antwort F5 (Otto, 06.11.2026): 1, fest.**
 
 **F6 — AOI im „Data catalogue“ (§7)?**
 1. Schalter, Vorgabe aus; an nur auf Klick, dann bleibt er für die Sitzung an **(Empfehlung: beim Zeichnen einer AOI verschwindet so kein Datensatz ohne Zutun, Leitfaden §1 Punkt 5, Prinzip 9)**
 2. Schalter, an, sobald eine AOI da ist
 3. Kein Schalter: Mit AOI filtert der Katalog immer
 
+**Antwort F6 (Otto, 06.11.2026): 1, fest.** Schalter mit Vorgabe aus.
+
 **F7 — Begriffe beim Onboarding (§4.2)?**
 1. Neuer Punkt der Onboarding-Checkliste: Schlagworte in Deutsch und Englisch, neue Fachbegriffe ins Glossar; gilt ab M5-07 **(Empfehlung)**
 2. Nur das Glossar pflegen, kein Punkt der Checkliste
 3. Keine Pflicht; das Modell soll es richten
+
+**Antwort F7 (Otto, 06.11.2026): 1, fest.** Neuer Punkt der Onboarding-Checkliste ab M5-07 (Folge 9 und 10 in §12).
 
 **F8 — Ortsnamen in der Anfrage (§4.1)?**
 1. Ortsbegriffe (Länder, de/en) beim Laden aus der Ausdehnung regionaler Datensätze in den Suchtext; globale bekommen „global, weltweit“ **(Empfehlung)**
 2. Zusätzlich Ortsnamen in der Anfrage per Geokodierung in einen Raumfilter übersetzen
 3. Keine Ortsbegriffe; Region nur über die AOI
 
+**Antwort F8 (Otto, 06.11.2026): 1, fest.**
+
 **F9 — Schnittstelle (§4.5)?**
 1. STAC Collection Search mit `q` auf `/stac/collections`, Fläche nur per `POST`; Konformität nur, soweit erfüllt **(Empfehlung)**
 2. Eigene Route außerhalb von `/stac`
 3. Beides: STAC-Route und eine schmale eigene Route für die Oberfläche
+
+**Antwort F9 (Otto, 06.11.2026): 1, fest.**
 
 ---
 
@@ -522,16 +548,20 @@ Abschätzung [A]; gemessen wird in der Umsetzung.
 
 Eingabe für Fassung 3 des M5-Plans. Diese Liste legt keine Plan-Dateien an und ändert weder Backlog noch M5-Plan.
 
-1. **Datenbank:** pgvector im Postgres von Compose, CI und Cloud-Umgebung (F3). Berührt `docker-compose.yml`, `.github/workflows/ci.yml` und das Setup der Cloud-Umgebung.
-2. **`catalog`:** Suchtext (§4.1), Tabelle für `tsvector`, Embedding, Modellkennung und Prüfwert (`architekturplan.md` 10), Glossar als YAML, Laden in `catalog-load` (§4.6), Startprüfung Index gegen Modell. Keine neue Importregel: Modell und ONNX Runtime sind Bibliotheken ohne Netz.
-3. **Modell:** Auswahl per Set (F2), ONNX-Dateien im Image mit festgeschriebener Revision und Prüfsumme, Lizenz in den Hinweisen zu Dritten.
+1. **Datenbank:** ~~pgvector im Postgres von Compose, CI und Cloud-Umgebung~~ **entfällt (F3 = 2).** Postgres-Image, `docker-compose.yml` (Dienst `postgres`), `.github/workflows/ci.yml` und Cloud-Umgebung bleiben in M5 unverändert. pgvector wird eine eigene Entscheidung, sobald die Menge einen Index verlangt.
+2. **`catalog`:** Suchtext (§4.1), Tabelle für `tsvector`, Embedding als Spalte, Modellkennung und Prüfwert (`architekturplan.md` 10), Glossar als YAML, Laden in `catalog-load` (§4.6), Startprüfung Index gegen Modell, exakter Vektorvergleich und RRF im Prozess `api` (§4.3, §4.4). Keine neue Importregel: Modell, ONNX Runtime und numpy sind Bibliotheken ohne Netz.
+3. **Modell:** Auswahl per Set (F2) unter Modellen bis zur Größe von e5-base, bevorzugt int8; ONNX-Dateien mit festgeschriebener Revision und Prüfsumme in einer eigenen Stufe des Dockerfiles nur für `api` (und `catalog-load`, §4.3), nicht im Runner-Image, mit Test; Speicher je Prozess `api` im PR; Lizenz in den Hinweisen zu Dritten.
 4. **`api`:** Collection Search mit `q` (F9), Fläche per `POST`, `ignored_filters` wie bei `/stac/search`, Konformität nur soweit erfüllt.
 5. **Frontend:** Suchfeld und AOI-Schalter im „Data catalogue“ (§7), **nachdem UI-05 gemergt ist**. Neue Begriffe zuerst in den Leitfaden (§2).
 6. **Bewertungs-Set:** Fixture, Test, Skript zum Neurechnen, Lauf in `tests_live` (§8.4).
-7. **An UI-05:** Platz für Feld und Schalter, Zeile als eigenes Bauteil, Gruppenansicht auf Teilmenge einschränkbar (§7).
+7. **An UI-05:** Kopf des Panels ergänzbar, Zeile als eigenes Bauteil; die Einschränkung der Gruppenansicht baut die Suche selbst (§7).
 8. **An `adr/0025`:** Der Harvester rechnet keine Embeddings; er liefert Texte in der Sprache der Quelle, das Review ergänzt englische Titel und Beschreibungen, wo sie fehlen (§4.1, §4.6).
-9. **An M5-07, M5-08, M5-09, M5-11, DS-04:** Beschreibungen nennen Region und Inhalt; Schlagworte nach F7. Gilt erst mit Ottos Antwort.
-10. **Dokumente nach der Annahme:** `architekturplan.md` 5.3 und 10 (Nachtrag), `projektuebersicht.md` §5 (F7), `docs/ui/leitfaden.md` §2 (neue Begriffe) und §7 (zweiter Schalter), Entscheidungslog.
+9. **An M5-07, M5-08, M5-09, M5-11, DS-04:** Beschreibungen nennen Region und Inhalt; Schlagworte in Deutsch und Englisch, neue Fachbegriffe ins Glossar (F7 = 1, ab M5-07). Solange das Glossar noch nicht gebaut ist, stehen die Begriffe in der Plan-Datei der Aufgabe und ziehen mit Fassung 3 um.
+10. **Dokumente:**
+    - **`architekturplan.md` 5.3 und 10, Nachtrag (F3):** Die Vektorähnlichkeit der Hybrid-Suche rechnet in M5 der Prozess `api` exakt über eine Spalte in Postgres, nicht pgvector; pgvector kommt, wenn die Menge einen Index verlangt. Entsprechend 0 Punkt 9 („pgvector“) und die Tabelle `dataset_embedding` in 10. Der Nachtrag kommt mit Fassung 3 des M5-Plans bzw. dem ersten PR der Umsetzung, nicht in diesem ADR-PR (Stufe C).
+    - `projektuebersicht.md` §5: neuer Punkt der Onboarding-Checkliste (F7).
+    - `docs/ui/leitfaden.md` §2 (neue Begriffe) und §7 (zweiter Schalter).
+    - Entscheidungslog.
 11. **Chatbot (M7 7a):** nutzt dieselbe Schnittstelle und dasselbe Set (`architekturplan.md` 8.3).
 
 ---
