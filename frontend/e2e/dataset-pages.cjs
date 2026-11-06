@@ -59,7 +59,11 @@ async function check(browser, { theme, viewport }) {
   const label = `${theme} ${viewport}`;
   const problems = [];
   const context = await browser.newContext({ viewport: VIEWPORTS[viewport] });
-  await context.addInitScript((t) => localStorage.setItem('earthx.theme', t), THEMES[theme]);
+  // All nine in "Search and area" (UI-05 part 2: a first visit adds at most six; the pages need more).
+  await context.addInitScript(([t, ids]) => {
+    localStorage.setItem('earthx.theme', t);
+    localStorage.setItem('earthx.datasets', JSON.stringify(ids));
+  }, [THEMES[theme], COLLECTIONS.map((c) => c.id)]);
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   page.on('pageerror', (error) => problems.push(`the page failed: ${error.message.slice(0, 200)}`));
