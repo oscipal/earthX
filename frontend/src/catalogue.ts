@@ -25,6 +25,7 @@ export const OTHER_CATEGORY = { id: 'other', title: 'Other' } as const;
 export const FIRST_VISIT_DATASETS = 6;
 
 export const NONE = '—';
+// "Last checked" stays "—" until M5-24 adds the date of the health checks under `earthx:health` (`adr/0025` §6.6).
 export const NOT_CHECKED = 'Not checked yet';
 
 export interface CatalogueGroup {
