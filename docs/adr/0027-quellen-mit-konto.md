@@ -1,14 +1,19 @@
 # ADR 0027 — Quellen mit kostenlosem Konto
 
-- **Status:** Entwurf, offen (Fragen F1–F8 in §9).
+- **Status:** **Angenommen** von Otto am 2026-11-06.
+  - F1–F8 jeweils Option 1 (Empfehlung), mit vier Ergänzungen (§9):
+    - F4: Regel R-Z zu Zugangsdaten (§6.4);
+    - F8: Werte von `access.account` einschließlich Requester Pays, Laden und Prüfen mit `legal_status` (§6.1);
+    - anonyme Kopien als Eingabe an `adr/0023` F3 (§6.5);
+    - M1–M3 sind keine Bedingung der Annahme, sondern vor der Umsetzung von F3 zu machen (§10).
   - Nummer 0027 fest laut `docs/plans/m5/m5-discovery-und-suche.md` §5a.
-- **Datum:** 2026-10-31
+- **Datum:** 2026-10-31 (Entwurf), 2026-11-06 (angenommen)
 - **Aufgabe:** M5-05 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (Entscheidungsvorlage E, §4).
 - **Autonomiestufe:** C. Kein Produktivcode. Es gibt keine Änderung an `backend/`, `frontend/`, `scripts/`, Fixtures, `.importlinter`, `.github/`, `.claude/` oder `CLAUDE.md`. An den Quellen gemessen wurde nichts; gemessen ist nur ein Detail am GDAL der Lock-Datei (Abschnitt „Methode“).
 - **Vorab fest:**
   - Quellen, die ein kostenloses Konto verlangen, zählen vorerst **nicht** als „ohne Schlüssel“; Ziel ist, sie später zu ermöglichen (Otto, 31.10.2026; M5-Plan §2 Punkt 6, §5 Antwort 4).
   - Ein anonymes Token, das die Quelle ohne Anmeldung ausgibt, gilt als „ohne Schlüssel“ (M5-Plan §2 Punkt 3), unter den Bedingungen (a)–(d) von `adr/0018` F4 und erst nach Ottos Messung (`adr/0018` §11 C, §12).
-  - Die fertige Plattform enthält nichts, was einen Token braucht; Token-Logik wird nicht übernommen und nicht generalisiert (`ENTSCHEIDUNGEN` §1, §3). Token-Logik ist nicht Teil von `gateway` (`KLAERUNGEN` B8). **Die Wege W1, W2b, W3 und W4 verlangen eine Änderung dieser Regeln durch Otto; ob W2a eine braucht, ist F3.**
+  - Die fertige Plattform enthält nichts, was einen Token braucht; Token-Logik wird nicht übernommen und nicht generalisiert (`ENTSCHEIDUNGEN` §1, §3). Token-Logik ist nicht Teil von `gateway` (`KLAERUNGEN` B8). **Die Wege W1, W2b, W3 und W4 verlangen eine Änderung dieser Regeln durch Otto; W2a gilt als Link und braucht keine (F3, Otto 2026-11-06).**
   - Rohdaten: kein Byte durch das eigene Backend (`architekturplan.md` 6.4).
   - Worker-Kern ohne Plattformdienste (`KLAERUNGEN` B9).
   - Keine Secrets im Repo, in Logs, Issues oder PRs (`ENTSCHEIDUNGEN` §4).
@@ -53,12 +58,13 @@ Belegstufen wie in `adr/0018` und `adr/0022`:
    - **W1:** CDSE teilt 4 Verbindungen und 50 000 COG-Anfragen im Monat auf alle Nutzer, verbietet Mehrfachkonten und verweist öffentliche Anwendungen auf eine eigene Anmeldung [P\*]. Earthdata gibt Anwendungen nur nach Freigabe durch ESDIS frei [S].
    - **W2b:** Keine geprüfte Quelle bietet heute Anmeldung fremder Web-Anwendungen mit PKCE und CORS (CDSE nur Passwort-Grant und Client Credentials [P\*]; Earthdata-Datenhosts ohne CORS nach einem Drittbefund [P-Dritt]).
    - **W3:** fremde Zugangsdaten bei der Plattform, Cache je Nutzer, Login (M6), eine Importgrenze oder Nachweise in der Queue; großer Aufwand.
-5. **Empfehlung (§7, Option 1):** gestuft und ohne Secrets der Plattform.
+5. **Empfehlung (§7, Option 1), von Otto am 2026-11-06 angenommen (§9):** gestuft und ohne Secrets der Plattform.
    - **M5:** W0 mit Registry-Feld `access.account`; anonyme Spiegel zuerst.
    - **Danach:** W2a (Earthdata, nach Ottos Messung) und W4 (Runner mit Nachweis des Nutzers).
    - **W3** als eigener ADR nach M6.
    - **W1** nur mit schriftlicher Zusage der Quelle.
-6. **Gemessen** ist hier nichts an den Quellen: Der Proxy sperrt alle Konto-Hosts. Die Messpunkte (OIDC-Konfiguration, CORS, Cookie-Weg) stehen in §10 für Otto.
+6. **Gemessen** ist hier nichts an den Quellen: Der Proxy sperrt alle Konto-Hosts. Die Messpunkte (OIDC-Konfiguration, CORS, Cookie-Weg) stehen in §10; Otto macht sie vor der Umsetzung von F3, sie sind keine Bedingung der Annahme.
+7. **Regel R-Z (Otto, F4):** Zugangsdaten gehen nur an den Anmelde-Host der Quelle, nie an Datenhosts, Ziele einer Weiterleitung, Rezepte, Logs, Permalinks oder die Auftragskopie eines Jobs (§6.4).
 
 ---
 
@@ -132,7 +138,7 @@ Gelesen aus den Bedingungen und dem Quelltext der Doku (`eu-cdse/documentation`,
 - **W1:** Ein Konto für alle Nutzer teilt 4 Verbindungen und 50 000 COG-Anfragen im Monat; mehrere Konten verbietet §9; die FAQ verweist öffentliche Anwendungen auf eine eigene Anmeldung. Tragbar nur mit schriftlicher Zusage von CDSE oder einem höheren Kontingent über die Programme.
 - **W2a, W2b:** Ohne Authorization Code/PKCE gibt es keinen Weg, den Nutzer bei CDSE anzumelden, ohne sein Passwort in die Seite zu holen. Eine Navigation zur Datei trägt kein Token. **Heute nicht möglich.**
 - **W3:** Nur mit einem vom Nutzer selbst erzeugten, befristeten S3-Schlüssel oder Sentinel-Hub-Client, nie mit Passwort. Der Refresh-Token (60 min) taugt nicht zum Hinterlegen.
-- **W4:** S3-Schlüssel des Nutzers als Umgebungsvariable oder Datei im Runner; das Kontingent trägt der Nutzer. Lesen über S3 heißt `s3://`-Adressen bzw. `/vsis3/` mit Endpunkt `eodata.dataspace.copernicus.eu`; das kann `gateway` heute nicht (nur `https`) [A].
+- **W4:** S3-Schlüssel des Nutzers als Umgebungsvariable oder Datei im Runner; das Kontingent trägt der Nutzer. Lesen über S3 heißt `s3://`-Adressen bzw. `/vsis3/` mit Endpunkt `eodata.dataspace.copernicus.eu`; das kann `gateway` heute nicht (nur `https`) [A]. Die Signatur geht an den Datenhost; mit R-Z (§6.4) ist das nur vereinbar, wenn der S3-Endpunkt als Anmelde-Host gilt.
 
 ### 3.2 Copernicus-Dienste von ECMWF, Marine, EUMETSAT
 
@@ -184,7 +190,7 @@ Alle Anbieterseiten waren für die Hilfsagenten gesperrt; die Befunde sind **S**
 
 - **W2b mit `fetch` (ZIP über den Service Worker) geht nicht**, wenn der CORS-Befund stimmt.
 - **W2a als Navigation geht ohne CORS:** Ein Klick auf die Datei-Adresse ist ein Download des Browsers. Ist der Nutzer im selben Browser bei EDL angemeldet, läuft die Weiterleitung mit seinem eigenen Cookie durch. Das ist der Weg „ohne CORS“ von NM4-33 (Einzeldateien), ohne OAuth-Registrierung der Plattform und ohne Token in der Seite. Messpunkt §10.
-- W4 mit Nutzer-Token in `.netrc` oder als Bearer passt zu `earthaccess`-Praxis.
+- W4 mit `.netrc` für `urs.earthdata.nasa.gov`; ein Bearer-Token an die Datenhosts, wie `earthaccess` es setzt, schließt R-Z aus (§6.4).
 
 ### 3.4 USGS [S], [P\*]
 
@@ -262,7 +268,7 @@ Zwei Spielarten [A]:
   - Voraussetzungen: (1) die Quelle lässt fremde Web-Anwendungen als Client zu, ohne Client-Secret; (2) CORS an Token- und Download-Endpunkt; (3) der Download nimmt ein Bearer-Token.
   - Heute bei keiner geprüften Quelle belegt: CDSE dokumentiert keinen solchen Fluss, die Earthdata-Datenhosts haben nach einem Drittbefund kein CORS (§3.1, §3.3).
   - Die Plattform braucht eine Registrierung als Anwendung bei der Quelle (bei Earthdata mit Freigabe durch ESDIS), also ein Betreiberkonto für die Registrierung, aber keines zum Lesen.
-- **Regeln:** W2a ist im Kern ein Link auf die Datei; die Plattform enthält dafür nichts, was einen Token braucht. Ob das `ENTSCHEIDUNGEN` §1 schon erfüllt oder einen Satz von Otto braucht, ist F3. W2b berührt §1 (Anmeldung im Frontend der Plattform). B8, B9 und 6.4 bleiben bei beiden unverändert [A].
+- **Regeln:** W2a ist im Kern ein Link auf die Datei; die Plattform enthält dafür nichts, was einen Token braucht. Nach Antwort F3 (1) gilt W2a als Link; ein Satz in `ENTSCHEIDUNGEN` ist nicht nötig. W2b berührt §1 (Anmeldung im Frontend der Plattform). B8, B9 und 6.4 bleiben bei beiden unverändert [A].
 - **Grenze:** Anzeige und Processing über die Plattform gehen so nicht, weil Tiler und Worker den Nachweis nicht haben. Erst eine Anzeige im Browser (Projektplan „später: Rendering im Browser“) nutzt W2 auch für Kacheln.
 - **Datenschutz:** Die Plattform erfährt nichts Neues. Die Quelle sieht wie bei jedem Download Konto und IP des Nutzers, bei W2b dazu die Client-ID der Plattform [A].
 
@@ -276,7 +282,7 @@ Das ist „Token pro Connector“ (`projektuebersicht.md` §6, `architekturplan.
 - **Fluss:** `api` löst den Nachweis für die Anfrage auf und gibt ihn an `access` bzw. an den Job; `gateway` setzt ihn als Kopfzeile bzw. GDAL-Konfiguration (Abschnitt „Methode“). Er steht nie im Rezept, in der Provenienz, im Permalink, im Cache-Schlüssel, in einer URL oder einem Log.
 - **Worker-Kern (B9):** Ein Nachweis als Eingabe des Auftrags ist kein Plattformdienst; der Kern bleibt zustandslos, wenn er ihn im Speicher bekommt [A]. Wer ihn dem Job gibt, ist offen:
   - (i) die Hülle `jobs` holt ihn beim Start aus `identity`. Heute verbietet `.importlinter` den Import `jobs → identity` (Vertrag `jobs`); das wäre eine Lockerung der Importgrenzen, die nur Otto entscheidet.
-  - (ii) `api` legt ihn bei der Annahme verschlüsselt und kurzlebig an den Auftrag; dann liegt er in der Queue, wenn auch verschlüsselt.
+  - (ii) `api` legt ihn bei der Annahme verschlüsselt und kurzlebig an den Auftrag; dann liegt er in der Queue, wenn auch verschlüsselt. **Ausgeschlossen durch R-Z (§6.4):** Zugangsdaten gehen nie in die Auftragskopie eines Jobs.
   - Beides gehört in einen eigenen ADR mit W3 (F6).
 - **Cache:** Der Kachel- und Ergebnis-Cache ist heute gemeinsam. Daten, die mit dem Konto von A gelesen sind, dürfen B nur erreichen, wenn die **Bedingungen des Zugangs** das erlauben; die **Lizenz der Daten** (Copernicus, NASA) erlaubt Weitergabe meist ohnehin. Das ist eine Rechtsfrage je Quelle (§3). Bis zur Klärung: Cache je Nutzer für diese Datensätze, also kalte Kacheln für jeden [A].
 - **Kontingent:** je Nutzer, skaliert damit mit den Nutzern; Fehler 429 der Quelle gehen als eigener Text an den Nutzer („Kontingent bei <Quelle> erschöpft“).
@@ -286,6 +292,7 @@ Das ist „Token pro Connector“ (`projektuebersicht.md` §6, `architekturplan.
 ### 4.5 W4 — Konto des Nutzers im lokalen Runner
 
 - Der Runner läuft auf dem Rechner des Nutzers und liest von seiner IP (`architekturplan.md` 7.7, `adr/0016`). Den Nachweis gibt der Nutzer dem Container selbst, etwa als Datei `.netrc` oder Umgebungsvariable; GDAL liest `.netrc` über `GDAL_HTTP_NETRC_FILE` (Abschnitt „Methode“).
+- Es gilt R-Z (§6.4): Der Nachweis geht nur an den Anmelde-Host der Quelle. Für Earthdata heißt das ein Eintrag in `.netrc` für `urs.earthdata.nasa.gov`; ein Bearer-Token an die Datenhosts (`GDAL_HTTP_BEARER`, `GDAL_HTTP_HEADERS`) scheidet aus [A].
 - Die Plattform sieht den Nachweis nie; das Rezept nennt nur unsignierte Adressen (wie bei `adr/0018` §5.3).
 - **Grenzen:** nur Jobs, keine Kacheln; die Host-Prüfung des Runners (`adr/0016` §6.2, A1) muss Weiterleitungen auf den Anmeldedienst der Quelle kennen (z. B. Earthdata: Datenhost leitet auf `urs.earthdata.nasa.gov` und zurück, §3) [A].
 - **Regeln:** berührt `ENTSCHEIDUNGEN` §3 („Token-Logik nicht übernehmen“) nur, wenn der Runner selbst ein Token holt; reicht der Nutzer einen fertigen Nachweis über `.netrc` herein, ist im Code nur die Weitergabe an GDAL [A].
@@ -318,8 +325,8 @@ Wie BIOMASS bis heute (`ENTSCHEIDUNGEN` §3): Otto nutzt ein eigenes Konto lokal
 
 | Quelle | W0 | W1 | W2a | W2b | W3 | W4 |
 |---|---|---|---|---|---|---|
-| CDSE | ✓ (STAC anonym) | ✗ ohne Zusage | ✗ Token in Kopfzeile | ✗ kein PKCE dokumentiert | ~ nur mit S3-Schlüssel oder SH-Client des Nutzers | ~ S3-Schlüssel, braucht `/vsis3/` in `gateway` |
-| Earthdata | ✓ (CMR anonym, CORS) | ✗ ohne Zusage | ~ nach Messung | ✗ Datenhosts ohne CORS (Drittbefund) | ~ Nutzer-Token 60 Tage | ✓ Token oder `.netrc` |
+| CDSE | ✓ (STAC anonym) | ✗ ohne Zusage | ✗ Token in Kopfzeile | ✗ kein PKCE dokumentiert | ~ nur mit S3-Schlüssel oder SH-Client des Nutzers | ~ S3-Schlüssel, braucht `/vsis3/` in `gateway` und eine Auslegung von R-Z (§6.4) |
+| Earthdata | ✓ (CMR anonym, CORS) | ✗ ohne Zusage | ~ nach Messung | ✗ Datenhosts ohne CORS (Drittbefund) | ~ Nutzer-Token 60 Tage | ✓ `.netrc` für den Anmelde-Host (R-Z) |
 | CDS/ADS | ✓ | ? Betreiber nähme Lizenzen für alle an | ✗ Warteschlange, kein Dateilink | ✗ | ~ Token des Nutzers | ✓ Token, aber Auftrag statt Datei |
 | CMEMS | ✓ | ? | ? | ? | ✗ nur Passwort | ~ Passwort lokal beim Nutzer |
 | EUMETSAT | ✓ | ? Weitergabe je Produkt verschieden | ? | ? | ~ Key/Secret des Nutzers | ✓ |
@@ -332,21 +339,31 @@ Wie BIOMASS bis heute (`ENTSCHEIDUNGEN` §3): Otto nutzt ein eigenes Konto lokal
 
 ### 6.1 Registry
 
-`AccessInfo` (`catalog/registry.py`) sagt heute nur, dass der anonyme Check bestanden ist (`token_free_checked_at`, `method`, `cors`). Vorschlag [A], eingeführt mit der YAML-Registry in M5 (B13):
+`AccessInfo` (`catalog/registry.py`) sagt heute nur, dass der anonyme Check bestanden ist (`token_free_checked_at`, `method`, `cors`). Festgelegt mit F8 (Otto, 2026-11-06), eingeführt mit der YAML-Registry in M5 (B13):
 
 | Feld | Werte | Wirkung |
 |---|---|---|
-| `access.account` | `none` · `anonymous_token` · `free_account` | `none` wie heute; `anonymous_token` nach `adr/0018` F4; `free_account` nur als Katalogeintrag (W0), bis Otto einen weiteren Weg freigibt |
+| `access.account` | `none` · `anonymous_token` · `free_account` · `requester_pays` | Werte in der Tabelle unten (F8, Otto 2026-11-06) |
 | `access.account_provider` | z. B. `cdse`, `earthdata` | Name des Identitätsdienstes für Hinweis, Link und spätere Wege; keine Adresse eines Token-Endpunkts im Datensatz, die liegt (wenn je nötig) in der Konfiguration des Wegs |
-| `access.account_paths` | Teilmenge von `W2a`, `W2b`, `W3`, `W4` | welche Wege für diesen Datensatz freigegeben sind; leer bis F3–F6 entschieden sind |
+| `access.account_paths` | Teilmenge von `W2a`, `W2b`, `W3`, `W4` | welche Wege für diesen Datensatz freigegeben sind; leer, bis ein Weg gebaut und für den Datensatz freigegeben ist (W2a nach M3, W4 als eigene Aufgabe, W3 mit eigenem ADR) |
 
-- Ein Startcheck verlangt: `free_account` ⇒ B11-Stufe höchstens „Katalogeintrag“, solange `account_paths` leer ist; `token_free_checked_at` bleibt bei `free_account` leer, und Checkliste Punkt 6 gilt als „nicht anwendbar, Katalogeintrag“.
+**Werte von `access.account` (festgelegt, F8):**
+
+| Wert | Bedeutung | Erlaubt ohne weitere Entscheidung | Checkliste Punkt 6 |
+|---|---|---|---|
+| `none` | Metadaten und Assets anonym, ohne Nachweis | alle B11-Stufen | wie heute: `200`/`206` ohne Nachweis, `token_free_checked_at` gesetzt |
+| `anonymous_token` | die Quelle stellt jedem ohne Konto einen Nachweis aus (`adr/0018` F4, Bedingungen (a)–(d)) | erst nach Ottos Messung und dem Nachtrag aus `adr/0018` §12; bis dahin wie `free_account` | `200`/`206` mit dem anonym erhaltenen Nachweis |
+| `free_account` | Assets nur mit kostenlosem Konto (z. B. CDSE-Download, Earthdata, CDS, CMEMS, EUMETSAT, CODE-DE, CLMS) | nur W0 (Katalogeintrag mit Link); weitere Wege nur über `account_paths` | „nicht anwendbar, Katalogeintrag“; `token_free_checked_at` leer |
+| `requester_pays` | Assets nur mit eigenem Cloud-Konto, und der Lesende zahlt den Transfer (Landsat C2 in AWS `us-west-2`, `sentinel-s2-l1c`; `adr/0023` §6.2, §7.5) | nur W0; `account_paths` bleibt leer, weil jeder Leseweg ein kostenpflichtiger Dienst ist (nie ohne Otto, Projektplan 1.1) | wie `free_account` |
+
+- Ein Startcheck verlangt: `free_account` und `requester_pays` ⇒ B11-Stufe höchstens „Katalogeintrag“, solange `account_paths` leer ist; bei `requester_pays` muss `account_paths` leer sein; bei `none` und `anonymous_token` ist `account_paths` leer und `account_provider` nicht gesetzt.
+- **Laden und Prüfen:** Der YAML-Lader aus M5-03 (`adr/0025`, B13) lädt und prüft `access.account` zusammen mit `legal_status` aus `adr/0024` (Entwurf in PR [#260](https://github.com/oscipal/earthX/pull/260)). Beide Felder sind Pflicht und ohne Vorgabe (B10); ein Eintrag ohne eines von beiden ist ein Ladefehler. Sie sind voneinander unabhängig: `legal_status` sagt, ob die Rechtslage geklärt ist, `access.account`, was das Lesen braucht.
 - Discovery (M5-03) liest die Metadaten weiter anonym; findet sie eine Collection, deren Assets ohne Konto `401`/`403` antworten, setzt der Vorschlag `free_account` statt den Eintrag zu verwerfen.
 - Oberfläche: Hinweis am Datensatz „Free account at <Quelle> required to download“ mit Link; kein Kartenlayer, kein Processing.
 
 ### 6.2 Regeltext
 
-Wie bei `adr/0018` N2 gehen `ENTSCHEIDUNGEN` §1/§3 allen anderen vor. Wird ein Weg außer W0 freigegeben, braucht es einen Satz von Otto in `ENTSCHEIDUNGEN`, dazu Nachträge in B8, Prinzip 2 und Checkliste Punkt 6. Für W0 reicht ein Nachtrag zu Prinzip 2 („Katalogeintrag mit Link ist kein Anbinden“), weil sich am Lesen der Daten nichts ändert. Wortlaut entsteht erst nach der Antwort auf F1–F2.
+Wie bei `adr/0018` N2 gehen `ENTSCHEIDUNGEN` §1/§3 allen anderen vor. Wird ein Weg außer W0 freigegeben, braucht es einen Satz von Otto in `ENTSCHEIDUNGEN`, dazu Nachträge in B8, Prinzip 2 und Checkliste Punkt 6. Für W0 reicht ein Nachtrag zu Prinzip 2 („Katalogeintrag mit Link ist kein Anbinden“), weil sich am Lesen der Daten nichts ändert. Die Antworten liegen vor (§9); der Wortlaut entsteht mit der Umsetzung von W0 und geht an Otto.
 
 ### 6.3 Datenschutz
 
@@ -357,9 +374,37 @@ Wie bei `adr/0018` N2 gehen `ENTSCHEIDUNGEN` §1/§3 allen anderen vor. Wird ein
 
 ### 6.4 Sicherheit
 
+**Regel R-Z (Otto, 2026-11-06, zu F4) — Zugangsdaten gehen nur an den Anmelde-Host der Quelle:**
+
+1. `gateway` führt je Quelle eine Regel je Host: Nur der Anmelde-Host (z. B. `urs.earthdata.nasa.gov`) darf einen Nachweis bekommen.
+2. Nie an Datenhosts und nie an Ziele einer Weiterleitung, auch nicht, wenn die Weiterleitung zum Anmelde-Host zurückführt und der nächste Schritt wieder zu einem Datenhost geht.
+3. Nie in Rezepte, Logs, Permalinks oder die Auftragskopie eines Jobs; ebenso nicht in Provenienz, Cache-Schlüssel, Fehlertexte oder URLs.
+4. Folgen [A]:
+   - W4 nur mit einem Eintrag in `.netrc` für den Anmelde-Host; keine Kopfzeile mit Nachweis für alle Anfragen (`GDAL_HTTP_BEARER`, `GDAL_HTTP_HEADERS`), weil GDAL sie auch an Datenhosts und Weiterleitungsziele schicken kann. Ein Test prüft mit einem Fixture-Server, dass der Nachweis nur beim Anmelde-Host ankommt.
+   - W3 kann den Nachweis nicht mit dem Auftrag in die Queue legen (§4.4 (ii)).
+   - CDSE über S3 (Signatur an den Datenhost) ist mit R-Z nicht vereinbar, solange der S3-Endpunkt nicht als Anmelde-Host gilt; das bleibt Teil der eigenen Entscheidung zu `/vsis3/` (F4).
+   - W2a berührt R-Z nicht: Dort meldet sich der Browser des Nutzers selbst an, die Plattform hat keinen Nachweis.
+
 - Jeder Nachweis ist ein Secret im Sinne von Projektplan 1.1; Tests laufen nur mit Fixtures, nie mit einem echten Konto (CLAUDE.md, `ENTSCHEIDUNGEN` §4).
-- `gateway` loggt schon heute keine Query-Strings; ein Nachweis in Kopfzeile oder GDAL-Konfiguration braucht dieselbe Prüfung für Kopfzeilen und Fehlertexte (Test „kein Nachweis in Log, Fehlertext, Provenienz“) [A].
+- `gateway` loggt schon heute keine Query-Strings; ein Nachweis für den Anmelde-Host braucht dieselbe Prüfung für Kopfzeilen und Fehlertexte (Test „kein Nachweis in Log, Fehlertext, Provenienz“) [A].
 - Weiterleitungen: Earthdata-Hosts leiten zum Anmeldedienst und zurück (§3). `gateway` prüft jede Weiterleitung gegen die Allowlist; der Anmeldedienst müsste darin stehen und darf den Nachweis nicht an fremde Hosts weitergeben (Kopfzeile nur an den Host, für den sie gilt) [A].
+
+### 6.5 Anonyme Kopien als Eingabe an `adr/0023` F3 (Leseweg Meteorologie)
+
+Auftrag Otto (2026-11-06). `adr/0023` §7.1 stellt fest, dass die Meteorologie in DACH in NetCDF, HDF5 oder GRIB2 liegt (Gruppe D) und einen eigenen Leseweg braucht (F3). Anonyme Kopien aus §3.7 ändern das für einzelne Bestände:
+
+| Kopie | Format | Region | Lizenz der Daten | Zugang | Beleg |
+|---|---|---|---|---|---|
+| **ARCO-ERA5** (Google, `gcp-public-data-arco-era5`) | Zarr, analysis-ready (Gruppe B, ohne neuen Reader lesbar [A]); Zarr-Version und Chunking **offen** | `us-central1` (USA) | **offen** (im gelesenen Teil nur Apache-2.0 für den Code) | anonym; Requester Pays **offen** | P\* (README teilweise) |
+| ERA5 in AWS `era5-pds` | NetCDF | `us-east-1` | Copernicus-Bedingungen genannt | anonym, aber „deprecated“; Nachfolger bei NCAR nicht gelesen | P\* |
+| ECMWF Open Data (Vorhersagen, kein ERA5) | **offen** (nicht belegt) | ECMWF, AWS, Google, Azure | CC BY 4.0 | ohne Konto, auf Azure mit SAS-Token | P\* |
+
+Folgen für F3 [A]:
+
+- ARCO-ERA5 wäre der einzige meteorologische Bestand, der ohne NetCDF-Leseweg auskommt. Er ersetzt keinen nationalen Dienst (MeteoSchweiz, DWD, GeoSphere), denn ERA5 ist eine globale Reanalyse mit rund 31 km Auflösung (Vorwissen, nicht nachgelesen), keine DACH-Messung.
+- Dagegen: Region USA (`adr/0022` F1: EU-Quellen bevorzugen; `data_region` z. B. `gcp:us-central1`), Lizenz und Requester Pays offen, Stand der stabilen Fassung rund 3 Monate hinter heute (ERA5T rund 1 Woche) [P\*].
+- Das Lesen über `gs://` kann `gateway` nicht; über die `https`-Adresse von Google Cloud Storage wäre es ein gewöhnlicher Host der Allowlist. Belegt ist das nicht.
+- Vorschlag: Die Recherche zu F3 in `adr/0023` nimmt ARCO-ERA5 als Vergleichsfall auf (Zarr gegen virtuelles Zarr über NetCDF) und klärt dabei Lizenz, Requester Pays und Zarr-Version. Die Lizenz stuft Otto ein.
 
 ---
 
@@ -367,7 +412,7 @@ Wie bei `adr/0018` N2 gehen `ENTSCHEIDUNGEN` §1/§3 allen anderen vor. Wird ein
 
 | Option | Inhalt | Regeländerung | Aufwand | Zeitpunkt |
 |---|---|---|---|---|
-| **1** gestuft, ohne Secrets der Plattform (empfohlen) | jetzt W0 mit Registry-Feld und anonyme Spiegel zuerst (§3.7); danach W2a (Earthdata, nach Messung) und W4 (Runner); W2b nur, wo eine Quelle PKCE und CORS bietet; W3 erst als eigener ADR nach M6; W1 nur mit schriftlicher Zusage der Quelle | W0: Nachtrag Prinzip 2; W2a: nach F3; W4: Satz in `ENTSCHEIDUNGEN` §3 | klein bis mittel | W0 mit M5; W2a und W4 nach M5 |
+| **1** gestuft, ohne Secrets der Plattform (empfohlen) | jetzt W0 mit Registry-Feld und anonyme Spiegel zuerst (§3.7); danach W2a (Earthdata, nach Messung) und W4 (Runner); W2b nur, wo eine Quelle PKCE und CORS bietet; W3 erst als eigener ADR nach M6; W1 nur mit schriftlicher Zusage der Quelle | W0: Nachtrag Prinzip 2; W2a: keine (F3); W4: Satz in `ENTSCHEIDUNGEN` §3 | klein bis mittel | W0 mit M5; W2a und W4 nach M5 |
 | **2** Betreiberkonto | W1 für CDSE und Earthdata | `ENTSCHEIDUNGEN` §1/§3, B8, Prinzip 2; Secret im Betrieb | mittel | nach schriftlicher Zusage der Quellen |
 | **3** Token pro Connector früh | W3 als Ziel mit M6 | wie 2, dazu Importgrenze `jobs → identity` oder Nachweis in der Queue | groß | M6/M7 |
 | **4** nichts | Konto-Quellen bleiben ganz draußen, auch als Katalogeintrag | keine | keiner | — |
@@ -391,7 +436,14 @@ Wie bei `adr/0018` N2 gehen `ENTSCHEIDUNGEN` §1/§3 allen anderen vor. Wird ein
 
 ---
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 2026-11-06
+
+**Antworten (Otto, 06.11.2026):** F1–F8 jeweils Option 1 (Empfehlung), mit diesen Ergänzungen:
+
+1. **F4:** Regel R-Z festhalten: Zugangsdaten gehen nur an den Anmelde-Host der Quelle (`gateway`-Regel je Host), nie an Datenhosts oder Ziele einer Weiterleitung, nie in Rezepte, Logs, Permalinks oder die Auftragskopie eines Jobs. Eingetragen in §6.4, Folgen in §4.4 und §4.5.
+2. **F8:** Werte von `access.account` festlegen, Requester Pays eingeschlossen (Landsat, `sentinel-s2-l1c`, `adr/0023` §7.5); der YAML-Lader aus M5-03 lädt und prüft das Feld zusammen mit `legal_status` aus `adr/0024`. Eingetragen in §6.1.
+3. **Folgen:** Anonyme Kopien als Eingabe an `adr/0023` F3 (Leseweg Meteorologie), vor allem ARCO-ERA5; Format, Region und Lizenz als offen markieren, wo nicht belegt. Eingetragen in §6.5.
+4. **M1–M3 (§10)** sind keine Bedingung für die Annahme, sondern vor der Umsetzung von F3 zu machen. Gekennzeichnet in §10.
 
 **F1 — Grundsatz?**
 1. Gestuft ohne Secrets der Plattform (Option 1): W0 jetzt, W2a und W4 danach, W3 als eigener ADR nach M6, W1 nur mit schriftlicher Zusage **(Empfehlung)**
@@ -399,46 +451,62 @@ Wie bei `adr/0018` N2 gehen `ENTSCHEIDUNGEN` §1/§3 allen anderen vor. Wird ein
 3. Token pro Connector als Ziel mit M6 (Option 3)
 4. Konto-Quellen bleiben ganz draußen, auch als Katalogeintrag (Option 4)
 
+**Antwort F1: (1).**
+
 **F2 — Katalogeintrag mit Link (W0) für Konto-Quellen in M5?**
 1. Ja, mit `access.account = free_account`, Hinweis „Free account at <Quelle> required to download“, B11-Stufe höchstens „Katalogeintrag“, Startcheck; Nachtrag zu Prinzip 2 („Katalogeintrag mit Link ist kein Anbinden“) **(Empfehlung)**
 2. Ja, aber erst mit der Harvest-Pipeline (`adr/0025`), nicht von Hand
 3. Nein
+
+**Antwort F2: (1).**
 
 **F3 — Download der Originale mit der Sitzung des Nutzers bei der Quelle (W2a)?**
 1. Ja, für Quellen, deren Download per Cookie-Sitzung läuft (Kandidat Earthdata), nach Ottos Messung (§10 M3); gilt als Link, kein Satz in `ENTSCHEIDUNGEN` nötig **(Empfehlung)**
 2. Ja, aber mit einem Satz von Otto in `ENTSCHEIDUNGEN` §1
 3. Nein, nur Link zur Seite der Quelle (W0)
 
+**Antwort F3: (1).**
+
 **F4 — Lokaler Runner mit Nachweis des Nutzers (W4)?**
 1. Ja, als eigene kleine Aufgabe nach M5: Nachweis als Datei (`.netrc` bzw. Umgebungsvariable), an GDAL nur als Konfiguration, Test „kein Nachweis in Ausgabe, Provenienz, Fehlertext“; S3-Lesen für CDSE erst mit einer eigenen Entscheidung zu `/vsis3/` in `gateway` **(Empfehlung)**
 2. Ja, auch mit S3 für CDSE gleich
 3. Nein
+
+**Antwort F4: (1),** mit der Regel R-Z (Ergänzung 1, §6.4): im Runner nur `.netrc` für den Anmelde-Host.
 
 **F5 — Betreiberkonto (W1)?**
 1. Nein; nur, wenn eine Quelle schriftlich zusagt, dass ein Plattformkonto für viele Nutzer erlaubt ist, und das Kontingent reicht. Otto fragt bei Bedarf selbst an (CDSE: Programm „Copernicus services user type“; Earthdata: ESDIS) **(Empfehlung)**
 2. Otto fragt jetzt bei CDSE und Earthdata an
 3. Ja, für CDSE mit dem Kontingent eines kostenlosen Kontos
 
+**Antwort F5: (1).**
+
 **F6 — Token pro Connector (W3)?**
 1. Eigener ADR nach M6 (Login), nur mit widerrufbaren Nachweisen, nie mit Passwörtern; Cache je Nutzer bis zur Rechtsklärung; Weg zum Job (Importgrenze `jobs → identity` oder verschlüsselt in der Queue) dort entscheiden **(Empfehlung)**
 2. Mit M6 einplanen
 3. Nicht verfolgen
+
+**Antwort F6: (1).** Nach R-Z kommt für den Weg zum Job nur noch (i) in Frage oder ein anderer Weg ohne Nachweis in der Auftragskopie (§4.4).
 
 **F7 — Rechtsfragen?**
 1. Vor W1, W2b oder W3: Rechtsrat zu „Handeln im Auftrag des Nutzers“ und zur Weitergabe von Daten, die mit dem Konto eines Nutzers gelesen sind, je Quelle; vor W3 eine Datenschutz-Folgenabschätzung. Für W0, W2a und W4 nicht nötig **(Empfehlung)**
 2. Rechtsrat schon vor W2a und W4
 3. Kein Rechtsrat
 
+**Antwort F7: (1).**
+
 **F8 — Registry-Feld?**
 1. `access.account` (`none` · `anonymous_token` · `free_account`), `access.account_provider` und `access.account_paths` mit der YAML-Registry in M5 (B13) **(Empfehlung)**
 2. Nur `access.account`; die anderen Felder mit dem ersten Weg außer W0
 3. Kein Feld; Konto-Quellen stehen nur in der Beschreibung
 
+**Antwort F8: (1),** mit den Werten und der Prüfung im Lader nach §6.1 (Ergänzung 2).
+
 ---
 
 ## 10. Was offen bleibt
 
-**Messpunkte für Otto (aus dieser Sitzung nicht erreichbar):**
+**Messpunkte für Otto (aus dieser Sitzung nicht erreichbar).** Keine Bedingung für die Annahme; Otto macht sie **vor der Umsetzung von F3** (Ergänzung 4, 2026-11-06).
 
 - **M1 CDSE-Anmeldung:** `https://identity.dataspace.copernicus.eu/auth/realms/CDSE/.well-known/openid-configuration` öffnen; stehen `authorization_code` in `grant_types_supported` und `S256` in `code_challenge_methods_supported`? Das heißt noch nicht, dass fremde Clients zugelassen sind.
 - **M2 CORS:** In der Konsole des Browsers auf einer fremden Seite `fetch` gegen den Download-Endpunkt von CDSE (OData `$value`) und einen Earthdata-Datenhost; erscheint ein CORS-Fehler? (Prüft den Drittbefund in §3.3.)
