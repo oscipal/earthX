@@ -85,13 +85,20 @@ const tick = (label: string) =>
   act(() => [...container.querySelectorAll<HTMLInputElement>('.filter-check input')].find((i) => text(i.parentElement) === label)!.click());
 
 describe('when the button is there', () => {
-  it('is not there while no dataset is ticked', () => {
-    expect(button()).toBeNull();
+  // UI-05 (Otto, 06.11.2026): always there; locked, with the reason in its tooltip, while no ticked dataset has filters.
+  const locked = () => button()!.getAttribute('aria-disabled') === 'true';
+
+  it('is there, locked with the reason, while no dataset is ticked', () => {
+    expect(text(button())).toBe('Advanced search');
+    expect(locked()).toBe(true);
+    expect(button()!.getAttribute('data-tip')).toBe('Choose a dataset to see its filters');
+    expect(button()!.hasAttribute('data-tip-level')).toBe(false);
   });
 
   it('is there for a dataset with filters, with no pop-up and no count', () => {
     pick('optical');
     expect(text(button())).toBe('Advanced search');
+    expect(locked()).toBe(false);
     expect(button()!.getAttribute('aria-expanded')).toBe('false');
     expect(button()!.hasAttribute('aria-controls')).toBe(false);
     expect(popup()).toBeNull();
@@ -100,18 +107,21 @@ describe('when the button is there', () => {
   it.each([
     ['a dataset without filters', ['elevation']],
     ['a dataset of an older backend', ['legacy']],
-  ])('is not there for %s — hidden, not greyed out', (_name, ids) => {
+  ])('is locked for %s, with the reason, and opens nothing', (_name, ids) => {
     pick(...ids);
-    expect(button()).toBeNull();
+    expect(locked()).toBe(true);
+    expect(button()!.getAttribute('data-tip')).toBe('The chosen datasets offer no filters');
+    open();
+    expect(popup()).toBeNull();
   });
 
-  it('goes with the last dataset that has filters, and comes back with it', () => {
+  it('is locked with the last dataset that has filters gone, and free again when it comes back', () => {
     pick('optical', 'elevation');
-    expect(button()).not.toBeNull();
+    expect(locked()).toBe(false);
     pick('elevation');
-    expect(button()).toBeNull();
+    expect(locked()).toBe(true);
     pick('optical');
-    expect(button()).not.toBeNull();
+    expect(locked()).toBe(false);
   });
 
   it('closes the pop-up when the last dataset with filters goes, and does not open it again with the next', () => {
@@ -119,10 +129,14 @@ describe('when the button is there', () => {
     open();
     expect(popup()).not.toBeNull();
     pick('elevation');
-    expect(button()).toBeNull();
+    expect(locked()).toBe(true);
     expect(popup()).toBeNull();
     pick('optical');
     expect(popup()).toBeNull();
+  });
+
+  it('stays right above "Search" while locked', () => {
+    expect(button()!.nextElementSibling).toBe(searchButton());
   });
 
   it('is the button right above "Search", in the footer that stays in view, and as wide', () => {

@@ -28,6 +28,7 @@ import {
   VIEWPORT_ROUND_LEVELS,
 } from './coverage';
 import type { DatasetOption } from './datasets';
+import { prefilledDays, todayUtc } from './dateBounds';
 import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import {
@@ -1167,8 +1168,13 @@ function applyDatasetSelection(
   const s = get();
   const datasetId =
     s.datasetId && selectedDatasetIds.includes(s.datasetId) ? s.datasetId : (selectedDatasetIds[0] ?? null);
+  // A new choice fills the dates anew with the days of the chosen datasets (UI-05 §3.3, Otto 06.11.2026); what the user
+  // types stays until the next choice.
+  const days = prefilledDays(s.datasets, selectedDatasetIds, todayUtc());
   set({
     selectedDatasetIds,
+    dateFrom: days.from,
+    dateTo: days.to,
     lastPickedDatasetId: lastPickedDatasetId && selectedDatasetIds.includes(lastPickedDatasetId) ? lastPickedDatasetId : null,
     datasetId,
     sections: [],

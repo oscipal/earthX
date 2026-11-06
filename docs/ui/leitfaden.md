@@ -1,10 +1,10 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 04.11.2026, UI-04 Teil 6 (Zahlenformat, weniger Text, schmale Fenster, Tokens für alle Maße) (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 06.11.2026, UI-05 Teil 1 (Seiten der Datensätze, „Advanced search“ immer da, Datum im Zeitraum der Datensätze, kein Zusatztext im Panel; `docs/plans/vp3/ui-05-data-catalogue.md`), davor UI-04 Teil 6 (Zahlenformat, weniger Text, schmale Fenster, Tokens für alle Maße) (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
-**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. Nach Teil 6 gibt es keine Regel mit dieser Markierung mehr.
+**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. Nach UI-04 Teil 6 gab es keine Regel mit dieser Markierung mehr; neu ist *(folgt in UI-05 Teil 2)* (Fenster, §5, §7).
 
 ## 1. Grundsätze
 
@@ -24,6 +24,7 @@
 | image | was ein Zeitschritt der Ansicht oder ein Layer zeigt | „picture“ |
 | view | die geöffnete, noch nicht angeheftete Darstellung in der Seitenleiste („Close and drop this view“, „Add current view to layers“) | |
 | time step | ein Datum der Zeitleiste („Previous time step“, Zähler „4 / 7“) | „step“ (das ist ein Schritt im Processing) |
+| page / Previous page / Next page | eine Seite der Datensätze in „Search and area“ (UI-05), Zähler „1 / 3“ zwischen `chevron-left` und `chevron-right`, klein rechts neben der Überschrift „Datasets“ | „1/3“ ohne Leerzeichen |
 | layer | ein Eintrag im Layer-Manager | |
 | Add to layers / Add all to layers / Add current view to layers / Add preview to layers | etwas als Layer anheften; der Tooltip sagt „Add … to the layers“ | „Pin …“ |
 | Search results | die Ergebnisse der Suche: Leiste, Kopf der Liste, Zeile im Layer-Manager | „Results“ |
@@ -120,7 +121,7 @@
 
 ## 4. Sperren
 
-- Was gerade nicht geht, ist **gesperrt** (`disabled` oder `aria-disabled="true"`) und nennt den **Grund im Tooltip**. Der Grund wiederholt nicht den Knopftext. Beispiele: „Type a place name first“, „No earlier AOI in this browser“, „Already at the top“, „Job deleted: restore it first“.
+- Was gerade nicht geht, ist **gesperrt** (`disabled` oder `aria-disabled="true"`) und nennt den **Grund im Tooltip**. Der Grund wiederholt nicht den Knopftext. Beispiele: „Type a place name first“, „No earlier AOI in this browser“, „Already at the top“, „Job deleted: restore it first“, „Already on the first page“, „Choose a dataset to see its filters“; die gesperrten Datumsfelder nennen den Zeitraum des Datensatzes ohne Zeitachse („No time axis – acquired Dec 2010 to Jan 2015“).
 - **Ein Aussehen:** ein gesperrtes Element ist auf `--disabled-opacity` (0.4) gedimmt, in einer Regel für `:disabled` und `[aria-disabled='true']`. Keine eigene Deckkraft an einem gesperrten Element.
 - **`aria-disabled` für neue Sperren mit Grund:** das Element bleibt in der Tab-Reihenfolge, der Grund ist auch per Tastatur lesbar; der Handler fängt den Klick ab. Ein bestehendes `disabled` bleibt; sein Tooltip erscheint, wo der Zeiger darüber liegt (`TipLayer`), per Tastatur nicht.
 - **Bekannte Grenze (Otto, 04.11.2026):** Der Grund eines `disabled`-Knopfs ist per Tastatur und Screenreader nicht lesbar; ein `disabled`-Element nimmt keinen Fokus. Die Umstellung aller gesperrten Knöpfe auf `aria-disabled` ist ein Punkt für M6 (Barrierefreiheit).
@@ -131,14 +132,15 @@
 
 ## 5. Schließen
 
-- **Linke Panels: ein- und ausschalten über das Symbol, kein x** (Otto, 04.11.2026). Search and area, Layers, Jobs, Search results und Settings öffnen und schließen nur mit ihrem Symbol in der Leiste (ein zweiter Klick schließt); ihr Kopf hat den Titel und kein x. Das rote x bleibt für die **Seitenleiste rechts, Dialoge, Blätter (Popover-Formulare, Processing-Panel) und Meldungen**.
+- **Linke Panels: ein- und ausschalten über das Symbol, kein x** (Otto, 04.11.2026). Search and area, Layers, Jobs, Search results und Settings öffnen und schließen nur mit ihrem Symbol in der Leiste (ein zweiter Klick schließt); ihr Kopf hat den Titel und kein x. Das rote x bleibt für die **Seitenleiste rechts, Dialoge, Fenster, Blätter (Popover-Formulare, Processing-Panel) und Meldungen**.
+- **Fenster** (Otto, 06.11.2026, UI-05; *folgt in UI-05 Teil 2*): ein größeres Fenster über der Karte, das ein Symbol der Leiste links öffnet, heute nur der „Data catalogue“. Es schließt mit dem roten x in seinem Kopf **oder** einem zweiten Klick auf sein Symbol (wie die linken Panels); Esc schließt nichts; ein Klick daneben schließt es nicht (wie bei Dialogen).
 - **Ein Weg:** das kleine rote x aus `CloseButton.tsx` (Tooltip „Close“, ein längerer Tooltip, wo das Schließen eine Folge hat). Das gilt auch für Meldungen der Statusleiste.
 - **Esc schließt nichts:** keine Ansicht, Seitenleiste, kein Panel, Blatt, Menü, keine Liste und keinen Tooltip. Ausnahmen:
   - Esc = „Cancel“ in Bestätigungsdialogen („Values are resampled“);
   - Esc beendet „Flip through layers“;
   - Esc bricht das Umbenennen und das Ziehen einer Zeile ab (schließt nichts).
 - **Klick daneben:**
-  - Dialoge schließen nicht; sonst ginge z. B. ein laufender Download verloren. Ausnahme: die Rückfrage „Values are resampled“ (Klick daneben = Cancel).
+  - Dialoge und Fenster schließen nicht; sonst ginge z. B. ein laufender Download verloren. Ausnahme: die Rückfrage „Values are resampled“ (Klick daneben = Cancel).
   - „Advanced search“ schließt (Otto, 02.11.2026).
   - Menüs und Auswahllisten schließen mit einer Wahl oder einem Klick daneben; Tooltips gehen mit Zeiger oder Fokus.
 - Was etwas entfernt (Layer, Schritt, Link, Suchergebnisse) oder leert, ist kein Schließen und hat sein eigenes Symbol (§3).
@@ -172,6 +174,7 @@
 | `SettingsPanel` | das Panel „Settings“ (§9), geöffnet vom letzten Symbol der Leiste (`AppRail`) |
 | `Popover` | Menüs, Listen und das Formular „Advanced search“ |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
+| Fenster (`DataCatalogue`, *folgt in UI-05 Teil 2*) | größeres Fenster über der Karte, geöffnet und geschlossen über sein Symbol in der Leiste, dazu das rote x im Kopf (§5); der Kopf ist ein eigener Bereich, in den später Suchfeld und AOI-Schalter kommen, ohne sichtbar leere Fläche, solange sie fehlen |
 | `Badge` | das eine Abzeichen („Preview“, „Temporary“, „Overview“, „Zoom in“, „Loading…“): Pille in `--accent-2`, Großbuchstaben per CSS; `PreviewBadge` setzt sie über die Karte |
 
 **Knopfformen** (`index.css`, vorn im Blatt):
@@ -264,6 +267,11 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (ein gezeigter Toolt
   - **AOI-Werkzeuge** im Control-Menü: bei 320 px kein Überstand der Zeile (`.toolbar`, `.tool-btn`).
   - **Felder eines Bereichs** („Scale“) in Seitenleiste und Processing-Panel: behalten `--number-field-width`; die Einheit daneben kürzt mit „…“ und ist in ihrer Liste vollständig.
   - Prüfungen: `frontend/e2e/narrow-windows.cjs` (320, 360 und 1280 px, Hell und Dunkel, jedes Panel der Leiste: Meldung im Fenster, nicht verdeckt, unter den Knöpfen, mit rotem x schließbar; Gegenprobe mit den alten Regeln über `FAULT=1`), `frontend/e2e/range-layout.cjs` (Vorschau des Processing-Panels: kein abgeschnittener Wert), `frontend/src/narrowWindows.test.ts`. `narrow-windows.cjs` prüft zusätzlich die Felder in Ansicht, Layer und Ergebnis-Layer mit „-0.123456“ (Gegenprobe `FAULT=1` mit den alten Regeln: Feld 33 px breit, Wert abgeschnitten).
+- **Datensätze in „Search and area“** (UI-05 Teil 1, Otto 06.11.2026):
+  - **Seiten** zu höchstens sechs Knöpfen, zwei je Reihe, so viele Reihen (1–3), wie ohne Scrollen des Panels Platz haben (gemessen, mindestens eine); klein rechts neben der Überschrift „Datasets“ immer „‹ 1 / n ›“ (Otto, 06.11.2026, Review von Teil 1), auch mit einer Seite, ohne Umbruch; ein Pfeil am Rand ist gesperrt mit Grund. Das Raster behält auf der letzten Seite die Höhe einer vollen Seite. Ändert sich die Seitengröße, zeigt das Panel die Seite des zuletzt gewählten Datensatzes; gewählte Datensätze auf anderen Seiten bleiben gewählt und werden mit gesucht.
+  - **„Advanced search“** steht immer über „Search“; ohne Datensatz mit Filtern gesperrt mit Grund.
+  - **Datum:** Jede neue Wahl im Panel füllt die Felder mit dem frühesten und dem spätesten Tag der gewählten Datensätze mit Zeitachse (offenes Ende = heute, UTC; `prefilledDays` in `dateBounds.ts`; Otto, 06.11.2026); was der Nutzer einträgt, bleibt bis zur nächsten Wahl. Ohne gewählten Datensatz sind sie leer. Die Felder bieten nur diese Tage an (`min`/`max`); ein Tag außerhalb geht beim Verlassen des Feldes auf die Grenze. Ohne Zeitachse gesperrt, mit dem Zeitraum des Datensatzes gefüllt und im Tooltip; bei gemischter Wahl steht er hinter einem (i) an „Acquisition date“.
+  - **Kein Zusatztext im Panel:** der Reifegrad eines gewählten Datensatzes als Warnung (`Tip tone="warn"`) an „Datasets“, der Ort mit der Attribution der Ortssuche hinter einem (i) am Feld, „Scenes counted by their center point in the cell“ hinter einem (i) an der Legende. Sichtbar bleiben „sample: n of m scenes“ (Pflicht) und „n scenes found“.
 - **Die Wahl des Datensatzes unter „Coverage“** (mehrere Datensätze gewählt) enthält nur Datensätze, keinen Eintrag „Hide coverage“. Beendet wird die Karte mit dem Knopf „Hide coverage“ neben „Coverage“.
 
 ## 10. Prüfungen gegen Rückfälle
@@ -304,6 +312,7 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (ein gezeigter Toolt
 | Coverage ohne AOI: keine AOI in der Anfrage, kein POST, derselbe Ausschnitt mit und ohne AOI | `frontend/src/store.coverage.test.ts`, `frontend/src/api.test.ts`, `frontend/e2e/no-aoi-in-url.cjs` |
 | kein Eintrag „Hide coverage“ in der Wahl des Datensatzes | `frontend/src/components/ControlPanel.test.tsx` |
 | Zeitleiste: Daten und Pfeile an einer Stelle bei jedem Schritt (auch erstem und letztem); ←/→ blättern durch die Überflüge, nicht in Feldern, Listen, Dialogen, am Regler, nicht mit Umschalttaste/Strg/Alt/Meta | `frontend/src/components/TimeSlider.keys.test.tsx`, `frontend/e2e/selection-block.cjs` |
+| Datensätze in Seiten zu höchstens sechs, so viele Reihen wie ohne Scrollen passen, Zähler und gesperrte Pfeile mit Grund klein rechts neben „Datasets“, volle Höhe auf der letzten Seite; „Advanced search“ immer da, gesperrt mit Grund; Datum bei jeder Wahl vorausgefüllt und im Zeitraum der gewählten Datensätze, gesperrt mit Zeitraum im Tooltip; kein Zusatztext im Panel | `frontend/src/components/ControlPanel.test.tsx`, `frontend/src/components/AdvancedSearch.test.tsx`, `frontend/src/datasetPages.test.ts`, `frontend/src/dateBounds.test.ts`, `frontend/src/uiRules.test.ts`, `frontend/e2e/dataset-pages.cjs`, `frontend/e2e/advanced-search.cjs` |
 | „Evaluate“: Segment-Knöpfe, per pass zuerst und gedrückt, Erklärung mit Beispiel hinter dem (i), nicht als Absatz; „AOI coverage“ als Schieber und Zahl, gesperrt mit Grund ohne AOI, bei einem Punkt frei (das Quadrat um ihn ist die AOI), ohne Zeitraum frei; die (i)-Box am Schalter nennt die gemessenen Filter | `frontend/src/components/AdvancedSearch.evaluate.test.tsx`, `frontend/src/store.evaluate.test.ts`, `frontend/e2e/evaluate-coverage.cjs` |
 
 Ein neuer Begriff, der ein altes Wort ersetzt, bekommt eine Zeile in der Liste `FORBIDDEN` von `uiRules.test.ts` mit Gegenprobe.

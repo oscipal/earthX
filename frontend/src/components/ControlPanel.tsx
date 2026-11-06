@@ -1,8 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 
 import type { CoverageHistogramPoint, PlaceResult } from '../api';
 import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
+import { DATASETS_PER_ROW, MAX_DATASET_ROWS, pageCount, pageOf, pageSlice, rowsThatFit } from '../datasetPages';
+import { clampDay, dateBounds, todayUtc, type DayBounds } from '../dateBounds';
 import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi, searchPlaces } from '../placeSearch';
@@ -11,8 +13,9 @@ import { totalItems } from '../sections';
 import { searchFiltersInvalid, useAppStore } from '../store';
 import AdvancedSearch from './AdvancedSearch';
 import ClearableInput from './ClearableInput';
-import { CoverageIcon, HistoryIcon, UploadIcon } from './icons';
+import { ChevronLeftIcon, ChevronRightIcon, CoverageIcon, HistoryIcon, UploadIcon } from './icons';
 import Popover from './Popover';
+import Tip from './Tip';
 import Toolbar from './Toolbar';
 import { counted } from '../plural';
 
@@ -24,16 +27,23 @@ import { counted } from '../plural';
 // clicking the visible icon then misses the part that actually opens the
 // picker. `showPicker()` sidesteps the mismatch instead of chasing it
 // pixel by pixel.
+//
+// UI-05 §3.3: the calendar offers only the days of the chosen datasets (`min`/`max`); a day typed outside them is moved
+// onto the nearest one when the field is left.
 function DateField({
   value,
   onChange,
   label,
   disabled,
+  bounds,
+  lockReason,
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
   disabled?: boolean;
+  bounds: DayBounds | null;
+  lockReason?: string;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
@@ -42,9 +52,16 @@ function DateField({
         ref={ref}
         type="date"
         value={value}
+        min={bounds?.min ?? undefined}
+        max={bounds?.max ?? undefined}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => {
+          const day = clampDay(e.target.value, bounds);
+          if (day !== e.target.value) onChange(day);
+        }}
         aria-label={label}
         disabled={disabled}
+        data-tip={disabled ? lockReason : undefined}
       />
       <button
         type="button"
@@ -66,13 +83,13 @@ function DateField({
 // M3-12, F6 (Otto, 26.09.2026): a dataset without a time axis
 // (`capabilities.time_range=False`, the DEM) answers a search the same for
 // any chosen window — the fields stay visible and keep their values (the next
-// dataset picked may well have a time axis), but are locked rather than
-// bedienbar, with the acquisition period underneath explaining why a filter
-// would not narrow anything.
+// dataset picked may well have a time axis), but are locked. With several datasets
+// ticked (M3-10) the window still means something for those that have a time axis,
+// so the fields lock only when *none* of the ticked ones has one.
 //
-// M3-10: with several datasets ticked the window still means something for those
-// that have a time axis, so the fields lock only when *none* of the ticked ones
-// has one; each one without says so under the fields, named by title.
+// UI-05 (Otto, 06.11.2026): no text under the fields. Locked, the acquisition period stands in their tooltip; with some
+// of the ticked datasets without a time axis, behind an (i) at the label. The days offered are those of the ticked
+// datasets with one (`dateBounds`).
 function AcquisitionDateFields() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
@@ -83,24 +100,23 @@ function AcquisitionDateFields() {
   const ticked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
   const withoutTimeAxis = ticked.filter((d) => d.viewable && !d.hasTimeAxis);
   const locked = ticked.length > 0 && withoutTimeAxis.length === ticked.length;
-  const notes = withoutTimeAxis.flatMap((d) => {
-    const note = acquisitionNote(d.collection);
-    if (!note) return [];
-    return [{ id: d.id, text: ticked.length > 1 ? `${d.title}: ${note}` : note }];
+  const notes = withoutTimeAxis.map((d) => {
+    const note = acquisitionNote(d.collection) ?? 'No time axis';
+    return ticked.length > 1 ? `${d.title}: ${note}` : note;
   });
+  const reason = notes.join('\n');
+  const bounds = dateBounds(datasets, selectedDatasetIds, todayUtc());
   return (
     <>
-      <label className="field-label">Acquisition date</label>
-      <div className="date-row">
-        <DateField value={dateFrom} onChange={setDateFrom} label="From date" disabled={locked} />
-        <span>→</span>
-        <DateField value={dateTo} onChange={setDateTo} label="To date" disabled={locked} />
+      <div className="field-label date-label">
+        <span>Acquisition date</span>
+        {!locked && notes.length > 0 && <Tip text={reason} />}
       </div>
-      {notes.map((n) => (
-        <p key={n.id} className="hint">
-          {n.text}
-        </p>
-      ))}
+      <div className="date-row">
+        <DateField value={dateFrom} onChange={setDateFrom} label="From date" disabled={locked} bounds={bounds} lockReason={reason} />
+        <span>→</span>
+        <DateField value={dateTo} onChange={setDateTo} label="To date" disabled={locked} bounds={bounds} lockReason={reason} />
+      </div>
     </>
   );
 }
@@ -156,10 +172,9 @@ function PlaceSearchField() {
     flyTo(result.bbox);
   };
 
-  // The "picked from here" line only holds while the store's AOI is still
-  // (by identity) the geometry this field handed to `setAoi` — a redraw, an
-  // upload or "Clear" replaces that object, so the line disappears without
-  // this field having to know why the AOI changed.
+  // The attribution of the place picked (UI-05, F8: behind an (i) at the field, not as a line under it) only holds while
+  // the store's AOI is still (by identity) the geometry this field handed to `setAoi` — a redraw, an upload or "Clear"
+  // replaces that object, so the (i) goes without this field having to know why the AOI changed.
   const stillActive = !!picked && currentAoi === picked.geometry;
 
   return (
@@ -191,6 +206,7 @@ function PlaceSearchField() {
         >
           {searching ? 'Finding…' : 'Find'}
         </button>
+        {stillActive && picked && <Tip text={`${picked.name} · ${PLACE_SEARCH_PROVENANCE.attribution}`} />}
       </div>
       <Popover anchorRef={rowRef} open={showResults} onClose={closeResults} className="place-results" ariaLabel="Places found">
         <div ref={resultsRef}>
@@ -221,11 +237,6 @@ function PlaceSearchField() {
           )}
         </div>
       </Popover>
-      {stillActive && picked && (
-        <p className="hint place-attribution">
-          {picked.name} · {PLACE_SEARCH_PROVENANCE.attribution}
-        </p>
-      )}
     </div>
   );
 }
@@ -304,31 +315,24 @@ function AoiExtras() {
 }
 
 // How settled the source of each ticked dataset is (D23: "staging" must not be
-// something a user finds out only once the source disappears).
+// something a user finds out only once the source disappears): a warning at the
+// label "Datasets", not a paragraph (UI-05, Otto 06.11.2026); the chip on the button stays.
 //
 // No "last checked" date is shown next to it: `earthx:health` carries only
 // `status` (M2-08-3, 2026-09-23) — the field it used to carry alongside dated only
 // the onboarding check, not an actual health check, and stating that would claim
 // something the platform does not know. A real check date comes with the health
 // checks in M5.
-function DatasetNotes() {
+function MaturityTip() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const ticked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
   const notes = ticked.flatMap((d) => {
     const maturity = maturityNote(d.collection);
-    return maturity ? [{ id: d.id, text: ticked.length > 1 ? `${d.title}: ${maturity}` : maturity }] : [];
+    return maturity ? [ticked.length > 1 ? `${d.title}: ${maturity}` : maturity] : [];
   });
   if (notes.length === 0) return null;
-  return (
-    <div className="dataset-notes">
-      {notes.map((n) => (
-        <p key={n.id} className="hint warn">
-          {n.text}
-        </p>
-      ))}
-    </div>
-  );
+  return <Tip tone="warn" text={notes.join('\n')} />;
 }
 
 // Not a heuristic bolted onto a generic search box: the scene-name syntax
@@ -377,36 +381,126 @@ function MultiSelectToggle() {
 // `/stac/collections`. Nothing is picked at the start; a click picks exactly that
 // dataset (drawn highlighted) and drops the one before; a click on the chosen one
 // drops it. Only with "Select multiple datasets" on can several be picked, and
-// then every picked dataset is searched together. With more rows than fit the list scrolls.
+// then every picked dataset is searched together, also those on another page.
 // A dataset that cannot be shown stays listed, disabled, with the reason.
+//
+// UI-05 (Otto, 06.11.2026): pages of at most six buttons, two a row, with as many rows as the panel holds without
+// scrolling (measured, at least one), and "‹ 1 / 3 ›" small at the right of the heading "Datasets" (Otto's review of
+// part 1), also with one page. The grid keeps the height of a full page, so that the last page does not let the panel
+// jump. When the size of a page changes, the page of the dataset picked last is shown. The heading row is drawn here,
+// because the pages are.
 function DatasetPicker() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
+  const anchorId = useAppStore((s) => s.lastPickedDatasetId ?? s.selectedDatasetIds[0] ?? null);
   const toggle = useAppStore((s) => s.toggleDatasetSelected);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
-  if (datasets.length === 0) return null;
+  const listRef = useRef<HTMLDivElement>(null);
+  const [rows, setRows] = useState(MAX_DATASET_ROWS);
+  const [page, setPage] = useState(0);
+  const pageSize = rows * DATASETS_PER_ROW;
+  // Only a new page size moves the page, to the one of the dataset picked last; a pick on the page shown leaves it.
+  const [sizeSeen, setSizeSeen] = useState(pageSize);
+  if (sizeSeen !== pageSize) {
+    setSizeSeen(pageSize);
+    const index = datasets.findIndex((d) => d.id === anchorId);
+    if (index >= 0) setPage(pageOf(index, pageSize));
+  }
+  const pages = pageCount(datasets.length, pageSize);
+  const shownPage = Math.min(page, pages - 1);
+  const drawnRows = Math.min(rows, Math.ceil(datasets.length / DATASETS_PER_ROW));
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const scroll = list?.closest('.control-scroll');
+    if (!list || !scroll || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const grid = getComputedStyle(list);
+      const step = parseFloat(grid.gridAutoRows) + parseFloat(grid.rowGap);
+      const last = scroll.lastElementChild;
+      const bottom = last ? last.getBoundingClientRect().bottom : scroll.getBoundingClientRect().top;
+      const content = bottom - scroll.getBoundingClientRect().top + scroll.scrollTop + parseFloat(getComputedStyle(scroll).paddingBottom);
+      setRows(rowsThatFit(drawnRows, scroll.clientHeight - content, step));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroll);
+    for (const child of scroll.children) observer.observe(child);
+    return () => observer.disconnect();
+  });
+
+
+  const first = shownPage === 0;
+  const last = shownPage === pages - 1;
   return (
     <>
-      <div className="dataset-list" role="group" aria-label="Datasets">
-        {datasets.map((d) => {
-          const picked = selectedDatasetIds.includes(d.id);
-          const label = d.viewable ? maturityLabel(d.collection) : null;
-          return (
-            <button
-              key={d.id}
-              type="button"
-              className="btn dataset-toggle"
-              data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}
-              aria-pressed={picked}
-              disabled={!d.viewable || busy}
-              onClick={() => toggle(d.id)}
-            >
-              <span className="dataset-toggle-title">{d.title}</span>
-              {label && <span className="maturity-chip">{label}</span>}
-            </button>
-          );
-        })}
+      <div className="field-label dataset-label">
+        <span>
+          Datasets
+          <MaturityTip />
+          {datasets.length > 0 && (
+            <span className="dataset-pages" role="group" aria-label="Pages of datasets">
+              <button
+                type="button"
+                className="icon-btn sm"
+                aria-label="Previous page"
+                aria-disabled={first || undefined}
+                data-tip-level="advanced"
+                data-tip={first ? 'Already on the first page' : 'Previous page'}
+                onClick={() => {
+                  if (!first) setPage(shownPage - 1);
+                }}
+              >
+                <ChevronLeftIcon size={14} />
+              </button>
+              <span className="dataset-page-count">
+                {shownPage + 1} / {pages}
+              </span>
+              <button
+                type="button"
+                className="icon-btn sm"
+                aria-label="Next page"
+                aria-disabled={last || undefined}
+                data-tip-level="advanced"
+                data-tip={last ? 'Already on the last page' : 'Next page'}
+                onClick={() => {
+                  if (!last) setPage(shownPage + 1);
+                }}
+              >
+                <ChevronRightIcon size={14} />
+              </button>
+            </span>
+          )}
+        </span>
+        <MultiSelectToggle />
       </div>
+      {datasets.length > 0 && (
+        <div
+          ref={listRef}
+          className="dataset-list"
+          role="group"
+          aria-label="Datasets"
+          style={{ '--dataset-rows': drawnRows } as CSSProperties}
+        >
+          {pageSlice(datasets, shownPage, pageSize).map((d) => {
+            const picked = selectedDatasetIds.includes(d.id);
+            const label = d.viewable ? maturityLabel(d.collection) : null;
+            return (
+              <button
+                key={d.id}
+                type="button"
+                className="btn dataset-toggle"
+                data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}
+                aria-pressed={picked}
+                disabled={!d.viewable || busy}
+                onClick={() => toggle(d.id)}
+              >
+                <span className="dataset-toggle-title">{d.title}</span>
+                {label && <span className="maturity-chip">{label}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
@@ -460,7 +554,10 @@ function CoverageLegend() {
   const note = coverage ? completenessNote(coverage) : null;
   return (
     <div className="coverage-controls">
-      <p className="hint coverage-dataset-name">Coverage · {title}</p>
+      <p className="hint coverage-dataset-name">
+        Coverage · {title}
+        {coverage && <Tip text="Scenes counted by their center point in the cell" />}
+      </p>
       {coverageLoading && <p className="hint">Loading coverage…</p>}
       {coverageError && <p className="error">{coverageError}</p>}
       {coverage && (
@@ -472,9 +569,6 @@ function CoverageLegend() {
               <span>{coverage.max_count}</span>
             </span>
           </div>
-          {/* English, matching the rest of the UI (D25; adr/0004 §5.3 nachtrag
-              22.09.2026 lifts the earlier German-terms default). */}
-          <p className="hint">Scenes counted by their center point in the cell</p>
           {note && <p className="hint coverage-note">{note}</p>}
           {coverage.histogram.length > 0 && (
             <CoverageHistogram histogram={coverage.histogram} dateFrom={dateFrom} dateTo={dateTo} />
@@ -641,13 +735,8 @@ export default function ControlPanel() {
         <Toolbar />
         <AoiExtras />
 
-        <div className="field-label dataset-label">
-          <span>Datasets</span>
-          <MultiSelectToggle />
-        </div>
         <DatasetPicker />
         <CoverageButton />
-        <DatasetNotes />
 
         <CoverageLegend />
 
