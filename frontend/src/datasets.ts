@@ -136,6 +136,14 @@ export function showsColormap(collection: Collection): boolean {
   return trueColorOf(collection) === null;
 }
 
+// Whether the standard picture of the dataset is a layer of classes in the colours of its source: a colour table and no
+// range (`earthx:default_render`, ESA WorldCover, M5-07 plan F4). A stretch would move the class values off their
+// colours, so the view offers neither a range nor another colormap for it.
+export function drawsClasses(collection: Collection): boolean {
+  const render = defaultRenderOf(collection);
+  return Boolean(render?.colormap_name) && !render?.rescale;
+}
+
 // The asset georeferencing (`quicklookCoords`/`quicklookAoiPixelRings`,
 // M3-12 review F-04) should read off of, rather than the `visual` literal those
 // functions used to assume: the registry's own standard-visualisation asset,

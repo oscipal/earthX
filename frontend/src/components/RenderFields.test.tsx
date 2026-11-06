@@ -76,6 +76,16 @@ describe('RenderFields', () => {
     expect(container.querySelector('select[data-tip="True colour"] option')?.textContent).toBe('RGB');
   });
 
+  it('leaves out the range of a picture of classes (M5-07 plan F4)', () => {
+    act(() =>
+      root.render(
+        <RenderFields vmin={{ value: '', onChange: noop }} vmax={{ value: '', onChange: noop }} colormap={{ fixed: 'Classes', title: 'Colours of the source' }} scale noRange />,
+      ),
+    );
+    expect(names()).toEqual(['Colormap']);
+    expect(container.querySelector('input')).toBeNull();
+  });
+
   it('never calls the ends "min" and "max"', () => {
     act(() => root.render(<RenderFields vmin={{ value: '', onChange: noop }} vmax={{ value: '', onChange: noop }} colormap={null} />));
     expect(names()).not.toContain('min');
