@@ -6,6 +6,32 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 
 > **Regel für alle Pläne (Otto, 30.10.2026):** Screenshots und andere Bilder der Browserprüfung kommen nicht ins Repo; die Prüfung wird im PR beschrieben.
 
+## Übersicht (Stand 01.11.2026, vor dem Wechsel zu M5)
+
+Otto (01.11.2026): erst das Backlog abschließen, dann M5. Die ADR-Sessions M5-01, M5-02, M5-05 laufen bereits; ihre PRs bleiben bis dahin liegen.
+
+**Offen vor M5:**
+
+| Reihenfolge | Punkt | Aufgabe | Stand |
+|---|---|---|---|
+| 1 | 29 | NM4-29b 512er-Kacheln | **erledigt**, PR #270 (gemergt) |
+| 2 | 72 | UI-03 Seitenleiste, Processing-Panel, Processing-Manager, Quick processing, Messung über die AOI | **erledigt** (#277, #279 – Fenster durch #283 ersetzt –, #280, #282, #283; 03.11.2026) |
+| 4c | 75 | NM4-75 Download mit Wahl der Bänder und der Form (je Band, je Auflösung, ein mehrbandiges TIF; `exports/`, `BANDS.txt`) | **erledigt**, PR #284 (gemergt 03.11.2026; adr/0028; Form-Frage nur bei gemischten Auflösungen; Ausgabe in der Projektion der Quelle; kein Auflösungsfaktor im Dialog; Ottos Skript-Prüfung grün) |
+| 3 | 44, 70 | NM4-44 `npm audit` und veraltete Browser-Skripte | **erledigt**, PR #278 (7 von 8 Meldungen behoben, alle sechs Skripte grün; Node ≥ 22.22.2, `engines`) |
+| 4 | 68, 63 | NM4-68 Backend aufräumen: drei wacklige Tests, Zielraster von `reproject` einmal berechnen | ohne Plan-Datei, Auftrag als Text (Otto, 01.11.2026); **erledigt**, PR #276 |
+| 4b | 74 | NM4-44b maplibre-gl 5.24 → 6.x (kritische Lücke im Attributionstext) mit Sichtprüfung der Karte und e2e-Lauf | **erledigt** (gemergt 03.11.2026); nach dem Wechsel im Ordner `frontend` `npm install` nötig |
+| 6 | 77 | DS-03c Suche je Überflug (alle Filter, Vorgabe per pass) und Filter „AOI coverage ≥ n %“ | **erledigt**, PR #293 (gemergt 06.11.2026; erledigt Punkt 67 mit) |
+| 5 | 73 | UI-04 Einheitlichkeit (mit 21, 22, 58) | **erledigt** (#285, #286, #287, #288, #289, #290, #291, #292; 05.11.2026) – Leitfaden `docs/ui/leitfaden.md` |
+| – | – | Runner-Image neu bauen (Otto) | **erledigt** 01.11.2026: `earthx-runner:0.5.0+g9cc8d863`, Rezept mit `normalize` Version 4 bitgleich zur Plattform (`runner-pruefung.ps1`) |
+
+**Auf Ottos Wunsch (sonst nach M5):** 60 gleiche Normalize-Werte je Stapel, 69 Warnung bei anderer Pixelgröße.
+
+**Stand 06.11.2026:** Alles vor M5 ist erledigt. Nächste Schritte: `live-smoke` von Hand, Browsertest mit der Checkliste, dann M5 (geparkte ADR-PRs M5-01, M5-02, M5-05).
+
+**Für M6 vorgemerkt:** 3, 35, 46, 47, 48 (Rechenort), 49, 61, 76, 78, 79; dazu „Offen im Entscheidungslog“ unten.
+
+Alle übrigen Punkte sind erledigt, aufgegangen oder entfallen (je Punkt vermerkt).
+
 ## Neu (Plan-Dateien unter `docs/plans/querschnitt/`)
 
 1. **Jahr in der Copernicus-Attribution** (Fund vom 20.10.2026, `provenance.json` des Runners).
@@ -73,6 +99,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Kein Knopf zum Kopieren,** nirgends im Frontend (Otto, 22.10.2026). Die Einträge „Methods“ und „Copy“ der Jobliste entfernt UI-01 (§1 Punkt 12).
    - **Aufgabe:** Stufe A, Backend und Runner.
 9. **Feste Gruppenköpfe in den Suchergebnissen** (Otto, 22.10.2026).
+   - **Erledigt** mit NM4-55, PR #242.
    - **Zusammengelegt (29.10.2026):** wird mit Paket NM4-55 umgesetzt; nicht einzeln starten.
    - **Plan:** `querschnitt/nm4-09-feste-gruppenkoepfe.md`
    - **Soll:** Beim Scrollen durch die Suchergebnisse bleibt der Kopf der aktuellen Gruppe oben stehen, solange Einträge dieser Gruppe sichtbar sind. Der Kopf der nächsten Gruppe schiebt ihn dann hinaus („sticky header“).
@@ -80,6 +107,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Zu prüfen:** Der Kopf verdeckt keinen Eintrag, das Nachladen weiterer Treffer am Listenende greift weiter, und das Verhalten passt auch auf schmalen Bildschirmen.
    - **Aufgabe:** Stufe A, nur Frontend. Weil UI-01 die Leisten und Panels neu ordnet, kommt der Punkt nach UI-01 oder wird dort mit aufgenommen.
 10. **Laufnummer und Band-Chips für Ergebnisse von Schritten** (Otto, 22.10.2026).
+   - **Erledigt** mit NM4-43 (adr/0020, #236–#255).
    - **Stand 27.10.2026:** geht in Punkt 43 (NM4-43, `adr/0020`) auf; nicht einzeln starten.
    - **Plan:** `querschnitt/nm4-10-schritt-namen-und-chips.md`
    - **Format (Otto):** Schritt-Titel „1. Band_Math_1“, „2. Normalize_2“ usw. Die Nummer steckt auch im Namen des Ergebnisbands: Schritt 1 gibt das Band `Band_Math_1` aus, nicht mehr `band_math`.
@@ -112,6 +140,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Vorher:** Stand der Technik mit Quellen recherchieren (Compute-Relevanz), etwa rio-tiler/GDAL-Statistik, scikit-learn-Skalierer, übliche Verfahren in der Fernerkundung.
    - **Aufgabe:** Stufe B, Backend und Frontend; neue `op_version` bzw. neuer Parameter `method`, Nachtrag in `adr/0014`, Kostenfaktor messen.
 12. **Anheften ohne zweiten Klick** (Otto, 22.10.2026, aus M4-17c).
+   - **Erledigt** mit NM4-54, PR #272 (Code war schon da, Randfälle getestet).
    - **Zusammengelegt (29.10.2026):** wird mit Paket NM4-54 umgesetzt; nicht einzeln starten.
    - **Plan:** `querschnitt/nm4-12-anheften-ohne-zweiten-klick.md`
    - **Heute:** „Add to layers“ bei einer Teilauswahl, deren Mosaik noch lädt, weist ab („The mosaic of this time step is still loading — add it to the layers in a moment.“); erst ein zweiter Klick heftet an.
@@ -167,6 +196,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Im Plan zu klären:** was mit angehefteten Layern, offener Ansicht (Mosaik aus M4-17) und Jobs passiert (Vorschlag: angeheftete Layer und Jobs bleiben, die offene Ansicht schließt); wo man AOI und Einstellungen künftig zurücksetzt (eigener Knopf im Control-Panel, falls es keinen gibt); Abstimmung mit UI-01 (linke Leiste, Control-Menü).
    - **Aufgabe:** Stufe A, nur Frontend; Test, dass nach dem Löschen alle Einstellungen erhalten sind.
 18. **Abspielen in der Timeline ohne Lücken** (Otto, 24.10.2026).
+   - **Erledigt** mit NM4-55, PR #242.
    - **Zusammengelegt (29.10.2026):** wird mit Paket NM4-55 umgesetzt; nicht einzeln starten.
    - **Plan:** `querschnitt/nm4-18-timeline-ohne-luecken.md`
    - **Soll:** Bei „Play“ wechselt die Karte erst zum nächsten Zeitschritt, wenn dessen Kacheln für den sichtbaren Ausschnitt geladen sind. Zwischen zwei Bildern ist nie die Basemap zu sehen.
@@ -220,6 +250,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Grenze:** keine Tests streichen oder überspringen, um Zeit zu sparen; `.github/` bleibt unverändert.
    - **Aufgabe:** Stufe B (Schritt 2 ist eine Abhängigkeit und rechenrelevant), nur Tests und Testkonfiguration.
 24. **Stapelung im Rückfall „Szene für Szene“ wie das Mosaik** (aus NM4-02, 25.10.2026).
+   - **Erledigt** mit NM4-54, PR #272 (Route `scene-order`).
    - **Zusammengelegt (29.10.2026):** wird mit Paket NM4-54 umgesetzt; nicht einzeln starten.
    - **Plan:** `querschnitt/nm4-24-rueckfall-stapelung.md`
    - **Befund:** Seit NM4-02 nutzen Zuschnitt, Export, Mosaik-Job und Mosaik-Kachel dieselbe Reihenfolge (`mosaic_order`, Kachel liefert `earthx:order`). Fällt die Ansicht auf Einzelszenen zurück (Überflug über 64 Szenen, abgelehnte Mosaik-Kachel), stapelt das Frontend weiter nach Auswahl. In Überlappungen kann dann eine andere Szene oben liegen.
@@ -227,6 +258,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Bekannte Grenze, nicht Teil davon:** Bei Überflügen mit gemischten CRS ordnet der Job nur die Szenen, die die AOI berühren, die Kachel die ganze Liste (die Kachel kennt keine AOI). Steht als Grenze in `adr/0014` §15p.
    - **Aufgabe:** Stufe A, Frontend (ggf. kleine Route im Backend), nach UI-01.
 25. **Quicklook nach „Crop & merge to AOI“ sofort zuschneiden** (Otto, 25.10.2026).
+   - **Erledigt** mit NM4-54, PR #272.
    - **Zusammengelegt (29.10.2026):** wird mit Paket NM4-54 umgesetzt; nicht einzeln starten.
    - **Plan:** `querschnitt/nm4-25-quicklook-nach-zuschnitt.md`
    - **Heute:** Nach „Crop & merge to AOI“ bleibt der Quicklook der ganzen Szene noch eine Weile sichtbar, auch außerhalb der AOI.
@@ -252,7 +284,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Berührt:** Zuordnung Kartenzoom → Kachelstufe (`TILE_LEVEL_AHEAD`, `previewMaxZoom`, `zoomHint`), die freigegebenen Stufen je Datensatz (`earthx:viewer`, `adr/0007` §12.10) und die Grenzen der Mosaik-Kachel (M4-17 §5).
    - **Aufgabe:** Stufe B, Frontend und `tiler`; nach NM4-26.
    - **Backend erledigt:** NM4-29, PR #227 (Plan dort freigegeben). Frontend: NM4-29b (gestartet 01.11.2026).
-   - **Frontend:** NM4-29b, PR #270 (01.11.2026): 512 px nur für Mosaik und Mosaik-Vorschau, Größe aus der Kachel-URL; Mosaik ab Kartenzoom 7,5. Messung (12 Szenen, Zoom 11,5): Anfragen 77 → 24; letzte Kachel unbegrenzt −52/−55 %, bei 100 Mbit/s −9/−6 %, **erste Kachel bei 100 Mbit/s 6 → 13 s**. Otto prüft abends auf seiner Leitung, ob er mergt.
+   - **Frontend:** NM4-29b, PR #270 (01.11.2026): 512 px nur für Mosaik und Mosaik-Vorschau, Größe aus der Kachel-URL; Mosaik ab Kartenzoom 7,5. Messung (12 Szenen, Zoom 11,5): Anfragen 77 → 24; letzte Kachel unbegrenzt −52/−55 %, bei 100 Mbit/s −9/−6 %, **erste Kachel bei 100 Mbit/s 6 → 13 s**. Otto-Test abends (01.11.2026, eigene Leitung, kalt): 512er gefällt besser. **Erledigt**, PR #270 gemergt.
    - **Für M5 vormerken:** Gröbere Daten (z. B. 300 m, Wetterraster 1 km) bekommen mit 512 px und Mosaik ab Stufe 8 eher keine Mosaik-Vorschau mehr (Szene für Szene). Beim Onboarding grober Raster prüfen (`earthx:viewer`, `MIN_MOSAIC_ZOOM` je Datensatz?).
 30. **Nicht Mögliches ausblenden statt ausgrauen** (Otto, 26.10.2026).
    - **Zusammengelegt (29.10.2026):** wird mit Paket NM4-56 umgesetzt; nicht einzeln starten.
@@ -307,6 +339,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-44-npm-audit.md`
    - **Aufgabe:** Stufe A, nach UI-02a (#211). Gezielt aktualisieren, kein `npm audit fix --force`; Hauptversionssprung nur nach Ottos Freigabe.
 45. **Einzelne Bänder in der Vollauflösungs-Ansicht per Dropdown** (Otto, 27.10.2026).
+   - **Erledigt** mit NM4-54, PR #272 (ein Dropdown „Band“ mit RGB, Bändern, Presets).
    - **Otto, 31.10.2026:** Bei Sentinel-2 ist „RGB“ (Echtfarben aus red/green/blue) oberster Eintrag und Vorgabe in der Ansicht; ersetzt `visual`. Bei RGB keine Colormap. In Vorschau und Ergebnis-Layer (NM4-43e PR 2, #255) ist RGB die Vorgabe nur ohne Band-Math und nur, wenn red, green, blue in der Ausgabe sind; mit Band-Math bleibt das neueste Ergebnis die Vorgabe.
    - **Zusammengelegt (29.10.2026):** wird mit Paket NM4-54 umgesetzt; nicht einzeln starten.
    - **Plan:** `querschnitt/nm4-45-band-in-ansicht.md`
@@ -337,6 +370,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-50-dem-layer-und-ergebnisse.md`
    - **Aufgabe:** Stufe A, Frontend, Vorrang vor neuen Funktionen. Ein Weg für alle Datensätze, keine Zweige je Datensatz.
 51. **Hinweis „resampled to common grid“ nur, wenn Werte betroffen sind** (Otto, 28.10.2026). Kein Hinweis, wenn nur die Maskenschicht (`scl`, nächster Nachbar) auf das Raster gebracht wird; Hinweis bleibt, wenn Wertebänder umgerechnet werden (verschiedene Auflösungen oder CRS/UTM-Zonen). Grund nur im Tooltip.
+   - **Erledigt** mit NM4-65 Teil 7, PR #266 (Warnung „Continue / Cancel“).
    - **Ersetzt (Otto, 31.10.2026):** statt Hinweis eine Warnung zum Bestätigen mit genauer Beschreibung, in NM4-65 Teil 7.
    - **Aufgabe:** mit NM4-43e (Panel-Umbau), Stufe A; vorher prüfen, ob die Annahme im Backend beide Fälle schon unterscheidet. Der NM4-43e-Session beim Start mitgeben.
 52. **Tooltips liegen immer über allem und bleiben im Fenster** (Otto, 28.10.2026; Anlass: Tooltip am Rufzeichen wird von anderen Kästen verdeckt).
@@ -352,6 +386,7 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Dazu (Otto, 01.11.2026):** Teil 5 gleiche Einstellungsbox für Job-Layer, angeheftete Ansicht und Ansicht der Suche, Form unabhängig vom gewählten Band. Im Plan ergänzt. Der Fehler „Apply“ bei reiner Änderung der Farbskala im Processing-Panel geht an NM4-11b (#269).
    - **Erledigt (PR #272, 01.11.2026):** NM4-12 (Randfälle), NM4-25 (Quicklook sofort zugeschnitten), NM4-24 (neue Route `POST /collections/{dataset}/scene-order`, bis 500 Szenen), NM4-45 (ein Dropdown „Band“: RGB, Einzelbänder, Linie, Presets; Zarr-Datensätze ohne Bänder), Teil 5 (eine Box für alle Layer-Arten). Dazu nach Ottos Browsertest: „Add to layers“ heftet die ganze Ansicht an, nur die Darstellung wird übernommen, Dropdown am Layer frei (auch Index-Layer); am Layer heißt der Knopf „Save“, Änderungen ohne „Save“ werden beim Schließen verworfen; Bandwechsel ändert denselben Layer statt einen neuen anzulegen. Weitere Antworten Otto direkt an die Session (01.11.2026, umgesetzt): (1) am Layer wird ein anderes Band erst mit „Apply“ sichtbar; (2) in der Ansicht steht zwischen Titel und Datum ein Hinweis „Temporary“ im Stil des Zeichens „Preview“ im Processing-Panel; er verschwindet, wenn die Ansicht bzw. der Zeitschritt unverändert angeheftet ist, und erscheint bei jeder Änderung wieder; nach „Add all to layers“ zeigen unveränderte Zeitschritte ihn nicht (sofort, nicht erst nach Wechsel); (3) Colormap bei RGB zeigt „none“.
 55. **Paket Suchergebnisse und Zeitleiste** = NM4-09, NM4-18. Plan: `querschnitt/nm4-55-paket-suchergebnisse.md`. Sofort möglich, nicht gleichzeitig mit DS-03b.
+   - **Erledigt:** PR #242.
 56. **Paket Oberfläche** = NM4-21, NM4-22 und schmale Fenster (Punkt 58); NM4-30 entfällt (31.10.2026). **Aufgegangen in UI-04 (Otto, 01.11.2026):** nicht einzeln starten; siehe Punkt 73. Plan: `querschnitt/nm4-56-paket-oberflaeche.md`. Als letzte Frontend-Aufgabe vor M5, allein.
    - Außerdem: NM4-06 wird mit NM4-05b zusammen umgesetzt (Vermerk im Plan von NM4-05b).
 57. **Keine AOI in URLs, keine Dateiadressen in Logs** (erweitert 30.10.2026 um GDAL-Meldungen mit voller Adresse, Fund aus DS-03a2, #240) (Fund aus DS-02c, #239, 30.10.2026). `GET /coverage` trägt mit AOI deren Umriss als `bbox` in der URL (seit M3-19). Das verstößt gegen die feste Regel „keine AOI in URLs oder Logs“ (M4 Q8). Soll: Coverage mit AOI als `POST`, AOI im Body; ohne AOI (Kartenausschnitt) darf `GET` bleiben. Prüfen, ob Logs oder Cache-Schlüssel die bbox tragen.
@@ -386,19 +421,46 @@ Stand: 27.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe A, Frontend, nicht neben NM4-53/NM4-54.
    - **Erledigt (PR #267, 31.10.2026):** ein Kasten mit einem Griff, Zeitleiste so breit wie die Knopfzeile; Datumszeile erstes · vorheriges < aktuelles > nächstes · letztes (fehlender Nachbar: Platz bleibt leer); rotes „x“ oben rechts schließt nur den Block, er kommt bei Klick auf eine Szene, offener Gruppe, „Select all“ und neuen Ergebnissen wieder; „x“ und </> beenden das Abspielen; Kästen weichen nicht mehr aus (unter 900 px liegt ein offenes Panel über dem Block); `CloseButton.tsx` gemeinsam mit NM4-65.
 67. **Weitere Klassenanteile in der AOI als Filter** (Vorschlag aus DS-03b, #265): Snow and ice, Water, Vegetation usw. aus derselben SCL-Lesung (Zählung je Klasse, kaum Mehraufwand). Erst auf Ottos Wunsch; passt zu den Eigenheiten je Datensatz (M5-Plan §2 Punkt 7).
-68. **Wackliger Zeittest der Job-Queue** (Fund aus NM4-65, #266): `jobs/test_queue.py::TestRetry::test_each_attempt_waits_twice_as_long` schlägt im vollen Lauf gelegentlich fehl, allein grün. Ebenso `test_the_item_is_fetched_once` (unter Last rot, Fund aus NM4-11b, #269). Dazu der Replay-Test des Wolkenfilters (rot im ersten CI-Lauf von #273, lokal 5/5 grün). Drei wacklige Tests: vorziehen. Ohne echte Wartezeit prüfen (Uhr einspeisen). Stufe A, Backend, klein; vorziehen, sobald er die CI rot macht.
+   - **Erledigt** mit DS-03c, PR #293 (06.11.2026): mit „Filter within AOI only“ messen alle Filter mit SCL-Klasse aus derselben Lesung (Cloud cover 8/9/10, Thin cirrus 10, Cloud shadow 3, Snow 11, Water 6, Vegetation 4, Not vegetated 5, No data); Degraded bleibt beim Metadatenwert.
+68. **Wackliger Zeittest der Job-Queue** (Fund aus NM4-65, #266): `jobs/test_queue.py::TestRetry::test_each_attempt_waits_twice_as_long` schlägt im vollen Lauf gelegentlich fehl, allein grün. Ebenso `test_the_item_is_fetched_once` (unter Last rot, Fund aus NM4-11b, #269). Dazu der Replay-Test des Wolkenfilters (rot im ersten CI-Lauf von #273, lokal 5/5 grün). Drei wacklige Tests: vorziehen.
+   - **NM4-68, PR #276 (02.11.2026):** Ursachen: Jitter des Backoffs an der Testgrenze (Datenbankuhr vor/nach `finish_failed`), 30-ms-Schlaf statt Synchronisation (Quelle antwortet erst bei allen sechs Anfragen), geteilter Zustand `_DETACHED` (`settle()` vor dem Zähler); Gegenproben alt 12/60, 2/60, 6/40 rot, neu 20/20 grün im vollen Lauf. Dazu Punkt 63 (Zielraster einmal je Einstiegspunkt, Hash und Bytes gleich; neue optionale Operator-Felder `place`, `transform_on` nur für `reproject`). Ohne echte Wartezeit prüfen (Uhr einspeisen). Stufe A, Backend, klein; vorziehen, sobald er die CI rot macht.
 69. **Warnung „Resampled“ auch bei gleicher Projektion mit anderer Pixelgröße** (offene Frage aus NM4-65, #266): Die Kostenschätzung erkennt aus den Item-Metadaten nicht sicher, wenn der Job eine Szene im selben CRS mit anderer Pixelgröße warpt. Später über `proj:transform`/`proj:shape` bzw. `proj:bbox` mitmelden. Niedrige Priorität.
 70. **Veraltete Browser-Skripte unter `frontend/e2e/`** (Fund aus NM4-65, #266): Auf main scheitern `area-range`, `band-select`, `mosaic-preview`, `no-aoi-in-url`, `zoom-layers` an veralteten Erwartungen; `preview-probe` braucht ein echtes Backend (502 von der Attrappe). Mit NM4-44 aufräumen.
 71. **Normalize: Vorschau ohne AOI geschätzt, Job immer exakt** (Otto, 01.11.2026): Die messenden Methoden gehen für die Vorschau auch ohne AOI und über 2048² (Messung auf Overview); ein gestarteter Job nimmt immer die exakten Werte über die ganze Fläche.
    - **Plan:** `querschnitt/nm4-71-normalize-exakt-im-job.md`
    - **Aufgabe:** Stufe B, Backend und Frontend, nach NM4-11b (#269).
-   - **Entschieden (Otto, 01.11.2026, PR #273):** alle sechs Fragen Option 1 – exakte Messung im Job über eine Arbeitsdatei (Quellen einmal gelesen, kein Zustand zwischen Jobs), `normalize` Version 4 ohne Zahlen (exakte Werte im Ergebnis; Version 3 bleibt für Vorschau, alte Rezepte und ⚙), ⚙ behält die exakten Zahlen des Ergebnisses, Perzentile exakt zweistufig, Vorschau bis 2048² auch ohne AOI, ein PR; KE1–KE10 wie vorgeschlagen. Messung: Job mit exakter Messung 27–52 % länger (ganze Szene, 4 Bänder 269 → 409 s), Speicher ≤ 483 MB. Auflagen: Plattenplatz der Arbeitsdatei messen, Grenze in der Schätzung, Löschen auch bei Abbruch/Fehler/DELETE; Runner liest Version 4 bitgleich; Tooltip „Z-score“ mit Hinweis auf Ausreißer und „Robust“. **Runner-Image erst nach diesem Merge neu bauen.** Umgesetzt in PR #273 (01.11.2026): Plattenplatz gemessen (ganze Szene, 4 Bänder 5,3 GB gegen 4,8 GB heute, Schätzung 12,7 GB), Arbeitsdatei bei Erfolg/Fehler/Abbruch/DELETE gelöscht, Runner bitgleich; Antworten A1 (Platz prüft der Worker vor dem Start, feste Obergrenze erst M6) und B1 (Methodentext ohne Zahlen, Zahlen in `earthx:normalize`).
+   - **Entschieden (Otto, 01.11.2026, PR #273):** alle sechs Fragen Option 1 – exakte Messung im Job über eine Arbeitsdatei (Quellen einmal gelesen, kein Zustand zwischen Jobs), `normalize` Version 4 ohne Zahlen (exakte Werte im Ergebnis; Version 3 bleibt für Vorschau, alte Rezepte und ⚙), ⚙ behält die exakten Zahlen des Ergebnisses, Perzentile exakt zweistufig, Vorschau bis 2048² auch ohne AOI, ein PR; KE1–KE10 wie vorgeschlagen. Messung: Job mit exakter Messung 27–52 % länger (ganze Szene, 4 Bänder 269 → 409 s), Speicher ≤ 483 MB. Auflagen: Plattenplatz der Arbeitsdatei messen, Grenze in der Schätzung, Löschen auch bei Abbruch/Fehler/DELETE; Runner liest Version 4 bitgleich; Tooltip „Z-score“ mit Hinweis auf Ausreißer und „Robust“. **Runner-Image erst nach diesem Merge neu bauen.** Erledigt, PR #273 (gemergt 01.11.2026; Ottos Prüfskript `nm4-71-normalize.ps1` 16/16): Plattenplatz gemessen (ganze Szene, 4 Bänder 5,3 GB gegen 4,8 GB heute, Schätzung 12,7 GB), Arbeitsdatei bei Erfolg/Fehler/Abbruch/DELETE gelöscht, Runner bitgleich; Antworten A1 (Platz prüft der Worker vor dem Start, feste Obergrenze erst M6) und B1 (Methodentext ohne Zahlen, Zahlen in `earthx:normalize`).
 72. **Seitenleiste rechts, aufgeräumtes Processing, einheitliches Erscheinungsbild** (Otto, 01.11.2026): Einstellungen von Ansicht und Layer als Seitenleiste rechts (öffnet bei Klick, rotes „x“), Layer-Manager und Leiste unten bleiben; Processing-Panel und -Manager breiter, Gruppen übersichtlich, „apple mäßiges design dass alles einheitlich seinen platz hat“. Nimmt NM4-20 auf.
    - **Plan:** `vp3/ui-03-seitenleiste-und-processing.md`
    - **Aufgabe:** Stufe B (Konzept zuerst), dann Teil 1 in derselben Session; Teile 2 und 3 je neue Session. Nach NM4-54 (#272), vor NM4-56.
+   - **Entschieden (Otto, 02.11.2026, #277):** eine Spalte rechts (Processing deckt die Seitenleiste ab und gibt sie zurück), 320 px, bündig, System-Schrift mit gleich breiten Ziffern, unter 900 px Blatt von unten (≤ 55 %), ⇩ zusätzlich unter „Actions“; Processing-Manager wird ein frei schwebendes Fenster (verschiebbar, Größe änderbar, ≥ ~420 px, Position je Browser gemerkt). Esc schließt nirgends etwas (siehe 73). Touch: Steuerhöhe 40–44 px bei grobem Zeiger bzw. unter 900 px.
+   - **Browsertest Otto (02.11.2026) an #277:** Zeitleiste gleich breit mit/ohne gewählte Szene, ohne Szene „Select a scene“ darüber; „Search results“ bleibt oben, außer der Nutzer schiebt sie (Ansichten/Vorschauen darüber); „Change image“ schaltet „Search results“ sichtbar und nach oben; Seitenleiste zweispaltig („Band“ ganze Breite, „Scale“ mit vmin/vmax nebeneinander und absolute/percentile); Opacity und Auge auch in der Ansicht der Suche; Actions paarweise „Change image | Process“, „Add to layers | Add all to layers“, „Download crop | Download full scene“, kein „Clear“ (rotes x verwirft); „Temporary“ nach Werten verglichen; Dropdown „Band“ nur Originalbänder und RGB.
+   - **UI-03b erledigt (#283, 03.11.2026), mit Ottos Zusätzen:** Jobs wieder links angedockt, 340 px, ✎ und ＋ in der Zeile, Spaltentitel je offener Gruppe, Datum „08OCT-12:34“, „Expires“ statt „until/expired“, Fortschrittslinie unter dem Titel, „Run again“ in der Spalte des Downloads, „Open in panel“ bei allen Jobs, „+ Add to layers“ statt „Show on map“; gelöschte Jobs: „Expires“ = einen Tag nach der Löschung, außer schon abgelaufen bzw. früher ablaufend; „Archived“/„Superseded“ neben dem Titel statt darüber; ✎ neben dem Titel im Format der Layer; „No longer available“ in der Spalte „Expires“.
+   - **UI-03d (Otto, 02.11.2026), nach #277, als Text-Auftrag:** Abschnitt „Quick processing“ über „Actions“ mit Index-Knöpfen (3 je Reihe, 2 Reihen) und „Enhance contrast“ (Strecken/Abschneiden je RGB-Kanal, nur Darstellung; ggf. Kachel-Route mit Bereich je Band). Index angeheftet = nur der Index als Layer; Kontrast angeheftet = ganze Ansicht. Dazu (Otto, 02.11.2026): Histogramm in der Zeile „Scale“ mit Schiebern für vmin/vmax, bei RGB drei Histogramme mit eigenen Bereichen je Kanal (ersetzt die gemeinsame RGB-Skala aus NM4-64; Kachel-Route, Ergebnis-Layer und „Save“ erweitern). Weiter an 03d (Otto, 02.11.2026): am Layer unter „Actions“ „Process“, „Remove layer“ (kleiner Mülleimer) und „Add current view to layers“ (Kopie mit der aktuell eingestellten Darstellung als neuer Layer, Original unverändert); Layer umbenennen im Kopf der Seitenleiste; keine Pfeile ‹ › neben dem Datum, wenn nur ein Datum verfügbar ist (Layer und Ansicht). Colormaps (Otto, 02.11.2026): Dropdown mit kleiner Auswahl und „More…“ (alle Colormaps des tiler mit Verlaufs-Vorschau, gruppiert, Suchfeld), Knopf „Reverse“ (`_r`); Liste und Farbwerte vom tiler, ein gemeinsames Bauteil. Umgesetzt in #280 (03.11.2026): Bereich je RGB-Kanal an der Operator-Kachel (1 oder 3 `rescale`), Histogramm (64 Klassen) auch für Ergebnisse, Route `GET /colormaps` (mit `_r`), Rocket und Mako aus seaborn ergänzt (BSD-3-Clause); Antworten Otto: ein PR, gleiche ColorBrewer-Namen, Esc im Namensfeld bricht ab. **UI-03e (Folge):** „Enhance contrast“, Histogramm und „auto-scale“ der Ansicht über die AOI messen (POST-Statistik-Route aus NM4-19, Antwort in Rohwerte der Kacheln zurückrechnen, Histogramm in der Antwort); heute über die ganze erste Szene; Beschreibung in `vp3/ui-03-…` §7.12, keine eigene Plan-Datei (Otto).
 73. **Einheitlichkeit von Stil, Namen und Bedienung** (Otto, 01.11.2026): „ähnlich sachen sollen den gleichen style haben; gleiche sachen sollen gleich heissen und gleich verwendbar sein (zB keine verschiedenen symbole oder wege zum exiten)“. Bestandsaufnahme über die ganze Oberfläche, Begriffsliste, Leitfaden `docs/ui/leitfaden.md`, automatische Prüfungen gegen Rückfälle; nimmt NM4-56 (21, 22, schmale Fenster) auf.
    - **Plan:** `vp3/ui-04-einheitlichkeit.md`
+   - **Regel (Otto, 02.11.2026):** Esc schließt nirgends etwas (keine Ansicht, Seitenleiste, Processing-Panel, schwebendes Fenster). Ausnahmen nur, wo nichts verloren geht: Esc = „Cancel“ in Bestätigungsdialogen, Esc beendet „Flip through layers“ (NM4-65). Schließen nur mit rotem „x“ bzw. „Clear“.
+   - **Dazu (aus UI-03e, #282, Otto 03.11.2026):** RGB je Kanal (Bereich und absolute/percentile) auch in den Einstellungen eines Job-Ergebnisses und im Permalink der Processing-Vorschau. Ausnahme von „nur Frontend“: Permalink-Schema im Backend erweitern (alte Permalinks weiter lesbar).
+   - **Regel (Otto, 04.11.2026):** Panels der linken Leiste haben nie ein rotes x; sie schließen über ihr Symbol. Datum überall „10 Nov, 20:15“, auch im Jobs-Manager (ersetzt „08OCT-12:34“ aus #283; Otto 04.11.2026). Das rote x bleibt für Seitenleiste rechts, Dialoge, Blätter und Meldungen. `POST /coverage` bleibt im Backend (Schnittstelle, M6), das Frontend nutzt nur noch `GET` über den Ausschnitt.
+   - **Dazu (Otto, 03.11.2026):** Symbole einheitlich aus einer Quelle (Lucide, `lucide-react`, ISC – freigegeben von Otto, 03.11.2026), Download überall als Pfeil nach unten in eine offene Schale (Ottos Vorlage) statt „⇩“; Schrift überall aus `tokens.css`, Monospace nur im Band-Math-Feld, Test gegen fremde Schriftangaben.
+   - **Dazu (Otto, 03.11.2026):** Relief nur noch als Overlay (nicht mehr als Basemap; ersetzt UI-02a); „Zoom to selection“ zoomt auf AOI, offene Ansicht und sichtbare Layer zusammen (heute gewinnt die AOI); Einstellungsmenü unten in der linken Seitenleiste mit Basemap und Light/Dark/System.
+   - **Fehler, vorab in UI-04 als eigener Commit (Otto, 03.11.2026):** Coverage-Karte nach Suche bzw. Ansicht/Layer: „lädt ewig“, Bild wie bei Zoom 0 (ein Viertel der Welt, eine Kachel), wiederholte `POST /coverage/…` mit 200 und gleicher Größe (4,4 kB); nach frischem Laden in Ordnung.
    - **Aufgabe:** Stufe B, Frontend, nach allen Teilen von UI-03, als letzte Frontend-Aufgabe vor M5, allein.
+74. **maplibre-gl auf 6.x** (Fund aus NM4-44, #278, 02.11.2026): kritische Lücke im Attributionstext der Karte, nur in 6.x behoben (5.24.0 → 6.16.0, Hauptversionssprung). In EarthX kaum erreichbar (Attribution nur aus eigenen Konstanten; nur über bösartiges HTML in fremder TileJSON), liegt aber im Bundle.
+   - **Aufgabe (Otto, 02.11.2026):** NM4-44b, Stufe A, Frontend, nach UI-03 und vor UI-04; Sichtprüfung der Karte (Basemaps, Relief, Layer, Ansicht, Mosaik, Zeichnen der AOI), alle e2e-Skripte, `npm audit` danach ohne kritische Meldung.
+75. **Download je Band** (Otto, 03.11.2026): „ein tiff pro band in einem exports … ordner. und beim download soll ich auswählen was für bänder ich will. Im download ordner soll auch eine beschreibung sein welches tif welches band ist.“ Gilt für „Download crop“ und „Download full scene“; Bänder in eigener Auflösung (keine Umrechnung, Otto: ein GeoTIFF braucht ein gemeinsames Raster, darum je Band eine Datei); Dialog mit Häkchen (Spektralbänder und SCL vorgewählt); `exports/BANDS.txt`. Ganze Szene weiter im Browser aus der Quelle (NM4-33, Punkt 37), Zuschnitt serverseitig je Band.
+   - **Dazu (Otto, 03.11.2026):** im Dialog wahlweise alle gewählten Bänder als **ein** mehrbandiges GeoTIFF in einer gemeinsamen Auflösung (Wahl 10/20/60 m; Umrechnung nach Art des Bandes); bei der ganzen Szene serverseitig als unsichtbarer Job (ab M6 neu bewerten, Punkt 37). Dritte Form (Otto, 03.11.2026): „One file per resolution“ – je Auflösung (10/20/60 m) ein mehrbandiges TIF, ohne Umrechnung.
+   - **Aufgabe:** Stufe A, Backend und Frontend, als Text-Auftrag ohne Plan-Datei.
+   - **Dazu (Otto, 03.11.2026):** Jobs-Fenster (UI-03c, #279) wieder links angedockt statt schwebend; innere Ordnung bleibt – an UI-03b.
+76. **Barrierefreiheit: Grund gesperrter Knöpfe auch per Tastatur und Screenreader** (aus UI-04 Teil 3a, #289, Otto 04.11.2026): heute `disabled`, Tooltip nur mit der Maus. Umstellung auf `aria-disabled` (rund 250 Testprüfungen, etwa 600 Zeilen Tests) mit weiteren Prüfungen nach WCAG vor dem öffentlichen Betrieb (M6).
+77. **Suche je Überflug und Abdeckung der AOI** (Otto, 04.11.2026): Heute wird „Filter within AOI only“ je Szene ausgewertet (Ausschnitt der Szene in der AOI). Neu: Umschalter „Evaluate: per scene / per pass“ (per pass über den gemergten Ausschnitt nach `mosaic_order`, Überlappung einmal gezählt, Überflug bleibt oder fällt als Ganzes) und Filter „AOI coverage ≥ n %“ aus den Umrissen (je Szene bzw. Vereinigung je Überflug), z. B. „nur Überflüge mit ≥ 80 % Abdeckung“.
+   - **Aufgabe:** DS-03c, Stufe A, Backend und Frontend, als Text-Auftrag nach UI-04.
+   - **Otto, 05.11.2026:** Vorgabe „per pass“; der Umschalter gilt für alle Filter in „Advanced search“ (nicht nur Cloud cover und No data); (i)-Box bei „Evaluate“ und bei „AOI coverage“.
+   - **Erledigt (PR #293, 06.11.2026):** Überflug = Schlüssel `results_group_by` der Registry wie Ergebnisliste und Mosaik-Job; Zeitgrenze je Überflug wächst mit der Szenenzahl, paralleles Lesen, eine Wiederholung, erst danach „skipped“; eigenes Feld `earthx:search_capabilities`; Vorgabe per pass nur in der Oberfläche (API ohne Angabe je Szene); adr/0021 §10.
+78. **Pixelwerte mit der Maus abfragen** (Otto, 04.11.2026): Umschalter „Inspect values“ auf der Karte; beim Stillstehen der Maus Tooltip mit den Werten aller sichtbaren Ansichten und Layer an der Stelle (physikalische Werte, RGB drei Werte, Index), Coverage aus den geladenen Daten; Punkt nur im Body, Werte bitgleich zum Job.
+   - **Verschoben nach M6 (Otto, 04.11.2026):** nicht vor M5; zusammen mit Punkt 79 (Rohwert-Kacheln) bewerten – mit Rohwerten im Browser bräuchte die Abfrage keine eigene Route.
+79. **Rohwert-Kacheln für die Ansicht in Bearbeitung prüfen** (Otto, 04.11.2026): Heute liefert der tiler für die Karte eingefärbte PNG-Kacheln; Werte kennt der Browser nicht. Idee: Mischform – PNG für alles, was nur angesehen wird; Rohwert-Kacheln (uint16 bzw. float32, gepackt, z. B. LERC oder DEFLATE) nur für die eine Ansicht bzw. den einen Layer mit offener Seitenleiste, Einfärben im Browser (WebGL), damit vmin/vmax, Colormap und Pixelwerte sofort ohne Anfrage wirken. Grobe Schätzung (nicht gemessen): je Bildschirm 6–10 MB (uint16) bzw. 10–18 MB (float32) statt 2–5 MB PNG, RGB dreifach. Grundsatz „ein Rechenweg“ bleibt: Rechnung weiter im tiler, nur das Einfärben im Browser.
+   - **Aufgabe (M6):** Stufe C mit Messung (Kachelgrößen, Ladezeit, Speicher im Browser, Einfärben per WebGL), Stand der Technik mit Quellen (z. B. LERC, Zarr/COG im Browser, deck.gl, MapLibre-Custom-Layer), Kosten für Bandbreite.
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
