@@ -10,6 +10,9 @@
     entfällt Teil B.
   - Fassung 1 hat Otto am 26.10.2026 beantwortet, aber nicht angenommen; er
     hat die Teile A bis C in Auftrag gegeben (§9.2).
+  - **Nachtrag M5-12 (Otto, 2026-11-06):** Die Quick processings „VV dB“,
+    „VH dB“ und „Dual-pol RGB“ sind auf GRD freigegeben, als Nachtrag zu F3
+    (§9.4, `adr/0030`).
 - **Datum:** 2026-10-26
 - **Aufgabe:** DS-01 laut `docs/plans/ds/ds-01-s1-quelle.md` (Paket DS,
   `docs/plans/ds/ds-00-paket.md`).
@@ -789,6 +792,23 @@ gegenüber der Antwort auf N1:
   Auftragsform des Workers (`ZipJob.files[].url`) nimmt die Adresse mit Token ohne Änderung auf.
 - **Content-Security-Policy:** Bekommt die Plattform eine, braucht sie für diesen Weg `worker-src 'self'`
   und `connect-src` für die Hosts der Dateien und der Token-API.
+
+### 9.4 Nachtrag M5-12 (2026-11-06): Quick processings auf GRD
+
+Otto hat am 06.11.2026 zu `adr/0030` (Aufgabe M5-12) entschieden: Die Quick processings
+„VV dB“, „VH dB“ und „Dual-pol RGB“ (Rot VV, Grün VH, Blau VV÷VH) sind auf Sentinel-1 GRD
+freigegeben. Das ist ein Nachtrag zu F3.
+
+- **Warum F3 nicht entgegensteht:** F3 schließt „Index-Knöpfe“ aus, weil sie für optische Daten
+  gelten (§4.4). Die drei Knöpfe sind keine optischen Indizes. Sie stellen dieselbe Szene dar,
+  mit dB-Umrechnung und Verhältnis innerhalb der Szene. Beides erlaubt F3.
+- **Weiter gilt F3:**
+  - keine festen Schwellen und keine Index-Knöpfe auf DN;
+  - kein Vergleich über Bahnen;
+  - das Verhältnis VV÷VH ist näherungsweise (§4.4);
+  - die Hinweise „Approximate geolocation“ und „Uncalibrated (DN)“ bleiben (F2).
+- **RVI und Schwellenmasken** kommen erst nach einer σ⁰-Kalibrierung (`adr/0030` F5, DS-05d).
+- **Umsetzung:** DS-05a (dB) und DS-05c (Komposit) nach `adr/0030` §9.
 
 ---
 
