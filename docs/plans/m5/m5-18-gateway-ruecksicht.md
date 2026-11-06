@@ -1,6 +1,6 @@
 # M5-18 — `gateway`: `User-Agent`, Abstand je Host, `robots.txt`: Plan-Schritt
 
-**Status (06.11.2026):** Plan, wartet auf Ottos Antworten (§8). Umsetzung danach im selben Draft-PR.
+**Status (06.11.2026):** Plan angenommen (Otto, 06.11.2026; Antworten in §8a), Umsetzung im selben Draft-PR.
 **Aufgabe:** M5-18 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von nichts ab; M5-19 (Harvest-Kern) wartet auf den Merge.
 **Grundlagen:** `adr/0025` §3 (Befund opendata.swiss), §3a (RFC 9309), §6.2, §8 Schnitt Schritt 3, F9, §12; `architekturplan.md` 4.3 (Fetch) und 6.5; `KLAERUNGEN.md` B8, B9; `adr/0005` §6 (Grenzen je Host).
 
@@ -33,13 +33,15 @@ Kein Harvester, keine Seed-Datei, keine Tabellen: das ist M5-19. Diese Aufgabe l
 
 ## 3. Umsetzung
 
-### 3.1 `User-Agent` (Form nach F1)
+### 3.1 `User-Agent` (F1 = 1 mit Ergänzungen 1 und 2, §8a)
 
-- **`Policy.user_agent: str`**, Vorgabe `DEFAULT_USER_AGENT = "EarthX/0.1 (+https://github.com/oscipal/earthX)"` als Konstante in `gateway/policy.py` (der Wert des Geocoders, also keine Änderung für Nominatim).
-- **Prüfung in `__post_init__`** (`ValueError`): nicht leer; nur druckbares ASCII ohne Steuerzeichen (kein Einschleusen von Köpfen über Zeilenumbruch); höchstens 256 Zeichen; kein `@` (keine Mail-Adresse, F9). Der Produktname (Text vor dem ersten `/`) ist der Name, den `robots.txt` sucht (§3.3).
-- **Gesetzt in `_once`:** `User-Agent` aus der Policy auf jeder Anfrage, auch bei Wiederholung, Weiterleitung und `HEAD`. Ein `User-Agent` des Aufrufers wird verworfen wie heute `Host`, gleich in welcher Schreibweise.
+- **Ein Wert je Instanz:** `EARTHX_USER_AGENT`, leer oder nicht gesetzt heißt Vorgabe `DEFAULT_USER_AGENT = "EarthX/0.1 (+https://github.com/oscipal/earthX)"` (Konstante in `gateway/policy.py`). `user_agent_from_env()` liest und prüft ihn.
+- **Prüfung** (Vorgabewert und Variable gleich, `ValueError`): nicht leer; nur druckbares ASCII ohne Steuerzeichen (kein Zeilenumbruch, kein Einschleusen von Köpfen); höchstens 256 Zeichen; kein `@` (keine Mail-Adresse, F9). Der Produktname (Text vor dem ersten `/`) ist der Name, den `robots.txt` sucht (§3.3); ohne `/` ist es der ganze Wert bis zum ersten Leerzeichen.
+- **Beim Start geprüft:** `api`, `tiler`, `worker`, `materialize` und der lokale Runner rufen `user_agent_from_env()` beim Start auf; ein ungültiger Wert hält den Prozess an, die Meldung nennt die Variable, nie den Wert.
+- **`Policy.user_agent: str`**, Vorgabe aus `user_agent_from_env()`, geprüft wie oben. Die 76 Aufrufstellen bleiben unverändert und bekommen so den Wert der Instanz.
+- **Gesetzt in `_once`:** `User-Agent` aus der Policy auf jeder Anfrage, auch bei Wiederholung, Weiterleitung und `HEAD`. Ein `User-Agent` des Aufrufers wird verworfen wie heute `Host`, gleich in welcher Schreibweise. Kein Aufrufer überschreibt ihn.
 - **GDAL:** `gdal_options(policy)` setzt `GDAL_HTTP_USERAGENT` auf denselben Wert. Damit tragen auch Kachel- und Runner-Lesezugriffe den Kopf.
-- **Geocoder:** `build_geocoder` gibt `GeocoderConfig.user_agent` in seine `Policy`; `nominatim._fetch` setzt keinen eigenen Kopf mehr. `EARTHX_GEOCODER_USER_AGENT` bleibt als Umgebungsvariable (die Nutzungsregeln von Nominatim verlangen eine Kennung des Betreibers, die ohne Release änderbar ist).
+- **Geocoder (Ergänzung 2):** `EARTHX_GEOCODER_USER_AGENT` **entfällt und geht in `EARTHX_USER_AGENT` auf.** `GeocoderConfig.user_agent`, der Parameter `user_agent` von `nominatim.geocode` und der eigene Kopf in `nominatim._fetch` entfallen; Nominatim bekommt den Wert der Instanz über die Policy. Wer einen eigenen Nominatim-Betrieb mit eigener Kennung braucht, setzt `EARTHX_USER_AGENT`. Ist die alte Variable noch gesetzt, schreibt `api` beim Start eine Warnung (Name der Variable, nicht der Wert) und liest sie nicht. Entfernt aus `docker-compose.yml`, `.env.example` und README; `EARTHX_USER_AGENT` neu in `.env.example`, README und bei `api`, `tiler`, `worker` und `materialize` in `docker-compose.yml`.
 
 ### 3.2 Mindestabstand je Host (nach F2)
 
@@ -71,7 +73,7 @@ Kein Harvester, keine Seed-Datei, keine Tabellen: das ist M5-19. Diese Aufgabe l
 
 ### 3.4 Was sich für bestehende Aufrufer ändert
 
-Nur der `User-Agent`: statt `python-httpx/…` bzw. dem GDAL-Standard steht `EarthX/0.1 (+https://github.com/oscipal/earthX)` auf jeder Anfrage. Abstand `0` und `obey_robots=False` sind die Vorgaben; Suche, Kacheln, Intake und Runner verhalten sich sonst wie heute. Die 76 Aufrufstellen von `Policy(...)` bleiben unverändert (nach F1 = 1).
+Nur der `User-Agent`: statt `python-httpx/…` bzw. dem GDAL-Standard steht der Wert der Instanz (Vorgabe `EarthX/0.1 (+https://github.com/oscipal/earthX)`) auf jeder Anfrage; `EARTHX_GEOCODER_USER_AGENT` entfällt (§3.1). Abstand `0` und `obey_robots=False` sind die Vorgaben; Suche, Kacheln, Intake und Runner verhalten sich sonst wie heute. Die 76 Aufrufstellen von `Policy(...)` bleiben unverändert (F1 = 1).
 
 ---
 
@@ -79,7 +81,7 @@ Nur der `User-Agent`: statt `python-httpx/…` bzw. dem GDAL-Standard steht `Ear
 
 Alle gegen `httpx.MockTransport`, falsche Uhr und falsches `sleep`; kein Netz.
 
-- **`User-Agent`:** auf `GET`, `HEAD`, `POST`, jeder Wiederholung und jedem Hop; Kopf des Aufrufers in drei Schreibweisen verworfen; Geocoder schickt seinen Wert aus der Policy; `gdal_options` enthält `GDAL_HTTP_USERAGENT`. Fehleingaben: leer, nur Leerzeichen, `\r\n` (Kopf-Einschleusung), Nicht-ASCII, über 256 Zeichen, mit `@`.
+- **`User-Agent`:** auf `GET`, `HEAD`, `POST`, jeder Wiederholung und jedem Hop; Kopf des Aufrufers in drei Schreibweisen verworfen; Geocoder schickt den Wert der Instanz; `gdal_options` enthält `GDAL_HTTP_USERAGENT`; `EARTHX_USER_AGENT` gesetzt, leer und nicht gesetzt; Start von `api` mit gesetztem `EARTHX_GEOCODER_USER_AGENT` warnt ohne Wert. Fehleingaben (für Variable und `Policy`): nur Leerzeichen, `\r\n` (Kopf-Einschleusung), Tabulator, Nicht-ASCII, über 256 Zeichen, mit `@`; die Fehlermeldung enthält den Wert nicht.
 - **Abstand:** zwei Anfragen an denselben Host im Abstand, an verschiedene Hosts ohne; Eintrag je Host vor Vorgabe, Subdomain erbt; sechs gleichzeitige Anfragen starten im Abstand; Wiederholung nach `503` wartet Backoff **und** Abstand; Weiterleitung auf anderen Host zählt dort; Fehleingaben: negativ, `NaN`, unendlich, über 300 s, Host in der Tabelle, der nicht normalisierbar ist; Vorgabe `0` wartet nie.
 - **`robots.txt`:** Gruppe für `EarthX` vor `*`; längste Regel; `Allow` bei Gleichstand; `*` und `$`; Prozent-Kodierung; leere Datei; Datei ohne passende Gruppe; `404` alles erlaubt; `429`, `500`, Timeout, Transportfehler → `HostResting` für alle folgenden Anfragen; einmal je Host abgerufen (zweite Anfrage ohne neuen Abruf); nach 24 h neu (falsche Uhr); über 500 KiB nur der Anfang ausgewertet; ungültiges UTF-8 und Binärmüll ohne Absturz; Weiterleitung von `robots.txt` außerhalb der Allowlist → ruht; gesperrtes Ziel einer Weiterleitung → `RobotsDisallowed`; `obey_robots=False` fragt nie; `RobotsDisallowed` und `HostResting` nennen keine Adresse und keine Abfrage.
 - **Zweckfremd:** Eine Policy ohne Schalter kann `robots.txt` nicht abschalten, wo ein Aufrufer sie mit Schalter gebaut hat (`within` engt nur ein, schaltet `robots.txt` nicht ab).
@@ -112,7 +114,7 @@ Commits (je eine Sache): (1) `User-Agent` in `Policy`, Client und GDAL; (2) Geoc
 
 ---
 
-## 8. Fragen an Otto
+## 8. Fragen an Otto — beantwortet am 06.11.2026 (§8a)
 
 **F1 — Form des `User-Agent` in `Policy`?**
 1. Feld mit Vorgabe `EarthX/0.1 (+https://github.com/oscipal/earthX)`, geprüft, nicht überschreibbar; Geocoder gibt seinen Wert aus `EARTHX_GEOCODER_USER_AGENT` in seine Policy; 76 Aufrufstellen bleiben **(Empfehlung)**
@@ -140,4 +142,9 @@ Commits (je eine Sache): (1) `User-Agent` in `Policy`, Client und GDAL; (2) Geoc
 1. Ein PR mit getrennten Commits, knapp über dem Richtwert **(Empfehlung)**
 2. Zwei PRs: `User-Agent` und Abstand hier, `robots.txt` als M5-18b
 
-**Antworten Otto:** —
+## 8a. Antworten Otto (06.11.2026)
+
+F1–F6 jeweils **Option 1**, Auslegungen A1–A5 angenommen. Ergänzungen:
+
+1. **Ein Wert je Instanz:** `EARTHX_USER_AGENT`, beim Start geprüft wie der Vorgabewert (kein Zeilenumbruch, kein `@`), Vorgabe `EarthX/0.1 (+https://github.com/oscipal/earthX)`. Kein Aufrufer überschreibt ihn. Eingetragen in §3.1.
+2. **`EARTHX_GEOCODER_USER_AGENT`:** im Plan festlegen, was damit geschieht; Nominatim bekommt danach denselben Wert. Festgelegt in §3.1: Die Variable entfällt und geht in `EARTHX_USER_AGENT` auf.
