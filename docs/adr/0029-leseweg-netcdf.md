@@ -1,7 +1,10 @@
 # ADR 0029 — Leseweg NetCDF/HDF5 für die Meteorologie
 
-- **Status:** **Entwurf** (offen). Fragen F1–F7 in §9. Ergänzt nach Ottos Review vom 06.11.2026 (§8a; F1 nennt die Zustimmung zu `h5py` ausdrücklich, F6 und F7 neu).
-- **Datum:** 2026-11-06
+- **Status:** **Angenommen** von Otto am 2026-11-06: F1–F7 jeweils Option 1 (Empfehlung), Antworten in §9.
+  - F1 schließt die Zustimmung zu `h5py` ein, unter einer Bedingung: Die Lizenzen der mitgelieferten Bibliotheken (HDF5, `libaec`) werden beim Eintrag in die Lock-Datei geprüft und im PR genannt.
+  - Vor der Annahme ergänzt nach Ottos Review (§8a).
+  - **Offen** bleibt, als Frage an `adr/0025`: ob `jobs` bei `source_changed` selbst einen Harvest-Lauf anstößt (§10 Punkt 5).
+- **Datum:** 2026-11-06 (Entwurf, Review und Annahme)
 - **Aufgabe:** M5-06 laut `docs/plans/m5/m5-discovery-und-suche.md` §6.1 (Antwort F3 zu `adr/0023`). Die Nummer 0029 ist dort vergeben und war beim Start frei.
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert werden nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -480,7 +483,9 @@ Monatswerte sind je Größe 780 bzw. 660 Items.
 
 ---
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto und Antworten
+
+Otto hat am 06.11.2026 alle sieben Fragen mit Option 1 beantwortet. Die Antwort steht unter der jeweiligen Frage.
 
 **F1 — Leseweg für NetCDF/HDF5?**
 1. A2: virtuelle Verweise mit eigenem Code über `gateway`, gelesen über einen zweiten Store im bestehenden Zarr-Lesepfad (§8a.1). **Dazu deine Zustimmung zur neuen Abhängigkeit `h5py` 3.16 (BSD-3-Clause, +18 MB im gemeinsamen Image und im Runner-Image)**, geladen nur in `discovery` und dort durch einen neuen Importvertrag festgehalten (§8a.4) **(Empfehlung)**
@@ -488,52 +493,70 @@ Monatswerte sind je Größe 780 bzw. 660 Items.
 3. B jetzt für M5-11, A2 danach als eigene Aufgabe
 4. A1 mit VirtualiZarr über einen eigenen obspec-Store; `obstore` wird mitgeladen, verlangt deine Zustimmung zur Importgrenze
 
+**Antwort F1 (Otto, 06.11.2026): 1, fest.** Option A2. Zustimmung zu `h5py` unter der Bedingung, dass die Lizenzen der mitgelieferten Bibliotheken (HDF5, `libaec`) beim Eintrag in die Lock-Datei geprüft und im PR genannt werden.
+
 **F2 — Zeitachse?**
 1. Ein Item je Zeitschritt, materialisiert in `discovery`, `datetime` aus der Achse `time` der Datei **(Empfehlung)**
 2. Ein Item je Datei mit Zeitachse im Item (STAC-Datacube); die Ansicht bekommt einen eigenen Zeitregler
 3. Ein Item je Datei, nur der erste Zeitschritt sichtbar, bis die Ansicht Zeitachsen kann
+
+**Antwort F2 (Otto, 06.11.2026): 1, fest.** Ein Item je Zeitschritt, `datetime` aus der Achse `time` der Datei.
 
 **F3 — Wo liegen die Verweise?**
 1. Im Item selbst, je Zeitschritt nur die eigenen Chunks; Typ, Chunkform, Filter, CRS einmal je Datensatz bzw. Datei **(Empfehlung)**
 2. Als Manifest je Datei im eigenen Objektspeicher; der Worker erzeugt sie selbst neu
 3. Nirgends; jeder Leser erzeugt sie beim Öffnen (5–8 Abrufe je Datei)
 
+**Antwort F3 (Otto, 06.11.2026): 1, fest.** Die Verweise liegen im Item selbst.
+
 **F4 — ARCO-ERA5?**
 1. Nicht in M5; bleibt Vergleichsfall, Lizenz und Ort (`us-central1`) wie in §3.3 festgehalten **(Empfehlung)**
 2. Katalogeintrag mit Link, ohne Anzeige
 3. Als globaler Kontext anbinden (Zarr v2, Zeitachse, Längen 0–360 im Leser nachziehen)
+
+**Antwort F4 (Otto, 06.11.2026): 1, fest.** ARCO-ERA5 nicht in M5; Vergleichsfall.
 
 **F5 — Laufende und vorläufige Daten in M5-11?**
 1. Nur abgeschlossene Jahresdateien (Archiv); laufendes Jahr später mit täglichem Lauf **(Empfehlung)**
 2. Auch das laufende Jahr, täglich neu verwiesen
 3. Auch die vorläufigen Tageswerte mit `expires`
 
+**Antwort F5 (Otto, 06.11.2026): 1, fest.** In M5-11 nur abgeschlossene Jahresdateien; das laufende Jahr später mit täglichem Lauf.
+
 **F6 — Variablen und Datensätze (§8a.2)?**
 1. Ein Datensatz je Quelle, Gitter und Takt; die Größen sind Assets eines Items je Zeitschritt (z. B. MeteoSchweiz täglich `ch01r` mit `TabsD`, `TminD`, `TmaxD`, `SrelD`; `RhiresD` auf `ch01h` eigener Datensatz) **(Empfehlung)**
 2. Ein Datensatz je Größe, ein Item je Zeitschritt mit einem Asset
 3. Ein Datensatz je Quelle mit allen Gittern; Assets unterschiedlicher Gitter in einem Item
+
+**Antwort F6 (Otto, 06.11.2026): 1, fest.** Ein Datensatz je Quelle, Gitter und Takt; die Größen sind Assets eines Items.
 
 **F7 — Die Quelle hat die Datei ersetzt (ETag passt nicht, §8a.3)?**
 1. Neue Fehlerart `source_changed` (nicht sofort wiederholt, „Run again“ angeboten); der nächste geplante Lauf verweist neu; die Kachel-URL trägt den Stand des Items **(Empfehlung)**
 2. Wie 1, dazu ein sofortiger Anstoß von `discovery` aus `jobs` (Regel in `adr/0025`)
 3. Der Leser erzeugt bei `412` die Verweise selbst neu und liest weiter (braucht `h5py` in `readers`, Ergebnis weicht vom Katalog ab)
 
+**Antwort F7 (Otto, 06.11.2026): 1, fest.** Fehlerart `source_changed`, Neuverweis im nächsten geplanten Lauf, Stand des Items in der Kachel-URL. Ob `jobs` zusätzlich selbst einen Lauf anstößt (Option 2), bleibt als Frage an `adr/0025` **offen** (§10 Punkt 5).
+
 ---
 
 ## 10. Folgen
 
-Für den Fall, dass Otto die Empfehlungen annimmt. Diese Liste legt keine Plan-Dateien an und ändert weder Backlog noch M5-Plan.
+Nach Ottos Antworten vom 06.11.2026 (F1–F7, Option 1). Diese Liste legt keine Plan-Dateien an und ändert weder Backlog noch M5-Plan.
 
-1. **M5-11** (erste Meteorologie-Quelle, Stufe B) setzt A2 um, in zwei Paketen (§8a.1): `readers` (Store, Zeitindex, `source_changed`), dann `discovery`, `adapters` und Registry (Verweise, Items je Zeitschritt, erster Datensatz). Dazu der Coverage-Weg „festes Gitter“ und der Stand des Items in der Kachel-URL (§8a.2, §8a.3).
+1. **M5-11** (erste Meteorologie-Quelle, Stufe B) setzt A2 um.
+   - **Zwei Pakete, je unter etwa 400 Zeilen ohne Tests** (§8a.1): zuerst `readers` (Store, Zeitindex, `source_changed`), dann `discovery`, `adapters` und Registry (Verweise, Items je Zeitschritt, erster Datensatz).
+   - **Kachel-URL trägt den Stand des Items** (z. B. ETag der Datei oder `updated`), damit Browser- und CDN-Caches nach dem Austausch einer Datei kein altes Bild liefern (§8a.3).
+   - **Coverage „festes Gitter“:** Fläche aus der Ausdehnung der Collection, Zahl der Zeitschritte aus dem Zeitraum, ohne Abfrage je Item (§8a.2; Checkliste Punkt 2).
+   - **Füllwert und Zeilenumkehr:** Der Store liefert `_FillValue` so, dass `xarray` maskiert; der Leser dreht die Zeilen um, wo die Achse `y` aufsteigt (beide Quellen speichern von Süd nach Nord) (§8a.1).
    - Kandidat bleibt MeteoSchweiz `ogd-surface-derived-grid`: unkomprimiert, ein Chunk je Tag, also der einfachste Fall. DWD HYRAS danach (zlib, Chunks über 40 Tage).
    - Plan klärt: die Namen der Registry-Felder für Verweise, Zeitindex und ETag; den Coverage-Weg; das Feld für den Stand in der Kachel-URL. Datensätze nach F6.
    - Tests mit synthetischen NetCDF-4-Dateien (unkomprimiert und zlib, Zeilen von Süd nach Nord) unter `tests/fixtures`; GDAL als Gegenprobe (bitgleich).
-2. **Lock-Datei:** `h5py` neu (BSD-3-Clause, mit Prüfung der mitgelieferten Bibliotheken). `kerchunk`, `virtualizarr`, `fsspec`-HTTP und `obstore` kommen nicht dazu. **`.importlinter`:** neuer Vertrag „`h5py` nur in `discovery`“.
+2. **Lock-Datei:** `h5py` neu (BSD-3-Clause). **Bedingung aus F1:** Die Lizenzen der mitgelieferten Bibliotheken (HDF5, `libaec`) werden beim Eintrag geprüft und im PR genannt. `kerchunk`, `virtualizarr`, `fsspec`-HTTP und `obstore` kommen nicht dazu. **`.importlinter`:** neuer Vertrag „`h5py` nur in `discovery`“.
 3. **`readers`:** `ReferenceStore` neben `GatewayStore`; der Leser lernt einen Zeitindex und die Achsenrichtung; `ZARR_FORMAT = 3` bleibt. `failures.py`, `processing_route._FAILURES` und `frontend/src/jobState.ts` kennen `source_changed` (F7).
 4. **Registry:** Format für Rang 3, Zeitachse, Verweise und ETag je Item; `time_range = true`. Die Felder benennt der Plan von M5-11.
-5. **`adr/0025`** (Entwurf, PR #300): ob `source_changed` aus `jobs` einen Lauf anstößt (F7 Option 2), und dass Listen ohne ETag (DWD) über ihren Inhalt entschieden werden, passt zu dessen F7.
+5. **Offene Frage an `adr/0025`** (Entwurf, PR #300): Stößt `jobs` bei `source_changed` selbst einen Harvest-Lauf an, oder reicht der nächste geplante Lauf (F7 hier: der geplante Lauf genügt für M5-11)? Außerdem: Listen ohne ETag (DWD) werden über ihren Inhalt entschieden; das passt zu dessen F7.
 6. **`adr/0023` §7.1 und §9.1** sowie **`adr/0027` §6.5**: ARCO-ERA5 ist gemessen (Zarr v2, Chunk 1 h × Erde, kein Requester Pays, Lizenz laut README Copernicus) — Nachtrag dort bei Gelegenheit, nicht in diesem PR.
-7. **`architekturplan.md` 6.2 Rang 3:** Nachtrag bei Annahme: „virtuelle Verweise ohne Icechunk, erzeugt mit `h5py` über `gateway`“.
+7. **`architekturplan.md` 6.2 Rang 3:** Nachtrag bei Gelegenheit, nicht in diesem PR: „virtuelle Verweise ohne Icechunk, erzeugt mit `h5py` über `gateway`“.
 
 ---
 
