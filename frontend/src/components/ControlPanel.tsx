@@ -385,9 +385,10 @@ function MultiSelectToggle() {
 // A dataset that cannot be shown stays listed, disabled, with the reason.
 //
 // UI-05 (Otto, 06.11.2026): pages of at most six buttons, two a row, with as many rows as the panel holds without
-// scrolling (measured, at least one), and "‹ 1 / 3 ›" under them, also with one page. The grid keeps the height of a full
-// page, so that the last page does not let the panel jump. When the size of a page changes, the page of the dataset
-// picked last is shown.
+// scrolling (measured, at least one), and "‹ 1 / 3 ›" small at the right of the heading "Datasets" (Otto's review of
+// part 1), also with one page. The grid keeps the height of a full page, so that the last page does not let the panel
+// jump. When the size of a page changes, the page of the dataset picked last is shown. The heading row is drawn here,
+// because the pages are.
 function DatasetPicker() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
@@ -428,68 +429,78 @@ function DatasetPicker() {
   });
 
 
-  if (datasets.length === 0) return null;
   const first = shownPage === 0;
   const last = shownPage === pages - 1;
   return (
     <>
-      <div
-        ref={listRef}
-        className="dataset-list"
-        role="group"
-        aria-label="Datasets"
-        style={{ '--dataset-rows': drawnRows } as CSSProperties}
-      >
-        {pageSlice(datasets, shownPage, pageSize).map((d) => {
-          const picked = selectedDatasetIds.includes(d.id);
-          const label = d.viewable ? maturityLabel(d.collection) : null;
-          return (
-            <button
-              key={d.id}
-              type="button"
-              className="btn dataset-toggle"
-              data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}
-              aria-pressed={picked}
-              disabled={!d.viewable || busy}
-              onClick={() => toggle(d.id)}
-            >
-              <span className="dataset-toggle-title">{d.title}</span>
-              {label && <span className="maturity-chip">{label}</span>}
-            </button>
-          );
-        })}
-      </div>
-      <div className="dataset-pages" role="group" aria-label="Pages of datasets">
-        <button
-          type="button"
-          className="icon-btn sm"
-          aria-label="Previous page"
-          aria-disabled={first || undefined}
-          data-tip-level="advanced"
-          data-tip={first ? 'Already on the first page' : 'Previous page'}
-          onClick={() => {
-            if (!first) setPage(shownPage - 1);
-          }}
-        >
-          <ChevronLeftIcon size={14} />
-        </button>
-        <span className="dataset-page-count">
-          {shownPage + 1} / {pages}
+      <div className="field-label dataset-label">
+        <span>
+          Datasets
+          <MaturityTip />
+          {datasets.length > 0 && (
+            <span className="dataset-pages" role="group" aria-label="Pages of datasets">
+              <button
+                type="button"
+                className="icon-btn sm"
+                aria-label="Previous page"
+                aria-disabled={first || undefined}
+                data-tip-level="advanced"
+                data-tip={first ? 'Already on the first page' : 'Previous page'}
+                onClick={() => {
+                  if (!first) setPage(shownPage - 1);
+                }}
+              >
+                <ChevronLeftIcon size={14} />
+              </button>
+              <span className="dataset-page-count">
+                {shownPage + 1} / {pages}
+              </span>
+              <button
+                type="button"
+                className="icon-btn sm"
+                aria-label="Next page"
+                aria-disabled={last || undefined}
+                data-tip-level="advanced"
+                data-tip={last ? 'Already on the last page' : 'Next page'}
+                onClick={() => {
+                  if (!last) setPage(shownPage + 1);
+                }}
+              >
+                <ChevronRightIcon size={14} />
+              </button>
+            </span>
+          )}
         </span>
-        <button
-          type="button"
-          className="icon-btn sm"
-          aria-label="Next page"
-          aria-disabled={last || undefined}
-          data-tip-level="advanced"
-          data-tip={last ? 'Already on the last page' : 'Next page'}
-          onClick={() => {
-            if (!last) setPage(shownPage + 1);
-          }}
-        >
-          <ChevronRightIcon size={14} />
-        </button>
+        <MultiSelectToggle />
       </div>
+      {datasets.length > 0 && (
+        <div
+          ref={listRef}
+          className="dataset-list"
+          role="group"
+          aria-label="Datasets"
+          style={{ '--dataset-rows': drawnRows } as CSSProperties}
+        >
+          {pageSlice(datasets, shownPage, pageSize).map((d) => {
+            const picked = selectedDatasetIds.includes(d.id);
+            const label = d.viewable ? maturityLabel(d.collection) : null;
+            return (
+              <button
+                key={d.id}
+                type="button"
+                className="btn dataset-toggle"
+                data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}
+                aria-pressed={picked}
+                disabled={!d.viewable || busy}
+                onClick={() => toggle(d.id)}
+              >
+                <span className="dataset-toggle-title">{d.title}</span>
+                {label && <span className="maturity-chip">{label}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
@@ -724,13 +735,6 @@ export default function ControlPanel() {
         <Toolbar />
         <AoiExtras />
 
-        <div className="field-label dataset-label">
-          <span>
-            Datasets
-            <MaturityTip />
-          </span>
-          <MultiSelectToggle />
-        </div>
         <DatasetPicker />
         <CoverageButton />
 

@@ -5,10 +5,14 @@
 //     more than one row, or shows fewer rows than the room it has;
 //   - the counter does not read "1 / n" for the pages there are, an arrow at the edge is not locked with its reason, or
 //     turning the pages misses a dataset or shows one twice;
+//   - the arrows and the counter do not stand small at the right of the heading "Datasets", in its row, before "Select
+//     multiple datasets" and above the grid (Otto's review of part 1), or overlap one of them;
 //   - the grid of the last page is lower than a full page (the panel jumps);
 //   - a dataset picked on another page is not shown when a lower window shrinks the page;
 //   - "Advanced search" is missing without a dataset, is not locked with its reason, or opens anything;
-//   - the date fields offer days outside the extent, or are not locked with the acquisition period in their tooltip for
+//   - a choice of datasets does not fill the date fields with their first and last day (an open end being today), a day
+//     typed does not stay until the next choice, or the fields offer days outside the extent, or are not locked with the
+//     acquisition period in their tooltip for
 //     the dataset without a time axis; "No time axis" or "Scenes counted …" stand as text in the panel;
 //   - something leaves the panel, or the page scrolls sideways;
 // and writes a screenshot per step.
@@ -116,6 +120,19 @@ async function check(browser, { theme, viewport }) {
   expect('the counter', (await counter.textContent())?.replace(/\s+/g, ' ').trim() === `1 / ${pages}`, await counter.textContent());
   expect('the first arrow is not locked', (await previous.getAttribute('aria-disabled')) === 'true');
   expect('the reason of the first arrow', (await tipOnHover(previous)) === 'Already on the first page');
+  const heading = await rect(page.locator('.dataset-label'));
+  const word = await page.locator('.dataset-label > span:first-child').evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el.firstChild);
+    return range.getBoundingClientRect().toJSON();
+  });
+  const arrows = await rect(page.locator('.dataset-pages'));
+  const multi = await rect(page.locator('.multi-select-toggle'));
+  expect('the pages are not in the row of the heading', arrows.y >= heading.y - 1 && arrows.y + arrows.height <= heading.y + heading.height + 1, JSON.stringify(arrows));
+  expect('the pages are not right of "Datasets"', arrows.x >= word.x + word.width, `${Math.round(arrows.x)} < ${Math.round(word.x + word.width)}`);
+  expect('the pages overlap "Select multiple datasets"', arrows.x + arrows.width <= multi.x + 0.5, `${Math.round(arrows.x + arrows.width)} > ${Math.round(multi.x)}`);
+  expect('the pages are not above the grid', arrows.y + arrows.height <= (await rect(grid)).y);
+  expect('the pages are not small', arrows.height <= 24, `${arrows.height} px`);
   await shot('1-first-page');
 
   // 2. Turning the pages shows every dataset once; the last page is as high as a full one; the last arrow is locked.
@@ -156,9 +173,16 @@ async function check(browser, { theme, viewport }) {
   expect('a locked "Advanced search" opened', (await page.locator('.advanced-popup').count()) === 0);
   await shot('4-advanced-locked');
 
-  // 5. The dates: the days of the optical dataset; locked with the period for the elevation one; an (i) for both.
+  // 5. The dates: filled with and held to the days of the optical dataset; a typed day stays until the next choice; locked
+  // with the period for the elevation one; an (i) for both.
   await store((s) => { s.getState().setMultiSelect(true); s.getState().toggleDatasetSelected('optical'); });
   const from = page.locator('input[aria-label="From date"]');
+  const to = page.locator('input[aria-label="To date"]');
+  const filled = async () => [await from.inputValue(), await to.inputValue()].join(' → ');
+  expect('the choice did not fill the dates', (await filled()) === `2015-06-27 → ${TODAY}`, await filled());
+  await from.fill('2020-05-05');
+  await to.focus();
+  expect('a day typed did not stay', (await from.inputValue()) === '2020-05-05', await from.inputValue());
   expect('the first day offered', (await from.getAttribute('min')) === '2015-06-27', await from.getAttribute('min'));
   expect('the last day offered', (await from.getAttribute('max')) === TODAY, await from.getAttribute('max'));
   await from.fill('2001-01-01');
@@ -166,8 +190,10 @@ async function check(browser, { theme, viewport }) {
   expect('a day before the extent stayed', (await from.inputValue()) === '2015-06-27', await from.inputValue());
   await store((s) => s.getState().toggleDatasetSelected('dem'));
   expect('no (i) at the dates with the elevation dataset ticked as well', (await page.locator('.date-label .tip').count()) === 1);
+  expect('the next choice did not fill the dates anew', (await filled()) === `2015-06-27 → ${TODAY}`, await filled());
   await store((s) => s.getState().toggleDatasetSelected('optical'));
   expect('the dates are not locked without a time axis', await from.isDisabled());
+  expect('the locked dates do not show the period', (await filled()) === '2010-12-01 → 2015-01-31', await filled());
   expect('the period is not in the tooltip of the locked dates', (await tipOnHover(from)) === 'No time axis – acquired Dec 2010 to Jan 2015', await tipOnHover(from));
   const panelText = await page.locator('.control-panel').innerText();
   for (const phrase of ['No time axis', 'Scenes counted by their center point']) expect('an explanation as text in the panel', !panelText.includes(phrase), phrase);

@@ -511,6 +511,15 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
     expect(container.textContent).not.toContain('No time axis');
   });
 
+  it('fills the locked fields with the acquisition period when chosen (Otto, 06.11.2026)', () => {
+    useAppStore.setState({ datasets: datasetsFrom([NO_TIME_AXIS]), selectedDatasetIds: [], datasetId: null, dateFrom: '', dateTo: '' });
+    act(() => root.render(<ControlPanel />));
+    act(() => useAppStore.getState().toggleDatasetSelected(NO_TIME_AXIS.id));
+    const [from, to] = dateInputs();
+    expect([from.value, to.value]).toEqual(['2010-12-01', '2015-01-31']);
+    expect(from.disabled && to.disabled).toBe(true);
+  });
+
   it('leaves the fields enabled for a dataset with a time axis', () => {
     useAppStore.setState({
       datasets: datasetsFrom([WITH_TIME_AXIS]),
@@ -620,12 +629,40 @@ describe('AcquisitionDateFields: the days of the ticked datasets', () => {
     expect(useAppStore.getState().dateTo).toBe('2020-02-02');
   });
 
-  it('moves the days into the new choice when the ticked datasets change, and leaves them without bounds', () => {
-    setUp(['optical'], { dateFrom: '2016-01-01', dateTo: '2026-01-01' });
+  // Otto's review of part 1 (06.11.2026): a choice fills the fields with the first and the last day; what the user types
+  // stays until the next choice.
+  const dates = () => inputs().map((i) => i.value);
+
+  it('fills the fields with the first and the last day of a chosen dataset, an open end being today', () => {
+    setUp([]);
     act(() => useAppStore.getState().toggleDatasetSelected('optical'));
-    expect(useAppStore.getState()).toMatchObject({ dateFrom: '2016-01-01', dateTo: '2026-01-01' });
+    expect(dates()).toEqual(['2015-06-27', '2026-11-06']);
+  });
+
+  it('fills them anew with each choice: the earliest and the latest day over all chosen', () => {
+    setUp([]);
     act(() => useAppStore.getState().toggleDatasetSelected('radar'));
-    expect(useAppStore.getState()).toMatchObject({ dateFrom: '2016-01-01', dateTo: '2021-12-23' });
+    expect(dates()).toEqual(['2014-10-03', '2021-12-23']);
+    act(() => useAppStore.getState().toggleDatasetSelected('optical'));
+    expect(dates()).toEqual(['2014-10-03', '2026-11-06']);
+  });
+
+  it('keeps what the user types until the next choice, which fills the fields anew', () => {
+    setUp([]);
+    act(() => useAppStore.getState().toggleDatasetSelected('optical'));
+    act(() => useAppStore.getState().setDateFrom('2024-03-01'));
+    act(() => useAppStore.getState().setDateTo('2024-04-01'));
+    act(() => root.render(<ControlPanel />));
+    expect(dates()).toEqual(['2024-03-01', '2024-04-01']);
+    act(() => useAppStore.getState().toggleDatasetSelected('radar'));
+    expect(dates()).toEqual(['2014-10-03', '2026-11-06']);
+  });
+
+  it('empties the fields when the last chosen dataset is dropped', () => {
+    setUp([]);
+    act(() => useAppStore.getState().toggleDatasetSelected('optical'));
+    act(() => useAppStore.getState().toggleDatasetSelected('optical'));
+    expect(dates()).toEqual(['', '']);
   });
 });
 
@@ -848,6 +885,18 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(buttons().find((b) => b.textContent === 'Extra 6')?.getAttribute('aria-pressed')).toBe('true');
     });
 
+    // Otto's review of part 1 (06.11.2026): small, at the right of the heading "Datasets", not under the list.
+    it('stands in the heading row, right of "Datasets" and before "Select multiple datasets", not under the grid', () => {
+      setUpMany();
+      const pages = container.querySelector('.dataset-pages')!;
+      const heading = container.querySelector('.dataset-label')!;
+      expect(heading.contains(pages)).toBe(true);
+      expect(pages.parentElement?.firstChild?.textContent).toBe('Datasets');
+      expect(pages.compareDocumentPosition(heading.querySelector('.multi-select-toggle')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(container.querySelector('.dataset-list')!.contains(pages)).toBe(false);
+      expect(container.querySelector('.dataset-list')!.nextElementSibling?.classList.contains('dataset-pages')).toBe(false);
+    });
+
     it('shows "1 / 1" with both arrows locked when all fit on one page', () => {
       setUp([]);
       expect(count()).toBe('1 / 1');
@@ -958,13 +1007,11 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       return [...container.querySelectorAll('.coverage-choice-item')] as HTMLButtonElement[];
     }
 
-    it('sits right under the grid of dataset buttons and its pages, outside them, and not in the footer', () => {
+    it('sits right under the grid of dataset buttons, outside it, and not in the footer', () => {
       setUp(['optical']);
       expect(button()).not.toBeNull();
       const grid = container.querySelector('.dataset-list')!;
-      // Under the grid only the row of pages, then the button (UI-05).
-      expect(grid.nextElementSibling?.classList.contains('dataset-pages')).toBe(true);
-      expect(grid.nextElementSibling?.nextElementSibling?.classList.contains('coverage-button-wrap')).toBe(true);
+      expect(grid.nextElementSibling?.classList.contains('coverage-button-wrap')).toBe(true);
       expect(grid.querySelector('.coverage-button-wrap')).toBeNull();
       expect(container.querySelector('.control-footer .coverage-button-wrap')).toBeNull();
       expect(button().textContent).toBe('Coverage');
