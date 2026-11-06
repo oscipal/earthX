@@ -27,13 +27,18 @@ from stac_pydantic import Item as StacItem
 
 from earthx.adapters import ADAPTER_SPECS, get_item, materialize_items, search_items
 from earthx.adapters.spec import AdapterSpec, AdapterSpecs
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
+from earthx.catalog.datasets import COP_DEM_GLO_30, ESA_WORLDCOVER_2021, SENTINEL_2_L2A
 from earthx.catalog.registry import AdapterKind, DatasetConfig
 from earthx.gateway import Policy, host_of
 from tests.earthx.adapters.conftest import FIXTURES as EARTH_SEARCH_FIXTURES
 from tests.earthx.adapters.conftest import answering, load
 from tests.earthx.adapters.test_cop_dem_bucket import HOST as DEM_HOST
 from tests.earthx.adapters.test_cop_dem_bucket import TILE_NE, TILE_SW, bucket
+from tests.earthx.adapters.test_esa_worldcover_bucket import HOST as WORLDCOVER_HOST
+from tests.earthx.adapters.test_esa_worldcover_bucket import TILES as WORLDCOVER_TILES
+from tests.earthx.adapters.test_esa_worldcover_bucket import bucket as worldcover_bucket
+from tests.earthx.adapters.test_esa_worldcover_bucket import grid as worldcover_grid
+from tests.earthx.adapters.test_esa_worldcover_bucket import key as worldcover_key
 
 pytestmark = pytest.mark.anyio
 
@@ -110,6 +115,17 @@ async def _materialized() -> list[dict[str, Any]]:
     return list(outcome.items)
 
 
+async def _materialized_worldcover() -> list[dict[str, Any]]:
+    config = replace(
+        ESA_WORLDCOVER_2021,
+        source=replace(ESA_WORLDCOVER_2021.source, endpoint=f"https://{WORLDCOVER_HOST}", asset_hosts=(WORLDCOVER_HOST,)),
+    )
+    gateway, _ = worldcover_bucket(worldcover_grid(WORLDCOVER_TILES), [[worldcover_key(t) for t in WORLDCOVER_TILES]])
+    async with gateway:
+        outcome = await materialize_items(config, adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
+    return list(outcome.items)
+
+
 # One producer per entry of the table and capability that delivers items. A new adapter,
 # or a new capability of an old one, adds a line here, with its own synthetic fixtures.
 PRODUCERS: Mapping[Capability, Producer] = {
@@ -120,6 +136,7 @@ PRODUCERS: Mapping[Capability, Producer] = {
         SENTINEL_2_L2A, EARTH_SEARCH_FIXTURES, "item", "item_asset_hosts"
     ),
     (AdapterKind.COP_DEM_BUCKET, "materialize"): _materialized,
+    (AdapterKind.ESA_WORLDCOVER_BUCKET, "materialize"): _materialized_worldcover,
 }
 
 

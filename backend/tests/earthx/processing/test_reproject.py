@@ -121,8 +121,14 @@ class TestParameters:
 class TestWhereItApplies:
     @pytest.mark.parametrize("config", list(DATASETS), ids=lambda config: config.dataset_id)
     def test_every_registry_entry_allows_it(self, config) -> None:
+        """A method that picks a value of the source everywhere; the others where the entry allows interpolation (not
+        for classes, M5-07)."""
         for resampling in METHODS:
-            assert applicable(REPROJECT, config, _params(resampling=resampling)) == []
+            reasons = applicable(REPROJECT, config, _params(resampling=resampling))
+            if resampling in reproject_module._PICKING or config.capabilities.interpolation:
+                assert reasons == [], resampling
+            else:
+                assert reasons == [f"{config.dataset_id} does not allow interpolation"], resampling
 
     def test_without_the_reprojection_flag(self) -> None:
         config = next(iter(DATASETS))

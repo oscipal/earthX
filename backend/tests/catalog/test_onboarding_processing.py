@@ -49,7 +49,7 @@ from earthx.api.citation import citation_bib
 from earthx.api.intake import AcceptedOrder, accept_order, job_recipe_json
 from earthx.api.tiler import build_app
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import DataFormat, DatasetConfig, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import AdapterKind, DataFormat, DatasetConfig, DatasetRegistry, ItemHolding
 from earthx.gateway import Gateway
 from earthx.processing import RunResult, run
 from earthx.processing.operators import REGISTRY as OPERATORS
@@ -62,11 +62,14 @@ from tests.catalog.test_onboarding_checklist import CHECKED_ELSEWHERE, CHECKLIST
 from tests.earthx.processing import sources
 from tests.earthx.readers import mini_dem, mini_zarr, mini_zarr_cf
 
-#: Q14: band math for the Sentinel-2 entry and the Zarr test entry, reprojection for the DEM.
+#: Q14: band math for the Sentinel-2 entry and the Zarr test entry, reprojection for the DEM; the mask over its own
+#: classes for ESA WorldCover (M5-07 plan §4.4, no band math there).
 OPERATOR_FOR = {
     "sentinel-2-c1-l2a": "band_math",
     "synthetic-zarr": "band_math",
     "cop-dem-glo-30": "reproject",
+    "esa-worldcover-2020": "mask",
+    "esa-worldcover-2021": "mask",
 }
 
 ENTRIES = list(TEST_ENTRIES)
@@ -76,6 +79,8 @@ SIDE = 300  # pixels of a synthetic Sentinel-2 band
 ZOOM = 14  # a level that reads the native resolution of both stores
 ZARR_ASSET = "SR_10m:b04,b08"
 REPROJECT = {"crs": "EPSG:32632", "resolution": 100.0, "resampling": "bilinear"}
+#: Hide water and built-up land in the map of classes.
+MASK = {"source": "map", "classes": [50, 80]}
 BAND = {"data_type": "uint16", "nodata": 0, "raster:scale": sources.SCALE, "raster:offset": sources.OFFSET}
 
 
@@ -100,18 +105,25 @@ class Scenario:
     result_bands: list[str]
     #: The tile for link 6 (band math only).
     tile: tuple[int, int, int] | None
+    #: Recipe version 2 names the bands of the result (adr/0020 §4); ``None`` is an order of version 1.
+    output_bands: list[str] | None = None
 
     @property
     def order(self) -> str:
+        output: dict[str, Any] = {"kind": "raster", "format": "cog", "dtype": "float32"}
+        if self.output_bands is not None:
+            output["bands"] = self.output_bands
         return json.dumps(
             {
-                "recipe_version": 1,
+                "recipe_version": 1 if self.output_bands is None else 2,
                 "inputs": [
-                    {"name": "input", "dataset": self.config.dataset_id, "groups": [[self.item["id"]]], "assets": self.assets}
+                    # In version 2 the assets follow from output.bands and the steps (recipe.py).
+                    {"name": "input", "dataset": self.config.dataset_id, "groups": [[self.item["id"]]]}
+                    | ({"assets": self.assets} if self.output_bands is None else {})
                 ],
                 "aoi": self.aoi,
                 "steps": [self.step],
-                "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
+                "output": output,
             }
         )
 
@@ -134,6 +146,8 @@ def _central_tile(bounds: tuple[float, ...], crs: str) -> tuple[int, int, int]:
 
 def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
     """A scenario for one entry, or :class:`UnsupportedFormat` — never a quiet pass."""
+    if config.format is DataFormat.COG and config.source.adapter is AdapterKind.ESA_WORLDCOVER_BUCKET:
+        return _worldcover(config, tmp_path, monkeypatch)
     if config.format is DataFormat.COG and config.source.item_holding is ItemHolding.MATERIALIZED:
         return _dem(config, tmp_path, monkeypatch)
     if config.format is DataFormat.COG:
@@ -226,6 +240,25 @@ def _dem(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         gateway=gateway,
         result_bands=["data"],
         tile=None,
+    )
+
+
+def _worldcover(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
+    sources.serve({}, monkeypatch)  # the resolver; the COG itself is served by the chain
+    chain = synthetic_chain.build(config, tmp_path, monkeypatch)
+    return Scenario(
+        config=chain.config,
+        registry=chain.registry,
+        item=chain.item,
+        assets=["map"],
+        aoi=chain.aoi,
+        # Version 2 keeps the layer (NM4-43c): the map is the data and its own mask at once.
+        step={"op": "mask", "op_version": 2, "params": MASK},
+        scaling="none",
+        gateway=chain.gateway,
+        result_bands=["map"],
+        tile=None,
+        output_bands=["map"],
     )
 
 
@@ -328,8 +361,9 @@ def test_a_fourth_entry_without_an_operator_is_found() -> None:
 
 def test_every_assigned_operator_exists_and_applies_to_its_entry() -> None:
     for config in ENTRIES:
-        operator = OPERATORS.operator(OPERATOR_FOR[config.dataset_id], 2 if OPERATOR_FOR[config.dataset_id] == "reproject" else 1)
-        params = operator.params.model_validate(REPROJECT if operator.op == "reproject" else {"expression": "a + b"})
+        op = OPERATOR_FOR[config.dataset_id]
+        operator = OPERATORS.operator(op, 2 if op in ("reproject", "mask") else 1)
+        params = operator.params.model_validate({"reproject": REPROJECT, "mask": MASK}.get(op, {"expression": "a + b"}))
         assert applicable(operator, config, params) == [], config.dataset_id
 
 

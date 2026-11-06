@@ -1,7 +1,7 @@
 """Every registry entry's items: an asset with band names also carries the core field ``bands`` (M4-23).
 
 One synthetic item per dataset, taken through the adapter path that item would take
-(the Earth Search pass-through, for a COG and for a Zarr item, the DEM item builder). A new
+(the Earth Search pass-through, for a COG and for a Zarr item, the DEM and the WorldCover item builders). A new
 registry entry fails ``test_every_registry_entry_is_covered`` until it is added here.
 """
 
@@ -16,8 +16,9 @@ import pytest
 
 from earthx.adapters.cop_dem_bucket import _item as dem_item
 from earthx.adapters.earth_search import get_item as earth_search_item
+from earthx.adapters.esa_worldcover_bucket import _item as worldcover_item
 from earthx.adapters.federated_search import with_core_bands
-from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
+from earthx.catalog.datasets import COP_DEM_GLO_30, ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021, REGISTRY, SENTINEL_2_L2A
 from earthx.gateway import Policy
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.readers import mini_zarr
@@ -65,16 +66,22 @@ def dem_fixture() -> dict[str, Any]:
     return dem_item("Copernicus_DSM_10_N47_00_E009_00_DEM", (9.0, 47.0, 10.0, 48.0), config=config)
 
 
+def worldcover_fixture(entry) -> dict[str, Any]:
+    config = replace(entry, source=replace(entry.source, endpoint="https://worldcover.example"))
+    return worldcover_item("ESA_WorldCover_10m_N45E009", "map/N45E009_Map.tif", (9.0, 45.0, 12.0, 48.0), config=config)
+
+
 async def items_by_dataset() -> dict[str, dict[str, Any]]:
     return {
         SENTINEL_2_L2A.dataset_id: await earth_search_fixture(),
         SYNTHETIC_ZARR.dataset_id: await zarr_fixture(),
         COP_DEM_GLO_30.dataset_id: dem_fixture(),
+        **{entry.dataset_id: worldcover_fixture(entry) for entry in (ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021)},
     }
 
 
 def test_every_registry_entry_is_covered() -> None:
-    covered = {SENTINEL_2_L2A.dataset_id, COP_DEM_GLO_30.dataset_id}
+    covered = {SENTINEL_2_L2A.dataset_id, COP_DEM_GLO_30.dataset_id, ESA_WORLDCOVER_2020.dataset_id, ESA_WORLDCOVER_2021.dataset_id}
     assert {entry.dataset_id for entry in REGISTRY} == covered
 
 
