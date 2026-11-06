@@ -403,7 +403,7 @@ Folgerungen [A]:
    - **(b)** Den Schritt in GDAL über `/vsicurl/` mit dem NetCDF- bzw. HDF5-Treiber machen. Das ist einfach, aber oft langsam, weil NetCDF-4/HDF5 viele kleine Lesezugriffe braucht.
    - **(c)** Ein flüchtiger Cache als COG mit Ablaufdatum (Prinzip 1 erlaubt abgeleitete Produkte nur flüchtig).
    
-   Das ist rechenrelevant und gehört in eine eigene Recherche bzw. einen Spike (Frage F4).
+   Das ist rechenrelevant und gehört in eine eigene Recherche bzw. einen Spike (Frage F3).
 3. GRIB2 auf dem Ikosaedergitter (ICON) braucht ein Umrechnen auf ein reguläres Gitter. Das ist Processing, kein Lesen. Bis auf Weiteres scheidet es aus.
 
 ### 7.2 Lizenzen und Vorschlag zur B11-Einstufung
