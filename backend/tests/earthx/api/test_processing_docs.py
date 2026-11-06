@@ -18,7 +18,7 @@ from fastapi import FastAPI
 
 from earthx.api.processing_docs import FORM_NOTE, OUTPUTS, order_schema
 from earthx.api.processing_route import router
-from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.datasets import COP_DEM_GLO_30, ESA_WORLDCOVER_2021, REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
@@ -205,6 +205,23 @@ class TestOrderSchema:
         assert "step_reproject_v4" in schema["$defs"]
         params = schema["$defs"]["step_reproject_v4"]["properties"]["params"]
         assert set(params["required"]) == {"crs", "resolution", "resampling"}
+
+    @staticmethod
+    def _methods(config=None) -> list[str]:
+        params = order_schema(REAL_OPERATORS, config)["$defs"]["step_reproject_v4"]["properties"]["params"]
+        return [choice["const"] for choice in params["properties"]["resampling"]["oneOf"]]
+
+    def test_a_dataset_without_interpolation_is_offered_the_picking_methods_only(self) -> None:
+        """M5-07: what a class map cannot run is not offered; intake would refuse it all the same."""
+        assert self._methods(ESA_WORLDCOVER_2021) == ["nearest", "mode"]
+
+    def test_a_dataset_with_interpolation_and_no_dataset_are_offered_every_method(self) -> None:
+        every = self._methods()
+        assert {"nearest", "mode", "bilinear", "lanczos"} <= set(every)
+        assert self._methods(COP_DEM_GLO_30) == every
+        # Counter-check: the narrowing follows the flag, not the dataset.
+        without = replace(COP_DEM_GLO_30, capabilities=replace(COP_DEM_GLO_30.capabilities, interpolation=False))
+        assert self._methods(without) == ["nearest", "mode"]
 
     def test_only_the_highest_version_of_an_operator_is_offered(self) -> None:
         """Versions 2 and 3 of reproject are still accepted, but not listed (M4-24, Otto 20.10.2026; NM4-43b)."""
