@@ -228,3 +228,16 @@ Teil 1 in diesem PR, Teil 2 in einer neuen Session mit eigenem PR nach dem Merge
 - **A1–A9** angenommen.
 - Danach: Teil 1 umsetzen (§6.1, §9).
 - **Nachtrag (Otto, 06.11.2026, aus `adr/0026`, #301):** Der Data catalogue ist ein Fenster: ein Klick daneben schließt es nicht, ein zweiter Klick auf das Symbol in der Leiste schließt es. Der obere Bereich bleibt frei für Suchfeld und AOI-Schalter, ohne sichtbar leere Fläche (§4.1, §4.2). Die Form „Fenster“ steht im Leitfaden §5 und §7.
+
+## 9. Teil 1 umgesetzt (06.11.2026)
+
+Umgesetzt wie §3, mit den Auslegungen A1–A4 und F8:
+
+- **Seiten:** `datasetPages.ts` (Reihen, die passen; Seitenzahl; Seite eines Eintrags), `DatasetPicker` misst mit `ResizeObserver` den freien Platz in `.control-scroll` und hält das Raster auf der Höhe einer vollen Seite (`--dataset-rows`). Ohne Layout (jsdom) bleiben drei Reihen.
+- **„Advanced search“:** immer da; ohne gewählten Datensatz „Choose a dataset to see its filters“, mit gewählten ohne Filter „The chosen datasets offer no filters“ (`aria-disabled`).
+- **Datum:** `dateBounds.ts`; `min`/`max` an beiden Feldern, Grenze beim Verlassen des Feldes und bei jeder neuen Wahl (`applyDatasetSelection` im Store).
+- **Kein Zusatztext:** wie §3.4; `DatasetNotes` ist durch eine Warnung an „Datasets“ ersetzt, die Zeile der Ortssuche durch ein (i) am Feld (F8).
+- **Abweichung von §6.1:** `addedDatasetIds` kommt erst mit Teil 2. In Teil 1 sind alle Datensätze der Registry „hinzugefügt“, das Panel blättert über `datasets`; ein Feld im Store, das nichts ändert, wäre bis dahin ein toter Rest.
+- **Beobachtung:** Nach dem Klick auf den letzten „Next page“ ist der Pfeil gesperrt, sein Grund erscheint aber erst, wenn der Zeiger den Pfeil verlässt und wieder darüber kommt (`TipLayer` reagiert auf das Hineinfahren, nicht auf eine neue Sperre unter dem Zeiger). Gilt ebenso für andere Knöpfe, die sich durch den eigenen Klick sperren; nicht geändert.
+
+**Geprüft:** `vitest` (alle Dateien), `tsc`, `oxlint`; Gegenprobe der neuen und geänderten Tests gegen die Komponenten von `main` (22 scheitern); Browser-Skript `e2e/dataset-pages.cjs` (Hell/Dunkel; 1280 × 800, 1280 × 560, 360 und 320 px) grün, gegen `main` bricht es ab (kein Zähler). `e2e/focus-and-type.cjs` grün. `advanced-search`, `evaluate-coverage`, `narrow-windows`, `settings-panel`, `tooltips`, `selection-block` und `within-aoi` scheitern auf `main` genauso wie auf dem Branch (gleiche Befunde, gleiche Stellen); `advanced-search.cjs` ist an Teil 1 angepasst (Schritt 1: Knopf beim DEM da und gesperrt), die Schritte davor bestehen.
