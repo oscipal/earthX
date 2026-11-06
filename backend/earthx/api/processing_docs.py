@@ -19,6 +19,7 @@ from earthx.api.intake import MAX_ORDER_STEPS
 from earthx.catalog.registry import DatasetConfig
 from earthx.objectstore.results import RESULT_NAMES
 from earthx.processing.operators import JSON_SCHEMA_DIALECT, Operator, OperatorRegistry, Tier, applicable
+from earthx.processing.operators.reproject import PICKING
 from earthx.processing.recipe import RECIPE_VERSION, RecipeRequest
 
 __all__ = [
@@ -238,7 +239,17 @@ def _prefixed(node: Any, prefix: str) -> Any:
     return node
 
 
-def _step_schemas(operators: OperatorRegistry, chosen: Iterable[Operator]) -> tuple[dict[str, Any], list[str]]:
+def _without_interpolation(params: dict[str, Any]) -> None:
+    """Only the methods that pick a source value, for a dataset without ``interpolation`` (classes, M5-07): what it
+    cannot run is not offered (M5 plan §6.4)."""
+    resampling = params.get("properties", {}).get("resampling")
+    if resampling is not None and "oneOf" in resampling:
+        resampling["oneOf"] = [choice for choice in resampling["oneOf"] if choice.get("const") in PICKING]
+
+
+def _step_schemas(
+    operators: OperatorRegistry, chosen: Iterable[Operator], config: DatasetConfig | None = None
+) -> tuple[dict[str, Any], list[str]]:
     """One definition per operator in one version, and its parameter definitions under their own names."""
     defs: dict[str, Any] = {}
     names: list[str] = []
@@ -246,6 +257,8 @@ def _step_schemas(operators: OperatorRegistry, chosen: Iterable[Operator]) -> tu
         name = f"step_{operator.op}_v{operator.op_version}"
         params = operators.params_schema(operator.op, operator.op_version)
         params.pop("$schema", None)
+        if operator.op == "reproject" and config is not None and not config.capabilities.interpolation:
+            _without_interpolation(params)
         inner = params.pop("$defs", {})
         prefix = f"{name}__"
         for key, value in inner.items():
@@ -286,7 +299,7 @@ def order_schema(operators: OperatorRegistry, config: DatasetConfig | None = Non
     for unused in ("Step", "JsonValue", "CropOutput", "CropLayout"):
         defs.pop(unused, None)
     schema["properties"]["output"] = {"$ref": "#/$defs/RasterOutput"}
-    step_defs, names = _step_schemas(operators, _jobs_of(operators, config))
+    step_defs, names = _step_schemas(operators, _jobs_of(operators, config), config)
     defs.update(step_defs)
     if names:
         items: dict[str, Any] = {"oneOf": [{"$ref": f"#/$defs/{name}"} for name in names]}

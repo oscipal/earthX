@@ -12,7 +12,7 @@ import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { defaultRenderOf, showsColormap } from '../datasets';
+import { defaultRenderOf, drawsClasses, showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
@@ -40,6 +40,8 @@ import ScaleHistograms from './ScaleHistograms';
 import { useHistograms } from './useHistograms';
 
 const INDEX_ONLY_TIP = 'This layer holds the index only';
+const CLASS_COLOURS = 'Classes';
+const CLASS_COLOURS_TIP = 'Each class in the colour of the source; a class map has no range and no other colormap';
 const ENHANCE_RGB_TIP = 'Put the 2nd to the 98th percentile of red, green and blue in the fields, each channel on its own; Apply draws them. Only the look: Add to layers pins the whole view.';
 
 // The histograms of the bands the statistics name, in their order; none where one band has none.
@@ -214,6 +216,8 @@ export default function ViewerControls() {
   );
   // An index is drawn with a colormap whatever the dataset's own picture is.
   const colormap = chosen || pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
+  // A layer of classes keeps the colours of its source: no range, no other colormap (M5-07 plan F4).
+  const classes = !chosen && shownDataset ? drawsClasses(shownDataset.collection) : false;
   const at = shown ? here.indexOf(shown) : -1;
   // Temporary where no layer holds the image as it is drawn now (Otto, 1.11.2026). What is only typed in the fields does not count: the
   // measured range that stands in them when the view opens is no change; "Apply" is.
@@ -317,18 +321,25 @@ export default function ViewerControls() {
               vmax={pendingUnit === 'percent' ? { value: pendingPercentHigh, onChange: (text) => setPendingPercent('high', text) } : { value: pendingVmax, onChange: setPendingVmax }}
               unit={colour ? undefined : { value: pendingUnit, onChange: setPendingUnit }}
               // The bar stays as it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
-              colormap={colormap ? { value: pendingColormapName, onChange: setPendingColormapName } : { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' }}
+              colormap={
+                classes
+                  ? { fixed: CLASS_COLOURS, title: CLASS_COLOURS_TIP }
+                  : colormap
+                    ? { value: pendingColormapName, onChange: setPendingColormapName }
+                    : { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' }
+              }
               placeholder="auto"
               scale
+              noRange={classes}
             />
             {/* The view of the search has an opacity of its own; a layer that draws it has its own (Otto, 2.11.2026). */}
             <OpacityRow layer={compact ? layer : (drawnBy ?? undefined)} />
             <div className="vc-buttons">
-              <AutoScaleButton
+              {!classes && <AutoScaleButton
                 title={focusLoading ? 'Measuring the range…' : pendingUnit === 'percent' ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Measure the 2nd/98th percentile stretch from the source again'}
                 busy={focusLoading}
                 onClick={() => void autoStretch()}
-              />
+              />}
               <button
                 type="button"
                 className="btn vc-apply"

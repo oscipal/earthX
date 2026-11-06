@@ -50,7 +50,9 @@ class TestTheEntries:
 
     @pytest.mark.parametrize("entry", TEST_ENTRIES, ids=lambda entry: entry.dataset_id)
     def test_every_entry_switches_normalization_on_itself(self, entry) -> None:
-        assert entry.capabilities.normalization is True
+        """On for every entry, except a map of classes, whose values are codes, not measurements (M5-07)."""
+        classes_only = entry.mask is not None and entry.default_render is not None and entry.default_render.assets == (entry.mask.asset,)
+        assert entry.capabilities.normalization is not classes_only
 
 
 class TestTheCollection:

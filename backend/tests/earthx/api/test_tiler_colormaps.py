@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy
 
-from earthx.access.colormaps import COLORMAPS
+from earthx.access.colormaps import CLASS_TABLES, COLORMAPS
 from tests.earthx.api.test_tiler_band import NDVI, Rig, _url, files, rig  # noqa: F401 - fixtures
 from tests.earthx.api.test_tiler_chain import _decode
 
@@ -23,7 +23,8 @@ class TestTheList:
         assert response.status_code == 200
         assert response.headers["cache-control"] == "public, max-age=86400"
         listed = {name for group in response.json()["groups"] for entry in group["colormaps"] for name in (entry["name"], entry["reversed"])}
-        assert listed == set(COLORMAPS.list())
+        # A class table paints its own dataset only and is no ramp to pick (M5-07 plan F4).
+        assert listed == set(COLORMAPS.list()) - set(CLASS_TABLES)
 
 
 class TestTheTiles:

@@ -285,5 +285,7 @@ class TestRunWithA20mLayer:
 
 def test_every_registry_entry_without_a_layer_refuses_the_operator() -> None:
     for config in TEST_ENTRIES:
-        reasons = applicable(MASK, config, _params(3))
+        # The entry's own layer and one of its classes, where it has one; the layer of Sentinel-2 otherwise.
+        params = _params(config.mask.classes[0].value, source=config.mask.band) if config.mask else _params(3)
+        reasons = applicable(MASK, config, params)
         assert (reasons == []) == (config.mask is not None), config.dataset_id

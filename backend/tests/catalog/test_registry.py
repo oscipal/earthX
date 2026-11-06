@@ -519,6 +519,7 @@ class TestMalformedInput:
                 endpoint=valid_config.source.endpoint,
                 source_collection_id=valid_config.source.source_collection_id,
                 item_holding=valid_config.source.item_holding,
+                data_region=valid_config.source.data_region,
             )
 
     def test_item_holding_is_not_optional(self, valid_config) -> None:
@@ -529,7 +530,67 @@ class TestMalformedInput:
                 endpoint=valid_config.source.endpoint,
                 source_collection_id=valid_config.source.source_collection_id,
                 asset_hosts=valid_config.source.asset_hosts,
+                data_region=valid_config.source.data_region,
             )
+
+    def test_data_region_is_not_optional(self, valid_config) -> None:
+        """M5-07, adr/0023 F3: a required field for every entry, the existing ones included."""
+        with pytest.raises(TypeError):
+            SourceInfo(
+                adapter=valid_config.source.adapter,
+                endpoint=valid_config.source.endpoint,
+                source_collection_id=valid_config.source.source_collection_id,
+                asset_hosts=valid_config.source.asset_hosts,
+                item_holding=valid_config.source.item_holding,
+            )
+
+
+class TestDataRegion:
+    """The form of adr/0023 F7 and the start check against AWS asset hosts (adr/0022 §7.2, M5-07 plan F2)."""
+
+    @staticmethod
+    def _source(valid_config, region: object, *hosts: str):
+        return replace(valid_config.source, data_region=region, asset_hosts=hosts or valid_config.source.asset_hosts)
+
+    @pytest.mark.parametrize("region", ["aws:eu-central-1", "eodc:vienna", "cscs:lugano", "dwd:offenbach", "unknown"])
+    def test_a_well_formed_value_is_accepted(self, vary, valid_config, region) -> None:
+        assert vary(source=self._source(valid_config, region)).source.data_region == region
+
+    @pytest.mark.parametrize(
+        "region",
+        ["", "aws", "AWS:eu-central-1", "aws:eu-central-1:x", "aws:", ":vienna", "aws: eu-central-1", "aws:eu_central", "-x:y", None, 1],
+    )
+    def test_a_malformed_value_is_rejected(self, vary, valid_config, region) -> None:
+        with pytest.raises(ConfigError, match="data_region"):
+            vary(source=self._source(valid_config, region))
+
+    def test_the_region_an_aws_host_names_must_match(self, vary, valid_config) -> None:
+        host = "bucket.s3.us-west-2.amazonaws.com"
+        assert vary(source=self._source(valid_config, "aws:us-west-2", host)).source.data_region == "aws:us-west-2"
+        with pytest.raises(ConfigError, match="contradicts"):
+            vary(source=self._source(valid_config, "aws:eu-central-1", host))
+        with pytest.raises(ConfigError, match="contradicts"):
+            vary(source=self._source(valid_config, "unknown", host))
+
+    def test_the_dash_form_of_a_regional_host_is_read_too(self, vary, valid_config) -> None:
+        with pytest.raises(ConfigError, match="contradicts"):
+            vary(source=self._source(valid_config, "aws:us-east-1", "bucket.s3-eu-west-1.amazonaws.com"))
+
+    def test_hosts_in_two_regions_are_rejected(self, vary, valid_config) -> None:
+        hosts = ("a.s3.eu-central-1.amazonaws.com", "b.s3.us-west-2.amazonaws.com")
+        with pytest.raises(ConfigError, match="more than one"):
+            vary(source=self._source(valid_config, "aws:eu-central-1", *hosts))
+
+    def test_an_aws_host_without_a_region_asks_for_the_operator_only(self, vary, valid_config) -> None:
+        host = "bucket.s3.amazonaws.com"
+        assert vary(source=self._source(valid_config, "aws:eu-central-1", host)).source.data_region == "aws:eu-central-1"
+        for region in ("unknown", "eodc:vienna"):
+            with pytest.raises(ConfigError, match="no aws region"):
+                vary(source=self._source(valid_config, region, host))
+
+    def test_another_host_is_not_checked(self, vary, valid_config) -> None:
+        """A CDN in front of a bucket (FSDI) tells nothing about where it stores (adr/0023 §7.3)."""
+        assert vary(source=self._source(valid_config, "aws:eu-central-1", "data.example.invalid")).source.data_region
 
 
 class TestEveryEntry:
@@ -545,6 +606,10 @@ class TestEveryEntry:
     def test_the_assets_have_a_host(self, entry: DatasetConfig) -> None:
         """Without one, the search answers and every read of an asset is refused (D12)."""
         assert entry.source.asset_hosts
+
+    def test_the_data_region_is_decided(self, entry: DatasetConfig) -> None:
+        """M5-07: every entry names where its data lie; `unknown` is a value an entry sets on purpose."""
+        assert entry.source.data_region
 
     def test_the_licence_is_identifiable(self, entry: DatasetConfig) -> None:
         assert entry.license.spdx_id or (entry.license.name and entry.license.url)

@@ -23,12 +23,17 @@ from typing import Any
 from rio_tiler.colormap import cmap as RIO_TILER_COLORMAPS
 from titiler.core.dependencies import create_colormap_dependency
 
-__all__ = ["COLORMAPS", "COLORMAP_PARAMS", "GROUPS", "PREVIEW_STOPS", "REVERSED", "catalog"]
+__all__ = ["CLASS_TABLES", "COLORMAPS", "COLORMAP_PARAMS", "GROUPS", "PREVIEW_STOPS", "REVERSED", "catalog"]
 
 _DATA = Path(__file__).with_name("colormap_data")
 
 #: The colormaps added to rio-tiler's, each a file of 256 RGB triples in ``colormap_data/`` (origin and licence in it).
 _ADDED = ("rocket", "mako")
+
+#: Tables of classes, each a file in ``colormap_data/`` with the colour of every class value (M5-07 plan F4). They paint
+#: a class layer as its source does, with no stretch: the tiles take them as ``colormap_name`` like every other, but
+#: they are no ramp to choose for other data, so the list leaves them out and none has a reversed one.
+CLASS_TABLES = ("esa-worldcover",)
 
 REVERSED = "_r"
 
@@ -69,6 +74,9 @@ def _added() -> dict[str, dict[int, tuple[int, int, int, int]]]:
         table = [(int(r), int(g), int(b), 255) for r, g, b in rgb]
         added[name] = dict(enumerate(table))
         added[f"{name}{REVERSED}"] = dict(enumerate(reversed(table)))
+    for name in CLASS_TABLES:
+        classes = json.loads((_DATA / f"{name}.json").read_text(encoding="utf-8"))["classes"]
+        added[name] = {int(value): tuple(int(part) for part in rgba) for value, rgba in classes.items()}
     # rio-tiler's own ones without a reversed one get it here, so that "Reverse" holds for every colormap.
     names = set(RIO_TILER_COLORMAPS.list())
     for name in sorted(names):

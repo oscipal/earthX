@@ -58,6 +58,7 @@ from earthx.processing.workfile import open_workfile_band
 
 __all__ = [
     "MAX_SIDE_PX",
+    "PICKING",
     "REPROJECT",
     "REPROJECT_V2",
     "REPROJECT_V3",
@@ -93,6 +94,7 @@ _METHODS = {
 
 #: The methods that only ever pick a value of the source, and so need no ``interpolation``.
 _PICKING = frozenset({"nearest", "mode"})
+PICKING = _PICKING
 
 _Method = Annotated[
     Literal["nearest", "bilinear", "cubic", "cubicspline", "lanczos", "average", "mode"],

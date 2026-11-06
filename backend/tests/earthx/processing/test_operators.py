@@ -128,7 +128,9 @@ class TestSchema:
 class TestApplicable:
     @pytest.mark.parametrize("config", list(DATASETS), ids=lambda config: config.dataset_id)
     def test_both_test_operators_apply_to_every_registry_entry(self, config) -> None:
-        assert applicable(SCALE, config, ScaleParams(factor=1.0)) == []
+        """Except where an entry leaves band math off on purpose (classes, M5-07): the scaling is band math."""
+        refused = [] if config.capabilities.band_math else [f"{config.dataset_id} does not allow band_math"]
+        assert applicable(SCALE, config, ScaleParams(factor=1.0)) == refused
         assert applicable(COARSEN, config, CoarsenParams(factor=2)) == []
 
     def test_a_flag_the_entry_does_not_set(self) -> None:

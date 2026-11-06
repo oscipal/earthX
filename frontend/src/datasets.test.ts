@@ -5,6 +5,7 @@ import {
   browseOf,
   datasetsFrom,
   defaultRenderOf,
+  drawsClasses,
   groupByOf,
   maturityNote,
   quicklookAsset,
@@ -271,6 +272,22 @@ describe('defaultRenderOf', () => {
 
   it('is null when the registry has not set one yet', () => {
     expect(defaultRenderOf(collection())).toBeNull();
+  });
+});
+
+describe('drawsClasses', () => {
+  const render = (rescale: [number, number][] | null, colormap: string | null) => ({
+    'earthx:default_render': { title: 'x', assets: ['map'], rescale, colormap_name: colormap, expression: null, resampling: 'nearest' },
+  });
+
+  it('is a colour table without a range (ESA WorldCover, M5-07 plan F4)', () => {
+    expect(drawsClasses(collection(render(null, 'esa-worldcover')))).toBe(true);
+  });
+
+  it('is not a ramp with a range, a true-colour picture or a dataset without a standard picture', () => {
+    expect(drawsClasses(collection(render([[0, 5000]], 'terrain')))).toBe(false);
+    expect(drawsClasses(collection(render(null, null)))).toBe(false);
+    expect(drawsClasses(collection())).toBe(false);
   });
 });
 
