@@ -180,3 +180,24 @@ Umgesetzt nach §4 mit den Antworten aus §8. Abweichungen und Befunde:
 - **Materialize-Lauf (§4.5):** über `gateway` aus der Sitzung nicht möglich (Proxy `403`, `gateway` pinnt die Adresse; derselbe Grund wie beim DEM-Smoke). Stattdessen lief der echte Adapter über einen Mock-Transport, der jede Anfrage per `curl` an die Quelle weiterreicht: je Stand **2651 Items, 0 fehlend, 0 unbekannt**, rund 3,5 s. In pgstac geschrieben ist nichts; der Lauf mit `python -m earthx.discovery.materialize esa-worldcover-2020` bzw. `-2021` steht bei Otto bzw. im Deployment aus.
 - **Live-Smoke:** `backend/tests_live/test_worldcover_smoke.py` mit Ersatz im Trockenlauf; eine Zeile in `live-smoke.yml` (Job des Buckets). In der Sitzung scheitert er wie der DEM-Smoke am Proxy; er läuft in der CI.
 - **Attribution bestätigt (Otto, 06.11.2026, `adr/0023` F2):** Wortlaut 2020 und 2021 wie in der PR-Beschreibung, also der Text der Quelle je Jahr, mit „(modified)“ für bearbeitete Daten; `CC-BY-4.0`, Stufe Processing.
+
+## 10. Begriffe für das Glossar (`adr/0026` F7, Folge 9)
+
+Bis das Glossar gebaut ist, stehen die Begriffe hier; sie ziehen mit Fassung 3 um. Schlagworte im Eintrag: siehe `keywords` in `catalog/datasets.py`.
+
+| Deutsch | Englisch |
+|---|---|
+| Landbedeckung, Bodenbedeckung | land cover |
+| Landnutzung | land use |
+| Klassifikation, Klassenkarte | classification, class map |
+| Baumbestand | tree cover |
+| Gebüsch | shrubland |
+| Grasland | grassland |
+| Acker | cropland |
+| bebaute Fläche | built-up |
+| kahl, spärlich bewachsen | bare/sparse vegetation |
+| Schnee und Eis | snow and ice |
+| Gewässer | permanent water bodies |
+| krautiges Feuchtgebiet | herbaceous wetland |
+| Mangroven | mangroves |
+| Moos und Flechten | moss and lichen |
