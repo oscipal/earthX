@@ -164,6 +164,14 @@ class AreaStatistics:
 
 
 @contextmanager
+def check_instance_settings() -> None:
+    """Raise ``ValueError`` for a bad ``EARTHX_USER_AGENT`` (M5-18 §3.1), at the start of a process that reads.
+
+    The GDAL options carry the User-Agent, so building them checks it; the text names the variable, never its value.
+    """
+    process_gdal_options()
+
+
 def worker_environment() -> Iterator[None]:
     """The GDAL options of `readers` for the whole process (§7.3 point 2, adr/0013 §5.3).
 

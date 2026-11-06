@@ -24,6 +24,7 @@ from earthx.jobs.worker import Supervisor
 from earthx.logging import RequestIdMiddleware, configure_logging
 from earthx.objectstore.errors import LifecycleMissing, ObjectStoreError
 from earthx.objectstore.results import Store, lifecycle_ok
+from earthx.processing import check_instance_settings
 
 # M3-16: this process's own JSON logging, before anything can log a line
 # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
@@ -57,6 +58,12 @@ def open_object_store(environ: Mapping[str, str] | None = None) -> Store:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    try:
+        check_instance_settings()
+    except ValueError as exc:
+        # Our own text: it names EARTHX_USER_AGENT, never its value (M5-18 §3.1).
+        logger.error("worker not started: %s", exc)
+        raise
     try:
         app.state.store = open_object_store()
     except ObjectStoreError as exc:
