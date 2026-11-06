@@ -164,3 +164,18 @@ Schätzung ohne Tests und Fixtures: rund 450 Zeilen (Adapter 200, Einträge 150,
 **F7 — Ein PR oder zwei?**
 1. Ein PR (dieser), Commits wie §6; Richtwert bewusst überschritten **(Empfehlung)**
 2. Zwei PRs: erst `data_region` (M5-07a), dann WorldCover (M5-07b)
+
+---
+
+## 9. Umsetzung (06.11.2026)
+
+Umgesetzt nach §4 mit den Antworten aus §8. Abweichungen und Befunde:
+
+- **DOI 2021 [M]:** an Zenodo geprüft, `10.5281/zenodo.7254221` ist „ESA WorldCover 10 m 2021 v200“ (CC BY 4.0); `10.5281/zenodo.5571936` ist „ESA WorldCover 10 m 2020 v100“.
+- **`data_region`** steht in `SourceInfo` (F1) und erscheint in der Collection unter `earthx:source.data_region`, nicht als neues `earthx:`-Feld (`architekturplan.md` 5.1, Zeile `earthx:source` ergänzt).
+- **Maske:** Version 1 von `mask` nimmt die Ebene aus dem Ergebnis und ließe bei WorldCover nichts übrig. Version 2 (NM4-43c) behält sie; nur sie bietet das Panel an. Punkt 9 läuft deshalb mit `mask` v2 und Rezept-Version 2. Kein Umbau nötig.
+- **Darstellung (F4):** Farbtabelle `esa-worldcover` im `tiler` (`access/colormaps.py`, Klassentabelle ohne Umkehrung, nicht in der Liste der Farbverläufe). Der Viewer zeigt bei einem Datensatz mit Farbtabelle und ohne `rescale` weder Bereich noch Farbverlauf-Auswahl (`drawsClasses`). Test: jedes deckende Pixel hat eine Farbe der Tabelle; mit Stretch nicht mehr.
+- **Reprojektion:** Ohne `interpolation` listet die Prozessbeschreibung nur `nearest` und `mode` (Plan §6.4: was nicht geht, erscheint nicht). Vorher hätte erst die Annahme `bilinear` abgewiesen.
+- **Registry-weite Tests:** Sie nahmen an, dass jeder Eintrag Band-Math, Interpolation und Normalisierung hat. Jetzt folgen sie den Flags des Eintrags.
+- **Materialize-Lauf (§4.5):** über `gateway` aus der Sitzung nicht möglich (Proxy `403`, `gateway` pinnt die Adresse; derselbe Grund wie beim DEM-Smoke). Stattdessen lief der echte Adapter über einen Mock-Transport, der jede Anfrage per `curl` an die Quelle weiterreicht: je Stand **2651 Items, 0 fehlend, 0 unbekannt**, rund 3,5 s. In pgstac geschrieben ist nichts; der Lauf mit `python -m earthx.discovery.materialize esa-worldcover-2020` bzw. `-2021` steht bei Otto bzw. im Deployment aus.
+- **Live-Smoke:** `backend/tests_live/test_worldcover_smoke.py` mit Ersatz im Trockenlauf; eine Zeile in `live-smoke.yml` (Job des Buckets). In der Sitzung scheitert er wie der DEM-Smoke am Proxy; er läuft in der CI.
