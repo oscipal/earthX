@@ -1,10 +1,15 @@
 # ADR 0025 — Harvest-Pipeline
 
-- **Status:** **Entwurf**, offen für Ottos Antworten (§11).
-- **Datum:** 2026-11-06
+- **Status:** **Angenommen** von Otto am 2026-11-06: F1–F9 jeweils Option 1 (Empfehlung), mit vier Ergänzungen (§11):
+  - Betrieb in M5 nur lokal bei Otto, mit Anleitung bzw. Skript für Lauf und `discovery propose` (§8);
+  - CKAN zusätzlich auf eine Liste von Herausgebern begrenzt (§5.2);
+  - Lizenzregeln „Herausgeber + Lizenz-URI → Stufe“ als Datei in Git (§6.7);
+  - Folgen zu `adr/0029` (`source_changed`), `adr/0026` (Embeddings) und zur Reihenfolge des YAML-Laders (§12).
+- **Datum:** 2026-11-06 (Entwurf, Draft-PR [#300](https://github.com/oscipal/earthX/pull/300)); 2026-11-06 angenommen.
 - **Aufgabe:** M5-03 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (Entscheidungsvorlage B, §4). Die Nummer 0025 ist dort fest vergeben.
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und eine Zeile im Entscheidungslog.
+  - Nach den Antworten ein zweiter Messschritt mit derselben Methode (Zahl der Rasterfunde je Herausgeber, §5.2).
   - Unverändert bleiben `backend/`, `frontend/`, `scripts/`, Registry, Fixtures, Backlog, M5-Plan, `.importlinter`, `.github/`, `.claude/` und `CLAUDE.md`.
 - **Vorab fest:**
   - Reihenfolge: zuerst Quellen von Hand, dann die Pipeline (Plan §5 Antwort 1).
@@ -20,7 +25,7 @@
   - `projektplan.md` §4 M5 (Abnahme), §1.2.
   - `architekturplan.md` 3.1, 3.2, 4.1–4.5, 5.1, 5.2, 10, 11.
   - `adr/0009` (Einmal-Befehl `materialize`), `adr/0011` (Adapter-Interface), `adr/0022` (`data_region`), `adr/0023` (§7.4 Kataloge, §8.3, §11), `adr/0024` (Prototyp-Quellen), `adr/0027` (Quellen mit Konto).
-- **Betroffen (erst mit einer Entscheidung):** `catalog/datasets.py` und die sechs Importstellen von `REGISTRY`, `catalog/registry.py`, `discovery`, `gateway` (Kopfzeile `User-Agent`), `backend/Dockerfile`, Compose-Dienst `harvester`, neue Migrationen, `architekturplan.md` 4.3, 4.4, 5.1, Projektplan M5 (Abnahme).
+- **Betroffen (mit der Annahme):** `catalog/datasets.py` und die sechs Importstellen von `REGISTRY`, `catalog/registry.py`, `discovery`, `gateway` (Kopfzeile `User-Agent`), `backend/Dockerfile`, Compose-Dienst `harvester`, neue Migrationen, `architekturplan.md` 4.3, 4.4, 5.1, Projektplan M5 (Abnahme).
 
 ---
 
@@ -40,6 +45,7 @@ Belegstufen wie in `adr/0022` und `adr/0023`:
 - Mit `curl` aus der Sitzung, wie Weg B in `adr/0023` §9.3. `gateway` verbindet sich ohne den HTTPS-Proxy der Sitzung mit der geprüften Adresse (`scripts/m5-01-sources/probe.py`, Kopf) und taugt hier deshalb nicht zum Messen. Ein Messskript liegt deshalb nicht bei.
 - Je Endpunkt: ein `GET`; Status, Größe, ob `ETag` bzw. `Last-Modified` da ist, `Cache-Control`. Dann dasselbe mit `If-None-Match` bzw. `If-Modified-Since`. Dann ein zweites `GET`, um zu sehen, ob der Körper bytegleich ist.
 - Bei CKAN zusätzlich `package_search` mit `rows=0` (nur die Zahl), mit `fq=metadata_modified:[NOW-7DAYS TO *]` und mit Facetten `res_format`, `groups`.
+- Nach Ottos Antworten (Ergänzung 2): `package_search` mit Rasterfilter und Facetten `organization` bzw. `publisher_name`, dann mit Rasterfilter und Herausgeberliste; nur Zahlen und acht Titel als Stichprobe.
 - Werte von `ETag`, Item-IDs und genaue Adressen von Dateien stehen nicht in diesem Dokument. Die Katalogadressen sind öffentlich und stehen in `adr/0023`.
 - Nicht erreichbar aus der Sitzung: `www.data.gv.at` (Verbindung abgelehnt). Nicht gemessen: der ATOM-Feed des BEV (dessen `ETag` und `304` sind in `adr/0023` §4.2 schon gemessen).
 
@@ -52,12 +58,12 @@ Belegstufen wie in `adr/0022` und `adr/0023`:
    - `304` auf `If-None-Match`: Collection-Seiten der FSDI, Collections von Earth Search, die Katalogliste des STAC Index, BEV und WorldCover (`adr/0023`).
    - Kein `ETag`, kein `Last-Modified`: die Collection-Liste der FSDI (514 Collections auf 6 Seiten, `no-store`), `package_search` bei GovData und opendata.swiss, `/v1/datasets` bei GeoSphere.
    - `metadata_modified` taugt bei CKAN nicht als Änderungszeichen: In den letzten 7 Tagen trugen bei GovData 82 811 von 161 380 Datensätzen ein neues Datum, bei opendata.swiss 7 352 von 16 211.
-   - **Folge:** Die Abnahme „ein erneuter Lauf kostet nur bedingte Requests“ ist so nicht erreichbar. Vorschlag F7: bedingt, wo die Quelle es kann; sonst eine Liste ohne Folgearbeit, entschieden über den Inhalts-Hash.
-3. **Empfehlung** (§8):
+   - **Folge:** Die Abnahme „ein erneuter Lauf kostet nur bedingte Requests“ ist so nicht erreichbar. Entschieden mit F7 = 1: bedingt, wo die Quelle es kann; sonst eine Liste ohne Folgearbeit, entschieden über den Inhalts-Hash (Wortlaut §12).
+3. **Entscheidung (Otto, 06.11.2026: F1–F9 je Option 1, §11)** (§8):
    - **Zustand in Postgres, Vorschläge in Git.** Die Pipeline läuft im Modul `discovery` als Befehle, die der Prozess `harvester` später nur zeitlich anstößt. Rohantworten, Inhalts-Hash und Zustand je Fund liegen in eigenen Tabellen.
    - **Ein Vorschlag ist ein Kandidat, kein Registry-Eintrag.** Aus einer geernteten Collection lassen sich Capabilities, Darstellung und die drei Eigenheiten nicht ableiten (B10, Plan §2 Punkt 7). Der Harvester schreibt deshalb Kandidatendateien. Was davon in den Katalog kommt, entscheidet Otto im PR.
    - **Neue Stufe „gelistet“** für Katalogeinträge mit Link (B11 Stufe 1, `adr/0027` W0): ein kleiner Eintrag mit Lizenz, Ausdehnung, Link und `access.account`, ohne Anzeige und ohne Processing.
-   - **PR ohne Secret der Plattform:** Ein Befehl legt die Kandidaten auf einem Branch ab; den Draft-PR öffnet Otto oder eine Sitzung mit eigenem Zugang (F3).
+   - **PR ohne Secret der Plattform:** Ein Befehl legt die Kandidaten auf einem Branch ab; den Draft-PR öffnet Otto mit eigenem Zugang (F1, §6.5).
    - **YAML-Lader:** Einträge unter `backend/catalog/`, ein Lader an einer Stelle, Prototyp-Verzeichnis nie im Image, Pflichtfelder `legal_status` und `access.account` ohne Vorgabe (§7).
 4. **Mehrere Stände je Kachel** (swissALTI3D, BEV): Die Pipeline entscheidet die Regel nicht; die bleibt bei M5-08 (Plan F2). Sie betrifft sie an zwei Stellen: Dedupe darf Stände nicht zu Spiegeln zusammenlegen, und ein ATOM-Feed mit Stichtagen ergibt einen Kandidaten mit Ständen, nicht sechs (§9).
 5. **Neu gemessen:** opendata.swiss lehnt den `User-Agent` von `curl` mit `403` ab und antwortet einem eigenen mit `200` [M]. `gateway` setzt heute keinen eigenen `User-Agent` [P]. Er wird Pflicht für den Harvester (§6.2).
@@ -174,7 +180,7 @@ Recherche eines Hilfsagenten am 06.11.2026. Die Doku-Seiten von CKAN, GitHub, IE
 | **Normalize** | Zwischenform → STAC-Collection; Unbekanntes bleibt in der Rohantwort | normierte Collection, eigener Hash |
 | **Validate** | STAC-Form, eigene Pflichtfelder: Beschreibung, Lizenzangabe oder Link, Zitierangabe | gültig / mit Mängeln |
 | **Verify** | anonymer `HEAD` und `Range` auf höchstens 3 Assets je Datensatz (§6.3) | Zugang, Format, Hosts, Vorschlag `access.account` |
-| **Enrich** | Footprint aus der Ausdehnung, `data_region` nur bei AWS-Hosts (`adr/0022`), Vorschlag SPDX aus einer Tabelle | Vorschlagsfelder |
+| **Enrich** | Footprint aus der Ausdehnung, `data_region` nur bei AWS-Hosts (`adr/0022`), Lizenz nach den Regeln aus §6.7. Kein Embedding: das rechnet `catalog-load` (§12 b) | Vorschlagsfelder |
 | **Dedupe** | DOI, dann kanonische Adresse, dann Titel und Herausgeber (unscharf) | ein Kandidat, mehrere Distributionen (§6.4) |
 | **Review** | Kandidatendatei, Draft-PR (§6.5) | `in_review` |
 | **Publish** | Merge durch Otto; `catalog-load` beim Start | `published` |
@@ -183,14 +189,32 @@ Jede Stufe ist über den Hash ihrer Eingabe geschlüsselt (`architekturplan.md` 
 
 ### 5.2 Seed: Quellen sind Konfiguration
 
-Eine YAML-Datei je Quelle unter `backend/catalog/sources/` (Vorschlag), im Review wie Einträge:
+Eine YAML-Datei je Quelle unter `backend/catalog/sources/` (F8 = 1), im Review wie Einträge:
 
 - `source_id`, `protocol` (`stac-api`, `ckan`, `stac-index`, `geosphere`, `inspire-atom`), `endpoint`, `hosts`;
 - Filter je Protokoll, z. B. CKAN `fq` mit den Formatwerten aus §3, STAC eine Liste von Collection-Präfixen;
 - `max_requests_per_run`, `min_interval_s` je Host, Takt (`daily`, `weekly`);
-- `maturity` der Quelle (wie in der Registry).
+- `maturity` der Quelle (wie in der Registry);
+- bei CKAN eine **Liste der Herausgeber** (Ergänzung 2, Otto 06.11.2026): nur Datensätze dieser Stellen kommen in die Pipeline.
 
-**Erste Seed-Liste** (aus `adr/0023` §7.4 und Antwort 5): FSDI STAC, Earth Search v1, GeoSphere `/v1/datasets`, BEV ATOM, STAC Index (nur als Register, Stufe 0: liefert Kataloge, keine Datensätze), GovData, opendata.swiss, data.gv.at (aus der Sitzung nicht erreichbar, Messung bei Otto). AWS Open Data Registry, EODC und CEOS FedEO bleiben für später. Die Liste selbst ist F6.
+**Erste Seed-Liste (F6 = 1, fest):** FSDI STAC, Earth Search v1, GeoSphere `/v1/datasets`, BEV ATOM, STAC Index (nur als Register, Stufe 0: liefert Kataloge, keine Datensätze), GovData, opendata.swiss, data.gv.at (aus der Sitzung nicht erreichbar, Messung bei Otto). AWS Open Data Registry, EODC und CEOS FedEO bleiben für später.
+
+**Herausgeber für CKAN** (aus `adr/0023` §3–§5, Vorschlag für die erste Seed-Datei; Änderungen im Review):
+
+| Katalog | Herausgeber |
+|---|---|
+| GovData | DWD, BKG, DLR, Thünen-Institut, die Vermessungs- und Geoinformationsämter der 16 Länder (z. B. LVermGeo SH, LGL BW, Geobasis NRW, LVermGeo ST, TLBG, HLBG, LGLN, LGV Hamburg, GeoInformation Bremen) |
+| opendata.swiss | swisstopo, MeteoSchweiz, BAFU, Amt für Geoinformation Liechtenstein |
+| data.gv.at | GeoSphere Austria, BEV, die Geodatenstellen der neun Länder |
+
+- **Feld:** GovData führt den Herausgeber im Zusatzfeld `publisher_name` (DCAT-AP.de), nicht in `organization`; `organization` ist dort der Lieferweg (z. B. `gdi-de`, `mcloud`) [M]. opendata.swiss führt ihn in `organization` [M]. Die Seed-Datei nennt deshalb je Katalog Feld und Werte; die Werte sind Freitext und werden genau verglichen, nicht unscharf [A].
+- **Volumen nach dem Filter [M, Zählabfragen 06.11.2026]:**
+  - GovData: 2 150 Rasterfunde (Formatfilter aus §3), davon **645** von Stellen der Liste. Die größten Posten sind LVermGeo Schleswig-Holstein (541), LGL Baden-Württemberg (27), DLR (20), LVermGeo Sachsen-Anhalt (16) und Geobasis NRW (15). Weggefallen sind vor allem das BSH (856, Meer, nicht in `adr/0023`) und Städte.
+  - opendata.swiss: 384 Rasterfunde, davon **14** von Stellen der Liste (BAFU 1, AGI Liechtenstein 13). swisstopo und MeteoSchweiz liefern ihre Raster über die FSDI-STAC-API, nicht als Raster in CKAN.
+  - data.gv.at: nicht messbar aus der Sitzung.
+  - Ohne Rasterfilter hätten die Stellen der Liste bei GovData 4 392 Datensätze [M]; der Formatfilter bleibt also nötig.
+- **Stichprobe:** Viele der 645 sind Teile einer Reihe (z. B. „Digitales Geländemodell NW … Schummerung-NW“ und „… -NO“) [M]. Sie zu einem Kandidaten zu bündeln, ist Aufgabe von Dedupe nur bei gleichem Inhalt; Reihen bleiben getrennte Kandidaten, bis Otto eine Regel dafür will [A].
+- **Folge für F4 [A]:** rund 660 Kandidaten aus CKAN ergeben bei 20 je PR etwa 33 Review-PRs beim ersten Lauf, danach nur Änderungen. Mit den Lizenzregeln aus §6.7 sind die meisten davon vorbewertet.
 
 ### 5.3 Zustand und Rohspeicherung
 
@@ -241,7 +265,7 @@ Ein `DatasetConfig` hat über 25 Pflichtfelder ohne Vorgabe, darunter Capabiliti
 | V2 | Vollständiger Registry-Eintrag mit Platzhaltern | widerspricht B10; ein Eintrag ohne `legal_status` lädt nicht (`adr/0024` R1, `adr/0027` §6.1) |
 | V3 | Nur ein Bericht (Markdown) je Lauf | lesbar, aber nicht maschinell weiterverwendbar |
 
-**Empfehlung V1.** Aus einem freigegebenen Kandidaten wird entweder ein **gelisteter Eintrag** (§6.1a) oder, als eigene Onboarding-Aufgabe, ein voller Eintrag.
+**Empfehlung V1, entschieden (F3 = 1).** Aus einem freigegebenen Kandidaten wird entweder ein **gelisteter Eintrag** (§6.1a) oder, als eigene Onboarding-Aufgabe, ein voller Eintrag.
 
 ### 6.1a Neue Stufe „gelistet“ (B11 Stufe 1)
 
@@ -250,7 +274,7 @@ Tausende Collections ernten (`architekturplan.md` 5.2) geht nur, wenn ein Katalo
 - **Form:** gemeinsamer Kopf mit dem vollen Eintrag (ID, Titel, Beschreibung, Schlagworte, DOI/Zitat, Ausdehnung, `license` mit `tier = catalog`, `legal_status`, `access` mit `account`, `source` mit Link, `data_region`, `maturity`). Kein `format`, keine Capabilities, kein `viewer`.
 - **Wirkung:** erscheint in `/stac/collections` und in der Suche; kein Kachel-, Such- oder Processing-Weg. `tiler`, `processing` und `runner` kennen nur volle Einträge [A].
 - **Prüfung beim Laden:** `tier` ist `catalog`; Link auf die Quelle vorhanden; sonst wie bei vollen Einträgen.
-- Das ist ein **zweiter Eintragstyp**. `adr/0024` K4 wollte keinen für Prototyp-Quellen; hier geht es um eine andere Stufe nach B11, nicht um einen Sonderweg. Derselbe Lader, dieselben Kopfprüfungen [A]. Frage F2.
+- Das ist ein **zweiter Eintragstyp**. `adr/0024` K4 wollte keinen für Prototyp-Quellen; hier geht es um eine andere Stufe nach B11, nicht um einen Sonderweg. Derselbe Lader, dieselben Kopfprüfungen [A]. Entschieden mit F2 = 1.
 
 ### 6.2 Fetch: Rücksicht und `gateway`
 
@@ -285,7 +309,7 @@ Tausende Collections ernten (`architekturplan.md` 5.2) geht nur, wenn ein Katalo
 | P2 | Der Prozess `harvester` öffnet den PR selbst über die GitHub-API | Token mit Schreibrecht auf das Repo im Betrieb | voll automatisch; ein Secret, das nur Otto anlegen darf (Projektplan 1.1) |
 | P3 | Geplanter Workflow in GitHub Actions mit dem eingebauten Token | keines neu | Zustand nicht in Postgres; Lauf auf GitHub-Rechnern; Änderung an `.github/`. Ereignisse des eingebauten Tokens starten in der Regel keine weiteren Workflows, die CI liefe am PR also nicht von selbst; Ausnahmen sind `workflow_dispatch` und `repository_dispatch` [P\*]. Die Einstellung „Allow GitHub Actions to create and approve pull requests“ ist bei einem Repo eines persönlichen Kontos ab Werk aus [P\*] |
 
-**Empfehlung P1** für M5, P2 oder P3 als Frage mit M6. Ein Lauf ohne neue oder geänderte Kandidaten erzeugt keinen Branch (K5).
+**Empfehlung P1, entschieden (F1 = 1)** für M5; P2 oder P3 als Frage mit M6. Ein Lauf ohne neue oder geänderte Kandidaten erzeugt keinen Branch (K5).
 
 ### 6.6 Health-Checks und „zuletzt erfolgreich geprüft“
 
@@ -294,6 +318,31 @@ Plan §3 legt die Health-Checks nach diesem ADR in Fassung 3. Hier nur, was die 
 - Ein eigener, häufigerer Schritt je veröffentlichtem Datensatz (`architekturplan.md` 4.5): Katalog erreichbar, ein Asset per `Range`, Vergleich von `ETag`. Gleiche Tabellen und dasselbe `gateway` wie der Harvester.
 - **Das Prüfdatum steht nicht in YAML.** Ein Feld, das sich täglich ändert, erzeugte täglich einen PR. Es liegt in `earthx_record_state` bzw. einer Tabelle `earthx_health_check`; `api` fügt es beim Ausliefern der Collection als eigenes Feld unter `earthx:health` an (`registry.py:726–737` sieht genau das vor) [A].
 - Ein Lizenz- oder Strukturwechsel öffnet einen Vorschlag (§5.4), nie eine stille Änderung.
+- **`source_changed` aus `adr/0029`** stößt keinen eigenen Lauf an. `jobs` meldet nichts an `discovery`; der nächste geplante Lauf erneuert die Verweise (Ergänzung 4a, §12).
+
+### 6.7 Lizenzregeln „Herausgeber + Lizenz-URI → Stufe“ (Ergänzung 3, Otto 06.11.2026)
+
+Die meisten Funde aus CKAN kommen von wenigen Stellen mit wenigen Lizenzen (§5.2, `adr/0023` §7.2). Otto gibt dafür Regeln frei; Kandidaten mit passender Regel kommen **vorbewertet** in den PR. **B11 bleibt:** Keine Stufe gilt ohne Ottos Freigabe; die Regel bereitet die Freigabe vor, sie ersetzt sie nicht.
+
+- **Ablage:** `backend/catalog/license_rules.yaml`, im Review wie Einträge (F8). Eine Regel ist ein Eintrag mit:
+  - `rule_id`;
+  - `source_id` (eine Quelle der Seed-Liste) und `publisher` (der Wert aus dem Herausgeber-Feld der Seed-Datei, genau);
+  - `license_uri`, die Lizenz so, wie die Quelle sie nennt: CKAN `license_id` bzw. `license_url`, DCAT `dct:license`, STAC-Link `rel=license`;
+  - das Ergebnis: `spdx_id`, die fünf Flags aus `LicenseInfo`, `tier`, Texte für die Attribution (`attribution_modified`, `attribution_unmodified`) und `terms`;
+  - `approved_on`. Ein Datum, kein Name; freigegeben ist eine Regel durch den Merge.
+- **Treffer nur genau:** Herausgeber und Lizenz-URI müssen beide wörtlich passen (nur Leerzeichen am Rand und ein abschließendes `/` werden ignoriert). Kein unscharfer Vergleich, keine Regel nur nach Lizenz [A].
+- **Prüfung beim Laden der Regeln:**
+  - Je Paar aus Herausgeber und Lizenz-URI höchstens eine Regel.
+  - Die Stufe passt zu den Flags nach B11: ohne `derivatives` oder `distribution` höchstens `catalog`. Mit `commercial_use = false` gilt Processing nur im Gratis-Tier; das vermerkt die Regel.
+  - Eine Regel nennt nie `legal_status: unclear` und nie eine `proto-`-ID (`adr/0024` R1, R2).
+- **Wirkung im Kandidaten:**
+  - Mit Treffer: Der Lizenzblock und `legal_status: cleared` sind ausgefüllt, mit `license_rule: <rule_id>`. Der PR listet je Kandidat „vorbewertet nach Regel …“. Ottos Bestätigung ist der Merge; vorher lädt nichts davon.
+  - Ohne Treffer: Lizenzblock und `legal_status` bleiben leer; ein solcher Eintrag lädt nicht (B10), bis Otto ihn ausfüllt.
+- **Grenzen:**
+  - `access.account` kommt aus Verify, nicht aus der Regel. Bei `free_account` oder `requester_pays` begrenzt die Prüfung des Laders die Stufe weiter auf `catalog` (§7.3).
+  - Ändert die Quelle Herausgeber oder Lizenz-URI eines veröffentlichten Eintrags, passt die Regel nicht mehr. Der Eintrag geht zurück in den Review (F5 = 1), nie still auf eine andere Stufe.
+  - Eine geänderte oder gelöschte Regel ändert keinen veröffentlichten Eintrag. Sie legt beim nächsten Lauf die betroffenen Einträge erneut vor.
+- **`license-checker`** schlägt neue Regeln vor (Herausgeber, URI, SPDX, Flags, Belegstelle). Die Regel selbst schreibt und freigibt Otto.
 
 ## 7. YAML-Lader (B13 Stufe 2)
 
@@ -348,21 +397,37 @@ Beide Felder auch bei gelisteten Einträgen. In der Collection als `earthx:legal
 | 3 | alles in GitHub Actions (P3), Zustand als Datei im Repo oder Cache | ✓ | ~ Zustand in Git | ✓ | ✓ | ~ PR ohne CI |
 | 4 | Zustand und Review nur in der Datenbank mit eigener Oberfläche | ✓ | ✗ zweite Wahrheit | ✓ | ✓ | ✗ |
 
-**Empfehlung: Option 1.** Gründe [A]:
+**Empfehlung: Option 1. Entschieden (F1 = 1, Otto 06.11.2026).** Gründe [A]:
 
 - Sie erfüllt `architekturplan.md` 4.4 (Git-Review) ohne neues Secret und ohne Änderung an `.github/`.
 - Befehle zuerst: Jede Stufe ist ein Lauf gegen offene Verbindung und offenes `gateway`, wie `materialize` heute; Tests brauchen kein Netz. Der Prozess `harvester` ist danach nur ein Takt mit Postgres-Advisory-Lock, damit nie zwei Läufe dieselbe Quelle holen.
 - Was automatisch weiter muss (P2/P3), lässt sich mit M6 entscheiden, wenn ein Betrieb existiert.
 
-**Schnitt der Umsetzung (Vorschlag für Fassung 3, je unter dem Richtwert):**
+**Betrieb in M5 (Ergänzung 1, Otto 06.11.2026):** Der Harvest läuft nur lokal bei Otto.
 
-1. YAML-Lader mit Umzug der zwei Einträge, `legal_status`, `access.account`, Startprüfung, Dockerfile (Stufe B; Voraussetzung für `adr/0024`).
-2. Gelistete Einträge (§6.1a), wenn F2 = 1.
-3. `gateway`: `user_agent`, Abstand je Host, `robots.txt`.
-4. Tabellen, Fetch und Extract für STAC-API und CKAN, Lauf-Befehl.
-5. Verify, Enrich, Dedupe, Kandidaten und `discovery propose`.
-6. Extraktoren GeoSphere und INSPIRE-ATOM; STAC Index als Register.
-7. Prozess `harvester` als Takt; Health-Checks (Fassung 3, nach Annahme).
+- `gateway` verbindet sich ohne den HTTPS-Proxy einer Cloud-Sitzung mit der geprüften Adresse und erreicht die Quellen von dort nicht (`adr/0002`, `scripts/m5-01-sources/probe.py`).
+- CI erreicht ohnehin keine Quelle.
+- Cloud-Sitzungen schreiben Code und testen mit Fixtures. Sie ernten nicht.
+
+**Schnitt der Umsetzung (Eingabe für Fassung 3, je unter dem Richtwert):**
+
+1. **YAML-Lader** mit Umzug der zwei Einträge, `legal_status`, `access.account`, Startprüfung und Dockerfile (Stufe B; Voraussetzung für `adr/0024`).
+   - Kommt **direkt nach dem Merge von M5-07 und vor M5-08** (Ergänzung 4c).
+   - WorldCover zieht dabei mit um; swissALTI3D entsteht schon als YAML.
+2. **Gelistete Einträge** (§6.1a, F2 = 1).
+3. **`gateway`:** `user_agent` als Pflicht für alle Aufrufer (F9 = 1), Abstand je Host, `robots.txt`.
+4. **Tabellen, Fetch und Extract** für STAC-API und CKAN (mit Herausgeberliste, §5.2), dazu der Lauf-Befehl.
+5. **Verify, Enrich, Dedupe, Lizenzregeln** (§6.7), Kandidaten und `discovery propose`.
+   - Dazu eine **Anleitung mit Skript für Ottos lokalen Lauf** (Ergänzung 1): Skript für bash und PowerShell unter `scripts/`, wie `scripts/try-job.ps1`, plus ein Abschnitt in der README.
+   - Ablauf:
+     1. Postgres per Compose starten.
+     2. Lauf je Quelle, im Compose-Profil `harvest` wie `materialize` (nie bei einem einfachen `docker compose up`).
+     3. Lauf-Bericht lesen (Anfragen, davon `304`, Funde neu, geändert und weg).
+     4. `discovery propose` legt die Kandidaten auf einem neuen Branch im lokalen Checkout ab.
+     5. `git push` und Draft-PR mit Ottos eigenem Zugang.
+   - Das Skript prüft vorher, dass der Checkout sauber ist und auf `main` steht. Es pusht nie selbst.
+6. **Extraktoren** für GeoSphere und INSPIRE-ATOM; STAC Index als Register.
+7. **Prozess `harvester` als Takt**, lokal bei Otto; Health-Checks folgen in Fassung 3.
 
 ## 9. Mehrere Stände je Kachel (offen aus `adr/0023`)
 
@@ -380,60 +445,118 @@ Beide Felder auch bei gelisteten Einträgen. In der Collection als `earthx:legal
 
 ## 10. Risiken und Grenzen
 
-- **Volumen:** Schon die Rasterfilter ergeben bei GovData rund 2 000 und bei opendata.swiss rund 400 Funde [M]. Ein PR mit hunderten Kandidaten ist nicht prüfbar. Vorschlag: höchstens 20 Kandidaten je PR, nach Quelle getrennt; der Rest wartet im Zustand `verified` (F4) [A].
-- **Lizenz als Freitext:** FSDI meldet fast überall `proprietary` [M], CKAN Lizenz-URIs oder Freitext. Der SPDX-Vorschlag ist nur Vorschlag; `license-checker` hilft im PR, entscheidet nicht.
+- **Volumen:** Die Rasterfilter allein ergeben bei GovData rund 2 150 und bei opendata.swiss rund 400 Funde. Mit der Herausgeberliste (Ergänzung 2) bleiben 645 bzw. 14 [M] (§5.2). Ein PR mit hunderten Kandidaten ist nicht prüfbar. Deshalb höchstens 20 Kandidaten je PR, nach Quelle getrennt; der Rest wartet im Zustand `verified` (F4 = 1) [A].
+- **Lizenz als Freitext:** FSDI meldet fast überall `proprietary` [M], CKAN Lizenz-URIs oder Freitext. Was keine Regel aus §6.7 trifft, bleibt ohne Lizenzblock und lädt nicht, bis Otto ihn ausfüllt; `license-checker` hilft im PR, entscheidet nicht.
 - **Verify fragt fremde Hosts an:** Auch `HEAD` auf eine Adresse aus einem fremden Katalog ist eine Anfrage an einen Host, den niemand geprüft hat. Grenzen: nur öffentliche Adressen (`gateway`), nur `HEAD`/`Range`, wenige Assets, Zahl der Hosts je Lauf begrenzt (§6.3).
 - **`www.data.gv.at`** war aus der Sitzung nicht erreichbar; ob es CKAN v3 ohne Schlüssel anbietet, ist nur S (`adr/0023` §7.4).
 - **Stufe C:** Die Größen in §6.2 und §10 sind Messungen eines Tages; die Grenzen (20 je PR, 50 Hosts, 1 s) sind Vorschläge.
 
-## 11. Fragen an Otto
+## 11. Fragen an Otto — beantwortet am 2026-11-06
+
+**Antworten (Otto, 06.11.2026):** F1–F9 jeweils **Option 1** (Empfehlung), mit diesen Ergänzungen:
+
+1. **Betrieb in M5:** Der Harvest läuft nur lokal bei Otto; `gateway` erreicht die Quellen aus Cloud-Sitzungen nicht (`adr/0002`). Anleitung bzw. Skript für Lauf und `discovery propose` gehören in den Schnitt. Eingetragen in §8.
+2. **CKAN (zu F6):** zusätzlich auf eine Liste von Herausgebern begrenzt (DACH-Behörden aus `adr/0023`), die Liste als Teil der Seed-Datei; Volumen nach diesem Filter geschätzt. Eingetragen in §5.2 und §10.
+3. **Lizenzregeln:** Otto kann eine Regel „Herausgeber + Lizenz-URI → Stufe“ freigeben (Datei in Git, Review wie Einträge). Kandidaten mit passender Regel kommen vorbewertet in den PR; Otto bestätigt im PR. B11 bleibt: keine Stufe ohne Ottos Freigabe. Eingetragen als §6.7.
+4. **Folgen:**
+   - (a) `source_changed` aus `adr/0029` stößt keinen eigenen Lauf an; der nächste geplante Lauf erneuert die Verweise.
+   - (b) Embeddings rechnet `catalog-load`, nicht der Harvester (`adr/0026` §4.6).
+   - (c) Der YAML-Lader (Schnitt Schritt 1) kommt direkt nach M5-07, vor M5-08.
+
+   Eingetragen in §12.
 
 **F1 — Grundsatz der Pipeline?**
 1. Option 1: Befehle in `discovery`, Zustand in Postgres, Kandidaten in Git, PR mit deinem Zugang oder aus einer Sitzung (P1) **(Empfehlung)**
 2. Option 2: der Harvester öffnet PRs selbst (Token im Betrieb)
 3. Option 3: alles in GitHub Actions
 
+**Antwort F1: 1,** Betrieb in M5 nur lokal bei Otto (Ergänzung 1, §8).
+
 **F2 — Neue Stufe „gelistet“ für Katalogeinträge mit Link (§6.1a)?**
 1. Ja, kleiner Eintrag mit Kopf, Lizenz, Link und `access.account`, ohne Anzeige und Processing; nötig auch für Konto-Quellen (`adr/0027` W0) **(Empfehlung)**
 2. Nein, nur volle Einträge; Kandidaten warten bis zum Onboarding
 3. Gelistete Einträge nur in pgstac, nicht in Git
+
+**Antwort F2: 1.**
 
 **F3 — Vorschlag = Kandidatendatei (§6.1)?**
 1. Ja, eigene kleine Datei unter `backend/catalog/candidates/`, nie geladen **(Empfehlung)**
 2. Voller Registry-Eintrag mit Platzhaltern
 3. Nur ein Bericht je Lauf
 
+**Antwort F3: 1.**
+
 **F4 — Größe eines Review-PR?**
 1. Höchstens 20 Kandidaten je PR, je Quelle getrennt **(Empfehlung)**
 2. Ein PR je Lauf, egal wie groß
 3. Ein PR je Kandidat
+
+**Antwort F4: 1.**
 
 **F5 — Wann wird ein veröffentlichter Datensatz neu vorgelegt?**
 1. Nur bei geänderter Lizenzangabe, Assets oder Hosts **(Empfehlung)**
 2. Bei jeder Änderung der Rohantwort
 3. Nie automatisch, nur Hinweis im Lauf-Bericht
 
+**Antwort F5: 1.**
+
 **F6 — Erste Seed-Liste (§5.2)?**
 1. FSDI STAC, Earth Search, GeoSphere, BEV ATOM, STAC Index als Register, GovData, opendata.swiss, data.gv.at mit Rasterfilter **(Empfehlung)**
 2. Erst nur die STAC-Quellen (FSDI, Earth Search, STAC Index), CKAN danach
 3. Andere Liste (bitte nennen)
+
+**Antwort F6: 1,** bei CKAN zusätzlich mit der Liste der Herausgeber (Ergänzung 2, §5.2).
 
 **F7 — Abnahme „erneuter Lauf kostet nur bedingte Requests“ (Projektplan M5, §3)?**
 1. Umformulieren: bedingte Anfragen, wo die Quelle `ETag` oder `Last-Modified` liefert; sonst ein Abruf der Liste ohne Folgearbeit, entschieden über den Inhalts-Hash; je Quelle im Lauf-Bericht ausgewiesen **(Empfehlung)**
 2. So lassen; Quellen ohne `ETag` gelten als Ausnahme
 3. Quellen ohne `ETag` nur wöchentlich ernten
 
+**Antwort F7: 1.** Wortlaut der neuen Abnahme in §12.
+
 **F8 — Ablage der YAML-Einträge (§7.1)?**
 1. `backend/catalog/` mit `datasets/`, `listed/`, `sources/`, `candidates/`, `prototype/`; Image ohne `candidates/` und `prototype/` **(Empfehlung)**
 2. `catalog/` an der Repo-Wurzel, Build-Kontext erweitern
 3. Einträge im Paket `earthx/` lassen, nur das Format wechseln
+
+**Antwort F8: 1.**
 
 **F9 — `User-Agent` des Harvesters (§6.2)?**
 1. Projektname und Repo-Adresse, Pflicht in `gateway` für alle Aufrufer, ohne Mail-Adresse **(Empfehlung)**
 2. Nur für den Harvester, Rest wie heute
 3. Mit einer eigenen Kontaktadresse (du nennst sie, nicht im Repo)
 
-## 12. Quellen
+**Antwort F9: 1.**
+
+## 12. Folgen
+
+Eingabe für Fassung 3 des M5-Plans. Dieses ADR ändert weder Plan, Backlog noch die genannten Dokumente; das tun die Umsetzung bzw. Fassung 3.
+
+**Ergänzung 4 (Otto, 06.11.2026):**
+
+- **(a) `source_changed` (`adr/0029` F7, PR [#303](https://github.com/oscipal/earthX/pull/303)):**
+  - Eine Fehlerart `source_changed` in `jobs` stößt keinen eigenen Harvest-Lauf an; der nächste geplante Lauf erneuert die Verweise.
+  - Damit ist die offene Frage aus `adr/0029` §10 Punkt 5 beantwortet: Option „der geplante Lauf genügt“.
+  - Es entsteht kein Weg von `jobs` zu `discovery`; die Importregeln bleiben unverändert.
+- **(b) Embeddings (`adr/0026` §4.6, PR [#301](https://github.com/oscipal/earthX/pull/301)):**
+  - `catalog-load` rechnet Suchtext und Embedding, nicht der Harvester.
+  - Der Harvester liefert Titel und Beschreibung in der Sprache der Quelle. Englische Titel und Beschreibungen ergänzt das Review, wo sie fehlen (`adr/0026` §4.1); die Kandidatendatei hat dafür leere Felder.
+  - Die Stufe „Enrich“ in `architekturplan.md` 4.3 nennt das Embedding nicht mehr (Nachtrag).
+- **(c) Reihenfolge:**
+  - Der YAML-Lader (§8, Schritt 1) kommt direkt nach dem Merge von M5-07 und vor M5-08.
+  - M5-08 hängt damit zusätzlich vom Lader ab.
+  - Die Umsetzung von `adr/0024` und die gelisteten Einträge für Konto-Quellen (`adr/0027` W0) folgen danach.
+
+**Weitere Folgen der Annahme:**
+
+- **`projektplan.md` §4 M5, Abnahme (F7 = 1):** „Ein erneuter Lauf ohne Quelländerung stellt bedingte Anfragen, wo die Quelle `ETag` oder `Last-Modified` liefert, sonst einen Abruf der Liste ohne Folgearbeit, entschieden über den Inhalts-Hash; der Lauf-Bericht weist das je Quelle aus.“
+- **`architekturplan.md`:** Nachträge in 4.3 (Enrich ohne Embedding, Lizenzregeln), 4.4 (Kandidaten, P1, lokaler Betrieb in M5) und 5.1 (`earthx:legal_status`, `earthx:legal_note`, `earthx:access.account`, Prüfdatum unter `earthx:health` aus der Datenbank).
+- **`KLAERUNGEN.md` B13:** Nachtrag zu Stufe 2: Ablage unter `backend/catalog/` (F8 = 1).
+- **`adr/0024` R4:** Das Prototyp-Verzeichnis heißt `backend/catalog/prototype/`.
+- **`docs/cloud-umgebung.md`:** Cloud-Sitzungen ernten nicht (Ergänzung 1).
+- **`gateway`:** `user_agent` wird Pflichtfeld von `Policy`, für alle Aufrufer (F9 = 1). Der Geocoder übernimmt seinen Wert daraus.
+
+## 13. Quellen
 
 - Code des Repos, Stand `main` nach #297 (06.11.2026), Pfade im Text [P].
 - `architekturplan.md` 4.3–4.5, 5.1, 5.2; `adr/0023` §4.2, §7.4, §8.1, §8.3; `adr/0024` §6, §6a, §10; `adr/0027` §6.1 [P].
