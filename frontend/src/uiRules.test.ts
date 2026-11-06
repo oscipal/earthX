@@ -206,6 +206,8 @@ describe('less text (NM4-22, UI-04 part 6): an explanation stands behind the (i)
     'One job covers the scenes of one pass',
     'Where scenes overlap, the preview may show another scene',
     'A job on the platform merges the whole scenes of one pass',
+    // UI-05 (Otto, 06.11.2026): no explanation in the panel "Search and area".
+    'Scenes counted by their center point in the cell',
   ];
   const inTags = (code: string, phrase: string) => new RegExp(`>\\s*${phrase.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}`, 'u').test(code);
   // A hint or an error that is one long static sentence is an explanation; a state that asks for an action may stay.

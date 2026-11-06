@@ -409,7 +409,8 @@ describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () =>
     expect(resultButtons()).toHaveLength(0);
   });
 
-  it('shows the picked place under the field while its AOI is still active, and drops the line once the AOI changes', async () => {
+  // UI-05, F8 (Otto, 06.11.2026): behind an (i) at the field, not as a line under it.
+  it('names the picked place and its attribution behind an (i) while its AOI is still active, and drops it once the AOI changes', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -438,11 +439,13 @@ describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () =>
     await act(async () => {
       resultButtons()[0].click();
     });
-    expect(container.textContent).toContain('Neuland · © OpenStreetMap contributors');
+    const tip = () => container.querySelector('.place-search-row .tip');
+    expect(tip()?.getAttribute('data-tip')).toBe('Neuland · © OpenStreetMap contributors');
+    expect(container.textContent).not.toContain('Neuland · © OpenStreetMap contributors');
 
     act(() => useAppStore.setState({ aoi: null }));
     root.render(<ControlPanel />);
-    expect(container.textContent).not.toContain('Neuland · © OpenStreetMap contributors');
+    expect(tip()).toBeNull();
   });
 });
 
@@ -492,7 +495,7 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
     return [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
   }
 
-  it('disables both date fields and shows the acquisition period', () => {
+  it('disables both date fields and names the acquisition period in their tooltip, not under them', () => {
     useAppStore.setState({
       datasets: datasetsFrom([NO_TIME_AXIS]),
       selectedDatasetIds: [NO_TIME_AXIS.id],
@@ -503,7 +506,9 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
     const [from, to] = dateInputs();
     expect(from.disabled).toBe(true);
     expect(to.disabled).toBe(true);
-    expect(container.textContent).toContain('No time axis – acquired Dec 2010 to Jan 2015');
+    expect(tipOf(from)).toBe('No time axis – acquired Dec 2010 to Jan 2015');
+    expect(tipOf(to)).toBe('No time axis – acquired Dec 2010 to Jan 2015');
+    expect(container.textContent).not.toContain('No time axis');
   });
 
   it('leaves the fields enabled for a dataset with a time axis', () => {
@@ -527,6 +532,100 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
     const [from, to] = dateInputs();
     expect(from.disabled).toBe(false);
     expect(to.disabled).toBe(false);
+  });
+});
+
+// UI-05 §3.3 (Otto, 06.11.2026): the days offered are the temporal extent of the ticked datasets, an open end being today.
+describe('AcquisitionDateFields: the days of the ticked datasets', () => {
+  const CAPABILITIES = {
+    roi: true,
+    time_range: true,
+    band_math: true,
+    interpolation: true,
+    ml_processing: true,
+    quad_pol: false,
+    single_coverage_product: false,
+  };
+  const VIEWER = {
+    group_by: ['datetime'],
+    min_zoom: 0,
+    max_zoom: 14,
+    browse: 'quicklook' as const,
+    quicklook_nodata_max: null,
+    results_group_by: ['datetime'],
+  };
+  const timed = (id: string, interval: [string | null, string | null]): Collection => ({
+    id,
+    title: id,
+    extent: { temporal: { interval: [interval] } },
+    'earthx:capabilities': CAPABILITIES,
+    'earthx:viewer': VIEWER,
+  });
+  const OPTICAL = timed('optical', ['2015-06-27T10:25:31Z', null]);
+  const RADAR = timed('radar', ['2014-10-03T00:00:00Z', '2021-12-23T23:59:59Z']);
+  const inputs = () => [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
+  const leave = (input: HTMLInputElement, value: string) =>
+    act(() => {
+      useAppStore.getState()[input.getAttribute('aria-label') === 'From date' ? 'setDateFrom' : 'setDateTo'](value);
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-06T12:00:00Z') });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function setUp(selected: string[], dates: { dateFrom?: string; dateTo?: string } = {}) {
+    useAppStore.setState({
+      datasets: datasetsFrom([OPTICAL, RADAR]),
+      selectedDatasetIds: selected,
+      datasetId: selected[0] ?? null,
+      multiSelect: true,
+      dateFrom: dates.dateFrom ?? '',
+      dateTo: dates.dateTo ?? '',
+    });
+    act(() => root.render(<ControlPanel />));
+  }
+
+  it('offers the days of one dataset, an open end being today', () => {
+    setUp(['optical']);
+    expect(inputs().map((i) => [i.min, i.max])).toEqual([
+      ['2015-06-27', '2026-11-06'],
+      ['2015-06-27', '2026-11-06'],
+    ]);
+  });
+
+  it('offers the days of several, earliest start to latest end', () => {
+    setUp(['optical', 'radar']);
+    expect([inputs()[0].min, inputs()[0].max]).toEqual(['2014-10-03', '2026-11-06']);
+  });
+
+  it('offers any day while no dataset is ticked', () => {
+    setUp([]);
+    expect(inputs().every((i) => !i.hasAttribute('min') && !i.hasAttribute('max'))).toBe(true);
+  });
+
+  it('moves a day typed outside onto the nearest one when the field is left, and leaves one inside', () => {
+    setUp(['radar']);
+    const [from, to] = inputs();
+    leave(from, '2001-01-01');
+    act(() => from.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+    expect(useAppStore.getState().dateFrom).toBe('2014-10-03');
+    leave(to, '2030-01-01');
+    act(() => to.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+    expect(useAppStore.getState().dateTo).toBe('2021-12-23');
+    leave(to, '2020-02-02');
+    act(() => to.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+    expect(useAppStore.getState().dateTo).toBe('2020-02-02');
+  });
+
+  it('moves the days into the new choice when the ticked datasets change, and leaves them without bounds', () => {
+    setUp(['optical'], { dateFrom: '2016-01-01', dateTo: '2026-01-01' });
+    act(() => useAppStore.getState().toggleDatasetSelected('optical'));
+    expect(useAppStore.getState()).toMatchObject({ dateFrom: '2016-01-01', dateTo: '2026-01-01' });
+    act(() => useAppStore.getState().toggleDatasetSelected('radar'));
+    expect(useAppStore.getState()).toMatchObject({ dateFrom: '2016-01-01', dateTo: '2021-12-23' });
   });
 });
 
@@ -698,11 +797,63 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     expect(buttons()[0].hasAttribute('title')).toBe(false);
   });
 
-  it('shows every dataset of the catalogue in one grid, however many — the grid itself scrolls (CSS shows 2 x 2)', () => {
+  // UI-05 (Otto, 06.11.2026): pages of at most six; jsdom has no layout, so the panel keeps three rows.
+  describe('pages of datasets', () => {
     const many = Array.from({ length: 7 }, (_, i) => collection(`extra-${i}`, `Extra ${i}`));
-    useAppStore.setState({ datasets: datasetsFrom([OPTICAL, DEM, ...many]), selectedDatasetIds: [], datasetId: null });
-    act(() => root.render(<ControlPanel />));
-    expect(buttons()).toHaveLength(9);
+    const previous = () => container.querySelector('.dataset-pages [aria-label="Previous page"]') as HTMLButtonElement;
+    const next = () => container.querySelector('.dataset-pages [aria-label="Next page"]') as HTMLButtonElement;
+    const count = () => container.querySelector('.dataset-page-count')?.textContent;
+    function setUpMany(selected: string[] = []) {
+      useAppStore.setState({ datasets: datasetsFrom([OPTICAL, DEM, ...many]), selectedDatasetIds: selected, datasetId: selected[0] ?? null, multiSelect: true });
+      act(() => root.render(<ControlPanel />));
+    }
+
+    it('shows six of nine, with "1 / 2" and the first arrow locked with its reason', () => {
+      setUpMany();
+      expect(titles()).toEqual(['Optical imagery', 'Elevation model', 'Extra 0', 'Extra 1', 'Extra 2', 'Extra 3']);
+      expect(count()).toBe('1 / 2');
+      expect(previous().getAttribute('aria-disabled')).toBe('true');
+      expect(tipOf(previous())).toBe('Already on the first page');
+      expect(next().hasAttribute('aria-disabled')).toBe(false);
+    });
+
+    it('turns to the next page and back; the last arrow is locked there; a click on a locked arrow does nothing', () => {
+      setUpMany();
+      act(() => next().click());
+      expect(titles()).toEqual(['Extra 4', 'Extra 5', 'Extra 6']);
+      expect(count()).toBe('2 / 2');
+      expect(next().getAttribute('aria-disabled')).toBe('true');
+      expect(tipOf(next())).toBe('Already on the last page');
+      act(() => next().click());
+      expect(count()).toBe('2 / 2');
+      act(() => previous().click());
+      expect(count()).toBe('1 / 2');
+      act(() => previous().click());
+      expect(count()).toBe('1 / 2');
+    });
+
+    it('keeps the rows of a full page on the last one, so the panel does not jump', () => {
+      setUpMany();
+      const rows = () => (container.querySelector('.dataset-list') as HTMLElement).style.getPropertyValue('--dataset-rows');
+      expect(rows()).toBe('3');
+      act(() => next().click());
+      expect(rows()).toBe('3');
+    });
+
+    it('keeps a dataset picked on another page picked, and searches it with the rest', () => {
+      setUpMany(['extra-6']);
+      act(() => buttons()[0].click());
+      expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical', 'extra-6']);
+      act(() => next().click());
+      expect(buttons().find((b) => b.textContent === 'Extra 6')?.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('shows "1 / 1" with both arrows locked when all fit on one page', () => {
+      setUp([]);
+      expect(count()).toBe('1 / 1');
+      expect(previous().getAttribute('aria-disabled')).toBe('true');
+      expect(next().getAttribute('aria-disabled')).toBe('true');
+    });
   });
 
   it('with nothing ticked, asks for a dataset and keeps Search off even with an AOI', () => {
@@ -752,25 +903,41 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       return [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
     }
 
-    it('stay usable while one ticked dataset has a time axis, and name each one without', () => {
+    it('stay usable while one ticked dataset has a time axis, and name each one without behind an (i)', () => {
       setUp(['optical', 'dem']);
       expect(dateInputs().every((i) => !i.disabled)).toBe(true);
-      expect(container.textContent).toContain('Elevation model: No time axis – acquired Dec 2010 to Jan 2015');
+      expect(container.querySelector('.date-label .tip')?.getAttribute('data-tip')).toBe(
+        'Elevation model: No time axis – acquired Dec 2010 to Jan 2015',
+      );
+      expect(container.textContent).not.toContain('No time axis');
     });
 
-    it('lock only when every ticked dataset lacks a time axis', () => {
+    it('lock only when every ticked dataset lacks a time axis, with the period in the tooltip', () => {
       setUp(['dem']);
       expect(dateInputs().every((i) => i.disabled)).toBe(true);
       // one dataset: the note without a title prefix, as before
-      expect(container.textContent).toContain('No time axis – acquired Dec 2010 to Jan 2015');
-      expect(container.textContent).not.toContain('Elevation model: No time axis');
+      expect(tipOf(dateInputs()[0])).toBe('No time axis – acquired Dec 2010 to Jan 2015');
+      expect(container.querySelector('.date-label .tip')).toBeNull();
+    });
+
+    it('have no (i) and no tooltip with a time axis only', () => {
+      setUp(['optical']);
+      expect(container.querySelector('.date-label .tip')).toBeNull();
+      expect(dateInputs()[0].hasAttribute('data-tip')).toBe(false);
     });
   });
 
-  it('lists the maturity note of every ticked dataset, named by title once there are several', () => {
+  it('names the maturity of every ticked dataset in a warning at "Datasets", by title once there are several, not as a paragraph', () => {
     setUp(['optical', 'dem']);
-    const notes = [...container.querySelectorAll('.dataset-notes .hint')].map((n) => n.textContent);
-    expect(notes).toEqual(['Optical imagery: staging: the provider may withdraw this collection without notice']);
+    const tip = container.querySelector('.dataset-label .tip.warn');
+    expect(tip?.getAttribute('data-tip')).toBe('Optical imagery: staging: the provider may withdraw this collection without notice');
+    expect(container.textContent).not.toContain('without notice');
+    expect(container.querySelector('.dataset-notes')).toBeNull();
+  });
+
+  it('has no warning at "Datasets" while every ticked dataset is settled', () => {
+    setUp(['dem']);
+    expect(container.querySelector('.dataset-label .tip')).toBeNull();
   });
 
   it('keeps the search button in a footer of its own, outside the scrolling part', () => {
@@ -791,11 +958,13 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       return [...container.querySelectorAll('.coverage-choice-item')] as HTMLButtonElement[];
     }
 
-    it('sits right under the grid of dataset buttons, outside it, and not in the footer', () => {
+    it('sits right under the grid of dataset buttons and its pages, outside them, and not in the footer', () => {
       setUp(['optical']);
       expect(button()).not.toBeNull();
       const grid = container.querySelector('.dataset-list')!;
-      expect(grid.nextElementSibling?.classList.contains('coverage-button-wrap')).toBe(true);
+      // Under the grid only the row of pages, then the button (UI-05).
+      expect(grid.nextElementSibling?.classList.contains('dataset-pages')).toBe(true);
+      expect(grid.nextElementSibling?.nextElementSibling?.classList.contains('coverage-button-wrap')).toBe(true);
       expect(grid.querySelector('.coverage-button-wrap')).toBeNull();
       expect(container.querySelector('.control-footer .coverage-button-wrap')).toBeNull();
       expect(button().textContent).toBe('Coverage');
