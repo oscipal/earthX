@@ -89,6 +89,12 @@ mit Hash-Prüfung, nicht mehr direkt aus den `.txt`-Dateien; siehe §7.)*
 > `sentinel.esa.int`, `sentinels.copernicus.eu` und `spacedata.copernicus.eu`
 > (`adr/0003` §10.2, §11.3).
 
+> **Nachtrag 2026-11-06 (M5-01b):** Eine über die Freigabekarte eingetragene
+> Freigabe wirkte am 06.11.2026 **sofort in derselben Sitzung**: die 17 Hosts
+> aus `adr/0023` §9.3 waren ohne Neustart erreichbar. Für diesen Weg gilt die
+> Regel „erst in neu gestarteten Sitzungen“ nicht mehr. Quelle: Bericht M5-01b
+> (PR #295).
+
 Damit sind Testcontainer, `docker compose` und der lokale Runner als Container
 in der Cloud-Sitzung nicht verfügbar. Selbst gebaute Images aus einem
 `Dockerfile` scheitern am Basis-Image aus derselben Quelle. Das ist eine
