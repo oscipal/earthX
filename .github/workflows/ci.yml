@@ -55,6 +55,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # First step of every required job (docs-only PRs, Otto 2026-11-06): the job always
+      # runs, so the required check never stays pending, but a PR whose own changes lie
+      # only under docs/ skips the rest. Rules: scripts/ci-scope.sh.
+      - name: Scope (docs-only pull request?)
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci-scope.sh
 
       - uses: actions/setup-python@v5
         with:
@@ -62,23 +75,40 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.lock
 
+      # Docs-only PR: the two checks on files under docs/ (test_plans_layout,
+      # test_decision_log_format) need pytest and pytest-xdist only. Their pins and
+      # hashes are taken from the lock file; `--noconftest` because the shared conftest
+      # imports the whole stack.
+      - name: Docs checks (docs-only pull request)
+        if: steps.scope.outputs.docs_only == 'true'
+        run: |
+          awk '/^[A-Za-z0-9]/ { keep = ($1 ~ /^(pytest|pytest-xdist|execnet|iniconfig|packaging|pluggy|pygments)==/) } keep && !/^ *#/' \
+            backend/requirements-dev.lock > "$RUNNER_TEMP/docs-checks.lock"
+          pip install --require-hashes --only-binary :all: -r "$RUNNER_TEMP/docs-checks.lock"
+          pytest --noconftest -o addopts="-ra --strict-markers --strict-config" \
+            backend/tests/test_plans_layout.py backend/tests/test_decision_log_format.py
+
       # From the lock file, hash-checked (M4-00b). Why these options, and in this
       # order: scripts/lock-backend.sh.
       - name: Install dependencies
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           python -m pip install --upgrade pip
           pip install --require-hashes --only-binary :all: --no-binary version-parser \
             -r backend/requirements-dev.lock
 
       - name: Lint (ruff)
+        if: steps.scope.outputs.docs_only != 'true'
         run: ruff check backend
 
       # Installs the pgstac schema the T-C tests read. The version comes from the
       # pin in backend/requirements.txt — there is no second place that sets it.
       - name: Migrate pgstac
+        if: steps.scope.outputs.docs_only != 'true'
         run: pypgstac migrate
 
       - name: Tests (pytest)
+        if: steps.scope.outputs.docs_only != 'true'
         run: pytest
 
   frontend:
@@ -89,23 +119,39 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Docs-only PRs skip the steps below, the job itself still runs (scripts/ci-scope.sh).
+      - name: Scope (docs-only pull request?)
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci-scope.sh
 
       - uses: actions/setup-node@v4
+        if: steps.scope.outputs.docs_only != 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
+        if: steps.scope.outputs.docs_only != 'true'
         run: npm ci
 
       - name: Lint (oxlint)
+        if: steps.scope.outputs.docs_only != 'true'
         run: npm run lint
 
       - name: Type check (tsc)
+        if: steps.scope.outputs.docs_only != 'true'
         run: npx tsc -b --pretty false
 
       - name: Tests (vitest)
+        if: steps.scope.outputs.docs_only != 'true'
         run: npm test
 
   import-boundaries:
@@ -115,13 +161,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Docs-only PRs skip the steps below, the job itself still runs (scripts/ci-scope.sh).
+      - name: Scope (docs-only pull request?)
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci-scope.sh
+
       - uses: actions/setup-python@v5
+        if: steps.scope.outputs.docs_only != 'true'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: |
+      - name: Install dependencies
+        if: steps.scope.outputs.docs_only != 'true'
+        run: |
           pip install --require-hashes --only-binary :all: --no-binary version-parser \
             -r backend/requirements-dev.lock
       - name: Check import contracts (lint-imports)
+        if: steps.scope.outputs.docs_only != 'true'
         env:
           PYTHONPATH: backend
         run: lint-imports --config .importlinter
@@ -138,8 +200,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Docs-only PRs skip the steps below, the job itself still runs (scripts/ci-scope.sh).
+      - name: Scope (docs-only pull request?)
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci-scope.sh
 
       - name: Write throwaway .env (CI only, never a real secret)
+        if: steps.scope.outputs.docs_only != 'true'
         # No S3_* here on purpose: this exercises the same generate-on-first-start
         # path a fresh local checkout takes (docker-compose.yml, objectstore-secrets).
         run: |
@@ -150,6 +224,7 @@ jobs:
           EOF
 
       - name: Build images
+        if: steps.scope.outputs.docs_only != 'true'
         run: docker compose build
 
       # M4-16b (adr/0016 F7 Teil 2, §12b): the runner stage of backend/Dockerfile
@@ -157,17 +232,20 @@ jobs:
       # hardening the README names for users: read-only root, no capabilities,
       # no network.
       - name: Build the runner image
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           docker build --target runner \
             --build-arg "EARTHX_COMMIT=${GITHUB_SHA::7}" \
             -t earthx-runner:ci backend
 
       - name: Runner runs as UID 10001
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           uid="$(docker run --rm --entrypoint id earthx-runner:ci -u)"
           [ "$uid" = "10001" ] || { echo "runner user is $uid, expected 10001"; exit 1; }
 
       - name: Runner and worker report the same engine versions
+        if: steps.scope.outputs.docs_only != 'true'
         env:
           COMMIT: ${{ github.sha }}
         run: |
@@ -195,6 +273,7 @@ jobs:
       # gateway clears only public https addresses of declared hosts, and the
       # seams the comparison uses exist only in pytest (docs/plans/m4-16-lokaler-runner.md §10).
       - name: Runner image carries the same layers as the worker image
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           worker_image="$(docker compose config --images | grep -E -- '-worker$')"
           [ "$(echo "$worker_image" | wc -l)" = "1" ] || { echo "no unique worker image: $worker_image"; exit 1; }
@@ -204,6 +283,7 @@ jobs:
           [ "$(layers "$worker_image")" = "$(layers earthx-runner:ci)" ] || { echo "layers differ"; exit 1; }
 
       - name: Runner checks the synthetic recipe and names its one host
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           hosts="$(docker run --rm --read-only --tmpfs /tmp --cap-drop ALL \
             --security-opt no-new-privileges --network none \
@@ -213,6 +293,7 @@ jobs:
             || { echo "unexpected hosts: $hosts"; exit 1; }
 
       - name: Runner without a network ends with exit code 4 and no result
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           out="$RUNNER_TEMP/runner-out"
           mkdir "$out"
@@ -231,9 +312,11 @@ jobs:
           fi
 
       - name: Start topology
+        if: steps.scope.outputs.docs_only != 'true'
         run: docker compose up -d
 
       - name: Wait for all services to report healthy
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           services="postgres objectstore api tiler worker harvester"
           for i in $(seq 1 30); do
@@ -252,6 +335,7 @@ jobs:
           exit 1
 
       - name: One-shot steps ran successfully
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           for s in pgstac-migrate catalog-load objectstore-secrets objectstore-init; do
             code="$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -aq "$s")")"
@@ -263,6 +347,7 @@ jobs:
           done
 
       - name: Object store credentials for the smoke steps (masked)
+        if: steps.scope.outputs.docs_only != 'true'
         id: objectstore-creds
         run: |
           creds="$(docker compose run --rm --no-deps objectstore-secrets show)"
@@ -282,6 +367,7 @@ jobs:
           done
 
       - uses: actions/setup-python@v5
+        if: steps.scope.outputs.docs_only != 'true'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -289,11 +375,13 @@ jobs:
 
       # From the lock file, hash-checked (M4 R4; scripts/lock-backend.sh).
       - name: Install object store smoke dependencies
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           pip install --require-hashes --only-binary :all: \
             -r compose/objectstore/requirements-smoke.lock
 
       - name: Object store smoke (adr/0012 §9 — confirms the official image)
+        if: steps.scope.outputs.docs_only != 'true'
         env:
           S3_ACCESS_KEY: ${{ steps.objectstore-creds.outputs.access_key }}
           S3_SECRET_KEY: ${{ steps.objectstore-creds.outputs.secret_key }}
@@ -305,6 +393,7 @@ jobs:
         run: python compose/objectstore/smoke.py --write-marker
 
       - name: Restart one service, all stay (or become) healthy
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           docker compose restart worker
           services="postgres objectstore api tiler worker harvester"
@@ -324,6 +413,7 @@ jobs:
           exit 1
 
       - name: Second start with the existing volume
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           docker compose down
           docker compose up -d
@@ -344,6 +434,7 @@ jobs:
           exit 1
 
       - name: One-shot steps ran successfully on the second start
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           for s in pgstac-migrate catalog-load objectstore-secrets objectstore-init; do
             code="$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -aq "$s")")"
@@ -355,6 +446,7 @@ jobs:
           done
 
       - name: Object store credentials are unchanged, and the earlier object is still there
+        if: steps.scope.outputs.docs_only != 'true'
         env:
           S3_ACCESS_KEY: ${{ steps.objectstore-creds.outputs.access_key }}
           S3_SECRET_KEY: ${{ steps.objectstore-creds.outputs.secret_key }}
@@ -366,9 +458,9 @@ jobs:
           python compose/objectstore/smoke.py --persisted
 
       - name: Logs (always, for diagnosis)
-        if: always()
+        if: always() && steps.scope.outputs.docs_only != 'true'
         run: docker compose logs
 
       - name: Tear down
-        if: always()
+        if: always() && steps.scope.outputs.docs_only != 'true'
         run: docker compose down -v
