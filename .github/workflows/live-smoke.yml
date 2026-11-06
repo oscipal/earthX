@@ -79,4 +79,4 @@ jobs:
             -r backend/requirements-dev.lock
 
       - name: Live smoke (pytest backend/tests_live/test_cop_dem_smoke.py)
-        run: pytest backend/tests_live/test_cop_dem_smoke.py
+        run: pytest backend/tests_live/test_cop_dem_smoke.py backend/tests_live/test_worldcover_smoke.py
