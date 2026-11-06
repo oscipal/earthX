@@ -1,6 +1,6 @@
 # UI-05 — Data catalogue und Control Panel
 
-**Stand:** 06.11.2026, **angenommen** von Otto am 06.11.2026 (§8a: F1–F9 jeweils Option 1, F5 mit Symbol in der Leiste, F3 ergänzt; A1–A9 angenommen). Teil 1 umgesetzt (§9). Beauftragt in `docs/plans/m5/m5-discovery-und-suche.md` §6.1 (UI-05) nach Ottos Zusatz vom 06.11.2026 (§2 Punkt 8 dort).
+**Stand:** 06.11.2026, **angenommen** von Otto am 06.11.2026 (§8a: F1–F9 jeweils Option 1, F5 mit Symbol in der Leiste, F3 ergänzt; A1–A9 angenommen). Teil 1 umgesetzt (§9), Teil 2 umgesetzt (§10). Beauftragt in `docs/plans/m5/m5-discovery-und-suche.md` §6.1 (UI-05) nach Ottos Zusatz vom 06.11.2026 (§2 Punkt 8 dort).
 **Stufe B:** Erst dieser Plan mit Fragen F1 … F9, dann setzt dieselbe Session nach Ottos Antworten Teil 1 um (§8a, §9); Teil 2 bekommt eine neue Session und einen eigenen PR.
 **Modell:** Opus, Effort hoch.
 **Gilt dazu:** `docs/ui/leitfaden.md` (alle Regeln; Oberflächentexte englisch), `adr/0024` R8 (Marke „Prototype“), `adr/0027` W0 (Konto-Quellen als Katalogeintrag mit Link), `KLAERUNGEN` B10 (keine Vorgaben in der Registry), B12 (Punkt 10 „zuletzt erfolgreich geprüft“).
@@ -246,3 +246,25 @@ Umgesetzt wie §3, mit den Auslegungen A1–A4 und F8:
 - **Beobachtung:** Nach dem Klick auf den letzten „Next page“ ist der Pfeil gesperrt, sein Grund erscheint aber erst, wenn der Zeiger den Pfeil verlässt und wieder darüber kommt (`TipLayer` reagiert auf das Hineinfahren, nicht auf eine neue Sperre unter dem Zeiger). Gilt ebenso für andere Knöpfe, die sich durch den eigenen Klick sperren; nicht geändert.
 
 **Geprüft:** `vitest` (alle Dateien), `tsc`, `oxlint`; Gegenprobe der neuen und geänderten Tests gegen die Komponenten von `main` (22 scheitern); Browser-Skript `e2e/dataset-pages.cjs` (Hell/Dunkel; 1280 × 800, 1280 × 560, 360 und 320 px) grün, gegen `main` bricht es ab (kein Zähler). `e2e/focus-and-type.cjs` grün. `advanced-search`, `evaluate-coverage`, `narrow-windows`, `settings-panel`, `tooltips`, `selection-block` und `within-aoi` scheitern auf `main` genauso wie auf dem Branch (gleiche Befunde, gleiche Stellen); `advanced-search.cjs` ist an Teil 1 angepasst (Schritt 1: Knopf beim DEM da und gesperrt), die Schritte davor bestehen.
+
+## 10. Teil 2 umgesetzt (06.11.2026)
+
+Umgesetzt wie §4 und §5 mit F1–F9, A5–A8 und dem Nachtrag zu F5/F6; alle vier Einträge auf `main` haben die neuen Felder, auch ESA WorldCover 2020 und 2021 aus M5-07.
+
+- **Registry:** `category` (`DatasetCategory`), `providers` (`Provider(name, roles, url)`, Rollen `ProviderRole`, `url` nur `https://` oder keine) und `gsd` (Meter > 0, aufsteigend, je Wert einmal), alle ohne Vorgabe (B10), geprüft in `__post_init__`; veröffentlicht als `earthx:category`, `providers` und `summaries.gsd`; `architekturplan.md` 5.1 nachgezogen. Werte:
+  - Sentinel-2 L2A: `optical`, `gsd` 10, 20, 60; Anbieter aus der Collection der Quelle (Earth Search, gelesen 06.11.2026). Die Quelle verlinkt AWS nur über `http://`; der Eintrag „AWS“ bleibt darum ohne Link.
+  - Copernicus DEM GLO-30: `elevation`, `gsd` 30 (Raster von GLO-30 laut `readme.html` des Buckets; die Collection nennt keine `gsd`); Anbieter aus der eigenen STAC-Collection des Buckets (`copernicus-dem-30m-stac`, `dem_cop_30.json`).
+  - ESA WorldCover 2020 und 2021: `land_cover`, `gsd` 10 (`readme.html` des Buckets). Der Bucket hat keine STAC-Collection, und Terrascope und Planetary Computer sind aus der Sitzung nicht erreichbar; die Anbieter stammen darum aus der Collection, die `stactools-packages/esa-worldcover` für das Produkt baut (`PROVIDERS` in `constants.py`), wörtlich übernommen.
+- **Frontend:** `catalogue.ts` (Gruppen, Erstbesuch, Angaben je Datensatz nur aus der Collection), `DataCatalogue.tsx` (Fenster), Symbol `library` als zweites in der Leiste, `addedDatasetIds` im Store, Speicher `earthx.datasets` (`preferences.ts`), Permalink fügt die Datensätze seines Auftrags hinzu (A7), Leerzustand im Panel.
+- **Auslegungen** (gelten, bis Otto widerspricht):
+  - (a) **Source** verlinkt den Endpunkt der Quelle, nicht `…/collections/<source_collection_id>`: DEM und WorldCover kommen aus Buckets, deren `source_collection_id` keine STAC-Collection ist; der Link dorthin führte ins Leere. Die Kennung steht als Text daneben („earth-search.aws.element84.com · sentinel-2-c1-l2a“).
+  - (b) **„Remove“** (A6) wählt ab, ohne die Ergebnisse der letzten Suche und den aktiven Datensatz zu verwerfen; der aktive Datensatz darf bis zur nächsten Wahl im Panel ein nicht mehr gewählter sein. Während eine Suche läuft, ist „Remove“ eines gewählten Datensatzes gesperrt („Wait until the search is finished“).
+  - (c) **Layer:** Wählt ein Layer seinen Datensatz an (wie bisher), kommt dieser zurück ins Panel, falls er entfernt war; sonst gäbe es eine gewählte, aber unsichtbare Auswahl. Gleicher Gedanke wie A7.
+  - (d) **Erstbesuch** wird nicht gespeichert, bis der Nutzer etwas hinzufügt oder entfernt; bis dahin folgt die Vorauswahl der Registry (ein neuer Datensatz erscheint, solange es höchstens sechs sind).
+  - (e) Eine Collection ohne oder mit unbekannter `earthx:category` steht in einer Gruppe „Other“ am Ende, damit die Lücke sichtbar ist.
+  - (f) **„Last checked“** zeigt immer „—“ mit „Not checked yet“: Der Name des Feldes unter `earthx:health` ist noch nicht entschieden (`adr/0025` §6.6), darum liest das Frontend keines.
+  - (g) **Konto-Datensatz:** statt „Add“ ein Link „Source“ auf den Endpunkt; ohne `https`-Endpunkt bleibt „Add“ gesperrt mit Grund.
+  - (h) **Quick processing** in den Angaben nennt, was die Seitenleiste anbietet: die Indizes und „Enhance contrast“ nur bei einem Datensatz mit Echtfarbenbild (nicht „für alle“ wie in §4.3).
+- **Umfang:** über dem Richtwert von etwa 400 Zeilen ohne Tests (Registry, Store, zwei neue Module und CSS); ein weiterer Schnitt hätte Teile ohne Oberfläche ergeben.
+
+**Geprüft:** `pytest` (Backend), `ruff`, `lint-imports`, `vitest`, `tsc`, `oxlint`; Browser-Skripte `e2e/data-catalogue.cjs` (neu; Hell/Dunkel, 1280 und 360 px, mit erfundenen und mit den echten vier Collections) und `e2e/dataset-pages.cjs` (angepasst: speichert seine neun Datensätze, weil ein Erstbesuch höchstens sechs hinzufügt) grün.

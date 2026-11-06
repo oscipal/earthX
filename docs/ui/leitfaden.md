@@ -1,10 +1,10 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 06.11.2026, UI-05 Teil 1 (Seiten der Datensätze, „Advanced search“ immer da, Datum im Zeitraum der Datensätze, kein Zusatztext im Panel; `docs/plans/vp3/ui-05-data-catalogue.md`), davor UI-04 Teil 6 (Zahlenformat, weniger Text, schmale Fenster, Tokens für alle Maße) (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 06.11.2026, UI-05 Teil 2 (Data catalogue als Fenster, Datensätze in „Search and area“ aus dem Katalog), davor UI-05 Teil 1 (Seiten der Datensätze, „Advanced search“ immer da, Datum im Zeitraum der Datensätze, kein Zusatztext im Panel; `docs/plans/vp3/ui-05-data-catalogue.md`), davor UI-04 Teil 6 (Zahlenformat, weniger Text, schmale Fenster, Tokens für alle Maße) (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
-**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. Nach UI-04 Teil 6 gab es keine Regel mit dieser Markierung mehr; neu ist *(folgt in UI-05 Teil 2)* (Fenster, §5, §7).
+**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. Nach UI-05 Teil 2 gibt es keine Regel mit dieser Markierung.
 
 ## 1. Grundsätze
 
@@ -33,7 +33,8 @@
 | Close | schließt Fenster, Leiste, Dialog, Meldung; nur das rote x (§5) | „Dismiss“ |
 | Cancel | verwirft eine Rückfrage oder bricht einen Job ab | |
 | Stop | hält einen laufenden Vorgang an; was fertig ist, bleibt („Stop checking. What is found stays.“, laufender Download) | „Cancel“ für einen Download |
-| Remove | nimmt etwas aus einer Liste der Oberfläche (Layer, Schritt, Gruppe) | |
+| Remove | nimmt etwas aus einer Liste der Oberfläche (Layer, Schritt, Gruppe, Datensatz aus „Search and area“ im Data catalogue) | |
+| Data catalogue / Add | das Fenster mit allen Datensätzen (UI-05) und sein Symbol in der Leiste; „Add“ nimmt einen Datensatz in „Search and area“ auf, ohne ihn zu wählen; „Source“ statt „Add“ bei einem Datensatz, der ein Konto braucht; Marken „Prototype“, „Account“ | |
 | Delete | löscht dauerhaft auf der Plattform (Job, Link) | |
 | Clear | leert ein Feld, die AOI oder die Suchergebnisse; der Knopf der AOI im Control-Menü heißt „Clear AOI“ (Beschriftung, Tooltip, `aria-label`), der der Ergebnisse „Clear search results“ | „Clear“ allein als Knopftext |
 | Hide / Show | das Auge; bei der Coverage „Hide coverage“ | „Clear coverage“ |
@@ -115,7 +116,7 @@
 | Suchergebnisse nach oben | `arrow-up-to-line` |
 | Flip through layers | `arrow-up-down` |
 | AOI-Werkzeuge | `map-pin`, `square`, `pentagon` |
-| Leiste | `search`, `layers`, `clipboard-list`, `list` |
+| Leiste | `search`, `library` (Data catalogue), `layers`, `clipboard-list`, `list` |
 | Coverage | `layout-grid` |
 | Erscheinungsbild (Light / Dark / System) | `sun`, `moon`, `monitor` |
 
@@ -133,7 +134,7 @@
 ## 5. Schließen
 
 - **Linke Panels: ein- und ausschalten über das Symbol, kein x** (Otto, 04.11.2026). Search and area, Layers, Jobs, Search results und Settings öffnen und schließen nur mit ihrem Symbol in der Leiste (ein zweiter Klick schließt); ihr Kopf hat den Titel und kein x. Das rote x bleibt für die **Seitenleiste rechts, Dialoge, Fenster, Blätter (Popover-Formulare, Processing-Panel) und Meldungen**.
-- **Fenster** (Otto, 06.11.2026, UI-05; *folgt in UI-05 Teil 2*): ein größeres Fenster über der Karte, das ein Symbol der Leiste links öffnet, heute nur der „Data catalogue“. Es schließt mit dem roten x in seinem Kopf **oder** einem zweiten Klick auf sein Symbol (wie die linken Panels); Esc schließt nichts; ein Klick daneben schließt es nicht (wie bei Dialogen).
+- **Fenster** (Otto, 06.11.2026, UI-05): ein größeres Fenster über der Karte, das ein Symbol der Leiste links öffnet, heute nur der „Data catalogue“. Es schließt mit dem roten x in seinem Kopf **oder** einem zweiten Klick auf sein Symbol (wie die linken Panels); Esc schließt nichts; ein Klick daneben schließt es nicht (wie bei Dialogen).
 - **Ein Weg:** das kleine rote x aus `CloseButton.tsx` (Tooltip „Close“, ein längerer Tooltip, wo das Schließen eine Folge hat). Das gilt auch für Meldungen der Statusleiste.
 - **Esc schließt nichts:** keine Ansicht, Seitenleiste, kein Panel, Blatt, Menü, keine Liste und keinen Tooltip. Ausnahmen:
   - Esc = „Cancel“ in Bestätigungsdialogen („Values are resampled“);
@@ -174,7 +175,7 @@
 | `SettingsPanel` | das Panel „Settings“ (§9), geöffnet vom letzten Symbol der Leiste (`AppRail`) |
 | `Popover` | Menüs, Listen und das Formular „Advanced search“ |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
-| Fenster (`DataCatalogue`, *folgt in UI-05 Teil 2*) | größeres Fenster über der Karte, geöffnet und geschlossen über sein Symbol in der Leiste, dazu das rote x im Kopf (§5); der Kopf ist ein eigener Bereich, in den später Suchfeld und AOI-Schalter kommen, ohne sichtbar leere Fläche, solange sie fehlen |
+| Fenster (`DataCatalogue`) | größeres Fenster über der Karte, geöffnet und geschlossen über sein Symbol in der Leiste, dazu das rote x im Kopf (§5); der Kopf ist ein eigener Bereich, in den später Suchfeld und AOI-Schalter kommen, ohne sichtbar leere Fläche, solange sie fehlen |
 | `Badge` | das eine Abzeichen („Preview“, „Temporary“, „Overview“, „Zoom in“, „Loading…“): Pille in `--accent-2`, Großbuchstaben per CSS; `PreviewBadge` setzt sie über die Karte |
 
 **Knopfformen** (`index.css`, vorn im Blatt):
@@ -313,6 +314,7 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (ein gezeigter Toolt
 | kein Eintrag „Hide coverage“ in der Wahl des Datensatzes | `frontend/src/components/ControlPanel.test.tsx` |
 | Zeitleiste: Daten und Pfeile an einer Stelle bei jedem Schritt (auch erstem und letztem); ←/→ blättern durch die Überflüge, nicht in Feldern, Listen, Dialogen, am Regler, nicht mit Umschalttaste/Strg/Alt/Meta | `frontend/src/components/TimeSlider.keys.test.tsx`, `frontend/e2e/selection-block.cjs` |
 | Datensätze in Seiten zu höchstens sechs, so viele Reihen wie ohne Scrollen passen, Zähler und gesperrte Pfeile mit Grund klein rechts neben „Datasets“, volle Höhe auf der letzten Seite; „Advanced search“ immer da, gesperrt mit Grund; Datum bei jeder Wahl vorausgefüllt und im Zeitraum der gewählten Datensätze, gesperrt mit Zeitraum im Tooltip; kein Zusatztext im Panel | `frontend/src/components/ControlPanel.test.tsx`, `frontend/src/components/AdvancedSearch.test.tsx`, `frontend/src/datasetPages.test.ts`, `frontend/src/dateBounds.test.ts`, `frontend/src/uiRules.test.ts`, `frontend/e2e/dataset-pages.cjs`, `frontend/e2e/advanced-search.cjs` |
+| Data catalogue: zweites Symbol der Leiste, öffnet und schließt das Fenster, rotes x schließt, Esc und Klick daneben nicht; Gruppen in der Reihenfolge von `earthx:category`; „Add“ ohne Wahl und mit Blättern, „Remove“ wählt ab und lässt die Ergebnisse; Konto-Datensatz mit Link statt „Add“, „Prototype“ nur bei `unclear`, Links nur `https://`; Speicher `earthx.datasets` (gesperrt, kaputt, unbekannte und ausgemusterte Kennungen); Erstbesuch höchstens sechs in der Reihenfolge der Gruppen; Permalink fügt seinen Datensatz hinzu | `frontend/src/components/DataCatalogue.test.tsx`, `frontend/src/catalogue.test.ts`, `frontend/src/store.catalogue.test.ts`, `frontend/src/preferences.test.ts`, `frontend/src/components/ProcessingShare.test.tsx`, `frontend/e2e/data-catalogue.cjs` |
 | „Evaluate“: Segment-Knöpfe, per pass zuerst und gedrückt, Erklärung mit Beispiel hinter dem (i), nicht als Absatz; „AOI coverage“ als Schieber und Zahl, gesperrt mit Grund ohne AOI, bei einem Punkt frei (das Quadrat um ihn ist die AOI), ohne Zeitraum frei; die (i)-Box am Schalter nennt die gemessenen Filter | `frontend/src/components/AdvancedSearch.evaluate.test.tsx`, `frontend/src/store.evaluate.test.ts`, `frontend/e2e/evaluate-coverage.cjs` |
 
 Ein neuer Begriff, der ein altes Wort ersetzt, bekommt eine Zeile in der Liste `FORBIDDEN` von `uiRules.test.ts` mit Gegenprobe.
