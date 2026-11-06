@@ -1,6 +1,6 @@
 # M5-18 — `gateway`: `User-Agent`, Abstand je Host, `robots.txt`: Plan-Schritt
 
-**Status (06.11.2026):** Plan angenommen (Otto, 06.11.2026; Antworten in §8a), Umsetzung im selben Draft-PR.
+**Status (06.11.2026):** Plan angenommen (Otto, 06.11.2026; Antworten in §8a), umgesetzt im selben Draft-PR (§9).
 **Aufgabe:** M5-18 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von nichts ab; M5-19 (Harvest-Kern) wartet auf den Merge.
 **Grundlagen:** `adr/0025` §3 (Befund opendata.swiss), §3a (RFC 9309), §6.2, §8 Schnitt Schritt 3, F9, §12; `architekturplan.md` 4.3 (Fetch) und 6.5; `KLAERUNGEN.md` B8, B9; `adr/0005` §6 (Grenzen je Host).
 
@@ -64,6 +64,7 @@ Kein Harvester, keine Seed-Datei, keine Tabellen: das ist M5-19. Diese Aufgabe l
 | `4xx` außer `429` | alles erlaubt |
 | `429`, `5xx`, Timeout, nicht erreichbar, mehr als 3 Weiterleitungen | Host ruht: jede weitere Anfrage an ihn wirft `HostResting` |
 | Weiterleitung außerhalb der Allowlist | Host ruht (Auslegung A3) |
+| Antwort über der Größengrenze der Policy (Vorgabe 8 MB) | Host ruht (Umsetzung, §9) |
 
 - **Cache:** je `Gateway`-Objekt und Host, höchstens 24 h (RFC 9309 §2.4). Länger lebt ein Lauf nicht; das Objekt im Prozess `api` setzt den Schalter nie.
 - **Regeln (Parser nach F3):** Gruppen nach `user-agent`; passt der Produktname aus §3.1 (ohne Groß-/Kleinschreibung), gilt nur diese Gruppe, sonst die Gruppe `*`, sonst alles erlaubt. Mehrere Gruppen mit gleichem Namen werden zusammengeführt. Innerhalb der Gruppe gewinnt die **längste** passende Regel, bei Gleichstand `Allow`. `*` und `$` in Pfaden, Prozent-Kodierung normiert. Unbekannte Zeilen und `Sitemap` werden übersprungen. Verglichen wird Pfad plus Abfrage, wie RFC 9309 §2.2.2 es vorsieht; der Log schreibt wie heute nur den Pfad.
@@ -148,3 +149,13 @@ F1–F6 jeweils **Option 1**, Auslegungen A1–A5 angenommen. Ergänzungen:
 
 1. **Ein Wert je Instanz:** `EARTHX_USER_AGENT`, beim Start geprüft wie der Vorgabewert (kein Zeilenumbruch, kein `@`), Vorgabe `EarthX/0.1 (+https://github.com/oscipal/earthX)`. Kein Aufrufer überschreibt ihn. Eingetragen in §3.1.
 2. **`EARTHX_GEOCODER_USER_AGENT`:** im Plan festlegen, was damit geschieht; Nominatim bekommt danach denselben Wert. Festgelegt in §3.1: Die Variable entfällt und geht in `EARTHX_USER_AGENT` auf.
+
+## 9. Umsetzung (06.11.2026)
+
+- **`gateway`:** `policy.py` (`user_agent`, `min_interval_s`, `host_intervals`, `obey_robots`, `user_agent_from_env`, `product_token`), `client.py` (Kopf, Abstand, Abruf und Cache von `robots.txt`), neues `robots.py` (Parser), `errors.py` (`RobotsDisallowed`, `HostResting`), `gdal.py` (`GDAL_HTTP_USERAGENT`).
+- **Startprüfung:** `api` und `tiler` (Lifespan), `materialize` (`main`), `worker` (Lifespan) und lokaler Runner über `processing.check_instance_settings()`; `jobs`, `runner` und `processing` dürfen `gateway` nicht direkt importieren, die GDAL-Optionen tragen den Wert und prüfen ihn so mit.
+- **Geocoder:** wie §3.1; `api` warnt beim Start, wenn `EARTHX_GEOCODER_USER_AGENT` noch gesetzt ist.
+- **Konfiguration:** `EARTHX_USER_AGENT` bei `api`, `tiler`, `worker` und `materialize` in `docker-compose.yml`, in `.env.example` und README; `architekturplan.md` 6.5 mit Nachtrag.
+- **Abweichung:** Eine `robots.txt` über der Größengrenze der Policy (8 MB) lässt den Host ruhen, statt den Anfang zu lesen (§3.3, Tabelle). Bis 8 MB gilt wie geplant: ausgewertet werden die ersten 500 KiB. Ein Abschneiden beim Lesen hätte einen zweiten Lesepfad im Client gebraucht.
+- **Tests:** `tests/earthx/gateway/test_user_agent.py`, `test_spacing.py`, `test_robots.py`, `tests/earthx/api/test_retired_settings.py`, je ein Starttest für Worker, Runner und `materialize`; Nominatim- und Geocode-Tests ohne eigenen Kopf.
+
