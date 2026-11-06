@@ -52,10 +52,10 @@ Belegstufen wie in `adr/0022` und `adr/0023`:
 
 ## 0. Kurzfassung
 
-1. **Alle drei Messfälle sind NetCDF-4, also HDF5** [M]. MeteoSchweiz unkomprimiert, ein Chunk je Tag über das ganze Gitter; DWD HYRAS mit zlib Stufe 9 und Chunks über 40 Tage × 178 × 133 Pixel. Beide erlauben Range (`206`), tragen ETag und beachten `If-None-Match` (`304`) und `If-Match` (`412`).
+1. **Beide NetCDF-Messfälle sind NetCDF-4, also HDF5** [M]. MeteoSchweiz unkomprimiert, ein Chunk je Tag über das ganze Gitter; DWD HYRAS mit zlib Stufe 9 und Chunks über 40 Tage × 178 × 133 Pixel. Beide erlauben Range (`206`), tragen ETag und beachten `If-None-Match` (`304`) und `If-Match` (`412`).
 2. **Byte-Ranges reichen; ein Kopieren der Dateien ist für keinen Lesefall nötig** [M]. Ein Zeitschritt kostet bei virtuellen Verweisen genau die Chunks, die er berührt: MeteoSchweiz 1 Abruf mit 355 KB, DWD für ganz Deutschland 25 Abrufe mit 7,5 MB, für eine Kachel 1 Abruf mit 0,5 MB (§4).
-3. **GDAL über `/vsicurl/` liest dieselben Dateien ohne neue Abhängigkeit** [M]: Der netCDF-Treiber im Wheel erkennt EPSG:2056 und EPSG:3035 und liefert dieselben Werte wie der Weg über die Verweise (bitgleich). Er braucht etwas mehr Abrufe und Bytes je Zeitschritt (§4).
-4. **Die Verweise entstehen mit `h5py` allein** [M], gleich denen von `kerchunk`, in 5–8 Abrufen zu 64 KiB je Datei. VirtualiZarr importiert beim Laden `obstore` [M], das die Importregeln außerhalb von `gateway` verbieten.
+3. **GDAL über `/vsicurl/` liest dieselben Dateien ohne neue Abhängigkeit** [M]: Der netCDF-Treiber im Wheel erkennt EPSG:2056 und EPSG:3035 und liefert dieselben Werte wie der Weg über die Verweise (bitgleich). Er braucht etwas mehr Abrufe und Bytes je Zeitschritt (§4), liest über `userfaultfd` unter einem globalen Mutex und prüft keine ETags (§7).
+4. **Die Verweise entstehen mit `h5py` allein** [M], gleich denen von `kerchunk`, in 5–8 Abrufen zu 64 KiB je Datei. VirtualiZarr lädt beim Import `obstore` [M], einen HTTP-Client, den die Importregeln außerhalb von `gateway` verbieten.
 5. **Die Zeitachse kommt nicht aus dem STAC der Quelle** [M]. MeteoSchweiz setzt `datetime` der Items auf die letzte Aktualisierung; die Zeit steht nur im Dateinamen und in der Datei. Das Archiv ist ein einziges Item mit 3257 Assets.
 6. **Empfehlung (F1):** virtuelle Verweise, erzeugt und gelesen mit eigenem Code über `gateway` (Option A2, §6); je Zeitschritt ein Item, das die Verweise auf seine Chunks selbst trägt (F2, F3). Kein flüchtiger COG-Cache in M5 (F1, Option C nur als spätere Ergänzung).
 7. **ARCO-ERA5** taugt als Vergleich, nicht als Quelle für M5: ein Chunk ist eine Stunde × ganze Erde (2,3 MB), eine Zeitreihe an einem Punkt über ein Jahr hieße rund 20 GB (F4).
@@ -204,7 +204,8 @@ Je Zeile ein frischer Prozess. „Verweise“ heißt: Abrufe genau der Chunks, d
 - **Verweise:** Jeder Abruf eines Chunks ist ein Range-GET auf eine bekannte Datei mit bekanntem Offset und bekannter Länge. Das ist das Muster von `GatewayStore` (`adr/0007` §6 Punkt 2): ein Schlüssel, ein `gateway`-Abruf. Für das Erzeugen reicht ein Dateiobjekt, dessen `read` über `gateway` geht; `h5py` liest daraus.
 - **GDAL:** wie bei COG heute. Die URL passiert `check_url`, GDAL ruft selbst ab; durchgesetzt wird erst mit der Netzwerk-Policy in M6 (B8).
 - **Bibliotheken:**
-  - `virtualizarr` 2.8.0 importiert beim Laden `obstore` (und `obspec_utils`), und seine Parser verlangen eine `ObjectStoreRegistry` [M]. `obstore` steht in der Verbotsliste des Vertrags `http-only-in-gateway`. VirtualiZarr in `readers` oder `discovery` hieße also, die Importregel zu lockern; das entscheidet nur Otto.
+  - `virtualizarr` 2.8.0 lädt beim Import `obstore` und `obspec_utils`; seine Parser verlangen eine `ObjectStoreRegistry` [M]. Die Registry nimmt jedes Objekt mit der obspec-Methode `get` an [P\*, §7]; ein Store über `gateway` wäre also möglich, ist aber nicht erprobt.
+  - `obstore` steht in der Verbotsliste des Vertrags `http-only-in-gateway`. Ob `lint-imports` den Umweg über ein fremdes Paket sieht, ist fraglich, denn import-linter schaut nicht in fremde Pakete hinein [A]. Geladen wäre der Client im Prozess trotzdem, gegen den Sinn von B8. Das entscheidet Otto (Lockerung von Importgrenzen).
   - `kerchunk.hdf` importiert `fsspec`, `h5py`, `numcodecs` und `ujson`, aber keinen HTTP-Client [M]. Mit einem eigenen Dateiobjekt liest es über `gateway`.
   - `h5py` allein liefert dieselben Verweise wie `kerchunk` (Offset und Länge aller 616 geprüften Chunks gleich) über `get_chunk_info` [M]. Damit ist `kerchunk` für das Erzeugen nicht nötig.
 - **Bedingte Abrufe:** Beide Quellen und GCS antworten auf `If-Match` mit falschem ETag mit `412` [M]. Ein Range-GET mit dem ETag aus der Zeit der Verweise liest also nie Bytes aus einer geänderten Datei. **Vorsicht:** `If-Range` mit falschem ETag liefert die **ganze** Datei mit `200` [M]; der Leser darf `If-Range` nicht verwenden.
@@ -244,14 +245,15 @@ Verweise (Datei, Offset, Länge je Chunk) statt Kopie; gelesen über einen Zarr-
 
 - **A1 — mit VirtualiZarr/Kerchunk und deren Laufzeit** (`fsspec` bzw. `obstore`, optional Icechunk):
   - Standardwerkzeug, Manifest als Kerchunk-JSON/Parquet oder Icechunk.
-  - Verletzt K2: `obstore` ist außerhalb von `gateway` verboten (§5.1); `fsspec` ruft über `aiohttp` ab. Nur mit Lockerung der Importregeln durch Otto.
-  - Icechunk bräuchte einen eigenen Speicher für Repository und Manifeste.
+  - K2: `obstore` wird mitgeladen (§5.1); `fsspec` ruft über `aiohttp` ab. Ein eigener obspec-Store über `gateway` ginge, der Client läge trotzdem im Prozess. Nur mit Ottos Zustimmung zur Importgrenze.
+  - Icechunk kann ETag und Änderungszeit virtueller Chunks prüfen, liest die Chunks aber in seinem Rust-Kern selbst, also an `gateway` vorbei, und braucht einen eigenen Speicher für das Repository [P\*, §7].
 - **A2 — eigener Code über `gateway` (empfohlen):**
   - Erzeugen in `discovery`: `h5py` auf einem Dateiobjekt über `gateway`, Seiten zu 64 KiB; je Datei 5–8 Abrufe [M].
   - Ablegen: die Verweise je Zeitschritt im Item (F3).
   - Lesen in `readers`: ein Store nach dem Muster von `GatewayStore`, dessen `get` ein Range-GET mit `If-Match` ist; Entpacken mit `numcodecs` (zlib; schon in der Lock-Datei); Achsenrichtung und CRS aus den Verweisen.
   - Neue Abhängigkeit: `h5py` (BSD-3-Clause) nur für `discovery`. `kerchunk` und VirtualiZarr bleiben draußen.
   - Neuer Code: Store, Erzeugen der Verweise, Zeitindex im Leser (heute nur 2-D-Variablen), Zarr-v2-Filter bzw. Übersetzen der Metadaten (der Leser öffnet heute fest `zarr_format=3`) [P].
+- **A3 — GDAL-Zarr-Treiber auf Kerchunk-Verweisen** (seit GDAL 3.11): liest die Verweise über `/vsisubfile/` und `/vsicurl/`, prüft aber weder ETag noch Änderungszeit [P\*]. K2 wie B. In der Bewertung unten wie B mit den Abrufzahlen von A.
 
 ### Option B — GDAL-Treiber über `/vsicurl/`
 
@@ -261,7 +263,7 @@ Verweise (Datei, Offset, Länge je Chunk) statt Kopie; gelesen über einen Zarr-
 - K2 wie COG: geduldet nach B8, Durchsetzung erst in M6.
 - K7: kein Schutz gegen eine Datei, die sich zwischen zwei Abrufen ändert; GDAL kennt kein `If-Match`.
 - Die Zeitachse muss die Plattform trotzdem selbst aufbauen (§5.4); GDAL nimmt nur das Lesen ab.
-- **Stand der Technik:** siehe §7 (Mechanismus, Sperren im Treiber).
+- Der Treiber liest `/vsi*` über `userfaultfd` und hält einen **globalen Mutex** über alle netCDF-Dateien [P\*, §7]. Im `tiler` hieße das: Kacheln aus NetCDF laufen je Prozess nacheinander. Gemessen ohne root und mit `vm.unprivileged_userfaultfd=0` [M]; in Containern mit strengem Seccomp-Profil kann der Systemaufruf gesperrt sein [P\*].
 
 ### Option C — flüchtiger COG-Cache mit Ablaufdatum
 
@@ -280,14 +282,43 @@ Verweise (Datei, Offset, Länge je Chunk) statt Kopie; gelesen über einen Zarr-
 | K4 Abrufe je Kachel/AOI | am wenigsten | am wenigsten | etwas mehr | am wenigsten nach dem Füllen |
 | K5 Reprojektion | ✓ | ✓ (`from_cf`) | ✓ (GDAL) | ✓ |
 | K6 Zeitachse | eigener Aufbau | eigener Aufbau | eigener Aufbau | eigener Aufbau |
-| K7 Änderungen | ETag in Icechunk [§7] | ✓ ETag und `If-Match` | ✗ | wie A bzw. B |
+| K7 Änderungen | nur mit Icechunk | ✓ ETag und `If-Match` | ✗ | wie A bzw. B |
 | K8 Aufwand | mittel, neue Pakete | mittel, nur `h5py` | gering | hoch |
 
 ---
 
 ## 7. Stand der Technik
 
-*Wird aus der Recherche ergänzt.*
+Recherche eines Hilfsagenten am 06.11.2026 (P\* bzw. S). `gdal.org`, `readthedocs.io` und `icechunk.io` waren nicht erreichbar; gelesen wurden deshalb Doku und Quelltext aus den GitHub-Repositories (Stand `main`/`master`, teils neuer als GDAL 3.12.2).
+
+**GDAL netCDF- und HDF5-Treiber auf `/vsi*`:**
+
+- Der netCDF-Treiber legt per `userfaultfd` eine Speicherregion in Dateigröße an, füllt Seitenfehler über `VSIFReadL` und öffnet mit `nc_open_mem` [P\*]. Nur Linux, Kernel ab 4.3, libnetcdf ab 4.5; in Containern kann der Systemaufruf gesperrt sein [P\*].
+- Der Code versucht zuerst `UFFD_USER_MODE_ONLY`, das auch ohne Privileg erlaubt ist [P\*; Kernelversion S]. Das erklärt, warum die Messung ohne root ging.
+- Abschalten mit `CPL_ENABLE_USERFAULTFD`, begrenzen mit `GDAL_UFFD_LIMIT`; ohne `userfaultfd` scheitert der Treiber an `/vsi`-Pfaden [P\*].
+- **Globaler Mutex `hNCMutex`** im netCDF-Treiber, weil die netCDF-Bibliothek nicht threadsicher ist [P\*].
+- Der HDF5-Treiber liest über ein eigenes VFD (`vsil`), ohne Seitenpuffer und ohne CF-Georeferenz [P\*]; passt zur Messung (keine Geotransformation).
+
+**GDAL und Kerchunk:** Kerchunk-JSON und -Parquet seit GDAL 3.11; Zarr-v2-Kompressoren u. a. zlib, gzip, blosc, lz4; Verweise als `/vsisubfile/`; **keine Prüfung von ETag oder Änderungszeit** der referenzierten Dateien [P\*]. Ein Icechunk-Treiber ist für GDAL 3.14 dokumentiert, noch nicht veröffentlicht [P\*].
+
+**VirtualiZarr** 2.8.0 (14.10.2026): verlangt zarr ≥ 3.1.6, `obstore` ≥ 0.7.0, `obspec_utils` [P\*]. `HDFParser` mit `reader_factory` seit 2.4.0; die Registry nimmt jeden obspec-Store [P\*]. Ausgabe als Kerchunk (JSON, Parquet) oder Icechunk [P\*].
+
+**Kerchunk** 0.2.10 (30.03.2026, „Alpha“): `SingleHdf5ToZarr` nimmt ein Dateiobjekt; zlib, Blosc, Zstd, Shuffle ja, lz4/szip/lzf nein; kein ETag [P\*]. VirtualiZarr hat einen eigenen HDF5-Parser [P\*].
+
+**Icechunk** 2.3.1 (27.10.2026): virtuelle Chunks mit optionaler Prüfsumme aus ETag bzw. Änderungszeit; geänderte Quellen werden nicht ausgeliefert [P\*]. HTTP-Quellen sind erlaubt; ob die Prüfung dort greift, ist offen. Gelesen wird im Rust-Kern, also an `gateway` vorbei [A].
+
+**TiTiler** (`titiler.xarray` 2.4.0, 21.09.2026): liest über `obstore`, NetCDF über `fsspec` mit `h5netcdf`; Zeitachse über `sel=` [P\*]. Beide Wege umgehen `gateway`; als Bibliothek für den Leseweg scheidet es aus, wie schon `adr/0007` für Zarr festhielt.
+
+**zarr-python 3:** liest ohne Sharding immer ganze Chunks, auch unkomprimierte [P\*]. Bei MeteoSchweiz ist das ohne Belang, weil ein Chunk ein Zeitschritt ist.
+
+**Erfahrungen [S]:** Kerchunk-Verweise verkürzen das Öffnen um Faktor 4 bis 20 gegenüber direktem Lesen über HTTP (NCAR CESM2, NOAA National Water Model); der erste Lauf bleibt teuer. Ein Blockcache passend zum Chunk-Layout bringt beim direkten Lesen viel. Das deckt sich mit §4: ohne Seitenpuffer 42–93 Abrufe beim Öffnen, mit Seiten zu 64 KiB 5–8.
+
+**Quellen selbst [P\*]:**
+
+- MeteoSchweiz: vorläufige Tageswerte 41 Tage, konsolidierte 14 Monate; Veröffentlichung am 10. und 26. des Folgemonats, die Fassung vom 26. **überschreibt** die vom 10.; Endbearbeitung Anfang Februar; Jahresdateien bis rund 200 MB. Dateien werden also an Ort und Stelle ersetzt.
+- DWD HYRAS v6-1: Die Datei des laufenden Jahres wird täglich verlängert; am Monatsanfang und zur Monatsmitte wird der Vormonat qualitätsgeprüft neu gerechnet. Abgeschlossene Jahre in v6-1 tragen den Stand vom 12.09.2025; v6-0 wird nicht mehr fortgeschrieben [A aus der Auflistung].
+
+**Folge für die Optionen [A]:** Keine fertige Bibliothek liest virtuelle Verweise über einen eigenen HTTP-Client **und** prüft das ETag. Icechunk prüft, umgeht aber `gateway`; GDAL und Kerchunk prüfen nicht. A2 schließt genau diese Lücke mit wenig eigenem Code. Weil beide Quellen Dateien an Ort und Stelle ersetzen, ist K7 kein Randfall.
 
 ---
 
@@ -297,16 +328,17 @@ Verweise (Datei, Offset, Länge je Chunk) statt Kopie; gelesen über einen Zarr-
 
 Begründung:
 
-1. **K2 ohne Abstrich.** Jeder Chunk ist ein `gateway`-Abruf, wie bei Zarr heute. B, der einzige Weg ohne neuen Code, bliebe bis M6 auf die Duldung aus B8 angewiesen; für COG ist das hingenommen, für einen neuen Leseweg muss es nicht sein.
+1. **K2 ohne Abstrich.** Jeder Chunk ist ein `gateway`-Abruf, wie bei Zarr heute. B, der einzige Weg ohne neuen Code, bliebe bis M6 auf die Duldung aus B8 angewiesen; für COG ist das hingenommen, für einen neuen Leseweg muss es nicht sein. Dazu kommt bei B der globale Mutex des netCDF-Treibers im `tiler` (§7).
 2. **K4 am günstigsten** und genau vorhersagbar: Die Verweise nennen jeden Abruf mit seiner Größe, bevor er stattfindet. Das passt zum Kostenmodell des Processing.
-3. **K7:** ETag zu den Verweisen, `If-Match` beim Lesen. Ein erneuter Lauf ohne Änderung kostet je Datei einen bedingten Abruf; das ist die Abnahme von M5.
+3. **K7:** ETag zu den Verweisen, `If-Match` beim Lesen. Beide Quellen ersetzen Dateien an Ort und Stelle (§7); ohne diese Prüfung läse ein Leser nach einer Neuberechnung Bytes an falschen Offsets. Ein erneuter Lauf ohne Änderung kostet je Datei einen bedingten Abruf; das ist die Abnahme von M5.
 4. **K3:** Die Verweise liegen im Item; Worker und lokaler Runner bekommen sie mit dem Rezept.
 5. **Architektur:** Das ist Rang 3 aus `architekturplan.md` 6.2, nur ohne Icechunk und ohne fremde I/O-Schicht.
 6. **Aufwand begrenzt:** `h5py` als einzige neue Abhängigkeit, nur in `discovery`; der Lesepfad baut auf `GatewayStore` und `numcodecs` auf.
 
 Nicht empfohlen:
 
-- **A1**, solange VirtualiZarr `obstore` zieht und die Importregel gilt. Eine Lockerung bringt keinen Vorteil, den A2 nicht auch hat.
+- **A1**, solange VirtualiZarr `obstore` mitlädt; Icechunk liest an `gateway` vorbei. Eine Lockerung der Importgrenze brächte keinen Vorteil, den A2 nicht auch hat.
+- **A3**, weil GDAL die Verweise ohne ETag-Prüfung liest.
 - **B** als Dauerlösung; als Gegenprobe in Tests ist GDAL nützlich (bitgleich, §4).
 - **C** in M5. Wiedervorlage, falls eine Quelle mit großen Chunks über die Zeit (Muster DWD) im Betrieb zu langsame Kacheln liefert.
 
@@ -318,7 +350,7 @@ Nicht empfohlen:
 1. A2: virtuelle Verweise mit eigenem Code über `gateway`; `h5py` neu in der Lock-Datei, nur für `discovery` **(Empfehlung)**
 2. B: GDAL-netCDF-Treiber über `/vsicurl/`, ohne neue Abhängigkeit, Durchsetzung von `gateway` erst in M6
 3. B jetzt für M5-11, A2 danach als eigene Aufgabe
-4. A1 mit VirtualiZarr; verlangt eine Ausnahme in der Importregel für `obstore`
+4. A1 mit VirtualiZarr über einen eigenen obspec-Store; `obstore` wird mitgeladen, verlangt deine Zustimmung zur Importgrenze
 
 **F2 — Zeitachse?**
 1. Ein Item je Zeitschritt, materialisiert in `discovery`, `datetime` aus der Achse `time` der Datei **(Empfehlung)**
@@ -360,4 +392,33 @@ Für den Fall, dass Otto die Empfehlungen annimmt. Diese Liste legt keine Plan-D
 
 ## 11. Quellen
 
-*Folgt.*
+**Gemessen (M), 06.11.2026, ohne Adressen von Dateien:**
+
+- FSDI-STAC: Collection `ch.meteoschweiz.ogd-surface-derived-grid`, ihre Items; je eine Jahresdatei Tagesmittel, Niederschlag und Monatsmittel 2024 und eine Tagesdatei (Kopfzeilen, Range, `If-Match`, Chunk-Index, ein Chunk, Lesefälle §4).
+- `opendata.dwd.de`, Verzeichnisse von HYRAS-DE; Niederschlag 2024 und Mitteltemperatur 2025 (wie oben), Kopfzeilen der Datei 2026.
+- `storage.googleapis.com/gcp-public-data-arco-era5`: `.zmetadata` und ein Chunk von `2m_temperature` (Kopfzeilen, Range, `If-Match`).
+- Im Repo: GDAL 3.12.2 aus `rasterio` 1.5.2 (Lock-Datei); im Kratzverzeichnis `h5py` 3.16.0, `kerchunk` 0.2.10, `virtualizarr` 2.8.0 (Importe, Signaturen).
+
+**Am Primärdokument gelesen (P):**
+
+- ARCO-ERA5, README: https://github.com/google-research/arco-era5 (Ort, Aktualisierung, Lizenzabschnitt, Zitierweise)
+- Im Repo: `readers/zarr_reader.py`, `gateway/gdal.py`, `catalog/registry.py`, `.importlinter`, `KLAERUNGEN.md` B8/B9, `architekturplan.md` 3.1, 6.2.
+
+**Über das Abrufwerkzeug eines Hilfsagenten gelesen (P\*):**
+
+- GDAL: `frmts/netcdf/netcdfdataset.cpp`, `port/cpl_userfaultfd.cpp`, `doc/source/drivers/raster/netcdf.rst`, `frmts/hdf5/hdf5vfl.h`, `hdf5dataset.cpp`, `doc/source/drivers/raster/zarr.rst`, `frmts/zarr/vsikerchunk_json_ref.cpp`, `doc/source/drivers/raster/icechunk.rst`, `NEWS.md` — https://github.com/OSGeo/gdal
+- VirtualiZarr: `virtualizarr/parsers/hdf/hdf.py`, `virtualizarr/accessor.py`, `docs/about/releases.md` — https://github.com/zarr-developers/VirtualiZarr; PyPI https://pypi.org/project/virtualizarr/
+- obspec-utils: `src/obspec_utils/registry.py` — https://github.com/virtual-zarr/obspec-utils
+- Kerchunk: `kerchunk/hdf.py` — https://github.com/fsspec/kerchunk; PyPI https://pypi.org/project/kerchunk/
+- Icechunk: `icechunk-python/python/icechunk/_icechunk_python.pyi`, `storage.py` — https://github.com/earth-mover/icechunk; PyPI https://pypi.org/project/icechunk/
+- TiTiler: `src/titiler/xarray/titiler/xarray/io.py` — https://github.com/developmentseed/titiler; PyPI https://pypi.org/project/titiler.xarray/
+- zarr-python: `src/zarr/core/codec_pipeline.py`, `src/zarr/codecs/bytes.py` — https://github.com/zarr-developers/zarr-python
+- MeteoSchweiz: https://opendatadocs.meteoswiss.ch/c-climate-data/c3-ground-based-climate-data, https://opendatadocs.meteoswiss.ch/general/download
+- DWD: https://opendata.dwd.de/climate_environment/CDC/grids_germany/daily/hyras_de/precipitation/ (Auflistung, `DESCRIPTION_HYRAS-DE-PR_V6-1_en.pdf`)
+
+**Suchtreffer (S):**
+
+- Kernel, `UFFD_USER_MODE_ONLY`: https://lore.kernel.org/lkml/20200507131503.02aba5a6@lwn.net/T/
+- https://ncar-esds.readthedocs.io/en/latest/posts/2023/cesm2-le-timeseries-kerchunk.html
+- https://element84.com/software-engineering/using-kerchunk-to-make-noaas-national-water-model-dataset-more-accessible/
+- https://earthaccess.readthedocs.io/en/stable/user/howto/fsspec/
