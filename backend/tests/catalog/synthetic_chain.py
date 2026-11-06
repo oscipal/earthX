@@ -35,9 +35,9 @@ import pytest
 from rasterio.warp import transform_bounds
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
-from earthx.catalog.registry import DataFormat, DatasetConfig, DatasetRegistry, ItemHolding, ViewerInfo
+from earthx.catalog.registry import AdapterKind, DataFormat, DatasetConfig, DatasetRegistry, ItemHolding, ViewerInfo
 from earthx.gateway import Gateway, Policy, check_url, host_of
-from tests.earthx.readers import mini_cog, mini_dem, mini_zarr, mini_zarr_composite
+from tests.earthx.readers import mini_cog, mini_dem, mini_worldcover, mini_zarr, mini_zarr_composite
 
 #: The one host both synthetic stores live on.
 HOST = mini_zarr.HOST
@@ -364,11 +364,74 @@ def gateway_answering_materialize(config: DatasetConfig, item: dict[str, Any]) -
     )
 
 
+def gateway_answering_worldcover(config: DatasetConfig, tile: str) -> tuple[Gateway, list[httpx.Request]]:
+    """A gateway that answers the WorldCover grid and the listing of the state's map files with exactly ``tile``
+    (M5-07), enough for `adapters.materialize_items` to build its item for real."""
+    seen: list[httpx.Request] = []
+    version, year = config.source.source_collection_id.split("/")
+    key = f"{version}/{year}/map/ESA_WorldCover_10m_{year}_{version}_{tile}_Map.tif"
+    west, south, east, north = mini_worldcover.BOUNDS
+    ring = [[west, south], [east, south], [east, north], [west, north], [west, south]]
+    grid = {"type": "FeatureCollection", "features": [{"properties": {"ll_tile": tile}, "geometry": {"type": "Polygon", "coordinates": [ring]}}]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/esa_worldcover_grid.geojson"):
+            return httpx.Response(200, json=grid, headers={"etag": '"synthetic"'})
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+            f"<Contents><Key>{key}</Key></Contents></ListBucketResult>"
+        ).encode()
+        return httpx.Response(200, content=body)
+
+    async def sleep(seconds: float) -> None:
+        return None
+
+    policy = Policy(allowed_hosts=frozenset({HOST, host_of(config.source.endpoint)}))
+    return (
+        Gateway(policy, transport=httpx.MockTransport(handler), resolve=mini_zarr.from_memory, sleep=sleep),
+        seen,
+    )
+
+
+def _build_worldcover(config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Chain:
+    from earthx.adapters.esa_worldcover_bucket import _item as worldcover_item
+
+    path = mini_worldcover.build_mini_worldcover(tmp_path / "mini_worldcover.tif")
+    read_addresses = mini_worldcover.serve_worldcover(path, monkeypatch)
+    synthetic = replace(config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,)))
+    version, year = config.source.source_collection_id.split("/")
+    tile = mini_worldcover.TILE
+    item = worldcover_item(
+        f"ESA_WorldCover_10m_{year}_{version}_{tile}",
+        f"{version}/{year}/map/ESA_WorldCover_10m_{year}_{version}_{tile}_Map.tif",
+        mini_worldcover.BOUNDS,
+        config=synthetic,
+    )
+    gateway, searched = gateway_answering_worldcover(synthetic, tile)
+    resolve_from_memory(monkeypatch)
+    return Chain(
+        config=synthetic,
+        registry=DatasetRegistry((synthetic,)),
+        item=item,
+        render_asset=render_asset,
+        # A few kilometres in the middle: half a 3° cell at the 10 m of the item is past the download limit.
+        aoi=aoi_wgs84((10.46, 46.46, 10.54, 46.54)),
+        tile=_covering_tile_wgs84(mini_worldcover.BOUNDS, config.viewer),
+        gateway=gateway,
+        searched=searched,
+        read_addresses=lambda: list(read_addresses),
+    )
+
+
 def _build_materialized(
     config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Chain:
     if config.format is not DataFormat.COG:
         raise UnsupportedFormat(f"no synthetic materialize chain for format {config.format.value!r}")
+    if config.source.adapter is AdapterKind.ESA_WORLDCOVER_BUCKET:
+        return _build_worldcover(config, render_asset, tmp_path, monkeypatch)
     path = mini_dem.build_mini_dem(tmp_path / "mini_dem.tif")
     read_addresses = mini_dem.serve_dem(path, monkeypatch)
     # Only the host has to match what the real adapter builds an href from

@@ -79,6 +79,20 @@ def _dem_double(request: httpx.Request) -> httpx.Response:
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
 
 
+def _worldcover_double(request: httpx.Request) -> httpx.Response:
+    """The WorldCover bucket as M5-07 measured it, by hand like the DEM's: grid unchanged, a listing, a TIFF head."""
+    if request.url.path.endswith("/esa_worldcover_grid.geojson"):
+        return httpx.Response(304, headers={"etag": request.headers.get("if-none-match", "")})
+    if request.url.path.endswith(".tif"):
+        return httpx.Response(206, content=TIFF_HEADER[:16])
+    if request.url.params.get("list-type"):
+        prefix = request.url.params["prefix"]
+        version, year = prefix.split("/")[:2]
+        key = f"{prefix}ESA_WorldCover_10m_{year}_{version}_N45E009_Map.tif"
+        return httpx.Response(200, content=f"<ListBucketResult><Contents><Key>{key}</Key></Contents></ListBucketResult>".encode())
+    raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+
+
 def _filtered_items() -> list[dict[str, Any]]:
     """Three synthetic scenes per filter: a range at 10, 40 and 90 % of its span, the values in turn."""
     items: list[dict[str, Any]] = []
@@ -190,6 +204,7 @@ DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_earth_search_smoke": _stac_double("earth_search"),
     "test_coverage_smoke": _coverage_double,
     "test_cop_dem_smoke": _dem_double,
+    "test_worldcover_smoke": _worldcover_double,
     "test_search_filters_live": _filtering_double,
     "test_aoi_cloud_filter_live": _scl_double,
 }

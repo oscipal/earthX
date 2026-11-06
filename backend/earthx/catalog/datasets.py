@@ -1,4 +1,4 @@
-"""The registry entries: Sentinel-2 L2A over Earth Search v1 (COG) and the Copernicus DEM GLO-30.
+"""The registry entries: Sentinel-2 L2A over Earth Search v1 (COG), the Copernicus DEM GLO-30 and ESA WorldCover.
 
 Decided in docs/adr/0003-erster-datensatz.md §6 (first token-free dataset) and
 §11.2 (licence). The Zarr entry of docs/adr/0007-zweites-format-zarr.md §12.11 left
@@ -234,6 +234,8 @@ SENTINEL_2_L2A = DatasetConfig(
         asset_hosts=("e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com",),
         # Federated items, nothing harvested into our own pgstac (architekturplan.md 5.2).
         item_holding=ItemHolding.FEDERATED,
+        # The region the asset host names (M5-07 plan §2, `x-amz-bucket-region` measured 06.11.2026).
+        data_region="aws:us-west-2",
     ),
     coverage=CoverageInfo(
         provider=CoverageProvider.UPSTREAM_AGGREGATION,
@@ -672,6 +674,9 @@ COP_DEM_GLO_30 = DatasetConfig(
         # `DatasetConfig._check_source`).
         asset_hosts=("copernicus-dem-30m.s3.amazonaws.com",),
         item_holding=ItemHolding.MATERIALIZED,
+        # The global host names no region; the bucket answers `x-amz-bucket-region: eu-central-1` (measured
+        # 06.11.2026, M5-07 plan §2), as the AWS Open Data registry says (`adr/0023` §6.2).
+        data_region="aws:eu-central-1",
     ),
     coverage=CoverageInfo(
         provider=CoverageProvider.LOCAL_SQL,
@@ -740,6 +745,165 @@ COP_DEM_GLO_30 = DatasetConfig(
     true_color=(),
 )
 
+# ESA WorldCover (M5-07, `adr/0023` §6.1 and §8.3): two states of one product, one entry each (`adr/0023` F6). Measured
+# 06.11.2026 (M5-07 plan §2): anonymous listing of the bucket in eu-central-1, 2651 COG tiles of 3° per state, the colour
+# table, the period and the copyright in the head of the file, the DOIs at Zenodo.
+_WORLDCOVER_HOST = "esa-worldcover.s3.eu-central-1.amazonaws.com"
+_WORLDCOVER_REFERENCE = f"https://{_WORLDCOVER_HOST}/v200/2021/docs/WorldCover_PUM_V2.0.pdf"
+# The legend in the head of every map file, values and names as the file writes them.
+_WORLDCOVER_CLASSES = tuple(
+    MaskClass(value, label)
+    for value, label in (
+        (10, "Tree cover"),
+        (20, "Shrubland"),
+        (30, "Grassland"),
+        (40, "Cropland"),
+        (50, "Built-up"),
+        (60, "Bare/sparse vegetation"),
+        (70, "Snow and ice"),
+        (80, "Permanent water bodies"),
+        (90, "Herbaceous wetland"),
+        (95, "Mangroves"),
+        (100, "Moss and lichen"),
+    )
+)
+
+
+def _worldcover(year: int, version: str, doi: str) -> DatasetConfig:
+    """One state of ESA WorldCover; the two differ in the year, the algorithm version and the DOI only."""
+    # The source's own attribution for a published map (`readme.html` of the bucket, the `copyright` tag of the file).
+    attribution = (
+        f"© ESA WorldCover project {year} / Contains modified Copernicus Sentinel data ({year}) "
+        "processed by ESA WorldCover consortium"
+    )
+    return DatasetConfig(
+        dataset_id=f"esa-worldcover-{year}",
+        title=f"ESA WorldCover {year}",
+        description=(
+            f"ESA WorldCover {year} ({version}): global land cover map at 10 m resolution with 11 classes, "
+            f"derived from Sentinel-1 and Sentinel-2 data of {year}, as cloud-optimized GeoTIFF in 3° × 3° tiles, "
+            "read directly from the AWS Open Data bucket. The 2020 and 2021 maps were made with different "
+            "algorithm versions and are not directly comparable."
+        ),
+        # German and English (adr/0026 F7, from M5-07 on).
+        keywords=(
+            "land cover", "landcover", "land use", "classification", "worldcover", "esa", "copernicus",
+            "sentinel-1", "sentinel-2", "Landbedeckung", "Bodenbedeckung", "Landnutzung", "Klassifikation",
+        ),  # fmt: skip
+        doi=doi,
+        citation=None,
+        # One map per year, not a stream of acquisitions (`adr/0023` §8.3), like the DEM.
+        data_class=DataClass.RASTER_STATIC,
+        format=DataFormat.COG,
+        # The outer edge of the tile grid (measured): no tiles south of 60° S.
+        spatial_extent=SpatialExtent(bbox=(-180.0, -60.0, 180.0, 84.0)),
+        # `time_start` and `time_end` of the file.
+        temporal_extent=TemporalExtent(
+            start=datetime(year, 1, 1, tzinfo=timezone.utc),
+            end=datetime(year, 12, 31, 23, 59, 59, tzinfo=timezone.utc),
+        ),
+        capabilities=Capabilities(
+            roi=True,
+            # One map: the year is chosen by the dataset, not by a date (`adr/0023` §8.3).
+            time_range=False,
+            # Arithmetic on class codes means nothing.
+            band_math=False,
+            # Classes only with `nearest` (adr/0014 F6): reprojection yes, interpolation no.
+            interpolation=False,
+            reprojection=True,
+            masking=True,
+            value_masking=True,
+            normalization=False,
+            # Open until M5-12 (`adr/0030`) has gone through the operators per dataset.
+            ml_processing=False,
+            quad_pol=False,
+            # One map per state: extent, not density (adr/0004 §5).
+            single_coverage_product=True,
+        ),
+        license=LicenseInfo(
+            spdx_id="CC-BY-4.0",
+            name="Creative Commons Attribution 4.0 International",
+            url="https://creativecommons.org/licenses/by/4.0/",
+            commercial_use=True,
+            distribution=True,
+            derivatives=True,
+            share_alike=False,
+            attribution_required=True,
+            # Proposal `adr/0023` §7.2; the wording Otto confirms before the merge (`adr/0023` F2, M5-07 plan F5).
+            tier=LicenseTier.PROCESSING,
+            attribution_modified=f"{attribution} (modified)",
+            attribution_unmodified=attribution,
+            terms=None,
+        ),
+        access=AccessInfo(
+            token_free_checked_at=date(2026, 11, 6),
+            method="anonymous HTTPS to the AWS Open Data bucket, no authentication header (M5-07 plan §2)",
+            # No Access-Control-Allow-Origin on a request with Origin (`adr/0023` §6.1, measured 31.10. and 06.11.2026).
+            cors=False,
+        ),
+        source=SourceInfo(
+            adapter=AdapterKind.ESA_WORLDCOVER_BUCKET,
+            endpoint=f"https://{_WORLDCOVER_HOST}",
+            # The bucket has no STAC collection; the prefix of the state is the closest thing to a source-side id.
+            source_collection_id=f"{version}/{year}",
+            asset_hosts=(_WORLDCOVER_HOST,),
+            item_holding=ItemHolding.MATERIALIZED,
+            data_region="aws:eu-central-1",
+        ),
+        coverage=CoverageInfo(
+            provider=CoverageProvider.LOCAL_SQL,
+            # A 3° tile; `max_geotile_level_for(333.0) == 6`.
+            typical_footprint_km=333.0,
+            max_geotile_level=6,
+        ),
+        # The classes in the colours of the file, no stretch (M5-07 plan F4). `nearest`, as for every class layer.
+        default_render=DefaultRender(
+            title="Land cover",
+            assets=("map",),
+            rescale=None,
+            colormap_name="esa-worldcover",
+            expression=None,
+            resampling="nearest",
+        ),
+        # As for the DEM: one period for every tile, so one group; the AOI crop in full resolution, no quicklook (no CORS).
+        # `min_zoom` 0: the file has overviews down to 1:64, so a tile of the world reads them, like the DEM's.
+        viewer=ViewerInfo(
+            group_by=("start_datetime",),
+            min_zoom=0,
+            max_zoom=15,
+            browse=BrowseMode.FULL_RESOLUTION,
+            quicklook_nodata_max=None,
+            results_group_by=("start_datetime",),
+        ),
+        health=HealthInfo(status=HealthStatus.OK),
+        maturity=Maturity.STABLE,
+        zarr=None,
+        # The map is its own class layer: `mask` keeps or hides the classes a recipe names (`adr/0023` §8.3).
+        mask=MaskSource(
+            asset="map",
+            band="map",
+            classes=_WORLDCOVER_CLASSES,
+            suggested=frozenset(),
+            reference=_WORLDCOVER_REFERENCE,
+            note="Class names as in the legend of the map files; 0 is no data.",
+            cloud_classes=frozenset(),
+            cloud_note="",
+            share_classes=(),
+        ),
+        # Class codes have no unit.
+        band_units={"map": None},
+        auxiliary_assets=(),
+        # Filters only for federated items for now (adr/0021 §2, point 1).
+        search_filters=(),
+        search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=True),
+        index_presets=(),
+        true_color=(),
+    )
+
+
+ESA_WORLDCOVER_2020 = _worldcover(2020, "v100", "https://doi.org/10.5281/zenodo.5571936")
+ESA_WORLDCOVER_2021 = _worldcover(2021, "v200", "https://doi.org/10.5281/zenodo.7254221")
+
 # The datasets that left the registry (docs/adr/0017-ein-sentinel-2-datensatz.md, rule III). An id on this
 # list answers `410` with the reason instead of "no dataset", and the side files of a job finished before the
 # entry left (`ATTRIBUTION.txt`, `citation.bib`) still carry its attribution, its terms and its citation. A
@@ -786,4 +950,4 @@ RETIRED = (
     ),
 )
 
-REGISTRY = DatasetRegistry((SENTINEL_2_L2A, COP_DEM_GLO_30), retired=RETIRED)
+REGISTRY = DatasetRegistry((SENTINEL_2_L2A, COP_DEM_GLO_30, ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021), retired=RETIRED)

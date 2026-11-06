@@ -86,7 +86,7 @@ async def test_search_reaches_the_source_through_its_own_adapter(chain: Chain) -
         assert [item["id"] for item in outcome.items] == [chain.item["id"]]
         assert outcome.items[0]["bbox"] == chain.item["bbox"]
         paths = {request.url.path for request in chain.searched}
-        assert paths == {"/tileList.txt", "/blacklist.txt", "/"}
+        assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"})
         return
 
     page = await search_items(chain.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=chain.gateway)

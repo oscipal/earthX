@@ -49,9 +49,11 @@ interface Props {
   };
   // What stands under the fields of "Scale": the histograms with their sliders.
   histograms?: ReactNode;
+  // A picture of classes (M5-07 plan F4): no range, the fields of "Scale" are left out.
+  noRange?: boolean;
 }
 
-export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder, unit, scale = false, channels, histograms }: Props) {
+export default function RenderFields({ band, index, vmin, vmax, colormap, placeholder, unit, scale = false, channels, histograms, noRange = false }: Props) {
   const percent = unit?.value === 'percent';
   const hint = percent ? undefined : placeholder;
   const range = scale ? (
@@ -81,7 +83,7 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
           </select>
         </label>
       )}
-      {range}
+      {!noRange && range}
       {colormap &&
         ('fixed' in colormap ? (
           // Not left out: the field keeps its place whatever band is drawn, locked, and its tooltip says why (NM4-54 part 5).
