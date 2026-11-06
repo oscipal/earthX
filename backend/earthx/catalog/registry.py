@@ -146,6 +146,14 @@ class Maturity(Enum):
     EXPERIMENTAL = "experimental"
 
 
+#: ``data_region`` of an entry whose storage operator or place is not shown yet (adr/0023 F7).
+UNKNOWN_DATA_REGION = "unknown"
+_DATA_REGION_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*")
+# Virtual-hosted S3 names (adr/0022 §7.2): with a region (`<bucket>.s3.<region>.amazonaws.com`) and without.
+_AWS_REGION_HOST_RE = re.compile(r"[a-z0-9.-]+\.s3[.-](?P<region>[a-z]{2}(?:-gov)?-[a-z]+-\d)\.amazonaws\.com")
+_AWS_HOST_RE = re.compile(r"(?:[a-z0-9.-]+\.)?amazonaws\.com")
+
+
 class ConfigError(ValueError):
     """A registry entry contradicts a rule from docs/."""
 
@@ -328,6 +336,11 @@ class SourceInfo:
     either way: for a federated dataset it is asked at search and item-fetch time,
     for a materialized one it is the adapter the one-off load in ``discovery`` used
     to build the items in the first place (M3-11b).
+
+    ``data_region`` is where the storage of the assets lies, as ``<operator>:<place>`` with the operator of the
+    storage, not the agency (``aws:eu-central-1``, ``eodc:vienna``), or ``unknown`` until both are shown
+    (adr/0022 §7.2, adr/0023 F7). It sits next to ``asset_hosts`` because the start check reads it against them
+    (M5-07 plan F1).
     """
 
     adapter: AdapterKind
@@ -335,6 +348,7 @@ class SourceInfo:
     source_collection_id: str
     asset_hosts: tuple[str, ...]
     item_holding: ItemHolding
+    data_region: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -1439,6 +1453,30 @@ class DatasetConfig:
                     f"{self.dataset_id}: asset_hosts entry {host!r} is not a bare host name "
                     "(no scheme, no path, no port, lower case)"
                 )
+        self._check_data_region()
+
+    def _check_data_region(self) -> None:
+        """The form of adr/0023 F7, and the region an AWS host names in itself (adr/0022 §7.2, M5-07 plan F2).
+
+        A host ``<bucket>.s3.<region>.amazonaws.com`` asks for exactly ``aws:<region>``; an AWS host without a region
+        in its name (``<bucket>.s3.amazonaws.com``) asks for the operator ``aws`` only, the region being a measurement
+        the entry notes beside it. Other hosts say nothing about where they store (``adr/0023`` §7.3).
+        """
+        region = self.source.data_region
+        if not isinstance(region, str) or not (region == UNKNOWN_DATA_REGION or _DATA_REGION_RE.fullmatch(region)):
+            raise ConfigError(
+                f"{self.dataset_id}: data_region {region!r} is neither <operator>:<place> "
+                f"(lower case, digits, hyphens) nor {UNKNOWN_DATA_REGION!r} (adr/0023 F7)"
+            )
+        named = {match["region"] for host in self.source.asset_hosts if (match := _AWS_REGION_HOST_RE.fullmatch(host))}
+        if len(named) > 1:
+            raise ConfigError(f"{self.dataset_id}: asset_hosts lie in more than one AWS region: {sorted(named)}")
+        if named:
+            expected = f"aws:{named.pop()}"
+            if region != expected:
+                raise ConfigError(f"{self.dataset_id}: data_region {region!r} contradicts its asset host ({expected})")
+        elif any(_AWS_HOST_RE.fullmatch(host) for host in self.source.asset_hosts) and not region.startswith("aws:"):
+            raise ConfigError(f"{self.dataset_id}: data_region {region!r} names no aws region for an AWS asset host")
 
     def _check_zarr(self) -> None:
         """``ZarrInfo`` describes a Zarr store; a COG entry has nothing for it to say."""

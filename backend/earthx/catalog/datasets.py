@@ -234,6 +234,8 @@ SENTINEL_2_L2A = DatasetConfig(
         asset_hosts=("e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com",),
         # Federated items, nothing harvested into our own pgstac (architekturplan.md 5.2).
         item_holding=ItemHolding.FEDERATED,
+        # The region the asset host names (M5-07 plan §2, `x-amz-bucket-region` measured 06.11.2026).
+        data_region="aws:us-west-2",
     ),
     coverage=CoverageInfo(
         provider=CoverageProvider.UPSTREAM_AGGREGATION,
@@ -672,6 +674,9 @@ COP_DEM_GLO_30 = DatasetConfig(
         # `DatasetConfig._check_source`).
         asset_hosts=("copernicus-dem-30m.s3.amazonaws.com",),
         item_holding=ItemHolding.MATERIALIZED,
+        # The global host names no region; the bucket answers `x-amz-bucket-region: eu-central-1` (measured
+        # 06.11.2026, M5-07 plan §2), as the AWS Open Data registry says (`adr/0023` §6.2).
+        data_region="aws:eu-central-1",
     ),
     coverage=CoverageInfo(
         provider=CoverageProvider.LOCAL_SQL,
