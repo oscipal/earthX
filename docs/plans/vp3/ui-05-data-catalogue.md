@@ -1,7 +1,7 @@
 # UI-05 — Data catalogue und Control Panel
 
-**Stand:** 06.11.2026, Plan zur Freigabe (Draft-PR). Beauftragt in `docs/plans/m5/m5-discovery-und-suche.md` §6.1 (UI-05) nach Ottos Zusatz vom 06.11.2026 (§2 Punkt 8 dort).
-**Stufe B:** Erst dieser Plan mit Fragen F1 … F9, dann setzt dieselbe Session nach Ottos Antworten um (§7).
+**Stand:** 06.11.2026, **angenommen** von Otto am 06.11.2026 (§8a: F1–F9 jeweils Option 1, F5 mit Symbol in der Leiste, F3 ergänzt; A1–A9 angenommen). Teil 1 umgesetzt (§9). Beauftragt in `docs/plans/m5/m5-discovery-und-suche.md` §6.1 (UI-05) nach Ottos Zusatz vom 06.11.2026 (§2 Punkt 8 dort).
+**Stufe B:** Erst dieser Plan mit Fragen F1 … F9, dann setzt dieselbe Session nach Ottos Antworten Teil 1 um (§8a, §9); Teil 2 bekommt eine neue Session und einen eigenen PR.
 **Modell:** Opus, Effort hoch.
 **Gilt dazu:** `docs/ui/leitfaden.md` (alle Regeln; Oberflächentexte englisch), `adr/0024` R8 (Marke „Prototype“), `adr/0027` W0 (Konto-Quellen als Katalogeintrag mit Link), `KLAERUNGEN` B10 (keine Vorgaben in der Registry), B12 (Punkt 10 „zuletzt erfolgreich geprüft“).
 **Startsatz:** „Führe Aufgabe UI-05 aus `docs/plans/m5/m5-discovery-und-suche.md` (§6.1) aus; Plan unter `docs/plans/vp3/`.“
@@ -42,7 +42,7 @@ Aus §6.1 des M5-Plans dazu: Erklärungen hinter (i) bzw. im Tooltip; ohne Zeita
 - **Blättern:** unter dem Raster eine Zeile „‹ 1 / 3 ›“ mit `chevron-left` / `chevron-right` (Leitfaden §3, „Bild davor / danach“) und dem Zähler in der Schreibweise des Leitfadens (`4 / 7` mit Leerzeichen, §2). Auf der ersten bzw. letzten Seite ist der Pfeil gesperrt mit Grund („Already on the first page“ / „… last page“). Mit nur einer Seite entfällt die Zeile nicht, sondern bleibt mit „1 / 1“ und zwei gesperrten Pfeilen, damit das Panel nicht springt (A2; Leitfaden §1 Punkt 5).
 - **Gewählte Datensätze auf anderen Seiten** bleiben gewählt; die Suche läuft über alle gewählten wie heute. Der Zähler zeigt nur die Seite, nicht die Zahl der gewählten (die steht schon in der Suche).
 - **„Select multiple datasets“** und „Coverage“ / „Hide coverage“ bleiben unverändert.
-- **Leerzustand:** ohne hinzugefügten Datensatz statt des Rasters „No datasets yet — add some from the Data catalogue“ mit dem Knopf (Leitfaden §4: Leerzustand, der sagt, was zu tun ist).
+- **Leerzustand:** ohne hinzugefügten Datensatz statt des Rasters „No datasets yet — add some from the Data catalogue“ (Leitfaden §4: Leerzustand, der sagt, was zu tun ist); kommt mit Teil 2, in Teil 1 sind immer alle Datensätze hinzugefügt.
 
 ### 3.2 „Advanced search“ immer sichtbar
 
@@ -76,9 +76,8 @@ Ein Test in `uiRules.test.ts` findet die verschobenen Texte als Absatz wieder (M
 
 ### 4.1 Ort und Form
 
-- **Knopf „Data catalogue“** (Symbol `library` aus Lucide, neu in `icons.ts` und Leitfaden §3) in der Kopfzeile „Datasets“ des Panels „Search and area“, rechts neben „Select multiple datasets“.
-- Er öffnet **ein Blatt neben dem Dock über der Karte** wie das Processing-Panel (**F5**): links die gruppierte Liste, rechts die Angaben des gewählten Eintrags. Schließen mit dem roten x (Leitfaden §5: Blätter haben das x), Esc schließt nichts, Klick daneben schließt nicht. Unter 900 px über die ganze Breite; die Angaben sind dann eine zweite Stufe mit „Back“ (`arrow-left`).
-- Kein Knopf in der Leiste links, kein sechstes Panel.
+- **Symbol „Data catalogue“ in der Leiste links** (Otto, 06.11.2026, F5; Lucide `library`, neu in `icons.ts` und Leitfaden §3). Es öffnet kein Panel im Dock, sondern das Fenster unten; ein zweiter Klick auf das Symbol schließt es wie das rote x. Die Abweichung von `adr/0026` §7 (dort im linken Panel) ist gewollt (Otto); das Suchfeld kommt später oben ins Fenster.
+- **Ein größeres Fenster über der Karte** (**F5**): links die gruppierte Liste, rechts die Angaben des gewählten Eintrags. Schließen mit dem roten x (Leitfaden §5: Blätter haben das x), Esc schließt nichts, Klick daneben schließt nicht. Unter 900 px über die ganze Breite; die Angaben sind dann eine zweite Stufe mit „Back“ (`arrow-left`).
 
 ### 4.2 Liste
 
@@ -119,7 +118,7 @@ Reihenfolge wie bei einem STAC-Browser, Werte aus `/stac/collections`, nichts au
 ### 4.5 Gespeicherte Auswahl und erster Besuch
 
 - **Speicher (F4):** `addedDatasetIds` je Browser in `localStorage` unter `earthx.datasets` (Muster `preferences.ts`): gesperrter oder werfender Speicher ändert nichts am Verhalten, unbekannte und ausgemusterte Kennungen (`RETIRED`) fallen beim Laden weg, die Reihenfolge bleibt.
-- **Erster Besuch (F3):** Vorauswahl nach Ottos Antwort.
+- **Erster Besuch (F3, Otto 06.11.2026):** Ohne gespeicherte Auswahl sind alle anzeigbaren Datensätze hinzugefügt, solange es höchstens sechs sind. Gibt es mehr, sind es **die ersten sechs in der Reihenfolge der Gruppen** (Reihenfolge von `category`, in der Gruppe nach Titel), also dieselbe Reihenfolge wie die Liste im Katalog.
 - **Permalink (A7):** Öffnet ein Permalink einen Auftrag mit einem Datensatz, der nicht hinzugefügt ist, wird er hinzugefügt (und gespeichert), damit Ansicht und Panel zusammenpassen. Der Permalink selbst trägt keine Auswahl.
 
 ## 5. Registry
@@ -164,7 +163,7 @@ Teil 1 in diesem PR, Teil 2 in einer neuen Session mit eigenem PR nach dem Merge
 - Vor „fertig“: `vitest`, `tsc`, `oxlint`; bei Teil 2 dazu `ruff`, `pytest`, `lint-imports`; Browser-Skripte, die das Panel berühren (`advanced-search`, `evaluate-coverage`, `narrow-windows`, `settings-panel`, `tooltips`, neu `dataset-pages`).
 - Zeile im Entscheidungslog je Teil.
 
-## 7. Auslegungen (gelten, bis Otto widerspricht)
+## 7. Auslegungen (angenommen von Otto, 06.11.2026)
 
 - **A1** „So viele wie ohne Scrollen Platz haben“ = gemessene Reihen 1–3, mindestens eine (§3.1).
 - **A2** Die Zeile „‹ 1 / 1 ›“ bleibt auch mit einer Seite, Pfeile gesperrt.
@@ -220,3 +219,11 @@ Teil 1 in diesem PR, Teil 2 in einer neuen Session mit eigenem PR nach dem Merge
 1. Zwei Teile nach §6.1, Teil 1 in diesem PR **(Empfehlung)**
 2. Alles in diesem PR (über dem Richtwert von etwa 400 Zeilen)
 3. Erst Teil 2 (Katalog), dann Teil 1
+
+## 8a. Antworten Otto (06.11.2026)
+
+- **F1–F9:** jeweils Option 1.
+- **F5** ausdrücklich so: ein größeres Fenster über der Karte mit rotem x, geöffnet über ein Symbol „Data catalogue“ in der linken Leiste (§4.1). Die Abweichung von `adr/0026` §7 (dort linkes Panel) ist gewollt; das Suchfeld kommt später oben ins Fenster (F6).
+- **F3 ergänzt:** Gibt es mehr als sechs Datensätze, sind beim ersten Besuch die ersten sechs in der Reihenfolge der Gruppen hinzugefügt (§4.5).
+- **A1–A9** angenommen.
+- Danach: Teil 1 umsetzen (§6.1, §9).
