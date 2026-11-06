@@ -163,7 +163,6 @@ class AreaStatistics:
         return self.factor == 1
 
 
-@contextmanager
 def check_instance_settings() -> None:
     """Raise ``ValueError`` for a bad ``EARTHX_USER_AGENT`` (M5-18 §3.1), at the start of a process that reads.
 
@@ -172,6 +171,7 @@ def check_instance_settings() -> None:
     process_gdal_options()
 
 
+@contextmanager
 def worker_environment() -> Iterator[None]:
     """The GDAL options of `readers` for the whole process (§7.3 point 2, adr/0013 §5.3).
 
