@@ -12,7 +12,8 @@
   - Bewertungs-Set: Die Session entwirft 30–50 Testfragen, Otto ergänzt und gibt frei (M5-Plan §5 Antwort 6). Es enthält deutsche und englische Fragen (`adr/0023` §7.5). Inhalt sind die Quellen aus `adr/0023` §11 (Vorgabe Otto zu dieser Aufgabe).
   - Prototyp-Datensätze kommen im Bewertungs-Set nie vor (`adr/0024` R7).
   - Konto-Quellen erscheinen in M5 nur als Katalogeintrag mit Link und `access.account` (`adr/0027` F2, F8).
-  - Die Suche bekommt ihren Platz im „Data catalogue“ im linken Panel (UI-05, M5-Plan §6.1; Vorgabe Otto zu dieser Aufgabe). UI-05 hält den Platz frei, ohne die Suche vorwegzunehmen.
+  - Die Suche bekommt ihren Platz im „Data catalogue“ (UI-05, M5-Plan §6.1; Vorgabe Otto zu dieser Aufgabe). UI-05 hält den Platz frei, ohne die Suche vorwegzunehmen.
+  - **Nachtrag Otto (06.11.2026, UI-05 F5):** Der „Data catalogue“ ist ein größeres Fenster über der Karte mit rotem x, geöffnet über ein Symbol in der linken Leiste, kein linkes Panel (§7).
   - Oberflächentexte englisch, Regeln aus `docs/ui/leitfaden.md`.
 - **Grundlage:**
   - `ENTSCHEIDUNGEN_2026-09-18.md` §4 (öffentliches Repo).
@@ -233,7 +234,7 @@ Der Architekturplan nennt Titel, Beschreibung, Schlagworte, Variablen und Bände
 - **Modell:** mehrsprachig, offene Lizenz (MIT oder Apache-2.0; nicht „nicht kommerziell“), klein genug für die CPU im Prozess `api`. Die Vorauswahl steht in §3.4; ausgewählt wird per Set (F2). Präfixe wie „query: “ bei e5 setzt der Code der Einbettung, nicht der Suchtext.
 - **Größe (F2, Bedingung b):** Kandidaten höchstens bis zur Größe von multilingual-e5-base (278 Mio. Parameter), bevorzugt int8. Damit bleiben aus §3.4 multilingual-e5-small und -base sowie zum Vergleich die beiden paraphrase-Modelle; bge-m3, Qwen3, gte-multilingual-base und die großen e5 fallen weg. Der PR der Umsetzung nennt den gemessenen Speicher je Prozess `api`.
 - **Ort der Rechnung:** Die Anfrage wird im Prozess `api` eingebettet (ONNX Runtime, CPU). Die Texte der Datensätze werden beim Laden des Katalogs eingebettet (§4.6).
-  - **Nur im Image von `api` (F2, Bedingung a):** Heute bauen alle Dienste das Ziel `app`, und der Runner baut darauf auf (`backend/Dockerfile`, `FROM app AS runner`) [P]. Die Modelldateien kommen deshalb in eine eigene Stufe über `app`, die nur `api` nutzt; der Runner bleibt ohne Modell. Rechnet `catalog-load` die Embeddings (§4.6), nutzt es dieselbe Stufe wie `api` [A, Auslegung; gilt bis Otto widerspricht]. Ein Test prüft, dass das Runner-Image keine Modelldatei enthält.
+  - **Nur im Image von `api` (F2, Bedingung a):** Heute bauen alle Dienste das Ziel `app`, und der Runner baut darauf auf (`backend/Dockerfile`, `FROM app AS runner`) [P]. Die Modelldateien kommen deshalb in eine eigene Stufe über `app`, die nur `api` nutzt; der Runner bleibt ohne Modell. `catalog-load` rechnet die Embeddings (§4.6) und nutzt dieselbe Stufe wie `api`. Ein Test prüft, dass das Runner-Image keine Modelldatei enthält. **Bestätigt von Otto am 06.11.2026.**
   - Die Modelldateien liegen im Image; der Pfad kommt aus der Konfiguration (`EARTHX_…`, Name in der Umsetzung). Zur Laufzeit gibt es keinen Abruf aus dem Netz, also nichts, was an `gateway` vorbei ginge.
   - Woher die Dateien beim Bau des Images kommen (Hugging Face, Revision und Prüfsumme festgeschrieben), legt die Umsetzung fest. Hugging Face ist aus der Cloud-Sitzung gesperrt [M].
 - **Vergleich im Prozess `api`, ohne pgvector (F3 = 2):** Die Vektoren liegen als Spalte (z. B. `real[]`) in der Tabelle des Suchindex. Eine SQL-Abfrage liefert die Datensätze, die die harten Filter bestehen, mit ihren Vektoren; `api` vergleicht exakt (Kosinus über normierte Vektoren, numpy). Bei bis zu einigen Tausend Zeilen ist das schnell genug [A, §3.2]. Exakt heißt auch: Filter und Vektor vertragen sich ohne die Fallen gefilterter ANN-Suche. pgvector mit Index (HNSW) kommt erst, wenn die Menge einen Index verlangt; die Spalte lässt sich dann in `vector` umwandeln, ohne die Embeddings neu zu rechnen.
@@ -305,23 +306,23 @@ Liegt nach Schritt 2 das Set schon über der Grenze aus F5, entscheidet Otto, ob
 
 ## 7. Oberfläche: Suche im „Data catalogue“
 
-Der „Data catalogue“ ist ein Panel der linken Leiste mit allen Datensätzen, gruppiert, zum Hinzufügen ins Control Panel (UI-05, M5-Plan §2 Punkt 8, §6.1). Die Suche sitzt darin. Vorschlag [A], mit den Regeln aus `docs/ui/leitfaden.md`:
+Der „Data catalogue“ ist ein **größeres Fenster über der Karte** mit allen Datensätzen, gruppiert, zum Hinzufügen ins Control Panel. Es öffnet über ein Symbol in der linken Leiste und schließt mit dem roten x; es ist kein linkes Panel (UI-05, M5-Plan §2 Punkt 8, §6.1; Nachtrag Otto zu UI-05 F5, 06.11.2026). Die Suche sitzt darin. Vorschlag [A], mit den Regeln aus `docs/ui/leitfaden.md`:
 
-- **Ort:** ein Suchfeld oben im Panel, unter dem Kopf, über der Liste. Bauteil wie die Ortssuche (`ClearableInput`), `autoComplete="off"` (Leitfaden §8b). Platzhalter „Search datasets“. Kein Satz darunter; was die Suche kann (Deutsch und Englisch, Namen, Themen), steht hinter einem (i) neben dem Feld (Leitfaden §4).
+- **Ort:** Suchfeld und AOI-Schalter **oben im Fenster**, unter dem Kopf mit Titel und rotem x, über der Liste. Bauteil wie die Ortssuche (`ClearableInput`), `autoComplete="off"` (Leitfaden §8b). Platzhalter „Search datasets“. Kein Satz darunter; was die Suche kann (Deutsch und Englisch, Namen, Themen), steht hinter einem (i) neben dem Feld (Leitfaden §4).
 - **Leeres Feld:** Der Katalog zeigt seine Gruppen wie in UI-05. Die Suche ändert daran nichts.
 - **Mit Text:** eine gerankte Liste statt der Gruppen. Jede Zeile ist **dieselbe Zeile** wie in der Gruppenansicht (Name, Marken, Hinzufügen bzw. Entfernen, Angaben aufklappbar); dazu der Name der Gruppe als kleine Marke. Keine Punktzahl, kein Rang als Zahl. Kein Tooltip am Namen (Leitfaden §4: keine Tooltips an Namen).
 - **Ohne Treffer:** ein Leerzustand, der sagt, was zu tun ist (Leitfaden §4), etwa „No matching datasets — try other words“, mit eingeschaltetem AOI-Filter „… or include datasets outside the AOI“. Fragen ohne passenden Datensatz bekommen so eine ehrliche Antwort statt eines nächstbesten Treffers (K9).
-- **AOI:** ein Schalter über der Liste: nur Datensätze, die die AOI berühren. Der Name kommt zuerst in den Leitfaden (§2) und darf nicht mit „Filter within AOI only“ verwechselbar sein, das in „Advanced search“ etwas anderes heißt. Gesperrt ohne AOI, Grund im Tooltip mit dem vorhandenen Text „Draw an AOI to use this filter“ (`LOCK_NEEDS_AOI`, `frontend/src/aoiFilter.ts`). Vorgabe: F6. Er wirkt auch ohne Text auf die Gruppenansicht. Das ist die „AOI-zuerst-Suche“ aus dem Projektplan (M5, Funktionen). Leitfaden §7 erlaubt heute genau einen Schalter (`role="switch"` nur im Filter der AOI); ein zweiter braucht einen Nachtrag dort.
+- **AOI:** ein Schalter oben im Fenster, neben oder unter dem Suchfeld: nur Datensätze, die die AOI berühren. Der Name kommt zuerst in den Leitfaden (§2) und darf nicht mit „Filter within AOI only“ verwechselbar sein, das in „Advanced search“ etwas anderes heißt. Gesperrt ohne AOI, Grund im Tooltip mit dem vorhandenen Text „Draw an AOI to use this filter“ (`LOCK_NEEDS_AOI`, `frontend/src/aoiFilter.ts`). Vorgabe: F6. Er wirkt auch ohne Text auf die Gruppenansicht. Das ist die „AOI-zuerst-Suche“ aus dem Projektplan (M5, Funktionen). Leitfaden §7 erlaubt heute genau einen Schalter (`role="switch"` nur im Filter der AOI); ein zweiter braucht einen Nachtrag dort.
 - **Zeitraum:** kein Filter im Katalog. Die Daten des Control Panels gelten je Datensatz und sind auf dessen Zeitraum begrenzt (UI-05); ein zweiter Zeitraum im Katalog wäre doppelt [A]. Die Schnittstelle kann ihn trotzdem (§4.4), für Chatbot und Python-Client.
 - **Marken:** „Prototype“ (`adr/0024` R8) und der Hinweis für Konto-Quellen (`adr/0027` §4.1 und F2: Link „kostenloses Konto nötig“; Form und Begriff legt UI-05 bzw. der Leitfaden fest) stehen in der Trefferzeile wie in der Gruppenansicht. „Last checked“ steht in den Angaben, sobald es Health-Checks gibt.
 - **Verhalten:** Die Anfrage geht nach einer kurzen Pause im Tippen an die API (keine Taste nötig), ab zwei Zeichen. Eine ältere Antwort überschreibt nie eine neuere. Fehler der API: der Fehler sichtbar mit „Retry“ (Leitfaden §2), die Gruppenansicht bleibt nutzbar.
 - **Merken:** Der Suchtext bleibt für die Sitzung stehen wie die Einstellungen von „Advanced search“, nicht im Browserspeicher und nicht im Permalink (wie DS-03c, Log 06.11.2026).
-- **Schließen und Leeren:** Der „Data catalogue“ ist ein linkes Panel ohne x (Leitfaden §5). Esc leert das Feld nicht; geleert wird nur mit „Clear“ von `ClearableInput`.
-- **Schmale Fenster:** dasselbe Panel; das Feld bleibt oben stehen, die Liste scrollt.
+- **Schließen und Leeren:** Das Fenster schließt mit dem roten x (Leitfaden §5, `CloseButton`); ein zweiter Klick auf das Symbol der Leiste schließt es ebenfalls, wenn UI-05 das so festlegt. Esc schließt nichts und leert das Feld nicht (Leitfaden §5); geleert wird nur mit „Clear“ von `ClearableInput`. Ob ein Klick daneben schließt, legt UI-05 fest (Leitfaden §5 kennt beides). Suchtext und Schalter bleiben beim Schließen und Wiederöffnen für die Sitzung stehen.
+- **Schmale Fenster:** Das Fenster deckt die Karte; Suchfeld und Schalter bleiben oben stehen, die Liste scrollt.
 
 **Was das für UI-05 heißt (Weitergabe):**
 
-1. Der Kopf des „Data catalogue“ lässt sich später um ein Feld und eine Zeile mit dem Schalter ergänzen, ohne Umbau. Keine sichtbar leere Fläche; UI-05 baut beides nicht.
+1. Der obere Bereich des Fensters „Data catalogue“ (unter Titel und rotem x) lässt sich später um das Suchfeld und den AOI-Schalter ergänzen, ohne Umbau. Keine sichtbar leere Fläche; UI-05 baut beides nicht.
 2. Die Zeile eines Datensatzes ist ein eigenes Bauteil, das auch ohne Gruppe stehen kann (mit der Gruppe als Marke).
 3. Keine Pflicht für UI-05: Dass die Gruppenansicht auf eine Teilmenge eingeschränkt werden kann (AOI-Schalter ohne Text), baut die Aufgabe der Suche in Fassung 3.
 4. Die Gruppe kommt aus einem Registry-Feld (UI-05 legt es fest). Dieses ADR schlägt kein eigenes vor; die Suche liest das Feld nur für die Marke.
@@ -490,7 +491,7 @@ Otto hat am 06.11.2026 alle neun Fragen beantwortet. Die Antworten stehen unter 
 3. Das größte Modell der Liste, Größe egal
 
 **Antwort F2 (Otto, 06.11.2026): 1, fest, mit zwei Bedingungen:**
-- (a) Modelldateien nur im Image von `api`, nicht im Runner-Image (umgesetzt in §4.3);
+- (a) Modelldateien nur im Image von `api`, nicht im Runner-Image (umgesetzt in §4.3). **Bestätigt (Otto, 06.11.2026):** eigene Stufe im `backend/Dockerfile` für `api` und `catalog-load`, Test, dass das Runner-Image kein Modell enthält;
 - (b) Kandidaten höchstens bis zur Größe von e5-base, bevorzugt int8; der PR nennt den Speicher je Prozess `api` (§4.3, §9).
 
 **F3 — pgvector in die Datenbank?**
@@ -554,7 +555,7 @@ Eingabe für Fassung 3 des M5-Plans. Diese Liste legt keine Plan-Dateien an und 
 4. **`api`:** Collection Search mit `q` (F9), Fläche per `POST`, `ignored_filters` wie bei `/stac/search`, Konformität nur soweit erfüllt.
 5. **Frontend:** Suchfeld und AOI-Schalter im „Data catalogue“ (§7), **nachdem UI-05 gemergt ist**. Neue Begriffe zuerst in den Leitfaden (§2).
 6. **Bewertungs-Set:** Fixture, Test, Skript zum Neurechnen, Lauf in `tests_live` (§8.4).
-7. **An UI-05:** Kopf des Panels ergänzbar, Zeile als eigenes Bauteil; die Einschränkung der Gruppenansicht baut die Suche selbst (§7).
+7. **An UI-05:** Der „Data catalogue“ ist ein Fenster über der Karte mit rotem x, geöffnet über ein Symbol der linken Leiste (Nachtrag Otto zu UI-05 F5). Sein oberer Bereich ist für Suchfeld und AOI-Schalter ergänzbar; die Zeile eines Datensatzes ist ein eigenes Bauteil. Die Einschränkung der Gruppenansicht baut die Suche selbst (§7). Das Fenster als neue Form gehört zuerst in den Leitfaden (§5, §7); das legt UI-05 fest.
 8. **An `adr/0025`:** Der Harvester rechnet keine Embeddings; er liefert Texte in der Sprache der Quelle, das Review ergänzt englische Titel und Beschreibungen, wo sie fehlen (§4.1, §4.6).
 9. **An M5-07, M5-08, M5-09, M5-11, DS-04:** Beschreibungen nennen Region und Inhalt; Schlagworte in Deutsch und Englisch, neue Fachbegriffe ins Glossar (F7 = 1, ab M5-07). Solange das Glossar noch nicht gebaut ist, stehen die Begriffe in der Plan-Datei der Aufgabe und ziehen mit Fassung 3 um.
 10. **Dokumente:**
